@@ -1,3 +1,8 @@
+// @verify-changed-triggers: ../NoteTabType.svelte, ../NoteContentSurface.svelte,
+//   src/lib/components/layout/panel-system/PanelEmptyState.svelte, src/lib/components/notes/NotesPanel.svelte,
+//   src/lib/components/notes/primitives/ReferenceBlock.svelte, src/lib/components/notes/primitives/CliBlock.svelte,
+//   src/lib/components/notes/primitives/AgentActionBlock.svelte
+
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';

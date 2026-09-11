@@ -71,6 +71,7 @@ interface TabInfo {
   tabId: string;
   webContentsId: number;
   url?: string;
+  requestedUrl?: string;
   title?: string;
 }
 
@@ -78,6 +79,8 @@ interface TabInfo {
 interface PanelBrowserTab {
   tabId: string;
   url: string;
+  /** Original URL before a loopback/tunnel rewrite; absent on legacy/plain tabs. */
+  requestedUrl?: string;
   title: string;
   /** Whether the tab may be closed by the user/agent (defaults to true when absent) */
   closable?: boolean;
@@ -193,7 +196,8 @@ class EmbeddedBrowserCdpService {
   private registrationWaiters = new Map<string, Set<(registered: boolean) => void>>();
 
   /**
-   * Renderer-reported bounds (CSS px) of each tab's visible webview element,
+   * Bounds in device-independent pixels of each tab's visible webview element,
+   * converted from renderer CSS pixels using the sending window's zoom factor,
    * keyed by tabId. Used to scale-to-fit emulated (agent-owned) tabs when
    * they are visible in a panel — the emulated viewport keeps its size, only
    * the displayed image is scaled (docs/protocol §5.9). Entries are dropped
@@ -621,13 +625,24 @@ class EmbeddedBrowserCdpService {
       const active = panelTab.active === true ? { active: true } : {};
       const viewport = this.tabViewports.get(panelTab.tabId) ?? { mode: 'fit' as const };
       const mounted = mountedTabs.find((t) => t.tabId === panelTab.tabId);
+      const requestedUrl = ownership?.requestedUrl ?? panelTab.requestedUrl;
+      const requested = requestedUrl === undefined ? {} : { requestedUrl };
       if (mounted) {
-        return { ...mounted, mounted: true, ...owner, viewport, ...hidden, ...active };
+        return {
+          ...mounted,
+          mounted: true,
+          ...requested,
+          ...owner,
+          viewport,
+          ...hidden,
+          ...active,
+        };
       }
       return {
         tabId: panelTab.tabId,
         webContentsId: -1, // Not mounted
         url: panelTab.url,
+        ...requested,
         title: panelTab.title,
         mounted: false,
         viewport,
@@ -1164,8 +1179,8 @@ class EmbeddedBrowserCdpService {
   }
 
   /**
-   * Record the on-screen bounds (CSS px) of a tab's visible webview element,
-   * reported by the renderer, and re-fit the emulation scale. Scale-to-fit
+   * Record the on-screen bounds (device-independent pixels) of a tab's visible
+   * webview element and re-fit the emulation scale. Scale-to-fit
    * only shrinks (docs/protocol §5.9): an emulated viewport smaller than the
    * element renders 1:1.
    */
@@ -1376,6 +1391,7 @@ class EmbeddedBrowserCdpService {
         : { ...DEFAULT_AGENT_VIEWPORT };
       this.tabOwnership.set(tab.tabId, {
         ownerAgentId: tab.ownerAgentId,
+        ...(tab.requestedUrl === undefined ? {} : { requestedUrl: tab.requestedUrl }),
         emulatedSize,
       });
       logger.info('Rehydrated tab ownership from panel layout', {

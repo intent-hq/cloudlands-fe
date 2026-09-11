@@ -443,8 +443,8 @@ jobs:
         run: pnpm run lint:dead-code
       - name: Accessibility lint
         run: bash scripts/check-accessibility.sh
-      - name: workspace:* dispatcher gate
-        run: node scripts/check-workspace-event-dispatchers.mjs
+      # Architecture gates are added to `lint:architecture` in package.json (run
+      # by both this step and `verify:changed`), never as separate workflow steps.
       - name: Architecture validation
         run: pnpm run validate:architecture
       - name: Build main process
@@ -606,6 +606,12 @@ jobs:
           cache: ${{ needs.route.outputs.linux_burst == 'true' && 'pnpm' || '' }}
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+      - name: Generate IPC channels
+        # src/preload/index.ts is gitignored and generated from the preload
+        # template + IPC registry (same shape as the generate:i18n steps).
+        # The unit suites no longer read it, but each shard regenerates it
+        # so a leg never depends on test internals to stay self-contained.
+        run: pnpm run generate:ipc-channels
       - name: Unit tests
         run: pnpm run test:unit --shard=${{ matrix.shard }}/2
 
@@ -823,14 +829,53 @@ jobs:
             | sudo tee /etc/apt/apt.conf.d/99-bounded-acquire >/dev/null
       - name: Install Playwright browsers
         if: needs.route.outputs.linux_burst == 'true'
-        # --with-deps runs even on a cache hit (OS packages aren't cached),
-        # but the browser download itself is skipped when already present.
-        # Step-level timeout so an apt/download stall the Acquire bounds
-        # somehow miss fails here in minutes — with logs attributing the
-        # failure to this step — instead of eating the 30-min job budget
-        # (monorepo#2832). Normal runs take ~1-2 min.
+        # The browser download self-skips when already present. OS deps are
+        # NOT installed with --with-deps: it re-runs apt on every run, and on
+        # the gh-linux-8x image every Chromium shared library is already
+        # present — the only NEW packages were ~21 MB of fonts-*/xfonts-*,
+        # fetched from archive.ubuntu.com at ~100 KB/s, which alone blew this
+        # step's budget and ejected PRs from the merge queue (intent#4723).
+        # The CT harness uses the repo-bundled Inter Variable font and waits
+        # on document.fonts.ready, so no suite depends on those system fonts.
+        # Instead: take the package list from the CT-aligned playwright's own
+        # `install-deps --dry-run` (parsed strictly and font-filtered by the
+        # launcher's --print-os-deps helper; see playwright-os-deps-lib.mjs),
+        # and call apt only for packages dpkg reports missing — zero network
+        # on a warm image, and a missing non-font lib still gets installed (or
+        # fails loudly, naming it). Step-level timeout so an apt/download
+        # stall the Acquire bounds somehow miss fails here in minutes — with
+        # logs attributing the failure to this step — instead of eating the
+        # 30-min job budget (monorepo#2832). Normal runs take ~1-2 min.
         timeout-minutes: 8
-        run: node scripts/run-ct-tests.mjs --install-browsers --with-deps chromium
+        run: |
+          set -euo pipefail
+          node scripts/run-ct-tests.mjs --install-browsers chromium
+          if ! pkgs="$(node scripts/run-ct-tests.mjs --print-os-deps chromium)" || [ -z "$pkgs" ]; then
+            echo "::error::Could not derive the non-font Chromium OS dependency list from install-deps --dry-run"
+            exit 1
+          fi
+          echo "Non-font Chromium OS deps: $pkgs"
+          missing=""
+          for p in $pkgs; do
+            status="$(dpkg-query -W -f='${Status}' "$p" 2>/dev/null || true)"
+            case "$status" in
+              *"install ok installed"*) ;;
+              *) missing="$missing $p" ;;
+            esac
+          done
+          if [ -z "$missing" ]; then
+            echo "All non-font Chromium OS deps already installed; skipping apt."
+            exit 0
+          fi
+          echo "Missing Chromium OS deps:$missing"
+          for i in 1 2; do
+            if sudo apt-get update && sudo apt-get install -y --no-install-recommends $missing; then
+              exit 0
+            fi
+            [ "$i" -eq 2 ] || sleep 15
+          done
+          echo "::error::Failed to install missing Chromium OS deps:$missing"
+          exit 1
       - name: Install Playwright browsers (tinybox)
         # Same install with the co-tenant apt caveat: --with-deps drives
         # sudo apt-get itself, so intentd ci.yml's DPkg::Lock::Timeout

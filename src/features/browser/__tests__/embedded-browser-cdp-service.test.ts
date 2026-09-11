@@ -47,9 +47,11 @@ const JPEG_1PX =
 type PanelTab = {
   tabId: string;
   url: string;
+  requestedUrl?: string;
   title: string;
   closable?: boolean;
   ownerAgentId?: string;
+  hidden?: boolean;
   emulatedSize?: { width: number; height: number };
   viewport?:
     | { mode: 'fit' }
@@ -707,15 +709,52 @@ describe('tab ownership registry (#2857)', () => {
 
   it('rehydrates persisted ownership from the panel-layout tab list (restart)', async () => {
     const service = await loadService();
+    const requestedVisible = 'http://daemon.localhost:3000/';
+    const requestedHidden = 'http://daemon.localhost:4000/';
     wireRenderer([
-      { tabId: 'tab-owned', url: 'http://a/', title: 'A', ownerAgentId: 'agent-1' },
+      {
+        tabId: 'tab-owned',
+        url: 'http://a/',
+        requestedUrl: requestedVisible,
+        title: 'A',
+        ownerAgentId: 'agent-1',
+      },
+      {
+        tabId: 'tab-hidden',
+        url: 'http://h/',
+        requestedUrl: requestedHidden,
+        title: 'Hidden',
+        ownerAgentId: 'agent-1',
+        hidden: true,
+      },
+      { tabId: 'tab-legacy', url: 'http://legacy/', title: 'Legacy', ownerAgentId: 'agent-1' },
       { tabId: 'tab-user', url: 'http://b/', title: 'B' },
     ]);
+    mocks.getAllWebContents.mockReturnValue([
+      fakeWebview(62, 'http://a/'),
+      fakeWebview(63, 'http://h/'),
+    ]);
+    service.registerTab('tab-owned', 62);
+    service.registerTab('tab-hidden', 63);
 
     // Fresh service: the in-memory registry knows nothing until a tab list
     // reply crosses the IPC boundary.
     expect(service.getTabOwner('tab-owned')).toBeUndefined();
-    await expect(service.resolveTabOwner('tab-owned', 'ws-1')).resolves.toBe('agent-1');
+    const { tabs } = await service.listAllTabs('ws-1');
+    expect(tabs.find((tab) => tab.tabId === 'tab-owned')).toMatchObject({
+      requestedUrl: requestedVisible,
+    });
+    expect(tabs.find((tab) => tab.tabId === 'tab-hidden')).toMatchObject({
+      requestedUrl: requestedHidden,
+      hidden: true,
+    });
+    expect(tabs.find((tab) => tab.tabId === 'tab-legacy')).not.toHaveProperty('requestedUrl');
+    await expect(
+      service.findModelTabByRequestedUrl(requestedVisible, 'agent-1', 'ws-1'),
+    ).resolves.toBe('tab-owned');
+    await expect(
+      service.findModelTabByRequestedUrl(requestedHidden, 'agent-1', 'ws-1'),
+    ).resolves.toBe('tab-hidden');
     await expect(service.resolveTabOwner('tab-user', 'ws-1')).resolves.toBeUndefined();
     // No persisted size (pre-size layout): the default viewport applies.
     expect(service.getTabEmulatedSize('tab-owned')).toEqual({ width: 1280, height: 800 });

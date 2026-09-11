@@ -13,6 +13,7 @@
  * This test reads the source files and checks that event handler bodies
  * (inside addEventListener callbacks) do not contain unsafe patterns.
  */
+// @verify-changed-triggers: ../*.ts, ../../WorkspaceSurface.svelte
 
 import { describe, it, expect } from 'vitest';
 import * as fs from 'fs';

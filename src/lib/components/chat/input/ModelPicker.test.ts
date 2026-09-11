@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
+import { tick } from 'svelte';
 import { derived, get, readable, writable } from 'svelte/store';
 
 const mockModelState = vi.hoisted(() => ({
@@ -1265,6 +1266,20 @@ describe('ModelPicker multi-provider mode', () => {
       expect(getModelsForProvider).toHaveBeenCalledWith('auggie');
       expect(getModelsForProvider).toHaveBeenCalledWith('claude-code');
     });
+  });
+
+  it('cancels the debounced provider fetch when unmounted', async () => {
+    vi.useFakeTimers();
+    try {
+      const view = render(ModelPicker, { props: { selectedModel: 'gpt5.4' } });
+      await tick();
+      view.unmount();
+      await vi.advanceTimersByTimeAsync(100);
+
+      expect(getModelsForProviderForLoadingState).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('renders the active provider models while another provider is still loading', async () => {

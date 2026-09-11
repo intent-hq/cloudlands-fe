@@ -4,7 +4,7 @@ import ToolCallRunningStatusHost from './ToolCallRunningStatusHost.svelte';
 const row = (host: Locator, name: string) => host.locator(`[data-row="${name}"]`);
 
 async function expectRunningIdentityOnly(target: Locator) {
-  await expect(target.locator('[data-tool-icon]')).toHaveClass(/animate-pulse/);
+  await expect(target.locator('[data-tool-icon]')).toHaveAttribute('data-streaming-pulse');
   await expect(target.locator('[data-operational-trailing]')).toHaveCount(0);
   await expect(target.getByTestId('tool-call-status')).toHaveCount(0);
   await expect(target.locator('[data-icon="spinner"]')).toHaveCount(0);

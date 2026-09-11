@@ -1152,9 +1152,9 @@ describe('thinking blocks — StreamingMessageContent', () => {
     const thinkingRows = document.querySelectorAll('.content-block--thinking');
     expect(thinkingRows).toHaveLength(2);
     for (const row of thinkingRows) {
-      expect(row.querySelector('[data-operational-leading]')?.className).not.toContain(
-        'animate-pulse',
-      );
+      expect(
+        row.querySelector('[data-operational-leading]')?.hasAttribute('data-streaming-pulse'),
+      ).toBe(false);
       expect(row.querySelector('[aria-expanded]')?.getAttribute('aria-expanded')).toBe('false');
     }
 
@@ -1180,12 +1180,16 @@ describe('thinking blocks — StreamingMessageContent', () => {
 
     const thinkingRows = document.querySelectorAll('.content-block--thinking');
     expect(thinkingRows).toHaveLength(2);
-    expect(thinkingRows[0].querySelector('[data-operational-leading]')?.className).not.toContain(
-      'animate-pulse',
-    );
-    expect(thinkingRows[1].querySelector('[data-operational-leading]')?.className).toContain(
-      'animate-pulse',
-    );
+    expect(
+      thinkingRows[0]
+        .querySelector('[data-operational-leading]')
+        ?.hasAttribute('data-streaming-pulse'),
+    ).toBe(false);
+    expect(
+      thinkingRows[1]
+        .querySelector('[data-operational-leading]')
+        ?.hasAttribute('data-streaming-pulse'),
+    ).toBe(true);
   });
 
   it('only flags the last parsed entry of the last text block as streaming', async () => {
@@ -1235,9 +1239,11 @@ describe('thinking blocks — StreamingMessageContent', () => {
 
     const thinkingRows = document.querySelectorAll('.content-block--thinking');
     expect(thinkingRows).toHaveLength(1);
-    expect(thinkingRows[0].querySelector('[data-operational-leading]')?.className).toContain(
-      'animate-pulse',
-    );
+    expect(
+      thinkingRows[0]
+        .querySelector('[data-operational-leading]')
+        ?.hasAttribute('data-streaming-pulse'),
+    ).toBe(true);
   });
 
   it('still renders legacy <think>-tag reasoning when showReasoningBlocks is on', async () => {

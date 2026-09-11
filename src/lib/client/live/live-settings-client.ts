@@ -339,6 +339,15 @@ export class LiveSettingsClient implements SettingsClient {
     return statuses.filter((status): status is McpServerRuntimeStatus => status !== null);
   }
 
+  async restartMcpServer(serverId: string): Promise<McpServerRuntimeStatus> {
+    const result = await backendRequest<{ status?: WireMcpServerStatus }>('mcp.servers.restart', {
+      serverId,
+    });
+    const status = fromWireMcpStatus(serverId, result?.status);
+    if (!status) throw new Error('The daemon returned an invalid MCP server status.');
+    return status;
+  }
+
   async getWorkspaceDisabledMcpServerNames(workspaceId: string): Promise<string[] | null> {
     // Workspace-scoped `mcp.servers.list` (§5.22 per-workspace disable): every
     // entry adds `workspaceDisabled: boolean`. Lenient on the wire (an unknown
@@ -541,7 +550,8 @@ function fromWireMcpStatus(
     wire?.state !== 'stopped' &&
     wire?.state !== 'starting' &&
     wire?.state !== 'running' &&
-    wire?.state !== 'error'
+    wire?.state !== 'error' &&
+    wire?.state !== 'auth_required'
   ) {
     return null;
   }

@@ -6,7 +6,6 @@ const mocks = vi.hoisted(() => ({
   ownClientId: vi.fn(),
   getBrowserClient: vi.fn(),
   setBrowserClient: vi.fn(),
-  listTabs: vi.fn(),
   navigateTab: vi.fn(),
   closeTab: vi.fn(),
   toastError: vi.fn(),
@@ -19,7 +18,6 @@ vi.mock('$lib/client', () => ({
       setBrowserClient: mocks.setBrowserClient,
     },
     browser: {
-      listTabs: mocks.listTabs,
       navigateTab: mocks.navigateTab,
       closeTab: mocks.closeTab,
     },
@@ -29,7 +27,6 @@ vi.mock('svelte-sonner', () => ({ toast: { error: mocks.toastError } }));
 
 import type { LiveClient } from '$shared/types/browser-clients';
 import { resolveDrivingClientView } from '$lib/components/workspace/driving-indicator';
-import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
 import type { StoreAction } from '@augmentcode/themis/utils/store/create-action';
 import type { StoreState } from '../../../types';
 import { removeWorkspaceEntity } from '../../workspace/workspace-slice';
@@ -46,7 +43,6 @@ import {
   browserTabClosed,
   closeBrowserTabRequested,
   fetchWorkspaceBrowserClientRequested,
-  fetchWorkspaceBrowserTabsRequested,
   hydrateBrowserClientsRequested,
   initialState,
   navigateBrowserTabRequested,
@@ -54,7 +50,6 @@ import {
   setWorkspaceBrowserClientRequested,
   workspaceBrowserClientReceived,
 } from '../browser-clients-slice';
-import { emptyWorkspaceBrowserClientsState } from '../browser-clients-types';
 import { browserClientsSaga } from './browser-clients-saga';
 
 const settle = async () => {
@@ -82,19 +77,7 @@ function start() {
   const state = { browserClients: initialState, workspaceLifecycle: lifecycleInitialState };
   const task = runSaga({ channel, dispatch, getState: () => state }, browserClientsSaga);
   const dispatched = () => dispatch.mock.calls.map(([action]) => action);
-  const setTabsRevision = (wsId: string, tabsRevision: number) => {
-    state.browserClients = {
-      ...state.browserClients,
-      byWorkspaceId: {
-        ...state.browserClients.byWorkspaceId,
-        [wsId]: {
-          ...(state.browserClients.byWorkspaceId[wsId] ?? emptyWorkspaceBrowserClientsState),
-          tabsRevision,
-        },
-      },
-    };
-  };
-  return { channel, task, dispatched, setTabsRevision };
+  return { channel, task, dispatched };
 }
 
 /** Saga wired to the real reducers, so lifecycle races are observed on state. */
@@ -113,11 +96,12 @@ function startWithReducer() {
     dispatch,
     task,
     entry: (wsId: string) => state.browserClients.byWorkspaceId[wsId],
-    /** The sidebar indicator's view for `wsId`, resolved from live state. */
+    /** The sidebar indicator's view for `wsId`, resolved from live state (with a browser tab open). */
     sidebar: (wsId: string) =>
-      resolveDrivingClientView(
-        selectWorkspaceDrivingClient.select(state as unknown as StoreState, wsId),
-      ),
+      resolveDrivingClientView({
+        ...selectWorkspaceDrivingClient.select(state as unknown as StoreState, wsId),
+        hasBrowserTabs: true,
+      }),
   };
 }
 
@@ -490,59 +474,6 @@ describe('browserClientsSaga', () => {
     ]);
   });
 
-  it('re-reads browser.listTabs when a browser:tab-* patch landed while the read was in flight', async () => {
-    const firstRead = deferred<unknown[]>();
-    const stale = [{ tabId: 'tab-stale' }];
-    const fresh = [{ tabId: 'tab-fresh' }];
-    mocks.listTabs.mockReturnValueOnce(firstRead.promise).mockResolvedValueOnce(fresh);
-    const { channel, task, dispatched, setTabsRevision } = start();
-
-    channel.put(fetchWorkspaceBrowserTabsRequested('ws-1'));
-    await settle();
-    expect(mocks.listTabs).toHaveBeenCalledTimes(1);
-
-    // A tab event patches the mirror (revision 0 → 1) before the snapshot lands.
-    setTabsRevision('ws-1', 1);
-    firstRead.resolve(stale);
-    await settle();
-    task.cancel();
-
-    expect(mocks.listTabs.mock.calls).toEqual([['ws-1'], ['ws-1']]);
-    expect(
-      dispatched().filter((a) => a.type === 'browserClients/workspaceBrowserTabsReceived'),
-    ).toEqual([
-      // Stamped with the stale revision: the reducer discards it.
-      { type: 'browserClients/workspaceBrowserTabsReceived', payload: ['ws-1', stale, 0] },
-      { type: 'browserClients/workspaceBrowserTabsReceived', payload: ['ws-1', fresh, 1] },
-    ]);
-  });
-
-  it('reads browser.listTabs per workspace and stores the listing', async () => {
-    const tabs = [
-      {
-        tabId: 'tab-1',
-        workspaceId: 'ws-1',
-        hostClientId: 'cli-desk',
-        url: 'https://a/',
-        visibility: 'visible',
-        createdAt: 't',
-        updatedAt: 't',
-        hostConnected: true,
-      },
-    ];
-    mocks.listTabs.mockResolvedValue(tabs);
-    const { channel, task, dispatched } = start();
-    channel.put(fetchWorkspaceBrowserTabsRequested('ws-1'));
-    await settle();
-    task.cancel();
-
-    expect(mocks.listTabs.mock.calls).toEqual([['ws-1']]);
-    expect(dispatched()).toContainEqual({
-      type: 'browserClients/workspaceBrowserTabsReceived',
-      payload: ['ws-1', tabs, 0],
-    });
-  });
-
   describe('viewer commands to a remote host (REV-2 Model 3)', () => {
     it('forwards a navigation as browser.navigateTab { tabId, url }, stores nothing from the envelope and resolves', async () => {
       mocks.navigateTab.mockResolvedValue({
@@ -617,16 +548,6 @@ describe('browserClientsSaga', () => {
 
   describe('workspace teardown while a per-workspace call is in flight', () => {
     const WS = 'ws-gone';
-    const listedTab = {
-      tabId: 'tab-1',
-      workspaceId: WS,
-      hostClientId: 'cli-desk',
-      url: 'https://a/',
-      visibility: 'visible',
-      createdAt: 't',
-      updatedAt: 't',
-      hostConnected: true,
-    };
     const pinned = {
       source: 'workspace',
       clientId: 'cli-desk',
@@ -635,11 +556,6 @@ describe('browserClientsSaga', () => {
     const unpinned = { source: 'default', resolved: null };
 
     const requests = {
-      listTabs: {
-        mock: () => mocks.listTabs,
-        request: () => fetchWorkspaceBrowserTabsRequested(WS),
-        reply: [listedTab],
-      },
       getBrowserClient: {
         mock: () => mocks.getBrowserClient,
         request: () => fetchWorkspaceBrowserClientRequested(WS),
@@ -677,33 +593,6 @@ describe('browserClientsSaga', () => {
 
       // The cleared entry is not recreated by the late reply.
       expect(entry(WS)).toBeUndefined();
-    });
-
-    it('a reply from before an unmount does not apply to the remounted workspace (listTabs)', async () => {
-      const first = deferred<unknown>();
-      const second = deferred<unknown>();
-      const fresh = [{ ...listedTab, tabId: 'tab-fresh' }];
-      mocks.listTabs.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
-      const { dispatch, task, entry } = startWithReducer();
-
-      dispatch(fetchWorkspaceBrowserTabsRequested(WS));
-      await settle();
-      dispatch(workspaceUnmounted(WS));
-
-      // Remounted, but its own read is not in flight yet when the pre-unmount
-      // read lands: nothing supersedes it, and it is stamped with the same
-      // revision (0) a fresh mount starts at — it must still be discarded.
-      first.resolve([listedTab]);
-      await settle();
-      expect(entry(WS)).toBeUndefined();
-
-      dispatch(fetchWorkspaceBrowserTabsRequested(WS));
-      await settle();
-      expect(mocks.listTabs).toHaveBeenCalledTimes(2);
-      second.resolve(fresh);
-      await settle();
-      task.cancel();
-      expect(getItems(entry(WS)!.tabs)).toEqual(fresh);
     });
 
     it('a reply from before an unmount does not apply to the remounted workspace (getBrowserClient)', async () => {

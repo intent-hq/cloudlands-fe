@@ -296,9 +296,14 @@ for (const theme of ['light', 'dark'] as const) {
 
           if (messageId === 'assistant-streaming') {
             const streamingRow = message.getByTestId('reasoning-tool-call').last();
-            await expect(streamingRow.locator('[data-operational-leading]')).toHaveClass(
-              /animate-pulse/,
+            await expect(streamingRow.locator('[data-operational-leading]')).toHaveAttribute(
+              'data-streaming-pulse',
             );
+            expect(
+              await streamingRow
+                .locator('[data-operational-leading]')
+                .evaluate((node) => node.getAnimations({ subtree: true }).length),
+            ).toBe(0);
             await expect(streamingRow.locator('[data-operational-expanded-content]')).toBeVisible();
           }
 

@@ -54,10 +54,12 @@
   import { toast } from 'svelte-sonner';
   import { withToastCountdown } from '$lib/components/ui/toast';
   import { Button } from '$lib/components/ui/button';
+  import * as Menu from '$lib/components/ui/menu';
   import { formatShortcut } from '$lib/utils/shortcuts';
   import { store as appStore } from '$store/renderer/store';
 
   interface Props {
+    layout?: 'list' | 'submenu';
     filePath?: string;
     workspaceId?: string;
     isDirectory?: boolean;
@@ -81,6 +83,7 @@
   }
 
   let {
+    layout = 'list',
     filePath = '',
     workspaceId = '',
     isDirectory = true,
@@ -146,84 +149,58 @@
   // Resolve the absolute path
   $effect(() => {
     if (filePath && workspaceId) {
-      // Check if workspaceFolderPath is a special marker for workspace root
-      if (workspaceFolderPath === '__WORKSPACE_ROOT__') {
-        // For notes, resolve the workspace root path via IPC
-        invoke<any>('workspace:get-root', { workspaceId })
-          .then((rootPath) => {
-            if (rootPath) {
-              const normalizedRoot = rootPath.replace(/\\/g, '/');
-              if (isAbsolutePath(filePath)) {
+      invoke<any>('workspace:get', { id: workspaceId })
+        .then((result) => {
+          // Check if result exists and has valid data (not archived/deleted)
+          if (result && result.success && result.data) {
+            const workspace = result.data;
+            const workspaceRoot =
+              workspace.worktreePath || workspace.repositoryPath || workspace.path;
+            const workspacePath =
+              workspaceFolderPath === '__WORKSPACE_ROOT__'
+                ? workspaceRoot
+                : workspaceFolderPath || workspaceRoot;
+
+            if (workspacePath) {
+              const normalizedWorkspacePath = workspacePath.replace(/\\/g, '/');
+              if (isWorkspaceRoot) {
+                resolvedPath = normalizedWorkspacePath;
+              } else if (isAbsolutePath(filePath)) {
                 resolvedPath = filePath.replace(/\\/g, '/');
               } else {
-                resolvedPath = `${normalizedRoot}/${filePath}`.replace(/\/+/g, '/');
+                resolvedPath = `${normalizedWorkspacePath}/${filePath}`.replace(/\/+/g, '/');
               }
-              resolvedFolderPath = normalizedRoot;
-              logger.info('[WorkspaceActionsMenu] Resolved note path:', {
+              resolvedFolderPath = normalizedWorkspacePath;
+              logger.info('[WorkspaceActionsMenu] Resolved file path:', {
                 filePath,
-                rootPath,
+                workspacePath,
                 resolvedPath,
               });
             } else {
               resolvedPath = filePath;
               resolvedFolderPath = '';
-              logger.warn('[WorkspaceActionsMenu] No workspace root found');
-            }
-          })
-          .catch((error) => {
-            resolvedPath = filePath;
-            resolvedFolderPath = '';
-            logger.error('[WorkspaceActionsMenu] Failed to get workspace root:', error);
-          });
-      } else {
-        // For code files, use the provided path or fall back to repository/worktree path
-        invoke<any>('workspace:get', { id: workspaceId })
-          .then((result) => {
-            // Check if result exists and has valid data (not archived/deleted)
-            if (result && result.success && result.data) {
-              const workspace = result.data;
-              const workspacePath =
-                workspaceFolderPath || workspace.worktreePath || workspace.repositoryPath;
-
-              if (workspacePath) {
-                const normalizedWorkspacePath = workspacePath.replace(/\\/g, '/');
-                if (isAbsolutePath(filePath)) {
-                  resolvedPath = filePath.replace(/\\/g, '/');
-                } else {
-                  resolvedPath = `${normalizedWorkspacePath}/${filePath}`.replace(/\/+/g, '/');
-                }
-                resolvedFolderPath = normalizedWorkspacePath;
-                logger.info('[WorkspaceActionsMenu] Resolved file path:', {
-                  filePath,
-                  workspacePath,
-                  resolvedPath,
-                });
-              } else {
-                resolvedPath = filePath;
-                resolvedFolderPath = '';
-                // Only warn if workspace exists but has no path (not for deleted workspaces)
-                if (workspace.status !== 'archived' && workspace.status !== 'deleted') {
-                  logger.warn('[WorkspaceActionsMenu] No workspace path found:', workspace);
-                }
-              }
-            } else {
-              resolvedPath = filePath;
-              resolvedFolderPath = '';
-              // Don't warn for archived/deleted workspaces
-              if (result?.error && !result.error.includes('not found')) {
-                logger.warn('[WorkspaceActionsMenu] Workspace not available:', result);
+              // Only warn if workspace exists but has no path (not for deleted workspaces)
+              if (workspace.status !== 'archived' && workspace.status !== 'deleted') {
+                logger.warn('[WorkspaceActionsMenu] No workspace path found:', workspace);
               }
             }
-          })
-          .catch((error) => {
+          } else {
             resolvedPath = filePath;
             resolvedFolderPath = '';
-            // Only log error if it's not a "not found" error (which is expected for deleted workspaces)
-            if (!error?.message?.includes('not found')) {
-              logger.error('[WorkspaceActionsMenu] Failed to resolve path:', error);
+            // Don't warn for archived/deleted workspaces
+            if (result?.error && !result.error.includes('not found')) {
+              logger.warn('[WorkspaceActionsMenu] Workspace not available:', result);
             }
-          });
-      }
+          }
+        })
+        .catch((error) => {
+          resolvedPath = filePath;
+          resolvedFolderPath = '';
+          // Only log error if it's not a "not found" error (which is expected for deleted workspaces)
+          if (!error?.message?.includes('not found')) {
+            logger.error('[WorkspaceActionsMenu] Failed to resolve path:', error);
+          }
+        });
     } else {
       resolvedPath = filePath;
       logger.info('[WorkspaceActionsMenu] Using filePath directly:', {
@@ -645,7 +622,82 @@
 </script>
 
 <div class="w-full overflow-hidden">
-  {#if showFileActions}
+  {#if showFileActions && layout === 'submenu'}
+    <Menu.Sub>
+      <Menu.SubTrigger>
+        <Fa icon={faUpRightFromSquare} size="12" class="w-4 text-muted-foreground opacity-70" />
+        <span>{m.ui_openCombo_openInApp_tooltip()}</span>
+      </Menu.SubTrigger>
+      <Menu.SubContent class="w-60">
+        {#if canOpenExternalEditors && $isWorkspaceHostLocal$}
+          {#each visibleEditors as editor (editor.id)}
+            {@const IconComponent = resolveEditorIcon(editor)}
+            <Menu.Item onclick={() => openInEditor(editor)}>
+              <span class={iconSlotClass} aria-hidden="true">
+                {#if editor.iconBase64}
+                  <img
+                    src="data:image/png;base64,{editor.iconBase64}"
+                    alt={editor.name}
+                    class="size-4"
+                  />
+                {:else if IconComponent}
+                  <IconComponent size={12} />
+                {:else}
+                  <Fa
+                    icon={resolveEditorFallbackIcon(editor.category)}
+                    size="12"
+                    class="opacity-50"
+                  />
+                {/if}
+              </span>
+              <span class="min-w-0 flex-1 truncate">
+                {m.ui_workspaceActions_openIn_label({ name: editor.name })}
+              </span>
+            </Menu.Item>
+          {/each}
+
+          <Menu.Item onclick={openWithOther}>
+            <span class={iconSlotClass} aria-hidden="true">
+              <Fa icon={faUpRightFromSquare} size="12" class="opacity-50" />
+            </span>
+            <span class="min-w-0 flex-1 truncate">{m.ui_workspaceActions_chooseApp_label()}</span>
+          </Menu.Item>
+          <Menu.Separator />
+        {/if}
+
+        <Menu.Item onclick={copyAbsolutePath}>
+          <span class="{iconSlotClass} text-xs font-black font-mono opacity-50" aria-hidden="true">
+            {isWindowsPlatform() ? '\\' : '/'}
+          </span>
+          <span class="min-w-0 flex-1 truncate">
+            {m.ui_workspaceActions_copyAbsolutePath_label()}
+          </span>
+        </Menu.Item>
+
+        {#if !isWorkspaceRoot}
+          <Menu.Item onclick={copyWorkspacePath}>
+            <span class="{iconSlotClass} text-xs font-black font-mono opacity-50" aria-hidden="true"
+              >./</span
+            >
+            <span class="min-w-0 flex-1 truncate">
+              {m.ui_workspaceActions_copyRelativePath_label()}
+            </span>
+          </Menu.Item>
+        {/if}
+
+        {#if showFileNameCopy && !isDirectory}
+          <Menu.Item onclick={copyFileName}>
+            <span class={iconSlotClass} aria-hidden="true">
+              <Fa icon={faFile} size="12" class="opacity-50" />
+            </span>
+            <span class="min-w-0 flex-1 truncate">
+              {m.ui_workspaceActions_copyFileName_label()}
+            </span>
+          </Menu.Item>
+        {/if}
+      </Menu.SubContent>
+    </Menu.Sub>
+  {:else if showFileActions}
     {#if canOpenExternalEditors && $isWorkspaceHostLocal$}
       <!-- Open Actions - dynamically rendered based on installed editors -->
       <div class="space-y-0.5">

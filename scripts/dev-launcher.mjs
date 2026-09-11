@@ -14,6 +14,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { existsSync, readdirSync, statSync, rmSync } from 'fs';
 import { executeGit, resolveDevLabel, resolveDevName } from './dev-launcher-name.mjs';
+import { pnpmInvocation } from './pnpm-launcher.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -162,14 +163,13 @@ function runDev(ports, cdpMode = false, devName = '') {
   }
 
   // Use cross-platform approach: set env vars on process.env and spawn pnpm directly
-  // On Windows, we need to use shell to find pnpm in PATH
-  const isWindows = process.platform === 'win32';
-  const child = spawn('pnpm', ['run', script], {
+  const launcher = pnpmInvocation(['run', script]);
+  const child = spawn(launcher.executable, launcher.args, {
     cwd: dirname(__dirname),
     env: process.env,
     stdio: 'inherit',
-    shell: isWindows,
-    windowsVerbatimArguments: isWindows,
+    shell: launcher.shell,
+    windowsVerbatimArguments: launcher.shell,
   });
 
   child.on('error', (err) => {

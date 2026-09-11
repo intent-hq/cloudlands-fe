@@ -1,3 +1,4 @@
+import { sessionHasPendingQuestion } from '$lib/components/chat/questions/pending-questions';
 import { AgentStatus } from '$shared/types/agent.types';
 import type { AgentSession } from '$shared/types';
 import type { AgentAttentionKind } from '$shared/utils/agent-attention';
@@ -54,7 +55,14 @@ export interface AvatarStateOptions {
   isCompleted?: boolean;
   /** Whether the agent has failed */
   isFailed?: boolean;
-  /** Whether the agent has an unanswered question */
+  /**
+   * Whether the agent has an unanswered question. For `getAvatarState` this is
+   * the sole question signal. For `getAvatarStateForSession` it is ADDITIVE:
+   * the session-derived `sessionHasPendingQuestion` predicate is always
+   * applied and OR-ed with this option, which exists for surfaces with
+   * store-only knowledge (HUD-captured question, wizard recovery projection).
+   * Callers can therefore over-report but never under-report a question.
+   */
   hasQuestion?: boolean;
   /** Whether the agent has a pending permission request that needs user action */
   hasPermissionRequest?: boolean;
@@ -85,6 +93,29 @@ function isRunningInput(input: AgentStateInput): boolean {
 function isBlockedWaitingInput(input: AgentStateInput): boolean {
   return isAgentBlockedWaitingState(input);
 }
+
+/**
+ * Priority order of the `getAvatarState` ladder, highest priority first.
+ *
+ * This is the documented contract for the hand-written branch chain below:
+ * a change to the order there must be reflected here, and every equality gate
+ * on a `getAvatarState*` result (see `avatar-state-gate-inventory.test.ts`)
+ * must be re-audited against the new order. `completed` is the one exception
+ * to a strict linear order — it defers to `running` while a live turn is in
+ * flight. `responding` is a declared display state the ladder never returns.
+ */
+export const AVATAR_STATE_PRECEDENCE: readonly AvatarState[] = [
+  'completed',
+  'failed',
+  'question',
+  'needs-permission',
+  'attention-discussion',
+  'attention-blocker',
+  'waiting',
+  'running',
+  'unread',
+  'idle',
+];
 
 /**
  * Get the avatar state based on agent state input and options.
@@ -185,11 +216,22 @@ export function getAvatarStateForSession(
 
   return getAvatarState(toAgentRuntimeStateInput(session), {
     ...options,
+    hasQuestion: sessionHasPendingQuestion(session) || options.hasQuestion === true,
     hasUnread: options.hasUnread ?? session.hasUnread,
     isCompleted: options.isCompleted ?? completedStatus,
     isFailed: options.isFailed ?? failedStatus,
     attentionKind: options.attentionKind ?? attentionRequest?.kind ?? null,
   });
+}
+
+/**
+ * Whether a session describes a live turn — the same running test the
+ * `getAvatarState` ladder uses, independent of higher-priority states such
+ * as `question` that outrank `running` in the returned avatar state.
+ */
+export function isSessionRunning(session: AgentSession | null | undefined): boolean {
+  if (!session) return false;
+  return isRunningInput(toAgentRuntimeStateInput(session));
 }
 
 /**

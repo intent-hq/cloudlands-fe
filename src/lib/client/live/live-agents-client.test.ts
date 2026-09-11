@@ -305,6 +305,28 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
     });
   });
 
+  it('queue forwards messageMetadata on agent.queueMessage params when supplied (§5.5)', async () => {
+    // The Q&A wizard's answer tag must survive queue-on-send so the daemon
+    // resolves the pending set when the queued entry drains.
+    const messageMetadata = { type: 'question_answers', answeredQuestionsMessageId: 'msg-q1' };
+    const queuedMessage = {
+      id: 'qm-meta-1',
+      content: 'Q: Auth method\nA: OAuth',
+      queuedAt: '2026-06-29T00:00:00.000Z',
+      position: 0,
+      messageMetadata,
+    };
+    backend.onRequest('agent.queueMessage', () => ({ success: true, queuedMessage }));
+    const client = new LiveAgentsClient();
+
+    const result = await client.queue('agent-1', 'Q: Auth method\nA: OAuth', { messageMetadata });
+    expect(result).toEqual({ success: true, queuedMessage });
+    expect(backend.requests[0]).toEqual({
+      method: 'agent.queueMessage',
+      params: { agentId: 'agent-1', content: 'Q: Auth method\nA: OAuth', messageMetadata },
+    });
+  });
+
   it('queue omits the imageBlocks key entirely when no images are supplied', async () => {
     backend.onRequest('agent.queueMessage', () => ({ success: true }));
     const client = new LiveAgentsClient();
@@ -315,6 +337,7 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
       params: { agentId: 'agent-1', content: 'no images' },
     });
     expect('imageBlocks' in (backend.requests[0]?.params as object)).toBe(false);
+    expect('messageMetadata' in (backend.requests[0]?.params as object)).toBe(false);
   });
 
   it('removeQueued forwards agent.removeQueuedMessage with PROTOCOL §5.5 params and folds the idempotent BE body into success', async () => {

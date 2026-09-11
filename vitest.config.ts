@@ -2,6 +2,7 @@ import { defineConfig } from 'vitest/config';
 import path from 'path';
 import os from 'os';
 import { readFileSync } from 'fs';
+import { gitignoreDirExcludes } from './scripts/gitignore-dir-excludes.mjs';
 
 // CI-only tuning for shared self-hosted runners (intent-hq/monorepo#3082; the
 // recurrence class #3032/#2586/#1406/#1171/#545). The CI unit job runs on the
@@ -61,9 +62,8 @@ export default defineConfig(async () => {
         '**/dist/**',
         '**/build/**',
         '**/.{idea,git,cache,output,temp}/**',
-        // Exclude any untracked git-worktree dirs (e.g. .wt-commit-details/) so
-        // vitest doesn't double-collect their test files alongside the primary tree.
-        '**/.wt-*/**',
+        // Scratch/sandbox excludes (worktrees, probes, .dev/, etc.) come from .gitignore.
+        ...gitignoreDirExcludes(path.join(__dirname, '.gitignore')),
         'test/**', // Exclude Playwright tests directory (package-root only; do not swallow src/test/**)
         // Required CI runs this suite separately with its Node-specific setup.
         'tests/integration/**',

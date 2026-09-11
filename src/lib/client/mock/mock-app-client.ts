@@ -95,6 +95,7 @@ export class MockAppClient implements Omit<AppClient, MigratedDomain> {
     getMcpServers: async () => fx.mockMcpServers,
     setMcpServers: async () => OK,
     getMcpServerStatuses: async () => [],
+    restartMcpServer: async (serverId) => ({ serverId, state: 'running' }),
     getWorkspaceDisabledMcpServerNames: async () => [],
     toggleWorkspaceMcpServer: async () => OK,
     getWorkspaceSettings: async () => fx.mockWorkspaceSettings,
