@@ -1,13 +1,16 @@
 <script lang="ts">
   import { DropdownMenu as MenuPrimitive } from 'bits-ui';
+  import type { Snippet } from 'svelte';
   import { cn } from '$lib/utils.js';
+  import type { WithoutChildrenOrChild } from '$lib/utils.js';
   import { OPTION_LIST_ROW_CLASS } from '$lib/styles/option-list-row';
 
   let {
     ref = $bindable(null),
     class: className,
+    children,
     ...restProps
-  }: MenuPrimitive.GroupHeadingProps = $props();
+  }: WithoutChildrenOrChild<MenuPrimitive.GroupHeadingProps> & { children?: Snippet } = $props();
 </script>
 
 <MenuPrimitive.GroupHeading
@@ -19,4 +22,7 @@
     className,
   )}
   {...restProps}
-/>
+>
+  <span data-slot="menu-item-leading" class="size-4 shrink-0" aria-hidden="true"></span>
+  {@render children?.()}
+</MenuPrimitive.GroupHeading>

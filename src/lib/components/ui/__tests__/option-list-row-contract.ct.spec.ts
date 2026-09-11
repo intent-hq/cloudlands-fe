@@ -23,7 +23,7 @@ async function expectRow(row: Locator) {
     };
   });
   expect(style).toMatchObject({
-    height: '36px',
+    height: '28px',
     radius: '8px',
     paddingLeft: '8px',
     paddingRight: '8px',
@@ -56,6 +56,18 @@ async function expectHighlight(row: Locator, highlight: Locator) {
   await expect(highlight).toBeVisible();
   const [rowBox, highlightBox] = await Promise.all([row.boundingBox(), highlight.boundingBox()]);
   expect(highlightBox).toEqual(rowBox);
+}
+
+async function firstTextStart(locator: Locator) {
+  return locator.evaluate((element) => {
+    const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+    let node = walker.nextNode();
+    while (node && !node.textContent?.trim()) node = walker.nextNode();
+    if (!node) throw new Error('Expected a non-empty text node');
+    const range = document.createRange();
+    range.selectNodeContents(node);
+    return range.getBoundingClientRect().left;
+  });
 }
 
 async function expectFocusTuple(row: Locator) {
@@ -109,7 +121,12 @@ for (const theme of ['light', 'dark'] as const) {
       await expectRow(row);
       await expectInset(menu, row);
       await expectHighlight(row, menu.locator('.bg-selected'));
-      expect(await row.evaluate((node) => getComputedStyle(node).fontWeight)).toBe('500');
+      expect(await row.evaluate((node) => getComputedStyle(node).fontWeight)).toBe('400');
+      const labelStart = await firstTextStart(menu.locator('[data-slot="menu-label"]'));
+      const rowStarts = await Promise.all(
+        (await menu.locator('[data-menu-item]').all()).map(firstTextStart),
+      );
+      for (const rowStart of rowStarts) expect(rowStart).toBeCloseTo(labelStart, 0);
       const indicator = row.locator('[data-slot="menu-item-indicator"]');
       expect(
         (await row.boundingBox())!.x +
@@ -142,7 +159,7 @@ for (const theme of ['light', 'dark'] as const) {
       await expectRow(row);
       await expectInset(viewport, row);
       await expectHighlight(row, listbox.locator('.bg-selected'));
-      expect(await row.evaluate((node) => getComputedStyle(node).fontWeight)).toBe('500');
+      expect(await row.evaluate((node) => getComputedStyle(node).fontWeight)).toBe('400');
       const box = await listbox.boundingBox();
       expect(box!.y + box!.height).toBeLessThanOrEqual(await page.evaluate(() => innerHeight));
       await page.keyboard.press('Escape');

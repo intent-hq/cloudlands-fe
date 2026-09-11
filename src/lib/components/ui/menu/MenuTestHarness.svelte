@@ -77,17 +77,21 @@
     />
   {:else}
     <Menu.Content portal={false}>
-      <Menu.Item onSelect={() => (selected = 'apple')}>Apple</Menu.Item>
-      <Menu.Item onSelect={() => (selected = 'banana')}>Banana</Menu.Item>
-      <Menu.Item disabled onSelect={() => (selected = 'disabled')}>Disabled action</Menu.Item>
-      <Menu.Item onSelect={() => (selected = 'cherry')}>Cherry</Menu.Item>
-      <Menu.Item destructive onSelect={() => (selected = 'delete')}>Delete item</Menu.Item>
-      <Menu.CommandItem
-        icon={faPaperclip}
-        label={m.chat_richInput_attachFiles_label()}
-        shortcut="⇧⌘A"
-        onSelect={() => (selected = 'attach')}
-      />
+      <Menu.Group>
+        <!-- i18n-ignore (test fixture) -->
+        <Menu.Label>Commands</Menu.Label>
+        <Menu.Item onSelect={() => (selected = 'apple')}>Apple</Menu.Item>
+        <Menu.Item onSelect={() => (selected = 'banana')}>Banana</Menu.Item>
+        <Menu.Item disabled onSelect={() => (selected = 'disabled')}>Disabled action</Menu.Item>
+        <Menu.Item onSelect={() => (selected = 'cherry')}>Cherry</Menu.Item>
+        <Menu.Item destructive onSelect={() => (selected = 'delete')}>Delete item</Menu.Item>
+        <Menu.CommandItem
+          icon={faPaperclip}
+          label={m.chat_richInput_attachFiles_label()}
+          shortcut="⇧⌘A"
+          onSelect={() => (selected = 'attach')}
+        />
+      </Menu.Group>
       <Menu.Separator />
       <Menu.CheckboxItem bind:checked closeOnSelect={false}>Show panel</Menu.CheckboxItem>
       <Menu.RadioGroup bind:value={density}>
