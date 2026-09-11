@@ -443,8 +443,8 @@ jobs:
         run: pnpm run lint:dead-code
       - name: Accessibility lint
         run: bash scripts/check-accessibility.sh
-      - name: workspace:* dispatcher gate
-        run: node scripts/check-workspace-event-dispatchers.mjs
+      # Architecture gates are added to `lint:architecture` in package.json (run
+      # by both this step and `verify:changed`), never as separate workflow steps.
       - name: Architecture validation
         run: pnpm run validate:architecture
       - name: Build main process
