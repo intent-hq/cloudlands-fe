@@ -84,7 +84,8 @@ export function isQuestionSetAnsweredInQueue(
  * `selectAgentIsRunning`, which stays true while the agent merely waits on
  * delegated agents and must not suppress the wizard): trailing system rows
  * are transparent and only a question-bearing assistant row at the
- * non-system tail is pending.
+ * non-system tail is pending, and a tagged answer for it still in
+ * `queuedMessages` hides it just as on the marker path.
  */
 export function derivePendingQuestions(
   messages: readonly AgentMessage[],
@@ -117,6 +118,7 @@ export function derivePendingQuestions(
     const msg = messages[i];
     if (msg.role === 'system') continue;
     if (msg.role !== 'assistant' || msg.isStreaming) return null;
+    if (isQuestionSetAnsweredInQueue(queuedMessages, msg.id)) return null;
     const questions = questionsOf(msg);
     return questions.length > 0 ? { messageId: msg.id, questions } : null;
   }

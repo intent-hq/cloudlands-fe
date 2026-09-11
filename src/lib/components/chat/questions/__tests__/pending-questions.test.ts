@@ -225,6 +225,27 @@ describe('derivePendingQuestions', () => {
     ).toMatchObject({ messageId: 'msg-a1' });
   });
 
+  it('a queued tagged answer hides the legacy (marker-less) tail set too', () => {
+    // No daemon marker (legacy daemon): the transcript-tail fallback applies.
+    // A tagged answer sitting in the queue for that tail row still counts
+    // as answered; a mismatched or untagged entry does not.
+    const msg = assistantMessage([questionBlock()], { id: 'msg-a1' });
+    const queued = [queuedMessage(buildAnswerMessageMetadata('msg-a1'))];
+    expect(derivePendingQuestions([msg], false, false, undefined, queued)).toBeNull();
+    // The entry leaving the queue with no tagged transcript row re-surfaces it.
+    expect(derivePendingQuestions([msg], false, false, undefined, [])).toMatchObject({
+      messageId: 'msg-a1',
+    });
+    expect(
+      derivePendingQuestions([msg], false, false, undefined, [
+        queuedMessage(buildAnswerMessageMetadata('msg-other')),
+      ]),
+    ).toMatchObject({ messageId: 'msg-a1' });
+    expect(
+      derivePendingQuestions([msg], false, false, undefined, [queuedMessage(undefined)]),
+    ).toMatchObject({ messageId: 'msg-a1' });
+  });
+
   it('ends the legacy fallback at a later user row', () => {
     const msg = assistantMessage([questionBlock()]);
     expect(derivePendingQuestions([msg, userMessage()], false)).toBeNull();
