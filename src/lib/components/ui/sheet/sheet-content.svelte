@@ -98,7 +98,9 @@
             out:crispOut={motion.exit}
             onoutroend={presence.finishExit}
           >
-            {@render children?.()}
+            <div data-slot="sheet-body" class="flex min-w-0 flex-1 flex-col px-6 py-4">
+              {@render children?.()}
+            </div>
             {#if showCloseButton}
               <SheetPrimitive.Close disabled={closeDisabled}>
                 {#snippet child({ props: closeProps })}
@@ -126,6 +128,23 @@
 {/if}
 
 <style>
+  /* Header/footer own their inset; cancel only the surrounding body padding. */
+  :global([data-slot='sheet-body'] > [data-slot='sheet-header']) {
+    margin-inline: -1.5rem;
+  }
+
+  :global([data-slot='sheet-body'] > [data-slot='sheet-header']:first-child) {
+    margin-top: -1rem;
+  }
+
+  :global([data-slot='sheet-body'] > [data-slot='sheet-footer']) {
+    margin-inline: -1.5rem;
+  }
+
+  :global([data-slot='sheet-body'] > [data-slot='sheet-footer']:last-child) {
+    margin-bottom: -1rem;
+  }
+
   :global(.sheet-editorial-content[data-side='left']),
   :global(.sheet-editorial-content[data-side='right']) {
     width: min(26rem, calc(100% - 0.5rem));

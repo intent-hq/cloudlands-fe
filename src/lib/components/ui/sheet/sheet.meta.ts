@@ -32,6 +32,9 @@ export const sheetMetadata = parseUiComponentMetadata({
   owner: '007-B4',
   callers: ['src/lib/components/ui/sidebar/sidebar.svelte'],
   replacement: null,
+  useWhen: [
+    'Content supplies a flex body with px-6 py-4 padding. Place Header and Footer directly inside Content; they retain their own inset without doubled padding. Ordinary body content needs no padding wrapper.',
+  ],
   characterizationTest: 'src/lib/components/ui/sheet/sheet.test.ts',
   removalGate: 'Retain while exported; require metadata, fixtures, and behavioral coverage.',
   dynamicImports: [],
