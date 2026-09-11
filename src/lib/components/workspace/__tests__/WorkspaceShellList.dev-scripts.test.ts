@@ -226,6 +226,8 @@ describe('WorkspaceShellList development script controls', () => {
     ) as HTMLElement;
     expect(within(idleRow).getByText(longName).className).toContain('truncate');
     expect(within(idleRow).getByText('Idle')).toBeTruthy();
+    expect(idleRow.querySelector('[data-script-status-indicator]')).toBeNull();
+    expect(within(idleRow).queryByRole('button', { name: 'Show in a panel' })).toBeNull();
     expect(within(idleRow).getByRole('button', { name: `Start ${longName}` })).toBeTruthy();
     expect(within(runningRow).getByText('Running')).toBeTruthy();
     expect(within(runningRow).getByRole('button', { name: 'Stop' })).toBeTruthy();

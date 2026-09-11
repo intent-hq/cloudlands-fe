@@ -202,13 +202,15 @@
             class="flex h-full min-w-0 flex-1 cursor-pointer items-center justify-start gap-2 p-0! text-left"
             onclick={() => openScript(script.id)}
           >
-            <span
-              class="size-1.5 shrink-0 rounded-full {live
-                ? 'bg-success'
-                : 'bg-muted-foreground/40'}"
-              aria-hidden="true"
-              data-script-status-indicator
-            ></span>
+            {#if script.runtime.status !== 'idle'}
+              <span
+                class="size-1.5 shrink-0 rounded-full {live
+                  ? 'bg-success'
+                  : 'bg-muted-foreground/40'}"
+                aria-hidden="true"
+                data-script-status-indicator
+              ></span>
+            {/if}
             <span
               class="min-w-0 flex-1 truncate text-sm font-medium text-foreground"
               title={script.name}
@@ -232,17 +234,19 @@
             {/if}
           </span>
           <div class="flex shrink-0 items-center" data-surface-actions>
-            <Button
-              variant="ghost-light"
-              size="icon-xs"
-              iconOnly
-              class="size-7"
-              tooltip={m.workspace_shell_showInPanel_tooltip()}
-              tooltipSide="left"
-              onclick={(event) => openScriptInPanel(script.id, script.name, event)}
-            >
-              <Fa icon={faTableColumns} class="size-3" />
-            </Button>
+            {#if script.runtime.status !== 'idle'}
+              <Button
+                variant="ghost-light"
+                size="icon-xs"
+                iconOnly
+                class="size-7"
+                tooltip={m.workspace_shell_showInPanel_tooltip()}
+                tooltipSide="left"
+                onclick={(event) => openScriptInPanel(script.id, script.name, event)}
+              >
+                <Fa icon={faTableColumns} class="size-3" />
+              </Button>
+            {/if}
             <Button
               variant="ghost-light"
               size="icon-xs"

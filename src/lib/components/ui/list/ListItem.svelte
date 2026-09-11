@@ -209,7 +209,7 @@
 
   <div
     class={cn(
-      'pointer-events-none relative col-start-1 row-start-1 flex w-full items-center',
+      'pointer-events-none relative col-start-1 row-start-1 flex w-full min-w-0 items-center',
       config.gap,
       config.padding,
     )}

@@ -636,23 +636,24 @@
   >
     {#snippet action()}
       <!-- Auto-commit toggle -->
-      <div class="flex items-center justify-between gap-2 -my-0.5">
+      <div class="-my-0.5 flex w-full min-w-0 items-center justify-between gap-2">
         <Tooltip
           content={$autoCommitEnabled
             ? m.workspace_fileChanges_autoCommitOn_tooltip()
             : m.workspace_fileChanges_autoCommitOff_tooltip()}
           side="right"
           contentClass="w-[12rem]"
+          class="min-w-0 flex-1"
           disableHoverableContent={false}
           disableCloseOnTriggerClick={true}
         >
-          <span class="text-ui whitespace-nowrap text-subtle">
+          <span class="text-ui min-w-0 truncate text-subtle">
             {m.workspace_commitDrawer_autoCommitWhenDone_label()}
           </span>
           <Switch
             size="xs"
             checked={$autoCommitEnabled}
-            class="-mr-1"
+            class="-mr-1 shrink-0"
             ariaLabel={m.workspace_commitDrawer_autoCommitWhenDone_label()}
             onCheckedChange={() => {
               if (workspaceId) {

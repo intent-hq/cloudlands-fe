@@ -543,7 +543,7 @@
             {:else if note?.metadata?.task?.status}
               <!-- Task note with status - show TaskStatusIcon -->
               {@const activeAgents = getActiveAgentsForNote(note)}
-              <div class="relative flex-1 w-full flex items-center gap-1">
+              <div class="relative flex w-full min-w-0 flex-1 items-center gap-1">
                 <ListItem
                   iconClass="text-ghost"
                   title={getNoteTitle(note)}
@@ -607,7 +607,7 @@
               {@const inProgressPctNorm = taskStats.inProgress / taskStats.total}
               {@const completedOffset = circumference * (1 - completedPctNorm)}
               {@const inProgressOffset = circumference * (1 - inProgressPctNorm)}
-              <div class="relative flex-1 w-full flex">
+              <div class="relative flex w-full min-w-0 flex-1">
                 <ListItem
                   iconClass="text-ghost"
                   title={getNoteTitle(note)}
@@ -690,7 +690,7 @@
               </div>
             {:else}
               {@const activeAgents = getActiveAgentsForNote(note)}
-              <div class="relative flex-1 w-full flex items-center gap-1">
+              <div class="relative flex w-full min-w-0 flex-1 items-center gap-1">
                 <ListItem
                   title={getNoteTitle(note)}
                   active={selectedNoteId === note.id}
