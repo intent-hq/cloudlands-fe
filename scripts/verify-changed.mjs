@@ -101,12 +101,17 @@ function assertCanonicalPathInsideRoot(path, root, displayPath) {
 }
 
 export function parseArgs(argv) {
-  const result = { dryRun: false, help: false, paths: [] };
-  for (const arg of argv) {
+  const result = { base: null, dryRun: false, help: false, paths: [] };
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
     if (arg === '--') continue;
     if (arg === '--dry-run') result.dryRun = true;
     else if (arg === '--help' || arg === '-h') result.help = true;
-    else if (arg.startsWith('-')) throw new Error(`unknown option: ${arg}`);
+    else if (arg === '--base' || arg.startsWith('--base=')) {
+      const value = arg === '--base' ? argv[(index += 1)] : arg.slice('--base='.length);
+      if (!value || value.startsWith('-')) throw new Error('missing value for option: --base');
+      result.base = value;
+    } else if (arg.startsWith('-')) throw new Error(`unknown option: ${arg}`);
     else result.paths.push(arg);
   }
   return result;
@@ -155,12 +160,34 @@ function gitNames(args, root) {
     .map((file) => slash(file));
 }
 
-export function collectChangedFiles(root = REPO_ROOT) {
+function mergeBase(ref, root) {
+  try {
+    return execFileSync('git', ['merge-base', ref, 'HEAD'], {
+      cwd: root,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }).trim();
+  } catch (error) {
+    const detail = String(error?.stderr ?? error?.message ?? error).trim();
+    throw new Error(`cannot resolve --base ${ref}: ${detail}`, { cause: error });
+  }
+}
+
+export function collectChangedFiles(root = REPO_ROOT, options = {}) {
   const files = [
     ...gitNames(['diff', '--name-only', '-z', '--diff-filter=ACMRTUXBD', 'HEAD', '--'], root),
     ...gitNames(['diff', '--cached', '--name-only', '-z', '--diff-filter=ACMRTUXBD', '--'], root),
     ...gitNames(['ls-files', '--others', '--exclude-standard', '-z'], root),
   ];
+  if (options.base) {
+    const base = mergeBase(options.base, root);
+    files.push(
+      ...gitNames(
+        ['diff', '--name-only', '-z', '--diff-filter=ACMRTUXBD', base, 'HEAD', '--'],
+        root,
+      ),
+    );
+  }
   return [...new Set(files)].sort();
 }
 
@@ -753,24 +780,38 @@ export async function runCli(argv = process.argv.slice(2), root = REPO_ROOT, opt
   const runPlan = options.runPlan ?? runVerificationPlan;
   const args = parseArgs(argv);
   if (args.help) {
-    log('Usage: pnpm run verify:changed -- [--dry-run] [paths...]');
-    return;
+    log('Usage: pnpm run verify:changed -- [--dry-run] [--base <ref>] [paths...]');
+    return 0;
   }
-  const files = args.paths.length ? expandInputPaths(args.paths, root) : collectChangedFiles(root);
+  const files = args.paths.length
+    ? expandInputPaths(args.paths, root)
+    : collectChangedFiles(root, { base: args.base });
+  if (!args.paths.length && files.length === 0) {
+    const hint = args.base
+      ? ` and no files changed relative to the merge-base with ${args.base}`
+      : "; pass --base origin/main to verify this branch's commits against main";
+    log(`verify:changed: nothing to verify — the worktree is clean${hint}`);
+    return 2;
+  }
   const plan = createVerificationPlan(files, { root });
   printPlan(plan, args.dryRun, log);
-  if (args.dryRun || plan.checks.length === 0) return;
+  if (args.dryRun || plan.checks.length === 0) return 0;
 
   const deps = checkDeps(root);
   if (!deps.ok) throw new Error(deps.reason);
   await runPlan(plan, root);
+  return 0;
 }
 
 const isDirectRun =
   process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url));
 if (isDirectRun) {
-  runCli().catch((error) => {
-    console.error(`[verify:changed] ${error instanceof Error ? error.message : error}`);
-    process.exitCode = 1;
-  });
+  runCli()
+    .then((code) => {
+      process.exitCode = code;
+    })
+    .catch((error) => {
+      console.error(`[verify:changed] ${error instanceof Error ? error.message : error}`);
+      process.exitCode = 1;
+    });
 }

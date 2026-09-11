@@ -310,7 +310,9 @@ produced — manual install/testing only.
 ## Verification
 
 Use `pnpm run verify:changed -- <paths...>` during local work. With no paths, it reads
-staged, unstaged, deleted, and untracked frontend files. Add `--dry-run` to inspect the
+staged, unstaged, deleted, and untracked frontend files, plus the commits since
+`git merge-base <ref> HEAD` when `--base <ref>` (e.g. `--base origin/main`) is given; an
+empty change set exits 2 instead of passing silently. Add `--dry-run` to inspect the
 selected commands without running them. The command runs scoped Prettier and ESLint,
 related Vitest tests, directly imported colocated component tests, and only the
 renderer/main/preload TypeScript boundaries that changed. Ambiguous or high-risk files
