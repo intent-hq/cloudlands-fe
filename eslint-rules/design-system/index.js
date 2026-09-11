@@ -6,6 +6,7 @@ import noDirectToast from './no-direct-toast.js';
 import noLegacySpinner from './no-legacy-spinner.js';
 import noNativeDialogs from './no-native-dialogs.js';
 import noRawControls from './no-raw-controls.js';
+import noRawMenuRow from './no-raw-menu-row.js';
 import settingsUseSchema from './settings-use-schema.js';
 
 export const designSystemRules = {
@@ -17,5 +18,6 @@ export const designSystemRules = {
   'no-legacy-spinner': noLegacySpinner,
   'no-native-dialogs': noNativeDialogs,
   'no-raw-controls': noRawControls,
+  'no-raw-menu-row': noRawMenuRow,
   'settings-use-schema': settingsUseSchema,
 };

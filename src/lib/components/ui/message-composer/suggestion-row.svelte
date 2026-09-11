@@ -3,6 +3,7 @@
   import ArrowElbowDownLeftIcon from 'phosphor-svelte/lib/ArrowElbowDownLeftIcon';
   import { proximityItem, type ProximityHover } from '$lib/interaction';
   import { cn } from '$lib/utils.js';
+  import { menuItem } from '$lib/components/ui/menu';
 
   let {
     text,
@@ -33,7 +34,7 @@
   aria-selected={active}
   onclick={onSelect}
   onkeydown={(event) => event.key === 'Enter' && onSelect()}
-  class="relative z-10 flex cursor-pointer items-center gap-2 px-2.5 text-muted-foreground transition-colors duration-spring-fast ease-spring-fast motion-reduce:transition-none"
+  class={cn(menuItem(), 'cursor-pointer px-2.5 text-muted-foreground')}
   class:h-7={compact}
   class:h-8={!compact}
   class:text-[13px]={compact}

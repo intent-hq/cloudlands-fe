@@ -131,9 +131,9 @@
 </script>
 
 {#if !$isAuthenticated$}
-  <div class="p-6 flex flex-col items-center gap-4">
+  <div class="flex flex-col items-start gap-4 p-6 text-left">
     <SentryIcon size={48} class="text-subtle" />
-    <p class="text-sm text-subtle text-center">{m.workspace_sentryPicker_connectPrompt_label()}</p>
+    <p class="text-left text-sm text-subtle">{m.workspace_sentryPicker_connectPrompt_label()}</p>
 
     {#if showConfigForm}
       <div class="w-full space-y-3">
@@ -191,7 +191,7 @@
   <!-- Issues list continues in next chunk due to line limit -->
   <div class="max-h-80 overflow-y-auto">
     {#if filteredIssues.length === 0}
-      <div class="p-8 text-center text-subtle text-sm">
+      <div class="p-8 text-left text-sm text-subtle">
         {searchQuery ? 'No matching issues found' : 'No issues found'}
       </div>
     {:else}

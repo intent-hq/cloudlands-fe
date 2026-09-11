@@ -329,7 +329,7 @@
             {/if}
             {#if !hasOptions && groups.length === 0 && !searching}
               <div
-                class="type-body px-3 py-2 text-muted-foreground"
+                class={cn(menuItem(), 'type-body text-muted-foreground')}
                 role="option"
                 aria-disabled="true"
                 aria-selected="false"

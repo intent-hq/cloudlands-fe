@@ -5361,7 +5361,7 @@
       class="absolute inset-0 z-50 flex items-center justify-center rounded-lg border border-dashed border-primary bg-primary/5 pointer-events-none"
       data-testid="chat-panel-drop-overlay"
     >
-      <div class="flex flex-col items-center gap-2 text-primary-ink">
+      <div class="flex flex-col items-start gap-2 text-left text-primary-ink">
         <Fa icon={faPaperclip} class="w-6 h-6" />
         <span class="text-sm font-medium">{m.chat_richInput_dropFiles_label()}</span>
       </div>
@@ -5510,7 +5510,7 @@
         {/snippet}
 
         {#if transcriptHydrationFailed && $agentMessages$.length === 0}
-          <div class="flex min-h-48 flex-col items-center justify-center gap-3 p-6 text-center">
+          <div class="flex min-h-48 flex-col items-start justify-center gap-3 p-6 text-left">
             <p class="text-sm text-muted-foreground">{m.chat_shared_actionFailed_label()}</p>
             <Button variant="outline" onclick={handleRetryTranscriptHydration}>
               {m.chat_shared_retry_label()}
@@ -5888,7 +5888,7 @@
                    stops (see syncOlderHistoryIndicator). -->
               {#if olderHistoryIndicatorVisible}
                 <div
-                  class="flex items-center justify-center gap-2 py-2 text-xs text-muted-foreground"
+                  class="flex items-center justify-start gap-2 py-2 text-left text-xs text-muted-foreground"
                   data-testid="chat-older-history-loading"
                   aria-live="polite"
                 >
@@ -5911,7 +5911,7 @@
                 {#if groupIndex === historyGapBeforeGroupIndex}
                   <div
                     bind:this={historyGapSentinel}
-                    class="flex items-center justify-center py-3"
+                    class="flex items-center justify-start py-3 text-left"
                     data-testid="chat-history-gap"
                   >
                     {#if $fetchingGapFill$}

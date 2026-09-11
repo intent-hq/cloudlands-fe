@@ -124,6 +124,7 @@ Import shared transitions from `$lib/motion`; inspect the live motion examples i
 ## Never
 
 - Never add raw `<button>`, `<input>`, `<select>`, or `<textarea>` controls; use their UI primitives.
+- Never hand-roll a menu or listbox row; apply the shared `menuItem()` recipe.
 - Never import `svelte-sonner` directly; route transient feedback through `notify`.
 - Never call `window.alert`, `window.confirm`, or `window.prompt`; use the Confirm pattern.
 - Never import `svelte/motion` or `svelte/transition` outside `$lib/motion`.

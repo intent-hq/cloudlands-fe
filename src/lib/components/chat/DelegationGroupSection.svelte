@@ -259,7 +259,7 @@
         </div>
       {/each}
       {#if orderedAgentIds.length > 5}
-        <div class="text-ui text-subtle text-center py-1">
+        <div class="py-1 text-left text-ui text-subtle">
           {m.chat_shared_moreAgents_label({ count: formatInteger(orderedAgentIds.length - 5) })}
         </div>
       {/if}

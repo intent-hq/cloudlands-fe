@@ -103,12 +103,12 @@
           {:else if provider === 'browser'}
             <BrowserUrlPicker {workspaceId} {onSelect} {onClose} />
           {:else if provider === 'github'}
-            <div class="p-8 text-center text-subtle">
+            <div class="p-8 text-left text-subtle">
               <p class="text-sm">{m.workspace_contextPicker_githubComingSoon_label()}</p>
               <p class="text-xs mt-2">{m.workspace_contextPicker_useBrowserUrls_label()}</p>
             </div>
           {:else}
-            <div class="p-8 text-center text-subtle">
+            <div class="p-8 text-left text-subtle">
               <p class="text-sm">{m.workspace_contextPicker_selectProvider_label()}</p>
             </div>
           {/if}

@@ -24,6 +24,7 @@
   import { shell } from '$lib/electron-bridge';
   import { Input } from '$lib/components/ui/input';
   import { Button } from '$lib/components/ui/button';
+  import { menuItem } from '$lib/components/ui/menu';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import GitHubAuthBanner from '$lib/components/GitHubAuthBanner.svelte';
 
@@ -345,10 +346,13 @@
               id="github-repo-option-{index}"
               role="option"
               aria-selected={isCommitted}
-              class="group/row w-full flex items-center gap-3 py-2.5 px-3 text-left rounded-lg transition-colors cursor-pointer
-                {isCommitted ? 'bg-foreground text-background pl-2.5' : ''}
-                {isFocused && !isCommitted ? 'bg-muted/40' : ''}
-                {!isFocused && !isCommitted ? 'hover:bg-muted/30' : ''}"
+              class={cn(
+                menuItem(),
+                'group/row gap-3 px-3 py-2.5 cursor-pointer',
+                isCommitted && 'bg-foreground text-background pl-2.5',
+                isFocused && !isCommitted && 'bg-muted/40',
+                !isFocused && !isCommitted && 'hover:bg-muted/30',
+              )}
               onclick={() => {
                 handleSelectRepo(repo);
                 githubInputRef?.focus();

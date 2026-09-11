@@ -19,11 +19,11 @@
   data-sidebar-action-icon={icon}
 >
   {#if icon === 'plus'}
-    <path d="M2.75 7h8.5M7 2.75v8.5" />
+    <path d="M2.5 7h9M7 2.5v9" />
   {:else if icon === 'close'}
-    <path d="M2.53 2.53l8.94 8.94M11.47 2.53l-8.94 8.94" />
+    <path d="M2.5 2.5l9 9M11.5 2.5l-9 9" />
   {:else}
-    <circle cx="6" cy="6" r="3.25" />
-    <path d="M8.3 8.3l3.17 3.17" />
+    <circle cx="5.75" cy="5.75" r="3.25" />
+    <path d="M8.05 8.05l3.45 3.45" />
   {/if}
 </svg>

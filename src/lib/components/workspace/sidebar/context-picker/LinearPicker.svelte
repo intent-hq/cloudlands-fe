@@ -119,9 +119,9 @@
 </script>
 
 {#if !isAuthenticated}
-  <div class="p-8 flex flex-col items-center gap-4">
+  <div class="flex flex-col items-start gap-4 p-8 text-left">
     <LinearIcon size={48} class="text-subtle" />
-    <p class="text-sm text-subtle text-center">{m.workspace_linearPicker_connectPrompt_label()}</p>
+    <p class="text-left text-sm text-subtle">{m.workspace_linearPicker_connectPrompt_label()}</p>
     <Button onclick={handleConnect} disabled={isConnecting}>
       {#if isConnecting}
         <IntentMarkLoader size={16} class="mr-2" />
@@ -150,7 +150,7 @@
   <!-- Issues list -->
   <div class="max-h-80 overflow-y-auto">
     {#if filteredIssues.length === 0}
-      <div class="p-8 text-center text-subtle text-sm">
+      <div class="p-8 text-left text-sm text-subtle">
         {searchQuery ? 'No matching issues found' : 'No issues found'}
       </div>
     {:else}

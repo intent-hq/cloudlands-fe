@@ -2599,7 +2599,7 @@
           {/each}
         </div>
       {:else if mergedChanges.length === 0}
-        <div class="flex items-center justify-center h-full text-subtle py-6">
+        <div class="flex h-full items-center justify-start py-6 text-left text-subtle">
           {m.chat_changesPanel_noChanges_label()}
         </div>
       {:else}
@@ -2609,7 +2609,7 @@
             class="flex items-center justify-between py-2 bg-background/95 backdrop-blur-sm border-b border-border"
           >
             <div
-              class="flex items-center gap-1.5 text-xs font-medium text-subtle whitespace-nowrap"
+              class="flex items-center justify-start gap-1.5 whitespace-nowrap text-left text-xs font-medium text-subtle"
             >
               <span
                 >{totalFileCount === 1
@@ -2941,7 +2941,7 @@
       <Button
         variant="plain"
         onclick={() => toggleFile(expandKey)}
-        class="flex items-center gap-2 flex-1 min-w-0 text-left cursor-pointer shrink"
+        class="flex min-w-0 flex-1 shrink cursor-pointer items-center justify-start gap-2 text-left"
       >
         <Fa
           icon={expandedFiles.has(expandKey) ? faChevronDown : faChevronLeft}
@@ -3154,7 +3154,7 @@
           {/if}
         {:else}
           <!-- Placeholder while waiting for visibility -->
-          <div class="flex items-center justify-center h-[300px] text-subtle">
+          <div class="flex h-[300px] items-center justify-start text-left text-subtle">
             <IntentMarkLoader size={16} class="mr-2" />
             {m.chat_changesPanel_loadingDiff_label()}
           </div>

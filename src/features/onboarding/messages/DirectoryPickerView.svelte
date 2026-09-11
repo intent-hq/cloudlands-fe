@@ -21,6 +21,7 @@
   import Fa from 'svelte-fa';
 
   import { cn } from '$lib/utils';
+  import { menuItem } from '$lib/components/ui/menu';
   import { m } from '$shared/paraglide/messages.js';
   import type {
     DirectoryPickerEntry,
@@ -561,6 +562,7 @@
                     aria-disabled={!entry.isDirectory && mode !== 'file'}
                     data-picker-index={index}
                     class={cn(
+                      menuItem(),
                       'flex h-8 w-full items-center gap-2.5 px-4 text-left transition-colors',
                       entry.isDirectory || mode === 'file'
                         ? 'cursor-default'

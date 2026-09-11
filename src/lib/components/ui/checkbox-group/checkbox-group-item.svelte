@@ -66,7 +66,7 @@
   onfocus={handleFocus}
   onkeydown={handleKeydown}
   class={cn(
-    'type-caption relative z-10 flex min-h-(--control-height-medium) min-w-0 cursor-pointer items-center gap-2 rounded-(--radius-row) border border-transparent bg-transparent px-2 py-1.5 text-left text-muted-foreground transition-[color,font-weight] duration-spring-fast ease-spring-fast hover:[--text-caption-weight:500] disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-none',
+    'type-caption relative z-10 flex min-h-(--control-height-medium) min-w-0 cursor-pointer items-center gap-2 rounded-(--radius-row) border border-transparent bg-transparent px-2 py-1.5 text-left text-muted-foreground transition-[color,font-weight] duration-spring-fast ease-spring-fast disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-none',
     selected && '[--text-caption-weight:500] text-foreground',
     className,
   )}

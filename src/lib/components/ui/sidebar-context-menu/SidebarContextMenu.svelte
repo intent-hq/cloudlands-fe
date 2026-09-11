@@ -12,6 +12,8 @@
   import Portal from '$lib/components/ui/Portal.svelte';
   import { Button } from '$lib/components/ui/button';
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
+  import { cn } from '$lib/utils';
+  import { menuItem } from '$lib/components/ui/menu';
 
   interface Props {
     x: number;
@@ -177,12 +179,15 @@
             variant="plain"
             type="button"
             data-proximity-active={menuHover?.activeIndex === i}
-            class="relative z-10 w-full px-3 py-1 text-sm text-left transition-[color,background-color] duration-spring-fast ease-spring-fast flex items-center gap-2 outline-none motion-reduce:transition-none
-              {entry.disabled
-              ? 'text-muted-foreground cursor-not-allowed'
-              : 'text-foreground cursor-pointer'}
-              {menuHover?.activeIndex === i ? 'bg-hover' : ''}
-              {entry.destructive && !entry.disabled ? 'text-danger' : ''}"
+            class={cn(
+              menuItem(),
+              'px-3 text-sm',
+              entry.disabled
+                ? 'text-muted-foreground cursor-not-allowed'
+                : 'text-foreground cursor-pointer',
+              menuHover?.activeIndex === i && 'bg-hover',
+              entry.destructive && !entry.disabled && 'text-danger',
+            )}
             onclick={() => handleItemClick(entry)}
             onfocus={() => menuHover?.setActiveIndex(i)}
             onblur={() => menuHover?.setActiveIndex(null)}
@@ -211,11 +216,14 @@
                     variant="plain"
                     type="button"
                     data-proximity-active={submenuHover?.activeIndex === subindex}
-                    class="relative z-10 w-full px-3 py-1 text-sm text-left transition-[color,background-color] duration-spring-fast ease-spring-fast flex items-center gap-2 outline-none motion-reduce:transition-none
-                    {subitem.disabled
-                      ? 'text-muted-foreground cursor-not-allowed'
-                      : 'text-foreground cursor-pointer'}
-                    {submenuHover?.activeIndex === subindex ? 'bg-hover' : ''}"
+                    class={cn(
+                      menuItem(),
+                      'px-3 text-sm',
+                      subitem.disabled
+                        ? 'text-muted-foreground cursor-not-allowed'
+                        : 'text-foreground cursor-pointer',
+                      submenuHover?.activeIndex === subindex && 'bg-hover',
+                    )}
                     onclick={() => handleSubmenuItemClick(subitem)}
                     onfocus={() => submenuHover?.setActiveIndex(subindex)}
                     onblur={() => submenuHover?.setActiveIndex(null)}

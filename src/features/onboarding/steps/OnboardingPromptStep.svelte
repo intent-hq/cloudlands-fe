@@ -42,6 +42,7 @@
     REFERENCE_IMAGE_MAX_BYTES,
   } from '$lib/components/chat/input/image-context-items';
   import { splitDroppedItems } from '$lib/utils/drop-split';
+  import { menuItem } from '$lib/components/ui/menu';
   import { isRemoteBackend } from '$lib/components/chat/input/attachment-placement';
   import { shouldTreatAsNewRepo } from '$features/onboarding/utils/treat-as-new-repo';
 
@@ -601,10 +602,7 @@
                       role="option"
                       id="suggestion-{i}"
                       aria-selected={focusedSuggestionIndex === i}
-                      class="text-left text-sm transition-colors cursor-pointer truncate flex items-center gap-1.5
-                        {focusedSuggestionIndex === i
-                        ? 'text-foreground'
-                        : 'text-muted-foreground/50 hover:text-muted-foreground/70'}"
+                      class={`${menuItem()} text-sm cursor-pointer truncate gap-1.5 ${focusedSuggestionIndex === i ? 'text-foreground' : 'text-muted-foreground/50 hover:text-muted-foreground/70'}`}
                       onclick={() => onPromptSelect(suggestion)}
                     >
                       <Fa
@@ -622,10 +620,7 @@
                   role="option"
                   id="suggestion-shuffle"
                   aria-selected={focusedSuggestionIndex === visibleSuggestions.slice(0, 4).length}
-                  class="text-left text-xs transition-colors cursor-pointer mt-0.75 inline-flex items-center gap-1.5
-                    {focusedSuggestionIndex === visibleSuggestions.slice(0, 4).length
-                    ? 'text-foreground'
-                    : 'text-muted-foreground/30 hover:text-muted-foreground/70'}"
+                  class={`${menuItem()} mt-0.75 inline-flex text-xs cursor-pointer gap-1.5 ${focusedSuggestionIndex === visibleSuggestions.slice(0, 4).length ? 'text-foreground' : 'text-muted-foreground/30 hover:text-muted-foreground/70'}`}
                   onclick={onShuffleSuggestions}
                 >
                   <Fa icon={faArrowsRotate} size={12} />

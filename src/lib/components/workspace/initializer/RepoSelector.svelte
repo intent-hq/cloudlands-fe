@@ -15,6 +15,7 @@
   import { performanceMonitor } from '$lib/utils/performance';
   import { invoke } from '$lib/electron-bridge';
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
+  import { menuItem } from '$lib/components/ui/menu';
   import { getRecentRepos } from '$lib/utils/workspace-utils';
   import { WORKSPACE_CHANNELS } from '$shared/ipc/channels';
   import type { KnownRepo } from '$shared/types/known-repo';
@@ -1567,10 +1568,9 @@
                   id="repo-selector-github-suggestion-{index}"
                   role="option"
                   aria-selected={index === suggestionIndex}
-                  class="w-full flex items-center gap-2 py-1.5 px-2 text-left rounded-md transition-colors cursor-pointer {index ===
-                  suggestionIndex
-                    ? 'bg-accent/20'
-                    : 'hover:bg-muted/50'}"
+                  class={`${menuItem()} gap-2 py-1.5 cursor-pointer ${
+                    index === suggestionIndex ? 'bg-accent/20' : 'hover:bg-muted/50'
+                  }`}
                   onclick={() => handleSelectGithubSuggestion(repo)}
                   onmousemove={() => (suggestionIndex = index)}
                 >

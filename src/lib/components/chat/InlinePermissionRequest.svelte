@@ -180,7 +180,7 @@
     </div>
 
     <!-- Keyboard hint -->
-    <div class="type-caption mt-2 text-center text-subtle">
+    <div class="type-caption mt-2 text-left text-subtle">
       {m.chat_inlinePermission_keyboardHint_label()}
     </div>
   </div>

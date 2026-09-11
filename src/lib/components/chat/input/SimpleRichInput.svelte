@@ -1500,7 +1500,7 @@
     <div
       class="absolute inset-0 bg-primary/5 z-20 flex items-center justify-center pointer-events-none"
     >
-      <div class="flex flex-col items-center gap-2 text-primary-ink">
+      <div class="flex flex-col items-start gap-2 text-left text-primary-ink">
         <Fa icon={faPaperclip} class="w-6 h-6" />
         <span class="text-sm font-medium">{m.chat_richInput_dropFiles_label()}</span>
       </div>

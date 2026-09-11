@@ -962,7 +962,7 @@
     aria-label={m.settings_wsApi_qrDialogAriaLabel()}
     tabindex="-1"
   >
-    <div class="bg-card rounded-xl p-6 shadow-xl max-w-xs text-center">
+    <div class="max-w-xs rounded-xl bg-card p-6 text-left shadow-xl">
       <h3 class="text-sm font-medium text-foreground mb-3">{m.settings_wsApi_scanToConnect()}</h3>
       {#if qrDataUrl}
         <img

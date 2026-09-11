@@ -455,7 +455,7 @@
                 </div>
               {/each}
               {#if parsedResult.snippets.length > 8}
-                <div class="text-center text-xs text-subtle py-1 border-t border-border mt-1">
+                <div class="mt-1 border-t border-border py-1 text-left text-xs text-subtle">
                   {plural(
                     parsedResult.snippets.length - 8,
                     m.chat_toolDetails_moreResults_one,
@@ -474,7 +474,7 @@
             <!-- No parsed snippets - only claim "No results" when the search was
                  genuinely empty; unparsed fallback content still holds real matches -->
             {#if parsedResult.noMatches || !parsedResult.content}
-              <div class="text-center py-2 text-subtle text-sm">
+              <div class="py-2 text-left text-sm text-subtle">
                 {m.chat_toolDetails_noResults_label()}
               </div>
             {/if}

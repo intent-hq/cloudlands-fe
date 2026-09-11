@@ -1,4 +1,5 @@
 <script lang="ts">
+  /* eslint-disable intent/no-raw-menu-row -- Static tooltip fixture, not a rendered menu row. */
   import Button from '../button/button.svelte';
   import * as Tooltip from './index';
 

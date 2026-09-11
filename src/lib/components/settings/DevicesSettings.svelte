@@ -105,14 +105,14 @@
       </p>
     {/snippet}
     {#snippet empty()}
-      <div class="rounded-xl border border-dashed border-border bg-card p-8 text-center">
+      <div class="rounded-xl border border-dashed border-border bg-card p-8 text-left">
         <p class="text-sm font-medium text-foreground">{m.settings_devices_empty_title()}</p>
         <p class="mt-1 text-sm text-muted-foreground">{m.settings_devices_empty_description()}</p>
       </div>
     {/snippet}
   </ListView>
 
-  <div class="flex justify-end">
+  <div class="flex justify-start">
     <Button variant="ghost" size="sm" onclick={() => (connectModalOpen = true)}>
       <Fa icon={faPlus} class="mr-1.5" size="xs" />
       {m.settings_devices_add_label()}

@@ -60,6 +60,7 @@
     DropdownMenu,
     GrokLogo,
     IntentMarkLoader,
+    Menu,
   } from '$lib/components/patterns/settings/custom-controls';
   import AuggieLogo from '../AuggieLogo.svelte';
   import ProviderPathConfig from './ProviderPathConfig.svelte';
@@ -646,133 +647,127 @@
                           {#if hasWarning}
                             <div class="border-b border-border pb-1">
                               {#if hasPiAdapterWarning}
-                                <p class="px-3 py-1.5 text-xs text-warning-ink">
+                                <p class="px-2 py-1.5 text-xs text-warning-ink">
                                   {m.settings_providers_piAdapterNeeded()}
                                 </p>
-                                <Button
-                                  variant="ghost"
-                                  type="button"
-                                  role="menuitem"
+                                <Menu.Item
                                   disabled={setupInProgress.pi}
-                                  class="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-50"
-                                  onclick={() => void handleInstallPiMcpAdapter()}
+                                  class="cursor-pointer text-foreground"
+                                  onSelect={() => void handleInstallPiMcpAdapter()}
                                 >
-                                  {#if setupInProgress.pi}
-                                    <IntentMarkLoader size={14} class="text-muted-foreground" />
-                                    {m.settings_providers_installing()}
-                                  {:else}
-                                    <Fa icon={faDownload} class="size-3.5 text-muted-foreground" />
-                                    {m.settings_providers_install()}
-                                  {/if}
-                                </Button>
+                                  <span class="flex size-4 shrink-0 items-center justify-center">
+                                    {#if setupInProgress.pi}
+                                      <IntentMarkLoader size={14} class="text-muted-foreground" />
+                                    {:else}
+                                      <Fa
+                                        icon={faDownload}
+                                        class="size-3.5 text-muted-foreground"
+                                      />
+                                    {/if}
+                                  </span>
+                                  {setupInProgress.pi
+                                    ? m.settings_providers_installing()
+                                    : m.settings_providers_install()}
+                                </Menu.Item>
                               {/if}
 
                               {#if hasNodeMissing}
-                                <p class="px-3 py-1.5 text-xs text-warning-ink">
+                                <p class="px-2 py-1.5 text-xs text-warning-ink">
                                   {m.settings_providers_requiresNodejs()}
                                 </p>
-                                <Button
-                                  variant="ghost"
-                                  type="button"
-                                  role="menuitem"
-                                  class="w-full cursor-pointer px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50"
-                                  onclick={() => {
+                                <Menu.Item
+                                  class="cursor-pointer text-foreground"
+                                  onSelect={() => {
                                     void shell.open('https://nodejs.org');
                                     close();
                                   }}
                                 >
+                                  <span class="size-4 shrink-0" aria-hidden="true"></span>
                                   {m.settings_providers_installFromNodejs()}
-                                </Button>
+                                </Menu.Item>
                               {/if}
 
                               {#if hasNpmOld}
-                                <p class="px-3 py-1.5 text-xs text-warning-ink">
+                                <p class="px-2 py-1.5 text-xs text-warning-ink">
                                   {m.settings_providers_npmTooOld()}
                                 </p>
                               {/if}
 
                               {#if hasProviderWarning}
-                                <p class="px-3 py-1.5 text-xs text-warning-ink">
+                                <p class="px-2 py-1.5 text-xs text-warning-ink">
                                   {provider.warning}
                                 </p>
                                 {#if provider.warning === CLAUDE_CODE_NPX_MISSING_WARNING}
-                                  <Button
-                                    variant="ghost"
-                                    type="button"
-                                    role="menuitem"
-                                    class="w-full cursor-pointer px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50"
-                                    onclick={() => {
+                                  <Menu.Item
+                                    class="cursor-pointer text-foreground"
+                                    onSelect={() => {
                                       void shell.open('https://nodejs.org');
                                       close();
                                     }}
                                   >
+                                    <span class="size-4 shrink-0" aria-hidden="true"></span>
                                     {m.settings_providers_installFromNodejs()}
-                                  </Button>
+                                  </Menu.Item>
                                 {/if}
                               {/if}
                             </div>
                           {/if}
 
                           {#if provider.available && provider.authenticated === true}
-                            <div
-                              role="menuitem"
-                              aria-disabled="true"
-                              class="flex items-center gap-1.5 px-3 py-1.5 text-sm text-subtle"
-                            >
-                              <Fa icon={faCheck} class="w-2.5 h-2.5 text-green-500" />
+                            <Menu.Item disabled class="text-subtle">
+                              <span class="flex size-4 shrink-0 items-center justify-center">
+                                <Fa icon={faCheck} class="size-3 text-green-500" />
+                              </span>
                               {m.settings_providers_loggedInStatus()}
-                            </div>
+                            </Menu.Item>
                           {/if}
 
-                          <Button
-                            variant="ghost"
-                            type="button"
-                            role="menuitem"
-                            class="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50"
-                            onclick={() => {
+                          <Menu.Item
+                            class="cursor-pointer text-foreground"
+                            onSelect={() => {
                               close();
                               pathConfigOpen = { [provider.id]: true };
                             }}
                           >
-                            <Fa icon={faFolder} class="size-3.5 text-muted-foreground" />
+                            <span class="flex size-4 shrink-0 items-center justify-center">
+                              <Fa icon={faFolder} class="size-3.5 text-muted-foreground" />
+                            </span>
                             {m.settings_providerPath_setCustomPath_label()}
-                          </Button>
+                          </Menu.Item>
 
                           {#if canSetDefault}
-                            <Button
-                              variant="ghost"
-                              type="button"
-                              role="menuitem"
-                              class="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-50"
+                            <Menu.Item
+                              class="cursor-pointer text-foreground"
                               disabled={selectingProviderId !== null}
-                              onclick={() => {
+                              onSelect={() => {
                                 void handleSelectProvider(provider.id);
                                 close();
                               }}
                             >
-                              <Fa icon={faStar} class="size-3.5 text-muted-foreground" />
+                              <span class="flex size-4 shrink-0 items-center justify-center">
+                                <Fa icon={faStar} class="size-3.5 text-muted-foreground" />
+                              </span>
                               {selectingProviderId === provider.id
                                 ? m.settings_providers_switching()
                                 : m.settings_providers_setAsDefault()}
-                            </Button>
+                            </Menu.Item>
                           {/if}
 
                           {#if canDisable}
-                            <Button
-                              variant="ghost"
-                              type="button"
-                              role="menuitem"
-                              class="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-50"
+                            <Menu.Item
+                              class="cursor-pointer text-foreground"
                               disabled={!!inUseReason}
                               title={inUseReason ?? undefined}
-                              onclick={() => {
+                              onSelect={() => {
                                 handleToggleProvider(provider.id, false);
                                 close();
                               }}
                             >
-                              <Fa icon={faBan} class="size-3.5 text-muted-foreground" />
+                              <span class="flex size-4 shrink-0 items-center justify-center">
+                                <Fa icon={faBan} class="size-3.5 text-muted-foreground" />
+                              </span>
                               {m.settings_providers_disable()}
-                            </Button>
+                            </Menu.Item>
                           {/if}
 
                           {#if needsLogin}
@@ -780,7 +775,7 @@
                               <!-- Actionable login guidance: the catalog's login
                                    command with copy-to-clipboard; docs link stays
                                    as the secondary action below. -->
-                              <div data-testid="provider-login-hint" class="px-3 py-1.5">
+                              <div data-testid="provider-login-hint" class="px-2 py-1.5">
                                 <p class="text-xs text-muted-foreground">
                                   {m.settings_providers_runToLogIn_label()}
                                 </p>
@@ -797,22 +792,19 @@
                               </div>
                             {/if}
                             {#if provider.id === 'claude-code'}
-                              <p class="px-3 py-1.5 text-xs text-muted-foreground">
+                              <p class="px-2 py-1.5 text-xs text-muted-foreground">
                                 {m.settings_providers_claudeDesktopNote_label()}
                               </p>
                             {/if}
-                            <Button
-                              variant="ghost"
-                              type="button"
-                              role="menuitem"
-                              class="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-50"
+                            <Menu.Item
+                              class="cursor-pointer text-foreground"
                               disabled={$providerLoadingMap$[provider.id]}
-                              onclick={() => {
+                              onSelect={() => {
                                 appStore.dispatch(checkSingleProviderRequested(provider.id));
                                 close();
                               }}
                             >
-                              <span class="inline-block">
+                              <span class="flex size-4 shrink-0 items-center justify-center">
                                 {#if $providerLoadingMap$[provider.id]}
                                   <IntentMarkLoader size={14} class="text-muted-foreground" />
                                 {:else}
@@ -823,38 +815,35 @@
                                 {/if}
                               </span>
                               {m.settings_providers_recheck_label()}
-                            </Button>
+                            </Menu.Item>
                           {/if}
 
                           {#if canLogIn}
-                            <Button
-                              variant="ghost"
-                              type="button"
-                              role="menuitem"
-                              class="w-full cursor-pointer px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50"
-                              onclick={() => {
+                            <Menu.Item
+                              class="cursor-pointer text-foreground"
+                              onSelect={() => {
                                 openDocs(provider.loginDocsUrl!);
                                 close();
                               }}
                             >
+                              <span class="size-4 shrink-0" aria-hidden="true"></span>
                               {m.settings_providers_logIn()}
-                            </Button>
+                            </Menu.Item>
                           {/if}
 
                           {#if canInstall}
-                            <Button
-                              variant="ghost"
-                              type="button"
-                              role="menuitem"
-                              class="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50"
-                              onclick={() => {
+                            <Menu.Item
+                              class="cursor-pointer text-foreground"
+                              onSelect={() => {
                                 openDocs(provider.docsUrl);
                                 close();
                               }}
                             >
-                              <Fa icon={faDownload} class="size-3.5 text-muted-foreground" />
+                              <span class="flex size-4 shrink-0 items-center justify-center">
+                                <Fa icon={faDownload} class="size-3.5 text-muted-foreground" />
+                              </span>
                               {m.settings_providers_install()}
-                            </Button>
+                            </Menu.Item>
                           {/if}
                         </div>
                       {/snippet}

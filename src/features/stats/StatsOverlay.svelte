@@ -12,6 +12,8 @@
    */
   import { fade } from '$lib/motion';
   import { Button } from '$lib/components/ui/button';
+  import { menuItem } from '$lib/components/ui/menu';
+  import { cn } from '$lib/utils';
   import Fa from 'svelte-fa';
   import { faChevronDown, faCheck, faDownload, faXmark } from '@fortawesome/free-solid-svg-icons';
   import AgentPassportCard from './AgentPassportCard.svelte';
@@ -190,10 +192,11 @@
               {#each options as key (key)}
                 <Button
                   variant="ghost"
-                  class="stats-dd-opt flex w-full items-center justify-between rounded-[5px] px-[9px] py-1.5 text-xs cursor-pointer select-none {key ===
-                  $periodKey$
-                    ? 'stats-dd-opt-sel'
-                    : ''}"
+                  class={cn(
+                    menuItem(),
+                    'stats-dd-opt justify-between rounded-[5px] px-[9px] py-1.5 text-xs cursor-pointer',
+                    key === $periodKey$ && 'stats-dd-opt-sel',
+                  )}
                   role="option"
                   aria-selected={key === $periodKey$}
                   onclick={() => pickPeriod(key)}

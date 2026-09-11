@@ -418,7 +418,7 @@
     </div>
   {:else if dedupedEvents.length === 0}
     <!-- Empty state -->
-    <div class="flex-1 flex flex-col items-center justify-center text-subtle py-8">
+    <div class="flex flex-1 flex-col items-start justify-center px-5 py-8 text-left text-subtle">
       <Fa icon={faFile} class="text-2xl mb-2 opacity-40" />
       <p class="text-ui">{m.workspace_activityPanel_noActivity_label()}</p>
     </div>

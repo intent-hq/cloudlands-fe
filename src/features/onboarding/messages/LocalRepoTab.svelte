@@ -22,6 +22,7 @@
   import Input from '$lib/components/ui/input/input.svelte';
   import { Button } from '$lib/components/ui/button';
   import { cn } from '$lib/utils';
+  import { menuItem } from '$lib/components/ui/menu';
   import DirectoryPickerModal from './DirectoryPickerModal.svelte';
   import { pickDirectory } from '$lib/directory-picker-service';
 
@@ -303,14 +304,11 @@
             id="local-repo-option-{index}"
             role="option"
             aria-selected={isCommitted}
-            class={cn(
-              'w-full flex items-center gap-3 py-2.5 px-3 text-left rounded-lg transition-colors cursor-pointer',
-              {
-                'bg-foreground text-background pl-2.5': isCommitted,
-                'bg-muted/40': isFocused && !isCommitted,
-                'hover:bg-muted/30': !isFocused && !isCommitted,
-              },
-            )}
+            class={cn(menuItem(), 'gap-3 px-3 py-2.5 cursor-pointer', {
+              'bg-foreground text-background pl-2.5': isCommitted,
+              'bg-muted/40': isFocused && !isCommitted,
+              'hover:bg-muted/30': !isFocused && !isCommitted,
+            })}
             onclick={() => {
               void handleSelectPath(repo.path);
               searchInputRef?.focus();

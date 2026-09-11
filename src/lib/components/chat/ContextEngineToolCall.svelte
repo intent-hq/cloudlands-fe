@@ -305,7 +305,7 @@
         {/each}
 
         {#if snippetCount > 6}
-          <div class="text-center text-xs text-subtle py-1.5 border-t border-border mt-1">
+          <div class="mt-1 border-t border-border py-1.5 text-left text-xs text-subtle">
             {snippetCount - 6 === 1
               ? m.chat_contextEngine_moreFiles_one({
                   count: formatInteger(snippetCount - 6),

@@ -12,6 +12,7 @@ import noDirectToast from './no-direct-toast.js';
 import noLegacySpinner from './no-legacy-spinner.js';
 import noNativeDialogs from './no-native-dialogs.js';
 import noRawControls from './no-raw-controls.js';
+import noRawMenuRow from './no-raw-menu-row.js';
 import settingsUseSchema from './settings-use-schema.js';
 
 const projectFile = (file) => path.resolve(file);
@@ -65,6 +66,35 @@ svelteTester.run('no-raw-controls', noRawControls, {
       code: '<button>Consumer action</button>',
       filename: projectFile('src/lib/components/ui/sidebar/sidebar-group-action.svelte'),
       errors: [{ message: 'Use `Button` instead — /sandbox/button' }],
+    },
+  ],
+});
+
+svelteTester.run('no-raw-menu-row', noRawMenuRow, {
+  valid: [
+    {
+      code: '<Button role="menuitem" class={cn(menuItem(), "text-danger")} />',
+      filename: projectFile('src/features/example/ActionMenu.svelte'),
+    },
+    {
+      code: '<span role="option" class="px-3" />',
+      filename: projectFile('src/features/example/Status.svelte'),
+    },
+  ],
+  invalid: [
+    {
+      code: '<Button role="menuitem" class="px-3">Action</Button>',
+      filename: projectFile('src/features/example/ActionMenu.svelte'),
+      errors: [{ messageId: 'rawMenuRow' }],
+    },
+    {
+      code: '<button role="menuitemradio" class="px-3">Choice</button><div role="menuitemcheckbox" class="px-3">Toggle</div><div role="option" class="px-3">Option</div>',
+      filename: projectFile('src/features/example/ActionMenu.svelte'),
+      errors: [
+        { messageId: 'rawMenuRow' },
+        { messageId: 'rawMenuRow' },
+        { messageId: 'rawMenuRow' },
+      ],
     },
   ],
 });

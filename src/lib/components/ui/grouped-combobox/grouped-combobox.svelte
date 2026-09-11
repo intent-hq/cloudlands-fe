@@ -1,4 +1,5 @@
 <script lang="ts">
+  /* eslint-disable intent/no-raw-menu-row -- The role is used by an inline group-heading action, not a row. */
   import type { Snippet } from 'svelte';
   import Combobox, { type ComboboxGroup, type ComboboxOption } from '../combobox';
   import { Button } from '$lib/components/ui/button';

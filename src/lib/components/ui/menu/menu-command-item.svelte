@@ -20,9 +20,11 @@
 </script>
 
 <Item {destructive} {...restProps} data-slot="menu-command-item">
-  {#if icon}
-    <Fa {icon} size="xs" class="w-4 shrink-0 text-muted-foreground opacity-70" />
-  {/if}
+  <span data-slot="menu-item-leading" class="flex size-4 shrink-0 items-center justify-center">
+    {#if icon}
+      <Fa {icon} size="xs" class="size-4 text-muted-foreground opacity-70" />
+    {/if}
+  </span>
   <span class="min-w-0 flex-1 truncate">{label}</span>
   {#if shortcut}
     <span class="ml-5" aria-hidden="true"><ShortcutChip>{shortcut}</ShortcutChip></span>

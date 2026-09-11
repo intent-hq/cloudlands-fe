@@ -274,7 +274,7 @@ describe('Menu metadata and compatibility', () => {
     expect(menu.className).toContain('rounded-md');
     expect(menu.className).toContain('shadow-(--elevation-overlay)');
     expect(menu.getAttribute('data-surface-level')).toBe('3');
-    expect(apple.className).toContain('min-h-(--control-height-medium)');
+    expect(apple.className).toContain('min-h-(--control-height-small)');
     expect(apple.className).toContain('rounded-(--radius-row)');
     expect(apple.className).toContain('type-caption');
     expect(menu.querySelector('[data-slot="menu-list-highlight"]')).toBeTruthy();

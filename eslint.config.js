@@ -636,6 +636,7 @@ export default [
       'intent/no-legacy-spinner': 'error',
       'intent/no-native-dialogs': 'error',
       'intent/no-raw-controls': 'error',
+      'intent/no-raw-menu-row': 'error',
       'intent/settings-use-schema': 'error',
     },
   },

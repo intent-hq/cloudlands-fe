@@ -192,7 +192,7 @@
           <span>{m.workspace_postMerge_resetAndContinue_label()}</span>
         {/if}
       </Button>
-      <p class="text-xs text-subtle text-center mt-2">
+      <p class="mt-2 text-left text-xs text-subtle">
         {m.workspace_postMerge_resetBranchTo_label({ branch: trunkBranch })}
       </p>
     </div>
@@ -204,7 +204,7 @@
         <Fa icon={faRocket} size="sm" class="text-primary-ink" />
         <span>{m.workspace_postMerge_archiveStartNew_label()}</span>
       </Button>
-      <p class="text-xs text-subtle text-center mt-2">
+      <p class="mt-2 text-left text-xs text-subtle">
         {m.workspace_postMerge_continueFresh_label()}
       </p>
     </div>

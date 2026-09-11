@@ -1,4 +1,5 @@
 <script lang="ts">
+  /* eslint-disable intent/no-raw-menu-row -- Radial options are spatial sectors, not rows. */
   /**
    * Joystick radial prompt picker overlay.
    *

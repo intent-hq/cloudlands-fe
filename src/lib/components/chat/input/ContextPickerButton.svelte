@@ -456,7 +456,7 @@
             {/each}
           </div>
         {:else if searchResults.length === 0}
-          <div class="type-caption px-3 py-4 text-center text-subtle">
+          <div class="type-caption px-3 py-4 text-left text-subtle">
             {m.chat_contextPicker_noResults_label()}
           </div>
         {:else}
@@ -549,7 +549,7 @@
             {/each}
           </div>
         {:else}
-          <div class="type-caption px-3 py-4 text-center text-subtle">
+          <div class="type-caption px-3 py-4 text-left text-subtle">
             {m.chat_contextPicker_noPanels_label()}
           </div>
         {/if}

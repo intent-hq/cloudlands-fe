@@ -773,7 +773,7 @@
             <div
               class="type-caption px-2 {groupIndex === 0
                 ? ''
-                : 'pt-3 border-t border-border'} py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider sticky top-0 z-10 bg-popover"
+                : 'pt-3 border-t border-border'} py-1 text-xs font-medium text-muted-foreground uppercase tracking-wider sticky top-0 z-10 bg-popover"
             >
               {#if group.icon}
                 <Fa icon={group.icon} class="inline-block mr-1.5 h-3 w-3" />
@@ -849,7 +849,7 @@
         data-highlighted={isHighlighted ? 'true' : undefined}
         data-menu-item
         style="scroll-margin-top: var(--control-height-medium)"
-        class={cn(menuItem(), 'gap-1.5 overflow-hidden px-2 py-1.5', option.class)}
+        class={cn(menuItem(), 'gap-1.5 overflow-hidden', option.class)}
         role={popupRole === 'menu' ? 'menuitem' : 'option'}
         aria-selected={popupRole === 'listbox' ? isSelected(option.value) : undefined}
         aria-haspopup={option.type === 'submenu' ? 'menu' : undefined}

@@ -7,6 +7,8 @@
   import { Tooltip } from '$lib/components/ui/tooltip';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { cn } from '$lib/utils';
+  import { menuItem } from '$lib/components/ui/menu';
+  import { OPTION_LIST_ROW_CLASS } from '$lib/styles/option-list-row';
   import { m } from '$shared/paraglide/messages.js';
   import ScrollToBottomButton from './ScrollToBottomButton.svelte';
   import type { UserMessageNavigationItem } from './chat-message-navigation';
@@ -299,7 +301,9 @@
                     tabindex={-1}
                     aria-selected={index === activeIndex}
                     class={cn(
-                      'type-caption flex h-(--control-height-large) min-h-(--control-height-large) max-h-(--control-height-large) w-full min-w-0 max-w-full cursor-pointer items-center overflow-hidden rounded-(--radius-small) px-[var(--space-2)] text-left font-normal text-muted-foreground outline-none transition-[background-color,color,box-shadow] duration-(--motion-fast) hover:bg-accent/60 hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40 motion-reduce:transition-none',
+                      menuItem(),
+                      OPTION_LIST_ROW_CLASS,
+                      'h-(--control-height-large) min-h-(--control-height-large) max-h-(--control-height-large) max-w-full cursor-pointer overflow-hidden font-normal text-muted-foreground hover:bg-accent/60 hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40',
                       index === activeIndex && 'bg-accent text-accent-foreground',
                     )}
                     onclick={() => void selectMessage(message.id)}

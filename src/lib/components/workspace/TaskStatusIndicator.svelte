@@ -8,6 +8,7 @@
 
   import { updateTaskNoteStatus } from '$features/tasks/tasks-write-service';
   import { m } from '$shared/paraglide/messages.js';
+  import { menuItem } from '$lib/components/ui/menu';
 
   let {
     workspaceId,
@@ -163,10 +164,9 @@
             variant="ghost"
             onclick={() => handleStatusSelect(option, close)}
             onmouseenter={() => (selectedIndex = i)}
-            class="w-full text-left px-3 py-1.5 text-sm rounded transition-colors flex items-center gap-2 cursor-pointer {i ===
-            selectedIndex
-              ? 'bg-muted/30'
-              : ''} {option === status ? 'font-medium' : ''}"
+            class={`${menuItem()} px-3 py-1.5 text-sm cursor-pointer ${
+              i === selectedIndex ? 'bg-muted/30' : ''
+            } ${option === status ? 'font-medium' : ''}`}
             role="option"
             aria-selected={option === status}
           >
