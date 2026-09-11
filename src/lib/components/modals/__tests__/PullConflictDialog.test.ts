@@ -21,6 +21,7 @@ vi.mock('$store/renderer/store', () => ({ store: { dispatch } }));
 
 warmImport(() => import('../../workspace/sidebar/__tests__/mocks/Fa.svelte'));
 warmImport(() => import('./PullConflictDialogHarness.svelte'));
+warmImport(() => import('../PullConflictDialog.svelte'));
 
 const openDialog = async () => {
   const trigger = screen.getByRole('button', { name: 'Retry pull' });
