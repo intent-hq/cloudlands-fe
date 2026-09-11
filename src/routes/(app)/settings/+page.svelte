@@ -666,13 +666,16 @@
             <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
               <section class="px-6 py-5">
                 <div class="flex items-center justify-between">
-                  <p class="text-sm font-medium text-foreground">{m.settings_theme_label()}</p>
+                  <div class="min-w-0 flex-1">
+                    <p class="text-sm font-medium text-foreground">{m.settings_theme_label()}</p>
+                  </div>
                   <ToggleGroup.Root
                     type="single"
                     value={$themePreference}
                     onValueChange={handleThemeChange}
                     size="sm"
                     aria-label={m.settings_theme_label()}
+                    class="ml-4 shrink-0"
                   >
                     {#each themeOptions as option (option.value)}
                       <ToggleGroup.Item value={option.value}>{option.label}</ToggleGroup.Item>
@@ -755,7 +758,7 @@
                 class="px-6 py-5"
               >
                 <div class="flex items-center justify-between">
-                  <div>
+                  <div class="min-w-0 flex-1">
                     <p class="text-sm font-medium text-foreground">
                       {m.settings_font_notes_label()}
                     </p>
@@ -772,6 +775,7 @@
                     onValueChange={handleNoteFontChange}
                     size="sm"
                     aria-label={m.settings_font_notes_label()}
+                    class="ml-4 shrink-0"
                   >
                     {#each fontStyleOptions as option (option.value)}
                       <ToggleGroup.Item value={option.value}>{option.label}</ToggleGroup.Item>
@@ -786,7 +790,7 @@
                 class="px-6 py-5"
               >
                 <div class="flex items-center justify-between">
-                  <div>
+                  <div class="min-w-0 flex-1">
                     <p class="text-sm font-medium text-foreground">
                       {m.settings_font_agentChat_label()}
                     </p>
@@ -803,6 +807,7 @@
                     onValueChange={handleAgentFontChange}
                     size="sm"
                     aria-label={m.settings_font_agentChat_label()}
+                    class="ml-4 shrink-0"
                   >
                     {#each fontStyleOptions as option (option.value)}
                       <ToggleGroup.Item value={option.value}>{option.label}</ToggleGroup.Item>

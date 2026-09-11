@@ -8,7 +8,7 @@
   import { TOGGLE_GROUP_CONTEXT, type ToggleGroupContext } from './context';
 
   const toggleVariants = tv({
-    base: 'type-caption relative z-10 inline-flex cursor-pointer items-center justify-center rounded-(--radius-medium) border-0 bg-transparent font-normal text-muted-foreground transition-[color,font-weight] duration-spring-fast ease-spring-fast hover:[--text-caption-weight:500] hover:text-foreground active:bg-active disabled:pointer-events-none disabled:opacity-50 data-[state=on]:[--text-caption-weight:500] data-[state=on]:text-foreground motion-reduce:transition-none',
+    base: 'type-caption relative z-10 inline-flex shrink-0 cursor-pointer items-center justify-center whitespace-nowrap rounded-(--radius-medium) border-0 bg-transparent font-normal text-muted-foreground transition-[color,font-weight] duration-spring-fast ease-spring-fast hover:text-foreground active:bg-active disabled:pointer-events-none disabled:opacity-50 data-[state=on]:[--text-caption-weight:500] data-[state=on]:text-foreground motion-reduce:transition-none',
     variants: {
       variant: {
         default: '',

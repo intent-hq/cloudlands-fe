@@ -11,7 +11,7 @@
   import { TOGGLE_GROUP_CONTEXT, type ToggleGroupContext } from './context';
 
   const toggleGroupVariants = tv({
-    base: 'relative isolate inline-flex items-center justify-center gap-0.5 rounded-(--radius-medium) border-0 bg-card',
+    base: 'relative isolate inline-flex shrink-0 items-center justify-center gap-0.5 rounded-(--radius-medium) border-0 bg-card',
     variants: {
       variant: {
         default: 'shadow-(--elevation-raised)',
