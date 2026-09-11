@@ -42,8 +42,8 @@ for (const scenario of scenarios) {
           firstLineCenterDelta: Math.abs(
             slotBox.top + slotBox.height / 2 - (firstLineBox.top + firstLineBox.height / 2),
           ),
-          hintCenterDelta: Math.abs(
-            hintBox.top + hintBox.height / 2 - (rowBox.top + rowBox.height / 2),
+          hintFirstLineCenterDelta: Math.abs(
+            hintBox.top + hintBox.height / 2 - (firstLineBox.top + firstLineBox.height / 2),
           ),
           lineCount: lineBoxes.length,
           contained: labelBox.right <= hintBox.left + 0.5 && hintBox.right <= rowBox.right + 0.5,
@@ -53,6 +53,8 @@ for (const scenario of scenarios) {
           labelColor: labelStyle.color,
           hintWeight: hintStyle.fontWeight,
           hintFontSize: hintStyle.fontSize,
+          rowOpacity: rowStyle.opacity,
+          hintOpacity: hintStyle.opacity,
         };
       });
     const [shortGeometry, wrappedGeometry, shortRowBox, wrappedRowBox] = await Promise.all([
@@ -79,6 +81,8 @@ for (const scenario of scenarios) {
       fontWeight: '400',
       hintWeight: '400',
       hintFontSize: '13px',
+      rowOpacity: '1',
+      hintOpacity: '1',
     });
     expect(surfaceMarginTop).toBe('16px');
     expect(shortGeometry.lineCount).toBe(1);
@@ -86,7 +90,7 @@ for (const scenario of scenarios) {
     expect(wrappedGeometry.labelColor).toBe(toolColor);
     expect(shortGeometry.firstLineCenterDelta).toBeLessThan(0.6 * scenario.zoom);
     expect(wrappedGeometry.firstLineCenterDelta).toBeLessThan(0.6 * scenario.zoom);
-    expect(wrappedGeometry.hintCenterDelta).toBeLessThan(0.6 * scenario.zoom);
+    expect(wrappedGeometry.hintFirstLineCenterDelta).toBeLessThan(0.6 * scenario.zoom);
     expect(wrappedRowBox!.y - (shortRowBox!.y + shortRowBox!.height)).toBeCloseTo(
       (scenario.compact ? 0 : 2) * scenario.zoom,
       1,

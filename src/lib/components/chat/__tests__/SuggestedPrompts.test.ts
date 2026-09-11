@@ -30,6 +30,7 @@ describe('SuggestedPrompts', () => {
     });
 
     const suggestion = screen.getByRole('button', { name: 'Approved, proceed with delegation.' });
+    expect(suggestion.classList.contains('opacity-100')).toBe(true);
     for (const className of OPERATIONAL_ROW_TONE_CLASS.split(' ')) {
       expect(suggestion.classList.contains(className)).toBe(true);
     }
@@ -127,6 +128,9 @@ describe('SuggestedPrompts', () => {
       expect(hint.classList.contains(className)).toBe(true);
     }
     expect(hint.className).toContain('type-caption');
+    expect(hint.className).toContain('mt-px');
+    expect(hint.className).toContain('self-start');
+    expect(hint.className).toContain('opacity-100');
     expect(hint.className).not.toContain('text-ui');
     expect(hint.className).not.toMatch(/text-(?:muted-foreground|subtle)\//);
     expect(hint.closest('button')?.className).toContain('type-body');

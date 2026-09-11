@@ -182,7 +182,7 @@ describe('stripAgentMessageHeader', () => {
   });
 
   it('a chief attribution uses only the pinned regex fallback', () => {
-    const attribution = { kind: 'chief' as const, fromAgentId: 'agent-chief' };
+    const attribution = { kind: 'chief' as const, fromAgentId: 'agent-chief', rawName: '' };
     expect(stripAgentMessageHeader(`${A2A_HEADER}\n\nbody`, attribution)).toBe('body');
     const lookalike = '[MESSAGE FROM AGENT quoted prose]\n\nbody';
     expect(stripAgentMessageHeader(lookalike, attribution)).toBe(lookalike);
@@ -217,6 +217,17 @@ describe('A2A sender header presentation', () => {
       queueInfo: { queuedAt: '2026-08-17T05:00:00.123456Z', waitedMs: 67_000 },
     });
     expect(getPresentedUserMessageText(message)).toBe('Ship it');
+  });
+
+  it('uses Chief attribution metadata to strip an exact sender header', () => {
+    const header = '[MESSAGE FROM AGENT Chief of Staff (agent-chief-primary)]';
+    const message = agentMessage(`${header}\n\nReview the workspace.`, {
+      type: 'chief_message',
+      fromAgentId: 'agent-chief-primary',
+      fromAgentName: 'Chief of Staff',
+    });
+
+    expect(getPresentedUserMessageText(message)).toBe('Review the workspace.');
   });
 });
 

@@ -76,7 +76,7 @@
         <div class="group relative flex min-w-0">
           <Button
             variant="ghost"
-            class="{OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS} {OPERATIONAL_ROW_TONE_CLASS} flex h-auto w-full cursor-pointer items-center justify-start gap-[var(--operational-leading-gap)] rounded-sm border border-transparent bg-transparent px-1.5 py-0.5 text-left hover:text-foreground focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-ring {onEdit
+            class="{OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS} {OPERATIONAL_ROW_TONE_CLASS} flex h-auto w-full cursor-pointer items-center justify-start gap-[var(--operational-leading-gap)] rounded-sm border border-transparent bg-transparent px-1.5 py-0.5 text-left opacity-100 hover:text-foreground focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-ring {onEdit
               ? 'pr-9'
               : ''}"
             data-typography-role="body"
@@ -93,7 +93,7 @@
             {#if hasShortcutHint(index) && showShortcutHints}
               <Badge
                 variant="secondary"
-                class="{SUGGESTED_PROMPT_HINT_CLASS} h-5 !font-normal text-muted-foreground!"
+                class="{SUGGESTED_PROMPT_HINT_CLASS} mt-px h-5 self-start !font-normal text-muted-foreground! opacity-100"
                 data-suggested-prompt-hint
               >
                 {modifierSymbol}{index + 1}

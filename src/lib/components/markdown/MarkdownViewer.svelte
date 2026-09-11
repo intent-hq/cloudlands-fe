@@ -993,6 +993,12 @@
     opacity: 0.8;
   }
 
+  /* Keep sentence punctuation visually attached to inline intent-link pills. */
+  .markdown-viewer :global(.mention-chip) {
+    margin-inline: 0;
+    padding-inline: 0.25rem;
+  }
+
   /* Blockquotes */
   .markdown-viewer :global(blockquote) {
     border-left: 1px solid hsl(var(--border));
