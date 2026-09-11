@@ -13,6 +13,14 @@
 
   interface Props {
     isOpen: boolean;
+    portalTarget?: string | HTMLElement;
+    inline?: boolean;
+    initialSetup?: Partial<
+      Pick<
+        RemoteSetup,
+        'name' | 'host' | 'port' | 'wsUrl' | 'username' | 'workspacePath' | 'branch'
+      >
+    >;
     onclose: () => void;
     onsave: (setup: RemoteSetup) => void;
   }
@@ -34,22 +42,36 @@
 
   type AuthMode = 'agent' | 'keyfile' | 'password';
 
-  let { isOpen, onclose, onsave }: Props = $props();
+  let {
+    isOpen,
+    onclose,
+    onsave,
+    portalTarget = 'body',
+    inline = false,
+    initialSetup,
+  }: Props = $props();
 
   const logger = createLogger('AddRemoteSetupModal');
 
   // Form state
-  let name = $state('');
+  // svelte-ignore state_referenced_locally - initial form values
+  let name = $state(initialSetup?.name ?? '');
   let transport = $state<'ssh' | 'websocket'>('ssh');
-  let host = $state('');
-  let port = $state(22);
-  let wsUrl = $state('');
-  let username = $state('');
+  // svelte-ignore state_referenced_locally - initial form values
+  let host = $state(initialSetup?.host ?? '');
+  // svelte-ignore state_referenced_locally - initial form values
+  let port = $state(initialSetup?.port ?? 22);
+  // svelte-ignore state_referenced_locally - initial form values
+  let wsUrl = $state(initialSetup?.wsUrl ?? '');
+  // svelte-ignore state_referenced_locally - initial form values
+  let username = $state(initialSetup?.username ?? '');
   let password = $state('');
   let keyPath = $state('');
   let authMode = $state<AuthMode>('agent');
-  let workspacePath = $state('');
-  let branch = $state('main');
+  // svelte-ignore state_referenced_locally - initial form values
+  let workspacePath = $state(initialSetup?.workspacePath ?? '');
+  // svelte-ignore state_referenced_locally - initial form values
+  let branch = $state(initialSetup?.branch ?? 'main');
   let error = $state('');
 
   const isFormValid = $derived(
@@ -113,11 +135,16 @@
 </script>
 
 {#if isOpen}
-  <div class="fixed inset-0 z-[9999] flex items-center justify-center" use:portal={'body'}>
+  <div
+    class="{inline ? 'relative' : 'fixed inset-0 z-[9999]'} flex items-center justify-center"
+    use:portal={portalTarget}
+  >
     <!-- Backdrop -->
-    <Dialog.Root open={true}>
-      <Dialog.Overlay contained class="z-auto cursor-default" onclick={handleClose} />
-    </Dialog.Root>
+    {#if !inline}
+      <Dialog.Root open={true}>
+        <Dialog.Overlay contained class="z-auto cursor-default" onclick={handleClose} />
+      </Dialog.Root>
+    {/if}
 
     <!-- Modal -->
     <div

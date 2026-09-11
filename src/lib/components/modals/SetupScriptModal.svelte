@@ -4,13 +4,15 @@
    * Uses local state so changes only apply on Done, and Cancel discards them.
    */
   import { FormDialog } from '$lib/components/patterns/confirm';
-  import SetupScriptEditor from '$lib/components/workspace/initializer/SetupScriptEditor.svelte';
+  import type { Snippet } from 'svelte';
   import Button from '$lib/components/ui/button/button.svelte';
   import type { ProjectType, SetupScriptNameSource } from '$features/setup-scripts';
   import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     open?: boolean;
+    static?: boolean;
+    editor?: Snippet<[string, (value: string) => void]>;
     repoPath?: string;
     /** Source URL for GitHub selections (last-used keys on path + URL). */
     githubUrl?: string | null;
@@ -27,6 +29,8 @@
 
   let {
     open = $bindable(false),
+    static: staticPosition = false,
+    editor,
     repoPath = '',
     githubUrl = null,
     projectType = undefined,
@@ -91,6 +95,7 @@
 
 <FormDialog
   bind:open
+  static={staticPosition}
   title={m.modals_setupScript_title()}
   showCloseButton={false}
   {escapeKeydownBehavior}
@@ -101,18 +106,24 @@
   onSubmit={handleDone}
   onCancel={handleCancel}
 >
-  <SetupScriptEditor
-    {repoPath}
-    {githubUrl}
-    {projectType}
-    {repoConfigScript}
-    bind:value={localValue}
-    bind:expanded={editorExpanded}
-    bind:scriptName={localScriptName}
-    bind:scriptNameSource={localScriptNameSource}
-    bind:isCustomScript={localIsCustomScript}
-    contentOnly={true}
-  />
+  {#if editor}
+    {@render editor(localValue, (next) => (localValue = next))}
+  {:else}
+    {#await import('$lib/components/workspace/initializer/SetupScriptEditor.svelte') then { default: SetupScriptEditor }}
+      <SetupScriptEditor
+        {repoPath}
+        {githubUrl}
+        {projectType}
+        {repoConfigScript}
+        bind:value={localValue}
+        bind:expanded={editorExpanded}
+        bind:scriptName={localScriptName}
+        bind:scriptNameSource={localScriptNameSource}
+        bind:isCustomScript={localIsCustomScript}
+        contentOnly={true}
+      />
+    {/await}
+  {/if}
   {#snippet footer()}
     <Button variant="ghost" onclick={handleCancel}>{m.modals_setupScript_cancel_label()}</Button>
     {#if localHasUnsavedChanges}

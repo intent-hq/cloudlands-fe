@@ -21,6 +21,8 @@
 
   interface Props {
     open?: boolean;
+    portalTarget?: string | HTMLElement;
+    inline?: boolean;
     agents?: InterruptedAgent[];
     onResumeSelected?: (resumeIds: string[], abandonIds: string[]) => void;
     onAbandonAll?: (abandonIds: string[]) => void;
@@ -30,6 +32,8 @@
   let {
     open = $bindable(false),
     agents = [],
+    portalTarget = 'body',
+    inline = false,
     onResumeSelected,
     onAbandonAll,
     onClose,
@@ -47,7 +51,7 @@
   // re-runs the effect, and tracking `agents` would re-steal focus from a
   // checkbox/button when a cross-window prune replaces the array mid-open.
   $effect(() => {
-    if (open && dialogEl && untrack(() => agents.length > 0)) {
+    if (!inline && open && dialogEl && untrack(() => agents.length > 0)) {
       dialogEl.focus();
     }
   });
@@ -265,9 +269,11 @@
 {/snippet}
 
 {#if open && agents.length > 0}
-  <Portal target="body" zIndex={100}>
+  <Portal target={portalTarget} zIndex={100}>
     <div
-      class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-[1px]"
+      class="{inline
+        ? 'relative'
+        : 'fixed inset-0 z-50'} flex items-center justify-center bg-black/40 p-4 backdrop-blur-[1px]"
       role="presentation"
       onkeydown={handleKeydown}
       onclick={close}
@@ -292,7 +298,7 @@
           footerClass="bg-muted/20 px-6 py-4"
           onclick={(event) => event.stopPropagation()}
           role="alertdialog"
-          aria-modal="true"
+          aria-modal={inline ? undefined : true}
           aria-labelledby={dialogTitleId}
           aria-describedby={dialogDescriptionId}
           tabindex={-1}
