@@ -6,9 +6,9 @@ export const SUBSCRIPTION_ICON_CLASS = 'text-muted-foreground! opacity-100';
 export const SUBSCRIPTION_ACTION_ICON_CLASS = 'text-ghost opacity-60';
 export const SUBSCRIPTION_CARD_CONTAINMENT_CLASS =
   'w-full min-w-0 max-w-full overflow-hidden font-family-child';
-export const SUBSCRIPTION_CARD_INSET_TOKENS_CLASS =
+const SUBSCRIPTION_CARD_INSET_TOKENS_CLASS =
   '[--subscription-card-inline-inset:0.75rem] [--subscription-card-border-width:1px] [--subscription-card-inline-bleed:calc(var(--subscription-card-inline-inset)-var(--chat-operational-row-inline-padding,0.5rem))] [--subscription-card-content-inline-padding:calc(var(--subscription-card-inline-inset)-var(--subscription-card-border-width))]';
-export const SUBSCRIPTION_CARD_OUTWARD_BLEED_CLASS =
+const SUBSCRIPTION_CARD_OUTWARD_BLEED_CLASS =
   '-mx-(--subscription-card-inline-bleed)! w-auto! max-w-none!';
 export const SUBSCRIPTION_CARD_SURFACE_CLASS = `${SUBSCRIPTION_CARD_INSET_TOKENS_CLASS} ${SUBSCRIPTION_CARD_OUTWARD_BLEED_CLASS} rounded-lg border border-border bg-card/80 shadow-sm`;
 export const EVENT_WAKEUP_IN_THREAD_SPACING_CLASS = 'mt-8';
