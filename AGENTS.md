@@ -315,7 +315,16 @@ parsed code (comments, string bodies, and regex literals never count) references
 neither that marker nor
 `// @ui-invariant-exempt: <reason>`. Add the marker to any new inventory or ledger suite;
 `node scripts/ui-invariant-suites.mjs --list` shows the current set and `--check`
-validates markers without running anything.
+validates markers without running anything. Likewise, any code change under `src/`, any
+`AGENTS.md` change (root or nested — `lint:instruction-themis-pins` scans them all), and
+any edit to the `scripts/check-*.mjs` gates themselves also runs
+`pnpm run lint:architecture` — the repo-wide static architecture scans CI runs through
+`validate:architecture` plus its separate whole-`src/` `workspace:*` dispatcher gate step —
+because those scans are cross-file graph checks that
+per-file linting cannot see: cloudlands-fe#2315 passed `verify:changed` locally and
+failed CI in `lint:saga-watcher-ownership`. A change to `scripts/type-check.ts` additionally
+runs `pnpm run type-check:validate`, since `lint:architecture` omits that wrapper and the
+per-boundary checks invoke `tsc` directly.
 
 For the same reason, a change to any IPC channel source — `src/preload/index.ts`,
 `src/preload/index.template.ts`, `src/shared/ipc-registry.ts`, or
