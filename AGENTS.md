@@ -146,6 +146,16 @@ Shared options are `--theme light|dark|system` (default `light`), `--width 240..
 `1`), `--timeout <milliseconds>` (default `30000`), `--out <path>`, and
 `--allow-console-errors`. Set `SANDBOX_DEBUG=1` for runner diagnostics.
 
+The in-process server, like every `test/*.spec.ts` Vite harness, uses its own optimizer
+cache under `node_modules/.vite-harness/<harness>` (via `test/vite-harness-cache.mjs`)
+instead of the shared `node_modules/.vite`, so a probe never invalidates a running
+`dev:ui` / `dev:web` server's optimized deps or vice versa. The runner fails fast with the
+cause named — a `504 Outdated Optimize Dep` / `Optimize Deps Processing Error` on a module
+URL, or an esbuild dependency-scan / optimizer failure from the dev-server log — instead
+of a generic ready-marker timeout. `SANDBOX_GOMAXPROCS=<n>` exports `GOMAXPROCS` to the
+esbuild service for that run; it is a diagnostic knob for the dependency-scan crashes in
+intent-hq/intent#4617, not a fix, so leave it unset normally.
+
 `sandbox:shot` captures the complete component frame without shell chrome or scrolling.
 By default it writes
 `.demo-artifacts/sandbox/<scene>--<state>--<theme>--<width>.png` and prints its path,
