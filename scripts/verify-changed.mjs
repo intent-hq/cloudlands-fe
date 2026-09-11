@@ -55,6 +55,14 @@ const FULL_RISK_FILES = new Set([
   'vite.config.mjs',
   'vitest.config.ts',
 ]);
+const GENERATED_PRELOAD = 'src/preload/index.ts';
+const PRELOAD_DRIFT_TEST = 'scripts/inline-ipc-channels.test.ts';
+const PRELOAD_DRIFT_SOURCES = new Set([
+  GENERATED_PRELOAD,
+  'src/preload/index.template.ts',
+  'src/shared/ipc-registry.ts',
+  'scripts/inline-ipc-channels.ts',
+]);
 
 function slash(path) {
   return path.split(sep).join('/');
@@ -290,6 +298,9 @@ export function createVerificationPlan(files, options = {}) {
       !UNIT_TEST_RE.test(file),
   );
   const uiInvariants = files.some(isRendererSource);
+  const preloadDrift =
+    files.some((file) => PRELOAD_DRIFT_SOURCES.has(file)) &&
+    !directUnit.includes(PRELOAD_DRIFT_TEST);
   const boundaries = new Set();
   let svelteCheck = false;
   let fullUnit = false;
@@ -379,6 +390,18 @@ export function createVerificationPlan(files, options = {}) {
           '--config',
           'vitest.config.ts',
           ...relatedSources,
+        ]),
+      );
+    }
+    if (preloadDrift) {
+      checks.push(
+        command('vitest-preload-drift', 'Vitest preload drift (generated IPC channels)', [
+          'exec',
+          'vitest',
+          'run',
+          '--config',
+          'vitest.config.ts',
+          PRELOAD_DRIFT_TEST,
         ]),
       );
     }
@@ -538,6 +561,11 @@ export function printPlan(plan, dryRun, log = console.log) {
   for (const file of plan.files) log(`  - ${file}`);
   if (plan.fallbackReasons.length) {
     log(`verify:changed: safe fallback for ${plan.fallbackReasons.join(', ')}`);
+  }
+  if (plan.files.includes(GENERATED_PRELOAD)) {
+    log(
+      `verify:changed: ${GENERATED_PRELOAD} is generated from src/preload/index.template.ts; regenerate with pnpm run generate:ipc-channels`,
+    );
   }
   log(`verify:changed: ${plan.checks.length} check(s)`);
   for (const check of plan.checks) {
