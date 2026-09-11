@@ -58,15 +58,19 @@ describe('Menu keyboard and focus behavior', () => {
     const cherry = screen.getByRole('menuitem', { name: 'Cherry' });
     const menu = screen.getByRole('menu');
     const highlight = menu.querySelector('[data-slot="menu-list-highlight"]')!;
-    const items = Array.from(menu.querySelectorAll<HTMLElement>('[data-menu-item]:not([data-disabled])'));
+    const items = Array.from(
+      menu.querySelectorAll<HTMLElement>('[data-menu-item]:not([data-disabled])'),
+    );
     items.forEach((item, index) => {
       item.getBoundingClientRect = () =>
         ({ top: index * 20, bottom: index * 20 + 20, left: 0, width: 100, height: 20 }) as DOMRect;
     });
+    await waitFor(() => expect(document.activeElement).toBe(apple));
     await fireEvent.pointerMove(banana, { pointerType: 'mouse', clientX: 10, clientY: 30 });
     await waitFor(() => expect(document.activeElement).toBe(banana));
     await waitFor(() => expect(highlight.getAttribute('data-active-index')).toBe('1'));
     await fireEvent.keyDown(banana, { key: 'ArrowDown' });
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
     await waitFor(() => {
       expect(document.activeElement).toBe(cherry);
       expect(highlight.getAttribute('data-active-index')).toBe('2');

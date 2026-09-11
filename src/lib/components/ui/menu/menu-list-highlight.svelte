@@ -12,9 +12,23 @@
   let marker: HTMLSpanElement | null = $state(null);
   let hover: ProximityHover | null = $state.raw(null);
   let selectedIndexes = $state<number[]>([]);
+  let keyboardIndex = $state<number | null>(null);
+  let keyboardActive = $state(false);
   let lastPointerIndex: number | null | undefined;
   const itemSelector =
     '[data-menu-item], [role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"], [role="option"]';
+
+  // Measurements and queued pointer frames must not undo keyboard navigation.
+  $effect(() => {
+    if (
+      hover &&
+      activeIndex === undefined &&
+      keyboardActive &&
+      hover.activeIndex !== keyboardIndex
+    ) {
+      hover.setActiveIndex(keyboardIndex);
+    }
+  });
 
   $effect(() => {
     if (!hover || activeIndex === undefined || hover.pointerPosition) return;
@@ -104,15 +118,37 @@
         'aria-disabled',
       ],
     });
+    const syncKeyboardIndex = () => {
+      const index = items.indexOf(document.activeElement as HTMLElement);
+      keyboardIndex = index >= 0 ? index : null;
+    };
+    const handleKeydown = () => {
+      keyboardActive = true;
+      syncKeyboardIndex();
+    };
+    const handlePointerMove = () => {
+      keyboardActive = false;
+    };
+    const handlePointerLeave = () => {
+      keyboardActive = true;
+      syncKeyboardIndex();
+    };
     const handleFocus = (event: FocusEvent) => {
       const index = items.indexOf(event.target as HTMLElement);
+      keyboardIndex = index >= 0 ? index : null;
       if (index >= 0) instance.setActiveIndex(index);
     };
+    container.addEventListener('keydown', handleKeydown, true);
+    container.addEventListener('pointermove', handlePointerMove, true);
+    container.addEventListener('pointerleave', handlePointerLeave);
     container.addEventListener('focusin', handleFocus);
     void tick().then(sync);
 
     return () => {
       observer.disconnect();
+      container.removeEventListener('keydown', handleKeydown, true);
+      container.removeEventListener('pointermove', handlePointerMove, true);
+      container.removeEventListener('pointerleave', handlePointerLeave);
       container.removeEventListener('focusin', handleFocus);
       instance.destroy();
       hover = null;
