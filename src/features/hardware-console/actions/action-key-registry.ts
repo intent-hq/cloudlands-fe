@@ -326,10 +326,20 @@ const lastCycledStopByAction = new Map<ActionKeyActionId, string>();
  */
 const retryStopByAction = new Map<ActionKeyActionId, string>();
 
+/**
+ * Per-family press counter. Each press is one attempt; an async workspace
+ * switch that rejects after a newer press (successful or not) is stale and
+ * must not arm the retry target. The cursor key cannot stand in for this:
+ * a later press can fail synchronously without moving the cursor, or the
+ * walk can wrap back onto the same stop key.
+ */
+const cycleAttemptByAction = new Map<ActionKeyActionId, number>();
+
 /** Reset the cycle cursors (test isolation). */
 export function resetActionKeyCycleCursors(): void {
   lastCycledStopByAction.clear();
   retryStopByAction.clear();
+  cycleAttemptByAction.clear();
   layoutPresetCursor.clear();
 }
 
@@ -384,6 +394,8 @@ function makeGlobalCycleAction(spec: GlobalCycleSpec): ActionKeyDefinition {
     },
     execute(context) {
       const { state } = context;
+      const attempt = (cycleAttemptByAction.get(spec.id) ?? 0) + 1;
+      cycleAttemptByAction.set(spec.id, attempt);
       const entries = spec.collect(state);
       if (entries.length === 0) return;
       const retryKey = retryStopByAction.get(spec.id);
@@ -436,8 +448,8 @@ function makeGlobalCycleAction(spec: GlobalCycleSpec): ActionKeyDefinition {
           // remote window): log it instead of swallowing the rejection so a
           // press that never leaves the current view is visible. The cursor
           // has already advanced by the time the rejection settles, so pin
-          // the next press back to this stop — unless a later press has
-          // since moved the cursor on, in which case the rejection is stale.
+          // the next press back to this stop — unless a newer press has
+          // happened since, in which case the rejection is stale.
           void context.navigate(`/workspace/${next.wsId}`).catch((error: unknown) => {
             logger.warn('Failed to switch workspace for cycle step', {
               actionId: spec.id,
@@ -445,7 +457,7 @@ function makeGlobalCycleAction(spec: GlobalCycleSpec): ActionKeyDefinition {
               stopKey: nextKey,
               error,
             });
-            if (lastCycledStopByAction.get(spec.id) === nextKey) {
+            if (cycleAttemptByAction.get(spec.id) === attempt) {
               retryStopByAction.set(spec.id, nextKey);
             }
           });
