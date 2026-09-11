@@ -12,6 +12,14 @@ const NARROW_HOST = 900;
 
 const INVALID_CODE = 'flowchart LR\n  A --> \n  ==> ??? (((\n';
 
+// Invalid source long enough to outgrow either prose column when its details
+// are expanded, including one unbroken token wider than the wide host.
+const LONG_INVALID_CODE = [
+  INVALID_CODE,
+  ...Array.from({ length: 40 }, (_, i) => `  step${i} --> ??? broken edge number ${i} (((`),
+  `  ${'x'.repeat(1_600)}`,
+].join('\n');
+
 // Wide enough for the SVG to outgrow the prose column on the wide host.
 const WIDE_VALID_CODE = [
   'flowchart LR',
@@ -20,6 +28,15 @@ const WIDE_VALID_CODE = [
 ].join('\n');
 
 const width = (locator: Locator) => locator.evaluate((node) => node.getBoundingClientRect().width);
+
+const horizontalBounds = (locator: Locator) =>
+  locator.evaluate((node) => {
+    const { left, right } = node.getBoundingClientRect();
+    return { left, right };
+  });
+
+const horizontalOverflow = (locator: Locator) =>
+  locator.evaluate((node) => node.scrollWidth - node.clientWidth);
 
 const afterTwoFrames = (page: Page) =>
   page.evaluate(
@@ -40,6 +57,7 @@ async function mountHarness(
     component,
     block: component.locator('[data-node-view-wrapper][data-render-state]'),
     paragraph: component.getByText('Paragraph before the diagram.'),
+    host: page.getByTestId('note-host'),
   };
 }
 
@@ -49,8 +67,8 @@ async function expectRenderState(block: Locator, state: 'rendered' | 'error') {
 
 for (const hostWidth of [WIDE_HOST, NARROW_HOST]) {
   test(`failed render card matches the prose column at ${hostWidth}px`, async ({ mount, page }) => {
-    const { block, paragraph } = await mountHarness(mount, page, {
-      code: INVALID_CODE,
+    const { block, paragraph, host } = await mountHarness(mount, page, {
+      code: LONG_INVALID_CODE,
       hostWidth,
     });
     await expectRenderState(block, 'error');
@@ -58,6 +76,22 @@ for (const hostWidth of [WIDE_HOST, NARROW_HOST]) {
     const paragraphWidth = await width(paragraph);
     expect(paragraphWidth).toBeGreaterThan(0);
     expect(Math.abs((await width(block)) - paragraphWidth)).toBeLessThanOrEqual(2);
+
+    // Expanding the source details must keep the card in the prose column
+    // rather than letting the long source push it (or the host) wider.
+    const details = block.locator('details');
+    await details.locator('summary').click();
+    await expect(details).toHaveAttribute('open');
+    await afterTwoFrames(page);
+
+    const paragraphBounds = await horizontalBounds(paragraph);
+    for (const target of [block, details]) {
+      const bounds = await horizontalBounds(target);
+      expect(bounds.left).toBeGreaterThanOrEqual(paragraphBounds.left - 2);
+      expect(bounds.right).toBeLessThanOrEqual(paragraphBounds.right + 2);
+    }
+    expect(Math.abs((await width(block)) - paragraphWidth)).toBeLessThanOrEqual(2);
+    expect(await horizontalOverflow(host)).toBe(0);
   });
 }
 
