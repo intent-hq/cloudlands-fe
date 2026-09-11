@@ -12,6 +12,7 @@
   import { formatInteger } from '$lib/i18n/format';
   import type { AgentSession, PullRequestInfo, Workspace } from '$shared/types';
   import { getAgentAttentionRequest } from '$shared/utils/agent-attention';
+  import { isQuestionMessageDismissed } from '$shared/utils/question-dismissal';
   import { onMount } from 'svelte';
   import { writable } from 'svelte/store';
   import Fa from 'svelte-fa';
@@ -135,13 +136,11 @@
     const status = String(session.status).toLowerCase();
     const attention = getAgentAttentionRequest(session);
     const marker = session.metadata?.pendingQuestionsMessageId;
-    const pending = derivePendingQuestions(
-      session.messages,
-      false,
-      false,
-      typeof marker === 'string' ? marker : undefined,
-    );
-    const hasQuestion = pending !== null || (typeof marker === 'string' && marker.length > 0);
+    const markerId = typeof marker === 'string' && marker.length > 0 ? marker : undefined;
+    const pending = derivePendingQuestions(session.messages, false, false, markerId);
+    const hasQuestion =
+      (pending !== null || markerId !== undefined) &&
+      !isQuestionMessageDismissed(session.metadata, pending?.messageId ?? markerId);
     const canonicalState = getAvatarStateForSession(session, { hasQuestion });
     const preview = previewText(selectAgentPreview.select(appStore.state, String(session.id)));
     let group: RowGroup;
