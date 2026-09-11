@@ -24,6 +24,7 @@
   import {
     arePanelTabCachesEqual,
     getNextPanelTabCacheExpiryDelay,
+    initializePanelTabCache,
     MAX_CACHED_INACTIVE_TABS,
     PANEL_TAB_CACHE_TTL_MS,
     updatePanelTabCache,
@@ -199,8 +200,13 @@
     maxInactiveTabs: MAX_CACHED_INACTIVE_TABS,
   };
 
-  // Track which tabs should remain mounted (active + recently visited)
-  let cachedTabIds = $state<Map<string, number>>(new Map()); // tabId -> timestamp when last active
+  // Track which tabs should remain mounted (active + recently visited). Seed an
+  // initially active panel before its first render; later changes stay effect-driven.
+  let cachedTabIds = $state<Map<string, number>>(
+    untrack(() =>
+      initializePanelTabCache(active, panel.tabs, panel.activeTabId, Date.now(), tabCacheOptions),
+    ),
+  ); // tabId -> timestamp when last active
 
   function applyTabCacheUpdate(
     tabs = panel.tabs,

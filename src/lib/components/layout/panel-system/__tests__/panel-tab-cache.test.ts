@@ -3,6 +3,7 @@ import {
   arePanelTabCachesEqual,
   BROWSER_TAB_CACHE_TTL_MS,
   getNextPanelTabCacheExpiryDelay,
+  initializePanelTabCache,
   updatePanelTabCache,
   type PanelTabCacheTab,
 } from '../panel-tab-cache';
@@ -12,6 +13,18 @@ function tabs(...ids: string[]): PanelTabCacheTab[] {
 }
 
 describe('panel tab cache', () => {
+  it('seeds active content before the first cache effect', () => {
+    const cache = initializePanelTabCache(true, tabs('active', 'inactive'), 'active', 100);
+
+    expect(Array.from(cache.entries())).toEqual([['active', 100]]);
+  });
+
+  it('keeps an initially hidden panel dormant', () => {
+    const cache = initializePanelTabCache(false, tabs('active'), 'active', 100);
+
+    expect(cache.size).toBe(0);
+  });
+
   it('keeps the active tab and drops tabs no longer in the panel', () => {
     const cache = new Map([
       ['active', 100],

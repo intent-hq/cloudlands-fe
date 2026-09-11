@@ -591,7 +591,12 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
         setFollowing(true, false);
         requestBottomSettle();
       } else if (!newOptions.follow && isFollowing) setFollowing(false, false);
-      else reportState();
+      else if (reactivationFrame === null) {
+        // Svelte can update the action's options repeatedly during one DOM
+        // flush without changing follow policy. Do not force layout for each
+        // update, or bypass the deferred initial/reactivation report above.
+        scheduleLayoutReport();
+      }
     },
 
     destroy() {

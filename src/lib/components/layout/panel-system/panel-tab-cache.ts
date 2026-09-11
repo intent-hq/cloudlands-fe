@@ -20,6 +20,16 @@ export type PanelTabCacheOptions = {
   maxInactiveTabs?: number;
 };
 
+export function initializePanelTabCache(
+  panelActive: boolean,
+  tabs: readonly PanelTabCacheTab[],
+  activeTabId: string | null | undefined,
+  now: number,
+  options?: PanelTabCacheOptions,
+): Map<string, number> {
+  return panelActive ? updatePanelTabCache(new Map(), tabs, activeTabId, now, options) : new Map();
+}
+
 const DEFAULT_OPTIONS = {
   ttlMs: PANEL_TAB_CACHE_TTL_MS,
   maxInactiveTabs: MAX_CACHED_INACTIVE_TABS,

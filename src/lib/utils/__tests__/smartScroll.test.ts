@@ -1149,6 +1149,81 @@ describe('followBottom policy', () => {
     action.destroy();
   });
 
+  it.each([true, false])(
+    'keeps repeated activation updates layout-free before the first frame (follow=%s)',
+    (follow) => {
+      const options = { enabled: true, follow };
+      const action = followBottom(container, options);
+      runSettleTail();
+      action.update({ ...options, enabled: false });
+      scrollHeight += 100;
+      const heightReads = vi.spyOn(container, 'scrollHeight', 'get');
+      const viewportReads = vi.spyOn(container, 'clientHeight', 'get');
+
+      action.update(options);
+      for (let update = 0; update < 20; update += 1) action.update({ ...options });
+
+      expect(heightReads).not.toHaveBeenCalled();
+      expect(viewportReads).not.toHaveBeenCalled();
+      expect(animationFrames).toHaveLength(1);
+      runFrame();
+      expect(heightReads).toHaveBeenCalledTimes(1);
+      expect(viewportReads).toHaveBeenCalledTimes(1);
+      expect(scrollTop).toBe(follow ? 700 : 600);
+      action.destroy();
+    },
+  );
+
+  it('coalesces unchanged follow updates and reports the latest threshold without scrolling', () => {
+    const onScrollStateChange = vi.fn();
+    const options = { follow: false, threshold: 100, onScrollStateChange };
+    scrollTop = 480;
+    const action = followBottom(container, options);
+    runSettleTail();
+    expect(onScrollStateChange).toHaveBeenLastCalledWith({
+      distanceFromBottom: 120,
+      isAtBottom: false,
+      isFollowing: false,
+    });
+    onScrollStateChange.mockClear();
+    const heightReads = vi.spyOn(container, 'scrollHeight', 'get');
+    const viewportReads = vi.spyOn(container, 'clientHeight', 'get');
+    const topWrites = vi.spyOn(container, 'scrollTop', 'set');
+
+    for (let update = 0; update < 20; update += 1) action.update({ ...options });
+    action.update({ ...options, threshold: 150 });
+    expect(heightReads).not.toHaveBeenCalled();
+    expect(viewportReads).not.toHaveBeenCalled();
+    expect(onScrollStateChange).not.toHaveBeenCalled();
+    expect(animationFrames).toHaveLength(1);
+    runFrame();
+    expect(heightReads).toHaveBeenCalledTimes(1);
+    expect(viewportReads).toHaveBeenCalledTimes(1);
+    expect(topWrites).not.toHaveBeenCalled();
+    expect(onScrollStateChange).toHaveBeenCalledExactlyOnceWith({
+      distanceFromBottom: 120,
+      isAtBottom: true,
+      isFollowing: false,
+    });
+    action.destroy();
+  });
+
+  it.each(['disable', 'destroy'])('cancels coalesced update reporting on %s', (operation) => {
+    const onScrollStateChange = vi.fn();
+    const options = { follow: false, onScrollStateChange };
+    const action = followBottom(container, options);
+    runSettleTail();
+    onScrollStateChange.mockClear();
+    const heightReads = vi.spyOn(container, 'scrollHeight', 'get');
+    action.update(options);
+    if (operation === 'disable') action.update({ ...options, enabled: false });
+    else action.destroy();
+    runFrame();
+    expect(heightReads).not.toHaveBeenCalled();
+    expect(onScrollStateChange).not.toHaveBeenCalled();
+    action.destroy();
+  });
+
   it('abandons a pending reactivation snap when disabled before the frame', () => {
     const options = { enabled: true, follow: true };
     const action = followBottom(container, options);
