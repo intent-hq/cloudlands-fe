@@ -315,9 +315,20 @@ function focusAgent(context: ActionKeyContext, wsId: string, agentId: string): v
  */
 const lastCycledStopByAction = new Map<ActionKeyActionId, string>();
 
+/**
+ * Per-family stop whose side effects threw mid-way on the last press. A
+ * partial failure can leave the state anchor already moved (`setActiveAgentId`
+ * reduced, then `openAgentTabRequested` threw), so anchoring the next press on
+ * the focused agent would step past the stop that never finished. The next
+ * press targets this stop directly instead; it is dropped once consumed or
+ * when the stop is no longer a candidate.
+ */
+const retryStopByAction = new Map<ActionKeyActionId, string>();
+
 /** Reset the cycle cursors (test isolation). */
 export function resetActionKeyCycleCursors(): void {
   lastCycledStopByAction.clear();
+  retryStopByAction.clear();
   layoutPresetCursor.clear();
 }
 
@@ -374,8 +385,15 @@ function makeGlobalCycleAction(spec: GlobalCycleSpec): ActionKeyDefinition {
       const { state } = context;
       const entries = spec.collect(state);
       if (entries.length === 0) return;
+      const retryKey = retryStopByAction.get(spec.id);
+      retryStopByAction.delete(spec.id);
+      const retryIndex =
+        retryKey === undefined ? -1 : entries.findIndex((e) => cycleStopKey(e) === retryKey);
       const focused = focusedAgentId(context);
+      // A pending retry takes precedence over the "already there" hint: the
+      // focus may already sit on that stop while its tab never opened.
       const alreadyThere =
+        retryIndex === -1 &&
         entries.length === 1 &&
         (entries[0].agentId !== null
           ? entries[0].agentId === focused
@@ -391,40 +409,53 @@ function makeGlobalCycleAction(spec: GlobalCycleSpec): ActionKeyDefinition {
         context.showHint(spec.getSingleCandidateHint());
         return;
       }
-      const cursor = lastCycledStopByAction.get(spec.id);
-      let index = cursor === undefined ? -1 : entries.findIndex((e) => cycleStopKey(e) === cursor);
-      if (index === -1 && cursor !== undefined && cursor.startsWith(WORKSPACE_STOP_KEY_PREFIX)) {
-        // The stored cursor was a workspace-level stop whose workspace has
-        // since hydrated (its stop now keys by agent id): resume from that
-        // workspace's stop instead of restarting the walk.
-        const cursorWsId = cursor.slice(WORKSPACE_STOP_KEY_PREFIX.length);
-        index = entries.findIndex((e) => e.wsId === cursorWsId);
-      }
-      if (index === -1 && focused !== null) {
-        index = entries.findIndex((e) => e.agentId === focused);
-      }
-      const next = entries[(index + 1) % entries.length];
-      const nextKey = cycleStopKey(next);
-      if (next.wsId !== activeWorkspaceId(context)) {
-        // Route switching is async and can fail (a stalled `goto` on a
-        // remote window): log it instead of swallowing the rejection so a
-        // press that never leaves the current view is visible.
-        void context.navigate(`/workspace/${next.wsId}`).catch((error: unknown) => {
-          logger.warn('Failed to switch workspace for cycle step', {
-            actionId: spec.id,
-            workspaceId: next.wsId,
-            stopKey: nextKey,
-            error,
-          });
-        });
-      }
-      if (next.agentId !== null) {
-        focusAgent(context, next.wsId, next.agentId);
+      let next: CycleStopEntry;
+      if (retryIndex !== -1) {
+        next = entries[retryIndex];
       } else {
-        // Workspace-level stop (no hydrated sessions yet): visiting the
-        // workspace clears its unread flag; hydrating converges the local
-        // session cache so later stops can target a concrete agent.
-        context.dispatch(hydrateAgentsRequested(next.wsId));
+        const cursor = lastCycledStopByAction.get(spec.id);
+        let index =
+          cursor === undefined ? -1 : entries.findIndex((e) => cycleStopKey(e) === cursor);
+        if (index === -1 && cursor !== undefined && cursor.startsWith(WORKSPACE_STOP_KEY_PREFIX)) {
+          // The stored cursor was a workspace-level stop whose workspace has
+          // since hydrated (its stop now keys by agent id): resume from that
+          // workspace's stop instead of restarting the walk.
+          const cursorWsId = cursor.slice(WORKSPACE_STOP_KEY_PREFIX.length);
+          index = entries.findIndex((e) => e.wsId === cursorWsId);
+        }
+        if (index === -1 && focused !== null) {
+          index = entries.findIndex((e) => e.agentId === focused);
+        }
+        next = entries[(index + 1) % entries.length];
+      }
+      const nextKey = cycleStopKey(next);
+      try {
+        if (next.wsId !== activeWorkspaceId(context)) {
+          // Route switching is async and can fail (a stalled `goto` on a
+          // remote window): log it instead of swallowing the rejection so a
+          // press that never leaves the current view is visible.
+          void context.navigate(`/workspace/${next.wsId}`).catch((error: unknown) => {
+            logger.warn('Failed to switch workspace for cycle step', {
+              actionId: spec.id,
+              workspaceId: next.wsId,
+              stopKey: nextKey,
+              error,
+            });
+          });
+        }
+        if (next.agentId !== null) {
+          focusAgent(context, next.wsId, next.agentId);
+        } else {
+          // Workspace-level stop (no hydrated sessions yet): visiting the
+          // workspace clears its unread flag; hydrating converges the local
+          // session cache so later stops can target a concrete agent.
+          context.dispatch(hydrateAgentsRequested(next.wsId));
+        }
+      } catch (error) {
+        // A partial step may already have moved the focused agent: pin the
+        // next press to this stop rather than to whatever the anchor says.
+        retryStopByAction.set(spec.id, nextKey);
+        throw error;
       }
       // Only a step whose synchronous side effects ran advances the cursor
       // and surfaces what the button did in the bottom-center HUD (the

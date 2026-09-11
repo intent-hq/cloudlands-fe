@@ -1371,6 +1371,106 @@ describe('cycle step side-effect failures', () => {
       types.indexOf('workspaceAgents/setActiveAgentId'),
     );
   });
+
+  /**
+   * Three unread agents in ONE workspace with a dispatch that reduces
+   * `setActiveAgentId` into the state (like the real store) so a throw from a
+   * later dispatch leaves the focused agent already moved.
+   */
+  function makeStatefulSameWorkspace() {
+    const state = makeState({
+      agentsByWorkspace: { 'ws-1': { ids: ['a-1', 'b-1', 'c-1'], activeAgentId: 'a-1' } },
+      unreadWorkspaceIds: ['ws-1'],
+      sessionOverrides: {
+        'a-1': { hasUnread: true, lastMessageId: 'm-a' },
+        'b-1': { hasUnread: true, lastMessageId: 'm-b' },
+        'c-1': { hasUnread: true, lastMessageId: 'm-c' },
+      },
+    });
+    const press = (failOnOpenTab: Error | null) => {
+      const made = makeContext(state);
+      made.dispatch.mockImplementation((action: { type: string; payload: unknown }) => {
+        if (action.type === 'workspaceAgents/setActiveAgentId') {
+          const [wsId, agentId] = action.payload as [string, string];
+          state.workspaceAgents.byWorkspaceId[wsId].activeAgentId = agentId;
+        }
+        if (failOnOpenTab && action.type === 'appLayout/openAgentTabRequested') throw failOnOpenTab;
+        return undefined;
+      });
+      return made;
+    };
+    return { state, press };
+  }
+
+  it('retries the stop whose tab open failed even though the focus already moved to it', () => {
+    // Regression (PR #2315 review): setActiveAgentId(B) reduces into the
+    // store, then openAgentTabRequested throws. Anchoring the next press on
+    // the now-mutated focused agent (B) would select C and skip B.
+    const { state, press } = makeStatefulSameWorkspace();
+    const definition = getActionKeyDefinition('cycle-unread-agents');
+    const failure = new Error('open tab failed');
+
+    const first = press(failure);
+    expect(() => definition.execute(first.context)).toThrow(failure);
+    expect(activeAgentDispatches(first.dispatch)).toEqual([['ws-1', 'b-1']]);
+    expect(state.workspaceAgents.byWorkspaceId['ws-1'].activeAgentId).toBe('b-1');
+    expect(hudDispatches(first.dispatch)).toEqual([]);
+
+    const second = press(null);
+    definition.execute(second.context);
+    expect(activeAgentDispatches(second.dispatch)).toEqual([['ws-1', 'b-1']]);
+    expect(second.focusComposer).toHaveBeenCalledWith('b-1');
+    expect(hudDispatches(second.dispatch)).toHaveLength(1);
+
+    // The retry target is consumed by the successful step: the walk resumes.
+    const third = press(null);
+    definition.execute(third.context);
+    expect(activeAgentDispatches(third.dispatch)).toEqual([['ws-1', 'c-1']]);
+  });
+
+  it('retries the failed stop even when it is the only candidate left', () => {
+    // A and C get read elsewhere after the failed press: B is the sole
+    // candidate AND already the focused agent, which would otherwise be the
+    // "already there" hint path — but its tab never opened, so retry it.
+    const { state, press } = makeStatefulSameWorkspace();
+    const definition = getActionKeyDefinition('cycle-unread-agents');
+    expect(() => definition.execute(press(new Error('open tab failed')).context)).toThrow();
+    for (const agentId of ['a-1', 'c-1']) {
+      state.agentSessions.byAgentId[agentId] = makeSession(agentId, false, {
+        hasUnread: false,
+        lastMessageId: `m-${agentId}`,
+      });
+    }
+    const second = press(null);
+    definition.execute(second.context);
+    expect(activeAgentDispatches(second.dispatch)).toEqual([['ws-1', 'b-1']]);
+    expect(second.showHint).not.toHaveBeenCalled();
+    expect(hudDispatches(second.dispatch)).toHaveLength(1);
+  });
+
+  it('drops the retry target when the failed stop is no longer a candidate', () => {
+    const { state, press } = makeStatefulSameWorkspace();
+    const definition = getActionKeyDefinition('cycle-unread-agents');
+    expect(() => definition.execute(press(new Error('open tab failed')).context)).toThrow();
+
+    // B got read elsewhere before the retry press: the normal walk resumes
+    // (the focused B is not a candidate, so it restarts at the first stop).
+    state.agentSessions.byAgentId['b-1'] = makeSession('b-1', false, {
+      hasUnread: false,
+      lastMessageId: 'm-b',
+    });
+    const second = press(null);
+    definition.execute(second.context);
+    expect(activeAgentDispatches(second.dispatch)).toEqual([['ws-1', 'a-1']]);
+    // ...and the stale target does not resurface once B is unread again.
+    state.agentSessions.byAgentId['b-1'] = makeSession('b-1', false, {
+      hasUnread: true,
+      lastMessageId: 'm-b2',
+    });
+    const third = press(null);
+    definition.execute(third.context);
+    expect(activeAgentDispatches(third.dispatch)).toEqual([['ws-1', 'b-1']]);
+  });
 });
 
 describe('single-candidate toast', () => {

@@ -8,6 +8,7 @@ import {
   markAgentSeenOnUserSend,
   markAgentSeenOnView,
   newestPersistedMessageId,
+  releaseViewAwaitingTranscript,
 } from '$features/agent/mark-agent-seen';
 import { clearCachedChatScroll } from '$lib/components/chat/chat-scroll-cache';
 import {
@@ -43,6 +44,7 @@ import {
   type DividerBoundarySnapshot,
 } from '../unread-tracking-selectors';
 import {
+  clearCurrentlyViewedAgent,
   endDividerSession,
   markAgentAsViewed,
   recordWatchedStreamingTail,
@@ -246,6 +248,17 @@ function* handleViewed(action: ReturnType<typeof markAgentAsViewed>): SagaGenera
 }
 
 /**
+ * The viewing session ended with nothing on screen (drawer closed / tab
+ * switched away): release the late-transcript re-arm so a starved view fire
+ * cannot linger. A scoped clear that the reducer ignored (another agent is
+ * viewed by now) leaves the new view's re-arm alone.
+ */
+function* handleViewCleared(): SagaGenerator<void> {
+  const viewedAgentId = yield* selectCurrentlyViewedAgentId.effect();
+  if (viewedAgentId === null) yield* call(releaseViewAwaitingTranscript);
+}
+
+/**
  * Late-transcript re-arm: the seq-0 snapshot (`replaceMessages`) and the
  * hydration settle both land after `markAgentAsViewed`, and on a remote
  * daemon after the view debounce too — so a view fire that found no
@@ -273,6 +286,7 @@ export function* unreadTrackingSaga(): SagaGenerator<void> {
     takeEvery(sendMessage, handleSend),
     takeEvery(agentStreamUpdateReceived, handleStreamUpdate),
     takeEvery(markAgentAsViewed, handleViewed),
+    takeEvery(clearCurrentlyViewedAgent, handleViewCleared),
     takeEvery([replaceMessages, transcriptHydrationSettled], handleTranscriptHydrated),
   ]);
 }
