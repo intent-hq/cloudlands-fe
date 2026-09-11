@@ -218,6 +218,7 @@
     captureScrollAnchor,
     followBottom,
     followToBottom,
+    hasActiveFollowBottomMutation,
     restoreScrollAnchor,
     type FollowBottomState,
   } from '$lib/utils/smartScroll';
@@ -754,8 +755,13 @@
 
   // Batch-end callback: one hydratedMessageIds rebuild per policy call, not
   // one per transitioned row (a mass transition would otherwise be O(n²)).
+  // Staged hydration waits out a followed-bottom mutation lease (the events
+  // footer disclosure motion) so a row it sweeps into the preload band does
+  // not mount mid-motion.
   const messageHydrationPolicy = createMessageHydrationPolicy([], {
     onHydrationChange: syncHydratedMessageIds,
+    isHydrationHeld: () =>
+      scrollContainer !== undefined && hasActiveFollowBottomMutation(scrollContainer),
     frameBudgetMs: CHAT_HYDRATION_FRAME_BUDGET_MS,
     maxRowsPerFrame: CHAT_HYDRATION_MAX_ROWS_PER_FRAME,
   });
