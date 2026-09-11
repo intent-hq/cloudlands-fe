@@ -86,6 +86,7 @@ const { ensureAgentSessionSpy, refreshAgentSessionAfterEventSpy } = vi.hoisted((
 vi.mock('$features/agent/agent-read-service', () => ({
   ensureAgentSession: ensureAgentSessionSpy,
   refreshAgentSessionAfterEvent: refreshAgentSessionAfterEventSpy,
+  notePendingQuestionMarkerProjection: vi.fn(),
   createAgentReadMiddleware: () => () => (next: (a: unknown) => unknown) => (a: unknown) => next(a),
 }));
 

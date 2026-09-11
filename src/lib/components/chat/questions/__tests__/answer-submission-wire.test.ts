@@ -329,6 +329,85 @@ describe('wizard completion → agent.sendMessage wire shape', () => {
       1,
     );
   }, 30000);
+
+  it('queues the tagged answer via agent.queueMessage while the agent is responding', async () => {
+    // The asking turn ended and the daemon wrote the marker, but a later
+    // turn is now active: the ordinary send path routes to the queue, and
+    // the answer tag must ride the agent.queueMessage params (§5.5) so the
+    // daemon resolves the set when the entry drains.
+    backendRequestMock.mockImplementation(async (method: string) => {
+      if (method === 'agent.queueMessage') {
+        return {
+          success: true,
+          turnId: 'turn-queued',
+          queuedMessage: {
+            id: 'qm-1',
+            content: `Q: ${SINGLE.question}\nA: OS keychain`,
+            queuedAt: '2026-07-03T14:36:00.000Z',
+            position: 0,
+            messageMetadata: buildAnswerMessageMetadata('msg-a1'),
+          },
+        };
+      }
+      return {};
+    });
+    appStore.dispatch(
+      bulkUpsertSessions([
+        {
+          id: AGENT,
+          backendSessionId: null,
+          workspaceId: WS,
+          name: 'Coordinator',
+          status: AgentStatus.Active,
+          isStreaming: true,
+          isProcessing: true,
+          isResponding: true,
+          messages: [assistantMessage([questionBlock(SINGLE)])],
+          metadata: { pendingQuestionsMessageId: 'msg-a1' },
+          createdAt: '2026-07-03T14:35:35.924Z',
+          updatedAt: '2026-07-03T14:35:35.924Z',
+        } as unknown as AgentSession,
+      ]),
+    );
+    const pending = derivePendingQuestions(
+      [assistantMessage([questionBlock(SINGLE)])],
+      true,
+      false,
+      'msg-a1',
+    );
+    expect(pending).not.toBeNull();
+
+    render(QuestionWizard, {
+      props: {
+        questions: pending!.questions,
+        onComplete: (answers: QuestionAnswer[]) => {
+          appStore.dispatch(
+            sendMessage(AGENT, {
+              wsId: WS,
+              text: flattenAnswersToMessage(answers),
+              messageMetadata: buildAnswerMessageMetadata(pending!.messageId),
+            }),
+          );
+        },
+      },
+    });
+    await fireEvent.click(screen.getByText('OS keychain'));
+
+    await vi.waitFor(
+      () => {
+        expect(backendRequestMock.mock.calls.map((c) => c[0])).toContain('agent.queueMessage');
+      },
+      { timeout: 15000, interval: 50 },
+    );
+
+    const queueCall = backendRequestMock.mock.calls.find((c) => c[0] === 'agent.queueMessage')!;
+    expect(queueCall[1]).toEqual({
+      agentId: AGENT,
+      content: `Q: ${SINGLE.question}\nA: OS keychain`,
+      messageMetadata: { type: 'question_answers', answeredQuestionsMessageId: 'msg-a1' },
+    });
+    expect(backendRequestMock.mock.calls.map((c) => c[0])).not.toContain('agent.sendMessage');
+  }, 30000);
 });
 
 describe('marker-compatible wizard transitions', () => {
