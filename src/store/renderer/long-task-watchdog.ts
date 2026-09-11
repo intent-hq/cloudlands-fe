@@ -17,15 +17,15 @@ import {
 const logger = createLogger('long-task-watchdog');
 
 /** Tasks at or above this duration are logged at `warn`. */
-export const LONG_TASK_WARN_MS = 250;
+const LONG_TASK_WARN_MS = 250;
 /** Tasks at or above this duration are logged at `error`. */
-export const LONG_TASK_ERROR_MS = 2000;
+const LONG_TASK_ERROR_MS = 2000;
 /** Minimum spacing between two log entries of the same severity. */
-export const LONG_TASK_RATE_LIMIT_MS = 1000;
+const LONG_TASK_RATE_LIMIT_MS = 1000;
 
-export type LongTaskSeverity = 'warn' | 'error';
+type LongTaskSeverity = 'warn' | 'error';
 
-export interface LongTaskReport {
+interface LongTaskReport {
   durationMs: number;
   startTimeMs: number;
   pathname: string | null;
