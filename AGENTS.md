@@ -146,6 +146,16 @@ Shared options are `--theme light|dark|system` (default `light`), `--width 240..
 `1`), `--timeout <milliseconds>` (default `30000`), `--out <path>`, and
 `--allow-console-errors`. Set `SANDBOX_DEBUG=1` for runner diagnostics.
 
+The in-process server, like every `test/*.spec.ts` Vite harness, uses its own optimizer
+cache under `node_modules/.vite-harness/<harness>` (via `test/vite-harness-cache.mjs`)
+instead of the shared `node_modules/.vite`, so a probe never invalidates a running
+`dev:ui` / `dev:web` server's optimized deps or vice versa. The runner fails fast with the
+cause named — a `504 Outdated Optimize Dep` / `Optimize Deps Processing Error` on a module
+URL, or an esbuild dependency-scan / optimizer failure from the dev-server log — instead
+of a generic ready-marker timeout. `SANDBOX_GOMAXPROCS=<n>` exports `GOMAXPROCS` to the
+esbuild service for that run; it is a diagnostic knob for the dependency-scan crashes in
+intent-hq/intent#4617, not a fix, so leave it unset normally.
+
 `sandbox:shot` captures the complete component frame without shell chrome or scrolling.
 By default it writes
 `.demo-artifacts/sandbox/<scene>--<state>--<theme>--<width>.png` and prints its path,
@@ -227,7 +237,11 @@ corepack pnpm run test:ct -- src/features/agent/components/agent-avatar/__tests_
 ```
 
 The CT harness defaults to port 3100 (the `CT_PORT` env var overrides it). Stop the
-process on that port before retrying if it is occupied. The full workflow is in
+process on that port before retrying if it is occupied. The run exits with Playwright's
+status as soon as the tests finish — the HTML report is written to `playwright-report/`
+but never served automatically. To browse it after the run, opt in from an interactive
+terminal with `CT_HTML_REPORT=open` (or `-- --open-report`); `node
+scripts/run-ct-tests.mjs --help` lists the options. The full workflow is in
 `../../docs/fe/DEVELOPER_GUIDE.md#fast-ui-preview-workflow`.
 
 ## Dogfooding a dev FE against a daemon
@@ -304,25 +318,34 @@ select a conservative suite instead of silently skipping coverage.
 
 Any renderer source change also runs `pnpm run test:ui-invariants` (chained into
 `validate:architecture` too): the repo-wide UI ratchets and the component-catalog
-`*.meta.ts` caller ledgers. These suites read the tree from the filesystem rather than
-importing every component they audit, so `vitest related` and targeted runs miss them —
-cloudlands-fe#2256 hit CI red twice this way. Membership is derived, not listed:
+`*.meta.ts` caller ledgers. Membership is derived, not listed:
 `scripts/ui-invariant-suites.mjs` scans the vitest test files under `scripts/` and `src/`
 (`*.{test,spec}.*`, minus the Playwright `*.ct.spec.*` / `*.visual.spec.*` suites), runs
 every one whose leading comments carry `// @ui-invariant`, and fails when a test whose
 parsed code (comments, string bodies, and regex literals never count) references
 `buildUiComponentInventory` or imports a `*.meta` module and reads a `.callers` ledger has
-neither that marker nor
-`// @ui-invariant-exempt: <reason>`. Add the marker to any new inventory or ledger suite;
-`node scripts/ui-invariant-suites.mjs --list` shows the current set and `--check`
-validates markers without running anything.
+neither that marker nor `// @ui-invariant-exempt: <reason>`. Add the marker to any new
+inventory or ledger suite; `node scripts/ui-invariant-suites.mjs --list` shows the current
+set and `--check` validates markers without running anything. Likewise, any code change
+under `src/`, any `AGENTS.md` change (root or nested — `lint:instruction-themis-pins` scans
+them all), and any edit to the `scripts/check-*.mjs` gates themselves also runs
+`pnpm run lint:architecture` — the repo-wide static architecture scans CI runs through
+`validate:architecture` plus its separate whole-`src/` `workspace:*` dispatcher gate step —
+because those scans are cross-file graph checks that per-file linting cannot see:
+cloudlands-fe#2315 passed `verify:changed` locally and failed CI in
+`lint:saga-watcher-ownership`. A change to `scripts/type-check.ts` additionally runs
+`pnpm run type-check:validate`, since `lint:architecture` omits that wrapper and the
+per-boundary checks invoke `tsc` directly.
 
-For the same reason, a change to any IPC channel source — `src/preload/index.ts`,
-`src/preload/index.template.ts`, `src/shared/ipc-registry.ts`, or
-`scripts/inline-ipc-channels.ts` — also runs `scripts/inline-ipc-channels.test.ts`, which
-reads the generated preload from disk and fails when it drifts from the template
-(cloudlands-fe#2314 hand-edited `src/preload/index.ts` and only CI caught it). Regenerate
-with `pnpm run generate:ipc-channels` rather than editing `src/preload/index.ts` by hand.
+`vitest related` follows the import graph, so a suite that reads the tree from disk is
+invisible to `verify:changed` (cloudlands-fe#2256 and #2314 both failed only on CI). Such a
+suite declares its triggers in its leading comments —
+`// @verify-changed-triggers: src/preload/index.ts, src/lib/components/**` (repo-relative
+paths or globs; `./` and `../` entries resolve from the test file's directory) — or opts
+out with `// @verify-changed-exempt: <reason>`; `// @ui-invariant` suites are already
+covered by the renderer trigger. `pnpm run lint:verify-changed-triggers` (in
+`validate:architecture`) fails an undeclared disk-reading suite. Regenerate
+`src/preload/index.ts` with `pnpm run generate:ipc-channels` rather than editing it by hand.
 
 Only checks that genuinely conflict use host-wide locks, held for one check at a time:
 Playwright CT uses `ct-<CT_PORT>` (default `ct-3100`) and the full Vitest fallback uses

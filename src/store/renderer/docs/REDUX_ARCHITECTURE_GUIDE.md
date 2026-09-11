@@ -31,8 +31,9 @@ These files are the repository-specific map for how that instance is assembled:
 ## Side effects
 
 App-route-owned sagas are the only business side-effect layer. Store middleware
-is limited to the five infrastructure/diagnostic entries in `middleware.ts`:
-store guards, action batching, logging, state-reference checks, and
+is limited to the six infrastructure/diagnostic entries in `middleware.ts`:
+store guards, action batching, the action-type ring buffer (types only, read
+by the long-task watchdog), logging, state-reference checks, and
 structured-clone checks. Do not add API, IPC, storage, timer, subscription,
 toast, navigation, or persistence work through middleware or a new renderer
 bridge.

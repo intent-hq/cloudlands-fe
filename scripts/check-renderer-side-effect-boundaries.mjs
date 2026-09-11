@@ -6,6 +6,7 @@ import ts from 'typescript';
 const APPROVED_MIDDLEWARE = new Map([
   ['src/store/utils/store-guard-middleware.ts', 'createStoreGuardMiddleware'],
   ['src/store/renderer/middlewares/batch.ts', 'createBatchingMiddleware'],
+  ['src/store/renderer/middlewares/action-ring-buffer.ts', 'createActionRingBufferMiddleware'],
   [
     'src/store/renderer/middlewares/state-reference-checks.ts',
     'createReferenceChangeDetectorMiddleware',
@@ -515,7 +516,7 @@ export function findRendererSideEffectBoundaryViolations(files) {
           .some((name, i) => name !== expected[i])
       ) {
         violations.push(
-          `${filePath}: registry must contain exactly the four approved middleware factories`,
+          `${filePath}: registry must contain exactly the ${expected.length} approved middleware factories`,
         );
       }
     }

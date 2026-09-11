@@ -13,6 +13,7 @@
  * generator's guard honest and keep the committed output in sync with the
  * template.
  */
+// @verify-changed-triggers: src/preload/index.ts, src/preload/index.template.ts, src/shared/ipc-registry.ts, scripts/inline-ipc-channels.ts
 
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';

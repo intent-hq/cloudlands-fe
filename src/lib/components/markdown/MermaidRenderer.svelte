@@ -5,6 +5,8 @@
   // Register the ELK layout engine once per module load; per-diagram
   // frontmatter (`config: layout: ...`) still overrides the default.
   mermaid.registerLayoutLoaders(elkLayouts);
+
+  export type MermaidRenderState = 'pending' | 'empty' | 'rendered' | 'error';
 </script>
 
 <script lang="ts">
@@ -23,9 +25,10 @@
     code: string;
     className?: string;
     showExpandButton?: boolean;
+    onRenderStateChange?: (state: MermaidRenderState) => void;
   }
 
-  let { code, className = '', showExpandButton = true }: Props = $props();
+  let { code, className = '', showExpandButton = true, onRenderStateChange }: Props = $props();
 
   let renderedSvg = $state('');
   let error = $state<string | null>(null);
@@ -211,6 +214,16 @@
     if (mounted && code) {
       renderDiagram(code, $isDarkTheme);
     }
+  });
+
+  // Mirrors the template branches below so hosts can lay out the block
+  // differently when there is no diagram to show.
+  let renderState = $derived<MermaidRenderState>(
+    error ? 'error' : renderedSvg ? 'rendered' : !code?.trim() ? 'empty' : 'pending',
+  );
+
+  $effect(() => {
+    onRenderStateChange?.(renderState);
   });
 </script>
 

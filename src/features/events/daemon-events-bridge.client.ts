@@ -172,6 +172,7 @@ import {
 import { replaceAgentQueue } from '$store/renderer/slices/agent-queue/agent-queue-slice';
 import {
   bulkUpsertSessions,
+  pendingQuestionMarkersFromWorkspaceEvent,
   removeSession,
   renameSession,
   setProcessQueueHint,
@@ -220,6 +221,7 @@ import { applyNoteFromEvent } from '$features/notes/notes-read-service';
 import { applyCommentFromEvent } from '$features/comments/comments-read-service';
 import {
   ensureAgentSession,
+  notePendingQuestionMarkerProjection,
   refreshAgentSessionAfterEvent,
 } from '$features/agent/agent-read-service';
 import { deriveAgentHasUnread } from '$shared/utils/agent-unread';
@@ -1608,12 +1610,20 @@ function handleAgentRenamedEvent(event: WorkspaceEvent): void {
  * projection via `refreshAgentSessionAfterEvent` — which preserves the local
  * transcript and schedules one trailing read when another read is already in
  * flight, so rapid marker updates converge to the newest AgentLite projection.
+ * The pending-question markers are the exception (§6.5 "Pending-question
+ * `agent:updated` payloads"): the `eventReceived` reducer mirrors them onto the
+ * session synchronously, so the marker clear is applied before a later
+ * `agent:queue:updated` shrink drops the queued answer; the read service is
+ * told so a still-in-flight `agent.get` cannot undo that projection.
  */
 function handleAgentUpdatedEvent(event: WorkspaceEvent): void {
   const data = (event as { data?: Record<string, unknown> }).data;
   if (!data) return;
   const agentId = data.agentId;
   if (typeof agentId !== 'string' || agentId.length === 0) return;
+  if (pendingQuestionMarkersFromWorkspaceEvent(event) !== null) {
+    notePendingQuestionMarkerProjection(agentId);
+  }
   void refreshAgentSessionAfterEvent(agentId);
   // Cross-window InterruptedAgentsModal reconciliation (§5.35):
   // agent.resolveInterrupted emits agent:updated per resolved agent, so an

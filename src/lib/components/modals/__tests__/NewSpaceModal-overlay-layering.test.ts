@@ -1,3 +1,6 @@
+// @verify-changed-triggers: ../NewSpaceModal.svelte, ../../ui/dialog/dialog-overlay.svelte,
+//   ../../ui/select/select-content.svelte
+
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';

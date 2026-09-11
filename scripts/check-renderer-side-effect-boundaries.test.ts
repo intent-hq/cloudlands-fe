@@ -6,10 +6,12 @@ const registry = {
   content: [
     "import { createStoreGuardMiddleware } from '../../store/utils/store-guard-middleware';",
     "import { createBatchingMiddleware } from './middlewares/batch';",
+    "import { createActionRingBufferMiddleware } from './middlewares/action-ring-buffer';",
     "import { createReferenceChangeDetectorMiddleware } from './middlewares/state-reference-checks';",
     "import { createStructuredCloneCheckerMiddleware } from './middlewares/structured-clone-checker';",
     'createStoreGuardMiddleware()',
     'createBatchingMiddleware()',
+    'createActionRingBufferMiddleware()',
     'createReferenceChangeDetectorMiddleware()',
     'createStructuredCloneCheckerMiddleware()',
   ].join('\n'),
@@ -27,7 +29,7 @@ const configuredStore = {
 };
 
 describe('renderer side-effect boundary guard', () => {
-  it('allows the four approved middleware and reusable non-middleware utilities', () => {
+  it('allows the five approved middleware and reusable non-middleware utilities', () => {
     const files = [
       registry,
       {
@@ -363,9 +365,7 @@ describe('renderer side-effect boundary guard', () => {
       { ...registry, content: `${registry.content}\ninstallTaskEffects()` },
     ]);
     expect(violations).toEqual([
-      expect.stringContaining(
-        'registry must contain exactly the four approved middleware factories',
-      ),
+      expect.stringContaining('registry must contain exactly the 5 approved middleware factories'),
     ]);
   });
 
@@ -379,7 +379,7 @@ describe('renderer side-effect boundary guard', () => {
   ])('rejects an approved factory that is %s in the registry', (_change, content) => {
     expect(findRendererSideEffectBoundaryViolations([{ ...registry, content }])).toEqual([
       expect.stringContaining(
-        'src/store/renderer/middleware.ts: registry must contain exactly the four approved middleware factories',
+        'src/store/renderer/middleware.ts: registry must contain exactly the 5 approved middleware factories',
       ),
     ]);
   });
