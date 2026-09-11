@@ -606,6 +606,12 @@ jobs:
           cache: ${{ needs.route.outputs.linux_burst == 'true' && 'pnpm' || '' }}
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+      - name: Generate IPC channels
+        # src/preload/index.ts is gitignored and generated from the preload
+        # template + IPC registry (same shape as the generate:i18n steps).
+        # The unit suites no longer read it, but each shard regenerates it
+        # so a leg never depends on test internals to stay self-contained.
+        run: pnpm run generate:ipc-channels
       - name: Unit tests
         run: pnpm run test:unit --shard=${{ matrix.shard }}/2
 
