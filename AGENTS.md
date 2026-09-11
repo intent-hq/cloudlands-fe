@@ -227,7 +227,11 @@ corepack pnpm run test:ct -- src/features/agent/components/agent-avatar/__tests_
 ```
 
 The CT harness defaults to port 3100 (the `CT_PORT` env var overrides it). Stop the
-process on that port before retrying if it is occupied. The full workflow is in
+process on that port before retrying if it is occupied. The run exits with Playwright's
+status as soon as the tests finish — the HTML report is written to `playwright-report/`
+but never served automatically. To browse it after the run, opt in from an interactive
+terminal with `CT_HTML_REPORT=open` (or `-- --open-report`); `node
+scripts/run-ct-tests.mjs --help` lists the options. The full workflow is in
 `../../docs/fe/DEVELOPER_GUIDE.md#fast-ui-preview-workflow`.
 
 ## Dogfooding a dev FE against a daemon
