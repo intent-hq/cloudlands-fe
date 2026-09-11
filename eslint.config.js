@@ -1,4 +1,6 @@
 import { builtinModules } from 'node:module';
+import { fileURLToPath } from 'node:url';
+import { includeIgnoreFile } from '@eslint/compat';
 import js from '@eslint/js';
 import typescript from '@typescript-eslint/eslint-plugin';
 import typescriptParser from '@typescript-eslint/parser';
@@ -330,6 +332,8 @@ const rendererBrowserSafetyRestrictedImportsOptions = {
 };
 
 export default [
+  // .gitignore is the source of truth for scratch/sandbox exclusions (.dev/, .wt-*/); see vitest.config.ts.
+  includeIgnoreFile(fileURLToPath(new URL('.gitignore', import.meta.url))),
   {
     ignores: [
       '**/node_modules/**',

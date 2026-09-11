@@ -88,6 +88,7 @@ test-harness-report.json
 
 # Scratch/sandbox location (worktrees, probes); also excluded from vitest discovery
 .dev/
+.wt-*/
 
 # Prevent literal ~ directory (path expansion bug)
 ~/
