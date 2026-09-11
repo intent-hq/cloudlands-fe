@@ -101,8 +101,8 @@ describe('readTriggerHeader', () => {
       kind: 'triggers',
       triggers: [
         'src/routes/[(]app[)]/workspace/[[]id[]]/composables/*.ts',
-        'src/routes/(app)/workspace/[id]/composables/foo.ts',
-        'src/routes/(app)/workspace/[id]/WorkspaceSurface.svelte',
+        'src/routes/[(]app[)]/workspace/[[]id[]]/composables/foo.ts',
+        'src/routes/[(]app[)]/workspace/[[]id[]]/WorkspaceSurface.svelte',
       ],
     });
     const suites = [{ path: testFile, triggers: header.triggers! }];
@@ -118,6 +118,43 @@ describe('readTriggerHeader', () => {
     expect(
       selectDeclaredSuites(suites, ['src/routes/(app)/workspace/[id]/WorkspaceSurface.svelte']),
     ).toEqual([testFile]);
+  });
+
+  it('matches an exact relative entry under a bracketed directory by equality only', () => {
+    const testFile = 'src/routes/(app)/workspace/[id]/page.test.ts';
+    const header = readTriggerHeader(lines(`// ${TRIGGER_MARKER} ./+page.svelte`), testFile);
+    const suites = [{ path: testFile, triggers: header.triggers! }];
+    expect(selectDeclaredSuites(suites, ['src/routes/(app)/workspace/[id]/+page.svelte'])).toEqual([
+      testFile,
+    ]);
+    expect(selectDeclaredSuites(suites, ['src/routes/(app)/workspace/i/+page.svelte'])).toEqual([]);
+    expect(readTriggerHeader(lines(`// ${TRIGGER_MARKER} ./b.ts`), 'src/a/x.test.ts')).toEqual({
+      kind: 'triggers',
+      triggers: ['src/a/b.ts'],
+    });
+  });
+
+  it('keeps a leading * on a line-comment continuation as glob text', () => {
+    const lineComments = lines(
+      `// ${TRIGGER_MARKER} src/a.ts,`,
+      '// **/*.svelte',
+      "import { it } from 'vitest';",
+    );
+    expect(readTriggerHeader(lineComments, 'scripts/x.test.ts')).toEqual({
+      kind: 'triggers',
+      triggers: ['src/a.ts', '**/*.svelte'],
+    });
+    const blockComment = lines(
+      '/**',
+      ` * ${TRIGGER_MARKER} src/a.ts,`,
+      ' * *.svelte',
+      ' */',
+      "import { it } from 'vitest';",
+    );
+    expect(readTriggerHeader(blockComment, 'scripts/x.test.ts')).toEqual({
+      kind: 'triggers',
+      triggers: ['src/a.ts', '*.svelte'],
+    });
   });
 
   it('resolves relative entries that land on the package root without a leading ./', () => {
@@ -207,6 +244,8 @@ describe('requiresTriggerDeclaration', () => {
     ['a repoRoot binding', "readdir(path.join(repoRoot, 'src'))"],
     ['a bare src/ literal', "readFileSync('src/lib/App.svelte', 'utf8')"],
     ['an existsSync probe', "expect(existsSync(resolve(process.cwd(), 'src/a.ts'))).toBe(true)"],
+    ['a cwd option', "globSync('*.ts', { cwd: path.join(process.cwd(), 'src/shared') })"],
+    ['a bare src/ cwd option', "fs.globSync('**/*.ts', { cwd: 'src/shared' })"],
   ];
   for (const [label, read] of rootReads) {
     it(`flags a read derived from ${label}`, () => {
@@ -221,6 +260,18 @@ describe('requiresTriggerDeclaration', () => {
       expect(requiresTriggerDeclaration(content, 'src/lib/__tests__/a.test.ts')).toBe(true);
     });
   }
+
+  it('follows a root through an assignment made after declaration', () => {
+    const content = lines(
+      "import { readFileSync } from 'node:fs';",
+      "import { join } from 'node:path';",
+      "import { beforeAll, it } from 'vitest';",
+      'let sourcePath: string;',
+      "beforeAll(() => { sourcePath = join(process.cwd(), 'src/app.html'); });",
+      "it('x', () => expect(readFileSync(sourcePath, 'utf8')).toContain('x'));",
+    );
+    expect(requiresTriggerDeclaration(content, 'src/lib/__tests__/a.test.ts')).toBe(true);
+  });
 
   it('follows a root through intermediate bindings and helper functions', () => {
     const content = lines(
@@ -316,6 +367,7 @@ describe('requiresTriggerDeclaration', () => {
       "  writeFileSync(path.join(root, 'src/a.json'), '{}');",
       "  expect(readFileSync(path.join(root, 'src/a.json'), 'utf8')).toBe('{}');",
       "  expect(readFileSync(path.join(process.env.TMP ?? '/tmp', 'src/a.json'), 'utf8')).toBe('{}');",
+      "  expect(globSync('**/*.json', { cwd: root })).toHaveLength(1);",
       '});',
     );
     expect(requiresTriggerDeclaration(content, 'scripts/a.test.ts')).toBe(false);

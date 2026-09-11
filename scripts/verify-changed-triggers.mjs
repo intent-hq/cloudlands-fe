@@ -76,11 +76,17 @@ const escapeGlob = (value) => value.replace(GLOB_METACHARACTERS, (character) => 
 
 // A `./` or `../` glob entry resolves its leading dot segments against the test
 // file's directory and glob-escapes that prefix, so route directories such as
-// `[id]` stay literal and only the author's text is read as glob syntax. Exact
-// entries resolve unescaped for the exact-equality match.
+// `[id]` stay literal and only the author's text is read as glob syntax. An
+// exact entry whose resolved path lands under such a directory is escaped
+// whole, so it never falls through to glob matching.
 function resolveTriggerEntry(entry, filePath) {
   const normalized = entry.replaceAll('\\', '/');
-  if (!GLOB_CHARACTERS.test(normalized)) return resolveEntry(normalized, filePath);
+  if (!GLOB_CHARACTERS.test(normalized)) {
+    const resolved = resolveEntry(normalized, filePath);
+    return resolved === normalized || !GLOB_CHARACTERS.test(resolved)
+      ? resolved
+      : escapeGlob(resolved);
+  }
   if (!normalized.startsWith('./') && !normalized.startsWith('../')) return normalized;
   const segments = normalized.split('/');
   let index = 0;
@@ -232,9 +238,33 @@ function readCallee(node) {
   return ts.isPropertyAccessExpression(callee) && READ_FUNCTIONS.has(callee.name.text);
 }
 
+// A `cwd` option (`globSync('*.ts', { cwd })`) is the location a read resolves
+// against, so a bare repo literal there counts like a whole read argument.
+function isRepoCwdOption(node) {
+  return (
+    ts.isObjectLiteralExpression(node) &&
+    node.properties.some(
+      (property) =>
+        ts.isPropertyAssignment(property) &&
+        ts.isIdentifier(property.name) &&
+        property.name.text === 'cwd' &&
+        isRepoLiteral(property.initializer),
+    )
+  );
+}
+
+// Any argument of a read call may carry the root: the path itself, or an
+// options object whose `cwd` derives from it.
+function readsRootArgument(node, tainted) {
+  return node.arguments.some(
+    (argument) =>
+      isRepoLiteral(argument) || isRepoCwdOption(argument) || containsRoot(argument, tainted),
+  );
+}
+
 // Names bound to expressions that derive from a repository root: variables and
-// functions whose initializer or body mentions a root source or another tainted
-// name. Iterates to a fixpoint so declaration order does not matter.
+// functions whose initializer, assigned value, or body mentions a root source
+// or another tainted name. Iterates to a fixpoint so order does not matter.
 function collectTaintedNames(sourceFile) {
   const bindings = [];
   const visit = (node) => {
@@ -242,6 +272,12 @@ function collectTaintedNames(sourceFile) {
       bindings.push([node.name.text, node.initializer]);
     } else if (ts.isFunctionDeclaration(node) && node.name && node.body) {
       bindings.push([node.name.text, node.body]);
+    } else if (
+      ts.isBinaryExpression(node) &&
+      node.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+      ts.isIdentifier(node.left)
+    ) {
+      bindings.push([node.left.text, node.right]);
     }
     ts.forEachChild(node, visit);
   };
@@ -278,10 +314,7 @@ export function requiresTriggerDeclaration(content, filePath = 'suite.test.ts') 
       importsSource = true;
       return;
     }
-    if (!readsRoot && readCallee(node) && node.arguments[0]) {
-      const target = node.arguments[0];
-      readsRoot = isRepoLiteral(target) || containsRoot(target, tainted);
-    }
+    if (!readsRoot && readCallee(node)) readsRoot = readsRootArgument(node, tainted);
     ts.forEachChild(node, visit);
   };
   visit(sourceFile);

@@ -34,9 +34,9 @@ function readLineEnd(source, index) {
   return end === -1 ? source.length : end;
 }
 
-// Returns the bodies of the comments that precede the first token, skipping a
-// hashbang. Text after a closing `*/` on the same line is code, not header.
-export function readLeadingComments(content) {
+// The comments that precede the first token, skipping a hashbang, as
+// `{ block, body }`. Text after a closing `*/` on the same line is code.
+function readLeadingCommentEntries(content) {
   const source = stripBom(content);
   const comments = [];
   let index = source.startsWith('#!') ? readLineEnd(source, 0) : 0;
@@ -45,12 +45,12 @@ export function readLeadingComments(content) {
       index += 1;
     } else if (source.startsWith('//', index)) {
       const end = readLineEnd(source, index);
-      comments.push(source.slice(index + 2, end));
+      comments.push({ block: false, body: source.slice(index + 2, end) });
       index = end;
     } else if (source.startsWith('/*', index)) {
       const close = source.indexOf('*/', index + 2);
       const end = close === -1 ? source.length : close;
-      comments.push(source.slice(index + 2, end));
+      comments.push({ block: true, body: source.slice(index + 2, end) });
       index = end + 2;
     } else {
       break;
@@ -59,13 +59,19 @@ export function readLeadingComments(content) {
   return comments;
 }
 
-// The leading comments flattened into trimmed lines with block-comment `*`
-// gutters removed, in source order.
+// Returns the bodies of the comments that precede the first token.
+export function readLeadingComments(content) {
+  return readLeadingCommentEntries(content).map((comment) => comment.body);
+}
+
+// The leading comments flattened into trimmed lines, in source order. A single
+// `*` gutter is stripped only inside `/* */` blocks; a `**` run, or any leading
+// `*` on a `//` line, is content (`**/*.svelte`).
 export function readHeaderLines(content) {
   const lines = [];
-  for (const comment of readLeadingComments(content)) {
-    for (const rawLine of comment.split(/\r?\n/)) {
-      lines.push(rawLine.replace(/^\s*\*+/, '').trim());
+  for (const { block, body } of readLeadingCommentEntries(content)) {
+    for (const rawLine of body.split(/\r?\n/)) {
+      lines.push((block ? rawLine.replace(/^\s*\*(?!\*)/, '') : rawLine).trim());
     }
   }
   return lines;
