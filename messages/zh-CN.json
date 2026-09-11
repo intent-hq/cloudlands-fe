@@ -5366,6 +5366,7 @@
   "mcp_oauth_callbackComplete_message": "身份验证已完成。您可以关闭此窗口。",
   "mcp_oauth_callbackFailed_message": "身份验证失败。请返回 Intent 查看详细信息。",
   "mcp_oauth_signInFailed_error": "OAuth 登录失败。",
+  "mcp_oauth_tokenAuthUnsupported_error": "此 OAuth 提供商未声明 Intent 支持的令牌认证方式。",
   "specialists_loader_unknown_error": "未知错误",
   "specialists_loader_fileNotFound_error": "未找到专家文件",
   "specialists_ipc_listFilesFailed_error": "列出专家文件失败",

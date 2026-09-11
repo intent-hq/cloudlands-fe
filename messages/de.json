@@ -5366,6 +5366,7 @@
   "mcp_oauth_callbackComplete_message": "Authentifizierung abgeschlossen. Sie können dieses Fenster schließen.",
   "mcp_oauth_callbackFailed_message": "Authentifizierung fehlgeschlagen. Kehren Sie für Details zu Intent zurück.",
   "mcp_oauth_signInFailed_error": "OAuth-Anmeldung fehlgeschlagen.",
+  "mcp_oauth_tokenAuthUnsupported_error": "Dieser OAuth-Anbieter gibt keine von Intent unterstützte Token-Authentifizierungsmethode an.",
   "specialists_loader_unknown_error": "Unbekannter Fehler",
   "specialists_loader_fileNotFound_error": "Spezialisten-Datei nicht gefunden",
   "specialists_ipc_listFilesFailed_error": "Spezialisten-Dateien konnten nicht aufgelistet werden",

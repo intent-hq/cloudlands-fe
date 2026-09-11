@@ -5366,6 +5366,7 @@
   "mcp_oauth_callbackComplete_message": "Autenticación completada. Puede cerrar esta ventana.",
   "mcp_oauth_callbackFailed_message": "Error de autenticación. Vuelva a Intent para obtener más información.",
   "mcp_oauth_signInFailed_error": "Error al iniciar sesión con OAuth.",
+  "mcp_oauth_tokenAuthUnsupported_error": "Este proveedor de OAuth no anuncia ningún método de autenticación de tokens compatible con Intent.",
   "specialists_loader_unknown_error": "Error desconocido",
   "specialists_loader_fileNotFound_error": "Archivo de especialista no encontrado",
   "specialists_ipc_listFilesFailed_error": "Error al listar los archivos de especialistas",

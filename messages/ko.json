@@ -5366,6 +5366,7 @@
   "mcp_oauth_callbackComplete_message": "인증이 완료되었습니다. 이 창을 닫아도 됩니다.",
   "mcp_oauth_callbackFailed_message": "인증에 실패했습니다. 자세한 내용은 Intent로 돌아가 확인하세요.",
   "mcp_oauth_signInFailed_error": "OAuth 로그인에 실패했습니다.",
+  "mcp_oauth_tokenAuthUnsupported_error": "이 OAuth 공급자는 Intent가 지원하는 토큰 인증 방식을 명시하지 않습니다.",
   "specialists_loader_unknown_error": "알 수 없는 오류",
   "specialists_loader_fileNotFound_error": "스페셜리스트 파일을 찾을 수 없음",
   "specialists_ipc_listFilesFailed_error": "스페셜리스트 파일을 나열하지 못했습니다",

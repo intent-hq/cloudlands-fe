@@ -5367,6 +5367,7 @@
   "mcp_oauth_callbackComplete_message": "Authentication complete. You can close this window.",
   "mcp_oauth_callbackFailed_message": "Authentication failed. Return to Intent for details.",
   "mcp_oauth_signInFailed_error": "OAuth sign-in failed.",
+  "mcp_oauth_tokenAuthUnsupported_error": "This OAuth provider does not advertise a token authentication method supported by Intent.",
   "specialists_loader_unknown_error": "Unknown error",
   "specialists_loader_fileNotFound_error": "Specialist file not found",
   "specialists_ipc_listFilesFailed_error": "Failed to list specialist files",

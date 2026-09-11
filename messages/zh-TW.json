@@ -5366,6 +5366,7 @@
   "mcp_oauth_callbackComplete_message": "驗證完成。您可以關閉此視窗。",
   "mcp_oauth_callbackFailed_message": "驗證失敗。請返回 Intent 查看詳細資訊。",
   "mcp_oauth_signInFailed_error": "OAuth 登入失敗。",
+  "mcp_oauth_tokenAuthUnsupported_error": "此 OAuth 提供者未宣告 Intent 支援的權杖驗證方式。",
   "specialists_loader_unknown_error": "未知錯誤",
   "specialists_loader_fileNotFound_error": "未找到專家檔案",
   "specialists_ipc_listFilesFailed_error": "列出專家檔案失敗",

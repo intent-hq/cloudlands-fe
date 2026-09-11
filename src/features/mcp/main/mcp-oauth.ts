@@ -22,6 +22,7 @@ interface OAuthServerMetadata {
   registration_endpoint?: string;
   scopes_supported?: string[];
   code_challenge_methods_supported?: string[];
+  token_endpoint_auth_methods_supported?: string[];
   authorization_response_iss_parameter_supported?: boolean;
 }
 
@@ -189,6 +190,18 @@ async function registerClient(
   if (!metadata.registration_endpoint) {
     throw new Error('The OAuth provider does not support automatic client registration.');
   }
+  // Both the code exchange and daemon refresh support secrets in the form body, not Basic auth.
+  // Keep the public-client fallback for providers that omit capability metadata.
+  const supportedMethods = metadata.token_endpoint_auth_methods_supported;
+  const tokenEndpointAuthMethod =
+    supportedMethods === undefined
+      ? 'none'
+      : ['client_secret_post', 'none'].find(
+          (method) => Array.isArray(supportedMethods) && supportedMethods.includes(method),
+        );
+  if (!tokenEndpointAuthMethod) {
+    throw new Error(m.mcp_oauth_tokenAuthUnsupported_error());
+  }
   const response = await fetch(metadata.registration_endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -198,7 +211,7 @@ async function registerClient(
       redirect_uris: [redirectUri],
       grant_types: ['authorization_code', 'refresh_token'],
       response_types: ['code'],
-      token_endpoint_auth_method: 'none',
+      token_endpoint_auth_method: tokenEndpointAuthMethod,
     }),
     redirect: 'error',
     signal: requestSignal(),
