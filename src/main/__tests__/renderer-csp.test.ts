@@ -1,3 +1,5 @@
+// @verify-changed-triggers: src/app.html
+
 import { describe, expect, it } from 'vitest';
 import fs from 'fs';
 import path from 'path';

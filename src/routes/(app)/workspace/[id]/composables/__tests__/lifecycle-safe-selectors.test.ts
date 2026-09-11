@@ -13,6 +13,9 @@
  * This test reads the source files and checks that event handler bodies
  * (inside addEventListener callbacks) do not contain unsafe patterns.
  */
+// `[id]` would read as a glob character class, so the composables directory is
+// matched with a `*` segment instead of a `../` entry.
+// @verify-changed-triggers: src/routes/(app)/workspace/*/composables/*.ts, ../../WorkspaceSurface.svelte
 
 import { describe, it, expect } from 'vitest';
 import * as fs from 'fs';
