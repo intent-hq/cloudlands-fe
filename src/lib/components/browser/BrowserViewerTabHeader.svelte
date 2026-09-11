@@ -184,7 +184,8 @@
           </Button>
         </form>
       {:else}
-        <button
+        <Button
+          variant="ghost"
           type="button"
           class="flex h-full min-w-0 flex-1 items-center gap-1.5 rounded-sm text-left outline-none hover:bg-muted/30 focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:hover:bg-transparent"
           onclick={() => void startEditingUrl()}
@@ -205,7 +206,7 @@
               >{pageHostname}</span
             >
           {/if}
-        </button>
+        </Button>
       {/if}
     </div>
 

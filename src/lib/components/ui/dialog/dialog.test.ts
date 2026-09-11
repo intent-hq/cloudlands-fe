@@ -1,3 +1,4 @@
+// @ui-invariant
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, describe, expect, it } from 'vitest';
 import DialogHarness from './DialogHarness.svelte';

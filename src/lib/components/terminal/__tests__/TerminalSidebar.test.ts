@@ -556,7 +556,7 @@ describe('TerminalSidebar script inline rename', () => {
   it('shows a prefilled rename input on double-click and restores the row on Escape', async () => {
     const { container } = render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
 
-    await fireEvent.doubleClick(screen.getByText('build'));
+    await fireEvent.doubleClick(screen.getByRole('button', { name: /build.*npm run build/ }));
 
     const input = container.querySelector<HTMLInputElement>('[data-edit-script="script-1"]');
     expect(input).toBeTruthy();
@@ -571,7 +571,7 @@ describe('TerminalSidebar script inline rename', () => {
   it('commits a non-empty rename with Enter', async () => {
     const { container } = render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
 
-    await fireEvent.doubleClick(screen.getByText('build'));
+    await fireEvent.doubleClick(screen.getByRole('button', { name: /build.*npm run build/ }));
     const input = container.querySelector<HTMLInputElement>('[data-edit-script="script-1"]');
     await fireEvent.input(input!, { target: { value: 'compile' } });
     await fireEvent.keyDown(input!, { key: 'Enter' });
@@ -584,7 +584,7 @@ describe('TerminalSidebar script inline rename', () => {
 
   it('commits a non-empty rename on blur', async () => {
     const { container } = render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
-    await fireEvent.doubleClick(screen.getByText('build'));
+    await fireEvent.doubleClick(screen.getByRole('button', { name: /build.*npm run build/ }));
     const input = container.querySelector<HTMLInputElement>('[data-edit-script="script-1"]');
     await fireEvent.input(input!, { target: { value: 'bundle' } });
 
@@ -598,7 +598,7 @@ describe('TerminalSidebar script inline rename', () => {
 
   it('never leaves the script row empty when an empty rename is submitted', async () => {
     const { container } = render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
-    await fireEvent.doubleClick(screen.getByText('build'));
+    await fireEvent.doubleClick(screen.getByRole('button', { name: /build.*npm run build/ }));
     const input = container.querySelector<HTMLInputElement>('[data-edit-script="script-1"]');
     await fireEvent.input(input!, { target: { value: '   ' } });
 

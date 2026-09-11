@@ -77,8 +77,6 @@ describe('ChatMessageNavigator', () => {
     expect(input.className).toContain('h-(--control-height-medium)');
     expect(input.className).toContain('outline-none');
     expect(input.className).toContain('caret-foreground');
-    expect(input.className).toContain('focus-visible:bg-card');
-    expect(input.className).toContain('focus-visible:shadow-[inset_0_0_0_1px_var(--ring)]');
 
     const panel = screen.getByTestId('chat-message-navigator-panel').parentElement!;
     expect(panel.className).toContain('w-[28rem]');

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   /**
    * BackgroundHooksRow Component
    *
@@ -201,9 +202,7 @@
     role={$snapshotStatus$ === 'failed' ? 'alert' : 'status'}
   >
     {#if $snapshotStatus$ === 'loading'}
-      <span
-        class="size-3 shrink-0 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground"
-      ></span>
+      <span aria-hidden="true" class="shrink-0"><IntentMarkLoader size={12} /></span>
       <span>{m.chat_chatMessage_loading_label()}</span>
     {:else}
       <span>{m.chat_streamingStatus_responseFailed_label()}</span>

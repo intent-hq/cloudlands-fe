@@ -74,14 +74,8 @@
       : content,
   );
 
-  // PERF: Detect content complexity to choose rendering strategy
-  // - Simple: plain text, no markdown - render as <p>
-  // - Static: has markdown - render the processed HTML directly (no TipTap)
-  //
-  // Read-only rendering never needs a live ProseMirror view: the markdown
-  // processor already emits final HTML for task lists (read-only checkboxes),
-  // tables, images, and intent:// links, and the container click/keydown
-  // handlers below provide the interactivity.
+  // Plain text uses <p>; processed HTML covers read-only markdown, with
+  // click/keydown handlers providing interactivity without a ProseMirror view.
 
   // Patterns that need markdown processing (rendered as processed static HTML)
   const needsProcessingPatterns = [

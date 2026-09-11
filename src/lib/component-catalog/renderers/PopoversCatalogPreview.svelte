@@ -195,7 +195,6 @@
       ><WorkspaceHoverCard
         workspace={workspaceCard.workspace}
         isLoading={workspaceCard.isLoading}
-        lineStats={workspaceCard.lineStats}
         activeAgentIds={workspaceCard.activeAgentIds ?? []}
         loadAgentSessions={false}
         loadWorkspaceData={false}

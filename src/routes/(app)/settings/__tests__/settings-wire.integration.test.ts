@@ -230,7 +230,7 @@ describe('Settings deterministic mock-BE contracts', () => {
 
     render(WebSocketApiSettings);
     const input = (await screen.findByRole('spinbutton', {
-      name: m.settings_wsApi_port_ariaLabel(),
+      name: m.settings_wsApi_port_label(),
     })) as HTMLInputElement;
     await waitFor(() => expect(input.value).toBe('5181'));
     await fireEvent.input(input, { target: { value: '6123' } });

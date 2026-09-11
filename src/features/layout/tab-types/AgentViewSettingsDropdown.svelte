@@ -25,7 +25,7 @@
 </script>
 
 {#if embedded}
-  <div
+  <Menu.Group
     role="group"
     aria-label={m.settings_section_fontStyle()}
     data-menu-stacked-content="font-style"
@@ -42,7 +42,7 @@
         {m.settings_fontStyle_mono()}
       </Menu.RadioItem>
     </Menu.RadioGroup>
-  </div>
+  </Menu.Group>
   <Menu.Separator />
 {:else}
   <Menu.Root bind:open>
