@@ -122,15 +122,6 @@
     open = false;
   }
 
-  function toggleAgent(agentId: string) {
-    if (checkedAgents.has(agentId)) {
-      checkedAgents.delete(agentId);
-    } else {
-      checkedAgents.add(agentId);
-    }
-    checkedAgents = new Set(checkedAgents); // trigger reactivity
-  }
-
   function setSelection(agentIds: string[]) {
     checkedAgents = new Set(agentIds);
   }
@@ -218,14 +209,27 @@
           ariaLabel={group.workspaceName}
           class="mb-3"
         >
-          {#snippet row({ item: agent })}
+          {#snippet row({ item: agent, selected })}
             <ListRow>
               {#snippet leading()}
-                <Checkbox
-                  checked={checkedAgents.has(agent.agentId)}
-                  ariaLabel={agent.agentName}
-                  onCheckedChange={() => toggleAgent(agent.agentId)}
-                />
+                <span
+                  aria-hidden="true"
+                  class="inline-flex size-4 shrink-0 items-center justify-center rounded-(--radius-small) border-[1.5px] shadow-(--elevation-raised) {selected
+                    ? 'border-primary bg-primary text-primary-foreground'
+                    : 'border-border bg-card'}"
+                >
+                  <svg class="size-[75%]" viewBox="0 0 12 12" fill="none">
+                    {#if selected}
+                      <path
+                        d="m2.25 6.25 2.25 2.2 5.25-5"
+                        stroke="currentColor"
+                        stroke-width="1.5"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      />
+                    {/if}
+                  </svg>
+                </span>
               {/snippet}
               {#snippet title()}{agent.agentName}{/snippet}
               {#snippet description()}
