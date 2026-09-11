@@ -2,6 +2,7 @@ import { defineConfig } from 'vitest/config';
 import path from 'path';
 import os from 'os';
 import { readFileSync } from 'fs';
+import { gitignoreDirExcludes } from './scripts/gitignore-dir-excludes.mjs';
 
 // CI-only tuning for shared self-hosted runners (intent-hq/monorepo#3082; the
 // recurrence class #3032/#2586/#1406/#1171/#545). The CI unit job runs on the
@@ -18,24 +19,6 @@ const isCI = !!process.env.CI && process.env.CI !== 'false';
 // Math.round matches how vitest resolves '50%' (getWorkersCountByPercentage),
 // so on any core count the CI path differs from '50%' only via the 16 cap.
 const ciMaxWorkers = Math.max(1, Math.min(16, Math.round(os.availableParallelism() / 2)));
-
-// Derives vitest exclude globs from .gitignore's directory-style entries, so
-// .gitignore stays the single source of truth for scratch/sandbox exclusions
-// (matches eslint.config.js's includeIgnoreFile usage, intent-hq/cloudlands-fe#2322).
-// Only trimmed lines ending in '/' are considered; blanks, comments, and '!'
-// negations are skipped. Unanchored entries (no '/' before the trailing one,
-// e.g. '.dev/') become '**/<pattern>/**'; anchored entries (containing a '/',
-// e.g. 'build/ios/') become '<pattern>/**' with any leading '/' stripped.
-function gitignoreDirExcludes(gitignorePath: string): string[] {
-  return readFileSync(gitignorePath, 'utf8')
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line && !line.startsWith('#') && !line.startsWith('!') && line.endsWith('/'))
-    .map((line) => {
-      const pattern = line.slice(0, -1);
-      return pattern.includes('/') ? `${pattern.replace(/^\//, '')}/**` : `**/${pattern}/**`;
-    });
-}
 
 export default defineConfig(async () => {
   const { svelte } = await import('@sveltejs/vite-plugin-svelte');
