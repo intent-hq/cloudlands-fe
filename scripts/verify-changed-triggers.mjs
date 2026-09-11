@@ -28,6 +28,10 @@ export const TRIGGER_MARKER = '@verify-changed-triggers:';
 export const EXEMPT_MARKER = '@verify-changed-exempt:';
 
 const GLOB_CHARACTERS = /[*?[\]{}]/;
+// Bracket-class escaping is the only form `path.matchesGlob` honors on every
+// platform (backslash escapes are path separators on Windows). Escaping `(`
+// also disarms the `+(…)` / `!(…)` extglob forms, so `!` stays literal.
+const GLOB_METACHARACTERS = /[*?[\]{}+@()]/g;
 const INTEGRATION_ROOT = 'tests/integration/';
 const READ_FUNCTIONS = new Set(['readFileSync', 'readdirSync', 'globSync', 'readFile', 'readdir']);
 const ROOT_IDENTIFIERS = new Set(['__dirname', '__filename', 'repoRoot', 'REPO_ROOT']);
@@ -55,6 +59,27 @@ function resolveEntry(entry, filePath) {
   const normalized = entry.replaceAll('\\', '/');
   if (!normalized.startsWith('./') && !normalized.startsWith('../')) return normalized;
   return path.posix.normalize(path.posix.join(path.posix.dirname(filePath), normalized));
+}
+
+const escapeGlob = (value) => value.replace(GLOB_METACHARACTERS, (character) => `[${character}]`);
+
+// A `./` or `../` glob entry resolves its leading dot segments against the test
+// file's directory and glob-escapes that prefix, so route directories such as
+// `[id]` stay literal and only the author's text is read as glob syntax. Exact
+// entries resolve unescaped for the exact-equality match.
+function resolveTriggerEntry(entry, filePath) {
+  const normalized = entry.replaceAll('\\', '/');
+  if (!GLOB_CHARACTERS.test(normalized)) return resolveEntry(normalized, filePath);
+  if (!normalized.startsWith('./') && !normalized.startsWith('../')) return normalized;
+  const segments = normalized.split('/');
+  let index = 0;
+  while (index < segments.length && (segments[index] === '.' || segments[index] === '..')) {
+    index += 1;
+  }
+  const base = path.posix.normalize(
+    path.posix.join(path.posix.dirname(filePath), ...segments.slice(0, index)),
+  );
+  return [escapeGlob(base), ...segments.slice(index)].join('/');
 }
 
 // Splits a marker list on commas outside `{}` / `[]`, so brace and class globs
@@ -92,7 +117,7 @@ export function readTriggerHeader(content, filePath = 'suite.test.ts') {
     continuing = list.trimEnd().endsWith(',');
     for (const entry of splitEntries(list)) {
       const trimmed = entry.trim();
-      if (trimmed) triggers.push(resolveEntry(trimmed, filePath));
+      if (trimmed) triggers.push(resolveTriggerEntry(trimmed, filePath));
     }
   }
   return declared ? { kind: 'triggers', triggers } : { kind: null };

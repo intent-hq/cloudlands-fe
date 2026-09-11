@@ -90,6 +90,36 @@ describe('readTriggerHeader', () => {
     ).toEqual(['scripts/x.test.ts']);
   });
 
+  it('glob-escapes the resolved directory of a relative glob entry', () => {
+    const testFile =
+      'src/routes/(app)/workspace/[id]/composables/__tests__/lifecycle-safe-selectors.test.ts';
+    const header = readTriggerHeader(
+      lines(`// ${TRIGGER_MARKER} ../*.ts, ../foo.ts, ../../WorkspaceSurface.svelte`),
+      testFile,
+    );
+    expect(header).toEqual({
+      kind: 'triggers',
+      triggers: [
+        'src/routes/[(]app[)]/workspace/[[]id[]]/composables/*.ts',
+        'src/routes/(app)/workspace/[id]/composables/foo.ts',
+        'src/routes/(app)/workspace/[id]/WorkspaceSurface.svelte',
+      ],
+    });
+    const suites = [{ path: testFile, triggers: header.triggers! }];
+    expect(
+      selectDeclaredSuites(suites, ['src/routes/(app)/workspace/[id]/composables/foo.ts']),
+    ).toEqual([testFile]);
+    expect(
+      selectDeclaredSuites(suites, ['src/routes/(app)/workspace/[id]/composables/bar.svelte.ts']),
+    ).toEqual([testFile]);
+    expect(
+      selectDeclaredSuites(suites, ['src/routes/(app)/workspace/creating/composables/unread.ts']),
+    ).toEqual([]);
+    expect(
+      selectDeclaredSuites(suites, ['src/routes/(app)/workspace/[id]/WorkspaceSurface.svelte']),
+    ).toEqual([testFile]);
+  });
+
   it('reads the exempt marker with its reason and ignores markers after the first token', () => {
     expect(
       readTriggerHeader(lines(`// ${EXEMPT_MARKER} reads only its temp dir`, 'const a = 1;')),
