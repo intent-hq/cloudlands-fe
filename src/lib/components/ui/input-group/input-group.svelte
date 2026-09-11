@@ -59,7 +59,7 @@
       <span
         data-slot="input-group-addon"
         data-side="leading"
-        class="flex h-[inherit] shrink-0 items-center border-r border-border px-2 text-muted-foreground transition-colors duration-(--spring-fast) has-[[data-slot=button]]:p-0 group-hover/input-group:text-foreground group-focus-within/input-group:text-foreground motion-reduce:transition-none"
+        class="flex h-full shrink-0 items-center border-r border-border px-2 leading-none text-muted-foreground transition-colors duration-(--spring-fast) has-[[data-slot=button]]:h-[inherit] has-[[data-slot=button]]:p-0 group-hover/input-group:text-foreground group-focus-within/input-group:text-foreground motion-reduce:transition-none"
       >
         {@render leading()}
       </span>
@@ -71,7 +71,7 @@
       <span
         data-slot="input-group-addon"
         data-side="trailing"
-        class="flex h-[inherit] shrink-0 items-center border-l border-border px-2 text-muted-foreground transition-colors duration-(--spring-fast) has-[[data-slot=button]]:p-0 group-hover/input-group:text-foreground group-focus-within/input-group:text-foreground motion-reduce:transition-none"
+        class="flex h-full shrink-0 items-center border-l border-border px-2 leading-none text-muted-foreground transition-colors duration-(--spring-fast) has-[[data-slot=button]]:h-[inherit] has-[[data-slot=button]]:p-0 group-hover/input-group:text-foreground group-focus-within/input-group:text-foreground motion-reduce:transition-none"
       >
         {@render trailing()}
       </span>
