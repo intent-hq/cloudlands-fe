@@ -123,6 +123,7 @@
   let triggerRef = $state.raw<HTMLButtonElement | null>(null);
   let portalContentRef = $state.raw<HTMLDivElement | null>(null);
   let portalStyle = $state('');
+  let openedWidth = $state<number | undefined>();
   let inlineContentRef = $state.raw<HTMLDivElement | null>(null);
   let inlineStyle = $state('');
   let inlineSide = $state<'top' | 'bottom'>('bottom');
@@ -283,6 +284,14 @@
     if (searchable) {
       inputRef?.focus();
     }
+  }
+
+  function pinOpenWidth(node: HTMLDivElement) {
+    // Measure the natural layout on each mount, before the entrance transform.
+    // Clearing the previous width also lets a reopened panel fit updated options.
+    node.style.removeProperty('width');
+    openedWidth = Math.max(node.offsetWidth, triggerRef?.offsetWidth ?? 0);
+    node.style.width = `${openedWidth}px`;
   }
 
   function resolveCollisionRect(): Pick<DOMRect, 'top' | 'right' | 'bottom' | 'left'> {
@@ -667,6 +676,8 @@
       <!-- svelte-ignore a11y_no_static_element_interactions (keyboard boundary for nested popup controls) -->
       <div
         bind:this={inlineContentRef}
+        use:pinOpenWidth
+        style:width={openedWidth === undefined ? undefined : `${openedWidth}px`}
         in:springIn={menuOverlayTransition.enter}
         out:crispOut={menuOverlayTransition.exit}
         class={cn(
@@ -693,6 +704,8 @@
     <!-- svelte-ignore a11y_no_static_element_interactions (keyboard boundary for nested popup controls) -->
     <div
       bind:this={portalContentRef}
+      use:pinOpenWidth
+      style:width={openedWidth === undefined ? undefined : `${openedWidth}px`}
       in:springIn={menuOverlayTransition.enter}
       out:crispOut={menuOverlayTransition.exit}
       class={cn(menuOverlay(), 'w-max flex flex-col', contentClass)}

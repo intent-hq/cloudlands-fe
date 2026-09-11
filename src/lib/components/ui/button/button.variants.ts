@@ -42,7 +42,7 @@ export const buttonVariants = tv({
       'ghost-light': 'text-muted-foreground hover:text-foreground',
       underline:
         'text-muted-foreground underline decoration-border underline-offset-3 hover:text-foreground',
-      plain: 'text-inherit !px-0 !py-0 font-inherit',
+      plain: 'text-inherit font-inherit',
       link: 'text-primary-ink underline-offset-4 hover:underline',
       neumorphic: 'border border-border text-foreground',
     },
@@ -62,6 +62,8 @@ export const buttonVariants = tv({
     leadingIcon: { true: 'pl-[var(--button-icon-padding)]' },
     trailingIcon: { true: 'pr-[var(--button-icon-padding)]' },
   },
+  // Apply after size padding, while still allowing caller utilities to override it.
+  compoundVariants: [{ variant: 'plain', class: 'px-0 py-0' }],
   defaultVariants: {
     variant: 'secondary',
     size: 'default',
