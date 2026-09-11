@@ -25,18 +25,20 @@
   }
 </script>
 
-<Button
-  type="button"
-  variant="outline"
-  size="sm"
-  class="disabled:pointer-events-auto"
-  disabled={opening}
-  aria-busy={opening}
-  onclick={login}
-  onkeydown={(event) => event.stopPropagation()}
->
-  {m.onboarding_providerCard_logIn_label()}
-</Button>
-{#if error}
-  <p role="alert" class="mt-2 text-xs text-danger">{error}</p>
-{/if}
+<div class="flex min-w-0 flex-col items-start gap-2">
+  <Button
+    type="button"
+    variant="default"
+    size="sm"
+    class="disabled:pointer-events-auto"
+    disabled={opening}
+    aria-busy={opening}
+    onclick={login}
+    onkeydown={(event) => event.stopPropagation()}
+  >
+    {m.onboarding_providerCard_logIn_label()}
+  </Button>
+  {#if error}
+    <p role="alert" class="text-xs text-foreground rounded-md bg-background px-2 py-1">{error}</p>
+  {/if}
+</div>
