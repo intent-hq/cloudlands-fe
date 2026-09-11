@@ -148,4 +148,36 @@ describe('NotesPanel active-agent row', () => {
       expect(avatar?.getAttribute('data-avatar-state')).toBe('question');
     });
   });
+
+  it.each([
+    {
+      label: 'dismissed',
+      metadata: {
+        pendingQuestionsMessageId: questionMessage.id,
+        dismissedQuestionsMessageId: questionMessage.id,
+      },
+    },
+    { label: 'cleared', metadata: { pendingQuestionsMessageId: '' } },
+  ])(
+    'keeps a running assigned agent visible as running once its question marker is $label',
+    async ({ metadata }) => {
+      const view = render(NotesPanel, { props: { notes: [taskNote()], workspaceId } });
+
+      expect(view.container.querySelector(avatarSelector)).toBeNull();
+
+      appStore.dispatch(
+        updateSession(agentId, {
+          status: AgentStatus.Active,
+          isResponding: true,
+          messages: [questionMessage],
+          metadata,
+        }),
+      );
+
+      await waitFor(() => {
+        const avatar = view.container.querySelector(avatarSelector);
+        expect(avatar?.getAttribute('data-avatar-state')).toBe('running');
+      });
+    },
+  );
 });
