@@ -4,7 +4,6 @@
   import Fa from 'svelte-fa';
 
   import { faSettings } from '$lib/icons/phosphor-icons';
-  import { cn } from '$lib/utils';
   import type { ProviderLoadError } from './model-picker-provider-errors';
   import { m } from '$shared/paraglide/messages.js';
   import { Button } from '$lib/components/ui/button';
@@ -27,7 +26,7 @@
 </script>
 
 <div
-  class="px-1 py-1"
+  class="px-1 py-1 text-left"
   in:springIn={{ tier: 'fast', y: 0, scale: 1 }}
   out:crispOut={{ tier: 'fast' }}
 >
@@ -43,11 +42,9 @@
         </div>
         <Button
           type="button"
-          variant="plain"
-          class={cn(
-            'type-caption mt-2 flex items-center gap-1.5 rounded-md px-2 py-1 font-medium',
-            'bg-muted hover:bg-muted/80 text-foreground transition-colors',
-          )}
+          variant="secondary"
+          size="sm"
+          class="mt-2"
           onclick={onOpenProviderSettings}
         >
           <Fa icon={faSettings} class="h-3 w-3" />
@@ -58,12 +55,12 @@
   {:else if isLoadingModels}
     {#each [4, 3] as itemCount, i}
       <div>
-        <div class="px-3 pt-3 pb-1 flex items-center gap-2">
+        <div class="px-3 pt-3 pb-1 flex items-start gap-2">
           <div class="size-3.5 rounded bg-muted/60 animate-pulse"></div>
           <div class="h-3 w-16 bg-muted/60 rounded animate-pulse"></div>
         </div>
         {#each Array.from(Array(itemCount), (_, i) => i) as j}
-          <div class="px-3 py-2 flex items-center gap-2">
+          <div class="px-3 py-2 flex items-start gap-2">
             <div class="flex-1 min-w-0">
               <div
                 class="h-3.5 rounded bg-muted/40 animate-pulse"
@@ -77,42 +74,26 @@
       </div>
     {/each}
   {:else if blockingLoadError}
-    <div class="flex flex-col items-center gap-2.5 py-4 px-3">
-      <div class="flex items-center gap-1.5 text-danger">
+    <div class="flex flex-col items-start gap-2.5 py-4 px-3 text-left">
+      <div class="flex items-start gap-1.5 text-danger">
         <Fa icon={faExclamationTriangle} class="h-3.5 w-3.5" />
         <span class="type-body font-medium">{m.chat_modelPicker_loadFailed_label()}</span>
       </div>
-      <div class="type-caption max-w-[280px] text-center leading-tight text-muted-foreground">
+      <div class="type-caption max-w-[280px] text-left leading-tight text-muted-foreground">
         <div>{blockingLoadError.displayText}</div>
         {#if blockingLoadError.hint}
           <div class="mt-1 text-subtle">{blockingLoadError.hint}</div>
         {/if}
       </div>
-      <Button
-        type="button"
-        variant="plain"
-        class={cn(
-          'type-caption flex items-center gap-1.5 rounded-md px-3 py-1.5 font-medium',
-          'bg-muted hover:bg-muted/80 text-foreground transition-colors',
-        )}
-        onclick={onRetry}
-      >
+      <Button type="button" variant="secondary" size="sm" onclick={onRetry}>
         <Fa icon={faArrowsRotate} class="h-3 w-3" />
         {m.chat_modelPicker_retry_label()}
       </Button>
     </div>
   {:else}
-    <div class="flex flex-col items-center gap-2.5 py-4 px-3 text-muted-foreground">
+    <div class="flex flex-col items-start gap-2.5 py-4 px-3 text-left text-muted-foreground">
       <span class="type-body">{m.chat_modelPicker_noModels_label()}</span>
-      <Button
-        type="button"
-        variant="plain"
-        class={cn(
-          'type-caption flex items-center gap-1.5 rounded-md px-3 py-1.5 font-medium',
-          'bg-muted hover:bg-muted/80 text-foreground transition-colors',
-        )}
-        onclick={onRetry}
-      >
+      <Button type="button" variant="secondary" size="sm" onclick={onRetry}>
         <Fa icon={faArrowsRotate} class="h-3 w-3" />
         {m.chat_modelPicker_retry_label()}
       </Button>

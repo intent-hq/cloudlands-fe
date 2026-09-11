@@ -674,8 +674,7 @@ describe('ModelPicker combined reasoning mode', () => {
     const popover = listbox.closest('[data-slot="dropdown-content"]') as HTMLElement;
     expect(popover).toBeTruthy();
     expect(popover.className).toContain('bg-background!');
-    expect(popover.className).toContain('[&_[role=searchbox]]:border-b!');
-    expect(popover.className).toContain('[&_[role=searchbox]]:border-solid!');
+    expect(popover.contains(screen.getByRole('searchbox', { name: 'Search options' }))).toBe(true);
     const modelOption = await screen.findByRole('option', { name: /GPT-5\.6-Sol/ });
     expect(modelOption.textContent).toContain('Codex model');
     expect(modelOption.textContent).not.toContain('Effort:');

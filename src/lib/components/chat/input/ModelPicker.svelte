@@ -98,6 +98,7 @@
   import { notify } from '$lib/components/patterns/notify';
   import { m } from '$shared/paraglide/messages.js';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
+  import { OPTION_LIST_END_SLOT_CLASS } from '$lib/styles/option-list-row';
   import {
     faArrowsRotate,
     faCheck,
@@ -1904,7 +1905,6 @@
     )}
     contentClass={cn(
       'max-w-[calc(100vw-32px)] bg-background! text-foreground!',
-      '[&_[role=searchbox]]:border-b! [&_[role=searchbox]]:border-solid! [&_[role=searchbox]]:border-border!',
       showReasoning ? 'w-85 h-90 min-h-0 max-h-90 flex flex-col' : 'w-[332px]',
     )}
     contentMaxHeight={showReasoning ? 360 : undefined}
@@ -1976,7 +1976,7 @@
           {#each providerTabIds as providerTabId (providerTabId)}
             <Button
               variant="ghost"
-              size="icon"
+              size="icon-xs"
               iconOnly={true}
               role="tab"
               aria-selected={providerTabId === activeBrowseProviderId}
@@ -1994,7 +1994,7 @@
           {/each}
           <Button
             variant="ghost"
-            size="icon"
+            size="icon-xs"
             iconOnly={true}
             aria-label={m.chat_modelPicker_noProviderAvailable_openSettings_label()}
             class="text-muted-foreground hover:bg-muted/40"
@@ -2005,7 +2005,7 @@
           </Button>
           <Button
             variant="ghost"
-            size="xs"
+            size="icon-xs"
             iconOnly={true}
             title={m.chat_modelPicker_refreshGroup_title({
               group: providerDisplayName(activeBrowseProviderId),
@@ -2065,26 +2065,25 @@
           />
         {:else}
           <div class="flex-1 min-w-0">
-            <div class="flex items-baseline justify-between gap-2">
-              <span
-                class={cn(
-                  'truncate text-sm font-medium',
-                  option.value === USE_DEFAULT_VALUE && 'italic text-muted-foreground',
-                  selected && 'font-medium',
-                )}
-              >
-                {option.label}
-              </span>
-              {#if selected}
-                <Fa icon={faCheck} class="text-xs text-primary-ink shrink-0" />
-              {/if}
-            </div>
+            <span
+              class={cn(
+                'block truncate text-sm font-medium',
+                option.value === USE_DEFAULT_VALUE && 'text-muted-foreground',
+              )}
+            >
+              {option.label}
+            </span>
             {#if option.description}
               <div class="text-xs text-subtle truncate mt-0.5" title={option.description}>
                 {option.description}
               </div>
             {/if}
           </div>
+          {#if selected}
+            <span class={OPTION_LIST_END_SLOT_CLASS}>
+              <Fa icon={faCheck} class="text-xs text-primary-ink shrink-0" />
+            </span>
+          {/if}
         {/if}
       </div>
     {/snippet}
