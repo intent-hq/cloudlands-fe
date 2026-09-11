@@ -1,4 +1,7 @@
-// @verify-changed-triggers: ../*TabType.svelte, ../*ViewSettingsDropdown.svelte
+// @verify-changed-triggers: ../FileTabType.svelte, ../DiffTabType.svelte, ../ActivityChangesTabType.svelte,
+//   ../LocalChangesTabType.svelte, ../ChangesTabType.svelte, ../NoteTabType.svelte, ../AgentTabType.svelte,
+//   ../BrowserTabType.svelte, ../TerminalTabType.svelte, ../NoteViewSettingsDropdown.svelte,
+//   ../AgentViewSettingsDropdown.svelte
 
 import { readFileSync } from 'fs';
 import { join } from 'path';
