@@ -21,6 +21,12 @@
   import type { CatalogRendererProps } from '../catalog-renderers';
 
   let { fixture }: CatalogRendererProps = $props();
+  let tooltipOpen = $state([true, true, true]);
+
+  function keepTooltipOpen(index: number, open: boolean) {
+    if (!open) requestAnimationFrame(() => (tooltipOpen[index] = true));
+  }
+
   let tooltipTargets = $state<(HTMLDivElement | undefined)[]>([]);
   const options = [
     { value: 'ada', label: 'Ada Lovelace' },
@@ -215,7 +221,7 @@
     <h3 class="type-caption font-medium text-muted-foreground">Tooltip — short</h3>
     <div bind:this={tooltipTargets[0]} class="pb-20">
       <Tooltip.Provider delayDuration={0}>
-        <Tooltip.Root open>
+        <Tooltip.Root bind:open={tooltipOpen[0]} onOpenChange={(open) => keepTooltipOpen(0, open)}>
           <Tooltip.Trigger>
             {#snippet child({ props })}
               <Button {...props} variant="outline" size="sm">Settings</Button>
@@ -239,7 +245,7 @@
     <h3 class="type-caption font-medium text-muted-foreground">Tooltip — multi-line</h3>
     <div bind:this={tooltipTargets[1]} class="pb-20">
       <Tooltip.Provider delayDuration={0}>
-        <Tooltip.Root open>
+        <Tooltip.Root bind:open={tooltipOpen[1]} onOpenChange={(open) => keepTooltipOpen(1, open)}>
           <Tooltip.Trigger>
             {#snippet child({ props })}
               <Button {...props} variant="outline" size="sm">Update workspaces</Button>
@@ -263,7 +269,7 @@
     <h3 class="type-caption font-medium text-muted-foreground">Tooltip — keyboard shortcut</h3>
     <div bind:this={tooltipTargets[2]} class="pb-20">
       <Tooltip.Provider delayDuration={0}>
-        <Tooltip.Root open>
+        <Tooltip.Root bind:open={tooltipOpen[2]} onOpenChange={(open) => keepTooltipOpen(2, open)}>
           <Tooltip.Trigger>
             {#snippet child({ props })}
               <Button {...props} variant="outline" size="sm">Command menu</Button>
