@@ -10,11 +10,13 @@ import unusedImports from 'eslint-plugin-unused-imports';
 import { svelte as themisFullConfig } from '@augmentcode/themis/eslint-plugins';
 import noProductionDynamicImportRule from './eslint-rules/no-production-dynamic-import.js';
 import noComponentAsyncDataFetchRule from './eslint-rules/no-component-async-data-fetch.js';
+import noColdSvelteImportInTestsRule from './eslint-rules/no-cold-svelte-import-in-tests.js';
 
 const intentPlugin = {
   rules: {
     'no-component-async-data-fetch': noComponentAsyncDataFetchRule,
     'no-production-dynamic-import': noProductionDynamicImportRule,
+    'no-cold-svelte-import-in-tests': noColdSvelteImportInTestsRule,
   },
 };
 
@@ -524,6 +526,19 @@ export default [
     },
     rules: {
       'intent/no-production-dynamic-import': 'error',
+    },
+  },
+  // A dynamic `.svelte` import inside a test body bills the component's whole
+  // cold module-graph transform to the first test's timeout, producing
+  // load-dependent timeout flakes (intent-hq/intent#1464). Warm the specifier
+  // at module scope (warmImport / static import) so test bodies hit the cache.
+  {
+    files: ['**/*.{test,spec}.{js,ts}'],
+    plugins: {
+      intent: intentPlugin,
+    },
+    rules: {
+      'intent/no-cold-svelte-import-in-tests': 'error',
     },
   },
   // Ban synchronous child_process calls in Electron main process code.

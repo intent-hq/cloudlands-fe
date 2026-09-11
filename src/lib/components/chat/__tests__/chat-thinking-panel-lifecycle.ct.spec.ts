@@ -57,13 +57,12 @@ test('keeps concurrent panels independent and preserves lifecycle presentation',
     await expect(mark).toHaveAttribute('data-variant', 'twist');
     await expect(mark).toHaveAttribute('data-motion-state', 'playing');
     expect(
-      await mark.evaluate(
-        (node) =>
-          node
-            .getAnimations({ subtree: true })
-            .filter((animation) => animation.effect?.getTiming().iterations === Infinity).length,
+      await mark.evaluate((node) =>
+        Array.from(node.querySelectorAll<SVGPathElement>('[data-mark-arm]')).map(
+          (arm) => arm.style.transform !== '',
+        ),
       ),
-    ).toBe(5);
+    ).toEqual([true, true, true, true, true]);
   }
 
   const firstRow = component.locator('[data-streaming-typing-row]').first();

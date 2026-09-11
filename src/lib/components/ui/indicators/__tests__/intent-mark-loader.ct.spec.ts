@@ -1,24 +1,114 @@
 import { expect, test } from '@playwright/experimental-ct-svelte';
-import type { Locator } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 import { readFile, writeFile } from 'node:fs/promises';
 import IntentMarkLoaderHost from './IntentMarkLoaderHost.svelte';
 
 test.setTimeout(120_000);
 
+interface ClockWindow extends Window {
+  markClock: {
+    now: number;
+    callbacks: Map<number, FrameRequestCallback>;
+    origins: WeakMap<Element, number>;
+  };
+}
+
+// Control only the browser clock inputs; the real production frame clock and
+// pose driver still run. Timers/WAAPI remain real for the bounded crossfade.
+// No expected geometry is assigned to the DOM and no production test hook exists.
+async function controlClock(page: Page) {
+  await page.evaluate(() => {
+    const clock: ClockWindow['markClock'] = {
+      now: 0,
+      callbacks: new Map(),
+      origins: new WeakMap(),
+    };
+    (window as unknown as ClockWindow).markClock = clock;
+    let id = 0;
+    performance.now = () => clock.now;
+    window.requestAnimationFrame = (callback) => {
+      clock.callbacks.set(++id, callback);
+      return id;
+    };
+    window.cancelAnimationFrame = (id) => {
+      clock.callbacks.delete(id);
+    };
+  });
+}
+
 async function seekLoop(root: Locator, time: number) {
-  return root.evaluate((node, currentTime) => {
-    const animations = node
-      .getAnimations({ subtree: true })
-      .filter((item) => item.effect?.getTiming().iterations === Infinity);
-    for (const animation of animations) {
-      animation.pause();
-      animation.currentTime = currentTime;
-    }
-    return animations[0].effect!.getTiming().duration;
+  await root.evaluate((node, elapsed) => {
+    const clock = (window as unknown as ClockWindow).markClock;
+    const layer = node.querySelector('[data-mark-layer]')!;
+    if (!clock.origins.has(layer))
+      clock.origins.set(layer, Math.floor(clock.now / (1000 / 30)) * (1000 / 30));
+    clock.now = clock.origins.get(layer)! + elapsed + 1e-6;
+    const due = [...clock.callbacks.values()];
+    clock.callbacks.clear();
+    due.forEach((callback) => callback(clock.now));
   }, time);
 }
 
-test('keeps one root and five vector strokes through every directed handoff', async ({ mount }) => {
+async function transitionStartAt(root: Locator) {
+  const sample = await root.evaluate((node) => {
+    const animations = node
+      .getAnimations({ subtree: true })
+      .filter((animation) => animation.effect?.getTiming().duration === 160);
+    animations.forEach((animation) => {
+      animation.pause();
+      animation.currentTime = 0;
+    });
+    const path = node.querySelector<SVGPathElement>('[data-mark-arm]')!;
+    const point = path.getPointAtLength(0);
+    const screenPoint = new DOMPoint(point.x, point.y).matrixTransform(path.getScreenCTM()!);
+    return { animationCount: animations.length, x: screenPoint.x, y: screenPoint.y };
+  });
+  expect(sample.animationCount).toBe(2);
+  return sample;
+}
+
+async function drivenArms(root: Locator) {
+  return root.evaluate((node) =>
+    Array.from(node.querySelectorAll<SVGPathElement>('[data-mark-arm]')).map((arm) => ({
+      transform: arm.style.transform,
+      willChange: arm.style.willChange,
+    })),
+  );
+}
+
+async function loopAnimationCount(root: Locator) {
+  return root.evaluate(
+    (node) =>
+      node
+        .getAnimations({ subtree: true })
+        .filter((animation) => animation.effect?.getTiming().iterations === Infinity).length,
+  );
+}
+
+/** Counts pose writes to the first arm over `windowMs`. */
+async function poseWritesOver(root: Locator, windowMs: number) {
+  return root.evaluate(
+    (node, duration) =>
+      new Promise<number>((resolve) => {
+        const arm = node.querySelector<SVGPathElement>('[data-mark-arm]')!;
+        let writes = 0;
+        let last = arm.style.cssText;
+        const observer = new MutationObserver(() => {
+          if (arm.style.cssText === last) return;
+          last = arm.style.cssText;
+          writes += 1;
+        });
+        observer.observe(arm, { attributes: true, attributeFilter: ['style'] });
+        window.setTimeout(() => {
+          observer.disconnect();
+          resolve(writes);
+        }, duration);
+      }),
+    windowMs,
+  );
+}
+
+test('keeps one root and five driven arms through every directed handoff', async ({ mount }) => {
   const component = await mount(IntentMarkLoaderHost, {
     props: { variant: 'bloom', size: 128, playing: true },
   });
@@ -40,26 +130,11 @@ test('keeps one root and five vector strokes through every directed handoff', as
     await expect(root).toHaveAttribute('data-motion-state', 'playing');
     await component.update({ props: { variant: to, size: 128, playing: true } });
     await expect(root).toHaveAttribute('data-motion-state', 'playing');
-    const loops = await root.evaluate((node) =>
-      node
-        .getAnimations({ subtree: true })
-        .filter((animation) => animation.effect?.getTiming().iterations === Infinity)
-        .map((animation) => ({
-          playState: animation.playState,
-          targetTag: (animation.effect as KeyframeEffect).target?.tagName,
-        })),
-    );
-    expect(loops).toHaveLength(5);
-    expect(loops.every(({ playState }) => playState === 'running')).toBe(true);
-    expect(loops.every(({ targetTag }) => targetTag === 'path')).toBe(true);
-    expect(
-      await root.evaluate(
-        (node) =>
-          node
-            .getAnimations({ subtree: true })
-            .filter((animation) => animation.effect?.getTiming().iterations === Infinity).length,
-      ),
-    ).toBe(5);
+    const arms = await drivenArms(root);
+    expect(arms).toHaveLength(5);
+    expect(arms.every(({ transform }) => transform !== '')).toBe(true);
+    expect(arms.every(({ willChange }) => willChange === '')).toBe(true);
+    expect(await loopAnimationCount(root)).toBe(0);
   }
 
   expect(
@@ -69,10 +144,51 @@ test('keeps one root and five vector strokes through every directed handoff', as
   ).toBe(true);
 });
 
+for (const variant of ['twist', 'bloom'] as const) {
+  for (const handoff of ['morph', 'settle'] as const) {
+    test(`keeps the ${variant} screen pose continuous at ${handoff} time zero`, async ({
+      mount,
+      page,
+    }) => {
+      await controlClock(page);
+      const component = await mount(IntentMarkLoaderHost, {
+        props: { variant, size: 256, playing: true },
+      });
+      const root = component.getByRole('status', { name: 'Loading' });
+      await expect(root).toHaveAttribute('data-motion-state', 'playing');
+      await seekLoop(root, 600);
+      const before = await root
+        .locator('[data-mark-arm]')
+        .first()
+        .evaluate((path) => {
+          const svgPath = path as SVGPathElement;
+          const point = svgPath.getPointAtLength(0);
+          const screen = new DOMPoint(point.x, point.y).matrixTransform(svgPath.getScreenCTM()!);
+          return { x: screen.x, y: screen.y };
+        });
+
+      await component.update({
+        props: {
+          variant: handoff === 'morph' ? 'pulse' : variant,
+          size: 256,
+          playing: handoff === 'morph',
+        },
+      });
+      await expect(root).toHaveAttribute(
+        'data-motion-state',
+        handoff === 'morph' ? 'morphing' : 'settling',
+      );
+      const after = await transitionStartAt(root);
+      expect(Math.hypot(after.x - before.x, after.y - before.y)).toBeLessThanOrEqual(0.5);
+    });
+  }
+}
+
 test('freezes the filled Twist pose during a theme change in a handoff', async ({
   mount,
   page,
 }) => {
+  await controlClock(page);
   const component = await mount(IntentMarkLoaderHost, {
     props: { variant: 'twist', playing: true },
   });
@@ -140,7 +256,9 @@ test('freezes the filled Twist pose during a theme change in a handoff', async (
 
 test('resolves currentColor again when replaying cached Twist frames in another theme', async ({
   mount,
+  page,
 }) => {
+  await controlClock(page);
   const component = await mount(IntentMarkLoaderHost, {
     props: { variant: 'twist', playing: true, theme: 'light' },
   });
@@ -172,6 +290,7 @@ for (const variant of ['pulse', 'bloom', 'twist'] as const) {
     mount,
     page,
   }, testInfo) => {
+    await controlClock(page);
     const gif = await readFile(
       new URL(`../../../../../../test/fixtures/intent-mark/${variant}.gif`, import.meta.url),
     );
@@ -216,7 +335,7 @@ for (const variant of ['pulse', 'bloom', 'twist'] as const) {
     expect(new Set(metadata.durations)).toEqual(new Set([40_000]));
     expect(metadata.count).toBe(variant === 'twist' ? 92 : 51);
     const duration = ((variant === 'twist' ? 110 : 61) * 1000) / 30;
-    expect(await seekLoop(root, 0)).toBe(duration);
+    await seekLoop(root, 0);
     const measurements: {
       frame: number;
       mean: number;
@@ -311,7 +430,7 @@ for (const variant of ['pulse', 'bloom', 'twist'] as const) {
     };
     for (let index = 0; index < metadata.count; index++) {
       // The 25fps reference samples its 30fps source with floor(frame * 6/5).
-      // Native SVG motion remains continuous between those reference samples.
+      // Seek the clock, not styles: the production driver writes the source slot.
       await seekLoop(root, (Math.floor((index * 6) / 5) * 1000) / 30);
       await compareFrame(
         index,
@@ -377,10 +496,11 @@ for (const variant of ['pulse', 'bloom', 'twist'] as const) {
 }
 
 for (const variant of ['pulse', 'bloom', 'twist'] as const) {
-  test(`interpolates ${variant} vectors between reference frames without image or media requests`, async ({
+  test(`holds ${variant} vectors within a clock slot and advances without image or media requests`, async ({
     mount,
     page,
   }) => {
+    await controlClock(page);
     const assetRequests: string[] = [];
     page.on('request', (request) => {
       if (['image', 'media'].includes(request.resourceType())) assetRequests.push(request.url());
@@ -391,7 +511,7 @@ for (const variant of ['pulse', 'bloom', 'twist'] as const) {
     const root = component.getByRole('status');
     await expect(root).toHaveAttribute('data-motion-state', 'playing');
     const poses = [];
-    for (const time of [500, 510, 520]) {
+    for (const time of [500, 510, 520, 540]) {
       await seekLoop(root, time);
       poses.push(
         await root
@@ -403,7 +523,8 @@ for (const variant of ['pulse', 'bloom', 'twist'] as const) {
           }),
       );
     }
-    expect(new Set(poses).size).toBe(3);
+    expect(new Set(poses.slice(0, 3)).size).toBe(1);
+    expect(poses[3]).not.toBe(poses[0]);
     expect(assetRequests).toEqual([]);
   });
 }
@@ -431,6 +552,44 @@ for (const theme of ['light', 'dark'] as const) {
     });
   }
 }
+
+test('does no continuous work while the window is blurred', async ({ mount, page }) => {
+  await page.evaluate(() => document.documentElement.setAttribute('data-window-blurred', ''));
+  const component = await mount(IntentMarkLoaderHost, {
+    props: { variant: 'bloom', size: 128, playing: true },
+  });
+  const root = component.getByRole('status', { name: 'Loading' });
+  await expect(root).toHaveAttribute('data-motion-state', 'neutral');
+  expect(await root.evaluate((node) => node.getAnimations({ subtree: true }).length)).toBe(0);
+  const neutral = await drivenArms(root);
+
+  await page.evaluate(() => document.documentElement.removeAttribute('data-window-blurred'));
+  await expect(root).toHaveAttribute('data-motion-state', 'playing');
+  expect((await drivenArms(root)).every(({ transform }) => transform !== '')).toBe(true);
+  expect(await poseWritesOver(root, 500)).toBeGreaterThan(0);
+
+  await page.evaluate(() => document.documentElement.setAttribute('data-window-blurred', ''));
+  await expect(root).toHaveAttribute('data-motion-state', 'neutral');
+  expect(await root.evaluate((node) => node.getAnimations({ subtree: true }).length)).toBe(0);
+  expect(await poseWritesOver(root, 500)).toBe(0);
+  expect(await drivenArms(root)).toEqual(neutral);
+});
+
+test('changes the Bloom pose at most 30 times per second and no compositor layer is promoted', async ({
+  mount,
+}) => {
+  const component = await mount(IntentMarkLoaderHost, {
+    props: { variant: 'bloom', size: 128, playing: true },
+  });
+  const root = component.getByRole('status', { name: 'Loading' });
+  await expect(root).toHaveAttribute('data-motion-state', 'playing');
+  expect(await loopAnimationCount(root)).toBe(0);
+  expect((await drivenArms(root)).every(({ willChange }) => willChange === '')).toBe(true);
+
+  const writes = await poseWritesOver(root, 2_000);
+  expect(writes).toBeLessThanOrEqual(62);
+  expect(writes).toBeGreaterThanOrEqual(50);
+});
 
 test('does no continuous work for reduced motion or a hidden document', async ({ mount, page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });

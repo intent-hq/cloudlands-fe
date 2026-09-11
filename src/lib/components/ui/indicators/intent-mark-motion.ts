@@ -1,8 +1,6 @@
-import {
-  intentMarkKeyframes,
-  intentMarkMotionTiming,
-  type IntentMarkVariant,
-} from './intent-mark-vector';
+import { currentFrameTime, subscribeFrameClock } from '$lib/utils/frame-clock';
+import { intentMarkPoses } from './intent-mark-poses';
+import { intentMarkMotionTiming, type IntentMarkVariant } from './intent-mark-vector';
 export {
   intentMarkMotionTiming,
   intentMarkVariants,
@@ -31,12 +29,13 @@ export function createIntentMarkMotion(
   // Avoid building invisible loops before the observer's first notification.
   let inViewport = typeof IntersectionObserver === 'undefined';
   let visible = !document.hidden;
+  let windowFocused = !document.documentElement.hasAttribute('data-window-blurred');
   let destroyed = false;
   let sequence = 0;
   let current = neutral;
   let outgoing: SVGGElement | undefined;
-  let loops: Animation[] = [];
   let fades: Animation[] = [];
+  let stopLoop: (() => void) | undefined;
   let activeVariant: IntentMarkVariant | undefined;
   let transitionTimer: number | undefined;
   let transitioning = false;
@@ -45,8 +44,8 @@ export function createIntentMarkMotion(
   const cancelAnimations = () => {
     if (transitionTimer !== undefined) window.clearTimeout(transitionTimer);
     transitionTimer = undefined;
-    for (const animation of loops) animation.cancel();
-    loops = [];
+    stopLoop?.();
+    stopLoop = undefined;
     for (const animation of fades) animation.cancel();
     fades = [];
     current.style.willChange = '';
@@ -66,19 +65,31 @@ export function createIntentMarkMotion(
     root.dataset.motionState = 'neutral';
   };
 
-  const canPlay = () => options.playing && inViewport && visible && !media.matches && !destroyed;
+  const mustRest = () => media.matches || !inViewport || !visible || !windowFocused || destroyed;
+  const canPlay = () => options.playing && !mustRest();
 
   const startLoop = (variant: IntentMarkVariant) => {
-    loops = Array.from(current.querySelectorAll<SVGPathElement>('[data-mark-arm]')).map(
-      (path, index) =>
-        // WAAPI takes a mutable array but copies its input. Copy only the array
-        // of references; immutable keyframe objects are shared across all marks.
-        path.animate(intentMarkKeyframes(variant, index).slice(), {
-          duration: intentMarkMotionTiming[`${variant}Ms`],
-          easing: 'linear',
-          iterations: Infinity,
-        }),
-    );
+    const paths = Array.from(current.querySelectorAll<SVGPathElement>('[data-mark-arm]'));
+    const poses = paths.map((_, index) => intentMarkPoses(variant, index));
+    const origin = currentFrameTime();
+    let previousFrame = 0;
+    const writePose = (time: number) => {
+      const frame = Math.round(((time - origin) * 30) / 1000) % poses[0].length;
+      if (frame === previousFrame) return;
+      paths.forEach((path, index) => {
+        const pose = poses[index][frame];
+        const previous = poses[index][previousFrame];
+        // Compare cached strings, not CSSOM serialization; identical holds and
+        // unchanging properties cause no DOM mutations or style reads.
+        for (const property in pose) {
+          if (pose[property] !== previous[property])
+            Object.assign(path.style, { [property]: pose[property] });
+        }
+      });
+      previousFrame = frame;
+    };
+    // The incoming layer already holds frame zero throughout its crossfade.
+    stopLoop = subscribeFrameClock(writePose);
     root.dataset.motionState = 'playing';
   };
 
@@ -119,12 +130,7 @@ export function createIntentMarkMotion(
     if (variant) {
       current.dataset.markLayer = variant;
       current.querySelectorAll<SVGPathElement>('[data-mark-arm]').forEach((path, index) => {
-        const {
-          offset: _offset,
-          easing: _easing,
-          ...pose
-        } = intentMarkKeyframes(variant, index)[0];
-        Object.assign(path.style, pose);
+        Object.assign(path.style, intentMarkPoses(variant, index)[0]);
       });
     }
     root.append(current);
@@ -156,7 +162,7 @@ export function createIntentMarkMotion(
   const reconcile = () => {
     if (destroyed) return;
     if (!canPlay()) {
-      if (media.matches || !inViewport || !visible) {
+      if (mustRest()) {
         setNeutral();
         return;
       }
@@ -165,20 +171,19 @@ export function createIntentMarkMotion(
     }
     if (activeVariant === options.variant) {
       if (transitioning) return;
-      if (
-        loops.length === 5 &&
-        loops.every(
-          (loop) =>
-            ['running', 'paused'].includes(loop.playState) && loop.replaceState !== 'removed',
-        )
-      )
-        return;
+      if (stopLoop) return;
     }
     transitionTo(options.variant);
   };
 
   const handleVisibility = () => {
     visible = !document.hidden;
+    reconcile();
+  };
+  const handleWindowFocusChange = () => {
+    const focused = !document.documentElement.hasAttribute('data-window-blurred');
+    if (focused === windowFocused) return;
+    windowFocused = focused;
     reconcile();
   };
   const handleMotionPreference = () => reconcile();
@@ -189,8 +194,13 @@ export function createIntentMarkMotion(
           inViewport = entry?.isIntersecting ?? true;
           reconcile();
         });
+  const windowFocusObserver = new MutationObserver(handleWindowFocusChange);
 
   observer?.observe(root);
+  windowFocusObserver.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ['data-window-blurred'],
+  });
   document.addEventListener('visibilitychange', handleVisibility);
   media.addEventListener('change', handleMotionPreference);
   reconcile();
@@ -206,6 +216,7 @@ export function createIntentMarkMotion(
       cancelAnimations();
       outgoing?.remove();
       observer?.disconnect();
+      windowFocusObserver.disconnect();
       document.removeEventListener('visibilitychange', handleVisibility);
       media.removeEventListener('change', handleMotionPreference);
       root.dataset.motionState = 'destroyed';

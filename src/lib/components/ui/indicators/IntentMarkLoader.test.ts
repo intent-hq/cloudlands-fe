@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as indicatorsApi from './index';
 import IntentMarkLoader from './IntentMarkLoader.svelte';
 import { intentMarkMotionTiming, intentMarkVariants } from './intent-mark-motion';
+import { intentMarkPoses } from './intent-mark-poses';
 import { spinnerMetadata } from './spinner.meta';
 
 interface AnimationRecord {
@@ -18,17 +19,60 @@ interface AnimationRecord {
 
 const records: AnimationRecord[] = [];
 const intersectionCallbacks: IntersectionObserverCallback[] = [];
+const frameCallbacks = new Map<number, FrameRequestCallback>();
+let frameId = 0;
+let nowMs = 0;
 let reducedMotion = false;
 let initiallyIntersecting: boolean | undefined = true;
 let mediaChange: (() => void) | undefined;
 
+const frameStepMs = 1000 / 60;
+
+function advanceFrames(count: number, stepMs = frameStepMs): void {
+  for (let frame = 0; frame < count; frame += 1) {
+    nowMs += stepMs;
+    const due = [...frameCallbacks.values()];
+    frameCallbacks.clear();
+    due.forEach((callback) => callback(nowMs));
+  }
+}
+
+function armTransforms(root: Element): string[] {
+  return Array.from(root.querySelectorAll<SVGPathElement>('[data-mark-arm]')).map(
+    (arm) => arm.style.cssText,
+  );
+}
+
+function isDriven(root: Element): boolean {
+  const transforms = armTransforms(root);
+  return root.getAttribute('data-motion-state') === 'playing' && transforms.length === 5;
+}
+
 beforeEach(() => {
   records.length = 0;
   intersectionCallbacks.length = 0;
+  frameCallbacks.clear();
+  frameId = 0;
+  // Advance monotonically between tests and off the 30 fps slot boundaries,
+  // as real frame timestamps are.
+  nowMs += 10_007;
   reducedMotion = false;
   initiallyIntersecting = true;
   mediaChange = undefined;
   Object.defineProperty(document, 'hidden', { configurable: true, value: false });
+  vi.spyOn(performance, 'now').mockImplementation(() => nowMs);
+  vi.stubGlobal(
+    'requestAnimationFrame',
+    vi.fn((callback: FrameRequestCallback) => {
+      frameId += 1;
+      frameCallbacks.set(frameId, callback);
+      return frameId;
+    }),
+  );
+  vi.stubGlobal(
+    'cancelAnimationFrame',
+    vi.fn((id: number) => frameCallbacks.delete(id)),
+  );
   Element.prototype.animate = vi.fn(function (this: Element, frames, options) {
     let playState: AnimationPlayState = 'running';
     let currentTime: number | null = 0;
@@ -96,6 +140,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  document.documentElement.removeAttribute('data-window-blurred');
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
@@ -117,6 +162,61 @@ function liveLoops(root: Element): AnimationRecord[] {
 }
 
 describe('IntentMarkLoader', () => {
+  it('reads the entire outgoing pose before the first freeze write', async () => {
+    const view = render(IntentMarkLoader, { props: { variant: 'twist', playing: true } });
+    completeTransition();
+    advanceFrames(40);
+    const events: string[] = [];
+    const read = window.getComputedStyle;
+    const write = CSSStyleDeclaration.prototype.setProperty;
+    vi.spyOn(window, 'getComputedStyle').mockImplementation((...args) => {
+      events.push('read');
+      return read(...args);
+    });
+    vi.spyOn(CSSStyleDeclaration.prototype, 'setProperty').mockImplementation(function (...args) {
+      events.push('write');
+      return write.apply(this, args);
+    });
+    await view.rerender({ variant: 'pulse', playing: true });
+    expect(events.filter((event) => event === 'read')).toHaveLength(6);
+    expect(events.indexOf('write')).toBeGreaterThan(events.lastIndexOf('read'));
+  });
+
+  it('finishes a handoff by timeout and never revives a destroyed driver', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const view = render(IntentMarkLoader, { props: { variant: 'pulse', playing: true } });
+      const root = view.getByRole('status');
+      const stale = records[0];
+      vi.advanceTimersByTime(intentMarkMotionTiming.settleMs);
+      expect(isDriven(root)).toBe(true);
+      expect(frameCallbacks.size).toBe(1);
+      await view.rerender({ variant: 'twist', playing: true });
+      view.unmount();
+      vi.runAllTimers();
+      stale.finish();
+      expect(root.getAttribute('data-motion-state')).toBe('destroyed');
+      expect(frameCallbacks.size).toBe(0);
+      expect(records.every(({ cancel }) => cancel.mock.calls.length > 0)).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not rewrite a held Twist pose on subsequent clock slots', async () => {
+    const view = render(IntentMarkLoader, { props: { variant: 'twist', playing: true } });
+    const root = view.getByRole('status');
+    completeTransition();
+    advanceFrames(96, 1000 / 30);
+    const onMutation = vi.fn();
+    const observer = new MutationObserver(onMutation);
+    observer.observe(root, { attributes: true, subtree: true, attributeFilter: ['style'] });
+    advanceFrames(10, 1000 / 30);
+    await Promise.resolve();
+    observer.disconnect();
+    expect(onMutation).not.toHaveBeenCalled();
+  });
+
   it('defers all animation setup until the first visible observation', async () => {
     initiallyIntersecting = undefined;
     const readStyle = vi.spyOn(window, 'getComputedStyle');
@@ -137,7 +237,7 @@ describe('IntentMarkLoader', () => {
     expect(root.firstElementChild).toBe(originalLayer);
     intersect(true);
     completeTransition();
-    expect(liveLoops(root)).toHaveLength(5);
+    expect(isDriven(root)).toBe(true);
     expect(root.querySelector<SVGGElement>('[data-mark-layer]')?.dataset.markLayer).toBe('twist');
   });
 
@@ -145,7 +245,7 @@ describe('IntentMarkLoader', () => {
     vi.stubGlobal('IntersectionObserver', undefined);
     const view = render(IntentMarkLoader, { props: { variant: 'pulse', playing: true } });
     completeTransition();
-    expect(liveLoops(view.container)).toHaveLength(5);
+    expect(isDriven(view.getByRole('status'))).toBe(true);
   });
 
   it('leaves the neutral DOM alone during repeated hidden and reduced-motion updates', async () => {
@@ -176,22 +276,28 @@ describe('IntentMarkLoader', () => {
   });
 
   it.each(['pulse', 'bloom', 'twist'] as const)(
-    'shares immutable %s frame data without sharing animation lifetimes',
+    'shares immutable %s poses without sharing driver lifetimes',
     (variant) => {
       const first = render(IntentMarkLoader, { props: { variant, playing: true } });
       completeTransition();
-      const firstLoops = liveLoops(first.container);
+      const firstRoot = first.getByRole('status');
+      const poses = Array.from({ length: 5 }, (_, arm) => intentMarkPoses(variant, arm));
       const second = render(IntentMarkLoader, { props: { variant, playing: true } });
       completeTransition();
-      const secondLoops = liveLoops(second.container);
-      for (let arm = 0; arm < firstLoops.length; arm++) {
-        expect(firstLoops[arm].frames[0]).toBe(secondLoops[arm].frames[0]);
-        expect(Reflect.set(firstLoops[arm].frames[0], 'opacity', 0.123)).toBe(false);
+      const secondRoot = second.container.querySelector('[data-slot="intent-mark-loader"]')!;
+      for (let arm = 0; arm < poses.length; arm++) {
+        expect(intentMarkPoses(variant, arm)).toBe(poses[arm]);
+        expect(Reflect.set(poses[arm][0], 'opacity', '0.123')).toBe(false);
       }
+      expect(frameCallbacks.size).toBe(1);
       first.unmount();
-      expect(firstLoops.every(({ cancel }) => cancel.mock.calls.length > 0)).toBe(true);
-      expect(secondLoops.every(({ cancel }) => cancel.mock.calls.length === 0)).toBe(true);
-      expect(liveLoops(second.container)).toHaveLength(5);
+      const stopped = armTransforms(firstRoot);
+      const before = armTransforms(secondRoot);
+      advanceFrames(10);
+      expect(armTransforms(firstRoot)).toEqual(stopped);
+      expect(armTransforms(secondRoot)).not.toEqual(before);
+      expect(isDriven(secondRoot)).toBe(true);
+      expect(frameCallbacks.size).toBe(1);
     },
   );
 
@@ -242,10 +348,14 @@ describe('IntentMarkLoader', () => {
         ),
       ).toBe(true);
       completeTransition();
-      const loops = liveLoops(root);
-      expect(loops).toHaveLength(5);
-      expect((loops[0].target.parentElement as unknown as SVGGElement).dataset.markLayer).toBe(to);
+      expect(root.querySelector<SVGGElement>('[data-mark-layer]')?.dataset.markLayer).toBe(to);
       expect(root.dataset.motionState).toBe('playing');
+      expect(liveLoops(root)).toHaveLength(0);
+      const arms = Array.from(root.querySelectorAll<SVGPathElement>('[data-mark-arm]'));
+      const before = armTransforms(root);
+      expect(arms.every((arm) => arm.style.willChange === '')).toBe(true);
+      advanceFrames(2);
+      expect(armTransforms(root)).not.toEqual(before);
     },
   );
 
@@ -263,10 +373,8 @@ describe('IntentMarkLoader', () => {
     expect(liveLoops(root)).toHaveLength(0);
     expect(root.querySelectorAll('[data-mark-layer]')).toHaveLength(2);
     completeTransition();
-    expect(liveLoops(root)).toHaveLength(5);
-    expect(
-      (liveLoops(root)[0].target.parentElement as unknown as SVGGElement).dataset.markLayer,
-    ).toBe('twist');
+    expect(isDriven(root)).toBe(true);
+    expect(root.querySelector<SVGGElement>('[data-mark-layer]')?.dataset.markLayer).toBe('twist');
     expect(root.querySelectorAll('[data-mark-layer]')).toHaveLength(1);
   });
 
@@ -290,16 +398,67 @@ describe('IntentMarkLoader', () => {
     expect(root.dataset.motionState).toBe('morphing');
     completeTransition();
 
+    expect(isDriven(root)).toBe(true);
     reducedMotion = true;
     mediaChange?.();
     expect(root.dataset.motionState).toBe('neutral');
-    expect(liveLoops(root)).toHaveLength(0);
+    expect(isDriven(root)).toBe(false);
+    expect(root.querySelector('[data-mark-layer="neutral"]')).not.toBeNull();
+    expect(frameCallbacks.size).toBe(0);
     view.unmount();
     expect(root.dataset.motionState).toBe('destroyed');
     expect(records.every(({ cancel }) => cancel.mock.calls.length > 0)).toBe(true);
   });
 
-  it('keeps concurrent indicators independent when one loop becomes idle', () => {
+  it('rests while the window is blurred and resumes through the canonical handoff', async () => {
+    const view = render(IntentMarkLoader, { props: { variant: 'bloom', playing: true } });
+    const root = view.container.querySelector<HTMLElement>('[data-slot="intent-mark-loader"]')!;
+    completeTransition();
+    expect(root.dataset.motionState).toBe('playing');
+
+    document.documentElement.setAttribute('data-window-blurred', '');
+    await vi.waitFor(() => expect(root.dataset.motionState).toBe('neutral'));
+    expect(isDriven(root)).toBe(false);
+    expect(frameCallbacks.size).toBe(0);
+    expect(records.every(({ cancel }) => cancel.mock.calls.length > 0)).toBe(true);
+
+    await view.rerender({ variant: 'pulse', playing: true });
+    expect(root.dataset.motionState).toBe('neutral');
+    expect(isDriven(root)).toBe(false);
+
+    document.documentElement.removeAttribute('data-window-blurred');
+    await vi.waitFor(() => expect(root.dataset.motionState).toBe('morphing'));
+    expect(root.querySelector('[data-mark-layer="pulse"]')).not.toBeNull();
+    completeTransition();
+    expect(root.dataset.motionState).toBe('playing');
+    expect(isDriven(root)).toBe(true);
+
+    const observedRecords = records.length;
+    view.unmount();
+    document.documentElement.setAttribute('data-window-blurred', '');
+    document.documentElement.removeAttribute('data-window-blurred');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(root.dataset.motionState).toBe('destroyed');
+    expect(records).toHaveLength(observedRecords);
+    expect(frameCallbacks.size).toBe(0);
+  });
+
+  it('stays neutral when mounted into an already blurred window', async () => {
+    document.documentElement.setAttribute('data-window-blurred', '');
+    const view = render(IntentMarkLoader, { props: { variant: 'twist', playing: true } });
+    const root = view.container.querySelector<HTMLElement>('[data-slot="intent-mark-loader"]')!;
+    expect(root.dataset.motionState).toBe('neutral');
+    expect(records).toHaveLength(0);
+    expect(frameCallbacks.size).toBe(0);
+
+    document.documentElement.removeAttribute('data-window-blurred');
+    await vi.waitFor(() => expect(root.dataset.motionState).toBe('morphing'));
+    completeTransition();
+    expect(root.dataset.motionState).toBe('playing');
+    expect(isDriven(root)).toBe(true);
+  });
+
+  it('keeps concurrent indicators independent when one stops', async () => {
     const first = render(IntentMarkLoader, { props: { variant: 'bloom', playing: true } });
     const firstRoot = first.container.querySelector<HTMLElement>(
       '[data-slot="intent-mark-loader"]',
@@ -310,16 +469,18 @@ describe('IntentMarkLoader', () => {
       '[data-slot="intent-mark-loader"]',
     )!;
     completeTransition();
-    const firstLoops = liveLoops(firstRoot);
-    const secondLoops = liveLoops(secondRoot);
-    firstLoops.forEach((record) => record.setPlayState('idle'));
-    intersectionCallbacks[0]?.(
-      [{ isIntersecting: true, target: firstRoot } as IntersectionObserverEntry],
-      {} as IntersectionObserver,
-    );
-    expect(firstRoot.dataset.motionState).toBe('morphing');
-    expect(liveLoops(secondRoot)).toEqual(secondLoops);
-    expect(secondLoops.every(({ cancel }) => cancel.mock.calls.length === 0)).toBe(true);
+    expect(isDriven(firstRoot)).toBe(true);
+    expect(isDriven(secondRoot)).toBe(true);
+
+    await first.rerender({ variant: 'bloom', playing: false });
+    completeTransition();
+    expect(firstRoot.dataset.motionState).toBe('neutral');
+    expect(isDriven(firstRoot)).toBe(false);
+    expect(secondRoot.dataset.motionState).toBe('playing');
+    const before = armTransforms(secondRoot);
+    advanceFrames(2);
+    expect(armTransforms(secondRoot)).not.toEqual(before);
+    expect(isDriven(firstRoot)).toBe(false);
   });
 
   it.each([
@@ -327,24 +488,19 @@ describe('IntentMarkLoader', () => {
     ['bloom', 61],
     ['twist', 110],
   ] as const)(
-    'runs %s on native SVG strokes with the original 30fps source duration',
+    'loops %s on native SVG paths with the original 30fps source duration',
     (variant, count) => {
       const view = render(IntentMarkLoader, { props: { variant, playing: true } });
       completeTransition();
-      const loops = liveLoops(view.container);
-      const [loop] = loops;
-      expect(loop.options).toMatchObject({
-        duration: (count * 1000) / 30,
-        iterations: Infinity,
-        easing: 'linear',
-      });
-      expect(
-        loops.every(({ target }) => target instanceof SVGElement && target.tagName === 'path'),
-      ).toBe(true);
-      expect(
-        loops.every(({ frames }) => frames.every(({ easing }) => !easing?.startsWith('steps'))),
-      ).toBe(true);
-      expect(loop.currentTime).toBe(0);
+      const root = view.getByRole('status');
+      expect(liveLoops(root)).toHaveLength(0);
+      expect(root.querySelectorAll('path[data-mark-arm]')).toHaveLength(5);
+      expect(intentMarkMotionTiming[`${variant}Ms`]).toBe((count * 1000) / 30);
+      const first = armTransforms(root);
+      advanceFrames(count - 1, 1000 / 30);
+      if (variant === 'bloom') expect(armTransforms(root)).not.toEqual(first);
+      advanceFrames(1, 1000 / 30);
+      expect(armTransforms(root)).toEqual(first);
     },
   );
 
@@ -352,20 +508,73 @@ describe('IntentMarkLoader', () => {
     const view = render(IntentMarkLoader, { props: { variant: 'pulse', playing: true } });
     const root = view.getByRole('status');
     completeTransition();
-    const originalLoop = liveLoops(root)[0];
+    advanceFrames(10);
+    const originalLayer = root.firstElementChild;
+    const originalPose = armTransforms(root);
+    const recordCount = records.length;
     await view.rerender({ variant: 'pulse', playing: true, size: 64 });
-    expect(liveLoops(root)[0]).toBe(originalLoop);
+    expect(root.firstElementChild).toBe(originalLayer);
+    expect(armTransforms(root)).toEqual(originalPose);
+    expect(records).toHaveLength(recordCount);
     const intersect = (isIntersecting: boolean) =>
       intersectionCallbacks[0](
         [{ isIntersecting, target: root } as IntersectionObserverEntry],
         {} as IntersectionObserver,
       );
     intersect(false);
-    expect(originalLoop.cancel).toHaveBeenCalledOnce();
+    expect(frameCallbacks.size).toBe(0);
     expect(root.getAttribute('data-motion-state')).toBe('neutral');
     intersect(true);
     completeTransition();
-    expect(liveLoops(root)).toHaveLength(5);
-    expect(liveLoops(root)[0]).not.toBe(originalLoop);
+    expect(isDriven(root)).toBe(true);
+    expect(root.firstElementChild).not.toBe(originalLayer);
+  });
+
+  it('drives every Bloom frame from the shared 30 fps clock without perpetual animations or will-change hints', () => {
+    expect(intentMarkMotionTiming).toMatchObject({
+      settleMs: 160,
+      bloomMs: 61_000 / 30,
+      pulseMs: 61_000 / 30,
+      twistMs: 110_000 / 30,
+    });
+    const { container } = render(IntentMarkLoader, { props: { variant: 'bloom', playing: true } });
+    const root = container.querySelector<HTMLElement>('[data-slot="intent-mark-loader"]')!;
+    completeTransition();
+    expect(liveLoops(root)).toHaveLength(0);
+    const arms = Array.from(root.querySelectorAll<SVGPathElement>('[data-mark-arm]'));
+    expect(arms.every((arm) => arm.style.willChange === '')).toBe(true);
+    expect(arms.every((path) => path.getAttribute('stroke-width') === '18.45088')).toBe(true);
+
+    // Two seconds of 60 Hz frames: poses change on at most every other frame
+    // (30 fps slots) and Bloom walks its source frames without repeating a
+    // pose between slots.
+    const changes: string[][] = [];
+    let previous = armTransforms(root);
+    for (let frame = 0; frame < 120; frame += 1) {
+      advanceFrames(1);
+      const current = armTransforms(root);
+      if (current.some((transform, index) => transform !== previous[index])) changes.push(current);
+      previous = current;
+    }
+    expect(changes.length).toBeGreaterThanOrEqual(59);
+    expect(changes.length).toBeLessThanOrEqual(61);
+    const firstArm = changes.map((transforms) => transforms[0]);
+    expect(new Set(firstArm).size).toBe(firstArm.length);
+    expect(armTransforms(root).every((transform) => transform !== '')).toBe(true);
+  });
+
+  it('writes no poses while the window is blurred', async () => {
+    const { container } = render(IntentMarkLoader, { props: { variant: 'bloom', playing: true } });
+    const root = container.querySelector<HTMLElement>('[data-slot="intent-mark-loader"]')!;
+    completeTransition();
+    expect(isDriven(root)).toBe(true);
+    advanceFrames(4);
+    document.documentElement.setAttribute('data-window-blurred', '');
+    await vi.waitFor(() => expect(root.dataset.motionState).toBe('neutral'));
+    expect(frameCallbacks.size).toBe(0);
+    const neutral = armTransforms(root);
+    advanceFrames(60);
+    expect(armTransforms(root)).toEqual(neutral);
+    expect(frameCallbacks.size).toBe(0);
   });
 });

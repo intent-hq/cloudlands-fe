@@ -6,7 +6,9 @@ import { afterAll, describe, expect, it } from 'vitest';
 import {
   CT_HTML_REPORT_ENV,
   OPEN_REPORT_FLAG,
+  PRINT_OS_DEPS_FLAG,
   buildChildEnv,
+  collectNonFontOsDeps,
   exitCodeFromChild,
   parseLauncherArgs,
   resolveHtmlReportOpen,
@@ -190,5 +192,52 @@ describe('runPlaywright', () => {
   it('exposes the launcher options in its usage text', () => {
     expect(usage()).toContain(CT_HTML_REPORT_ENV);
     expect(usage()).toContain(OPEN_REPORT_FLAG);
+    expect(usage()).toContain(PRINT_OS_DEPS_FLAG);
+  });
+});
+
+describe('collectNonFontOsDeps', () => {
+  const dryRunLine =
+    'sudo -- sh -c "apt-get update&& apt-get install -y --no-install-recommends libnss3 fonts-liberation xvfb"\n';
+
+  it('runs install-deps --dry-run with the CT-aligned CLI and returns the non-font packages', () => {
+    const calls: unknown[][] = [];
+    const { dryRun, packages } = collectNonFontOsDeps({
+      cliPath: '/ct/cli.js',
+      browsers: ['chromium'],
+      cwd: '/repo',
+      spawnSyncImpl: ((...args: unknown[]) => {
+        calls.push(args);
+        return { status: 0, stdout: dryRunLine };
+      }) as never,
+    });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.[1]).toEqual(['/ct/cli.js', 'install-deps', '--dry-run', 'chromium']);
+    expect(calls[0]?.[2]).toMatchObject({ cwd: '/repo' });
+    expect(dryRun).toBe(dryRunLine);
+    expect(packages).toEqual(['libnss3', 'xvfb']);
+  });
+
+  it('throws when the dry run exits non-zero', () => {
+    expect(() =>
+      collectNonFontOsDeps({
+        cliPath: '/ct/cli.js',
+        browsers: ['chromium'],
+        spawnSyncImpl: (() => ({ status: 2, stdout: '' })) as never,
+      }),
+    ).toThrow(/install-deps --dry-run failed: exit 2/);
+  });
+
+  it('propagates the strict-parse failure for a partial multiline package list', () => {
+    expect(() =>
+      collectNonFontOsDeps({
+        cliPath: '/ct/cli.js',
+        browsers: ['chromium'],
+        spawnSyncImpl: (() => ({
+          status: 0,
+          stdout: 'apt-get install -y --no-install-recommends libc6\nlibmissing\n',
+        })) as never,
+      }),
+    ).toThrow(/unexpected extra install-deps/);
   });
 });

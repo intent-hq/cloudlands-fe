@@ -13,6 +13,7 @@
     safeOperationalDetailsTransition,
   } from './operational-disclosure-row';
   import { searchDisclosureEvents } from './chat-search-disclosure';
+  import { streamingPulse } from './streaming-pulse';
 
   interface Props {
     leading: Snippet;
@@ -140,7 +141,8 @@
         {onkeydown}
       >
         <span
-          class="{CHAT_OPERATIONAL_LEADING_CLASS} {streaming ? 'animate-pulse' : ''}"
+          class={CHAT_OPERATIONAL_LEADING_CLASS}
+          use:streamingPulse={streaming}
           data-operational-leading
           data-operational-icon-box
           data-tool-icon={toolIcon || undefined}>{@render leading()}</span
@@ -156,7 +158,8 @@
       </button>
     {:else}
       <div
-        class="{CHAT_OPERATIONAL_LEADING_CLASS} {streaming ? 'animate-pulse' : ''}"
+        class={CHAT_OPERATIONAL_LEADING_CLASS}
+        use:streamingPulse={streaming}
         data-operational-leading
         data-operational-icon-box
         data-tool-icon={toolIcon || undefined}

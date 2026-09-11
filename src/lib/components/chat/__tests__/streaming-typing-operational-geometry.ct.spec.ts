@@ -161,13 +161,13 @@ test('runs the mark only while active and holds neutral for reduced motion', asy
   const mark = component.locator('[data-slot="intent-mark-loader"]');
   await expect(mark).toHaveAttribute('data-motion-state', 'playing');
   expect(
-    await mark.evaluate(
-      (node) =>
-        node
-          .getAnimations({ subtree: true })
-          .filter((animation) => animation.effect?.getTiming().iterations === Infinity).length,
+    await mark.evaluate((node) =>
+      Array.from(node.querySelectorAll<SVGPathElement>('[data-mark-arm]')).map(
+        (arm) => arm.style.transform !== '' && arm.style.willChange === '',
+      ),
     ),
-  ).toBe(5);
+  ).toEqual([true, true, true, true, true]);
+  expect(await mark.evaluate((node) => node.getAnimations({ subtree: true }).length)).toBe(0);
 
   await mark.evaluate(
     (node) => ((window as typeof window & { thinkingRoot?: Element }).thinkingRoot = node),
