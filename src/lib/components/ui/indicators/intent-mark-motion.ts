@@ -356,7 +356,7 @@ function loopPoseAt(variant: IntentMarkVariant, index: number, phase: number): K
   };
 }
 
-export interface IntentMarkDrivenPose {
+interface IntentMarkDrivenPose {
   opacity: number;
   transform: string;
 }
@@ -366,7 +366,7 @@ export interface IntentMarkDrivenPose {
  * frame for one 30 fps slot (the former steps(1, end) keyframes); pulse and
  * twist sample their linear keyframes at the slot.
  */
-export function intentMarkLoopPose(
+function intentMarkLoopPose(
   variant: IntentMarkVariant,
   index: number,
   phase: number,

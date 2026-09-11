@@ -12,8 +12,8 @@ import { currentFrameTime, subscribeFrameClock } from '$lib/utils/frame-clock';
  * Under `prefers-reduced-motion: reduce` the driver stays off and the icon
  * holds its normal opacity, as the stylesheet froze `animate-pulse` before.
  */
-export const STREAMING_PULSE_PERIOD_MS = 2_000;
-export const STREAMING_PULSE_STEP = 0.05;
+const STREAMING_PULSE_PERIOD_MS = 2_000;
+const STREAMING_PULSE_STEP = 0.05;
 
 function cubicBezierY(x: number, x1: number, y1: number, x2: number, y2: number): number {
   const sample = (t: number, first: number, second: number) =>
@@ -29,7 +29,7 @@ function cubicBezierY(x: number, x1: number, y1: number, x2: number, y2: number)
 }
 
 /** Opacity of the pulse at `timeMs`, quantised to `STREAMING_PULSE_STEP`. */
-export function streamingPulseOpacity(timeMs: number): number {
+function streamingPulseOpacity(timeMs: number): number {
   const position = (((timeMs / STREAMING_PULSE_PERIOD_MS) % 1) + 1) % 1;
   const dipping = position < 0.5;
   const progress = cubicBezierY((dipping ? position : position - 0.5) * 2, 0.4, 0, 0.6, 1);

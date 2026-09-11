@@ -7,7 +7,7 @@
  * of interleaving with them. One requestAnimationFrame loop serves all
  * subscribers and stops while there are none or while the window is blurred.
  */
-export const FRAME_CLOCK_INTERVAL_MS = 1000 / 30;
+const FRAME_CLOCK_INTERVAL_MS = 1000 / 30;
 
 export type FrameClockCallback = (frameTimeMs: number) => void;
 
