@@ -513,6 +513,7 @@ const ALLOWED_CHANNELS = [
   'release-notes:get-pending',
   'release-notes:dismiss',
   'release-notes:show',
+  'release-notes:close',
   'pip:open',
   'pip:close',
   'pip:close-all-for-workspace',
