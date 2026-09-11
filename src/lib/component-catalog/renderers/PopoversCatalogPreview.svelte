@@ -21,6 +21,7 @@
   import type { CatalogRendererProps } from '../catalog-renderers';
 
   let { fixture }: CatalogRendererProps = $props();
+  let tooltipTargets = $state<(HTMLDivElement | undefined)[]>([]);
   const options = [
     { value: 'ada', label: 'Ada Lovelace' },
     { value: 'grace', label: 'Grace Hopper' },
@@ -154,8 +155,8 @@
     <h3 class="type-caption font-medium text-muted-foreground">Popover — title and body</h3>
     <Popover.Root open staticPosition
       ><Popover.Content class="w-full p-4"
-        ><h4 class="type-title font-medium">Workspace details</h4>
-        <p class="type-body mt-1 text-muted-foreground">
+        ><h4 class="type-body font-medium">Workspace details</h4>
+        <p class="type-caption mt-1 text-muted-foreground">
           Review the selected workspace before continuing.
         </p></Popover.Content
       ></Popover.Root
@@ -179,8 +180,8 @@
     <Popover.Root open staticPosition
       ><Popover.Content class="w-full"
         ><div class="p-4">
-          <h4 class="type-title font-medium">Archive workspace?</h4>
-          <p class="type-body mt-1 text-muted-foreground">You can restore it later.</p>
+          <h4 class="type-body font-medium">Archive workspace?</h4>
+          <p class="type-caption mt-1 text-muted-foreground">You can restore it later.</p>
         </div>
         <footer class="flex justify-end gap-2 border-t border-border p-3">
           <Button variant="ghost" size="sm">Cancel</Button><Button size="sm">Archive</Button>
@@ -212,35 +213,76 @@
 
   <article class="matrix-cell" data-catalog-rendered-state="tooltip short">
     <h3 class="type-caption font-medium text-muted-foreground">Tooltip — short</h3>
-    <Tooltip.Provider delayDuration={0}
-      ><Tooltip.Root open staticPosition
-        ><Tooltip.Content>Open settings</Tooltip.Content></Tooltip.Root
-      ></Tooltip.Provider
-    >
+    <div bind:this={tooltipTargets[0]} class="pb-20">
+      <Tooltip.Provider delayDuration={0}>
+        <Tooltip.Root open>
+          <Tooltip.Trigger>
+            {#snippet child({ props })}
+              <Button {...props} variant="outline" size="sm">Settings</Button>
+            {/snippet}
+          </Tooltip.Trigger>
+          <Tooltip.Content
+            side="bottom"
+            align="start"
+            sideOffset={8}
+            portalTarget={tooltipTargets[0]}
+            class="max-w-56"
+          >
+            Open settings
+          </Tooltip.Content>
+        </Tooltip.Root>
+      </Tooltip.Provider>
+    </div>
   </article>
 
   <article class="matrix-cell" data-catalog-rendered-state="tooltip multi-line">
     <h3 class="type-caption font-medium text-muted-foreground">Tooltip — multi-line</h3>
-    <Tooltip.Provider delayDuration={0}
-      ><Tooltip.Root open staticPosition
-        ><Tooltip.Content class="max-w-56"
-          >This action updates every selected workspace and cannot be undone.</Tooltip.Content
-        ></Tooltip.Root
-      ></Tooltip.Provider
-    >
+    <div bind:this={tooltipTargets[1]} class="pb-20">
+      <Tooltip.Provider delayDuration={0}>
+        <Tooltip.Root open>
+          <Tooltip.Trigger>
+            {#snippet child({ props })}
+              <Button {...props} variant="outline" size="sm">Update workspaces</Button>
+            {/snippet}
+          </Tooltip.Trigger>
+          <Tooltip.Content
+            side="bottom"
+            align="start"
+            sideOffset={8}
+            portalTarget={tooltipTargets[1]}
+            class="max-w-56"
+          >
+            This action updates every selected workspace and cannot be undone.
+          </Tooltip.Content>
+        </Tooltip.Root>
+      </Tooltip.Provider>
+    </div>
   </article>
 
   <article class="matrix-cell" data-catalog-rendered-state="tooltip kbd zoom-200 reduced-motion">
     <h3 class="type-caption font-medium text-muted-foreground">Tooltip — keyboard shortcut</h3>
-    <Tooltip.Provider delayDuration={0}
-      ><Tooltip.Root open staticPosition
-        ><Tooltip.Content
-          ><span class="flex items-center gap-2"
-            >Open command menu <ShortcutChip>⌘K</ShortcutChip></span
-          ></Tooltip.Content
-        ></Tooltip.Root
-      ></Tooltip.Provider
-    >
+    <div bind:this={tooltipTargets[2]} class="pb-20">
+      <Tooltip.Provider delayDuration={0}>
+        <Tooltip.Root open>
+          <Tooltip.Trigger>
+            {#snippet child({ props })}
+              <Button {...props} variant="outline" size="sm">Command menu</Button>
+            {/snippet}
+          </Tooltip.Trigger>
+          <Tooltip.Content
+            side="bottom"
+            align="start"
+            sideOffset={8}
+            portalTarget={tooltipTargets[2]}
+            class="max-w-56"
+          >
+            <span class="flex items-center gap-2"
+              >Open command menu <ShortcutChip>⌘K</ShortcutChip></span
+            >
+          </Tooltip.Content>
+        </Tooltip.Root>
+      </Tooltip.Provider>
+    </div>
   </article>
 </div>
 

@@ -11,10 +11,19 @@ const originalScrollIntoView = Element.prototype.scrollIntoView;
 
 beforeEach(() => {
   Element.prototype.scrollIntoView = vi.fn();
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
 });
 
 afterEach(() => {
   cleanup();
+  vi.unstubAllGlobals();
   Element.prototype.scrollIntoView = originalScrollIntoView;
   document.body.removeAttribute('style');
 });
