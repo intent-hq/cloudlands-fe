@@ -2,6 +2,7 @@ import { cleanup, render, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { IPC_CHANNELS } from '$shared/ipc-registry';
+import { warmImport } from '../../../test/warm-import';
 import { formatNativeWindowTitle } from './native-window-title';
 
 const mocks = vi.hoisted(() => {
@@ -106,6 +107,8 @@ vi.mock('./WorkspaceRepoLauncher.svelte', async () => ({
 vi.mock('./sidebar-nav/SidebarNav.svelte', async () => ({
   default: (await import('../../../routes/__tests__/mocks/Marker.svelte')).default,
 }));
+
+warmImport(() => import('./WindowTitleBar.svelte'));
 
 describe('formatNativeWindowTitle', () => {
   it('orders the focused tab, workspace title, and branch', () => {
