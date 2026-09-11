@@ -14,7 +14,7 @@ import {
 import { tmpdir } from 'node:os';
 import { dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { globSync } from 'glob';
+import { escape as escapeGlob, globSync } from 'glob';
 import { checkDepsFresh } from './check-deps-fresh.mjs';
 
 export const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -226,7 +226,7 @@ export function findRelatedCtTests(files, options = {}) {
     (file) => CODE_EXTENSIONS.has(extname(file)) && !UNIT_TEST_RE.test(file),
   );
   const selected = new Set(
-    files.filter((file) => CT_TEST_RE.test(file) && existsSync(resolve(root, file))),
+    files.filter((file) => testRunner(file) === 'ct' && existsSync(resolve(root, file))),
   );
   for (const test of ctTests) {
     if (selected.has(test)) continue;
@@ -273,7 +273,8 @@ export function vitestExcludePatterns(root = REPO_ROOT) {
 function hasRunnableUnitTests(directory, root, exclude) {
   const absolute = resolve(root, directory);
   if (!existsSync(absolute) || !statSync(absolute).isDirectory()) return false;
-  return globSync(`${directory}/${VITEST_INCLUDE_GLOB}`, {
+  const literalDirectory = escapeGlob(directory, { windowsPathsNoEscape: true });
+  return globSync(`${literalDirectory}/${VITEST_INCLUDE_GLOB}`, {
     cwd: root,
     ignore: exclude,
     nodir: true,

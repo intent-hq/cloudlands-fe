@@ -372,6 +372,25 @@ describe('verification planning', () => {
     ]);
   });
 
+  it('does not hand a browser-owned CT-shaped spec to the component test runner', () => {
+    const root = fixtureRoot({
+      'test/added.ct.spec.ts': '',
+      'src/lib/components/__tests__/button.ct.spec.ts': '',
+    });
+    const browser = createVerificationPlan(['test/added.ct.spec.ts'], { root, ctTests: [] });
+    expect(browser.checks.map((check) => check.id)).toContain('playwright-direct');
+    expect(browser.checks.map((check) => check.id)).not.toContain('ct-related');
+
+    const component = createVerificationPlan(['src/lib/components/__tests__/button.ct.spec.ts'], {
+      root,
+      ctTests: [],
+    });
+    expect(component.checks.find((check) => check.id === 'ct-related')?.args).toContain(
+      'src/lib/components/__tests__/button.ct.spec.ts',
+    );
+    expect(component.checks.map((check) => check.id)).not.toContain('playwright-direct');
+  });
+
   it('plans a Playwright command whose filter selects only the changed spec', () => {
     const spec = 'test/actions-status-visual.spec.ts';
     const plan = createVerificationPlan([spec], { root: process.cwd(), ctTests: [] });
@@ -468,6 +487,19 @@ describe('verification planning', () => {
     expect(withSurvivor.checks.find((check) => check.id === 'vitest-direct')?.args).toContain(
       'src/example',
     );
+  });
+
+  it('treats a deleted test directory with glob characters in its name literally', () => {
+    const test = "import { test } from 'vitest';\ntest('kept', () => {});\n";
+    const directory = 'src/routes/(app)/workspace/[id]';
+    const root = fixtureRoot({
+      'vitest.config.ts': "export default { test: { exclude: ['**/node_modules/**'] } };\n",
+      [`${directory}/keep.test.ts`]: test,
+    });
+
+    expect(vitestList(root, directory)).toEqual([`${directory}/keep.test.ts > kept`]);
+    const plan = createVerificationPlan([`${directory}/removed.test.ts`], { root, ctTests: [] });
+    expect(plan.checks.find((check) => check.id === 'vitest-direct')?.args).toContain(directory);
   });
 
   it('keeps a deleted unit test directory when a nested runnable unit test survives', () => {
