@@ -312,6 +312,21 @@ describe('BranchSelector (daemon-backed branch listing, no fabricated fallbacks)
       expect(mockToastError).toHaveBeenCalledWith(m.workspace_branchSelector_network_error());
     });
 
+    it('GitHub-URL repo: a not-found rejection toasts the no-access message once', async () => {
+      mockGithubBranches.mockRejectedValue(new Error('Repository not found'));
+      render(BranchSelector, {
+        props: {
+          repoPath: 'octo/intent',
+          repoType: 'github',
+          githubUrl: 'https://github.com/octo/intent',
+        },
+      });
+
+      await waitFor(() => expect(mockToastError).toHaveBeenCalled());
+      expect(mockToastError).toHaveBeenCalledTimes(1);
+      expect(mockToastError).toHaveBeenCalledWith(m.workspace_branchSelector_noAccess_error());
+    });
+
     it('GitHub-URL repo: the not-configured auth state does not toast', async () => {
       mockGithubBranches.mockRejectedValue(new Error('GitHub is not configured.'));
       render(BranchSelector, {
