@@ -1,5 +1,7 @@
 /** @vitest-environment jsdom */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { followBottom, hasActiveFollowBottomMutation } from '$lib/utils/smartScroll';
+import { safeDisclosureTransition } from '../disclosure-motion';
 import { inspectLazyTurnObserverOwnership } from '../lazy-turn-observer';
 import {
   createMessageHydrationPolicy,
@@ -753,6 +755,139 @@ describe('message hydration policy', () => {
       expect(transitions).toEqual(['swept-in', 'change']);
       expect(policy.getHydratedIds()).toEqual(['swept-in']);
       expect(frames.callbacks).toHaveLength(4);
+    });
+
+    it('stops holding staged hydration once the bounded hold elapses', () => {
+      const frames = controlledFrames();
+      let clock = 0;
+      const transitions: string[] = [];
+      const policy = createMessageHydrationPolicy([assistant('row')], {
+        frameBudgetMs: 6,
+        scheduleFrame: frames.scheduleFrame,
+        cancelFrame: frames.cancelFrame,
+        now: () => clock,
+        isHydrationHeld: () => true,
+        maxHoldMs: 100,
+        onHydrate: (id) => transitions.push(id),
+      });
+      policies.push(policy);
+      const elements = observe(policy, ['row']);
+      MockIntersectionObserver.instances[0].fire([
+        { target: elements.get('row')!, isIntersecting: true },
+      ]);
+
+      frames.callbacks[0](0);
+      clock = 99;
+      frames.callbacks[1](99);
+      expect(transitions).toEqual([]);
+      expect(frames.callbacks).toHaveLength(3);
+
+      // The hold predicate never clears: the bound ends the hold, the usual
+      // quiet frame follows, and the row mounts.
+      clock = 100;
+      frames.callbacks[2](100);
+      expect(transitions).toEqual([]);
+      clock = 116;
+      frames.callbacks[3](116);
+      expect(transitions).toEqual(['row']);
+      expect(frames.callbacks).toHaveLength(4);
+    });
+
+    it('finishes pending hydration after a leased disclosure is aborted and its node removed', () => {
+      const frames: FrameRequestCallback[] = [];
+      let mutationCallback: MutationCallback | undefined;
+      vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+        frames.push(callback);
+        return frames.length;
+      });
+      vi.stubGlobal('cancelAnimationFrame', vi.fn());
+      vi.stubGlobal(
+        'MutationObserver',
+        class {
+          constructor(callback: MutationCallback) {
+            mutationCallback = callback;
+          }
+          observe() {}
+          disconnect() {}
+        },
+      );
+      vi.stubGlobal(
+        'ResizeObserver',
+        class {
+          observe() {}
+          unobserve() {}
+          disconnect() {}
+        },
+      );
+      vi.stubGlobal(
+        'matchMedia',
+        vi.fn(() => ({ matches: false })),
+      );
+      vi.spyOn(window, 'getComputedStyle').mockReturnValue({
+        height: '40px',
+        opacity: '1',
+        paddingTop: '0px',
+        paddingBottom: '0px',
+        marginTop: '0px',
+        marginBottom: '0px',
+      } as CSSStyleDeclaration);
+      const root = document.createElement('div');
+      Object.defineProperties(root, {
+        scrollHeight: { configurable: true, value: 900 },
+        clientHeight: { configurable: true, value: 300 },
+        scrollTop: { configurable: true, writable: true, value: 600 },
+      });
+      const footer = document.createElement('div');
+      root.append(footer);
+      const runFrames = (limit: number) => {
+        for (let frame = 0; frame < limit && frames.length > 0; frame += 1) {
+          const callbacks = frames.splice(0);
+          callbacks.forEach((callback) => callback(performance.now()));
+        }
+      };
+      const follow = followBottom(root, { follow: true });
+      runFrames(10);
+
+      const transitions: string[] = [];
+      const policy = createMessageHydrationPolicy([assistant('older'), assistant('tail')], {
+        frameBudgetMs: 6,
+        maxRowsPerFrame: 4,
+        now: () => 0,
+        isHydrationHeld: () => hasActiveFollowBottomMutation(root),
+        onHydrate: (id) => transitions.push(id),
+      });
+      policies.push(policy);
+      const elements = observe(policy, ['older', 'tail'], root);
+
+      const outro = safeDisclosureTransition(footer, {}, { direction: 'out' });
+      outro.tick?.(0.6, 0.4);
+      expect(hasActiveFollowBottomMutation(root)).toBe(true);
+
+      // Svelte's transition.stop() cancels the animation (no terminal tick),
+      // the destroyed effect removes the node, and the root observer delivers
+      // the removal.
+      footer.remove();
+      mutationCallback?.(
+        [
+          {
+            type: 'childList',
+            addedNodes: [],
+            removedNodes: [footer],
+          } as unknown as MutationRecord,
+        ],
+        {} as MutationObserver,
+      );
+
+      MockIntersectionObserver.instances
+        .at(-1)!
+        .fire([{ target: elements.get('older')!, isIntersecting: true }]);
+      runFrames(240);
+
+      expect(transitions).toEqual(['older']);
+      expect(policy.getHydratedIds()).toEqual(['older']);
+      expect(hasActiveFollowBottomMutation(root)).toBe(false);
+      expect(frames).toHaveLength(0);
+      follow.destroy();
     });
 
     it('does not delay staged hydration when the hold was never active', () => {

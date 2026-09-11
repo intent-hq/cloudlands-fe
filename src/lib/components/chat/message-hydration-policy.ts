@@ -43,6 +43,13 @@ interface MessageHydrationPolicyOptions {
    * its frames — they mount one frame after the lease settles instead.
    */
   isHydrationHeld?: () => boolean;
+  /**
+   * Upper bound on one continuous hold, in `now()` milliseconds. The hold is
+   * an optimization; a lease that failed to release must never leave rows
+   * blank, so once this elapses the staged frames proceed as if unheld until
+   * the predicate next reads false.
+   */
+  maxHoldMs?: number;
   frameBudgetMs?: number;
   maxRowsPerFrame?: number;
   scheduleFrame?: (callback: FrameRequestCallback) => number;
@@ -52,6 +59,7 @@ interface MessageHydrationPolicyOptions {
 
 export const CHAT_HYDRATION_FRAME_BUDGET_MS = 6;
 export const CHAT_HYDRATION_MAX_ROWS_PER_FRAME = 4;
+export const CHAT_HYDRATION_MAX_HOLD_MS = 1500;
 
 export interface MessageHydrationPolicy {
   /**
@@ -110,9 +118,12 @@ export function createMessageHydrationPolicy(
   let scheduledFrame: number | null = null;
   /** True when the previous staged frame found the hydration hold active. */
   let hydrationWasHeld = false;
+  /** `now()` at which the current continuous hold began; null while unheld. */
+  let holdStartedAt: number | null = null;
   const staged = options.frameBudgetMs !== undefined;
   const frameBudgetMs = options.frameBudgetMs ?? CHAT_HYDRATION_FRAME_BUDGET_MS;
   const maxRowsPerFrame = options.maxRowsPerFrame ?? CHAT_HYDRATION_MAX_ROWS_PER_FRAME;
+  const maxHoldMs = options.maxHoldMs ?? CHAT_HYDRATION_MAX_HOLD_MS;
   const now = options.now ?? (() => performance.now());
   const scheduleFrame =
     options.scheduleFrame ?? ((callback: FrameRequestCallback) => requestAnimationFrame(callback));
@@ -182,6 +193,7 @@ export function createMessageHydrationPolicy(
     generation += 1;
     pendingHydrations.clear();
     hydrationWasHeld = false;
+    holdStartedAt = null;
     if (scheduledFrame === null) return;
     if (scheduledFrame >= 0) cancelFrame(scheduledFrame);
     scheduledFrame = null;
@@ -222,10 +234,14 @@ export function createMessageHydrationPolicy(
       scheduledFrame = null;
       if (disposed || !active || generation !== scheduledGeneration) return;
       if (options.isHydrationHeld?.() === true) {
-        hydrationWasHeld = true;
-        schedulePendingHydration();
-        return;
-      }
+        const current = now();
+        holdStartedAt ??= current;
+        if (current - holdStartedAt < maxHoldMs) {
+          hydrationWasHeld = true;
+          schedulePendingHydration();
+          return;
+        }
+      } else holdStartedAt = null;
       if (hydrationWasHeld) {
         // The lease releases inside the transition's final tick, which Svelte
         // issues from `animation.onfinish` — the same frame that removes the

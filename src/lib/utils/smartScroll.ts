@@ -45,7 +45,15 @@ interface BottomFollower {
   isFollowing: () => boolean;
   isNativeScrollAnchoringActive: () => boolean;
   hasActiveMutation: () => boolean;
-  beforeMutation: (element: HTMLElement) => FollowBottomMutation;
+  beforeMutation: (
+    element: HTMLElement,
+    options: FollowBottomMutationOptions,
+  ) => FollowBottomMutation;
+}
+
+interface MutationLease {
+  element: HTMLElement;
+  expiresAt: number;
 }
 
 interface ScrollGeometry {
@@ -58,6 +66,17 @@ export interface FollowBottomMutation {
   settle: () => void;
 }
 
+export interface FollowBottomMutationOptions {
+  /**
+   * Upper bound on the lease lifetime, in milliseconds from acquisition. A
+   * lease whose terminal `settle()` never arrives (an aborted transition, a
+   * throttled tick loop) releases itself once this elapses, so a missed
+   * release can only ever delay the follower's settle and the hydration hold
+   * by a bounded time.
+   */
+  maxHoldMs?: number;
+}
+
 const inertFollowBottomMutation: FollowBottomMutation = {
   request() {},
   settle() {},
@@ -65,6 +84,7 @@ const inertFollowBottomMutation: FollowBottomMutation = {
 
 const bottomFollowers = new WeakMap<HTMLElement, BottomFollower>();
 const FOLLOW_BOTTOM_STABLE_FRAMES = 2;
+export const FOLLOW_BOTTOM_MUTATION_MAX_HOLD_MS = 2000;
 
 /**
  * Svelte action that follows the bottom of a scrollable container.
@@ -94,8 +114,8 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
   let layoutFrame: number | null = null;
   let stableFrames = 0;
   let previousMaximum: number | null = null;
-  let activeMutationLocks = 0;
   let destroyed = false;
+  const activeLeases = new Set<MutationLease>();
   const mutationElements = new Map<HTMLElement, number>();
   const persistentResizeElements = new WeakSet<HTMLElement>();
   const originalOverflowAnchors = new Map<HTMLElement, string>();
@@ -230,10 +250,44 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
     reportState();
   }
 
+  function releaseLease(lease: MutationLease, scheduleSettle = true): void {
+    if (!activeLeases.delete(lease)) return;
+    const remainingElementLocks = (mutationElements.get(lease.element) ?? 1) - 1;
+    if (remainingElementLocks > 0) mutationElements.set(lease.element, remainingElementLocks);
+    else {
+      mutationElements.delete(lease.element);
+      if (!persistentResizeElements.has(lease.element)) {
+        resizeObserver?.unobserve?.(lease.element);
+      }
+    }
+    stableFrames = 0;
+    if (scheduleSettle) scheduleBottomSettle();
+  }
+
+  /**
+   * Leases release from their motion's terminal tick, but Svelte's
+   * `transition.stop()` aborts an animation without one and the destroyed
+   * effect removes the node — so a lease whose element left the container,
+   * or whose bounded lifetime elapsed, is released here instead. Neither
+   * check reads geometry (`contains` is a tree walk), so the settle frame and
+   * the hold query stay read-free during the motion.
+   */
+  function releaseStaleLeases(scheduleSettle = true): void {
+    if (activeLeases.size === 0) return;
+    const now = performance.now();
+    for (const lease of activeLeases) {
+      if (!container.contains(lease.element) || now >= lease.expiresAt) {
+        releaseLease(lease, scheduleSettle);
+      }
+    }
+  }
+
   function runSettleFrame() {
     settleFrame = null;
     if (destroyed || !enabled || !isFollowing) return;
-    if (activeMutationLocks > 0) {
+    // Already inside the settle loop: a stale release must not arm a second one.
+    releaseStaleLeases(false);
+    if (activeLeases.size > 0) {
       // A leased element is resize-observed, so its per-frame growth arrives
       // post-layout through handleResizeDelivery — the frame's single clean
       // geometry read — while the native bottom anchor carries the pin
@@ -286,7 +340,7 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
     let geometry = readScrollGeometry();
     const correctedBottom = geometry.scrollTop !== geometry.maximum;
     geometry = setExactBottom(geometry);
-    if (correctedBottom || geometry.maximum !== previousMaximum || activeMutationLocks > 0) {
+    if (correctedBottom || geometry.maximum !== previousMaximum || activeLeases.size > 0) {
       stableFrames = 0;
       previousMaximum = geometry.maximum;
       scheduleBottomSettle();
@@ -335,15 +389,28 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
     isFollowing: () => isFollowing,
     isNativeScrollAnchoringActive: () =>
       !isFollowing && getComputedStyle(container).overflowAnchor !== 'none',
-    hasActiveMutation: () => activeMutationLocks > 0,
-    beforeMutation(element) {
+    hasActiveMutation: () => {
+      // A lease acquired while following stays owned through wheel-up,
+      // PageUp/Home or a consumer `follow: false` (so a later re-follow keeps
+      // its pin), but an unfollowed viewport is not being swept by a bottom
+      // pin, so it must not hold hydration.
+      if (!isFollowing) return false;
+      releaseStaleLeases();
+      return activeLeases.size > 0;
+    },
+    beforeMutation(element, mutationOptions) {
       // The lease never reads geometry itself: acquisition, request() and
       // settle() are called from Svelte flushes and transition ticks that
       // have just dirtied style, where a scrollHeight/clientHeight read
       // forces layout. They only arm the settle loop; the pin comes from the
       // element's resize delivery (post-layout) and the tail frames.
       if (destroyed || !enabled || !isFollowing) return inertFollowBottomMutation;
-      activeMutationLocks += 1;
+      const lease: MutationLease = {
+        element,
+        expiresAt:
+          performance.now() + (mutationOptions.maxHoldMs ?? FOLLOW_BOTTOM_MUTATION_MAX_HOLD_MS),
+      };
+      activeLeases.add(lease);
       const elementLocks = mutationElements.get(element) ?? 0;
       mutationElements.set(element, elementLocks + 1);
       if (elementLocks === 0 && !persistentResizeElements.has(element)) {
@@ -351,23 +418,13 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
       }
       stableFrames = 0;
       scheduleBottomSettle();
-      let active = true;
       return {
         request() {
-          if (active && !destroyed) scheduleBottomSettle();
+          if (activeLeases.has(lease) && !destroyed) scheduleBottomSettle();
         },
         settle() {
-          if (!active || destroyed) return;
-          active = false;
-          activeMutationLocks = Math.max(0, activeMutationLocks - 1);
-          const remainingElementLocks = (mutationElements.get(element) ?? 1) - 1;
-          if (remainingElementLocks > 0) mutationElements.set(element, remainingElementLocks);
-          else {
-            mutationElements.delete(element);
-            if (!persistentResizeElements.has(element)) resizeObserver?.unobserve?.(element);
-          }
-          stableFrames = 0;
-          scheduleBottomSettle();
+          if (destroyed) return;
+          releaseLease(lease);
         },
       };
     },
@@ -478,9 +535,11 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
     // Watch for DOM changes
     mutationObserver = new MutationObserver((mutations) => {
       // When new children are added, observe them for size changes too
+      let removedNodes = false;
       for (const mutation of mutations) {
         if (mutation.type === 'childList') {
           for (const node of mutation.removedNodes) {
+            removedNodes = true;
             if (node instanceof HTMLElement) restoreNativeAnchor(node);
           }
           for (const node of mutation.addedNodes) {
@@ -491,6 +550,7 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
           }
         }
       }
+      if (removedNodes) releaseStaleLeases();
       setNativeBottomAnchorActive(isFollowing);
       handleLayoutChange();
     });
@@ -556,7 +616,7 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
   }
 
   function detachLifecycle() {
-    activeMutationLocks = 0;
+    activeLeases.clear();
     mutationElements.clear();
     pointerScrolling = false;
     cancelSettle();
@@ -644,12 +704,17 @@ export function hasActiveFollowBottomMutation(element: HTMLElement): boolean {
 /**
  * Capture the nearest followed scroll container before descendant layout changes.
  * The returned lease asks that single authority to keep its settle active.
+ * `settle()` is idempotent; the follower also releases the lease itself once
+ * the element leaves the container or `maxHoldMs` elapses.
  */
-export function beforeFollowBottomMutation(element: HTMLElement): FollowBottomMutation {
+export function beforeFollowBottomMutation(
+  element: HTMLElement,
+  options: FollowBottomMutationOptions = {},
+): FollowBottomMutation {
   let current: HTMLElement | null = element;
   while (current) {
     const follower = bottomFollowers.get(current);
-    if (follower) return follower.beforeMutation(element);
+    if (follower) return follower.beforeMutation(element, options);
     current = current.parentElement;
   }
   return inertFollowBottomMutation;

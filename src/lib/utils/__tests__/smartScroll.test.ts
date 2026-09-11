@@ -660,6 +660,127 @@ describe('followBottom policy', () => {
     action.destroy();
   });
 
+  it('stops reporting an active lease once user input leaves the bottom', () => {
+    const child = document.createElement('div');
+    container.append(child);
+    const action = followBottom(container, { follow: true });
+    runSettleTail();
+    const mutation = beforeFollowBottomMutation(child);
+    expect(hasActiveFollowBottomMutation(container)).toBe(true);
+
+    container.dispatchEvent(new WheelEvent('wheel', { deltaY: -1 }));
+    expect(isFollowingBottom(container)).toBe(false);
+    expect(hasActiveFollowBottomMutation(container)).toBe(false);
+
+    // The lease stays owned: re-following restores the hold until it settles.
+    followToBottom(container);
+    expect(hasActiveFollowBottomMutation(container)).toBe(true);
+    mutation.settle();
+    expect(hasActiveFollowBottomMutation(container)).toBe(false);
+    followToBottom(container);
+    expect(hasActiveFollowBottomMutation(container)).toBe(false);
+    action.destroy();
+  });
+
+  it('stops reporting an active lease when the consumer drops follow mode', () => {
+    const child = document.createElement('div');
+    container.append(child);
+    const action = followBottom(container, { follow: true });
+    runSettleTail();
+    const mutation = beforeFollowBottomMutation(child);
+    expect(hasActiveFollowBottomMutation(container)).toBe(true);
+
+    action.update({ follow: false });
+    expect(hasActiveFollowBottomMutation(container)).toBe(false);
+
+    action.update({ follow: true });
+    expect(hasActiveFollowBottomMutation(container)).toBe(true);
+    mutation.settle();
+    expect(hasActiveFollowBottomMutation(container)).toBe(false);
+    action.destroy();
+  });
+
+  it('releases a lease whose element leaves the container before its motion ends', () => {
+    const wrapper = document.createElement('div');
+    const row = document.createElement('div');
+    wrapper.append(row);
+    container.append(wrapper);
+    const action = followBottom(container, { follow: true });
+    runSettleTail();
+    const mutation = beforeFollowBottomMutation(row);
+    mutation.request();
+    expect(hasActiveFollowBottomMutation(container)).toBe(true);
+    expect(resizeActive.has(row)).toBe(true);
+
+    row.remove();
+    fireRemovedMutation(row);
+
+    expect(hasActiveFollowBottomMutation(container)).toBe(false);
+    expect(resizeActive.has(row)).toBe(false);
+    runSettleTail();
+    expect(animationFrames).toHaveLength(0);
+    // The late terminal release is idempotent.
+    mutation.settle();
+    expect(animationFrames).toHaveLength(0);
+    action.destroy();
+  });
+
+  it('releases a detached lease from the settle frame when no removal record is delivered', () => {
+    const child = document.createElement('div');
+    container.append(child);
+    const action = followBottom(container, { follow: true });
+    runSettleTail();
+    beforeFollowBottomMutation(child);
+    expect(hasActiveFollowBottomMutation(container)).toBe(true);
+
+    child.remove();
+    runFrame();
+
+    expect(hasActiveFollowBottomMutation(container)).toBe(false);
+    runSettleTail();
+    expect(animationFrames).toHaveLength(0);
+    action.destroy();
+  });
+
+  it('expires a lease a bounded time after its declared motion', () => {
+    let now = 1000;
+    vi.spyOn(performance, 'now').mockImplementation(() => now);
+    const child = document.createElement('div');
+    container.append(child);
+    const action = followBottom(container, { follow: true });
+    runSettleTail();
+    beforeFollowBottomMutation(child, { maxHoldMs: 500 });
+    expect(hasActiveFollowBottomMutation(container)).toBe(true);
+
+    now = 1499;
+    runFrame();
+    expect(hasActiveFollowBottomMutation(container)).toBe(true);
+    expect(animationFrames).toHaveLength(1);
+
+    now = 1500;
+    expect(hasActiveFollowBottomMutation(container)).toBe(false);
+    runSettleTail();
+    expect(animationFrames).toHaveLength(0);
+    action.destroy();
+  });
+
+  it('expires a lease from the settle frame without a hold query', () => {
+    let now = 1000;
+    vi.spyOn(performance, 'now').mockImplementation(() => now);
+    const child = document.createElement('div');
+    container.append(child);
+    const action = followBottom(container, { follow: true });
+    runSettleTail();
+    beforeFollowBottomMutation(child, { maxHoldMs: 500 });
+
+    now = 1600;
+    runSettleTail();
+
+    expect(animationFrames).toHaveLength(0);
+    expect(hasActiveFollowBottomMutation(container)).toBe(false);
+    action.destroy();
+  });
+
   it('retains persistent direct-child observation across overlapping leases', () => {
     const child = document.createElement('div');
     container.append(child);
@@ -989,6 +1110,72 @@ describe('followBottom policy', () => {
     expect(scrollTop).toBe(610);
     outro.tick?.(1, 0);
     runSettleTail();
+    expect(animationFrames).toHaveLength(0);
+    action.destroy();
+  });
+
+  it('releases an aborted outro lease once its element leaves the container', () => {
+    const child = document.createElement('div');
+    container.append(child);
+    vi.spyOn(window, 'getComputedStyle').mockReturnValue({
+      height: '40px',
+      opacity: '1',
+      paddingTop: '0px',
+      paddingBottom: '0px',
+      marginTop: '0px',
+      marginBottom: '0px',
+    } as CSSStyleDeclaration);
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn(() => ({ matches: false })),
+    );
+    const action = followBottom(container, { follow: true });
+    runSettleTail();
+    const outro = safeDisclosureTransition(child, {}, { direction: 'out' });
+    outro.tick?.(0.6, 0.4);
+    expect(hasActiveFollowBottomMutation(container)).toBe(true);
+
+    // Svelte's transition.stop() cancels the animation without a terminal
+    // tick, then the destroyed effect removes the node.
+    child.remove();
+    fireRemovedMutation(child);
+
+    expect(hasActiveFollowBottomMutation(container)).toBe(false);
+    runSettleTail();
+    expect(animationFrames).toHaveLength(0);
+    action.destroy();
+  });
+
+  it('bounds a disclosure lease whose terminal tick never arrives', () => {
+    let now = 5000;
+    vi.spyOn(performance, 'now').mockImplementation(() => now);
+    const child = document.createElement('div');
+    container.append(child);
+    vi.spyOn(window, 'getComputedStyle').mockReturnValue({
+      height: '40px',
+      opacity: '1',
+      paddingTop: '0px',
+      paddingBottom: '0px',
+      marginTop: '0px',
+      marginBottom: '0px',
+    } as CSSStyleDeclaration);
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn(() => ({ matches: false })),
+    );
+    const action = followBottom(container, { follow: true });
+    runSettleTail();
+    const intro = safeDisclosureTransition(child, { duration: 200 }, { direction: 'in' });
+    intro.tick?.(0.5, 0.5);
+    expect(hasActiveFollowBottomMutation(container)).toBe(true);
+
+    now += 200;
+    runFrame();
+    expect(hasActiveFollowBottomMutation(container)).toBe(true);
+
+    now += 2000;
+    runSettleTail();
+    expect(hasActiveFollowBottomMutation(container)).toBe(false);
     expect(animationFrames).toHaveLength(0);
     action.destroy();
   });

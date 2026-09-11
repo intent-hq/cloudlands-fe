@@ -27,13 +27,21 @@ export function safeDisclosureTransition(
   options: { direction?: 'in' | 'out' | 'both' } = {},
 ): TransitionConfig {
   const element = node as HTMLElement;
-  let bottomMutation: FollowBottomMutation | null = beforeFollowBottomMutation(element);
+  const duration = params.duration ?? 180;
+  // Svelte's `transition.stop()` aborts the animation without a terminal
+  // tick, so the lease also carries a lifetime bound: a full bidirectional
+  // reversal plus slack, after which the follower releases it on its own.
+  const leaseOptions = { maxHoldMs: duration * 2 + 500 };
+  let bottomMutation: FollowBottomMutation | null = beforeFollowBottomMutation(
+    element,
+    leaseOptions,
+  );
   const settleBottomMutation = () => {
     bottomMutation?.settle();
     bottomMutation = null;
   };
   const acquireBottomMutation = () => {
-    bottomMutation ??= beforeFollowBottomMutation(element);
+    bottomMutation ??= beforeFollowBottomMutation(element, leaseOptions);
   };
 
   if (!areAnimationsEnabled() || prefersReducedMotion()) {
@@ -49,7 +57,6 @@ export function safeDisclosureTransition(
   }
 
   const opacity = numericStyle(style, 'opacity') || 1;
-  const duration = params.duration ?? 180;
   const y = params.y ?? -4;
   const paddingTop = numericStyle(style, 'paddingTop');
   const paddingBottom = numericStyle(style, 'paddingBottom');
