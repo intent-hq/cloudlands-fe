@@ -8,9 +8,12 @@ import {
   setSecondaryRootGitError,
   setSecondaryRootGitLoading,
   setSecondaryRootCommitFiles,
+  setAcceptChangesStatus,
+  setAcceptChangesStatusLoading,
 } from './git-slice';
 import type { CommitInfo, GitStatus } from '$shared/types';
 import { workspaceUnmounted } from '../workspace-lifecycle/workspace-lifecycle-slice';
+import type { WorkspaceGitStatus } from '$features/accept-changes/types';
 import { createCollection, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
 
 const reduce = gitReducer;
@@ -40,6 +43,29 @@ describe('gitReducer', () => {
       expect(ws.ahead).toBe(0);
       expect(ws.behind).toBe(0);
     });
+  });
+
+  it('stores accept-changes status and loading state without clearing the cached value', () => {
+    const status = {
+      branch: 'feature',
+      trunkBranch: 'main',
+      aheadOfTrunk: 2,
+      behindTrunk: 0,
+      hasRemote: true,
+      isPushed: false,
+      uncommittedCount: 1,
+      stagedCount: 0,
+      localCommits: [],
+      canMergeDirectly: false,
+      hasConflicts: false,
+      hasDivergedFromRemote: false,
+    } satisfies WorkspaceGitStatus;
+    const loaded = reduce(initialState, setAcceptChangesStatus('ws-1', status));
+    const refreshing = reduce(loaded, setAcceptChangesStatusLoading('ws-1', true));
+
+    expect(getGitWorkspaceState(refreshing, 'ws-1')).toEqual(
+      expect.objectContaining({ acceptChangesStatus: status, acceptChangesStatusLoading: true }),
+    );
   });
 
   describe('secondary root reads', () => {

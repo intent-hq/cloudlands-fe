@@ -44,6 +44,7 @@ import {
 import { deduplicateAgentMessages } from '$shared/utils/message-dedup';
 import { createLogger } from '$lib/utils/client-logger';
 import { isAgentDeletionPending } from './utils/pending-agent-deletions';
+import { readAgentSession } from './agent-read-service';
 
 const logger = createLogger('ChatReadService');
 
@@ -129,7 +130,7 @@ export async function loadChatTranscript(agentId: string): Promise<void> {
   // Actually perform the work
   (async () => {
     try {
-      const session = await appClient.agents.get(agentId);
+      const session = await readAgentSession(agentId);
       if (!session) return;
       // Skip rows carrying the daemon's delete-grace-window deadline (PROTOCOL
       // §5.5 `pendingDeleteAt`, v6.7+) — a deletion scheduled by another

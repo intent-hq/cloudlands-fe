@@ -62,7 +62,7 @@ describe('modelSelectionSaga', () => {
     mocks.updateSnapshot = undefined;
   });
 
-  it('switches a known compound provider before reload and selection', async () => {
+  it('lands a known compound provider switch before requesting its reload', async () => {
     const dispatch = vi.fn();
     await runSaga(
       { dispatch, getState: state },
@@ -71,11 +71,11 @@ describe('modelSelectionSaga', () => {
     ).toPromise();
 
     expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
-      { type: 'model/reloadModelsForProvider', payload: [] },
       {
         type: 'providerSettings/setAtomicDefaultModel',
         payload: [{ providerId: 'codex', model: 'gpt-5' }],
       },
+      { type: 'model/reloadModelsForProvider', payload: [] },
     ]);
   });
 
@@ -128,11 +128,11 @@ describe('modelSelectionSaga', () => {
     ).toPromise();
 
     expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
-      { type: 'model/reloadModelsForProvider', payload: [] },
       {
         type: 'providerSettings/setAtomicDefaultModel',
         payload: [{ providerId: 'claude-code', model: 'fable5' }],
       },
+      { type: 'model/reloadModelsForProvider', payload: [] },
     ]);
   });
 
@@ -193,6 +193,37 @@ describe('modelSelectionSaga', () => {
           },
         ],
         7,
+      ],
+    });
+  });
+
+  it.each([0, 1, 3])('accepts a successful atomic save with %i changed paths', async (count) => {
+    const applied = [
+      { path: 'model.providerDefaults', value: { auggie: 'sonnet4.5', codex: 'gpt-5' } },
+      { path: 'model.defaultProvider', value: 'codex' },
+      { path: 'model.default', value: '' },
+    ].slice(0, count);
+    mocks.updateSnapshot = vi.fn().mockResolvedValue({ applied, revision: 8 });
+    const dispatch = vi.fn();
+    const result = await runSaga(
+      { dispatch, getState: state },
+      persistSelectedModelsWorker,
+      { codex: 'gpt-5' },
+      'codex',
+    ).toPromise();
+    expect(result).toBe('persisted');
+    expect(dispatch).toHaveBeenCalledExactlyOnceWith({
+      type: 'settings/changesReceived',
+      payload: [
+        expect.arrayContaining([
+          { path: 'model.defaultProvider', value: 'codex' },
+          {
+            path: 'model.providerDefaults',
+            value: { auggie: 'sonnet4.5', codex: 'gpt-5' },
+          },
+          ...applied,
+        ]),
+        8,
       ],
     });
   });

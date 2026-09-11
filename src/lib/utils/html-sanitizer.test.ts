@@ -5,6 +5,82 @@ import { describe, expect, it } from 'vitest';
 import { sanitizeMarkdownHTML } from './html-sanitizer';
 
 describe('html-sanitizer', () => {
+  it.each([
+    ['cross-workspace', 'workspace-asset://other-ws/demo.webm', 'ws-abc'],
+    ['unknown workspace', 'workspace-asset://ws-abc/demo.mp4', undefined],
+    ['traversal', 'workspace-asset://ws-abc/../demo.webm', 'ws-abc'],
+    ['encoded separator', 'workspace-asset://ws-abc/a%2Fdemo.mp4', 'ws-abc'],
+    ['malformed escape', 'workspace-asset://ws-abc/bad%zz.webm', 'ws-abc'],
+    ['encoded extension', 'workspace-asset://other-ws/demo%2E%77ebm', 'ws-abc'],
+    ['duplicate backend', 'workspace-asset://ws-abc/demo.webm?backend=one&backend=two', 'ws-abc'],
+    ['invalid backend', 'workspace-asset://ws-abc/demo.webm?backend=one%0A', 'ws-abc'],
+    ['unknown query', 'workspace-asset://ws-abc/demo.webm?url=remote', 'ws-abc'],
+    ['fragment', 'workspace-asset://ws-abc/demo.mp4#fragment', 'ws-abc'],
+    ['scheme casing', 'WORKSPACE-ASSET://other-ws/demo.mp4', 'ws-abc'],
+    ['whitespace', ' workspace-asset://other-ws/demo.mp4 ', 'ws-abc'],
+  ])(
+    'cannot bypass %s saved-video rejection using an image element',
+    (_reason, src, workspaceId) => {
+      const element = document.createElement('div');
+      element.innerHTML = sanitizeMarkdownHTML(
+        `<img src="${src}" alt="rejected"><video src="${src}"></video>`,
+        workspaceId,
+      );
+      expect(element.querySelector('img[src], video[src]')).toBeNull();
+    },
+  );
+
+  it.each(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'tiff'])(
+    'leaves existing saved %s image policy unchanged',
+    (extension) => {
+      const src = `workspace-asset://other-ws/image.${extension}?backend=remote-1&v=render-1`;
+      const element = document.createElement('div');
+      element.innerHTML = sanitizeMarkdownHTML(`<img src="${src}">`);
+      expect(element.querySelector('img')?.getAttribute('src')).toBe(src);
+    },
+  );
+
+  it.each(['mp4', 'webm'])(
+    'preserves same-workspace saved %s identity and safe player attributes',
+    (extension) => {
+      const src = `workspace-asset://ws-abc/saved.${extension}?backend=remote-1&v=render-1`;
+      const element = document.createElement('div');
+      element.innerHTML = sanitizeMarkdownHTML(
+        `<video src="${src}" controls preload="metadata" playsinline onclick="alert(1)"></video>`,
+        'ws-abc',
+      );
+      const video = element.querySelector('video');
+      expect(video?.getAttribute('src')).toBe(src);
+      expect(video?.controls).toBe(true);
+      expect(video?.getAttribute('onclick')).toBeNull();
+    },
+  );
+
+  it.each([undefined, 'other-workspace'])(
+    'removes saved videos without matching workspace scope (%s)',
+    (workspaceId) => {
+      expect(
+        sanitizeMarkdownHTML(
+          '<video src="workspace-asset://ws-abc/saved.webm"></video>',
+          workspaceId,
+        ),
+      ).not.toContain('<video');
+    },
+  );
+
+  it.each([
+    'workspace-asset://ws-abc/../saved.webm',
+    'workspace-asset://ws-abc/a%2Fsaved.webm',
+    'workspace-asset://ws-abc/saved.mov',
+    'workspace-asset://ws-abc/saved.svg',
+    'workspace-asset://ws-abc/saved.webm?backend=one&backend=two',
+    'workspace-asset://ws-abc/saved.webm?backend=one%0A',
+    'workspace-asset://ws-abc/saved.webm?url=remote',
+    'workspace-asset://ws-abc/saved.webm#fragment',
+  ])('rejects unsafe saved video source %s', (src) => {
+    expect(sanitizeMarkdownHTML(`<video src="${src}"></video>`, 'ws-abc')).not.toContain('<video');
+  });
+
   it('preserves diff block data attributes', () => {
     const html = '<div data-type="diff-block" data-diff-code="abc123"></div>';
 

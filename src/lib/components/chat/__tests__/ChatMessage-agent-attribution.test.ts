@@ -276,6 +276,25 @@ describe('ChatMessage user message text rendering', () => {
     expect(spans.some((el) => el.textContent === 'see ')).toBe(true);
     expect(spans.some((el) => el.textContent === ' now')).toBe(true);
   });
+
+  it('opens an inline file mention at its captured line', async () => {
+    dispatchMock.mockClear();
+    render(ChatMessage, {
+      props: {
+        message: userTextMessage('see @src/a.ts:10 now'),
+        workspace: { id: 'ws-1' } as any,
+      },
+    });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'a.ts:10' }));
+
+    expect(dispatchMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'workspaceNavigation/openWorkspaceFile',
+        payload: ['ws-1', 'src/a.ts', expect.objectContaining({ line: 10 })],
+      }),
+    );
+  });
 });
 
 describe('ChatMessage agent-to-agent sender attribution', () => {

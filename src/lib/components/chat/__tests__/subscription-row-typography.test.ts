@@ -58,9 +58,16 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
 }));
 vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', () => ({
   selectChatReceivedFirstChunk: () => readable(false),
+  selectPendingQuestionRecovery: () => readable(undefined),
 }));
 vi.mock('$store/renderer/slices/permission/permission-selectors', () => ({
   selectPendingCount: () => readable(0),
+}));
+vi.mock('$store/renderer/slices/hud/hud-selectors', () => ({
+  selectHudAgentHasPendingQuestion: () => readable(false),
+}));
+vi.mock('$lib/components/chat/questions/wizard-gate', () => ({
+  deriveWizardPendingQuestions: () => null,
 }));
 vi.mock('$store/renderer/slices/changes/changes-selectors', () => ({
   selectAgentLineStats: () => readable(null),
@@ -85,6 +92,7 @@ vi.mock('$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-sele
   selectDelegationGroups: () => readable([]),
   selectWokenUpInfo: () => readable(null),
   selectWaitingState: () => readable('waiting'),
+  selectSubscriptionSnapshotStatus: () => readable('ready'),
 }));
 vi.mock('$store/renderer/slices/background-hooks/background-hooks-selectors', () => ({
   selectBackgroundHooks: () =>
@@ -102,6 +110,7 @@ vi.mock('$store/renderer/slices/background-hooks/background-hooks-selectors', ()
         runCount: 0,
       },
     ]),
+  selectBackgroundHooksSnapshotStatus: () => readable('ready'),
 }));
 vi.mock('$store/renderer/slices/pr-monitor/pr-monitor-selectors', () => ({
   selectAgentPrMonitors: () =>
@@ -120,6 +129,7 @@ vi.mock('$store/renderer/slices/pr-monitor/pr-monitor-selectors', () => ({
         updatedAt: '2026-08-13T10:00:00Z',
       },
     ]),
+  selectPrMonitorsSnapshotStatus: () => readable('ready'),
 }));
 vi.mock('$features/layout/panel-layout-adapter', () => ({
   hasPanelLayoutManager: () => false,

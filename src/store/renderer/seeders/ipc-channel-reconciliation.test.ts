@@ -701,13 +701,13 @@ describe('IPC event-channel reconciliation (renderer listener surface vs emitter
   } = scanEventChannels();
 
   it('scanner sanity: detects the known listener surface', () => {
-    // Simple literal listenSync call sites (WorkspaceProgressCard).
-    expect(listened.has('git:status-changed')).toBe(true);
-    // Multiline nested-generic call sites (`listenSync<{ workspaceId: string;
-    // … }>(\n 'workspace:updated', …)`) — guards the depth-aware argument
-    // parser; a naive single-line matcher drops these entirely.
-    expect(listened.has('workspace:updated')).toBe(true);
-    expect(listened.has('task:ready-tasks-changed')).toBe(true);
+    // Accept-changes refreshes now ride the daemon event bridge instead of a
+    // duplicate renderer `git:status-changed` listener.
+    expect(listened.has('git:status-changed')).toBe(false);
+    // Remaining literal listener sites continue to exercise both direct and
+    // multiline generic `listenSync` calls.
+    expect(listened.has('line-attribution:updated')).toBe(true);
+    expect(listened.has('terminal:created')).toBe(true);
     // Bare `on()` import call site (active-streams-tracker.ts).
     expect(listened.has('agent:status-changed')).toBe(true);
     // Template-literal dynamic family (CliBlock.svelte).

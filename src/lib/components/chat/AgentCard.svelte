@@ -14,9 +14,11 @@
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import { Input } from '$lib/components/ui/input';
   import {
+    selectAgentIsResponding,
     selectAgentSession,
     selectAgentPreview,
   } from '$store/renderer/slices/agent-session/agent-session-selectors';
+  import { selectPendingQuestionRecovery } from '$store/renderer/slices/chat-state/chat-state-selectors';
   import {
     deleteAgentWithUndoRequested,
     ensureAgentSessionLoaded,
@@ -31,9 +33,12 @@
   import { selectAgentLineStats } from '$store/renderer/slices/changes/changes-selectors';
   import AgentAvatarWithState from '$features/agent/components/agent-avatar/AgentAvatarWithState.svelte';
   import { getAvatarStateForSession } from '$features/agent/components/agent-avatar/avatar-state';
+  import { isAgentRunningState, toAgentRuntimeStateInput } from '$shared/utils/agent-runtime-state';
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { selectPendingCount } from '$store/renderer/slices/permission/permission-selectors';
   import { safeDisclosureTransition } from './disclosure-motion';
+  import { selectHudAgentHasPendingQuestion } from '$store/renderer/slices/hud/hud-selectors';
+  import { deriveWizardPendingQuestions } from './questions/wizard-gate';
   import { findSourcePanelId } from '$lib/utils/workspace-navigation';
   import { updateSession as updateAgentSessionFields } from '$store/renderer/slices/agent-session/agent-session-slice';
   import {
@@ -150,6 +155,9 @@
   });
 
   const agentPermCount = selectPendingCount(agentIdStore);
+  const hasCapturedQuestion$ = selectHudAgentHasPendingQuestion(agentIdStore);
+  const pendingQuestionRecovery$ = selectPendingQuestionRecovery(agentIdStore);
+  const agentIsResponding$ = selectAgentIsResponding(agentIdStore);
 
   $effect(() => {
     const wsId = workspace?.id;
@@ -359,8 +367,11 @@
       });
     }
 
-    // Add stop option if agent is running
-    if (avatarState === 'running' || avatarState === 'responding') {
+    // Add stop option if agent is running. Gate on the canonical runtime
+    // state, not the display state: user-attention states (question,
+    // needs-permission, …) outrank `running` in getAvatarState, but a live
+    // turn must stay stoppable regardless of what the avatar shows.
+    if (isTurnRunning) {
       items.push({
         id: 'stop',
         label: m.chat_agentCard_menu_stop_label(),
@@ -503,10 +514,32 @@
   // fields; null when none is pending (retired on agent:updated clear).
   const attentionRequest = $derived(getAgentAttentionRequest($agent$));
 
+  // Mirrors PanelHeaderAgentAvatar / the mini dock: captured HUD question or
+  // transcript-derived pending question set.
+  const hasQuestion = $derived.by(() => {
+    if ($hasCapturedQuestion$) return true;
+    // The shared gate reads the responding flag, the marker/dismissal metadata
+    // and the out-of-tail recovery result straight from store state; touching
+    // the readables here keeps this $derived reactive to changes that do not
+    // alter the session's message array (recovery settling, gate flips).
+    void $agentIsResponding$;
+    void $agent$?.metadata?.pendingQuestionsMessageId;
+    void $agent$?.metadata?.dismissedQuestionsMessageId;
+    void $pendingQuestionRecovery$;
+    return deriveWizardPendingQuestions(appStore.state, agentId, $agent$?.messages ?? []) !== null;
+  });
+
+  // Canonical running predicate for the session, independent of the display
+  // precedence applied by getAvatarState below.
+  const isTurnRunning = $derived(
+    $agent$ ? isAgentRunningState(toAgentRuntimeStateInput($agent$)) : false,
+  );
+
   // Use the canonical session state derivation for every agent surface.
   const avatarState = $derived(
     getAvatarStateForSession($agent$, {
       hasPermissionRequest: $agentPermCount > 0,
+      hasQuestion,
       isActive: selected,
       isCompleted,
       attentionKind: attentionRequest?.kind ?? null,
@@ -561,11 +594,12 @@
 
   const updatedAt = $derived(updatedAtProp ?? $agent$?.updatedAt);
 
-  // Border color based on state - only show colored border if showStateBorder is true
-  const isRunning = $derived(avatarState === 'running' || avatarState === 'responding');
+  // Border color based on state - only show colored border if showStateBorder
+  // is true. Keyed on the display state (not isTurnRunning) so the amber/red
+  // attention shadows keep their precedence over the active glow.
   const glowClass = $derived.by(() => {
     if (!showStateBorder) return '';
-    if (isRunning) return 'agent-glow-active';
+    if (avatarState === 'running' || avatarState === 'responding') return 'agent-glow-active';
     if (avatarState === 'failed') return 'shadow shadow-red-500 shadow-sm';
     if (avatarState === 'needs-permission') return 'shadow shadow-warning shadow-sm';
     if (avatarState === 'attention-discussion') return 'shadow shadow-warning shadow-sm';
@@ -629,16 +663,18 @@
 {#snippet agentCardContent()}
   <div
     style="padding-left: {depth * 10}px; container-type: inline-size;"
-    class="relative w-full min-w-0 max-w-full overflow-hidden agent-card-container"
+    class="relative w-full min-w-0 max-w-full {isEditing
+      ? 'overflow-visible'
+      : 'overflow-hidden'} agent-card-container"
     data-agent-id={agentId}
     data-testid="agent-list-item"
   >
     <svelte:element
       this={isEditing ? 'div' : 'button'}
       type={isEditing ? undefined : 'button'}
-      class="flex w-full min-w-0 max-w-full overflow-hidden text-left gap-2 transition-colors duration-spring-fast ease-spring-fast motion-reduce:transition-none {isEditing
-        ? 'cursor-text'
-        : 'cursor-pointer'} group border {panelRow
+      class="flex w-full min-w-0 max-w-full text-left gap-2 transition-colors duration-spring-fast ease-spring-fast motion-reduce:transition-none {isEditing
+        ? 'overflow-visible'
+        : 'overflow-hidden'} {isEditing ? 'cursor-text' : 'cursor-pointer'} group border {panelRow
         ? 'h-10 items-center rounded-md border-transparent bg-transparent px-2 py-2 type-body font-normal text-foreground hover:bg-transparent active:bg-transparent focus-visible:-outline-offset-2 focus-visible:bg-transparent focus-visible:outline-1 focus-visible:outline-ring focus-visible:ring-0'
         : inline
           ? `type-body items-center rounded-md ${inlineRowClass}`
@@ -674,13 +710,17 @@
       </div>
 
       <div
-        class="agent-card-content flex min-w-0 max-w-full flex-1 overflow-hidden {headerActions
-          ? 'mr-14'
-          : ''} {inline || panelRow ? 'flex-row items-center gap-2' : 'flex-col'}"
+        class="agent-card-content flex min-w-0 max-w-full flex-1 {isEditing
+          ? 'overflow-visible'
+          : 'overflow-hidden'} {headerActions ? 'mr-14' : ''} {inline || panelRow
+          ? 'flex-row items-center gap-2'
+          : 'flex-col'}"
       >
         <!-- Header row -->
         <div
-          class="agent-card-header flex w-full min-w-0 max-w-full items-center gap-1.5 overflow-hidden {inline
+          class="agent-card-header flex w-full min-w-0 max-w-full items-center gap-1.5 {isEditing
+            ? 'overflow-visible'
+            : 'overflow-hidden'} {inline
             ? 'inline-agent-card-header'
             : panelRow
               ? 'agent-panel-row-header'
@@ -690,56 +730,72 @@
 
           <div
             class="flex-1 min-w-0 flex items-center {panelRow
-              ? 'gap-1.5 overflow-hidden'
+              ? `gap-1.5 ${isEditing ? 'overflow-visible' : 'overflow-hidden'}`
               : inline
                 ? 'gap-0'
                 : 'gap-1.5'} {typographyClass
               ? 'font-normal'
               : panelRow
                 ? 'font-normal'
-                : 'font-medium'} {inline ? 'overflow-hidden' : ''}"
+                : 'font-medium'} {inline
+              ? isEditing
+                ? 'overflow-visible'
+                : 'overflow-hidden'
+              : ''}"
           >
-            {#if isEditing}
-              <!-- svelte-ignore a11y_autofocus -->
-              <Input
-                bind:ref={editInputRef}
-                type="text"
-                bind:value={editingValue}
-                aria-label={m.chat_agentCard_menu_rename_label()}
-                onblur={saveEdit}
-                onkeydowncapture={handleEditKeydown}
-                onkeyupcapture={isolateEditEvent}
-                onfocusincapture={isolateEditEvent}
-                onfocusoutcapture={isolateEditEvent}
-                onpointerdowncapture={isolateEditEvent}
-                onpointerupcapture={isolateEditEvent}
-                onmousedowncapture={isolateEditEvent}
-                onmouseupcapture={isolateEditEvent}
-                onclickcapture={isolateEditEvent}
-                ondblclickcapture={isolateEditEvent}
-                oncontextmenucapture={isolateEditEvent}
-                oncopycapture={isolateEditEvent}
-                oncutcapture={isolateEditEvent}
-                onpastecapture={isolateEditEvent}
-                class="text-sm truncate bg-transparent border-none outline-none! ring-0! focus:ring-0! focus:outline-none! focus-visible:ring-0! focus-visible:outline-none! min-w-0 flex-1 text-foreground"
-              />
-            {:else}
-              <!-- svelte-ignore a11y_no_static_element_interactions -->
-              <h3
-                class="whitespace-nowrap {panelRow
-                  ? 'min-w-0 flex-1 truncate type-body font-normal text-foreground'
-                  : inline
-                    ? typographyClass
-                      ? 'shrink-0 type-body font-normal text-foreground!'
-                      : 'shrink-0 type-body font-normal text-foreground'
-                    : 'shrink-0 text-sm font-normal text-foreground'}"
-                data-testid="agent-card-name"
-                data-agent-row-name={panelRow ? '' : undefined}
-                ondblclick={handleNameDoubleClick}
-              >
-                {displayName}
-              </h3>
-            {/if}
+            <div
+              class="relative flex min-w-0 items-center {isEditing || !inline
+                ? 'flex-1'
+                : ''} {isEditing ? 'overflow-visible' : 'overflow-hidden'}"
+            >
+              {#if isEditing}
+                <!-- svelte-ignore a11y_autofocus -->
+                <Input
+                  bind:ref={editInputRef}
+                  type="text"
+                  bind:value={editingValue}
+                  aria-label={m.chat_agentCard_menu_rename_label()}
+                  onblur={saveEdit}
+                  onkeydowncapture={handleEditKeydown}
+                  onkeyupcapture={isolateEditEvent}
+                  onfocusincapture={isolateEditEvent}
+                  onfocusoutcapture={isolateEditEvent}
+                  onpointerdowncapture={isolateEditEvent}
+                  onpointerupcapture={isolateEditEvent}
+                  onmousedowncapture={isolateEditEvent}
+                  onmouseupcapture={isolateEditEvent}
+                  onclickcapture={isolateEditEvent}
+                  ondblclickcapture={isolateEditEvent}
+                  oncontextmenucapture={isolateEditEvent}
+                  oncopycapture={isolateEditEvent}
+                  oncutcapture={isolateEditEvent}
+                  onpastecapture={isolateEditEvent}
+                  class="inline-edit-input relative z-10 min-w-0 flex-1 truncate border-none bg-transparent text-sm text-foreground outline-none! ring-0! focus:outline-none! focus:ring-0! focus-visible:outline-none! focus-visible:ring-0!"
+                />
+              {:else}
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <h3
+                  class="relative z-10 cursor-text whitespace-nowrap {panelRow
+                    ? 'min-w-0 flex-1 truncate type-body font-normal text-foreground'
+                    : inline
+                      ? typographyClass
+                        ? 'shrink-0 type-body font-normal text-foreground!'
+                        : 'shrink-0 type-body font-normal text-foreground'
+                      : 'shrink-0 text-sm font-normal text-foreground'}"
+                  data-testid="agent-card-name"
+                  data-agent-row-name={panelRow ? '' : undefined}
+                  ondblclick={handleNameDoubleClick}
+                >
+                  {displayName}
+                </h3>
+              {/if}
+              <span
+                aria-hidden="true"
+                class="pointer-events-none absolute z-0 rounded-(--radius-small) border transition-[inset,border-color,background-color] duration-(--motion-standard) ease-(--ease-standard) motion-reduce:transition-none {isEditing
+                  ? '-inset-x-2 -inset-y-1.5 border-ring/60 bg-background'
+                  : '-inset-x-1 -inset-y-0.5 border-transparent bg-transparent'}"
+              ></span>
+            </div>
             {#if statusLabel}
               <span
                 class="type-body shrink-0 truncate whitespace-nowrap font-normal text-muted-foreground"
@@ -860,7 +916,7 @@
                 class="block w-full min-w-0 max-w-full truncate whitespace-nowrap text-sm text-subtle"
                 data-testid="agent-card-preview"
               >
-                <AgentPreviewToolLabel toolUse={$preview$.toolUse} animate={isRunning} />
+                <AgentPreviewToolLabel toolUse={$preview$.toolUse} animate={isTurnRunning} />
               </div>
             {:else if $preview$.kind === 'report'}
               <p
@@ -931,6 +987,10 @@
 {/if}
 
 <style>
+  input.inline-edit-input::selection {
+    background: hsl(var(--ring) / 0.3);
+  }
+
   .agent-card-avatar-wrapper {
     display: inline-flex;
     box-sizing: border-box;

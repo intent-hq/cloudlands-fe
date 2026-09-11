@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TerminalAdapter } from '../TerminalAdapter';
 import type { TerminalsClient } from '$lib/client';
 
@@ -374,6 +374,230 @@ describe('TerminalAdapter lifecycle cleanup', () => {
     adapter.resize(120, 40);
 
     expect(terminals.resize).toHaveBeenCalledWith('term-1', 120, 40);
+  });
+});
+
+describe('TerminalAdapter reattach refit', () => {
+  class FakeResizeObserver {
+    static instances: FakeResizeObserver[] = [];
+    targets = new Set<Element>();
+    observe = vi.fn((target: Element) => {
+      this.targets.add(target);
+    });
+    unobserve = vi.fn((target: Element) => {
+      this.targets.delete(target);
+    });
+    disconnect = vi.fn(() => {
+      this.targets.clear();
+    });
+
+    constructor(readonly callback: ResizeObserverCallback) {
+      FakeResizeObserver.instances.push(this);
+    }
+  }
+
+  /** Simulate layout reporting a size change on `target` to every observer watching it. */
+  function notifyResize(target: Element): void {
+    for (const observer of FakeResizeObserver.instances) {
+      if (observer.targets.has(target)) {
+        observer.callback([{ target } as ResizeObserverEntry], observer as any);
+      }
+    }
+  }
+
+  /** A container whose layout box can be changed by the test after reattach. */
+  function sizableContainer(width = 0, height = 0) {
+    const element = document.createElement('div');
+    let size = { width, height };
+    element.getBoundingClientRect = vi.fn(
+      () =>
+        ({
+          ...size,
+          top: 0,
+          left: 0,
+          right: size.width,
+          bottom: size.height,
+          x: 0,
+          y: 0,
+          toJSON: () => ({}),
+        }) as DOMRect,
+    );
+    return {
+      element,
+      setSize(nextWidth: number, nextHeight: number) {
+        size = { width: nextWidth, height: nextHeight };
+      },
+    };
+  }
+
+  function createAdapter(container: HTMLElement) {
+    return new TerminalAdapter({
+      workspaceId: 'ws-1',
+      terminalId: 'term-1',
+      container,
+      appClient: { terminals: fakeTerminalsClient() },
+    });
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    xtermMock.instances.length = 0;
+    fitMock.instances.length = 0;
+    FakeResizeObserver.instances.length = 0;
+    vi.clearAllMocks();
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      value: vi.fn(() => ({ addEventListener: vi.fn(), removeEventListener: vi.fn() })),
+    });
+    Object.defineProperty(window, 'requestAnimationFrame', {
+      configurable: true,
+      value: (callback: FrameRequestCallback) => setTimeout(callback, 0),
+    });
+    (globalThis as any).ResizeObserver = FakeResizeObserver;
+    (globalThis as any).IntersectionObserver = class {
+      observe = vi.fn();
+      disconnect = vi.fn();
+    };
+    (window as any).electronAPI = {
+      invoke: vi.fn().mockResolvedValue({ success: false }),
+      on: vi.fn(() => 'listener-id'),
+      offById: vi.fn(),
+    };
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('fits immediately when the new container already has a size', async () => {
+    const adapter = createAdapter(sizableContainer(800, 400).element);
+    const target = sizableContainer(640, 320);
+    const fit = fitMock.instances[0].fit;
+
+    await adapter.reattach(target.element);
+
+    expect(fit).toHaveBeenCalledOnce();
+    expect(xtermMock.instances[0].refresh).toHaveBeenCalled();
+
+    adapter.detach();
+  });
+
+  it('defers the fit until a 0×0 container gains size, even after the old 50 ms retry window', async () => {
+    const adapter = createAdapter(sizableContainer(800, 400).element);
+    const target = sizableContainer(0, 0);
+    const fit = fitMock.instances[0].fit;
+    const xterm = xtermMock.instances[0];
+
+    await adapter.reattach(target.element);
+    expect(fit).not.toHaveBeenCalled();
+
+    // The surface is still animating in: the container stays 0×0 well past 50 ms.
+    vi.advanceTimersByTime(80);
+    expect(fit).not.toHaveBeenCalled();
+
+    // Layout settles: the container reports a size, observers fire, and the
+    // size holds for the settle window.
+    target.setSize(640, 320);
+    notifyResize(target.element);
+    vi.advanceTimersByTime(100);
+
+    expect(fit).toHaveBeenCalledOnce();
+    expect(xterm.refresh).toHaveBeenCalled();
+
+    adapter.detach();
+  });
+
+  it('waits for an animated container to stop changing size before fitting', async () => {
+    const adapter = createAdapter(sizableContainer(800, 400).element);
+    const target = sizableContainer(0, 0);
+    const fit = fitMock.instances[0].fit;
+
+    await adapter.reattach(target.element);
+
+    // Height-animated slide-in: the first reports are a few px tall.
+    target.setSize(640, 6);
+    notifyResize(target.element);
+    vi.advanceTimersByTime(60);
+    target.setSize(640, 120);
+    notifyResize(target.element);
+    vi.advanceTimersByTime(60);
+    expect(fit).not.toHaveBeenCalled();
+
+    target.setSize(640, 320);
+    notifyResize(target.element);
+    vi.advanceTimersByTime(99);
+    expect(fit).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(1);
+    expect(fit).toHaveBeenCalledOnce();
+
+    // Later size changes are the regular debounced observer's job, not a second reattach fit.
+    target.setSize(700, 320);
+    notifyResize(target.element);
+    vi.advanceTimersByTime(100);
+    expect(fit).toHaveBeenCalledTimes(2);
+    expect(FakeResizeObserver.instances[0].disconnect).toHaveBeenCalled();
+
+    adapter.detach();
+  });
+
+  it('does not fit when the adapter is disposed before the container gains size', async () => {
+    const adapter = createAdapter(sizableContainer(800, 400).element);
+    const target = sizableContainer(0, 0);
+    const fit = fitMock.instances[0].fit;
+
+    await adapter.reattach(target.element);
+    adapter.dispose({ killPty: false });
+
+    target.setSize(640, 320);
+    notifyResize(target.element);
+    vi.advanceTimersByTime(200);
+
+    expect(fit).not.toHaveBeenCalled();
+  });
+
+  it('does not fit from hidden layout while the terminal is not visible', async () => {
+    const adapter = createAdapter(sizableContainer(800, 400).element);
+    const target = sizableContainer(0, 0);
+    const fit = fitMock.instances[0].fit;
+
+    await adapter.reattach(target.element);
+    adapter.setVisible(false);
+
+    target.setSize(640, 320);
+    notifyResize(target.element);
+    vi.advanceTimersByTime(200);
+
+    expect(fit).not.toHaveBeenCalled();
+
+    adapter.detach();
+  });
+
+  it('cancels a pending refit when the terminal is reattached elsewhere first', async () => {
+    const adapter = createAdapter(sizableContainer(800, 400).element);
+    const first = sizableContainer(0, 0);
+    const second = sizableContainer(640, 320);
+    const fit = fitMock.instances[0].fit;
+
+    await adapter.reattach(first.element);
+    expect(fit).not.toHaveBeenCalled();
+    const pendingObserver = FakeResizeObserver.instances.find((observer) =>
+      observer.targets.has(first.element),
+    )!;
+    expect(pendingObserver).toBeDefined();
+
+    await adapter.reattach(second.element);
+    expect(fit).toHaveBeenCalledOnce();
+    // Moving on releases the wait on the old container instead of leaving it armed.
+    expect(pendingObserver.disconnect).toHaveBeenCalled();
+
+    // The abandoned container gaining size later must not drive another fit.
+    first.setSize(500, 250);
+    notifyResize(first.element);
+    vi.advanceTimersByTime(200);
+    expect(fit).toHaveBeenCalledOnce();
+
+    adapter.detach();
   });
 });
 

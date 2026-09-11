@@ -7,6 +7,7 @@
     lineWrapping = false,
     isPanelFocused = false,
     externalContentVersion = 0,
+    jumpTo,
   } = $props();
 
   const initialValue = value;
@@ -21,5 +22,6 @@
   data-line-wrapping={lineWrapping}
   data-panel-focused={isPanelFocused}
   data-external-content-version={externalContentVersion}
+  data-jump-to-line={jumpTo?.line}
   data-initial-value={initialValue}
   bind:value></textarea>

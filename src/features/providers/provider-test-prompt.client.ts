@@ -15,6 +15,7 @@ import {
   ProviderTestPromptResponseSchema,
   type ProviderTestPromptResult,
 } from '$shared/provider-test-prompt';
+import { invalidateProviderAuthStatus } from './provider-auth-status.client';
 
 /**
  * Transport budget for the RPC. The daemon's worst-case structured-result
@@ -45,5 +46,9 @@ export async function runProviderTestPrompt(params: {
     },
     { timeoutMs: TEST_PROMPT_TIMEOUT_MS },
   );
-  return ProviderTestPromptResponseSchema.parse(raw);
+  const result = ProviderTestPromptResponseSchema.parse(raw);
+  if (result.ok || result.reason === 'auth-required') {
+    invalidateProviderAuthStatus(params.providerId);
+  }
+  return result;
 }

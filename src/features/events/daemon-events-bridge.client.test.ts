@@ -22,6 +22,7 @@ const {
   backendRequestSpy,
   applyNoteFromEventSpy,
   applyCommentFromEventSpy,
+  workspaceServiceListSpy,
   capturedHandlers,
   capturedReconnectHandlers,
 } = vi.hoisted(() => ({
@@ -29,6 +30,7 @@ const {
   backendRequestSpy: vi.fn(),
   applyNoteFromEventSpy: vi.fn(),
   applyCommentFromEventSpy: vi.fn(),
+  workspaceServiceListSpy: vi.fn(() => Promise.resolve({ ok: true, data: [] })),
   capturedHandlers: [] as Array<(n: { method: string; params?: unknown }) => void>,
   // RESUB-1: capture reconnect listeners so a test can simulate a daemon
   // restart by invoking each captured handler.
@@ -56,6 +58,9 @@ vi.mock('$lib/client/live/backend-transport', () => ({
     return result || Promise.resolve({ subscriptionId: 'sub-1' });
   },
 }));
+vi.mock('$store/renderer/slices/workspace/utils/workspace.client', () => ({
+  workspaceClient: { list: workspaceServiceListSpy },
+}));
 // Mock the notes-read-service so the bridge's note:* routing is observable
 // without touching the real appClient.notes.list seam.
 vi.mock('$features/notes/notes-read-service', () => ({
@@ -81,6 +86,7 @@ const { ensureAgentSessionSpy, refreshAgentSessionAfterEventSpy } = vi.hoisted((
 vi.mock('$features/agent/agent-read-service', () => ({
   ensureAgentSession: ensureAgentSessionSpy,
   refreshAgentSessionAfterEvent: refreshAgentSessionAfterEventSpy,
+  notePendingQuestionMarkerProjection: vi.fn(),
   createAgentReadMiddleware: () => () => (next: (a: unknown) => unknown) => (a: unknown) => next(a),
 }));
 
@@ -4929,6 +4935,28 @@ describe('daemonEventsBridge (wire contract — mcp.servers:status-changed §6.5
     expect(appStore.state.mcpSettings.errorMessages.github).toBe('connect ECONNREFUSED');
   });
 
+  it("auth_required → preserves the daemon's recovery message", async () => {
+    seedMcpServer('srv-figma', 'figma');
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      mcpNotification({
+        serverId: 'srv-figma',
+        status: {
+          serverId: 'srv-figma',
+          state: 'auth_required',
+          lastError: 'authenticate or check configured credentials',
+        },
+      }),
+    );
+
+    expect(readStatus('figma')).toBe('auth_required');
+    expect(appStore.state.mcpSettings.errorMessages.figma).toBe(
+      'authenticate or check configured credentials',
+    );
+  });
+
   it('starting/stopped map to configured/stopped respectively', async () => {
     seedMcpServer('srv-a', 'alpha');
     await primeBridge();
@@ -6151,20 +6179,16 @@ describe('daemonEventsBridge (workspace:created → recycled-ID purge + rehydrat
     await primeBridge();
     const handler = capturedHandlers[0]!;
     backendRequestSpy.mockClear();
-    backendRequestSpy.mockImplementation((method: string) => {
-      if (method === 'workspace.list') {
-        return Promise.resolve({
-          workspaces: [
-            {
-              id: REMOTE_WS,
-              title: 'Created elsewhere',
-              branch: 'main',
-              status: 'Active',
-            },
-          ],
-        });
-      }
-      return undefined;
+    workspaceServiceListSpy.mockResolvedValueOnce({
+      ok: true,
+      data: [
+        {
+          id: REMOTE_WS,
+          title: 'Created elsewhere',
+          branch: 'main',
+          status: 'Active',
+        },
+      ],
     });
 
     handler({
@@ -6184,7 +6208,7 @@ describe('daemonEventsBridge (workspace:created → recycled-ID purge + rehydrat
     // (live client → mocked backendRequest); let the async refetch settle.
     await flush();
 
-    expect(backendRequestSpy).toHaveBeenCalledWith('workspace.list', { includeArchived: true });
+    expect(workspaceServiceListSpy).toHaveBeenCalledWith({ lite: true });
     const state = appStore.state as { workspace: { workspaces: { ids: string[] } } };
     expect(state.workspace.workspaces.ids).toContain(REMOTE_WS);
   });
@@ -10292,6 +10316,23 @@ describe('daemonEventsBridge (changes refresh — git/changes events → refresh
     });
   }
 
+  it('invalidates accept status immediately for the named event families only', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    wrapDispatch();
+
+    handler(notification('git:commit', { sha: 'abc123' }));
+    handler(notification('changes:git-status', { status: { files: [] } }));
+    handler(notification('changes:tracked', { changes: [] }));
+
+    expect(
+      dispatchCalls.filter((action) => action.type === 'git/acceptChangesStatusInvalidated'),
+    ).toEqual([
+      { type: 'git/acceptChangesStatusInvalidated', payload: [WS] },
+      { type: 'git/acceptChangesStatusInvalidated', payload: [WS] },
+    ]);
+  });
+
   it('git:commit event triggers debounced refreshRequested with the right workspaceId', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
@@ -11725,5 +11766,256 @@ describe('daemonEventsBridge (create-progress wire contract — git:clone:progre
       sawFrame: false,
       done: false,
     });
+  });
+});
+
+describe('daemonEventsBridge (REV-2 §5.17 — client:* / browser:tab-* / browserClientId pin → browserClients slice)', () => {
+  const WS_BC = 'ws-browser-clients-1';
+  let stopSaga: (() => void) | undefined;
+
+  const DESK_ROW = {
+    clientId: 'cli-desk',
+    name: 'Intent Desktop',
+    capabilities: { browserExec: true },
+    hostname: 'dev-box',
+    connections: 1,
+    transports: ['uds'],
+    connectedAt: '2026-09-07T00:00:00.000Z',
+  };
+
+  const TAB = {
+    tabId: 'tab-1',
+    workspaceId: WS_BC,
+    hostClientId: 'cli-desk',
+    url: 'https://example.com/',
+    visibility: 'visible',
+    createdAt: '2026-09-07T00:00:00.000Z',
+    updatedAt: '2026-09-07T00:00:00.000Z',
+  };
+
+  beforeAll(async () => {
+    appStore.init();
+    const { browserClientsSaga } =
+      await import('$store/renderer/slices/browser-clients/sagas/browser-clients-saga');
+    stopSaga = appStore.runSaga(browserClientsSaga);
+  });
+
+  afterAll(() => stopSaga?.());
+
+  beforeEach(async () => {
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+    const { liveClientsReceived } =
+      await import('$store/renderer/slices/browser-clients/browser-clients-slice');
+    const { workspaceUnmounted } =
+      await import('$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice');
+    appStore.dispatch(workspaceUnmounted(WS_BC));
+    appStore.dispatch(liveClientsReceived([]));
+  });
+
+  afterEach(() => vi.clearAllMocks());
+
+  function globalNotification(type: string, data: unknown) {
+    return {
+      method: 'events.event',
+      params: {
+        event: {
+          id: `evt-${type}-${Math.random().toString(36).slice(2, 8)}`,
+          timestamp: '2026-09-07T00:00:01.000Z',
+          type,
+          actor: { type: 'system' },
+          data,
+        },
+      },
+    };
+  }
+
+  function tabNotification(type: string, data: unknown) {
+    return {
+      method: 'events.event',
+      params: {
+        event: {
+          id: `evt-${type}-${Math.random().toString(36).slice(2, 8)}`,
+          workspaceId: WS_BC,
+          timestamp: '2026-09-07T00:00:01.000Z',
+          type,
+          actor: { type: 'agent', id: 'agent-1' },
+          data,
+        },
+      },
+    };
+  }
+
+  it('subscribes to the REV-2 client and browser-tab event types in the firehose filter', () => {
+    for (const type of [
+      'client:connected',
+      'client:disconnected',
+      'browser:tab-opened',
+      'browser:tab-updated',
+      'browser:tab-closed',
+    ]) {
+      expect(DAEMON_EVENTS_SUBSCRIBE_TYPES).toContain(type);
+    }
+  });
+
+  it('client:connected (global, no workspaceId) re-reads client.list and stores the rows', async () => {
+    backendRequestSpy.mockImplementation((method: string) =>
+      method === 'client.list' ? Promise.resolve({ clients: [DESK_ROW] }) : undefined,
+    );
+    const { selectLiveClients } =
+      await import('$store/renderer/slices/browser-clients/browser-clients-selectors');
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      globalNotification('client:connected', {
+        clientId: 'cli-desk',
+        name: 'Intent Desktop',
+        capabilities: { browserExec: true },
+      }),
+    );
+    await flush();
+
+    expect(backendRequestSpy.mock.calls.filter(([m]) => m === 'client.list')).toEqual([
+      ['client.list', undefined],
+    ]);
+    expect(selectLiveClients.select(appStore.state)).toEqual([DESK_ROW]);
+  });
+
+  it('client:disconnected re-reads client.list so the departed client drops out', async () => {
+    const { liveClientsReceived } =
+      await import('$store/renderer/slices/browser-clients/browser-clients-slice');
+    const { selectLiveClients } =
+      await import('$store/renderer/slices/browser-clients/browser-clients-selectors');
+    appStore.dispatch(liveClientsReceived([DESK_ROW as never]));
+    backendRequestSpy.mockImplementation((method: string) =>
+      method === 'client.list' ? Promise.resolve({ clients: [] }) : undefined,
+    );
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(globalNotification('client:disconnected', { clientId: 'cli-desk', capabilities: {} }));
+    await flush();
+
+    expect(selectLiveClients.select(appStore.state)).toEqual([]);
+  });
+
+  it('drops a malformed client:* payload without touching the wire', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(globalNotification('client:connected', { name: 'no clientId' }));
+    await flush();
+
+    expect(backendRequestSpy.mock.calls.filter(([m]) => m === 'client.list')).toEqual([]);
+  });
+
+  it('browser:tab-opened / tab-updated / tab-closed dispatch the tab event actions and advance tabsRevision', async () => {
+    const { browserTabClosed, browserTabUpserted } =
+      await import('$store/renderer/slices/browser-clients/browser-clients-slice');
+    const { selectWorkspaceBrowserTabsRevision } =
+      await import('$store/renderer/slices/browser-clients/browser-clients-selectors');
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    const originalDispatch = appStore.dispatch;
+    const dispatchSpy = vi.fn(originalDispatch);
+    const dispatchGetterSpy = vi.spyOn(appStore, 'dispatch', 'get').mockReturnValue(dispatchSpy);
+
+    handler(tabNotification('browser:tab-opened', { tab: TAB }));
+    expect(dispatchSpy).toHaveBeenCalledWith(browserTabUpserted(WS_BC, TAB as never));
+    expect(selectWorkspaceBrowserTabsRevision.select(appStore.state, WS_BC)).toBe(1);
+
+    const moved = {
+      ...TAB,
+      url: 'https://example.com/next',
+      updatedAt: '2026-09-07T00:00:02.000Z',
+    };
+    handler(tabNotification('browser:tab-updated', { tab: moved, changes: { url: moved.url } }));
+    expect(dispatchSpy).toHaveBeenCalledWith(browserTabUpserted(WS_BC, moved as never));
+    expect(selectWorkspaceBrowserTabsRevision.select(appStore.state, WS_BC)).toBe(2);
+
+    handler(tabNotification('browser:tab-closed', { tab: moved }));
+    expect(dispatchSpy).toHaveBeenCalledWith(browserTabClosed(WS_BC, TAB.tabId));
+    expect(selectWorkspaceBrowserTabsRevision.select(appStore.state, WS_BC)).toBe(3);
+
+    // Self-sufficient payloads: no browser.listTabs refetch is issued.
+    expect(backendRequestSpy.mock.calls.filter(([m]) => m === 'browser.listTabs')).toEqual([]);
+    dispatchGetterSpy.mockRestore();
+  });
+
+  it('ignores a browser:tab-* event whose payload is not a registry row', async () => {
+    const { selectWorkspaceBrowserTabsRevision } =
+      await import('$store/renderer/slices/browser-clients/browser-clients-selectors');
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(tabNotification('browser:tab-opened', { tab: { tabId: 'tab-x' } }));
+    expect(selectWorkspaceBrowserTabsRevision.select(appStore.state, WS_BC)).toBe(0);
+  });
+
+  it('workspace:updated browserClientId delta merges the pin and re-reads workspace.getBrowserClient', async () => {
+    const { setWorkspaceEntity } = await import('$store/renderer/slices/workspace/workspace-slice');
+    const { WorkspaceStatus } = await import('$shared/types');
+    const { getItem } = await import('@augmentcode/themis/utils/collections/collection-utils');
+    const { selectWorkspaceBrowserClient } =
+      await import('$store/renderer/slices/browser-clients/browser-clients-selectors');
+    appStore.dispatch(
+      setWorkspaceEntity({
+        id: WS_BC,
+        title: 'Pinned ws',
+        branch: 'main',
+        status: WorkspaceStatus.Active,
+        changesets: [],
+        timeline: [],
+        conversationInfo: [],
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      } as never),
+    );
+    const pinned = {
+      clientId: 'cli-desk',
+      source: 'workspace',
+      resolved: { clientId: 'cli-desk', name: 'Intent Desktop' },
+    };
+    const cleared = { source: 'default', resolved: null };
+    let browserClient: unknown = pinned;
+    backendRequestSpy.mockImplementation((method: string) =>
+      method === 'workspace.getBrowserClient' ? Promise.resolve({ browserClient }) : undefined,
+    );
+    const readWorkspace = () => {
+      const state = appStore.state as { workspace: { workspaces: unknown } };
+      return (getItem(state.workspace.workspaces as never, WS_BC) ?? {}) as {
+        browserClientId?: string;
+      };
+    };
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      tabNotification('workspace:updated', {
+        workspaceId: WS_BC,
+        changes: { browserClientId: 'cli-desk' },
+      }),
+    );
+    await flush();
+    expect(readWorkspace().browserClientId).toBe('cli-desk');
+    expect(
+      backendRequestSpy.mock.calls.filter(([m]) => m === 'workspace.getBrowserClient'),
+    ).toEqual([['workspace.getBrowserClient', { workspaceId: WS_BC }]]);
+    expect(selectWorkspaceBrowserClient.select(appStore.state, WS_BC)).toEqual(pinned);
+
+    // Clearing the pin arrives as an explicit JSON null.
+    browserClient = cleared;
+    handler(
+      tabNotification('workspace:updated', {
+        workspaceId: WS_BC,
+        changes: { browserClientId: null },
+      }),
+    );
+    await flush();
+    expect(readWorkspace().browserClientId).toBeUndefined();
+    expect(selectWorkspaceBrowserClient.select(appStore.state, WS_BC)).toEqual(cleared);
   });
 });

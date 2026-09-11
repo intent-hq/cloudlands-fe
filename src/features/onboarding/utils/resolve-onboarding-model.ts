@@ -4,7 +4,7 @@
  *
  * Resolution is provider-availability aware: the returned provider is always
  * one that is installed AND authenticated on the user's machine, so the
- * initial Coordinator agent can actually start. If the caller-preferred
+ * initial Developer agent can actually start. If the caller-preferred
  * provider (specialist codingAgent, active provider, default) is not
  * available, we fall back to the first usable provider.
  *
@@ -30,6 +30,7 @@ import {
 } from '$store/renderer/slices/specialists/specialists-selectors';
 import { selectEffectiveDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
 import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
+import { DEFAULT_NEW_WORKSPACE_SPECIALIST_ID, getSpecialistById } from '$lib/constants/specialists';
 import { isProviderAuthenticationReady } from '$shared/types/provider-availability';
 import {
   getProviderAvailability,
@@ -41,14 +42,32 @@ import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
 
 const logger = createLogger('resolve-onboarding-model');
-const specialistId = 'spec-writer';
 
 export interface ResolvedModelConfig {
   provider: string;
   /** Explicit override only; undefined ⇒ the daemon resolves the default. */
   model: string | undefined;
   behaviorPrompt: string | undefined;
-  specialistId: string;
+  /**
+   * Developer when the resolved specialist list carries it (or is not loaded
+   * yet — the daemon bundles the Developer); `null` (General) when a loaded
+   * list does not, since that list is authoritative (daemon replacement mode).
+   */
+  specialistId: string | null;
+  /** Localized display name of the resolved specialist; undefined for General. */
+  specialistName: string | undefined;
+}
+
+/**
+ * Applies the `DEFAULT_NEW_WORKSPACE_SPECIALIST_ID` contract: the Developer
+ * id only when a non-empty resolved list contains it, or when nothing has
+ * loaded yet; otherwise General (`null`).
+ */
+function resolveOnboardingSpecialistId(specialists: readonly { id: string }[]): string | null {
+  if (specialists.length === 0) return DEFAULT_NEW_WORKSPACE_SPECIALIST_ID;
+  return specialists.some((s) => s.id === DEFAULT_NEW_WORKSPACE_SPECIALIST_ID)
+    ? DEFAULT_NEW_WORKSPACE_SPECIALIST_ID
+    : null;
 }
 
 /** An explicit prompt-step picker pick: bare model id + its provider leg. */
@@ -162,7 +181,7 @@ function resolveUsableProvider(
 
 /**
  * Given the current Redux state, resolve the provider, behavior prompt, and
- * any explicit model override for the initial onboarding "Coordinator" agent.
+ * any explicit model override for the initial onboarding Developer agent.
  * Returns a provider that is guaranteed to be available + authenticated on
  * the user's machine.
  *
@@ -179,9 +198,21 @@ export async function resolveOnboardingModel(
 ): Promise<ResolvedModelConfig> {
   const activeProvider = selectActiveProviderId.select(state);
   const defaultProviderId = selectEffectiveDefaultProviderId.select(state);
-  const specialist = selectSpecialists.select(state).find((s) => s.id === specialistId);
-  const behaviorPrompt = selectEffectiveBehaviorPrompt.select(state, specialistId) || undefined;
-  const specialistOverride = selectUserOverrides.select(state).modelOverrides[specialistId];
+  const specialists = selectSpecialists.select(state);
+  const specialistId = resolveOnboardingSpecialistId(specialists);
+  const specialist = specialistId ? specialists.find((s) => s.id === specialistId) : undefined;
+  const specialistName = specialistId
+    ? (specialist?.name ?? getSpecialistById(specialistId)?.name ?? specialistId)
+    : undefined;
+  const behaviorPrompt = specialistId
+    ? selectEffectiveBehaviorPrompt.select(state, specialistId) || undefined
+    : undefined;
+  const specialistOverride = specialistId
+    ? selectUserOverrides.select(state).modelOverrides[specialistId]
+    : undefined;
+  if (specialistId === null) {
+    logger.info('Developer specialist absent from the resolved list; falling back to General');
+  }
 
   const availability = await getProviderAvailability();
 
@@ -208,6 +239,7 @@ export async function resolveOnboardingModel(
       model: pickedModel,
       behaviorPrompt,
       specialistId,
+      specialistName,
     };
   }
 
@@ -279,5 +311,6 @@ export async function resolveOnboardingModel(
     model: resolvedModel,
     behaviorPrompt,
     specialistId,
+    specialistName,
   };
 }

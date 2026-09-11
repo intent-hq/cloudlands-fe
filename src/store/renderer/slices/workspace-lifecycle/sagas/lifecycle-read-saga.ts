@@ -8,6 +8,7 @@ import { getAgentLineStats } from '$features/line-changes/line-changes.client';
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
 import type { Workspace } from '$shared/types';
+import { workspaceClient } from '../../workspace/utils/workspace.client';
 import { selectActiveBackendId } from '../../../utils/backend-storage-namespace';
 import { takeEveryFromWindowEvent } from '../../../utils/ipc-channel';
 import { selectCurrentWorkspaceTabId } from '../../tab-state/tab-state-selectors';
@@ -15,13 +16,10 @@ import {
   takeLeadingByAgent,
   takeLeadingByWorkspace,
   takeLeadingInContext,
+  takeLatestByContext,
   takeSingleFlightInContext,
 } from '../../../utils/context-saga-effects';
-import {
-  bulkUpsertSessions,
-  upsertSession,
-  type BulkUpsertSessionsOptions,
-} from '../../agent-session/agent-session-slice';
+import { bulkUpsertSessions } from '../../agent-session/agent-session-slice';
 import {
   selectAgentSession,
   selectAgentSessionsById,
@@ -81,7 +79,16 @@ import {
   selectRetiredAgentsLoaded,
   selectWorkspaceAgentIds,
 } from '../../workspace-agents/workspace-agents-selectors';
-import { eventsLoaded, loadEventsRequested } from '../../workspace-events/workspace-events-slice';
+import { selectOlderEventsNextToken } from '../../workspace-events/workspace-events-selectors';
+import {
+  eventsLoaded,
+  eventsLoadFailed,
+  eventsLoadStarted,
+  loadEventsRequested,
+  loadOlderEventsRequested,
+  olderEventsLoaded,
+  olderEventsLoadFailed,
+} from '../../workspace-events/workspace-events-slice';
 import {
   ensureWorkspaceTasksLoaded,
   loadWorkspaceTasksRequested,
@@ -112,6 +119,8 @@ const logger = createLogger('LifecycleReadSaga');
  * the TTL and the next trigger will retry immediately.
  */
 const PR_STATUS_REFRESH_TTL_MS = 60_000;
+/** Initial/latest page size; pages arrive newest→oldest and are stored oldest→newest. */
+const EVENTS_PAGE_LIMIT = 100;
 
 function matchesWorkspaceCleanup(workspaceId: string) {
   return (action: { type: string; payload?: unknown }) =>
@@ -137,12 +146,13 @@ function scriptsReadContext(action: { type: string; payload: [string, ...unknown
 }
 
 function* refreshWorkspaces(): SagaGenerator<void> {
-  const workspaces: Awaited<ReturnType<typeof appClient.workspaces.list>> = yield* call(
-    [appClient.workspaces, appClient.workspaces.list],
-    { includeArchived: true },
+  const result: Awaited<ReturnType<typeof workspaceClient.list>> = yield* call(
+    [workspaceClient, workspaceClient.list],
+    { lite: true },
   );
+  if (!result.ok) throw new Error(result.error);
   const backendId = yield* selectActiveBackendId();
-  yield* put(replaceWorkspaceList(workspaces));
+  yield* put(replaceWorkspaceList(result.data));
   yield* put(setWorkspaceHasLoaded(true, backendId));
   const recentViews: Awaited<ReturnType<typeof appClient.workspaces.recentViews>> = yield* call([
     appClient.workspaces,
@@ -348,14 +358,13 @@ function* hydrateAgents(workspaceId: string): SagaGenerator<void> {
   // Crash-leftover runtime-flag convergence (monorepo#4135): a stored session
   // whose both-true isStreaming/isProcessing pair predates this read (the
   // pre-fetch snapshot above) and whose fresh list row reports the turn idle
-  // is a crash leftover no event will ever clear — upsert it with the
-  // stale-clear options so the list refresh converges it, matching the
-  // per-agent fetch path (agent-read-service). A genuinely live turn returns
-  // undefined options and keeps the default pair-guard preservation
-  // semantics (monorepo#1250). The per-agent `existing` read stays post-fetch
-  // on purpose: the message merge wants the latest stored transcript.
-  const staleClearAgents = [] as typeof fetched;
-  let staleClearOptions: BulkUpsertSessionsOptions | undefined;
+  // is a crash leftover no event will ever clear — tag that row for stale
+  // clearing in the single batch so list refresh converges it, matching the
+  // per-agent fetch path (agent-read-service). Genuinely live rows retain the
+  // default pair-guard semantics (monorepo#1250). The per-agent `existing`
+  // read stays post-fetch on purpose: the message merge wants the latest
+  // stored transcript.
+  const staleRuntimeFlagClearAgentIds: string[] = [];
   for (const agent of fetched) {
     const existing = yield* selectAgentSession.effect(String(agent.id));
     const hadInFlightPairBeforeFetch = inFlightPairIdsBeforeFetch.has(String(agent.id));
@@ -366,8 +375,7 @@ function* hydrateAgents(workspaceId: string): SagaGenerator<void> {
     agents.push(merged);
     const clearOptions = staleRuntimeFlagClearUpsertOptions(hadInFlightPairBeforeFetch, agent);
     if (clearOptions) {
-      staleClearOptions = clearOptions;
-      staleClearAgents.push(merged);
+      staleRuntimeFlagClearAgentIds.push(String(agent.id));
     }
   }
   yield* put(setAgents(workspaceId, agents));
@@ -380,15 +388,11 @@ function* hydrateAgents(workspaceId: string): SagaGenerator<void> {
     yield* put(fetchRetiredAgentsRequested(workspaceId));
   }
   if (agents.length > 0) {
-    if (staleClearAgents.length > 0) {
-      const staleClearIds = new Set(staleClearAgents.map((agent) => String(agent.id)));
-      const preserved = agents.filter((agent) => !staleClearIds.has(String(agent.id)));
-      if (preserved.length > 0) yield* put(bulkUpsertSessions(preserved));
-      yield* put(bulkUpsertSessions(staleClearAgents, staleClearOptions));
+    if (staleRuntimeFlagClearAgentIds.length > 0) {
+      yield* put(bulkUpsertSessions(agents, { staleRuntimeFlagClearAgentIds }));
     } else {
       yield* put(bulkUpsertSessions(agents));
     }
-    for (const agent of agents) yield* put(upsertSession(agent));
   }
 
   const activeAgentId = yield* selectActiveAgentId.effect(workspaceId);
@@ -434,7 +438,6 @@ function* fetchRetiredAgents(workspaceId: string): SagaGenerator<void> {
       }
       yield* put(bulkUpsertSessions(agents));
       for (const agent of agents) {
-        yield* put(upsertSession(agent));
         yield* put(addAgent(workspaceId, agent));
       }
     }
@@ -505,11 +508,41 @@ function* runWorkspaceRead(
 }
 
 function* refreshEvents(workspaceId: string): SagaGenerator<void> {
-  const events: Awaited<ReturnType<typeof appClient.events.list>> = yield* call(
-    [appClient.events, appClient.events.list],
-    workspaceId,
-  );
-  yield* put(eventsLoaded(workspaceId, events));
+  try {
+    yield* put(eventsLoadStarted(workspaceId));
+    const page: Awaited<ReturnType<typeof appClient.events.queryPage>> = yield* call(
+      [appClient.events, appClient.events.queryPage],
+      workspaceId,
+      { limit: EVENTS_PAGE_LIMIT },
+    );
+    yield* put(eventsLoaded(workspaceId, [...page.items].reverse(), page.nextToken));
+  } catch (error) {
+    yield* put(
+      eventsLoadFailed(workspaceId, error instanceof Error ? error.message : String(error)),
+    );
+    throw error;
+  }
+}
+
+function* refreshOlderEvents(workspaceId: string): SagaGenerator<void> {
+  const nextToken = yield* selectOlderEventsNextToken.effect(workspaceId);
+  if (!nextToken) {
+    yield* put(olderEventsLoaded(workspaceId, [], null));
+    return;
+  }
+  try {
+    const page: Awaited<ReturnType<typeof appClient.events.queryPage>> = yield* call(
+      [appClient.events, appClient.events.queryPage],
+      workspaceId,
+      { limit: EVENTS_PAGE_LIMIT, nextToken },
+    );
+    yield* put(olderEventsLoaded(workspaceId, [...page.items].reverse(), page.nextToken));
+  } catch (error) {
+    yield* put(
+      olderEventsLoadFailed(workspaceId, error instanceof Error ? error.message : String(error)),
+    );
+    throw error;
+  }
 }
 
 function* refreshTaskAgentLinks(workspaceId: string): SagaGenerator<void> {
@@ -568,6 +601,10 @@ type TasksReadAction = ReturnType<
   typeof ensureWorkspaceTasksLoaded | typeof loadWorkspaceTasksRequested | typeof workspaceUnmounted
 >;
 
+type EventsReadAction = ReturnType<
+  typeof loadEventsRequested | typeof loadOlderEventsRequested | typeof workspaceUnmounted
+>;
+
 function tasksReadContext(pendingForcedReads: Set<string>, action: TasksReadAction) {
   const workspaceId = action.payload[0];
   if (isWorkspaceCleanupAction(action)) {
@@ -599,11 +636,33 @@ function* tasksWorker(
   );
 }
 
+function eventsReadContext(pendingInitialReads: Set<string>, action: EventsReadAction) {
+  const workspaceId = action.payload[0];
+  if (isWorkspaceCleanupAction(action)) {
+    pendingInitialReads.delete(workspaceId);
+    return { context: workspaceId || '', cancel: true as const };
+  }
+  if (workspaceId && action.type === loadEventsRequested.type) {
+    pendingInitialReads.add(workspaceId);
+  }
+  return workspaceId || '';
+}
+
 function* eventsWorker(
   scheduler: WorkspaceReadScheduler,
-  action: ReturnType<typeof loadEventsRequested>,
+  pendingInitialReads: Set<string>,
+  action: EventsReadAction,
 ) {
-  yield* runWorkspaceRead(scheduler, 'events', action.payload[0], refreshEvents);
+  if (isWorkspaceCleanupAction(action)) return;
+  const workspaceId = action.payload[0];
+  if (pendingInitialReads.delete(workspaceId)) {
+    yield* runWorkspaceRead(scheduler, 'events', workspaceId, refreshEvents, false);
+    if (action.type === loadOlderEventsRequested.type) {
+      yield* runWorkspaceRead(scheduler, 'olderEvents', workspaceId, refreshOlderEvents, false);
+    }
+    return;
+  }
+  yield* runWorkspaceRead(scheduler, 'olderEvents', workspaceId, refreshOlderEvents, false);
 }
 
 function* tokenUsageWorker(
@@ -705,8 +764,8 @@ function* contextWorker(
   initializedContexts: Set<string>,
   action: ReturnType<typeof initContextForWorkspace>,
 ) {
-  const [workspaceId] = action.payload;
-  if (!workspaceId || initializedContexts.has(workspaceId)) return;
+  const [workspaceId, force] = action.payload;
+  if (!workspaceId || (!force && initializedContexts.has(workspaceId))) return;
   try {
     yield* race({
       read: call(function* () {
@@ -754,6 +813,7 @@ function* consoleOwnerReconcileWorker(action: ReturnType<typeof consoleOwnerChan
 export function* lifecycleReadSaga(): SagaGenerator<void> {
   const initializedContexts = new Set<string>();
   const pendingForcedTaskReads = new Set<string>();
+  const pendingInitialEventReads = new Set<string>();
   // One scheduler per saga run: it dies with the saga, so a restart can never
   // inherit slots held by reads that were cancelled with the previous run.
   const scheduler = createWorkspaceReadScheduler();
@@ -776,9 +836,24 @@ export function* lifecycleReadSaga(): SagaGenerator<void> {
         scheduler,
         pendingForcedTaskReads,
       ),
-      takeLeadingByWorkspace(loadEventsRequested, eventsWorker, scheduler),
+      takeSingleFlightInContext(
+        [loadEventsRequested, loadOlderEventsRequested, workspaceUnmounted],
+        (action) => eventsReadContext(pendingInitialEventReads, action),
+        eventsWorker,
+        scheduler,
+        pendingInitialEventReads,
+      ),
       takeLeadingByWorkspace(fetchWorkspaceTokenUsage, tokenUsageWorker, scheduler),
-      takeLeadingByWorkspace(initContextForWorkspace, contextWorker, initializedContexts),
+      takeLatestByContext(
+        initContextForWorkspace,
+        (action) => ({
+          context: action.payload[0],
+          force: action.payload[1],
+          generation: action.payload[2] ?? 0,
+        }),
+        contextWorker,
+        initializedContexts,
+      ),
       takeLeadingByWorkspace(
         hydrateTaskAgentAssociationsRequested,
         taskAgentLinksWorker,
@@ -818,5 +893,6 @@ export function* lifecycleReadSaga(): SagaGenerator<void> {
   } finally {
     initializedContexts.clear();
     pendingForcedTaskReads.clear();
+    pendingInitialEventReads.clear();
   }
 }

@@ -8,6 +8,7 @@ import {
   openTab,
   openTabInRightmostColumn,
   preparePanelLayoutBackendRestore,
+  resetEmptiedByUserClose,
   openTabInAdjacentOrSplit,
   openTabInNewRootColumn,
   openBlankWorkingPanel,
@@ -17,6 +18,9 @@ import {
   moveTabToSplitLevel,
   createGridLayout,
   closeTab,
+  acknowledgeBrowserTabHost,
+  activateVisibleTab,
+  applyBrowserTabRegistryRow,
   closeActiveTab,
   closeFocusedPanelTab,
   closePanel,
@@ -36,6 +40,7 @@ import {
   closeAllTabs,
   closeAllOthersEverywhere,
   closeTabsByType,
+  closeTabsByAgentId,
   reopenClosedPanelColumn,
   reopenClosedTab,
   pruneRecentlyClosed,
@@ -1102,6 +1107,194 @@ describe('panelLayoutReducer', () => {
     });
   });
 
+  describe('emptiedByUserClose', () => {
+    const noteTab = { id: 't1', type: 'note', title: 'Note' };
+    const ownedBrowserTab = {
+      id: 'b1',
+      type: 'browser',
+      title: 'Owned',
+      browserUrl: 'https://example.com',
+      ownerAgentId: 'agent-1',
+    };
+
+    it('defaults to false', () => {
+      expect(emptyWorkspaceState.emptiedByUserClose).toBe(false);
+    });
+
+    it('is set when closeTab removes the last tab', () => {
+      const result = panelLayoutReducer(
+        stateWithPanel('p1', [noteTab]),
+        closeTab(WS, 't1', 'p1', 10),
+      );
+      expect(result.byWorkspaceId[WS].emptiedByUserClose).toBe(true);
+    });
+
+    it('stays false when closeTab leaves other tabs behind', () => {
+      const state = stateWithPanel('p1', [noteTab, { id: 't2', type: 'note', title: 'Other' }]);
+      const result = panelLayoutReducer(state, closeTab(WS, 't1', 'p1', 10));
+      expect(result.byWorkspaceId[WS].emptiedByUserClose).toBe(false);
+    });
+
+    it('stays false when the closed tab only hides (owned browser tab)', () => {
+      const result = panelLayoutReducer(
+        stateWithPanel('p1', [ownedBrowserTab]),
+        closeTab(WS, 'b1', 'p1', 10),
+      );
+      expect(getItems(result.byWorkspaceId[WS].hiddenTabs)).toHaveLength(1);
+      expect(result.byWorkspaceId[WS].emptiedByUserClose).toBe(false);
+    });
+
+    it('stays false when a destroy (agent teardown) removes the last tab', () => {
+      const result = panelLayoutReducer(
+        stateWithPanel('p1', [noteTab]),
+        closeTab(WS, 't1', 'p1', 10, { destroy: true }),
+      );
+      expect(Object.values(result.byWorkspaceId[WS].panels).flatMap((p) => p.tabs)).toEqual([]);
+      expect(result.byWorkspaceId[WS].emptiedByUserClose).toBe(false);
+    });
+
+    it('is set by closeActiveTab and closeAllTabs when they empty the layout', () => {
+      const viaActive = panelLayoutReducer(
+        stateWithPanel('p1', [noteTab]),
+        closeActiveTab(WS, 'p1', 10),
+      );
+      expect(viaActive.byWorkspaceId[WS].emptiedByUserClose).toBe(true);
+      const viaAll = panelLayoutReducer(
+        stateWithPanel('p1', [noteTab, { id: 't2', type: 'note', title: 'Other' }]),
+        closeAllTabs(WS, 'p1', 10),
+      );
+      expect(viaAll.byWorkspaceId[WS].emptiedByUserClose).toBe(true);
+    });
+
+    it('is set when closeFocusedPanelTab (Cmd+W) removes the last tab', () => {
+      const result = panelLayoutReducer(
+        stateWithPanel('p1', [noteTab]),
+        closeFocusedPanelTab(WS, 10),
+      );
+      expect(Object.values(result.byWorkspaceId[WS].panels).flatMap((p) => p.tabs)).toEqual([]);
+      expect(result.byWorkspaceId[WS].emptiedByUserClose).toBe(true);
+    });
+
+    it('is set when closePanel removes the last populated column', () => {
+      const split = panelLayoutReducer(
+        stateWithPanel('p1', [noteTab]),
+        splitPanel(WS, 'p1', 'horizontal', undefined, 10),
+      );
+      expect(Object.keys(split.byWorkspaceId[WS].panels)).toHaveLength(2);
+      const state = panelLayoutReducer(split, closePanel(WS, 'p1', 20));
+      expect(Object.values(state.byWorkspaceId[WS].panels).flatMap((p) => p.tabs)).toEqual([]);
+      expect(state.byWorkspaceId[WS].emptiedByUserClose).toBe(true);
+    });
+
+    it('stays false when closePanel leaves tabs in another column', () => {
+      const split = panelLayoutReducer(
+        stateWithPanel('p1', [noteTab]),
+        splitPanel(WS, 'p1', 'horizontal', undefined, 10),
+      );
+      const emptyPanelId = Object.keys(split.byWorkspaceId[WS].panels).find((id) => id !== 'p1')!;
+      const state = panelLayoutReducer(split, closePanel(WS, emptyPanelId, 20));
+      expect(state.byWorkspaceId[WS].emptiedByUserClose).toBe(false);
+    });
+
+    it('is set by resetLayout', () => {
+      const result = panelLayoutReducer(stateWithPanel('p1', [noteTab]), resetLayout(WS));
+      expect(result.byWorkspaceId[WS].emptiedByUserClose).toBe(true);
+    });
+
+    it('is set when a UI-driven closeTabsByType removes the last tab', () => {
+      const agentTab = { id: 'a1', type: 'agent', title: 'Agent', agentId: 'agent-1' };
+      const result = panelLayoutReducer(
+        stateWithPanel('p1', [agentTab]),
+        closeTabsByType(WS, 'agent', 'agentId', 'agent-1', 10),
+      );
+      expect(Object.values(result.byWorkspaceId[WS].panels).flatMap((p) => p.tabs)).toEqual([]);
+      expect(result.byWorkspaceId[WS].emptiedByUserClose).toBe(true);
+    });
+
+    it('stays false when deleted-agent cleanup (closeTabsByAgentId) removes the last tab', () => {
+      const agentTab = { id: 'a1', type: 'agent', title: 'Agent', agentId: 'agent-1' };
+      const result = panelLayoutReducer(
+        stateWithPanel('p1', [agentTab]),
+        closeTabsByAgentId(WS, 'agent-1', 10),
+      );
+      expect(Object.values(result.byWorkspaceId[WS].panels).flatMap((p) => p.tabs)).toEqual([]);
+      expect(result.byWorkspaceId[WS].emptiedByUserClose).toBe(false);
+    });
+
+    it('is cleared as soon as any transition leaves a tab in the layout', () => {
+      const emptied = panelLayoutReducer(
+        stateWithPanel('p1', [noteTab]),
+        closeTab(WS, 't1', 'p1', 10),
+      );
+      expect(emptied.byWorkspaceId[WS].emptiedByUserClose).toBe(true);
+
+      const reopened = panelLayoutReducer(
+        emptied,
+        openTab(WS, { type: 'note', title: 'Again', noteId: 'n1' }, 'p1', 't2', false, 20),
+      );
+      expect(reopened.byWorkspaceId[WS].emptiedByUserClose).toBe(false);
+
+      const { id: _ownedId, ...ownedBrowserTabInput } = ownedBrowserTab;
+      const hidden = panelLayoutReducer(emptied, openHiddenTab(WS, ownedBrowserTabInput, 'b2'));
+      expect(getItems(hidden.byWorkspaceId[WS].hiddenTabs)).toHaveLength(1);
+      expect(hidden.byWorkspaceId[WS].emptiedByUserClose).toBe(false);
+    });
+
+    it('survives a same-session remount of a tabless layout and clears once a tab is restored', () => {
+      const emptied = panelLayoutReducer(
+        stateWithPanel('p1', [noteTab]),
+        closeTab(WS, 't1', 'p1', 10),
+      );
+      const tabless = {
+        root: { type: 'panel', panelId: 'p1' } as const,
+        panels: { p1: { id: 'p1', tabs: [], activeTabId: null } },
+        focusedPanelId: 'p1',
+      };
+
+      const pending = panelLayoutReducer(emptied, setRestoreStatus(WS, 'pending'));
+      expect(pending.byWorkspaceId[WS].emptiedByUserClose).toBe(true);
+      const initialized = panelLayoutReducer(pending, initializeLayout(WS, tabless));
+      expect(initialized.byWorkspaceId[WS].emptiedByUserClose).toBe(true);
+      const restored = panelLayoutReducer(initialized, setRestoreStatus(WS, 'restored'));
+      expect(restored.byWorkspaceId[WS].emptiedByUserClose).toBe(true);
+
+      const withTab = panelLayoutReducer(
+        pending,
+        initializeLayout(WS, {
+          ...tabless,
+          panels: { p1: { id: 'p1', tabs: [noteTab], activeTabId: 't1' } },
+        }),
+      );
+      expect(withTab.byWorkspaceId[WS].emptiedByUserClose).toBe(false);
+    });
+
+    it('is cleared by the saga-owned empty/invalid restore transitions', () => {
+      const reset = panelLayoutReducer(stateWithPanel('p1', [noteTab]), resetLayout(WS));
+      expect(reset.byWorkspaceId[WS].emptiedByUserClose).toBe(true);
+      for (const status of ['empty', 'invalid'] as const) {
+        const transitioned = panelLayoutReducer(reset, setRestoreStatus(WS, status));
+        expect(transitioned.byWorkspaceId[WS].emptiedByUserClose).toBe(false);
+      }
+    });
+
+    it('is cleared on every workspace by the backend-boundary reset', () => {
+      const other = 'ws-other';
+      let state = panelLayoutReducer(stateWithPanel('p1', [noteTab]), closeTab(WS, 't1', 'p1', 10));
+      state = panelLayoutReducer(
+        state,
+        openTab(other, { type: 'note', title: 'Note', noteId: 'n1' }, undefined, 't2', false, 11),
+      );
+      state = panelLayoutReducer(state, resetLayout(other));
+      expect(state.byWorkspaceId[WS].emptiedByUserClose).toBe(true);
+      expect(state.byWorkspaceId[other].emptiedByUserClose).toBe(true);
+
+      const reset = panelLayoutReducer(state, resetEmptiedByUserClose());
+      expect(reset.byWorkspaceId[WS].emptiedByUserClose).toBe(false);
+      expect(reset.byWorkspaceId[other].emptiedByUserClose).toBe(false);
+      expect(panelLayoutReducer(reset, resetEmptiedByUserClose())).toBe(reset);
+    });
+  });
+
   describe('openTab', () => {
     it('rejects a tab owned by another workspace without changing state', () => {
       const state = stateWithPanel('p1');
@@ -1203,6 +1396,147 @@ describe('panelLayoutReducer', () => {
         nowSpy.mockRestore();
       }
     });
+
+    // preserveFocus (agent-driven visible position:same opens): the tab is
+    // activated in the target panel so it paints, but panel focus and focus
+    // history stay put — the same contract as openTabInRightmostColumn.
+    it('preserveFocus activates the new tab in the target panel without moving focus', () => {
+      const state = stateWithPanel('p1', [{ id: 'note', type: 'note', title: 'Note' }]);
+      state.byWorkspaceId[WS].panels.p2 = {
+        id: 'p2',
+        tabs: [{ id: 'other', type: 'file', title: 'Other', closable: true }],
+        activeTabId: 'other',
+      };
+      const before = state.byWorkspaceId[WS];
+      const result = panelLayoutReducer(
+        state,
+        openTab(
+          WS,
+          { type: 'browser', title: 'Browser', browserUrl: 'https://agent.test', closable: true },
+          'p2',
+          'browser',
+          undefined,
+          10,
+          undefined,
+          true,
+        ),
+      ).byWorkspaceId[WS];
+
+      expect(result.panels.p2.tabs.map((tab) => tab.id)).toEqual(['other', 'browser']);
+      expect(result.panels.p2.activeTabId).toBe('browser');
+      expect(result.focusedPanelId).toBe('p1');
+      expect(result.focusHistory).toEqual(before.focusHistory);
+      expect(result.pendingFocusTabId).toBeNull();
+      expect(result.pendingPanelReveal).toEqual({
+        panelId: 'p2',
+        tabId: 'browser',
+        requestId: 'browser',
+        preserveFocus: true,
+      });
+      expect(result.layoutHistory).toHaveLength(1);
+      expect(result.layoutHistory[0].panels.p2).toMatchObject({ activeTabId: 'other' });
+    });
+
+    it('preserveFocus marks the reveal when the target is the focused panel', () => {
+      const state = stateWithPanel('p1', [{ id: 'note', type: 'note', title: 'Note' }]);
+      const result = panelLayoutReducer(
+        state,
+        openTab(
+          WS,
+          { type: 'browser', title: 'Browser', browserUrl: 'https://agent.test', closable: true },
+          undefined,
+          'browser',
+          undefined,
+          10,
+          undefined,
+          true,
+        ),
+      ).byWorkspaceId[WS];
+
+      expect(result.panels.p1.activeTabId).toBe('browser');
+      expect(result.focusedPanelId).toBe('p1');
+      expect(result.pendingFocusTabId).toBeNull();
+      expect(result.pendingPanelReveal).toEqual({
+        panelId: 'p1',
+        tabId: 'browser',
+        requestId: 'browser',
+        preserveFocus: true,
+      });
+
+      const userOpen = panelLayoutReducer(
+        state,
+        openTab(
+          WS,
+          { type: 'browser', title: 'Browser', browserUrl: 'https://user.test', closable: true },
+          undefined,
+          'user-browser',
+          undefined,
+          10,
+        ),
+      ).byWorkspaceId[WS];
+      expect(userOpen.pendingPanelReveal?.preserveFocus).toBeUndefined();
+    });
+
+    it('preserveFocus activates an equivalent inactive tab in place without moving focus', () => {
+      const state = stateWithPanel('p1', [{ id: 'note', type: 'note', title: 'Note' }]);
+      state.byWorkspaceId[WS].panels.p2 = {
+        id: 'p2',
+        tabs: [
+          { id: 'other', type: 'file', title: 'Other', closable: true },
+          {
+            id: 'existing-browser',
+            type: 'browser',
+            title: 'Browser',
+            browserUrl: 'https://agent.test',
+            closable: true,
+          },
+        ],
+        activeTabId: 'other',
+        attentionTabIds: ['existing-browser'],
+      };
+      const result = panelLayoutReducer(
+        state,
+        openTab(
+          WS,
+          { type: 'browser', title: 'Browser', browserUrl: 'https://agent.test', closable: true },
+          'p2',
+          'request-1',
+          undefined,
+          10,
+          undefined,
+          true,
+        ),
+      ).byWorkspaceId[WS];
+
+      expect(result.panels.p2.tabs.map((tab) => tab.id)).toEqual(['other', 'existing-browser']);
+      expect(result.panels.p2.activeTabId).toBe('existing-browser');
+      expect(result.panels.p2.attentionTabIds).toEqual([]);
+      expect(result.focusedPanelId).toBe('p1');
+      expect(result.pendingPanelReveal).toEqual({
+        panelId: 'p2',
+        tabId: 'existing-browser',
+        requestId: 'request-1',
+        preserveFocus: true,
+      });
+    });
+
+    it('preserveFocus leaves state untouched when the target panel does not exist', () => {
+      const state = stateWithPanel('p1');
+      const result = panelLayoutReducer(
+        state,
+        openTab(
+          WS,
+          { type: 'browser', title: 'Browser', browserUrl: 'https://agent.test', closable: true },
+          'missing',
+          'browser',
+          undefined,
+          10,
+          undefined,
+          true,
+        ),
+      );
+      expect(result).toBe(state);
+    });
   });
 
   describe('openTabInRightmostColumn', () => {
@@ -1288,6 +1622,113 @@ describe('panelLayoutReducer', () => {
       expect(activated.focusedPanelId).toBe('left');
       expect(activated.panels.right.tabs.map((candidate) => candidate.id)).toEqual(['old-right']);
       expect(duplicated.panels.right.tabs.at(-1)?.id).toBe('duplicate');
+    });
+
+    // preserveFocus (agent-driven visible opens, monorepo#3045): the tab is
+    // activated so it paints, but panel focus and focus history stay put.
+    it('preserveFocus activates the new tab in the rightmost column without moving focus', () => {
+      const before = twoColumnState().byWorkspaceId[WS];
+      const result = panelLayoutReducer(
+        twoColumnState(),
+        openTabInRightmostColumn(
+          WS,
+          { type: 'browser', title: 'Browser', browserUrl: 'https://agent.test', closable: true },
+          { newTabId: 'new-right', preserveFocus: true },
+          10,
+        ),
+      ).byWorkspaceId[WS];
+
+      expect(result.panels.right.tabs.map((tab) => tab.id)).toEqual(['old-right', 'new-right']);
+      expect(result.panels.right.activeTabId).toBe('new-right');
+      expect(result.panels.right.attentionTabIds ?? []).toEqual([]);
+      expect(result.focusedPanelId).toBe('left');
+      expect(result.focusHistory).toEqual(before.focusHistory);
+      expect(result.pendingFocusTabId).toBeNull();
+      expect(result.pendingPanelReveal).toEqual({
+        panelId: 'right',
+        tabId: 'new-right',
+        requestId: 'new-right',
+        preserveFocus: true,
+      });
+      expect(result.layoutHistory).toHaveLength(1);
+      expect(result.layoutHistory[0].panels.right).toMatchObject({ activeTabId: 'old-right' });
+    });
+
+    // Single column: the rightmost panel already is the focused panel, so the
+    // reveal must carry the no-focus intent for the layout/tab to honour.
+    it('preserveFocus marks the reveal when the rightmost column is already focused', () => {
+      const state = stateWithPanel('p1', [{ id: 'note', type: 'note', title: 'Note' }]);
+      const result = panelLayoutReducer(
+        state,
+        openTabInRightmostColumn(
+          WS,
+          { type: 'browser', title: 'Browser', browserUrl: 'https://agent.test', closable: true },
+          { newTabId: 'browser', preserveFocus: true },
+          10,
+        ),
+      ).byWorkspaceId[WS];
+
+      expect(result.panels.p1.activeTabId).toBe('browser');
+      expect(result.focusedPanelId).toBe('p1');
+      expect(result.pendingFocusTabId).toBeNull();
+      expect(result.pendingPanelReveal).toEqual({
+        panelId: 'p1',
+        tabId: 'browser',
+        requestId: 'browser',
+        preserveFocus: true,
+      });
+
+      const userOpen = panelLayoutReducer(
+        state,
+        openTabInRightmostColumn(
+          WS,
+          { type: 'browser', title: 'Browser', browserUrl: 'https://user.test', closable: true },
+          { newTabId: 'user-browser' },
+          10,
+        ),
+      ).byWorkspaceId[WS];
+      expect(userOpen.pendingPanelReveal?.preserveFocus).toBeUndefined();
+    });
+
+    it('preserveFocus activates an equivalent inactive tab in place without moving focus', () => {
+      const state = twoColumnState();
+      state.byWorkspaceId[WS].panels.right = {
+        ...state.byWorkspaceId[WS].panels.right,
+        tabs: [
+          ...state.byWorkspaceId[WS].panels.right.tabs,
+          {
+            id: 'existing-browser',
+            type: 'browser',
+            title: 'Browser',
+            browserUrl: 'https://agent.test',
+            closable: true,
+          },
+        ],
+        attentionTabIds: ['existing-browser'],
+      };
+      const result = panelLayoutReducer(
+        state,
+        openTabInRightmostColumn(
+          WS,
+          { type: 'browser', title: 'Browser', browserUrl: 'https://agent.test', closable: true },
+          { newTabId: 'request-1', preserveFocus: true },
+          10,
+        ),
+      ).byWorkspaceId[WS];
+
+      expect(result.panels.right.tabs.map((tab) => tab.id)).toEqual([
+        'old-right',
+        'existing-browser',
+      ]);
+      expect(result.panels.right.activeTabId).toBe('existing-browser');
+      expect(result.panels.right.attentionTabIds).toEqual([]);
+      expect(result.focusedPanelId).toBe('left');
+      expect(result.pendingPanelReveal).toEqual({
+        panelId: 'right',
+        tabId: 'existing-browser',
+        requestId: 'request-1',
+        preserveFocus: true,
+      });
     });
   });
 
@@ -3315,6 +3756,119 @@ describe('panelLayoutReducer', () => {
     });
   });
 
+  describe('browser tab registry (REV-2 §5.45)', () => {
+    const row = {
+      tabId: 'b1',
+      workspaceId: WS,
+      hostClientId: 'cli-laptop',
+      url: 'http://daemon.localhost:5173/',
+      requestedUrl: 'http://localhost:5173/',
+      title: 'Dev server',
+      ownerAgentId: 'agent-1',
+      ownerAgentName: 'Builder',
+      visibility: 'visible' as const,
+      emulatedSize: { width: 390, height: 844 },
+      createdAt: '2026-09-07T00:00:00.000Z',
+      updatedAt: '2026-09-07T00:00:00.000Z',
+    };
+
+    it('acknowledgeBrowserTabHost records the host and leaves every other field alone', () => {
+      const state = stateWithPanel('p1', [
+        { id: 'b1', type: 'browser', title: 'Browser', browserUrl: 'http://a.test/' },
+      ]);
+      const result = panelLayoutReducer(state, acknowledgeBrowserTabHost(WS, 'b1', 'cli-desk'));
+      expect(result.byWorkspaceId[WS].panels.p1.tabs[0]).toMatchObject({
+        hostClientId: 'cli-desk',
+        browserUrl: 'http://a.test/',
+        title: 'Browser',
+      });
+      expect(panelLayoutReducer(result, acknowledgeBrowserTabHost(WS, 'b1', 'cli-desk'))).toBe(
+        result,
+      );
+    });
+
+    it('acknowledgeBrowserTabHost ignores unknown and non-browser tabs', () => {
+      const state = stateWithPanel('p1', [{ id: 'n1', type: 'note', title: 'Note' }]);
+      expect(panelLayoutReducer(state, acknowledgeBrowserTabHost(WS, 'n1', 'cli-desk'))).toBe(
+        state,
+      );
+      expect(panelLayoutReducer(state, acknowledgeBrowserTabHost(WS, 'zz', 'cli-desk'))).toBe(
+        state,
+      );
+    });
+
+    it('applyBrowserTabRegistryRow fills a geometry-only tab from the canonical row', () => {
+      const state = stateWithPanel('p1', [
+        { id: 'b1', type: 'browser', title: 'Browser', hostClientId: 'cli-laptop' },
+      ]);
+      const result = panelLayoutReducer(state, applyBrowserTabRegistryRow(WS, 'b1', row));
+      expect(result.byWorkspaceId[WS].panels.p1.tabs[0]).toEqual({
+        id: 'b1',
+        type: 'browser',
+        closable: true,
+        hostClientId: 'cli-laptop',
+        browserUrl: 'http://daemon.localhost:5173/',
+        browserRequestedUrl: 'http://localhost:5173/',
+        title: 'Dev server',
+        ownerAgentId: 'agent-1',
+        ownerAgentName: 'Builder',
+        emulatedSize: { width: 390, height: 844 },
+        viewport: { mode: 'custom', width: 390, height: 844 },
+      });
+    });
+
+    it('applyBrowserTabRegistryRow drops fields the row cleared and re-homes the tab', () => {
+      const state = stateWithPanel('p1', [
+        {
+          id: 'b1',
+          type: 'browser',
+          title: 'Old',
+          hostClientId: 'cli-desk',
+          browserUrl: 'http://old.test/',
+          browserRequestedUrl: 'http://localhost:1/',
+          ownerAgentId: 'agent-9',
+          ownerAgentName: 'Nine',
+          emulatedSize: { width: 1, height: 1 },
+          viewport: { mode: 'custom', width: 1, height: 1 },
+        },
+      ]);
+      const unowned = {
+        ...row,
+        requestedUrl: undefined,
+        ownerAgentId: undefined,
+        ownerAgentName: undefined,
+        emulatedSize: undefined,
+        title: undefined,
+      };
+      const result = panelLayoutReducer(state, applyBrowserTabRegistryRow(WS, 'b1', unowned));
+      const tab = result.byWorkspaceId[WS].panels.p1.tabs[0];
+      expect(tab).toMatchObject({
+        hostClientId: 'cli-laptop',
+        browserUrl: 'http://daemon.localhost:5173/',
+        viewport: { mode: 'fit' },
+      });
+      expect(tab.title).toBe('');
+      expect(tab).not.toHaveProperty('browserRequestedUrl');
+      expect(tab).not.toHaveProperty('ownerAgentId');
+      expect(tab).not.toHaveProperty('ownerAgentName');
+      expect(tab).not.toHaveProperty('emulatedSize');
+    });
+
+    it('applyBrowserTabRegistryRow reaches a hidden owned tab', () => {
+      const state = stateWithPanel('p1', [
+        { id: 'b1', type: 'browser', title: 'B', ownerAgentId: 'agent-1' },
+        { id: 'n1', type: 'note', title: 'Note' },
+      ]);
+      const hidden = panelLayoutReducer(state, closeTab(WS, 'b1', 'p1', 1000));
+      const result = panelLayoutReducer(hidden, applyBrowserTabRegistryRow(WS, 'b1', row));
+      expect(getItems(result.byWorkspaceId[WS].hiddenTabs)[0]).toMatchObject({
+        hostClientId: 'cli-laptop',
+        browserUrl: 'http://daemon.localhost:5173/',
+        title: 'Dev server',
+      });
+    });
+  });
+
   describe('updateTabViewport', () => {
     it('persists a preset on a visible browser tab', () => {
       const state = stateWithPanel('p1', [{ id: 'b1', type: 'browser', title: 'Browser' }]);
@@ -3447,6 +4001,119 @@ describe('panelLayoutReducer', () => {
 
       expect(result.panels.p1.tabs.at(-1)).toMatchObject({ type: 'note', title: 'A' });
       expect(result.recentlyClosed.map((entry) => entry.tab.id)).toEqual(['t2']);
+    });
+
+    describe('targetPanelId', () => {
+      /** Two columns A and B; tab X lives in A alongside a keeper so closing X keeps A open. */
+      function twoColumnState() {
+        const state = emptyState();
+        state.byWorkspaceId[WS] = {
+          ...emptyWorkspaceState,
+          root: {
+            type: 'split',
+            direction: 'horizontal',
+            children: [
+              { type: 'panel', panelId: 'A' },
+              { type: 'panel', panelId: 'B' },
+            ],
+            sizes: [50, 50],
+          },
+          panels: {
+            A: {
+              id: 'A',
+              tabs: [
+                { id: 'x', type: 'note', title: 'X', noteId: 'note-x', closable: true },
+                { id: 'a-keep', type: 'file', title: 'Keep', closable: true },
+              ] as any,
+              activeTabId: 'x',
+            },
+            B: {
+              id: 'B',
+              tabs: [{ id: 'b1', type: 'note', title: 'B1', closable: true }] as any,
+              activeTabId: 'b1',
+            },
+          },
+          focusedPanelId: 'A',
+          columnCount: 2,
+        };
+        return state;
+      }
+
+      it('reopens the entry into an empty clicked panel and leaves the source panel unchanged (monorepo#4553)', () => {
+        const start = twoColumnState();
+        start.byWorkspaceId[WS].panels.B = { id: 'B', tabs: [], activeTabId: null, pristine: true };
+        const afterClose = panelLayoutReducer(start, closeTab(WS, 'x', 'A', 1000));
+        const panelABeforeReopen = afterClose.byWorkspaceId[WS].panels.A;
+        expect(afterClose.byWorkspaceId[WS].panels.B.tabs).toEqual([]);
+
+        const result = panelLayoutReducer(afterClose, reopenClosedTab(WS, 1001, 'x', 'B'))
+          .byWorkspaceId[WS];
+
+        expect(result.panels.B.tabs).toHaveLength(1);
+        expect(result.panels.B.tabs[0]).toMatchObject({
+          type: 'note',
+          title: 'X',
+          noteId: 'note-x',
+        });
+        expect(result.panels.B.activeTabId).toBe(result.panels.B.tabs[0].id);
+        expect(result.panels.B.pristine).toBe(false);
+        expect(result.focusedPanelId).toBe('B');
+        expect(result.panels.A).toEqual(panelABeforeReopen);
+        expect(result.recentlyClosed).toHaveLength(0);
+      });
+
+      it('reopens the entry into the requested panel when it exists (monorepo#4553)', () => {
+        const afterClose = panelLayoutReducer(twoColumnState(), closeTab(WS, 'x', 'A', 1000));
+        expect(afterClose.byWorkspaceId[WS].recentlyClosed.map((e) => e.tab.id)).toEqual(['x']);
+
+        const result = panelLayoutReducer(afterClose, reopenClosedTab(WS, 1001, 'x', 'B'))
+          .byWorkspaceId[WS];
+
+        expect(result.panels.B.tabs.map((t) => t.title)).toEqual(['B1', 'X']);
+        expect(result.panels.B.activeTabId).toBe(result.panels.B.tabs.at(-1)?.id);
+        expect(result.focusedPanelId).toBe('B');
+        expect(result.panels.A.tabs.map((t) => t.id)).toEqual(['a-keep']);
+        expect(result.recentlyClosed).toHaveLength(0);
+      });
+
+      it("falls back to the entry's original panel when the requested panel is gone", () => {
+        const afterClose = panelLayoutReducer(twoColumnState(), closeTab(WS, 'x', 'A', 1000));
+
+        const result = panelLayoutReducer(afterClose, reopenClosedTab(WS, 1001, 'x', 'missing'))
+          .byWorkspaceId[WS];
+
+        expect(result.panels.A.tabs.map((t) => t.title)).toEqual(['Keep', 'X']);
+        expect(result.panels.B.tabs.map((t) => t.id)).toEqual(['b1']);
+        expect(result.focusedPanelId).toBe('A');
+      });
+
+      it('falls back to the focused panel when both requested and original panels are gone', () => {
+        const afterClose = panelLayoutReducer(twoColumnState(), closeTab(WS, 'x', 'A', 1000));
+        const afterPanelClose = panelLayoutReducer(afterClose, closePanel(WS, 'A', 1001));
+        expect(afterPanelClose.byWorkspaceId[WS].panels.A).toBeUndefined();
+        expect(afterPanelClose.byWorkspaceId[WS].focusedPanelId).toBe('B');
+
+        const result = panelLayoutReducer(
+          afterPanelClose,
+          reopenClosedTab(WS, 1002, 'x', 'missing'),
+        ).byWorkspaceId[WS];
+
+        expect(result.panels.B.tabs.map((t) => t.title)).toContain('X');
+        expect(result.focusedPanelId).toBe('B');
+      });
+
+      it("reopens into the entry's original panel when no target is requested", () => {
+        const afterClose = panelLayoutReducer(twoColumnState(), closeTab(WS, 'x', 'A', 1000));
+        const focusedB = panelLayoutReducer(afterClose, focusPanel(WS, 'B'));
+
+        const result = panelLayoutReducer(focusedB, reopenClosedTab(WS, 1001, 'x')).byWorkspaceId[
+          WS
+        ];
+
+        expect(result.panels.A.tabs.map((t) => t.title)).toEqual(['Keep', 'X']);
+        expect(result.panels.B.tabs.map((t) => t.id)).toEqual(['b1']);
+        expect(result.focusedPanelId).toBe('A');
+      });
     });
 
     // A reopen is a fresh, unowned tab: a stale ownerAgentId in a
@@ -3635,9 +4302,9 @@ describe('panelLayoutReducer', () => {
       expect(ws.panels.p1.tabs.at(-1)?.ownerAgentId).toBe('agent-1');
     });
 
-    // showTab without focus adds a selectable background pane and never
-    // replaces the content the user is viewing.
-    it('restoreHiddenTab with focus: false signals in the sole fixed column', () => {
+    // showTab without focus displays the pane (activates it in its column)
+    // via a focus-preserving reveal, never moving panel focus (monorepo#3045).
+    it('restoreHiddenTab with focus: false activates in the sole fixed column without moving focus', () => {
       const state = stateWithPanel('p1', [ownedTab, { id: 't2', type: 'note', title: 'A' }]);
       const hidden = panelLayoutReducer(state, closeTab(WS, 'owned', 'p1', 1000));
       const before = hidden.byWorkspaceId[WS];
@@ -3646,14 +4313,19 @@ describe('panelLayoutReducer', () => {
       expect(getItems(ws.hiddenTabs)).toHaveLength(0);
       expect(Object.keys(ws.panels)).toEqual(['p1']);
       expect(ws.panels.p1.tabs.map((t) => t.id)).toEqual(['t2', 'owned']);
-      expect(ws.panels.p1.activeTabId).toBe('t2');
-      expect(ws.panels.p1.attentionTabIds).toEqual(['owned']);
+      expect(ws.panels.p1.activeTabId).toBe('owned');
+      expect(ws.panels.p1.attentionTabIds ?? []).toEqual([]);
       expect(ws.focusedPanelId).toBe(before.focusedPanelId);
-      expect(ws.pendingPanelReveal).toBeNull();
+      expect(ws.pendingPanelReveal).toEqual({
+        panelId: 'p1',
+        tabId: 'owned',
+        requestId: 'owned',
+        preserveFocus: true,
+      });
       expect(ws.focusHistory).toBe(before.focusHistory);
     });
 
-    it('restoreHiddenTab with focus: false signals in another fixed column without moving focus', () => {
+    it('restoreHiddenTab with focus: false activates in another fixed column without moving focus', () => {
       const state = stateWithPanel('p1', [ownedTab, { id: 't2', type: 'note', title: 'A' }]);
       state.byWorkspaceId[WS].root = {
         type: 'split',
@@ -3677,10 +4349,65 @@ describe('panelLayoutReducer', () => {
       expect(ws.panels.p1.tabs.map((t) => t.id)).toEqual(['t2']);
       expect(ws.panels.p1.activeTabId).toBe(before.panels.p1.activeTabId);
       expect(ws.panels.p2.tabs.map((t) => t.id)).toEqual(['n2', 'owned']);
-      expect(ws.panels.p2.activeTabId).toBe('n2');
-      expect(ws.panels.p2.attentionTabIds).toEqual(['owned']);
+      expect(ws.panels.p2.activeTabId).toBe('owned');
+      expect(ws.panels.p2.attentionTabIds ?? []).toEqual([]);
       expect(ws.focusedPanelId).toBe(before.focusedPanelId);
-      expect(ws.pendingPanelReveal).toBeNull();
+      expect(ws.pendingPanelReveal).toEqual({
+        panelId: 'p2',
+        tabId: 'owned',
+        requestId: 'owned',
+        preserveFocus: true,
+      });
+      expect(ws.focusHistory).toBe(before.focusHistory);
+    });
+
+    // showTab without focus on a tab already in a panel but not its active
+    // tab: activate it in place via a focus-preserving reveal (monorepo#3045).
+    it('activateVisibleTab activates an inactive tab in its panel without moving focus', () => {
+      const state = stateWithPanel('p1', [ownedTab, { id: 't2', type: 'note', title: 'A' }]);
+      state.byWorkspaceId[WS].root = {
+        type: 'split',
+        direction: 'horizontal',
+        children: [
+          { type: 'panel', panelId: 'p1' },
+          { type: 'panel', panelId: 'p2' },
+        ],
+        sizes: [50, 50],
+      };
+      state.byWorkspaceId[WS].panels.p2 = {
+        id: 'p2',
+        tabs: [
+          { id: 'n2', type: 'note', title: 'B', closable: true } as any,
+          { id: 'b2', type: 'browser', title: 'Browser', browserUrl: 'http://b2/' } as any,
+        ],
+        activeTabId: 'n2',
+        attentionTabIds: ['b2'],
+      };
+      state.byWorkspaceId[WS].focusedPanelId = 'p1';
+      const before = state.byWorkspaceId[WS];
+      const result = panelLayoutReducer(state, activateVisibleTab(WS, 'b2', 1001));
+      const ws = result.byWorkspaceId[WS];
+      expect(ws.panels.p2.activeTabId).toBe('b2');
+      expect(ws.panels.p2.attentionTabIds).toEqual([]);
+      expect(ws.panels.p1.activeTabId).toBe(before.panels.p1.activeTabId);
+      expect(ws.focusedPanelId).toBe('p1');
+      expect(ws.focusHistory).toBe(before.focusHistory);
+      expect(ws.pendingPanelReveal).toEqual({
+        panelId: 'p2',
+        tabId: 'b2',
+        requestId: 'b2',
+        preserveFocus: true,
+      });
+    });
+
+    it('activateVisibleTab is a no-op for an already-active tab or a tab not in any panel', () => {
+      const state = stateWithPanel('p1', [ownedTab, { id: 't2', type: 'note', title: 'A' }]);
+      state.byWorkspaceId[WS].panels.p1.activeTabId = 'owned';
+      expect(panelLayoutReducer(state, activateVisibleTab(WS, 'owned', 1001))).toBe(state);
+      expect(panelLayoutReducer(state, activateVisibleTab(WS, 'missing', 1001))).toBe(state);
+
+      const hidden = panelLayoutReducer(state, closeTab(WS, 'owned', 'p1', 1000));
+      expect(panelLayoutReducer(hidden, activateVisibleTab(WS, 'owned', 1001))).toBe(hidden);
     });
 
     // Agent openTab is hidden by default (monorepo#3045): the tab is created

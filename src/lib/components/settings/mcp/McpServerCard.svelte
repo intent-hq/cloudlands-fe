@@ -203,12 +203,14 @@
           {matchedPreset ? matchedPreset.description : displayCommand()}
         </p>
 
-        <!-- Error / stopped message (shown inline when server has issues) -->
-        {#if isRetryable && server.errorMessage}
+        <!-- Recovery message (shown inline when server has issues) -->
+        {#if (isRetryable || server.status === 'auth_required') && server.errorMessage}
           <p
-            class="mt-1 type-body line-clamp-2 {server.status === 'stopped'
-              ? 'text-orange-600 dark:text-orange-400'
-              : 'text-red-500 dark:text-red-400'}"
+            class="mt-1 type-body line-clamp-2 {server.status === 'auth_required'
+              ? 'text-warning'
+              : server.status === 'stopped'
+                ? 'text-orange-600 dark:text-orange-400'
+                : 'text-red-500 dark:text-red-400'}"
           >
             {server.errorMessage}
           </p>

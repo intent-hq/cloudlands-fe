@@ -29,7 +29,7 @@ describe('loadModelsOnBootWorker', () => {
 
     expect(loaded).toBe(true);
     expect(mocks.getProviderSettings).not.toHaveBeenCalled();
-    expect(mocks.list.mock.calls).toEqual([[]]);
+    expect(mocks.list.mock.calls).toEqual([['codex']]);
     expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
       { type: 'model/setAvailableModels', payload: [MODELS, 'codex'] },
       {

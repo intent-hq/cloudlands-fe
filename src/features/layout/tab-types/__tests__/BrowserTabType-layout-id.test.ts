@@ -9,6 +9,9 @@ import {
 import { updateContextItem } from '$store/renderer/slices/context/context-slice';
 
 const dispatch = vi.hoisted(() => vi.fn());
+const mockState = vi.hoisted(() => ({
+  panelLayout: { byWorkspaceId: {} as Record<string, unknown> },
+}));
 
 vi.mock('$lib/components/browser/EmbeddedBrowser.svelte', async () => ({
   default: (await import('./mocks/MockEmbeddedBrowser.svelte')).default,
@@ -16,7 +19,7 @@ vi.mock('$lib/components/browser/EmbeddedBrowser.svelte', async () => ({
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
-  return createAppStoreMockModule({ dispatch });
+  return createAppStoreMockModule({ state: () => mockState, dispatch });
 });
 
 import BrowserTabType from '../BrowserTabType.svelte';
@@ -24,6 +27,7 @@ import BrowserTabType from '../BrowserTabType.svelte';
 describe('BrowserTabType panel layout routing', () => {
   beforeEach(() => {
     dispatch.mockClear();
+    mockState.panelLayout.byWorkspaceId = {};
   });
   afterEach(cleanup);
 
@@ -91,6 +95,48 @@ describe('BrowserTabType panel layout routing', () => {
           layoutId: 'workspace-1',
           isActive,
           isPanelFocused,
+        },
+      });
+      expect(
+        screen.getByTestId('embedded-browser').getAttribute('data-focus-url-bar-on-mount'),
+      ).toBe(expected);
+    },
+  );
+
+  // A focus-preserving reveal (agent openTab { visible: true } into the already
+  // focused / single-column panel, monorepo#3045) must not autofocus the URL bar
+  // even though the tab is active in the focused panel; a reveal for another tab
+  // or a user-driven reveal keeps the default autofocus.
+  it.each([
+    ['browser-tab', true, 'false'],
+    ['browser-tab', undefined, 'true'],
+    ['other-tab', true, 'true'],
+  ])(
+    'suppresses focusUrlBarOnMount for a focus-preserving reveal (revealTab=%s, preserveFocus=%s)',
+    (revealTabId, preserveFocus, expected) => {
+      mockState.panelLayout.byWorkspaceId = {
+        'layout-1': {
+          pendingPanelReveal: {
+            panelId: 'p1',
+            tabId: revealTabId,
+            requestId: 'req-1',
+            ...(preserveFocus === undefined ? {} : { preserveFocus }),
+          },
+        },
+      };
+      render(BrowserTabType, {
+        props: {
+          tab: {
+            id: 'browser-tab',
+            type: 'browser',
+            title: 'Browser',
+            closable: true,
+            browserUrl: 'https://initial.example/',
+          },
+          workspaceId: 'workspace-1',
+          layoutId: 'layout-1',
+          isActive: true,
+          isPanelFocused: true,
         },
       });
       expect(

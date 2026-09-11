@@ -16,6 +16,7 @@ const { mockRequest, loggerSpies } = vi.hoisted(() => ({
 
 vi.mock('../../backend/main/backend.ipc', () => ({
   getBackendClient: () => ({ request: mockRequest }),
+  onBackendReconnected: () => () => {},
 }));
 
 vi.mock('$shared/logger', () => ({

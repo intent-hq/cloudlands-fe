@@ -45,7 +45,11 @@ import {
   shouldUseTransferConnection,
 } from './transfer-connections';
 import { JsonRpcError } from './json-rpc-errors';
-import { getOrCreateClientId, persistClientId } from './client-identity';
+import {
+  buildMainClientHelloParams,
+  persistClientId,
+  setLocalHostIdentity,
+} from './client-identity';
 import { formatTransportInfo } from './transport-info';
 import { readPinnedVersion } from './intentd-version-pin';
 import {
@@ -587,16 +591,6 @@ export function isSameHostBackendActive(): boolean {
 const HEARTBEAT_INTERVAL_MS = 30_000;
 
 /**
- * Bound on the pre-window `host.status` probe for a REMOTE open. A remote
- * probe failure opens the window anyway (the connection-lost overlay owns
- * recovery), so a black-holed connect waiting out the client's 30s default
- * request timeout would only delay that window. 5s comfortably covers a
- * healthy WAN round-trip; a slower-but-healthy remote still opens fine — the
- * retained client finishes connecting in the background.
- */
-const REMOTE_OPEN_PROBE_TIMEOUT_MS = 5_000;
-
-/**
  * Drop every latched failure state (cert/auth one-shot guards, sticky protocol
  * mismatch and auth rejection, accumulated per-host cert warnings) for one
  * backend connection id. Called whenever
@@ -852,8 +846,12 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
     },
     // §5.17 stable identity: present the persisted clientId on every
     // (re)connect so daemon-side client-scoped state (`drafts.*`, §5.16)
-    // survives app restarts and renderer reloads.
-    helloParams: async () => ({ clientId: await getOrCreateClientId() }),
+    // survives app restarts and renderer reloads. REV-2: this pooled client
+    // is the one that registers the `browser.exec` reverse handler below, so
+    // it alone advertises `capabilities.browserExec` plus the app's name and
+    // host identification (the auxiliary setup/transfer/quit clients stay
+    // clientId-only).
+    helloParams: async () => ({ ...(await buildMainClientHelloParams()) }),
     onHelloResult: (result) => {
       const obj =
         result && typeof result === 'object'
@@ -1337,17 +1335,32 @@ function extractDeviceKind(result: unknown): DetectedDeviceKind | null {
   return isDetectedDeviceKind(value) ? value : null;
 }
 
-/** Capture the synthesized local record's kind from the connected daemon. */
+/**
+ * Capture the synthesized local record's kind from the connected daemon.
+ *
+ * The same `host.status` result is this machine's own identification, so it
+ * also feeds the REV-2 `client.hello` host triple: when `prettyHostname` /
+ * `deviceKind` change from what the connect-time handshake presented, the
+ * local client re-hellos so the daemon's `client.list` row (what OTHER
+ * clients see when picking a browser target) reflects the learned identity.
+ * Remote backends are never re-helloed here — they describe a different host.
+ */
 async function captureLocalDeviceKind(): Promise<void> {
   try {
     const client = backendClients.get(LOCAL_CONNECTION_ID);
     if (!client) return;
     const result = await client.request('host.status');
     if (backendClients.get(LOCAL_CONNECTION_ID) !== client) return;
+    const identityChanged = setLocalHostIdentity(result);
     if (
       await connectionsStore.setDetectedDeviceKind(LOCAL_CONNECTION_ID, extractDeviceKind(result))
     ) {
       await broadcastConnectionsChanged();
+    }
+    if (identityChanged && backendClients.get(LOCAL_CONNECTION_ID) === client) {
+      // The pooled client merges the persisted identity + capabilities into
+      // every caller-issued hello, so this presents the full REV-2 params.
+      await client.request('client.hello', {});
     }
   } catch (error) {
     logger.warn('Failed to capture local device kind', {
@@ -1916,22 +1929,23 @@ function enqueueConnectionOperation<T>(fn: () => Promise<T>): Promise<T> {
 
 /**
  * Connect one pooled backend and open/focus its windows.
- * `options.probeTimeoutMs` bounds the authenticated `host.status` probe
- * for a single call — used by deadline-driven callers like
- * {@link openLocalAndSpawn} whose own budget is shorter than the 30s client
- * default. When omitted, a REMOTE open is bounded by
- * {@link REMOTE_OPEN_PROBE_TIMEOUT_MS} (a probe failure opens the window
- * anyway, so a black-holed connect must not sit out the 30s default before
- * the window appears); a LOCAL open keeps the client's flat request timeout.
  *
- * A failed probe on a REMOTE no longer rejects the open: the window is created
- * anyway and the pooled client's reconnect loop keeps retrying, so the
- * renderer's connection-lost overlay (or the latched cert-mismatch /
- * auth-rejected failure event, replayed on `connections:list`) owns recovery.
- * Only a missing secret ({@link ConnectionSecretUnavailableError}, thrown
- * before any client is built) still blocks the window — there is nothing for
- * a window to retry against. The LOCAL open keeps strict probe semantics:
- * {@link openLocalAndSpawn}'s deadline/retry loop depends on the rejection.
+ * A REMOTE open creates/focuses the window as soon as the pooled client is
+ * built — no pre-window `host.status` probe. A dead or slow host therefore
+ * gives immediate visible feedback (the renderer's connection-lost overlay,
+ * or the latched cert-mismatch / auth-rejected failure event replayed on
+ * `connections:list`, owns recovery while the client's reconnect loop keeps
+ * retrying) and never holds the connection-operation queue for a network
+ * round-trip. Only a missing secret ({@link ConnectionSecretUnavailableError},
+ * thrown before any client is built) still blocks the window — there is
+ * nothing for a window to retry against.
+ *
+ * The LOCAL open keeps strict probe semantics: one authenticated
+ * `host.status` completes before the window is created, and a failure
+ * rejects — {@link openLocalAndSpawn}'s deadline/retry loop depends on it.
+ * `options.probeTimeoutMs` bounds that local probe for a single call (used by
+ * deadline-driven callers whose budget is shorter than the 30s client
+ * default); it is ignored for a remote, which issues no probe.
  */
 export function openBackendWindow(
   id: string,
@@ -1946,43 +1960,22 @@ async function performOpenBackendWindow(
 ): Promise<{ id: string }> {
   const target = await connectBackendClient(id);
   try {
-    try {
+    if (id === LOCAL_CONNECTION_ID) {
       // Complete one authenticated request over the pinned transport before
       // creating a renderer, so the common healthy open never flashes the
-      // connection-lost overlay. A remote probe is bounded well below the 30s
-      // client default: a timing-out remote already opens the window on
-      // failure, so a long probe only delays that window — and a healthy
-      // remote slower than this bound still opens fine (the retained client
-      // finishes connecting and the renderer never sees a 'down' health).
-      const probeTimeoutMs =
-        options?.probeTimeoutMs ??
-        (id !== LOCAL_CONNECTION_ID ? REMOTE_OPEN_PROBE_TIMEOUT_MS : undefined);
-      await target.request('host.status', undefined, { timeoutMs: probeTimeoutMs });
-    } catch (error) {
-      // Local keeps the strict reject: openLocalAndSpawn's deadline loop
-      // retries on it, and a local window without a daemon has no client
-      // reconnect posture worth showing.
-      if (id === LOCAL_CONNECTION_ID) throw error;
-      // Remote probe failure (unreachable, cert mismatch, auth rejected):
-      // open the window anyway. The retained pooled client keeps
-      // reconnecting, the renderer shows the daemon-loss overlay, and a
-      // latched cert-mismatch/auth-rejected failure event is replayed to the
-      // new window via `connections:list` — instead of a silent failed click.
-      logger.warn('Backend probe failed on open; opening window and retrying in background', {
-        id,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-    // Label the remote by its hostname once it connects (T14). Reuses the
-    // live client's `host.status`; fire-and-forget so a slow remote never
-    // stalls the open — the label upgrades from `host:port` to
-    // `hostname (host:port)` asynchronously (the request queues until the
-    // socket connects, so this also covers a probe-failed open once the
-    // client eventually reconnects). Skipped for the local sidecar
-    // (UDS has no remote hostname to show; its label is fixed). The
-    // candidate-host refresh (#1746) piggybacks on the same post-connect
-    // window, equally fire-and-forget/fail-soft.
-    if (id !== LOCAL_CONNECTION_ID) {
+      // connection-lost overlay. A failure rejects: openLocalAndSpawn's
+      // deadline loop retries on it, and a local window without a daemon has
+      // no client reconnect posture worth showing.
+      await target.request('host.status', undefined, { timeoutMs: options?.probeTimeoutMs });
+    } else {
+      // Label the remote by its hostname once it connects (T14). Reuses the
+      // live client's `host.status`; fire-and-forget so a slow remote never
+      // stalls the open — the label upgrades from `host:port` to
+      // `hostname (host:port)` asynchronously (the request queues until the
+      // socket connects, so this also covers an unreachable host once the
+      // client eventually reconnects). The candidate-host refresh (#1746)
+      // piggybacks on the same post-connect window, equally
+      // fire-and-forget/fail-soft.
       void captureRemoteHostname(id);
       void refreshRemoteHosts(id);
     }

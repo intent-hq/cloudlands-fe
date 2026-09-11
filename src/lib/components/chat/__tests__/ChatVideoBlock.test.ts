@@ -91,7 +91,7 @@ describe('ChatVideoBlock', () => {
     expect(screen.queryByRole('button', { name: /play/i })).toBeNull();
   });
 
-  it('shows workspace file actions when a workspace video is missing', async () => {
+  it('retains file recovery actions without claiming a video load error proves absence', async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, 'clipboard', {
       value: { writeText },
@@ -110,11 +110,30 @@ describe('ChatVideoBlock', () => {
 
     const video = screen.getByRole('button', { name: /play/i }).querySelector('video')!;
     await fireEvent.error(video);
-    expect(screen.getByRole('status').textContent).toContain('File is missing');
+    expect(screen.getByTestId('media-unavailable').dataset.reason).toBe('load-failed');
     await fireEvent.click(screen.getByRole('button', { name: /copy path/i }));
     await waitFor(() => expect(writeText).toHaveBeenCalledWith('out/missing demo.mp4'));
     expect(screen.getByRole('button', { name: /open file/i })).toBeTruthy();
   });
+
+  it.each([2, 3, 4])(
+    'keeps saved video recovery available after media error code %s',
+    async (code) => {
+      const url = 'workspace-asset://ws-1/mfr7-1234abcd.webm?backend=remote-1';
+      render(ChatVideoBlock, {
+        props: { source: { kind: 'workspace', url, mimeType: 'video/webm' }, name: 'saved demo' },
+      });
+      const video = screen
+        .getByRole('button', { name: /play saved demo/i })
+        .querySelector('video')!;
+      Object.defineProperty(video, 'error', { value: { code } });
+      await fireEvent.error(video);
+      expect(screen.getByTestId('media-unavailable').dataset.reason).toBe('load-failed');
+      expect(screen.queryByRole('button', { name: /open file|copy path/i })).toBeNull();
+      await openVideoActionsMenu();
+      expect(screen.getByRole('menuitem', { name: /download/i })).toBeTruthy();
+    },
+  );
 
   it('accepts a workspace-file poster', () => {
     render(ChatVideoBlock, {

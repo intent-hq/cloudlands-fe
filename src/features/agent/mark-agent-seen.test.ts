@@ -39,9 +39,11 @@ import {
   cancelPendingMarkAgentSeen,
   markAgentSeenAtBoundary,
   markAgentSeenOnTurnFinish,
+  markAgentSeenOnTranscriptHydrated,
   markAgentSeenOnUserSend,
   markAgentSeenOnView,
   newestPersistedMessageId,
+  releaseViewAwaitingTranscript,
 } from './mark-agent-seen';
 
 function msg(id: string, isStreaming = false, role = 'assistant'): AgentMessage {
@@ -412,5 +414,185 @@ describe('markAgentSeenOnView (debounced, viewed + focused + assistant-tail gate
     await fireDebounce();
 
     expect(mockMarkSeen).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('markAgentSeenOnTranscriptHydrated (re-arms a view trigger that beat the transcript)', () => {
+  // Regression: on a remote daemon the chat.subscribe seq-0 snapshot can land
+  // after the 1 s view debounce, so the view trigger fires against an empty
+  // transcript and used to drop silently — the agent stayed unread forever.
+  it('sends exactly one markSeen with the newest persisted id once the transcript hydrates', async () => {
+    const agentId = nextAgentId();
+    seedSession(agentId, { messages: [] });
+
+    markAgentSeenOnView(agentId);
+    await fireDebounce();
+    expect(mockMarkSeen).not.toHaveBeenCalled(); // nothing to target yet
+
+    mockState.agentSessions.byAgentId[agentId]!.messages = [
+      msg('user-1', false, 'user'),
+      msg('reply-1'),
+    ];
+    markAgentSeenOnTranscriptHydrated(agentId);
+    await flushImmediate();
+
+    expect(mockMarkSeen).toHaveBeenCalledTimes(1);
+    expect(mockMarkSeen).toHaveBeenCalledWith({
+      workspaceId: 'ws-1',
+      agentId,
+      messageId: 'reply-1',
+    });
+
+    // The re-arm is one-shot: a later hydration of the same transcript is a no-op.
+    markAgentSeenOnTranscriptHydrated(agentId);
+    await flushImmediate();
+    expect(mockMarkSeen).toHaveBeenCalledTimes(1);
+  });
+
+  it('is a no-op when no view trigger was starved of a transcript', async () => {
+    const agentId = nextAgentId();
+    seedSession(agentId, { messages: [msg('reply-1')] });
+
+    markAgentSeenOnTranscriptHydrated(agentId);
+    await flushImmediate();
+    expect(mockMarkSeen).not.toHaveBeenCalled();
+  });
+
+  it('keeps the viewed gate: no send when another agent is viewed by hydration time', async () => {
+    const agentId = nextAgentId();
+    seedSession(agentId, { messages: [] });
+
+    markAgentSeenOnView(agentId);
+    await fireDebounce();
+    mockState.agentSessions.byAgentId[agentId]!.messages = [msg('reply-1')];
+    mockState.unreadTracking.currentlyViewedAgentId = 'agent-other';
+    markAgentSeenOnTranscriptHydrated(agentId);
+    await flushImmediate();
+
+    expect(mockMarkSeen).not.toHaveBeenCalled();
+  });
+
+  it('keeps the focus gate: no send when the window is unfocused by hydration time', async () => {
+    const agentId = nextAgentId();
+    seedSession(agentId, { messages: [] });
+
+    markAgentSeenOnView(agentId);
+    await fireDebounce();
+    mockState.agentSessions.byAgentId[agentId]!.messages = [msg('reply-1')];
+    vi.spyOn(document, 'hasFocus').mockReturnValue(false);
+    markAgentSeenOnTranscriptHydrated(agentId);
+    await flushImmediate();
+
+    expect(mockMarkSeen).not.toHaveBeenCalled();
+  });
+
+  it('keeps the assistant-tail gate: a hydrated mid-turn transcript is left to turn-finish', async () => {
+    const agentId = nextAgentId();
+    seedSession(agentId, { messages: [] });
+
+    markAgentSeenOnView(agentId);
+    await fireDebounce();
+    mockState.agentSessions.byAgentId[agentId]!.messages = [
+      msg('reply-1'),
+      msg('user-2', false, 'user'),
+      msg('partial', true),
+    ];
+    markAgentSeenOnTranscriptHydrated(agentId);
+    await flushImmediate();
+
+    expect(mockMarkSeen).not.toHaveBeenCalled();
+  });
+
+  it('does not displace a pending debounced trigger (user send keeps its gates)', async () => {
+    const agentId = nextAgentId();
+    seedSession(agentId, { messages: [] });
+
+    markAgentSeenOnView(agentId);
+    await fireDebounce();
+    // The user composes in the still-empty conversation; the canonical echo
+    // (user tail) hydrates before the send debounce fires.
+    markAgentSeenOnUserSend(agentId);
+    mockState.agentSessions.byAgentId[agentId]!.messages = [msg('user-1', false, 'user')];
+    markAgentSeenOnTranscriptHydrated(agentId);
+    await flushImmediate();
+    expect(mockMarkSeen).not.toHaveBeenCalled();
+
+    await fireDebounce();
+    expect(mockMarkSeen).toHaveBeenCalledTimes(1);
+    expect(mockMarkSeen).toHaveBeenCalledWith({
+      workspaceId: 'ws-1',
+      agentId,
+      messageId: 'user-1',
+    });
+  });
+
+  // The re-arm is bounded to the ONE conversation currently viewed: only a
+  // fresh view can (re-)arm it, and anything that ends the viewing session
+  // releases it, so a starved view fire never lingers per agent.
+  it('viewing another conversation releases the starved re-arm of the previous one', async () => {
+    const previous = nextAgentId();
+    const current = nextAgentId();
+    seedSession(previous, { messages: [] });
+    markAgentSeenOnView(previous);
+    await fireDebounce();
+
+    seedSession(current, { messages: [] });
+    markAgentSeenOnView(current);
+    await fireDebounce();
+    expect(mockMarkSeen).not.toHaveBeenCalled();
+
+    // The previous transcript hydrates late and the user is even back on it
+    // (without a fresh view trigger): the stale arm must not fire.
+    mockState.agentSessions.byAgentId[previous]!.messages = [msg('reply-p')];
+    mockState.unreadTracking.currentlyViewedAgentId = previous;
+    markAgentSeenOnTranscriptHydrated(previous);
+    await flushImmediate();
+    expect(mockMarkSeen).not.toHaveBeenCalled();
+
+    // The current conversation's own re-arm is intact.
+    mockState.agentSessions.byAgentId[current]!.messages = [msg('reply-c')];
+    mockState.unreadTracking.currentlyViewedAgentId = current;
+    markAgentSeenOnTranscriptHydrated(current);
+    await flushImmediate();
+    expect(mockMarkSeen).toHaveBeenCalledTimes(1);
+    expect(mockMarkSeen).toHaveBeenCalledWith({
+      workspaceId: 'ws-1',
+      agentId: current,
+      messageId: 'reply-c',
+    });
+  });
+
+  it('a stop-looking boundary releases the starved re-arm', async () => {
+    const agentId = nextAgentId();
+    seedSession(agentId, { messages: [] });
+    markAgentSeenOnView(agentId);
+    await fireDebounce();
+
+    markAgentSeenAtBoundary([agentId]);
+    await flushImmediate();
+    expect(mockMarkSeen).not.toHaveBeenCalled(); // still nothing to target
+
+    mockState.agentSessions.byAgentId[agentId]!.messages = [msg('reply-1')];
+    markAgentSeenOnTranscriptHydrated(agentId);
+    await flushImmediate();
+    expect(mockMarkSeen).not.toHaveBeenCalled();
+
+    // A fresh view re-arms as usual.
+    markAgentSeenOnView(agentId);
+    await fireDebounce();
+    expect(mockMarkSeen).toHaveBeenCalledTimes(1);
+  });
+
+  it('releaseViewAwaitingTranscript drops the re-arm when the viewed conversation is cleared', async () => {
+    const agentId = nextAgentId();
+    seedSession(agentId, { messages: [] });
+    markAgentSeenOnView(agentId);
+    await fireDebounce();
+
+    releaseViewAwaitingTranscript();
+    mockState.agentSessions.byAgentId[agentId]!.messages = [msg('reply-1')];
+    markAgentSeenOnTranscriptHydrated(agentId);
+    await flushImmediate();
+    expect(mockMarkSeen).not.toHaveBeenCalled();
   });
 });

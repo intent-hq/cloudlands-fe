@@ -13,6 +13,9 @@ import {
   connectOperationStarted,
   connectOperationSettled,
   connectOperationFailed,
+  openOperationStarted,
+  openOperationSettled,
+  openOperationFailed,
   certMismatchReceived,
   certMismatchCleared,
   certWarningsReceived,
@@ -203,6 +206,87 @@ describe('connectionsReducer', () => {
     it('connectOperationFailed records the error', () => {
       const state = { ...initialState, status: 'connecting' as const };
       const next = connectionsReducer(state, connectOperationFailed('unreachable'));
+      expect(next.status).toBe('error');
+      expect(next.error).toBe('unreachable');
+    });
+  });
+
+  describe('per-id open operations', () => {
+    it('starts with no opens in flight', () => {
+      expect(initialState.openingIds).toEqual([]);
+    });
+
+    it('openOperationStarted records the id, moves to connecting and clears latches', () => {
+      const state = {
+        ...initialState,
+        status: 'error' as const,
+        error: 'boom',
+        authRejected: AUTH_REJECTED,
+      };
+      const next = connectionsReducer(state, openOperationStarted('remote-1'));
+      expect(next.openingIds).toEqual(['remote-1']);
+      expect(next.status).toBe('connecting');
+      expect(next.error).toBeNull();
+      expect(next.authRejected).toBeNull();
+    });
+
+    it('openOperationStarted tracks one entry per operation, including a repeat of the same id', () => {
+      let state = connectionsReducer(initialState, openOperationStarted('remote-1'));
+      state = connectionsReducer(state, openOperationStarted('remote-2'));
+      state = connectionsReducer(state, openOperationStarted('remote-1'));
+      expect(state.openingIds).toEqual(['remote-1', 'remote-2', 'remote-1']);
+    });
+
+    it('settling one of two same-id opens keeps the id in flight and status connecting', () => {
+      let state = connectionsReducer(initialState, openOperationStarted('remote-1'));
+      state = connectionsReducer(state, openOperationStarted('remote-1'));
+      const afterFirst = connectionsReducer(state, openOperationSettled('remote-1'));
+      expect(afterFirst.openingIds).toEqual(['remote-1']);
+      expect(afterFirst.status).toBe('connecting');
+      const afterSecond = connectionsReducer(afterFirst, openOperationSettled('remote-1'));
+      expect(afterSecond.openingIds).toEqual([]);
+      expect(afterSecond.status).toBe('idle');
+    });
+
+    it('failing one of two same-id opens keeps the other in flight', () => {
+      let state = connectionsReducer(initialState, openOperationStarted('remote-1'));
+      state = connectionsReducer(state, openOperationStarted('remote-1'));
+      const next = connectionsReducer(state, openOperationFailed('remote-1', 'unreachable'));
+      expect(next.openingIds).toEqual(['remote-1']);
+      expect(next.status).toBe('error');
+      expect(next.error).toBe('unreachable');
+    });
+
+    it('settling an id that is not in flight is a no-op on the list', () => {
+      const state = connectionsReducer(initialState, openOperationStarted('remote-1'));
+      const next = connectionsReducer(state, openOperationSettled('remote-2'));
+      expect(next.openingIds).toEqual(['remote-1']);
+      expect(next.status).toBe('connecting');
+    });
+
+    it('openOperationSettled keeps status connecting while another open is in flight', () => {
+      let state = connectionsReducer(initialState, openOperationStarted('remote-1'));
+      state = connectionsReducer(state, openOperationStarted('remote-2'));
+      const next = connectionsReducer(state, openOperationSettled('remote-1'));
+      expect(next.openingIds).toEqual(['remote-2']);
+      expect(next.status).toBe('connecting');
+    });
+
+    it('openOperationSettled returns to idle once the last open settles', () => {
+      let state = connectionsReducer(initialState, openOperationStarted('remote-1'));
+      state = connectionsReducer(state, openOperationStarted('remote-2'));
+      state = connectionsReducer(state, openOperationSettled('remote-1'));
+      const next = connectionsReducer(state, openOperationSettled('remote-2'));
+      expect(next.openingIds).toEqual([]);
+      expect(next.status).toBe('idle');
+      expect(next.error).toBeNull();
+    });
+
+    it('openOperationFailed drops the id and records the error', () => {
+      let state = connectionsReducer(initialState, openOperationStarted('remote-1'));
+      state = connectionsReducer(state, openOperationStarted('remote-2'));
+      const next = connectionsReducer(state, openOperationFailed('remote-1', 'unreachable'));
+      expect(next.openingIds).toEqual(['remote-2']);
       expect(next.status).toBe('error');
       expect(next.error).toBe('unreachable');
     });

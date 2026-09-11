@@ -422,7 +422,61 @@ describe('embedded browser CDP workspace routing', () => {
       );
     });
 
-    it('sends the reveal scoped to the workspace and confirms via a fresh non-hidden listing', async () => {
+    it('sends the reveal scoped to the workspace and confirms via a fresh non-hidden active listing', async () => {
+      mocks.sendToWorkspaceWindows.mockImplementation(
+        (_ws: string, channel: string, payload: { requestId?: string }) => {
+          if (channel !== IPC_CHANNELS.BROWSER.LIST_TABS_REQUEST) return DELIVERED;
+          responseHandlers.get(IPC_CHANNELS.BROWSER.LIST_TABS_RESPONSE)?.(
+            {},
+            {
+              tabs: [{ tabId: 'tab-1', url: 'https://a.test', title: 'A', active: true }],
+              requestId: payload.requestId,
+            },
+          );
+          return DELIVERED;
+        },
+      );
+
+      await expect(embeddedBrowserCdp.showTab('tab-1', 'ws-2', false)).resolves.toBeUndefined();
+      expect(mocks.sendToWorkspaceWindows.mock.calls[0]).toEqual([
+        'ws-2',
+        IPC_CHANNELS.BROWSER.SHOW_TAB,
+        { tabId: 'tab-1', workspaceId: 'ws-2', focus: false },
+      ]);
+    });
+
+    // A visible-but-inactive listing means the activation has not applied
+    // yet: the confirmation must keep polling until the tab is its panel's
+    // active tab, so a success never precedes a paintable tab.
+    it('keeps polling a visible-but-inactive listing until the tab is active', async () => {
+      let listings = 0;
+      mocks.sendToWorkspaceWindows.mockImplementation(
+        (_ws: string, channel: string, payload: { requestId?: string }) => {
+          if (channel !== IPC_CHANNELS.BROWSER.LIST_TABS_REQUEST) return DELIVERED;
+          listings += 1;
+          responseHandlers.get(IPC_CHANNELS.BROWSER.LIST_TABS_RESPONSE)?.(
+            {},
+            {
+              tabs: [
+                {
+                  tabId: 'tab-1',
+                  url: 'https://a.test',
+                  title: 'A',
+                  ...(listings >= 2 ? { active: true } : {}),
+                },
+              ],
+              requestId: payload.requestId,
+            },
+          );
+          return DELIVERED;
+        },
+      );
+
+      await expect(embeddedBrowserCdp.showTab('tab-1', 'ws-2')).resolves.toBeUndefined();
+      expect(listings).toBe(2);
+    });
+
+    it('fails when the tab is listed visible but never becomes active', async () => {
       mocks.sendToWorkspaceWindows.mockImplementation(
         (_ws: string, channel: string, payload: { requestId?: string }) => {
           if (channel !== IPC_CHANNELS.BROWSER.LIST_TABS_REQUEST) return DELIVERED;
@@ -437,12 +491,9 @@ describe('embedded browser CDP workspace routing', () => {
         },
       );
 
-      await expect(embeddedBrowserCdp.showTab('tab-1', 'ws-2', false)).resolves.toBeUndefined();
-      expect(mocks.sendToWorkspaceWindows.mock.calls[0]).toEqual([
-        'ws-2',
-        IPC_CHANNELS.BROWSER.SHOW_TAB,
-        { tabId: 'tab-1', workspaceId: 'ws-2', focus: false },
-      ]);
+      await expect(embeddedBrowserCdp.showTab('tab-1', 'ws-2')).rejects.toThrow(
+        'could not be shown',
+      );
     });
 
     it('fails when the tab stays hidden in every confirmation listing', async () => {

@@ -118,6 +118,7 @@ describe('workspaceAgentsReducer', () => {
           ...emptyWorkspaceAgentState,
           agentIds: ['agent-1', 'agent-2'],
           foregroundAgentIds: ['agent-1', 'agent-2'],
+          diskMessageCounts: { 'agent-1': 0, 'agent-2': 0 },
         },
       },
     });
@@ -178,6 +179,7 @@ describe('workspaceAgentsReducer', () => {
           ...emptyWorkspaceAgentState,
           agentIds: ['agent-2'],
           foregroundAgentIds: [],
+          diskMessageCounts: { 'agent-2': 0 },
         },
       },
     });
@@ -677,6 +679,30 @@ describe('workspace-agents selectors', () => {
       const state = workspaceAgentsReducer(initialState, setActiveAgentId(WS_1, 'agent-1'));
       const next = workspaceAgentsReducer(state, setActiveAgentId(WS_1, 'agent-1'));
       expect(next).toBe(state);
+    });
+  });
+
+  describe('hydration membership snapshots', () => {
+    it('records disk message counts in the setAgents membership commit', () => {
+      const withMessage = mockAgent('agent-1', WS_1, 'Agent');
+      withMessage.messages = [
+        { id: 'msg-1', role: 'user', timestamp: '2026-03-19T00:00:00.000Z' } as any,
+      ];
+
+      const state = workspaceAgentsReducer(initialState, setAgents(WS_1, [withMessage]));
+
+      expect(state.byWorkspaceId[WS_1].diskMessageCounts).toEqual({ 'agent-1': 1 });
+    });
+
+    it('records disk message counts when a retired hydration appends with addAgent', () => {
+      const withMessage = mockAgent('agent-1', WS_1, 'Agent');
+      withMessage.messages = [
+        { id: 'msg-1', role: 'user', timestamp: '2026-03-19T00:00:00.000Z' } as any,
+      ];
+
+      const state = workspaceAgentsReducer(initialState, addAgent(WS_1, withMessage));
+
+      expect(state.byWorkspaceId[WS_1].diskMessageCounts).toEqual({ 'agent-1': 1 });
     });
   });
 

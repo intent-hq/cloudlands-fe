@@ -121,4 +121,28 @@ describe('workspace-transfer IPC — per-window affinity wiring', () => {
     (webContents.fromId as any).mockReturnValue({ isDestroyed: () => false });
     expect(deps.isOwnerGone(5)).toBe(false);
   });
+
+  it('builds the transfer target client with a clientId-only hello (never browserExec)', async () => {
+    const handler = await getHandler(TRANSFER.CANCEL);
+    await handler(event(1)); // force lazy relay creation
+    const deps = createWorkspaceTransferRelay.mock.calls[0][0] as {
+      createTargetClient(connectionId: string): Promise<unknown>;
+    };
+    const { buildConfigForConnection } = await import('./backend.ipc');
+    (buildConfigForConnection as any).mockResolvedValue({ config: { kind: 'remote' } });
+    const { JsonRpcClient } = await import('./json-rpc-client');
+    (JsonRpcClient as any).mockImplementation(function () {
+      return { on: vi.fn(), start: vi.fn(), dispose: vi.fn() };
+    });
+
+    await deps.createTargetClient('conn-1');
+
+    const opts = (JsonRpcClient as any).mock.calls.at(-1)[0] as {
+      helloParams: () => Promise<Record<string, unknown>>;
+    };
+    // REV-2: only the main pooled client advertises `capabilities.browserExec`
+    // — the transfer relay's target connection identifies itself by clientId
+    // alone so the daemon never routes `browser.exec` to it.
+    await expect(opts.helloParams()).resolves.toEqual({ clientId: 'client-1' });
+  });
 });

@@ -20,6 +20,12 @@
     message?: string;
     lifecycleMessage?: string | null;
     elapsed?: string | null;
+    /**
+     * Called with `true` while the pointer is over the row and `false` when it
+     * leaves or the row hides, so the owner can refresh the hover-only elapsed
+     * text only while it can be seen.
+     */
+    onHoverChange?: (hovered: boolean) => void;
     variant?: IntentMarkVariant;
     class?: string;
     /** Compact mode - shows only the loading mark without message */
@@ -31,6 +37,7 @@
     message = m.chat_streamingStatus_thinking_label(),
     lifecycleMessage = null,
     elapsed = null,
+    onHoverChange,
     variant = 'bloom',
     class: className = '',
     compact = false,
@@ -38,6 +45,13 @@
 
   let rendered = $state(false);
   let hideTimer: number | undefined;
+  let hovered = false;
+
+  function setHovered(next: boolean) {
+    if (hovered === next) return;
+    hovered = next;
+    onHoverChange?.(next);
+  }
 
   $effect.pre(() => {
     if (visible) {
@@ -52,8 +66,13 @@
     }
   });
 
+  $effect(() => {
+    if (!rendered) setHovered(false);
+  });
+
   onDestroy(() => {
     if (hideTimer !== undefined) window.clearTimeout(hideTimer);
+    setHovered(false);
   });
 </script>
 
@@ -62,6 +81,8 @@
     class="{CHAT_OPERATIONAL_ROW_CLASS} group font-family-child font-normal text-muted-foreground {className}"
     data-streaming-typing-row
     aria-hidden={!visible}
+    onpointerenter={() => setHovered(true)}
+    onpointerleave={() => setHovered(false)}
     in:fade={{ tier: 'moderate' }}
     out:fade={{ tier: 'moderate' }}
   >

@@ -1,14 +1,13 @@
 /**
  * Wiring tests for the dev-only switch-timing observer saga: t=0 triggers open
  * a record, gate actions mark it, and the reveal condition (hydration settled
- * + both reveal gates clear) finalizes exactly one consolidated summary.
+ * + transcript snapshot gate clear) finalizes exactly one consolidated summary.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runSaga, stdChannel } from 'redux-saga';
 
 import {
   chatLiveStreamPhaseChanged,
-  chatUtilityFooterReady,
   initializeChatRequested,
   transcriptHydrationSettled,
   transcriptHydrationStarted,
@@ -32,7 +31,6 @@ const WS = 'ws-timing';
 type ChatAgentTestState = {
   transcriptHydration?: 'loading' | 'settled';
   awaitingSwitchBackSnapshot?: boolean;
-  awaitingUtilityFooter?: boolean;
 };
 
 function harness(chatAgentState: () => ChatAgentTestState) {
@@ -58,12 +56,12 @@ describe('switchTimingSaga', () => {
     vi.restoreAllMocks();
   });
 
-  it('opens a record at initializeChatRequested and finalizes when gates settle', async () => {
+  it('opens a record at initializeChatRequested and finalizes when transcript hydration settles', async () => {
     const state: ChatAgentTestState = {
       transcriptHydration: 'loading',
-      awaitingUtilityFooter: true,
     };
     const run = harness(() => state);
+    const debugSpy = vi.spyOn(console, 'debug').mockImplementation(() => {});
 
     run.channel.put(initializeChatRequested(AGENT, { wsId: WS }));
     await settle();
@@ -72,13 +70,6 @@ describe('switchTimingSaga', () => {
     run.channel.put(transcriptHydrationStarted(AGENT));
     state.transcriptHydration = 'settled';
     run.channel.put(transcriptHydrationSettled(AGENT));
-    await settle();
-    // Utility-footer gate still armed — not finalized yet.
-    expect(hasOpenAgentView(AGENT)).toBe(true);
-
-    const debugSpy = vi.spyOn(console, 'debug').mockImplementation(() => {});
-    state.awaitingUtilityFooter = false;
-    run.channel.put(chatUtilityFooterReady(AGENT));
     await settle();
     expect(hasOpenAgentView(AGENT)).toBe(false);
     expect(debugSpy).toHaveBeenCalledTimes(1);
@@ -139,19 +130,15 @@ describe('switchTimingSaga', () => {
     run.task.cancel();
   });
 
-  it('finalizes when the subscription snapshot is the action clearing the final gate', async () => {
+  it('records a subscription snapshot without making reveal wait for it', async () => {
     const state: ChatAgentTestState = {
-      transcriptHydration: 'settled',
-      awaitingUtilityFooter: true,
+      transcriptHydration: 'loading',
     };
     const run = harness(() => state);
     const debugSpy = vi.spyOn(console, 'debug').mockImplementation(() => {});
 
     run.channel.put(initializeChatRequested(AGENT, { wsId: WS }));
     await settle();
-    expect(hasOpenAgentView(AGENT)).toBe(true);
-
-    state.awaitingUtilityFooter = false;
     run.channel.put(
       setSubscriptionSnapshot(WS, AGENT, {
         subscriptions: [],
@@ -160,6 +147,8 @@ describe('switchTimingSaga', () => {
         waitingState: 'idle',
       }),
     );
+    state.transcriptHydration = 'settled';
+    run.channel.put(transcriptHydrationSettled(AGENT));
     await settle();
     expect(hasOpenAgentView(AGENT)).toBe(false);
     expect(debugSpy).toHaveBeenCalledTimes(1);
@@ -169,20 +158,18 @@ describe('switchTimingSaga', () => {
     run.task.cancel();
   });
 
-  it('finalizes when the subscription fetch failure is the action clearing the final gate', async () => {
+  it('records a subscription fetch failure without making reveal wait for it', async () => {
     const state: ChatAgentTestState = {
-      transcriptHydration: 'settled',
-      awaitingUtilityFooter: true,
+      transcriptHydration: 'loading',
     };
     const run = harness(() => state);
     const debugSpy = vi.spyOn(console, 'debug').mockImplementation(() => {});
 
     run.channel.put(initializeChatRequested(AGENT, { wsId: WS }));
     await settle();
-    expect(hasOpenAgentView(AGENT)).toBe(true);
-
-    state.awaitingUtilityFooter = false;
     run.channel.put(subscriptionSnapshotFetchFailed(WS, AGENT));
+    state.transcriptHydration = 'settled';
+    run.channel.put(transcriptHydrationSettled(AGENT));
     await settle();
     expect(hasOpenAgentView(AGENT)).toBe(false);
     expect(debugSpy).toHaveBeenCalledTimes(1);

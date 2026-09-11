@@ -41,7 +41,12 @@ import {
   selectAgentSession,
 } from '$store/renderer/slices/agent-session/agent-session-selectors';
 import type { AgentMessage } from '$shared/types';
-import { ensureAgentSession, refreshAgentSessionAfterEvent } from './agent-read-service';
+import {
+  ensureAgentSession,
+  notePendingQuestionMarkerProjection,
+  readAgentSession,
+  refreshAgentSessionAfterEvent,
+} from './agent-read-service';
 import {
   clearPendingAgentDeletions,
   removePendingAgentDeletion,
@@ -202,6 +207,63 @@ describe('agentReadService (fake seam, real store)', () => {
     expect(agentsApi.get).toHaveBeenCalledTimes(1);
   });
 
+  it('shares one request between a raw caller and the guarded hydrator', async () => {
+    const agentId = 'agent-read-cross-caller';
+    let resolveGet!: (value: AgentSession) => void;
+    agentsApi.get.mockReturnValueOnce(
+      new Promise<AgentSession>((resolve) => {
+        resolveGet = resolve;
+      }) as never,
+    );
+
+    const rawCaller = readAgentSession(agentId);
+    const hydratedCaller = ensureAgentSession(agentId);
+    expect(agentsApi.get).toHaveBeenCalledTimes(1);
+
+    resolveGet(makeSession({ id: agentId, name: 'shared across callers' }));
+    await Promise.all([rawCaller, hydratedCaller]);
+
+    expect(agentsApi.get).toHaveBeenCalledTimes(1);
+    expect(selectAgentSession.select(appStore.state, agentId)?.name).toBe('shared across callers');
+  });
+
+  it('does not cache a rejected request', async () => {
+    const agentId = 'agent-read-retry-after-rejection';
+    agentsApi.get
+      .mockRejectedValueOnce(new Error('temporary failure') as never)
+      .mockResolvedValueOnce(makeSession({ id: agentId, name: 'retry succeeded' }) as never);
+
+    await ensureAgentSession(agentId);
+    await ensureAgentSession(agentId);
+
+    expect(agentsApi.get).toHaveBeenCalledTimes(2);
+    expect(selectAgentSession.select(appStore.state, agentId)?.name).toBe('retry succeeded');
+  });
+
+  it('runs exactly one trailing refresh when events arrive during a raw caller request', async () => {
+    const agentId = 'agent-read-event-during-raw';
+    let resolveLeading!: (value: AgentSession) => void;
+    agentsApi.get
+      .mockImplementationOnce(
+        () =>
+          new Promise<AgentSession>((resolve) => {
+            resolveLeading = resolve;
+          }) as never,
+      )
+      .mockResolvedValueOnce(makeSession({ id: agentId, name: 'trailing' }) as never);
+
+    const leading = readAgentSession(agentId);
+    const trailing = refreshAgentSessionAfterEvent(agentId);
+    const duplicateEvent = refreshAgentSessionAfterEvent(agentId);
+    expect(agentsApi.get).toHaveBeenCalledTimes(1);
+
+    resolveLeading(makeSession({ id: agentId, name: 'leading' }));
+    await Promise.all([leading, trailing, duplicateEvent]);
+
+    expect(agentsApi.get).toHaveBeenCalledTimes(2);
+    expect(selectAgentSession.select(appStore.state, agentId)?.name).toBe('trailing');
+  });
+
   it.each([
     {
       direction: 'clear to set',
@@ -255,6 +317,79 @@ describe('agentReadService (fake seam, real store)', () => {
       ).toBe(latestMarker);
     },
   );
+
+  // A read whose request started before an `agent:updated` question-marker
+  // projection (§6.5) may carry the pre-mutation marker; its response must not
+  // undo the store's projected value, while a read started after the
+  // projection stays authoritative.
+  it('keeps the projected question marker against a read that started before the projection', async () => {
+    const agentId = 'agent-marker-stale-read';
+    appStore.dispatch(
+      bulkUpsertSessions([
+        makeSession({ id: agentId, metadata: { pendingQuestionsMessageId: 'msg-q1' } }),
+      ]),
+    );
+    let resolveStale!: (session: AgentSession) => void;
+    agentsApi.get
+      .mockImplementationOnce(
+        () =>
+          new Promise<AgentSession>((resolve) => {
+            resolveStale = resolve;
+          }) as never,
+      )
+      .mockResolvedValueOnce(
+        makeSession({
+          id: agentId,
+          metadata: { pendingQuestionsMessageId: '', specialist: 'implementor' },
+        }) as never,
+      );
+
+    const stale = ensureAgentSession(agentId);
+    appStore.dispatch(
+      bulkUpsertSessions([
+        makeSession({ id: agentId, metadata: { pendingQuestionsMessageId: '' } }),
+      ]),
+    );
+    notePendingQuestionMarkerProjection(agentId);
+    const trailing = refreshAgentSessionAfterEvent(agentId);
+
+    resolveStale(
+      makeSession({
+        id: agentId,
+        name: 'stale',
+        metadata: { pendingQuestionsMessageId: 'msg-q1', taskNoteId: 'task-1' },
+      }),
+    );
+    await stale;
+    const afterStale = selectAgentSession.select(appStore.state, agentId);
+    expect(afterStale?.name).toBe('stale');
+    expect(afterStale?.metadata).toEqual({ pendingQuestionsMessageId: '', taskNoteId: 'task-1' });
+
+    await trailing;
+    expect(selectAgentSession.select(appStore.state, agentId)?.metadata).toEqual({
+      pendingQuestionsMessageId: '',
+      specialist: 'implementor',
+    });
+  });
+
+  it('applies the fetched question marker from a read that started after the projection', async () => {
+    const agentId = 'agent-marker-fresh-read';
+    appStore.dispatch(
+      bulkUpsertSessions([
+        makeSession({ id: agentId, metadata: { pendingQuestionsMessageId: '' } }),
+      ]),
+    );
+    notePendingQuestionMarkerProjection(agentId);
+    agentsApi.get.mockResolvedValueOnce(
+      makeSession({ id: agentId, metadata: { pendingQuestionsMessageId: 'msg-q2' } }) as never,
+    );
+
+    await ensureAgentSession(agentId);
+
+    expect(
+      selectAgentSession.select(appStore.state, agentId)?.metadata?.pendingQuestionsMessageId,
+    ).toBe('msg-q2');
+  });
 
   // Regression: `agent.get` returns AgentLite (PROTOCOL §5.5) — session
   // metadata + message COUNTS, not the retained transcript. Dispatching that

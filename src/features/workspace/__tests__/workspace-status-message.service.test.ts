@@ -16,6 +16,7 @@ vi.mock('../../../store/main/redux-store-bridge', () => ({
 // now delegates to the daemon.
 const workspaceStore = new Map<string, Record<string, unknown>>();
 vi.mock('../../backend/main/backend.ipc', () => ({
+  onBackendReconnected: () => () => {},
   getBackendClient: () => ({
     request: vi.fn(async (method: string, params: unknown) => {
       if (method === 'note.list') return { notes: [] };

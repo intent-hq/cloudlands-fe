@@ -317,13 +317,24 @@ describe('fixed-column panel keyboard shortcuts', () => {
     shortcuts.cleanup();
   });
 
-  it('maps the configurable split-down leader key', () => {
+  it('maps the configurable split-right leader key', () => {
+    const shortcuts = createPanelKeyboardShortcuts(() => manager);
+    shortcuts.activateLeader();
+    const event = new KeyboardEvent('keydown', { key: '%', shiftKey: true });
+
+    expect(shortcuts.handleKeyDown(event)).toBe(true);
+    expect(splitPanel).toHaveBeenCalledWith('p1', 'horizontal');
+    expect(shortcuts.leaderActive).toBe(false);
+    shortcuts.cleanup();
+  });
+
+  it('leaves the former split-down leader key unbound', () => {
     const shortcuts = createPanelKeyboardShortcuts(() => manager);
     shortcuts.activateLeader();
     const event = new KeyboardEvent('keydown', { key: '"', shiftKey: true });
 
     expect(shortcuts.handleKeyDown(event)).toBe(true);
-    expect(splitPanel).toHaveBeenCalledWith('p1', 'vertical');
+    expect(splitPanel).not.toHaveBeenCalled();
     expect(shortcuts.leaderActive).toBe(false);
     shortcuts.cleanup();
   });

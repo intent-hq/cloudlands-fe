@@ -1,4 +1,6 @@
 import { expect, test } from '@playwright/experimental-ct-svelte';
+import { fileURLToPath } from 'node:url';
+import { defineGeometrySnapshotSuite } from '$lib/component-catalog/geometry-snapshot';
 import WorkspaceHoverCardPreview from './workspace-hover-card.preview.svelte';
 import {
   workspaceHoverCardPreview,
@@ -275,6 +277,7 @@ test('uses accessible muted foreground for secondary metadata', async ({ mount, 
     props: fixture('working'),
   });
   const card = preview.locator('[data-workspace-hover-card]');
+  await expect(card.locator('[data-workspace-hover-card-agent-time]').first()).toBeVisible();
   const styles = await card.evaluate((node) => {
     const renderedColor = (color: string) => {
       const canvas = document.createElement('canvas');
@@ -478,4 +481,28 @@ test('keeps sections accessible without visible headings or internal row divider
     .locator('[data-workspace-hover-card-agent-row]')
     .evaluateAll((rows) => rows.map((row) => getComputedStyle(row).borderBottomWidth));
   expect(rowBorders.every((width) => width === '0px')).toBe(true);
+});
+
+test.describe('workspace hover-card snapshots with a fixed clock', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2026-09-07T00:00:00.000Z'));
+    await page.reload();
+  });
+
+  defineGeometrySnapshotSuite({
+    scene: 'workspace-hover-card',
+    component: WorkspaceHoverCardPreview,
+    states: [
+      'working',
+      'attention',
+      'dense',
+      'landscape-wide',
+      'landscape-narrow',
+      'landscape-loading',
+    ],
+    widths: [720],
+    snapshotPath: fileURLToPath(
+      new URL('./__geometry__/workspace-hover-card.geometry.json', import.meta.url),
+    ),
+  });
 });

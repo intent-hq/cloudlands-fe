@@ -25,6 +25,7 @@
    */
 
   import { Button } from '$lib/components/ui/button';
+  import DeviceIconPicker from '$lib/components/DeviceIconPicker.svelte';
   import { Checkbox } from '$lib/components/ui/checkbox';
   import { Input } from '$lib/components/ui/input';
   import { Label } from '$lib/components/ui/label';
@@ -41,7 +42,11 @@
     setKeychainSyncEnabledRequested,
   } from '$store/renderer/slices/connections/connections-slice';
   import { selectKeychainSyncState } from '$store/renderer/slices/connections/connections-selectors';
-  import { DEFAULT_CONNECTION_ACCENT, type ConnectionAccent } from '$shared/types/connections';
+  import {
+    DEFAULT_CONNECTION_ACCENT,
+    type ConnectionAccent,
+    type DeviceIconChoice,
+  } from '$shared/types/connections';
   import {
     CONNECTION_ACCENT_CLASSES,
     connectionAccentOptions,
@@ -92,6 +97,7 @@
   let step = $state<Step>('details');
   let name = $state('');
   let accent = $state<ConnectionAccent>(DEFAULT_CONNECTION_ACCENT);
+  let deviceIcon = $state<DeviceIconChoice>('auto');
   let host = $state('');
   let port = $state(DEFAULT_WS_PORT);
   let token = $state('');
@@ -139,6 +145,7 @@
     step = 'details';
     name = '';
     accent = defaultAccent;
+    deviceIcon = 'auto';
     host = '';
     port = DEFAULT_WS_PORT;
     token = '';
@@ -236,6 +243,7 @@
       const addAction = addConnectionRequested({
         label: name.trim(),
         accent,
+        deviceIcon,
         host: trimmedHost,
         port: portNumber,
         fingerprint,
@@ -425,6 +433,8 @@
               {/each}
             </div>
           </fieldset>
+
+          <DeviceIconPicker record={{ deviceIcon }} bind:value={deviceIcon} portal={true} />
 
           <div class="space-y-1">
             <label class="text-xs text-subtle" for="connect-host"

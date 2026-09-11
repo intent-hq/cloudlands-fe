@@ -1022,6 +1022,68 @@ describe('agent-session-slice reducer', () => {
       expect(state.byAgentId['a1'].waitingForAgentIds).toEqual(['child-1']);
     });
 
+    describe('agent:updated pending-question marker projection (§6.5)', () => {
+      const updated = (data: Record<string, unknown>) =>
+        eventReceived('ws-1', {
+          id: 'evt-updated',
+          type: 'agent:updated',
+          timestamp: '2024-01-01T00:00:00.000Z',
+          workspaceId: 'ws-1',
+          data: { agentId: 'a1', ...data },
+        } as any);
+      const seeded = () =>
+        agentSessionReducer(
+          initialState,
+          upsertSession(
+            makeSession('a1', 'ws-1', {
+              metadata: { pendingQuestionsMessageId: 'msg-q1', specialist: 'implementor' },
+            }),
+          ),
+        );
+
+      it('applies a written empty-string clear synchronously and keeps unrelated metadata', () => {
+        const next = agentSessionReducer(seeded(), updated({ pendingQuestionsMessageId: '' }));
+
+        expect(next.byAgentId['a1'].metadata).toEqual({
+          pendingQuestionsMessageId: '',
+          specialist: 'implementor',
+        });
+      });
+
+      it('applies a marker set and the dismissal marker riding alongside it', () => {
+        const cleared = agentSessionReducer(seeded(), updated({ pendingQuestionsMessageId: '' }));
+        const set = agentSessionReducer(cleared, updated({ pendingQuestionsMessageId: 'msg-q2' }));
+        expect(set.byAgentId['a1'].metadata?.pendingQuestionsMessageId).toBe('msg-q2');
+
+        const dismissed = agentSessionReducer(
+          set,
+          updated({ dismissedQuestionsMessageId: 'msg-q2', pendingQuestionsMessageId: 'msg-q2' }),
+        );
+        expect(dismissed.byAgentId['a1'].metadata).toMatchObject({
+          dismissedQuestionsMessageId: 'msg-q2',
+          pendingQuestionsMessageId: 'msg-q2',
+        });
+      });
+
+      it('leaves the marker untouched when agent:updated omits it or carries a non-string', () => {
+        const state = seeded();
+
+        expect(agentSessionReducer(state, updated({ modelId: 'other' }))).toBe(state);
+        expect(agentSessionReducer(state, updated({ pendingQuestionsMessageId: null }))).toBe(
+          state,
+        );
+        expect(agentSessionReducer(state, updated({ pendingQuestionsMessageId: 'msg-q1' }))).toBe(
+          state,
+        );
+      });
+
+      it('does not create a session for an unknown agent', () => {
+        expect(agentSessionReducer(initialState, updated({ pendingQuestionsMessageId: '' }))).toBe(
+          initialState,
+        );
+      });
+    });
+
     it('folds the agent:idle isWaitingForOtherAgents flag onto the session', () => {
       // §6.5: agent:idle freezes the completion-watch waiting flag into the
       // payload at emit time — a coordinator that ended its turn to wait on
@@ -2484,6 +2546,40 @@ describe('agent-session-slice reducer', () => {
       });
     });
 
+    it('applies stale runtime-flag clears to selected rows in one mixed batch', () => {
+      let state = agentSessionReducer(
+        initialState,
+        bulkUpsertSessions([
+          makeSession('stale', 'ws-1', { isStreaming: true, isProcessing: true }),
+          makeSession('live', 'ws-1', { isStreaming: true, isProcessing: true }),
+          makeSession('new', 'ws-1'),
+        ]),
+      );
+
+      state = agentSessionReducer(
+        state,
+        bulkUpsertSessions(
+          [
+            makeSession('stale', 'ws-1', { isStreaming: false, isProcessing: false }),
+            makeSession('live', 'ws-1', { isStreaming: false, isProcessing: false }),
+            makeSession('new', 'ws-1', { name: 'Hydrated new' }),
+          ],
+          { staleRuntimeFlagClearAgentIds: ['stale'] },
+        ),
+      );
+
+      expect(state.byAgentId['stale']).toMatchObject({
+        isStreaming: false,
+        isProcessing: false,
+      });
+      expect(state.byAgentId['live']).toMatchObject({
+        isStreaming: true,
+        isProcessing: true,
+      });
+      expect(state.byAgentId['new'].name).toBe('Hydrated new');
+      expect(state.agentIdsByWorkspace['ws-1']).toEqual(['stale', 'live', 'new']);
+    });
+
     it('still clears isProcessing via upsert once isStreaming was cleared first (safety timeout)', () => {
       // Mirrors agent-stream-saga's safety-timeout path: setAgentStreaming(false)
       // flips isStreaming off first, then an upsert clears the remaining
@@ -3370,16 +3466,20 @@ describe('agent-session selectors', () => {
       expect(selectAgentAttentionRequest.select(state, 'unknown')).toBeNull();
     });
 
-    it('gates a pending request while the agent runs a live turn; surfaces it once idle', () => {
-      // Mid-turn rehydration can deliver the persisted fields while the agent
-      // is still streaming — the selector must defer until the turn ends.
+    it('surfaces a pending request while the agent runs a live turn and once idle', () => {
+      // Automatic deliveries restart the agent without clearing the request,
+      // so it is still pending mid-turn — attention trumps running.
       const live = makeSession('a1', 'ws-1', {
         attentionRequestKind: 'blocker',
         attentionRequestReason: 'sandbox broken',
         isResponding: true,
       });
       const liveState = storeWith({ byAgentId: { a1: live }, agentIdsByWorkspace: {} });
-      expect(selectAgentAttentionRequest.select(liveState, 'a1')).toBeNull();
+      expect(selectAgentAttentionRequest.select(liveState, 'a1')).toEqual({
+        kind: 'blocker',
+        reason: 'sandbox broken',
+        timestamp: undefined,
+      });
 
       const settled = makeSession('a1', 'ws-1', {
         attentionRequestKind: 'blocker',

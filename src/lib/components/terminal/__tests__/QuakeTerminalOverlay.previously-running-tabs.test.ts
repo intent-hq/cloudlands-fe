@@ -7,7 +7,7 @@
  * not live, then refetches the list.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { fireEvent, render, waitFor } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import type { WorkspaceId } from '$shared/types/branded-ids';
 import type { ScriptRuntimeState, ScriptWithState } from '$features/scripts/types';
 
@@ -157,6 +157,7 @@ import {
   setScriptsData,
   setScriptsInitialized,
 } from '$store/renderer/slices/scripts/scripts-slice';
+import { m } from '$shared/paraglide/messages.js';
 import { warmImport } from '../../../../test/warm-import';
 
 const WS_A = 'ws-a' as WorkspaceId;
@@ -283,6 +284,18 @@ describe('QuakeTerminalOverlay previously-running script tabs', () => {
 
     expect(scriptsClient.stop).toHaveBeenCalledWith(WS_A, 'prev-1');
     expect(dispatchedTypes()).toContain('scripts/refreshScripts');
+  });
+
+  it('removes the dismiss control from the document while its script tab is being renamed', async () => {
+    seedScripts([makeScript('prev-1', { previouslyRunning: true })]);
+    const { container } = render(QuakeTerminalOverlay, { props: { workspaceId: WS_A } });
+    const dismissName = m.terminal_quakeOverlay_dismissScriptTab_ariaLabel();
+
+    await waitFor(() => expect(screen.getByRole('button', { name: dismissName })).not.toBeNull());
+    await fireEvent.doubleClick(scriptTabs(container)[0]);
+
+    expect(container.querySelector('[data-edit-script-tab="prev-1"]')).not.toBeNull();
+    expect(screen.queryByRole('button', { name: dismissName })).toBeNull();
   });
 
   it('a previously-running script that goes live keeps its tab and loses the dismiss button', async () => {

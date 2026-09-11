@@ -51,6 +51,8 @@ in a monorepo checkout, where this repo mounts at `packages/cloudlands-fe/`.
 | agents              | ../../docs/fe/agent-message-dedup-and-stream-sagas.md, ../../docs/fe/RULES_SYSTEM.md |
 | state/store         | ../../docs/fe/STATE_MANAGEMENT.md, src/store/renderer/docs/                          |
 | component design    | ../../docs/fe/COMPONENTS_DESIGN.md                                                   |
+| UI invariant gates  | `pnpm run test:ui-invariants` — ratchets + catalog `*.meta.ts` ledgers, see below    |
+| deps freshness      | `pnpm run deps:check` — gates refuse to run on a stale node_modules install          |
 | panels/layout       | ../../docs/fe/panel-system-refactoring.md, ../../docs/fe/PANEL_TAB_UX_SPEC.md        |
 | PR descriptions     | ../../docs/fe/PR_DESCRIPTION_GUIDE.md                                                |
 | browser/CDP         | ../../docs/fe/BROWSER_PANEL_SPEC.md, ../../docs/fe/CDP_MCP_TOOLS.md                  |
@@ -114,10 +116,10 @@ and production application sagas. Use `dev:web` when the full browser renderer o
 client connection is required. Use `dev:cdp` for Electron main, preload, native,
 window, or shell behavior.
 
-From the monorepo root, run `make ports`, then start `make dev-sandbox-ui` as a
-workspace service script. The target installs locked dependencies when needed and uses
-the worktree's derived `DEV_PORT`, avoiding collisions with concurrent workspaces. An
-explicit `DEV_PORT` override remains available when needed.
+For remote-host lifecycle, browser, evidence, and hand-off steps, follow the monorepo
+root [`Developing on a remote host`](../../AGENTS.md#developing-on-a-remote-host) loop.
+Choose `make dev-sandbox-ui` for this recipe. UI mode intentionally has no daemon bridge
+or `/__sandbox/health`; wait for its component-ready marker instead.
 
 Use these exact state names in direct URLs:
 
@@ -130,23 +132,104 @@ Use these exact state names in direct URLs:
 On the sandbox page, use `window.__INTENT_PREVIEW__.list()` to find preview IDs,
 `await window.__INTENT_PREVIEW__.states('button')` to find states, and
 `window.__INTENT_PREVIEW__.current()` to inspect the active ready state. Wait for
-`[data-preview-ready=true]` before capture.
+`[data-preview-ready=true]` before capture. For a cold renderer launch, use the
+[self-checking readiness hook](.agents/skills/electron/SKILL.md#wait-for-renderer-readiness)
+instead of polling or rescheduling an expired hook.
+
+### Visual verification
+
+For every component change that has a sandbox scene, capture geometry before and after
+the change and put both probe outputs (or their diff) in the task report. After the
+change, also capture and inspect a screenshot:
+
+```bash
+pnpm sandbox:probe workspace-hover-card --state landscape-wide
+pnpm sandbox:shot workspace-hover-card --state landscape-wide
+```
+
+Both commands require the scene as the first argument and `--state <name>`. They start
+an in-process Vite server with `INTENT_UI_PREVIEW=1` and `INTENT_BUILD_TARGET=web`, use
+`fit=component`, and wait for both the ready and stable markers. To reuse a running
+`dev:ui` server, pass its root URL with `--base-url http://127.0.0.1:<DEV_PORT>`.
+The sandbox route and Playwright CT harness use the repo-bundled `Inter Variable` font, and
+capture stability waits for `document.fonts.ready`, so geometry does not depend on host fonts.
+Shared options are `--theme light|dark|system` (default `light`), `--width 240..1600`
+(default `720`), `--motion reduced|full` (default `reduced`), `--scale 1|2` (default
+`1`), `--timeout <milliseconds>` (default `30000`), `--out <path>`, and
+`--allow-console-errors`. Set `SANDBOX_DEBUG=1` for runner diagnostics.
+
+The in-process server, like every `test/*.spec.ts` Vite harness, uses its own optimizer
+cache under `node_modules/.vite-harness/<harness>` (via `test/vite-harness-cache.mjs`)
+instead of the shared `node_modules/.vite`, so a probe never invalidates a running
+`dev:ui` / `dev:web` server's optimized deps or vice versa. The runner fails fast with the
+cause named — a `504 Outdated Optimize Dep` / `Optimize Deps Processing Error` on a module
+URL, or an esbuild dependency-scan / optimizer failure from the dev-server log — instead
+of a generic ready-marker timeout. `SANDBOX_GOMAXPROCS=<n>` exports `GOMAXPROCS` to the
+esbuild service for that run; it is a diagnostic knob for the dependency-scan crashes in
+intent-hq/intent#4617, not a fix, so leave it unset normally.
+
+`sandbox:shot` captures the complete component frame without shell chrome or scrolling.
+By default it writes
+`.demo-artifacts/sandbox/<scene>--<state>--<theme>--<width>.png` and prints its path,
+pixel dimensions, and URL. `sandbox:probe` prints stable JSON to stdout; pass
+`--selector <css>` to measure custom descendants or `--out
+.demo-artifacts/sandbox/<name>.json` to save it. `.demo-artifacts/sandbox/` is
+git-ignored; never commit these visual-review artifacts.
+
+Registered scenes also have co-located `*.geometry.ct.spec.ts` suites and checked-in
+`__geometry__/<scene>.geometry.json` baselines. A missing key, an extra key, or a numeric
+field that moves by more than 1px fails with `state/width/key.field expected→actual`.
+Regenerate baselines only for an intentional geometry change:
+
+```bash
+SANDBOX_GEOMETRY_UPDATE=1 pnpm run test:ct -- --grep 'geometry snapshot'
+pnpm sandbox:geometry:update
+```
+
+The two commands are equivalent; the package script sets
+`SANDBOX_GEOMETRY_UPDATE=1`. Inspect the JSON diff and justify every regenerated
+snapshot in the PR description. To register a scene, add a co-located
+`<scene>.geometry.ct.spec.ts` that statically imports the preview's default component, then
+passes it to `defineGeometrySnapshotSuite` with the scene, named states, contract widths, and
+`__geometry__/<scene>.geometry.json` path. The shared CT hook lazily resolves the matching
+preview definition in the browser, so no per-scene bootstrap registration is needed. Run the
+update command once to create the baseline. See
+`../../docs/fe/DEVELOPER_GUIDE.md#fast-ui-preview-workflow` for the manual preview loop.
+
+```ts
+import Preview from './example.preview.svelte';
+
+defineGeometrySnapshotSuite({
+  scene: 'example',
+  component: Preview,
+  states: ['default'],
+  widths: [420],
+  snapshotPath,
+});
+```
 
 ### Put a preview screenshot in user chat
 
-Use an owned hidden embedded-browser tab with a fixed viewport. Call
-`ws.browser.listTabs` first and reuse a matching tab; otherwise call
+Follow the root Observe and Prove steps with a fixed viewport. For this preview, require
+`[data-preview-ready=true]` and confirm `window.__INTENT_PREVIEW__.current()` has the
+expected state and `status: 'ready'` before capture. Keep the returned image block in the
+user response; a local path alone does not display an image in chat.
+
+Prefer `sandbox:shot`, verify the resulting PNG, save it with `ws.note.saveAsset`, and
+embed the returned workspace asset URL in chat or a note. A local file path alone does
+not show the image in chat.
+
+If the command cannot reach the preview, use an owned hidden embedded-browser tab as
+the fallback. Call `ws.browser.listTabs` first and reuse a matching tab; otherwise call
 `ws.browser.openTab` with the preview URL under
 `http://daemon.localhost:<DEV_PORT>/`. Wait no more than 15 seconds for
 `[data-preview-ready=true]`. Confirm that
-`window.__INTENT_PREVIEW__.current()` has the expected state and `status: 'ready'`.
-Then call the browser `screenshot` action. A successful action returns image content;
-keep that image block in the user response. A local file path alone does not show the
-image in chat.
+`window.__INTENT_PREVIEW__.current()` has the expected state and `status: 'ready'`, then
+call the browser `screenshot` action and keep its image block in the user response.
 
-The embedded-browser path is the remote-host default. `playwright-cli` is typically
-absent on remote hosts; use it only as a local fallback if the browser screenshot call
-reaches its 30-second limit. Do not retry the same stalled browser call. In a new,
+`playwright-cli` is typically absent on remote hosts; use it only as a local fallback if
+the browser screenshot call reaches its 30-second limit. Do not retry the same stalled
+browser call. In a new,
 clean local session, set a fixed viewport, wait up to 15 seconds for the ready marker,
 and write one PNG under `.demo-artifacts/<timestamp>-<flow>/`. Check that the PNG is
 non-empty and has the expected dimensions, inspect it with an image-capable file
@@ -159,44 +242,6 @@ absolute workspace path. Never invent an `artifacts/...` path, substitute a simi
 named file, or read a sibling workspace. If the expected artifact is absent, report it
 as missing instead of emitting a link.
 
-```bash
-playwright-cli -s=ui-preview-chat open 'http://127.0.0.1:<DEV_PORT>/sandbox/button?state=destructive&theme=dark&width=420&motion=reduced'
-playwright-cli -s=ui-preview-chat resize 1100 850
-playwright-cli -s=ui-preview-chat run-code 'async page => { await page.locator("[data-preview-ready=true]").waitFor({ timeout: 15000 }); }'
-playwright-cli -s=ui-preview-chat screenshot --filename=.demo-artifacts/<run>/preview.png --hires
-playwright-cli -s=ui-preview-chat console error
-playwright-cli -s=ui-preview-chat close
-```
-
-### Show your work with a video
-
-Record demos only when a video helps the reviewer understand a flow. Keep every recording under
-`.demo-artifacts/<timestamp>-<flow>/<flow>.webm`; `.demo-artifacts/` is git-ignored and videos must
-never be committed. When `playwright-cli` is available, open a clean session, start recording with
-`video-start <path>`, perform the flow, then run `video-stop` and close the session.
-
-If video recording is unavailable, the embedded browser can capture a sequence of screenshot frames.
-This is a fallback, not the preferred recording path: save numbered PNGs in the same artifact directory
-and, when `ffmpeg` is available, stitch them with `ffmpeg -framerate 8 -i frame-%04d.png -c:v libvpx-vp9
--pix_fmt yuv420p <flow>.webm`. Keep the viewport fixed and capture at a steady interval.
-
-Before linking the result, verify it is non-empty with `test -s <path>`. Embed the verified recording
-in chat or a note with one line:
-
-```markdown
-![demo](intent://local/file/.demo-artifacts/<timestamp>-<flow>/<flow>.webm)
-```
-
-The file must belong to the message's workspace. Do not link a client-local capture or a sibling
-workspace artifact; copy or create the recording in the daemon workspace first.
-
-Call `ws.browser.listTabs` before `ws.browser.openTab` and reuse a matching URL. New
-agent tabs are hidden by default and can still be evaluated, inspected, and captured.
-Keep the tab open so Vite HMR updates it after source edits. Use `ws.browser.showTab`
-to reveal it for human review; add `focus: true` only when focus is wanted. Use
-`http://daemon.localhost:<DEV_PORT>` in `ws.browser` URLs so local and remote daemon
-setups resolve correctly.
-
 For focused browser validation, run:
 
 ```bash
@@ -204,66 +249,40 @@ corepack pnpm run test:ct -- src/features/agent/components/agent-avatar/__tests_
 ```
 
 The CT harness defaults to port 3100 (the `CT_PORT` env var overrides it). Stop the
-process on that port before retrying if it is occupied. The full workflow is in
+process on that port before retrying if it is occupied. The run exits with Playwright's
+status as soon as the tests finish — the HTML report is written to `playwright-report/`
+but never served automatically. To browse it after the run, opt in from an interactive
+terminal with `CT_HTML_REPORT=open` (or `-- --open-report`); `node
+scripts/run-ct-tests.mjs --help` lists the options. The full workflow is in
 `../../docs/fe/DEVELOPER_GUIDE.md#fast-ui-preview-workflow`.
 
 ## Dogfooding a dev FE against a daemon
 
-The Vite dev server embeds a same-origin daemon bridge for `dev:web` and the app and
-stack sandboxes. While they run, the renderer reaches the daemon at `/intentd/ws` on
-the Vite origin, using `INTENTD_SOCKET` or the platform default socket. No separate
-bridge process or second tunnel is needed. The bridged daemon API is unauthenticated
-and loopback-only by design; never expose it beyond the Intent client's tunnel.
+Start with the monorepo root
+[`Developing on a remote host`](../../AGENTS.md#developing-on-a-remote-host) loop. It owns
+the canonical status, sandbox lifecycle, health wait, browser, evidence, and hand-off
+steps. The deeper implementation contract is in the
+[`Remote Sandbox Internals`](../../docs/fe/DEVELOPER_GUIDE.md#remote-sandbox-internals).
 
 ### Loop A — web build in an embedded tab (primary; renderer/UI work)
 
-From the monorepo root, choose the smallest one-command sandbox and run it as a
-workspace service script:
+The app and stack sandboxes enable the Vite dev server's same-origin daemon bridge. The
+renderer reaches `/intentd/ws` on the page origin through `INTENTD_SOCKET` or the platform
+default socket; `/__sandbox/health` checks the same socket plus Vite warm-up. The browser
+therefore needs one tunnel for the page, daemon RPC, and HMR.
+During the first page load, the health probe returns 503 quickly while warm-up is pending
+rather than blocking on the import crawl.
 
-- `make dev-sandbox-ui` — component previews, with no daemon.
-- `make dev-sandbox-app` — the complete web renderer against the installed Intent
-  daemon (or `INTENTD_SOCKET`).
-- `make dev-sandbox-stack` — a dev-profile intentd build on isolated `.dev/` state plus
-  the renderer. Use `INTENTD_PROFILE=release` to opt into a release build or
-  `INTENTD_BIN=/path/to/intentd` to skip the build and use a prebuilt binary.
+A first tunneled open of a fresh, pre-warmed app takes roughly one to three minutes to
+hydrate depending on host load. If the splash remains after health is ok, keep waiting
+rather than restarting; later loads are fast.
 
-Run `make doctor` first for the stack path. It intentionally exits nonzero for missing
-required prerequisites, including `pkg-config` plus OpenSSL development headers
-(`libssl-dev` and `pkg-config` on Debian/Ubuntu). Do not bypass that check.
-
-The remote-first Loop A is:
-
-1. Start the chosen `dev-sandbox-*` workspace service and wait for its exact
-   `Sandbox ready:` line. App and stack pre-warm the Vite module graph before printing
-   that line.
-2. Read the service status `detectedUrl`, keep its port, and call
-   `ws.browser.listTabs`. Reuse a matching tab or call `ws.browser.openTab` with
-   `http://daemon.localhost:<port>/` (plus any route/query).
-3. Poll the tab for the expected DOM or accessibility content. A first tunneled open of
-   a fresh pre-warmed app takes roughly one to three minutes to hydrate depending on host
-   load (fastest observed: about 45 seconds). If only the splash is visible, keep polling;
-   do not restart the service. Subsequent loads are fast; before pre-warming, a cold
-   tunneled load took about 10 minutes.
-4. Capture a browser screenshot, set the representative image as the workspace status
-   image, and call `ws.browser.showTab` without focus so the human can inspect the live
-   tab. Keep it open for HMR while editing.
-
-Always use `http://daemon.localhost:<port>` for embedded-browser URLs. Same-machine
-setups resolve to loopback; remote setups automatically create one tunnel for the page
-and its same-origin `/intentd/ws` daemon connection. The app and stack Vite origin
-exposes the full unauthenticated daemon API, so keep it loopback-only and open it only
-through the client tunnel.
+The bridged daemon API is unauthenticated. Keep Vite on loopback and reach it only through
+the Intent client's authenticated tunnel.
 
 Tunneled Chromium treats `daemon.localhost` as a remote origin. Consequently,
 `workspace-file://` media do not load in that embedded tab even though they load in
 Electron; validate such media in an Electron build.
-
-### Show your work after visible changes
-
-Capture one representative embedded-browser screenshot and set it as the workspace
-status image with `ws.workspace.setStatusImage`. Then call `ws.browser.showTab` without
-`focus: true` so the human can click through the live HMR tab without having focus
-stolen.
 
 ### Loop B — dev Electron FE + CDP (Electron shell work)
 
@@ -303,11 +322,50 @@ produced — manual install/testing only.
 ## Verification
 
 Use `pnpm run verify:changed -- <paths...>` during local work. With no paths, it reads
-staged, unstaged, deleted, and untracked frontend files. Add `--dry-run` to inspect the
+staged, unstaged, deleted, and untracked frontend files, plus the commits since
+`git merge-base <ref> HEAD` when `--base <ref>` (e.g. `--base origin/main`) is given; an
+empty change set exits 2 instead of passing silently. Add `--dry-run` to inspect the
 selected commands without running them. The command runs scoped Prettier and ESLint,
 related Vitest tests, directly imported colocated component tests, and only the
 renderer/main/preload TypeScript boundaries that changed. Ambiguous or high-risk files
 select a conservative suite instead of silently skipping coverage.
+
+Any renderer source change also runs `pnpm run test:ui-invariants` (chained into
+`validate:architecture` too): the repo-wide UI ratchets and the component-catalog
+`*.meta.ts` caller ledgers. Membership is derived, not listed:
+`scripts/ui-invariant-suites.mjs` scans the vitest test files under `scripts/` and `src/`
+(`*.{test,spec}.*`, minus the Playwright `*.ct.spec.*` / `*.visual.spec.*` suites), runs
+every one whose leading comments carry `// @ui-invariant`, and fails when a test whose
+parsed code (comments, string bodies, and regex literals never count) references
+`buildUiComponentInventory` or imports a `*.meta` module and reads a `.callers` ledger has
+neither that marker nor `// @ui-invariant-exempt: <reason>`. Add the marker to any new
+inventory or ledger suite; `node scripts/ui-invariant-suites.mjs --list` shows the current
+set and `--check` validates markers without running anything. Likewise, any code change
+under `src/`, any `AGENTS.md` change (root or nested — `lint:instruction-themis-pins` scans
+them all), and any edit to the `scripts/check-*.mjs` gates themselves also runs
+`pnpm run lint:architecture` — the repo-wide static architecture scans CI runs through
+`validate:architecture` (its only architecture step; new gates go into `lint:architecture`
+in `package.json`, never into a separate workflow step, so local and CI cannot diverge —
+`scripts/check-ci-architecture-gate.test.ts` fails on any other scanner or wrapper-script
+step in `intent-pr.yml`, and an edit to that workflow runs it locally) —
+because those scans are cross-file graph checks that per-file linting cannot see:
+cloudlands-fe#2315 passed `verify:changed` locally and failed CI in
+`lint:saga-watcher-ownership`. A change to `scripts/type-check.ts` additionally runs
+`pnpm run type-check:validate`, since `lint:architecture` omits that wrapper and the
+per-boundary checks invoke `tsc` directly.
+
+`vitest related` follows the import graph, so a suite that reads the tree from disk is
+invisible to `verify:changed` (cloudlands-fe#2256 and #2314 both failed only on CI). Such a
+suite declares its triggers in its leading comments —
+`// @verify-changed-triggers: src/preload/index.template.ts, src/lib/components/**`
+(repo-relative paths or globs; `./` and `../` entries resolve from the test file's
+directory) — or opts out with `// @verify-changed-exempt: <reason>`; `// @ui-invariant`
+suites are already covered by the renderer trigger. `pnpm run lint:verify-changed-triggers`
+(in `validate:architecture`) fails an undeclared disk-reading suite. `src/preload/index.ts`
+is untracked and generated by `pnpm run generate:ipc-channels` (run by `dev`, `build`, and
+CI before it is needed), so a hand edit to it can no longer be committed by accident, and
+the generator's guard rejects a locally edited copy on regeneration (cloudlands-fe#2314
+edited it, and only CI caught it).
 
 Only checks that genuinely conflict use host-wide locks, held for one check at a time:
 Playwright CT uses `ct-<CT_PORT>` (default `ct-3100`) and the full Vitest fallback uses
@@ -323,10 +381,10 @@ pnpm vitest run <targeted-test-files>
 pnpm run check                              # Svelte + TypeScript consumers
 pnpm tsc -p tsconfig.json --noEmit          # renderer
 pnpm tsc -p tsconfig.main.json --noEmit     # main process
-pnpm tsc -p tsconfig.preload.json --noEmit  # preload
+pnpm run generate:ipc-channels && pnpm tsc -p tsconfig.preload.json --noEmit  # preload
 ```
 
-`pnpm run check` must run alongside plain `tsc` because Svelte component consumers are not fully type-checked by `tsc` alone. All three typechecks must pass. The main typecheck requires `pnpm run generate:build-config` to have been run at least once.
+`pnpm run check` must run alongside plain `tsc` because Svelte component consumers are not fully type-checked by `tsc` alone. All three typechecks must pass. The main typecheck requires `pnpm run generate:build-config` to have been run at least once; the preload typecheck requires `pnpm run generate:ipc-channels` first, since the untracked `src/preload/index.ts` is the preload `tsconfig`'s only input and is absent after a fresh install.
 
 ## Frontend philosophy & testing
 

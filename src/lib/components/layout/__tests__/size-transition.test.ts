@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { spring } from '$lib/motion';
 import { resize } from '../size-transition';
 
 function createNode(width = 320, height = 240): HTMLElement {
@@ -20,24 +19,31 @@ function createNode(width = 320, height = 240): HTMLElement {
 }
 
 describe('resize transition', () => {
-  it('skips layout measurement entirely when motion is disabled', () => {
-    const node = createNode();
+  it.each([{ enabled: false }, { duration: 0 }])(
+    'skips layout measurement when motion is disabled: %j',
+    (params) => {
+      const node = createNode();
 
-    const config = resize(node, { enabled: false });
+      const config = resize(node, params);
 
-    expect(node.getBoundingClientRect).not.toHaveBeenCalled();
-    expect(config.duration).toBe(0);
-    expect(config.css).toBeUndefined();
-  });
+      expect(node.getBoundingClientRect).not.toHaveBeenCalled();
+      expect(config.duration).toBe(0);
+      expect(config.css).toBeUndefined();
+    },
+  );
 
   it('measures and animates the width for a real intro on the x axis', () => {
     const node = createNode(320);
+    const easing = (progress: number) => progress;
 
-    const config = resize(node, { axis: 'x', tier: 'moderate' });
+    const config = resize(node, { axis: 'x', duration: 180, easing, fade: true, clip: false });
 
     expect(node.getBoundingClientRect).toHaveBeenCalledTimes(1);
-    expect(config.duration).toBe(spring.moderate.settleMs);
+    expect(config.duration).toBe(180);
+    expect(config.easing).toBe(easing);
     expect(config.css?.(0.5, 0.5)).toContain('width: 160px');
+    expect(config.css?.(0.5, 0.5)).toContain('opacity: 0.5');
+    expect(config.css?.(0.5, 0.5)).not.toContain('overflow: hidden');
     expect(config.css?.(1, 0)).toContain('width: 320px');
   });
 

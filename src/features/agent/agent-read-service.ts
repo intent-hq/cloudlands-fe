@@ -25,6 +25,7 @@
  * configured store, the slice actions, and the logger.
  */
 import { appClient } from '$lib/client';
+import type { AgentSession } from '$shared/types';
 import { store as appStore } from '$store/renderer/store';
 import {
   bulkUpsertSessions,
@@ -37,11 +38,50 @@ import { staleRuntimeFlagClearUpsertOptions } from './utils/stale-runtime-flag-c
 
 const logger = createLogger('AgentReadService');
 
-/** In-flight loads keyed by agent id; coalesces concurrent requests. */
-const inFlight = new Map<string, Promise<void>>();
+/** In-flight wire reads keyed by agent id; shared by every metadata caller. */
+const inFlight = new Map<string, Promise<AgentSession | null>>();
+
+/** In-flight guarded hydrations keyed by agent id; prevents duplicate store writes. */
+const hydrationInFlight = new Map<string, Promise<AgentSession | null>>();
 
 /** Event-driven trailing loads keyed by agent id; at most one per in-flight read. */
 const pendingEventRerun = new Map<string, Promise<void>>();
+
+/**
+ * Monotonic read sequencing: every new `agent.get` request takes the next
+ * generation, and `notePendingQuestionMarkerProjection` records the generation
+ * current when an `agent:updated` question-marker event was applied to the
+ * store (PROTOCOL §6.5). A response whose request started at or before that
+ * generation may predate the daemon's marker write, so its marker fields must
+ * not undo the event projection; the trailing read (always a later generation)
+ * remains authoritative.
+ */
+let readGeneration = 0;
+const markerProjectionGeneration = new Map<string, number>();
+const QUESTION_MARKER_KEYS = ['pendingQuestionsMessageId', 'dismissedQuestionsMessageId'] as const;
+
+export function notePendingQuestionMarkerProjection(agentId: string): void {
+  markerProjectionGeneration.set(agentId, readGeneration);
+}
+
+function preserveProjectedQuestionMarkers(
+  agentId: string,
+  generation: number,
+  session: AgentSession | null,
+): AgentSession | null {
+  if (!session) return session;
+  const projectedAt = markerProjectionGeneration.get(agentId);
+  if (projectedAt === undefined || generation > projectedAt) return session;
+  const stored = appStore.state.agentSessions?.byAgentId[agentId]?.metadata;
+  if (!stored) return session;
+  let metadata = session.metadata;
+  for (const key of QUESTION_MARKER_KEYS) {
+    const projected = stored[key];
+    if (typeof projected !== 'string' || metadata?.[key] === projected) continue;
+    metadata = { ...metadata, [key]: projected };
+  }
+  return metadata === session.metadata ? session : { ...session, metadata };
+}
 
 /**
  * Refresh after a daemon event without losing an update behind an older read.
@@ -55,15 +95,92 @@ export async function refreshAgentSessionAfterEvent(agentId: string): Promise<vo
   const scheduledRerun = pendingEventRerun.get(agentId);
   if (scheduledRerun) return scheduledRerun;
 
-  // ensureAgentSession swallows read failures, so `pending` always fulfills.
   // Delete before the trailing read so events during that read can coalesce
   // into one further trailing refresh instead of getting lost.
-  const rerun = pending.then(() => {
-    pendingEventRerun.delete(agentId);
-    return ensureAgentSession(agentId);
-  });
+  const rerun = pending.then(
+    () => {
+      pendingEventRerun.delete(agentId);
+      return ensureAgentSession(agentId);
+    },
+    () => {
+      // A rejected leading read is not cached and must not suppress the event's
+      // authoritative trailing retry.
+      pendingEventRerun.delete(agentId);
+      return ensureAgentSession(agentId);
+    },
+  );
   pendingEventRerun.set(agentId, rerun);
   return rerun;
+}
+
+/**
+ * Shared raw `agent.get` read for callers that need the returned projection.
+ * Rejections propagate so each caller can preserve its existing error policy;
+ * the failed promise is always evicted and is never treated as cached data.
+ * The only reconciliation applied is the question-marker guard above: a
+ * response to a request that started before an `agent:updated` marker
+ * projection keeps the store's projected marker values.
+ */
+export function readAgentSession(agentId: string): Promise<AgentSession | null> {
+  const pending = inFlight.get(agentId);
+  if (pending) return pending;
+
+  const generation = ++readGeneration;
+  const run = appClient.agents
+    .get(agentId)
+    .then((session) => preserveProjectedQuestionMarkers(agentId, generation, session))
+    .finally(() => {
+      if (inFlight.get(agentId) === run) inFlight.delete(agentId);
+    });
+  inFlight.set(agentId, run);
+  return run;
+}
+
+async function hydrateAgentSession(agentId: string): Promise<AgentSession | null> {
+  try {
+    const storedBefore = appStore.state.agentSessions?.byAgentId[agentId];
+    const hadInFlightPairBeforeFetch =
+      storedBefore?.isStreaming === true && storedBefore?.isProcessing === true;
+    const session = await readAgentSession(agentId);
+    // Re-check after the fetch: a deletion may have become pending while
+    // `agent.get` was in flight; upserting now would resurrect the
+    // soft-hidden session. Also drop rows carrying the daemon's
+    // delete-grace-window deadline (PROTOCOL §5.5 `pendingDeleteAt`, v6.7+)
+    // — a deletion scheduled by another window/client (or before an FE
+    // restart) is not in this window's local registry.
+    if (session && !session.pendingDeleteAt && !isAgentDeletionPending(agentId)) {
+      // `agent.get` returns AgentLite (PROTOCOL §5.5) — session metadata and
+      // message COUNTS only, not the retained transcript. `normalizeAgent`
+      // fills the missing `messages` field with `[]`, so dispatching this
+      // session as-is would clobber a transcript that `chat-read-service`
+      // already hydrated via `agent.getConversation`. Preserve any existing
+      // messages so this metadata-only refresh never erases the seq-0 user
+      // message (nor any subsequent history).
+      const existing = appStore.state.agentSessions?.byAgentId[agentId];
+      const merged = existing ? { ...session, messages: existing.messages } : session;
+      appStore.dispatch(
+        bulkUpsertSessions(
+          [merged],
+          staleRuntimeFlagClearUpsertOptions(hadInFlightPairBeforeFetch, session),
+        ),
+      );
+      appStore.dispatch(upsertSession(merged));
+      return merged;
+    }
+    return null;
+  } catch (error) {
+    if (isAgentNotFoundError(error)) {
+      // Expected: speculative loads (hover cards, avatars, peek cards) may
+      // reference an agent deleted on the daemon (monorepo#1753). WARN only
+      // — no navigation or cleanup from this read seam.
+      logger.warn('Agent no longer exists on daemon; skipping session load', { agentId });
+    } else {
+      logger.error('Failed to load agent session', error);
+    }
+    return null;
+  } finally {
+    hydrationInFlight.delete(agentId);
+  }
 }
 
 /**
@@ -77,56 +194,12 @@ export async function ensureAgentSession(agentId: string): Promise<void> {
   // still returns the agent from `agent.get`, so refetching would resurrect
   // the deleted session. Skip entirely.
   if (isAgentDeletionPending(agentId)) return;
-  const pending = inFlight.get(agentId);
-  if (pending) return pending;
-
-  const run = (async () => {
-    try {
-      const storedBefore = appStore.state.agentSessions?.byAgentId[agentId];
-      const hadInFlightPairBeforeFetch =
-        storedBefore?.isStreaming === true && storedBefore?.isProcessing === true;
-      const session = await appClient.agents.get(agentId);
-      // Re-check after the fetch: a deletion may have become pending while
-      // `agent.get` was in flight; upserting now would resurrect the
-      // soft-hidden session. Also drop rows carrying the daemon's
-      // delete-grace-window deadline (PROTOCOL §5.5 `pendingDeleteAt`, v6.7+)
-      // — a deletion scheduled by another window/client (or before an FE
-      // restart) is not in this window's local registry.
-      if (session && !session.pendingDeleteAt && !isAgentDeletionPending(agentId)) {
-        // `agent.get` returns AgentLite (PROTOCOL §5.5) — session metadata and
-        // message COUNTS only, not the retained transcript. `normalizeAgent`
-        // fills the missing `messages` field with `[]`, so dispatching this
-        // session as-is would clobber a transcript that `chat-read-service`
-        // already hydrated via `agent.getConversation`. Preserve any existing
-        // messages so this metadata-only refresh never erases the seq-0 user
-        // message (nor any subsequent history).
-        const existing = appStore.state.agentSessions?.byAgentId[agentId];
-        const merged =
-          existing && existing.messages.length > 0
-            ? { ...session, messages: existing.messages }
-            : session;
-        appStore.dispatch(
-          bulkUpsertSessions(
-            [merged],
-            staleRuntimeFlagClearUpsertOptions(hadInFlightPairBeforeFetch, session),
-          ),
-        );
-        appStore.dispatch(upsertSession(merged));
-      }
-    } catch (error) {
-      if (isAgentNotFoundError(error)) {
-        // Expected: speculative loads (hover cards, avatars, peek cards) may
-        // reference an agent deleted on the daemon (monorepo#1753). WARN only
-        // — no navigation or cleanup from this read seam.
-        logger.warn('Agent no longer exists on daemon; skipping session load', { agentId });
-      } else {
-        logger.error('Failed to load agent session', error);
-      }
-    } finally {
-      inFlight.delete(agentId);
-    }
-  })();
-
-  inFlight.set(agentId, run);
-  return run;
+  const pending = hydrationInFlight.get(agentId);
+  if (pending) {
+    await pending;
+    return;
+  }
+  const run = hydrateAgentSession(agentId);
+  hydrationInFlight.set(agentId, run);
+  await run;
 }

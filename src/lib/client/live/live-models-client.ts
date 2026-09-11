@@ -1,7 +1,7 @@
 /**
  * Live models domain backed by the intentd daemon (PROTOCOL §5.30).
  *
- * `models.list` is global (no `workspaceId`) and returns the daemon-resolved
+ * Unscoped `models.list` is global (no `workspaceId`) and returns the daemon-resolved
  * rich model catalog — `{ models: ModelInfo[], source: "auggie" | "static" }`.
  * The daemon does auggie CLI discovery (JSON → plain-text fallback), catalog
  * caching (served indefinitely; it re-probes only on a cache miss, an adapter
@@ -9,6 +9,9 @@
  * priority sorting server-side and
  * degrades to the static tier catalog when the CLI is unavailable, so the
  * result is never empty (§5.30).
+ *
+ * Pass `providerId` to load a provider-specific catalog; omitting it retains
+ * the legacy Auggie catalog for existing unscoped consumers.
  *
  * Wire-boundary rename: the FE's `AuggieModel` keeps the historical
  * `value`/`label` names; the documented `id`→`value` / `name`→`label` mapping
@@ -27,9 +30,14 @@ import type { AppClient, ModelsClient, SubscriptionHandler, Unsubscribe } from '
 import { backendRequest } from './backend-transport';
 
 export class LiveModelsClient implements ModelsClient {
-  async list(): Promise<AuggieModel[]> {
+  async list(providerId?: string): Promise<AuggieModel[]> {
     try {
-      const result = await backendRequest<WireModelsListResult>('models.list');
+      const result = providerId
+        ? await backendRequest<WireModelsListResult>('models.list', { providerId })
+        : await backendRequest<WireModelsListResult>('models.list');
+      // Scoped replies identify their provider. Never attribute legacy unscoped
+      // Auggie rows (or another provider's rows) to the requested provider.
+      if (providerId && result.providerId !== providerId) return [];
       return wireModelsToProviderModels(result);
     } catch {
       return [];

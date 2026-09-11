@@ -53,6 +53,9 @@ export const loadWorkspaceNotesSucceeded = createAction<
 export const loadWorkspaceNotesFailed = createAction<[workspaceIds: string[], error: string]>(
   'workspaceNotes/loadWorkspaceNotesFailed',
 );
+export const workspaceNotesHydrationRequested = createAction<
+  [workspaceId: string, generation: number, force: boolean]
+>('workspaceNotes/hydrationRequested');
 export const applyTaskStatusChanged = createAction<
   [workspaceId: string, noteId: string, newStatus: TaskStatus]
 >('workspaceNotes/applyTaskStatusChanged');

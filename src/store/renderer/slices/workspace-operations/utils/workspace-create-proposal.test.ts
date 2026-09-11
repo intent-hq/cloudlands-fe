@@ -1,6 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { WorkspaceCreateProposal } from '$shared/types/proposal';
-import { buildCreateWorkspaceRequestFromProposal } from './workspace-create-proposal';
+import {
+  buildCreateWorkspaceRequestFromProposal as buildRequest,
+  type BuildCreateWorkspaceRequestOptions,
+} from './workspace-create-proposal';
 
 function makeProposal(params: Record<string, unknown>): WorkspaceCreateProposal {
   return {
@@ -8,6 +11,24 @@ function makeProposal(params: Record<string, unknown>): WorkspaceCreateProposal 
     payload: { operation: 'workspace.create', params },
     preview: { title: 'Create workspace' },
   };
+}
+
+// Independent model of the naming contract: a specialist's display name, or
+// the generic "Agent" label for General (undefined) / unknown specialists.
+const SPECIALIST_NAMES: Record<string, string> = {
+  coordinator: 'Coordinator',
+  implementor: 'Implementor',
+  planner: 'Planner',
+};
+const resolveAgentName = (specialistId: string | undefined) =>
+  (specialistId ? SPECIALIST_NAMES[specialistId] : undefined) ?? 'Agent';
+
+function buildCreateWorkspaceRequestFromProposal(
+  proposal: WorkspaceCreateProposal,
+  editedFields: Record<string, unknown> | undefined,
+  options: BuildCreateWorkspaceRequestOptions = { resolveAgentName },
+) {
+  return buildRequest(proposal, editedFields, options);
 }
 
 describe('buildCreateWorkspaceRequestFromProposal', () => {
@@ -46,7 +67,7 @@ describe('buildCreateWorkspaceRequestFromProposal', () => {
       isNewRepo: true,
       scope: 'packages/app',
       initialAgent: {
-        name: 'Coordinator',
+        name: 'Implementor',
         prompt: 'Edited prompt',
         specialist: 'implementor',
         agentType: 'workspace',
@@ -170,6 +191,53 @@ describe('buildCreateWorkspaceRequestFromProposal', () => {
     });
   });
 
+  it('names the initial agent "Agent" when the resolved specialist is General', () => {
+    const fromUndefined = buildCreateWorkspaceRequestFromProposal(
+      makeProposal({ initialAgent: { prompt: 'Go' } }),
+      undefined,
+    );
+    const fromNullEdit = buildCreateWorkspaceRequestFromProposal(
+      makeProposal({ initialAgent: { prompt: 'Go', specialist: 'coordinator' } }),
+      { specialist: null },
+    );
+
+    expect(fromUndefined.initialAgent?.name).toBe('Agent');
+    expect(fromNullEdit.initialAgent?.name).toBe('Agent');
+    expect(fromNullEdit.initialAgent?.specialist).toBeUndefined();
+  });
+
+  it('names the initial agent after the resolved specialist, honoring an edited override', () => {
+    const fromPayload = buildCreateWorkspaceRequestFromProposal(
+      makeProposal({ initialAgent: { prompt: 'Go', specialist: 'coordinator' } }),
+      undefined,
+    );
+    const fromEdit = buildCreateWorkspaceRequestFromProposal(
+      makeProposal({ initialAgent: { prompt: 'Go', specialist: 'coordinator' } }),
+      { specialist: 'planner' },
+    );
+
+    expect(fromPayload.initialAgent).toMatchObject({
+      name: 'Coordinator',
+      specialist: 'coordinator',
+    });
+    expect(fromEdit.initialAgent).toMatchObject({ name: 'Planner', specialist: 'planner' });
+  });
+
+  it('keeps an explicit payload agent name without consulting the resolver', () => {
+    const resolve = vi.fn(resolveAgentName);
+    const request = buildCreateWorkspaceRequestFromProposal(
+      makeProposal({ initialAgent: { name: 'Named by producer', specialist: 'coordinator' } }),
+      { specialist: 'planner' },
+      { resolveAgentName: resolve },
+    );
+
+    expect(request.initialAgent).toMatchObject({
+      name: 'Named by producer',
+      specialist: 'planner',
+    });
+    expect(resolve).not.toHaveBeenCalled();
+  });
+
   it('preserves existing specialist metadata when specialist edit is absent', () => {
     const request = buildCreateWorkspaceRequestFromProposal(
       makeProposal({
@@ -235,7 +303,7 @@ describe('buildCreateWorkspaceRequestFromProposal', () => {
       scope: 'apps/current',
       isNewRepo: false,
       initialAgent: {
-        name: 'Coordinator',
+        name: 'Implementor',
         prompt: 'Edited prompt',
         specialist: 'implementor',
         agentType: 'workspace',

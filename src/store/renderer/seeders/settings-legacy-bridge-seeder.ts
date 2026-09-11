@@ -31,7 +31,7 @@
  */
 import { registerMockIpcHandler } from '$shared/ipc-mock-router';
 import { FEATURE_CODES_CHANNELS, SETTINGS_CHANNELS } from '$shared/ipc/channels';
-import { backendRequest } from '$lib/client/live/backend-transport';
+import { readSetting, updateSettings } from '$lib/client/live/live-settings-client';
 
 /** Legacy electron-store key → daemon settings-catalog path (settings.rs). */
 const DAEMON_SETTING_PATHS: Record<string, string> = {
@@ -87,13 +87,12 @@ function writeLocalValue(key: string, value: unknown): void {
 
 /** Daemon `settings.get` — unwraps `{ path, value, definition }` to the value. */
 async function daemonGet(path: string): Promise<unknown> {
-  const result = await backendRequest<{ value?: unknown }>('settings.get', { path });
-  return result?.value;
+  return (await readSetting(path))?.value;
 }
 
 /** Daemon `settings.update` — single-change batch (validated + atomic BE-side). */
 async function daemonUpdate(path: string, value: unknown): Promise<void> {
-  await backendRequest('settings.update', { changes: [{ path, value }] });
+  await updateSettings([{ path, value }]);
 }
 
 async function getSetting(key: string): Promise<unknown> {

@@ -26,7 +26,7 @@ export interface InlineMentionMatch {
 }
 
 const MENTION_REGEX =
-  /(?<![A-Za-z0-9._%+-])@(context\[[^\]]+\]|note\/[^\s]+|[^\s@]+\.[a-zA-Z]+(?::[L\d-]+)?|[^\s@]*\/[^\s]+)/g;
+  /(?<![A-Za-z0-9._%+-])@(context\[[^\]]+\]|note\/[^\s]+|[^\s@]+\.[a-zA-Z]+(?::\d+(?::\d+)?|#L\d+(?:-\d+)?|:L\d+(?:-\d+)?)?|[^\s@]*\/[^\s]+(?::\d+(?::\d+)?|#L\d+(?:-\d+)?)?)/g;
 
 /** Find all inline @mentions in `text`, in order of appearance. */
 export function findInlineMentions(text: string): InlineMentionMatch[] {

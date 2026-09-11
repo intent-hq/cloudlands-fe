@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import type { ViteDevServer } from 'vite';
 import { createServer } from 'vite';
+import { viteHarnessCacheDir } from './vite-harness-cache.mjs';
 
 const systemChrome = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const artifactDir = path.resolve('test-results/catalog-artifacts');
@@ -48,6 +49,7 @@ let baseUrl: string;
 test.beforeAll(async () => {
   mkdirSync(artifactDir, { recursive: true });
   server = await createServer({
+    cacheDir: viteHarnessCacheDir('catalog-shell'),
     server: { host: '127.0.0.1', port: 0, strictPort: false, watch: { ignored: ['**/*'] } },
   });
   await server.listen();
@@ -190,6 +192,81 @@ test('200% zoom uses DPR2 device metrics and keeps the catalog contained', async
     await cdp.send('Emulation.clearDeviceMetricsOverride');
   }
 });
+
+test('keeps the bundled Inter Variable font across scene round trips and theme changes', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.addInitScript(() => {
+    delete (window as Window & { electronAPI?: unknown }).electronAPI;
+  });
+  await page.goto(`${baseUrl}sandbox/button?state=default&theme=light&width=960&motion=full`, {
+    waitUntil: 'networkidle',
+  });
+  await expectPreviewReady(page, 'button', 'default');
+  const first = await readShellFontEvidence(page);
+  expect(first.family).toMatch(/^"?Inter Variable"?/);
+  expect(first.loadedFaces).toBeGreaterThan(0);
+
+  await navigateWithinDocument(page, '/sandbox/mention-agent-avatar?state=idle&width=960');
+  await expectPreviewReady(page, 'mention-agent-avatar', 'idle');
+  await setCatalogTheme(page, 'dark');
+
+  await navigateWithinDocument(page, '/sandbox/button?state=default&width=960');
+  await expectPreviewReady(page, 'button', 'default');
+  await setCatalogTheme(page, 'light');
+
+  const roundTrip = await readShellFontEvidence(page);
+  expect(roundTrip.documentToken).toBe(first.documentToken);
+  expect(roundTrip.family).toBe(first.family);
+  expect(roundTrip.loadedFaces).toBeGreaterThan(0);
+  expect(roundTrip.fontsStatus).toBe('loaded');
+  expect(roundTrip.checkPasses).toBe(true);
+});
+
+/** Client-side SvelteKit navigation: the router intercepts same-origin anchor clicks. */
+async function navigateWithinDocument(page: Page, href: string) {
+  await page.evaluate((target) => {
+    const anchor = document.createElement('a');
+    anchor.href = target;
+    anchor.textContent = 'navigate';
+    document.body.append(anchor);
+    anchor.click();
+    anchor.remove();
+  }, href);
+  await expect(page).toHaveURL(new RegExp(href.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+}
+
+async function expectPreviewReady(page: Page, slug: string, state: string) {
+  const scene = page.locator(
+    `[data-testid="catalog-scene"][data-preview-slug="${slug}"][data-preview-state="${state}"]`,
+  );
+  await expect(scene).toHaveAttribute('data-preview-ready', 'true');
+  await expect(scene).toHaveAttribute('data-preview-stable', 'true');
+}
+
+async function readShellFontEvidence(page: Page) {
+  return page.evaluate(async () => {
+    await document.fonts.ready;
+    const documentWindow = window as Window & { __catalogDocumentToken?: string };
+    documentWindow.__catalogDocumentToken ??= crypto.randomUUID();
+    const shell = document.querySelector('[data-testid="catalog-shell"]');
+    const family = shell ? getComputedStyle(shell).fontFamily : '';
+    let loadedFaces = 0;
+    document.fonts.forEach((face) => {
+      if (face.family.replace(/["']/g, '') === 'Inter Variable' && face.status === 'loaded') {
+        loadedFaces += 1;
+      }
+    });
+    return {
+      documentToken: documentWindow.__catalogDocumentToken,
+      family,
+      loadedFaces,
+      fontsStatus: document.fonts.status,
+      checkPasses: document.fonts.check("16px 'Inter Variable'"),
+    };
+  });
+}
 
 async function captureKeyboardFocusEvidence(page: Page) {
   await page.setViewportSize({ width: 1280, height: 800 });

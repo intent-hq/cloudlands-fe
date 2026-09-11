@@ -5,11 +5,14 @@
  * Asserts that:
  * - `initializeReleaseNotes` subscribes to the main → renderer show push once
  * - the startup push (notes attached) opens the modal with those notes
- * - startup notes parked before the listener existed are claimed over
+ * - startup notes parked before the listener existed are read over
  *   `release-notes:get-pending`, and a duplicate push does not re-open
  * - the Help-menu push (`notes: null`) opens the modal loading, fetches over
  *   `release-notes:get`, and resolves into content
  * - an unavailable fetch still opens the modal (fallback state)
+ * - a user dismissal closes the modal and invokes `release-notes:dismiss` once
+ * - the main-broadcast `release-notes:close` closes the modal without echoing
+ *   a dismiss back to main
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -27,6 +30,7 @@ import { store as appStore } from '$store/renderer/store';
 import { releaseNotesSaga } from '$store/renderer/slices/release-notes/sagas/release-notes-saga';
 import {
   closeReleaseNotesModal,
+  dismissReleaseNotes,
   initializeReleaseNotes,
 } from '$store/renderer/slices/release-notes/release-notes-slice';
 import {
@@ -81,12 +85,13 @@ describe('release-notes-mutation-service', () => {
 
   afterEach(() => cancelSaga?.());
 
-  it('subscribes to the show push exactly once', async () => {
+  it('subscribes to the show and close pushes exactly once', async () => {
     appStore.dispatch(initializeReleaseNotes());
     appStore.dispatch(initializeReleaseNotes());
     await flush();
 
     expect(mockIpcListenerCount(RELEASE_NOTES_CHANNELS.SHOW)).toBe(1);
+    expect(mockIpcListenerCount(RELEASE_NOTES_CHANNELS.CLOSE)).toBe(1);
     expect(appStore.state.releaseNotes.initialized).toBe(true);
   });
 
@@ -162,5 +167,56 @@ describe('release-notes-mutation-service', () => {
     expect(appStore.state.releaseNotes.showModal).toBe(true);
     expect(appStore.state.releaseNotes.releaseNotes).toBeNull();
     expect(appStore.state.releaseNotes.loading).toBe(false);
+  });
+
+  it('closes the modal and invokes release-notes:dismiss once on user dismissal', async () => {
+    const dismissSpy = vi.fn(async () => ({ success: true }));
+    registerMockIpcHandler(RELEASE_NOTES_CHANNELS.DISMISS, dismissSpy);
+
+    appStore.dispatch(initializeReleaseNotes());
+    await flush();
+    emitMockIpcEvent(RELEASE_NOTES_CHANNELS.SHOW, { notes: NOTES });
+    await flush();
+    expect(appStore.state.releaseNotes.showModal).toBe(true);
+
+    appStore.dispatch(dismissReleaseNotes());
+    await flush();
+
+    expect(appStore.state.releaseNotes.showModal).toBe(false);
+    expect(dismissSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('still closes the modal locally when release-notes:dismiss fails', async () => {
+    registerMockIpcHandler(RELEASE_NOTES_CHANNELS.DISMISS, async () => {
+      throw new Error('bridge unavailable');
+    });
+
+    appStore.dispatch(initializeReleaseNotes());
+    await flush();
+    emitMockIpcEvent(RELEASE_NOTES_CHANNELS.SHOW, { notes: NOTES });
+    await flush();
+
+    appStore.dispatch(dismissReleaseNotes());
+    await flush();
+
+    expect(appStore.state.releaseNotes.showModal).toBe(false);
+  });
+
+  it('closes an open modal on the main-broadcast close without echoing a dismiss', async () => {
+    const dismissSpy = vi.fn(async () => ({ success: true }));
+    registerMockIpcHandler(RELEASE_NOTES_CHANNELS.DISMISS, dismissSpy);
+
+    appStore.dispatch(initializeReleaseNotes());
+    await flush();
+    emitMockIpcEvent(RELEASE_NOTES_CHANNELS.SHOW, { notes: NOTES });
+    await flush();
+    expect(appStore.state.releaseNotes.showModal).toBe(true);
+
+    emitMockIpcEvent(RELEASE_NOTES_CHANNELS.CLOSE, undefined);
+    await flush();
+
+    expect(appStore.state.releaseNotes.showModal).toBe(false);
+    expect(appStore.state.releaseNotes.releaseNotes).toEqual(NOTES);
+    expect(dismissSpy).not.toHaveBeenCalled();
   });
 });

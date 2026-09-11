@@ -702,18 +702,36 @@ describe('selectHudAttnCount', () => {
     expect(selectHudAttnCount.select(state)).toBe(1);
   });
 
-  it('does not count a pending request while the agent runs a live turn (mid-turn gate)', () => {
-    // Mid-turn rehydration can deliver the persisted attention fields while
-    // the agent is still streaming — nothing must blink until the turn ends.
+  it('counts a pending request while the agent runs a live turn (attention trumps running)', () => {
+    // An automatic delivery restarts a top-level foreground agent without
+    // clearing the request, so it is still pending while the agent streams and
+    // must blink, bucket needs-attention, and still count on the running axis.
     const state = attnState({
       root: {
         status: 'active',
+        workspaceId: 'ws-1',
         attentionRequestKind: 'discussion',
         isResponding: true,
         messages: [],
       },
     });
-    expect(selectHudAttnCount.select(state)).toBe(0);
+    expect(selectHudAttnCount.select(state)).toBe(1);
+    const [card] = selectHudWorkspaceCards.select(state);
+    expect(card.agents.find((agent) => agent.id === 'root')).toMatchObject({
+      bucket: 'needs-attention',
+      attentionKind: 'discussion',
+    });
+    const tabCategories = selectWorkspaceTabStatuses.select(state)['ws-1'].categories;
+    expect(tabCategories).toContainEqual({
+      category: 'discussion',
+      count: 1,
+      agentNames: ['Coordinator'],
+    });
+    expect(tabCategories).toContainEqual({
+      category: 'running',
+      count: 1,
+      agentNames: ['Coordinator'],
+    });
   });
 
   it('counts a wire needs_attention rollup once when no per-agent signal covers it', () => {
@@ -1031,6 +1049,38 @@ describe('selectHudAttentionItems', () => {
       'agent_failed',
     ]);
     expect(selectHudAttnCount.select(failedRoot)).toBe(1);
+  });
+
+  it('a summary-only failed background agent raises no row before session hydration (§5.1 isBackground)', () => {
+    // intent-hq/intent#3789: the §5.1 summary row carries the additive
+    // `isBackground` flag, so the gate holds with NO tracked session — the
+    // previous session-only read let the failed row through until
+    // hydration. A summary-only failed FOREGROUND root (no flag) still
+    // raises the row, proving the gate keys on the summary field alone.
+    const summaryOnly = (root: Record<string, unknown>): StoreState => {
+      const base = mockState([
+        makeWorkspace('ws-1', {
+          displayStatus: 'in_progress',
+          agentSummary: {
+            count: 1,
+            agentIds: ['root'],
+            agents: [{ id: 'root', name: 'Watcher', status: 'error', ...root }],
+          } as Workspace['agentSummary'],
+        }),
+      ]);
+      return {
+        ...base,
+        agentSessions: { byAgentId: {}, agentIdsByWorkspace: {} },
+      } as unknown as StoreState;
+    };
+    const background = summaryOnly({ isBackground: true });
+    expect(selectHudAttentionItems.select(background)).toEqual([]);
+    expect(selectHudAttnCount.select(background)).toBe(0);
+    const foreground = summaryOnly({});
+    expect(selectHudAttentionItems.select(foreground).map((item) => item.kind)).toEqual([
+      'agent_failed',
+    ]);
+    expect(selectHudAttnCount.select(foreground)).toBe(1);
   });
 
   it('an attention card state whose only per-agent signal is gated out falls back to a generic row', () => {

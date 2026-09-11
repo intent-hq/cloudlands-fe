@@ -133,6 +133,15 @@ function reconcileWorkspaceAgentSnapshot(
   const isWaitingForFirstMessage = Object.fromEntries(
     Object.entries(workspaceState.isWaitingForFirstMessage).filter(([id]) => allIdSet.has(id)),
   );
+  const diskMessageCounts = Object.fromEntries(
+    Object.entries(workspaceState.diskMessageCounts).filter(([id]) => allIdSet.has(id)),
+  );
+  for (const agent of agents) {
+    const agentId = String(agent.id);
+    if (diskMessageCounts[agentId] === undefined) {
+      diskMessageCounts[agentId] = agent.messages?.length ?? 0;
+    }
+  }
 
   return {
     ...workspaceState,
@@ -140,6 +149,7 @@ function reconcileWorkspaceAgentSnapshot(
     foregroundAgentIds,
     recentlyCreatedAgents,
     isWaitingForFirstMessage,
+    diskMessageCounts,
   };
 }
 
@@ -425,11 +435,19 @@ workspaceAgentsReducer.with(addAgent, (state, { payload: [wsId, agent] }) => {
   const workspaceState = getWorkspaceState(state, wsId);
   const agentId = String(agent.id);
   const foregroundAgentIds = syncForegroundAgentId(workspaceState.foregroundAgentIds, agent);
+  const diskMessageCounts =
+    workspaceState.diskMessageCounts[agentId] !== undefined
+      ? workspaceState.diskMessageCounts
+      : { ...workspaceState.diskMessageCounts, [agentId]: agent.messages?.length ?? 0 };
   if (workspaceState.agentIds.includes(agentId)) {
-    if (foregroundAgentIds !== workspaceState.foregroundAgentIds) {
+    if (
+      foregroundAgentIds !== workspaceState.foregroundAgentIds ||
+      diskMessageCounts !== workspaceState.diskMessageCounts
+    ) {
       return setWorkspaceState(state, wsId, {
         ...workspaceState,
         foregroundAgentIds,
+        diskMessageCounts,
       });
     }
     return state;
@@ -438,6 +456,7 @@ workspaceAgentsReducer.with(addAgent, (state, { payload: [wsId, agent] }) => {
     ...workspaceState,
     agentIds: [...workspaceState.agentIds, agentId],
     foregroundAgentIds,
+    diskMessageCounts,
   });
 });
 workspaceAgentsReducer.with(removeAgent, (state, { payload: [wsId, agentId] }) => {
@@ -460,6 +479,7 @@ workspaceAgentsReducer.with(removeAgent, (state, { payload: [wsId, agentId] }) =
       (recentAgentId) => recentAgentId !== agentId,
     ),
     isWaitingForFirstMessage: omitKey(workspaceState.isWaitingForFirstMessage, agentId),
+    diskMessageCounts: omitKey(workspaceState.diskMessageCounts, agentId),
   });
 });
 workspaceAgentsReducer.with(markAgentRecentlyCreated, (state, { payload: [wsId, agentId] }) => {

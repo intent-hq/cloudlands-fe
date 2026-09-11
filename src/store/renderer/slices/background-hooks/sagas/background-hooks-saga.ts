@@ -21,6 +21,7 @@ import {
 import {
   backgroundHooksMarkedStale,
   backgroundHooksRefetchRequested,
+  backgroundHooksSnapshotFailed,
   backgroundHooksSubscribeRequested,
   backgroundHooksUnsubscribeRequested,
   backgroundHooksUpdated,
@@ -142,8 +143,7 @@ function* subscribeActiveWorkspace(
   entry.lease = lease;
   // Seed `hook.list` CONCURRENTLY with the `events.subscribe` (~1 RTT
   // instead of 2 serial RTTs); the ack handler below closes the event-gap
-  // race. A failed seed still latches the entry as empty (refetchWorkspace's
-  // catch), so the footer gate never wedges.
+  // race. A failed seed preserves cached rows and reports its own failed state.
   yield* put(backgroundHooksRefetchRequested(workspaceId));
   if (yield* call(subscribeWorkspace, workspaceId, lease)) {
     if (
@@ -181,13 +181,12 @@ function* refetchWorkspace(
     }
   } catch (error) {
     logger.warn('hook.list failed', { workspaceId, error });
-    // Still deliver the cached list (empty on a failed initial seed) so the
-    // workspace entry exists: the utility-footer readiness gate treats a
-    // failed seed as ready-with-empty and never wedges the reveal.
+    // Preserve cached rows, then independently surface the failed read.
     // PROVISIONAL: the cached rows are not a fresh snapshot, so a retained
     // stale flag must survive this delivery.
     if (active.get(workspaceId) === entry && entry.generation === generation) {
       yield* put(backgroundHooksUpdated(workspaceId, entry.hooks, true));
+      yield* put(backgroundHooksSnapshotFailed(workspaceId));
     }
   }
 }
@@ -308,9 +307,8 @@ const SUBSCRIPTION_RECONCILIATION_DELAY_MS = 100;
 /**
  * View-time lease on the ACTIVE workspace's hook subscription (mirrors the
  * pr-monitor saga's active-workspace watcher): holds one refcount so the
- * `hook.list` seed lands — and the footer-readiness selector
- * (`selectBackgroundHooksSnapshotDelivered`) flips — before the
- * EventSubscriptionsCard mounts post-reveal, and so the card's own
+ * `hook.list` seed starts before the EventSubscriptionsCard mounts, and so
+ * the card's own
  * unsubscribe on agent-switch remount never drops the count to zero
  * (which would clear the delivered latch and re-defer every reveal).
  * Switching workspace tabs swaps the lease: the previous workspace's count
@@ -320,10 +318,8 @@ const SUBSCRIPTION_RECONCILIATION_DELAY_MS = 100;
  *
  * Like pr-monitors, the swap RETAINS the outgoing workspace's entry — it is
  * marked stale (`backgroundHooksMarkedStale`) rather than cleared — so a
- * warm switch-back never re-arms the footer reveal gate on a `hook.list`
- * RTT: the delivered latch (`selectBackgroundHooksSnapshotDelivered`) stays
- * set and the re-activation seed refreshes the rows in the background,
- * after the reveal. Staleness is handled at the consumer: readers that
+ * warm switch-back can retain its prior rows while the reactivation seed
+ * refreshes them in the background. Staleness is handled at the consumer: readers that
  * treat an entry as authoritative (`getActiveHookNames`) consult the
  * `stale` flag and fall back to an on-demand `hook.list` while the entry is
  * unsubscribed, so retention never serves stale hooks as fresh.

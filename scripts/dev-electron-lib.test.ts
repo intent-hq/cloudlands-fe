@@ -4,6 +4,7 @@ import {
   WAIT_ON_TIMEOUT_MS,
   buildWaitOnEnv,
   buildWaitOnTargets,
+  resolveWaitOnTimeoutMs,
 } from './dev-electron-lib.mjs';
 
 describe('GENERATED_CLIENT_PROBE_PATH', () => {
@@ -42,10 +43,29 @@ describe('buildWaitOnTargets', () => {
 
 describe('WAIT_ON_TIMEOUT_MS', () => {
   it('bounds the wait so a wedged probe fails loudly instead of hanging forever', () => {
-    // Generous vs the ~1.3s measured cold start, but finite: if a SvelteKit
-    // upgrade ever relocates the generated nodes, the launcher errors with
-    // wait-on's stuck-target output rather than waiting silently.
-    expect(WAIT_ON_TIMEOUT_MS).toBe(120000);
+    expect(WAIT_ON_TIMEOUT_MS).toBe(300000);
+  });
+});
+
+describe('resolveWaitOnTimeoutMs', () => {
+  it('uses the default when the override is unset', () => {
+    expect(resolveWaitOnTimeoutMs({})).toBe(300000);
+  });
+
+  it('uses a positive integer override', () => {
+    expect(resolveWaitOnTimeoutMs({ DEV_WAIT_ON_TIMEOUT_MS: '600000' })).toBe(600000);
+  });
+
+  it.each(['abc', '0', '-5'])('warns and uses the default for invalid value %s', (value) => {
+    const warnings: string[] = [];
+    expect(
+      resolveWaitOnTimeoutMs({ DEV_WAIT_ON_TIMEOUT_MS: value }, (warning) =>
+        warnings.push(warning),
+      ),
+    ).toBe(300000);
+    expect(warnings).toEqual([
+      `Invalid DEV_WAIT_ON_TIMEOUT_MS=${JSON.stringify(value)}; using 300000ms.`,
+    ]);
   });
 });
 

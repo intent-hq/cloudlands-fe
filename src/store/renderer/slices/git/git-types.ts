@@ -5,6 +5,7 @@
  */
 
 import type { CommitFile } from '$features/file-tracking/types';
+import type { WorkspaceGitStatus } from '$features/accept-changes/types';
 import type { CommitInfo, GitStatus, DiffChunk } from '$shared/types';
 import type { Collection } from '@augmentcode/themis/utils/collections/collection-utils';
 
@@ -99,6 +100,8 @@ export type GitWorkspaceState = {
   ahead: number;
   behind: number;
   postMergeState: PostMergeState | null;
+  acceptChangesStatus: WorkspaceGitStatus | null;
+  acceptChangesStatusLoading: boolean;
   gitOperations: GitOperationFlags;
   secondaryRoots: Record<string, SecondaryRootGitState>;
 };

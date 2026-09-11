@@ -13,9 +13,12 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 // FAKE transport only: the daemon bridge is mocked so no IPC ever fires.
 vi.mock('$lib/client/live/backend-transport', () => ({
   backendRequest: vi.fn(),
+  onBackendNotification: vi.fn(() => () => {}),
+  onBackendReconnected: vi.fn(() => () => {}),
 }));
 
 import { backendRequest } from '$lib/client/live/backend-transport';
+import { __resetSettingsReadCacheForTests } from '$lib/client/live/live-settings-client';
 import { mockInvoke } from '$shared/ipc-mock-router';
 import { FEATURE_CODES_CHANNELS, SETTINGS_CHANNELS } from '$shared/ipc/channels';
 
@@ -46,13 +49,23 @@ describe('settings-legacy-bridge-seeder', () => {
   });
 
   afterEach(() => {
+    __resetSettingsReadCacheForTests();
     vi.clearAllMocks();
     localStore.clear();
   });
 
   describe('settings:get', () => {
     it('routes daemon-owned keys to settings.get with the mapped catalog path', async () => {
-      mockedRequest.mockResolvedValueOnce({ path: 'git.autoCommit', value: false });
+      mockedRequest.mockResolvedValueOnce({
+        value: false,
+        definition: {
+          path: 'git.autoCommit',
+          label: 'Auto commit',
+          description: '',
+          category: 'git',
+          type: 'boolean',
+        },
+      });
       const result = await mockInvoke<Envelope>(SETTINGS_CHANNELS.GET, { key: 'autoCommit' });
       expect(mockedRequest).toHaveBeenCalledWith('settings.get', { path: 'git.autoCommit' });
       expect(result).toEqual({ success: true, data: false });
@@ -60,8 +73,14 @@ describe('settings-legacy-bridge-seeder', () => {
 
     it('reads provider path keys out of the daemon providers.paths object', async () => {
       mockedRequest.mockResolvedValueOnce({
-        path: 'providers.paths',
         value: { 'claude-code': '/opt/bin/claude', codex: '/opt/bin/codex-acp' },
+        definition: {
+          path: 'providers.paths',
+          label: 'Provider paths',
+          description: '',
+          category: 'providers',
+          type: 'object',
+        },
       });
       const result = await mockInvoke<Envelope>(SETTINGS_CHANNELS.GET, {
         key: 'claude-codePath',
@@ -104,7 +123,16 @@ describe('settings-legacy-bridge-seeder', () => {
 
     it('read-merge-writes provider path keys into the providers.paths object', async () => {
       mockedRequest
-        .mockResolvedValueOnce({ path: 'providers.paths', value: { codex: '/old/codex' } })
+        .mockResolvedValueOnce({
+          value: { codex: '/old/codex' },
+          definition: {
+            path: 'providers.paths',
+            label: 'Provider paths',
+            description: '',
+            category: 'providers',
+            type: 'object',
+          },
+        })
         .mockResolvedValueOnce({ applied: [] });
       await mockInvoke<Envelope>(SETTINGS_CHANNELS.SET, {
         key: 'claude-codePath',

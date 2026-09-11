@@ -1,3 +1,11 @@
+// @verify-changed-triggers: ../MultiSelectTabbedSidebar.svelte, ../multi-select-sidebar-tabs.ts,
+//   ../multi-select-sidebar-transitions.css, ../WorkspaceAgentsList.svelte,
+//   ../WorkspaceSidebarHeader.svelte, ../TaskStatusProgress.svelte, ../SidebarBrowserLauncher.svelte,
+//   ../sidebar/WorkspaceProgressCard.svelte, ../sidebar/FlameGraph.svelte,
+//   ../sidebar/ContextPanel.svelte, ../sidebar/NotesPanel.svelte, ../sidebar/SidebarChangesPanel.svelte,
+//   ../../layout/sidebar-nav/SidebarNav.svelte, ../../layout/sidebar-nav/cards/AllWorkspacesCard.svelte,
+//   ../../layout/WindowTitleBar.svelte, ../../../../routes/(app)/+layout.svelte
+
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
@@ -60,7 +68,10 @@ describe('workspace sidebar hierarchy presentation contract', () => {
     expect(metadata).toBeLessThan(progressSection);
     expect(progressSection).toBeLessThan(status);
     expect(fullMode).toContain('class="flex w-full flex-col" data-workspace-title-section');
-    expect(fullMode).toContain('type-caption mb-4 flex h-5 w-full min-w-0 items-center gap-2.5');
+    expect(fullMode).toContain(
+      'class="mb-4 flex w-full flex-col gap-1" data-sidebar-workspace-metadata',
+    );
+    expect(fullMode).toContain('type-caption flex h-5 w-full min-w-0 items-center gap-2.5');
     expect(fullMode).toContain('class="flex w-full flex-col pb-1"');
     expect(fullMode).toContain('flex w-full flex-col gap-3.5 pb-2 text-left');
     expect(fullMode).not.toContain('pb-1 pl-1');
@@ -208,10 +219,10 @@ describe('workspace sidebar hierarchy presentation contract', () => {
     expect(sidebar).toContain('getFixedContainingBlockOffset(node)');
     expect(sidebar).toContain('position: fixed; left: ${fixedLeft}px');
     expect(sidebar).toContain('spring.slow.exit.easing(t)');
-    expect(sidebar).toContain('(t - 0.72) / 0.28');
     expect(sidebar).toContain('data-sidebar-expanded-content');
     expect(sidebar).toContain('prefersReducedMotion()');
-    expect(transitions).toContain('opacity: var(--sidebar-card-content-opacity, 1)');
+    expect(sidebar).not.toContain('--sidebar-card-content-');
+    expect(transitions).not.toContain('--sidebar-card-content-');
     expect(transitions).not.toContain('grid-template-rows');
     expect(transitions).not.toContain('::view-transition');
   });

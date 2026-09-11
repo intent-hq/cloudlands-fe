@@ -45,6 +45,7 @@
     selectDelegationGroups,
     selectWokenUpInfo,
     selectWaitingState,
+    selectSubscriptionSnapshotStatus,
   } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-selectors';
   import {
     cancelAgentSubscriptionsRequested,
@@ -163,6 +164,7 @@
   const agentStatuses$ = selectAgentSubscriptionStatuses(workspaceIdStore, agentIdStore);
   const wokenUpInfo$ = selectWokenUpInfo(workspaceIdStore, agentIdStore);
   const waitingState$ = selectWaitingState(workspaceIdStore, agentIdStore);
+  const snapshotStatus$ = selectSubscriptionSnapshotStatus(workspaceIdStore, agentIdStore);
 
   // ── Derived display values ───────────────────────────────────────────
 
@@ -442,7 +444,7 @@
   const showSubscriptionRow = $derived(isCompleted || waitingAgentRows.length > 0);
 
   $effect(() => {
-    visible = showSubscriptionRow || !!$wokenUpInfo$;
+    visible = showSubscriptionRow || !!$wokenUpInfo$ || $snapshotStatus$ !== 'ready';
     count = activeAgentRows.length;
     participantAgentIds = activeAgentRows.map((row) => row.agentId);
     participantAvatarItems = getHeaderStackItems(activeAgentRows);
@@ -663,6 +665,24 @@
         </Tooltip.Content>
       </Tooltip.Root>
     </Tooltip.Provider>
+  </div>
+{/if}
+
+{#if !showSubscriptionRow && !$wokenUpInfo$ && $snapshotStatus$ !== 'ready'}
+  <div
+    class="flex min-h-10 items-center gap-2 px-3 py-2 text-muted-foreground {SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS}"
+    data-testid="agent-subscriptions-snapshot-status"
+    data-snapshot-status={$snapshotStatus$}
+    role={$snapshotStatus$ === 'failed' ? 'alert' : 'status'}
+  >
+    {#if $snapshotStatus$ === 'loading'}
+      <span
+        class="size-3 shrink-0 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground"
+      ></span>
+      <span>{m.chat_chatMessage_loading_label()}</span>
+    {:else}
+      <span>{m.chat_streamingStatus_responseFailed_label()}</span>
+    {/if}
   </div>
 {/if}
 

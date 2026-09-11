@@ -6,9 +6,14 @@ import { call, cancel, cancelled, fork, take, type SagaGenerator } from 'typed-r
 type ContextWorker<PrefixArgs extends unknown[], Message> = Saga<[...PrefixArgs, Message]>;
 type ContextSource<Message> = ActionPattern | TakeableChannel<Message>;
 type ContextDirective = string | { context: string; cancel: true };
+type VersionedContext = { context: string; generation: number; force?: boolean };
 
 type WorkerSlot = {
   task?: Task;
+};
+
+type VersionedWorkerSlot = WorkerSlot & {
+  generation: number;
 };
 
 type SingleFlightSlot<Message> = WorkerSlot & {
@@ -72,6 +77,36 @@ function* watchInContext<Message, PrefixArgs extends unknown[]>(
     const slot: WorkerSlot = {};
     slots.set(context, slot);
     const task = yield* fork(function* contextWorker() {
+      try {
+        yield* worker(...args, message);
+      } finally {
+        if (slots.get(context) === slot) slots.delete(context);
+      }
+    });
+    slot.task = task;
+
+    if (!task.isRunning() && slots.get(context) === slot) slots.delete(context);
+  }
+}
+
+function* watchLatestByContext<Message, PrefixArgs extends unknown[]>(
+  source: ContextSource<Message>,
+  getContext: (message: Message) => VersionedContext,
+  worker: ContextWorker<PrefixArgs, Message>,
+  args: PrefixArgs,
+): SagaGenerator<never> {
+  const slots = new Map<string, VersionedWorkerSlot>();
+
+  while (true) {
+    const message = yield* take(source as TakeableChannel<Message>);
+    const { context, generation, force } = getContext(message);
+    const current = slots.get(context);
+    if (current && !force && current.generation >= generation) continue;
+    if (current?.task?.isRunning()) yield* cancel(current.task);
+
+    const slot: VersionedWorkerSlot = { generation };
+    slots.set(context, slot);
+    const task = yield* fork(function* latestByContextWorker() {
       try {
         yield* worker(...args, message);
       } finally {
@@ -207,6 +242,33 @@ export function* takeLatestInContext<Message, PrefixArgs extends unknown[]>(
 ): SagaGenerator<Task> {
   return yield* fork(function* latestInContextWatcher() {
     yield* watchInContext('latest', source, getContext, worker, args);
+  });
+}
+
+/**
+ * Runs at most one generation per context at a time. Duplicate or older generations
+ * are dropped while work is active; a newer generation cancels and replaces it.
+ */
+export function takeLatestByContext<P extends ActionPattern, PrefixArgs extends unknown[]>(
+  pattern: P,
+  getContext: (action: ActionMatchingPattern<P>) => VersionedContext,
+  worker: ContextWorker<PrefixArgs, ActionMatchingPattern<P>>,
+  ...args: PrefixArgs
+): SagaGenerator<Task>;
+export function takeLatestByContext<Message, PrefixArgs extends unknown[]>(
+  channel: TakeableChannel<Message>,
+  getContext: (message: Message) => VersionedContext,
+  worker: ContextWorker<PrefixArgs, Message>,
+  ...args: PrefixArgs
+): SagaGenerator<Task>;
+export function* takeLatestByContext<Message, PrefixArgs extends unknown[]>(
+  source: ContextSource<Message>,
+  getContext: (message: Message) => VersionedContext,
+  worker: ContextWorker<PrefixArgs, Message>,
+  ...args: PrefixArgs
+): SagaGenerator<Task> {
+  return yield* fork(function* latestByContextWatcher() {
+    yield* watchLatestByContext(source, getContext, worker, args);
   });
 }
 

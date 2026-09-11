@@ -25,7 +25,9 @@ describe('ProtocolAdapter getCurrentContext', () => {
   let uiContextStore: Map<string, unknown>;
 
   const createMockedService = async (): Promise<WorkspaceService> => {
-    const { getBackendClient } = await import('../../backend/main/backend.ipc');
+    const { getBackendClient, onBackendReconnected } =
+      await import('../../backend/main/backend.ipc');
+    vi.mocked(onBackendReconnected).mockReturnValue(() => {});
     vi.mocked(getBackendClient).mockReturnValue({
       request: vi.fn(
         async (method: string, params?: { workspaceId?: string; uiContext?: unknown }) => {

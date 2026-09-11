@@ -157,6 +157,19 @@ describe('prMonitorSaga', () => {
     await harness.task.toPromise();
   });
 
+  it('forwards a failed list status independently of cached rows', async () => {
+    const harness = createHarness('ws-A');
+    await settle();
+
+    const emitFailure = mocks.subscribePrMonitors.mock.calls[0][2] as (status: 'failed') => void;
+    emitFailure('failed');
+    await settle();
+
+    expect(harness.getState().prMonitor.byWorkspaceId['ws-A'].snapshotStatus).toBe('failed');
+    harness.task.cancel();
+    await harness.task.toPromise();
+  });
+
   it('switches A to B immediately when the change lands outside the debounce window', async () => {
     const harness = createHarness('ws-A');
     await settle();

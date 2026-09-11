@@ -1,6 +1,6 @@
 import { logger } from '$shared/logger';
 import { m } from '$shared/paraglide/messages.js';
-import type { HandleClientError } from '@sveltejs/kit';
+import type { ClientInit, HandleClientError } from '@sveltejs/kit';
 import { shouldSuppressMonacoUnhandledRejection } from '$lib/utils/monaco-error-suppression';
 import { expectsElectronPreloadBridge } from '$lib/utils/platform-capabilities';
 
@@ -16,16 +16,17 @@ import { expectsElectronPreloadBridge } from '$lib/utils/platform-capabilities';
 // agent + build target, not from window.electronAPI presence, which is not a
 // safe signal at import time (intent-hq/monorepo#3606). The web build keeps
 // the mock even inside the app's own <webview> (no preload there).
-const isCatalogRoute =
-  typeof window !== 'undefined' && window.location.pathname.startsWith('/sandbox');
+export const init: ClientInit = async () => {
+  const isCatalogRoute = window.location.pathname.startsWith('/sandbox');
 
-if (
-  !isCatalogRoute &&
-  !expectsElectronPreloadBridge() &&
-  (import.meta.env.DEV || import.meta.env.VITE_ENABLE_BROWSER_MOCK === 'true')
-) {
-  void import('$lib/browser-mock');
-}
+  if (
+    !isCatalogRoute &&
+    !expectsElectronPreloadBridge() &&
+    (import.meta.env.DEV || import.meta.env.VITE_ENABLE_BROWSER_MOCK === 'true')
+  ) {
+    await import('$lib/browser-mock');
+  }
+};
 
 // Track if we've initialized - this helps suppress the initial "Not found: /index.html"
 // error that happens in SPA mode when the app first loads

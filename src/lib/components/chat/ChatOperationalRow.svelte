@@ -15,6 +15,7 @@
   import { searchDisclosureEvents } from './chat-search-disclosure';
   import { animatedHeight } from '$lib/motion';
   import { Button } from '$lib/components/ui/button';
+  import { streamingPulse } from './streaming-pulse';
 
   interface Props {
     leading: Snippet;
@@ -147,7 +148,8 @@
         {onkeydown}
       >
         <span
-          class="{CHAT_OPERATIONAL_LEADING_CLASS} {streaming ? 'animate-pulse' : ''}"
+          class={CHAT_OPERATIONAL_LEADING_CLASS}
+          use:streamingPulse={streaming}
           data-operational-leading
           data-operational-icon-box
           data-tool-icon={toolIcon || undefined}>{@render leading()}</span
@@ -163,7 +165,8 @@
       </Button>
     {:else}
       <div
-        class="{CHAT_OPERATIONAL_LEADING_CLASS} {streaming ? 'animate-pulse' : ''}"
+        class={CHAT_OPERATIONAL_LEADING_CLASS}
+        use:streamingPulse={streaming}
         data-operational-leading
         data-operational-icon-box
         data-tool-icon={toolIcon || undefined}

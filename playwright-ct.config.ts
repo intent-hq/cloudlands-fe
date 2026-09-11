@@ -27,8 +27,13 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 0,
   /* Opt out of parallel tests on CI. */
   workers: process.env.CI ? 1 : undefined,
-  /* Reporter to use. See https://playwright.dev/docs/test-reporters */
-  reporter: 'html',
+  /* Reporter to use. See https://playwright.dev/docs/test-reporters
+     `list` streams results to the terminal; the html report is still written
+     to playwright-report/ but never served automatically — a run that stayed
+     alive on :9323 after a failure blocked chained automation
+     (intent-hq/intent#4652). Opt in to viewing via the launcher
+     (`CT_HTML_REPORT=open` / `--open-report`, see scripts/run-ct-tests.mjs). */
+  reporter: [['list'], ['html', { open: 'never' }]],
 
   expect: {
     /* Screenshot baselines are generated on the GH-hosted runner image, but

@@ -54,6 +54,7 @@ export const initialState: ConnectionsState = {
   connectedIds: [],
   status: 'idle',
   error: null,
+  openingIds: [],
   certMismatch: null,
   certWarnings: {},
   authRejected: null,
@@ -92,6 +93,27 @@ export const connectOperationSettled = createAction('connections/operationSettle
  * message is stored for the UI.
  */
 export const connectOperationFailed = createAction<[error: string]>('connections/operationFailed');
+
+/**
+ * An open operation for one backend started. Records the id in `openingIds`
+ * and moves status to 'connecting' — opens run concurrently, so each is
+ * tracked per id.
+ */
+export const openOperationStarted = createAction<[id: string]>('connections/openStarted');
+
+/**
+ * The open operation for one backend succeeded. Drops the id from
+ * `openingIds`; status returns to 'idle' only once no other open remains in
+ * flight.
+ */
+export const openOperationSettled = createAction<[id: string]>('connections/openSettled');
+
+/**
+ * The open operation for one backend failed. Drops the id from `openingIds`,
+ * moves status to 'error' and stores the message for the UI.
+ */
+export const openOperationFailed =
+  createAction<[id: string, error: string]>('connections/openFailed');
 
 /**
  * A `connections:cert-mismatch` push arrived — a pinned cert changed on
@@ -309,6 +331,37 @@ connectionsReducer.with(connectOperationSettled, (state) => {
 });
 connectionsReducer.with(connectOperationFailed, (state, { payload: [error] }) => {
   return { ...state, status: 'error', error };
+});
+/**
+ * Drop exactly one occurrence of `id` from the in-flight multiset so a repeat
+ * open of the same backend keeps the id tracked until its own settle.
+ */
+function removeOneOpening(openingIds: string[], id: string): string[] {
+  const index = openingIds.indexOf(id);
+  if (index === -1) return openingIds;
+  return [...openingIds.slice(0, index), ...openingIds.slice(index + 1)];
+}
+
+connectionsReducer.with(openOperationStarted, (state, { payload: [id] }) => {
+  // Mirrors connectOperationStarted's legacy latch-clearing semantics: any new
+  // open clears the auth-rejected latch, regardless of whether `id` matches
+  // the window's own backend (the clearing is not scoped to the opened id).
+  // Opening does not itself replace the client (main's connectBackendClient
+  // reuses the pooled instance; replacement happens on re-pair/config
+  // changes). One entry per operation (not per id): takeEvery admits repeat
+  // opens of the same backend and each must settle on its own.
+  const openingIds = [...state.openingIds, id];
+  return { ...state, openingIds, status: 'connecting', error: null, authRejected: null };
+});
+connectionsReducer.with(openOperationSettled, (state, { payload: [id] }) => {
+  const openingIds = removeOneOpening(state.openingIds, id);
+  // Another open still in flight keeps the global status busy.
+  if (openingIds.length > 0) return { ...state, openingIds };
+  return { ...state, openingIds, status: 'idle', error: null };
+});
+connectionsReducer.with(openOperationFailed, (state, { payload: [id, error] }) => {
+  const openingIds = removeOneOpening(state.openingIds, id);
+  return { ...state, openingIds, status: 'error', error };
 });
 connectionsReducer.with(certMismatchReceived, (state, { payload: [event] }) => {
   // The fatal mismatch also carries every per-host mismatch the failing

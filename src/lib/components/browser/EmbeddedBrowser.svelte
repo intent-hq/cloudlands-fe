@@ -34,7 +34,10 @@
     recordEmbeddedBrowserNavigation,
   } from './embedded-browser-navigation-sync';
   import { reportTabBounds } from './tab-bounds-action';
-  import { isValidBrowserUrl } from './embedded-browser-url-validation';
+  import {
+    isValidBrowserUrl,
+    normalizeBrowserAddressInput,
+  } from './embedded-browser-url-validation';
   import { navigateToAgent } from '$lib/utils/workspace-navigation';
   import InlineAgentAvatar from '$lib/components/chat/InlineAgentAvatar.svelte';
   import Fa from 'svelte-fa';
@@ -1016,16 +1019,13 @@
     });
 
     if (urlDraft) {
-      let urlToLoad = urlDraft.trim();
-      // Only prepend a protocol if the input doesn't already have one (scheme://...).
-      // This avoids turning "file:///path" into "https://file:///path" (ERR_NAME_NOT_RESOLVED).
       // loadUrl() will reject disallowed protocols with a clear error message.
-      if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(urlToLoad)) {
-        const isLocalhost =
-          urlToLoad.includes('localhost') ||
-          urlToLoad.includes('127.0.0.1') ||
-          urlToLoad.includes('0.0.0.0');
-        urlToLoad = (isLocalhost ? 'http://' : 'https://') + urlToLoad;
+      const urlToLoad = normalizeBrowserAddressInput(urlDraft);
+      if (urlToLoad === null) {
+        errorMessage = m.browser_embedded_invalidUrlFormat_error();
+        logger.warn('Invalid URL format', { url: urlDraft });
+        exitUrlEditMode();
+        return;
       }
       logger.info('Loading URL from form', { urlToLoad });
       loadUrl(urlToLoad);
@@ -1120,9 +1120,13 @@
       {:else if faviconUrl}
         <img src={faviconUrl} alt="" class="size-5 shrink-0 rounded-sm" data-browser-page-favicon />
       {/if}
-      <div class="flex h-8 min-w-0 flex-1 items-center rounded-md bg-background px-2">
+
+      <div class="relative flex h-8 min-w-0 flex-1 items-center rounded-md bg-background px-2">
         {#if isEditingUrl}
-          <form onsubmit={handleFormSubmit} class="flex h-full min-w-0 flex-1 items-center">
+          <form
+            onsubmit={handleFormSubmit}
+            class="relative z-10 flex h-full min-w-0 flex-1 items-center"
+          >
             <Input
               bind:this={urlInputRef}
               type="text"
@@ -1130,7 +1134,7 @@
               onkeydown={handleUrlInputKeydown}
               onblur={exitUrlEditMode}
               noFocusStyle
-              class="h-full flex-1 rounded-none border-0 bg-transparent px-0 hover:border-transparent"
+              class="inline-edit-input h-full flex-1 rounded-none border-0 bg-transparent px-0 hover:border-transparent"
               placeholder={m.browser_embedded_url_placeholder()}
               aria-label={m.browser_embedded_addressInput_ariaLabel()}
             />
@@ -1143,7 +1147,7 @@
             type="button"
             variant="ghost"
             size="sm"
-            class="flex h-full min-w-0 flex-1 items-center gap-1.5 rounded-sm text-left outline-none hover:bg-muted/30 focus-visible:ring-1 focus-visible:ring-ring"
+            class="relative z-10 flex h-full min-w-0 flex-1 cursor-text items-center gap-1.5 rounded-sm text-left outline-none hover:bg-muted/30 focus-visible:ring-1 focus-visible:ring-ring"
             onclick={() => void focusUrlInput()}
             aria-label={m.browser_embedded_editAddress_ariaLabel()}
           >
@@ -1160,6 +1164,12 @@
             {/if}
           </Button>
         {/if}
+        <span
+          aria-hidden="true"
+          class="pointer-events-none absolute z-0 rounded-(--radius-small) border transition-[inset,border-color,background-color] duration-(--motion-standard) ease-(--ease-standard) motion-reduce:transition-none {isEditingUrl
+            ? '-inset-x-2 -inset-y-1.5 border-ring/60 bg-background'
+            : '-inset-x-1 -inset-y-0.5 border-transparent bg-transparent'}"
+        ></span>
       </div>
     </div>
 
@@ -1270,6 +1280,10 @@
 </div>
 
 <style>
+  :global(input.inline-edit-input::selection) {
+    background: hsl(var(--ring) / 0.3);
+  }
+
   .browser-toolbar {
     container-type: inline-size;
   }

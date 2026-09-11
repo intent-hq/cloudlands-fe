@@ -59,6 +59,9 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentIsBlockedWaiting: () => constantReadable(false),
   selectAgentAttentionRequest: () => constantReadable(null),
 }));
+vi.mock('$store/renderer/slices/agent-queue/agent-queue-selectors', () => ({
+  selectAgentQueueMessages: Object.assign(() => constantReadable([]), { select: () => [] }),
+}));
 vi.mock('$store/renderer/slices/hud/hud-selectors', () => ({
   selectHudAgentHasPendingQuestion: () => constantReadable(false),
 }));

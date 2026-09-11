@@ -40,7 +40,6 @@ interface HoverCardScenario {
   expected: string;
   workspace: Workspace | null;
   isLoading?: boolean;
-  lineStats?: { additions: number; deletions: number };
   activeAgentIds?: string[];
   tasks?: WorkspaceTask[];
   taskStats?: WorkspaceTaskStats;
@@ -925,11 +924,8 @@ const scenes: Record<string, WorkspaceHoverCardPreviewProps> = {
         workspace: workspace('changes-none', { lastActivity: undefined, updatedAt: 'invalid' }),
         gitSummary: { ahead: 0, behind: 0, hasUnpushed: false },
       }),
-      scenario('changes-lines', 'Line stats', 'Local line-stat fallback.', {
-        lineStats: { additions: 8, deletions: 3 },
-      }),
+      scenario('changes-lines', 'Line stats', 'Local line-stat fallback.'),
       scenario('changes-diff', 'Detailed diff wins', 'Detailed diff replaces line stats.', {
-        lineStats: { additions: 8, deletions: 3 },
         diffSummary: {
           schemaVersion: 1,
           updatedAt: PREVIEW_FIXTURE_TIMESTAMPS.updatedAt,

@@ -389,6 +389,7 @@ export class LiveAgentsClient implements AgentsClient {
     options?: {
       imageBlocks?: ImageBlock[];
       fileBlocks?: FileBlock[];
+      messageMetadata?: Record<string, unknown>;
     },
   ): Promise<MutationResult> {
     // `agent.queueMessage` returns `{ success, queuedMessage, turnId }`
@@ -396,12 +397,13 @@ export class LiveAgentsClient implements AgentsClient {
     // render the queue position / id without an extra `agent.getQueue`
     // round-trip, plus the entry's turn-correlation id (monorepo#1057 —
     // top-level `turnId` preferred, `queuedMessage.turnId` as the fallback).
-    // Optional `imageBlocks` / `fileBlocks` only ride along when supplied so
-    // the daemon sees an omitted param otherwise.
+    // Optional `imageBlocks` / `fileBlocks` / `messageMetadata` only ride
+    // along when supplied so the daemon sees an omitted param otherwise.
     try {
       const params: Record<string, unknown> = { agentId, content: message };
       if (options?.imageBlocks !== undefined) params.imageBlocks = options.imageBlocks;
       if (options?.fileBlocks !== undefined) params.fileBlocks = options.fileBlocks;
+      if (options?.messageMetadata !== undefined) params.messageMetadata = options.messageMetadata;
       const result = await backendRequest<
         { queuedMessage?: QueuedMessage; turnId?: unknown } | undefined
       >('agent.queueMessage', params);

@@ -10,16 +10,46 @@
  */
 
 import { Logger } from '../../shared/logger';
-import { getBackendClient } from '../../features/backend/main/backend.ipc';
-import { createCache } from './cache';
+import {
+  getBackendClient,
+  onBackendNotification,
+  onBackendReconnected,
+} from '../../features/backend/main/backend.ipc';
 
 const logger = new Logger('GitHubAuthStatus');
 
-// 30s TTL matching the deleted broker's CACHE_TTL — callers like
-// git-tracking gate every poll on this probe, so successful results are
-// cached to avoid a github.authStatus round-trip per poll. Failures are
-// not cached so recovery is immediate.
-const statusCache = createCache<'status', boolean>({ name: 'github-auth-status', ttlMs: 30_000 });
+let cachedStatus: boolean | undefined;
+let pendingStatus: { generation: number; promise: Promise<boolean> } | undefined;
+let trailingStatus: Promise<boolean> | undefined;
+let generation = 0;
+let lifecycleInstalled = false;
+
+function invalidateGitHubAuthStatus(): void {
+  generation += 1;
+  cachedStatus = undefined;
+}
+
+function clearPendingStatus(run: Promise<boolean>): void {
+  if (pendingStatus?.promise === run) pendingStatus = undefined;
+}
+
+function ensureLifecycle(): void {
+  if (lifecycleInstalled) return;
+  lifecycleInstalled = true;
+  if (typeof onBackendNotification === 'function') {
+    onBackendNotification((notification) => {
+      if (notification.method !== 'events.event' || !notification.params) return;
+      const params = notification.params as { event?: unknown; type?: unknown };
+      const event = params.event && typeof params.event === 'object' ? params.event : params;
+      if ((event as { type?: unknown }).type === 'github:auth-changed') {
+        invalidateGitHubAuthStatus();
+      }
+    });
+  }
+  if (typeof onBackendReconnected === 'function') {
+    onBackendReconnected(() => invalidateGitHubAuthStatus());
+  }
+}
 
 /** Wire shape of `github.authStatus` (PROTOCOL §5.27). */
 interface WireAuthStatus {
@@ -33,22 +63,49 @@ interface WireAuthStatus {
  * Probe the daemon for GitHub auth state (`isConfigured` ⇒ authenticated).
  */
 export async function isGitHubConfigured(): Promise<boolean> {
-  const cached = statusCache.get('status');
-  if (cached !== undefined) {
-    return cached;
-  }
-  try {
-    const status = await getBackendClient().request<WireAuthStatus>('github.authStatus');
-    if (status?.isConfigured && status.configuredButNeedsUpdate) {
-      logger.warn('GitHub is configured but needs scope update', {
-        updatedScopes: status.updatedScopes,
+  ensureLifecycle();
+  if (cachedStatus !== undefined) return cachedStatus;
+  if (pendingStatus?.generation === generation) return pendingStatus.promise;
+  if (pendingStatus) {
+    if (trailingStatus) return trailingStatus;
+    const next = pendingStatus.promise
+      .then(() => {
+        if (trailingStatus === next) trailingStatus = undefined;
+        return isGitHubConfigured();
+      })
+      .finally(() => {
+        if (trailingStatus === next) trailingStatus = undefined;
       });
-    }
-    const isConfigured = status?.isConfigured ?? false;
-    statusCache.set('status', isConfigured);
-    return isConfigured;
-  } catch (error) {
-    logger.error('Failed to get GitHub auth status from daemon', error as Error);
-    return false;
+    trailingStatus = next;
+    return next;
   }
+  const requestGeneration = generation;
+  let run!: Promise<boolean>;
+  run = (async () => {
+    try {
+      const status = await getBackendClient().request<WireAuthStatus>('github.authStatus');
+      if (status?.isConfigured && status.configuredButNeedsUpdate) {
+        logger.warn('GitHub is configured but needs scope update', {
+          updatedScopes: status.updatedScopes,
+        });
+      }
+      const isConfigured = status?.isConfigured ?? false;
+      if (requestGeneration === generation) cachedStatus = isConfigured;
+      return isConfigured;
+    } catch (error) {
+      logger.error('Failed to get GitHub auth status from daemon', error as Error);
+      return false;
+    } finally {
+      clearPendingStatus(run);
+    }
+  })();
+  pendingStatus = { generation: requestGeneration, promise: run };
+  return run;
+}
+
+export function __resetGitHubAuthStatusForTests(): void {
+  cachedStatus = undefined;
+  pendingStatus = undefined;
+  trailingStatus = undefined;
+  generation += 1;
 }

@@ -2,9 +2,12 @@ import { buffers, type EventChannel } from 'redux-saga';
 import {
   actionChannel,
   call,
+  cancel,
   delay,
   fork,
+  join,
   put,
+  race,
   take,
   takeEvery,
   takeLeading,
@@ -16,12 +19,12 @@ import { m } from '$shared/paraglide/messages.js';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import { createElectronChannel } from '$store/renderer/utils/ipc-channel';
 import { takeWithBackoff } from '$store/renderer/utils/take-with-backoff';
+import { selectDaemonConnectionGeneration } from '../daemon-health-selectors';
 import {
   connectionStatusChanged,
   fetchSidecarRunLogFailed,
   fetchSidecarRunLogRequested,
   fetchSidecarRunLogSucceeded,
-  heartbeatFailed,
   pollSystemStatus,
   pollUnslothStatus,
   openLocalAndSpawnRequested,
@@ -36,9 +39,9 @@ import {
   unslothStatusFailure,
   unslothStatusSuccess,
 } from '../daemon-health-slice';
-import { selectDaemonHealth } from '../daemon-health-selectors';
 import type {
   BackendTransportInfo,
+  DaemonStatusCheckFailureKind,
   SidecarRunLog,
   SystemStatusWirePayload,
   UnslothStatusWirePayload,
@@ -238,6 +241,11 @@ function* daemonStatusSaga() {
     } catch {
       // Push events and system.status polling still converge the state.
     }
+    // Polling starts once the boot snapshot has settled either way: a
+    // successful snapshot binds the first poll to that connection, and a
+    // failed one must not leave the app without any poll until main happens
+    // to push a status.
+    yield* fork(systemPollingLoop);
 
     yield* takeWithBackoff(
       channel,
@@ -263,17 +271,45 @@ function* daemonStatusSaga() {
   }
 }
 
+/**
+ * Reduce a failed poll to a safe category at the effect boundary. Only a
+ * transport-tagged `TIMEOUT` (browser WebSocket transport) is a known
+ * timeout; the Electron IPC path reports timeouts as a generic
+ * `TRANSPORT_ERROR`, so those stay generic rather than being guessed from
+ * the message. Raw errors never reach the store.
+ */
+function classifyStatusCheckFailure(error: unknown): DaemonStatusCheckFailureKind {
+  const code = error && typeof error === 'object' ? (error as { code?: unknown }).code : undefined;
+  return code === 'TIMEOUT' ? 'timeout' : 'status-check-failed';
+}
+
 export function* pollSystemStatusSaga() {
+  // Snapshot the connection generation before the request: the reducer
+  // discards the terminal action when a connection lifecycle change happened
+  // meanwhile, so a slow poll can never report on a connection it did not
+  // observe.
+  const connectionGeneration = yield* selectDaemonConnectionGeneration.effect();
   try {
     const status = yield* call(backendRequest<SystemStatusWirePayload>, 'system.status');
-    yield* put(systemStatusSuccess(status, new Date().toISOString()));
-  } catch {
-    yield* put(systemStatusFailure());
-    const health = yield* selectDaemonHealth.effect();
-    if (health === 'healthy') yield* put(heartbeatFailed());
+    yield* put(systemStatusSuccess(status, new Date().toISOString(), connectionGeneration));
+  } catch (error) {
+    yield* put(
+      systemStatusFailure(
+        {
+          kind: classifyStatusCheckFailure(error),
+          failedAt: new Date().toISOString(),
+        },
+        connectionGeneration,
+      ),
+    );
   }
 }
 
+/**
+ * Fixed-cadence poll trigger, forked by `daemonStatusSaga` once the boot
+ * snapshot has settled so the first poll is bound to a known connection
+ * lifecycle rather than racing the snapshot (which would only discard it).
+ */
 function* systemPollingLoop() {
   yield* put(pollSystemStatus());
   while (true) {
@@ -282,8 +318,45 @@ function* systemPollingLoop() {
   }
 }
 
+/**
+ * Run one poll to completion unless the connection generation changes
+ * underneath it. Status notifications that leave the generation alone
+ * (same-connection metadata refreshes) keep waiting on the same request — the
+ * transport cannot abort it, so re-issuing would only fan out requests.
+ * Returns whether the new lifecycle should be polled right away.
+ */
+function* runPollBoundToConnection() {
+  const generation = yield* selectDaemonConnectionGeneration.effect();
+  const poll = yield* fork(pollSystemStatusSaga);
+  while (true) {
+    const { lifecycle } = yield* race({
+      settled: join(poll),
+      lifecycle: take(connectionStatusChanged),
+    });
+    if (!lifecycle) return false;
+    const current = yield* selectDaemonConnectionGeneration.effect();
+    if (current === generation) continue;
+    yield* cancel(poll);
+    return lifecycle.payload[0] === 'connected';
+  }
+}
+
+/**
+ * One poll in flight at a time (triggers during a poll are dropped, as with
+ * takeLeading). A connection lifecycle change cancels the in-flight poll —
+ * its result belongs to the previous connection — and, when the new
+ * lifecycle is connected, polls it right away instead of leaving its stats
+ * to the next interval.
+ */
 function* watchSystemStatusPolls() {
-  yield* takeLeading(pollSystemStatus, pollSystemStatusSaga);
+  while (true) {
+    yield* take(pollSystemStatus);
+    let poll = true;
+    while (poll) {
+      poll = yield* call(runPollBoundToConnection);
+      if (poll) yield* put(pollSystemStatus());
+    }
+  }
 }
 
 function* pollUnslothStatusSaga() {
@@ -369,9 +442,10 @@ function* watchDaemonControls() {
 
 export function* daemonHealthSaga() {
   if (typeof window === 'undefined' || !window.electronAPI) return;
-  yield* fork(daemonStatusSaga);
+  // The poll watcher is forked first so the boot poll issued by the status
+  // saga's polling loop always has a listener.
   yield* fork(watchSystemStatusPolls);
+  yield* fork(daemonStatusSaga);
   yield* fork(watchUnslothStatusPolls);
   yield* fork(watchDaemonControls);
-  yield* call(systemPollingLoop);
 }

@@ -1,3 +1,5 @@
+// @verify-changed-triggers: scripts/check-selector-active-workspace-hygiene.mjs, src/store/renderer/seeders/file-bridge-seeder.ts
+
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';

@@ -108,7 +108,15 @@
     </div>
     <div class="min-h-0 flex-1 overflow-y-auto py-2" data-workspace-preview-list>
       {#each workspaces as workspace (workspace.id)}
-        <WorkspaceCard {workspace} isPinned={workspace.id === PREVIEW_FIXTURE_IDS.workspace} />
+        <WorkspaceCard
+          {workspace}
+          isPinned={workspace.id === PREVIEW_FIXTURE_IDS.workspace}
+          isUnread={workspace.id === PREVIEW_FIXTURE_IDS.workspace}
+          onClick={() => {}}
+          onTogglePin={() => {}}
+          onMarkAsRead={() => {}}
+          onOpenInNewWindow={() => {}}
+        />
       {:else}
         <p class="px-4 py-8 text-center text-sm text-muted-foreground" data-workspace-preview-empty>
           {m.layout_allCard_noWorkspaces_label()}

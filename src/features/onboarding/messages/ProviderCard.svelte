@@ -240,7 +240,7 @@
               transition:slide={{ axis: 'x', tier: 'moderate' }}
             >
               <div class="h-px bg-gradient-to-r from-transparent to-current w-3 mt-px"></div>
-              <Fa icon={faPlug} class="mr-1.5 transform rotate-90" size={12} />
+              <Fa icon={faPlug} class="mr-1.5 translate-y-[0.5px] transform rotate-45" size={12} />
             </div>
             <div class="flex items-center whitespace-nowrap truncate font-medium">
               {m.onboarding_providerCard_connected_label()}

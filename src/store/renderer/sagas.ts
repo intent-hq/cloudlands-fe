@@ -24,6 +24,7 @@ import { autoUpdateSaga } from './slices/auto-update/sagas/auto-update-saga';
 import { backgroundAgentSettingsSaga } from './slices/background-agent-settings/sagas/background-agent-settings-saga';
 import { backgroundHooksSaga } from './slices/background-hooks/sagas/background-hooks-saga';
 import { browserPersistenceSaga } from './slices/browser/sagas/browser-persistence-saga';
+import { browserClientsSaga } from './slices/browser-clients/sagas/browser-clients-saga';
 import { chatReadSaga } from './slices/chat-state/sagas/chat-read-saga';
 import { chatScrollbackSaga } from './slices/chat-state/sagas/chat-scrollback-saga';
 import { chatSendSaga } from './slices/chat-state/sagas/chat-send-saga';
@@ -40,6 +41,7 @@ import { filesReadSaga } from './slices/files/sagas/files-read-saga';
 import { filesWriteSaga } from './slices/files/sagas/files-write-saga';
 import { gitEventsIpcSaga } from './slices/git-events/sagas/git-events-ipc-saga';
 import { gitReadSaga } from './slices/git/sagas/git-read-saga';
+import { acceptChangesStatusSaga } from './slices/git/sagas/accept-changes-status-saga';
 import { gitRootsSaga } from './slices/git-roots/sagas/git-roots-saga';
 import { githubAuthSaga } from './slices/github-auth/sagas/github-auth-saga';
 import { githubRepoSearchSaga } from './slices/github-repo-search/sagas/github-repo-search-saga';
@@ -60,6 +62,7 @@ import {
   notificationIpcSaga,
   webNotificationSaga,
 } from './slices/notifications/sagas/notifications-saga';
+import { browserTabRegistrySaga } from './slices/panel-layout/sagas/browser-tab-registry-saga';
 import { panelLayoutSaga } from './slices/panel-layout/sagas/panel-layout-saga';
 import { permissionResponseSaga } from './slices/permission/sagas/permission-response-saga';
 import { proposalLifecycleSaga } from './slices/proposal-lifecycle/sagas/proposal-lifecycle-saga';
@@ -142,6 +145,7 @@ export const sagas = [
   editRegenerateSaga,
   agentFailureToastSaga,
   gitReadSaga,
+  acceptChangesStatusSaga,
   fileExplorerSaga,
   filesReadSaga,
   filesWriteSaga,
@@ -194,9 +198,11 @@ export const sagas = [
   workspaceTabCleanupSaga,
   sidebarNavSaga,
   panelLayoutSaga,
+  browserTabRegistrySaga,
   unreadTrackingSaga,
   releaseNotesSaga,
   browserPersistenceSaga,
+  browserClientsSaga,
   fileContentPruneSaga,
   terminalPersistenceSaga,
   externalEditorsPersistenceSaga,

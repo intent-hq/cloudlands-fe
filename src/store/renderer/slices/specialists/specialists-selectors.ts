@@ -206,14 +206,24 @@ export const selectSpecialists = store.createSelector((state): Specialist[] => {
 });
 /**
  * The specialist that powers the New Workspace modal's team-mode card: the
- * first `role: 'orchestrator'` entry by id order (ties are deterministic
- * regardless of list sort). Returns null when no orchestrator exists — the
- * modal then hides the team card and defaults to single-agent mode.
+ * first `role: 'orchestrator'` entry ranked with bundled specialist ids before
+ * non-bundled ids, then by id order within each rank. The shipped catalog is
+ * consulted for ranking because the daemon reports only the winning override
+ * tier; it never adds missing entries to the roster. A same-id file override
+ * retains its bundled rank. Returns null when no orchestrator exists — the modal
+ * then hides the team card and defaults to single-agent mode.
  */
 export const selectOrchestratorSpecialist = store.createSelector((state): Specialist | null => {
   const orchestrators = selectSpecialists.select(state).filter((s) => s.role === 'orchestrator');
   if (orchestrators.length === 0) return null;
-  orchestrators.sort((a, b) => a.id.localeCompare(b.id));
+  const bundledIds = new Set([
+    ...SPECIALISTS.map(({ id }) => id),
+    ...state.specialists.bundledSpecialists.map(({ id }) => id),
+  ]);
+  orchestrators.sort((a, b) => {
+    const bundledRank = Number(!bundledIds.has(a.id)) - Number(!bundledIds.has(b.id));
+    return bundledRank || a.id.localeCompare(b.id);
+  });
   return orchestrators[0];
 });
 // ============================================================================

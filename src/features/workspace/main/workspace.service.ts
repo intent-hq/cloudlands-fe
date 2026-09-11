@@ -11,7 +11,7 @@ import { promises as fs } from 'fs';
 import { Logger } from '../../../shared/logger';
 import { m } from '$shared/paraglide/messages.js';
 import { getChangeHistoryForWorkspace } from './change-history-persistence';
-import { getBackendClient } from '../../backend/main/backend.ipc';
+import { getBackendClient, onBackendReconnected } from '../../backend/main/backend.ipc';
 
 import type {
   DiffChunk,
@@ -69,6 +69,7 @@ export class WorkspaceService {
   private summaryInvalidationTimer: NodeJS.Timeout | null = null;
   private readonly SUMMARY_INVALIDATION_DEBOUNCE_MS = 100;
   private disposed = false;
+  private disposeBackendReconnect: (() => void) | null = null;
   private readonly BACKGROUND_ENRICHMENT_CONCURRENCY = 3;
   // Domain event listeners (workspace:deleted, note:created, note:deleted, git:status-changed)
   // are now handled by sagas in domain-event-listener-sagas.ts.
@@ -145,6 +146,13 @@ export class WorkspaceService {
     { expiresAt: number | null; promise: Promise<Workspace[]> }
   >();
 
+  private ensureBackendReconnectListener(): void {
+    if (this.disposeBackendReconnect) return;
+    this.disposeBackendReconnect = onBackendReconnected(() => {
+      this.workspaceListCache.clear();
+    });
+  }
+
   private async fetchWorkspacesFromDaemon(includeArchived: boolean): Promise<Workspace[]> {
     const now = Date.now();
     const cached = this.workspaceListCache.get(includeArchived);
@@ -162,6 +170,7 @@ export class WorkspaceService {
         return rows.map((raw) => this.normalizeDaemonWorkspace(raw as Record<string, unknown>));
       })(),
     };
+    this.ensureBackendReconnectListener();
     this.workspaceListCache.set(includeArchived, entry);
 
     entry.promise.then(
@@ -1374,6 +1383,8 @@ export class WorkspaceService {
    */
   public cleanup(): void {
     this.disposed = true;
+    this.disposeBackendReconnect?.();
+    this.disposeBackendReconnect = null;
 
     // Remove event listeners
     // Domain event listeners (workspace:deleted, note:created, note:deleted, git:status-changed)

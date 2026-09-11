@@ -7,7 +7,10 @@
   import VideoActionsMenu from '$lib/components/ui/VideoActionsMenu.svelte';
   import VideoLightbox from '$lib/components/ui/VideoLightbox.svelte';
   import { parseWorkspaceFileImageUrl } from '$lib/utils/image-actions';
-  import { parseIntentFileTarget } from '$lib/utils/workspace-file-image';
+  import {
+    parseIntentFileTarget,
+    workspaceAssetVideoSource,
+  } from '$lib/utils/workspace-file-image';
   import { m } from '$shared/paraglide/messages.js';
   import { Button } from '$lib/components/ui/button';
 
@@ -19,6 +22,7 @@
   let openerElement: HTMLElement | null = $state(null);
   let failedVideoUrl = $state<string | null>(null);
   let configuredWorkspaceId = $derived<string | undefined>(extension.options.workspaceId);
+  let mimeType = $derived(workspaceAssetVideoSource(videoUrl, configuredWorkspaceId)?.mimeType);
   let workspaceFile = $derived(parseWorkspaceFileImageUrl(videoUrl));
   let intentFile = $derived(parseIntentFileTarget(videoUrl, configuredWorkspaceId));
   let unavailablePath = $derived(workspaceFile?.path ?? intentFile?.path);
@@ -38,12 +42,15 @@
 <NodeViewWrapper class={`note-video-node${selected ? ' selected' : ''}`}>
   <div class="group relative inline-block max-w-full">
     {#if failedVideoUrl === videoUrl}
-      <MediaUnavailable
-        name={videoName}
-        reason={workspaceFile ? 'missing' : 'load-failed'}
-        path={unavailablePath}
-        workspaceId={unavailableWorkspaceId}
-      />
+      <div class="flex items-center gap-2" contenteditable="false">
+        <MediaUnavailable
+          name={videoName}
+          reason="load-failed"
+          path={unavailablePath}
+          workspaceId={unavailableWorkspaceId}
+        />
+        <VideoActionsMenu {videoUrl} {videoName} {mimeType} sourceKind="workspace" />
+      </div>
     {:else}
       <!-- svelte-ignore a11y_media_has_caption (workspace video has no captions field) -->
       <video
@@ -70,7 +77,7 @@
         >
           <Fa icon={faExpand} size="sm" />
         </Button>
-        <VideoActionsMenu {videoUrl} {videoName} sourceKind="workspace" />
+        <VideoActionsMenu {videoUrl} {videoName} {mimeType} sourceKind="workspace" />
       </div>
     {/if}
   </div>
@@ -80,6 +87,7 @@
   bind:open={lightboxOpen}
   {videoUrl}
   {videoName}
+  {mimeType}
   sourceKind="workspace"
   {openerElement}
 />

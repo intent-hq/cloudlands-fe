@@ -37,7 +37,12 @@
   import {
     selectWorkspaceEvents,
     selectEventsLoading,
+    selectOlderEventsEndReached,
+    selectOlderEventsError,
+    selectOlderEventsLoading,
   } from '$store/renderer/slices/workspace-events/workspace-events-selectors';
+  import { loadOlderEventsRequested } from '$store/renderer/slices/workspace-events/workspace-events-slice';
+  import { store as appStore } from '$store/renderer/store';
 
   import { getActivityLabelParts, type StructuredLabel } from '$features/events/activity-labels';
   import { getEventAgentId } from './utils';
@@ -101,6 +106,9 @@
   // Read events and loading state from Redux
   const events$ = selectWorkspaceEvents(workspaceIdStore);
   const loading$ = selectEventsLoading(workspaceIdStore);
+  const loadingOlder$ = selectOlderEventsLoading(workspaceIdStore);
+  const olderError$ = selectOlderEventsError(workspaceIdStore);
+  const endReached$ = selectOlderEventsEndReached(workspaceIdStore);
 
   /**
    * Event types that should be hidden from the activity log.
@@ -405,6 +413,26 @@
 </script>
 
 <div class="h-full flex flex-col">
+  {#if !$loading$ && !$endReached$}
+    <div class="flex items-center justify-center gap-2 px-5 pt-2">
+      {#if $olderError$}
+        <span class="text-ui text-danger truncate" role="status">{$olderError$}</span>
+      {/if}
+      <Button
+        variant="plain"
+        size="xs"
+        class="!h-auto text-ui text-subtle hover:text-foreground"
+        loading={$loadingOlder$}
+        onclick={() => appStore.dispatch(loadOlderEventsRequested(workspaceId))}
+      >
+        {$loadingOlder$
+          ? m.workspace_activityPanel_loadingOlder_label()
+          : $olderError$
+            ? m.workspace_activityPanel_retryOlder_label()
+            : m.workspace_activityPanel_loadOlder_label()}
+      </Button>
+    </div>
+  {/if}
   {#if $loading$}
     <!-- Loading skeleton -->
     <div class="px-5 py-3 space-y-3">

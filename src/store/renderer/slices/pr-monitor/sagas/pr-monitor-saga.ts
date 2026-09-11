@@ -18,6 +18,7 @@ import { markWorkspaceSeed } from '../../../utils/switch-timing';
 import {
   cancelPrMonitorRequested,
   flushPrMonitorRequested,
+  prMonitorsSnapshotFailed,
   prMonitorsUpdated,
 } from '../pr-monitor-slice';
 import { selectCurrentWorkspaceTabId } from '../../tab-state/tab-state-selectors';
@@ -30,29 +31,39 @@ import {
 
 const logger = createLogger('PrMonitorSaga');
 
+type MonitorChannelMessage = { kind: 'rows'; monitors: PrMonitorRow[] } | { kind: 'failed' };
+
 type SubscriptionEntry = {
-  channel: EventChannel<PrMonitorRow[]>;
+  channel: EventChannel<MonitorChannelMessage>;
   task: Task;
 };
 
 const SUBSCRIPTION_RECONCILIATION_DELAY_MS = 100;
 
-function createMonitorChannel(workspaceId: string): EventChannel<PrMonitorRow[]> {
-  return eventChannel<PrMonitorRow[]>((emit) => {
-    const subscription = subscribePrMonitors(workspaceId, emit);
+function createMonitorChannel(workspaceId: string): EventChannel<MonitorChannelMessage> {
+  return eventChannel<MonitorChannelMessage>((emit) => {
+    const subscription = subscribePrMonitors(
+      workspaceId,
+      (monitors) => emit({ kind: 'rows', monitors }),
+      () => emit({ kind: 'failed' }),
+    );
     return () => subscription.dispose();
-  }, buffers.expanding<PrMonitorRow[]>());
+  }, buffers.expanding<MonitorChannelMessage>());
 }
 
 function* forwardMonitorUpdates(
   workspaceId: string,
-  channel: EventChannel<PrMonitorRow[]>,
+  channel: EventChannel<MonitorChannelMessage>,
 ): SagaGenerator<void> {
   try {
     while (true) {
-      const monitors: PrMonitorRow[] = yield* take(channel);
-      if (monitors === (END as unknown as PrMonitorRow[])) return;
-      yield* put(prMonitorsUpdated(workspaceId, monitors));
+      const message: MonitorChannelMessage = yield* take(channel);
+      if (message === (END as unknown as MonitorChannelMessage)) return;
+      if (message.kind === 'rows') {
+        yield* put(prMonitorsUpdated(workspaceId, message.monitors));
+      } else {
+        yield* put(prMonitorsSnapshotFailed(workspaceId));
+      }
     }
   } finally {
     channel.close();

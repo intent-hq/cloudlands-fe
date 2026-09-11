@@ -329,7 +329,8 @@ describe('shared operational disclosure-row contract', () => {
     });
     const toolIcon = container.querySelector('[data-tool-icon]')!;
     expectClasses(toolIcon, CHAT_OPERATIONAL_LEADING_CLASS);
-    expect(toolIcon.className).toContain('animate-pulse');
+    expect(toolIcon.hasAttribute('data-streaming-pulse')).toBe(true);
+    expect(toolIcon.className).not.toContain('animate-pulse');
     cleanup();
 
     render(ContextEngineToolCall, { props: { toolUse: contextTool, toolState: 'running' } });
@@ -337,7 +338,7 @@ describe('shared operational disclosure-row contract', () => {
       .getByTestId('context-engine-tool-call')
       .querySelector('[data-tool-icon]')!;
     expectClasses(searchIcon, CHAT_OPERATIONAL_LEADING_CLASS);
-    expect(searchIcon.className).toContain('animate-pulse');
+    expect(searchIcon.hasAttribute('data-streaming-pulse')).toBe(true);
     expect(screen.queryByTestId('tool-call-status')).toBeNull();
     expect(document.querySelector('[data-operational-trailing]')).toBeNull();
     cleanup();
@@ -347,6 +348,9 @@ describe('shared operational disclosure-row contract', () => {
     const spinner = within(reasoning).getByRole('status', { name: 'Loading' });
     expect(spinner.getAttribute('data-variant')).toBe('bloom');
     expect(reasoning.querySelector('[data-icon="brain"]')).toBeNull();
+    expect(
+      reasoning.querySelector('[data-operational-leading]')!.hasAttribute('data-streaming-pulse'),
+    ).toBe(true);
     cleanup();
 
     const group = render(ResponseGroup, {
@@ -701,7 +705,7 @@ describe('shared operational disclosure-row contract', () => {
 
       expect(within(row).queryByRole('button')).toBeNull();
       expect(icon.tagName).toBe('DIV');
-      expect(icon.className).toContain('animate-pulse');
+      expect(icon.hasAttribute('data-streaming-pulse')).toBe(true);
       expect(icon.className).not.toContain('cursor-pointer');
     });
   });

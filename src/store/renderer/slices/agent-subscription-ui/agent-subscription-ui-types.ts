@@ -40,6 +40,7 @@ export interface WokenUpInfo {
 }
 
 export type WaitingState = 'idle' | 'waiting' | 'woken' | 'completed';
+export type SubscriptionSnapshotStatus = 'loading' | 'ready' | 'failed';
 
 export interface AgentSubscriptionUIEntry {
   subscriptions: Subscription[];
@@ -47,15 +48,8 @@ export interface AgentSubscriptionUIEntry {
   agentStatuses: Record<string, AgentStatus>;
   waitingState: WaitingState;
   wokenUpInfo: WokenUpInfo | null;
-  /**
-   * Utility-footer readiness latch: true once an `agent.getSubscriptions`
-   * snapshot read has settled for this (workspace, agent) — success OR
-   * failure (a failed read renders the same as empty, so it still counts
-   * as ready). Never cleared by `resetSubscriptionUI`; dropped on
-   * `markAgentAsViewed` so a switch-back's reveal gate waits for the fresh
-   * view-time read instead of clearing on a cached snapshot.
-   */
-  snapshotFetched: boolean;
+  /** Independent footer presentation state; `ready` with empty arrays is authoritative empty. */
+  snapshotStatus: SubscriptionSnapshotStatus;
 }
 
 export interface AgentSubscriptionUIState {

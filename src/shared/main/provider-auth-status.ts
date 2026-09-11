@@ -5,7 +5,11 @@
  * indicator) so availability aggregation degrades instead of throwing.
  */
 import { Logger } from '../logger';
-import { getBackendClient } from '../../features/backend/main/backend.ipc';
+import {
+  getBackendClient,
+  onBackendNotification,
+  onBackendReconnected,
+} from '../../features/backend/main/backend.ipc';
 import type { JsonRpcClient } from '../../features/backend/main/json-rpc-client';
 import {
   PROVIDER_AUTH_STATUS_METHOD,
@@ -17,6 +21,70 @@ import {
 } from '../provider-auth-status';
 
 const logger = new Logger('ProviderAuthStatus');
+type VerdictMap = Record<string, ProviderAuthVerdict>;
+type Pending = { generation: number; promise: Promise<VerdictMap> };
+type Trailing = { force: boolean; promise: Promise<VerdictMap> };
+type Cached = { expiresAt: number; verdicts: VerdictMap };
+type ClientState = {
+  cache: Map<string, Cached>;
+  generation: number;
+  lifecycleEpoch: number;
+  pending: Map<string, Pending>;
+  trailing: Map<string, Trailing>;
+};
+const PROVIDER_AUTH_CACHE_TTL_MS = 60_000;
+let clientStates = new WeakMap<JsonRpcClient, ClientState>();
+let lifecycleEpoch = 0;
+let lifecycleInstalled = false;
+
+function getClientState(client: JsonRpcClient): ClientState {
+  let state = clientStates.get(client);
+  if (!state) {
+    state = {
+      cache: new Map(),
+      generation: 0,
+      lifecycleEpoch,
+      pending: new Map(),
+      trailing: new Map(),
+    };
+    clientStates.set(client, state);
+  } else if (state.lifecycleEpoch !== lifecycleEpoch) {
+    state.lifecycleEpoch = lifecycleEpoch;
+    state.generation += 1;
+    state.cache.clear();
+  }
+  return state;
+}
+
+function invalidateClientState(state: ClientState, providerId?: string): void {
+  state.generation += 1;
+  if (providerId) {
+    state.cache.delete(providerId);
+    state.cache.delete('*');
+  } else state.cache.clear();
+}
+
+function invalidateProviderAuthStatus(): void {
+  lifecycleEpoch += 1;
+}
+
+function ensureLifecycle(): void {
+  if (lifecycleInstalled) return;
+  lifecycleInstalled = true;
+  if (typeof onBackendNotification === 'function') {
+    onBackendNotification((notification) => {
+      if (notification.method !== 'events.event' || !notification.params) return;
+      const params = notification.params as { event?: unknown; type?: unknown };
+      const event = params.event && typeof params.event === 'object' ? params.event : params;
+      if ((event as { type?: unknown }).type === 'provider:auth-changed') {
+        invalidateProviderAuthStatus();
+      }
+    });
+  }
+  if (typeof onBackendReconnected === 'function') {
+    onBackendReconnected(() => invalidateProviderAuthStatus());
+  }
+}
 
 /**
  * Sweep (or single-provider) auth status from the daemon as an id → verdict
@@ -27,19 +95,72 @@ export async function getProviderAuthVerdicts(
   options: ProviderAuthStatusParams = {},
   client?: JsonRpcClient,
 ): Promise<Record<string, ProviderAuthVerdict>> {
-  try {
-    const response = await (client ?? getBackendClient()).request<ProviderAuthStatusResponse>(
-      PROVIDER_AUTH_STATUS_METHOD,
-      buildProviderAuthStatusParams(options),
-    );
-    return toAuthVerdictMap(response);
-  } catch (error) {
-    logger.warn('host.providerAuthStatus RPC failed; auth verdicts degrade to unknown', {
-      providerId: options.providerId,
-      error: error instanceof Error ? error.message : String(error),
-    });
-    return {};
+  ensureLifecycle();
+  const backend = client ?? getBackendClient();
+  const state = getClientState(backend);
+  const params = buildProviderAuthStatusParams(options);
+  const key = params.providerId ?? '*';
+  if (params.force) invalidateClientState(state, params.providerId);
+  else {
+    const cached = state.cache.get(key);
+    if (cached && cached.expiresAt > Date.now()) return cached.verdicts;
+    if (cached) state.cache.delete(key);
   }
+
+  const active = state.pending.get(key);
+  if (!params.force && active?.generation === state.generation) return active.promise;
+  if (active) {
+    const queued = state.trailing.get(key);
+    if (queued) {
+      queued.force ||= params.force === true;
+      return queued.promise;
+    }
+    let queuedState!: Trailing;
+    const next = active.promise
+      .then(() => {
+        if (state.trailing.get(key) === queuedState) state.trailing.delete(key);
+        return getProviderAuthVerdicts(
+          { providerId: params.providerId, force: queuedState.force },
+          backend,
+        );
+      })
+      .finally(() => {
+        if (state.trailing.get(key) === queuedState) state.trailing.delete(key);
+      });
+    queuedState = { force: params.force === true, promise: next };
+    state.trailing.set(key, queuedState);
+    return next;
+  }
+  const requestGeneration = state.generation;
+  let run!: Promise<VerdictMap>;
+  run = (async (): Promise<VerdictMap> => {
+    try {
+      const response = await backend.request<ProviderAuthStatusResponse>(
+        PROVIDER_AUTH_STATUS_METHOD,
+        params,
+      );
+      const verdicts = toAuthVerdictMap(response);
+      if (requestGeneration === state.generation) {
+        state.cache.set(key, { verdicts, expiresAt: Date.now() + PROVIDER_AUTH_CACHE_TTL_MS });
+      }
+      return verdicts;
+    } catch (error) {
+      logger.warn('host.providerAuthStatus RPC failed; auth verdicts degrade to unknown', {
+        providerId: options.providerId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return {};
+    } finally {
+      if (state.pending.get(key)?.promise === run) state.pending.delete(key);
+    }
+  })();
+  state.pending.set(key, { generation: requestGeneration, promise: run });
+  return run;
+}
+
+export function __resetProviderAuthStatusForTests(): void {
+  clientStates = new WeakMap<JsonRpcClient, ClientState>();
+  lifecycleEpoch += 1;
 }
 
 /** Single-provider convenience over {@link getProviderAuthVerdicts}. */

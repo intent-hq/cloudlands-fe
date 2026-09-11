@@ -26,6 +26,7 @@ export const inputMetadata = parseUiComponentMetadata({
     'src/lib/components/CommandPalette.svelte',
     'src/lib/components/browser/BrowserOverflowMenu.svelte',
     'src/lib/components/browser/BrowserPanel.svelte',
+    'src/lib/components/browser/BrowserViewerTabHeader.svelte',
     'src/lib/components/browser/BrowserViewportMenu.svelte',
     'src/lib/components/browser/EmbeddedBrowser.svelte',
     'src/lib/components/chat/AgentCard.svelte',

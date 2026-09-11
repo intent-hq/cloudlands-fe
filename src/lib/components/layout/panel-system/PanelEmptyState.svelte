@@ -98,6 +98,12 @@
     return filtered.slice(0, 5);
   });
 
+  // A browser tab's title is canonical registry data; none yet shows the label.
+  function getTabTitle(tab: PanelTab): string {
+    if (tab.type === 'browser') return tab.title || m.layout_panelLayout_browser_fallback();
+    return tab.title;
+  }
+
   // Get icon for tab type
   function getTabIcon(type: PanelTab['type']) {
     switch (type) {
@@ -129,8 +135,12 @@
     return m.layout_panelEmptyState_daysAgo_label({ days: Math.floor(diff / 86400000) });
   }
 
-  function handleReopenItem() {
+  function handleReopenLatest() {
     layoutManager?.reopenClosedTab();
+  }
+
+  function handleReopenItem(closedTabId: string) {
+    layoutManager?.reopenClosedTab(closedTabId, panelId);
   }
 
   function handleCreateAgent() {
@@ -208,7 +218,7 @@
     {
       key: $reopenTabShortcut$,
       label: m.layout_panelEmptyState_reopenClosed_label(),
-      action: handleReopenItem,
+      action: handleReopenLatest,
     },
     {
       key: $toggleSidebarShortcut$,
@@ -229,74 +239,80 @@
   aria-label={m.layout_panelEmptyState_createInEmptyPanel_ariaLabel()}
   data-panel-empty-state
 >
-  <div class="creation-grid grid gap-1.5">
-    {#each creationActions as action (action.id)}
-      <Button
-        variant="ghost"
-        class="creation-card type-body flex min-h-16 cursor-pointer items-center gap-2.5 rounded-md border border-transparent bg-muted/30 px-3 py-2.5 text-left text-foreground transition-transform duration-150 focus-visible:outline-none motion-reduce:transition-none"
-        onclick={action.action}
-        title={m.layout_panelEmptyState_newItem_tooltip({ label: action.label })}
-        aria-label={m.layout_panelEmptyState_newItem_tooltip({ label: action.label })}
-      >
-        {#if action.resourceKind}
-          <ResourceIconTile kind={action.resourceKind} variant="emphasized" />
-        {:else}
-          <span
-            class="flex size-6 shrink-0 items-center justify-center rounded-md bg-background/70 text-muted-foreground"
-            data-panel-empty-leading-surface
-          >
-            <Fa icon={action.icon} class="size-4" />
-          </span>
-        {/if}
-        <span class="min-w-0 truncate font-medium">
-          {m.layout_panelEmptyState_newItem_tooltip({ label: action.label })}
-        </span>
-      </Button>
-    {/each}
-  </div>
-
-  {#if recentItems.length > 0}
-    <div class="mt-4 pt-3">
-      <div class="type-caption mb-1 flex items-center gap-1.5 px-1 text-muted-foreground">
-        <Fa icon={faArrowRotateLeft} class="size-3" />
-        <span>{m.layout_panelEmptyState_recentlyClosed_label()}</span>
-      </div>
-      {#each recentItems as item (item.tab.id + '-' + item.closedAt)}
-        {@const resourceKind = getResourceIconKind(item.tab.type)}
+  <section
+    class="empty-state-content w-full max-w-[36rem]"
+    aria-label={m.layout_panelEmptyState_createInEmptyPanel_ariaLabel()}
+  >
+    <div class="creation-grid grid gap-1.5">
+      {#each creationActions as action (action.id)}
         <Button
           variant="ghost"
-          class="recent-item type-caption flex w-full cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-left text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none motion-reduce:transition-none"
-          onclick={handleReopenItem}
-          title={m.layout_panelEmptyState_reopen_tooltip({ title: item.tab.title })}
+          class="creation-card type-body flex min-h-16 cursor-pointer items-center gap-2.5 rounded-md border border-transparent bg-muted/30 px-3 py-2.5 text-left text-foreground transition-transform duration-150 focus-visible:outline-none motion-reduce:transition-none"
+          onclick={action.action}
+          title={m.layout_panelEmptyState_newItem_tooltip({ label: action.label })}
+          aria-label={m.layout_panelEmptyState_newItem_tooltip({ label: action.label })}
         >
-          {#if resourceKind}
-            <ResourceIconTile kind={resourceKind} />
+          {#if action.resourceKind}
+            <ResourceIconTile kind={action.resourceKind} variant="emphasized" />
           {:else}
-            <Fa icon={getTabIcon(item.tab.type)} class="size-3 shrink-0 opacity-70" />
+            <span
+              class="flex size-6 shrink-0 items-center justify-center rounded-md bg-background/70 text-muted-foreground"
+              data-panel-empty-leading-surface
+            >
+              <Fa icon={action.icon} class="size-4" />
+            </span>
           {/if}
-          <span class="flex-1 truncate">{item.tab.title}</span>
-          <span class="shrink-0 opacity-70">{formatTime(item.closedAt)}</span>
+          <span class="min-w-0 truncate font-medium">
+            {m.layout_panelEmptyState_newItem_tooltip({ label: action.label })}
+          </span>
         </Button>
       {/each}
     </div>
-  {/if}
 
-  <div class="shortcut-grid mt-5 grid gap-x-5 gap-y-0.5 pt-3">
-    {#each utilityActions as action (action.key)}
-      <Button
-        variant="ghost"
-        class="shortcut-item type-caption flex cursor-pointer items-center justify-between gap-3 rounded-md px-1 py-1.5 text-left text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none motion-reduce:transition-none"
-        onclick={action.action}
-        title={action.label}
-      >
-        <span>{action.label}</span>
-        <kbd class="shortcut-key shrink-0 text-muted-foreground">
-          {formatShortcut(action.key)}
-        </kbd>
-      </Button>
-    {/each}
-  </div>
-</EmptyState>
+    {#if recentItems.length > 0}
+      <div class="mt-4 pt-3">
+        <div class="type-caption mb-1 flex items-center gap-1.5 px-1 text-muted-foreground">
+          <Fa icon={faArrowRotateLeft} class="size-3" />
+          <span>{m.layout_panelEmptyState_recentlyClosed_label()}</span>
+        </div>
+        {#each recentItems as item (item.tab.id + '-' + item.closedAt)}
+          {@const resourceKind = getResourceIconKind(item.tab.type)}
+          {@const tabTitle = getTabTitle(item.tab)}
+          <Button
+            variant="ghost"
+            class="recent-item type-caption flex w-full cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-left text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none motion-reduce:transition-none"
+            onclick={() => handleReopenItem(item.tab.id)}
+            title={m.layout_panelEmptyState_reopen_tooltip({ title: tabTitle })}
+          >
+            {#if resourceKind}
+              <ResourceIconTile kind={resourceKind} />
+            {:else}
+              <Fa icon={getTabIcon(item.tab.type)} class="size-3 shrink-0 opacity-70" />
+            {/if}
+            <span class="flex-1 truncate">{tabTitle}</span>
+            <span class="shrink-0 opacity-70">{formatTime(item.closedAt)}</span>
+          </Button>
+        {/each}
+      </div>
+    {/if}
+
+    <div class="shortcut-grid mt-5 grid gap-x-5 gap-y-0.5 pt-3">
+      {#each utilityActions as action (action.key)}
+        <Button
+          variant="ghost"
+          class="shortcut-item type-caption flex cursor-pointer items-center justify-between gap-3 rounded-md px-1 py-1.5 text-left text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none motion-reduce:transition-none"
+          onclick={action.action}
+          title={action.label}
+        >
+          <span>{action.label}</span>
+          <kbd class="shortcut-key shrink-0 text-muted-foreground">
+            {formatShortcut(action.key)}
+          </kbd>
+        </Button>
+      {/each}
+    </div>
+  </section></EmptyState
+>
 
 <style>
   :global(.empty-state-content) {

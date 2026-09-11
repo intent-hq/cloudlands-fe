@@ -285,19 +285,6 @@ export interface ChatAgentState {
    */
   awaitingSwitchBackSnapshot?: boolean;
   /**
-   * Utility-footer reveal gate: true while the transcript reveal is holding
-   * for the footer data sources (agent subscriptions, background hooks,
-   * monitored PRs) to settle their initial snapshots, so transcript and
-   * footer flip in the SAME paint. Armed by the first
-   * `transcriptHydrationSettled` (first open) and alongside
-   * `awaitingSwitchBackSnapshot` on `markAgentAsViewed` (switch-back);
-   * cleared by `chatUtilityFooterReady` (the subscribe saga observed
-   * `isUtilityFooterReady` flip true), by the subscription teardown
-   * (phase null), or by the saga's bounded fallback timeout — footer
-   * readiness must NEVER wedge the transcript reveal.
-   */
-  awaitingUtilityFooter?: boolean;
-  /**
    * Lazily hydrated full content blocks, keyed `{messageId}|{blockId}`
    * (§5.5 slim projection → v7.2 `agent.getMessageBlock`). Read-through
    * cache of daemon responses: `loading` de-dupes concurrent expand clicks

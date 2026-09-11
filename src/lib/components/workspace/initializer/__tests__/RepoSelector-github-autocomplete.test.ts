@@ -5,9 +5,10 @@
  * repos (client-side filtered) plus deduped global search results, rendered
  * under the `github.com/ owner/repo` input. Covers rendering, dedupe,
  * keyboard selection, the emitted pick detail, and the signed-out state.
+ * Also covers the trigger's GitHub owner avatar (GitHub picks only).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 
 const mocks = vi.hoisted(() => {
   const readable = <T>(getter: () => T) => ({
@@ -384,5 +385,76 @@ describe('RepoSelector "Pick a repo" autocomplete', () => {
 
     await fireEvent.keyDown(input, { key: 'Enter' });
     expect(onchange.mock.calls[0][0].detail.path).toBe('someone/elsewhere');
+  });
+});
+
+describe('RepoSelector trigger avatar', () => {
+  beforeEach(() => {
+    mocks.isAuthenticated = true;
+    mocks.reposLoaded = true;
+    mocks.reposError = null;
+    mocks.repos = [
+      { id: 'octo/alpha', owner: 'octo', name: 'alpha' },
+      { id: 'octo/beta', owner: 'octo', name: 'beta' },
+    ];
+    mocks.searchResults = [];
+    mocks.searchLastQuery = '';
+    mocks.recentRepos = [];
+  });
+
+  afterEach(() => {
+    cleanup();
+    mocks.dispatch.mockReset();
+  });
+
+  const triggerAvatar = (container: HTMLElement) =>
+    container.querySelector('button')!.querySelector<HTMLImageElement>('img');
+
+  it('shows the avatar again for the next owner after the previous image failed', async () => {
+    const { container, rerender } = render(RepoSelector, { props: { value: 'octo/alpha' } });
+
+    const failed = triggerAvatar(container)!;
+    expect(failed.src).toContain('/octo.png');
+    await fireEvent.error(failed);
+    expect(failed.style.display).toBe('none');
+
+    await rerender({ value: 'other/beta' });
+
+    const next = triggerAvatar(container)!;
+    expect(next).not.toBe(failed);
+    expect(next.src).toContain('/other.png');
+    expect(next.style.display).not.toBe('none');
+  });
+
+  it('renders the avatar for a restored full GitHub URL value', async () => {
+    const { container } = render(RepoSelector, {
+      props: { value: 'https://github.com/intent-hq/intent', displayValue: 'intent-hq/intent' },
+    });
+
+    expect(triggerAvatar(container)!.src).toContain('/intent-hq.png');
+  });
+
+  it('keeps the avatar decorative so the owner is announced once', () => {
+    const { container } = render(RepoSelector, { props: { value: 'intent-hq/intent' } });
+
+    const trigger = container.querySelector('button')!;
+    expect(triggerAvatar(container)!.getAttribute('aria-hidden')).toBe('true');
+    expect(within(container).getByRole('button', { name: 'intent-hq/intent' })).toBe(trigger);
+  });
+
+  it('drops a confirmed pick when the value prop moves to another repo', async () => {
+    const { container, rerender } = await openGithubTab({ onchange: vi.fn() });
+    await waitFor(() => expect(suggestions().length).toBe(2));
+    await fireEvent.click(suggestions()[1]);
+    await waitFor(() => expect(screen.queryByText(DROPDOWN_HEADING)).toBeFalsy());
+    expect(triggerAvatar(container)!.src).toContain('/octo.png');
+
+    await rerender({ value: 'https://github.com/octo/beta' });
+    expect(triggerAvatar(container)!.src).toContain('/octo.png');
+    expect(container.querySelector('button')!.textContent).toContain('octo/beta');
+
+    await rerender({ value: 'other/gamma' });
+    expect(triggerAvatar(container)!.src).toContain('/other.png');
+    expect(container.querySelector('button')!.textContent).toContain('other/gamma');
   });
 });

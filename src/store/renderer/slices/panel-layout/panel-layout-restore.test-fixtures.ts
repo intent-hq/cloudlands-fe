@@ -61,6 +61,35 @@ export function narrowOverlappingGeometryFixture(workspaceId: string): Workspace
   };
 }
 
+/**
+ * The panel tree a hang left behind: a valid two-column split whose panels
+ * carry no tabs and no active tab. It passes stored-layout validation, so the
+ * restore settles as 'restored' and renders a blank content area with only
+ * the split divider unless the reconcile reseeds the primary agent tab.
+ */
+export function tablessSplitFixture(): WorkspacePanelLayout {
+  return {
+    version: PANEL_LAYOUT_PERSISTENCE_VERSION,
+    root: {
+      type: 'split',
+      direction: 'horizontal',
+      children: [
+        { type: 'panel', panelId: 'lost-left' },
+        { type: 'panel', panelId: 'lost-right' },
+      ],
+      sizes: [50, 50],
+    },
+    panels: {
+      'lost-left': { id: 'lost-left', tabs: [], activeTabId: null },
+      'lost-right': { id: 'lost-right', tabs: [], activeTabId: null },
+    },
+    focusedPanelId: 'lost-left',
+    columnCount: 2,
+    canvasWidth: null,
+    canvasWidthSource: null,
+  };
+}
+
 export function displacedOrphanSliverFixture(workspaceId: string): WorkspacePanelLayout {
   return {
     version: PANEL_LAYOUT_PERSISTENCE_VERSION,

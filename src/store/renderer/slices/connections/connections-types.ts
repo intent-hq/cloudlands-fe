@@ -87,6 +87,16 @@ export interface ConnectionsState {
   /** Error message from the last failed add/open operation, or null. */
   error: string | null;
   /**
+   * One entry per open operation currently in flight, keyed by backend id (a
+   * multiset — a repeat open of the same id adds a second entry). Opens run
+   * concurrently (main serializes the underlying work), so each is tracked
+   * for per-row UI feedback. `status` alone is not the busy signal: a failed
+   * open sets it to `error` while other opens may still be tracked here. Gate
+   * busy UI on `selectIsConnecting` (`status === 'connecting'` OR this list is
+   * non-empty), never on `status` by itself.
+   */
+  openingIds: string[];
+  /**
    * Last cert-mismatch push (`connections:cert-mismatch`), or null. A pinned
    * cert changed on (re)connect — the UI surfaces a blocking failure modal
    * (no silent re-trust). Cleared once the user dismisses it.

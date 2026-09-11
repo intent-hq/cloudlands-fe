@@ -324,6 +324,41 @@ describe('workspaceNavigationTabSaga', () => {
     vi.restoreAllMocks();
   });
 
+  it.each([
+    ['docs/chl-spec.md:2471', undefined, 'docs/chl-spec.md', 'chl-spec.md', 2471],
+    ['src/a.ts:10:5', undefined, 'src/a.ts', 'a.ts', 10],
+    ['src/a.ts#L10-20', undefined, 'src/a.ts', 'a.ts', 10],
+    ['src/a.ts:10', { line: 3 }, 'src/a.ts', 'a.ts', 3],
+  ])(
+    'normalizes a line suffix before opening %s',
+    async (filePath, options, expectedPath, expectedTitle, expectedLine) => {
+      vi.spyOn(Date, 'now').mockReturnValue(42);
+      const channel = stdChannel();
+      const dispatch = vi.fn();
+      const task = runSaga(
+        { channel, dispatch, getState: () => noFocusedPanelState },
+        workspaceNavigationTabSaga,
+      );
+
+      channel.put(openWorkspaceFile('ws-1', filePath, options));
+      await settle();
+
+      expect(dispatch.mock.calls[0]?.[0]).toMatchObject({
+        payload: {
+          tab: {
+            type: 'file',
+            title: expectedTitle,
+            filePath: expectedPath,
+            data: { line: expectedLine, jumpTimestamp: 42 },
+          },
+        },
+      });
+      task.cancel();
+      await task.toPromise();
+      vi.restoreAllMocks();
+    },
+  );
+
   // Regression tests for intent-hq/monorepo#3398: a mod-clicked note-task link
   // (openInNewAdjacentPanel) must open a NEW column right of the source panel,
   // even when an equivalent note tab is already open in another column.

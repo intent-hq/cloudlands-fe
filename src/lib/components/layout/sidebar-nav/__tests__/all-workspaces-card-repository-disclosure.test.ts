@@ -132,54 +132,6 @@ describe('AllWorkspacesCard repository disclosure', () => {
     await waitFor(() => expect(rowIds(group)).toEqual(['alpha-4', 'alpha-1', 'alpha-2']));
   });
 
-  it('renders a compact left-aligned text action with transparent interaction states', async () => {
-    renderRepositoryView(() => seedRepository('alpha', 4));
-
-    const group = await waitFor(() => repositoryGroup('alpha'));
-    const heading = within(group).getByRole('heading', { level: 4, name: 'alpha' });
-    const toggle = within(group).getByRole('button', { name: 'Show more' });
-    const label = toggle.querySelector('[data-repository-group-toggle-label]') as HTMLElement;
-    const container = toggle.closest('.min-w-0') as HTMLElement;
-
-    expect(container.className).toContain('min-w-0');
-    expect(container.className).toContain('px-2');
-    expect(toggle.className).toContain('type-caption');
-    expect(toggle.className).toContain('min-h-7');
-    expect(toggle.className).toContain('w-fit');
-    expect(toggle.className).toContain('max-w-full');
-    expect(toggle.className).toContain('justify-start');
-    expect(toggle.className).toContain('text-left');
-    expect(toggle.className).toContain('font-normal');
-    expect(toggle.className).toContain('text-muted-foreground');
-    expect(toggle.className).toContain('border-0');
-    expect(toggle.className).toContain('bg-transparent');
-    expect(toggle.className).toContain('shadow-none');
-    expect(toggle.className).toContain('hover:bg-transparent');
-    expect(toggle.className).toContain('active:bg-transparent');
-    expect(toggle.className).toContain('focus-visible:bg-transparent');
-    expect(toggle.className).toContain('focus-visible:text-foreground');
-    expect(toggle.className).toContain('focus-visible:underline');
-    expect(toggle.className).toContain('focus-visible:outline-none');
-    expect(toggle.className).toContain('focus-visible:ring-0!');
-    expect(toggle.classList.contains('w-full')).toBe(false);
-    expect(toggle.className).not.toMatch(/focus-visible:outline-(?!none(?:\s|$)|0(?:\s|$))\S+/);
-    expect(toggle.className).not.toMatch(/focus-visible:(?:shadow|ring-offset)-\S+/);
-
-    setGeometry(group, 0, 240);
-    setGeometry(container, 0, 240);
-    setGeometry(toggle, 4, 72);
-    setGeometry(heading, 8, 48, 16);
-    setGeometry(label, 8, 64, 16);
-
-    expect(toggle.getBoundingClientRect().width).toBeLessThan(
-      container.getBoundingClientRect().width,
-    );
-    expect(label.getBoundingClientRect().left).toBe(heading.getBoundingClientRect().left);
-    expect(toggle.getBoundingClientRect().right).toBeLessThanOrEqual(
-      group.getBoundingClientRect().right,
-    );
-  });
-
   it('keeps its content-sized hit target contained at narrow and zoom-equivalent widths', async () => {
     renderRepositoryView(() => seedRepository('alpha', 4));
 

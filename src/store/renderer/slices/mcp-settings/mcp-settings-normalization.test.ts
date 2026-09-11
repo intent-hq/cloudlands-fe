@@ -13,6 +13,7 @@ describe('mcp-settings normalization', () => {
     expect(mapDaemonMcpState('starting')).toBe('configured');
     expect(mapDaemonMcpState('stopped')).toBe('stopped');
     expect(mapDaemonMcpState('error')).toBe('error');
+    expect(mapDaemonMcpState('auth_required')).toBe('auth_required');
     expect(mapDaemonMcpState('warming-up')).toBeNull();
     expect(mapDaemonMcpState(undefined)).toBeNull();
   });

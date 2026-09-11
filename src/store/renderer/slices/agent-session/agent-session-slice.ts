@@ -1,5 +1,5 @@
 import { deepEqual, shallowEqual } from 'fast-equals';
-import type { AgentSession, AgentMessage, SessionStats } from '$shared/types';
+import type { AgentMetadata, AgentSession, AgentMessage, SessionStats } from '$shared/types';
 import { AgentStatus } from '$shared/types/agent.types';
 import type { CanonicalAgentStatusFields, WorkspaceEvent } from '$features/events/types';
 import { createAction, createAsyncAction } from '@augmentcode/themis/utils/store/create-action';
@@ -686,6 +686,41 @@ function canonicalFieldsFromWorkspaceEvent(event: {
   return null;
 }
 
+/**
+ * `agent:updated` question-marker projection (PROTOCOL §6.5 "Pending-question
+ * `agent:updated` payloads"): a committed marker mutation carries the mutated
+ * value in `event.data` — a set is the message id, a clear is a WRITTEN empty
+ * string, and a legacy marker-less session omits the field. Mirror exactly the
+ * string fields present so the store reflects the marker in the same
+ * synchronous step the event is applied (the follow-up `agent.get` refresh is
+ * async and can land after a later `agent:queue:updated` shrink, which would
+ * otherwise reopen a just-answered question set for one event interval).
+ * Omitted / non-string fields are left untouched — never fabricated.
+ */
+type PendingQuestionMarkerFields = Partial<
+  Pick<AgentMetadata, 'pendingQuestionsMessageId' | 'dismissedQuestionsMessageId'>
+>;
+
+export function pendingQuestionMarkersFromWorkspaceEvent(event: {
+  type?: string;
+  data?: any;
+}): [string, PendingQuestionMarkerFields] | null {
+  if (event.type !== 'agent:updated') return null;
+  const data = event.data;
+  if (!data || typeof data !== 'object') return null;
+  const agentId = data.agentId;
+  if (typeof agentId !== 'string' || agentId.length === 0) return null;
+  const fields: PendingQuestionMarkerFields = {};
+  if (typeof data.pendingQuestionsMessageId === 'string') {
+    fields.pendingQuestionsMessageId = data.pendingQuestionsMessageId;
+  }
+  if (typeof data.dismissedQuestionsMessageId === 'string') {
+    fields.dismissedQuestionsMessageId = data.dismissedQuestionsMessageId;
+  }
+  if (Object.keys(fields).length === 0) return null;
+  return [agentId, fields];
+}
+
 function userMessageFromWorkspaceEvent(event: WorkspaceEvent): [string, AgentMessage] | null {
   if (event.type !== 'agent:user-message:sent') return null;
   const data = event.data;
@@ -1291,6 +1326,13 @@ export type BulkUpsertSessionsOptions = {
    * in-flight pair.
    */
   allowActiveTurnRuntimeFlagClear?: boolean;
+  /**
+   * Mixed list snapshots may contain both crash-leftover idle rows and live
+   * rows. IDs listed here receive the authoritative stale-clear semantics
+   * (`preserveExplicitRuntimeFlags: false` plus active-turn clear) without
+   * splitting one hydration into multiple reducer commits.
+   */
+  staleRuntimeFlagClearAgentIds?: string[];
 };
 
 /** Bulk upsert sessions (initial load / snapshot reconciliation / batched upsert storage) */
@@ -1440,6 +1482,22 @@ agentSessionReducer.with(eventReceived, (state, { payload: [, event] }) => {
     return updateSessionFields(state, agentId, { stats });
   }
 
+  const markers = pendingQuestionMarkersFromWorkspaceEvent(event);
+  if (markers) {
+    const [agentId, fields] = markers;
+    const existing = getSession(state, agentId);
+    if (!existing) return state;
+    const metadata = existing.metadata ?? {};
+    if (
+      Object.entries(fields).every(
+        ([key, value]) => metadata[key as keyof typeof metadata] === value,
+      )
+    ) {
+      return state;
+    }
+    return updateSessionFields(state, agentId, { metadata: { ...metadata, ...fields } });
+  }
+
   const canonical = canonicalFieldsFromWorkspaceEvent(event);
   if (!canonical) return state;
   const [agentId, fields] = canonical;
@@ -1470,11 +1528,18 @@ agentSessionReducer.with(renameSession, (state, { payload: [agentId, name] }) =>
 });
 agentSessionReducer.with(bulkUpsertSessions, (state, { payload: [sessions, options] }) => {
   let next = state;
-  const storageOptions: SessionUpsertStorageOptions = {
+  const defaultStorageOptions: SessionUpsertStorageOptions = {
     preserveExplicitRuntimeFlags: options?.preserveExplicitRuntimeFlags ?? true,
     allowActiveTurnRuntimeFlagClear: options?.allowActiveTurnRuntimeFlagClear ?? false,
   };
+  const staleClearIds = new Set(options?.staleRuntimeFlagClearAgentIds ?? []);
   for (const session of sessions) {
+    const storageOptions = staleClearIds.has(String(session.id))
+      ? {
+          preserveExplicitRuntimeFlags: false,
+          allowActiveTurnRuntimeFlagClear: true,
+        }
+      : defaultStorageOptions;
     next = applySessionUpsert(next, session, storageOptions);
   }
   return next;

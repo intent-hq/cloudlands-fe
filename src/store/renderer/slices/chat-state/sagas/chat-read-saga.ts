@@ -42,6 +42,7 @@ import { createLogger } from '$lib/utils/client-logger';
 import type { AgentMessage, AgentSession } from '$shared/types';
 import { isAgentDeletionPending } from '$features/agent/utils/pending-agent-deletions';
 import { isAgentNotFoundError } from '$features/agent/utils/agent-not-found-error';
+import { readAgentSession } from '$features/agent/agent-read-service';
 import {
   hasChatSubscriptionAcquisitionInFlight,
   hasReplayableChatSnapshot,
@@ -141,10 +142,7 @@ function* hydrateChatTranscriptSaga(request: ChatRequest): SagaGenerator<Hydrate
   try {
     yield* put(transcriptHydrationStarted(agentId));
     started = true;
-    const session: AgentSession | null = yield* call(
-      [appClient.agents, appClient.agents.get],
-      agentId,
-    );
+    const session: AgentSession | null = yield* call(readAgentSession, agentId);
     if (!session || String(session.workspaceId) !== wsId) {
       return { started, succeeded: true };
     }

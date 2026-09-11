@@ -127,6 +127,7 @@
     type TabId,
   } from './multi-select-sidebar-tabs';
   import { getFixedContainingBlockOffset } from './utils/fixed-containing-block';
+  import { applyContentReveal } from './utils/sidebar-card-morph';
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
   import { formatInteger } from '$lib/i18n/format';
   import { m } from '$shared/paraglide/messages.js';
@@ -430,6 +431,7 @@
     const fixedContainingBlockOffset = getFixedContainingBlockOffset(node);
     const fixedLeft = cardRect.left - fixedContainingBlockOffset.x;
     const fixedTop = cardRect.top - fixedContainingBlockOffset.y;
+    const content = node.querySelector<HTMLElement>('[data-sidebar-expanded-content]');
 
     return {
       duration: spring.slow.settleMs,
@@ -437,9 +439,9 @@
         const shellProgress =
           direction === 'expand' ? spring.slow.exit.easing(t) : 1 - spring.slow.exit.easing(1 - t);
         const shellInverse = 1 - shellProgress;
-        const contentProgress = Math.max(0, Math.min(1, (t - 0.72) / 0.28));
-        return `position: fixed; left: ${fixedLeft}px; top: ${fixedTop}px; width: ${cardRect.width}px; height: ${cardRect.height}px; transform-origin: top left; transform: translate(${shellInverse * translateX}px, ${shellInverse * translateY}px) scale(${scaleX + shellProgress * (1 - scaleX)}, ${scaleY + shellProgress * (1 - scaleY)}); background-color: hsl(var(--sidebar)); --sidebar-card-content-opacity: ${contentProgress}; --sidebar-card-content-y: ${(1 - contentProgress) * 4}px; will-change: transform;`;
+        return `position: fixed; left: ${fixedLeft}px; top: ${fixedTop}px; width: ${cardRect.width}px; height: ${cardRect.height}px; transform-origin: top left; transform: translate(${shellInverse * translateX}px, ${shellInverse * translateY}px) scale(${scaleX + shellProgress * (1 - scaleX)}, ${scaleY + shellProgress * (1 - scaleY)}); background-color: hsl(var(--sidebar)); will-change: transform;`;
       },
+      tick: (t) => applyContentReveal(content, t),
     };
   }
 

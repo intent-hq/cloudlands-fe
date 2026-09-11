@@ -126,7 +126,7 @@ const runtimePatterns = [
   /^--bits-select-content-available-height$/,
   // Set by bits-ui at runtime on menu content (dropdown-menu content and the shared
   // menu primitive used by SubContent); externally owned, not design tokens.
-  /^--bits-(?:dropdown-)?menu-content-available-height$/,
+  /^--bits-(?:dropdown-)?menu-content-available-(?:height|width)$/,
   // Set by Bits UI from measured ScrollArea thumb geometry.
   /^--bits-scroll-area-thumb-(?:height|width)$/,
   // Set by Bits UI's floating-positioning layer for Tooltip content.

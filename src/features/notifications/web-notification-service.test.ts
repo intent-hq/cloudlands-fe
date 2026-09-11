@@ -38,6 +38,8 @@ vi.mock('$lib/utils/notification-sound', () => ({
 
 vi.mock('$lib/client/live/backend-transport', () => ({
   backendRequest: mockBackendRequest,
+  onBackendNotification: vi.fn(() => () => {}),
+  onBackendReconnected: vi.fn(() => () => {}),
 }));
 
 // Import after mocking
@@ -54,6 +56,7 @@ import {
   setChiefActiveAgentId,
 } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 import type { AgentIdleEvent } from '$features/events/types';
+import { __resetSettingsReadCacheForTests } from '$lib/client/live/live-settings-client';
 
 /** Mock browser Notification API capturing constructor calls + instances. */
 class MockNotification {
@@ -191,6 +194,7 @@ describe('web-notification-service', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    __resetSettingsReadCacheForTests();
     __resetWebNotificationServiceForTesting();
     mockState.userPreferences.enabled = true;
     mockState.userPreferences.soundEnabled = true;

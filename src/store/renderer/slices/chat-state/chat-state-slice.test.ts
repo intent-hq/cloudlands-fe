@@ -38,7 +38,6 @@ import {
   pendingProposalRecoverySettled,
   pendingProposalRecoveryPruned,
   chatSwitchBackRevealTimedOut,
-  chatUtilityFooterReady,
   messageBlockHydrationRequested,
   messageBlockHydrated,
   messageBlockHydrationFailed,
@@ -53,7 +52,6 @@ import {
 import type { QueuedMessage } from '$shared/types';
 import {
   selectAwaitingSwitchBackSnapshot,
-  selectAwaitingUtilityFooter,
   selectChatAgentState,
   selectChatError,
   selectChatFailureCorrelation,
@@ -1648,85 +1646,6 @@ describe('chatState selectors', () => {
       const armed = chatStateReducer(switchedAwayState(), markAgentAsViewed(AGENT));
       const again = chatStateReducer(armed, markAgentAsViewed(AGENT));
       expect(again).toBe(armed);
-    });
-  });
-
-  // Utility-footer reveal gate (awaitingUtilityFooter): transcript and footer
-  // flip in the same paint on first open AND switch-back.
-  describe('utility-footer reveal gate', () => {
-    const footerArmed = (state: ReturnType<typeof chatStateReducer>) =>
-      selectAwaitingUtilityFooter.select(asStoreState(state), AGENT);
-
-    it('arms on the FIRST hydration settle only (refresh re-settles never re-arm)', () => {
-      let state = chatStateReducer(initialState, transcriptHydrationStarted(AGENT));
-      expect(footerArmed(state)).toBe(false);
-      state = chatStateReducer(state, transcriptHydrationSettled(AGENT));
-      expect(footerArmed(state)).toBe(true);
-
-      state = chatStateReducer(state, chatUtilityFooterReady(AGENT));
-      expect(footerArmed(state)).toBe(false);
-      state = chatStateReducer(state, transcriptHydrationStarted(AGENT));
-      state = chatStateReducer(state, transcriptHydrationSettled(AGENT));
-      expect(footerArmed(state)).toBe(false);
-    });
-
-    it('arms alongside the snapshot gate on markAgentAsViewed (switch-back)', () => {
-      let state = chatStateReducer(initialState, transcriptHydrationStarted(AGENT));
-      state = chatStateReducer(state, transcriptHydrationSettled(AGENT));
-      state = chatStateReducer(state, chatUtilityFooterReady(AGENT));
-      state = chatStateReducer(
-        state,
-        chatTranscriptSnapshotApplied(AGENT, { truncated: false, totalMessages: 2 }),
-      );
-      state = chatStateReducer(state, chatLiveStreamPhaseChanged(AGENT, null));
-      expect(footerArmed(state)).toBe(false);
-      state = chatStateReducer(state, markAgentAsViewed(AGENT));
-      expect(footerArmed(state)).toBe(true);
-      expect(selectAwaitingSwitchBackSnapshot.select(asStoreState(state), AGENT)).toBe(true);
-    });
-
-    it('chatUtilityFooterReady clears the footer gate without touching the snapshot gate', () => {
-      let state = chatStateReducer(initialState, transcriptHydrationStarted(AGENT));
-      state = chatStateReducer(state, transcriptHydrationSettled(AGENT));
-      state = chatStateReducer(state, chatLiveStreamPhaseChanged(AGENT, null));
-      state = chatStateReducer(state, markAgentAsViewed(AGENT));
-      state = chatStateReducer(state, chatUtilityFooterReady(AGENT));
-      expect(footerArmed(state)).toBe(false);
-      expect(selectAwaitingSwitchBackSnapshot.select(asStoreState(state), AGENT)).toBe(true);
-    });
-
-    it('chatUtilityFooterReady is a no-op when the gate is not armed', () => {
-      let before = chatStateReducer(initialState, transcriptHydrationStarted(AGENT));
-      before = chatStateReducer(before, transcriptHydrationSettled(AGENT));
-      before = chatStateReducer(before, chatUtilityFooterReady(AGENT));
-      const state = chatStateReducer(before, chatUtilityFooterReady(AGENT));
-      expect(state).toBe(before);
-    });
-
-    it('the shared bounded fallback timeout clears BOTH gates', () => {
-      let state = chatStateReducer(initialState, transcriptHydrationStarted(AGENT));
-      state = chatStateReducer(state, transcriptHydrationSettled(AGENT));
-      state = chatStateReducer(state, chatLiveStreamPhaseChanged(AGENT, null));
-      state = chatStateReducer(state, markAgentAsViewed(AGENT));
-      state = chatStateReducer(state, chatSwitchBackRevealTimedOut(AGENT));
-      expect(footerArmed(state)).toBe(false);
-      expect(selectAwaitingSwitchBackSnapshot.select(asStoreState(state), AGENT)).toBe(false);
-    });
-
-    it('the fallback timeout clears a footer-only hold (first open)', () => {
-      let state = chatStateReducer(initialState, transcriptHydrationStarted(AGENT));
-      state = chatStateReducer(state, transcriptHydrationSettled(AGENT));
-      expect(footerArmed(state)).toBe(true);
-      state = chatStateReducer(state, chatSwitchBackRevealTimedOut(AGENT));
-      expect(footerArmed(state)).toBe(false);
-    });
-
-    it('clears when the subscription closes (phase null) — no pending reveal on a backgrounded panel', () => {
-      let state = chatStateReducer(initialState, transcriptHydrationStarted(AGENT));
-      state = chatStateReducer(state, transcriptHydrationSettled(AGENT));
-      expect(footerArmed(state)).toBe(true);
-      state = chatStateReducer(state, chatLiveStreamPhaseChanged(AGENT, null));
-      expect(footerArmed(state)).toBe(false);
     });
   });
 

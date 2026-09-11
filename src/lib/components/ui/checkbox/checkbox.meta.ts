@@ -11,7 +11,6 @@ export const checkboxMetadata = {
   owner: '007-B2',
   callers: [
     'src/features/log/components/ActivityLogFilters.svelte',
-    'src/features/onboarding/OnboardingPage.svelte',
     'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte',
     'src/lib/component-catalog/renderers/FieldPreviewCell.svelte',
     'src/lib/component-catalog/renderers/ProposalCatalogPreview.svelte',

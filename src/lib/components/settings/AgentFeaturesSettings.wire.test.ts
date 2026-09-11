@@ -16,6 +16,8 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('$lib/client/live/backend-transport', () => ({
   backendRequest: mocks.mockBackendRequest,
+  onBackendNotification: vi.fn(() => () => {}),
+  onBackendReconnected: vi.fn(() => () => {}),
   BackendError: class BackendError extends Error {
     constructor(payload: { code: string; message: string }) {
       super(payload.message);
@@ -26,6 +28,7 @@ vi.mock('$lib/client/live/backend-transport', () => ({
 }));
 
 import AgentFeaturesSettings from './AgentFeaturesSettings.svelte';
+import { __resetSettingsReadCacheForTests } from '$lib/client/live/live-settings-client';
 
 const FEATURE_PATHS = [
   'agentFeatures.backgroundHooks',
@@ -84,6 +87,7 @@ describe('AgentFeaturesSettings wire contract (PROTOCOL §5.12)', () => {
   });
 
   afterEach(() => {
+    __resetSettingsReadCacheForTests();
     cleanup();
   });
 
