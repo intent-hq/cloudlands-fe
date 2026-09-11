@@ -815,8 +815,10 @@ export const IPC_CHANNELS = {
   RELEASE_NOTES: {
     GET: 'release-notes:get',
     GET_PENDING: 'release-notes:get-pending',
-    // Event channel (main → renderer)
+    DISMISS: 'release-notes:dismiss',
+    // Event channels (main → renderer)
     SHOW: 'release-notes:show',
+    CLOSE: 'release-notes:close',
   },
 
   // Picture-in-Picture Windows
@@ -1077,8 +1079,10 @@ export const EVENT_CHANNELS = [
   'auto-update:error',
   'auto-update:show-toast',
   'auto-update:up-to-date',
-  // Release-notes modal push (startup after an update, or Help menu)
+  // Release-notes modal push (startup after an update, or Help menu) and the
+  // cross-window close broadcast after any window dismisses it
   'release-notes:show',
+  'release-notes:close',
   // Picture-in-Picture events
   'pip:opened',
   'pip:closed',
