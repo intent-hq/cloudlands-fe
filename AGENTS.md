@@ -332,7 +332,10 @@ set and `--check` validates markers without running anything. Likewise, any code
 under `src/`, any `AGENTS.md` change (root or nested — `lint:instruction-themis-pins` scans
 them all), and any edit to the `scripts/check-*.mjs` gates themselves also runs
 `pnpm run lint:architecture` — the repo-wide static architecture scans CI runs through
-`validate:architecture` plus its separate whole-`src/` `workspace:*` dispatcher gate step —
+`validate:architecture` (its only architecture step; new gates go into `lint:architecture`
+in `package.json`, never into a separate workflow step, so local and CI cannot diverge —
+`scripts/check-ci-architecture-gate.test.ts` fails on any other scanner or wrapper-script
+step in `intent-pr.yml`, and an edit to that workflow runs it locally) —
 because those scans are cross-file graph checks that per-file linting cannot see:
 cloudlands-fe#2315 passed `verify:changed` locally and failed CI in
 `lint:saga-watcher-ownership`. A change to `scripts/type-check.ts` additionally runs
