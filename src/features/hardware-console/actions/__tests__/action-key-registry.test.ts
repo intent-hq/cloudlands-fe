@@ -1471,6 +1471,57 @@ describe('cycle step side-effect failures', () => {
     definition.execute(third.context);
     expect(activeAgentDispatches(third.dispatch)).toEqual([['ws-1', 'b-1']]);
   });
+
+  it('a settled navigate rejection re-targets the failed stop on the next press', async () => {
+    // Regression (PR #2315 review): navigate() is async, so the cursor and
+    // HUD advance before the switch is known to fail. Once the rejection
+    // settles, the next press must retry the stop that never mounted rather
+    // than skipping past it.
+    const state = makeUnreadState();
+    const { context, navigate } = makeContext(state);
+    navigate.mockImplementation(() => Promise.reject(new Error('goto stalled')));
+    const definition = getActionKeyDefinition('cycle-unread-agents');
+    definition.execute(context);
+    expect(navigate).toHaveBeenCalledWith('/workspace/ws-2');
+    await vi.waitFor(() => expect(loggerWarnMock).toHaveBeenCalled());
+
+    const second = makeContext(state);
+    definition.execute(second.context);
+    expect(second.navigate).toHaveBeenCalledWith('/workspace/ws-2');
+    expect(activeAgentDispatches(second.dispatch)).toEqual([['ws-2', 'b-1']]);
+    expect(hudDispatches(second.dispatch)).toHaveLength(1);
+  });
+
+  it('a stale navigate rejection does not re-target once a later press moved on', async () => {
+    // The first switch is still pending when the user presses again and the
+    // second switch succeeds; the first rejection settling afterwards must
+    // not drag the walk back to the stop the user has already moved past.
+    const state = makeUnreadState();
+    const definition = getActionKeyDefinition('cycle-unread-agents');
+    let rejectFirst: (error: Error) => void = () => {};
+    const first = makeContext(state);
+    first.navigate.mockImplementation(
+      () =>
+        new Promise<void>((_, reject) => {
+          rejectFirst = reject;
+        }),
+    );
+    definition.execute(first.context);
+    expect(first.navigate).toHaveBeenCalledWith('/workspace/ws-2');
+
+    const second = makeContext(state);
+    definition.execute(second.context);
+    expect(second.navigate).toHaveBeenCalledWith('/workspace/ws-3');
+    expect(activeAgentDispatches(second.dispatch)).toEqual([['ws-3', 'c-1']]);
+
+    rejectFirst(new Error('goto stalled'));
+    await vi.waitFor(() => expect(loggerWarnMock).toHaveBeenCalled());
+
+    const third = makeContext(state);
+    definition.execute(third.context);
+    expect(third.navigate).not.toHaveBeenCalled();
+    expect(activeAgentDispatches(third.dispatch)).toEqual([['ws-1', 'a-1']]);
+  });
 });
 
 describe('single-candidate toast', () => {

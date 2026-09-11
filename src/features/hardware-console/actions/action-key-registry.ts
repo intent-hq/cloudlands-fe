@@ -316,12 +316,13 @@ function focusAgent(context: ActionKeyContext, wsId: string, agentId: string): v
 const lastCycledStopByAction = new Map<ActionKeyActionId, string>();
 
 /**
- * Per-family stop whose side effects threw mid-way on the last press. A
- * partial failure can leave the state anchor already moved (`setActiveAgentId`
- * reduced, then `openAgentTabRequested` threw), so anchoring the next press on
- * the focused agent would step past the stop that never finished. The next
- * press targets this stop directly instead; it is dropped once consumed or
- * when the stop is no longer a candidate.
+ * Per-family stop whose side effects failed on the last press — either threw
+ * mid-way, or its async workspace switch rejected after the cursor advanced.
+ * A partial failure can leave the state anchor already moved
+ * (`setActiveAgentId` reduced, then `openAgentTabRequested` threw), so
+ * anchoring the next press on the focused agent would step past the stop that
+ * never finished. The next press targets this stop directly instead; it is
+ * dropped once consumed or when the stop is no longer a candidate.
  */
 const retryStopByAction = new Map<ActionKeyActionId, string>();
 
@@ -433,7 +434,10 @@ function makeGlobalCycleAction(spec: GlobalCycleSpec): ActionKeyDefinition {
         if (next.wsId !== activeWorkspaceId(context)) {
           // Route switching is async and can fail (a stalled `goto` on a
           // remote window): log it instead of swallowing the rejection so a
-          // press that never leaves the current view is visible.
+          // press that never leaves the current view is visible. The cursor
+          // has already advanced by the time the rejection settles, so pin
+          // the next press back to this stop — unless a later press has
+          // since moved the cursor on, in which case the rejection is stale.
           void context.navigate(`/workspace/${next.wsId}`).catch((error: unknown) => {
             logger.warn('Failed to switch workspace for cycle step', {
               actionId: spec.id,
@@ -441,6 +445,9 @@ function makeGlobalCycleAction(spec: GlobalCycleSpec): ActionKeyDefinition {
               stopKey: nextKey,
               error,
             });
+            if (lastCycledStopByAction.get(spec.id) === nextKey) {
+              retryStopByAction.set(spec.id, nextKey);
+            }
           });
         }
         if (next.agentId !== null) {
