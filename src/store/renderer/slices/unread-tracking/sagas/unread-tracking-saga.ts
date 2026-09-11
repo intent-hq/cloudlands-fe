@@ -16,7 +16,7 @@ import {
   selectAgentSessionHasStreamingTailMessage,
 } from '../../agent-session/agent-session-selectors';
 import { replaceMessages } from '../../agent-session/agent-session-slice';
-import { sendMessage, transcriptHydrationSettled } from '../../chat-state/chat-state-slice';
+import { sendMessage } from '../../chat-state/chat-state-slice';
 import {
   agentStreamUpdateReceived,
   type AgentStreamUpdatePayload,
@@ -259,14 +259,15 @@ function* handleViewCleared(): SagaGenerator<void> {
 }
 
 /**
- * Late-transcript re-arm: the seq-0 snapshot (`replaceMessages`) and the
- * hydration settle both land after `markAgentAsViewed`, and on a remote
- * daemon after the view debounce too — so a view fire that found no
- * transcript would otherwise never retry. Only the agent still on screen is
- * re-fired; the trigger itself no-ops unless a view fire was starved.
+ * Late-transcript re-arm: the seq-0 snapshot lands in `agentSessions` through
+ * `replaceMessages` after `markAgentAsViewed`, and on a remote daemon after
+ * the view debounce too — so a view fire that found no transcript would
+ * otherwise never retry. Only the agent still on screen is re-fired; the
+ * trigger itself no-ops unless a view fire was starved. (The hydration settle
+ * signal is owned by the switch-timing saga and is not watched here.)
  */
 function* handleTranscriptHydrated(
-  action: ReturnType<typeof replaceMessages> | ReturnType<typeof transcriptHydrationSettled>,
+  action: ReturnType<typeof replaceMessages>,
 ): SagaGenerator<void> {
   const [agentId] = action.payload;
   const viewedAgentId = yield* selectCurrentlyViewedAgentId.effect();
@@ -287,6 +288,6 @@ export function* unreadTrackingSaga(): SagaGenerator<void> {
     takeEvery(agentStreamUpdateReceived, handleStreamUpdate),
     takeEvery(markAgentAsViewed, handleViewed),
     takeEvery(clearCurrentlyViewedAgent, handleViewCleared),
-    takeEvery([replaceMessages, transcriptHydrationSettled], handleTranscriptHydrated),
+    takeEvery(replaceMessages, handleTranscriptHydrated),
   ]);
 }

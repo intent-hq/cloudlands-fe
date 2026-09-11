@@ -30,7 +30,7 @@ import {
   setCachedChatScroll,
 } from '$lib/components/chat/chat-scroll-cache';
 import { replaceMessages } from '../../agent-session/agent-session-slice';
-import { sendMessage, transcriptHydrationSettled } from '../../chat-state/chat-state-slice';
+import { sendMessage } from '../../chat-state/chat-state-slice';
 import { closeTab } from '../../panel-layout/panel-layout-slice';
 import { closePanel } from '../../sidebar-nav/sidebar-nav-slice';
 import { openWorkspaceTab } from '../../tab-state/tab-state-slice';
@@ -190,10 +190,9 @@ describe('unreadTrackingSaga', () => {
   });
 
   it('re-arms the view trigger when the viewed agent transcript hydrates late', async () => {
-    // Remote daemon: the chat.subscribe seq-0 snapshot (replaceMessages) and
-    // the hydration settle can both land after the view debounce fired
-    // against an empty transcript; either must re-trigger the view path for
-    // the agent still on screen.
+    // Remote daemon: the chat.subscribe seq-0 snapshot (replaceMessages) can
+    // land after the view debounce fired against an empty transcript; it must
+    // re-trigger the view path for the agent still on screen — exactly once.
     const channel = stdChannel();
     const current = snapshot();
     const { task } = startSaga(channel, vi.fn(), () => state(current, {}, 'a1'));
@@ -201,9 +200,6 @@ describe('unreadTrackingSaga', () => {
     await settle();
     expect(marks.hydrated).toHaveBeenCalledTimes(1);
     expect(marks.hydrated).toHaveBeenCalledWith('a1');
-    channel.put(transcriptHydrationSettled('a1'));
-    await settle();
-    expect(marks.hydrated).toHaveBeenCalledTimes(2);
     task.cancel();
     await task.toPromise();
   });
@@ -237,7 +233,6 @@ describe('unreadTrackingSaga', () => {
     const current = snapshot();
     const { task } = startSaga(channel, vi.fn(), () => state(current, {}, 'a1'));
     channel.put(replaceMessages('a2', []));
-    channel.put(transcriptHydrationSettled('a2'));
     await settle();
     expect(marks.hydrated).not.toHaveBeenCalled();
     task.cancel();
