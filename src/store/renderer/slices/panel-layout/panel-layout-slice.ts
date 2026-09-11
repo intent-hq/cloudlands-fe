@@ -149,10 +149,41 @@ export const emptyWorkspaceState: WorkspacePanelLayoutState = {
   savedCanvasWidthSourceBeforeExpand: undefined,
   deferSpecTab: false,
   newWorkspaceLifecycle: null,
+  emptiedByUserClose: false,
 };
 
-const { getWorkspaceState, setWorkspaceState, clearWorkspaceState } =
-  createWorkspaceScopedHelpers(emptyWorkspaceState);
+const {
+  getWorkspaceState,
+  setWorkspaceState: setWorkspaceStateUnchecked,
+  clearWorkspaceState,
+} = createWorkspaceScopedHelpers(emptyWorkspaceState);
+
+function hasAnyWorkspaceTab(ws: WorkspacePanelLayoutState): boolean {
+  return (
+    Object.values(ws.panels).some((panel) => panel.tabs.length > 0) ||
+    (ws.hiddenTabs?.ids.length ?? 0) > 0
+  );
+}
+
+/**
+ * `emptiedByUserClose` only means anything while the layout is still tabless:
+ * any transition that leaves a visible or hidden tab behind clears it here, so
+ * no tab-adding reducer has to remember to.
+ */
+function setWorkspaceState<S extends { byWorkspaceId: Record<string, WorkspacePanelLayoutState> }>(
+  state: S,
+  wsId: string,
+  ws: WorkspacePanelLayoutState,
+): S {
+  const next =
+    ws.emptiedByUserClose && hasAnyWorkspaceTab(ws) ? { ...ws, emptiedByUserClose: false } : ws;
+  return setWorkspaceStateUnchecked(state, wsId, next);
+}
+
+/** Flag a layout the user just emptied with an explicit close (see emptiedByUserClose). */
+function markEmptiedByUserClose(ws: WorkspacePanelLayoutState): WorkspacePanelLayoutState {
+  return hasAnyWorkspaceTab(ws) ? ws : { ...ws, emptiedByUserClose: true };
+}
 
 // ============================================================================
 // Actions
@@ -181,6 +212,12 @@ export const preparePanelLayoutBackendRestore = createAction(
   'panelLayout/preparePanelLayoutBackendRestore',
   (wsId: string) => [wsId] as const,
 );
+
+/**
+ * A backend switch ends the session every `emptiedByUserClose` belonged to:
+ * the incoming backend's tabless layouts were not emptied by this user.
+ */
+export const resetEmptiedByUserClose = createAction<[]>('panelLayout/resetEmptiedByUserClose');
 
 export const bootstrapNewWorkspaceLayout = createAction(
   'panelLayout/bootstrapNewWorkspaceLayout',
@@ -2058,11 +2095,22 @@ panelLayoutReducer.with(initializeLayout, (state, { payload }) => {
     newWorkspaceLifecycle: layout.newWorkspaceLifecycle ?? null,
     pendingFocusTabId: null,
     pendingPanelReveal: null,
+    // A remount re-restores the same session's layout: keep the user's close
+    // (setWorkspaceState drops it as soon as the restored layout has a tab).
+    emptiedByUserClose: ws.emptiedByUserClose,
   });
 });
 panelLayoutReducer.with(preparePanelLayoutBackendRestore, (state, { payload: [wsId] }) => {
   const ws = getWorkspaceState(state, wsId);
   return setWorkspaceState(state, wsId, { ...ws, columnCountInitialized: false });
+});
+panelLayoutReducer.with(resetEmptiedByUserClose, (state) => {
+  let result = state;
+  for (const [wsId, ws] of Object.entries(state.byWorkspaceId)) {
+    if (!ws.emptiedByUserClose) continue;
+    result = setWorkspaceState(result, wsId, { ...ws, emptiedByUserClose: false });
+  }
+  return result;
 });
 panelLayoutReducer.with(bootstrapNewWorkspaceLayout, (state, { payload }) => {
   const {
@@ -2161,6 +2209,11 @@ panelLayoutReducer.with(setRestoreStatus, (state, { payload: [wsId, restoreStatu
   return setWorkspaceState(state, wsId, {
     ...ws,
     restoreStatus,
+    // The resetLayout a missing/invalid restore dispatches is saga-owned, not
+    // a user close; 'pending'/'restored' keep whatever this session recorded.
+    ...(restoreStatus === 'empty' || restoreStatus === 'invalid'
+      ? { emptiedByUserClose: false }
+      : {}),
     ...(restoreStatus === 'pending' ? { pendingFocusTabId: null, pendingPanelReveal: null } : {}),
   });
 });
@@ -2473,7 +2526,8 @@ panelLayoutReducer.with(closeTab, (state, { payload }) => {
     ws = closePanelHelper(ws, targetPanelId);
   }
 
-  return setWorkspaceState(state, wsId, ws);
+  // A destroy is agent/registry-driven teardown, not a user emptying the layout.
+  return setWorkspaceState(state, wsId, destroy ? ws : markEmptiedByUserClose(ws));
 });
 // --- Close Active Tab ---
 panelLayoutReducer.with(closeActiveTab, (state, { payload }) => {
@@ -2593,7 +2647,11 @@ panelLayoutReducer.with(closeTabsByAgentId, (state, { payload }) => {
   for (const { tabId, panelId } of tabsToClose) {
     result = selfDispatch(result, closeTab(wsId, tabId, panelId, timestamp));
   }
-  return result;
+  // Deleted-agent cleanup is automated, not the user emptying the layout.
+  return setWorkspaceState(result, wsId, {
+    ...getWorkspaceState(result, wsId),
+    emptiedByUserClose: ws.emptiedByUserClose,
+  });
 });
 // --- Destroy Tabs By Owner Agent (monorepo#2857) ---
 panelLayoutReducer.with(destroyTabsByOwnerAgent, (state, { payload }) => {
@@ -3468,7 +3526,7 @@ panelLayoutReducer.with(closeAllTabs, (state, { payload }) => {
   if (keptTabs.length === 0 && Object.keys(ws.panels).length > 1) {
     ws = closePanelHelper(ws, targetPanelId);
   }
-  return setWorkspaceState(state, wsId, ws);
+  return setWorkspaceState(state, wsId, markEmptiedByUserClose(ws));
 });
 // --- Close All Others Everywhere ---
 panelLayoutReducer.with(closeAllOthersEverywhere, (state, { payload }) => {
@@ -3607,7 +3665,7 @@ panelLayoutReducer.with(closePanel, (state, { payload }) => {
       .filter((tab) => tab.closable !== false && !isHideOnCloseTab(tab))
       .map((tab) => tab.id),
   );
-  return setWorkspaceState(state, wsId, updatedWs);
+  return setWorkspaceState(state, wsId, markEmptiedByUserClose(updatedWs));
 });
 panelLayoutReducer.with(reconcilePanelColumnCount, (state, { payload }) => {
   const { wsId, count, newPanelIds, timestamp, recordHistory, availableCanvasWidth } = payload;
@@ -3839,6 +3897,7 @@ panelLayoutReducer.with(resetLayout, (state, { payload }) => {
     savedCanvasWidthSourceBeforeExpand: undefined,
     deferSpecTab: false,
     newWorkspaceLifecycle: null,
+    emptiedByUserClose: true,
   });
 });
 // --- Go Back ---

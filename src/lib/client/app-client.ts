@@ -634,8 +634,9 @@ export interface AgentsClient {
   }): Promise<MutationResult>;
   /**
    * Queue a message behind the agent's in-flight turn (`agent.queueMessage`,
-   * §5.5). Optional `imageBlocks` / `fileBlocks` are only forwarded when
-   * supplied so queued attachments survive queue-on-send. The daemon returns
+   * §5.5). Optional `imageBlocks` / `fileBlocks` / `messageMetadata` are only
+   * forwarded when supplied so queued attachments and the Q&A wizard's answer
+   * tag survive queue-on-send. The daemon returns
    * `{ success, queuedMessage, turnId }`, surfaced as `queuedMessage` /
    * `turnId` on the MutationResult (the entry's turn-correlation id,
    * monorepo#1057 — falls back to `queuedMessage.turnId` when the top-level
@@ -648,6 +649,7 @@ export interface AgentsClient {
     options?: {
       imageBlocks?: ImageBlock[];
       fileBlocks?: FileBlock[];
+      messageMetadata?: Record<string, unknown>;
     },
   ): Promise<MutationResult>;
   /**
@@ -1150,6 +1152,8 @@ export interface SettingsClient {
    * fails are omitted (live updates arrive via `mcp.servers:status-changed`).
    */
   getMcpServerStatuses(serverIds: string[]): Promise<McpServerRuntimeStatus[]>;
+  /** `mcp.servers.restart` (§5.22). Restarts/re-probes one daemon-owned server. */
+  restartMcpServer(serverId: string): Promise<McpServerRuntimeStatus>;
   /**
    * Workspace-scoped `mcp.servers.list` (§5.22 per-workspace disable). Returns
    * the names of servers whose entry carries `workspaceDisabled: true`; `null`

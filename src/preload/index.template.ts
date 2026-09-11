@@ -8,6 +8,10 @@
  *     scripts/inline-ipc-channels.ts, which runs on every 'npm run dev' and
  *     every 'npm run build'. Edit the TEMPLATE. Anything written directly into
  *     index.ts is overwritten at build time and never reaches a packaged app.
+ *
+ *     index.ts is NOT tracked in git (see .gitignore): after a fresh clone or
+ *     install, create it with 'pnpm run generate:ipc-channels'; dev and build
+ *     regenerate it themselves.
  */
 
 import { contextBridge, ipcRenderer, webUtils } from 'electron';

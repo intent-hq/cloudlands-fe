@@ -2,6 +2,7 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
 import { resolve } from 'node:path';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { createServer, type Plugin, type ViteDevServer } from 'vite';
+import { viteHarnessCacheDir } from './vite-harness-cache.mjs';
 
 let server: ViteDevServer;
 let baseUrl: string;
@@ -145,6 +146,7 @@ test.beforeAll(async () => {
   server = await createServer({
     configFile: false,
     root: process.cwd(),
+    cacheDir: viteHarnessCacheDir('workspace-tab-strip-status-geometry'),
     plugins: [geometryStubs(), svelte({ configFile: resolve(process.cwd(), 'svelte.config.js') })],
     resolve: {
       alias: {

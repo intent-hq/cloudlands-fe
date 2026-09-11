@@ -1,3 +1,7 @@
+// @verify-changed-triggers: ../WindowTitleBar.svelte, ../WorkspaceTabStrip.svelte, src/app.css,
+//   src/routes/+layout.svelte, src/routes/(app)/app-layout.css,
+//   src/features/hud/components/HudHeader.svelte
+
 /**
  * Regression coverage for intent-hq/monorepo#1907 — titlebar drag-region dead
  * zone. Chromium computes draggable regions from UNCLIPPED element geometry

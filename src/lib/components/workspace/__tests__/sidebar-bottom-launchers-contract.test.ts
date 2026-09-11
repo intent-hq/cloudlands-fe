@@ -1,3 +1,9 @@
+// @verify-changed-triggers: ../MultiSelectTabbedSidebar.svelte, ../SidebarBrowserLauncher.svelte,
+//   ../WorkspaceTerminalDock.svelte, ../SidebarExpandedTabStrip.svelte,
+//   ../multi-select-sidebar-transitions.css, ../sidebar/WorkspaceProgressCard.svelte,
+//   ../sidebar/SidebarPrDropdown.svelte, ../sidebar/SidebarPrList.svelte,
+//   ../../terminal/QuakeTerminalOverlay.svelte
+
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 

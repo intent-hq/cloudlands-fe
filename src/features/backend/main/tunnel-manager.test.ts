@@ -34,6 +34,8 @@ import {
 class FakeTunnelSocket extends EventEmitter implements TunnelSocketLike {
   readyState = 0; // CONNECTING
   bufferedAmount = 0;
+  autoPong = true;
+  pingCount = 0;
   /** Frames the manager sent, in order. */
   readonly sent: TunnelFrame[] = [];
   /** Called for each frame the manager sends (the scripted daemon hook). */
@@ -48,6 +50,11 @@ class FakeTunnelSocket extends EventEmitter implements TunnelSocketLike {
     const frame = decodeFrame(data);
     this.sent.push(frame);
     this.onFrame?.(frame);
+  }
+
+  ping(): void {
+    this.pingCount += 1;
+    if (this.autoPong) queueMicrotask(() => this.emit('pong'));
   }
 
   /** Deliver a daemon → client frame. */
@@ -166,6 +173,8 @@ function makeManager(
     backpressureHighWaterMark?: number;
     openTimeoutMs?: number;
     connectTimeoutMs?: number;
+    heartbeatIntervalMs?: number;
+    heartbeatTimeoutMs?: number;
     daemon?: boolean;
     config?: BackendConnectionConfig | null;
     /** Remote ports whose OPENs get a scripted refused OPEN_ERR (see [[refuseOpens]]). */
@@ -183,6 +192,9 @@ function makeManager(
       queueMicrotask(() => ws.open());
       return ws;
     },
+    // Existing tests exercise mux behavior without background health ticks;
+    // heartbeat-specific regressions opt in below.
+    heartbeatIntervalMs: options.heartbeatIntervalMs ?? 0,
     ...options,
   });
   return { manager, created };
@@ -600,6 +612,120 @@ describe('TunnelManager', () => {
     client.write(payload);
     expect((await received).equals(payload)).toBe(true);
     expect(created.length).toBe(2);
+  });
+
+  it('keeps a responsive shared tunnel healthy when heartbeat pongs arrive', async () => {
+    const { manager, created } = makeManager({
+      heartbeatIntervalMs: 10,
+      heartbeatTimeoutMs: 30,
+    });
+    onCleanup(() => manager.dispose());
+
+    const localPort = await manager.forwardPort(4242);
+    await waitFor(
+      () => created[0].pingCount >= 2 && manager.getDiagnostics().heartbeat.lastPongAtMs !== null,
+    );
+
+    expect(created).toHaveLength(1);
+    expect(manager.getDiagnostics()).toMatchObject({
+      state: 'connected',
+      generation: 1,
+      forwards: [{ remotePort: 4242, localPort, streams: 0 }],
+      streams: [],
+      heartbeat: { enabled: true, awaitingPong: false },
+    });
+  });
+
+  it('resets a nominally open stalled tunnel and eagerly reconnects after a missed heartbeat', async () => {
+    const { server, port } = await startEchoServer();
+    onCleanup(() => server.close());
+    const { manager, created } = makeManager({
+      heartbeatIntervalMs: 10,
+      heartbeatTimeoutMs: 20,
+    });
+    onCleanup(() => manager.dispose());
+
+    const localPort = await manager.forwardPort(port);
+    const active = await connectClient(localPort);
+    const payload = Buffer.from('before black hole');
+    const received = collectUntil(active, payload.length);
+    active.write(payload);
+    expect((await received).equals(payload)).toBe(true);
+
+    // The transport remains OPEN and emits no close/error, but its control
+    // path stops answering pings — the half-open shape reported in #4615.
+    created[0].autoPong = false;
+    const activeClosed = waitForClose(active);
+    await waitFor(
+      () =>
+        created[0].readyState === 3 &&
+        created.length === 2 &&
+        manager.getDiagnostics().state === 'connected',
+    );
+    await activeClosed;
+
+    expect(manager.getDiagnostics()).toMatchObject({
+      state: 'connected',
+      generation: 2,
+      forwards: [{ remotePort: port, localPort, streams: 0 }],
+      streams: [],
+      heartbeat: { enabled: true, awaitingPong: false },
+    });
+
+    const revived = await connectClient(localPort);
+    onCleanup(() => revived.destroy());
+    const after = Buffer.from('after heartbeat reconnect');
+    const receivedAfter = collectUntil(revived, after.length);
+    revived.write(after);
+    expect((await receivedAfter).equals(after)).toBe(true);
+    expect(created).toHaveLength(2);
+  });
+
+  it('times out one stalled OPEN without disturbing healthy streams on the shared tunnel', async () => {
+    const healthy = await startEchoServer();
+    onCleanup(() => healthy.server.close());
+    const stalledPort = 4242;
+    const { manager, created } = makeManager({ daemon: false, openTimeoutMs: 50 });
+    onCleanup(() => manager.dispose());
+    const healthyLocal = await manager.forwardPort(healthy.port);
+    const stalledLocal = await manager.forwardPort(stalledPort);
+    const ws = created[0];
+    attachFakeDaemon(ws);
+    const daemonHandler = ws.onFrame;
+    ws.onFrame = (frame) => {
+      if (frame.type === 'open' && frame.port === stalledPort) return;
+      daemonHandler?.(frame);
+    };
+
+    const healthyClient = await connectClient(healthyLocal);
+    onCleanup(() => healthyClient.destroy());
+    const warmup = Buffer.from('healthy warmup');
+    const warmupReceived = collectUntil(healthyClient, warmup.length);
+    healthyClient.write(warmup);
+    expect((await warmupReceived).equals(warmup)).toBe(true);
+
+    const stalledClient = await connectClient(stalledLocal);
+    const stalledClosed = waitForClose(stalledClient);
+    await waitFor(() =>
+      manager
+        .getDiagnostics()
+        .streams.some((stream) => stream.remotePort === stalledPort && stream.state === 'opening'),
+    );
+    await stalledClosed;
+
+    expect(manager.getDiagnostics()).toMatchObject({
+      state: 'connected',
+      generation: 1,
+      forwards: expect.arrayContaining([
+        { remotePort: healthy.port, localPort: healthyLocal, streams: 1 },
+        { remotePort: stalledPort, localPort: stalledLocal, streams: 0 },
+      ]),
+      streams: [expect.objectContaining({ remotePort: healthy.port, state: 'open' })],
+    });
+    const after = Buffer.from('healthy after stalled open');
+    const afterReceived = collectUntil(healthyClient, after.length);
+    healthyClient.write(after);
+    expect((await afterReceived).equals(after)).toBe(true);
   });
 
   it('survives a client reset during the lazy-reconnect window (no uncaught error)', async () => {

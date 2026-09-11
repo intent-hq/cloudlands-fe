@@ -178,7 +178,7 @@ describe('AgentCard pending-question avatar state', () => {
     expect(await findAvatarState()).toBe('question');
   });
 
-  it('flips to the question state when an out-of-tail marked question is recovered', async () => {
+  it('keeps the question state for an out-of-tail marked question through recovery', async () => {
     appStore.dispatch(
       bulkUpsertSessions([
         makeSession({
@@ -190,7 +190,9 @@ describe('AgentCard pending-question avatar state', () => {
     );
 
     render(AgentCard, { props: { agentId, panelRow: true } });
-    expect(await findAvatarState()).not.toBe('question');
+    // Fail-closed: a set marker whose row is not in the loaded tail is still
+    // an unanswered question until answered or dismissed.
+    expect(await findAvatarState()).toBe('question');
 
     appStore.dispatch(pendingQuestionRecoveryRequested(agentId, QUESTION_MESSAGE_ID));
     appStore.dispatch(
@@ -247,6 +249,29 @@ describe('AgentCard pending-question avatar state', () => {
 
     await expect.poll(findAvatarState).toBe('question');
   });
+
+  it.each([
+    ['blocker', 'attention-blocker'],
+    ['discussion', 'attention-discussion'],
+  ] as const)(
+    'lets a pending %s request win over a running agent on the panel row',
+    async (kind, expected) => {
+      appStore.dispatch(
+        bulkUpsertSessions([
+          makeSession({
+            status: AgentStatus.Active,
+            isResponding: true,
+            attentionRequestKind: kind,
+            attentionRequestReason: 'needs a decision',
+          }),
+        ]),
+      );
+
+      render(AgentCard, { props: { agentId, panelRow: true } });
+
+      expect(await findAvatarState()).toBe(expected);
+    },
+  );
 
   it('keeps Stop available for a running agent whose avatar shows the question state', async () => {
     const dispatch = vi.spyOn(appStore, 'dispatch');

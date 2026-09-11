@@ -118,10 +118,13 @@ export interface MessageMetadata {
   // single-message deliveries and on rows from older daemons. Batch entries
   // whose wait fell below the 5-second annotation threshold carry ONLY
   // `batchId` (no `queuedAt`/`waitedMs`), so the wait fields are optional.
+  // `queuedMessageId` names the queue entry (`QueuedMessage.id`) the row was
+  // drained from; absent on rows from older daemons.
   queueInfo?: {
     queuedAt?: string;
     waitedMs?: number;
     batchId?: string;
+    queuedMessageId?: string;
   };
 
   // Allow additional properties

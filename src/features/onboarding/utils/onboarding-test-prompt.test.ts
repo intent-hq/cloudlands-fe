@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ProviderCatalogEntry } from '$shared/provider-catalog';
-import { mapTestPromptFailure, providerSupportsTestPrompt } from './onboarding-test-prompt';
+import { mapTestPromptFailure, shouldRunOnboardingTestPrompt } from './onboarding-test-prompt';
 
 function entry(overrides: Partial<ProviderCatalogEntry> = {}): ProviderCatalogEntry {
   return {
@@ -14,15 +14,33 @@ function entry(overrides: Partial<ProviderCatalogEntry> = {}): ProviderCatalogEn
   };
 }
 
-describe('providerSupportsTestPrompt', () => {
-  it('is true only for an explicit supportsTestPrompt: true', () => {
-    expect(providerSupportsTestPrompt(entry({ supportsTestPrompt: true }))).toBe(true);
-    expect(providerSupportsTestPrompt(entry({ supportsTestPrompt: false }))).toBe(false);
+describe('shouldRunOnboardingTestPrompt', () => {
+  it('tests Claude Code only when the daemon supports test prompts', () => {
+    expect(shouldRunOnboardingTestPrompt(entry({ supportsTestPrompt: true }))).toBe(true);
+    expect(shouldRunOnboardingTestPrompt(entry({ supportsTestPrompt: false }))).toBe(false);
   });
 
   it('treats an absent flag (pre-v9.3 daemon) and a missing entry as unsupported', () => {
-    expect(providerSupportsTestPrompt(entry())).toBe(false);
-    expect(providerSupportsTestPrompt(undefined)).toBe(false);
+    expect(shouldRunOnboardingTestPrompt(entry())).toBe(false);
+    expect(shouldRunOnboardingTestPrompt(undefined)).toBe(false);
+  });
+
+  it.each([
+    'auggie',
+    'codex',
+    'cortex',
+    'opencode',
+    'pi',
+    'droid',
+    'grok',
+    'unsloth',
+    'antigravity',
+    'mock',
+    'future-provider',
+  ])('skips %s even when the provider supports test prompts', (providerId) => {
+    expect(shouldRunOnboardingTestPrompt(entry({ id: providerId, supportsTestPrompt: true }))).toBe(
+      false,
+    );
   });
 });
 

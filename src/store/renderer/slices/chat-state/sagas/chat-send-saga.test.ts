@@ -532,6 +532,29 @@ describe('chatSendSaga', () => {
     await run.task.toPromise();
   });
 
+  it('forwards the Q&A answer tag on the busy-agent queue payload', async () => {
+    const messageMetadata = { type: 'question_answers', answeredQuestionsMessageId: 'msg-q1' };
+    mocks.queue.mockResolvedValue({
+      success: true,
+      turnId: 'turn-queued',
+      queuedMessage: { id: 'queued-1', content: 'Q: Auth method\nA: OAuth', timestamp: 1 },
+    });
+    const run = harness(
+      session({ status: AgentStatus.Active, isStreaming: true, isProcessing: true }),
+    );
+    run.channel.put(
+      sendMessage(AGENT, { wsId: WS, text: 'Q: Auth method\nA: OAuth', messageMetadata }),
+    );
+    await settle();
+
+    expect(mocks.queue).toHaveBeenCalledWith(AGENT, 'Q: Auth method\nA: OAuth', {
+      messageMetadata,
+    });
+    expect(mocks.send).not.toHaveBeenCalled();
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
   it('skips the queue-on-send seed when a live agent:queue:updated snapshot superseded the queue RPC (monorepo#2481)', async () => {
     // The daemon delivered the queued entry and emitted an EMPTY
     // agent:queue:updated snapshot while the agent.queueMessage response was
