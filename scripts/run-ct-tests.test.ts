@@ -91,6 +91,18 @@ describe('resolveHtmlReportOpen', () => {
     expect(result.open).toBe('never');
     expect(result.notice).toMatch(/ignoring CT_HTML_REPORT=sometimes/);
   });
+
+  it.each(['toString', 'constructor', '__proto__', 'hasOwnProperty'])(
+    'rejects inherited object key %s as a mode value',
+    (key) => {
+      const result = resolveHtmlReportOpen({
+        env: { ...baseEnv, [CT_HTML_REPORT_ENV]: key },
+        isTTY: true,
+      });
+      expect(result.open).toBe('never');
+      expect(result.notice).toMatch(new RegExp(`ignoring CT_HTML_REPORT=${key}`));
+    },
+  );
 });
 
 describe('buildChildEnv', () => {

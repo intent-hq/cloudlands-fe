@@ -102,7 +102,7 @@ export function resolveHtmlReportOpen({ env, isTTY, openReport = false }) {
   let requested = openReport ? 'always' : 'never';
   let notice;
   if (raw) {
-    const mapped = CT_HTML_REPORT_MODES[raw];
+    const mapped = Object.hasOwn(CT_HTML_REPORT_MODES, raw) ? CT_HTML_REPORT_MODES[raw] : undefined;
     if (mapped) {
       requested = openReport ? 'always' : mapped;
     } else {
