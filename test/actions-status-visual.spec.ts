@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import type { ViteDevServer } from 'vite';
 import { createServer } from 'vite';
+import { viteHarnessCacheDir } from './vite-harness-cache.mjs';
 
 const systemChrome = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const artifactDir = path.resolve('.demo-artifacts/20260722-actions-status');
@@ -14,6 +15,7 @@ test.use(existsSync(systemChrome) ? { channel: 'chrome' } : {});
 test.beforeAll(async () => {
   mkdirSync(artifactDir, { recursive: true });
   server = await createServer({
+    cacheDir: viteHarnessCacheDir('actions-status-visual'),
     server: { host: '127.0.0.1', port: 0, strictPort: false, watch: { ignored: ['**/*'] } },
   });
   await server.listen();

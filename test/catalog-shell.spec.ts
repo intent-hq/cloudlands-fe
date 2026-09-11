@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import type { ViteDevServer } from 'vite';
 import { createServer } from 'vite';
+import { viteHarnessCacheDir } from './vite-harness-cache.mjs';
 
 const systemChrome = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const artifactDir = path.resolve('test-results/catalog-artifacts');
@@ -48,6 +49,7 @@ let baseUrl: string;
 test.beforeAll(async () => {
   mkdirSync(artifactDir, { recursive: true });
   server = await createServer({
+    cacheDir: viteHarnessCacheDir('catalog-shell'),
     server: { host: '127.0.0.1', port: 0, strictPort: false, watch: { ignored: ['**/*'] } },
   });
   await server.listen();
