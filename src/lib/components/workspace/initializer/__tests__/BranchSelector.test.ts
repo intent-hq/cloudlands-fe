@@ -15,6 +15,7 @@ const {
   mockBranchStatus,
   mockGithubBranches,
   mockGithubBranchesCached,
+  mockToastError,
   debugFlags,
   savedBranchByRepo,
 } = vi.hoisted(() => ({
@@ -22,6 +23,7 @@ const {
   mockBranchStatus: vi.fn(async () => null),
   mockGithubBranches: vi.fn(),
   mockGithubBranchesCached: vi.fn(),
+  mockToastError: vi.fn(),
   // Mutable knobs for the module-level mocks below. Tests arm form
   // persistence + a saved branch; both are reset in beforeEach.
   debugFlags: {} as Record<string, boolean>,
@@ -36,6 +38,10 @@ vi.mock('$lib/client', () => ({
       githubBranchesCached: mockGithubBranchesCached,
     },
   },
+}));
+
+vi.mock('$lib/components/ui/toast', () => ({
+  toast: { error: mockToastError, success: vi.fn(), warning: vi.fn(), message: vi.fn() },
 }));
 
 vi.mock('$store/renderer/store', async () => {
@@ -91,6 +97,7 @@ vi.mock('$lib/utils/performance', () => ({
   performanceMonitor: { start: vi.fn(), end: vi.fn() },
 }));
 
+import { m } from '$shared/paraglide/messages.js';
 import BranchSelector from '../BranchSelector.svelte';
 
 /** Open the dropdown by clicking the select trigger (first button rendered). */
@@ -114,6 +121,7 @@ describe('BranchSelector (daemon-backed branch listing, no fabricated fallbacks)
     mockGetBranches.mockReset();
     mockGithubBranches.mockReset();
     mockGithubBranchesCached.mockReset();
+    mockToastError.mockReset();
     for (const key of Object.keys(debugFlags)) delete debugFlags[key];
     for (const key of Object.keys(savedBranchByRepo)) delete savedBranchByRepo[key];
     // Default: cold cache — the cached-first path is a no-op unless a test arms it.
@@ -277,6 +285,46 @@ describe('BranchSelector (daemon-backed branch listing, no fabricated fallbacks)
     await waitFor(() => expect(mockGithubBranches).toHaveBeenCalled());
     // The trigger itself surfaces the auth hint (no dropdown needed).
     await waitFor(() => expect(screen.getByText('Connect GitHub')).toBeTruthy());
+  });
+
+  describe('toasts branch fetch failures', () => {
+    it('GitHub-URL repo: a rate-limit rejection toasts the rate-limit message once', async () => {
+      mockGithubBranches.mockRejectedValue(new Error('rate limit exceeded'));
+      render(BranchSelector, {
+        props: {
+          repoPath: 'octo/intent',
+          repoType: 'github',
+          githubUrl: 'https://github.com/octo/intent',
+        },
+      });
+
+      await waitFor(() => expect(mockToastError).toHaveBeenCalled());
+      expect(mockToastError).toHaveBeenCalledTimes(1);
+      expect(mockToastError).toHaveBeenCalledWith(m.workspace_branchSelector_rateLimit_error());
+    });
+
+    it('local repo: a git.getBranches failure toasts the network message once', async () => {
+      mockGetBranches.mockResolvedValue(null);
+      render(BranchSelector, { props: { repoPath: '/tmp/repo', repoType: 'local' } });
+
+      await waitFor(() => expect(mockToastError).toHaveBeenCalled());
+      expect(mockToastError).toHaveBeenCalledTimes(1);
+      expect(mockToastError).toHaveBeenCalledWith(m.workspace_branchSelector_network_error());
+    });
+
+    it('GitHub-URL repo: the not-configured auth state does not toast', async () => {
+      mockGithubBranches.mockRejectedValue(new Error('GitHub is not configured.'));
+      render(BranchSelector, {
+        props: {
+          repoPath: 'octo/intent',
+          repoType: 'github',
+          githubUrl: 'https://github.com/octo/intent',
+        },
+      });
+
+      await waitFor(() => expect(screen.getByText('Connect GitHub')).toBeTruthy());
+      expect(mockToastError).not.toHaveBeenCalled();
+    });
   });
 });
 
