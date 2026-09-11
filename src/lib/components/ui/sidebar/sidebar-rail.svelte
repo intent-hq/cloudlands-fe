@@ -24,14 +24,21 @@
     const container = ref?.closest<HTMLElement>('[data-slot="sidebar-container"]');
     const measured = container?.getBoundingClientRect().width ?? Number.NaN;
     const parsed = sidebar.width.endsWith('px') ? Number.parseFloat(sidebar.width) : Number.NaN;
-    const startWidth = measured > 0 ? measured : Number.isFinite(parsed) ? parsed : 256;
+    // A collapsed offcanvas sidebar retains its full DOM/stored width offscreen.
+    const startWidth = !sidebar.open
+      ? 0
+      : measured > 0
+        ? measured
+        : Number.isFinite(parsed)
+          ? parsed
+          : 256;
     dragged = false;
 
     const move = (moveEvent: PointerEvent) => {
       const delta = (moveEvent.clientX - startX) * (sidebar.side === 'left' ? 1 : -1);
       const requested = startWidth + delta;
       dragged ||= Math.abs(delta) > 2;
-      if (dragged && !sidebar.open) sidebar.setOpen(true);
+      if (!dragged) return;
       if (requested < SIDEBAR_MIN_WIDTH) {
         sidebar.setWidth(SIDEBAR_MIN_WIDTH);
         sidebar.setOpen(false);

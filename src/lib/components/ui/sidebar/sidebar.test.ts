@@ -93,6 +93,53 @@ describe('Sidebar', () => {
     expect(sidebar.getAttribute('data-state')).toBe('collapsed');
   });
 
+  it.each(['left', 'right'] as const)(
+    'tracks a collapsed %s rail through expansion, reversal, and collapse',
+    async (side) => {
+      stubMatchMedia(false);
+      const { container } = render(SidebarHarness, { props: { side } });
+      const wrapper = container.querySelector<HTMLElement>('[data-slot="sidebar-wrapper"]')!;
+      const sidebar = container.querySelector<HTMLElement>('[data-slot="sidebar"][data-state]')!;
+      const rail = container.querySelector<HTMLButtonElement>('[data-sidebar="rail"]')!;
+      const startX = side === 'left' ? 0 : 800;
+      const direction = side === 'left' ? 1 : -1;
+
+      await fireEvent.pointerDown(rail, { button: 0, clientX: startX });
+      for (const [distance, width, state] of [
+        [100, '160px', 'collapsed'],
+        [200, '200px', 'expanded'],
+        [300, '300px', 'expanded'],
+        [500, '360px', 'expanded'],
+        [220, '220px', 'expanded'],
+        [100, '160px', 'collapsed'],
+        [240, '240px', 'expanded'],
+      ] as const) {
+        await fireEvent.pointerMove(window, { clientX: startX + direction * distance });
+        expect(wrapper.style.getPropertyValue('--sidebar-width')).toBe(width);
+        expect(sidebar.getAttribute('data-state')).toBe(state);
+      }
+      await fireEvent.pointerUp(window);
+      await fireEvent.click(rail);
+      expect(sidebar.getAttribute('data-state')).toBe('expanded');
+    },
+  );
+
+  it.each(['none', 'click'] as const)(
+    'preserves rail clicks with %s peek and pointer jitter',
+    async (peek) => {
+      stubMatchMedia(false);
+      const { container } = render(SidebarHarness, { props: { peek } });
+      const sidebar = container.querySelector<HTMLElement>('[data-slot="sidebar"][data-state]')!;
+      const rail = container.querySelector<HTMLButtonElement>('[data-sidebar="rail"]')!;
+      await fireEvent.pointerDown(rail, { button: 0, clientX: 0 });
+      await fireEvent.pointerMove(window, { clientX: 1 });
+      await fireEvent.pointerUp(window);
+      await fireEvent.click(rail);
+      expect(sidebar.getAttribute('data-state')).toBe(peek === 'click' ? 'collapsed' : 'expanded');
+      expect(sidebar.getAttribute('data-peeking')).toBe(peek === 'click' ? 'true' : 'false');
+    },
+  );
+
   it('uses the side-aware bare shortcut only while its provider has focus', async () => {
     stubMatchMedia(false);
     const { container } = render(SidebarHarness, { props: { side: 'right' } });
