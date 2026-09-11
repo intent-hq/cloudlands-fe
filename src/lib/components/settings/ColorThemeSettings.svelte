@@ -115,6 +115,7 @@
 
   <ToggleGroup.Root
     type="single"
+    axis="xy"
     value={activeChoice}
     onValueChange={handleThemeChoiceChange}
     aria-label={m.settings_colorTheme_title()}

@@ -5,8 +5,9 @@
   import { ToggleGroup as ToggleGroupPrimitive } from 'bits-ui';
   import type { Snippet } from 'svelte';
   import type { HTMLAttributes } from 'svelte/elements';
-  import { setContext } from 'svelte';
+  import { setContext, untrack } from 'svelte';
   import { tv, type VariantProps } from 'tailwind-variants';
+  import type { ProximityAxis } from '$lib/interaction';
   import { TOGGLE_GROUP_CONTEXT, type ToggleGroupContext } from './context';
 
   const toggleGroupVariants = tv({
@@ -37,6 +38,7 @@
     onValueChange?: ((value: string) => void) | ((value: string[]) => void);
     type?: 'single' | 'multiple';
     disabled?: boolean;
+    axis?: ProximityAxis;
     class?: string;
     children?: Snippet;
   }
@@ -46,6 +48,7 @@
     onValueChange,
     type = 'single',
     disabled = false,
+    axis = 'x',
     variant = 'default',
     size = 'default',
     class: className = '',
@@ -55,7 +58,7 @@
   let root = $state<HTMLElement | null>(null);
   const choiceGroup = new ChoiceGroupState(
     () => (Array.isArray(value) ? value : typeof value === 'string' && value ? [value] : []),
-    'x',
+    untrack(() => axis),
   );
 
   setContext<ToggleGroupContext>(TOGGLE_GROUP_CONTEXT, {
