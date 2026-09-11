@@ -35,7 +35,7 @@ import { getBackendIdForWindow } from './window-backend';
 const logger = new Logger('RendererHangMonitor');
 
 /** Upper bound on the whole stack-capture attempt (attach → paused → detach). */
-export const STACK_CAPTURE_TIMEOUT_MS = 3000;
+const STACK_CAPTURE_TIMEOUT_MS = 3000;
 /** Maximum call frames included in the log line. */
 const MAX_LOGGED_FRAMES = 30;
 
@@ -48,7 +48,7 @@ export interface RendererHangFrame {
 }
 
 /** Structured context logged for every unresponsive event. */
-export interface RendererHangLogPayload {
+interface RendererHangLogPayload {
   windowId: number;
   backendId: string;
   workspaceId: string | undefined;
