@@ -118,6 +118,8 @@ for (const file of files) {
 }
 
 const runtimePatterns = [
+  // Set by svelte-sonner on Toaster from the measured front toast height.
+  /^--front-toast-height$/,
   /^--color-(?:white|black)$/,
   /^--color-[a-z]+-[0-9]{2,3}$/,
   /^--radix-/,

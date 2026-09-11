@@ -293,7 +293,7 @@
     gap: var(--space-3);
   }
   .family-title {
-    font-size: var(--text-body);
+    font-size: var(--text-body-size);
     font-weight: var(--text-body-strong-weight);
     color: hsl(var(--foreground));
   }

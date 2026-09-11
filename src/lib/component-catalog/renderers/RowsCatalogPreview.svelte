@@ -322,7 +322,7 @@
     gap: var(--space-2);
   }
   .family-title {
-    font-size: var(--text-caption);
+    font-size: var(--text-caption-size);
     font-weight: 500;
     color: hsl(var(--muted-foreground));
   }
