@@ -18,6 +18,7 @@
 
   let isExpanded = $state(true);
   let initializerRef: CompactWorkspaceInitializer | null = $state(null);
+  let contentRef: HTMLElement | null = $state(null);
 
   function close() {
     open = false;
@@ -43,10 +44,21 @@
     const focusTimer = setTimeout(() => initializerRef?.focusAndSelectAll(), 150);
     return () => clearTimeout(focusTimer);
   });
+
+  // Mark <body> while the dialog content is mounted (including its outro) so the
+  // layering rules below can key off an attribute. A `body:has(...)` anchor would
+  // make every DOM/style mutation in the page a candidate `:has()` invalidation.
+  $effect(() => {
+    if (!contentRef) return;
+    const body = contentRef.ownerDocument.body;
+    body.setAttribute('data-new-space-modal-open', '');
+    return () => body.removeAttribute('data-new-space-modal-open');
+  });
 </script>
 
 <Dialog.Root bind:open onOpenChange={handleOpenChange}>
   <Dialog.Content
+    bind:ref={contentRef}
     data-new-space-modal
     data-model-picker-collision-boundary
     showCloseButton={true}
@@ -68,16 +80,16 @@
 </Dialog.Root>
 
 <style>
-  :global(body:has([data-new-space-modal]) [data-slot='select-content']),
-  :global(body:has([data-new-space-modal]) [data-slot='menu-content']) {
+  :global(body[data-new-space-modal-open] [data-slot='select-content']),
+  :global(body[data-new-space-modal-open] [data-slot='menu-content']) {
     z-index: var(--layer-tooltip);
   }
 
-  :global(body:has([data-new-space-modal]) [data-slot='dialog-overlay']) {
+  :global(body[data-new-space-modal-open] [data-slot='dialog-overlay']) {
     z-index: calc(var(--layer-tooltip) - 1);
   }
 
-  :global(body:has([data-new-space-modal]) [data-slot='dialog-content']) {
+  :global(body[data-new-space-modal-open] [data-slot='dialog-content']) {
     z-index: var(--layer-tooltip);
   }
 </style>

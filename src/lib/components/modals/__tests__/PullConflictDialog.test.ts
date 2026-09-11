@@ -111,4 +111,19 @@ describe('PullConflictDialog dismissal', () => {
     expect(document.querySelector('[data-pull-conflict-dialog]')).toBe(dialog);
     expect(overlay).toBeTruthy();
   });
+
+  it('marks <body> only while the dialog is mounted so layering rules need no body :has() anchor', async () => {
+    const Harness = (await import('./PullConflictDialogHarness.svelte')).default;
+    render(Harness);
+    expect(document.body.hasAttribute('data-pull-conflict-dialog-open')).toBe(false);
+
+    const { trigger, dialog } = await openDialog();
+    expect(document.body.hasAttribute('data-pull-conflict-dialog-open')).toBe(true);
+
+    await fireEvent.keyDown(dialog, { key: 'Escape' });
+    await expectDismissedOnce(trigger);
+    await waitFor(() =>
+      expect(document.body.hasAttribute('data-pull-conflict-dialog-open')).toBe(false),
+    );
+  });
 });
