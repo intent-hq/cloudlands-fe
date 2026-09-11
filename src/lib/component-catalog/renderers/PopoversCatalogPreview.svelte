@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { faPaperclip } from '@fortawesome/free-solid-svg-icons';
   import { Button } from '$lib/components/ui/button';
   import { Combobox } from '$lib/components/ui/combobox';
@@ -21,7 +22,12 @@
   import type { CatalogRendererProps } from '../catalog-renderers';
 
   let { fixture }: CatalogRendererProps = $props();
-  let tooltipOpen = $state([true, true, true]);
+  let tooltipOpen = $state([false, false, false]);
+
+  onMount(() => {
+    const frame = requestAnimationFrame(() => (tooltipOpen = [true, true, true]));
+    return () => cancelAnimationFrame(frame);
+  });
 
   function keepTooltipOpen(index: number, open: boolean) {
     if (!open) requestAnimationFrame(() => (tooltipOpen[index] = true));
