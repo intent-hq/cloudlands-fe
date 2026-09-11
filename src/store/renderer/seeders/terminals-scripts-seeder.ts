@@ -27,7 +27,8 @@ function asRecord(arg: unknown): Record<string, unknown> {
 
 /**
  * `terminal:createWithCommand` → daemon `terminal.create` (PROTOCOL §5.13).
- * The daemon creates a login shell; terminal.write submits the command. On
+ * Interactive launches create a login shell and write the command; ordinary
+ * launches retain the daemon command's process lifetime and exit code. On
  * success this emits `terminal:created` (so `PanelLayout` reloads the
  * workspace's terminal list) and forwards the daemon's `terminal:exit` to
  * `terminal:professional:exit:<terminalId>` so call sites (CliBlock,
@@ -41,11 +42,13 @@ registerMockIpcHandler('terminal:createWithCommand', async (arg) => {
   if (!workspaceId || !command) {
     return { ok: false, error: 'workspaceId and command are required' };
   }
+  const interactive = params.interactive === true || params.pasteOnly === true;
   const result = await appClient.terminals.create({
     workspaceId,
     cols: 80,
     rows: 24,
     ...(typeof params.cwd === 'string' && params.cwd ? { cwd: params.cwd } : {}),
+    ...(!interactive ? { command } : {}),
   });
   if (!result.success || !result.id) {
     return { ok: false, error: result.error ?? 'Failed to create terminal' };
@@ -58,12 +61,14 @@ registerMockIpcHandler('terminal:createWithCommand', async (arg) => {
     },
   });
   try {
-    const written = await appClient.terminals.write(
-      terminalId,
-      params.pasteOnly === true ? command : `${command}\r`,
-    );
-    if (!written.success) {
-      throw new Error(written.error ?? 'Failed to write terminal command');
+    if (interactive) {
+      const written = await appClient.terminals.write(
+        terminalId,
+        params.pasteOnly === true ? command : `${command}\r`,
+      );
+      if (!written.success) {
+        throw new Error(written.error ?? 'Failed to write terminal command');
+      }
     }
   } catch (error) {
     unsubscribe();

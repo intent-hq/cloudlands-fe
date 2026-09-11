@@ -58,6 +58,7 @@ describe('terminals-scripts-seeder terminal bridges', () => {
         command: 'pnpm test',
         cwd: '/repo',
         title: 'Command: pnpm test',
+        interactive: true,
       });
       offCreated();
 
@@ -94,6 +95,14 @@ describe('terminals-scripts-seeder terminal bridges', () => {
         workspaceId: 'ws-1',
         command: 'false',
       });
+
+      expect(terminals.create).toHaveBeenCalledWith({
+        workspaceId: 'ws-1',
+        cols: 80,
+        rows: 24,
+        command: 'false',
+      });
+      expect(terminals.write).not.toHaveBeenCalled();
 
       expect(terminals.subscribeEvents).toHaveBeenCalledWith(
         'term-9',
@@ -163,6 +172,7 @@ describe('terminals-scripts-seeder terminal bridges', () => {
           const response = await mockInvoke('terminal:createWithCommand', {
             workspaceId: '__root__',
             command: 'claude auth login',
+            interactive: true,
           });
           expect(response).toEqual({ ok: false, error: 'write failed' });
           expect(created).not.toHaveBeenCalled();

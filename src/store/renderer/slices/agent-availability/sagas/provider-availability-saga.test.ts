@@ -61,7 +61,10 @@ describe('providerAvailabilitySaga', () => {
       channel.put(request);
       await request.promise;
       expect(mocks.invoke.mock.calls).toEqual([
-        ['terminal:createWithCommand', { workspaceId: '__root__', command: 'claude auth login' }],
+        [
+          'terminal:createWithCommand',
+          { workspaceId: '__root__', command: 'claude auth login', interactive: true },
+        ],
       ]);
       expect(dispatch).toHaveBeenCalledWith({
         type: 'terminals/open',
@@ -96,6 +99,61 @@ describe('providerAvailabilitySaga', () => {
       },
     ]);
   });
+
+  it.each(['success', 'failure', 'rejection', 'cancellation'])(
+    'coalesces simultaneous login callers and settles both on %s',
+    async (outcome) => {
+      mocks.catalog.mockImplementation(() => new Promise(() => {}));
+      let resolveLaunch!: (value: unknown) => void;
+      let rejectLaunch!: (error: Error) => void;
+      mocks.invoke.mockImplementationOnce(
+        () =>
+          new Promise((resolve, reject) => {
+            resolveLaunch = resolve;
+            rejectLaunch = reject;
+          }),
+      );
+      const channel = stdChannel();
+      const dispatch = vi.fn((action) => channel.put(action));
+      const task = runSaga(
+        { channel, dispatch, getState: () => ({ agentAvailability: initialState }) },
+        providerAvailabilitySaga,
+      );
+      const first = claudeLoginRequested();
+      const second = claudeLoginRequested();
+      const settled = Promise.allSettled([first.promise, second.promise]);
+      try {
+        channel.put(first);
+        channel.put(second);
+        expect(mocks.invoke).toHaveBeenCalledTimes(1);
+        if (outcome === 'cancellation') task.cancel();
+        else if (outcome === 'rejection') rejectLaunch(new Error('spawn failed'));
+        else
+          resolveLaunch(
+            outcome === 'success'
+              ? { ok: true, terminalId: 'shared-login' }
+              : { ok: false, error: 'spawn failed' },
+          );
+        const results = await settled;
+        expect(results.map((result) => result.status)).toEqual(
+          outcome === 'success' ? ['fulfilled', 'fulfilled'] : ['rejected', 'rejected'],
+        );
+        expect(
+          dispatch.mock.calls.filter(([action]) => action.type === 'terminals/open'),
+        ).toHaveLength(outcome === 'success' ? 1 : 0);
+        if (outcome === 'failure' || outcome === 'rejection') {
+          mocks.invoke.mockResolvedValueOnce({ ok: true, terminalId: 'retry-login' });
+          const retry = claudeLoginRequested();
+          channel.put(retry);
+          await retry.promise;
+          expect(mocks.invoke).toHaveBeenCalledTimes(2);
+        }
+      } finally {
+        task.cancel();
+        await task.toPromise();
+      }
+    },
+  );
 
   it('dispatches the exact failure action when a single probe rejects', async () => {
     mocks.invoke.mockRejectedValue(new Error('probe failed'));

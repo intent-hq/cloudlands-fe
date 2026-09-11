@@ -650,6 +650,7 @@ export const TerminalCreateWithCommandSchema = z.object({
    * Defaults to `false` (existing auto-run behavior).
    */
   pasteOnly: z.boolean().optional(),
+  interactive: z.boolean().optional(),
 });
 
 export const AgentContextUpdateSchema = z.object({

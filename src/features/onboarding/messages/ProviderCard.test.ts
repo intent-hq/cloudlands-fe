@@ -309,6 +309,7 @@ describe('ProviderCard login guidance', () => {
         expect(createTerminal).toHaveBeenCalledExactlyOnceWith({
           workspaceId: '__root__',
           command: 'claude auth login',
+          interactive: true,
         });
         expect(mocks.dispatch).toHaveBeenCalledWith({
           type: 'terminals/open',

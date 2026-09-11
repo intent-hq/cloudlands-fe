@@ -117,7 +117,7 @@ export function* openClaudeLoginWorker(action: ReturnType<typeof claudeLoginRequ
     const result = yield* call(
       invoke<{ ok: boolean; terminalId?: string; error?: string }>,
       IPC_CHANNELS.TERMINAL.CREATE_WITH_COMMAND,
-      { workspaceId: ROOT_WORKSPACE_ID, command: 'claude auth login' },
+      { workspaceId: ROOT_WORKSPACE_ID, command: 'claude auth login', interactive: true },
     );
     if (!result.ok || !result.terminalId) {
       throw new Error(result.error || m.terminal_adapter_openFailed_error());
@@ -131,6 +131,32 @@ export function* openClaudeLoginWorker(action: ReturnType<typeof claudeLoginRequ
         cause instanceof Error ? cause : new Error(m.terminal_adapter_openFailed_error()),
       ),
     );
+  } finally {
+    if (yield* cancelled()) {
+      yield* put(action.failure(new Error(m.terminal_adapter_openFailed_error())));
+    }
+  }
+}
+
+function* coalesceClaudeLoginRequests(
+  launch: { pending?: ReturnType<typeof claudeLoginRequested> },
+  action: ReturnType<typeof claudeLoginRequested>,
+) {
+  if (!launch.pending) {
+    launch.pending = action;
+    try {
+      yield* call(openClaudeLoginWorker, action);
+    } finally {
+      launch.pending = undefined;
+    }
+    return;
+  }
+  const pending = launch.pending;
+  try {
+    yield* call(() => pending.promise);
+    yield* put(action.success(undefined));
+  } catch (cause) {
+    yield* put(action.failure(cause instanceof Error ? cause : new Error(String(cause))));
   } finally {
     if (yield* cancelled()) {
       yield* put(action.failure(new Error(m.terminal_adapter_openFailed_error())));
@@ -162,7 +188,7 @@ export function* providerAvailabilitySaga() {
   // boot-time ensure cannot be missed. This removes the need for setup polling
   // without initiating an extra sweep from provider availability itself.
   yield* takeEvery(checkSingleProviderRequested, handleSingleProviderRequest);
-  yield* takeEvery(claudeLoginRequested, openClaudeLoginWorker);
+  yield* takeEvery(claudeLoginRequested, coalesceClaudeLoginRequests, {});
   yield* takeLatest(claudeLoginStarted, dismissClaudeLoginOnSuccess);
   yield* takeEvery(ensureProvidersChecked, handleEnsureProvidersChecked);
   yield* takeSingleFlightInContext(
