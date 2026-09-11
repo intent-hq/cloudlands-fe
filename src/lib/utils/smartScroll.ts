@@ -232,6 +232,16 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
   function runSettleFrame() {
     settleFrame = null;
     if (destroyed || !enabled || !isFollowing) return;
+    if (activeMutationLocks > 0) {
+      // A leased element is resize-observed, so its per-frame growth arrives
+      // post-layout through handleResizeDelivery — the frame's single clean
+      // geometry read — while the native bottom anchor carries the pin
+      // between layouts. Reading here too would add a pre-layout read every
+      // frame (a forced layout whenever the frame's tick already dirtied
+      // style); just keep the loop armed until the last lease settles.
+      settleFrame = requestAnimationFrame(runSettleFrame);
+      return;
+    }
     const geometry = setExactBottom();
     const { maximum } = geometry;
     reportState(geometry);
@@ -240,7 +250,7 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
       stableFrames = 0;
       previousMaximum = maximum;
     }
-    if (activeMutationLocks > 0 || stableFrames < FOLLOW_BOTTOM_STABLE_FRAMES) {
+    if (stableFrames < FOLLOW_BOTTOM_STABLE_FRAMES) {
       settleFrame = requestAnimationFrame(runSettleFrame);
     }
   }
@@ -325,6 +335,11 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
     isNativeScrollAnchoringActive: () =>
       !isFollowing && getComputedStyle(container).overflowAnchor !== 'none',
     beforeMutation(element) {
+      // The lease never reads geometry itself: acquisition, request() and
+      // settle() are called from Svelte flushes and transition ticks that
+      // have just dirtied style, where a scrollHeight/clientHeight read
+      // forces layout. They only arm the settle loop; the pin comes from the
+      // element's resize delivery (post-layout) and the tail frames.
       if (destroyed || !enabled || !isFollowing) return inertFollowBottomMutation;
       activeMutationLocks += 1;
       const elementLocks = mutationElements.get(element) ?? 0;
@@ -332,11 +347,12 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
       if (elementLocks === 0 && !persistentResizeElements.has(element)) {
         resizeObserver?.observe(element);
       }
-      requestBottomSettle();
+      stableFrames = 0;
+      scheduleBottomSettle();
       let active = true;
       return {
         request() {
-          if (active && !destroyed) requestBottomSettle();
+          if (active && !destroyed) scheduleBottomSettle();
         },
         settle() {
           if (!active || destroyed) return;
@@ -348,7 +364,8 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
             mutationElements.delete(element);
             if (!persistentResizeElements.has(element)) resizeObserver?.unobserve?.(element);
           }
-          requestBottomSettle();
+          stableFrames = 0;
+          scheduleBottomSettle();
         },
       };
     },
@@ -407,6 +424,10 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
 
   function handleScroll() {
     if (!pointerScrolling) {
+      // While the settle loop is armed it (or resize delivery) already owns
+      // this frame's single geometry read and pin; a scroll event here is
+      // the echo of that pin, and re-reading would double the layout work.
+      if (isFollowing && settleFrame !== null) return;
       let geometry = readScrollGeometry();
       if (isFollowing) geometry = setExactBottom(geometry);
       reportState(geometry);

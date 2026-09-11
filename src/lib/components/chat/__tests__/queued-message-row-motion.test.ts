@@ -50,6 +50,7 @@ function scrollHarness(node: HTMLElement, follow: boolean) {
   let animationFrames: FrameRequestCallback[] = [];
   const observed: Element[] = [];
   const unobserved: Element[] = [];
+  let resizeCallback: ResizeObserverCallback | null = null;
   vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
     animationFrames.push(callback);
     return animationFrames.length;
@@ -58,6 +59,9 @@ function scrollHarness(node: HTMLElement, follow: boolean) {
   vi.stubGlobal(
     'ResizeObserver',
     class {
+      constructor(callback: ResizeObserverCallback) {
+        resizeCallback = callback;
+      }
       observe(element: Element) {
         observed.push(element);
       }
@@ -95,6 +99,9 @@ function scrollHarness(node: HTMLElement, follow: boolean) {
       const callbacks = animationFrames;
       animationFrames = [];
       callbacks.forEach((callback) => callback(performance.now()));
+    },
+    fireResize() {
+      resizeCallback?.([], {} as ResizeObserver);
     },
     scrollTop: () => scrollTop,
     observed,
@@ -230,8 +237,12 @@ describe('queued message row motion', () => {
 
     scroll.grow(13);
     transition.tick?.(0.5, 0.5);
-    expect(scroll.scrollTop()).toBe(613);
     expect(scroll.observed.filter((element) => element === harness.node)).toHaveLength(2);
+    // The re-acquired lease pins through the row's post-layout resize
+    // delivery, not a synchronous read inside the tick.
+    expect(scroll.scrollTop()).toBe(600);
+    scroll.fireResize();
+    expect(scroll.scrollTop()).toBe(613);
     transition.tick?.(0, 1);
     expect(scroll.unobserved.filter((element) => element === harness.node)).toHaveLength(2);
     scroll.action.destroy();

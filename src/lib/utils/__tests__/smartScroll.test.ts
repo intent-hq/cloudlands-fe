@@ -602,19 +602,31 @@ describe('followBottom policy', () => {
     const child = document.createElement('div');
     container.append(child);
     const action = followBottom(container, { follow: true });
+    runSettleTail();
     const mutation = beforeFollowBottomMutation(child);
 
+    // While leased, the pin arrives with the leased element's post-layout
+    // resize delivery; the settle frame and the lease calls stay read-free.
     scrollHeight += 12;
     runFrame();
+    expect(scrollTop).toBe(600);
+    fireResizeFor(child);
     expect(scrollTop).toBe(612);
 
     scrollHeight += 18;
     mutation.request();
+    expect(scrollTop).toBe(612);
+    fireResizeFor(child);
     expect(scrollTop).toBe(630);
 
     scrollHeight += 24;
     mutation.settle();
+    expect(scrollTop).toBe(630);
+    runFrame();
     expect(scrollTop).toBe(654);
+    runSettleTail();
+    expect(scrollTop).toBe(654);
+    expect(animationFrames).toHaveLength(0);
     action.destroy();
   });
 
@@ -806,9 +818,11 @@ describe('followBottom policy', () => {
     outro.tick?.(1, 0);
     scrollHeight -= 20;
     outro.tick?.(0.5, 0.5);
+    fireResizeFor(child);
     expect(scrollTop).toBe(580);
     scrollHeight -= 20;
     outro.tick?.(0, 1);
+    fireResizeFor(child);
     expect(scrollTop).toBe(560);
     runSettleTail();
 
@@ -838,12 +852,113 @@ describe('followBottom policy', () => {
     intro.tick?.(0, 1);
     scrollHeight += 20;
     intro.tick?.(0.5, 0.5);
+    fireResizeFor(child);
     expect(scrollTop).toBe(620);
     scrollHeight += 20;
     intro.tick?.(1, 0);
+    fireResizeFor(child);
     expect(scrollTop).toBe(640);
     runSettleTail();
 
+    expect(animationFrames).toHaveLength(0);
+    action.destroy();
+  });
+
+  it('reads container geometry at most once per frame during a leased disclosure motion', () => {
+    const child = document.createElement('div');
+    container.append(child);
+    vi.spyOn(window, 'getComputedStyle').mockReturnValue({
+      height: '40px',
+      opacity: '1',
+      paddingTop: '0px',
+      paddingBottom: '0px',
+      marginTop: '0px',
+      marginBottom: '0px',
+    } as CSSStyleDeclaration);
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn(() => ({ matches: false })),
+    );
+    const action = followBottom(container, { follow: true });
+    runSettleTail();
+    const heightReads = vi.spyOn(container, 'scrollHeight', 'get');
+    const clientReads = vi.spyOn(container, 'clientHeight', 'get');
+    const topReads = vi.spyOn(container, 'scrollTop', 'get');
+    const readCount = () =>
+      Math.max(
+        heightReads.mock.calls.length,
+        clientReads.mock.calls.length,
+        topReads.mock.calls.length,
+      );
+    const intro = safeDisclosureTransition(child, {}, { direction: 'in' });
+    expect(intro.tick).toBeDefined();
+
+    // One browser frame while the lease is held: the previous frame's snap
+    // echoes as a scroll event, rAF callbacks run (settle loop, then the
+    // Svelte tick that dirties style), layout happens, then ResizeObserver
+    // delivers on the clean tree.
+    const frameReads: number[] = [];
+    const frame = (t: number, u: number, growth: number) => {
+      const atFrameStart = readCount();
+      container.dispatchEvent(new Event('scroll'));
+      runFrame();
+      const beforeTick = readCount();
+      intro.tick?.(t, u);
+      expect(readCount()).toBe(beforeTick);
+      scrollHeight += growth;
+      fireResizeFor(child);
+      frameReads.push(readCount() - atFrameStart);
+      expect(scrollTop).toBe(scrollHeight - clientHeight);
+    };
+
+    frame(0, 1, 0);
+    frame(0.25, 0.75, 10);
+    frame(0.5, 0.5, 10);
+    frame(0.75, 0.25, 10);
+    frame(1, 0, 10);
+    expect(frameReads.every((reads) => reads <= 1)).toBe(true);
+
+    runSettleTail();
+    expect(animationFrames).toHaveLength(0);
+    expect(scrollTop).toBe(640);
+    action.destroy();
+  });
+
+  it('re-acquires a reversed disclosure lease without reading geometry inside the tick', () => {
+    const child = document.createElement('div');
+    container.append(child);
+    vi.spyOn(window, 'getComputedStyle').mockReturnValue({
+      height: '40px',
+      opacity: '1',
+      paddingTop: '0px',
+      paddingBottom: '0px',
+      marginTop: '0px',
+      marginBottom: '0px',
+    } as CSSStyleDeclaration);
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn(() => ({ matches: false })),
+    );
+    const action = followBottom(container, { follow: true });
+    runSettleTail();
+    const outro = safeDisclosureTransition(child, {}, { direction: 'both' });
+    outro.tick?.(1, 0);
+    outro.tick?.(0.5, 0.5);
+    const heightReads = vi.spyOn(container, 'scrollHeight', 'get');
+    const clientReads = vi.spyOn(container, 'clientHeight', 'get');
+    const topReads = vi.spyOn(container, 'scrollTop', 'get');
+
+    // Reversal back toward shown re-enters the lease from inside the tick.
+    outro.tick?.(0.75, 0.25);
+    expect(heightReads).not.toHaveBeenCalled();
+    expect(clientReads).not.toHaveBeenCalled();
+    expect(topReads).not.toHaveBeenCalled();
+
+    scrollHeight += 10;
+    fireResizeFor(child);
+    expect(scrollTop).toBe(610);
+    outro.tick?.(1, 0);
+    runSettleTail();
     expect(animationFrames).toHaveLength(0);
     action.destroy();
   });
@@ -1002,8 +1117,9 @@ describe('followBottom policy', () => {
     });
     const mutation = beforeFollowBottomMutation(child);
     for (let frame = 0; frame < 81; frame += 1) {
-      scrollHeight += 1;
       runFrame();
+      scrollHeight += 1;
+      fireResizeFor(child);
       expect(scrollTop).toBe(scrollHeight - clientHeight);
       expect(isFollowingBottom(container)).toBe(true);
     }
