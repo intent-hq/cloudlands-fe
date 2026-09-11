@@ -49,12 +49,13 @@ const FORMAT_EXTENSIONS = new Set([
 ]);
 const UNIT_TEST_RE = /\.(?:test|spec)\.[cm]?[jt]sx?$/;
 const CT_TEST_RE = /\.ct\.(?:test|spec)\.[cm]?[jt]sx?$/;
-// Mirrors playwright.config.ts (testDir ./test, testMatch **/*.spec.ts, testIgnore) and
-// the runner-owned excludes in vitest.config.ts / tests/integration/vitest.integration.config.ts.
+// Mirrors playwright.config.ts (testDir ./test, testMatch **/*.spec.ts, testIgnore),
+// playwright-ct.config.ts (testDir ./src) and the runner-owned excludes in
+// vitest.config.ts / tests/integration/vitest.integration.config.ts.
 const PLAYWRIGHT_TEST_RE = /^test\/.*\.spec\.ts$/;
 const PLAYWRIGHT_MANUAL_RE =
   /(?:^|\/)(?:catalog-manual-review\.capture|current-main-baseline)\.spec\.ts$/;
-const VISUAL_TEST_RE = /\.visual\.spec\.[cm]?[jt]sx?$/;
+const VISUAL_TEST_RE = /\.visual\.spec\.ts$/;
 const INTEGRATION_TEST_RE = /^tests\/integration\/.*\.test\.ts$/;
 const VITEST_EXCLUDED_RE = /(?:^|\/)remote-(?:env|git)\.test\.ts$/;
 const FULL_RISK_FILES = new Set([
@@ -242,17 +243,33 @@ function isExisting(file, root) {
 
 export function testRunner(file) {
   if (!UNIT_TEST_RE.test(file)) return null;
-  if (CT_TEST_RE.test(file)) return 'ct';
-  if (PLAYWRIGHT_MANUAL_RE.test(file) || VISUAL_TEST_RE.test(file)) return 'manual';
-  if (PLAYWRIGHT_TEST_RE.test(file)) return 'playwright';
-  if (INTEGRATION_TEST_RE.test(file)) return 'integration';
-  if (file.startsWith('tests/integration/') || VITEST_EXCLUDED_RE.test(file)) return 'manual';
+  if (file.startsWith('test/')) {
+    if (!PLAYWRIGHT_TEST_RE.test(file) || PLAYWRIGHT_MANUAL_RE.test(file)) return 'manual';
+    return 'playwright';
+  }
+  if (file.startsWith('tests/integration/')) {
+    return INTEGRATION_TEST_RE.test(file) ? 'integration' : 'manual';
+  }
+  if (CT_TEST_RE.test(file)) return file.startsWith('src/') ? 'ct' : 'manual';
+  if (VISUAL_TEST_RE.test(file) || VITEST_EXCLUDED_RE.test(file)) return 'manual';
   return 'vitest';
 }
 
-function existingParentDirectory(file, root) {
+function hasRunnableUnitTests(directory, root) {
+  const absolute = resolve(root, directory);
+  if (!existsSync(absolute) || !statSync(absolute).isDirectory()) return false;
+  for (const entry of readdirSync(absolute, { withFileTypes: true })) {
+    if (entry.name === 'node_modules' || entry.name.startsWith('.')) continue;
+    const child = `${directory}/${entry.name}`;
+    if (entry.isDirectory() ? hasRunnableUnitTests(child, root) : testRunner(child) === 'vitest')
+      return true;
+  }
+  return false;
+}
+
+function survivingUnitTestDirectory(file, root) {
   const directory = dirname(file);
-  return directory !== '.' && isExisting(directory, root) ? directory : null;
+  return directory !== '.' && hasRunnableUnitTests(directory, root) ? directory : null;
 }
 
 function isLintable(file) {
@@ -314,7 +331,7 @@ export function createVerificationPlan(files, options = {}) {
   const directPlaywright = directTests('playwright');
   const deletedUnitDirectories = files
     .filter((file) => testRunner(file) === 'vitest' && !isExisting(file, root))
-    .map((file) => existingParentDirectory(file, root))
+    .map((file) => survivingUnitTestDirectory(file, root))
     .filter(Boolean);
   const directUnit = [...new Set([...directTests('vitest'), ...deletedUnitDirectories])];
   const relatedSources = existing.filter(
@@ -474,9 +491,9 @@ export function createVerificationPlan(files, options = {}) {
   else if (directPlaywright.length) {
     checks.push(
       command('playwright-direct', 'Playwright browser tests (changed specs)', [
-        'run',
-        'test:playwright',
-        '--',
+        'exec',
+        'playwright',
+        'test',
         ...directPlaywright,
       ]),
     );
