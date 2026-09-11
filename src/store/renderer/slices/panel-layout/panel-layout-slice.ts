@@ -149,10 +149,22 @@ export const emptyWorkspaceState: WorkspacePanelLayoutState = {
   savedCanvasWidthSourceBeforeExpand: undefined,
   deferSpecTab: false,
   newWorkspaceLifecycle: null,
+  emptiedByUserClose: false,
 };
 
 const { getWorkspaceState, setWorkspaceState, clearWorkspaceState } =
   createWorkspaceScopedHelpers(emptyWorkspaceState);
+
+function hasAnyWorkspaceTab(ws: WorkspacePanelLayoutState): boolean {
+  return (
+    Object.values(ws.panels).some((panel) => panel.tabs.length > 0) || ws.hiddenTabs.ids.length > 0
+  );
+}
+
+/** Flag a layout the user just emptied with an explicit close (see emptiedByUserClose). */
+function markEmptiedByUserClose(ws: WorkspacePanelLayoutState): WorkspacePanelLayoutState {
+  return hasAnyWorkspaceTab(ws) ? ws : { ...ws, emptiedByUserClose: true };
+}
 
 // ============================================================================
 // Actions
@@ -2058,6 +2070,7 @@ panelLayoutReducer.with(initializeLayout, (state, { payload }) => {
     newWorkspaceLifecycle: layout.newWorkspaceLifecycle ?? null,
     pendingFocusTabId: null,
     pendingPanelReveal: null,
+    emptiedByUserClose: false,
   });
 });
 panelLayoutReducer.with(preparePanelLayoutBackendRestore, (state, { payload: [wsId] }) => {
@@ -2161,6 +2174,9 @@ panelLayoutReducer.with(setRestoreStatus, (state, { payload: [wsId, restoreStatu
   return setWorkspaceState(state, wsId, {
     ...ws,
     restoreStatus,
+    // Restore transitions are saga-owned: the resetLayout a missing/invalid
+    // restore dispatches is not a user close.
+    emptiedByUserClose: false,
     ...(restoreStatus === 'pending' ? { pendingFocusTabId: null, pendingPanelReveal: null } : {}),
   });
 });
@@ -2473,7 +2489,8 @@ panelLayoutReducer.with(closeTab, (state, { payload }) => {
     ws = closePanelHelper(ws, targetPanelId);
   }
 
-  return setWorkspaceState(state, wsId, ws);
+  // A destroy is agent/registry-driven teardown, not a user emptying the layout.
+  return setWorkspaceState(state, wsId, destroy ? ws : markEmptiedByUserClose(ws));
 });
 // --- Close Active Tab ---
 panelLayoutReducer.with(closeActiveTab, (state, { payload }) => {
@@ -3468,7 +3485,7 @@ panelLayoutReducer.with(closeAllTabs, (state, { payload }) => {
   if (keptTabs.length === 0 && Object.keys(ws.panels).length > 1) {
     ws = closePanelHelper(ws, targetPanelId);
   }
-  return setWorkspaceState(state, wsId, ws);
+  return setWorkspaceState(state, wsId, markEmptiedByUserClose(ws));
 });
 // --- Close All Others Everywhere ---
 panelLayoutReducer.with(closeAllOthersEverywhere, (state, { payload }) => {
@@ -3607,7 +3624,7 @@ panelLayoutReducer.with(closePanel, (state, { payload }) => {
       .filter((tab) => tab.closable !== false && !isHideOnCloseTab(tab))
       .map((tab) => tab.id),
   );
-  return setWorkspaceState(state, wsId, updatedWs);
+  return setWorkspaceState(state, wsId, markEmptiedByUserClose(updatedWs));
 });
 panelLayoutReducer.with(reconcilePanelColumnCount, (state, { payload }) => {
   const { wsId, count, newPanelIds, timestamp, recordHistory, availableCanvasWidth } = payload;
@@ -3839,6 +3856,7 @@ panelLayoutReducer.with(resetLayout, (state, { payload }) => {
     savedCanvasWidthSourceBeforeExpand: undefined,
     deferSpecTab: false,
     newWorkspaceLifecycle: null,
+    emptiedByUserClose: true,
   });
 });
 // --- Go Back ---

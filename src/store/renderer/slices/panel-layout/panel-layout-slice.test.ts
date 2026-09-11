@@ -1105,6 +1105,115 @@ describe('panelLayoutReducer', () => {
     });
   });
 
+  describe('emptiedByUserClose', () => {
+    const noteTab = { id: 't1', type: 'note', title: 'Note' };
+    const ownedBrowserTab = {
+      id: 'b1',
+      type: 'browser',
+      title: 'Owned',
+      browserUrl: 'https://example.com',
+      ownerAgentId: 'agent-1',
+    };
+
+    it('defaults to false', () => {
+      expect(emptyWorkspaceState.emptiedByUserClose).toBe(false);
+    });
+
+    it('is set when closeTab removes the last tab', () => {
+      const result = panelLayoutReducer(
+        stateWithPanel('p1', [noteTab]),
+        closeTab(WS, 't1', 'p1', 10),
+      );
+      expect(result.byWorkspaceId[WS].emptiedByUserClose).toBe(true);
+    });
+
+    it('stays false when closeTab leaves other tabs behind', () => {
+      const state = stateWithPanel('p1', [noteTab, { id: 't2', type: 'note', title: 'Other' }]);
+      const result = panelLayoutReducer(state, closeTab(WS, 't1', 'p1', 10));
+      expect(result.byWorkspaceId[WS].emptiedByUserClose).toBe(false);
+    });
+
+    it('stays false when the closed tab only hides (owned browser tab)', () => {
+      const result = panelLayoutReducer(
+        stateWithPanel('p1', [ownedBrowserTab]),
+        closeTab(WS, 'b1', 'p1', 10),
+      );
+      expect(getItems(result.byWorkspaceId[WS].hiddenTabs)).toHaveLength(1);
+      expect(result.byWorkspaceId[WS].emptiedByUserClose).toBe(false);
+    });
+
+    it('stays false when a destroy (agent teardown) removes the last tab', () => {
+      const result = panelLayoutReducer(
+        stateWithPanel('p1', [noteTab]),
+        closeTab(WS, 't1', 'p1', 10, { destroy: true }),
+      );
+      expect(Object.values(result.byWorkspaceId[WS].panels).flatMap((p) => p.tabs)).toEqual([]);
+      expect(result.byWorkspaceId[WS].emptiedByUserClose).toBe(false);
+    });
+
+    it('is set by closeActiveTab and closeAllTabs when they empty the layout', () => {
+      const viaActive = panelLayoutReducer(
+        stateWithPanel('p1', [noteTab]),
+        closeActiveTab(WS, 'p1', 10),
+      );
+      expect(viaActive.byWorkspaceId[WS].emptiedByUserClose).toBe(true);
+      const viaAll = panelLayoutReducer(
+        stateWithPanel('p1', [noteTab, { id: 't2', type: 'note', title: 'Other' }]),
+        closeAllTabs(WS, 'p1', 10),
+      );
+      expect(viaAll.byWorkspaceId[WS].emptiedByUserClose).toBe(true);
+    });
+
+    it('is set when closePanel removes the last populated column', () => {
+      const split = panelLayoutReducer(
+        stateWithPanel('p1', [noteTab]),
+        splitPanel(WS, 'p1', 'horizontal', undefined, 10),
+      );
+      expect(Object.keys(split.byWorkspaceId[WS].panels)).toHaveLength(2);
+      const state = panelLayoutReducer(split, closePanel(WS, 'p1', 20));
+      expect(Object.values(state.byWorkspaceId[WS].panels).flatMap((p) => p.tabs)).toEqual([]);
+      expect(state.byWorkspaceId[WS].emptiedByUserClose).toBe(true);
+    });
+
+    it('stays false when closePanel leaves tabs in another column', () => {
+      const split = panelLayoutReducer(
+        stateWithPanel('p1', [noteTab]),
+        splitPanel(WS, 'p1', 'horizontal', undefined, 10),
+      );
+      const emptyPanelId = Object.keys(split.byWorkspaceId[WS].panels).find((id) => id !== 'p1')!;
+      const state = panelLayoutReducer(split, closePanel(WS, emptyPanelId, 20));
+      expect(state.byWorkspaceId[WS].emptiedByUserClose).toBe(false);
+    });
+
+    it('is set by resetLayout', () => {
+      const result = panelLayoutReducer(stateWithPanel('p1', [noteTab]), resetLayout(WS));
+      expect(result.byWorkspaceId[WS].emptiedByUserClose).toBe(true);
+    });
+
+    it('is cleared by initializeLayout and by every restore status transition', () => {
+      const emptied = panelLayoutReducer(
+        stateWithPanel('p1', [noteTab]),
+        closeTab(WS, 't1', 'p1', 10),
+      );
+      expect(emptied.byWorkspaceId[WS].emptiedByUserClose).toBe(true);
+
+      const initialized = panelLayoutReducer(
+        emptied,
+        initializeLayout(WS, {
+          root: { type: 'panel', panelId: 'p1' },
+          panels: { p1: { id: 'p1', tabs: [], activeTabId: null } },
+          focusedPanelId: 'p1',
+        }),
+      );
+      expect(initialized.byWorkspaceId[WS].emptiedByUserClose).toBe(false);
+
+      for (const status of ['pending', 'restored', 'empty', 'invalid'] as const) {
+        const transitioned = panelLayoutReducer(emptied, setRestoreStatus(WS, status));
+        expect(transitioned.byWorkspaceId[WS].emptiedByUserClose).toBe(false);
+      }
+    });
+  });
+
   describe('openTab', () => {
     it('rejects a tab owned by another workspace without changing state', () => {
       const state = stateWithPanel('p1');
