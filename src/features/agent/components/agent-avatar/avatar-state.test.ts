@@ -27,10 +27,14 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
 }));
 
 import {
+  AVATAR_STATE_PRECEDENCE,
   getAvatarState,
   getAvatarStateForSession,
   getAvatarStateFromStore,
   isAgentStreamingFromStore,
+  type AgentStateInput,
+  type AvatarState,
+  type AvatarStateOptions,
 } from './avatar-state';
 
 describe('avatar-state store-backed selectors', () => {
@@ -278,5 +282,113 @@ describe('getAvatarState completed-vs-active precedence', () => {
     expect(getAvatarState({ status: AgentStatus.Waiting }, { isCompleted: true })).toBe(
       'completed',
     );
+  });
+});
+
+describe('getAvatarState ladder precedence golden', () => {
+  const PRECEDENCE_CHANGED =
+    'getAvatarState precedence changed (ladder or AVATAR_STATE_PRECEDENCE). A reorder can flip ' +
+    'every equality gate on a getAvatarState* result — re-audit the sites listed in ' +
+    'avatar-state-gate-inventory.test.ts, then update the constant and this golden together.';
+
+  type Fixture = { input: AgentStateInput; options?: AvatarStateOptions };
+
+  /** Minimal signal that yields each state on its own (independent of the ladder order). */
+  const soloFixture: Record<AvatarState, Fixture | null> = {
+    completed: { input: { status: AgentStatus.Idle }, options: { isCompleted: true } },
+    failed: { input: { status: AgentStatus.Idle }, options: { isFailed: true } },
+    question: { input: { status: AgentStatus.Idle }, options: { hasQuestion: true } },
+    'needs-permission': {
+      input: { status: AgentStatus.Idle },
+      options: { hasPermissionRequest: true },
+    },
+    'attention-discussion': {
+      input: { status: AgentStatus.Idle },
+      options: { attentionKind: 'discussion' },
+    },
+    'attention-blocker': {
+      input: { status: AgentStatus.Idle },
+      options: { attentionKind: 'blocker' },
+    },
+    waiting: { input: { status: AgentStatus.Waiting } },
+    running: { input: { status: AgentStatus.Active, isResponding: true } },
+    unread: { input: { status: AgentStatus.Idle }, options: { hasUnread: true } },
+    idle: { input: { status: AgentStatus.Idle } },
+    responding: null,
+  };
+
+  /**
+   * For each adjacent pair `[higher, lower]` in the golden, an input carrying
+   * the signals of BOTH states. `attention-discussion` / `attention-blocker`
+   * share the single `attentionKind` field and cannot co-occur, so that pair
+   * is asserted via the solo fixtures only.
+   */
+  const bothSignals: Partial<Record<AvatarState, Fixture>> = {
+    completed: { input: { status: AgentStatus.Error }, options: { isCompleted: true } },
+    failed: { input: { status: AgentStatus.Error }, options: { hasQuestion: true } },
+    question: {
+      input: { status: AgentStatus.Idle },
+      options: { hasQuestion: true, hasPermissionRequest: true },
+    },
+    'needs-permission': {
+      input: { status: AgentStatus.Idle },
+      options: { hasPermissionRequest: true, attentionKind: 'discussion' },
+    },
+    'attention-blocker': {
+      input: { status: AgentStatus.Waiting },
+      options: { attentionKind: 'blocker' },
+    },
+    waiting: { input: { status: AgentStatus.Active, isWaitingForOtherAgents: true } },
+    running: {
+      input: { status: AgentStatus.Active, isResponding: true },
+      options: { hasUnread: true },
+    },
+    unread: { input: { status: AgentStatus.Idle }, options: { hasUnread: true } },
+  };
+
+  it('matches the inline golden, highest priority first', () => {
+    expect(AVATAR_STATE_PRECEDENCE, PRECEDENCE_CHANGED).toEqual([
+      'completed',
+      'failed',
+      'question',
+      'needs-permission',
+      'attention-discussion',
+      'attention-blocker',
+      'waiting',
+      'running',
+      'unread',
+      'idle',
+    ]);
+  });
+
+  it.each(AVATAR_STATE_PRECEDENCE)('%s is reachable from its solo fixture', (state) => {
+    const fixture = soloFixture[state];
+    expect(fixture, `no solo fixture for ${state}`).not.toBeNull();
+    expect(getAvatarState(fixture!.input, fixture!.options)).toBe(state);
+  });
+
+  const adjacentPairs = AVATAR_STATE_PRECEDENCE.slice(0, -1).map(
+    (higher, index) => [higher, AVATAR_STATE_PRECEDENCE[index + 1]] as const,
+  );
+
+  it.each(adjacentPairs)('%s outranks %s when both signals are present', (higher, lower) => {
+    const fixture = bothSignals[higher];
+    if (higher === 'attention-discussion' && lower === 'attention-blocker') {
+      expect(fixture).toBeUndefined();
+      return;
+    }
+    expect(fixture, `no both-signals fixture for ${higher} > ${lower}`).toBeDefined();
+    expect(getAvatarState(fixture!.input, fixture!.options), PRECEDENCE_CHANGED).toBe(higher);
+  });
+
+  it('running is the one state that outranks completed, and only while live', () => {
+    expect(
+      getAvatarState({ status: AgentStatus.Active, isResponding: true }, { isCompleted: true }),
+      PRECEDENCE_CHANGED,
+    ).toBe('running');
+    expect(
+      getAvatarState({ status: AgentStatus.Idle }, { isCompleted: true }),
+      PRECEDENCE_CHANGED,
+    ).toBe('completed');
   });
 });
