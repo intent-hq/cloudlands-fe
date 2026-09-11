@@ -60,6 +60,25 @@
   const step = $derived(Math.max(Number(stepProp) || 1, Number.EPSILON));
   const invalid = $derived(ariaInvalid === true || ariaInvalid === 'true');
   const valueText = $derived(ariaValueText ?? formatValue(value));
+  const valueWidth = $derived.by(() => {
+    const candidates = stepValues ?? [min, max, snap(min + step), snap(max - step)];
+    const decimals = (candidate: number) => {
+      const [coefficient, exponent = '0'] = String(candidate).split('e');
+      return Math.max(0, (coefficient.split('.')[1]?.length ?? 0) - Number(exponent));
+    };
+    const precision = Math.min(12, Math.max(decimals(min), decimals(step)));
+    return candidates.reduce((width, candidate) => {
+      const raw = String(candidate);
+      const formatted = formatValue(candidate);
+      // Include fractional digits even when the endpoints are whole numbers.
+      const numericWidth = stepValues ? raw.length : candidate.toFixed(precision).length;
+      return Math.max(
+        width,
+        formatted.length,
+        numericWidth + Math.max(0, formatted.length - raw.length),
+      );
+    }, 1);
+  });
   const currentPercent = $derived(toPercent(value));
   const previewPercent = $derived(previewValue === null ? null : toPercent(previewValue));
   const thumbPosition = new Spring(
@@ -290,6 +309,9 @@
     data-slot="slider-value"
     class="inline-grid shrink-0 text-[13px] leading-none text-muted-foreground tabular-nums"
     style:font-variation-settings="'wght' 500"
+    style:width={`${valueWidth}ch`}
+    style:align-self={valuePosition === 'top' || valuePosition === 'bottom' ? 'center' : undefined}
+    style:text-align={valuePosition === 'left' || valuePosition === 'right' ? 'right' : 'center'}
   >
     {#if editing}
       <input
@@ -300,14 +322,14 @@
         {max}
         step={stepValues ? 'any' : step}
         aria-label={ariaLabel}
-        class="w-[6ch] rounded-(--shape-input-radius) border-b border-border bg-transparent text-center text-foreground outline-none"
+        class="slider-value-input w-full min-w-0 rounded-(--shape-input-radius) border-b border-border bg-transparent text-foreground outline-none [text-align:inherit]"
         onblur={commitEditing}
         onkeydown={handleEditKeydown}
       />
     {:else}
       <button
         type="button"
-        class="cursor-text select-none rounded-(--shape-input-radius) text-inherit"
+        class="w-full min-w-0 cursor-text select-none rounded-(--shape-input-radius) text-inherit whitespace-nowrap [text-align:inherit]"
         {disabled}
         onclick={startEditing}>{formatValue(value)}</button
       >
@@ -446,6 +468,16 @@
 </div>
 
 <style>
+  .slider-value-input {
+    appearance: textfield;
+  }
+
+  .slider-value-input::-webkit-inner-spin-button,
+  .slider-value-input::-webkit-outer-spin-button {
+    margin: 0;
+    appearance: none;
+  }
+
   .slider-hit-area::before {
     position: absolute;
     inset: 0 -8px;

@@ -174,6 +174,39 @@ describe('Slider', () => {
     expect(onValueChange).toHaveBeenCalledOnce();
   });
 
+  it.each(['left', 'right', 'top'] as const)(
+    'reserves the same readout width across values and editing at %s',
+    async (valuePosition) => {
+      const { container, getByRole } = render(Slider, {
+        props: { value: 8, showValue: true, valuePosition, 'aria-label': 'Stable value' },
+      });
+      const readout = container.querySelector<HTMLElement>('[data-slot="slider-value"]')!;
+      expect(readout.style.width).toBe('3ch');
+      expect(readout.style.textAlign).toBe(valuePosition === 'top' ? 'center' : 'right');
+      await fireEvent.keyDown(getByRole('slider'), { key: 'End' });
+      expect(readout.textContent).toBe('100');
+      expect(readout.style.width).toBe('3ch');
+      await fireEvent.click(getByRole('button'));
+      expect(getByRole('spinbutton').classList.contains('w-full')).toBe(true);
+      expect(readout.style.width).toBe('3ch');
+      await fireEvent.keyDown(getByRole('spinbutton'), { key: 'Escape' });
+      expect(readout.style.width).toBe('3ch');
+    },
+  );
+
+  it.each([
+    { min: -100, max: 100, step: 0.01, width: '10ch' },
+    { min: 0, max: 1, step: 1e-7, width: '12ch' },
+    { min: 0, max: 100, steps: [0, 0.12345, 100], width: '10ch' },
+  ])('reserves signs, decimals and suffixes for $width', ({ width, ...bounds }) => {
+    const { container } = render(Slider, {
+      props: { ...bounds, showValue: true, formatValue: (value) => `${value} ms` },
+    });
+    expect(container.querySelector<HTMLElement>('[data-slot="slider-value"]')!.style.width).toBe(
+      width,
+    );
+  });
+
   it('is inert when disabled and uses danger visuals when invalid', async () => {
     const onValueChange = vi.fn();
     const { container, getByRole } = render(Slider, {
