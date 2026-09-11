@@ -12,20 +12,21 @@
 <div
   bind:this={ref}
   data-slot="skeleton"
-  class={cn('skeleton-shimmer rounded-(--radius-small) bg-hover', className)}
+  class={cn('skeleton-shimmer rounded-(--radius-small) bg-(--skeleton)', className)}
   {...restProps}
 ></div>
 
 <style>
   .skeleton-shimmer {
+    --skeleton: color-mix(in srgb, hsl(var(--muted)) 85%, hsl(var(--foreground)));
     background-image: linear-gradient(
       90deg,
       transparent 25%,
-      color-mix(in oklab, var(--selected) 55%, transparent) 50%,
+      color-mix(in oklab, hsl(var(--selected)) 55%, transparent) 50%,
       transparent 75%
     );
     background-size: 200% 100%;
-    animation: skeleton-shimmer calc(var(--spring-slow) * 10) linear infinite;
+    animation: skeleton-shimmer calc(var(--spring-moderate) * 10) linear infinite;
   }
 
   @keyframes skeleton-shimmer {

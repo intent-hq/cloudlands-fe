@@ -15,13 +15,15 @@ const source = readFileSync(
 );
 
 describe('Skeleton', () => {
-  it('uses a calm linear slow-tier shimmer and disables it when motion is reduced', () => {
+  it('uses a calm linear moderate-tier shimmer and disables it when motion is reduced', () => {
     const { container } = render(Skeleton, { props: { 'data-testid': 'loading-row' } });
     const skeleton = container.querySelector('[data-slot="skeleton"]');
+    expect(skeleton?.classList.contains('bg-(--skeleton)')).toBe(true);
+    expect(skeleton?.classList.contains('bg-hover')).toBe(false);
     expect(skeleton?.className).toContain('skeleton-shimmer');
     expect(skeleton?.className).toContain('rounded-(--radius-small)');
-    expect(source).toContain('calc(var(--spring-slow) * 10) linear infinite');
-    expect(source).toContain('color-mix(in oklab, var(--selected) 55%, transparent)');
+    expect(source).toContain('calc(var(--spring-moderate) * 10) linear infinite');
+    expect(source).toContain('color-mix(in oklab, hsl(var(--selected)) 55%, transparent)');
     expect(source).toMatch(/prefers-reduced-motion: reduce[\s\S]*animation: none/);
   });
 

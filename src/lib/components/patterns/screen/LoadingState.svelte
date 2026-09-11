@@ -53,20 +53,17 @@
   {#if recipe === 'form'}
     {#each Array(count) as _, index (index)}
       <div class="space-y-2">
-        <Skeleton class="h-3 w-24 bg-surface-2" style="--selected: var(--surface-4)" />
-        <Skeleton class="h-9 w-full bg-surface-2" style="--selected: var(--surface-4)" />
+        <Skeleton class="h-3 w-24" />
+        <Skeleton class="h-9 w-full" />
       </div>
     {/each}
   {:else if recipe === 'card-grid'}
     {#each Array(count) as _, index (index)}
-      <Skeleton class="h-28 w-full bg-surface-2" style="--selected: var(--surface-4)" />
+      <Skeleton class="h-28 w-full" />
     {/each}
   {:else}
     {#each Array(count) as _, index (index)}
-      <Skeleton
-        class="h-(--state-list-row-height) w-full bg-surface-2"
-        style="--selected: var(--surface-4)"
-      />
+      <Skeleton class="h-(--state-list-row-height) w-full" />
     {/each}
   {/if}
 </div>
