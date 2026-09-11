@@ -372,6 +372,23 @@ describe('requiresTriggerDeclaration', () => {
     );
     expect(requiresTriggerDeclaration(content, 'scripts/a.test.ts')).toBe(false);
   });
+
+  it('does not flag a temp read whose callback or non-cwd option mentions the root', () => {
+    const content = lines(
+      "import fs, { mkdtempSync } from 'node:fs';",
+      "import { tmpdir } from 'node:os';",
+      "import { join } from 'node:path';",
+      "import { it } from 'vitest';",
+      "const tmp = mkdtempSync(join(tmpdir(), 'case-'));",
+      "it('x', () => {",
+      "  fs.readFile(join(tmp, 'output.txt'), 'utf8', (err, text) => {",
+      '    expect(text).toContain(process.cwd());',
+      '  });',
+      "  fs.readdirSync(tmp, { withFileTypes: true, encoding: process.cwd() ? 'utf8' : 'utf8' });",
+      '});',
+    );
+    expect(requiresTriggerDeclaration(content, 'scripts/a.test.ts')).toBe(false);
+  });
 });
 
 describe('inspectDeclaredSuites', () => {

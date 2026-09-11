@@ -238,28 +238,32 @@ function readCallee(node) {
   return ts.isPropertyAccessExpression(callee) && READ_FUNCTIONS.has(callee.name.text);
 }
 
-// A `cwd` option (`globSync('*.ts', { cwd })`) is the location a read resolves
-// against, so a bare repo literal there counts like a whole read argument.
-function isRepoCwdOption(node) {
-  return (
-    ts.isObjectLiteralExpression(node) &&
-    node.properties.some(
-      (property) =>
+// The `cwd` initializers of any object-literal option argument after the
+// target. Only that property names a location a read resolves against
+// (`globSync('*.ts', { cwd })`); other options and callbacks are not inspected,
+// so a callback body that mentions `process.cwd()` does not make a read.
+function cwdOptions(node) {
+  const locations = [];
+  for (const argument of node.arguments.slice(1)) {
+    if (!ts.isObjectLiteralExpression(argument)) continue;
+    for (const property of argument.properties) {
+      if (
         ts.isPropertyAssignment(property) &&
         ts.isIdentifier(property.name) &&
-        property.name.text === 'cwd' &&
-        isRepoLiteral(property.initializer),
-    )
-  );
+        property.name.text === 'cwd'
+      ) {
+        locations.push(property.initializer);
+      }
+    }
+  }
+  return locations;
 }
 
-// Any argument of a read call may carry the root: the path itself, or an
-// options object whose `cwd` derives from it.
+// A read location is argument zero, or a `cwd` option; either counts when it is
+// a bare repo literal or derives from a root.
 function readsRootArgument(node, tainted) {
-  return node.arguments.some(
-    (argument) =>
-      isRepoLiteral(argument) || isRepoCwdOption(argument) || containsRoot(argument, tainted),
-  );
+  const locations = node.arguments[0] ? [node.arguments[0], ...cwdOptions(node)] : [];
+  return locations.some((location) => isRepoLiteral(location) || containsRoot(location, tainted));
 }
 
 // Names bound to expressions that derive from a repository root: variables and
