@@ -1,3 +1,5 @@
+// @verify-changed-triggers: vitest.config.ts, playwright.config.ts, test/actions-status-visual.spec.ts
+
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -6,6 +8,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   acquireVerificationLock,
+  collectChangedFiles,
   createVerificationPlan,
   expandInputPaths,
   findRelatedCtTests,
@@ -49,6 +52,38 @@ function fixtureRoot(files: Record<string, string>) {
     writeFileSync(path, content);
   }
   return root;
+}
+
+function git(root: string, ...args: string[]) {
+  return execFileSync('git', args, {
+    cwd: root,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  }).trim();
+}
+
+function commitFile(root: string, file: string, message: string) {
+  mkdirSync(join(root, file, '..'), { recursive: true });
+  writeFileSync(join(root, file), '');
+  git(root, 'add', file);
+  git(root, 'commit', '-q', '-m', message);
+}
+
+function gitRepository() {
+  const root = temporaryDirectory();
+  git(root, 'init', '-q');
+  git(root, 'symbolic-ref', 'HEAD', 'refs/heads/main');
+  git(root, 'config', 'user.name', 'verify-changed test');
+  git(root, 'config', 'user.email', 'verify-changed@example.invalid');
+  git(root, 'config', 'commit.gpgsign', 'false');
+  commitFile(root, 'src/base.ts', 'base');
+  return root;
+}
+
+function branchWithCommit(root: string, file = 'src/committed.ts') {
+  git(root, 'checkout', '-q', '-b', 'feature');
+  commitFile(root, file, 'feature');
+  return file;
 }
 
 function deferred() {
@@ -97,11 +132,38 @@ afterEach(() => {
 describe('verify-changed arguments and paths', () => {
   it('parses explicit paths and dry-run', () => {
     expect(parseArgs(['--dry-run', '--', 'src/a.ts'])).toEqual({
+      base: null,
       dryRun: true,
       help: false,
       paths: ['src/a.ts'],
     });
     expect(() => parseArgs(['--wat'])).toThrow('unknown option');
+  });
+
+  it('parses --base in both spellings and requires a value', () => {
+    expect(parseArgs(['--base', 'origin/main'])).toMatchObject({ base: 'origin/main', paths: [] });
+    expect(parseArgs(['--base=origin/main', 'src/a.ts'])).toMatchObject({
+      base: 'origin/main',
+      paths: ['src/a.ts'],
+    });
+    expect(() => parseArgs(['--base'])).toThrow('--base');
+    expect(() => parseArgs(['--base', '--dry-run'])).toThrow('--base');
+  });
+
+  it('collects committed branch files only when a base is given', () => {
+    const root = gitRepository();
+    const committed = branchWithCommit(root);
+    writeFileSync(join(root, 'src/untracked.ts'), '');
+
+    expect(collectChangedFiles(root)).toEqual(['src/untracked.ts']);
+    expect(collectChangedFiles(root, { base: 'main' })).toEqual([committed, 'src/untracked.ts']);
+
+    writeFileSync(join(root, committed), 'export const changed = 1;');
+    expect(collectChangedFiles(root)).toEqual([committed, 'src/untracked.ts']);
+    expect(collectChangedFiles(root, { base: 'main' })).toEqual([committed, 'src/untracked.ts']);
+    expect(() => collectChangedFiles(root, { base: 'no-such-ref' })).toThrow(
+      /cannot resolve --base no-such-ref/,
+    );
   });
 
   it('accepts package-prefixed paths and expands directories', () => {
@@ -745,6 +807,49 @@ describe('verification planning', () => {
     expect(ids).toContain('playwright-full');
     expect(ids).not.toContain('playwright-direct');
     expect(plan.fallbackReasons).toEqual([]);
+  });
+});
+
+describe('empty change set guard', () => {
+  function capture() {
+    const lines: string[] = [];
+    return { lines, options: { log: (line: string) => lines.push(line) } };
+  }
+
+  it('exits 2 with the --base hint when a clean worktree collects nothing', async () => {
+    const root = gitRepository();
+    for (const argv of [[], ['--dry-run']]) {
+      const { lines, options } = capture();
+      expect(await runCli(argv, root, options), argv.join(' ')).toBe(2);
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).toContain('nothing to verify');
+      expect(lines[0]).toContain('pass --base origin/main');
+    }
+  });
+
+  it('omits the hint when --base was already supplied', async () => {
+    const root = gitRepository();
+    const { lines, options } = capture();
+    expect(await runCli(['--base', 'main'], root, options)).toBe(2);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain('nothing to verify');
+    expect(lines[0]).toContain('no files changed relative to the merge-base with main');
+    expect(lines[0]).not.toContain('pass --base');
+  });
+
+  it('plans the committed files of a branch against --base', async () => {
+    const root = gitRepository();
+    const committed = branchWithCommit(root);
+    const { lines, options } = capture();
+    expect(await runCli(['--dry-run', '--base', 'main'], root, options)).toBe(0);
+    expect(lines).toContain(`  - ${committed}`);
+    expect(lines.some((line) => /verify:changed: [1-9][0-9]* check\(s\)/.test(line))).toBe(true);
+  });
+
+  it('keeps explicit-path runs on the plain exit path', async () => {
+    const root = gitRepository();
+    const { options } = capture();
+    expect(await runCli(['--dry-run', 'src/missing.ts'], root, options)).toBe(0);
   });
 });
 
