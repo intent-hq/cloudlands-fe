@@ -142,7 +142,7 @@
         onclick={openPicker}>{label}</Button
       >
       <span
-        class="type-body min-w-0 flex-1 truncate text-muted-foreground"
+        class="type-caption min-w-0 flex-1 truncate text-muted-foreground"
         role="status"
         aria-live="polite"
         title={selectedText}
