@@ -4,7 +4,7 @@
   import { surfaceClasses } from '$lib/components/ui';
 
   let { slug }: { slug: 'motion' | 'sizes' | 'surfaces' | 'scrollbars' } = $props();
-  let motionActive = $state(false);
+  let motionReplay = $state(0);
   const springTiers = [
     ['fast', 'Hover, press, and focus feedback', '--spring-fast', '--spring-fast-exit'],
     ['moderate', 'Menus and compact disclosure', '--spring-moderate', '--spring-moderate-exit'],
@@ -40,18 +40,21 @@
       <div class="specimen-list">
         {#each springTiers as tier (tier[0])}
           <div class="spring-row">
-            <strong>{tier[0]}</strong><span>{tier[1]}</span><code>{tier[2]} · {tier[3]}</code><i
-              class:active={motionActive}
-              style={`--tier:var(${tier[2]});--ease:var(${tier[2]}-ease)`}
-            ></i>
+            <strong>{tier[0]}</strong><span>{tier[1]}</span><code>{tier[2]} · {tier[3]}</code>
+            <div class="spring-track" aria-hidden="true">
+              {#key motionReplay}
+                <i
+                  class:active={motionReplay > 0}
+                  style={`--tier:var(${tier[2]});--ease:var(${tier[2]}-ease)`}
+                ></i>
+              {/key}
+            </div>
           </div>
         {/each}
       </div>
-      <Button
-        variant="outline"
-        aria-pressed={motionActive}
-        onclick={() => (motionActive = !motionActive)}>Replay motion</Button
-      >
+      <Button variant="outline" onclick={() => motionReplay++}>Replay motion</Button>
+      <!-- i18n-ignore (developer catalog specimen) -->
+      <p class="reduced-motion-note">Reduced motion is on</p>
     </section>
     <section>
       <h2>Reduced motion</h2>
@@ -173,17 +176,49 @@
   .spring-row code {
     color: hsl(var(--muted-foreground));
   }
-  .spring-row i {
+  .spring-track {
     grid-column: 1/-1;
+    position: relative;
+    width: 100%;
+    height: 0.75rem;
+  }
+  .spring-row i {
+    position: absolute;
+    left: 0;
     display: block;
     width: 0.75rem;
     height: 0.75rem;
     border-radius: 999px;
     background: hsl(var(--foreground));
-    transition: transform var(--tier) var(--ease);
   }
   .spring-row i.active {
-    transform: translateX(calc(100% - 0.75rem));
+    left: calc(100% - 0.75rem);
+    animation: spring-travel var(--tier) var(--ease);
+  }
+  @keyframes spring-travel {
+    from {
+      left: 0;
+    }
+    to {
+      left: calc(100% - 0.75rem);
+    }
+  }
+  .reduced-motion-note {
+    display: none;
+  }
+  :global(.catalog-reduced-motion) .spring-row i.active {
+    animation: none;
+  }
+  :global(.catalog-reduced-motion) .reduced-motion-note {
+    display: block;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .spring-row i.active {
+      animation: none;
+    }
+    .reduced-motion-note {
+      display: block;
+    }
   }
   .size-ladder > div {
     display: grid;
