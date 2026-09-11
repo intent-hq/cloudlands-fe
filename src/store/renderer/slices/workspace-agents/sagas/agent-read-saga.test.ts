@@ -35,11 +35,9 @@ import { agentReadSaga } from './agent-read-saga';
 
 const WS = 'ws-read';
 const AGENT = 'agent-read';
-const settle = async () => {
-  await Promise.resolve();
-  await Promise.resolve();
-  await Promise.resolve();
-};
+// Macrotask hop: drains every pending microtask regardless of how many
+// promise hops the read seam chains internally.
+const settle = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
 function session(overrides: Partial<AgentSession> = {}): AgentSession {
   return {

@@ -1,3 +1,6 @@
+// @verify-changed-triggers: ../ActivityLogPreview.svelte, ../../MultiSelectTabbedSidebar.svelte,
+//   ../../../chat/ChatPanel.svelte, ../../../chat/ToolCall.svelte, src/app.css
+
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';

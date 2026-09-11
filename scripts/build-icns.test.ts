@@ -1,3 +1,6 @@
+// @verify-changed-triggers: src/assets/icons/icon.ico, src/assets/icons/dev-icon.ico, src/assets/icons/dev-icon.icns,
+//   src/assets/icons/dev-icon.png, src/assets/icons/app-icon/*.png
+
 import { createHash } from 'node:crypto';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';

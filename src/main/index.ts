@@ -132,6 +132,7 @@ import { handleUncaughtException, handleUnhandledRejection } from './utils/proce
 import { isWebviewPopupWindow, setupWebviewSecurity } from './webview-security';
 import { attachAppCommandHistoryNavigation } from './app-command-navigation';
 import { attachSwipeHistoryNavigation } from './swipe-navigation';
+import { attachRendererHangMonitor } from './renderer-hang-monitor';
 import { setupHardwareConsoleMain } from '../features/hardware-console/main/hardware-console.ipc';
 import { setupConsoleOwnerTracking } from '../features/hardware-console/main/console-owner';
 import { requestHardwareConsoleLightingClear } from '../features/hardware-console/main/clear-lighting-shutdown';
@@ -640,6 +641,9 @@ app.whenReady().then(async () => {
     // macOS: forward swipe gestures (incl. Logi Options+ synthesized swipes
     // for mouse side buttons) the same way (see src/main/swipe-navigation.ts).
     attachSwipeHistoryNavigation(window);
+    // Log renderer hangs with window context + a JS stack and offer
+    // Reload / Wait (see src/main/renderer-hang-monitor.ts).
+    attachRendererHangMonitor(window);
   });
 
   // Set application menu with correct app name on macOS
@@ -1662,13 +1666,13 @@ app.whenReady().then(async () => {
     // Run regardless of whether a window exists yet (intent-hq/monorepo#3054,
     // same race as #1848 above): this setImmediate task can run before window
     // creation, and gating on the window skipped the check — and the pref
-    // advance — for the whole session. The window is resolved at send time
-    // inside the check; with no window the notes park as pending for the
-    // renderer's get-pending claim.
+    // advance — for the whole session. Open windows are enumerated at send
+    // time inside the check; with no window the notes park as pending for
+    // the renderers' get-pending path.
     if (app.isPackaged) {
       const { initializeReleaseNotesOnStartup } =
         await import('../features/release-notes/main/release-notes.ipc');
-      void initializeReleaseNotesOnStartup(getMainWindow);
+      void initializeReleaseNotesOnStartup();
     }
 
     // Setup development-only IPC handlers

@@ -28,6 +28,7 @@
   import {
     type AvatarState,
     getAvatarStateForSession,
+    isSessionRunning,
   } from '$features/agent/components/agent-avatar/avatar-state';
   import { selectAgentSessionsByIds } from '$store/renderer/slices/agent-session/agent-session-selectors';
 
@@ -372,10 +373,12 @@
       const agent = agentSessionsById.get(agentId);
       if (!agent) continue;
 
-      // Shared precedence: a live turn with an unresolved tool is still running,
-      // so tool-executing agents stay visible here instead of dropping out.
+      // Shared running test: a live turn with an unresolved tool is still running,
+      // so tool-executing agents stay visible here instead of dropping out. The
+      // avatar state itself may outrank `running` (e.g. `question`), so it is
+      // not used as the visibility gate.
+      if (!isSessionRunning(agent)) continue;
       const state = getAvatarStateForSession(agent);
-      if (state !== 'running') continue;
 
       // Get specialist from agent metadata
       const specialistId = agent.metadata?.specialist || agent.agentMetadata?.specialist;

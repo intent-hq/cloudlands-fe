@@ -18,8 +18,17 @@ export const initializeReleaseNotes = createAction('releaseNotes/initialize');
 /** Mark as initialized */
 export const setInitialized = createAction('releaseNotes/setInitialized');
 
-/** Close the release notes modal */
+/**
+ * Close the release notes modal locally only — dispatched when main broadcasts
+ * `release-notes:close`, so it must never notify main back (no echo loop).
+ */
 export const closeReleaseNotesModal = createAction('releaseNotes/closeModal');
+
+/**
+ * User dismissed the modal: closes it locally and (via saga) invokes
+ * `release-notes:dismiss` so main closes it in every other window.
+ */
+export const dismissReleaseNotes = createAction('releaseNotes/dismiss');
 
 /** Manually show release notes: opens the modal and fetches on demand */
 export const showReleaseNotes = createAction('releaseNotes/showReleaseNotes');
@@ -54,6 +63,10 @@ releaseNotesReducer.with(setInitialized, (state) => ({
   initialized: true,
 }));
 releaseNotesReducer.with(closeReleaseNotesModal, (state) => ({
+  ...state,
+  showModal: false,
+}));
+releaseNotesReducer.with(dismissReleaseNotes, (state) => ({
   ...state,
   showModal: false,
 }));

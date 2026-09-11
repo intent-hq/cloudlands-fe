@@ -1,3 +1,14 @@
+// @verify-changed-triggers: ../ChatPanel.svelte, ../ChatMessage.svelte, ../LazyTurn.svelte,
+//   ../PinnedUserPrompt.svelte, ../pinned-prompt.ts, ../user-message-surface.ts,
+//   ../ConversationTurnGap.svelte, ../MessageContent.svelte, ../StreamingMessageContent.svelte,
+//   ../ResponseGroup.svelte, ../operational-disclosure-row.ts, ../ChatOperationalRow.svelte,
+//   ../StreamingStatus.svelte, ../StreamingTypingIndicator.svelte, ../EventWakeupBanner.svelte,
+//   ../InlineAgentAvatar.svelte, ../SuggestedPrompts.svelte, ../message-action-surface.ts,
+//   ../ToolCall.svelte, ../ThinkingBlock.svelte, ../ContextEngineToolCall.svelte,
+//   ../chat-queue-edge-layout.ts, ../input/SimpleRichInput.svelte,
+//   ../../markdown/MarkdownViewer.svelte, ../../ui/indicators/IntentMarkLoader.svelte,
+//   ../../ui/indicators/index.ts, ../../../../features/layout/tab-types/AgentTabType.svelte
+
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';

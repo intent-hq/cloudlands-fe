@@ -1,7 +1,7 @@
 /**
- * Release-notes invoke bridge — forwards `release-notes:get` and
- * `release-notes:get-pending` to the real Electron preload bridge
- * (`window.electronAPI.invoke`) when present.
+ * Release-notes invoke bridge — forwards `release-notes:get`,
+ * `release-notes:get-pending` and `release-notes:dismiss` to the real Electron
+ * preload bridge (`window.electronAPI.invoke`) when present.
  *
  * Same pattern as auto-update-bridge-seeder: the generated `invoke()` routes
  * ALL legacy renderer invokes through the mock router in every build, so
@@ -32,6 +32,7 @@ function bridgeChannel(channel: string): void {
 export function registerReleaseNotesBridge(): void {
   bridgeChannel(RELEASE_NOTES_CHANNELS.GET);
   bridgeChannel(RELEASE_NOTES_CHANNELS.GET_PENDING);
+  bridgeChannel(RELEASE_NOTES_CHANNELS.DISMISS);
 }
 
 registerReleaseNotesBridge();

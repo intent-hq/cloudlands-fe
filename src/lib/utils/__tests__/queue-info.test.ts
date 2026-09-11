@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   getQueueInfo,
   getBatchId,
+  getQueuedMessageId,
   stripDequeueWaitNote,
   shouldSuppressQueueDivider,
   isBatchedDeliverySeam,
@@ -98,6 +99,36 @@ describe('getBatchId', () => {
     expect(getBatchId({ queueInfo: { batchId: '' } })).toBeNull();
     expect(getBatchId({ queueInfo: { batchId: '   ' } })).toBeNull();
     expect(getBatchId({ queueInfo: { batchId: 42 } })).toBeNull();
+  });
+});
+
+describe('getQueuedMessageId', () => {
+  it('extracts the source queue entry id from a drained row (PROTOCOL §5.5)', () => {
+    expect(
+      getQueuedMessageId({
+        queueInfo: { queuedAt: '2026-01-01T11:58:00Z', waitedMs: 120000, queuedMessageId: 'qm-1' },
+      }),
+    ).toBe('qm-1');
+  });
+
+  it('resolves on a sub-threshold row that carries no wait fields', () => {
+    expect(
+      getQueuedMessageId({ queueInfo: { batchId: 'batch-abc', queuedMessageId: 'qm-2' } }),
+    ).toBe('qm-2');
+  });
+
+  it('returns null for absent, empty, or malformed ids (older daemons)', () => {
+    expect(getQueuedMessageId(undefined)).toBeNull();
+    expect(getQueuedMessageId(null)).toBeNull();
+    expect(getQueuedMessageId({})).toBeNull();
+    expect(getQueuedMessageId({ queueInfo: 'soon' })).toBeNull();
+    expect(getQueuedMessageId({ queueInfo: {} })).toBeNull();
+    expect(
+      getQueuedMessageId({ queueInfo: { queuedAt: '2026-01-01T11:58:00Z', waitedMs: 1 } }),
+    ).toBeNull();
+    expect(getQueuedMessageId({ queueInfo: { queuedMessageId: '' } })).toBeNull();
+    expect(getQueuedMessageId({ queueInfo: { queuedMessageId: '   ' } })).toBeNull();
+    expect(getQueuedMessageId({ queueInfo: { queuedMessageId: 42 } })).toBeNull();
   });
 });
 

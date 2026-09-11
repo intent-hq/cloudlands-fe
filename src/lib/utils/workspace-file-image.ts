@@ -15,6 +15,8 @@
  * navigation stores or toasts.
  */
 
+import type { VideoSource } from '$shared/types/content-block';
+
 /** Image extensions served by the workspace-file:// protocol (SVG excluded). */
 const IMAGE_EXTENSION_RE = /\.(?:png|jpe?g|gif|webp)$/i;
 const VIDEO_EXTENSION_RE = /\.(?:mp4|webm)$/i;
@@ -51,6 +53,56 @@ function decodeSegment(segment: string): string | null {
 
 function isValidWorkspaceId(id: string): boolean {
   return WORKSPACE_ID_RE.test(id) && id !== '.' && id !== '..';
+}
+
+/** Identify video-shaped assets even when invalid, so they cannot fall back to image policy. */
+export function isWorkspaceAssetVideoCandidate(value: string): boolean {
+  if (!/^[\s\u0000-\u001f]*workspace-asset:/i.test(value)) return false;
+  // Decode individual bytes for classification, including when another escape is malformed.
+  // Acceptance and routing remain exclusively in workspaceAssetVideoSource below.
+  const path = value
+    .split(/[?#]/)[0]
+    .replace(/%([a-f0-9]{2})/gi, (_match, hex: string) =>
+      String.fromCharCode(Number.parseInt(hex, 16)),
+    );
+  return /\.(?:mp4|webm)$/i.test(path.trim());
+}
+
+/** Saved assets stay on note.readAsset routing, never workspace file paths. */
+export function workspaceAssetVideoSource(
+  value: string,
+  currentWorkspaceId?: string,
+): Extract<VideoSource, { kind: 'workspace' }> | null {
+  if (value !== value.trim()) return null;
+  const match = /^workspace-asset:\/\/([^/?#]+)\/([^/?#]+)(\?[^#]*)?$/.exec(value);
+  if (!match || !currentWorkspaceId || !isValidWorkspaceId(currentWorkspaceId)) return null;
+  if (match[1] !== currentWorkspaceId) return null;
+  const assetId = decodeSegment(match[2]);
+  if (!assetId || !/^[A-Za-z0-9._-]+\.(?:mp4|webm)$/i.test(assetId)) return null;
+
+  // Preserve accepted routing/cache hints verbatim; reject all other query shapes.
+  const search = match[3];
+  if (search) {
+    if (!/^\?[^&=]+=[^&=]+(?:&[^&=]+=[^&=]+)*$/.test(search)) return null;
+    const seen = new Set<string>();
+    for (const [key, token] of new URLSearchParams(search)) {
+      if (
+        (key !== 'backend' && key !== 'v') ||
+        seen.has(key) ||
+        !token ||
+        /[^A-Za-z0-9._-]/.test(token)
+      ) {
+        return null;
+      }
+      seen.add(key);
+    }
+  }
+
+  return {
+    kind: 'workspace',
+    url: value,
+    mimeType: assetId.toLowerCase().endsWith('.webm') ? 'video/webm' : 'video/mp4',
+  };
 }
 
 /**
@@ -252,7 +304,7 @@ export function stampWorkspaceFileImageVersions(html: string, version: string): 
  * `data-media-unavailable="workspace-unknown"` so the viewer mounts a placeholder.
  */
 export function rewriteIntentFileImageSrcs(html: string, currentWorkspaceId?: string): string {
-  if (!html.includes('intent://')) return html;
+  if (!html.includes('intent://') && !html.includes('workspace-asset://')) return html;
 
   return html.replace(/<img\b[^>]*>/gi, (match) => {
     const srcMatch = /\ssrc="([^"]*)"/i.exec(match);
@@ -260,6 +312,11 @@ export function rewriteIntentFileImageSrcs(html: string, currentWorkspaceId?: st
 
     // marked entity-encodes ampersands inside attribute values
     const src = srcMatch[1].replace(/&amp;/g, '&');
+    const assetVideo = workspaceAssetVideoSource(src, currentWorkspaceId);
+    if (assetVideo) {
+      const name = /\salt="([^"]*)"/i.exec(match)?.[1] ?? '';
+      return `<video src="${escapeAttr(assetVideo.url)}" controls preload="metadata" playsinline class="markdown-video" data-name="${name}"></video>`;
+    }
     if (!src.startsWith('intent://')) return match;
     const target = parseIntentFileTarget(src, currentWorkspaceId);
     if (!target) {

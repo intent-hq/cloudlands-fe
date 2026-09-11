@@ -26,9 +26,7 @@
     node.attrs.mediaUnsupported
       ? 'unsupported'
       : failedImageUrl === imageUrl
-        ? workspaceFile || imageUrl.startsWith('workspace-asset://')
-          ? 'missing'
-          : 'load-failed'
+        ? 'load-failed'
         : null,
   );
   let unavailablePath = $derived(workspaceFile?.path ?? intentFile?.path);

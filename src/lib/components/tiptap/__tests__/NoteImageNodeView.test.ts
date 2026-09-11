@@ -56,7 +56,7 @@ describe('NoteImageNodeView', () => {
     expect(screen.getByRole('dialog', { name: /image preview/i })).toBeTruthy();
   });
 
-  it('replaces a missing workspace file with path actions', async () => {
+  it('keeps file actions without claiming an image load error proves absence', async () => {
     render(NoteImageNodeView, {
       props: makeProps(false, {
         src: 'workspace-file://workspace-1/docs/missing.png',
@@ -67,9 +67,21 @@ describe('NoteImageNodeView', () => {
 
     await fireEvent.error(screen.getByAltText('Missing image'));
 
-    expect(screen.getByTestId('media-unavailable').dataset.reason).toBe('missing');
+    expect(screen.getByTestId('media-unavailable').dataset.reason).toBe('load-failed');
     expect(screen.getByRole('button', { name: /copy path/i })).toBeTruthy();
     expect(screen.getByRole('button', { name: /open file/i })).toBeTruthy();
+  });
+
+  it('does not misidentify a saved asset error as a missing repository file', async () => {
+    render(NoteImageNodeView, {
+      props: makeProps(false, {
+        src: 'workspace-asset://workspace-1/saved.png',
+        alt: 'Saved image',
+      }),
+    });
+    await fireEvent.error(screen.getByAltText('Saved image'));
+    expect(screen.getByTestId('media-unavailable').dataset.reason).toBe('load-failed');
+    expect(screen.queryByRole('button', { name: /open file|copy path/i })).toBeNull();
   });
 
   it('renders unsupported note images as a placeholder without loading them', () => {
