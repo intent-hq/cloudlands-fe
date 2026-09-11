@@ -8,7 +8,7 @@ import {
   parseUiComponentInventory,
   parseUiComponentMetadata,
 } from '../src/lib/components/ui/component-metadata';
-import { runUiComponentAudit } from './ui-component-audit';
+import { buildPatternAdoptionAudit, runUiComponentAudit } from './ui-component-audit';
 import { buildUiComponentInventory } from './ui-component-inventory';
 
 const auditScript = path.resolve(process.cwd(), 'scripts/ui-component-audit.ts');
@@ -269,4 +269,31 @@ describe('UI component inventory gate', () => {
       rmSync(directory, { recursive: true, force: true });
     }
   }, 120_000);
+});
+
+describe('settings pattern adoption', () => {
+  it('accepts standalone field rows and still flags sections without a schema form', () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'settings-pattern-audit-'));
+    const settings = path.join(root, 'src/lib/components/settings');
+    mkdirSync(settings, { recursive: true });
+    try {
+      writeFileSync(
+        path.join(settings, 'CustomSettings.svelte'),
+        '<SettingsFieldRow id="custom" label="Custom"><CustomControl /></SettingsFieldRow>',
+      );
+      writeFileSync(
+        path.join(settings, 'FormSettings.svelte'),
+        '<SettingsSection><SettingsForm schema={schema} /></SettingsSection>',
+      );
+      writeFileSync(
+        path.join(settings, 'UnmigratedSettings.svelte'),
+        '<SettingsSection><CustomControl /></SettingsSection>',
+      );
+      expect(buildPatternAdoptionAudit(root).patterns.settingsForm.findings).toEqual([
+        { file: 'src/lib/components/settings/UnmigratedSettings.svelte', occurrences: 1 },
+      ]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });

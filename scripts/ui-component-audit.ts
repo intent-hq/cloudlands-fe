@@ -125,7 +125,9 @@ export function buildPatternAdoptionAudit(root = projectRoot): PatternAdoptionAu
     const source = fs.readFileSync(absolute, 'utf8');
     const settingsCandidate =
       (file.includes('/settings/') || /Settings\.svelte$/.test(file)) &&
-      /<(?:SettingsSection|SettingsFieldRow)\b/.test(source);
+      // Standalone SettingsFieldRow is the canonical anatomy for bespoke controls.
+      // Section-level forms still require the schema-driven SettingsForm.
+      /<SettingsSection\b/.test(source);
     if (settingsCandidate && !/<SettingsForm\b/.test(source)) {
       findings.settingsForm.push({ file, occurrences: 1 });
     }

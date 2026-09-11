@@ -75,9 +75,9 @@
     data-highlight-id={`specialist-${specialist.id}`}
     data-settings-agent-row
     aria-current={isSelected({ type: 'specialist', id: specialist.id }) ? 'true' : undefined}
-    class="flex h-auto w-full min-w-0 cursor-pointer items-center gap-2.5 rounded-lg !px-2.5 !py-2 text-left text-sm transition-colors
+    class="flex h-auto w-full min-w-0 cursor-pointer items-center gap-2.5 rounded-lg !px-2.5 !py-2 text-left type-body transition-colors
       {isSelected({ type: 'specialist', id: specialist.id })
-      ? 'bg-muted font-medium text-foreground shadow-xs'
+      ? 'bg-muted font-medium! text-foreground shadow-xs'
       : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'}"
   >
     <AgentAvatar
@@ -105,7 +105,7 @@
             delayDuration={400}
           >
             <span
-              class="text-ui shrink-0 rounded bg-muted px-1 py-0.5 font-medium text-muted-foreground"
+              class="type-caption shrink-0 rounded bg-muted px-1 py-0.5 font-medium! text-muted-foreground"
             >
               {m.settings_aiBehavior_sidebar_projectBadge()}
             </span>
@@ -126,9 +126,9 @@
   data-highlight-id="create-specialist"
   data-settings-agent-row
   aria-current={isSelected({ type: 'create-specialist' }) ? 'true' : undefined}
-  class="flex h-auto w-full min-w-0 cursor-pointer items-center gap-2.5 rounded-lg !px-2.5 !py-2 text-left text-sm transition-colors
+  class="flex h-auto w-full min-w-0 cursor-pointer items-center gap-2.5 rounded-lg !px-2.5 !py-2 text-left type-body transition-colors
     {isSelected({ type: 'create-specialist' })
-    ? 'bg-muted font-medium text-foreground shadow-xs'
+    ? 'bg-muted font-medium! text-foreground shadow-xs'
     : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'}"
 >
   <Fa icon={faPlus} class="h-3 w-3 shrink-0" />

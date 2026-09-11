@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { SettingsFieldRow } from '$lib/components/patterns/settings';
   import { Button, Input, Select } from '$lib/components/patterns/settings/custom-controls';
   import { onMount } from 'svelte';
   import { faCheck, faXmark } from '@fortawesome/free-solid-svg-icons';
@@ -252,7 +253,7 @@
 
 <div class="space-y-4">
   {#if $error$}
-    <p class="text-xs text-danger">{$error$}</p>
+    <p class="type-body text-danger">{$error$}</p>
   {/if}
 
   {#if $isLoading$}
@@ -261,7 +262,7 @@
       <div class="h-4 w-48 bg-muted/50 rounded animate-pulse"></div>
     </div>
   {:else if !$available$}
-    <p class="text-xs text-subtle">{m.settings_voice_unavailable()}</p>
+    <p class="type-body text-subtle">{m.settings_voice_unavailable()}</p>
   {:else}
     <div class="space-y-6">
       {#each VOICE_PROVIDERS as target (target)}
@@ -275,17 +276,17 @@
                 {:else}
                   <OpenAIIcon size={14} class="text-ghost" />
                 {/if}
-                <span class="text-sm text-foreground">{PROVIDER_LABELS[target]}</span>
+                <span class="type-body text-foreground">{PROVIDER_LABELS[target]}</span>
                 {#if isDefault}
-                  <span class="text-xs text-subtle flex items-center gap-1">
+                  <span class="type-caption text-subtle flex items-center gap-1">
                     <Fa icon={faCheck} class="w-2.5 h-2.5 text-green-500" />
                     {m.settings_voice_default_label()}
                   </span>
                 {/if}
               </div>
-              <p class="text-xs text-subtle pl-6">{PROVIDER_DESCRIPTIONS[target]()}</p>
+              <p class="type-body text-subtle pl-6">{PROVIDER_DESCRIPTIONS[target]()}</p>
             </div>
-            <div class="flex items-center gap-2 text-xs shrink-0">
+            <div class="flex items-center gap-2 type-caption shrink-0">
               {#if $busyProvider$ === target}
                 <span class="text-subtle">{m.settings_voice_saving()}</span>
               {:else}
@@ -322,7 +323,7 @@
                   <Button
                     variant="ghost"
                     type="button"
-                    class="text-primary-ink hover:text-primary-ink/80 cursor-pointer transition-colors font-medium"
+                    class="type-body text-primary-ink hover:text-primary-ink/80 cursor-pointer transition-colors font-medium!"
                     onclick={() => handleShowKeyInput(target)}
                   >
                     {m.settings_voice_setKey()}
@@ -339,7 +340,7 @@
                   type="password"
                   bind:value={apiKeyDraft}
                   placeholder={KEY_PLACEHOLDERS[target]}
-                  class="h-7 text-xs flex-1"
+                  class="h-7 type-body flex-1"
                   aria-label={m.settings_voice_apiKey_ariaLabel({
                     provider: PROVIDER_LABELS[target],
                   })}
@@ -350,7 +351,7 @@
                 />
                 <Button
                   type="button"
-                  class="text-primary-ink hover:text-primary-ink/80 cursor-pointer transition-colors font-medium text-xs"
+                  class="text-primary-ink hover:text-primary-ink/80 cursor-pointer transition-colors font-medium! type-body"
                   onclick={() => handleSubmitApiKey(target)}
                   disabled={!apiKeyDraft.trim()}
                 >
@@ -358,13 +359,13 @@
                 </Button>
                 <Button
                   type="button"
-                  class="text-muted-foreground hover:text-foreground cursor-pointer transition-colors text-xs"
+                  class="text-muted-foreground hover:text-foreground cursor-pointer transition-colors type-body"
                   onclick={handleCancelKeyInput}
                 >
                   {m.settings_voice_cancel()}
                 </Button>
               </div>
-              <p class="text-xs text-subtle">
+              <p class="type-body text-subtle">
                 {m.settings_voice_apiKeyStorageNote()}
               </p>
             </div>
@@ -372,10 +373,10 @@
 
           {#if target === 'openai' && $keyConfigured$.openai && $openaiModel$ !== null}
             <div class="pl-6 flex items-center gap-3">
-              <span class="text-xs text-subtle shrink-0">{m.settings_voice_model_label()}</span>
+              <span class="type-body text-subtle shrink-0">{m.settings_voice_model_label()}</span>
               <Select.Root value={$openaiModel$} onchange={(v) => handleModelChange(v)}>
                 <Select.Trigger
-                  class="h-7 text-xs w-[200px]"
+                  class="h-7 type-body w-[200px]"
                   aria-label={m.settings_voice_model_ariaLabel()}
                 >
                   {$openaiModel$}
@@ -384,7 +385,7 @@
                   {#each VOICE_OPENAI_MODELS as model (model)}
                     <Select.Item value={model}>
                       <!-- i18n-ignore (model identifiers) -->
-                      <span class="text-xs">{model}</span>
+                      <span class="type-body">{model}</span>
                     </Select.Item>
                   {/each}
                 </Select.Content>
@@ -400,25 +401,25 @@
           <div class="space-y-1">
             <div class="flex items-center gap-2">
               <Fa icon={faApple} class="w-3.5 h-3.5 text-ghost" />
-              <span class="text-sm text-foreground">{m.settings_voice_osEngine_label()}</span>
+              <span class="type-body text-foreground">{m.settings_voice_osEngine_label()}</span>
               {#if isOsDefault}
-                <span class="text-xs text-subtle flex items-center gap-1">
+                <span class="type-caption text-subtle flex items-center gap-1">
                   <Fa icon={faCheck} class="w-2.5 h-2.5 text-green-500" />
                   {m.settings_voice_default_label()}
                 </span>
               {/if}
             </div>
-            <p class="text-xs text-subtle pl-6">{m.settings_voice_osEngine_description()}</p>
+            <p class="type-body text-subtle pl-6">{m.settings_voice_osEngine_description()}</p>
             {#if isOsDefault}
-              <p class="text-xs text-subtle pl-6">{m.settings_voice_osEngine_permissionNote()}</p>
+              <p class="type-body text-subtle pl-6">{m.settings_voice_osEngine_permissionNote()}</p>
             {/if}
             {#if !$osEngineAvailable$}
-              <p class="text-xs text-danger pl-6">
+              <p class="type-body text-danger pl-6">
                 {m.settings_voice_osEngine_helperMissing_description()}
               </p>
             {/if}
           </div>
-          <div class="flex items-center gap-2 text-xs shrink-0">
+          <div class="flex items-center gap-2 type-caption shrink-0">
             {#if !isOsDefault}
               <Button
                 variant="ghost"
@@ -435,11 +436,10 @@
       {/if}
 
       {#if $language$ !== null}
-        <div class="space-y-2 pt-1">
-          <span class="text-xs text-foreground">{m.settings_voice_language_label()}</span>
+        <SettingsFieldRow id="voice-language" label={m.settings_voice_language_label()}>
           <Select.Root value={$language$} onchange={handleLanguageChange}>
             <Select.Trigger
-              class="h-7 text-xs w-[280px]"
+              class="h-7 type-body w-[280px]"
               aria-label={m.settings_voice_language_ariaLabel()}
             >
               {$language$ === VOICE_LANGUAGE_AUTO
@@ -448,23 +448,22 @@
             </Select.Trigger>
             <Select.Content>
               <Select.Item value={VOICE_LANGUAGE_AUTO}>
-                <span class="text-xs">{m.settings_voice_language_auto()}</span>
+                <span class="type-body">{m.settings_voice_language_auto()}</span>
               </Select.Item>
               {#each languageOptions as code (code)}
                 <Select.Item value={code}>
-                  <span class="text-xs">{languageDisplayName(code)}</span>
+                  <span class="type-body">{languageDisplayName(code)}</span>
                 </Select.Item>
               {/each}
             </Select.Content>
           </Select.Root>
-        </div>
+        </SettingsFieldRow>
       {/if}
 
-      <div class="space-y-2 pt-1">
-        <span class="text-xs text-foreground">{m.settings_voice_inputDevice_label()}</span>
+      <SettingsFieldRow id="voice-input-device" label={m.settings_voice_inputDevice_label()}>
         <Select.Root value={$inputDeviceId$ ?? ''} onchange={handleInputDeviceChange}>
           <Select.Trigger
-            class="h-7 text-xs w-[280px]"
+            class="h-7 type-body w-[280px]"
             aria-label={m.settings_voice_inputDevice_ariaLabel()}
           >
             {selectedInputDevice
@@ -473,20 +472,20 @@
           </Select.Trigger>
           <Select.Content>
             <Select.Item value="">
-              <span class="text-xs">{m.settings_voice_inputDevice_default()}</span>
+              <span class="type-body">{m.settings_voice_inputDevice_default()}</span>
             </Select.Item>
             {#each $inputDevices$ as device, index (device.deviceId)}
               <Select.Item value={device.deviceId}>
-                <span class="text-xs">{inputDeviceLabel(device, index)}</span>
+                <span class="type-body">{inputDeviceLabel(device, index)}</span>
               </Select.Item>
             {/each}
           </Select.Content>
         </Select.Root>
-      </div>
+      </SettingsFieldRow>
 
       {#if $vocabulary$ !== null || $workspaceVocabularyMaxTerms$ !== null}
         <div class="space-y-3 pt-1">
-          <span class="text-sm text-foreground font-medium">
+          <span class="type-body text-foreground font-medium!">
             {m.settings_voice_workspaceVocabulary_label()}
           </span>
 
@@ -494,10 +493,10 @@
             <div class="space-y-1">
               <div class="flex items-center justify-between gap-3">
                 <div class="space-y-1">
-                  <span class="text-xs text-foreground">
+                  <span class="type-body text-foreground">
                     {m.settings_voice_workspaceVocabulary_autoTerms_label()}
                   </span>
-                  <p class="text-xs text-subtle">
+                  <p class="type-body text-subtle">
                     {m.settings_voice_workspaceVocabulary_description()}
                   </p>
                 </div>
@@ -507,7 +506,7 @@
                   min={VOICE_WORKSPACE_VOCABULARY_MAX_TERMS_MIN}
                   max={VOICE_WORKSPACE_VOCABULARY_MAX_TERMS_MAX}
                   step={1}
-                  class="h-7 text-xs w-[100px] shrink-0"
+                  class="h-7 type-body w-[100px] shrink-0"
                   aria-label={m.settings_voice_workspaceVocabulary_input_ariaLabel()}
                   aria-invalid={maxTermsDraftError !== null}
                   oninput={() => (maxTermsDraftError = null)}
@@ -518,7 +517,7 @@
                 />
               </div>
               {#if maxTermsDraftError}
-                <p class="text-xs text-danger">{maxTermsDraftError}</p>
+                <p class="type-body text-danger">{maxTermsDraftError}</p>
               {/if}
             </div>
           {/if}
@@ -526,14 +525,14 @@
           {#if $vocabulary$ !== null}
             <div class="space-y-2">
               <div class="space-y-1">
-                <span class="text-xs text-foreground">{m.settings_voice_vocabulary_label()}</span>
-                <p class="text-xs text-subtle">{m.settings_voice_vocabulary_description()}</p>
+                <span class="type-body text-foreground">{m.settings_voice_vocabulary_label()}</span>
+                <p class="type-body text-subtle">{m.settings_voice_vocabulary_description()}</p>
               </div>
               <div class="flex items-center gap-2">
                 <Input
                   bind:value={vocabularyDraft}
                   placeholder={m.settings_voice_vocabulary_placeholder()}
-                  class="h-7 text-xs flex-1"
+                  class="h-7 type-body flex-1"
                   aria-label={m.settings_voice_vocabulary_input_ariaLabel()}
                   oninput={() => (vocabularyDraftError = null)}
                   onkeydown={(e) => {
@@ -542,7 +541,7 @@
                 />
                 <Button
                   type="button"
-                  class="text-primary-ink hover:text-primary-ink/80 cursor-pointer transition-colors font-medium text-xs"
+                  class="text-primary-ink hover:text-primary-ink/80 cursor-pointer transition-colors font-medium! type-body"
                   onclick={handleAddVocabularyTerm}
                   disabled={!vocabularyDraft.trim()}
                 >
@@ -550,13 +549,13 @@
                 </Button>
               </div>
               {#if vocabularyDraftError}
-                <p class="text-xs text-danger">{vocabularyDraftError}</p>
+                <p class="type-body text-danger">{vocabularyDraftError}</p>
               {/if}
               {#if $vocabulary$.length > 0}
                 <div class="flex flex-wrap gap-1.5">
                   {#each $vocabulary$ as term (term)}
                     <span
-                      class="inline-flex items-center gap-1 rounded-full bg-muted/50 px-2 py-0.5 text-xs text-foreground"
+                      class="inline-flex items-center gap-1 rounded-full bg-muted/50 px-2 py-0.5 type-caption text-foreground"
                     >
                       {term}
                       <Button

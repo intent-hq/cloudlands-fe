@@ -153,10 +153,10 @@
     <div class="w-80 p-3 space-y-3 overflow-hidden">
       <!-- Header with helpful copy -->
       <div class="space-y-1">
-        <p class="text-sm font-medium text-foreground">
+        <p class="type-body font-medium! text-foreground">
           {m.settings_providerPath_header({ name: providerName })}
         </p>
-        <p class="text-xs text-subtle">
+        <p class="type-body text-subtle">
           {#if npxPackage && resolvedPath}
             {m.settings_providerPath_npxOverrideHint_before({ package: npxPackage })}
             <code class="px-1 py-0.5 bg-muted rounded text-ui">{cliCommand}</code>

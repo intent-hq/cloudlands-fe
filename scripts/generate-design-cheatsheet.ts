@@ -75,6 +75,11 @@ Pattern-first routing for product UI. Open the catalog URL in \`pnpm run dev:ui\
 - **Overlay recipe:** \`.overlay-surface\` uses the 8px medium radius and two-layer \`--elevation-overlay\`; its boundary is 0px in light themes and a 1px semantic border in dark themes.
 - **States:** use \`bg-hover\`, \`bg-active\`, \`bg-selected\`, and \`bg-danger-background\` rather than physical colors.
 
+## Settings typography
+
+- **Roles:** \`type-body\` for labels, descriptions and controls; \`type-caption\` for short metadata; \`type-title\` for headings. Use \`SettingsFieldRow\` for label-and-control rows.
+- **Zero rule:** Never use raw \`text-xs\`, \`text-sm\`, \`text-base\` or \`text-lg\` in settings components, routes or patterns. Pair \`font-medium!\` with a \`type-*\` role on the same element; \`intent/no-raw-typography\` enforces this.
+
 ## Motion
 
 - **Import:** \`$lib/motion\`

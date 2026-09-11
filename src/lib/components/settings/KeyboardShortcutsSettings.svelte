@@ -88,7 +88,7 @@
       >
         <h3
           id={`keyboard-shortcuts-${categoryId}`}
-          class="text-xs font-medium text-muted-foreground uppercase tracking-wider"
+          class="type-caption font-medium! text-muted-foreground uppercase tracking-wider"
         >
           {category.title}
         </h3>
@@ -100,13 +100,13 @@
             {#if definition && !hiddenShortcutIds.has(definition.id)}
               {@const isFixed = fixedShortcutIds.has(definition.id)}
               <div class="flex justify-between gap-4" data-shortcut-entry>
-                <dt class="min-w-0 pt-1.5 text-sm text-foreground">
+                <dt class="min-w-0 pt-1.5 type-body text-foreground">
                   <label for={`shortcut-${definition.id}`}>{shortcut.label}</label>
                 </dt>
                 <dd class="relative min-w-0 mr-4">
                   <Input
                     id={`shortcut-${definition.id}`}
-                    class="h-7 w-28 bg-transparent px-2 text-xs read-only:text-foreground read-only:hover:border-input focus-visible:ring-2 focus-visible:ring-ring/40 {isFixed
+                    class="h-7 w-28 bg-transparent px-2 type-body read-only:text-foreground read-only:hover:border-input focus-visible:ring-2 focus-visible:ring-ring/40 {isFixed
                       ? 'read-only:bg-muted/20'
                       : 'read-only:bg-transparent'}"
                     type="text"

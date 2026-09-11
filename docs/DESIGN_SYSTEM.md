@@ -123,6 +123,8 @@ Import shared transitions from `$lib/motion`; inspect the live motion examples i
 
 ## Never
 
+- Never use raw `text-xs`, `text-sm`, `text-base`, or `text-lg` in settings surfaces; use `type-body` for labels, descriptions and controls, `type-caption` for short metadata, and `type-title` for headings. Pair `font-medium!` with a `type-*` role on the same element. `intent/no-raw-typography` enforces this in settings components, routes and patterns.
+
 - Never add raw `<button>`, `<input>`, `<select>`, or `<textarea>` controls; use their UI primitives.
 - Never hand-roll a menu or listbox row; apply the shared `menuItem()` recipe.
 - Never import `svelte-sonner` directly; route transient feedback through `notify`.
@@ -130,7 +132,7 @@ Import shared transitions from `$lib/motion`; inspect the live motion examples i
 - Never import `svelte/motion` or `svelte/transition` outside `$lib/motion`.
 - Never use arbitrary duration, easing, background, or text-color utilities; use semantic tokens.
 - Never mount `Dialog.Root` directly in a feature; use `FormDialog` or the Confirm service.
-- Never hand-compose settings rows from primitives; define a schema and render `SettingsForm`.
+- Never hand-compose settings row layout from primitives; use `SettingsFieldRow` for bespoke controls, or define a schema and render `SettingsForm` for a settings section.
 
 ## Choose a semantic role
 

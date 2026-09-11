@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { SettingsFieldRow } from '$lib/components/patterns/settings';
   import { browser } from '$app/environment';
   import { page } from '$app/state';
   import {
@@ -472,12 +473,12 @@
     <Button
       variant="ghost"
       onclick={navigateBackFromSettings}
-      class="group flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+      class="group flex items-center gap-1.5 type-body text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
     >
-      <Fa icon={faArrowLeft} class="text-xs opacity-50 mr-1" />
+      <Fa icon={faArrowLeft} class="type-caption opacity-50 mr-1" />
       <span>{backLabel}</span>
       <kbd
-        class="ml-2 px-1.5 py-0.5 text-ui font-medium bg-muted text-muted-foreground border border-border rounded opacity-60 group-hover:opacity-100 transition-opacity"
+        class="type-caption ml-2 px-1.5 py-0.5 font-medium! bg-muted text-muted-foreground border border-border rounded opacity-60 group-hover:opacity-100 transition-opacity"
       >
         {isMac ? '⌘' : 'Ctrl'},
       </kbd>
@@ -494,7 +495,9 @@
 {/snippet}
 
 {#snippet sidebarFooter()}
-  <div class="shrink-0 border-t border-border dark:border-border px-5 py-4 text-xs text-subtle">
+  <div
+    class="shrink-0 border-t border-border dark:border-border px-5 py-4 type-caption text-subtle"
+  >
     <div class="flex w-full items-baseline justify-between gap-2">
       <div class="flex items-baseline gap-1.5">
         <!-- i18n-ignore (brand name) -->
@@ -504,7 +507,7 @@
       {#if $isReadyToInstall$}
         <Button
           variant="plain"
-          class="cursor-pointer border-none bg-transparent p-0 font-medium text-primary-ink underline hover:text-primary-ink/80"
+          class="type-body cursor-pointer border-none bg-transparent p-0 font-medium! text-primary-ink underline hover:text-primary-ink/80"
           onclick={() => appStore.dispatch(installUpdate())}
         >
           {m.settings_footer_updateAvailable()}
@@ -665,10 +668,7 @@
             </h2>
             <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
               <section class="px-6 py-5">
-                <div class="flex items-center justify-between">
-                  <div class="min-w-0 flex-1">
-                    <p class="text-sm font-medium text-foreground">{m.settings_theme_label()}</p>
-                  </div>
+                <SettingsFieldRow id="settings-theme-label-field" label={m.settings_theme_label()}>
                   <ToggleGroup.Root
                     type="single"
                     value={$themePreference}
@@ -681,7 +681,7 @@
                       <ToggleGroup.Item value={option.value}>{option.label}</ToggleGroup.Item>
                     {/each}
                   </ToggleGroup.Root>
-                </div>
+                </SettingsFieldRow>
               </section>
               <section
                 id="color-theme"
@@ -697,15 +697,11 @@
                 use:highlightTarget
                 class="px-6 py-5"
               >
-                <div class="flex items-center justify-between">
-                  <div>
-                    <p class="text-sm font-medium text-foreground">
-                      {m.settings_appearance_chatAurora_label()}
-                    </p>
-                    <p class="text-xs text-subtle mt-1">
-                      {m.settings_appearance_chatAurora_description()}
-                    </p>
-                  </div>
+                <SettingsFieldRow
+                  id="settings-appearance-chatAurora-label-field"
+                  label={m.settings_appearance_chatAurora_label()}
+                  description={m.settings_appearance_chatAurora_description()}
+                >
                   <Switch
                     id="chat-aurora-switch"
                     size="sm"
@@ -714,7 +710,7 @@
                     onCheckedChange={(enabled) => appStore.dispatch(setChatAuroraEnabled(enabled))}
                     ariaLabel={m.settings_appearance_chatAurora_label()}
                   />
-                </div>
+                </SettingsFieldRow>
               </section>
               <section
                 id="translucent-window"
@@ -722,15 +718,11 @@
                 use:highlightTarget
                 class="px-6 py-5"
               >
-                <div class="flex items-center justify-between">
-                  <div>
-                    <p class="text-sm font-medium text-foreground">
-                      {m.settings_appearance_translucentWindow_label()}
-                    </p>
-                    <p class="text-xs text-subtle mt-1">
-                      {m.settings_appearance_translucentWindow_description()}
-                    </p>
-                  </div>
+                <SettingsFieldRow
+                  id="settings-appearance-translucentWindow-label-field"
+                  label={m.settings_appearance_translucentWindow_label()}
+                  description={m.settings_appearance_translucentWindow_description()}
+                >
                   <Switch
                     id="translucent-window-switch"
                     size="sm"
@@ -740,7 +732,7 @@
                       appStore.dispatch(setShellTransparencyEnabled(enabled))}
                     ariaLabel={m.settings_appearance_translucentWindow_label()}
                   />
-                </div>
+                </SettingsFieldRow>
               </section>
             </div>
           </div>
@@ -757,18 +749,16 @@
                 use:highlightTarget
                 class="px-6 py-5"
               >
-                <div class="flex items-center justify-between">
-                  <div class="min-w-0 flex-1">
-                    <p class="text-sm font-medium text-foreground">
-                      {m.settings_font_notes_label()}
-                    </p>
-                    <p
-                      class="text-xs text-subtle mt-0.5 transition-all duration-200"
+                <SettingsFieldRow
+                  id="settings-font-notes-label-field"
+                  label={m.settings_font_notes_label()}
+                >
+                  {#snippet descriptionContent()}<span
+                      class="type-body text-subtle mt-0.5 transition-all duration-200"
                       class:font-mono={$isNoteMonospace}
                     >
                       {m.settings_font_notes_description()}
-                    </p>
-                  </div>
+                    </span>{/snippet}
                   <ToggleGroup.Root
                     type="single"
                     value={$noteFontStyle}
@@ -781,7 +771,7 @@
                       <ToggleGroup.Item value={option.value}>{option.label}</ToggleGroup.Item>
                     {/each}
                   </ToggleGroup.Root>
-                </div>
+                </SettingsFieldRow>
               </section>
               <section
                 id="agent-chat-font"
@@ -789,18 +779,16 @@
                 use:highlightTarget
                 class="px-6 py-5"
               >
-                <div class="flex items-center justify-between">
-                  <div class="min-w-0 flex-1">
-                    <p class="text-sm font-medium text-foreground">
-                      {m.settings_font_agentChat_label()}
-                    </p>
-                    <p
-                      class="text-xs text-subtle mt-0.5 transition-all duration-200"
+                <SettingsFieldRow
+                  id="settings-font-agentChat-label-field"
+                  label={m.settings_font_agentChat_label()}
+                >
+                  {#snippet descriptionContent()}<span
+                      class="type-body text-subtle mt-0.5 transition-all duration-200"
                       class:font-mono={$agentFontStyle === 'monospace'}
                     >
                       {m.settings_font_agentChat_description()}
-                    </p>
-                  </div>
+                    </span>{/snippet}
                   <ToggleGroup.Root
                     type="single"
                     value={$agentFontStyle}
@@ -813,7 +801,7 @@
                       <ToggleGroup.Item value={option.value}>{option.label}</ToggleGroup.Item>
                     {/each}
                   </ToggleGroup.Root>
-                </div>
+                </SettingsFieldRow>
               </section>
               <section
                 id="code-font"
@@ -821,15 +809,11 @@
                 use:highlightTarget
                 class="px-6 py-5"
               >
-                <div class="flex items-center justify-between">
-                  <div>
-                    <p class="text-sm font-medium text-foreground">
-                      {m.settings_font_code_label()}
-                    </p>
-                    <p class="text-xs text-subtle mt-0.5">
-                      {m.settings_font_code_description()}
-                    </p>
-                  </div>
+                <SettingsFieldRow
+                  id="settings-font-code-label-field"
+                  label={m.settings_font_code_label()}
+                  description={m.settings_font_code_description()}
+                >
                   <div class="w-[180px] flex-shrink-0">
                     <Select.Root value={$codeFontFamily} onchange={handleCodeFontChange}>
                       <Select.Trigger>
@@ -848,7 +832,7 @@
                       </Select.Content>
                     </Select.Root>
                   </div>
-                </div>
+                </SettingsFieldRow>
               </section>
             </div>
           </div>
@@ -875,15 +859,11 @@
             </h2>
             <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
               <section class="px-6 py-5">
-                <div class="flex items-center justify-between">
-                  <div>
-                    <p class="text-sm font-medium text-foreground">
-                      {m.settings_updateChannel_label()}
-                    </p>
-                    <p class="text-xs text-subtle mt-0.5">
-                      {m.settings_updateChannel_description()}
-                    </p>
-                  </div>
+                <SettingsFieldRow
+                  id="settings-updateChannel-label-field"
+                  label={m.settings_updateChannel_label()}
+                  description={m.settings_updateChannel_description()}
+                >
                   <div class="w-45 flex-shrink-0">
                     <Select.Root value={$updateChannel$} onchange={handleUpdateChannelChange}>
                       <Select.Trigger aria-label={m.settings_updateChannel_ariaLabel()}>
@@ -898,7 +878,7 @@
                       </Select.Content>
                     </Select.Root>
                   </div>
-                </div>
+                </SettingsFieldRow>
               </section>
             </div>
           </div>
@@ -1034,10 +1014,10 @@
                 <section class="px-6 py-5">
                   <div class="flex items-center justify-between gap-4">
                     <div class="min-w-0">
-                      <p class="text-sm font-medium text-foreground">
+                      <p class="type-body font-medium! text-foreground">
                         {m.settings_connection_socket_label()}
                       </p>
-                      <p class="text-xs text-subtle mt-0.5 font-mono select-text break-all">
+                      <p class="type-body text-subtle mt-0.5 font-mono select-text break-all">
                         {udsSocketPath}
                       </p>
                     </div>
@@ -1075,10 +1055,10 @@
               <section class="px-6 py-5">
                 <div class="flex items-center justify-between">
                   <div>
-                    <p class="text-sm font-medium text-foreground">
+                    <p class="type-body font-medium! text-foreground">
                       {m.settings_reset_label()}
                     </p>
-                    <p class="text-xs text-subtle">
+                    <p class="type-body text-subtle">
                       {m.settings_reset_description()}
                     </p>
                   </div>
@@ -1101,7 +1081,7 @@
                 <section class="px-6 py-5">
                   <div class="flex flex-col gap-2">
                     <!-- i18n-ignore (dev-only) -->
-                    <span class="text-sm font-medium">Update Toast Simulation</span>
+                    <span class="type-body font-medium!">Update Toast Simulation</span>
                     <div class="flex items-center gap-2">
                       <Button
                         variant="outline"

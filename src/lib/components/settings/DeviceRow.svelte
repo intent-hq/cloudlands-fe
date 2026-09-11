@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { SettingsFieldRow } from '$lib/components/patterns/settings';
   import { untrack } from 'svelte';
   import {
     Button,
@@ -517,7 +518,7 @@
   </ListRow>
 
   {#if connectionError}
-    <p class="px-4 pb-3 text-sm text-danger sm:px-5" role="alert">
+    <p class="px-4 pb-3 type-body text-danger sm:px-5" role="alert">
       {m.settings_devices_connectFailed_error()}
     </p>
   {/if}
@@ -542,7 +543,7 @@
               disabled={busy !== null}
               aria-invalid={nameInvalid || undefined}
             />
-            {#if nameInvalid}<p class="text-xs text-danger">
+            {#if nameInvalid}<p class="type-body text-danger">
                 {m.settings_devices_nameRequired_error()}
               </p>{/if}
           </div>
@@ -555,7 +556,7 @@
                 disabled={busy !== null}
                 aria-invalid={hostInvalid || undefined}
               />
-              {#if hostInvalid}<p class="text-xs text-danger">
+              {#if hostInvalid}<p class="type-body text-danger">
                   {m.settings_devices_hostRequired_error()}
                 </p>{/if}
             </div>
@@ -569,7 +570,7 @@
                 disabled={busy !== null}
                 aria-invalid={portInvalid || undefined}
               />
-              {#if portInvalid}<p class="text-xs text-danger">
+              {#if portInvalid}<p class="type-body text-danger">
                   {m.settings_devices_portInvalid_error()}
                 </p>{/if}
             </div>
@@ -590,7 +591,7 @@
           </div>
         </div>
         <fieldset class="space-y-1" disabled={busy !== null}>
-          <legend class="text-sm font-medium text-foreground"
+          <legend class="type-body font-medium! text-foreground"
             >{m.settings_devices_accent_label()}</legend
           >
           <div class="flex flex-wrap gap-1">
@@ -638,7 +639,7 @@
         <!-- Read-only network facts: the candidate hosts the connect race
              tries (refreshed from server.pairingInfo) and the tailcat tunnel
              address when the daemon reports one. -->
-        <dl class="space-y-3 text-xs">
+        <dl class="space-y-3 type-caption">
           <div class="space-y-1">
             <dt class="text-muted-foreground">
               {m.settings_devices_detectedAddresses_label()}
@@ -679,42 +680,36 @@
           {/if}
         </dl>
         <div class="space-y-3">
-          <div class="flex items-start justify-between gap-3">
-            <div class="min-w-0">
-              <p id={`device-${device.id}-detect-hosts-label`} class="text-sm text-foreground">
-                {m.modals_connect_detectHosts_label()}
-              </p>
-              <p class="text-xs text-muted-foreground">
-                {m.modals_connect_detectHosts_description()}
-              </p>
-            </div>
+          <SettingsFieldRow
+            id={`device-${device.id}-detect-hosts-field`}
+            compact
+            label={m.modals_connect_detectHosts_label()}
+            description={m.modals_connect_detectHosts_description()}
+          >
             <Switch
               id={`device-${device.id}-detect-hosts`}
               size="sm"
               bind:checked={detectHosts}
               disabled={busy !== null}
-              ariaLabelledby={`device-${device.id}-detect-hosts-label`}
+              ariaLabelledby={`device-${device.id}-detect-hosts-field-label`}
             />
-          </div>
-          <div class="flex items-start justify-between gap-3">
-            <div class="min-w-0">
-              <p id={`device-${device.id}-push-to-cloud-label`} class="text-sm text-foreground">
-                {m.settings_devices_pushToCloud_label()}
-              </p>
-              <p class="text-xs text-muted-foreground">
-                {syncSupported
-                  ? m.settings_devices_pushToCloud_description()
-                  : m.settings_backendSync_unsupported_description()}
-              </p>
-            </div>
+          </SettingsFieldRow>
+          <SettingsFieldRow
+            id={`device-${device.id}-push-to-cloud-field`}
+            compact
+            label={m.settings_devices_pushToCloud_label()}
+            description={syncSupported
+              ? m.settings_devices_pushToCloud_description()
+              : m.settings_backendSync_unsupported_description()}
+          >
             <Switch
               id={`device-${device.id}-push-to-cloud`}
               size="sm"
               bind:checked={() => pushToCloud, setPushToCloud}
               disabled={busy !== null || !syncSupported}
-              ariaLabelledby={`device-${device.id}-push-to-cloud-label`}
+              ariaLabelledby={`device-${device.id}-push-to-cloud-field-label`}
             />
-          </div>
+          </SettingsFieldRow>
         </div>
       </div>
 
@@ -723,10 +718,10 @@
           class="space-y-2 rounded-md border border-warning-foreground/30 bg-warning/10 p-3"
           role="alert"
         >
-          <p class="text-sm font-medium text-foreground">
+          <p class="type-body font-medium! text-foreground">
             {m.settings_devices_removeFromCloud_title()}
           </p>
-          <p class="text-xs text-muted-foreground">
+          <p class="type-body text-muted-foreground">
             {m.settings_devices_removeFromCloud_description()}
           </p>
           <div class="flex justify-end gap-2">
@@ -743,13 +738,13 @@
           class="space-y-2 rounded-md border border-warning-foreground/30 bg-warning/10 p-3"
           role="alert"
         >
-          <p class="text-sm font-medium text-foreground">
+          <p class="type-body font-medium! text-foreground">
             {m.settings_devices_confirmFingerprint_title()}
           </p>
-          <p class="text-xs text-muted-foreground">
+          <p class="type-body text-muted-foreground">
             {m.settings_devices_confirmFingerprint_description()}
           </p>
-          <dl class="grid gap-2 text-xs sm:grid-cols-2">
+          <dl class="grid gap-2 type-caption sm:grid-cols-2">
             <div>
               <dt class="text-muted-foreground">
                 {m.settings_devices_expectedFingerprint_label()}
@@ -773,10 +768,10 @@
       {:else if feedback && feedbackOperation === 'update'}
         <p
           class={feedback.kind === 'error'
-            ? 'text-sm text-danger'
+            ? 'type-body text-danger'
             : feedback.kind === 'success'
-              ? 'text-sm text-success-foreground'
-              : 'text-sm text-muted-foreground'}
+              ? 'type-body text-success-foreground'
+              : 'type-body text-muted-foreground'}
           role={feedback.kind === 'error' ? 'alert' : 'status'}
         >
           {feedback.message}
@@ -795,10 +790,10 @@
           {#if feedback && feedbackOperation === 'test'}
             <p
               class={feedback.kind === 'error'
-                ? 'text-right text-sm text-danger'
+                ? 'text-right type-body text-danger'
                 : feedback.kind === 'success'
-                  ? 'text-right text-sm text-success'
-                  : 'text-right text-sm text-muted-foreground'}
+                  ? 'text-right type-body text-success'
+                  : 'text-right type-body text-muted-foreground'}
               role={feedback.kind === 'error' ? 'alert' : 'status'}
               aria-atomic="true"
             >

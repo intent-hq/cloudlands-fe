@@ -7,6 +7,7 @@ import noLegacySpinner from './no-legacy-spinner.js';
 import noNativeDialogs from './no-native-dialogs.js';
 import noRawControls from './no-raw-controls.js';
 import noRawMenuRow from './no-raw-menu-row.js';
+import noRawTypography from './no-raw-typography.js';
 import settingsUseSchema from './settings-use-schema.js';
 
 export const designSystemRules = {
@@ -19,5 +20,6 @@ export const designSystemRules = {
   'no-native-dialogs': noNativeDialogs,
   'no-raw-controls': noRawControls,
   'no-raw-menu-row': noRawMenuRow,
+  'no-raw-typography': noRawTypography,
   'settings-use-schema': settingsUseSchema,
 };

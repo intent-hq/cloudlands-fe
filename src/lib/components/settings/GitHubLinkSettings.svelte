@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { SettingsFieldRow } from '$lib/components/patterns/settings';
   import { Select } from '$lib/components/patterns/settings/custom-controls';
   import { m } from '$shared/paraglide/messages.js';
   import type { GithubLinkDefaultAction } from '$shared/utils/link-helpers';
@@ -24,15 +25,11 @@
   }
 </script>
 
-<div class="flex items-center justify-between gap-6">
-  <div>
-    <p class="text-sm font-medium text-foreground">
-      {m.settings_githubLinks_defaultAction_label()}
-    </p>
-    <p class="text-xs text-subtle mt-0.5">
-      {m.settings_githubLinks_defaultAction_description()}
-    </p>
-  </div>
+<SettingsFieldRow
+  id="github-link-default-action"
+  label={m.settings_githubLinks_defaultAction_label()}
+  description={m.settings_githubLinks_defaultAction_description()}
+>
   <div class="w-[180px] flex-shrink-0">
     <Select.Root value={$defaultAction} onchange={handleChange}>
       <Select.Trigger><span class="truncate">{selectedLabel}</span></Select.Trigger>
@@ -43,4 +40,4 @@
       </Select.Content>
     </Select.Root>
   </div>
-</div>
+</SettingsFieldRow>

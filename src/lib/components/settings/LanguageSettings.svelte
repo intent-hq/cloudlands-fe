@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { SettingsFieldRow } from '$lib/components/patterns/settings';
   import { Select } from '$lib/components/patterns/settings/custom-controls';
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
@@ -30,13 +31,11 @@
   }
 </script>
 
-<div class="flex items-center justify-between">
-  <div>
-    <p class="text-sm font-medium text-foreground">{m.settings_language_label()}</p>
-    <p class="text-xs text-subtle mt-0.5">
-      {m.settings_language_description()}
-    </p>
-  </div>
+<SettingsFieldRow
+  id="language-preference"
+  label={m.settings_language_label()}
+  description={m.settings_language_description()}
+>
   <div class="w-45 flex-shrink-0">
     <Select.Root value={$languagePreference} onchange={handleLanguageChange}>
       <Select.Trigger>
@@ -51,4 +50,4 @@
       </Select.Content>
     </Select.Root>
   </div>
-</div>
+</SettingsFieldRow>

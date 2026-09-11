@@ -459,7 +459,7 @@
                 <Button
                   variant="ghost"
                   type="button"
-                  class="px-3 py-1.5 text-sm rounded-md transition-colors cursor-pointer {addMode ===
+                  class="px-3 py-1.5 type-body rounded-md transition-colors cursor-pointer {addMode ===
                   'form'
                     ? 'bg-background text-foreground shadow-sm'
                     : 'text-muted-foreground hover:text-foreground'}"
@@ -470,7 +470,7 @@
                 <Button
                   variant="ghost"
                   type="button"
-                  class="px-3 py-1.5 text-sm rounded-md transition-colors cursor-pointer {addMode ===
+                  class="px-3 py-1.5 type-body rounded-md transition-colors cursor-pointer {addMode ===
                   'import'
                     ? 'bg-background text-foreground shadow-sm'
                     : 'text-muted-foreground hover:text-foreground'}"
@@ -501,7 +501,7 @@
             class="border-b border-border bg-muted/20"
           >
             <div class="py-4">
-              <h3 class="text-sm font-medium mb-4">
+              <h3 class="type-body font-medium! mb-4">
                 {m.settings_mcpServers_editServerTitle({ name: editingServer.name })}
               </h3>
               <McpServerForm
@@ -555,17 +555,18 @@
           {:else if $error$}
             <div class="mb-4 rounded-lg border border-danger/30 bg-danger-background/5 p-4">
               <div class="space-y-1">
-                <p class="text-sm font-medium text-foreground">
+                <p class="type-body font-medium! text-foreground">
                   {m.settings_mcpServers_loadError()}
                 </p>
-                <p class="text-sm text-danger">{$error$}</p>
+                <p class="type-body text-danger">{$error$}</p>
               </div>
 
               <div class="mt-3 rounded-md border border-border bg-background/70 p-3">
-                <p class="text-xs text-muted-foreground">
+                <p class="type-body text-muted-foreground">
                   {m.settings_mcpServers_diagnosticCommand()}
                 </p>
-                <code class="mt-1 block break-all text-xs text-foreground">{diagnosticCommand}</code
+                <code class="mt-1 block break-all type-caption text-foreground"
+                  >{diagnosticCommand}</code
                 >
               </div>
 
@@ -581,12 +582,12 @@
                 </Button>
               </div>
 
-              <p class="mt-3 text-xs text-muted-foreground">
+              <p class="mt-3 type-body text-muted-foreground">
                 {m.settings_mcpServers_diagnosticHint()}
               </p>
             </div>
           {:else if $servers$.length === 0}
-            <div class="text-xs text-subtle mb-4">
+            <div class="type-caption text-subtle mb-4">
               <p>{m.settings_mcpServers_emptyTitle()}</p>
               <p class="mt-1">
                 {m.settings_mcpServers_emptyDescription()}
@@ -627,7 +628,7 @@
           <!-- Easy MCP Installation (below configured servers) -->
           <div class="pt-4">
             <div class="flex items-center gap-2 mb-3">
-              <span class="text-sm font-medium text-foreground"
+              <span class="type-body font-medium! text-foreground"
                 >{m.settings_mcpServers_quickInstall()}</span
               >
             </div>
@@ -645,29 +646,29 @@
                     <div class="py-3 px-1">
                       <div class="flex items-center gap-2 mb-3">
                         <McpIcon iconName={option.iconName} label={option.label} size={20} />
-                        <span class="font-medium text-sm">{option.label}</span>
+                        <span class="font-medium! type-body">{option.label}</span>
                       </div>
 
                       {#each option.userInput || [] as input}
                         {@const inputKey =
                           input.envVarName || input.correspondingArg || input.label}
                         <div class="mb-2">
-                          <span class="block text-xs text-subtle mb-1">
+                          <span class="block type-caption text-subtle mb-1">
                             {input.label}
                           </span>
                           <Input
                             bind:value={userInputValues[inputKey]}
                             placeholder={input.placeholder}
-                            class="h-8 text-sm"
+                            class="h-8 type-body"
                           />
                           {#if input.description}
-                            <p class="text-xs text-subtle mt-0.5">{input.description}</p>
+                            <p class="type-body text-subtle mt-0.5">{input.description}</p>
                           {/if}
                         </div>
                       {/each}
 
                       {#if installError}
-                        <p class="text-xs text-danger mb-2">{installError}</p>
+                        <p class="type-body text-danger mb-2">{installError}</p>
                       {/if}
 
                       <div class="flex gap-2 mt-3">
@@ -697,18 +698,18 @@
 
                         <div class="flex-1 min-w-0 text-left">
                           <div class="flex items-center gap-2">
-                            <span class="text-sm font-medium truncate">{option.label}</span>
+                            <span class="type-body font-medium! truncate">{option.label}</span>
                             {#if needsAuth}
-                              <span class="text-ui text-warning-ink font-medium">
+                              <span class="type-caption text-warning-ink font-medium!">
                                 {m.settings_mcp_status_needsAuth()}
                               </span>
                             {:else if installed}
-                              <span class="text-ui text-green-600 font-medium">
+                              <span class="type-caption text-green-600 font-medium!">
                                 {m.settings_mcpServers_installed()}
                               </span>
                             {/if}
                           </div>
-                          <p class="text-xs text-subtle truncate">{option.description}</p>
+                          <p class="type-body text-subtle truncate">{option.description}</p>
                         </div>
                       </Button>
 
@@ -719,7 +720,7 @@
                           <Button
                             variant="ghost"
                             type="button"
-                            class="px-3 py-1 text-xs font-medium rounded-md border border-warning/30 text-warning-ink hover:bg-warning/10 transition-colors cursor-pointer"
+                            class="px-3 py-1 type-body font-medium! rounded-md border border-warning/30 text-warning-ink hover:bg-warning/10 transition-colors cursor-pointer"
                             onclick={() => handleReauthenticate(normalizeServerName(option.label))}
                           >
                             {m.settings_mcp_authenticateButton()}
@@ -755,17 +756,18 @@
           onclick={handleToggleAdvanced}
         >
           <div class="text-left">
-            <p class="text-sm font-medium text-foreground">
+            <p class="type-body font-medium! text-foreground">
               {m.settings_mcpServers_advancedTitle()}
             </p>
-            <p class="text-xs text-subtle">
+            <p class="type-body text-subtle">
               {m.settings_mcpServers_advancedDescription_before()}
               <!-- i18n-ignore (config key) -->
-              <code class="bg-muted px-1 py-0.5 rounded text-xs">mcp.servers</code>
+              <code class="bg-muted px-1 py-0.5 rounded type-caption">mcp.servers</code>
               {m.settings_mcpServers_advancedDescription_after()}
             </p>
           </div>
-          <span class="text-subtle text-xs transition-transform {showAdvanced ? 'rotate-90' : ''}"
+          <span
+            class="text-subtle type-caption transition-transform {showAdvanced ? 'rotate-90' : ''}"
             >▶</span
           >
         </Button>
@@ -777,7 +779,7 @@
             class="pb-4 space-y-3 border-t border-border pt-4"
           >
             <Textarea
-              class="w-full h-64 px-3 py-2 bg-background border border-border rounded-md text-sm font-mono text-foreground resize-y focus:outline-none focus:border-primary-ink focus:ring-2 focus:ring-primary-ink/10"
+              class="w-full h-64 px-3 py-2 bg-background border border-border rounded-md type-body font-mono text-foreground resize-y focus:outline-none focus:border-primary-ink focus:ring-2 focus:ring-primary-ink/10"
               placeholder={mcpJsonPlaceholder}
               aria-label={m.settings_mcpServers_jsonEditorAriaLabel()}
               bind:value={userMcpSettingsContent}
@@ -786,21 +788,21 @@
             <div class="flex items-center justify-between gap-4">
               <div class="flex items-center gap-2">
                 {#if $advancedSaveStatus$ === 'saved'}
-                  <span class="text-xs text-green-500"
+                  <span class="type-caption text-green-500"
                     >{m.settings_mcpServers_savedIndicator()}</span
                   >
                 {:else if $advancedSaveStatus$ === 'error'}
-                  <span class="text-xs text-danger"
+                  <span class="type-caption text-danger"
                     >✗ {$advancedSaveError$ || m.settings_mcpServers_saveFailed()}</span
                   >
                 {:else if $advancedSaveStatus$ === 'saving'}
-                  <span class="text-xs text-subtle">{m.settings_mcpServers_saving()}</span>
+                  <span class="type-caption text-subtle">{m.settings_mcpServers_saving()}</span>
                 {/if}
               </div>
               <div class="flex items-center gap-3">
                 <a
                   href="https://docs.augmentcode.com/cli/integrations#configure-mcp-via-settings-json"
-                  class="text-xs text-primary-ink hover:underline"
+                  class="type-caption text-primary-ink hover:underline"
                   onclick={(e) => {
                     e.preventDefault();
                     handleLink(
@@ -831,7 +833,7 @@
 <!-- Import success toast -->
 {#if showImportSuccess}
   <div
-    class="fixed bottom-4 right-4 px-4 py-3 bg-green-600 text-white text-sm rounded-lg shadow-lg z-50"
+    class="fixed bottom-4 right-4 px-4 py-3 bg-green-600 text-white type-body rounded-lg shadow-lg z-50"
     in:springIn={{ tier: 'fast', y: 4 }}
     out:crispOut={{ tier: 'fast' }}
   >

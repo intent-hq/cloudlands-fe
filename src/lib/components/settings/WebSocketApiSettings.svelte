@@ -742,12 +742,12 @@
         {#if tunnelEnabled && tcAddress}
           <section data-tunnel-address-row>
             <div class="flex items-center justify-between gap-2">
-              <span class="text-sm text-muted-foreground">
+              <span class="type-body text-muted-foreground">
                 {m.settings_tunnel_tcAddress_label()}
               </span>
               <div class="flex items-center gap-2 shrink-0">
                 <code
-                  class="text-xs font-mono text-foreground bg-muted px-2 py-0.5 rounded max-w-[280px] truncate"
+                  class="type-caption font-mono text-foreground bg-muted px-2 py-0.5 rounded max-w-[280px] truncate"
                   title={tcAddress}>{tcAddress}</code
                 >
                 <Button
@@ -891,11 +891,11 @@
         {#if certFingerprint}
           <section>
             <div class="flex items-center justify-between">
-              <span class="text-sm text-muted-foreground"
+              <span class="type-body text-muted-foreground"
                 >{m.settings_wsApi_tlsFingerprint_label()}</span
               >
               <code
-                class="text-xs font-mono text-foreground bg-muted px-2 py-0.5 rounded max-w-[280px] truncate"
+                class="type-caption font-mono text-foreground bg-muted px-2 py-0.5 rounded max-w-[280px] truncate"
                 title={certFingerprint}>{certFingerprint.slice(0, 23)}…</code
               >
             </div>
@@ -905,10 +905,10 @@
         <!-- Token -->
         <section class="space-y-3">
           <div class="flex items-center justify-between">
-            <span class="text-sm text-muted-foreground">{m.settings_wsApi_apiToken_label()}</span>
+            <span class="type-body text-muted-foreground">{m.settings_wsApi_apiToken_label()}</span>
             <div class="flex items-center gap-2">
               <code
-                class="text-xs font-mono text-foreground bg-muted px-2 py-1 rounded max-w-[280px] truncate select-all"
+                class="type-caption font-mono text-foreground bg-muted px-2 py-1 rounded max-w-[280px] truncate select-all"
               >
                 {showToken ? token : maskedToken}
               </code>
@@ -946,7 +946,7 @@
               </Button>
             </div>
           </div>
-          <p class="text-xs text-warning-ink">
+          <p class="type-body text-warning-ink">
             {m.settings_wsApi_tokenSecretWarning()}
           </p>
         </section>
@@ -969,7 +969,9 @@
     tabindex="-1"
   >
     <div class="max-w-xs rounded-xl bg-card p-6 text-left shadow-xl">
-      <h3 class="text-sm font-medium text-foreground mb-3">{m.settings_wsApi_scanToConnect()}</h3>
+      <h3 class="type-body font-medium! text-foreground mb-3">
+        {m.settings_wsApi_scanToConnect()}
+      </h3>
       {#if qrDataUrl}
         <img
           src={qrDataUrl}
@@ -979,16 +981,16 @@
           height="200"
         />
       {/if}
-      <p class="text-xs text-subtle mt-3">
+      <p class="type-body text-subtle mt-3">
         {m.settings_wsApi_scanDescription()}
       </p>
-      <p class="text-xs text-warning-ink mt-2">
+      <p class="type-body text-warning-ink mt-2">
         {m.settings_wsApi_qrTokenWarning()}
       </p>
       <Button
         type="button"
         onclick={handleCloseQr}
-        class="mt-4 px-4 py-1.5 text-xs font-medium text-foreground bg-muted hover:bg-muted/80 rounded-md transition-colors cursor-pointer"
+        class="mt-4 px-4 py-1.5 type-body font-medium! text-foreground bg-muted hover:bg-muted/80 rounded-md transition-colors cursor-pointer"
       >
         {m.settings_wsApi_close()}
       </Button>

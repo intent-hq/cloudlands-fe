@@ -71,10 +71,10 @@
 
 <div class="space-y-5">
   <div>
-    <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+    <h2 class="type-caption font-medium! text-muted-foreground uppercase tracking-wider mb-3">
       {m.settings_devices_title()}
     </h2>
-    <p class="max-w-2xl text-sm text-muted-foreground">
+    <p class="max-w-2xl type-body text-muted-foreground">
       {m.settings_devices_description()}
     </p>
   </div>
@@ -98,7 +98,7 @@
     {/snippet}
     {#snippet loading()}
       <p
-        class="rounded-xl border border-border bg-card p-6 text-sm text-muted-foreground"
+        class="rounded-xl border border-border bg-card p-6 type-body text-muted-foreground"
         role="status"
       >
         {m.settings_devices_loading_label()}
@@ -106,8 +106,8 @@
     {/snippet}
     {#snippet empty()}
       <div class="rounded-xl border border-dashed border-border bg-card p-8 text-left">
-        <p class="text-sm font-medium text-foreground">{m.settings_devices_empty_title()}</p>
-        <p class="mt-1 text-sm text-muted-foreground">{m.settings_devices_empty_description()}</p>
+        <p class="type-body font-medium! text-foreground">{m.settings_devices_empty_title()}</p>
+        <p class="mt-1 type-body text-muted-foreground">{m.settings_devices_empty_description()}</p>
       </div>
     {/snippet}
   </ListView>
@@ -124,7 +124,7 @@
       class="flex items-center justify-between gap-3 rounded-md border border-danger/30 bg-danger-background/10 p-3"
       role="alert"
     >
-      <p class="text-sm text-danger">{removeError}</p>
+      <p class="type-body text-danger">{removeError}</p>
       <Button variant="ghost" disabled={removing || !removeTarget} onclick={() => removeDevice()}>
         {m.settings_devices_retry_label()}
       </Button>

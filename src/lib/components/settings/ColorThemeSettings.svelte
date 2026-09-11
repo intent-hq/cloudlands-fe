@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { SettingsFieldRow } from '$lib/components/patterns/settings';
   import {
     Button,
     FileInput,
@@ -97,8 +98,7 @@
 </script>
 
 <div class="flex min-w-0 flex-col gap-4">
-  <div class="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-    <p class="text-sm font-medium text-foreground">{m.settings_colorTheme_title()}</p>
+  <SettingsFieldRow id="color-theme-import" label={m.settings_colorTheme_title()}>
     <FileInput
       id="color-theme-file"
       label={m.settings_colorTheme_importButton()}
@@ -111,7 +111,7 @@
       variant="flat"
       class="w-full sm:w-auto sm:max-w-md"
     />
-  </div>
+  </SettingsFieldRow>
 
   <ToggleGroup.Root
     type="single"
@@ -154,9 +154,9 @@
 
   {#if isUserImported}
     <div class="flex min-w-0 items-center justify-between gap-3">
-      <p class="min-w-0 truncate text-xs text-muted-foreground">
+      <p class="min-w-0 truncate type-body text-muted-foreground">
         {m.settings_colorTheme_importedLabel()}
-        <span class="text-foreground font-medium">{$customThemeName}</span>
+        <span class="type-caption text-foreground font-medium!">{$customThemeName}</span>
       </p>
       <Button variant="ghost" size="xs" onclick={selectDefault}>
         {m.settings_colorTheme_clearButton()}

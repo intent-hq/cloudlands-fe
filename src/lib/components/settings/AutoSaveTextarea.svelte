@@ -61,7 +61,7 @@
 
     {#if maxLength && (isApproachingLimit || isOverLimit)}
       <div
-        class="flex items-center justify-end text-xs shrink-0 {isOverLimit
+        class="flex items-center justify-end type-caption shrink-0 {isOverLimit
           ? 'text-danger'
           : 'text-warning-ink'}"
       >

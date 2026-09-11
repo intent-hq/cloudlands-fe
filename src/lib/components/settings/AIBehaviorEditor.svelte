@@ -677,7 +677,7 @@
       data-testid="all-agents-editor-layout"
       class="flex min-w-0 flex-col gap-4 xl:h-full xl:min-h-0 xl:flex-1"
     >
-      <p class="text-sm text-muted-foreground">
+      <p class="type-body text-muted-foreground">
         {m.settings_agentRules_description()}
       </p>
       <div
@@ -716,13 +716,13 @@
               }}
               aria-label={m.settings_aiBehavior_name_label()}
               placeholder={m.settings_aiBehavior_specialistName_placeholder()}
-              class="min-w-0 flex-1 text-base font-medium text-foreground bg-transparent border-none outline-none px-0 py-0 focus:ring-0 focus:outline-none placeholder:text-muted-foreground"
+              class="min-w-0 flex-1 type-title font-medium! text-foreground bg-transparent border-none outline-none px-0 py-0 focus:ring-0 focus:outline-none placeholder:text-muted-foreground"
             />
           {:else}
-            <h2 class="text-base font-medium text-foreground">{currentSpecialist.name}</h2>
+            <h2 class="type-title font-medium! text-foreground">{currentSpecialist.name}</h2>
             {#if isBuiltIn && hasOverrides}
               <span
-                class="text-xs px-1.5 py-0.5 rounded bg-primary/15 text-primary font-medium inline-flex items-center gap-1"
+                class="type-caption px-1.5 py-0.5 rounded bg-primary/15 text-primary font-medium! inline-flex items-center gap-1"
               >
                 <Fa icon={faPencil} class="w-2.5 h-2.5" />
                 {m.settings_aiBehavior_modifiedBadge()}
@@ -734,7 +734,7 @@
               variant="ghost"
               type="button"
               onclick={resetToDefault}
-              class="text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1 cursor-pointer shrink-0"
+              class="type-body text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1 cursor-pointer shrink-0"
             >
               <Fa icon={faRotateLeft} class="w-3 h-3" />
               {m.settings_aiBehavior_reset()}
@@ -845,7 +845,7 @@
               variant="ghost"
               type="button"
               onclick={deleteSpecialist}
-              class="text-xs text-muted-foreground hover:text-danger transition-colors flex items-center gap-1.5 cursor-pointer"
+              class="type-body text-muted-foreground hover:text-danger transition-colors flex items-center gap-1.5 cursor-pointer"
             >
               <Fa icon={faTrash} class="w-3 h-3" />
               {m.settings_aiBehavior_deleteSpecialist()}
@@ -866,7 +866,7 @@
         data-testid="create-specialist-prompt-column"
         class="min-h-0 min-w-0 h-full xl:flex xl:flex-col"
       >
-        <h2 class="mb-2 shrink-0 text-base font-medium text-foreground">
+        <h2 class="mb-2 shrink-0 type-title font-medium! text-foreground">
           {m.settings_aiBehavior_createSpecialist_title()}
         </h2>
         <div class="flex min-h-0 flex-1 flex-col gap-1.5">
@@ -874,13 +874,13 @@
             id="create-specialist-prompt"
             bind:value={newPrompt}
             placeholder={m.settings_aiBehavior_newPrompt_placeholder()}
-            class="min-h-72 w-full grow resize-none rounded-lg border border-border bg-background p-3 text-sm
+            class="min-h-72 w-full grow resize-none rounded-lg border border-border bg-background p-3 type-body
               focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 xl:min-h-0
               {newPromptIsOverLimit ? 'border-danger' : ''}"
           ></Textarea>
           {#if newPromptIsApproachingLimit || newPromptIsOverLimit}
             <div
-              class="flex shrink-0 items-center justify-end text-xs {newPromptIsOverLimit
+              class="flex shrink-0 items-center justify-end type-caption {newPromptIsOverLimit
                 ? 'text-danger'
                 : 'text-warning-ink'}"
             >
@@ -904,7 +904,7 @@
         <div>
           <label
             for="create-specialist-name"
-            class="text-sm font-medium text-foreground block mb-1.5"
+            class="type-body font-medium! text-foreground block mb-1.5"
           >
             {m.settings_aiBehavior_name_label()}
           </label>
@@ -920,7 +920,7 @@
         <div>
           <label
             for="create-specialist-description"
-            class="text-sm font-medium text-foreground block mb-1.5"
+            class="type-body font-medium! text-foreground block mb-1.5"
           >
             {m.settings_aiBehavior_description_label()}
           </label>

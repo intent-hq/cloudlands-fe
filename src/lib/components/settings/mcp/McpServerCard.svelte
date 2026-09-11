@@ -181,7 +181,7 @@
     {#snippet meta()}
       <span class="flex items-center gap-2">
         {#if server.toolCount > 0}
-          <span class="text-xs text-subtle">
+          <span class="type-caption text-subtle">
             {server.toolCount === 1
               ? m.settings_mcp_toolCount_one()
               : m.settings_mcp_toolCount_many({ count: formatInteger(server.toolCount) })}
@@ -206,14 +206,14 @@
         <!-- Error / stopped message (shown inline when server has issues) -->
         {#if isRetryable && server.errorMessage}
           <p
-            class="mt-1 text-xs line-clamp-2 {server.status === 'stopped'
+            class="mt-1 type-body line-clamp-2 {server.status === 'stopped'
               ? 'text-orange-600 dark:text-orange-400'
               : 'text-red-500 dark:text-red-400'}"
           >
             {server.errorMessage}
           </p>
         {:else if server.status === 'stopped'}
-          <p class="mt-1 text-xs text-orange-600 dark:text-orange-400 line-clamp-2">
+          <p class="mt-1 type-body text-orange-600 dark:text-orange-400 line-clamp-2">
             {m.settings_mcp_serverStoppedMessage()}
           </p>
         {/if}
@@ -223,7 +223,7 @@
           <Button
             variant="plain"
             size="xs"
-            class="mt-1 h-auto text-xs text-muted-foreground hover:text-foreground"
+            class="mt-1 h-auto type-body text-muted-foreground hover:text-foreground"
             onclick={() => (showTools = !showTools)}
           >
             <span>
@@ -274,9 +274,9 @@
           <div class="flex items-start gap-2 py-1">
             <div class="w-1.5 h-1.5 rounded-full bg-muted-foreground/40 mt-1.5 shrink-0"></div>
             <div class="min-w-0 flex-1">
-              <span class="text-sm font-medium">{formatToolName(tool.name, server.name)}</span>
+              <span class="type-body font-medium!">{formatToolName(tool.name, server.name)}</span>
               {#if tool.description}
-                <p class="text-xs text-subtle line-clamp-2">{tool.description}</p>
+                <p class="type-body text-subtle line-clamp-2">{tool.description}</p>
               {/if}
             </div>
           </div>
@@ -289,7 +289,7 @@
 <!-- Copy success toast -->
 {#if copySuccess}
   <div
-    class="fixed bottom-4 right-4 px-3 py-2 bg-green-600 text-white text-sm rounded-md shadow-lg z-50"
+    class="fixed bottom-4 right-4 px-3 py-2 bg-green-600 text-white type-body rounded-md shadow-lg z-50"
     in:springIn={{ tier: 'fast', y: 4 }}
     out:crispOut={{ tier: 'fast' }}
   >

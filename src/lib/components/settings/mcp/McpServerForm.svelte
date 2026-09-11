@@ -153,7 +153,7 @@
 <div class="space-y-4" onkeydown={handleKeydown}>
   <!-- Server Name -->
   <div>
-    <span class="block text-sm font-medium mb-1.5">
+    <span class="block type-body font-medium! mb-1.5">
       {m.settings_mcp_form_serverName_label()} <span class="text-danger">*</span>
     </span>
     <Input
@@ -163,15 +163,15 @@
       maxlength={MCP_SERVER_NAME_MAX_LENGTH}
     />
     {#if nameError && !editMode}
-      <p class="text-xs text-danger mt-1">{nameError}</p>
+      <p class="type-body text-danger mt-1">{nameError}</p>
     {:else}
-      <p class="text-xs text-subtle mt-1">{m.settings_mcp_form_serverName_hint()}</p>
+      <p class="type-body text-subtle mt-1">{m.settings_mcp_form_serverName_hint()}</p>
     {/if}
   </div>
 
   <!-- Connection Type -->
   <div>
-    <span class="block text-sm font-medium mb-1.5">
+    <span class="block type-body font-medium! mb-1.5">
       {m.settings_mcp_form_connectionType_label()}
       <span class="text-danger">*</span>
     </span>
@@ -180,7 +180,7 @@
         <Button
           variant="ghost"
           type="button"
-          class="px-3 py-1.5 text-sm rounded-md transition-colors cursor-pointer
+          class="px-3 py-1.5 type-body rounded-md transition-colors cursor-pointer
                  {form.type === type.value
             ? 'bg-background text-foreground shadow-sm'
             : 'text-muted-foreground hover:text-foreground'}"
@@ -190,7 +190,7 @@
         </Button>
       {/each}
     </div>
-    <p class="text-xs text-subtle mt-1.5">
+    <p class="type-body text-subtle mt-1.5">
       {#if form.type === 'stdio'}
         {m.settings_mcp_form_transportHint_stdio()}
       {:else if form.type === 'http'}
@@ -205,35 +205,36 @@
   {#if form.type === 'stdio'}
     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
       <div>
-        <span class="block text-sm font-medium mb-1.5">
+        <span class="block type-body font-medium! mb-1.5">
           {m.settings_mcp_form_command_label()} <span class="text-danger">*</span>
         </span>
         <!-- i18n-ignore (example command) -->
         <Input bind:value={form.command} placeholder="npx -y @some/mcp-server" />
-        <p class="text-xs text-subtle mt-1">{m.settings_mcp_form_command_hint()}</p>
+        <p class="type-body text-subtle mt-1">{m.settings_mcp_form_command_hint()}</p>
       </div>
 
       <div>
-        <span class="block text-sm font-medium mb-1.5">{m.settings_mcp_form_arguments_label()}</span
+        <span class="block type-body font-medium! mb-1.5"
+          >{m.settings_mcp_form_arguments_label()}</span
         >
         <!-- i18n-ignore (example flags) -->
         <Input bind:value={form.args} placeholder="--port 3000 --verbose" />
-        <p class="text-xs text-subtle mt-1">{m.settings_mcp_form_arguments_hint()}</p>
+        <p class="type-body text-subtle mt-1">{m.settings_mcp_form_arguments_hint()}</p>
       </div>
     </div>
 
     <!-- Environment Variables -->
     <div>
       <div class="flex items-center justify-between mb-1.5">
-        <span class="text-sm font-medium">{m.settings_mcp_form_envVars_label()}</span>
+        <span class="type-body font-medium!">{m.settings_mcp_form_envVars_label()}</span>
         <Button size="sm" variant="ghost" onclick={addEnvVar}>
           <Fa icon={faPlus} class="mr-1" size="xs" />
           {m.settings_mcp_form_add()}
         </Button>
       </div>
-      <p class="text-xs text-subtle mb-2">{m.settings_mcp_form_envVars_hint()}</p>
+      <p class="type-body text-subtle mb-2">{m.settings_mcp_form_envVars_hint()}</p>
       {#if form.envPairs.length === 0}
-        <p class="text-xs text-subtle italic">{m.settings_mcp_form_envVars_empty()}</p>
+        <p class="type-body text-subtle italic">{m.settings_mcp_form_envVars_empty()}</p>
       {:else}
         <div class="space-y-2">
           {#each form.envPairs as pair (pair.id)}
@@ -254,17 +255,17 @@
   {:else}
     <!-- Remote fields (http/sse) -->
     <div>
-      <span class="block text-sm font-medium mb-1.5">
+      <span class="block type-body font-medium! mb-1.5">
         {m.settings_mcp_form_url_label()} <span class="text-danger">*</span>
       </span>
       <!-- i18n-ignore (example URL) -->
       <Input bind:value={form.url} placeholder="https://example.com/mcp" />
-      <p class="text-xs text-subtle mt-1">{m.settings_mcp_form_url_hint()}</p>
+      <p class="type-body text-subtle mt-1">{m.settings_mcp_form_url_hint()}</p>
     </div>
 
     <!-- Auth Type -->
     <div>
-      <span class="block text-sm font-medium mb-1.5"
+      <span class="block type-body font-medium! mb-1.5"
         >{m.settings_mcp_form_authentication_label()}</span
       >
       <div class="flex gap-1 p-1 bg-muted rounded-lg w-fit">
@@ -272,7 +273,7 @@
           <Button
             variant="ghost"
             type="button"
-            class="px-3 py-1.5 text-sm rounded-md transition-colors cursor-pointer
+            class="px-3 py-1.5 type-body rounded-md transition-colors cursor-pointer
                    {form.authType === auth.value
               ? 'bg-background text-foreground shadow-sm'
               : 'text-muted-foreground hover:text-foreground'}"
@@ -282,7 +283,7 @@
           </Button>
         {/each}
       </div>
-      <p class="text-xs text-subtle mt-1.5">
+      <p class="type-body text-subtle mt-1.5">
         {#if form.authType === 'none'}
           {m.settings_mcp_form_authHint_none()}
         {:else if form.authType === 'oauth'}
@@ -297,15 +298,15 @@
     {#if form.authType === 'header'}
       <div>
         <div class="flex items-center justify-between mb-1.5">
-          <span class="text-sm font-medium">{m.settings_mcp_form_headers_label()}</span>
+          <span class="type-body font-medium!">{m.settings_mcp_form_headers_label()}</span>
           <Button size="sm" variant="ghost" onclick={addHeader}>
             <Fa icon={faPlus} class="mr-1" size="xs" />
             {m.settings_mcp_form_add()}
           </Button>
         </div>
-        <p class="text-xs text-subtle mb-2">{m.settings_mcp_form_headers_hint()}</p>
+        <p class="type-body text-subtle mb-2">{m.settings_mcp_form_headers_hint()}</p>
         {#if form.headerPairs.length === 0}
-          <p class="text-xs text-subtle italic">{m.settings_mcp_form_headers_empty()}</p>
+          <p class="type-body text-subtle italic">{m.settings_mcp_form_headers_empty()}</p>
         {:else}
           <div class="space-y-2">
             {#each form.headerPairs as pair (pair.id)}
@@ -327,7 +328,7 @@
 
     {#if form.authType === 'oauth'}
       <div class="p-3 bg-muted/30 rounded-md border border-border">
-        <p class="text-sm text-subtle">
+        <p class="type-body text-subtle">
           {m.settings_mcp_form_oauthNote()}
         </p>
       </div>
@@ -336,7 +337,7 @@
 
   <!-- Error message -->
   {#if error}
-    <div class="text-sm text-danger">{error}</div>
+    <div class="type-body text-danger">{error}</div>
   {/if}
 
   <!-- Actions -->

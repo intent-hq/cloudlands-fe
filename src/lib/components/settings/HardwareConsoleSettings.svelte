@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { SettingsFieldRow } from '$lib/components/patterns/settings';
   /**
    * Hardware / Creator Micro settings panel.
    *
@@ -310,11 +311,11 @@
 <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
   <!-- Enable toggle -->
   <section class="px-6 py-5">
-    <div class="flex items-center justify-between">
-      <div>
-        <p class="text-sm font-medium text-foreground">{m.settings_hardware_enable_label()}</p>
-        <p class="text-xs text-subtle mt-1">{m.settings_hardware_enable_description()}</p>
-      </div>
+    <SettingsFieldRow
+      id="hardware-enabled"
+      label={m.settings_hardware_enable_label()}
+      description={m.settings_hardware_enable_description()}
+    >
       <Switch
         checked={$enabled$}
         onCheckedChange={handleEnabledChange}
@@ -322,7 +323,7 @@
         class="mb-auto"
         ariaLabel={m.settings_hardware_enable_label()}
       />
-    </div>
+    </SettingsFieldRow>
   </section>
 
   {#if $enabled$}
@@ -330,11 +331,11 @@
     <section class="px-6 py-4">
       <div class="flex items-center justify-between gap-4">
         <div class="min-w-0">
-          <p class="text-sm font-medium text-foreground">
+          <p class="type-body font-medium! text-foreground">
             {m.settings_hardware_status_label()}
           </p>
           {#if connectionStatus === 'connected' && deviceName}
-            <p class="text-xs text-subtle mt-0.5">
+            <p class="type-body text-subtle mt-0.5">
               <span class="inline-block w-2 h-2 rounded-full bg-green-500 mr-1.5 align-middle"
               ></span>{m.settings_hardware_status_connected_label({ name: deviceName })}
               {#if statusDetails}
@@ -343,25 +344,25 @@
               {/if}
             </p>
           {:else if connectionStatus === 'connecting'}
-            <p class="text-xs text-subtle mt-0.5">
+            <p class="type-body text-subtle mt-0.5">
               {m.settings_hardware_status_connecting_label()}
             </p>
           {:else if connectionStatus === 'unavailable'}
-            <p class="text-xs text-subtle mt-0.5">
+            <p class="type-body text-subtle mt-0.5">
               {m.settings_hardware_status_unavailable_label()}
             </p>
           {:else if showConnectError}
             {#if showInputMonitoringHint}
-              <p class="text-xs text-warning-ink mt-0.5">
+              <p class="type-body text-warning-ink mt-0.5">
                 {m.settings_hardware_inputMonitoring_error()}
               </p>
-              <p class="text-xs text-subtle mt-1">
+              <p class="type-body text-subtle mt-1">
                 {m.settings_hardware_inputMonitoring_regrant_description()}
               </p>
               <!-- A NotAllowedError is not always Input Monitoring (e.g. the
                    device claimed exclusively elsewhere), so keep the raw
                    error detail visible in case the guidance misdiagnoses. -->
-              <p class="text-xs text-subtle/70 mt-1">
+              <p class="type-body text-subtle/70 mt-1">
                 {m.settings_hardware_connectError_label({ error: lastConnectError?.message ?? '' })}
               </p>
               <Button
@@ -373,17 +374,17 @@
                 {m.settings_hardware_inputMonitoring_openSettings_button()}
               </Button>
             {:else}
-              <p class="text-xs text-warning-ink mt-0.5">
+              <p class="type-body text-warning-ink mt-0.5">
                 {m.settings_hardware_connectError_label({ error: lastConnectError?.message ?? '' })}
               </p>
             {/if}
           {:else}
-            <p class="text-xs text-subtle mt-0.5">
+            <p class="type-body text-subtle mt-0.5">
               {m.settings_hardware_status_disconnected_label()}
             </p>
           {/if}
           {#if connectFailed && !showConnectError}
-            <p class="text-xs text-warning-ink mt-1">
+            <p class="type-body text-warning-ink mt-1">
               {m.settings_hardware_connectFailed_error()}
             </p>
           {/if}
@@ -406,8 +407,8 @@
 
     <!-- Action keys: device graphic + assignment dropdown -->
     <section class="px-6 py-5">
-      <p class="text-sm font-medium text-foreground">{m.settings_hardware_actionKeys_label()}</p>
-      <p class="text-xs text-subtle mt-1 mb-4">
+      <p class="type-body font-medium! text-foreground">{m.settings_hardware_actionKeys_label()}</p>
+      <p class="type-body text-subtle mt-1 mb-4">
         {m.settings_hardware_actionKeys_description()}
       </p>
       <div class="flex flex-col sm:flex-row gap-6 items-start">
@@ -422,7 +423,7 @@
         />
         <div class="w-full sm:w-60 shrink-0">
           {#if selectedSlot !== null}
-            <p class="text-xs font-medium text-muted-foreground mb-2">
+            <p class="type-body font-medium! text-muted-foreground mb-2">
               {selectedKeyLabel}
             </p>
             <Select.Root value={selectedActionId ?? 'none'} onchange={handleActionChange}>
@@ -441,7 +442,7 @@
               </Select.Content>
             </Select.Root>
             {#if selectedActionId === 'push-to-talk'}
-              <ul class="text-xs text-subtle mt-2 space-y-0.5">
+              <ul class="type-caption text-subtle mt-2 space-y-0.5">
                 <li>{m.settings_hardware_pttHint_hold_description()}</li>
                 <li>{m.settings_hardware_pttHint_tap_description()}</li>
                 <li>{m.settings_hardware_pttHint_doublePress_description()}</li>
@@ -449,12 +450,12 @@
               </ul>
             {/if}
             {#if showLinkedKeyWarning}
-              <p class="text-xs text-warning-ink mt-2">
+              <p class="type-body text-warning-ink mt-2">
                 {m.settings_hardware_linkedKey_warning()}
               </p>
             {/if}
           {:else}
-            <p class="text-xs text-subtle">
+            <p class="type-body text-subtle">
               {m.settings_hardware_actionKeys_selectPrompt()}
             </p>
           {/if}
@@ -474,15 +475,15 @@
 
     <!-- Cycle scope: which cycle actions include sub-agents -->
     <section class="px-6 py-5">
-      <p class="text-sm font-medium text-foreground">
+      <p class="type-body font-medium! text-foreground">
         {m.settings_hardware_cycleScope_label()}
       </p>
-      <p class="text-xs text-subtle mt-1 mb-3">
+      <p class="type-body text-subtle mt-1 mb-3">
         {m.settings_hardware_cycleScope_description()}
       </p>
       <div class="flex flex-col gap-2">
         {#each cycleScopeFamilies as family (family.familyId)}
-          <label class="flex items-center gap-2 text-sm text-foreground cursor-pointer w-fit">
+          <label class="flex items-center gap-2 type-body text-foreground cursor-pointer w-fit">
             <Checkbox
               checked={$cycleScopes$[family.familyId] === 'all'}
               onCheckedChange={(checked) => handleCycleScopeChange(family.familyId, checked)}
@@ -501,10 +502,10 @@
     <section class="px-6 py-5">
       <div class="flex items-center justify-between">
         <div>
-          <p class="text-sm font-medium text-foreground">
+          <p class="type-body font-medium! text-foreground">
             {m.settings_hardware_promptLimit_label()}
           </p>
-          <p class="text-xs text-subtle mt-1">
+          <p class="type-body text-subtle mt-1">
             {m.settings_hardware_promptLimit_description()}
           </p>
         </div>

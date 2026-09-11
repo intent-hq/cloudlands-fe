@@ -105,8 +105,8 @@
 </script>
 
 <div class="flex flex-col gap-1" data-listen-target-selector>
-  <p class="text-sm font-medium text-foreground">{m.settings_listenTargets_label()}</p>
-  <p class="text-xs text-subtle mb-1">{m.settings_listenTargets_description()}</p>
+  <p class="type-body font-medium! text-foreground">{m.settings_listenTargets_label()}</p>
+  <p class="type-body text-subtle mb-1">{m.settings_listenTargets_description()}</p>
   <ul class="flex flex-col gap-0.5">
     {#each ipOptions as ip (ip)}
       {@const covered = !UNSPECIFIED.has(ip) && allInterfacesSelected}
@@ -114,7 +114,7 @@
       {@const checked = selection.has(ip) || locked}
       <li>
         <label
-          class="flex items-center gap-2 py-1 text-sm text-foreground cursor-pointer {saving
+          class="flex items-center gap-2 py-1 type-body text-foreground cursor-pointer {saving
             ? 'opacity-50'
             : ''}"
           title={covered
@@ -135,7 +135,7 @@
               onCheckedChange={(next) => handleCheckedChange(ip, next, checked)}
             />
           {/key}
-          <span class="font-mono text-xs">
+          <span class="font-mono type-caption">
             {ip === ALL_INTERFACES
               ? m.settings_listenTargets_allInterfaces_label()
               : ip === LOOPBACK
@@ -144,7 +144,7 @@
           </span>
         </label>
         {#if locked && !covered}
-          <p class="text-xs text-subtle ml-6">
+          <p class="type-body text-subtle ml-6">
             {m.settings_listenTargets_loopbackAlwaysBound_note()}
           </p>
         {/if}
@@ -152,9 +152,9 @@
     {/each}
   </ul>
   {#if allInterfacesSelected}
-    <p class="text-xs text-subtle">{m.settings_listenTargets_coveredByAllInterfaces_note()}</p>
+    <p class="type-body text-subtle">{m.settings_listenTargets_coveredByAllInterfaces_note()}</p>
   {/if}
   {#if tunnelSelected && selectedIps.length === 0}
-    <p class="text-xs text-subtle">{m.settings_listenTargets_tunnelOnly_note()}</p>
+    <p class="type-body text-subtle">{m.settings_listenTargets_tunnelOnly_note()}</p>
   {/if}
 </div>

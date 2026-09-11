@@ -463,11 +463,11 @@
 <div class="flex flex-col gap-6">
   {#if checkError}
     <div class="flex items-center justify-between gap-4 rounded-xl bg-card px-6 py-4">
-      <p class="text-sm text-danger">{checkError}</p>
+      <p class="type-body text-danger">{checkError}</p>
       <Button
         variant="ghost"
         type="button"
-        class="text-primary-ink hover:text-primary-ink/80 cursor-pointer transition-colors text-xs font-medium"
+        class="text-primary-ink hover:text-primary-ink/80 cursor-pointer transition-colors type-body font-medium!"
         onclick={() => checkProviderAvailability(true, true)}
       >
         {m.settings_providers_tryAgain()}
@@ -480,7 +480,7 @@
       <div>
         <h2
           id={`provider-group-${group.id}`}
-          class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3"
+          class="type-caption font-medium! text-muted-foreground uppercase tracking-wider mb-3"
         >
           {#if group.id === 'enabled'}
             {m.settings_providers_groupEnabled_label()}
@@ -546,7 +546,7 @@
                   <div class="flex items-center gap-2 h-7">
                     {@render providerIcon(provider.id)}
                     <span
-                      class="text-sm {provider.available || provider.statusPending
+                      class="type-body {provider.available || provider.statusPending
                         ? 'text-foreground'
                         : 'text-muted-foreground'}"
                     >
@@ -555,7 +555,7 @@
                   </div>
                 </div>
 
-                <div class="flex min-h-7 shrink-0 items-center gap-2 text-xs">
+                <div class="flex min-h-7 shrink-0 items-center gap-2 type-caption">
                   {#if provider.statusPending}
                     <!-- This row's own probe has not settled yet; the rest of the
                      row is already rendered from the catalog. -->
@@ -566,11 +566,11 @@
                   {:else}
                     {#if isActive}
                       {#if provider.available}
-                        <span class="rounded-full bg-muted px-2 py-0.5 text-xs text-subtle">
+                        <span class="rounded-full bg-muted px-2 py-0.5 type-caption text-subtle">
                           {m.settings_providers_default()}
                         </span>
                       {:else}
-                        <span class="text-xs text-warning-ink flex items-center gap-1">
+                        <span class="type-caption text-warning-ink flex items-center gap-1">
                           <Fa icon={faTriangleExclamation} class="w-2.5 h-2.5" />
                           {m.settings_providers_defaultUnavailable_label()}
                         </span>
@@ -647,7 +647,7 @@
                           {#if hasWarning}
                             <div class="border-b border-border pb-1">
                               {#if hasPiAdapterWarning}
-                                <p class="px-2 py-1.5 text-xs text-warning-ink">
+                                <p class="px-2 py-1.5 type-body text-warning-ink">
                                   {m.settings_providers_piAdapterNeeded()}
                                 </p>
                                 <Menu.Item
@@ -672,7 +672,7 @@
                               {/if}
 
                               {#if hasNodeMissing}
-                                <p class="px-2 py-1.5 text-xs text-warning-ink">
+                                <p class="px-2 py-1.5 type-body text-warning-ink">
                                   {m.settings_providers_requiresNodejs()}
                                 </p>
                                 <Menu.Item
@@ -688,13 +688,13 @@
                               {/if}
 
                               {#if hasNpmOld}
-                                <p class="px-2 py-1.5 text-xs text-warning-ink">
+                                <p class="px-2 py-1.5 type-body text-warning-ink">
                                   {m.settings_providers_npmTooOld()}
                                 </p>
                               {/if}
 
                               {#if hasProviderWarning}
-                                <p class="px-2 py-1.5 text-xs text-warning-ink">
+                                <p class="px-2 py-1.5 type-body text-warning-ink">
                                   {provider.warning}
                                 </p>
                                 {#if provider.warning === CLAUDE_CODE_NPX_MISSING_WARNING}
@@ -776,12 +776,12 @@
                                    command with copy-to-clipboard; docs link stays
                                    as the secondary action below. -->
                               <div data-testid="provider-login-hint" class="px-2 py-1.5">
-                                <p class="text-xs text-muted-foreground">
+                                <p class="type-body text-muted-foreground">
                                   {m.settings_providers_runToLogIn_label()}
                                 </p>
                                 <div class="mt-1 flex items-center gap-1">
                                   <code
-                                    class="min-w-0 flex-1 truncate rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-foreground"
+                                    class="min-w-0 flex-1 truncate rounded bg-muted px-1.5 py-0.5 font-mono type-caption text-foreground"
                                     >{provider.loginCommandHint}</code
                                   >
                                   <CopyButton
@@ -792,7 +792,7 @@
                               </div>
                             {/if}
                             {#if provider.id === 'claude-code'}
-                              <p class="px-2 py-1.5 text-xs text-muted-foreground">
+                              <p class="px-2 py-1.5 type-body text-muted-foreground">
                                 {m.settings_providers_claudeDesktopNote_label()}
                               </p>
                             {/if}
@@ -932,7 +932,7 @@
       <GrokLogo class="size-5" size={20} />
     {:else if providerId === 'unsloth'}
       <!-- Unsloth's brand mark is the sloth emoji (per their brand guidelines) -->
-      <span class="size-5 inline-flex items-center justify-center leading-none text-lg">🦥</span>
+      <span class="size-5 inline-flex items-center justify-center leading-none type-title">🦥</span>
     {:else if providerId === 'cortex'}
       <svg
         class="size-5"
