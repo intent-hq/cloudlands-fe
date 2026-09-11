@@ -9,9 +9,9 @@
   "entry": [
     // Electron main process (tsconfig.main.json; package.json "main" points at its build output)
     "src/main/index.ts",
-    // Electron preload (tsconfig.preload.json)
-    "src/preload/index.ts",
-    // Template consumed as text by scripts/inline-ipc-channels.ts to generate src/preload/index.ts
+    // Electron preload (tsconfig.preload.json). The compiled entry, src/preload/index.ts, is
+    // gitignored output of `pnpm run generate:ipc-channels` (scripts/inline-ipc-channels.ts),
+    // so knip skips it; the template carries the same imports and stands in as the entry.
     "src/preload/index.template.ts",
     // MCP server bundled separately by scripts/build-cdp-mcp.js
     "cdp-mcp-server/server.ts",

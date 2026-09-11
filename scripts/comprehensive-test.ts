@@ -113,7 +113,7 @@ runTest('Error tracking system', () => {
 runTest('Required files exist', () => {
   const requiredFiles = [
     'src/main/index.ts',
-    'src/preload/index.ts',
+    'src/preload/index.template.ts',
     'src/routes/+layout.svelte',
     'src/shared/ipc-registry.ts',
     'src/main/ipc-schemas.ts',
