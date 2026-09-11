@@ -1181,6 +1181,32 @@ describe('panelLayoutSaga', () => {
       await cancelSaga(run.task);
     });
 
+    it('keeps a user-emptied layout empty across a same-session unmount and remount', async () => {
+      const initial = agent('agent-initial', 'Coordinator', undefined, { isInitialAgent: true });
+      const run = startRestoreSaga(layout, [initial]);
+      await settle();
+      run.dispatch(closeTab(WS_1, tab.id, 'panel-1', 30));
+      await settle();
+      const persisted = mocks.setJSON.mock.calls.at(-1)?.[1] as WorkspacePanelLayout;
+      expect(Object.values(persisted.panels).flatMap((panel) => panel.tabs)).toEqual([]);
+
+      // Switching workspaces and back re-restores from the tabless storage entry.
+      mocks.getJSON.mockReturnValue(persisted);
+      run.dispatch(workspaceUnmounted(WS_1));
+      await settle();
+      run.dispatch(workspaceMounted(WS_1));
+      run.dispatch(setAgents(WS_1, [initial]));
+      await settle();
+
+      const workspace = run.getState().panelLayout.byWorkspaceId[WS_1];
+      expect(workspace.restoreStatus).toBe('restored');
+      expect(Object.values(workspace.panels).flatMap((panel: any) => panel.tabs)).toEqual([]);
+      expect(
+        run.dispatch.mock.calls.filter(([action]) => action.type === openTabInAdjacentOrSplit.type),
+      ).toHaveLength(0);
+      await cancelSaga(run.task);
+    });
+
     it.each([
       ['no user-message stamp', {}],
       ['wrong workspace', { workspaceId: WS_2 }],
@@ -2003,6 +2029,15 @@ describe('panelLayoutSaga', () => {
         await cancelSaga(task);
       },
     );
+
+    it('treats a destroying closeTab as teardown, not an explicit user close', async () => {
+      const { channel, task } = await restoreThenEmptyInMemory();
+      channel.put(closeTab(WS_1, tab.id, 'panel-1', 10, { destroy: true }));
+      await settle();
+
+      expect(mocks.setJSON.mock.calls).toEqual([]);
+      await cancelSaga(task);
+    });
 
     it('persists a tabless layout when the stored one has no tabs either', async () => {
       mocks.getJSON.mockReturnValue(tablessPersisted);

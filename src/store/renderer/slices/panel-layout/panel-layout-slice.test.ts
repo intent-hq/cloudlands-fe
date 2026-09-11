@@ -39,6 +39,7 @@ import {
   closeAllTabs,
   closeAllOthersEverywhere,
   closeTabsByType,
+  closeTabsByAgentId,
   reopenClosedPanelColumn,
   reopenClosedTab,
   pruneRecentlyClosed,
@@ -1190,25 +1191,68 @@ describe('panelLayoutReducer', () => {
       expect(result.byWorkspaceId[WS].emptiedByUserClose).toBe(true);
     });
 
-    it('is cleared by initializeLayout and by every restore status transition', () => {
+    it('stays false when deleted-agent cleanup (closeTabsByAgentId) removes the last tab', () => {
+      const agentTab = { id: 'a1', type: 'agent', title: 'Agent', agentId: 'agent-1' };
+      const result = panelLayoutReducer(
+        stateWithPanel('p1', [agentTab]),
+        closeTabsByAgentId(WS, 'agent-1', 10),
+      );
+      expect(Object.values(result.byWorkspaceId[WS].panels).flatMap((p) => p.tabs)).toEqual([]);
+      expect(result.byWorkspaceId[WS].emptiedByUserClose).toBe(false);
+    });
+
+    it('is cleared as soon as any transition leaves a tab in the layout', () => {
       const emptied = panelLayoutReducer(
         stateWithPanel('p1', [noteTab]),
         closeTab(WS, 't1', 'p1', 10),
       );
       expect(emptied.byWorkspaceId[WS].emptiedByUserClose).toBe(true);
 
-      const initialized = panelLayoutReducer(
+      const reopened = panelLayoutReducer(
         emptied,
+        openTab(WS, { type: 'note', title: 'Again', noteId: 'n1' }, 'p1', 't2', false, 20),
+      );
+      expect(reopened.byWorkspaceId[WS].emptiedByUserClose).toBe(false);
+
+      const { id: _ownedId, ...ownedBrowserTabInput } = ownedBrowserTab;
+      const hidden = panelLayoutReducer(emptied, openHiddenTab(WS, ownedBrowserTabInput, 'b2'));
+      expect(getItems(hidden.byWorkspaceId[WS].hiddenTabs)).toHaveLength(1);
+      expect(hidden.byWorkspaceId[WS].emptiedByUserClose).toBe(false);
+    });
+
+    it('survives a same-session remount of a tabless layout and clears once a tab is restored', () => {
+      const emptied = panelLayoutReducer(
+        stateWithPanel('p1', [noteTab]),
+        closeTab(WS, 't1', 'p1', 10),
+      );
+      const tabless = {
+        root: { type: 'panel', panelId: 'p1' } as const,
+        panels: { p1: { id: 'p1', tabs: [], activeTabId: null } },
+        focusedPanelId: 'p1',
+      };
+
+      const pending = panelLayoutReducer(emptied, setRestoreStatus(WS, 'pending'));
+      expect(pending.byWorkspaceId[WS].emptiedByUserClose).toBe(true);
+      const initialized = panelLayoutReducer(pending, initializeLayout(WS, tabless));
+      expect(initialized.byWorkspaceId[WS].emptiedByUserClose).toBe(true);
+      const restored = panelLayoutReducer(initialized, setRestoreStatus(WS, 'restored'));
+      expect(restored.byWorkspaceId[WS].emptiedByUserClose).toBe(true);
+
+      const withTab = panelLayoutReducer(
+        pending,
         initializeLayout(WS, {
-          root: { type: 'panel', panelId: 'p1' },
-          panels: { p1: { id: 'p1', tabs: [], activeTabId: null } },
-          focusedPanelId: 'p1',
+          ...tabless,
+          panels: { p1: { id: 'p1', tabs: [noteTab], activeTabId: 't1' } },
         }),
       );
-      expect(initialized.byWorkspaceId[WS].emptiedByUserClose).toBe(false);
+      expect(withTab.byWorkspaceId[WS].emptiedByUserClose).toBe(false);
+    });
 
-      for (const status of ['pending', 'restored', 'empty', 'invalid'] as const) {
-        const transitioned = panelLayoutReducer(emptied, setRestoreStatus(WS, status));
+    it('is cleared by the saga-owned empty/invalid restore transitions', () => {
+      const reset = panelLayoutReducer(stateWithPanel('p1', [noteTab]), resetLayout(WS));
+      expect(reset.byWorkspaceId[WS].emptiedByUserClose).toBe(true);
+      for (const status of ['empty', 'invalid'] as const) {
+        const transitioned = panelLayoutReducer(reset, setRestoreStatus(WS, status));
         expect(transitioned.byWorkspaceId[WS].emptiedByUserClose).toBe(false);
       }
     });

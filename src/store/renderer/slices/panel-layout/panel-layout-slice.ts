@@ -152,13 +152,31 @@ export const emptyWorkspaceState: WorkspacePanelLayoutState = {
   emptiedByUserClose: false,
 };
 
-const { getWorkspaceState, setWorkspaceState, clearWorkspaceState } =
-  createWorkspaceScopedHelpers(emptyWorkspaceState);
+const {
+  getWorkspaceState,
+  setWorkspaceState: setWorkspaceStateUnchecked,
+  clearWorkspaceState,
+} = createWorkspaceScopedHelpers(emptyWorkspaceState);
 
 function hasAnyWorkspaceTab(ws: WorkspacePanelLayoutState): boolean {
   return (
     Object.values(ws.panels).some((panel) => panel.tabs.length > 0) || ws.hiddenTabs.ids.length > 0
   );
+}
+
+/**
+ * `emptiedByUserClose` only means anything while the layout is still tabless:
+ * any transition that leaves a visible or hidden tab behind clears it here, so
+ * no tab-adding reducer has to remember to.
+ */
+function setWorkspaceState<S extends { byWorkspaceId: Record<string, WorkspacePanelLayoutState> }>(
+  state: S,
+  wsId: string,
+  ws: WorkspacePanelLayoutState,
+): S {
+  const next =
+    ws.emptiedByUserClose && hasAnyWorkspaceTab(ws) ? { ...ws, emptiedByUserClose: false } : ws;
+  return setWorkspaceStateUnchecked(state, wsId, next);
 }
 
 /** Flag a layout the user just emptied with an explicit close (see emptiedByUserClose). */
@@ -2070,7 +2088,9 @@ panelLayoutReducer.with(initializeLayout, (state, { payload }) => {
     newWorkspaceLifecycle: layout.newWorkspaceLifecycle ?? null,
     pendingFocusTabId: null,
     pendingPanelReveal: null,
-    emptiedByUserClose: false,
+    // A remount re-restores the same session's layout: keep the user's close
+    // (setWorkspaceState drops it as soon as the restored layout has a tab).
+    emptiedByUserClose: ws.emptiedByUserClose,
   });
 });
 panelLayoutReducer.with(preparePanelLayoutBackendRestore, (state, { payload: [wsId] }) => {
@@ -2174,9 +2194,11 @@ panelLayoutReducer.with(setRestoreStatus, (state, { payload: [wsId, restoreStatu
   return setWorkspaceState(state, wsId, {
     ...ws,
     restoreStatus,
-    // Restore transitions are saga-owned: the resetLayout a missing/invalid
-    // restore dispatches is not a user close.
-    emptiedByUserClose: false,
+    // The resetLayout a missing/invalid restore dispatches is saga-owned, not
+    // a user close; 'pending'/'restored' keep whatever this session recorded.
+    ...(restoreStatus === 'empty' || restoreStatus === 'invalid'
+      ? { emptiedByUserClose: false }
+      : {}),
     ...(restoreStatus === 'pending' ? { pendingFocusTabId: null, pendingPanelReveal: null } : {}),
   });
 });
@@ -2610,7 +2632,11 @@ panelLayoutReducer.with(closeTabsByAgentId, (state, { payload }) => {
   for (const { tabId, panelId } of tabsToClose) {
     result = selfDispatch(result, closeTab(wsId, tabId, panelId, timestamp));
   }
-  return result;
+  // Deleted-agent cleanup is automated, not the user emptying the layout.
+  return setWorkspaceState(result, wsId, {
+    ...getWorkspaceState(result, wsId),
+    emptiedByUserClose: ws.emptiedByUserClose,
+  });
 });
 // --- Destroy Tabs By Owner Agent (monorepo#2857) ---
 panelLayoutReducer.with(destroyTabsByOwnerAgent, (state, { payload }) => {

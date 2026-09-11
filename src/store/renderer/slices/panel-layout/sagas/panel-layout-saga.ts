@@ -421,8 +421,16 @@ const EXPLICIT_USER_CLOSE_ACTION_TYPES: ReadonlySet<string> = new Set([
   resetLayout.type,
 ]);
 
-function isExplicitUserCloseAction(action: { type?: string }): boolean {
-  return action.type !== undefined && EXPLICIT_USER_CLOSE_ACTION_TYPES.has(action.type);
+function isExplicitUserCloseAction(action: { type?: string; payload?: unknown }): boolean {
+  if (action.type === undefined || !EXPLICIT_USER_CLOSE_ACTION_TYPES.has(action.type)) {
+    return false;
+  }
+  // A destroying closeTab is agent/registry-driven teardown (monorepo#2857),
+  // not the user emptying the layout.
+  if (action.type === closeTab.type) {
+    return (action.payload as ReturnType<typeof closeTab>['payload']).destroy !== true;
+  }
+  return true;
 }
 
 function getPersistableRoot(workspace: WorkspacePanelLayoutState): PanelLayoutNode {
