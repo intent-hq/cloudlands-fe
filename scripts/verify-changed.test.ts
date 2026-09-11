@@ -400,6 +400,19 @@ describe('verification planning', () => {
     expect(hint(linesFor(['src/shared/ipc-registry.ts']))).toEqual([]);
   });
 
+  it('prints every planned command as a pnpm invocation', () => {
+    const root = fixtureRoot({ 'src/lib/example.ts': '' });
+    const plan = createVerificationPlan(['src/lib/example.ts'], { root, ctTests: [] });
+    expect(plan.checks.length).toBeGreaterThan(0);
+    for (const check of plan.checks) expect(check.executable).toBe('pnpm');
+
+    const lines: string[] = [];
+    printPlan(plan, true, (line: string) => lines.push(line));
+    const commandLines = lines.filter((line) => /^ {2}- [^:]+: /.test(line));
+    expect(commandLines).toHaveLength(plan.checks.length);
+    for (const line of commandLines) expect(line).toMatch(/: pnpm (?:exec|run) /);
+  });
+
   it('selects a component test that directly imports a changed Svelte component', () => {
     const root = fixtureRoot({
       'src/lib/Button.svelte': '<button />',

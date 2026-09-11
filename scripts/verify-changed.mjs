@@ -16,6 +16,7 @@ import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } 
 import { fileURLToPath } from 'node:url';
 import { escape as escapeGlob, globSync } from 'glob';
 import { checkDepsFresh } from './check-deps-fresh.mjs';
+import { pnpmInvocation } from './pnpm-launcher.mjs';
 import {
   listDeclaredSuites,
   selectDeclaredSuites,
@@ -336,7 +337,7 @@ function command(id, label, args, lockKind = null) {
   return {
     id,
     label,
-    executable: process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm',
+    executable: 'pnpm',
     args,
     lockKind,
   };
@@ -693,10 +694,12 @@ export function printPlan(plan, dryRun, log = console.log) {
 
 async function runCheck(check, root) {
   console.log(`\n[verify:changed] ${check.label}`);
+  const launcher = pnpmInvocation(check.args);
   await new Promise((resolveRun, reject) => {
-    const child = spawn(check.executable, check.args, {
+    const child = spawn(launcher.executable, launcher.args, {
       cwd: root,
       stdio: 'inherit',
+      shell: launcher.shell,
       env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
     });
     child.on('error', reject);
