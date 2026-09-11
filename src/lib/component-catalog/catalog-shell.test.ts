@@ -1,6 +1,8 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import CatalogShell from './CatalogShell.svelte';
 
 const root = process.cwd();
 const routesRoot = path.join(root, 'src/routes');
@@ -145,5 +147,121 @@ describe('catalog route shell', () => {
     const file = 'src/lib/component-catalog/renderers/SettingsCatalogPreview.svelte';
     const source = readFileSync(path.join(root, file), 'utf8');
     expect(source).not.toMatch(/\$lib\/components\/ui\/[^'\"]+\/[^'\"]+\.svelte/);
+  });
+});
+
+describe('CatalogShell root inline style ownership', () => {
+  const fontToken = "'Inter Variable', Inter, system-ui, sans-serif";
+  const rootStyle = () => document.documentElement.style;
+
+  beforeEach(() => {
+    const storage = new Map<string, string>();
+    vi.mocked(localStorage.getItem).mockImplementation((key) => storage.get(key) ?? null);
+    vi.mocked(localStorage.setItem).mockImplementation((key, value) => {
+      storage.set(key, String(value));
+    });
+    window.history.replaceState(null, '', '/sandbox/button');
+    document.documentElement.removeAttribute('style');
+    document.documentElement.removeAttribute('class');
+  });
+
+  afterEach(() => {
+    cleanup();
+    document.documentElement.removeAttribute('style');
+    document.documentElement.removeAttribute('class');
+  });
+
+  async function chooseTheme(name: 'Light' | 'Dark' | 'System') {
+    await fireEvent.click(screen.getByRole('radio', { name }));
+    await waitFor(() =>
+      expect(rootStyle().getPropertyValue('color-scheme')).toBe(name.toLowerCase()),
+    );
+  }
+
+  async function chooseColorTheme(name: string) {
+    const trigger = screen.getByRole('button', { name: 'Color theme' });
+    await fireEvent.keyDown(trigger, { key: 'Enter' });
+    const options = screen.getAllByRole('option');
+    const highlighted = options.findIndex((option) => option.hasAttribute('data-highlighted'));
+    const target = options.indexOf(screen.getByRole('option', { name }));
+    expect(target).toBeGreaterThanOrEqual(0);
+    const key = target > highlighted ? 'ArrowDown' : 'ArrowUp';
+    for (let step = 0; step < Math.abs(target - Math.max(highlighted, 0)); step += 1) {
+      await fireEvent.keyDown(trigger, { key });
+    }
+    await fireEvent.keyDown(trigger, { key: 'Enter' });
+    await waitFor(() => expect(trigger.textContent).toContain(name));
+  }
+
+  // The sandbox route owns the font token and, as the shell's parent, may write it to the
+  // root after the shell has already mounted; the shell must never wipe it.
+  function declareSandboxFontToken() {
+    rootStyle().setProperty('--font-ui', fontToken);
+  }
+
+  it('keeps unowned root inline properties across theme and color theme changes', async () => {
+    render(CatalogShell, { props: { activeSlug: 'button' } });
+    await waitFor(() => expect(rootStyle().getPropertyValue('color-scheme')).not.toBe(''));
+    declareSandboxFontToken();
+
+    await chooseTheme('Dark');
+    expect(rootStyle().getPropertyValue('--font-ui')).toBe(fontToken);
+    expect(document.documentElement.classList.contains('dark')).toBe(true);
+
+    await chooseColorTheme('Dracula');
+    await waitFor(() => expect(rootStyle().getPropertyValue('--background')).not.toBe(''));
+    expect(rootStyle().getPropertyValue('--font-ui')).toBe(fontToken);
+
+    await chooseTheme('Light');
+    expect(rootStyle().getPropertyValue('--font-ui')).toBe(fontToken);
+    expect(rootStyle().getPropertyValue('--background')).not.toBe('');
+
+    await chooseColorTheme('Default');
+    await waitFor(() => expect(rootStyle().getPropertyValue('--background')).toBe(''));
+    expect(rootStyle().getPropertyValue('--font-ui')).toBe(fontToken);
+    expect(rootStyle().getPropertyValue('color-scheme')).toBe('light');
+  });
+
+  it('restores prior root inline values on teardown and survives a remount', async () => {
+    rootStyle().setProperty('color-scheme', 'light');
+    const first = render(CatalogShell, { props: { activeSlug: 'button' } });
+    await waitFor(() => expect(rootStyle().getPropertyValue('color-scheme')).not.toBe(''));
+    declareSandboxFontToken();
+    await chooseTheme('Dark');
+    await chooseColorTheme('Nord');
+    await waitFor(() => expect(rootStyle().getPropertyValue('--background')).not.toBe(''));
+
+    first.unmount();
+    expect(rootStyle().getPropertyValue('--font-ui')).toBe(fontToken);
+    expect(rootStyle().getPropertyValue('color-scheme')).toBe('light');
+    expect(rootStyle().getPropertyValue('--background')).toBe('');
+    expect(document.documentElement.classList.contains('dark')).toBe(false);
+
+    render(CatalogShell, { props: { activeSlug: 'button' } });
+    await waitFor(() => expect(rootStyle().getPropertyValue('--background')).not.toBe(''));
+    expect(rootStyle().getPropertyValue('color-scheme')).toBe('dark');
+    expect(rootStyle().getPropertyValue('--font-ui')).toBe(fontToken);
+  });
+
+  it('restores prior inline priority when a preset drops a property and on teardown', async () => {
+    rootStyle().setProperty('color-scheme', 'light', 'important');
+    rootStyle().setProperty('--background', 'red', 'important');
+    const shell = render(CatalogShell, { props: { activeSlug: 'button' } });
+    await waitFor(() => expect(rootStyle().getPropertyValue('color-scheme')).toBe('light'));
+    await chooseColorTheme('Dracula');
+    await waitFor(() => expect(rootStyle().getPropertyValue('--background')).not.toBe('red'));
+
+    await chooseColorTheme('Default');
+    await waitFor(() => expect(rootStyle().getPropertyValue('--background')).toBe('red'));
+    expect(rootStyle().getPropertyPriority('--background')).toBe('important');
+
+    await chooseTheme('Dark');
+    expect(rootStyle().getPropertyPriority('color-scheme')).toBe('');
+
+    shell.unmount();
+    expect(rootStyle().getPropertyValue('color-scheme')).toBe('light');
+    expect(rootStyle().getPropertyPriority('color-scheme')).toBe('important');
+    expect(rootStyle().getPropertyValue('--background')).toBe('red');
+    expect(rootStyle().getPropertyPriority('--background')).toBe('important');
   });
 });
