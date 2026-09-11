@@ -21,6 +21,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { cleanup, render, screen, fireEvent } from '@testing-library/svelte';
 import { tick } from 'svelte';
+import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { compile as compileTailwind } from 'tailwindcss';
 import type { Workspace } from '$shared/types';
 import { warmImport } from '../../../../test/warm-import';
 import { invalidateCowIsolationSetting } from '../initializer/cow-isolation-setting';
@@ -103,9 +106,82 @@ const diskUsage = {
   ],
 };
 
-async function renderPill(props: Record<string, unknown>) {
+async function renderPill(props: Record<string, unknown>, target?: HTMLElement) {
   const CheckoutModePill = (await import('../CheckoutModePill.svelte')).default;
-  return render(CheckoutModePill, { props });
+  return render(CheckoutModePill, { props, target });
+}
+
+/**
+ * Compile the Tailwind utilities actually rendered under `root` with the real
+ * Tailwind compiler and attach them to the document so jsdom cascades them.
+ * jsdom applies stylesheets to `getComputedStyle` but performs no layout, so
+ * width assertions model the CSS box rules on top of the cascaded values.
+ */
+async function attachRenderedTailwind(root: Element): Promise<HTMLStyleElement> {
+  const candidates = new Set<string>();
+  for (const element of [root, ...root.querySelectorAll('*')]) {
+    for (const token of element.classList) candidates.add(token);
+  }
+  const require = createRequire(import.meta.url);
+  const compiler = await compileTailwind('@import "tailwindcss/theme.css"; @tailwind utilities;', {
+    base: '/',
+    loadStylesheet: async (id) => ({
+      base: '/',
+      content: readFileSync(require.resolve(id), 'utf8'),
+    }),
+  });
+  const style = document.createElement('style');
+  style.textContent = compiler.build([...candidates]);
+  document.head.appendChild(style);
+  return style;
+}
+
+const ROOT_FONT_SIZE_PX = 16;
+
+/**
+ * Resolve a cascaded CSS length to px. Handles the forms Tailwind emits for
+ * sizing utilities (`0px`, `100%`, `calc(var(<theme scale>) * N)`); `auto` and an
+ * unset value resolve to 0, which is what `min-width: auto` computes to on a
+ * flex item's cross axis.
+ */
+function cssLengthToPx(value: string, containingBlockPx: number): number {
+  const trimmed = value.trim();
+  if (trimmed === '' || trimmed === 'auto') return 0;
+  const rootStyle = getComputedStyle(document.documentElement);
+  const expression = trimmed
+    .replace(/^calc\((.*)\)$/, '$1')
+    .replace(/var\((--[\w-]+)\)/g, (_, name: string) => rootStyle.getPropertyValue(name).trim())
+    .replace(/(-?[\d.]+)rem/g, (_, n: string) => String(Number(n) * ROOT_FONT_SIZE_PX))
+    .replace(/(-?[\d.]+)%/g, (_, n: string) => String((Number(n) / 100) * containingBlockPx))
+    .replace(/(-?[\d.]+)px/g, '$1');
+  const factors = expression.split('*').map((factor) => Number(factor.trim()));
+  if (factors.some(Number.isNaN)) throw new Error(`Unsupported CSS length: ${value}`);
+  return factors.reduce((product, factor) => product * factor, 1);
+}
+
+/**
+ * Model the used width of `element` inside `host`: every ancestor between
+ * them is a block or stretched column-flex item, so each level fills its
+ * parent's content box and is then clamped by its own `min-width`.
+ */
+function modelUsedWidth(host: HTMLElement, element: HTMLElement): number {
+  const chain: HTMLElement[] = [];
+  for (let node = element; node !== host; node = node.parentElement as HTMLElement) {
+    if (!node.parentElement) throw new Error('element is not a descendant of host');
+    chain.unshift(node);
+  }
+  let width = cssLengthToPx(host.style.width, 0);
+  let parent = host;
+  for (const node of chain) {
+    const parentStyle = getComputedStyle(parent);
+    const available =
+      width -
+      cssLengthToPx(parentStyle.paddingLeft, width) -
+      cssLengthToPx(parentStyle.paddingRight, width);
+    width = Math.max(available, cssLengthToPx(getComputedStyle(node).minWidth, available));
+    parent = node;
+  }
+  return width;
 }
 
 // Pre-warm the component module graph so the cold dynamic import is not
@@ -413,6 +489,36 @@ describe('CheckoutModePill', () => {
     expect(tooltip.textContent).not.toContain('Total size');
     const loading = screen.getByRole('status', { name: 'Loading disk usage' });
     expect(loading.querySelectorAll('[data-slot="skeleton"]')).toHaveLength(3);
+  });
+
+  it('keeps the repository loading skeleton within a narrow host while the walk is in flight', async () => {
+    mocks.diskUsage.mockResolvedValue({ refreshing: true });
+    // The sidebar repository hover card is narrower than the 14rem the tooltip
+    // skeleton used to reserve; host the details in a fixed 200px box.
+    const host = document.createElement('div');
+    host.style.width = '200px';
+    document.body.appendChild(host);
+    let style: HTMLStyleElement | undefined;
+    try {
+      await renderPill(
+        {
+          presentation: 'repository',
+          repositoryOpen: true,
+          workspace: { ...baseWorkspace, checkoutMode: 'direct' } as Workspace,
+        },
+        host,
+      );
+      await flushFetch();
+
+      const loading = screen.getByRole('status', { name: 'Loading disk usage' });
+      expect(loading.querySelectorAll('[data-slot="skeleton"]')).toHaveLength(3);
+      style = await attachRenderedTailwind(host);
+
+      expect(modelUsedWidth(host, loading)).toBeLessThanOrEqual(200);
+    } finally {
+      style?.remove();
+      host.remove();
+    }
   });
 
   it('keeps polling an in-progress first walk and replaces the skeleton with data', async () => {

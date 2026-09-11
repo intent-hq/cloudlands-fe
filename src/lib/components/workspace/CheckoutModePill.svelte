@@ -284,7 +284,7 @@
       </div>
     {:else if loading}
       <div
-        class="flex min-w-56 flex-col gap-2 py-1"
+        class="flex w-full min-w-0 flex-col gap-2 py-1"
         role="status"
         aria-label={m.workspace_diskUsagePill_loading_ariaLabel()}
       >
@@ -322,7 +322,7 @@
       side="bottom"
       align="start"
       sideOffset={4}
-      contentClass="max-w-xs"
+      contentClass="min-w-56 max-w-xs"
       disableHoverableContent={false}
       class="min-w-0"
       onOpenChange={handleOpenChange}
