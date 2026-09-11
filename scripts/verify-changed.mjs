@@ -14,6 +14,7 @@ import {
 import { tmpdir } from 'node:os';
 import { dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { checkDepsFresh } from './check-deps-fresh.mjs';
 
 export const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const FRONTEND_PREFIX = 'packages/cloudlands-fe/';
@@ -630,18 +631,23 @@ export async function runVerificationPlan(plan, root, options = {}) {
   }
 }
 
-export async function runCli(argv = process.argv.slice(2), root = REPO_ROOT) {
+export async function runCli(argv = process.argv.slice(2), root = REPO_ROOT, options = {}) {
+  const log = options.log ?? console.log;
+  const checkDeps = options.checkDeps ?? checkDepsFresh;
+  const runPlan = options.runPlan ?? runVerificationPlan;
   const args = parseArgs(argv);
   if (args.help) {
-    console.log('Usage: pnpm run verify:changed -- [--dry-run] [paths...]');
+    log('Usage: pnpm run verify:changed -- [--dry-run] [paths...]');
     return;
   }
   const files = args.paths.length ? expandInputPaths(args.paths, root) : collectChangedFiles(root);
   const plan = createVerificationPlan(files, { root });
-  printPlan(plan, args.dryRun);
+  printPlan(plan, args.dryRun, log);
   if (args.dryRun || plan.checks.length === 0) return;
 
-  await runVerificationPlan(plan, root);
+  const deps = checkDeps(root);
+  if (!deps.ok) throw new Error(deps.reason);
+  await runPlan(plan, root);
 }
 
 const isDirectRun =

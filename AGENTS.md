@@ -40,6 +40,7 @@ in a monorepo checkout, where this repo mounts at `packages/cloudlands-fe/`.
 | state/store         | ../../docs/fe/STATE_MANAGEMENT.md, src/store/renderer/docs/                          |
 | component design    | ../../docs/fe/COMPONENTS_DESIGN.md                                                   |
 | UI invariant gates  | `pnpm run test:ui-invariants` — ratchets + catalog `*.meta.ts` ledgers, see below    |
+| deps freshness      | `pnpm run deps:check` — gates refuse to run on a stale node_modules install          |
 | panels/layout       | ../../docs/fe/panel-system-refactoring.md, ../../docs/fe/PANEL_TAB_UX_SPEC.md        |
 | PR descriptions     | ../../docs/fe/PR_DESCRIPTION_GUIDE.md                                                |
 | browser/CDP         | ../../docs/fe/BROWSER_PANEL_SPEC.md, ../../docs/fe/CDP_MCP_TOOLS.md                  |
