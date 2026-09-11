@@ -72,6 +72,24 @@ describe('readTriggerHeader', () => {
     });
   });
 
+  it('keeps brace and class globs whole when splitting the entry list', () => {
+    const content = lines(
+      `// ${TRIGGER_MARKER} src/*.{ts,svelte}, src/lib/[a,b]*.ts, src/c.ts`,
+      "import { it } from 'vitest';",
+    );
+    const header = readTriggerHeader(content, 'scripts/x.test.ts');
+    expect(header).toEqual({
+      kind: 'triggers',
+      triggers: ['src/*.{ts,svelte}', 'src/lib/[a,b]*.ts', 'src/c.ts'],
+    });
+    expect(
+      selectDeclaredSuites(
+        [{ path: 'scripts/x.test.ts', triggers: header.triggers! }],
+        ['src/App.svelte'],
+      ),
+    ).toEqual(['scripts/x.test.ts']);
+  });
+
   it('reads the exempt marker with its reason and ignores markers after the first token', () => {
     expect(
       readTriggerHeader(lines(`// ${EXEMPT_MARKER} reads only its temp dir`, 'const a = 1;')),
@@ -89,6 +107,13 @@ describe('matchesTrigger', () => {
     expect(matchesTrigger('src/lib/components/**', 'src/lib/components/a/b/C.svelte')).toBe(true);
     expect(matchesTrigger('src/lib/components/**', 'src/lib/componentsx/C.svelte')).toBe(false);
     expect(matchesTrigger('src/lib/*.svelte', 'src/lib/nested/C.svelte')).toBe(false);
+  });
+
+  it('matches literal route segments before treating brackets as glob syntax', () => {
+    const route = 'src/routes/(app)/workspace/[id]/+page.svelte';
+    expect(matchesTrigger(route, route)).toBe(true);
+    expect(matchesTrigger(route, 'src/routes/(app)/workspace/xyz/+page.svelte')).toBe(false);
+    expect(matchesTrigger('src/*.{ts,svelte}', 'src/App.svelte')).toBe(true);
   });
 });
 
@@ -146,6 +171,27 @@ describe('requiresTriggerDeclaration', () => {
     expect(requiresTriggerDeclaration(content, 'src/lib/__tests__/a.test.ts')).toBe(true);
   });
 
+  it('resolves relative imports against the test file before counting them as source', () => {
+    const scriptSuite = lines(
+      "import { audit } from './audit.mjs';",
+      "import { readFileSync } from 'node:fs';",
+      "readFileSync(process.cwd() + '/src/app.html', 'utf8');",
+    );
+    expect(requiresTriggerDeclaration(scriptSuite, 'scripts/a.test.ts')).toBe(true);
+    const helperSuite = lines("import { render } from './helpers';", cwdReader);
+    expect(requiresTriggerDeclaration(helperSuite, 'src/lib/__tests__/a.test.ts')).toBe(true);
+    const fixtureSuite = lines("import data from '../__fixtures__/data';", cwdReader);
+    expect(requiresTriggerDeclaration(fixtureSuite, 'src/lib/__tests__/a.test.ts')).toBe(true);
+    const mockSuite = lines("import { page } from '$app/stores';", cwdReader);
+    expect(requiresTriggerDeclaration(mockSuite, 'src/lib/__tests__/a.test.ts')).toBe(true);
+    const escapingSuite = lines("import { util } from '../../../scripts/util';", cwdReader);
+    expect(requiresTriggerDeclaration(escapingSuite, 'src/lib/__tests__/a.test.ts')).toBe(true);
+    const sourceSuite = lines("import { Sidebar } from '../Sidebar.svelte';", cwdReader);
+    expect(requiresTriggerDeclaration(sourceSuite, 'src/lib/__tests__/a.test.ts')).toBe(false);
+    const aliasSuite = lines("import { util } from '@/lib/util';", cwdReader);
+    expect(requiresTriggerDeclaration(aliasSuite, 'scripts/a.test.ts')).toBe(false);
+  });
+
   it('does not flag Playwright specs or integration suites', () => {
     expect(requiresTriggerDeclaration(cwdReader, 'src/lib/a.ct.spec.ts')).toBe(false);
     expect(requiresTriggerDeclaration(cwdReader, 'src/lib/a.visual.spec.ts')).toBe(false);
@@ -160,6 +206,21 @@ describe('requiresTriggerDeclaration', () => {
       "it('x', () => expect(doc).toContain('readFileSync'));",
     );
     expect(requiresTriggerDeclaration(content, 'src/lib/__tests__/a.test.ts')).toBe(false);
+  });
+
+  it('does not taint a fixture root through a computed object key naming a src path', () => {
+    const content = lines(
+      "import { readFileSync } from 'node:fs';",
+      "import { join } from 'node:path';",
+      "import { it } from 'vitest';",
+      "import { fixtureRoot } from './helpers';",
+      "const entry = 'src/lib/a.ts';",
+      "it('x', () => {",
+      "  const root = fixtureRoot({ [entry]: '', 'src/lib/b.ts': '' });",
+      "  expect(readFileSync(join(root, 'src/lib/b.ts'), 'utf8')).toBe('');",
+      '});',
+    );
+    expect(requiresTriggerDeclaration(content, 'scripts/a.test.ts')).toBe(false);
   });
 
   it('does not flag a suite that reads only temp directories it creates', () => {

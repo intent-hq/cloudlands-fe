@@ -32,9 +32,19 @@ const INTEGRATION_ROOT = 'tests/integration/';
 const READ_FUNCTIONS = new Set(['readFileSync', 'readdirSync', 'globSync', 'readFile', 'readdir']);
 const ROOT_IDENTIFIERS = new Set(['__dirname', '__filename', 'repoRoot', 'REPO_ROOT']);
 const META_PROPERTIES = new Set(['url', 'dirname', 'filename']);
-const SOURCE_ALIASES = ['$lib', '$store', '$app', '$features', '$shared'];
+// The vitest.config.ts aliases that resolve into `src/` (`$app` lands on the
+// SvelteKit mock under `src/__mocks__`, which the test-module filter rejects).
+const SOURCE_ALIASES = {
+  '@': 'src',
+  $lib: 'src/lib',
+  $store: 'src/store',
+  $features: 'src/features',
+  $shared: 'src/shared',
+  $app: 'src/__mocks__/$app',
+};
 const TEST_MODULE =
-  /(?:^|[./-])(?:test|spec|tests|__tests__|__mocks__|test-setup|test-utils|test-helpers|test-harness)(?:$|[./-])/;
+  /(?:^|[./-])(?:test|spec|tests|__tests__|__mocks__|__fixtures__|test-setup|test-utils|test-helpers|test-harness)(?:$|[./-])/;
+const TEST_FILE = /\.(?:test|spec)(?:\.[cm]?[jt]sx?)?$/;
 // Generated, gitignored output: importing it never makes a source change select the suite.
 const GENERATED_MODULE = /(?:^|\/)paraglide\//;
 const REPO_LITERAL = /^(?:src|scripts)\//;
@@ -45,6 +55,25 @@ function resolveEntry(entry, filePath) {
   const normalized = entry.replaceAll('\\', '/');
   if (!normalized.startsWith('./') && !normalized.startsWith('../')) return normalized;
   return path.posix.normalize(path.posix.join(path.posix.dirname(filePath), normalized));
+}
+
+// Splits a marker list on commas outside `{}` / `[]`, so brace and class globs
+// such as `src/*.{ts,svelte}` stay whole.
+function splitEntries(list) {
+  const entries = [];
+  let depth = 0;
+  let start = 0;
+  for (let index = 0; index < list.length; index += 1) {
+    const character = list[index];
+    if (character === '{' || character === '[') depth += 1;
+    else if (character === '}' || character === ']') depth = Math.max(0, depth - 1);
+    else if (character === ',' && depth === 0) {
+      entries.push(list.slice(start, index));
+      start = index + 1;
+    }
+  }
+  entries.push(list.slice(start));
+  return entries;
 }
 
 export function readTriggerHeader(content, filePath = 'suite.test.ts') {
@@ -61,7 +90,7 @@ export function readTriggerHeader(content, filePath = 'suite.test.ts') {
     const list = marker === -1 ? line : line.slice(marker + TRIGGER_MARKER.length);
     declared = true;
     continuing = list.trimEnd().endsWith(',');
-    for (const entry of list.split(',')) {
+    for (const entry of splitEntries(list)) {
       const trimmed = entry.trim();
       if (trimmed) triggers.push(resolveEntry(trimmed, filePath));
     }
@@ -69,9 +98,11 @@ export function readTriggerHeader(content, filePath = 'suite.test.ts') {
   return declared ? { kind: 'triggers', triggers } : { kind: null };
 }
 
+// Exact match first: route segments such as `(app)` and `[id]` are literal
+// path characters, not glob syntax.
 export function matchesTrigger(trigger, changedPath) {
-  if (GLOB_CHARACTERS.test(trigger)) return path.posix.matchesGlob(changedPath, trigger);
-  return trigger === changedPath;
+  if (trigger === changedPath) return true;
+  return GLOB_CHARACTERS.test(trigger) && path.posix.matchesGlob(changedPath, trigger);
 }
 
 // Type-only imports are erased before vitest builds its module graph.
@@ -98,19 +129,30 @@ function moduleSpecifier(node) {
   return undefined;
 }
 
-// An import `vitest related` follows into `src/`: relative or aliased, and not
-// a test module (suites, `__tests__` helpers, mocks, harnesses).
-function isSourceImport(specifierNode) {
+// The repo-relative path an import specifier resolves to: aliases through
+// vitest.config.ts, `./` and `../` against the importing file's directory.
+function resolveSpecifier(specifier, filePath) {
+  const [alias] = Object.entries(SOURCE_ALIASES).find(
+    ([name]) => specifier === name || specifier.startsWith(`${name}/`),
+  ) ?? [undefined];
+  if (alias) return path.posix.normalize(SOURCE_ALIASES[alias] + specifier.slice(alias.length));
+  if (specifier.startsWith('./') || specifier.startsWith('../')) {
+    return resolveEntry(specifier, filePath);
+  }
+  return path.posix.normalize(specifier);
+}
+
+// An import `vitest related` follows into production source: it resolves under
+// `src/` and is not itself a test module (suites, `__tests__` / `__fixtures__`
+// helpers, mocks, harnesses) or generated output.
+function isSourceImport(specifierNode, filePath) {
   if (!specifierNode || !ts.isStringLiteralLike(specifierNode)) return false;
   const specifier = specifierNode.text.split('?')[0];
-  const aliased = SOURCE_ALIASES.some(
-    (alias) => specifier === alias || specifier.startsWith(`${alias}/`),
-  );
-  const relative =
-    specifier.startsWith('./') || specifier.startsWith('../') || specifier.startsWith('src/');
-  if (!aliased && !relative) return false;
-  if (GENERATED_MODULE.test(specifier)) return false;
-  return !TEST_MODULE.test(specifier.replace(/\.[cm]?[jt]sx?$|\.svelte$/, ''));
+  const resolved = resolveSpecifier(specifier, filePath);
+  if (!resolved.startsWith('src/')) return false;
+  if (GENERATED_MODULE.test(resolved)) return false;
+  const moduleName = resolved.replace(/\.[cm]?[jt]sx?$|\.svelte$/, '');
+  return !TEST_FILE.test(moduleName) && !TEST_MODULE.test(moduleName);
 }
 
 // A bare `src/...` / `scripts/...` path, which node resolves against the cwd
@@ -135,9 +177,14 @@ function isRootSource(node) {
   return false;
 }
 
+// A computed object key (`{ [file]: '' }`) names an entry a fixture creates,
+// not a location it reads, so taint does not flow through it.
 function containsRoot(node, tainted) {
   if (isRootSource(node)) return true;
   if (ts.isIdentifier(node) && tainted.has(node.text)) return true;
+  if (ts.isPropertyAssignment(node) && ts.isComputedPropertyName(node.name)) {
+    return containsRoot(node.initializer, tainted);
+  }
   return ts.forEachChild(node, (child) => containsRoot(child, tainted) || undefined) === true;
 }
 
@@ -190,7 +237,7 @@ export function requiresTriggerDeclaration(content, filePath = 'suite.test.ts') 
   const tainted = collectTaintedNames(sourceFile);
   const visit = (node) => {
     if (importsSource) return;
-    if (isSourceImport(moduleSpecifier(node))) {
+    if (isSourceImport(moduleSpecifier(node), filePath)) {
       importsSource = true;
       return;
     }
