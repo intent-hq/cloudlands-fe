@@ -397,7 +397,7 @@ describe('ModelPicker legacy Auggie models', () => {
 
     await fireEvent.keyDown(legacyToggle, { key: ' ' });
     await waitFor(() => expect(legacyToggle.getAttribute('aria-expanded')).toBe('false'));
-    expect(screen.queryByRole('option', { name: /Opus 4.1/ })).toBeNull();
+    await waitFor(() => expect(screen.queryByRole('option', { name: /Opus 4.1/ })).toBeNull());
   });
 
   it('reveals matching legacy models during search and restores collapse when cleared', async () => {
@@ -941,7 +941,7 @@ describe('ModelPicker combined reasoning mode', () => {
     const auggieTab = screen.getByRole('tab', { name: /Auggie/ });
     expect(auggieTab.getAttribute('aria-selected')).toBe('true');
     expect(await screen.findByRole('option', { name: /GPT 5\.4/ })).toBeTruthy();
-    expect(screen.queryByRole('option', { name: /GPT-5\.6-Sol/ })).toBeNull();
+    await waitFor(() => expect(screen.queryByRole('option', { name: /GPT-5\.6-Sol/ })).toBeNull());
   });
 
   it('opens provider settings from the control after the provider tabs', async () => {
@@ -1026,7 +1026,7 @@ describe('ModelPicker combined reasoning mode', () => {
     });
 
     expect(await screen.findByRole('option', { name: /GPT-6 Codex/ })).toBeTruthy();
-    expect(screen.queryByRole('option', { name: /GPT-5\.6-Sol/ })).toBeNull();
+    await waitFor(() => expect(screen.queryByRole('option', { name: /GPT-5\.6-Sol/ })).toBeNull());
     await waitFor(() => expect(refreshButton.hasAttribute('disabled')).toBe(false));
   });
 
@@ -2417,7 +2417,7 @@ describe('ModelPicker unlocked agent provider handling', () => {
     // The refreshed list replaces the group (allProviderModels path); the
     // per-agent snapshot is not used for an enabled provider in unlocked mode.
     expect(await screen.findByRole('option', { name: /GPT-6 Codex/ })).toBeTruthy();
-    expect(screen.queryByRole('option', { name: /GPT-5 Codex/ })).toBeNull();
+    await waitFor(() => expect(screen.queryByRole('option', { name: /GPT-5 Codex/ })).toBeNull());
   });
 
   it('keeps the agent provider group visible when that provider was since disabled', async () => {

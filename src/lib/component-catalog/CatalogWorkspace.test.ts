@@ -199,9 +199,14 @@ describe('catalog workspace', () => {
 
     const motion = render(CatalogSystemPage, { props: { slug: 'motion' } });
     const replay = screen.getByRole('button', { name: 'Replay motion' });
-    expect(replay.getAttribute('aria-pressed')).toBe('false');
+    const originalDots = Array.from(motion.container.querySelectorAll('.spring-track i'));
+    expect(originalDots).toHaveLength(3);
     await fireEvent.click(replay);
-    expect(replay.getAttribute('aria-pressed')).toBe('true');
+    expect(originalDots.every((dot) => !dot.isConnected)).toBe(true);
+    const replayedDots = Array.from(motion.container.querySelectorAll('.spring-track i'));
+    expect(replayedDots).toHaveLength(3);
+    await fireEvent.click(replay);
+    expect(replayedDots.every((dot) => !dot.isConnected)).toBe(true);
     motion.unmount();
 
     render(CatalogSystemPage, { props: { slug: 'surfaces' } });

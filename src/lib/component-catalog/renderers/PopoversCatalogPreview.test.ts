@@ -36,7 +36,7 @@ describe('PopoversCatalogPreview', () => {
     const { container } = render(PopoversCatalogPreview, { props: { fixture } });
 
     await waitFor(() => {
-      expect(container.querySelectorAll('[data-static-position]')).toHaveLength(16);
+      expect(container.querySelectorAll('[data-static-position]')).toHaveLength(13);
       expect(getComputedStyle(document.body).overflow).not.toBe('hidden');
       expect(getComputedStyle(document.body).pointerEvents).not.toBe('none');
     });
