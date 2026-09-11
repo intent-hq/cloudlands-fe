@@ -71,7 +71,7 @@ describe('screen pattern', () => {
     expect(message.classList.contains('text-destructive')).toBe(false);
     expect(message.classList.contains('text-danger')).toBe(false);
     expect(message.classList.contains('text-muted-foreground')).toBe(true);
-    expect(icon.classList.contains('text-destructive')).toBe(true);
+    expect(icon.classList.contains('text-danger')).toBe(true);
   });
 
   it('provides list, card-grid, and form loading fixture recipes', () => {

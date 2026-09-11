@@ -66,7 +66,7 @@
         data-slot="empty-state-icon"
         class={cn(
           'mx-auto flex w-fit',
-          severity === 'danger' ? 'text-destructive' : 'text-muted-foreground',
+          severity === 'danger' ? 'text-danger' : 'text-muted-foreground',
         )}
       >
         {@render icon()}
