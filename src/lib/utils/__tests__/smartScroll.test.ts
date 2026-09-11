@@ -1125,6 +1125,31 @@ describe('followBottom policy', () => {
     action.destroy();
   });
 
+  it('pins from the lease request when the container opts out of native anchoring', () => {
+    const child = document.createElement('div');
+    container.append(child);
+    container.style.overflowAnchor = 'none';
+    const action = followBottom(container, { follow: true });
+    runSettleTail();
+    const mutation = beforeFollowBottomMutation(child);
+
+    // No native anchor carries the viewport between the tick's write and the
+    // post-layout resize delivery, so the request itself snaps to the new
+    // maximum instead of only arming the settle loop.
+    scrollHeight += 18;
+    mutation.request();
+    expect(scrollTop).toBe(618);
+    fireResizeFor(child);
+    expect(scrollTop).toBe(618);
+
+    scrollHeight += 24;
+    mutation.settle();
+    runSettleTail();
+    expect(scrollTop).toBe(642);
+    expect(animationFrames).toHaveLength(0);
+    action.destroy();
+  });
+
   it('re-acquires a reversed disclosure lease without reading geometry inside the tick', () => {
     const child = document.createElement('div');
     container.append(child);

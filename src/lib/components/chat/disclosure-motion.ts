@@ -72,11 +72,11 @@ export function safeDisclosureTransition(
   // viewport run — so any same-frame reader observes the grown content with
   // the previous frame's scrollTop (a per-frame bottom-distance drift equal
   // to the height delta). Driving the styles from `tick` keeps the height
-  // mutation inside the frame's rAF phase. The tick itself must stay
-  // write-only: the lease's `request()` only keeps the follower's settle
-  // loop armed, and the pin lands post-layout (resize delivery on the leased
-  // element, same frame, pre-paint) rather than as a synchronous
-  // scrollHeight read here on the just-dirtied tree.
+  // mutation inside the frame's rAF phase. The tick itself stays write-only:
+  // the lease's `request()` decides whether the pin can land post-layout
+  // (resize delivery on the leased element, same frame, pre-paint, with
+  // native anchoring carrying the viewport until then) or must be applied
+  // synchronously because the container opted out of native anchoring.
   const applyFrameStyles = (t: number, u: number) => {
     element.style.overflow = 'hidden';
     element.style.height = `${t * height}px`;

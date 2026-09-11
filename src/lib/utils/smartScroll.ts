@@ -115,6 +115,12 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
   let stableFrames = 0;
   let previousMaximum: number | null = null;
   let destroyed = false;
+  // Whether native scroll anchoring on the container (via the follower's
+  // bottom anchor) carries a followed viewport through a leased motion's
+  // per-frame growth until the post-layout resize delivery snaps exactly.
+  // Read from the container's computed `overflow-anchor` once per attach
+  // (primed by the reactivation frame, so lease ticks normally never read).
+  let nativeAnchorCarriesPin: boolean | null = null;
   const activeLeases = new Set<MutationLease>();
   const mutationElements = new Map<HTMLElement, number>();
   const persistentResizeElements = new WeakSet<HTMLElement>();
@@ -192,6 +198,11 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
 
   function maximumScrollTop(): number {
     return Math.max(0, container.scrollHeight - container.clientHeight);
+  }
+
+  function canNativeAnchorCarryPin(): boolean {
+    nativeAnchorCarriesPin ??= getComputedStyle(container).overflowAnchor !== 'none';
+    return nativeAnchorCarriesPin;
   }
 
   function readScrollGeometry(): ScrollGeometry {
@@ -399,11 +410,16 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
       return activeLeases.size > 0;
     },
     beforeMutation(element, mutationOptions) {
-      // The lease never reads geometry itself: acquisition, request() and
+      // The lease avoids reading geometry itself: acquisition, request() and
       // settle() are called from Svelte flushes and transition ticks that
       // have just dirtied style, where a scrollHeight/clientHeight read
       // forces layout. They only arm the settle loop; the pin comes from the
-      // element's resize delivery (post-layout) and the tail frames.
+      // element's resize delivery (post-layout) and the tail frames, while
+      // native anchoring holds the viewport in between. A container that
+      // opts out of native anchoring (`overflow-anchor: none`) has no such
+      // carrier — any rAF callback ordered after the transition tick would
+      // read the grown content against the previous frame's scrollTop until
+      // resize delivery — so there request() pins synchronously instead.
       if (destroyed || !enabled || !isFollowing) return inertFollowBottomMutation;
       const lease: MutationLease = {
         element,
@@ -420,7 +436,9 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
       scheduleBottomSettle();
       return {
         request() {
-          if (activeLeases.has(lease) && !destroyed) scheduleBottomSettle();
+          if (!activeLeases.has(lease) || destroyed) return;
+          if (canNativeAnchorCarryPin()) scheduleBottomSettle();
+          else requestBottomSettle();
         },
         settle() {
           if (destroyed) return;
@@ -602,11 +620,13 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
       reactivationFrame = requestAnimationFrame(() => {
         reactivationFrame = null;
         if (destroyed || !enabled) return;
+        canNativeAnchorCarryPin();
         if (isFollowing) requestBottomSettle();
         else reportState();
       });
       return;
     }
+    canNativeAnchorCarryPin();
     let initialGeometry = readScrollGeometry();
     if (isFollowing) {
       initialGeometry = setExactBottom(initialGeometry);
@@ -627,6 +647,7 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
     if (layoutReportFrame !== null) cancelAnimationFrame(layoutReportFrame);
     layoutReportFrame = null;
     lastReportedState = null;
+    nativeAnchorCarriesPin = null;
     if (bottomFollowers.get(container) === follower) bottomFollowers.delete(container);
     teardownObservers();
     teardownNativeBottomAnchor();
