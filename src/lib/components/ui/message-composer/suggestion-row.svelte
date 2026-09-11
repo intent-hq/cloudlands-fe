@@ -47,7 +47,7 @@
   <span class="min-w-0 flex-1 truncate">{text}</span>
   {#if shortcut}
     <span
-      class="inline-flex h-[18px] shrink-0 items-center rounded-[5px] border border-border bg-background px-1"
+      class="inline-flex h-5 shrink-0 items-center rounded-sm border border-border bg-background px-1"
     >
       <ShortcutChip>{shortcut}</ShortcutChip>
     </span>
