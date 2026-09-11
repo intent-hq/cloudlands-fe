@@ -44,9 +44,11 @@ const models = [
 ];
 
 const selectLoadingStates = appStore.createSelector((state) => state.model.loadingState);
+let activeCleanup: (() => void) | undefined;
 
 function setupModels(populated: boolean) {
   return () => {
+    activeCleanup?.();
     const previousLoading = selectLoadingStates.select(appStore.state);
     const previousCache = selectProviderModelsCacheMap.select(appStore.state);
     const previousModels = selectAvailableModels.select(appStore.state);
@@ -57,6 +59,7 @@ function setupModels(populated: boolean) {
     const bridge = typeof window === 'undefined' ? undefined : window.electronAPI;
     const originalInvoke = bridge?.invoke;
     if (bridge && originalInvoke) {
+      // electronAPI.invoke takes precedence over the router in the UI-preview build.
       bridge.invoke = (channel, ...args) =>
         channel === 'codex:get-models' || channel === 'claude-code:get-models'
           ? mockInvoke(channel, ...args)
@@ -74,7 +77,11 @@ function setupModels(populated: boolean) {
       appStore.dispatch(providerModelsLoaded(providerId, { models: rows }, epoch));
       if (providerId === 'codex') appStore.dispatch(setAvailableModels(rows, providerId));
     }
-    return () => {
+    let disposed = false;
+    const cleanup = () => {
+      if (disposed) return;
+      disposed = true;
+      if (activeCleanup === cleanup) activeCleanup = undefined;
       if (bridge && originalInvoke) bridge.invoke = originalInvoke;
       for (const providerId of ['codex', 'claude-code'])
         unregisterMockIpcHandler(`${providerId}:get-models`);
@@ -98,6 +105,8 @@ function setupModels(populated: boolean) {
         );
       }
     };
+    activeCleanup = cleanup;
+    return cleanup;
   };
 }
 
