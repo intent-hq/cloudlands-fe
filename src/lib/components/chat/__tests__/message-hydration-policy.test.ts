@@ -712,6 +712,71 @@ describe('message hydration policy', () => {
       expect(frames.callbacks).toHaveLength(2);
     });
 
+    it('holds staged hydration while the scroll root is mid-motion, then resumes', () => {
+      const frames = controlledFrames();
+      const transitions: string[] = [];
+      let held = true;
+      const policy = createMessageHydrationPolicy([assistant('swept-in'), assistant('tail')], {
+        frameBudgetMs: 6,
+        maxRowsPerFrame: 4,
+        scheduleFrame: frames.scheduleFrame,
+        cancelFrame: frames.cancelFrame,
+        now: () => 0,
+        isHydrationHeld: () => held,
+        onHydrate: (id) => transitions.push(id),
+        onHydrationChange: () => transitions.push('change'),
+      });
+      policies.push(policy);
+      const elements = observe(policy, ['swept-in', 'tail']);
+
+      // A collapsing footer under a bottom-pinned viewport shifts an older
+      // placeholder row into the preload band while the lease is still held.
+      MockIntersectionObserver.instances[0].fire([
+        { target: elements.get('swept-in')!, isIntersecting: true },
+      ]);
+      expect(frames.callbacks).toHaveLength(1);
+
+      frames.callbacks[0](0);
+      frames.callbacks[1](16);
+      expect(transitions).toEqual([]);
+      expect(policy.getHydratedIds()).toEqual([]);
+      expect(frames.callbacks).toHaveLength(3);
+
+      // The lease releases in the outro's final tick (issued from
+      // animation.onfinish, the frame that removes the element): the first
+      // unheld frame is skipped too, and the next one mounts the row.
+      held = false;
+      frames.callbacks[2](32);
+      expect(transitions).toEqual([]);
+      expect(frames.callbacks).toHaveLength(4);
+      frames.callbacks[3](48);
+      expect(transitions).toEqual(['swept-in', 'change']);
+      expect(policy.getHydratedIds()).toEqual(['swept-in']);
+      expect(frames.callbacks).toHaveLength(4);
+    });
+
+    it('does not delay staged hydration when the hold was never active', () => {
+      const frames = controlledFrames();
+      const transitions: string[] = [];
+      const policy = createMessageHydrationPolicy([assistant('row')], {
+        frameBudgetMs: 6,
+        scheduleFrame: frames.scheduleFrame,
+        cancelFrame: frames.cancelFrame,
+        now: () => 0,
+        isHydrationHeld: () => false,
+        onHydrate: (id) => transitions.push(id),
+      });
+      policies.push(policy);
+      const elements = observe(policy, ['row']);
+      MockIntersectionObserver.instances[0].fire([
+        { target: elements.get('row')!, isIntersecting: true },
+      ]);
+
+      frames.callbacks[0](0);
+      expect(transitions).toEqual(['row']);
+      expect(frames.callbacks).toHaveLength(1);
+    });
+
     it('retires removed pending rows without scheduling another frame', () => {
       const frames = controlledFrames();
       const policy = createMessageHydrationPolicy([assistant('removed'), assistant('live')], {

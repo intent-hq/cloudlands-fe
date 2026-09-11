@@ -5,6 +5,7 @@ import {
   captureScrollAnchor,
   followBottom,
   followToBottom,
+  hasActiveFollowBottomMutation,
   isFollowingBottom,
   isNativeScrollAnchoringActive,
   restoreScrollAnchor,
@@ -627,6 +628,35 @@ describe('followBottom policy', () => {
     runSettleTail();
     expect(scrollTop).toBe(654);
     expect(animationFrames).toHaveLength(0);
+    action.destroy();
+  });
+
+  it('reports an active lease from acquisition until the last lease settles', () => {
+    const child = document.createElement('div');
+    container.append(child);
+    const action = followBottom(container, { follow: true });
+    runSettleTail();
+    expect(hasActiveFollowBottomMutation(container)).toBe(false);
+
+    const first = beforeFollowBottomMutation(child);
+    const second = beforeFollowBottomMutation(child);
+    expect(hasActiveFollowBottomMutation(container)).toBe(true);
+    first.settle();
+    expect(hasActiveFollowBottomMutation(container)).toBe(true);
+    second.settle();
+    expect(hasActiveFollowBottomMutation(container)).toBe(false);
+
+    action.destroy();
+    expect(hasActiveFollowBottomMutation(container)).toBe(false);
+  });
+
+  it('reports no active lease on an unfollowed container', () => {
+    const child = document.createElement('div');
+    container.append(child);
+    const action = followBottom(container, { follow: false });
+    const mutation = beforeFollowBottomMutation(child);
+    expect(hasActiveFollowBottomMutation(container)).toBe(false);
+    mutation.settle();
     action.destroy();
   });
 

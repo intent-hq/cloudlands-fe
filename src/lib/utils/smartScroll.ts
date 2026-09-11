@@ -44,6 +44,7 @@ interface BottomFollower {
   followAndScroll: () => void;
   isFollowing: () => boolean;
   isNativeScrollAnchoringActive: () => boolean;
+  hasActiveMutation: () => boolean;
   beforeMutation: (element: HTMLElement) => FollowBottomMutation;
 }
 
@@ -334,6 +335,7 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
     isFollowing: () => isFollowing,
     isNativeScrollAnchoringActive: () =>
       !isFollowing && getComputedStyle(container).overflowAnchor !== 'none',
+    hasActiveMutation: () => activeMutationLocks > 0,
     beforeMutation(element) {
       // The lease never reads geometry itself: acquisition, request() and
       // settle() are called from Svelte flushes and transition ticks that
@@ -628,6 +630,15 @@ export function isFollowingBottom(element: HTMLElement): boolean {
 
 export function isNativeScrollAnchoringActive(element: HTMLElement): boolean {
   return bottomFollowers.get(element)?.isNativeScrollAnchoringActive() ?? false;
+}
+
+/**
+ * True while a descendant mutation lease (see beforeFollowBottomMutation) is
+ * held on this followed container — i.e. a disclosure motion or similar
+ * layout change is still moving content under a bottom-pinned viewport.
+ */
+export function hasActiveFollowBottomMutation(element: HTMLElement): boolean {
+  return bottomFollowers.get(element)?.hasActiveMutation() ?? false;
 }
 
 /**

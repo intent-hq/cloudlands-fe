@@ -33,6 +33,16 @@ interface MessageHydrationPolicyOptions {
    * transition costs one rebuild, not one per row.
    */
   onHydrationChange?: () => void;
+  /**
+   * Polled at the start of each staged frame. While it returns true the frame
+   * hydrates and dehydrates nothing, keeps its pending rows queued and re-arms
+   * for the next frame. ChatPanel supplies the scroll root's followed-bottom
+   * mutation lease: a disclosure motion shrinking or growing content under a
+   * bottom-pinned viewport sweeps placeholder rows into the preload band, and
+   * mounting them inside the motion is a full-message Svelte flush on one of
+   * its frames — they mount one frame after the lease settles instead.
+   */
+  isHydrationHeld?: () => boolean;
   frameBudgetMs?: number;
   maxRowsPerFrame?: number;
   scheduleFrame?: (callback: FrameRequestCallback) => number;
@@ -98,6 +108,8 @@ export function createMessageHydrationPolicy(
   let generation = 0;
   const pendingHydrations = new Set<string>();
   let scheduledFrame: number | null = null;
+  /** True when the previous staged frame found the hydration hold active. */
+  let hydrationWasHeld = false;
   const staged = options.frameBudgetMs !== undefined;
   const frameBudgetMs = options.frameBudgetMs ?? CHAT_HYDRATION_FRAME_BUDGET_MS;
   const maxRowsPerFrame = options.maxRowsPerFrame ?? CHAT_HYDRATION_MAX_ROWS_PER_FRAME;
@@ -169,6 +181,7 @@ export function createMessageHydrationPolicy(
   function cancelScheduledHydration(): void {
     generation += 1;
     pendingHydrations.clear();
+    hydrationWasHeld = false;
     if (scheduledFrame === null) return;
     if (scheduledFrame >= 0) cancelFrame(scheduledFrame);
     scheduledFrame = null;
@@ -208,6 +221,20 @@ export function createMessageHydrationPolicy(
     const handle = scheduleFrame(() => {
       scheduledFrame = null;
       if (disposed || !active || generation !== scheduledGeneration) return;
+      if (options.isHydrationHeld?.() === true) {
+        hydrationWasHeld = true;
+        schedulePendingHydration();
+        return;
+      }
+      if (hydrationWasHeld) {
+        // The lease releases inside the transition's final tick, which Svelte
+        // issues from `animation.onfinish` — the same frame that removes the
+        // collapsed element — so the first unheld frame is skipped as well and
+        // the mount lands in a quiet frame.
+        hydrationWasHeld = false;
+        schedulePendingHydration();
+        return;
+      }
       const startedAt = now();
       let hydratedCount = 0;
       const candidates = sortByIndex(records.values())
