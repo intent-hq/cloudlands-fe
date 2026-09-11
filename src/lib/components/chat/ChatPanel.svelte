@@ -42,6 +42,7 @@
   import { shouldHandleChatFocusRequest, type ChatFocusRequest } from './chat-focus-ownership';
   import type { AgentMessage } from '$shared/types';
   import { getPresentedUserMessageText } from '$lib/utils/user-message-presentation';
+  import { getAutomatedWakePresentation } from './automated-wake-presentation';
   import {
     reportStreamLifecycle,
     streamTurnCorrelation,
@@ -861,8 +862,12 @@
   }
 
   function getPinnedPromptText(message: AgentMessage): string {
-    const extracted = extractAllContent(message);
-    const text = getQueueInfo(message.metadata) ? stripDequeueWaitNote(extracted) : extracted;
+    const automatedWake = getAutomatedWakePresentation(message);
+    const presented = automatedWake?.bodyText ?? getPresentedUserMessageText(message);
+    const withoutEventPrefix = presented.replace(/^\[WORKSPACE EVENTS\](?:\r?\n)*/, '');
+    const text = getQueueInfo(message.metadata)
+      ? stripDequeueWaitNote(withoutEventPrefix)
+      : withoutEventPrefix;
     if (text.trim()) return text.trim();
     const attachment = message.contentBlocks?.find(
       (block) => block.type === 'image' || block.type === 'file',
@@ -5409,6 +5414,7 @@
           <div class={isChiefWorkspace ? 'mx-1 sm:mx-2' : ''}>
             <PinnedUserPrompt
               text={getPinnedPromptText(pinnedPrompt.message)}
+              surface={pinnedPrompt.surface}
               {workspace}
               onActivate={handlePinnedPromptClick}
             />
@@ -6017,6 +6023,7 @@
                       <!-- Source wake-up row remains owned by this transcript turn. -->
                       <div
                         data-message-id={message.id}
+                        data-pinnable-user-prompt
                         data-pinned-prompt-id={message.id}
                         data-message-index={globalIndex}
                         class="message-nav-target relative z-10 {eventCardAssistantMarginClass(
@@ -6061,7 +6068,7 @@
                       <div
                         data-message-id={message.id}
                         data-message-role="user"
-                        data-pinnable-user-prompt={!isAutomatedMessage(message) ? '' : undefined}
+                        data-pinnable-user-prompt
                         data-pinned-prompt-id={message.id}
                         data-send-app-message-id={message.appMessageId}
                         data-message-index={globalIndex}
@@ -6326,19 +6333,6 @@
           </div>
         {/if}
 
-        <!-- Show suggested prompts for the last message only, when not streaming -->
-        {#if suggestedPrompts.length > 0 && !deferTranscriptReveal}
-          <div class="w-full {isCompactMode ? 'pb-1 pt-2' : 'py-2'}">
-            <SuggestedPrompts
-              prompts={suggestedPrompts}
-              onSelect={handleSelectSuggestedPrompt}
-              onEdit={handleEditSuggestedPrompt}
-              compact={isCompactMode}
-              showShortcutHints={isChatFocused}
-            />
-          </div>
-        {/if}
-
         <!-- Inline Permission Requests (filtered by current agent) -->
         {#if agentId && agentPermissionRequests.length > 0}
           {@const currentRequest = agentPermissionRequests[0]}
@@ -6501,6 +6495,22 @@
               {/key}
             {/if}
             {#if (!pendingQuestions && !pendingQuestionRecoveryLoading) || questionWizardCollapsed}
+              <!-- Show suggested prompts for the last message only, when not streaming. -->
+              {#if suggestedPrompts.length > 0 && !deferTranscriptReveal}
+                <div
+                  class="w-full {isCompactMode ? 'pb-1' : 'pb-2'} {isChiefWorkspace
+                    ? 'px-0'
+                    : 'regular-composer-content-inset'}"
+                >
+                  <SuggestedPrompts
+                    prompts={suggestedPrompts}
+                    onSelect={handleSelectSuggestedPrompt}
+                    onEdit={handleEditSuggestedPrompt}
+                    compact={isCompactMode}
+                    showShortcutHints={isChatFocused}
+                  />
+                </div>
+              {/if}
               {#if draftManager.gateVisible}
                 <ChatDraftLoadingGate />
               {/if}
@@ -6526,19 +6536,18 @@
                 selectedModel={hydratedInputModel}
                 compactMode={isCompactMode}
                 editorClassName={isChiefWorkspace
-                  ? 'w-full px-3!'
+                  ? 'w-full px-0!'
                   : 'regular-composer-content-inset w-full'}
                 contentInsetClassName={isChiefWorkspace
-                  ? 'w-full px-3'
+                  ? 'w-full px-0'
                   : 'regular-composer-content-inset w-full'}
                 actionBarEndClassName={isChiefWorkspace
-                  ? 'pr-3!'
+                  ? 'pr-0!'
                   : 'regular-composer-content-inset'}
                 edgeDocked
                 externalDropTarget
                 requiresModelSwitchConfirmation={!canChangeProvider}
                 providerId={inputProviderId}
-                placeholderSuggestion={!deferTranscriptReveal ? suggestedPrompts[0] : undefined}
               >
                 {#snippet queueRegion()}
                   {#if queuedMessagesVisibility.showQueue}
@@ -6572,8 +6581,8 @@
   }
 
   :global(.regular-composer-content-inset) {
-    padding-right: 1rem !important;
-    padding-left: 1rem !important;
+    padding-right: 0 !important;
+    padding-left: 0 !important;
   }
 
   .workspace-setup-card-alignment {
@@ -6601,8 +6610,8 @@
     }
 
     :global(.regular-composer-content-inset) {
-      padding-right: 1.5rem !important;
-      padding-left: 1.5rem !important;
+      padding-right: 0 !important;
+      padding-left: 0 !important;
     }
   }
 

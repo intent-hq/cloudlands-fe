@@ -21,7 +21,6 @@
   } from '$lib/client/live/live-prompt-enhancement';
   import { TooltipShortcut } from '$lib/components/ui/tooltip';
   import TooltipRich from '$lib/components/ui/tooltip/TooltipRich.svelte';
-  import { ShortcutChip } from '$lib/components/ui/kbd';
   import { surfaceClasses } from '$lib/components/ui/surface-context';
   import ArrowUpIcon from 'phosphor-svelte/lib/ArrowUpIcon';
 
@@ -165,8 +164,6 @@
     tooltipPortalTarget?: Element | string;
     /** Daemon-backed queue rendered inside the composer's recessed queue region. */
     queueRegion?: Snippet;
-    /** Optional first suggested prompt shown as a Tab-accepting ghost value. */
-    placeholderSuggestion?: string;
     /**
      * The parent owns file drag-and-drop (e.g. ChatPanel's full-panel drop
      * target): the container's own drag handlers and drop overlay are disabled
@@ -240,7 +237,6 @@
     actionBarEndClassName = 'pr-1.5!',
     tooltipPortalTarget,
     queueRegion,
-    placeholderSuggestion,
     externalDropTarget = false,
     onsubmit,
     onforcesubmit,
@@ -278,6 +274,7 @@
     clearPendingUpdate: () => void;
   } | null = $state(null);
   let contextPickerRef: { open: (anchor?: HTMLElement) => Promise<void> } | null = $state(null);
+  let promptActionsOpen = $state(false);
   // svelte-ignore state_referenced_locally -- intentional initial snapshots for transition detection.
   let previousDisabled = $state(disabled);
   // svelte-ignore state_referenced_locally -- intentional initial snapshots for transition detection.
@@ -566,10 +563,6 @@
     value.trim().length > 0 || contextItems.length > 0 || hasInlineImages,
   );
   const showPlaceholder = $derived(inputLocked || (isComposerFocused && !hasComposerContent));
-  const showPlaceholderSuggestion = $derived(
-    Boolean(placeholderSuggestion) && !hasComposerContent && !isDragging,
-  );
-
   // Automatic geometry expands only for real composer content. Focus reveals
   // the placeholder without changing the compact idle height.
   let dynamicDefaultHeight = $derived.by(() => {
@@ -1367,23 +1360,6 @@
     }
   }
 
-  function handleComposerKeydownCapture(event: KeyboardEvent) {
-    if (
-      event.key !== 'Tab' ||
-      event.shiftKey ||
-      event.altKey ||
-      event.metaKey ||
-      event.ctrlKey ||
-      !placeholderSuggestion ||
-      hasComposerContent ||
-      !(event.target instanceof Element) ||
-      !event.target.closest('[data-testid="tiptap-editor"]')
-    )
-      return;
-    event.preventDefault();
-    void setContent(placeholderSuggestion).then(() => focus());
-  }
-
   // Add global mouse event listeners for resize
   $effect(() => {
     if (isResizing) {
@@ -1400,6 +1376,16 @@
     }
   });
 
+  function withContextPickerContent(
+    groups: StackedMenuGroup[],
+    content: Snippet,
+  ): StackedMenuGroup[] {
+    return groups.map((group) => ({
+      ...group,
+      items: group.items.map((item) => (item.id === 'add-context' ? { ...item, content } : item)),
+    }));
+  }
+
   const promptActionGroups = $derived.by((): StackedMenuGroup[] => {
     const groups: StackedMenuGroup[] = [
       {
@@ -1410,9 +1396,6 @@
             icon: faAt,
             label: m.chat_contextPicker_addContext_ariaLabel(),
             shortcut: '@',
-            onSelect: (event) => {
-              void contextPickerRef?.open(event.currentTarget as HTMLElement);
-            },
           },
           {
             id: 'attach-files',
@@ -1507,7 +1490,6 @@
   onfocusout={handleFocusOut}
   onmouseenter={() => (isComposerHovered = true)}
   onmouseleave={() => (isComposerHovered = false)}
-  onkeydowncapture={handleComposerKeydownCapture}
   role="region"
   aria-label={m.chat_richInput_dropSupport_ariaLabel()}
   data-testid="message-input"
@@ -1611,7 +1593,7 @@
     class="editor-wrapper relative min-h-0 cursor-text pt-1 {isAutoExpand
       ? 'flex-1 overflow-y-auto'
       : 'flex-1 overflow-hidden'} {editMode ? 'pr-5' : ''}"
-    class:placeholder-hidden={!showPlaceholder || showPlaceholderSuggestion}
+    class:placeholder-hidden={!showPlaceholder}
     onclick={() => tiptap?.focus()}
   >
     <TipTapEditor
@@ -1659,24 +1641,6 @@
         logger.debug('Mention selected:', item);
       }}
     />
-
-    {#if showPlaceholderSuggestion}
-      <div
-        class="pointer-events-none absolute inset-0 overflow-hidden {editorClassName} pt-1 text-sm leading-5 text-muted-foreground"
-        aria-hidden="true"
-        data-testid="composer-placeholder-suggestion"
-      >
-        <span class="flex max-w-full items-center gap-1.5">
-          <span class="min-w-0 truncate">{placeholderSuggestion}</span>
-          <span
-            class="inline-flex h-[18px] items-center rounded-[5px] border border-border bg-background px-1"
-          >
-            <!-- i18n-ignore (physical keyboard key label) -->
-            <ShortcutChip>Tab</ShortcutChip>
-          </span>
-        </span>
-      </div>
-    {/if}
 
     {#if isEnhancing}
       <div class="shimmer-overlay-wrapper">
@@ -1768,7 +1732,22 @@
 
     <div class="flex min-w-0 shrink-0 items-center gap-1.5" data-chat-input-submit-actions>
       <div class="relative inline-block">
-        <Menu.Root>
+        {#snippet contextPickerSubmenu()}
+          <ContextPickerButton
+            panels={availablePanels}
+            selections={availableSelections}
+            {workspace}
+            {disabled}
+            currentAgentId={agentId}
+            onToggle={handleTogglePanel}
+            onToggleSelection={handleToggleSelection}
+            onInsertMention={(mention) => tiptap?.insertMention(mention)}
+            onPick={() => (promptActionsOpen = false)}
+            renderTrigger={false}
+            embedded
+          />
+        {/snippet}
+        <Menu.Root bind:open={promptActionsOpen}>
           <Menu.Trigger>
             {#snippet child({ props })}
               <Button
@@ -1783,7 +1762,13 @@
               </Button>
             {/snippet}
           </Menu.Trigger>
-          <Menu.StackedContent groups={promptActionGroups} align="end" side="top" class="w-52" />
+          <Menu.StackedContent
+            groups={withContextPickerContent(promptActionGroups, contextPickerSubmenu)}
+            align="end"
+            side="top"
+            class="w-52"
+            submenuClass="p-0"
+          />
         </Menu.Root>
       </div>
 
