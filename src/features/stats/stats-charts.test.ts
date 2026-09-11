@@ -210,7 +210,7 @@ describe('monthCardModel', () => {
     expect(m.heroValue).toBe('1K');
     expect(m.avgSub).toBe('avg 250 / month');
     expect(m.bestLabel).toBe('Mar · 400');
-    expect(m.deltaLabel).toBe('VS FEB');
+    expect(m.deltaLabel).toBe('vs FEB');
     expect(m.deltaValue).toBe('+100%');
   });
 
