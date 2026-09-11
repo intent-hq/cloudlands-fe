@@ -35,7 +35,7 @@
     gap: var(--space-2);
   }
   .family-title {
-    font-size: var(--text-body);
+    font-size: var(--text-body-size);
     font-weight: 600;
     color: hsl(var(--foreground));
   }

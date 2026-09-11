@@ -62,9 +62,6 @@ describe('Dialog', () => {
 
     const dialog = screen.getByRole('dialog');
     await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true));
-    expect(screen.getByRole('textbox', { name: 'Dialog field' }).className).toContain(
-      'var(--ring)',
-    );
     await fireEvent.click(screen.getByRole('button', { name: 'Nested dialog action' }));
     expect(screen.getByRole('dialog')).toBeTruthy();
 

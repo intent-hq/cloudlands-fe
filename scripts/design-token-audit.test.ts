@@ -6,28 +6,17 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const script = path.resolve(process.cwd(), 'scripts/design-token-audit.mjs');
-const knownUndefinedReferences = [
-  '--front-toast-height\tsrc/lib/components/ui/toast/Toast.svelte\tuse an approved semantic role',
-  '--text-body\tsrc/lib/component-catalog/renderers/FieldsCatalogPreview.svelte\tuse an approved semantic role',
-  '--text-body\tsrc/lib/component-catalog/renderers/ScreenStatesCatalogPreview.svelte\tuse an approved semantic role',
-  '--text-caption\tsrc/lib/component-catalog/renderers/RowsCatalogPreview.svelte\tuse an approved semantic role',
-];
 
 function audit(mode: string): string {
   return execFileSync(process.execPath, [script, mode], { encoding: 'utf8' }).trim();
 }
 
 describe('design token audit', () => {
-  it('keeps the known undefined references exact while enforcing every other ratchet', () => {
+  it('passes all token ratchets without undefined references', () => {
     const result = spawnSync(process.execPath, [script, 'check'], { encoding: 'utf8' });
-    expect(result.status).toBe(1);
-    expect(result.stdout).toBe('');
-    expect(result.stderr.trim().split('\n')).toEqual([
-      'src/lib/components/ui/toast/Toast.svelte: unknown --front-toast-height; use an approved semantic role',
-      'src/lib/component-catalog/renderers/FieldsCatalogPreview.svelte: unknown --text-body; use an approved semantic role',
-      'src/lib/component-catalog/renderers/ScreenStatesCatalogPreview.svelte: unknown --text-body; use an approved semantic role',
-      'src/lib/component-catalog/renderers/RowsCatalogPreview.svelte: unknown --text-caption; use an approved semantic role',
-    ]);
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(audit('undefined')).toBe('');
   });
 
   it('produces deterministic, sorted approved-token and alias inventories', () => {
@@ -49,8 +38,24 @@ describe('design token audit', () => {
     expect(audit('aliases')).toBe(audit('aliases'));
   });
 
-  it('tracks the exact known unowned undefined custom properties', () => {
-    expect(audit('undefined').split('\n')).toEqual(knownUndefinedReferences);
+  it('recognizes the Sonner height without exempting retired or unknown tokens', () => {
+    const directory = mkdtempSync(path.join(tmpdir(), 'design-token-audit-'));
+    try {
+      writeFileSync(
+        path.join(directory, 'product.svelte'),
+        '<div style="height: var(--front-toast-height); width: var(--front-toast-width); font-size: var(--text-body); line-height: var(--text-caption)" />',
+      );
+      const output = execFileSync(process.execPath, [script, 'undefined'], {
+        encoding: 'utf8',
+        env: { ...process.env, DESIGN_TOKEN_AUDIT_SOURCE_ROOT: directory },
+      });
+      expect(output).not.toContain('--front-toast-height');
+      expect(output).toContain('--front-toast-width');
+      expect(output).toContain('--text-body');
+      expect(output).toContain('--text-caption');
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 
   it('recognizes the Bits UI Select height without exempting other custom properties', () => {
