@@ -96,7 +96,6 @@
     options.forEach((option, optionIndex) => {
       if (selectedIds.includes(option.id ?? `o-${optionIndex}`)) indexes.add(optionIndex);
     });
-    if (allowOther && otherText.length > 0) indexes.add(otherIndex);
     return indexes;
   });
   const canSubmit = $derived(
@@ -547,7 +546,6 @@
                     'relative mt-1 cursor-text rounded-(--radius-small) transition-colors duration-spring-fast ease-spring-fast motion-reduce:transition-none',
                     compact ? '-mx-2.5 px-2.5 py-2' : '-mx-3 px-3 py-2.5',
                     multiline ? 'min-h-[76px]' : compact ? 'min-h-8' : 'min-h-10',
-                    otherText.length > 0 ? 'bg-active' : 'hover:bg-hover focus-within:bg-card',
                   )}
                   onpointerdown={(event) => {
                     if (event.target !== otherInput) otherInput?.focus();
@@ -586,7 +584,7 @@
                   use:connectRows
                   role={isMulti ? 'group' : 'radiogroup'}
                   aria-labelledby={titleId}
-                  class="relative -mx-3 flex flex-col gap-0.5"
+                  class="relative -mx-1 flex flex-col gap-0.5"
                   onfocusin={handleRowsFocus}
                   onfocusout={handleRowsBlur}
                   onkeydown={handleRowsKeydown}
@@ -596,6 +594,7 @@
                       store={hover}
                       {selectedIndexes}
                       selectedClass="bg-selected"
+                      hoverClass={hover.activeIndex === otherIndex ? 'bg-transparent' : 'bg-hover'}
                     />
                   {/if}
 
@@ -620,7 +619,8 @@
                         : -1}
                       class={cn(
                         'group/question-row relative z-10 flex cursor-pointer select-none',
-                        chipPosition === 'left' ? 'gap-2 pl-1.5 pr-3' : 'gap-3 pr-1.5 pl-3',
+                        'px-1',
+                        chipPosition === 'left' ? 'gap-2' : 'gap-3',
                         question.layout === 'stacked' ? 'items-start' : 'items-center',
                         question.layout === 'stacked'
                           ? compact
@@ -756,9 +756,8 @@
                       data-state={otherText.length > 0 ? 'checked' : 'unchecked'}
                       class={cn(
                         'relative z-10 flex cursor-text items-center rounded-(--radius-small)',
-                        question.chipPosition === 'left'
-                          ? 'gap-2 pl-1.5 pr-3'
-                          : 'gap-3 pr-1.5 pl-3',
+                        'px-1',
+                        question.chipPosition === 'left' ? 'gap-2' : 'gap-3',
                         compact ? 'min-h-8 py-1' : 'min-h-10 py-1.5',
                       )}
                       onpointerdown={(event) => {

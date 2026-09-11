@@ -43,7 +43,8 @@
 {#snippet trailingAddon()}<Button variant="ghost" size="xs">Apply</Button>{/snippet}
 
 <div
-  class="grid w-full min-w-0 max-w-2xl grid-cols-1 gap-4 overflow-hidden"
+  class="grid w-full min-w-0 max-w-2xl grid-cols-1 gap-4"
+  class:overflow-hidden={componentId !== 'card'}
   data-catalog-renderer-fixture={fixture.id}
 >
   {#if componentId === 'card'}
