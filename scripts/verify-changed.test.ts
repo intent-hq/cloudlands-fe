@@ -269,50 +269,109 @@ describe('verification planning', () => {
     expect(deletedPlan.checks.map((check) => check.id)).toContain('vitest-ui-invariants');
   });
 
-  it('runs the preload drift test for IPC channel source changes', () => {
-    const triggers = [
-      'src/preload/index.ts',
-      'src/preload/index.template.ts',
-      'src/shared/ipc-registry.ts',
-      'scripts/inline-ipc-channels.ts',
+  describe('suites declaring verify:changed triggers', () => {
+    const driftTest = 'scripts/inline-ipc-channels.test.ts';
+    const catalogTest = 'src/lib/components/__tests__/catalog.test.ts';
+    const declaredSuites = [
+      { path: driftTest, triggers: ['src/preload/index.ts', 'src/shared/ipc-registry.ts'] },
+      { path: catalogTest, triggers: ['src/lib/components/**'] },
     ];
-    const root = fixtureRoot({
-      ...Object.fromEntries(triggers.map((file) => [file, ''])),
-      'src/preload/other.ts': '',
-      'src/lib/example.ts': '',
-      'scripts/inline-ipc-channels.test.ts': '',
-      'package.json': '{}',
+    const fixture = () =>
+      fixtureRoot({
+        'src/preload/index.ts': '',
+        'src/preload/other.ts': '',
+        'src/shared/ipc-registry.ts': '',
+        'src/lib/components/ui/Button.svelte': '<button />',
+        'src/lib/utils.ts': '',
+        [driftTest]: '',
+        [catalogTest]: '',
+        'package.json': '{}',
+      });
+    const declared = (root: string, files: string[]) =>
+      createVerificationPlan(files, { root, ctTests: [], declaredSuites }).checks.find(
+        (check) => check.id === 'vitest-declared',
+      );
+    const ids = (root: string, files: string[]) =>
+      createVerificationPlan(files, { root, ctTests: [], declaredSuites }).checks.map(
+        (check) => check.id,
+      );
+
+    it('selects a suite whose exact trigger path changed', () => {
+      const check = declared(fixture(), ['src/preload/index.ts']);
+      expect(check?.args).toEqual([
+        'exec',
+        'vitest',
+        'run',
+        '--config',
+        'vitest.config.ts',
+        driftTest,
+      ]);
+      expect(check?.lockKind).toBeNull();
     });
-    const ids = (files: string[]) =>
-      createVerificationPlan(files, { root, ctTests: [] }).checks.map((check) => check.id);
 
-    for (const file of triggers) {
-      expect(ids([file]), file).toContain('vitest-preload-drift');
-    }
-    const drift = createVerificationPlan(['src/shared/ipc-registry.ts'], {
-      root,
-      ctTests: [],
-    }).checks.find((check) => check.id === 'vitest-preload-drift');
-    expect(drift?.args).toEqual([
-      'exec',
-      'vitest',
-      'run',
-      '--config',
-      'vitest.config.ts',
-      'scripts/inline-ipc-channels.test.ts',
-    ]);
-    expect(drift?.lockKind).toBeNull();
+    it('selects a suite whose glob trigger matches the changed path', () => {
+      expect(declared(fixture(), ['src/lib/components/ui/Button.svelte'])?.args).toContain(
+        catalogTest,
+      );
+    });
 
-    expect(ids(['src/preload/other.ts'])).not.toContain('vitest-preload-drift');
-    expect(ids(['src/lib/example.ts'])).not.toContain('vitest-preload-drift');
+    it('skips suites whose triggers do not match', () => {
+      const root = fixture();
+      expect(ids(root, ['src/preload/other.ts'])).not.toContain('vitest-declared');
+      expect(ids(root, ['src/lib/utils.ts'])).not.toContain('vitest-declared');
+    });
 
-    const fallback = ids(['src/preload/index.ts', 'package.json']);
-    expect(fallback).toContain('vitest-full');
-    expect(fallback).not.toContain('vitest-preload-drift');
+    it('does not repeat a suite that already runs as a changed test', () => {
+      const checks = ids(fixture(), ['src/preload/index.ts', driftTest]);
+      expect(checks).toContain('vitest-direct');
+      expect(checks).not.toContain('vitest-declared');
+    });
 
-    const direct = ids(['src/preload/index.ts', 'scripts/inline-ipc-channels.test.ts']);
-    expect(direct).toContain('vitest-direct');
-    expect(direct).not.toContain('vitest-preload-drift');
+    it('is omitted under the full-suite fallback', () => {
+      const checks = ids(fixture(), ['src/preload/index.ts', 'package.json']);
+      expect(checks).toContain('vitest-full');
+      expect(checks).not.toContain('vitest-declared');
+    });
+
+    it('selects a suite for a deleted trigger path', () => {
+      const root = fixtureRoot({ [driftTest]: '' });
+      expect(declared(root, ['src/shared/ipc-registry.ts'])?.args).toContain(driftTest);
+    });
+
+    it('runs suites sharing a trigger in one sorted check', () => {
+      const shared = 'src/shared/ipc-registry.ts';
+      const suites = [
+        { path: 'src/zeta.test.ts', triggers: [shared] },
+        { path: 'scripts/alpha.test.ts', triggers: [shared] },
+      ];
+      const plan = createVerificationPlan([shared], {
+        root: fixture(),
+        ctTests: [],
+        declaredSuites: suites,
+      });
+      const checks = plan.checks.filter((check) => check.id === 'vitest-declared');
+      expect(checks).toHaveLength(1);
+      expect(checks[0].args.slice(-2)).toEqual(['scripts/alpha.test.ts', 'src/zeta.test.ts']);
+    });
+
+    it('scans the tree for markers and warns about undeclared suites without failing', () => {
+      const root = fixtureRoot({
+        'src/preload/index.ts': '',
+        'scripts/declared.test.ts': `// @verify-changed-triggers: src/preload/index.ts\nimport { it } from 'vitest';`,
+        'scripts/undeclared.test.ts': `import { readFileSync } from 'node:fs';\nreadFileSync(process.cwd() + '/package.json', 'utf8');`,
+      });
+      const plan = createVerificationPlan(['src/preload/index.ts'], { root, ctTests: [] });
+      expect(plan.checks.find((check) => check.id === 'vitest-declared')?.args).toContain(
+        'scripts/declared.test.ts',
+      );
+      expect(plan.triggerViolations).toEqual(['scripts/undeclared.test.ts']);
+
+      const lines: string[] = [];
+      printPlan(plan, true, (line: string) => lines.push(line));
+      const warnings = lines.filter((line) => line.includes('warning'));
+      expect(warnings).toHaveLength(1);
+      expect(warnings[0]).toContain('lint:verify-changed-triggers');
+    });
   });
 
   it('prints the regeneration hint only when the generated preload is planned', () => {
