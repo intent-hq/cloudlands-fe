@@ -558,7 +558,7 @@ export default [
       'no-restricted-syntax': [
         'error',
         {
-          selector: "MemberExpression[property.name='dismissedQuestionsMessageId']",
+          selector: "MemberExpression[computed=false][property.name='dismissedQuestionsMessageId']",
           message: dismissalMarkerRawReadMessage,
         },
         {
@@ -567,6 +567,10 @@ export default [
         },
         {
           selector: "ObjectPattern > Property[key.name='dismissedQuestionsMessageId']",
+          message: dismissalMarkerRawReadMessage,
+        },
+        {
+          selector: "ObjectPattern > Property[key.value='dismissedQuestionsMessageId']",
           message: dismissalMarkerRawReadMessage,
         },
       ],
