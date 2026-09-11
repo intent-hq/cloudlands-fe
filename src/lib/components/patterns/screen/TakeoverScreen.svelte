@@ -66,7 +66,7 @@
       {...headerAttributes}
     />
     <div
-      class="min-h-0 flex-1"
+      class="min-h-0 flex-1 overflow-y-auto"
       use:animatedHeight={true}
       data-slot="takeover-screen-body"
       {...bodyRegionAttributes}

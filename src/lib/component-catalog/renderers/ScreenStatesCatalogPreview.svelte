@@ -31,7 +31,7 @@
 {#snippet pageTitle()}<h3 class="type-title font-semibold">Workspace setup</h3>{/snippet}
 {#snippet pageDescription()}<p>Review the repository before continuing.</p>{/snippet}
 {#snippet pageBody()}
-  <div class="grid gap-3 p-5"><Skeleton class="h-3 w-3/4" /><Skeleton class="h-20 w-full" /></div>
+  <div class="grid gap-3"><Skeleton class="h-3 w-3/4" /><Skeleton class="h-20 w-full" /></div>
 {/snippet}
 {#snippet secondaryAction()}<Button variant="outline">Back</Button>{/snippet}
 {#snippet primaryAction()}<Button>Continue</Button>{/snippet}
@@ -54,7 +54,7 @@
   </p>
 {/snippet}
 {#snippet errorDetails()}<p>JSON-RPC request timed out after 30 seconds.</p>{/snippet}
-{#snippet takeoverCounter()}<span class="type-caption text-muted-foreground">2 of 3</span>{/snippet}
+{#snippet takeoverCounter()}<span>2 of 3</span>{/snippet}
 
 <div
   class="screen-states-matrix"

@@ -30,13 +30,13 @@
 >
   {#if leading}<div class="flex shrink-0 items-center">{@render leading()}</div>{/if}
   <div class="min-w-0 flex-1">
-    <div class="flex min-w-0 items-center gap-2">
-      {#if counter}
-        <div data-slot="screen-header-counter" class="shrink-0">{@render counter()}</div>
-      {/if}
-      <div data-slot="screen-header-title" class="min-w-0 flex-1">
-        {@render title()}
+    {#if counter}
+      <div data-slot="screen-header-counter" class="type-caption mb-1 text-muted-foreground">
+        {@render counter()}
       </div>
+    {/if}
+    <div data-slot="screen-header-title" class="min-w-0">
+      {@render title()}
     </div>
     {#if description}
       <div data-slot="screen-header-description" class="mt-1 text-sm text-muted-foreground">
