@@ -70,6 +70,8 @@ for (const width of [360, 960]) {
           subscriptionOuterRight: cardRect.right,
           toolLeadingCenter: center(toolLeading),
           subscriptionLeadingCenter: center(subscriptionLeading),
+          subscriptionIconWidth: subscriptionLeading.getBoundingClientRect().width,
+          subscriptionIconHeight: subscriptionLeading.getBoundingClientRect().height,
           toolTextStart: toolSummary.getBoundingClientRect().left,
           subscriptionTextStart: subscriptionSummary.getBoundingClientRect().left,
           agentOuterLeft: agentCard.getBoundingClientRect().left,
@@ -96,6 +98,8 @@ for (const width of [360, 960]) {
         expectedBleed,
         1,
       );
+      expect(geometry.subscriptionIconWidth).toBeCloseTo(16 * zoom, 1);
+      expect(geometry.subscriptionIconHeight).toBeCloseTo(16 * zoom, 1);
       expect(geometry.subscriptionLeadingCenter).toBeCloseTo(geometry.toolLeadingCenter, 1);
       expect(geometry.subscriptionTextStart).toBeCloseTo(geometry.toolTextStart, 1);
       expect(geometry.agentLeadingCenter - geometry.agentOuterLeft - expectedBleed).toBeCloseTo(
@@ -321,7 +325,7 @@ test('matches sent-message disclosures to real finished event rows', async ({ mo
             1,
           );
           expect(collapsed.eventSummaryRect.left - collapsed.eventIconRect.right).toBeCloseTo(
-            (width === 360 ? 13 : 11) * zoom,
+            (width === 360 ? 12 : 10) * zoom,
             1,
           );
           expect(collapsed.eventStatusRect.left - collapsed.eventNameRect.right).toBeCloseTo(

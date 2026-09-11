@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { CHAT_OPERATIONAL_ICON_CLASS } from './operational-disclosure-row';
   /**
    * BrowserTabsRow Component
    *
@@ -250,8 +251,8 @@
         <span class={SUBSCRIPTION_LEADING_COLUMN_CLASS} aria-hidden="true">
           <Fa
             icon={faWindowMaximize}
-            size={14}
-            class="h-3.5! w-3.5! shrink-0 {SUBSCRIPTION_ICON_CLASS}"
+            size={16}
+            class="{CHAT_OPERATIONAL_ICON_CLASS} {SUBSCRIPTION_ICON_CLASS}"
           />
         </span>
         <span

@@ -1,3 +1,4 @@
+import { CHAT_OPERATIONAL_ICON_CLASS } from '../operational-disclosure-row';
 /** Rendered contracts for the unified waiting-agent subscription disclosure. */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
@@ -600,7 +601,7 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
       expect(waitingIcon?.classList).toContain('text-muted-foreground!');
       expect(waitingIcon?.classList).toContain('opacity-100');
       expect(finishedIcon?.className.baseVal).not.toMatch(/green/);
-      for (const token of ['h-3.5!', 'w-3.5!', 'shrink-0']) {
+      for (const token of CHAT_OPERATIONAL_ICON_CLASS.split(' ')) {
         expect(finishedIcon?.classList).toContain(token);
         expect(waitingIcon?.classList).toContain(token);
       }

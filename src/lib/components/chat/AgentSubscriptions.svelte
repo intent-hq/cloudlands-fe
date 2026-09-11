@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { CHAT_OPERATIONAL_ICON_CLASS } from './operational-disclosure-row';
   /**
    * AgentSubscriptions Component
    *
@@ -646,8 +647,8 @@
             <span class={SUBSCRIPTION_LEADING_COLUMN_CLASS}>
               <Fa
                 icon={faBolt}
-                size={14}
-                class="h-3.5! w-3.5! shrink-0 {SUBSCRIPTION_ICON_CLASS}"
+                size={16}
+                class="{CHAT_OPERATIONAL_ICON_CLASS} {SUBSCRIPTION_ICON_CLASS}"
               />
             </span>
             <span>{m.chat_agentSubscriptions_wokenUp_label()}</span>
@@ -713,7 +714,7 @@
             transition:fade={{ duration: 200 }}
           >
             <span class={SUBSCRIPTION_LEADING_COLUMN_CLASS}>
-              <Fa icon={faCircleCheck} size={14} class="h-3.5! w-3.5! shrink-0" />
+              <Fa icon={faCircleCheck} size={16} class={CHAT_OPERATIONAL_ICON_CLASS} />
             </span>
             <span>{m.chat_agentSubscriptions_completed_label()}</span>
           </span>
@@ -729,8 +730,8 @@
                   <span class={SUBSCRIPTION_LEADING_COLUMN_CLASS}>
                     <Fa
                       icon={faBolt}
-                      size={14}
-                      class="h-3.5! w-3.5! shrink-0 {SUBSCRIPTION_ICON_CLASS}"
+                      size={16}
+                      class="{CHAT_OPERATIONAL_ICON_CLASS} {SUBSCRIPTION_ICON_CLASS}"
                     />
                   </span>
                   <span>{m.chat_agentSubscriptions_wokenUp_label()}</span>
@@ -786,14 +787,14 @@
                   {#if hasActiveAgentRows}
                     <Fa
                       icon={faHourglass}
-                      size={14}
-                      class="h-3.5! w-3.5! shrink-0 {SUBSCRIPTION_ICON_CLASS}"
+                      size={16}
+                      class="{CHAT_OPERATIONAL_ICON_CLASS} {SUBSCRIPTION_ICON_CLASS}"
                     />
                   {:else}
                     <Fa
                       icon={faCircleCheck}
-                      size={14}
-                      class="h-3.5! w-3.5! shrink-0 {SUBSCRIPTION_ICON_CLASS}"
+                      size={16}
+                      class="{CHAT_OPERATIONAL_ICON_CLASS} {SUBSCRIPTION_ICON_CLASS}"
                     />
                   {/if}
                 </span>
@@ -866,8 +867,8 @@
                   >
                     <Fa
                       icon={faCircleCheck}
-                      size={14}
-                      class="h-3.5! w-3.5! shrink-0 {SUBSCRIPTION_ICON_CLASS}"
+                      size={16}
+                      class="{CHAT_OPERATIONAL_ICON_CLASS} {SUBSCRIPTION_ICON_CLASS}"
                     />
                   </span>
                   <span

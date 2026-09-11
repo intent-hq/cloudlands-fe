@@ -687,8 +687,8 @@ test('centers the finished summary and gives completed avatars a muted semantic 
         expect(
           Math.abs(geometry.titleCenterY - geometry.rowCenterY) * geometry.devicePixelRatio,
         ).toBeLessThanOrEqual(0.5);
-        expect(geometry.iconWidth).toBeCloseTo(14 * zoom, 1);
-        expect(geometry.iconHeight).toBeCloseTo(14 * zoom, 1);
+        expect(geometry.iconWidth).toBeCloseTo(16 * zoom, 1);
+        expect(geometry.iconHeight).toBeCloseTo(16 * zoom, 1);
 
         await summary.click();
         const completed = component
@@ -887,7 +887,7 @@ test('keeps the bell at the compact gap and on the outer-header text tone', asyn
             };
           });
           expect(geometry.slotWidth).toBeCloseTo(20 * zoom, 1);
-          expect(geometry.iconWidth).toBeCloseTo(14 * zoom, 1);
+          expect(geometry.iconWidth).toBeCloseTo(16 * zoom, 1);
           expect(geometry.iconCenterX).toBeCloseTo(geometry.slotCenterX, 1);
           expect(geometry.iconCenterY).toBeCloseTo(geometry.slotCenterY, 1);
           expect(geometry.titleLeft - (geometry.slotCenterX + geometry.slotWidth / 2)).toBeCloseTo(
