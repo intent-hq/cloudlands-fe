@@ -223,6 +223,14 @@ describe('derivePendingQuestions', () => {
     expect(
       derivePendingQuestions([msg], false, false, 'msg-a1', [queuedMessage(undefined)]),
     ).toMatchObject({ messageId: 'msg-a1' });
+    // Drain transition (daemon order: tagged row first, shrunk queue later):
+    // the overlap state — row present AND entry still listed — and the
+    // post-drain state — row present, queue empty, marker still set — both
+    // stay hidden.
+    const drained = [msg, answerMessage('msg-a1')];
+    expect(derivePendingQuestions(drained, true, false, 'msg-a1', queued)).toBeNull();
+    expect(derivePendingQuestions(drained, true, false, 'msg-a1', [])).toBeNull();
+    expect(derivePendingQuestions(drained, false, false, 'msg-a1', [])).toBeNull();
   });
 
   it('a queued tagged answer hides the legacy (marker-less) tail set too', () => {
