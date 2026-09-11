@@ -195,11 +195,55 @@ describe('buildHardwareLedSnapshot', () => {
       sessions: [
         makeSession('agent-1', {
           messages: [questionMessage('msg-1')],
-          metadata: { dismissedQuestionsMessageId: 'msg-1' },
+          metadata: { pendingQuestionsMessageId: 'msg-1', dismissedQuestionsMessageId: 'msg-1' },
         }),
       ],
     });
-    expect(buildHardwareLedSnapshot(state).keys[0]).toBe('idle');
+    const snapshot = buildHardwareLedSnapshot(state);
+    expect(snapshot.keys[0]).toBe('idle');
+    expect(snapshot.ambient).toEqual({ kind: 'dark' });
+  });
+
+  it('a cleared pending marker does not pend', () => {
+    const state = makeState({
+      workspaces: [makeWorkspace('ws-1')],
+      agentsByWorkspace: { 'ws-1': ['agent-1'] },
+      sessions: [
+        makeSession('agent-1', {
+          messages: [questionMessage('msg-1')],
+          metadata: { pendingQuestionsMessageId: '' },
+        }),
+      ],
+    });
+    const snapshot = buildHardwareLedSnapshot(state);
+    expect(snapshot.keys[0]).toBe('idle');
+    expect(snapshot.ambient).toEqual({ kind: 'dark' });
+  });
+
+  it('a set marker whose row is outside the loaded tail stays attention unless dismissed', () => {
+    const offTail = makeState({
+      workspaces: [makeWorkspace('ws-1')],
+      agentsByWorkspace: { 'ws-1': ['agent-1'] },
+      sessions: [
+        makeSession('agent-1', {
+          messages: [{ id: 'msg-2', role: 'user', contentBlocks: [] } as never],
+          metadata: { pendingQuestionsMessageId: 'msg-1' },
+        }),
+      ],
+    });
+    expect(buildHardwareLedSnapshot(offTail).keys[0]).toBe('attention');
+    expect(buildHardwareLedSnapshot(offTail).ambient).toEqual({ kind: 'question' });
+    const dismissed = makeState({
+      workspaces: [makeWorkspace('ws-1')],
+      agentsByWorkspace: { 'ws-1': ['agent-1'] },
+      sessions: [
+        makeSession('agent-1', {
+          messages: [{ id: 'msg-2', role: 'user', contentBlocks: [] } as never],
+          metadata: { pendingQuestionsMessageId: 'msg-1', dismissedQuestionsMessageId: 'msg-1' },
+        }),
+      ],
+    });
+    expect(buildHardwareLedSnapshot(dismissed).keys[0]).toBe('idle');
   });
 
   it('question does not pend while the agent turn is still active', () => {
