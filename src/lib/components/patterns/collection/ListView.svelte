@@ -4,7 +4,7 @@
   import { createProximityHover, proximityItem, type ProximityHover } from '$lib/interaction';
   import { cn } from '$lib/utils';
   import { m } from '$shared/paraglide/messages.js';
-  import type { Snippet } from 'svelte';
+  import { untrack, type Snippet } from 'svelte';
   import type { Action } from 'svelte/action';
   import type { HTMLAttributes } from 'svelte/elements';
   import { LIST_STATE_GEOMETRY, type StateDensity } from '../state-geometry';
@@ -105,18 +105,23 @@
     node,
     options,
   ) => {
-    let registration = options.store
-      ? proximityItem(node, { hover: options.store, index: options.index })
-      : undefined;
+    // Registration measures hover state; do not subscribe the action to those reads.
+    let registration = untrack(() =>
+      options.store
+        ? proximityItem(node, { hover: options.store, index: options.index })
+        : undefined,
+    );
     return {
       update(next) {
-        registration?.destroy?.();
-        registration = next.store
-          ? proximityItem(node, { hover: next.store, index: next.index })
-          : undefined;
+        untrack(() => {
+          registration?.destroy?.();
+          registration = next.store
+            ? proximityItem(node, { hover: next.store, index: next.index })
+            : undefined;
+        });
       },
       destroy() {
-        registration?.destroy?.();
+        untrack(() => registration?.destroy?.());
       },
     };
   };

@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/experimental-ct-svelte';
 import CollectionHarness from './CollectionHarness.svelte';
+import InterruptedAgentsModal from '../../modals/InterruptedAgentsModal.svelte';
 
 for (const key of ['Enter', 'Space']) {
   test(`${key} activates a nested row action exactly once without selecting the row`, async ({
@@ -48,4 +49,37 @@ test('an open overflow menu keeps row actions revealed', async ({ mount, page })
 
   await expect(page.getByRole('menu', { name: 'More actions for Alpha' })).toBeVisible();
   await expect(actions).toHaveCSS('opacity', '1');
+});
+
+test('selectable modal rows toggle after pointer hover without reactive loops', async ({
+  mount,
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  const component = await mount(InterruptedAgentsModal, {
+    props: {
+      open: true,
+      inline: true,
+      agents: [
+        {
+          agentId: 'a1',
+          workspaceId: 'w1',
+          workspaceName: 'Workspace',
+          agentName: 'Agent',
+          prevStatus: 'responding',
+          interruptedAt: '2026-08-22T10:00:00Z',
+        },
+      ],
+    },
+  });
+  const option = component.getByRole('option');
+  await option.hover();
+  await option.click();
+  await expect(option).toHaveAttribute('aria-selected', 'false');
+  await option.press('Space');
+  await expect(option).toHaveAttribute('aria-selected', 'true');
+  await option.press('Enter');
+  await expect(option).toHaveAttribute('aria-selected', 'false');
+  expect(errors).toEqual([]);
 });
