@@ -19,13 +19,13 @@ export const SUBSCRIPTION_CARD_INLINE_PADDING_CLASS =
 export const SUBSCRIPTION_ROW_GEOMETRY_CLASS = `${OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS} h-9! min-h-9 border-0! ${SUBSCRIPTION_CARD_INLINE_PADDING_CLASS} py-2!`;
 export const SUBSCRIPTION_FINISHED_ROW_GEOMETRY_CLASS = `${OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS} min-h-10 border-0! ${SUBSCRIPTION_CARD_INLINE_PADDING_CLASS} py-2!`;
 export const SUBSCRIPTION_LEADING_COLUMN_CLASS =
-  'inline-flex size-[var(--operational-leading-slot-size)] min-w-[var(--operational-leading-slot-size)] shrink-0 items-center justify-center leading-none';
+  'inline-flex size-[var(--operational-leading-slot-size)] min-w-operational-leading shrink-0 items-center justify-center leading-none';
 export const SUBSCRIPTION_LEADING_CONTENT_CLASS =
-  'inline-flex min-w-0 items-center gap-[var(--operational-leading-gap)]';
+  'inline-flex min-w-0 items-center gap-operational-leading';
 export const SUBSCRIPTION_INSET_TOP_DIVIDER_CLASS =
   "relative before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:h-px before:bg-border before:content-['']";
 export const SUBSCRIPTION_INSET_ROW_DIVIDER_CLASS = `${SUBSCRIPTION_INSET_TOP_DIVIDER_CLASS} first:before:hidden`;
-export const SUBSCRIPTION_DISCLOSURE_ROW_CLASS = `${OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS} type-body flex h-auto! min-h-9 w-full min-w-0 max-w-full items-center justify-start! gap-[var(--operational-leading-gap)] overflow-hidden ${SUBSCRIPTION_CARD_INLINE_PADDING_CLASS} py-2! font-normal text-muted-foreground!`; // i18n-ignore (Tailwind class constants)
+export const SUBSCRIPTION_DISCLOSURE_ROW_CLASS = `${OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS} type-body flex h-auto! min-h-9 w-full min-w-0 max-w-full items-center justify-start! gap-operational-leading overflow-hidden ${SUBSCRIPTION_CARD_INLINE_PADDING_CLASS} py-2! font-normal text-muted-foreground!`; // i18n-ignore (Tailwind class constants)
 export const SUBSCRIPTION_CHEVRON_CLASS =
   'text-ghost opacity-60 transition-transform duration-[var(--motion-fast)] motion-reduce:transition-none';
 export const SUBSCRIPTION_CHEVRON_SIZE_CLASS = 'h-[16px]! w-[16px]!';

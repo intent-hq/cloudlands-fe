@@ -706,7 +706,7 @@
     {#if isCompleted || $wokenUpInfo$}
       <!-- Slim status row: transitional "Completed" state and/or "Woken up" pill -->
       <div
-        class="flex w-full min-w-0 max-w-full items-center gap-[var(--operational-leading-gap)] overflow-hidden {SUBSCRIPTION_ROW_GEOMETRY_CLASS} {SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS}"
+        class="flex w-full min-w-0 max-w-full items-center gap-operational-leading overflow-hidden {SUBSCRIPTION_ROW_GEOMETRY_CLASS} {SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS}"
       >
         {#if isCompleted}
           <span

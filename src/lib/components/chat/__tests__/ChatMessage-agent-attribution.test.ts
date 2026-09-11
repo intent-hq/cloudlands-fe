@@ -368,7 +368,7 @@ describe('ChatMessage agent-to-agent sender attribution', () => {
     for (const token of ['h-auto!', 'min-h-9', 'py-2!', 'type-body', 'font-normal']) {
       expect(disclosureHeader.classList.contains(token)).toBe(true);
     }
-    expect(disclosureHeader.classList.contains('gap-[var(--operational-leading-gap)]')).toBe(true);
+    expect(disclosureHeader.classList.contains('gap-operational-leading')).toBe(true);
     expect(disclosureHeader.classList.contains('justify-start!')).toBe(true);
     expect(surface.querySelector('button button')).toBeNull();
   });

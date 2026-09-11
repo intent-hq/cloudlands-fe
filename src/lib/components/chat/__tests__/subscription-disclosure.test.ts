@@ -46,7 +46,7 @@ describe('safeSubscriptionRowTransition', () => {
     expect(SUBSCRIPTION_LEADING_COLUMN_CLASS).toContain(
       'size-[var(--operational-leading-slot-size)]',
     );
-    expect(SUBSCRIPTION_LEADING_CONTENT_CLASS).toContain('gap-[var(--operational-leading-gap)]');
+    expect(SUBSCRIPTION_LEADING_CONTENT_CLASS).toContain('gap-operational-leading');
   });
 
   it('moves a clipped row from zero height and opacity to its measured natural box', () => {

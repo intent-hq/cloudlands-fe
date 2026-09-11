@@ -46,6 +46,15 @@
    variants must key off the class, not the OS `prefers-color-scheme` query. */
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* Shared operational-row geometry, without arbitrary utility spellings. */
+@utility gap-operational-leading {
+  gap: var(--operational-leading-gap);
+}
+
+@utility min-w-operational-leading {
+  min-width: var(--operational-leading-slot-size);
+}
+
 :root {
   /* Canonical navigation-row geometry. Product rows select compact or regular density. */
   --row-height-compact: 1.75rem;
