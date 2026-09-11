@@ -37,14 +37,14 @@
   aria-describedby={describedBy}
   aria-busy={busy || undefined}
 >
-  <header class="flex flex-wrap items-start justify-between gap-3 sm:flex-nowrap">
-    <div class="min-w-0 space-y-1">
-      <h2 id={titleId} class="type-title break-words text-foreground">{title}</h2>
-      {#if description}<p id={descriptionId} class="type-body max-w-2xl text-muted-foreground">
-          {description}
-        </p>{/if}
+  <header class="space-y-1">
+    <div class="flex min-w-0 flex-wrap items-center justify-between gap-3 sm:flex-nowrap">
+      <h2 id={titleId} class="type-title min-w-0 break-words text-foreground">{title}</h2>
+      {#if actions}<div class="max-w-full shrink-0">{@render actions()}</div>{/if}
     </div>
-    {#if actions}<div class="max-w-full shrink-0">{@render actions()}</div>{/if}
+    {#if description}<p id={descriptionId} class="type-body max-w-2xl text-muted-foreground">
+        {description}
+      </p>{/if}
   </header>
   {#if error}<p id={errorId} class="type-body mt-2 text-danger" role="alert">
       {error}

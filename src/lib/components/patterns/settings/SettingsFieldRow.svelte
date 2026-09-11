@@ -93,11 +93,24 @@
         </div>{/if}
       <div class="min-w-0 flex-1 space-y-1 break-words">
         {#if htmlFor}
-          <Label id={labelId} for={htmlFor} class="type-body block font-medium! text-foreground">
+          <Label
+            id={labelId}
+            for={htmlFor}
+            class={cn(
+              'type-body block font-medium! text-foreground',
+              !compact && 'md:py-[max(0px,calc((var(--control-height-medium)-1lh)/2))]',
+            )}
+          >
             {label}
           </Label>
         {:else}
-          <div id={labelId} class="type-body font-medium! text-foreground">
+          <div
+            id={labelId}
+            class={cn(
+              'type-body font-medium! text-foreground',
+              !compact && 'md:py-[max(0px,calc((var(--control-height-medium)-1lh)/2))]',
+            )}
+          >
             {label}
           </div>
         {/if}
@@ -127,6 +140,7 @@
   <div
     class={cn(
       'w-full min-w-0 max-w-full',
+      !controlOnly && !compact && 'md:grid md:min-h-(--control-height-medium) md:content-center',
       controlOnly ? 'md:justify-self-stretch' : 'md:w-auto md:justify-self-end',
       disabled && 'opacity-60',
     )}
