@@ -59,7 +59,7 @@ interface MessageHydrationPolicyOptions {
 
 export const CHAT_HYDRATION_FRAME_BUDGET_MS = 6;
 export const CHAT_HYDRATION_MAX_ROWS_PER_FRAME = 4;
-export const CHAT_HYDRATION_MAX_HOLD_MS = 1500;
+const CHAT_HYDRATION_MAX_HOLD_MS = 1500;
 
 export interface MessageHydrationPolicy {
   /**

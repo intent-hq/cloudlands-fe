@@ -84,7 +84,7 @@ const inertFollowBottomMutation: FollowBottomMutation = {
 
 const bottomFollowers = new WeakMap<HTMLElement, BottomFollower>();
 const FOLLOW_BOTTOM_STABLE_FRAMES = 2;
-export const FOLLOW_BOTTOM_MUTATION_MAX_HOLD_MS = 2000;
+const FOLLOW_BOTTOM_MUTATION_MAX_HOLD_MS = 2000;
 
 /**
  * Svelte action that follows the bottom of a scrollable container.
