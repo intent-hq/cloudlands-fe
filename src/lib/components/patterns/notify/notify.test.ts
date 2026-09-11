@@ -67,6 +67,8 @@ describe('notify', () => {
     expect(details.open).toBe(false);
     await fireEvent.click(disclosure);
     expect(details.open).toBe(true);
+    expect(disclosure).toHaveClass('type-caption');
+    expect(details.querySelector('pre')).toHaveClass('type-caption');
     await fireEvent.click(screen.getByRole('button', { name: 'Copy' }));
     expect(writeText).toHaveBeenCalledWith('RPC -32000\nrequest id: 42');
   });

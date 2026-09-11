@@ -17,23 +17,24 @@
   }
 </script>
 
-<div
-  class="relative flex min-w-0 flex-1 items-start gap-2.5 pr-6"
-  data-toast-layout="error-details"
->
+<div class="relative flex min-w-0 flex-1 items-start gap-2 pr-6" data-toast-layout="error-details">
   <ToastGlyph variant="error" />
   <div class="min-w-0 flex-1">
-    <p class="toast-title break-words text-foreground">{message}</p>
-    <details class="mt-2 min-w-0 text-sm text-muted-foreground">
-      <summary class="toast-details-summary cursor-pointer select-none">
+    <p class="type-body break-words font-medium text-foreground">{message}</p>
+    <details class="mt-2 min-w-0 text-muted-foreground">
+      <summary
+        class="toast-details-summary type-caption inline-flex cursor-pointer items-center gap-2 text-muted-foreground select-none"
+      >
         <span class="toast-details-chevron" aria-hidden="true">›</span>
         {m.chat_toolCall_technicalDetails_label()}
       </summary>
       <pre
-        class="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-(--radius-medium) bg-muted p-2">{details}</pre>
-      <Button variant="ghost" size="compact" class="toast-detail-copy mt-2" onclick={copyDetails}>
-        {m.ui_errorToast_copy_label()}
-      </Button>
+        class="type-caption mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-(--radius-medium) bg-muted p-2 font-mono">{details}</pre>
+      <div class="mt-2 flex justify-end gap-2">
+        <Button variant="ghost" size="compact" class="toast-detail-copy" onclick={copyDetails}>
+          {m.ui_errorToast_copy_label()}
+        </Button>
+      </div>
     </details>
   </div>
   <ToastCloseButton
@@ -43,17 +44,7 @@
 </div>
 
 <style>
-  .toast-title {
-    font-size: var(--toast-title-size, 0.8125rem);
-    font-weight: 500;
-    line-height: 1.4;
-  }
-
   .toast-details-summary {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.375rem;
-    color: hsl(var(--muted-foreground));
     list-style: none;
   }
 
@@ -63,7 +54,6 @@
 
   .toast-details-chevron {
     display: inline-block;
-    font-size: 0.75rem;
     transition: transform var(--spring-fast) var(--spring-fast-ease);
   }
 
