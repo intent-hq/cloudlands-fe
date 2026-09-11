@@ -316,6 +316,13 @@ neither that marker nor
 `node scripts/ui-invariant-suites.mjs --list` shows the current set and `--check`
 validates markers without running anything.
 
+For the same reason, a change to any IPC channel source — `src/preload/index.ts`,
+`src/preload/index.template.ts`, `src/shared/ipc-registry.ts`, or
+`scripts/inline-ipc-channels.ts` — also runs `scripts/inline-ipc-channels.test.ts`, which
+reads the generated preload from disk and fails when it drifts from the template
+(cloudlands-fe#2314 hand-edited `src/preload/index.ts` and only CI caught it). Regenerate
+with `pnpm run generate:ipc-channels` rather than editing `src/preload/index.ts` by hand.
+
 Only checks that genuinely conflict use host-wide locks, held for one check at a time:
 Playwright CT uses `ct-<CT_PORT>` (default `ct-3100`) and the full Vitest fallback uses
 `vitest-full`. CT runs on different ports can proceed concurrently; Svelte and TypeScript
