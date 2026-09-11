@@ -29,6 +29,35 @@ describe('NewSpaceModal nested overlay layering', () => {
     });
   });
 
+  it.each([
+    ['first', 0],
+    ['second', 1],
+  ])(
+    'keeps the <body> marker until the last overlapping modal unmounts (%s unmounts first)',
+    async (_label, unmountFirst) => {
+      const props = { open: true, onClose: vi.fn() };
+      const first = render(NewSpaceModal, { props });
+      const second = render(NewSpaceModal, { props });
+      await waitFor(() =>
+        expect(document.querySelectorAll('[data-new-space-modal]')).toHaveLength(2),
+      );
+      expect(document.body.hasAttribute('data-new-space-modal-open')).toBe(true);
+
+      const [gone, survivor] = unmountFirst === 0 ? [first, second] : [second, first];
+      gone.unmount();
+      await waitFor(() =>
+        expect(document.querySelectorAll('[data-new-space-modal]')).toHaveLength(1),
+      );
+      expect(document.body.hasAttribute('data-new-space-modal-open')).toBe(true);
+
+      survivor.unmount();
+      await waitFor(() =>
+        expect(document.querySelectorAll('[data-new-space-modal]')).toHaveLength(0),
+      );
+      expect(document.body.hasAttribute('data-new-space-modal-open')).toBe(false);
+    },
+  );
+
   it('raises nested selects, menus, and dialogs above the create modal', () => {
     const modal = source('src/lib/components/modals/NewSpaceModal.svelte');
     const selectContent = source('src/lib/components/ui/select/select-content.svelte');

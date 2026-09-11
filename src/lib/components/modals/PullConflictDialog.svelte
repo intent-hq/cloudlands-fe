@@ -24,6 +24,7 @@
   import { invoke } from '$lib/electron-bridge';
   import { toast } from 'svelte-sonner';
   import { createLogger } from '$lib/utils/client-logger';
+  import { acquireMarkerAttribute } from '$lib/utils/marker-attribute-lease';
   import { m } from '$shared/paraglide/messages.js';
 
   // Icon components for well-known editors
@@ -82,11 +83,11 @@
   // Mark <body> while the dialog content is mounted (including its outro) so the
   // layering rules below can key off an attribute. A `body:has(...)` anchor would
   // make every DOM/style mutation in the page a candidate `:has()` invalidation.
+  // The marker is leased per instance: overlapping dialogs (onboarding + the
+  // global create flow) keep it until the last one detaches.
   $effect(() => {
     if (!contentRef) return;
-    const body = contentRef.ownerDocument.body;
-    body.setAttribute('data-pull-conflict-dialog-open', '');
-    return () => body.removeAttribute('data-pull-conflict-dialog-open');
+    return acquireMarkerAttribute(contentRef.ownerDocument.body, 'data-pull-conflict-dialog-open');
   });
 
   // Fetch installed editors on mount

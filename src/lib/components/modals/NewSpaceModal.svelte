@@ -7,6 +7,7 @@
   import * as Dialog from '$lib/components/ui/dialog';
   import CompactWorkspaceInitializer from '$lib/components/workspace/CompactWorkspaceInitializer.svelte';
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
+  import { acquireMarkerAttribute } from '$lib/utils/marker-attribute-lease';
   import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
@@ -48,11 +49,11 @@
   // Mark <body> while the dialog content is mounted (including its outro) so the
   // layering rules below can key off an attribute. A `body:has(...)` anchor would
   // make every DOM/style mutation in the page a candidate `:has()` invalidation.
+  // The marker is leased per instance so overlapping modals keep it until the
+  // last one detaches.
   $effect(() => {
     if (!contentRef) return;
-    const body = contentRef.ownerDocument.body;
-    body.setAttribute('data-new-space-modal-open', '');
-    return () => body.removeAttribute('data-new-space-modal-open');
+    return acquireMarkerAttribute(contentRef.ownerDocument.body, 'data-new-space-modal-open');
   });
 </script>
 

@@ -126,4 +126,34 @@ describe('PullConflictDialog dismissal', () => {
       expect(document.body.hasAttribute('data-pull-conflict-dialog-open')).toBe(false),
     );
   });
+
+  it.each([
+    ['first', 0],
+    ['second', 1],
+  ])(
+    'keeps the <body> marker until the last overlapping dialog unmounts (%s unmounts first)',
+    async (_label, unmountFirst) => {
+      const PullConflictDialog = (await import('../PullConflictDialog.svelte')).default;
+      const props = { open: true, error: 'conflict', repoPath: '/tmp/example', branchName: 'main' };
+      const first = render(PullConflictDialog, { props });
+      const second = render(PullConflictDialog, { props });
+      await waitFor(() =>
+        expect(document.querySelectorAll('[data-pull-conflict-dialog]')).toHaveLength(2),
+      );
+      expect(document.body.hasAttribute('data-pull-conflict-dialog-open')).toBe(true);
+
+      const [gone, survivor] = unmountFirst === 0 ? [first, second] : [second, first];
+      gone.unmount();
+      await waitFor(() =>
+        expect(document.querySelectorAll('[data-pull-conflict-dialog]')).toHaveLength(1),
+      );
+      expect(document.body.hasAttribute('data-pull-conflict-dialog-open')).toBe(true);
+
+      survivor.unmount();
+      await waitFor(() =>
+        expect(document.querySelectorAll('[data-pull-conflict-dialog]')).toHaveLength(0),
+      );
+      expect(document.body.hasAttribute('data-pull-conflict-dialog-open')).toBe(false);
+    },
+  );
 });
