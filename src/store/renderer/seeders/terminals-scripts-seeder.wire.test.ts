@@ -58,7 +58,6 @@ it.each([
       ]);
       const notify = vi.mocked(onBackendNotification).mock.calls.at(-1)![0];
       notify({
-        jsonrpc: '2.0',
         method: 'events.event',
         params: {
           subscriptionId: 'terminal-subscription',
