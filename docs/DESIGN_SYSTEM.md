@@ -190,12 +190,12 @@ when no mapped utility expresses the property.
 
 ### Input focus treatment
 
-Text-entry controls use a one-pixel inset shadow in `--ring` for focus, never an outer ring or
-outline. Canonical `Input`, `Textarea`, `FileInput`, and composed input surfaces use a transparent
-rest state, `bg-hover` on hover, and `bg-card` plus the inset shadow on focus. The `noFocusStyle`
-compatibility prop may suppress the focus background and inset shadow when a parent surface already
-owns focus presentation. This exception is limited to input surfaces: buttons, toggles, menus, and
-other keyboard-operable controls retain their focus rings.
+Text-entry controls suppress the browser outline and show no visible focus treatment: no outer ring,
+inset shadow, background change, or border change. Canonical `Input`, `Textarea`, `FileInput`, and
+composed input surfaces use a transparent rest state and `bg-hover` on hover, then return to the rest
+appearance on focus. The `noFocusStyle` compatibility prop remains available for composed input
+surfaces that own their presentation. This rule is limited to input surfaces: buttons, toggles, menus,
+and other keyboard-operable controls retain their focus rings.
 
 The default light foundation uses a warm editorial canvas, white raised and overlay surfaces,
 forest foregrounds, sage selections, green actions/success, and violet information/focus. Dark mode
