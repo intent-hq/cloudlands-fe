@@ -290,7 +290,7 @@
 
   {#if loading}
     <div
-      class="flex items-center justify-center py-16 text-subtle border border-border rounded-lg bg-muted/20 grow"
+      class="flex grow items-center justify-start rounded-lg border border-border bg-muted/20 px-4 py-16 text-left text-subtle"
     >
       <IntentMarkLoader size={16} class="mr-2" />
       {m.settings_agentRules_loading()}

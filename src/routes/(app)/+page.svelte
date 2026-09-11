@@ -9,7 +9,7 @@
   <title>{m.home_page_title()}</title>
 </svelte:head>
 
-<div class="flex h-full flex-col items-center justify-center gap-1.5 text-center">
+<div class="flex h-full flex-col items-start justify-center gap-1.5 text-left">
   <p class="text-lg font-medium text-foreground">{m.home_emptyState_noSpaceSelected_label()}</p>
   <p class="text-sm text-subtle">{m.home_emptyState_selectOrCreate_description()}</p>
   <Button

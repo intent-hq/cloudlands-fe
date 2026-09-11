@@ -254,7 +254,7 @@
       </div>
     {/if}
   {:else}
-    <div class="flex items-center justify-center h-24 text-subtle">
+    <div class="flex h-24 items-center justify-start text-left text-subtle">
       {m.chat_inlineDiffItem_noWorkspace_label()}
     </div>
   {/if}

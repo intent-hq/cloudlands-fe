@@ -330,7 +330,7 @@
             </div>
           {:else if !isLoadingIndex}
             <div
-              class="type-caption px-2 py-6 text-center text-muted-foreground"
+              class="type-caption px-2 py-6 text-left text-muted-foreground"
               data-testid="chat-message-navigator-empty"
             >
               {m.chat_messageNavigator_empty_label()}
