@@ -34,14 +34,17 @@ function createImage({
   loading,
   top,
   naturalWidth = 100,
+  rendered,
 }: {
   complete: () => boolean;
   loading?: 'lazy' | 'eager';
   top: number;
   naturalWidth?: number;
+  rendered?: boolean;
 }) {
   const image = document.createElement('img');
   if (loading) image.setAttribute('loading', loading);
+  if (rendered !== undefined) image.checkVisibility = vi.fn(() => rendered);
   Object.defineProperty(image, 'complete', { configurable: true, get: complete });
   Object.defineProperty(image, 'naturalWidth', { configurable: true, get: () => naturalWidth });
   image.getBoundingClientRect = () =>
@@ -125,6 +128,30 @@ describe('waitForCaptureStability', () => {
     });
     expect(addListener).not.toHaveBeenCalled();
     expect(offscreenLazy.decode).not.toHaveBeenCalled();
+  });
+
+  it('does not wait for unrendered lazy images even though their rect sits at the origin', async () => {
+    setFonts(Promise.resolve());
+    useTimerFrames();
+    const root = document.createElement('div');
+    const hiddenLazy = createImage({
+      complete: () => false,
+      loading: 'lazy',
+      top: 0,
+      rendered: false,
+    });
+    hiddenLazy.getBoundingClientRect = () =>
+      ({ top: 0, bottom: 0, left: 0, right: 0, width: 0, height: 0 }) as DOMRect;
+    const addListener = vi.spyOn(hiddenLazy, 'addEventListener');
+    root.append(hiddenLazy);
+
+    await expect(waitForCaptureStability(root, { timeoutMs: 1_000 })).resolves.toEqual({
+      imageCount: 0,
+      deferredImageCount: 1,
+      reducedMotion: false,
+    });
+    expect(hiddenLazy.checkVisibility).toHaveBeenCalled();
+    expect(addListener).not.toHaveBeenCalled();
   });
 
   it('still waits for lazy images inside the viewport until they load', async () => {

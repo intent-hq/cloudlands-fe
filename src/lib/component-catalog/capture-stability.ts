@@ -8,7 +8,11 @@ export interface CaptureStabilityOptions {
 export interface CaptureStabilityResult {
   /** Images that gated readiness; deferred lazy images are excluded. */
   imageCount: number;
-  /** Offscreen `loading="lazy"` images the browser has not started loading. */
+  /**
+   * Incomplete `loading="lazy"` images skipped because they were unrendered or outside
+   * the window viewport when readiness was evaluated. This describes their position, not
+   * their network state: the browser may already be preloading images near the viewport.
+   */
   deferredImageCount: number;
   reducedMotion: boolean;
 }
@@ -77,6 +81,12 @@ async function waitForImage(image: HTMLImageElement, signal: AbortSignal): Promi
   }
 }
 
+// An unrendered element (`display: none` / `content-visibility: hidden` subtree) has a
+// zero rect at the origin, which the viewport bounds check would otherwise accept.
+function isRendered(image: HTMLImageElement): boolean {
+  return typeof image.checkVisibility === 'function' ? image.checkVisibility() : true;
+}
+
 function intersectsViewport(image: HTMLImageElement): boolean {
   const view = image.ownerDocument.defaultView;
   if (!view) return true;
@@ -90,14 +100,15 @@ function intersectsViewport(image: HTMLImageElement): boolean {
 }
 
 /**
- * Viewport readiness semantics: an incomplete `loading="lazy"` image outside the viewport
- * cannot be relied on to complete without a scroll, so it never gates readiness. Visible
- * lazy images, complete images, and eager images gate as before.
+ * Viewport readiness semantics: an incomplete `loading="lazy"` image that is unrendered or
+ * outside the window viewport cannot be relied on to complete without layout or scroll
+ * changes, so it never gates readiness. Visible lazy images, complete images, and eager
+ * images gate as before.
  */
 function isDeferredLazyImage(image: HTMLImageElement): boolean {
   if (image.complete) return false;
   if ((image.getAttribute('loading') ?? '').toLowerCase() !== 'lazy') return false;
-  return !intersectsViewport(image);
+  return !isRendered(image) || !intersectsViewport(image);
 }
 
 interface ImageReadiness {
@@ -146,11 +157,13 @@ function waitForAnimationFrame(documentRef: Document, signal: AbortSignal): Prom
  * or when its signal is aborted.
  *
  * Image readiness uses viewport semantics: every eager image, every already-complete
- * image, and every lazy image that intersects the viewport must finish loading and
- * decoding, whether it succeeds or errors. Incomplete offscreen `loading="lazy"` images
- * are reported in `deferredImageCount` and do not gate readiness, because the browser
- * does not fetch them until they approach the viewport; a capture never scrolls, so
- * they cannot affect it.
+ * image, and every rendered lazy image that intersects the window viewport must finish
+ * loading and decoding, whether it succeeds or errors. Incomplete `loading="lazy"` images
+ * that are unrendered or outside the viewport are skipped and reported in
+ * `deferredImageCount`, because the browser defers fetching them until they approach the
+ * viewport and waiting on them would only end at the timeout. This is a deliberate limit,
+ * not a whole-scene guarantee: a capture that scrolls a target into view or renders a
+ * frame extending beyond the viewport can still include an image that was skipped here.
  */
 export async function waitForCaptureStability(
   root: HTMLElement,
