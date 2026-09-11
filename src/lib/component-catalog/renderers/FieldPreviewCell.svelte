@@ -394,20 +394,19 @@
   .field-cell[data-field-state='hover'] .control-shell :global(button) {
     background-color: hsl(var(--hover));
   }
-  .field-cell[data-field-state='focus-visible'] .control-shell :global(input),
+  .field-cell[data-field-state='focus-visible']
+    .control-shell
+    :global(input:not([data-slot='input-group'] *)),
   .field-cell[data-field-state='focus-visible'] .control-shell :global(textarea),
-  .field-cell[data-field-state='focus-visible'] .control-shell :global(button) {
+  .field-cell[data-field-state='focus-visible']
+    .control-shell
+    :global(button:not([data-slot='input-group'] *)),
+  .field-cell[data-field-state='focus-visible'] .control-shell :global([data-slot='input-group']) {
     outline: 1px solid hsl(var(--focus-ring));
     outline-offset: 2px;
   }
-  .field-cell[data-field-state='focus-visible'] .control-shell :global([data-slot='input']),
-  .field-cell[data-field-state='focus-visible'] .control-shell :global([data-slot='textarea']),
-  .field-cell[data-field-state='focus-visible'] .control-shell :global([data-slot='input-group']) {
-    background-color: hsl(var(--card));
-    box-shadow: inset 0 0 0 1px hsl(var(--ring));
-  }
   .zoom-preview {
-    width: 50%;
+    grid-column: 1 / -1;
     zoom: 2;
   }
 </style>
