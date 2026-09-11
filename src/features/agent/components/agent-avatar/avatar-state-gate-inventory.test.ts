@@ -42,7 +42,8 @@
 //  - Flagged forms: `<ident> === '<literal>'` / `!==` in either operand order
 //    (member access such as `row.state` matches by property name),
 //    `switch (<ident>)`, and a direct `getAvatarState*(…)` or
-//    `<fn returning AvatarState>(…)` call compared to a literal.
+//    `<fn returning AvatarState>(…)` call compared to a literal, again in
+//    either operand order.
 //  - Limits: cross-file flow through `string`/untyped parameters is caught only
 //    by the ladder-only-literal rule; destructured bindings, `.includes(…)`,
 //    `Set.has(…)`, lookup tables, and comparisons against a variable holding a
@@ -56,7 +57,7 @@
 //    literal's opposite side are only partially covered; comments and strings
 //    are not stripped before matching.
 import { readdirSync, readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { basename, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const LADDER_PATH = 'src/features/agent/components/agent-avatar/avatar-state.ts';
@@ -64,7 +65,7 @@ const INVENTORY_PATH =
   'src/features/agent/components/agent-avatar/avatar-state-gate-inventory.test.ts';
 const LADDER_FUNCTION = /\bgetAvatarState(?:ForSession|FromStore)?\b/;
 const LADDER_ONLY_LITERALS = ['needs-permission', 'attention-discussion', 'attention-blocker'];
-const EXCLUDED_FILE = /\.(?:test|spec)\.[cm]?[jt]sx?$|\.stories\./;
+const EXCLUDED_FILE = /\.(?:test|spec|stories)\./;
 const EXCLUDED_DIRECTORIES = new Set(['__tests__', 'src/routes/sandbox']);
 
 type SiteKind = 'display' | 'gate';
@@ -296,10 +297,16 @@ function productionSourceFiles(directory = 'src'): string[] {
           ? []
           : productionSourceFiles(path);
       }
-      if (!entry.isFile() || path === LADDER_PATH || EXCLUDED_FILE.test(entry.name)) return [];
-      return /\.(?:ts|svelte)$/.test(entry.name) ? [path] : [];
+      if (!entry.isFile() || path === LADDER_PATH || !isProductionSourceFile(entry.name)) {
+        return [];
+      }
+      return [path];
     },
   );
+}
+
+function isProductionSourceFile(name: string): boolean {
+  return /\.(?:ts|svelte)$/.test(name) && !EXCLUDED_FILE.test(name);
 }
 
 function readAvatarStateLiterals(): string[] {
@@ -413,10 +420,15 @@ function collectComparisonsIn(path: string, text: string, literals: string[]): C
   for (const callName of callNames) {
     for (const match of text.matchAll(new RegExp(`\\b${callName}\\s*\\(`, 'g'))) {
       const end = callEnd(text, match.index + match[0].length - 1);
+      const call = text.slice(match.index, end);
       const tail = text
         .slice(end)
         .match(new RegExp(`^\\s*(?:===|!==)\\s*(?:'|")(?:${literal})(?:'|")`));
-      if (tail) record(match.index, text.slice(match.index, end) + tail[0]);
+      if (tail) record(match.index, call + tail[0]);
+      const head = text
+        .slice(Math.max(0, match.index - 80), match.index)
+        .match(new RegExp(`(?:'|")(?:${literal})(?:'|")\\s*(?:===|!==)\\s*$`));
+      if (head) record(match.index - head[0].length, head[0] + call);
     }
   }
 
@@ -599,6 +611,35 @@ describe('avatar-state comparison inventory', () => {
       expect(unlisted.map(describeHit).join('\n')).toMatch(
         new RegExp(`^${escapeRegExp(MENTION_AVATAR)}:\\d+ — `),
       );
+    });
+
+    it('fails a literal-first direct visibility gate injected into a non-allowlisted component', () => {
+      const comparison = "'running' !== getAvatarStateForSession(session)";
+      const text = source(MENTION_AVATAR).replace(
+        '</script>',
+        `  if (${comparison}) return;\n</script>`,
+      );
+      const { unlisted } = reconcileFixture(MENTION_AVATAR, text);
+      expect(unlisted.map((hit) => hit.text)).toEqual([comparison]);
+    });
+
+    it('ignores comparisons in .test / .spec / .stories files of any extension', () => {
+      const comparison = "getAvatarStateForSession(session) !== 'running'";
+      const body = `<script lang="ts">\n  if (${comparison}) throw new Error();\n</script>`;
+      const directory = 'src/lib/components/chat';
+      const names = [
+        'Strip.test.svelte',
+        'Strip.spec.svelte',
+        'Strip.stories.svelte',
+        'Strip.svelte',
+      ];
+      const hits = names
+        .map((name) => `${directory}/${name}`)
+        .filter((path) => isProductionSourceFile(basename(path)))
+        .flatMap((path) => collectComparisonsIn(path, body, literals));
+      expect(hits.map((hit) => `${hit.path} — ${hit.text}`)).toEqual([
+        `${directory}/Strip.svelte — ${comparison}`,
+      ]);
     });
 
     it('reports a stale entry when an allowlisted comparison is removed', () => {
