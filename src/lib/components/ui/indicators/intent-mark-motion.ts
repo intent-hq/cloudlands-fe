@@ -1,3 +1,5 @@
+import { currentFrameTime, subscribeFrameClock } from '$lib/utils/frame-clock';
+
 export const intentMarkVariants = ['bloom', 'pulse', 'twist'] as const;
 export type IntentMarkVariant = (typeof intentMarkVariants)[number];
 
@@ -272,20 +274,6 @@ function bloomPose(index: number, frame: number): Keyframe {
   };
 }
 
-function bloomFrames(index: number): Keyframe[] {
-  const sourceFrames = Array.from({ length: bloomFrameCount + 1 }, (_, frame) => frame);
-  sourceFrames.splice(bloomLayerOutFrame, 0, bloomLayerOutFrame - 0.001);
-  return sourceFrames.map((frame) => {
-    const pose = bloomPose(index, frame);
-    return {
-      opacity: pose.opacity,
-      transform: pose.transform,
-      offset: frame / bloomFrameCount,
-      easing: 'steps(1, end)',
-    };
-  });
-}
-
 function twistFrames(index: number): Keyframe[] {
   const direction = index % 2 === 0 ? -1 : 1;
   const start = 0.06 * index;
@@ -315,9 +303,7 @@ function twistFrames(index: number): Keyframe[] {
 }
 
 function loopFrames(variant: IntentMarkVariant, index: number): Keyframe[] {
-  if (variant === 'pulse') return pulseFrames(index);
-  if (variant === 'twist') return twistFrames(index);
-  return bloomFrames(index);
+  return variant === 'pulse' ? pulseFrames(index) : twistFrames(index);
 }
 
 function loopDuration(variant: IntentMarkVariant): number {
@@ -357,13 +343,41 @@ function loopPoseAt(variant: IntentMarkVariant, index: number, phase: number): K
   return {
     ...stripTiming(before),
     opacity: rounded(
-      numeric(before.opacity) + (numeric(after.opacity) - numeric(before.opacity)) * progress,
+      numeric(before.opacity ?? neutralFrame.opacity) +
+        (numeric(after.opacity ?? neutralFrame.opacity) -
+          numeric(before.opacity ?? neutralFrame.opacity)) *
+          progress,
     ),
     strokeDashoffset: rounded(
       numeric(before.strokeDashoffset) +
         (numeric(after.strokeDashoffset) - numeric(before.strokeDashoffset)) * progress,
     ),
     transform: interpolateTransform(String(before.transform), String(after.transform), progress),
+  };
+}
+
+interface IntentMarkDrivenPose {
+  opacity: number;
+  transform: string;
+}
+
+/**
+ * Pose written to an arm for a loop phase in [0, 1). Bloom holds each source
+ * frame for one 30 fps slot (the former steps(1, end) keyframes); pulse and
+ * twist sample their linear keyframes at the slot.
+ */
+function intentMarkLoopPose(
+  variant: IntentMarkVariant,
+  index: number,
+  phase: number,
+): IntentMarkDrivenPose {
+  const pose =
+    variant === 'bloom'
+      ? bloomPose(index, Math.floor(phase * bloomFrameCount + 0.000_001) % bloomFrameCount)
+      : loopPoseAt(variant, index, phase);
+  return {
+    opacity: numeric(pose.opacity ?? neutralFrame.opacity),
+    transform: String(pose.transform),
   };
 }
 
@@ -397,9 +411,11 @@ export function createIntentMarkMotion(
   let options = initial;
   let inViewport = true;
   let visible = !document.hidden;
+  let windowFocused = !document.documentElement.hasAttribute('data-window-blurred');
   let destroyed = false;
   let sequence = 0;
   let animations: Animation[] = [];
+  let stopLoop: (() => void) | undefined;
   let activeVariant: IntentMarkVariant | undefined;
   let transitionTimer: number | undefined;
   let transition: 'morph' | 'settle' | undefined;
@@ -410,7 +426,12 @@ export function createIntentMarkMotion(
     transitionTimer = undefined;
     for (const animation of animations) animation.cancel();
     animations = [];
-    arms.forEach((arm) => (arm.style.willChange = ''));
+    stopLoop?.();
+    stopLoop = undefined;
+    arms.forEach((arm) => {
+      arm.style.opacity = '';
+      arm.style.transform = '';
+    });
   };
 
   const setNeutral = () => {
@@ -424,17 +445,15 @@ export function createIntentMarkMotion(
     root.dataset.motionState = 'neutral';
   };
 
-  const canPlay = () => options.playing && inViewport && visible && !media.matches && !destroyed;
+  const mustRest = () => media.matches || !inViewport || !visible || !windowFocused || destroyed;
+  const canPlay = () => options.playing && !mustRest();
 
-  const hasRunningLoop = () =>
-    activeVariant === options.variant &&
-    animations.length === arms.length &&
-    animations.every(
-      (animation) =>
-        animation.playState === 'running' &&
-        (!('replaceState' in animation) || animation.replaceState !== 'removed'),
-    );
+  const hasRunningLoop = () => activeVariant === options.variant && stopLoop !== undefined;
 
+  // The loop is a main-thread pose driver on the shared 30 fps clock: every
+  // slot writes inline transform/opacity to the arms only when the pose
+  // differs, so the arms never become composited layers and the compositor
+  // draws once per pose change instead of once per vsync.
   const startLoop = (variant: IntentMarkVariant, phase = canonicalLoopPhase[variant]) => {
     if (!canPlay()) return;
     cancelAnimations();
@@ -443,16 +462,22 @@ export function createIntentMarkMotion(
     needsHandoff = false;
     const duration = loopDuration(variant);
     root.dataset.motionState = 'playing';
-    animations = arms.map((arm, index) => {
-      arm.style.willChange = 'transform, opacity';
-      const animation = arm.animate(loopFrames(variant, index), {
-        duration: loopDuration(variant),
-        easing: 'linear',
-        iterations: Infinity,
+    const origin = currentFrameTime() - phase * duration;
+    const written: string[] = [];
+    const writePose = (frameTimeMs: number) => {
+      const elapsed = frameTimeMs - origin;
+      const loopPhase = (((elapsed / duration) % 1) + 1) % 1;
+      arms.forEach((arm, index) => {
+        const pose = intentMarkLoopPose(variant, index, loopPhase);
+        const key = `${pose.opacity}|${pose.transform}`;
+        if (written[index] === key) return;
+        written[index] = key;
+        arm.style.opacity = String(pose.opacity);
+        arm.style.transform = pose.transform;
       });
-      animation.currentTime = phase * duration;
-      return animation;
-    });
+    };
+    writePose(origin + phase * duration);
+    stopLoop = subscribeFrameClock(writePose);
     activeVariant = variant;
     delete root.dataset.handoffVariant;
     root.dataset.loopPhase = String(phase);
@@ -501,7 +526,7 @@ export function createIntentMarkMotion(
 
   const settle = () => {
     const run = ++sequence;
-    if (media.matches || !inViewport || !visible || destroyed) {
+    if (mustRest()) {
       setNeutral();
       return;
     }
@@ -528,7 +553,7 @@ export function createIntentMarkMotion(
 
   const reconcile = (variantChanged = false) => {
     if (!canPlay()) {
-      if (media.matches || !inViewport || !visible || destroyed) {
+      if (mustRest()) {
         setNeutral();
         return;
       }
@@ -560,6 +585,12 @@ export function createIntentMarkMotion(
     visible = !document.hidden;
     reconcile();
   };
+  const handleWindowFocusChange = () => {
+    const focused = !document.documentElement.hasAttribute('data-window-blurred');
+    if (focused === windowFocused) return;
+    windowFocused = focused;
+    reconcile();
+  };
   const handleMotionPreference = () => reconcile();
   const observer =
     typeof IntersectionObserver === 'undefined'
@@ -568,8 +599,13 @@ export function createIntentMarkMotion(
           inViewport = entry?.isIntersecting ?? true;
           reconcile();
         });
+  const windowFocusObserver = new MutationObserver(handleWindowFocusChange);
 
   observer?.observe(root);
+  windowFocusObserver.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ['data-window-blurred'],
+  });
   document.addEventListener('visibilitychange', handleVisibility);
   media.addEventListener('change', handleMotionPreference);
   reconcile();
@@ -585,6 +621,7 @@ export function createIntentMarkMotion(
       sequence += 1;
       cancelAnimations();
       observer?.disconnect();
+      windowFocusObserver.disconnect();
       document.removeEventListener('visibilitychange', handleVisibility);
       media.removeEventListener('change', handleMotionPreference);
       root.dataset.motionState = 'destroyed';
