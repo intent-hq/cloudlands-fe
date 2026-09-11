@@ -83,7 +83,13 @@ interface AllowlistEntry {
 
 /** Number of `kind: 'gate'` entries accepted as recorded debt. Lower it, never raise it. */
 const GATE_DEBT_CEILING = 3;
-const GATE_FOLLOW_UP = /\bisSessionRunning\b|\bisAgentActivelyWorking\b/;
+const GATE_FOLLOW_UP =
+  /\bisSessionRunning\b|\bisAgentActivelyWorking\b|\bsessionHasPendingQuestion\b/;
+const HOVER_CARD_QUESTION_GATE_FOLLOW_UP =
+  'Decide row inclusion from sessionHasPendingQuestion (pending-questions.ts) plus an ' +
+  'activity predicate (isSessionRunning / isAgentActivelyWorking); getAgentAttentionRequest ' +
+  'only reads attentionRequestKind and does not see pending-question metadata. Keep ladder ' +
+  'equality for row copy only.';
 const HOVER_CARD_GATE_FOLLOW_UP =
   'Decide row inclusion from getAgentAttentionRequest plus an activity predicate ' +
   '(isSessionRunning / isAgentActivelyWorking); keep ladder equality for row copy only.';
@@ -208,7 +214,7 @@ const ALLOWLIST: readonly AllowlistEntry[] = [
     rationale:
       'Picks the attention row group; without this branch a question session that is neither ' +
       'unread nor active falls through to the final `return null` and is dropped from the card.',
-    followUp: HOVER_CARD_GATE_FOLLOW_UP,
+    followUp: HOVER_CARD_QUESTION_GATE_FOLLOW_UP,
   },
   {
     path: WORKSPACE_HOVER_CARD,
@@ -521,13 +527,15 @@ describe('avatar-state comparison inventory', () => {
     for (const gate of gates) {
       expect(
         gate.followUp ?? '',
-        `${describeEntry(gate)} is a gate and must name the activity predicate to migrate to`,
+        `${describeEntry(gate)} is a gate and must name the predicate to migrate to ` +
+          `(isSessionRunning / isAgentActivelyWorking / sessionHasPendingQuestion)`,
       ).toMatch(GATE_FOLLOW_UP);
     }
     expect(
       gates.length,
       `Gate entries compare a ladder result to decide visibility/inclusion. Do not add new ones; ` +
         `migrate the recorded debt to isSessionRunning / isAgentActivelyWorking (${LADDER_PATH}) ` +
+        `or sessionHasPendingQuestion (pending-questions.ts) ` +
         `and lower GATE_DEBT_CEILING:\n${gates.map(describeEntry).join('\n')}`,
     ).toBeLessThanOrEqual(GATE_DEBT_CEILING);
   });
