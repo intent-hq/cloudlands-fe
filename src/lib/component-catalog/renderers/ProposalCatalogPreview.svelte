@@ -68,10 +68,10 @@
       aria-label="Bulk proposal"
     >
       <div class="space-y-1 px-3 pt-3">
-        <p class="type-caption font-medium text-muted-foreground">Bulk change</p>
+        <p class="type-caption text-muted-foreground">Bulk change</p>
         <h3 class="type-body font-medium text-foreground">Update workspace specialists</h3>
         <p
-          class="type-body leading-relaxed text-muted-foreground"
+          class="type-caption leading-relaxed text-muted-foreground"
           data-catalog-rendered-state="long-content"
         >
           Apply the shared review instructions to selected specialists while leaving locked
@@ -79,31 +79,28 @@
         </p>
       </div>
       <div
-        class="type-caption mx-3 mt-3 rounded-(--radius-small) border border-warning/40 bg-warning/10 px-3 py-2 text-warning-ink"
+        class="type-caption mx-3 mt-3 rounded-(--radius-small) bg-warning/10 px-3 py-2 text-warning-ink"
         role="note"
         aria-label="Proposal warning"
         data-catalog-rendered-state="warning"
       >
         One specialist is locked and will be skipped.
       </div>
-      <div
-        class="mx-3 my-3 divide-y divide-border rounded-(--radius-medium) border border-border bg-background"
-        data-catalog-rendered-state="mixed-selection"
-      >
-        <label class="type-body flex min-w-0 items-start gap-3 px-3 py-2.5 text-foreground">
+      <div class="mx-3 my-3 divide-y divide-border" data-catalog-rendered-state="mixed-selection">
+        <label class="type-body flex min-w-0 items-start gap-3 py-2.5 text-foreground">
           <Checkbox checked ariaLabel="Toggle Review Buddy" />
           <span class="min-w-0 break-words">Review Buddy</span>
         </label>
-        <label class="type-body flex min-w-0 items-start gap-3 px-3 py-2.5 text-foreground">
+        <label class="type-body flex min-w-0 items-start gap-3 py-2.5 text-foreground">
           <Checkbox ariaLabel="Toggle Test Writer" />
           <span class="min-w-0 break-words">Test Writer</span>
         </label>
-        <label class="type-body flex min-w-0 items-start gap-3 px-3 py-2.5 text-muted-foreground">
+        <label class="type-body flex min-w-0 items-start gap-3 py-2.5 text-muted-foreground">
           <Checkbox checked disabled ariaLabel="Toggle Organization Default" />
           <span class="min-w-0 break-words">Organization Default · Locked</span>
         </label>
       </div>
-      <div class="flex flex-wrap justify-end gap-2 border-t border-border bg-muted/10 px-3 py-3">
+      <div class="flex flex-wrap justify-end gap-2 border-t border-border px-3 py-3">
         <Button variant="outline" size="sm">Discard</Button>
         <Button size="sm">Apply selected</Button>
       </div>
