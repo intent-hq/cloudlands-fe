@@ -160,12 +160,25 @@ describe('verification planning', () => {
       'vitest-full',
       'svelte-check',
       'tsc-renderer',
+      'generate-build-config',
       'tsc-main',
       'tsc-preload',
     ]);
     expect(plan.checks.find((check) => check.id === 'vitest-full')?.lockKind).toBe('vitest-full');
+    expect(plan.checks.find((check) => check.id === 'vitest-full')?.args).toEqual([
+      'exec',
+      'vitest',
+      'run',
+      '--config',
+      'vitest.config.ts',
+      '--maxWorkers=1',
+    ]);
     expect(plan.checks.find((check) => check.id === 'svelte-check')?.lockKind).toBeNull();
     expect(plan.checks.find((check) => check.id === 'tsc-renderer')?.lockKind).toBeNull();
+    expect(plan.checks.find((check) => check.id === 'generate-build-config')?.args).toEqual([
+      'run',
+      'generate:build-config',
+    ]);
   });
 
   it('runs changed integration tests with their own Vitest config', () => {

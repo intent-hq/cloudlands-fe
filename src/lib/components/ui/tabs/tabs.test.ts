@@ -82,7 +82,12 @@ describe('Tabs', () => {
       const overview = getByRole('tab', { name: 'Overview' });
 
       if (listPadding) expect(list.className).toContain(listPadding);
-      else expect(list.className).not.toMatch(/\bp-[^x]/);
+      else {
+        const hasNonHorizontalPadding = list.className
+          .split(/\s+/)
+          .some((className) => className.startsWith('p-') && !className.startsWith('px-'));
+        expect(hasNonHorizontalPadding).toBe(false);
+      }
       expect(overview.className).toContain(triggerHeight);
       expect(overview.className).toContain('border-0');
       expect(overview.className).toContain('rounded-(--radius-medium)');

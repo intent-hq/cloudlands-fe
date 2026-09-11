@@ -293,7 +293,7 @@ export function createVerificationPlan(files, options = {}) {
       command(
         'vitest-full',
         'Vitest unit suite (safe fallback)',
-        ['run', 'test:unit'],
+        ['exec', 'vitest', 'run', '--config', 'vitest.config.ts', '--maxWorkers=1'],
         'vitest-full',
       ),
     );
@@ -371,6 +371,9 @@ export function createVerificationPlan(files, options = {}) {
     );
   }
   if (boundaries.has('main')) {
+    checks.push(
+      command('generate-build-config', 'Generate build config', ['run', 'generate:build-config']),
+    );
     checks.push(
       command('tsc-main', 'TypeScript (main)', [
         'exec',

@@ -57,6 +57,6 @@ describe('Files panel scroll ownership', () => {
     expect(sidebar).toContain('data-file-tree-toolbar');
     expect(search).toContain('placement="toolbar"');
     expect(sharedSearch).toContain("placement === 'toolbar'");
-    expect(listItem).toContain("padding: 'min-h-7 px-2 py-0.5'");
+    expect(listItem).toContain("padding: 'min-h-(--control-height-compact) px-2 py-0.5'");
   });
 });

@@ -687,9 +687,9 @@ describe('BranchSelector (uncommitted-changes indicator gated on skipIsolation, 
     showUncommittedIndicator: true,
   };
 
-  /** The amber status dot (trigger + dropdown notice share the same marker). */
+  /** The warning status dot (trigger + dropdown notice share the same marker). */
   function uncommittedDot(root: ParentNode) {
-    return root.querySelector('.bg-amber-500');
+    return root.querySelector('.bg-warning');
   }
 
   it('shows the indicator and dropdown notice with uncommitted changes on the current branch', async () => {

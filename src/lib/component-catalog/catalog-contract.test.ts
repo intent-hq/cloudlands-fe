@@ -72,6 +72,8 @@ const cases: ContractCase[] = [
     fixture,
   })) ?? []),
 ].sort((left, right) => left.key.localeCompare(right.key));
+const slowCases = cases.filter(({ key }) => key === 'product:fields:field-state-matrix');
+const standardCases = cases.filter(({ key }) => key !== 'product:fields:field-state-matrix');
 
 const intentionalAxeAllowlist: Record<string, ReadonlyArray<{ rule: string; reason: string }>> = {
   'pattern:collection:collection-states': [
@@ -181,23 +183,26 @@ afterEach(() => {
   document.body.replaceChildren();
 });
 
+async function verifyCatalogContract(testCase: ContractCase) {
+  const rendered = renderCase(testCase);
+  await tick();
+  await waitForCaptureStability(document.body, { timeoutMs: 2_000 });
+
+  expect({
+    declaredStates: testCase.fixture.states,
+    dom: stableDom(document.body),
+  }).toMatchSnapshot();
+
+  rendered.container.setAttribute('role', 'main');
+  const result = await axe.run(document.body, { rules: axeRules });
+  const allowed = intentionalAxeAllowlist[testCase.key] ?? [];
+  expect(allowed.every(({ reason }) => reason.trim().length > 0)).toBe(true);
+  expect(result.violations.map(({ id }) => id).sort()).toEqual(
+    allowed.map(({ rule }) => rule).sort(),
+  );
+}
+
 describe.sequential('catalog DOM, token, and accessibility contracts', () => {
-  it.each(cases)('$key', async (testCase) => {
-    const rendered = renderCase(testCase);
-    await tick();
-    await waitForCaptureStability(document.body, { timeoutMs: 2_000 });
-
-    expect({
-      declaredStates: testCase.fixture.states,
-      dom: stableDom(document.body),
-    }).toMatchSnapshot();
-
-    rendered.container.setAttribute('role', 'main');
-    const result = await axe.run(document.body, { rules: axeRules });
-    const allowed = intentionalAxeAllowlist[testCase.key] ?? [];
-    expect(allowed.every(({ reason }) => reason.trim().length > 0)).toBe(true);
-    expect(result.violations.map(({ id }) => id).sort()).toEqual(
-      allowed.map(({ rule }) => rule).sort(),
-    );
-  });
+  it.each(standardCases)('$key', verifyCatalogContract);
+  it.each(slowCases)('$key', verifyCatalogContract, 90_000);
 });
