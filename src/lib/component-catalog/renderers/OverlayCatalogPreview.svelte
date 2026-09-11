@@ -14,6 +14,7 @@
   let menuChecked = $state(false);
   let menuDensity = $state('comfortable');
   let menuOpen = $state(false);
+  let menuOutsideClicks = $state(0);
   let dialogOpen = $state(false);
   let dialogTriggerElement = $state<HTMLButtonElement>();
 
@@ -81,7 +82,12 @@
           >
         </Menu.Content>
       </Menu.Root>
-      <Button variant="outline" size="sm">Menu outside target</Button>
+      <Button variant="outline" size="sm" onclick={() => menuOutsideClicks++}
+        >Menu outside target</Button
+      >
+      <p class="type-caption text-muted-foreground" role="status">
+        Outside clicks received: {menuOutsideClicks}. Click outside an open menu to dismiss it.
+      </p>
     </div>
   {:else if componentId === 'dialog'}
     {#if fixture.id === 'dialog-open-state'}
