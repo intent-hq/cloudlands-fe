@@ -48,13 +48,26 @@ for (const width of [360, 960]) {
         )!;
         const agentLeading = root.querySelector('[data-testid="agent-message-avatar-column"]')!;
         const agentSummary = root.querySelector('[data-testid="agent-message-actor-name"]')!;
+        const subscriptionRow = root.querySelector('[data-testid="event-wakeup-header"]')!;
+        const subscriptionLeadingColumn = root.querySelector(
+          '[data-testid="event-wakeup-leading-column"]',
+        )!;
+        const subscriptionChevron = root.querySelector(
+          '[data-testid="event-wakeup-chevron-column"]',
+        )!;
+        const agentRow = root.querySelector('[data-testid="agent-message-disclosure-header"]')!;
         const center = (element: Element) => {
           const box = element.getBoundingClientRect();
           return (box.left + box.right) / 2;
         };
+        const toolRect = toolRow.getBoundingClientRect();
+        const cardRect = card.getBoundingClientRect();
+        const agentCardRect = agentCard.getBoundingClientRect();
         return {
-          toolOuterLeft: toolRow.getBoundingClientRect().left,
-          subscriptionOuterLeft: card.getBoundingClientRect().left,
+          toolOuterLeft: toolRect.left,
+          toolOuterRight: toolRect.right,
+          subscriptionOuterLeft: cardRect.left,
+          subscriptionOuterRight: cardRect.right,
           toolLeadingCenter: center(toolLeading),
           subscriptionLeadingCenter: center(subscriptionLeading),
           toolTextStart: toolSummary.getBoundingClientRect().left,
@@ -62,20 +75,44 @@ for (const width of [360, 960]) {
           agentOuterLeft: agentCard.getBoundingClientRect().left,
           agentLeadingCenter: center(agentLeading),
           agentTextStart: agentSummary.getBoundingClientRect().left,
+          toolLeadingInset: toolLeading.getBoundingClientRect().left - toolRect.left,
+          subscriptionLeadingInset:
+            subscriptionLeadingColumn.getBoundingClientRect().left - cardRect.left,
+          subscriptionTrailingInset:
+            cardRect.right - subscriptionChevron.getBoundingClientRect().right,
+          agentLeadingInset: agentLeading.getBoundingClientRect().left - agentCardRect.left,
+          subscriptionRowPadding: getComputedStyle(subscriptionRow).paddingInlineStart,
+          agentRowPadding: getComputedStyle(agentRow).paddingInlineStart,
+          subscriptionOverflow:
+            (card as HTMLElement).scrollWidth - (card as HTMLElement).clientWidth,
+          agentOverflow:
+            (agentCard as HTMLElement).scrollWidth - (agentCard as HTMLElement).clientWidth,
         };
       });
 
-      expect(geometry.subscriptionOuterLeft).toBeCloseTo(geometry.toolOuterLeft, 1);
+      const expectedBleed = 12 * zoom - geometry.toolLeadingInset;
+      expect(geometry.toolOuterLeft - geometry.subscriptionOuterLeft).toBeCloseTo(expectedBleed, 1);
+      expect(geometry.subscriptionOuterRight - geometry.toolOuterRight).toBeCloseTo(
+        expectedBleed,
+        1,
+      );
       expect(geometry.subscriptionLeadingCenter).toBeCloseTo(geometry.toolLeadingCenter, 1);
       expect(geometry.subscriptionTextStart).toBeCloseTo(geometry.toolTextStart, 1);
-      expect(geometry.agentLeadingCenter - geometry.agentOuterLeft).toBeCloseTo(
+      expect(geometry.agentLeadingCenter - geometry.agentOuterLeft - expectedBleed).toBeCloseTo(
         geometry.toolLeadingCenter - geometry.toolOuterLeft,
         1,
       );
-      expect(geometry.agentTextStart - geometry.agentOuterLeft).toBeCloseTo(
+      expect(geometry.agentTextStart - geometry.agentOuterLeft - expectedBleed).toBeCloseTo(
         geometry.toolTextStart - geometry.toolOuterLeft,
         1,
       );
+      expect(geometry.subscriptionLeadingInset).toBeCloseTo(12 * zoom, 1);
+      expect(geometry.subscriptionTrailingInset).toBeCloseTo(12 * zoom, 1);
+      expect(geometry.agentLeadingInset).toBeCloseTo(12 * zoom, 1);
+      expect(geometry.subscriptionRowPadding).toBe('11px');
+      expect(geometry.agentRowPadding).toBe('11px');
+      expect(geometry.subscriptionOverflow).toBeLessThanOrEqual(0);
+      expect(geometry.agentOverflow).toBeLessThanOrEqual(0);
     });
   }
 }
@@ -141,10 +178,7 @@ test('measures the production finished-card turn gap across all required states'
                   surfaceInset: [surface.paddingInlineStart, surface.paddingBlockStart],
                 };
               });
-              expect(measurement.finishedInset).toEqual([
-                width === 360 ? '1px' : '7px',
-                measurement.sentInset[1],
-              ]);
+              expect(measurement.finishedInset).toEqual(['11px', measurement.sentInset[1]]);
               expect(measurement.finishedHeight).toBeCloseTo(40 * zoom, 1);
               expect(measurement.surfaceInset).toEqual(['0px', '0px']);
               const topGap = measurement.cardTop - measurement.predecessorBottom;
@@ -295,7 +329,7 @@ test('matches sent-message disclosures to real finished event rows', async ({ mo
             1,
           );
           expect(collapsed.agentIconRect.left - collapsed.agentRowRect.left).toBeCloseTo(
-            (width === 360 ? 1 : 7) * zoom,
+            11 * zoom,
             1,
           );
           expect(collapsed.agentRowRect.bottom - collapsed.agentRowRect.top).toBeCloseTo(

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   safeSubscriptionRowTransition,
-  SUBSCRIPTION_BORDER_COMPENSATED_INLINE_PADDING_CLASS,
+  SUBSCRIPTION_CARD_INLINE_PADDING_CLASS,
   SUBSCRIPTION_DISCLOSURE_ROW_CLASS,
   SUBSCRIPTION_FINISHED_ROW_GEOMETRY_CLASS,
   SUBSCRIPTION_INSET_ROW_DIVIDER_CLASS,
@@ -38,10 +38,10 @@ describe('safeSubscriptionRowTransition', () => {
       SUBSCRIPTION_FINISHED_ROW_GEOMETRY_CLASS,
     ]) {
       expect(rowClass).toContain(OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS);
-      expect(rowClass).toContain(SUBSCRIPTION_BORDER_COMPENSATED_INLINE_PADDING_CLASS);
+      expect(rowClass).toContain(SUBSCRIPTION_CARD_INLINE_PADDING_CLASS);
     }
-    expect(SUBSCRIPTION_BORDER_COMPENSATED_INLINE_PADDING_CLASS).toContain(
-      'calc(var(--operational-row-inline-padding)-1px)',
+    expect(SUBSCRIPTION_CARD_INLINE_PADDING_CLASS).toContain(
+      '--subscription-card-content-inline-padding',
     );
     expect(SUBSCRIPTION_LEADING_COLUMN_CLASS).toContain(
       'size-[var(--operational-leading-slot-size)]',

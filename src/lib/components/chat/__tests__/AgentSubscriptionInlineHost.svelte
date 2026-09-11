@@ -2,6 +2,7 @@
   import { onDestroy } from 'svelte';
   import EventSubscriptionsCard from '$lib/components/chat/EventSubscriptionsCard.svelte';
   import EventWakeupBanner from '$lib/components/chat/EventWakeupBanner.svelte';
+  import ChatOperationalRow from '$lib/components/chat/ChatOperationalRow.svelte';
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
   import { store } from '$store/renderer/store';
   import {
@@ -229,6 +230,14 @@
     data-parent-background={parentBackground}
   >
     {#if geometryOracle}
+      <ChatOperationalRow testId="subscription-inline-tool-row" toolIcon>
+        {#snippet leading()}
+          <span class="block size-4" data-testid="subscription-inline-tool-icon"></span>
+        {/snippet}
+        {#snippet summary()}
+          <span data-testid="subscription-inline-tool-summary">Reviewing</span>
+        {/snippet}
+      </ChatOperationalRow>
       <EventWakeupBanner
         metadata={wakeupMetadata}
         asDivider

@@ -13,6 +13,8 @@
     type AgentAvatarStackItem,
   } from '$features/agent/components/agent-avatar/AgentAvatarStack.svelte';
   import {
+    SUBSCRIPTION_CARD_CONTAINMENT_CLASS,
+    SUBSCRIPTION_CARD_SURFACE_CLASS,
     SUBSCRIPTION_CHEVRON_CLASS,
     SUBSCRIPTION_CHEVRON_SIZE_CLASS,
     SUBSCRIPTION_DISCLOSURE_ROW_CLASS,
@@ -160,7 +162,7 @@
   data-has-subscriptions={hasSubscriptions}
 >
   <section
-    class="w-full min-w-0 max-w-full overflow-hidden rounded-lg border border-border bg-card/80 shadow-sm font-family-child"
+    class="{SUBSCRIPTION_CARD_CONTAINMENT_CLASS} {SUBSCRIPTION_CARD_SURFACE_CLASS}"
     data-conversation-layer="event-subscriptions"
     data-testid="event-subscriptions-card"
     aria-label={cardAriaLabel}

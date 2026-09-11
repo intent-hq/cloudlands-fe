@@ -677,9 +677,9 @@
       type={isEditing ? undefined : 'button'}
       class="w-full min-w-0 max-w-full text-left transition-colors duration-150 {isEditing
         ? 'overflow-visible'
-        : 'overflow-hidden'} {inline
-        ? SUBSCRIPTION_LEADING_CONTENT_CLASS
-        : 'flex gap-2'} {isEditing ? 'cursor-text' : 'cursor-pointer'} group border {panelRow
+        : 'overflow-hidden'} {inline ? SUBSCRIPTION_LEADING_CONTENT_CLASS : 'flex gap-2'} {isEditing
+        ? 'cursor-text'
+        : 'cursor-pointer'} group border {panelRow
         ? 'h-10 items-center rounded-md border-transparent bg-transparent px-2 py-2 type-body font-normal text-foreground hover:bg-transparent active:bg-transparent focus-visible:-outline-offset-2 focus-visible:bg-transparent focus-visible:outline-2 focus-visible:outline-ring focus-visible:ring-0'
         : inline
           ? `type-body items-center rounded-md ${inlineRowClass}`
@@ -946,7 +946,7 @@
     {#if headerActions}
       <div
         class="absolute right-3 top-1/2 z-10 h-6 w-14 shrink-0 -translate-y-1/2 {inline
-          ? 'right-[calc(var(--chat-operational-row-inline-padding,0.8125rem)-1px)]!'
+          ? 'right-[calc(var(--subscription-card-inline-inset,var(--chat-operational-row-inline-padding,0.8125rem))-1px)]!'
           : ''}"
         data-testid="agent-card-trailing-slot"
       >

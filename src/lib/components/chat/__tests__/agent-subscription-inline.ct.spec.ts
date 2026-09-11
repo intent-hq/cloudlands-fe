@@ -204,33 +204,78 @@ for (const width of [360, 960]) {
       const geometry = await component.evaluate((root) => {
         const wakeupCard = root.querySelector('[data-testid="event-wakeup-card"]')!;
         const watchedCard = root.querySelector('[data-testid="event-subscriptions-card"]')!;
+        const toolRow = root.querySelector(
+          '[data-testid="subscription-inline-tool-row"] [data-operational-disclosure-row]',
+        )!;
+        const toolLeading = root.querySelector(
+          '[data-testid="subscription-inline-tool-row"] [data-operational-leading]',
+        )!;
+        const toolSummary = root.querySelector('[data-testid="subscription-inline-tool-summary"]')!;
         const wakeupIcon = root.querySelector('[data-testid="event-wakeup-leading-column"] svg')!;
         const wakeupSummary = root.querySelector('[data-testid="event-wakeup-summary"]')!;
         const watchedAvatar = root.querySelector('[data-testid="agent-card-avatar-wrapper"]')!;
         const watchedName = root.querySelector('[data-testid="agent-card-name"]')!;
+        const wakeupLeading = root.querySelector('[data-testid="event-wakeup-leading-column"]')!;
+        const wakeupChevron = root.querySelector('[data-testid="event-wakeup-chevron-column"]')!;
+        const watchedLeading = root.querySelector('[data-testid="agent-card-avatar-wrapper"]')!;
+        const watchedTrailing = root.querySelector('[data-testid="agent-card-trailing-slot"]')!;
         const centerX = (node: Element) => {
           const box = node.getBoundingClientRect();
           return (box.left + box.right) / 2;
         };
+        const toolRect = toolRow.getBoundingClientRect();
+        const wakeupRect = wakeupCard.getBoundingClientRect();
+        const watchedRect = watchedCard.getBoundingClientRect();
         return {
-          wakeupOuterLeft: wakeupCard.getBoundingClientRect().left,
-          watchedOuterLeft: watchedCard.getBoundingClientRect().left,
+          toolOuterLeft: toolRect.left,
+          toolOuterRight: toolRect.right,
+          toolLeadingInset: toolLeading.getBoundingClientRect().left - toolRect.left,
+          toolLeadingCenter: centerX(toolLeading),
+          toolTextStart: toolSummary.getBoundingClientRect().left,
+          wakeupOuterLeft: wakeupRect.left,
+          wakeupOuterRight: wakeupRect.right,
+          watchedOuterLeft: watchedRect.left,
+          watchedOuterRight: watchedRect.right,
           wakeupLeadingCenter: centerX(wakeupIcon),
           watchedLeadingCenter: centerX(watchedAvatar),
           wakeupTextStart: wakeupSummary.getBoundingClientRect().left,
           watchedTextStart: watchedName.getBoundingClientRect().left,
+          wakeupLeadingInset: wakeupLeading.getBoundingClientRect().left - wakeupRect.left,
+          wakeupTrailingInset: wakeupRect.right - wakeupChevron.getBoundingClientRect().right,
+          watchedLeadingInset: watchedLeading.getBoundingClientRect().left - watchedRect.left,
+          watchedTrailingInset: watchedRect.right - watchedTrailing.getBoundingClientRect().right,
+          wakeupOverflow:
+            (wakeupCard as HTMLElement).scrollWidth - (wakeupCard as HTMLElement).clientWidth,
+          watchedOverflow:
+            (watchedCard as HTMLElement).scrollWidth - (watchedCard as HTMLElement).clientWidth,
         };
       });
 
+      const expectedBleed = 12 * zoom - geometry.toolLeadingInset;
+      expect(geometry.toolOuterLeft - geometry.wakeupOuterLeft).toBeCloseTo(expectedBleed, 1);
+      expect(geometry.wakeupOuterRight - geometry.toolOuterRight).toBeCloseTo(expectedBleed, 1);
       expect(Math.abs(geometry.watchedOuterLeft - geometry.wakeupOuterLeft)).toBeLessThanOrEqual(
         0.5,
       );
+      expect(Math.abs(geometry.watchedOuterRight - geometry.wakeupOuterRight)).toBeLessThanOrEqual(
+        0.5,
+      );
+      expect(geometry.wakeupLeadingCenter).toBeCloseTo(geometry.toolLeadingCenter, 1);
+      expect(geometry.wakeupTextStart).toBeCloseTo(geometry.toolTextStart, 1);
       expect(
         Math.abs(geometry.watchedLeadingCenter - geometry.wakeupLeadingCenter),
       ).toBeLessThanOrEqual(0.5);
       expect(Math.abs(geometry.watchedTextStart - geometry.wakeupTextStart)).toBeLessThanOrEqual(
         0.5,
       );
+      expect(geometry.watchedLeadingCenter).toBeCloseTo(geometry.toolLeadingCenter, 1);
+      expect(geometry.watchedTextStart).toBeCloseTo(geometry.toolTextStart, 1);
+      expect(geometry.wakeupLeadingInset).toBeCloseTo(12 * zoom, 1);
+      expect(geometry.wakeupTrailingInset).toBeCloseTo(12 * zoom, 1);
+      expect(geometry.watchedLeadingInset).toBeCloseTo(12 * zoom, 1);
+      expect(geometry.watchedTrailingInset).toBeCloseTo(12 * zoom, 1);
+      expect(geometry.wakeupOverflow).toBeLessThanOrEqual(0);
+      expect(geometry.watchedOverflow).toBeLessThanOrEqual(0);
     });
   }
 }
@@ -486,8 +531,8 @@ test('shares exact header and agent-row padding and minimum height', async ({ mo
       const value = await measure(component, page);
       expect(value.rowGeometry).toEqual(value.headerGeometry);
       expect(value.rowGeometry).toEqual({
-        paddingInlineStart: '1px',
-        paddingInlineEnd: '1px',
+        paddingInlineStart: '11px',
+        paddingInlineEnd: '11px',
         paddingBlockStart: '8px',
         paddingBlockEnd: '8px',
         minHeight: '36px',
@@ -555,7 +600,7 @@ test('omits cohort time and pins the finished chevron across count and state', a
           expect(
             Math.abs(collapsed.slotRight - expectedRight) * collapsed.devicePixelRatio,
           ).toBeLessThanOrEqual(0.5);
-          expect(collapsed.rowRight - collapsed.slotRight).toBeCloseTo(1 * zoom, 1);
+          expect(collapsed.rowRight - collapsed.slotRight).toBeCloseTo(11 * zoom, 1);
           expect(collapsed.slotWidth).toBeCloseTo(24 * zoom, 1);
           expect(collapsed.slotHeight).toBeCloseTo(24 * zoom, 1);
           expect(
@@ -1123,7 +1168,7 @@ test('pins the participant stack before a fixed trailing chevron slot', async ({
           ).toBeLessThanOrEqual(0.5);
           expect(collapsed.slotWidth).toBeCloseTo(24 * zoom, 1);
           expect(collapsed.slotHeight).toBeCloseTo(24 * zoom, 1);
-          expect(collapsed.headerRight - collapsed.slotRight).toBeCloseTo(1 * zoom, 1);
+          expect(collapsed.headerRight - collapsed.slotRight).toBeCloseTo(11 * zoom, 1);
           expect(
             Math.abs(collapsed.slotCenterY - collapsed.headerCenterY) * collapsed.devicePixelRatio,
           ).toBeLessThanOrEqual(0.5);
