@@ -12,6 +12,7 @@ import {
   agentAvailabilityReducer,
   checkAllProvidersRequested,
   claudeLoginRequested,
+  claudeLoginStarted,
   checkSingleProviderRequested,
   ensureProvidersChecked,
   initialState,
@@ -21,6 +22,12 @@ import {
   checkSingleProviderWorker,
   providerAvailabilitySaga,
 } from './provider-availability-saga';
+import {
+  closeTerminalOverlay,
+  openTerminalOverlay,
+  selectScript,
+  terminalsReducer,
+} from '../../terminals/terminals-slice';
 
 const settle = async () => {
   await Promise.resolve();
@@ -481,5 +488,166 @@ describe('providerAvailabilitySaga', () => {
     expect(mocks.invoke.mock.calls).toEqual([['providers:check-single', 'codex']]);
     task.cancel();
     await task.toPromise();
+  });
+});
+
+describe('Claude login terminal dismissal', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.clearAllMocks();
+    mocks.catalog.mockImplementation(() => new Promise(() => {}));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function startLogin() {
+    let availability: typeof initialState = {
+      ...initialState,
+      providerStatusMap: { 'claude-code': { available: true, authenticated: true } },
+    };
+    let terminals = terminalsReducer(undefined, { type: 'init' });
+    const channel = stdChannel();
+    const dispatch = vi.fn((action) => {
+      availability = agentAvailabilityReducer(availability, action);
+      terminals = terminalsReducer(terminals, action);
+      channel.put(action);
+      return action;
+    });
+    const task = runSaga(
+      { channel, dispatch, getState: () => ({ agentAvailability: availability, terminals }) },
+      providerAvailabilitySaga,
+    );
+    dispatch(openTerminalOverlay('__root__', 'login-terminal'));
+    dispatch(claudeLoginStarted('login-terminal'));
+    return { dispatch, task, isOpen: () => terminals.workspaces.__root__?.isOpen };
+  }
+
+  it('refreshes Claude and dismisses the login drawer only after confirmed success', async () => {
+    mocks.invoke
+      .mockResolvedValueOnce({ success: true, data: { available: true, authenticated: false } })
+      .mockResolvedValueOnce({ success: true, data: { available: true, authenticated: true } });
+    const login = startLogin();
+    try {
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(login.isOpen()).toBe(true);
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(login.isOpen()).toBe(false);
+      expect(mocks.invoke.mock.calls).toEqual([
+        ['providers:check-single', 'claude-code'],
+        ['providers:check-single', 'claude-code'],
+      ]);
+      expect(login.dispatch).toHaveBeenCalledWith(closeTerminalOverlay('__root__'));
+      await vi.advanceTimersByTimeAsync(10000);
+      expect(mocks.invoke).toHaveBeenCalledTimes(2);
+    } finally {
+      login.task.cancel();
+    }
+  });
+
+  it.each([
+    { success: true, data: { available: true } },
+    { success: true, data: { available: true, authenticated: false } },
+    { success: true, data: { available: false, authenticated: true } },
+    { success: false, error: 'probe failed' },
+    new Error('disconnected'),
+  ])('keeps the drawer open for an unsuccessful auth probe: %j', async (result) => {
+    if (result instanceof Error) mocks.invoke.mockRejectedValue(result);
+    else mocks.invoke.mockResolvedValue(result);
+    const login = startLogin();
+    try {
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(login.isOpen()).toBe(true);
+      expect(login.dispatch).not.toHaveBeenCalledWith(closeTerminalOverlay('__root__'));
+    } finally {
+      login.task.cancel();
+    }
+  });
+
+  it.each([
+    openTerminalOverlay('__root__', 'another-terminal'),
+    selectScript('__root__', 'another-script'),
+    closeTerminalOverlay('__root__'),
+  ])('stops monitoring when the user leaves the login drawer: %j', async (action) => {
+    const login = startLogin();
+    try {
+      login.dispatch(action);
+      await vi.advanceTimersByTimeAsync(10000);
+      expect(mocks.invoke).not.toHaveBeenCalled();
+    } finally {
+      login.task.cancel();
+    }
+  });
+
+  it('does not dismiss an unrelated terminal selected while a probe is in flight', async () => {
+    let resolveProbe!: (value: unknown) => void;
+    mocks.invoke.mockImplementation(() => new Promise((resolve) => (resolveProbe = resolve)));
+    const login = startLogin();
+    try {
+      await vi.advanceTimersByTimeAsync(2000);
+      login.dispatch(openTerminalOverlay('__root__', 'another-terminal'));
+      resolveProbe({ success: true, data: { available: true, authenticated: true } });
+      await settle();
+      expect(login.isOpen()).toBe(true);
+      expect(login.dispatch).not.toHaveBeenCalledWith(closeTerminalOverlay('__root__'));
+    } finally {
+      login.task.cancel();
+    }
+  });
+
+  it('does not dismiss on a stale successful probe superseded by a newer check', async () => {
+    let resolveProbe!: (value: unknown) => void;
+    mocks.invoke
+      .mockImplementationOnce(() => new Promise((resolve) => (resolveProbe = resolve)))
+      .mockResolvedValue({ success: true, data: { available: true, authenticated: false } });
+    const login = startLogin();
+    try {
+      await vi.advanceTimersByTimeAsync(2000);
+      login.dispatch(checkSingleProviderRequested('claude-code'));
+      await settle();
+      resolveProbe({ success: true, data: { available: true, authenticated: true } });
+      await settle();
+      expect(login.isOpen()).toBe(true);
+      expect(login.dispatch).not.toHaveBeenCalledWith(closeTerminalOverlay('__root__'));
+    } finally {
+      login.task.cancel();
+    }
+  });
+
+  it('waits for an existing provider check before starting a fresh login probe', async () => {
+    let resolveProbe!: (value: unknown) => void;
+    mocks.invoke
+      .mockImplementationOnce(() => new Promise((resolve) => (resolveProbe = resolve)))
+      .mockResolvedValue({ success: true, data: { available: true, authenticated: true } });
+    const login = startLogin();
+    try {
+      login.dispatch(checkSingleProviderRequested('claude-code'));
+      await vi.advanceTimersByTimeAsync(4000);
+      expect(mocks.invoke).toHaveBeenCalledTimes(1);
+      expect(login.isOpen()).toBe(true);
+      resolveProbe({ success: true, data: { available: true, authenticated: false } });
+      await settle();
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(mocks.invoke).toHaveBeenCalledTimes(2);
+      expect(login.isOpen()).toBe(false);
+    } finally {
+      login.task.cancel();
+    }
+  });
+
+  it('replaces the old login watcher and cancels polling with the owning saga', async () => {
+    mocks.invoke.mockResolvedValue({
+      success: true,
+      data: { available: true, authenticated: false },
+    });
+    const login = startLogin();
+    login.dispatch(openTerminalOverlay('__root__', 'replacement-login'));
+    login.dispatch(claudeLoginStarted('replacement-login'));
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(mocks.invoke).toHaveBeenCalledTimes(1);
+    login.task.cancel();
+    await vi.advanceTimersByTimeAsync(10000);
+    expect(mocks.invoke).toHaveBeenCalledTimes(1);
   });
 });

@@ -38,6 +38,10 @@ export const claudeLoginRequested = createAsyncAction<[], void>(
   'agentAvailability/claudeLoginRequested',
 );
 
+export const claudeLoginStarted = createAction<[terminalId: string]>(
+  'agentAvailability/claudeLoginStarted',
+);
+
 /**
  * `epoch` is the provider's check generation captured when the probe started
  * (see `providerCheckEpochMap`). The reducer drops the result when a newer
