@@ -1,10 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import {
-  ACTION_RING_BUFFER_CAPACITY,
   createActionRingBufferMiddleware,
   createActionTypeRingBuffer,
+  rendererActionTypeRingBuffer,
 } from './action-ring-buffer';
+
+/** Contract from the task spec: the shared renderer buffer keeps the last 20 action types. */
+const SPEC_DEFAULT_CAPACITY = 20;
 
 function dispatchThrough(
   middleware: ReturnType<typeof createActionRingBufferMiddleware>,
@@ -41,11 +44,6 @@ describe('createActionTypeRingBuffer', () => {
   it('rejects a non-positive capacity', () => {
     expect(() => createActionTypeRingBuffer(0)).toThrow();
     expect(() => createActionTypeRingBuffer(1.5)).toThrow();
-  });
-
-  it('exposes a bounded default capacity', () => {
-    expect(ACTION_RING_BUFFER_CAPACITY).toBeGreaterThan(0);
-    expect(ACTION_RING_BUFFER_CAPACITY).toBeLessThanOrEqual(50);
   });
 });
 
@@ -86,5 +84,20 @@ describe('createActionRingBufferMiddleware', () => {
     }
 
     expect(buffer.snapshot()).toEqual(['t/6', 't/7', 't/8', 't/9']);
+  });
+
+  it('defaults to the shared renderer buffer holding the last 20 action types', () => {
+    rendererActionTypeRingBuffer.clear();
+    const middleware = createActionRingBufferMiddleware();
+
+    for (let i = 0; i < SPEC_DEFAULT_CAPACITY + 5; i++) {
+      dispatchThrough(middleware, { type: `t/${i}` });
+    }
+
+    const snapshot = rendererActionTypeRingBuffer.snapshot();
+    expect(snapshot).toHaveLength(SPEC_DEFAULT_CAPACITY);
+    expect(snapshot[0]).toBe('t/5');
+    expect(snapshot.at(-1)).toBe(`t/${SPEC_DEFAULT_CAPACITY + 4}`);
+    rendererActionTypeRingBuffer.clear();
   });
 });

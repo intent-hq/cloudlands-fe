@@ -10,7 +10,7 @@ import type { StoreMiddleware } from '@augmentcode/themis/types';
  */
 
 /** How many action types the renderer buffer retains. */
-export const ACTION_RING_BUFFER_CAPACITY = 20;
+const ACTION_RING_BUFFER_CAPACITY = 20;
 
 export interface ActionTypeRingBuffer {
   push(type: string): void;
