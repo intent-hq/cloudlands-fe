@@ -9,13 +9,23 @@
 // generation step records a sha256 over those inputs in a sidecar next to the
 // outputs, and the UI-preview Vite config reuses the outputs only while the
 // recorded hash matches the inputs on disk.
+//
+// The digest is taken BEFORE compiling and persisted only if the inputs still
+// hash the same afterwards: an edit that lands while the compiler runs may or
+// may not be reflected in the outputs, so such a run leaves no sidecar and the
+// next generation (or the preview's unplugin fallback) picks the edit up.
+//
+// Run directly (`pnpm run generate:i18n`), it compiles the project with the
+// same options as `paraglide-js compile --output-structure locale-modules`.
 import { createHash } from 'node:crypto';
-import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const PARAGLIDE_INPUTS_HASH_FILE = '.inputs.sha256';
+export const PARAGLIDE_OUTPUT_STRUCTURE = 'locale-modules';
 const GENERATED_OUTPUTS = ['messages.js', 'runtime.js'];
+const MAX_GENERATE_ATTEMPTS = 3;
 
 export function paraglideInputFiles({ projectDir, messagesDir }) {
   const catalogs = readdirSync(messagesDir)
@@ -36,10 +46,26 @@ export function hashParaglideInputs({ projectDir, messagesDir }) {
   return hash.digest('hex');
 }
 
-export function writeParaglideInputsHash({ projectDir, messagesDir, outdir }) {
+/**
+ * Run `compile` and record the inputs' digest next to its outputs. Returns
+ * false (and leaves no sidecar) when the inputs changed while compiling.
+ */
+export async function compileWithInputsHash({ projectDir, messagesDir, outdir, compile }) {
+  const sidecar = join(outdir, PARAGLIDE_INPUTS_HASH_FILE);
+  rmSync(sidecar, { force: true });
   const digest = hashParaglideInputs({ projectDir, messagesDir });
-  writeFileSync(join(outdir, PARAGLIDE_INPUTS_HASH_FILE), `${digest}\n`);
-  return digest;
+  await compile();
+  if (hashParaglideInputs({ projectDir, messagesDir }) !== digest) return false;
+  writeFileSync(sidecar, `${digest}\n`);
+  return true;
+}
+
+/** `compileWithInputsHash`, retried while edits keep landing mid-compile. */
+export async function generateParaglide({ maxAttempts = MAX_GENERATE_ATTEMPTS, ...options }) {
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    if (await compileWithInputsHash(options)) return true;
+  }
+  return false;
 }
 
 export function canReuseGeneratedParaglide({ projectDir, messagesDir, outdir }) {
@@ -53,9 +79,18 @@ export function canReuseGeneratedParaglide({ projectDir, messagesDir, outdir }) 
 const isDirectRun = process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1]);
 if (isDirectRun) {
   const rootDir = join(dirname(fileURLToPath(import.meta.url)), '..');
-  writeParaglideInputsHash({
-    projectDir: join(rootDir, 'project.inlang'),
+  const { compile } = await import('@inlang/paraglide-js');
+  const projectDir = join(rootDir, 'project.inlang');
+  const outdir = join(rootDir, 'src/shared/paraglide');
+  const ok = await generateParaglide({
+    projectDir,
     messagesDir: join(rootDir, 'messages'),
-    outdir: join(rootDir, 'src/shared/paraglide'),
+    outdir,
+    compile: () =>
+      compile({ project: projectDir, outdir, outputStructure: PARAGLIDE_OUTPUT_STRUCTURE }),
   });
+  if (!ok) {
+    console.error('[generate:i18n] messages kept changing while compiling; rerun generate:i18n');
+    process.exit(1);
+  }
 }

@@ -8,8 +8,9 @@ import { execSync } from 'child_process';
 import { intentdBridgePlugin } from './scripts/vite-plugin-intentd-bridge.mjs';
 import { compactParaglideDevPlugin } from './scripts/vite-plugin-paraglide-dev.mjs';
 import {
+  PARAGLIDE_OUTPUT_STRUCTURE,
   canReuseGeneratedParaglide as hasCurrentGeneratedParaglide,
-  writeParaglideInputsHash,
+  compileWithInputsHash,
 } from './scripts/paraglide-inputs-hash.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -52,14 +53,19 @@ const reuseGeneratedParaglide = () => ({
     const isProjectSettings = normalizedFile === normalizedProjectSettings;
     if (!isMessage && !isProjectSettings) return;
 
-    await compile({
-      project: paraglideProject,
-      outdir: paraglideOutdir,
-      outputStructure: 'locale-modules',
-      cleanOutdir: false,
-      isServer: "import.meta.env?.SSR ?? typeof window === 'undefined'",
+    // An edit that lands mid-compile leaves no sidecar; it also fires its own
+    // watchChange, which recompiles, so no retry is needed here.
+    await compileWithInputsHash({
+      ...paraglidePaths,
+      compile: () =>
+        compile({
+          project: paraglideProject,
+          outdir: paraglideOutdir,
+          outputStructure: PARAGLIDE_OUTPUT_STRUCTURE,
+          cleanOutdir: false,
+          isServer: "import.meta.env?.SSR ?? typeof window === 'undefined'",
+        }),
     });
-    writeParaglideInputsHash(paraglidePaths);
   },
 });
 

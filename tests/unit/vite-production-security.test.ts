@@ -1,5 +1,13 @@
 import { execFileSync } from 'node:child_process';
-import { copyFileSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { pathToFileURL } from 'node:url';
 import { join, resolve } from 'node:path';
@@ -7,7 +15,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   PARAGLIDE_INPUTS_HASH_FILE,
   canReuseGeneratedParaglide,
-  writeParaglideInputsHash,
+  compileWithInputsHash,
+  generateParaglide,
 } from '../../scripts/paraglide-inputs-hash.mjs';
 
 function readWsUrlDefine(mode: string, wsUrl: string): string {
@@ -34,10 +43,9 @@ function readWsUrlDefine(mode: string, wsUrl: string): string {
  * i18n inputs and generated outputs, so the reuse decision never depends on the
  * state of the working tree's src/shared/paraglide.
  */
-function createParaglideFixtureRoot(): {
-  root: string;
-  paths: { projectDir: string; messagesDir: string; outdir: string };
-} {
+type FixturePaths = { projectDir: string; messagesDir: string; outdir: string };
+
+function createParaglideFixtureRoot(): { root: string; paths: FixturePaths } {
   const root = mkdtempSync(join(tmpdir(), 'vite-paraglide-fixture-'));
   for (const shared of ['node_modules', 'scripts', 'package.json']) {
     symlinkSync(resolve(shared), join(root, shared));
@@ -107,13 +115,18 @@ describe('generated Paraglide reuse in the UI preview', () => {
     for (const root of fixtures.splice(0)) rmSync(root, { recursive: true, force: true });
   });
 
-  it('reuses generated messages only while the recorded input hash matches', () => {
+  // The fixture already holds generated outputs; a no-op compile records the
+  // sidecar the way generate:i18n / watchChange do after a real compile.
+  const recordSidecar = (paths: FixturePaths) =>
+    compileWithInputsHash({ ...paths, compile: async () => {} });
+
+  it('reuses generated messages only while the recorded input hash matches', async () => {
     const { root, paths } = createParaglideFixtureRoot();
     fixtures.push(root);
 
     expect(readPluginNames(true, root)).toContain('unplugin-paraglide-js');
 
-    writeParaglideInputsHash(paths);
+    await expect(recordSidecar(paths)).resolves.toBe(true);
     expect(readPluginNames(true, root)).toContain('reuse-generated-paraglide');
     expect(readPluginNames(false, root)).toContain('unplugin-paraglide-js');
 
@@ -126,12 +139,12 @@ describe('generated Paraglide reuse in the UI preview', () => {
     expect(readPluginNames(true, root)).toContain('unplugin-paraglide-js');
   });
 
-  it('requires both the sidecar and the generated outputs', () => {
+  it('requires both the sidecar and the generated outputs', async () => {
     const { root, paths } = createParaglideFixtureRoot();
     fixtures.push(root);
 
     expect(canReuseGeneratedParaglide(paths)).toBe(false);
-    writeParaglideInputsHash(paths);
+    await recordSidecar(paths);
     expect(canReuseGeneratedParaglide(paths)).toBe(true);
 
     writeFileSync(
@@ -140,12 +153,64 @@ describe('generated Paraglide reuse in the UI preview', () => {
     );
     expect(canReuseGeneratedParaglide(paths)).toBe(false);
 
-    writeParaglideInputsHash(paths);
+    await recordSidecar(paths);
     rmSync(join(paths.outdir, 'runtime.js'));
     expect(canReuseGeneratedParaglide(paths)).toBe(false);
 
     writeFileSync(join(paths.outdir, 'runtime.js'), 'export const baseLocale = "en";\n');
     writeFileSync(join(paths.outdir, PARAGLIDE_INPUTS_HASH_FILE), '');
+    expect(canReuseGeneratedParaglide(paths)).toBe(false);
+  });
+
+  it('does not record a sidecar when an input changes while compiling', async () => {
+    const { root, paths } = createParaglideFixtureRoot();
+    fixtures.push(root);
+    const sidecar = join(paths.outdir, PARAGLIDE_INPUTS_HASH_FILE);
+    const koCatalog = join(paths.messagesDir, 'ko.json');
+    await recordSidecar(paths);
+    expect(existsSync(sidecar)).toBe(true);
+
+    // The compiler read the old ko.json; the edit lands before it finishes
+    // writing, so the outputs may or may not reflect it.
+    const racedCompile = async () => {
+      writeFileSync(join(paths.outdir, 'messages.js'), 'export const m = { stale: true };\n');
+      writeFileSync(koCatalog, JSON.stringify({ hello: '안녕' }));
+    };
+    await expect(compileWithInputsHash({ ...paths, compile: racedCompile })).resolves.toBe(false);
+    expect(existsSync(sidecar)).toBe(false);
+    expect(canReuseGeneratedParaglide(paths)).toBe(false);
+
+    // A content-preserving rewrite mid-compile is not a change.
+    const touchingCompile = async () => {
+      writeFileSync(koCatalog, JSON.stringify({ hello: '안녕' }));
+    };
+    await expect(compileWithInputsHash({ ...paths, compile: touchingCompile })).resolves.toBe(true);
+    expect(canReuseGeneratedParaglide(paths)).toBe(true);
+  });
+
+  it('generate:i18n retries a raced compile and gives up after the attempt budget', async () => {
+    const { root, paths } = createParaglideFixtureRoot();
+    fixtures.push(root);
+    const koCatalog = join(paths.messagesDir, 'ko.json');
+
+    let attempts = 0;
+    const settlesOnSecondRun = async () => {
+      attempts += 1;
+      if (attempts === 1) writeFileSync(koCatalog, JSON.stringify({ hello: '안녕' }));
+    };
+    await expect(generateParaglide({ ...paths, compile: settlesOnSecondRun })).resolves.toBe(true);
+    expect(attempts).toBe(2);
+    expect(canReuseGeneratedParaglide(paths)).toBe(true);
+
+    let edits = 0;
+    const neverSettles = async () => {
+      edits += 1;
+      writeFileSync(koCatalog, JSON.stringify({ hello: `edit ${edits}` }));
+    };
+    await expect(
+      generateParaglide({ ...paths, compile: neverSettles, maxAttempts: 2 }),
+    ).resolves.toBe(false);
+    expect(edits).toBe(2);
     expect(canReuseGeneratedParaglide(paths)).toBe(false);
   });
 });
