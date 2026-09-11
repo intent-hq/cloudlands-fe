@@ -379,8 +379,8 @@ for (const theme of ['light', 'dark'] as const) {
 
         expect(styles.ordinaryBackground).toBe(styles.surface);
         expect(styles.pinnedBackground).toBe(styles.surface);
-        expect(styles.attributedBackground).not.toBe(styles.surface);
-        expect(styles.eventBackground).not.toBe(styles.surface);
+        expect(styles.attributedBackground).toBe(styles.surface);
+        expect(styles.eventBackground).toBe(styles.surface);
         expect(styles.ordinaryBorderWidth).toBe('0px');
         expect(styles.pinnedBorderWidth).toBe('0px');
         expect(styles.ordinaryText).toBe(styles.surfaceForeground);

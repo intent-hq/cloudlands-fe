@@ -3,6 +3,7 @@
   import { m } from '$shared/paraglide/messages.js';
   import * as Menu from './index';
   import type { StackedMenuGroup } from './index';
+  import type { Snippet } from 'svelte';
 
   let { stacked = false }: { stacked?: boolean } = $props();
 
@@ -46,12 +47,34 @@
       ],
     },
   ];
+
+  function withCustomSubmenu(content: Snippet): StackedMenuGroup[] {
+    return stackedGroups.map((group) =>
+      group.id === 'team'
+        ? {
+            ...group,
+            items: [
+              ...group.items,
+              { id: 'custom', label: 'Custom panel', content }, // i18n-ignore (test fixture)
+            ],
+          }
+        : group,
+    );
+  }
 </script>
+
+{#snippet customSubmenu()}
+  <Menu.Item onSelect={() => (selected = 'custom')}>Custom action</Menu.Item>
+{/snippet}
 
 <Menu.Root>
   <Menu.Trigger>{stacked ? 'Open stacked menu' : 'Actions'}</Menu.Trigger>
   {#if stacked}
-    <Menu.StackedContent groups={stackedGroups} portal={false} submenuClass="w-44" />
+    <Menu.StackedContent
+      groups={withCustomSubmenu(customSubmenu)}
+      portal={false}
+      submenuClass="w-44"
+    />
   {:else}
     <Menu.Content portal={false}>
       <Menu.Item onSelect={() => (selected = 'apple')}>Apple</Menu.Item>

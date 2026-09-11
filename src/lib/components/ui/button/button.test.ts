@@ -140,6 +140,14 @@ describe('Button', () => {
     expect(container.querySelectorAll('[data-slot="button-surface"]')).toHaveLength(5);
   });
 
+  it('lets a caller replace the default caption role with body typography', () => {
+    render(Button, { props: { 'aria-label': 'Body action', class: 'type-body' } });
+
+    const button = screen.getByRole('button', { name: 'Body action' });
+    expect(button.classList.contains('type-body')).toBe(true);
+    expect(button.classList.contains('type-caption')).toBe(false);
+  });
+
   it('keeps full-card layout regions as direct children when content wrapping is disabled', () => {
     const children = createRawSnippet(() => ({
       render: () => '<span data-testid="card-layout-region"></span>',

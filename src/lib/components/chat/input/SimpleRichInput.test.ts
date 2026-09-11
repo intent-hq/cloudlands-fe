@@ -405,23 +405,19 @@ describe('SimpleRichInput draft change notification', () => {
     expect(editor.getAttribute('placeholder')).toBe('Ask anything');
   });
 
-  it('shows a suggested prompt and accepts it with Tab from the empty editor', async () => {
+  it('leaves Tab available for normal editor focus navigation', async () => {
     const onvaluechange = vi.fn();
     render(SimpleRichInput, {
       props: {
         value: '',
         contextItems: [],
-        placeholderSuggestion: 'Summarize the workspace',
         onvaluechange,
       },
     });
 
-    expect(screen.getByTestId('composer-placeholder-suggestion').textContent).toContain(
-      'Summarize the workspace',
-    );
     const accepted = await fireEvent.keyDown(screen.getByTestId('tiptap-editor'), { key: 'Tab' });
-    expect(accepted).toBe(false);
-    expect(onvaluechange).toHaveBeenCalledWith('Summarize the workspace');
+    expect(accepted).toBe(true);
+    expect(onvaluechange).not.toHaveBeenCalled();
   });
 });
 
@@ -557,7 +553,8 @@ describe('SimpleRichInput action bar layout', () => {
     expect(promptMenu.querySelector('[data-icon="plus"]')).toBeTruthy();
     expect(submitActions?.contains(micButton)).toBe(true);
     await fireEvent.click(promptMenu);
-    expect(await screen.findByRole('menuitem', { name: /Add Context/i })).toBeTruthy();
+    const addContext = await screen.findByRole('menuitem', { name: /Add Context/i });
+    expect(addContext.getAttribute('aria-haspopup')).toBe('menu');
     expect(screen.getByRole('menuitem', { name: /Attach files/i })).toBeTruthy();
     const modelPickerClass = screen.getByTestId('model-picker').className;
     expect(modelPickerClass).toContain('px-0');

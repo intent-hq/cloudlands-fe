@@ -56,7 +56,7 @@ describe('editorial conversation presentation contract', () => {
     );
     expect(panel).not.toContain('max-w-[var(--content-measure-wide)]');
     expect(panel).toContain('<div class="w-full" data-testid="question-wizard-slot">');
-    expect(panel).toContain("? 'w-full px-3!'");
+    expect(panel).toContain("? 'w-full px-0!'");
     expect(panel).toContain('conversation-composer relative z-10 w-full');
     expect(panel).toContain(
       'class="composer-prompt-lane chat-content-measure mx-auto w-full min-w-0"',
@@ -82,12 +82,14 @@ describe('editorial conversation presentation contract', () => {
     expect(panel).toContain('data-conversation-turn');
     expect(panel).toContain('<PinnedUserPrompt');
     expect(panel).toContain('text={getPinnedPromptText(pinnedPrompt.message)}');
+    expect(panel).toContain('surface={pinnedPrompt.surface}');
     expect(panel).toContain('onActivate={handlePinnedPromptClick}');
     expect(panel).toContain(':global(.conversation-turn) {\n    contain: style;');
     expect(panel).toContain(':global(.message-nav-target) {\n    contain: style;');
     expect(panel).not.toContain('contain: style paint');
     expect(pinned).toContain('data-testid="pinned-user-prompt"');
     expect(pinned).toContain('USER_MESSAGE_SURFACE_CLASS');
+    expect(pinned).toContain('SUBSCRIPTION_CARD_SURFACE_CLASS');
     expect(pinned).toContain('USER_MESSAGE_TEXT_CLASS');
     expect(pinned).toContain('truncate whitespace-nowrap');
     expect(message).toContain(': USER_MESSAGE_TEXT_CLASS}');
@@ -311,6 +313,7 @@ describe('editorial conversation presentation contract', () => {
     );
     expect(wakeupWrapper).toContain('data-message-id={message.id}');
     expect(wakeupWrapper).toContain('data-message-index={globalIndex}');
+    expect(wakeupWrapper).toContain('data-pinnable-user-prompt');
     expect(wakeupWrapper).toContain('message-nav-target relative z-10');
     expect(wakeupWrapper).toContain('data-pinned-prompt-id={message.id}');
     expect(wakeupWrapper).toContain('use:attachPinnedPromptMessage={message}');
@@ -428,7 +431,7 @@ describe('editorial conversation presentation contract', () => {
     expect(panel).toContain('const transcriptBottomInsetClass = $derived(');
     expect(panel).toContain('{transcriptBottomInsetClass}');
     expect(queueEdgeLayout).toContain("return isCompactMode ? 'pb-3' : 'pb-6'");
-    expect(panel).toContain("isCompactMode ? 'pb-1 pt-2' : 'py-2'");
+    expect(panel).toContain("isCompactMode ? 'pb-1' : 'pb-2'");
     expect(panel).not.toContain("'pb-1 pt-3'");
     expect(panel).not.toContain('eventSubscriptionsOwnEndGap');
     expect(panel).not.toContain('eventSubscriptionsVisible');

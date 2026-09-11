@@ -60,10 +60,10 @@ describe('EventSubscriptionsCard', () => {
     const card = await renderCard(agentId);
     expect(card.parentElement?.classList.contains('hidden')).toBe(false);
     expect(card.className).toContain('rounded-lg');
-    expect(card.className).toContain('border');
-    expect(card.className).toContain('border-border');
-    expect(card.className).toContain('bg-card/80');
-    expect(card.className).toContain('shadow-sm');
+    expect(card.className).toContain('bg-sidebar');
+    expect(card.className).not.toContain('border-border');
+    expect(card.className).not.toContain('bg-card');
+    expect(card.className).not.toContain('shadow');
     expect(screen.getByTestId(testId)).toBeTruthy();
     expect(screen.getByText('Subscribed to 1 event')).toBeTruthy();
   });

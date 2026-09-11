@@ -740,7 +740,7 @@ describe('ChatMessage agent-to-agent sender attribution', () => {
     for (const token of USER_MESSAGE_SURFACE_CLASS.split(' ')) {
       expect(surface.classList.contains(token)).toBe(true);
     }
-    expect(surface.className).not.toContain(SUBSCRIPTION_CARD_SURFACE_CLASS);
+    expect(surface.classList.contains('shadow-sm')).toBe(true);
 
     await rerender({
       message: userMessage(),
@@ -1117,6 +1117,8 @@ describe('ChatMessage PR-monitor wake attribution', () => {
     expect(chip.className).toContain('justify-start');
     expect(chip.className).toContain('whitespace-normal');
     expect(chip.className).toContain('break-words');
+    expect(chip.classList.contains('type-body')).toBe(true);
+    expect(chip.classList.contains('type-caption')).toBe(false);
     expect(chip.querySelector('.truncate')).toBeNull();
     expect(chip.getAttribute('title')).toBe('Open intent-hq/monorepo #42');
     const lane = screen.getByTestId('automated-wake-text-lane');

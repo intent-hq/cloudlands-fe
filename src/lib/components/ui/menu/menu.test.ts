@@ -151,6 +151,16 @@ describe('Menu stacked content', () => {
     await fireEvent.click(email);
     expect(screen.getByTestId('selected').textContent).toBe('email');
   });
+
+  it('renders a custom submenu body and returns focus with ArrowLeft', async () => {
+    render(MenuTestHarness, { props: { stacked: true } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Open stacked menu' }));
+    const custom = screen.getByRole('menuitem', { name: 'Custom panel' });
+    await fireEvent.keyDown(custom, { key: 'ArrowRight' });
+    const action = await screen.findByRole('menuitem', { name: 'Custom action' });
+    await fireEvent.keyDown(action, { key: 'ArrowLeft' });
+    await waitFor(() => expect(document.activeElement).toBe(custom));
+  });
 });
 
 describe('Menu metadata and compatibility', () => {

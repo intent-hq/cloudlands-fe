@@ -2008,6 +2008,34 @@ describe('ChatPanel mounted lifecycle', () => {
     expect(view.container.querySelector('[data-testid="chat-scroll-lock-button"]')).toBeNull();
   });
 
+  it.each([
+    ['regular', 'workspace-a'],
+    ['Chief', '__chief__'],
+  ])('renders suggested prompts in the %s composer instead of the transcript', async (_, id) => {
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentMessages.set([
+      {
+        id: 'assistant-with-prompts',
+        role: 'assistant',
+        timestamp: '2026-01-01T00:00:00.000Z',
+        contentBlocks: [
+          {
+            type: 'text',
+            text: 'Done.\n\n<!-- suggested-prompts\nRun the tests\nReview the diff\n-->',
+          },
+        ],
+      },
+    ]);
+    render(ChatPanel, {
+      props: { workspace: workspace(id), agentId: 'agent-a' },
+    });
+    await tick();
+
+    const prompts = screen.getByTestId('suggested-prompts-surface');
+    expect(screen.getByTestId('chat-composer-controls-inner').contains(prompts)).toBe(true);
+    expect(screen.getByTestId('chat-transcript-inner').contains(prompts)).toBe(false);
+  });
+
   it('reports true-bottom state to the stable header control', async () => {
     mocks.draftGet.mockResolvedValue(null);
     mocks.agentMessages.set([

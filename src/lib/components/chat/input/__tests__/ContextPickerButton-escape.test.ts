@@ -75,6 +75,35 @@ describe('ContextPickerButton Escape handling (escape-layer stack)', () => {
     anchor.remove();
   });
 
+  it('renders its picker body inside an owning submenu and reports a completed pick', async () => {
+    const onToggle = vi.fn();
+    const onPick = vi.fn();
+    render(ContextPickerButton, {
+      props: {
+        panels: [
+          {
+            id: 'note-1',
+            panelId: 'panel-1',
+            tabId: 'tab-1',
+            type: 'note',
+            label: 'Project notes',
+            checked: false,
+          },
+        ],
+        renderTrigger: false,
+        embedded: true,
+        onToggle,
+        onPick,
+      },
+    });
+
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(document.querySelector('[data-context-picker-body][data-embedded]')).toBeTruthy();
+    await fireEvent.click(screen.getByRole('button', { name: /Project notes/i }));
+    expect(onToggle).toHaveBeenCalledWith('note-1');
+    expect(onPick).toHaveBeenCalledTimes(1);
+  });
+
   it('stops loading when a newer query supersedes a search that never settles', async () => {
     vi.useFakeTimers();
     searchMock.mockImplementationOnce(() => new Promise(() => {})).mockResolvedValueOnce([]);
