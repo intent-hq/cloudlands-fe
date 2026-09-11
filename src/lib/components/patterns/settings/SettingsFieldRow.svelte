@@ -18,6 +18,7 @@
     danger = false,
     experimental = false,
     featureCode,
+    controlOnly = false,
     leading,
     descriptionContent,
     control,
@@ -38,6 +39,7 @@
     danger?: boolean;
     experimental?: boolean;
     featureCode?: string;
+    controlOnly?: boolean;
     leading?: Snippet;
     descriptionContent?: Snippet;
     control?: Snippet<
@@ -60,7 +62,7 @@
     description || descriptionContent ? `${id}-description` : undefined,
   );
   const errorId = $derived(error ? `${id}-error` : undefined);
-  const orientation = $derived(compact ? 'stacked' : 'responsive');
+  const orientation = $derived(controlOnly ? 'full-width' : compact ? 'stacked' : 'responsive');
 </script>
 
 <div
@@ -72,52 +74,60 @@
   data-danger={danger || undefined}
   data-experimental={experimental || undefined}
   data-disabled={disabled || undefined}
-  data-orientation={compact ? 'stacked' : 'responsive'}
+  data-orientation={orientation}
   aria-busy={busy || undefined}
   class={cn(
     'grid min-w-0 gap-3 py-3 first:pt-3 last:pb-3',
-    compact
+    controlOnly
       ? 'grid-cols-1'
-      : 'md:grid-cols-[minmax(0,1fr)_minmax(12rem,auto)] md:items-start md:gap-8',
+      : compact
+        ? 'grid-cols-1'
+        : 'md:grid-cols-[minmax(0,1fr)_minmax(12rem,auto)] md:items-start md:gap-8',
     className,
   )}
 >
-  <div class="flex min-w-0 items-start gap-3">
-    {#if leading}<div class="shrink-0" data-field-leading aria-hidden="true">
-        {@render leading()}
-      </div>{/if}
-    <div class="min-w-0 flex-1 space-y-1 break-words">
-      {#if htmlFor}
-        <Label id={labelId} for={htmlFor} class="block font-medium">{label}</Label>
-      {:else}
-        <div id={labelId} class="type-body font-medium text-foreground">
-          {label}
-        </div>
-      {/if}
-      {#if description || descriptionContent}<p
-          id={descriptionId}
-          class="type-body text-muted-foreground"
-        >
-          {#if descriptionContent}
-            {@render descriptionContent()}
-          {:else}
-            {description}
-          {/if}
-        </p>{/if}
-      {#if error}
-        <p id={errorId} class="type-body text-danger" role="alert">{error}</p>
-      {:else if status}
-        <p
-          class={cn('type-body', statusTone === 'subtle' ? 'text-ghost' : 'text-info')}
-          role="status"
-        >
-          {status}
-        </p>
-      {/if}
+  {#if !controlOnly}
+    <div class="flex min-w-0 items-start gap-3">
+      {#if leading}<div class="shrink-0" data-field-leading aria-hidden="true">
+          {@render leading()}
+        </div>{/if}
+      <div class="min-w-0 flex-1 space-y-1 break-words">
+        {#if htmlFor}
+          <Label id={labelId} for={htmlFor} class="block font-medium">{label}</Label>
+        {:else}
+          <div id={labelId} class="type-body font-medium text-foreground">
+            {label}
+          </div>
+        {/if}
+        {#if description || descriptionContent}<p
+            id={descriptionId}
+            class="type-body text-muted-foreground"
+          >
+            {#if descriptionContent}
+              {@render descriptionContent()}
+            {:else}
+              {description}
+            {/if}
+          </p>{/if}
+        {#if error}
+          <p id={errorId} class="type-body text-danger" role="alert">{error}</p>
+        {:else if status}
+          <p
+            class={cn('type-body', statusTone === 'subtle' ? 'text-ghost' : 'text-info')}
+            role="status"
+          >
+            {status}
+          </p>
+        {/if}
+      </div>
     </div>
-  </div>
+  {/if}
   <div
-    class={cn('w-full min-w-0 max-w-full md:w-auto md:justify-self-end', disabled && 'opacity-60')}
+    class={cn(
+      'w-full min-w-0 max-w-full',
+      controlOnly ? 'md:justify-self-stretch' : 'md:w-auto md:justify-self-end',
+      disabled && 'opacity-60',
+    )}
     data-field-control
     data-orientation={orientation}
   >

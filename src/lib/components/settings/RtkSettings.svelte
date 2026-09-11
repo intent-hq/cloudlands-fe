@@ -139,55 +139,58 @@
 </script>
 
 {#if loaded}
-  {#if settingsError}
-    <div class="text-xs text-danger mb-2">
-      {settingsError}
+  <div data-rtk-settings class="w-full min-w-0">
+    {#if settingsError}
+      <div class="text-xs text-danger mb-2">
+        {settingsError}
+      </div>
+    {/if}
+    <div class="flex min-w-0 items-start justify-between gap-4">
+      <div class="min-w-0 flex-1">
+        <p class="text-sm font-medium text-foreground">{m.settings_rtk_label()}</p>
+        <p class="text-xs text-subtle">
+          {#if rtkAvailable}
+            {m.settings_rtk_enabledDescription()}
+          {:else}
+            <span class="text-muted-foreground">{m.settings_rtk_notInstalled()}</span>
+            <Button
+              variant="ghost"
+              type="button"
+              class="text-primary-ink hover:underline cursor-pointer text-xs ml-1"
+              onclick={recheckRtk}
+              disabled={checking}
+              >{checking ? m.settings_rtk_checking() : m.settings_rtk_checkAgain()}</Button
+            >
+          {/if}
+        </p>
+      </div>
+      <Switch
+        checked={rtkEnabled}
+        onCheckedChange={handleToggle}
+        size="xs"
+        class="shrink-0"
+        disabled={!rtkAvailable}
+        ariaLabel={m.settings_rtk_label()}
+      />
     </div>
-  {/if}
-  <div class="flex justify-between">
-    <div>
-      <p class="text-sm font-medium text-foreground">{m.settings_rtk_label()}</p>
-      <p class="text-xs text-subtle">
-        {#if rtkAvailable}
-          {m.settings_rtk_enabledDescription()}
-        {:else}
-          <span class="text-muted-foreground">{m.settings_rtk_notInstalled()}</span>
-          <Button
-            variant="ghost"
-            type="button"
-            class="text-primary-ink hover:underline cursor-pointer text-xs ml-1"
-            onclick={recheckRtk}
-            disabled={checking}
-            >{checking ? m.settings_rtk_checking() : m.settings_rtk_checkAgain()}</Button
-          >
-        {/if}
+    {#if !rtkAvailable}
+      <p class="text-xs text-muted-foreground mt-2">
+        {m.settings_rtk_installHint_before()}
+        <Button
+          variant="ghost"
+          type="button"
+          class="text-primary-ink hover:underline cursor-pointer font-mono"
+          onclick={installRtk}><!-- i18n-ignore (shell command) -->brew install rtk</Button
+        >
+        {m.settings_rtk_installHint_orVisit()}
+        <a
+          href="https://github.com/rtk-ai/rtk"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="text-primary-ink hover:underline"
+          ><!-- i18n-ignore (URL) -->github.com/rtk-ai/rtk</a
+        >.
       </p>
-    </div>
-    <Switch
-      checked={rtkEnabled}
-      onCheckedChange={handleToggle}
-      size="xs"
-      class="mb-auto"
-      disabled={!rtkAvailable}
-      ariaLabel={m.settings_rtk_label()}
-    />
+    {/if}
   </div>
-  {#if !rtkAvailable}
-    <p class="text-xs text-muted-foreground mt-2">
-      {m.settings_rtk_installHint_before()}
-      <Button
-        variant="ghost"
-        type="button"
-        class="text-primary-ink hover:underline cursor-pointer font-mono"
-        onclick={installRtk}><!-- i18n-ignore (shell command) -->brew install rtk</Button
-      >
-      {m.settings_rtk_installHint_orVisit()}
-      <a
-        href="https://github.com/rtk-ai/rtk"
-        target="_blank"
-        rel="noopener noreferrer"
-        class="text-primary-ink hover:underline"><!-- i18n-ignore (URL) -->github.com/rtk-ai/rtk</a
-      >.
-    </p>
-  {/if}
 {/if}

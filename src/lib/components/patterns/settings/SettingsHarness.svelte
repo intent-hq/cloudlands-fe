@@ -92,6 +92,12 @@
             },
             { kind: 'custom', id: 'servers', label: 'Server integrations' },
             {
+              kind: 'custom',
+              id: 'full-width-custom',
+              label: 'Pattern-owned full-width label',
+              layout: 'full-width',
+            },
+            {
               kind: 'switch',
               id: 'conditional',
               label: 'Conditional feature',
@@ -112,6 +118,10 @@
   <div data-testid="complex-custom">Embedded server manager</div>
 {/snippet}
 
+{#snippet fullWidthControl()}
+  <div data-testid="full-width-custom">Self-owned custom label</div>
+{/snippet}
+
 {#snippet enabledDescription()}
   Controls the feature (for example, <code>enabled</code>).
 {/snippet}
@@ -122,7 +132,7 @@
   title="Application settings"
   {schema}
   {searchQuery}
-  custom={{ servers: serversControl }}
+  custom={{ servers: serversControl, 'full-width-custom': fullWidthControl }}
   descriptions={{ enabled: enabledDescription }}
   {activeTab}
   onSelect={(tab) => (activeTab = tab)}

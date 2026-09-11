@@ -252,6 +252,7 @@
               kind: 'custom',
               id: 'cli-optimization',
               label: m.settings_section_cliOptimization(),
+              layout: 'full-width',
               when: () => Boolean(shellAdditions),
             },
           ],

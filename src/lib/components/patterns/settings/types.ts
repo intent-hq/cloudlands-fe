@@ -92,7 +92,9 @@ export interface ActionSetting extends BaseSetting<'action'> {
   variant?: 'default' | 'primary' | 'secondary' | 'outline' | 'ghost' | 'destructive';
 }
 
-export type CustomSetting = BaseSetting<'custom'>;
+export interface CustomSetting extends BaseSetting<'custom'> {
+  layout?: 'default' | 'full-width';
+}
 
 export type SettingEntry =
   | SwitchSetting

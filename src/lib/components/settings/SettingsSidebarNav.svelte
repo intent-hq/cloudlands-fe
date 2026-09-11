@@ -102,7 +102,7 @@
       onclick={() => onSelect(item.id as SettingsTab)}
       aria-current={activeTab === item.id ? 'page' : undefined}
       data-settings-tab={item.id}
-      class="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring
+      class="flex w-full cursor-pointer items-center justify-start gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring
         {item.id === 'advanced' ? '' : 'mb-0.5'}
         {activeTab === item.id
         ? 'bg-muted font-medium text-foreground shadow-xs'
@@ -122,7 +122,7 @@
     <h2 class="type-caption font-semibold uppercase text-muted-foreground tracking-wider">
       {m.settings_sidebar_specialists_label()}
     </h2>
-    <div class="flex flex-col gap-0.5 mt-2">
+    <div class="mt-2 flex flex-col gap-0.5 [&_[data-settings-agent-row]]:justify-start">
       {@render agentsNavigation()}
     </div>
   </section>

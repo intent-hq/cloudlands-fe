@@ -27,6 +27,17 @@ describe('settings pattern', () => {
     expect(screen.getByTestId('complex-custom')).toBeTruthy();
   });
 
+  it('lets an opt-in full-width custom control own its label row', () => {
+    const { container } = render(SettingsHarness);
+    const control = screen.getByTestId('full-width-custom');
+    const row = control.closest('[data-slot="settings-field-row"]');
+
+    expect(control.textContent).toContain('Self-owned custom label');
+    expect(screen.queryByText('Pattern-owned full-width label')).toBeNull();
+    expect(row?.getAttribute('data-orientation')).toBe('full-width');
+    expect(container.querySelector('[data-testid="complex-custom"]')).toBeTruthy();
+  });
+
   it('renders keyed rich descriptions with accessible control association', () => {
     render(SettingsHarness);
     const toggle = screen.getByRole('switch', { name: 'Enable feature' });

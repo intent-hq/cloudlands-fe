@@ -68,6 +68,17 @@ describe('RtkSettings', () => {
     });
   });
 
+  it('renders one self-owned label and description in the available state', async () => {
+    mocks.mockSettingsGet.mockResolvedValue({ path: 'rtk.enabled', value: true });
+    mocks.mockInvoke.mockResolvedValue({ data: { available: true } });
+
+    render(RtkSettings);
+
+    await screen.findByRole('switch', { name: m.settings_rtk_label() });
+    expect(screen.getAllByText(m.settings_rtk_label())).toHaveLength(1);
+    expect(screen.getAllByText(m.settings_rtk_enabledDescription())).toHaveLength(1);
+  });
+
   it('defaults to false when settings.get returns no value', async () => {
     mocks.mockSettingsGet.mockResolvedValue({ path: 'rtk.enabled', value: undefined });
     mocks.mockInvoke.mockResolvedValue({ data: { available: true } });
