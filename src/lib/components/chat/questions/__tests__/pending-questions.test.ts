@@ -357,6 +357,16 @@ describe('sessionPendingQuestions / sessionHasPendingQuestion', () => {
       const session = makeStoredSession({ ...idle, messages: offTail });
       expect(sessionHasPendingQuestion(session)).toBe(false);
     });
+
+    it('is false when the question row is off-tail and dismissed', () => {
+      const session = makeStoredSession({
+        ...idle,
+        messages: offTail,
+        metadata: { dismissedQuestionsMessageId: 'msg-a1' },
+      });
+      expect(sessionPendingQuestions(session)).toBeNull();
+      expect(sessionHasPendingQuestion(session)).toBe(false);
+    });
   });
 
   describe("marker cleared ('')", () => {
@@ -389,6 +399,16 @@ describe('sessionPendingQuestions / sessionHasPendingQuestion', () => {
           }),
         ),
       ).toBe(false);
+    });
+
+    it('is false when the question row is off-tail and dismissed', () => {
+      const session = makeStoredSession({
+        ...idle,
+        messages: offTail,
+        metadata: { pendingQuestionsMessageId: '', dismissedQuestionsMessageId: 'msg-a1' },
+      });
+      expect(sessionPendingQuestions(session)).toBeNull();
+      expect(sessionHasPendingQuestion(session)).toBe(false);
     });
   });
 
