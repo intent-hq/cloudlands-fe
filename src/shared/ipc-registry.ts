@@ -429,6 +429,7 @@ export const IPC_CHANNELS = {
 
   // User MCP Settings — HTTP/SSE server auth checks.
   USER_MCP: {
+    AUTHENTICATE: 'user-mcp:authenticate', // Run interactive OAuth for a saved hosted server
     CHECK_AUTH: 'user-mcp:check-auth', // Check if URL requires auth and if we have credentials
     TEST_CONNECTION: 'user-mcp:test-connection', // Test connection to HTTP/SSE server, returns status
   },

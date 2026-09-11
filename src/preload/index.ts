@@ -326,6 +326,7 @@ const ALLOWED_CHANNELS = [
   'feature-codes:clear',
   'feature-codes:deactivate',
   'feature-codes:restart-app',
+  'user-mcp:authenticate',
   'user-mcp:check-auth',
   'user-mcp:test-connection',
   'notification:test',

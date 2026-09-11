@@ -4934,6 +4934,28 @@ describe('daemonEventsBridge (wire contract — mcp.servers:status-changed §6.5
     expect(appStore.state.mcpSettings.errorMessages.github).toBe('connect ECONNREFUSED');
   });
 
+  it("auth_required → preserves the daemon's recovery message", async () => {
+    seedMcpServer('srv-figma', 'figma');
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      mcpNotification({
+        serverId: 'srv-figma',
+        status: {
+          serverId: 'srv-figma',
+          state: 'auth_required',
+          lastError: 'authenticate or check configured credentials',
+        },
+      }),
+    );
+
+    expect(readStatus('figma')).toBe('auth_required');
+    expect(appStore.state.mcpSettings.errorMessages.figma).toBe(
+      'authenticate or check configured credentials',
+    );
+  });
+
   it('starting/stopped map to configured/stopped respectively', async () => {
     seedMcpServer('srv-a', 'alpha');
     await primeBridge();

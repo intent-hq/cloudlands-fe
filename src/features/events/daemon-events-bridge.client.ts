@@ -3357,7 +3357,11 @@ function handleMcpServerStatusChangedEvent(event: WorkspaceEvent): void {
 
   appStore.dispatch(setServerStatus(match.name, mapped));
   const lastError = status.lastError;
-  if (mapped === 'error' && typeof lastError === 'string' && lastError.length > 0) {
+  if (
+    (mapped === 'error' || mapped === 'auth_required') &&
+    typeof lastError === 'string' &&
+    lastError.length > 0
+  ) {
     appStore.dispatch(setServerErrorMessage(match.name, lastError));
   } else {
     appStore.dispatch(clearServerErrorMessage(match.name));

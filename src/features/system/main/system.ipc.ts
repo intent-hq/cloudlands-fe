@@ -29,6 +29,7 @@ import {
   SystemExecuteCommandSchema,
   SystemExecuteCommandStreamingSchema,
   SystemWriteClipboardSchema,
+  UserMcpAuthenticateSchema,
   UserMcpCheckAuthSchema,
   UserMcpTestConnectionSchema,
   VscodeOpenDiffSchema,
@@ -2311,6 +2312,20 @@ export function setupSystemIPC() {
   // (or to namespaced localStorage for the FE-only keys); no main-side
   // handler is needed in the daemon-backed build. The `SETTINGS_CHANNELS`
   // constants remain exported for the bridge seeder + its tests.
+
+  // Run interactive OAuth for a daemon-saved hosted MCP server.
+  ipcMain.handle(
+    USER_MCP_CHANNELS.AUTHENTICATE,
+    createSafeValidatedHandler(
+      UserMcpAuthenticateSchema,
+      async (_event, validated) => {
+        const { initiateMcpOAuth } = await import('../../mcp/main/mcp-oauth');
+        const result = await initiateMcpOAuth(validated.serverId, validated.url);
+        return { success: true, data: result };
+      },
+      USER_MCP_CHANNELS.AUTHENTICATE,
+    ),
+  );
 
   // Check MCP server auth requirements
   ipcMain.handle(
