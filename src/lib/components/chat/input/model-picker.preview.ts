@@ -1,0 +1,135 @@
+// Teardown restores model rows and user values through existing actions. Cache
+// timestamps/check flags/epochs may advance; new cache keys are cleared on teardown.
+import type { ComponentProps } from 'svelte';
+import { definePreview } from '$lib/component-catalog/preview-definition';
+import { store as appStore } from '$store/renderer/store';
+import { m } from '$shared/paraglide/messages.js';
+import {
+  mockInvoke,
+  registerMockIpcHandler,
+  unregisterMockIpcHandler,
+} from '$shared/ipc-mock-router';
+import {
+  providerModelsLoaded,
+  providerModelsCacheCleared,
+} from '$store/renderer/slices/provider-models/provider-models-slice';
+import {
+  selectProviderModelsCacheMap,
+  selectProviderModelsClearEpoch,
+} from '$store/renderer/slices/provider-models/provider-models-selectors';
+import {
+  selectAvailableModels,
+  selectAvailableModelsProviderId,
+  selectModelPickerCollapsedGroups,
+} from '$store/renderer/slices/model/model-selectors';
+import { selectEffectiveDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+import {
+  hydrateDefaultProvider,
+  setAvailableModels,
+  setLoadingStateForProvider,
+  setModelPickerGroupCollapsed,
+} from '$store/renderer/slices/model/model-slice';
+import { setupPreviewProviders } from '../../settings/provider-selector.preview';
+import ModelPicker from './ModelPicker.svelte';
+
+const models = [
+  {
+    value: 'preview-balanced',
+    label: 'Balanced',
+    description: 'Balanced speed and capability',
+    isDefault: true,
+  },
+  { value: 'preview-fast', label: 'Fast', description: 'Quick everyday tasks' },
+  { value: 'preview-deep', label: 'Deep', description: 'Detailed analysis' },
+];
+
+const selectLoadingStates = appStore.createSelector((state) => state.model.loadingState);
+
+function setupModels(populated: boolean) {
+  return () => {
+    const previousLoading = selectLoadingStates.select(appStore.state);
+    const previousCache = selectProviderModelsCacheMap.select(appStore.state);
+    const previousModels = selectAvailableModels.select(appStore.state);
+    const previousProvider = selectAvailableModelsProviderId.select(appStore.state);
+    const previousDefault = selectEffectiveDefaultProviderId.select(appStore.state);
+    const previousCollapsed = selectModelPickerCollapsedGroups.select(appStore.state);
+    const restoreProviders = setupPreviewProviders();
+    const bridge = typeof window === 'undefined' ? undefined : window.electronAPI;
+    const originalInvoke = bridge?.invoke;
+    if (bridge && originalInvoke) {
+      bridge.invoke = (channel, ...args) =>
+        channel === 'codex:get-models' || channel === 'claude-code:get-models'
+          ? mockInvoke(channel, ...args)
+          : originalInvoke.call(bridge, channel, ...args);
+    }
+    appStore.dispatch(hydrateDefaultProvider('codex'));
+    for (const group of previousCollapsed)
+      appStore.dispatch(setModelPickerGroupCollapsed(group, false));
+    const epoch = selectProviderModelsClearEpoch.select(appStore.state);
+    for (const providerId of ['codex', 'claude-code']) {
+      const rows = populated
+        ? models.map((model) => ({ ...model, value: `${providerId}-${model.value}` }))
+        : [];
+      registerMockIpcHandler(`${providerId}:get-models`, () => ({ success: true, data: rows }));
+      appStore.dispatch(providerModelsLoaded(providerId, { models: rows }, epoch));
+      if (providerId === 'codex') appStore.dispatch(setAvailableModels(rows, providerId));
+    }
+    return () => {
+      if (bridge && originalInvoke) bridge.invoke = originalInvoke;
+      for (const providerId of ['codex', 'claude-code'])
+        unregisterMockIpcHandler(`${providerId}:get-models`);
+      appStore.dispatch(providerModelsCacheCleared());
+      const restoreEpoch = selectProviderModelsClearEpoch.select(appStore.state);
+      for (const [providerId, entry] of Object.entries(previousCache))
+        appStore.dispatch(providerModelsLoaded(providerId, entry, restoreEpoch));
+      appStore.dispatch(setAvailableModels(previousModels, previousProvider));
+      for (const group of selectModelPickerCollapsedGroups.select(appStore.state))
+        appStore.dispatch(setModelPickerGroupCollapsed(group, false));
+      for (const group of previousCollapsed)
+        appStore.dispatch(setModelPickerGroupCollapsed(group, true));
+      restoreProviders();
+      appStore.dispatch(hydrateDefaultProvider(previousDefault));
+      for (const providerId of ['codex', 'claude-code']) {
+        appStore.dispatch(
+          setLoadingStateForProvider({
+            providerId,
+            ...(previousLoading[providerId] ?? { status: 'success' }),
+          }),
+        );
+      }
+    };
+  };
+}
+
+export const preview = definePreview<ComponentProps<typeof ModelPicker>>({
+  id: 'model-picker',
+  title: 'Model picker',
+  defaultState: 'populated',
+  states: {
+    populated: {
+      props: {
+        selectedModel: null,
+        defaultModelId: 'codex-preview-balanced',
+        defaultOptionLabel: m.chat_modelPicker_providerDefault_label(),
+        defaultOptionDescription: m.settings_backgroundAgent_providerDefault_description(),
+        showDefaultOption: true,
+        updateGlobalStore: false,
+        updateGlobalDefault: false,
+        showManageLink: false,
+      },
+      setup: setupModels(true),
+    },
+    empty: {
+      props: {
+        selectedModel: null,
+        showDefaultOption: false,
+        updateGlobalStore: false,
+        updateGlobalDefault: false,
+        showManageLink: false,
+      },
+      setup: setupModels(false),
+    },
+  },
+});
+
+export default ModelPicker;
