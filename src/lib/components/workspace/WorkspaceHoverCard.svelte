@@ -1,6 +1,9 @@
 <script lang="ts">
   import AgentAvatarWithState from '$features/agent/components/agent-avatar/AgentAvatarWithState.svelte';
-  import type { AvatarState } from '$features/agent/components/agent-avatar/avatar-state';
+  import {
+    getAvatarStateForSession,
+    type AvatarState,
+  } from '$features/agent/components/agent-avatar/avatar-state';
   import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
   import { derivePendingQuestions } from '$lib/components/chat/questions/pending-questions';
   import { Skeleton } from '$lib/components/ui/skeleton';
@@ -139,6 +142,7 @@
       typeof marker === 'string' ? marker : undefined,
     );
     const hasQuestion = pending !== null || (typeof marker === 'string' && marker.length > 0);
+    const canonicalState = getAvatarStateForSession(session, { hasQuestion });
     const preview = previewText(selectAgentPreview.select(appStore.state, String(session.id)));
     let group: RowGroup;
     let attentionKind: string | undefined;
@@ -147,13 +151,7 @@
     let priority: number;
     let questionMeta: AgentRow['questionMeta'];
     let contextIsPreview = false;
-    if (attention?.kind === 'blocker' || status === 'blocked') {
-      group = 'attention';
-      attentionKind = 'blocker';
-      context = attention?.reason?.trim() || m.chat_agentCard_attentionBlocker_label();
-      avatarState = 'attention-blocker';
-      priority = 0;
-    } else if (hasQuestion) {
+    if (canonicalState === 'question') {
       group = 'attention';
       attentionKind = 'question';
       context =
@@ -167,12 +165,18 @@
           accessible: `${m.workspace_hoverCard_question_label()} ${m.chat_questionWizard_stepCounter_label({ current: 1, total: count })}`,
         };
       }
-    } else if (attention?.kind === 'discussion') {
+    } else if (canonicalState === 'attention-discussion') {
       group = 'attention';
       attentionKind = 'discussion';
-      context = attention.reason?.trim() || m.chat_agentCard_attentionDiscussion_label();
+      context = attention?.reason?.trim() || m.chat_agentCard_attentionDiscussion_label();
       avatarState = 'attention-discussion';
       priority = 1;
+    } else if (canonicalState === 'attention-blocker' || status === 'blocked') {
+      group = 'attention';
+      attentionKind = 'blocker';
+      context = attention?.reason?.trim() || m.chat_agentCard_attentionBlocker_label();
+      avatarState = 'attention-blocker';
+      priority = 0;
     } else if (session.hasUnread) {
       group = 'attention';
       attentionKind = 'unread';
