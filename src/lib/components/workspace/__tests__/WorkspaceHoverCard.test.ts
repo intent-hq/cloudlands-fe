@@ -551,6 +551,96 @@ describe('WorkspaceHoverCard', () => {
     expect(times.every((time) => Boolean(time?.getAttribute('aria-label')))).toBe(true);
   });
 
+  it('renders a question row when one agent has both a blocker and an unanswered question', async () => {
+    const pending = questionMessage('pending', [
+      'Which deployment region should receive the migration first?',
+    ]);
+    const blockerReason = 'The staging database rejects the migration user.';
+    const session = agent('both', 'Maya', 'waiting', {
+      attentionRequestKind: 'blocker',
+      attentionRequestReason: blockerReason,
+      messages: [pending],
+      metadata: { pendingQuestionsMessageId: pending.id },
+    });
+    const { getAvatarStateForSession } =
+      await import('$features/agent/components/agent-avatar/avatar-state');
+    expect(getAvatarStateForSession(session, { hasQuestion: true })).toBe('question');
+    mocks.agentSessionsByWorkspace['ws-1'] = [session];
+    const { container } = await renderHoverCard({ agentSummary: { agentIds: ['both'] } });
+
+    const attentionRows = Array.from(
+      container.querySelectorAll(
+        '[data-workspace-hover-card-agent-row][data-agent-group-row="attention"]',
+      ),
+    );
+    expect(attentionRows).toHaveLength(1);
+    expect(attentionRows[0].getAttribute('data-attention-kind')).toBe('question');
+    expect(text(attentionRows[0].querySelector('[data-workspace-hover-card-agent-context]')!)).toBe(
+      'Which deployment region should receive the migration first?',
+    );
+    expect(text(attentionRows[0])).not.toContain(blockerReason);
+  });
+
+  it('keeps the blocker row when the marked question was already dismissed', async () => {
+    const pending = questionMessage('dismissed', [
+      'Which deployment region should receive the migration first?',
+    ]);
+    const blockerReason = 'The staging database rejects the migration user.';
+    mocks.agentSessionsByWorkspace['ws-1'] = [
+      agent('both', 'Maya', 'waiting', {
+        attentionRequestKind: 'blocker',
+        attentionRequestReason: blockerReason,
+        messages: [pending],
+        metadata: {
+          pendingQuestionsMessageId: pending.id,
+          dismissedQuestionsMessageId: pending.id,
+        },
+      }),
+    ];
+    const { container } = await renderHoverCard({ agentSummary: { agentIds: ['both'] } });
+
+    const attentionRows = Array.from(
+      container.querySelectorAll(
+        '[data-workspace-hover-card-agent-row][data-agent-group-row="attention"]',
+      ),
+    );
+    expect(attentionRows).toHaveLength(1);
+    expect(attentionRows[0].getAttribute('data-attention-kind')).toBe('blocker');
+    expect(text(attentionRows[0].querySelector('[data-workspace-hover-card-agent-context]')!)).toBe(
+      blockerReason,
+    );
+    expect(text(attentionRows[0])).not.toContain('Which deployment region');
+    expect(attentionRows[0].querySelector('[data-workspace-hover-card-question-meta]')).toBeNull();
+  });
+
+  it('keeps the blocker row when the question marker was cleared', async () => {
+    const stale = questionMessage('stale', [
+      'Which deployment region should receive the migration first?',
+    ]);
+    const blockerReason = 'The staging database rejects the migration user.';
+    mocks.agentSessionsByWorkspace['ws-1'] = [
+      agent('both', 'Maya', 'waiting', {
+        attentionRequestKind: 'blocker',
+        attentionRequestReason: blockerReason,
+        messages: [stale],
+        metadata: { pendingQuestionsMessageId: '' },
+      }),
+    ];
+    const { container } = await renderHoverCard({ agentSummary: { agentIds: ['both'] } });
+
+    const attentionRows = Array.from(
+      container.querySelectorAll(
+        '[data-workspace-hover-card-agent-row][data-agent-group-row="attention"]',
+      ),
+    );
+    expect(attentionRows).toHaveLength(1);
+    expect(attentionRows[0].getAttribute('data-attention-kind')).toBe('blocker');
+    expect(text(attentionRows[0].querySelector('[data-workspace-hover-card-agent-context]')!)).toBe(
+      blockerReason,
+    );
+    expect(text(attentionRows[0])).not.toContain('Which deployment region');
+  });
+
   it('does not use generic awaiting-answer copy when marked question content is unavailable', async () => {
     mocks.agentSessionsByWorkspace['ws-1'] = [
       agent('question', 'Leah', 'waiting', {

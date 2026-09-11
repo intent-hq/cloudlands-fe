@@ -9,13 +9,13 @@
  * such presence refresh also requests the mounted workspaces' daemon
  * browser-client resolution, since the pin or default may now resolve
  * differently), and the per-workspace `workspace.getBrowserClient` /
- * `setBrowserClient` / `browser.listTabs` calls keyed by workspace. Every
+ * `setBrowserClient` calls keyed by workspace. Every
  * resolution read — mount, `workspace:updated`, presence — goes through one
  * single-flight lane per workspace (one in flight, at most one trailing), and
  * a read that overlapped a pin write in any way (started before it, or
  * during it and settled after) discards its reply and re-queues itself, so an
  * older read can never overwrite the write's echo or a newer read. Pin writes
- * and tab reads are latest-wins per workspace, so a slow earlier pin write
+ * are latest-wins per workspace, so a slow earlier pin write
  * cannot overwrite a later daemon echo. A viewer's `browser.navigateTab` /
  * `browser.closeTab` requests (REV-2 Model 3) are fire-and-forget commands to
  * the tab's host: nothing is stored from the reply — the mirror follows the
@@ -46,15 +46,10 @@ import {
   workspaceMounted,
   workspaceUnmounted,
 } from '../../workspace-lifecycle/workspace-lifecycle-slice';
-import {
-  selectLiveClientsLoaded,
-  selectOwnClientId,
-  selectWorkspaceBrowserTabsRevision,
-} from '../browser-clients-selectors';
+import { selectLiveClientsLoaded, selectOwnClientId } from '../browser-clients-selectors';
 import {
   closeBrowserTabRequested,
   fetchWorkspaceBrowserClientRequested,
-  fetchWorkspaceBrowserTabsRequested,
   hydrateBrowserClientsRequested,
   liveClientsReceived,
   navigateBrowserTabRequested,
@@ -62,13 +57,10 @@ import {
   refreshLiveClientsRequested,
   setWorkspaceBrowserClientRequested,
   workspaceBrowserClientReceived,
-  workspaceBrowserTabsReceived,
 } from '../browser-clients-slice';
 
 const logger = createLogger('BrowserClientsSaga');
 const LIVE_CLIENTS_CONTEXT = 'live-clients';
-/** Re-reads allowed when `browser:tab-*` patches keep landing mid-`browser.listTabs`. */
-const MAX_TABS_READ_ATTEMPTS = 3;
 
 /**
  * Saga-local, per-workspace pin-write epoch, bumped when a pin write starts
@@ -213,32 +205,6 @@ function* writeWorkspaceBrowserClient(
   }
 }
 
-function* readWorkspaceBrowserTabs(
-  action: ReturnType<typeof fetchWorkspaceBrowserTabsRequested>,
-): SagaGenerator<void> {
-  const [wsId] = action.payload;
-  try {
-    for (let attempt = 0; attempt < MAX_TABS_READ_ATTEMPTS; attempt++) {
-      const revision = yield* selectWorkspaceBrowserTabsRevision.effect(wsId);
-      const read = yield* untilWorkspaceCleanup(
-        wsId,
-        call([appClient.browser, appClient.browser.listTabs], wsId),
-      );
-      if (read.cleanup) return;
-      yield* put(workspaceBrowserTabsReceived(wsId, read.result, revision));
-      if ((yield* selectWorkspaceBrowserTabsRevision.effect(wsId)) === revision) return;
-    }
-    logger.warn('browser.listTabs snapshot kept racing browser:tab-* events; keeping patches', {
-      wsId,
-    });
-  } catch (error) {
-    logger.warn('browser.listTabs failed', {
-      wsId,
-      error: error instanceof Error ? error.message : error,
-    });
-  }
-}
-
 async function toastError(message: string, description?: string): Promise<void> {
   try {
     const { toast } = await import('svelte-sonner');
@@ -327,7 +293,6 @@ export function* browserClientsSaga(): SagaGenerator<void> {
     writeWorkspaceBrowserClient,
     pinWriteEpochs,
   );
-  yield* takeLatestByWorkspace(fetchWorkspaceBrowserTabsRequested, readWorkspaceBrowserTabs);
   yield* takeEvery(navigateBrowserTabRequested, forwardBrowserTabNavigation);
   yield* takeEvery(closeBrowserTabRequested, closeRemoteBrowserTab);
 }

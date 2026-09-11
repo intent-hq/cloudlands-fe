@@ -12,6 +12,7 @@ import {
   isSessionIdle,
   isSessionInProgress,
   pickLastActivePerWorkspace,
+  sessionAttentionPriority,
   sessionHasFailed,
   sessionNeedsAttention,
   type AgentCycleState,
@@ -20,6 +21,26 @@ import {
 function makeSession(id: string, overrides: Record<string, unknown> = {}): StoredAgentSession {
   return { id, status: 'Completed', messages: [], ...overrides } as never;
 }
+
+const questionMessage = {
+  id: 'msg-1',
+  role: 'assistant',
+  contentBlocks: [
+    {
+      type: 'resource',
+      resource: {
+        mimeType: QUESTION_RESOURCE_MIME_TYPE,
+        uri: 'intent-question:1',
+        text: JSON.stringify({
+          attachmentId: 'tar-1',
+          header: 'Choice',
+          question: 'Which one?',
+          options: [{ label: 'A' }, { label: 'B' }],
+        }),
+      },
+    },
+  ],
+};
 
 function makeState(
   agentsByWorkspace: Record<string, string[]>,
@@ -83,30 +104,11 @@ describe('predicates', () => {
   it('sessionNeedsAttention follows the authoritative pending marker', () => {
     // A present daemon marker keeps the question authoritative across later
     // plain messages, then a written-empty marker clears it.
-    const question = {
-      id: 'msg-1',
-      role: 'assistant',
-      contentBlocks: [
-        {
-          type: 'resource',
-          resource: {
-            mimeType: QUESTION_RESOURCE_MIME_TYPE,
-            uri: 'intent-question:1',
-            text: JSON.stringify({
-              attachmentId: 'tar-1',
-              header: 'Choice',
-              question: 'Which one?',
-              options: [{ label: 'A' }, { label: 'B' }],
-            }),
-          },
-        },
-      ],
-    };
     const plainUser = { id: 'msg-2', role: 'user', contentBlocks: [] };
     expect(
       sessionNeedsAttention(
         makeSession('a', {
-          messages: [question],
+          messages: [questionMessage],
           metadata: { pendingQuestionsMessageId: 'msg-1' },
         }),
       ),
@@ -114,7 +116,7 @@ describe('predicates', () => {
     expect(
       sessionNeedsAttention(
         makeSession('a', {
-          messages: [question, plainUser],
+          messages: [questionMessage, plainUser],
           metadata: { pendingQuestionsMessageId: 'msg-1' },
         }),
       ),
@@ -126,11 +128,52 @@ describe('predicates', () => {
     expect(
       sessionNeedsAttention(
         makeSession('a', {
-          messages: [question, answer],
+          messages: [questionMessage, answer],
           metadata: { pendingQuestionsMessageId: '' },
         }),
       ),
     ).toBe(false);
+  });
+
+  it('a dismissed question or a cleared marker no longer ranks as question', () => {
+    const pending = makeSession('a', {
+      messages: [questionMessage],
+      metadata: { pendingQuestionsMessageId: 'msg-1' },
+      attentionRequestKind: 'discussion',
+    });
+    expect(sessionAttentionPriority(pending)).toBe('question');
+    const dismissed = makeSession('a', {
+      messages: [questionMessage],
+      metadata: { pendingQuestionsMessageId: 'msg-1', dismissedQuestionsMessageId: 'msg-1' },
+      attentionRequestKind: 'discussion',
+    });
+    expect(sessionAttentionPriority(dismissed)).toBe('discussion');
+    const cleared = makeSession('a', {
+      messages: [questionMessage],
+      metadata: { pendingQuestionsMessageId: '' },
+    });
+    expect(sessionAttentionPriority(cleared)).toBeNull();
+    expect(sessionNeedsAttention(cleared)).toBe(false);
+  });
+
+  it('a set marker whose row is outside the loaded tail stays pending unless dismissed', () => {
+    const plainUser = { id: 'msg-2', role: 'user', contentBlocks: [] };
+    expect(
+      sessionAttentionPriority(
+        makeSession('a', {
+          messages: [plainUser],
+          metadata: { pendingQuestionsMessageId: 'msg-1' },
+        }),
+      ),
+    ).toBe('question');
+    expect(
+      sessionAttentionPriority(
+        makeSession('a', {
+          messages: [plainUser],
+          metadata: { pendingQuestionsMessageId: 'msg-1', dismissedQuestionsMessageId: 'msg-1' },
+        }),
+      ),
+    ).toBeNull();
   });
 
   it('sessionHasFailed matches error status only', () => {

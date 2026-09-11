@@ -4,6 +4,71 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.145.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.145.2...v2.145.3) (2026-09-11)
+
+
+### 🐛 Bug Fixes
+
+* unblock the unread-agent cycle key on remote daemons ([#2315](https://github.com/intent-hq/cloudlands-fe/issues/2315)) ([0e39b28](https://github.com/intent-hq/cloudlands-fe/commit/0e39b2829752e274dece402951391027901a129e))
+* **workspace-hover-card:** follow canonical avatar-state precedence for agent rows ([#2316](https://github.com/intent-hq/cloudlands-fe/issues/2316)) ([02b7c44](https://github.com/intent-hq/cloudlands-fe/commit/02b7c445a1aa9588c80ce4820ca21e6ef9a97e3c))
+
+## [2.145.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.145.1...v2.145.2) (2026-09-11)
+
+
+### 🐛 Bug Fixes
+
+* **agent-attention:** let a pending attention request win over a live turn ([#2309](https://github.com/intent-hq/cloudlands-fe/issues/2309)) ([824df3d](https://github.com/intent-hq/cloudlands-fe/commit/824df3d9c36321ad494346deecbccce096d23cd6))
+* bump intentd sidecar to v0.9.39 ([#2317](https://github.com/intent-hq/cloudlands-fe/issues/2317)) ([fa7ac5b](https://github.com/intent-hq/cloudlands-fe/commit/fa7ac5b2eef7de23766cb22315e0789ada566ba5))
+* **release-notes:** show update notes in every window and sync dismissal ([#2314](https://github.com/intent-hq/cloudlands-fe/issues/2314)) ([aabcb07](https://github.com/intent-hq/cloudlands-fe/commit/aabcb07b8d863992c5e444dca18a25cac7ebe9ee))
+* resolve panel Open In paths and stack them into a submenu ([#2059](https://github.com/intent-hq/cloudlands-fe/issues/2059)) ([4e61f03](https://github.com/intent-hq/cloudlands-fe/commit/4e61f0356e7ac39eda0f6ba238788f71d4438732))
+
+
+### ⚡ Performance
+
+* compact generated translation payloads in dev ([#2296](https://github.com/intent-hq/cloudlands-fe/issues/2296)) ([3c9feb6](https://github.com/intent-hq/cloudlands-fe/commit/3c9feb63d38d048eaec547b7c5286e46104207b6))
+
+## [2.145.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.145.0...v2.145.1) (2026-09-10)
+
+
+### 🐛 Bug Fixes
+
+* shorten onboarding project picker labels ([#2305](https://github.com/intent-hq/cloudlands-fe/issues/2305)) ([3a5b4d7](https://github.com/intent-hq/cloudlands-fe/commit/3a5b4d7b11e68e56a46261736c08b858f4e99b23))
+
+## [2.145.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.144.9...v2.145.0) (2026-09-10)
+
+
+### 🚀 Features
+
+* interactive task constellation for the agent overview ([#2278](https://github.com/intent-hq/cloudlands-fe/issues/2278)) ([96641cc](https://github.com/intent-hq/cloudlands-fe/commit/96641cccb5e610b47c6949d15438bb6c8f04a5a6))
+
+## [2.144.9](https://github.com/intent-hq/cloudlands-fe/compare/v2.144.8...v2.144.9) (2026-09-10)
+
+
+### 🐛 Bug Fixes
+
+* start onboarding at step one and test only Claude Code ([#2297](https://github.com/intent-hq/cloudlands-fe/issues/2297)) ([102d655](https://github.com/intent-hq/cloudlands-fe/commit/102d655a09098a62e8a21db66f5d819f0e54ba1c))
+
+## [2.144.8](https://github.com/intent-hq/cloudlands-fe/compare/v2.144.7...v2.144.8) (2026-09-10)
+
+
+### 🐛 Bug Fixes
+
+* **workspace:** let WorkspaceActionsMenu wrappers size to content ([#2293](https://github.com/intent-hq/cloudlands-fe/issues/2293)) ([97f8ba7](https://github.com/intent-hq/cloudlands-fe/commit/97f8ba75396db231219924b8f569bfb00d75d422))
+
+## [2.144.7](https://github.com/intent-hq/cloudlands-fe/compare/v2.144.6...v2.144.7) (2026-09-10)
+
+
+### 🐛 Bug Fixes
+
+* **workspace:** gate driving-client indicator on browser tabs ([#2288](https://github.com/intent-hq/cloudlands-fe/issues/2288)) ([e166746](https://github.com/intent-hq/cloudlands-fe/commit/e16674669a8634758bbf92930986b3dbff063e96))
+
+## [2.144.6](https://github.com/intent-hq/cloudlands-fe/compare/v2.144.5...v2.144.6) (2026-09-10)
+
+
+### 🐛 Bug Fixes
+
+* stabilize hover-card geometry component tests ([#2291](https://github.com/intent-hq/cloudlands-fe/issues/2291)) ([029edd5](https://github.com/intent-hq/cloudlands-fe/commit/029edd5e67e0eda84d5a6cbeafbe27d155007d9c))
+
 ## [2.144.5](https://github.com/intent-hq/cloudlands-fe/compare/v2.144.4...v2.144.5) (2026-09-09)
 
 

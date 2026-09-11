@@ -88,9 +88,6 @@ vi.mock('$store/renderer/store', async () => {
 vi.mock('$store/renderer/slices/onboarding/onboarding-selectors', () => ({
   selectOnboardingStep: () => mocks.readable(() => 'configuring'),
   selectOnboardingState: () => mocks.readable(() => ({ step: 'configuring' })),
-  selectOnboardingFullFlowRequested: Object.assign(() => mocks.readable(() => false), {
-    select: () => false,
-  }),
 }));
 
 vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors', () => ({

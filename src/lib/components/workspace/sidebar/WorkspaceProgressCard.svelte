@@ -80,10 +80,11 @@
   import { openTransferModal } from '$store/renderer/slices/workspace-transfer/workspace-transfer-slice';
   import { selectWorkspaceDrivingClient } from '$store/renderer/slices/browser-clients/browser-clients-selectors';
   import { setWorkspaceBrowserClientRequested } from '$store/renderer/slices/browser-clients/browser-clients-slice';
+  import { selectWorkspaceHasBrowserTabs } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
   import DrivingClientIndicator from '$lib/components/workspace/DrivingClientIndicator.svelte';
   import SetPrimaryClientConfirmDialog from '$lib/components/workspace/SetPrimaryClientConfirmDialog.svelte';
-  import { resolveDrivingClientView } from '$lib/components/workspace/driving-indicator';
+  import { resolveDrivingClientSwitch } from '$lib/components/workspace/driving-indicator';
 
   const readyLogger = createLogger('ReadyTasks');
 
@@ -447,9 +448,11 @@
   );
 
   // REV-2 driving browser client (spec Model 8): the daemon resolves it; the
-  // indicator renders only when another eligible client could take over.
+  // indicator renders only when the workspace has a browser tab and another
+  // eligible client could take over (or the pin is offline).
   const drivingClient$ = selectWorkspaceDrivingClient(workspaceIdStore);
-  const drivingClientView = $derived(resolveDrivingClientView($drivingClient$));
+  const hasBrowserTabs$ = selectWorkspaceHasBrowserTabs(workspaceIdStore);
+  const drivingClientSwitch = $derived(resolveDrivingClientSwitch($drivingClient$));
 
   // "Set Current Client as Primary": pin this workspace's browser to this
   // app; the daemon also migrates the workspace's claimed (agent-owned) tabs
@@ -461,7 +464,7 @@
 
   const setPrimaryClientAction: MenuAction | null = $derived.by(() => {
     const ownClientId = $drivingClient$.ownClientId;
-    if (!drivingClientView?.canSwitchHere || !ownClientId || !workspaceId) return null;
+    if (!drivingClientSwitch?.canSwitchHere || !ownClientId || !workspaceId) return null;
     return {
       label: m.workspace_drivingClient_setPrimary_label(),
       icon: faGlobe,
@@ -894,7 +897,10 @@
           {/snippet}
 
           {#snippet content()}
-            <div class="w-48">
+            <div
+              class="min-w-48 w-max"
+              style="max-width: min(20rem, calc(var(--bits-dropdown-menu-content-available-width, 100vw) - 0.625rem))"
+            >
               <WorkspaceActionsMenu
                 filePath={$workspace?.worktreePath ||
                   $workspace?.repositoryPath ||
@@ -1041,8 +1047,8 @@
           </TooltipRich>
         {/if}
       </div>
-      <!-- driving browser client (REV-2); renders nothing with one eligible client -->
-      <DrivingClientIndicator {...$drivingClient$} />
+      <!-- driving browser client (REV-2); renders nothing with one eligible client or no browser tabs -->
+      <DrivingClientIndicator {...$drivingClient$} hasBrowserTabs={$hasBrowserTabs$} />
     </div>
   </div>
 
@@ -1274,10 +1280,10 @@
   </div>
 </div>
 
-{#if drivingClientView}
+{#if drivingClientSwitch}
   <SetPrimaryClientConfirmDialog
     open={confirmingSetPrimaryClient}
-    currentHost={drivingClientView.hostName}
+    currentHost={drivingClientSwitch.hostName}
     onConfirm={handleConfirmSetPrimaryClient}
     onCancel={() => (confirmingSetPrimaryClient = false)}
   />

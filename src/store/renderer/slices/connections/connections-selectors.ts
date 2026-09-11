@@ -62,9 +62,14 @@ export const selectConnectedIds = store.createSelector((state) => state.connecti
 /** Status of the in-flight add/switch operation. */
 export const selectConnectionStatus = store.createSelector((state) => state.connections.status);
 
-/** True while an add/switch operation is in flight. */
+/** True while an add/switch operation is in flight (including any per-id open). */
 export const selectIsConnecting = store.createSelector(
-  (state) => state.connections.status === 'connecting',
+  (state) => state.connections.status === 'connecting' || state.connections.openingIds.length > 0,
+);
+
+/** True while an open operation for the given backend id is in flight. */
+export const selectIsOpeningConnection = store.createSelector((state, id: string) =>
+  state.connections.openingIds.includes(id),
 );
 
 /** Error message from the last failed add/switch operation, or null. */
