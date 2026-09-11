@@ -420,7 +420,7 @@
       {/if}
       <Button
         variant="plain"
-        size="xs"
+        size="compact"
         class="!h-auto text-ui text-subtle hover:text-foreground"
         loading={$loadingOlder$}
         onclick={() => appStore.dispatch(loadOlderEventsRequested(workspaceId))}

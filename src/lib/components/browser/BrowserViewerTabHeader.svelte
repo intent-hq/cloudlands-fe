@@ -124,7 +124,7 @@
     <div class="flex gap-0.5">
       <Button
         variant="ghost-light"
-        size="icon-xs"
+        size="icon-compact"
         onclick={() => onGoBack?.()}
         disabled={offline || !canGoBack}
         tooltip={m.browser_embedded_goBack_tooltip()}
@@ -135,7 +135,7 @@
       </Button>
       <Button
         variant="ghost-light"
-        size="icon-xs"
+        size="icon-compact"
         onclick={() => onGoForward?.()}
         disabled={offline || !canGoForward}
         tooltip={m.browser_embedded_goForward_tooltip()}
@@ -146,7 +146,7 @@
       </Button>
       <Button
         variant="ghost-light"
-        size="icon-xs"
+        size="icon-compact"
         onclick={() => onRefresh?.()}
         disabled={offline}
         tooltip={m.browser_embedded_refresh_tooltip()}
@@ -179,7 +179,7 @@
             aria-invalid={urlDraftInvalid || undefined}
             title={urlDraftInvalid ? m.browser_panel_invalidUrl_error() : undefined}
           />
-          <Button type="submit" variant="ghost" size="xs" class="sr-only">
+          <Button type="submit" variant="ghost" size="compact" class="sr-only">
             {m.browser_embedded_go_label()}
           </Button>
         </form>
@@ -212,7 +212,7 @@
 
     <Button
       variant="ghost-light"
-      size="icon-xs"
+      size="icon-compact"
       onclick={() => onClose?.({ force: false })}
       disabled={offline}
       tooltip={m.browser_embedded_close_tooltip()}
@@ -233,7 +233,7 @@
       <span class="min-w-0 flex-1">
         {m.browser_viewer_hostOffline_description({ host: host.name })}
       </span>
-      <Button variant="outline" size="xs" onclick={() => onClose?.({ force: true })}>
+      <Button variant="outline" size="compact" onclick={() => onClose?.({ force: true })}>
         {m.browser_viewer_forceClose_label()}
       </Button>
     </div>
