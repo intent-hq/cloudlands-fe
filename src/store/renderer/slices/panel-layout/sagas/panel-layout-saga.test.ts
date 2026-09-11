@@ -53,6 +53,7 @@ import {
   closeActiveTab,
   closeAllOthersEverywhere,
   closeAllTabs,
+  closeFocusedPanelTab,
   closeOtherTabs,
   closePanel,
   closeTab,
@@ -356,6 +357,7 @@ const persistActionCreators = [
   openBlankWorkingPanel,
   closeTab,
   closeActiveTab,
+  closeFocusedPanelTab,
   closeTabsByType,
   closeTabsByAgentId,
   removeScript,
@@ -1179,6 +1181,41 @@ describe('panelLayoutSaga', () => {
       // The explicit close is the one tabless write that must reach storage.
       const persisted = mocks.setJSON.mock.calls.at(-1)?.[1] as WorkspacePanelLayout;
       expect(Object.values(persisted.panels).flatMap((panel) => panel.tabs)).toEqual([]);
+      await cancelSaga(run.task);
+    });
+
+    it('persists the empty layout after a Cmd+W last-tab close and keeps it empty on remount', async () => {
+      const initial = agent('agent-initial', 'Coordinator', undefined, { isInitialAgent: true });
+      const run = startRestoreSaga(layout, [initial]);
+      await settle();
+      mocks.setJSON.mockClear();
+
+      // Cmd+W dispatches closeFocusedPanelTab; its inner closeTab never reaches the store.
+      run.dispatch(closeFocusedPanelTab(WS_1, 30));
+      await settle();
+
+      expect(
+        Object.values(run.getState().panelLayout.byWorkspaceId[WS_1].panels).flatMap(
+          (panel: any) => panel.tabs,
+        ),
+      ).toEqual([]);
+      const persisted = mocks.setJSON.mock.calls.at(-1)?.[1] as WorkspacePanelLayout;
+      expect(persisted).toBeDefined();
+      expect(Object.values(persisted.panels).flatMap((panel) => panel.tabs)).toEqual([]);
+
+      mocks.getJSON.mockReturnValue(persisted);
+      run.dispatch(workspaceUnmounted(WS_1));
+      await settle();
+      run.dispatch(workspaceMounted(WS_1));
+      run.dispatch(setAgents(WS_1, [initial]));
+      await settle();
+
+      const workspace = run.getState().panelLayout.byWorkspaceId[WS_1];
+      expect(workspace.restoreStatus).toBe('restored');
+      expect(Object.values(workspace.panels).flatMap((panel: any) => panel.tabs)).toEqual([]);
+      expect(
+        run.dispatch.mock.calls.filter(([action]) => action.type === openTabInAdjacentOrSplit.type),
+      ).toHaveLength(0);
       await cancelSaga(run.task);
     });
 
@@ -2050,17 +2087,22 @@ describe('panelLayoutSaga', () => {
       await cancelSaga(task);
     });
 
-    it.each([closeTab, closeActiveTab, closeAllTabs, closeTabsByType, closePanel, resetLayout])(
-      'still persists the tabless layout for the explicit user close $type',
-      async (creator) => {
-        const { channel, task } = await restoreThenEmptyInMemory();
-        channel.put({ type: creator.type, payload: { wsId: WS_1 } });
-        await settle();
+    it.each([
+      closeTab,
+      closeActiveTab,
+      closeFocusedPanelTab,
+      closeAllTabs,
+      closeTabsByType,
+      closePanel,
+      resetLayout,
+    ])('still persists the tabless layout for the explicit user close $type', async (creator) => {
+      const { channel, task } = await restoreThenEmptyInMemory();
+      channel.put({ type: creator.type, payload: { wsId: WS_1 } });
+      await settle();
 
-        expect(mocks.setJSON.mock.calls).toEqual([[STORAGE_KEY_1, tablessPersisted]]);
-        await cancelSaga(task);
-      },
-    );
+      expect(mocks.setJSON.mock.calls).toEqual([[STORAGE_KEY_1, tablessPersisted]]);
+      await cancelSaga(task);
+    });
 
     it('treats a destroying closeTab as teardown, not an explicit user close', async () => {
       const { channel, task } = await restoreThenEmptyInMemory();

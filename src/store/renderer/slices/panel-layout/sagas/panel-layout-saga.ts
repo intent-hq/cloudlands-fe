@@ -72,6 +72,7 @@ import {
   closeActiveTab,
   closeAllOthersEverywhere,
   closeAllTabs,
+  closeFocusedPanelTab,
   closeOtherTabs,
   closePanel,
   closeTab,
@@ -159,6 +160,7 @@ const PERSIST_ACTIONS = [
   openTabInRightmostColumn,
   closeTab,
   closeActiveTab,
+  closeFocusedPanelTab,
   closeTabsByType,
   closeTabsByAgentId,
   destroyTabsByOwnerAgent,
@@ -417,6 +419,7 @@ function hasAnyTab(layout: WorkspacePanelLayout | WorkspacePanelLayoutState): bo
 const EXPLICIT_USER_CLOSE_ACTION_TYPES: ReadonlySet<string> = new Set([
   closeTab.type,
   closeActiveTab.type,
+  closeFocusedPanelTab.type,
   closeAllTabs.type,
   closeTabsByType.type,
   closePanel.type,

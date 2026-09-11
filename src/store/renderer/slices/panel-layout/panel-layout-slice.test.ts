@@ -1166,6 +1166,15 @@ describe('panelLayoutReducer', () => {
       expect(viaAll.byWorkspaceId[WS].emptiedByUserClose).toBe(true);
     });
 
+    it('is set when closeFocusedPanelTab (Cmd+W) removes the last tab', () => {
+      const result = panelLayoutReducer(
+        stateWithPanel('p1', [noteTab]),
+        closeFocusedPanelTab(WS, 10),
+      );
+      expect(Object.values(result.byWorkspaceId[WS].panels).flatMap((p) => p.tabs)).toEqual([]);
+      expect(result.byWorkspaceId[WS].emptiedByUserClose).toBe(true);
+    });
+
     it('is set when closePanel removes the last populated column', () => {
       const split = panelLayoutReducer(
         stateWithPanel('p1', [noteTab]),
