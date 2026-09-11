@@ -187,7 +187,7 @@ describe('FileInput', () => {
     expect(surface?.className).toContain('hover:bg-card');
     expect(surface?.className).toContain('focus-within:bg-card');
     expect(surface?.className).toContain('focus-within:shadow-[inset_0_0_0_1px_var(--ring)]');
-    expect(getByRole('status').className).toContain('type-body');
+    expect(getByRole('status').className).toContain('type-caption');
     expect(getByRole('status').className).toContain('truncate');
   });
 
