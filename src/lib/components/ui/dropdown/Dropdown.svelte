@@ -9,7 +9,7 @@
   import { getPageTargetIndex } from '$lib/components/ui/menu';
   import ListHighlight from '../menu/menu-list-highlight.svelte';
   import { menuItem, menuOverlay, menuOverlayTransition } from '../menu/menu-recipes';
-  import { crispOut, springIn } from '$lib/motion';
+  import { crispOut, slide, springIn } from '$lib/motion';
   import type {
     DropdownOption,
     DropdownGroup,
@@ -779,14 +779,14 @@
     {#if groups.length > 0}
       <!-- Grouped options -->
       {#each filteredGroups as group, groupIndex (group.key)}
-        <div>
+        <div transition:slide={{ tier: 'fast' }}>
           {#if groupHeader}
             {@render groupHeader({ group, groupIndex })}
           {:else if group.label}
             <div
               class="type-caption px-2 {groupIndex === 0
                 ? ''
-                : 'pt-3 border-t border-border'} py-1 text-xs font-medium text-muted-foreground uppercase tracking-wider sticky top-0 z-10 bg-popover"
+                : 'pt-3 border-t border-border'} py-1 text-xs font-medium text-muted-foreground sticky top-0 z-10 bg-popover"
             >
               {#if group.icon}
                 <Fa icon={group.icon} class="inline-block mr-1.5 h-3 w-3" />
@@ -796,14 +796,18 @@
           {/if}
 
           {#each group.options as option (option.value)}
-            {@render optionItem(option)}
+            <div transition:slide={{ tier: 'fast' }}>
+              {@render optionItem(option)}
+            </div>
           {/each}
         </div>
       {/each}
     {:else}
       <!-- Flat options -->
       {#each filteredOptions as option (option.value)}
-        {@render optionItem(option)}
+        <div transition:slide={{ tier: 'fast' }}>
+          {@render optionItem(option)}
+        </div>
       {/each}
     {/if}
 
@@ -811,14 +815,18 @@
     {#if !hasResults}
       {#if searchValue && allOptions.length > 0}
         <!-- Search yielded no results but there are options available -->
-        <div class="flex flex-col items-center gap-1 py-6 px-3 text-muted-foreground">
-          <span class="text-sm">{m.ui_dropdown_noResultsFor_label({ query: searchValue })}</span>
-          <span class="text-xs text-subtle">{m.ui_dropdown_tryDifferentSearch_description()}</span>
+        <div class="type-caption flex flex-col items-center gap-1 py-1 px-2 text-muted-foreground">
+          <span>{m.ui_dropdown_noResultsFor_label({ query: searchValue })}</span>
+          <span class="type-caption text-muted-foreground"
+            >{m.ui_dropdown_tryDifferentSearch_description()}</span
+          >
         </div>
       {:else if empty}
         {@render empty()}
       {:else}
-        <div class="px-2 py-4 text-center text-sm text-subtle">
+        <div
+          class="type-caption min-h-(--control-height-small) px-2 py-1 text-center text-muted-foreground"
+        >
           {m.ui_dropdown_noResults_label()}
         </div>
       {/if}

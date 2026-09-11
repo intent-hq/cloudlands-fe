@@ -119,6 +119,43 @@ describe('Dropdown duplicate option handling', () => {
   });
 });
 
+describe('Dropdown filtered rows', () => {
+  beforeEach(setupDropdownEnv);
+  afterEach(cleanupDropdownEnv);
+
+  it.each([false, true])(
+    'preserves surviving row identity while filtering (grouped: %s)',
+    async (grouped) => {
+      vi.stubGlobal('matchMedia', () => ({
+        matches: true,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      }));
+      const options = [
+        { value: 'a', label: 'Alpha' },
+        { value: 'b', label: 'Beta' },
+      ];
+      const { container } = render(Dropdown, {
+        props: {
+          ...(grouped ? { groups: [{ key: 'letters', label: 'Letters', options }] } : { options }),
+          portal: false,
+        },
+      });
+      await fireEvent.click(container.querySelector('button')!);
+      const beta = screen.getByRole('option', { name: 'Beta' });
+      const search = screen.getByRole('searchbox', { name: 'Search options' });
+      await fireEvent.input(search, { target: { value: 'Beta' } });
+      await waitFor(() => expect(screen.queryByRole('option', { name: 'Alpha' })).toBeNull());
+      expect(screen.getByRole('option', { name: 'Beta' })).toBe(beta);
+      await fireEvent.input(search, { target: { value: '' } });
+      expect(await screen.findByRole('option', { name: 'Alpha' })).toBeTruthy();
+      expect(screen.getByRole('option', { name: 'Beta' })).toBe(beta);
+      await fireEvent.input(search, { target: { value: 'missing' } });
+      expect(await screen.findByText('No results for “missing”')).toBeTruthy();
+    },
+  );
+});
+
 describe('Dropdown portal positioning', () => {
   beforeEach(setupDropdownEnv);
   afterEach(cleanupDropdownEnv);
@@ -401,7 +438,10 @@ describe('Dropdown compatibility modes', () => {
 
     const emptyRender = render(Dropdown, { props: { options: [], searchable: false } });
     await fireEvent.click(emptyRender.container.querySelector('button')!);
-    expect(screen.getByText('No results found')).toBeTruthy();
+    const emptyState = screen.getByText('No results found');
+    expect(emptyState.classList.contains('type-caption')).toBe(true);
+    expect(emptyState.classList.contains('text-muted-foreground')).toBe(true);
+    expect(emptyState.classList.contains('py-1')).toBe(true);
   });
 });
 
