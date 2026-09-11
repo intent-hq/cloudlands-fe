@@ -703,17 +703,35 @@ describe('selectHudAttnCount', () => {
   });
 
   it('counts a pending request while the agent runs a live turn (attention trumps running)', () => {
-    // Automatic deliveries restart the agent without clearing the request, so
-    // it is still pending while the agent streams and must blink.
+    // An automatic delivery restarts a top-level foreground agent without
+    // clearing the request, so it is still pending while the agent streams and
+    // must blink, bucket needs-attention, and still count on the running axis.
     const state = attnState({
       root: {
         status: 'active',
+        workspaceId: 'ws-1',
         attentionRequestKind: 'discussion',
         isResponding: true,
         messages: [],
       },
     });
     expect(selectHudAttnCount.select(state)).toBe(1);
+    const [card] = selectHudWorkspaceCards.select(state);
+    expect(card.agents.find((agent) => agent.id === 'root')).toMatchObject({
+      bucket: 'needs-attention',
+      attentionKind: 'discussion',
+    });
+    const tabCategories = selectWorkspaceTabStatuses.select(state)['ws-1'].categories;
+    expect(tabCategories).toContainEqual({
+      category: 'discussion',
+      count: 1,
+      agentNames: ['Coordinator'],
+    });
+    expect(tabCategories).toContainEqual({
+      category: 'running',
+      count: 1,
+      agentNames: ['Coordinator'],
+    });
   });
 
   it('counts a wire needs_attention rollup once when no per-agent signal covers it', () => {
