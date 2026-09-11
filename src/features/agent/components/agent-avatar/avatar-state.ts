@@ -202,6 +202,16 @@ export function getAvatarStateForSession(
 }
 
 /**
+ * Whether a session describes a live turn — the same running test the
+ * `getAvatarState` ladder uses, independent of higher-priority states such
+ * as `question` that outrank `running` in the returned avatar state.
+ */
+export function isSessionRunning(session: AgentSession | null | undefined): boolean {
+  if (!session) return false;
+  return isRunningInput(toAgentRuntimeStateInput(session));
+}
+
+/**
  * Get avatar state by looking up the agent in the Redux store.
  * This checks the store's streaming state directly for the most accurate real-time state.
  */
