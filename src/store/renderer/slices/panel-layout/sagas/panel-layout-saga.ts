@@ -12,7 +12,7 @@ import {
   type SagaGenerator,
 } from 'typed-redux-saga';
 import { buffers, channel, type Channel } from 'redux-saga';
-import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItem, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
 import { deepEqual } from 'fast-equals';
 
 import { clearPanelLayoutAdapter } from '$features/layout/panel-layout-adapter';
@@ -529,9 +529,11 @@ export function* rehydrateTunneledBrowserTabs(
       if (stillCurrent && !(yield* call(stillCurrent))) return;
       if (resolved.url === tab.storedUrl) continue;
       const workspace = yield* selectPanelLayoutWorkspace.effect(wsId);
-      const current = Object.values(workspace.panels)
-        .flatMap((panel) => panel.tabs)
-        .find((candidate) => candidate.id === tab.tabId);
+      const current =
+        Object.values(workspace.panels)
+          .flatMap((panel) => panel.tabs)
+          .find((candidate) => candidate.id === tab.tabId) ??
+        getItem(workspace.hiddenTabs, tab.tabId);
       if (
         !current ||
         current.browserUrl !== tab.storedUrl ||
