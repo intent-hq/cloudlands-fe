@@ -40,27 +40,15 @@ export function getPanelExternalOpenTarget(
       ? { kind: 'path', filePath, workspaceId, isDirectory: false, isDiff: true }
       : { kind: 'unavailable', reason: 'missing-resource' };
   }
-  if (tab.type === 'note') {
-    return tab.noteId
-      ? {
-          kind: 'path',
-          filePath: `.workspace/notes/${tab.noteId}.md`,
-          workspaceId,
-          isDirectory: false,
-          workspaceFolderPath: '__WORKSPACE_ROOT__',
-        }
-      : { kind: 'unavailable', reason: 'missing-resource' };
-  }
-  if (tab.type === 'agent') {
-    return tab.agentId
-      ? {
-          kind: 'path',
-          filePath: `.workspace/agents/${tab.agentId}.json`,
-          workspaceId,
-          isDirectory: false,
-          workspaceFolderPath: '__WORKSPACE_ROOT__',
-        }
-      : { kind: 'unavailable', reason: 'missing-resource' };
+  if (tab.type === 'note' || tab.type === 'agent') {
+    return {
+      kind: 'path',
+      filePath: '.',
+      workspaceId,
+      isDirectory: true,
+      isWorkspaceRoot: true,
+      workspaceFolderPath: '__WORKSPACE_ROOT__',
+    };
   }
 
   return {
