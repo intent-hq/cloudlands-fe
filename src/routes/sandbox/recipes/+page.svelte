@@ -117,7 +117,7 @@
 
 <div class="w-full min-w-0 space-y-8 px-4 py-8 sm:px-6 lg:py-12">
   <header class="space-y-2">
-    <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Design system</p>
+    <p class="text-xs font-medium text-muted-foreground">Design system</p>
     <h1 class="type-display">Recipe cookbook</h1>
     <p class="max-w-3xl text-muted-foreground">
       Copy these pattern-first compositions before reaching for raw primitives.

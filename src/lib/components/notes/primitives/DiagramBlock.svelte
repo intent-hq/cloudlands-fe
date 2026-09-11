@@ -252,7 +252,6 @@
           text.setAttribute('font-family', 'system-ui, -apple-system, sans-serif');
           text.setAttribute('font-size', kindComputed.fontSize || '8px');
           text.setAttribute('font-weight', '500');
-          text.setAttribute('text-transform', 'uppercase');
           text.setAttribute('opacity', '0.6');
           text.textContent = kindText;
           g.appendChild(text);

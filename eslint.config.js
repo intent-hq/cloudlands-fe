@@ -11,6 +11,7 @@ import unusedImports from 'eslint-plugin-unused-imports';
 import { svelte as themisFullConfig } from '@augmentcode/themis/eslint-plugins';
 import noProductionDynamicImportRule from './eslint-rules/no-production-dynamic-import.js';
 import noComponentAsyncDataFetchRule from './eslint-rules/no-component-async-data-fetch.js';
+import cssParser from './eslint-rules/design-system/css-parser.js';
 import { designSystemRules } from './eslint-rules/design-system/index.js';
 import { namedColorAllowlist } from './eslint-rules/design-system/common.js';
 
@@ -704,6 +705,18 @@ export default [
       'intent/no-raw-typography': 'error',
       'intent/settings-use-schema': 'error',
     },
+  },
+  {
+    files: ['src/**/*.{svelte,ts,tsx,js}'],
+    ignores: productionModuleIgnores,
+    plugins: { intent: intentPlugin },
+    rules: { 'intent/no-uppercase': 'error' },
+  },
+  {
+    files: ['src/**/*.css'],
+    languageOptions: { parser: cssParser },
+    plugins: { intent: intentPlugin },
+    rules: { 'intent/no-uppercase': 'error' },
   },
   ...designSystemBaselineOverrides,
   {

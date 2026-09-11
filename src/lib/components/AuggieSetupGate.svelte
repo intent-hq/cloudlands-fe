@@ -643,8 +643,6 @@
   .recommended-badge {
     font-size: 0.625rem;
     font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
     padding: 0.125rem 0.375rem;
     background: hsl(var(--primary));
     color: hsl(var(--primary-foreground));

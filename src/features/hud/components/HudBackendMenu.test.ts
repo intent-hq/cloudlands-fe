@@ -104,7 +104,7 @@ describe('HudBackendMenu', () => {
     const trigger = screen.getByTestId('hud-footer-system');
     expect(trigger.tagName).toBe('BUTTON');
     expect(trigger.textContent).toContain('INTENTD');
-    expect(trigger.textContent).toContain('ONLINE');
+    expect(trigger.textContent).toContain('Online');
   });
 
   it('opens a menu listing all saved backends plus the add entry', async () => {

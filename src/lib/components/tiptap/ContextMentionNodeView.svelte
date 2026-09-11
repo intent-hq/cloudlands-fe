@@ -261,9 +261,7 @@
           <!-- Header row: provider + identifier -->
           <div class="flex items-center gap-1.5">
             <ProviderIcon {provider} size={10} class="opacity-40" />
-            <span class="text-ui font-medium text-muted-foreground uppercase tracking-wide"
-              >{providerName()}</span
-            >
+            <span class="text-ui font-medium text-muted-foreground">{providerName()}</span>
             {#if identifier && itemType !== 'browser-url'}
               <span class="text-ui font-medium text-subtle">·</span>
               <span class="text-ui font-medium text-subtle">{identifier}</span>
@@ -292,9 +290,7 @@
 
               <!-- Sentry level (for Sentry issues) -->
               {#if meta.level && provider === 'sentry'}
-                <span class="text-ui font-medium uppercase {getLevelColor(meta.level)}"
-                  >{meta.level}</span
-                >
+                <span class="text-ui font-medium {getLevelColor(meta.level)}">{meta.level}</span>
               {/if}
 
               <!-- Assignee -->

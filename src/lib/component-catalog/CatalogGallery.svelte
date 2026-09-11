@@ -56,9 +56,7 @@
 <section class="w-full min-w-0" data-testid="catalog-gallery">
   <header class="catalog-intro border-b border-border px-4 py-8 sm:px-6 lg:px-8 lg:py-12">
     <div>
-      <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-        Interface library
-      </p>
+      <p class="text-xs font-medium text-muted-foreground">Interface library</p>
       <h1 class="mt-2 text-3xl font-medium tracking-tight sm:text-4xl">Design system workspace</h1>
       <p class="mt-3 max-w-2xl text-sm leading-relaxed text-muted-foreground sm:text-base">
         Explore live semantic foundations and host-independent canonical components across themes,
@@ -137,9 +135,7 @@
       {/if}
       {#each visibleGroups as item (item.id)}
         <section class="component-group space-y-5" data-catalog-group={item.id}>
-          <h2
-            class="border-b border-border pb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground"
-          >
+          <h2 class="border-b border-border pb-3 text-xs font-medium text-muted-foreground">
             {item.name}
           </h2>
           {#each item.entries as entry (entry.slug)}

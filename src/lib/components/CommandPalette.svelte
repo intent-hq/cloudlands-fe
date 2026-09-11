@@ -1013,7 +1013,7 @@
               <!-- Group Label with shortcut key -->
               <div class="px-3 pt-2 pb-1 {index > 0 ? 'mt-0.5' : ''}">
                 <div
-                  class="flex items-center justify-between text-ui font-semibold text-muted-foreground uppercase tracking-wide"
+                  class="flex items-center justify-between text-ui font-semibold text-muted-foreground"
                 >
                   <span>{item._groupLabel}</span>
                   {#if item._shortcutKey}

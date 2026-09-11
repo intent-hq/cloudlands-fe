@@ -480,7 +480,7 @@
       <div>
         <h2
           id={`provider-group-${group.id}`}
-          class="type-caption font-medium! text-muted-foreground uppercase tracking-wider mb-3"
+          class="type-caption font-medium! text-muted-foreground mb-3"
         >
           {#if group.id === 'enabled'}
             {m.settings_providers_groupEnabled_label()}

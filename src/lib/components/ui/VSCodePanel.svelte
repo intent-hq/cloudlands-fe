@@ -129,7 +129,7 @@
       {/if}
 
       <span
-        class="flex-1 text-ui font-semibold tracking-wide uppercase overflow-hidden text-ellipsis whitespace-nowrap group-hover/panel-header:text-foreground"
+        class="flex-1 text-ui font-semibold overflow-hidden text-ellipsis whitespace-nowrap group-hover/panel-header:text-foreground"
       >
         {title}
       </span>

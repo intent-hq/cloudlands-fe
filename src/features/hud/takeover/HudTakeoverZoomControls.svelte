@@ -86,9 +86,7 @@
     font:
       600 10px 'JetBrains Mono',
       monospace;
-    letter-spacing: 0.08em;
     color: hsl(var(--muted-foreground));
-    text-transform: uppercase;
   }
   .ov-map-zoom :global(.ov-map-zoom-btn:hover:not(:disabled)) {
     border-color: hsl(var(--border));

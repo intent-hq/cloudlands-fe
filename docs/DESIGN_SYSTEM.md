@@ -123,6 +123,8 @@ Import shared transitions from `$lib/motion`; inspect the live motion examples i
 
 ## Never
 
+- Never transform labels to all capitals; use sentence case without extra letter spacing. `intent/no-uppercase` rejects Tailwind `uppercase` classes and CSS `text-transform: uppercase` in renderer components and stylesheets. Preserve meaningful acronyms and initials.
+
 - Never use raw `text-xs`, `text-sm`, `text-base`, or `text-lg` in settings surfaces; use `type-body` for labels, descriptions and controls, `type-caption` for short metadata, and `type-title` for headings. Pair `font-medium!` with a `type-*` role on the same element. `intent/no-raw-typography` enforces this in settings components, routes and patterns.
 
 - Never add raw `<button>`, `<input>`, `<select>`, or `<textarea>` controls; use their UI primitives.
@@ -304,16 +306,17 @@ exceptions with an owner and reason; remove files as callers migrate, and never 
 file. The baseline test fails when a rule finds a file outside that checked-in set, and CI compares the
 file with the PR base revision to reject baseline additions while allowing removals.
 
-| Rule                                     | Replace with                                     |
-| ---------------------------------------- | ------------------------------------------------ |
-| `intent/no-raw-controls`                 | `Button`, `Input`, `Select`, or `Textarea`       |
-| `intent/no-direct-toast`                 | `notify` from the Notify pattern                 |
-| `intent/no-native-dialogs`               | `confirm()` from the Confirm pattern             |
-| `intent/no-adhoc-transitions`            | shared motion tiers from `$lib/motion`           |
-| `intent/no-arbitrary-motion-or-color`    | semantic color and spring motion tokens          |
-| `intent/no-dialog-root-outside-patterns` | `FormDialog` (or the imperative Confirm service) |
-| `intent/no-legacy-spinner`               | `IntentMarkLoader` from the indicators module    |
-| `intent/settings-use-schema`             | `defineSettings` rendered through `SettingsForm` |
+| Rule                                     | Replace with                                      |
+| ---------------------------------------- | ------------------------------------------------- |
+| `intent/no-raw-controls`                 | `Button`, `Input`, `Select`, or `Textarea`        |
+| `intent/no-direct-toast`                 | `notify` from the Notify pattern                  |
+| `intent/no-native-dialogs`               | `confirm()` from the Confirm pattern              |
+| `intent/no-adhoc-transitions`            | shared motion tiers from `$lib/motion`            |
+| `intent/no-arbitrary-motion-or-color`    | semantic color and spring motion tokens           |
+| `intent/no-dialog-root-outside-patterns` | `FormDialog` (or the imperative Confirm service)  |
+| `intent/no-uppercase`                    | sentence-case labels without extra letter spacing |
+| `intent/no-legacy-spinner`               | `IntentMarkLoader` from the indicators module     |
+| `intent/settings-use-schema`             | `defineSettings` rendered through `SettingsForm`  |
 
 `no-raw-controls` shares the narrow exception policy in
 `scripts/ui-component-raw-element-allowlist.json`; do not create a second lint-only exception.

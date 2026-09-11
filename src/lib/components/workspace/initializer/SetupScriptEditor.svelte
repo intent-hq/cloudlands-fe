@@ -304,9 +304,7 @@
     <div class="flex flex-col flex-[2] min-w-0 overflow-y-auto pl-10 pt-6 pb-6 pr-5">
       <!-- Auto-generate -->
       <div class="mb-4">
-        <h4
-          class="text-ui font-semibold uppercase tracking-wider text-muted-foreground mb-1.5 px-2"
-        >
+        <h4 class="text-ui font-semibold text-muted-foreground mb-1.5 px-2">
           {m.workspace_setupScriptEditor_generate_label()}
         </h4>
         <p class="text-xs text-subtle px-2 mb-2">
@@ -346,9 +344,7 @@
       <!-- Repo-committed script from .intent/config.json -->
       {#if repoConfigScript}
         <div class="mb-4">
-          <h4
-            class="text-ui font-semibold uppercase tracking-wider text-muted-foreground mb-1.5 px-2"
-          >
+          <h4 class="text-ui font-semibold text-muted-foreground mb-1.5 px-2">
             {m.workspace_setupScriptEditor_repoConfig_label()}
           </h4>
           <Button
@@ -372,9 +368,7 @@
       <!-- Last-used script for this repo (localStorage) -->
       {#if lastUsedScript}
         <div class="mb-4">
-          <h4
-            class="text-ui font-semibold uppercase tracking-wider text-muted-foreground mb-1.5 px-2"
-          >
+          <h4 class="text-ui font-semibold text-muted-foreground mb-1.5 px-2">
             {m.workspace_setupScriptEditor_lastUsed_label()}
           </h4>
           <Button
@@ -397,9 +391,7 @@
 
       <!-- Templates -->
       <div class="mb-4">
-        <h4
-          class="text-ui font-semibold uppercase tracking-wider text-muted-foreground mb-1.5 px-2"
-        >
+        <h4 class="text-ui font-semibold text-muted-foreground mb-1.5 px-2">
           {m.workspace_setupScriptEditor_templates_label()}
         </h4>
         {#each SETUP_SCRIPT_TEMPLATES as template (template.id)}
@@ -448,7 +440,7 @@
       </div>
       <!-- Bottom bar -->
       <div class="flex items-center gap-3 px-3 py-1.5 bg-muted/30 shrink-0">
-        <span class="text-ui font-medium uppercase tracking-wider text-muted-foreground shrink-0"
+        <span class="text-ui font-medium text-muted-foreground shrink-0"
           >{m.workspace_setupScriptEditor_variables_label()}</span
         >
         <div class="flex flex-wrap gap-1.5">

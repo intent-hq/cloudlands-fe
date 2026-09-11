@@ -35,7 +35,7 @@
 
 <div class="min-w-0 overflow-hidden rounded-(--radius-large) border border-border bg-muted/20">
   <div class="flex items-center justify-between gap-3 border-b border-border px-3 py-2">
-    <div class="type-caption font-medium uppercase tracking-wide text-muted-foreground">
+    <div class="type-caption font-medium text-muted-foreground">
       {m.chat_bulkProposalItems_bulkChanges_label()}
     </div>
     <div class="type-caption shrink-0 text-muted-foreground">

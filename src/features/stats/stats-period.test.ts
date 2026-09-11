@@ -54,7 +54,7 @@ describe('periodLabel / shortLabel', () => {
   it('renders card short labels (MON YYYY / YYYY / LAST 24H)', () => {
     expect(shortLabel('month', '2026-07')).toBe('JUL 2026');
     expect(shortLabel('year', '2026')).toBe('2026');
-    expect(shortLabel('24h', '')).toBe('LAST 24H');
+    expect(shortLabel('24h', '')).toBe('Last 24h');
   });
 });
 

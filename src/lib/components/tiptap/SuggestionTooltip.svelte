@@ -44,9 +44,7 @@
 
 <div class="suggestion-tooltip" style="left: {x}px; top: {y}px;">
   <div class="flex justify-between items-center mb-2">
-    <span class="font-semibold text-xs uppercase tracking-wide"
-      >{getTypeLabel(suggestion.type)}</span
-    >
+    <span class="font-semibold text-xs">{getTypeLabel(suggestion.type)}</span>
     {#if suggestion.author}
       <span class="suggestion-tooltip-author"
         >{m.tiptap_suggestionTooltip_byAuthor_label({ author: suggestion.author })}</span

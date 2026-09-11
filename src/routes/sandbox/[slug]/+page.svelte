@@ -46,9 +46,7 @@
       <CatalogFixtureList entry={detail.entry} />
     {:else}
       <section class="w-full min-w-0 space-y-4 p-6 lg:p-10">
-        <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          Catalog entry
-        </p>
+        <p class="text-xs font-medium text-muted-foreground">Catalog entry</p>
         <h1 class="text-3xl font-semibold tracking-tight">Fixture not found</h1>
         <p class="text-muted-foreground">
           This slug is not present in the static catalog registry.

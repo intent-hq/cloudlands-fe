@@ -270,7 +270,7 @@
   {#if toolState !== 'error' && snippetCount > 0}
     <div class="py-2">
       <!-- <div class="flex items-center gap-2 mb-2">
-          <span class="text-xs text-muted-foreground uppercase tracking-wide">Retrieved</span>
+          <span class="text-xs text-muted-foreground ">Retrieved</span>
           <span class="text-xs px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-medium">
             {snippetCount} {snippetCount === 1 ? 'file' : 'files'}
           </span>

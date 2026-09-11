@@ -315,7 +315,7 @@
       <div class="overflow-y-auto flex-1 p-3 space-y-3">
         <!-- Creation Simulation -->
         <div class="space-y-2">
-          <h4 class="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+          <h4 class="text-xs font-medium text-muted-foreground">
             <!-- i18n-ignore (dev-only debug UI) -->
             Workspace Creation
           </h4>
@@ -356,7 +356,7 @@
 
         <!-- Animation Settings -->
         <div class="space-y-2">
-          <h4 class="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+          <h4 class="text-xs font-medium text-muted-foreground">
             <!-- i18n-ignore (dev-only debug UI) -->
             Animations
           </h4>

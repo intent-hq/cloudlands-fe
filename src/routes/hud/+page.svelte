@@ -192,9 +192,7 @@
     font:
       600 10px 'JetBrains Mono',
       monospace;
-    letter-spacing: 0.15em;
     color: hsl(var(--muted-foreground));
-    text-transform: uppercase;
   }
   .hud-fullscreen-btn:hover {
     background: hsl(var(--muted) / 0.5);

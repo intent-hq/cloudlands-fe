@@ -170,9 +170,7 @@
       600 10px Inter,
       system-ui,
       sans-serif;
-    letter-spacing: 0.2em;
     color: hsl(var(--muted-foreground));
-    text-transform: uppercase;
   }
   .hud-header-filter-sep {
     width: 1px;
@@ -196,8 +194,6 @@
       600 10px Inter,
       system-ui,
       sans-serif;
-    letter-spacing: 0.2em;
-    text-transform: uppercase;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;

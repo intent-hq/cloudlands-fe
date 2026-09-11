@@ -132,15 +132,13 @@
     border-top: none;
   }
 
-  /* h3 (Features / Bug Fixes / …) → small uppercase eyebrow labels */
+  /* h3 (Features / Bug Fixes / …) → small sentence-case eyebrow labels */
   .release-notes-body :global(.markdown-viewer h3) {
     margin-top: 1.25rem;
     margin-bottom: 0.375rem;
     font-size: 0.6875rem;
     font-weight: 600;
-    letter-spacing: 0.08em;
     line-height: 1.4;
-    text-transform: uppercase;
     color: hsl(var(--muted-foreground));
   }
 

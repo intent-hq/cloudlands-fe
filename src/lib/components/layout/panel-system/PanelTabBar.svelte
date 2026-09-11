@@ -5,7 +5,7 @@
    * PanelTabBar - Compact header bar for a panel
    *
    * Displays a breadcrumb-style header with:
-   * - Category label (muted, uppercase)
+   * - Category label (muted, sentence case)
    * - Tab switcher dropdown (when multiple tabs)
    * - Active tab title
    * - Content actions on the right
@@ -1678,8 +1678,7 @@
               {/if}
 
               {#if isBackgroundAgent(tab)}
-                <span
-                  class="text-ui font-medium text-muted-foreground bg-muted px-1 py-0.5 rounded uppercase tracking-wider"
+                <span class="text-ui font-medium text-muted-foreground bg-muted px-1 py-0.5 rounded"
                   >{m.layout_panelTabBar_bgBadge_label()}</span
                 >
               {/if}

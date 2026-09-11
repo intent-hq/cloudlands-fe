@@ -126,7 +126,7 @@
     <!-- Staged Changes -->
     {#if stagedChanges.length > 0}
       <div class="mt-2">
-        <p class="text-ui uppercase tracking-wider text-muted-foreground px-2 mb-1">
+        <p class="text-ui text-muted-foreground px-2 mb-1">
           {m.workspace_fileChanges_staged_label()}
         </p>
         <FileChangesList

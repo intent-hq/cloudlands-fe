@@ -200,7 +200,7 @@
 
 <section id="foundations" class="scroll-mt-24 space-y-6" aria-labelledby="foundations-title">
   <header class="space-y-2">
-    <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Semantic system</p>
+    <p class="text-xs font-medium text-muted-foreground">Semantic system</p>
     <h2 id="foundations-title" class="text-2xl font-medium tracking-tight">Foundations</h2>
     <p class="max-w-3xl text-sm leading-relaxed text-muted-foreground">
       Live roles resolved from the active theme. These specimens reference the shared CSS variables

@@ -108,9 +108,7 @@
         {#if mode === 'gallery'}
           <h3 class="text-lg font-medium tracking-tight">{entry.name}</h3>
         {:else}
-          <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Component focus
-          </p>
+          <p class="text-xs font-medium text-muted-foreground">Component focus</p>
           <h1 class="mt-1 text-3xl font-medium tracking-tight">{entry.name}</h1>
         {/if}
         <span

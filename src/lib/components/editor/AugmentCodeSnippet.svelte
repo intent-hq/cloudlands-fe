@@ -68,9 +68,7 @@
     </div>
 
     {#if mode && mode !== 'EXCERPT'}
-      <span
-        class="text-ui uppercase tracking-wider font-semibold text-muted-foreground bg-muted px-2 py-0.5 rounded"
-      >
+      <span class="text-ui font-semibold text-muted-foreground bg-muted px-2 py-0.5 rounded">
         {mode}
       </span>
     {/if}

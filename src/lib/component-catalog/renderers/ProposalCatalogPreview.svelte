@@ -17,9 +17,7 @@
       aria-label="Pending proposal"
     >
       <div class="space-y-1 px-3 pt-3" data-catalog-rendered-state="default">
-        <p class="type-caption font-medium uppercase tracking-wide text-muted-foreground">
-          Settings change
-        </p>
+        <p class="type-caption font-medium text-muted-foreground">Settings change</p>
         <h3 class="type-body font-medium text-foreground">Update workspace defaults</h3>
         <p class="type-body leading-relaxed text-muted-foreground">
           Review the suggested title before applying it to this workspace.
@@ -70,9 +68,7 @@
       aria-label="Bulk proposal"
     >
       <div class="space-y-1 px-3 pt-3">
-        <p class="type-caption font-medium uppercase tracking-wide text-muted-foreground">
-          Bulk change
-        </p>
+        <p class="type-caption font-medium text-muted-foreground">Bulk change</p>
         <h3 class="type-body font-medium text-foreground">Update workspace specialists</h3>
         <p
           class="type-body leading-relaxed text-muted-foreground"

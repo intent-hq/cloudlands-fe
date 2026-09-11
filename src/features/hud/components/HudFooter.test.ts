@@ -144,12 +144,12 @@ describe('HudFooter zones', () => {
   it('shows OFFLINE until the daemon-health slice reports a live connection', async () => {
     render(HudFooter);
     const system = screen.getByTestId('hud-footer-system');
-    expect(system.textContent).toContain('OFFLINE');
+    expect(system.textContent).toContain('Offline');
 
     appStore.dispatch(connectionStatusChanged('connected'));
     await waitFor(() => {
       flushSync();
-      expect(system.textContent).toContain('ONLINE');
+      expect(system.textContent).toContain('Online');
     });
   });
 
@@ -160,13 +160,13 @@ describe('HudFooter zones', () => {
     appStore.dispatch(connectionStatusChanged('connected'));
     await waitFor(() => {
       flushSync();
-      expect(system.textContent).toContain('ONLINE');
+      expect(system.textContent).toContain('Online');
     });
 
     appStore.dispatch(connectionStatusChanged('disconnected'));
     await waitFor(() => {
       flushSync();
-      expect(system.textContent).toContain('OFFLINE');
+      expect(system.textContent).toContain('Offline');
     });
   });
 
@@ -178,7 +178,7 @@ describe('HudFooter zones', () => {
     appStore.dispatch(heartbeatFailed());
     await waitFor(() => {
       flushSync();
-      expect(system.textContent).toContain('ONLINE');
+      expect(system.textContent).toContain('Online');
     });
   });
 
@@ -224,7 +224,7 @@ describe('HudFooter remote daemon hostname', () => {
       flushSync();
       expect(screen.getByTestId('hud-footer-hostname').textContent).toBe('(intent1)');
     });
-    expect(screen.getByTestId('hud-footer-system').textContent).toContain('ONLINE');
+    expect(screen.getByTestId('hud-footer-system').textContent).toContain('Online');
   });
 
   it('renders the SHORT hostname (intent1.local → intent1)', async () => {
@@ -252,7 +252,7 @@ describe('HudFooter remote daemon hostname', () => {
     );
     await waitFor(() => {
       flushSync();
-      expect(screen.getByTestId('hud-footer-system').textContent).toContain('ONLINE');
+      expect(screen.getByTestId('hud-footer-system').textContent).toContain('Online');
     });
     expect(screen.queryByTestId('hud-footer-hostname')).toBeNull();
     expect(screen.getByTestId('hud-footer-system').textContent).not.toContain('(');
@@ -269,7 +269,7 @@ describe('HudFooter remote daemon hostname', () => {
     );
     await waitFor(() => {
       flushSync();
-      expect(screen.getByTestId('hud-footer-system').textContent).toContain('ONLINE');
+      expect(screen.getByTestId('hud-footer-system').textContent).toContain('Online');
     });
     expect(screen.queryByTestId('hud-footer-hostname')).toBeNull();
     expect(screen.getByTestId('hud-footer-system').textContent).not.toContain('(');
@@ -293,7 +293,7 @@ describe('HudFooter remote daemon hostname', () => {
     appStore.dispatch(connectionStatusChanged('disconnected'));
     await waitFor(() => {
       flushSync();
-      expect(screen.getByTestId('hud-footer-system').textContent).toContain('OFFLINE');
+      expect(screen.getByTestId('hud-footer-system').textContent).toContain('Offline');
     });
     expect(screen.getByTestId('hud-footer-hostname').textContent).toBe('(intent1)');
   });

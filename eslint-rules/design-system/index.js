@@ -4,6 +4,7 @@ import noButtonCompatibilityAliases from './no-button-compatibility-aliases.js';
 import noDialogRootOutsidePatterns from './no-dialog-root-outside-patterns.js';
 import noDirectToast from './no-direct-toast.js';
 import noLegacySpinner from './no-legacy-spinner.js';
+import noUppercase from './no-uppercase.js';
 import noNativeDialogs from './no-native-dialogs.js';
 import noRawControls from './no-raw-controls.js';
 import noRawMenuRow from './no-raw-menu-row.js';
@@ -11,6 +12,7 @@ import noRawTypography from './no-raw-typography.js';
 import settingsUseSchema from './settings-use-schema.js';
 
 export const designSystemRules = {
+  'no-uppercase': noUppercase,
   'no-adhoc-transitions': noAdhocTransitions,
   'no-arbitrary-motion-or-color': noArbitraryMotionOrColor,
   'no-button-compatibility-aliases': noButtonCompatibilityAliases,

@@ -166,9 +166,7 @@
   <!-- Recent URLs -->
   {#if $recentUrls$.length > 0}
     <div class="flex items-center justify-between px-4 py-1">
-      <span class="text-ui uppercase tracking-wider text-muted-foreground"
-        >{m.browser_panel_recent_label()}</span
-      >
+      <span class="text-ui text-muted-foreground">{m.browser_panel_recent_label()}</span>
       <Button
         type="button"
         variant="ghost"

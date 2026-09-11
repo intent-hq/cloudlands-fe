@@ -517,11 +517,11 @@
                   <Fa icon={getIconForType(panel.type)} class="h-3.5 w-3.5 text-subtle" />
                   <span class="flex-1 truncate text-left">{panel.label}</span>
                   {#if isCurrentAgent}
-                    <span class="type-caption text-muted-foreground uppercase"
+                    <span class="type-caption text-muted-foreground"
                       >{m.chat_contextPicker_you_badge()}</span
                     >
                   {:else if panel.isActive}
-                    <span class="type-caption text-muted-foreground uppercase"
+                    <span class="type-caption text-muted-foreground"
                       >{m.chat_contextPicker_active_badge()}</span
                     >
                   {/if}

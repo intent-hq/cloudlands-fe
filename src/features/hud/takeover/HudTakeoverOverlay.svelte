@@ -780,9 +780,7 @@
     font:
       600 10px 'JetBrains Mono',
       monospace;
-    letter-spacing: 0.12em;
     color: hsl(var(--muted-foreground));
-    text-transform: uppercase;
   }
   :global(.ov-dismiss:hover) {
     background: hsl(var(--muted) / 0.5);
@@ -1063,9 +1061,7 @@
       600 10px Inter,
       system-ui,
       sans-serif;
-    letter-spacing: 0.18em;
     color: hsl(var(--muted-foreground));
-    text-transform: uppercase;
   }
   .ov-panel-rule {
     flex: 1;

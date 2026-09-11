@@ -252,9 +252,7 @@
     font:
       600 10px 'JetBrains Mono',
       monospace;
-    letter-spacing: 0.15em;
     color: hsl(var(--muted-foreground));
-    text-transform: uppercase;
   }
   :global(.hud-header-theme-btn:hover),
   :global(.hud-header-sound-btn:hover) {

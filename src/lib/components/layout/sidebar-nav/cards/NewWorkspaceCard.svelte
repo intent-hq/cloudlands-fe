@@ -99,7 +99,7 @@
       onclick={openWithDraft}
     >
       <div class="flex items-center gap-2 mb-1">
-        <span class="text-ui font-semibold uppercase tracking-wider text-primary-ink/70"
+        <span class="text-ui font-semibold text-primary-ink/70"
           >{m.layout_newWorkspaceCard_draft_label()}</span
         >
       </div>

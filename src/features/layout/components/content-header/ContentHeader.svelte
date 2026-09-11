@@ -122,7 +122,7 @@
         {#if crumb.onClick}
           <Button
             onclick={crumb.onClick}
-            class="flex items-center gap-1.5 text-ui font-medium tracking-wide uppercase text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+            class="flex items-center gap-1.5 text-ui font-medium text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
           >
             {#if crumb.icon}
               <Fa icon={crumb.icon} class="w-3 h-3 opacity-50" />
@@ -130,9 +130,7 @@
             <span class="truncate max-w-24">{crumb.label}</span>
           </Button>
         {:else}
-          <span
-            class="flex items-center gap-1.5 text-ui font-medium tracking-wide uppercase text-muted-foreground"
-          >
+          <span class="flex items-center gap-1.5 text-ui font-medium text-muted-foreground">
             {#if crumb.icon}
               <Fa icon={crumb.icon} class="w-3 h-3 opacity-50" />
             {/if}

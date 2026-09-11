@@ -16,7 +16,7 @@
     {#if showIcon}
       <Fa icon={faCalendar} size="xs" class="text-ghost" />
     {/if}
-    <span class="text-xs font-medium text-muted-foreground first-letter:uppercase">{label}</span>
+    <span class="text-xs font-medium text-muted-foreground">{label}</span>
   </div>
   <div class="flex-1 h-px bg-border"></div>
 </div>

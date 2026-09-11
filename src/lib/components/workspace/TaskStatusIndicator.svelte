@@ -181,8 +181,8 @@
 {:else}
   <span
     class="inline-flex items-center rounded-md font-semibold {compact
-      ? 'px-2 py-0.5 text-[0.66rem] uppercase tracking-wide'
-      : 'px-2 py-1 text-sm uppercase tracking-wide'} {statusColors[status]}"
+      ? 'px-2 py-0.5 text-[0.66rem] '
+      : 'px-2 py-1 text-sm '} {statusColors[status]}"
   >
     {statusLabels[status]}
   </span>

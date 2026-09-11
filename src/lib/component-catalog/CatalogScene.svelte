@@ -236,7 +236,7 @@
 >
   {#if requestedFit !== 'component'}
     <header class="rounded-lg border border-border bg-card p-4">
-      <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Named preview</p>
+      <p class="text-xs font-medium text-muted-foreground">Named preview</p>
       <h1 class="mt-1 text-2xl font-medium tracking-tight">{title || slug}</h1>
       {#if availableStates.length > 0}
         <nav class="mt-3 flex flex-wrap gap-2" aria-label="Preview states">

@@ -38,8 +38,7 @@
     aria-label={m.browser_panel_toggleGroup_ariaLabel({ name: groupLabel })}
   >
     <Fa icon={expanded ? faChevronDown : faChevronRight} size="xs" class="text-muted-foreground" />
-    <span class="truncate text-ui uppercase tracking-wider text-muted-foreground">{groupLabel}</span
-    >
+    <span class="truncate text-ui text-muted-foreground">{groupLabel}</span>
     <span class="text-ui text-muted-foreground">{group.entries.length}</span>
   </Button>
   {#if expanded}

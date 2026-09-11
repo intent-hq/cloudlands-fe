@@ -71,7 +71,7 @@
 
 <div class="space-y-5">
   <div>
-    <h2 class="type-caption font-medium! text-muted-foreground uppercase tracking-wider mb-3">
+    <h2 class="type-caption font-medium! text-muted-foreground mb-3">
       {m.settings_devices_title()}
     </h2>
     <p class="max-w-2xl type-body text-muted-foreground">

@@ -583,7 +583,7 @@ Only respond with the <layout> tag and valid JSON inside it.`;
         class="absolute bottom-full left-0 mt-1 w-56 bg-popover border border-border rounded-lg shadow-lg z-50 py-1"
         transition:fade={{ tier: 'fast' }}
       >
-        <div class="px-2 py-1 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+        <div class="px-2 py-1 text-xs font-medium text-muted-foreground">
           {m.layout_layoutHeader_focusModes_header()}
         </div>
         {#each contentPresets as preset (preset.id)}
