@@ -8170,7 +8170,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:message-co
                       <div aria-selected="false" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-pointer data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground gap-2 group/menu-item h-8 items-center justify-start min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2.5 py-1 relative rounded-(--radius-row) select-none text-left text-muted-foreground text-sm transition-colors type-caption w-full z-10" id="c<id>-suggestions-0" role="option" tabindex="-1">
                         <span class="flex-1 min-w-0 truncate">
                           "Explain the latest changes"
-                        <span class="bg-background border border-border h-[18px] inline-flex items-center px-1 rounded-[5px] shrink-0">
+                        <span class="bg-background border border-border h-5 inline-flex items-center px-1 rounded-sm shrink-0">
                           <kbd class="font-normal leading-none shrink-0 text-muted-foreground type-caption" data-slot="shortcut-chip" tokens=["--font-ui"]>
                             "Alt+1"
                         <svg aria-hidden="true" class="opacity-70 shrink-0" role="img">
@@ -8179,7 +8179,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:message-co
                       <div aria-selected="false" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-pointer data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground gap-2 group/menu-item h-8 items-center justify-start min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2.5 py-1 relative rounded-(--radius-row) select-none text-left text-muted-foreground text-sm transition-colors type-caption w-full z-10" id="c<id>-suggestions-1" role="option" tabindex="-1">
                         <span class="flex-1 min-w-0 truncate">
                           "Draft a concise release note"
-                        <span class="bg-background border border-border h-[18px] inline-flex items-center px-1 rounded-[5px] shrink-0">
+                        <span class="bg-background border border-border h-5 inline-flex items-center px-1 rounded-sm shrink-0">
                           <kbd class="font-normal leading-none shrink-0 text-muted-foreground type-caption" data-slot="shortcut-chip" tokens=["--font-ui"]>
                             "Alt+2"
                         <svg aria-hidden="true" class="duration-spring-fast opacity-0 shrink-0 transition-opacity" role="img">
@@ -8188,7 +8188,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:message-co
                       <div aria-selected="false" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-pointer data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground gap-2 group/menu-item h-8 items-center justify-start min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2.5 py-1 relative rounded-(--radius-row) select-none text-left text-muted-foreground text-sm transition-colors type-caption w-full z-10" id="c<id>-suggestions-2" role="option" tabindex="-1">
                         <span class="flex-1 min-w-0 truncate">
                           "List the remaining risks"
-                        <span class="bg-background border border-border h-[18px] inline-flex items-center px-1 rounded-[5px] shrink-0">
+                        <span class="bg-background border border-border h-5 inline-flex items-center px-1 rounded-sm shrink-0">
                           <kbd class="font-normal leading-none shrink-0 text-muted-foreground type-caption" data-slot="shortcut-chip" tokens=["--font-ui"]>
                             "Alt+3"
                         <svg aria-hidden="true" class="duration-spring-fast opacity-0 shrink-0 transition-opacity" role="img">
