@@ -757,6 +757,74 @@ describe('message hydration policy', () => {
       expect(frames.callbacks).toHaveLength(4);
     });
 
+    it('hydrates forced rows immediately while the hold is active', () => {
+      const frames = controlledFrames();
+      const transitions: string[] = [];
+      const policy = createMessageHydrationPolicy([assistant('forced'), assistant('tail')], {
+        frameBudgetMs: 6,
+        scheduleFrame: frames.scheduleFrame,
+        cancelFrame: frames.cancelFrame,
+        now: () => 0,
+        isHydrationHeld: () => true,
+        onHydrate: (id) => transitions.push(id),
+      });
+      policies.push(policy);
+      const elements = observe(policy, ['forced', 'tail']);
+      MockIntersectionObserver.instances[0].fire([
+        { target: elements.get('forced')!, isIntersecting: true },
+      ]);
+      frames.callbacks[0](0);
+      expect(transitions).toEqual([]);
+
+      policy.setForced('forced', true);
+      expect(transitions).toEqual(['forced']);
+      expect(policy.getHydratedIds()).toEqual(['forced']);
+    });
+
+    it('restarts a held hydration after disable and re-enable, then resumes on release', () => {
+      const frames = controlledFrames();
+      const transitions: string[] = [];
+      let held = true;
+      const policy = createMessageHydrationPolicy([assistant('row'), assistant('tail')], {
+        frameBudgetMs: 6,
+        scheduleFrame: frames.scheduleFrame,
+        cancelFrame: frames.cancelFrame,
+        now: () => 0,
+        isHydrationHeld: () => held,
+        onHydrate: (id) => transitions.push(id),
+      });
+      policies.push(policy);
+      const elements = observe(policy, ['row', 'tail']);
+      MockIntersectionObserver.instances[0].fire([
+        { target: elements.get('row')!, isIntersecting: true },
+      ]);
+      frames.callbacks[0](0);
+      expect(frames.callbacks).toHaveLength(2);
+
+      policy.setActive(false);
+      expect(frames.cancelFrame).toHaveBeenCalledWith(2);
+      frames.callbacks[1](16);
+      expect(transitions).toEqual([]);
+      expect(frames.callbacks).toHaveLength(2);
+
+      // Re-enabling re-observes the rows; a fresh intersection report under
+      // the still-active hold queues them again without hydrating.
+      policy.setActive(true);
+      MockIntersectionObserver.instances
+        .at(-1)!
+        .fire([{ target: elements.get('row')!, isIntersecting: true }]);
+      expect(frames.callbacks).toHaveLength(3);
+      frames.callbacks[2](32);
+      expect(transitions).toEqual([]);
+
+      held = false;
+      frames.callbacks[3](48);
+      frames.callbacks[4](64);
+      expect(transitions).toEqual(['row']);
+      expect(policy.getHydratedIds()).toEqual(['row']);
+      expect(frames.callbacks).toHaveLength(5);
+    });
+
     it('stops holding staged hydration once the bounded hold elapses', () => {
       const frames = controlledFrames();
       let clock = 0;

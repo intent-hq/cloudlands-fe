@@ -700,6 +700,56 @@ describe('followBottom policy', () => {
     action.destroy();
   });
 
+  it('drops active leases when disabled and re-enables without a hold', () => {
+    const child = document.createElement('div');
+    container.append(child);
+    const action = followBottom(container, { follow: true });
+    runSettleTail();
+    const mutation = beforeFollowBottomMutation(child);
+    expect(hasActiveFollowBottomMutation(container)).toBe(true);
+
+    action.update({ enabled: false, follow: true });
+    expect(hasActiveFollowBottomMutation(container)).toBe(false);
+    expect(resizeActive.size).toBe(0);
+
+    action.update({ enabled: true, follow: true });
+    expect(isFollowingBottom(container)).toBe(true);
+    expect(hasActiveFollowBottomMutation(container)).toBe(false);
+    // The pre-disable lease is inert: neither its ticks nor its settle re-arm a hold.
+    mutation.request();
+    expect(hasActiveFollowBottomMutation(container)).toBe(false);
+    mutation.settle();
+    expect(hasActiveFollowBottomMutation(container)).toBe(false);
+    action.destroy();
+  });
+
+  it('keeps a lease scoped to its own root across a root swap', () => {
+    const child = document.createElement('div');
+    container.append(child);
+    const replacement = document.createElement('div');
+    Object.defineProperties(replacement, {
+      scrollHeight: { configurable: true, get: () => scrollHeight },
+      clientHeight: { configurable: true, value: 300 },
+      scrollTop: { configurable: true, writable: true, value: 600 },
+    });
+    document.body.append(replacement);
+    const action = followBottom(container, { follow: true });
+    runSettleTail();
+    const mutation = beforeFollowBottomMutation(child);
+    expect(hasActiveFollowBottomMutation(container)).toBe(true);
+
+    // The consumer swaps roots: the new root never inherits the old hold, and
+    // destroying the old follower retires it.
+    const swapped = followBottom(replacement, { follow: true });
+    expect(hasActiveFollowBottomMutation(replacement)).toBe(false);
+    action.destroy();
+    expect(hasActiveFollowBottomMutation(container)).toBe(false);
+    expect(hasActiveFollowBottomMutation(replacement)).toBe(false);
+    mutation.settle();
+    swapped.destroy();
+    replacement.remove();
+  });
+
   it('releases a lease whose element leaves the container before its motion ends', () => {
     const wrapper = document.createElement('div');
     const row = document.createElement('div');
