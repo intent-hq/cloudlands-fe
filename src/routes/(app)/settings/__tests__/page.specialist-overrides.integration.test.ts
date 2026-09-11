@@ -24,11 +24,13 @@ vi.mock('svelte-fa', async () => ({
   default: (await import('$lib/components/workspace/sidebar/__tests__/mocks/Fa.svelte')).default,
 }));
 
-async function slotOnly() {
-  return {
-    default: (await import('$lib/components/chat/__tests__/mocks/SlotOnly.svelte')).default,
-  };
-}
+const { slotOnly } = vi.hoisted(() => ({
+  async slotOnly() {
+    return {
+      default: (await import('$lib/components/chat/__tests__/mocks/SlotOnly.svelte')).default,
+    };
+  },
+}));
 
 vi.mock('$lib/components/settings/ProviderSelector.svelte', slotOnly);
 vi.mock('$lib/components/settings/ConnectionsSettings.svelte', slotOnly);
