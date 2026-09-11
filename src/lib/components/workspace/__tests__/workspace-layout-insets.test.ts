@@ -1,3 +1,6 @@
+// @verify-changed-triggers: ../WorkspaceLayout.svelte,
+//   src/routes/(app)/workspace/[id]/WorkspaceSurface.svelte
+
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';

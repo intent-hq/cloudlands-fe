@@ -1,3 +1,11 @@
+// @verify-changed-triggers: ../MultiSelectTabbedSidebar.svelte, ../multi-select-sidebar-tabs.ts,
+//   ../multi-select-sidebar-transitions.css, ../WorkspaceAgentsList.svelte,
+//   ../WorkspaceSidebarHeader.svelte, ../TaskStatusProgress.svelte, ../SidebarBrowserLauncher.svelte,
+//   ../sidebar/WorkspaceProgressCard.svelte, ../sidebar/FlameGraph.svelte,
+//   ../sidebar/ContextPanel.svelte, ../sidebar/NotesPanel.svelte, ../sidebar/SidebarChangesPanel.svelte,
+//   ../../layout/sidebar-nav/SidebarNav.svelte, ../../layout/sidebar-nav/cards/AllWorkspacesCard.svelte,
+//   ../../layout/WindowTitleBar.svelte, ../../../../routes/(app)/+layout.svelte
+
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 

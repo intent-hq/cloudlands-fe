@@ -318,34 +318,34 @@ select a conservative suite instead of silently skipping coverage.
 
 Any renderer source change also runs `pnpm run test:ui-invariants` (chained into
 `validate:architecture` too): the repo-wide UI ratchets and the component-catalog
-`*.meta.ts` caller ledgers. These suites read the tree from the filesystem rather than
-importing every component they audit, so `vitest related` and targeted runs miss them —
-cloudlands-fe#2256 hit CI red twice this way. Membership is derived, not listed:
+`*.meta.ts` caller ledgers. Membership is derived, not listed:
 `scripts/ui-invariant-suites.mjs` scans the vitest test files under `scripts/` and `src/`
 (`*.{test,spec}.*`, minus the Playwright `*.ct.spec.*` / `*.visual.spec.*` suites), runs
 every one whose leading comments carry `// @ui-invariant`, and fails when a test whose
 parsed code (comments, string bodies, and regex literals never count) references
 `buildUiComponentInventory` or imports a `*.meta` module and reads a `.callers` ledger has
-neither that marker nor
-`// @ui-invariant-exempt: <reason>`. Add the marker to any new inventory or ledger suite;
-`node scripts/ui-invariant-suites.mjs --list` shows the current set and `--check`
-validates markers without running anything. Likewise, any code change under `src/`, any
-`AGENTS.md` change (root or nested — `lint:instruction-themis-pins` scans them all), and
-any edit to the `scripts/check-*.mjs` gates themselves also runs
+neither that marker nor `// @ui-invariant-exempt: <reason>`. Add the marker to any new
+inventory or ledger suite; `node scripts/ui-invariant-suites.mjs --list` shows the current
+set and `--check` validates markers without running anything. Likewise, any code change
+under `src/`, any `AGENTS.md` change (root or nested — `lint:instruction-themis-pins` scans
+them all), and any edit to the `scripts/check-*.mjs` gates themselves also runs
 `pnpm run lint:architecture` — the repo-wide static architecture scans CI runs through
 `validate:architecture` plus its separate whole-`src/` `workspace:*` dispatcher gate step —
-because those scans are cross-file graph checks that
-per-file linting cannot see: cloudlands-fe#2315 passed `verify:changed` locally and
-failed CI in `lint:saga-watcher-ownership`. A change to `scripts/type-check.ts` additionally
-runs `pnpm run type-check:validate`, since `lint:architecture` omits that wrapper and the
+because those scans are cross-file graph checks that per-file linting cannot see:
+cloudlands-fe#2315 passed `verify:changed` locally and failed CI in
+`lint:saga-watcher-ownership`. A change to `scripts/type-check.ts` additionally runs
+`pnpm run type-check:validate`, since `lint:architecture` omits that wrapper and the
 per-boundary checks invoke `tsc` directly.
 
-For the same reason, a change to any IPC channel source — `src/preload/index.ts`,
-`src/preload/index.template.ts`, `src/shared/ipc-registry.ts`, or
-`scripts/inline-ipc-channels.ts` — also runs `scripts/inline-ipc-channels.test.ts`, which
-reads the generated preload from disk and fails when it drifts from the template
-(cloudlands-fe#2314 hand-edited `src/preload/index.ts` and only CI caught it). Regenerate
-with `pnpm run generate:ipc-channels` rather than editing `src/preload/index.ts` by hand.
+`vitest related` follows the import graph, so a suite that reads the tree from disk is
+invisible to `verify:changed` (cloudlands-fe#2256 and #2314 both failed only on CI). Such a
+suite declares its triggers in its leading comments —
+`// @verify-changed-triggers: src/preload/index.ts, src/lib/components/**` (repo-relative
+paths or globs; `./` and `../` entries resolve from the test file's directory) — or opts
+out with `// @verify-changed-exempt: <reason>`; `// @ui-invariant` suites are already
+covered by the renderer trigger. `pnpm run lint:verify-changed-triggers` (in
+`validate:architecture`) fails an undeclared disk-reading suite. Regenerate
+`src/preload/index.ts` with `pnpm run generate:ipc-channels` rather than editing it by hand.
 
 Only checks that genuinely conflict use host-wide locks, held for one check at a time:
 Playwright CT uses `ct-<CT_PORT>` (default `ct-3100`) and the full Vitest fallback uses

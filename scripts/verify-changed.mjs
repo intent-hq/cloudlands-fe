@@ -16,6 +16,11 @@ import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } 
 import { fileURLToPath } from 'node:url';
 import { escape as escapeGlob, globSync } from 'glob';
 import { checkDepsFresh } from './check-deps-fresh.mjs';
+import {
+  listDeclaredSuites,
+  selectDeclaredSuites,
+  TRIGGER_MARKER,
+} from './verify-changed-triggers.mjs';
 
 export const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const FRONTEND_PREFIX = 'packages/cloudlands-fe/';
@@ -67,13 +72,6 @@ const FULL_RISK_FILES = new Set([
   'vitest.config.ts',
 ]);
 const GENERATED_PRELOAD = 'src/preload/index.ts';
-const PRELOAD_DRIFT_TEST = 'scripts/inline-ipc-channels.test.ts';
-const PRELOAD_DRIFT_SOURCES = new Set([
-  GENERATED_PRELOAD,
-  'src/preload/index.template.ts',
-  'src/shared/ipc-registry.ts',
-  'scripts/inline-ipc-channels.ts',
-]);
 
 function slash(path) {
   return path.split(sep).join('/');
@@ -346,6 +344,9 @@ function command(id, label, args, lockKind = null) {
 
 export function createVerificationPlan(files, options = {}) {
   const root = options.root ?? REPO_ROOT;
+  const declared = options.declaredSuites
+    ? { suites: options.declaredSuites, violations: [] }
+    : listDeclaredSuites(root);
   const existing = files.filter((file) => isExisting(file, root));
   const formatFiles = existing.filter((file) => FORMAT_EXTENSIONS.has(extname(file)));
   const lintFiles = existing.filter(isLintable);
@@ -368,9 +369,9 @@ export function createVerificationPlan(files, options = {}) {
       !UNIT_TEST_RE.test(file),
   );
   const uiInvariants = files.some(isRendererSource);
-  const preloadDrift =
-    files.some((file) => PRELOAD_DRIFT_SOURCES.has(file)) &&
-    !directUnit.includes(PRELOAD_DRIFT_TEST);
+  const declaredUnit = selectDeclaredSuites(declared.suites, files).filter(
+    (suite) => !directUnit.includes(suite),
+  );
   let architecture = files.some(isArchitectureSource);
   const typeCheckWrapper = files.includes('scripts/type-check.ts');
   const boundaries = new Set();
@@ -482,15 +483,15 @@ export function createVerificationPlan(files, options = {}) {
         ]),
       );
     }
-    if (preloadDrift) {
+    if (declaredUnit.length) {
       checks.push(
-        command('vitest-preload-drift', 'Vitest preload drift (generated IPC channels)', [
+        command('vitest-declared', 'Vitest (suites declaring changed paths as triggers)', [
           'exec',
           'vitest',
           'run',
           '--config',
           'vitest.config.ts',
-          PRELOAD_DRIFT_TEST,
+          ...declaredUnit,
         ]),
       );
     }
@@ -576,7 +577,12 @@ export function createVerificationPlan(files, options = {}) {
       ]),
     );
   }
-  return { files, checks, fallbackReasons: [...new Set(fallbackReasons)].sort() };
+  return {
+    files,
+    checks,
+    fallbackReasons: [...new Set(fallbackReasons)].sort(),
+    triggerViolations: declared.violations.map((entry) => entry.path),
+  };
 }
 
 function processIsAlive(pid) {
@@ -667,6 +673,11 @@ export function printPlan(plan, dryRun, log = console.log) {
   for (const file of plan.files) log(`  - ${file}`);
   if (plan.fallbackReasons.length) {
     log(`verify:changed: safe fallback for ${plan.fallbackReasons.join(', ')}`);
+  }
+  if (plan.triggerViolations?.length) {
+    log(
+      `verify:changed: warning: ${plan.triggerViolations.length} vitest suite(s) read the tree from disk without a ${TRIGGER_MARKER} header and are never selected here; see pnpm run lint:verify-changed-triggers`,
+    );
   }
   if (plan.files.includes(GENERATED_PRELOAD)) {
     log(
