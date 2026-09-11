@@ -339,9 +339,19 @@ async function expectNormalActiveShape(
   });
   expect(radii.leading).toBeGreaterThan(0);
   expect(radii.trailing).toBe(radii.leading);
-  await expect(tab.locator('[data-workspace-tab-leading-flare]')).toHaveCount(1);
-  await expect(tab.locator('[data-workspace-tab-trailing-flare]')).toHaveCount(1);
-  if (assertHeight) expect((await box(tab)).height).toBeCloseTo(36 * zoom, 0);
+  const leadingFlare = tab.locator('[data-workspace-tab-leading-flare]');
+  const trailingFlare = tab.locator('[data-workspace-tab-trailing-flare]');
+  await expect(leadingFlare).toHaveCount(1);
+  await expect(trailingFlare).toHaveCount(1);
+  const [tabBox, leadingFlareBox, trailingFlareBox] = await Promise.all([
+    box(tab),
+    box(leadingFlare),
+    box(trailingFlare),
+  ]);
+  const tabBottom = tabBox.y + tabBox.height;
+  expect(leadingFlareBox.y + leadingFlareBox.height).toBeCloseTo(tabBottom, 1);
+  expect(trailingFlareBox.y + trailingFlareBox.height).toBeCloseTo(tabBottom, 1);
+  if (assertHeight) expect(tabBox.height).toBeCloseTo(36 * zoom, 0);
   return radii;
 }
 
@@ -801,7 +811,7 @@ test('drag keeps one horizontal real tab and drops it at the invisible reserved 
     const tracked = await box(active);
     const titlebarBounds = await box(titlebar);
     expect(tracked.x).toBeCloseTo(origin.x + pointerX - startX, 1);
-    expect(tracked.y).toBeCloseTo(origin.y - 2, 1);
+    expect(tracked.y).toBeCloseTo(origin.y, 1);
     await expect(mask).toHaveAttribute('data-tracking', 'true');
     expect(
       await mask.evaluate((node) => ({
@@ -849,7 +859,7 @@ test('drag keeps one horizontal real tab and drops it at the invisible reserved 
     outlineStyle: 'none',
   });
   expect(dragged.x).toBeCloseTo(origin.x + dragX - startX, 1);
-  expect(dragged.y).toBeCloseTo(origin.y - 2, 1);
+  expect(dragged.y).toBeCloseTo(origin.y, 1);
   expect(leadingFlare.y + leadingFlare.height).toBeCloseTo(origin.y + origin.height, 1);
   expect(trailingFlare.y + trailingFlare.height).toBeCloseTo(origin.y + origin.height, 1);
   expect(

@@ -728,9 +728,6 @@
        against the last tab's pr-3 padding when everything fits, but during
        overflow the clipped tab edge is flush with the strip border, so mr-1
        (plus the parent's gap-1) keeps 8px of clearance before the "+".
-       The 2px bottom padding contains the dropped active-tab flares inside
-       the scrollport; the matching negative margin preserves the strip's
-       36px titlebar footprint while preventing vertical overflow.
        data-app-region-clip: tabs scrolled out of this container must not carve
        no-drag holes in the titlebar drag strip (unclipped-geometry carving,
        intent-hq/monorepo#2400; rules in app.css). -->
@@ -743,8 +740,6 @@
       isOverflowing ? 'mr-1' : '-mr-2.5',
       draggedWorkspaceId && 'cursor-grabbing',
     )}
-    style:padding-bottom="2px"
-    style:margin-bottom="-2px"
     data-workspace-tab-strip
     data-app-region-clip
     onpointermove={handleDragPointerMove}
@@ -798,7 +793,7 @@
             style:left={isDragged && dragSession
               ? `${dragClientX - dragSession.pointerOffsetX}px`
               : undefined}
-            style:top={isDragged && dragSession ? `${dragSession.origin.top - 2}px` : undefined}
+            style:top={isDragged && dragSession ? `${dragSession.origin.top}px` : undefined}
             style:width={isDragged && dragSession ? `${dragSession.origin.width}px` : undefined}
             style:height={isDragged && dragSession ? `${dragSession.origin.height}px` : undefined}
             use:reportActiveTabBounds={isCurrent}
@@ -812,12 +807,12 @@
             {#if isCurrent}
               <!-- Concave outward flare: extends bg-sidebar below-outside the tab's bottom corners
                      so the active tab appears to flow into the panel below (Chrome-tab style).
-                     Uses a 12x12 quarter-arc dropped 2px past the tab bottom so the concave
-                     curve terminates on the panel's top border. The right flare's `-12.5px`
+                     Uses a 12x12 quarter-arc aligned to the tab bottom so the concave curve
+                     terminates on the panel's top border. The right flare's `-12.5px`
                      offset + 1px seam-fill rect compensates for the arc-stroke straddling the
                      right-edge pixel boundary so no gap shows between flare and tab side. -->
               <svg
-                class="pointer-events-none absolute left-[-12px] -bottom-0.5 size-[12px] overflow-visible text-sidebar"
+                class="pointer-events-none absolute bottom-0 left-[-12px] size-[12px] overflow-visible text-sidebar"
                 viewBox="0 0 12 12"
                 aria-hidden="true"
                 data-workspace-tab-leading-flare
@@ -831,7 +826,7 @@
                 />
               </svg>
               <svg
-                class="pointer-events-none absolute right-[-12.5px] -bottom-0.5 size-[12px] overflow-visible text-sidebar"
+                class="pointer-events-none absolute right-[-12.5px] bottom-0 size-[12px] overflow-visible text-sidebar"
                 viewBox="0 0 12 12"
                 aria-hidden="true"
                 data-workspace-tab-trailing-flare
@@ -938,7 +933,7 @@
           >
             {#if isCurrent}
               <svg
-                class="pointer-events-none absolute left-[-12px] -bottom-0.5 size-[12px] overflow-visible text-sidebar"
+                class="pointer-events-none absolute bottom-0 left-[-12px] size-[12px] overflow-visible text-sidebar"
                 viewBox="0 0 12 12"
                 aria-hidden="true"
                 data-workspace-tab-leading-flare
@@ -952,7 +947,7 @@
                 />
               </svg>
               <svg
-                class="pointer-events-none absolute right-[-12.5px] -bottom-0.5 size-[12px] overflow-visible text-sidebar"
+                class="pointer-events-none absolute right-[-12.5px] bottom-0 size-[12px] overflow-visible text-sidebar"
                 viewBox="0 0 12 12"
                 aria-hidden="true"
                 data-workspace-tab-trailing-flare
