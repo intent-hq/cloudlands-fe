@@ -96,6 +96,24 @@ const productionModuleIgnores = [
   '**/generated/**',
 ];
 
+// The only production files allowed to read the raw
+// `metadata.dismissedQuestionsMessageId` wire field. Every other surface must go
+// through `isQuestionMessageDismissed` / `sessionHasPendingQuestion` so the
+// dismissal comparison is never hand-rolled again (intent-hq/cloudlands-fe#2316).
+const dismissalMarkerRawReadAllowedFiles = [
+  // Canonical dismissal predicate.
+  'src/shared/utils/question-dismissal.ts',
+  // Session metadata normalisation on the wire boundary.
+  'src/store/renderer/slices/agent-session/agent-session-slice.ts',
+  // `questions_dismissed` system-row payload parsing.
+  'src/lib/components/chat/questions-dismissed-notice.ts',
+  // `void …dismissedQuestionsMessageId` Svelte reactivity touches only.
+  'src/lib/components/chat/AgentCard.svelte',
+  'src/lib/components/chat/ChatPanel.svelte',
+];
+const dismissalMarkerRawReadMessage =
+  'Do not read `dismissedQuestionsMessageId` directly. Use `isQuestionMessageDismissed` (src/shared/utils/question-dismissal.ts) or `sessionHasPendingQuestion` (src/lib/components/chat/questions/pending-questions.ts) so the dismissal comparison stays shared.';
+
 // Staged rollout: existing components with direct async data loads are baselined
 // until each flow moves to Redux actions/selectors. New Svelte components and
 // cleaned-up files are checked by the rule below.
@@ -531,6 +549,33 @@ export default [
                 'Synchronous child_process calls block the Electron main thread. Use exec/spawn with util.promisify or the execAsync helper instead.',
             },
           ],
+        },
+      ],
+    },
+  },
+  // Guard raw `dismissedQuestionsMessageId` reads: the dismissal comparison lives
+  // in the shared helpers only. See dismissalMarkerRawReadAllowedFiles above.
+  {
+    files: ['src/**/*.{js,mjs,ts,tsx,svelte}'],
+    ignores: [...productionModuleIgnores, ...dismissalMarkerRawReadAllowedFiles],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: "MemberExpression[computed=false][property.name='dismissedQuestionsMessageId']",
+          message: dismissalMarkerRawReadMessage,
+        },
+        {
+          selector: "MemberExpression[computed=true][property.value='dismissedQuestionsMessageId']",
+          message: dismissalMarkerRawReadMessage,
+        },
+        {
+          selector: "ObjectPattern > Property[key.name='dismissedQuestionsMessageId']",
+          message: dismissalMarkerRawReadMessage,
+        },
+        {
+          selector: "ObjectPattern > Property[key.value='dismissedQuestionsMessageId']",
+          message: dismissalMarkerRawReadMessage,
         },
       ],
     },
