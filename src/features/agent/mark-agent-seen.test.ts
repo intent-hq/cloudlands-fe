@@ -39,6 +39,7 @@ import {
   cancelPendingMarkAgentSeen,
   markAgentSeenAtBoundary,
   markAgentSeenOnTurnFinish,
+  markAgentSeenOnTranscriptHydrated,
   markAgentSeenOnUserSend,
   markAgentSeenOnView,
   newestPersistedMessageId,
@@ -412,5 +413,115 @@ describe('markAgentSeenOnView (debounced, viewed + focused + assistant-tail gate
     await fireDebounce();
 
     expect(mockMarkSeen).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('markAgentSeenOnTranscriptHydrated (re-arms a view trigger that beat the transcript)', () => {
+  // Regression: on a remote daemon the chat.subscribe seq-0 snapshot can land
+  // after the 1 s view debounce, so the view trigger fires against an empty
+  // transcript and used to drop silently — the agent stayed unread forever.
+  it('sends exactly one markSeen with the newest persisted id once the transcript hydrates', async () => {
+    const agentId = nextAgentId();
+    seedSession(agentId, { messages: [] });
+
+    markAgentSeenOnView(agentId);
+    await fireDebounce();
+    expect(mockMarkSeen).not.toHaveBeenCalled(); // nothing to target yet
+
+    mockState.agentSessions.byAgentId[agentId]!.messages = [
+      msg('user-1', false, 'user'),
+      msg('reply-1'),
+    ];
+    markAgentSeenOnTranscriptHydrated(agentId);
+    await flushImmediate();
+
+    expect(mockMarkSeen).toHaveBeenCalledTimes(1);
+    expect(mockMarkSeen).toHaveBeenCalledWith({
+      workspaceId: 'ws-1',
+      agentId,
+      messageId: 'reply-1',
+    });
+
+    // The re-arm is one-shot: a later hydration of the same transcript is a no-op.
+    markAgentSeenOnTranscriptHydrated(agentId);
+    await flushImmediate();
+    expect(mockMarkSeen).toHaveBeenCalledTimes(1);
+  });
+
+  it('is a no-op when no view trigger was starved of a transcript', async () => {
+    const agentId = nextAgentId();
+    seedSession(agentId, { messages: [msg('reply-1')] });
+
+    markAgentSeenOnTranscriptHydrated(agentId);
+    await flushImmediate();
+    expect(mockMarkSeen).not.toHaveBeenCalled();
+  });
+
+  it('keeps the viewed gate: no send when another agent is viewed by hydration time', async () => {
+    const agentId = nextAgentId();
+    seedSession(agentId, { messages: [] });
+
+    markAgentSeenOnView(agentId);
+    await fireDebounce();
+    mockState.agentSessions.byAgentId[agentId]!.messages = [msg('reply-1')];
+    mockState.unreadTracking.currentlyViewedAgentId = 'agent-other';
+    markAgentSeenOnTranscriptHydrated(agentId);
+    await flushImmediate();
+
+    expect(mockMarkSeen).not.toHaveBeenCalled();
+  });
+
+  it('keeps the focus gate: no send when the window is unfocused by hydration time', async () => {
+    const agentId = nextAgentId();
+    seedSession(agentId, { messages: [] });
+
+    markAgentSeenOnView(agentId);
+    await fireDebounce();
+    mockState.agentSessions.byAgentId[agentId]!.messages = [msg('reply-1')];
+    vi.spyOn(document, 'hasFocus').mockReturnValue(false);
+    markAgentSeenOnTranscriptHydrated(agentId);
+    await flushImmediate();
+
+    expect(mockMarkSeen).not.toHaveBeenCalled();
+  });
+
+  it('keeps the assistant-tail gate: a hydrated mid-turn transcript is left to turn-finish', async () => {
+    const agentId = nextAgentId();
+    seedSession(agentId, { messages: [] });
+
+    markAgentSeenOnView(agentId);
+    await fireDebounce();
+    mockState.agentSessions.byAgentId[agentId]!.messages = [
+      msg('reply-1'),
+      msg('user-2', false, 'user'),
+      msg('partial', true),
+    ];
+    markAgentSeenOnTranscriptHydrated(agentId);
+    await flushImmediate();
+
+    expect(mockMarkSeen).not.toHaveBeenCalled();
+  });
+
+  it('does not displace a pending debounced trigger (user send keeps its gates)', async () => {
+    const agentId = nextAgentId();
+    seedSession(agentId, { messages: [] });
+
+    markAgentSeenOnView(agentId);
+    await fireDebounce();
+    // The user composes in the still-empty conversation; the canonical echo
+    // (user tail) hydrates before the send debounce fires.
+    markAgentSeenOnUserSend(agentId);
+    mockState.agentSessions.byAgentId[agentId]!.messages = [msg('user-1', false, 'user')];
+    markAgentSeenOnTranscriptHydrated(agentId);
+    await flushImmediate();
+    expect(mockMarkSeen).not.toHaveBeenCalled();
+
+    await fireDebounce();
+    expect(mockMarkSeen).toHaveBeenCalledTimes(1);
+    expect(mockMarkSeen).toHaveBeenCalledWith({
+      workspaceId: 'ws-1',
+      agentId,
+      messageId: 'user-1',
+    });
   });
 });

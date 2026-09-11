@@ -3,6 +3,7 @@ import { all, call, put, takeEvery, type SagaGenerator } from 'typed-redux-saga'
 
 import {
   markAgentSeenAtBoundary,
+  markAgentSeenOnTranscriptHydrated,
   markAgentSeenOnTurnFinish,
   markAgentSeenOnUserSend,
   markAgentSeenOnView,
@@ -13,7 +14,8 @@ import {
   selectAgentMessages,
   selectAgentSessionHasStreamingTailMessage,
 } from '../../agent-session/agent-session-selectors';
-import { sendMessage } from '../../chat-state/chat-state-slice';
+import { replaceMessages } from '../../agent-session/agent-session-slice';
+import { sendMessage, transcriptHydrationSettled } from '../../chat-state/chat-state-slice';
 import {
   agentStreamUpdateReceived,
   type AgentStreamUpdatePayload,
@@ -36,6 +38,7 @@ import {
   togglePanel as toggleSidebarPanel,
 } from '../../sidebar-nav/sidebar-nav-slice';
 import {
+  selectCurrentlyViewedAgentId,
   selectDividerBoundaryStateSnapshot,
   type DividerBoundarySnapshot,
 } from '../unread-tracking-selectors';
@@ -242,6 +245,21 @@ function* handleViewed(action: ReturnType<typeof markAgentAsViewed>): SagaGenera
   if (agentId) yield* call(markAgentSeenOnView, agentId);
 }
 
+/**
+ * Late-transcript re-arm: the seq-0 snapshot (`replaceMessages`) and the
+ * hydration settle both land after `markAgentAsViewed`, and on a remote
+ * daemon after the view debounce too — so a view fire that found no
+ * transcript would otherwise never retry. Only the agent still on screen is
+ * re-fired; the trigger itself no-ops unless a view fire was starved.
+ */
+function* handleTranscriptHydrated(
+  action: ReturnType<typeof replaceMessages> | ReturnType<typeof transcriptHydrationSettled>,
+): SagaGenerator<void> {
+  const [agentId] = action.payload;
+  const viewedAgentId = yield* selectCurrentlyViewedAgentId.effect();
+  if (agentId && agentId === viewedAgentId) yield* call(markAgentSeenOnTranscriptHydrated, agentId);
+}
+
 export function* unreadTrackingSaga(): SagaGenerator<void> {
   const initialWorkspaceId = yield* selectCurrentWorkspaceTabId.effect();
   const tracker: BoundarySnapshotTracker = {
@@ -255,5 +273,6 @@ export function* unreadTrackingSaga(): SagaGenerator<void> {
     takeEvery(sendMessage, handleSend),
     takeEvery(agentStreamUpdateReceived, handleStreamUpdate),
     takeEvery(markAgentAsViewed, handleViewed),
+    takeEvery([replaceMessages, transcriptHydrationSettled], handleTranscriptHydrated),
   ]);
 }

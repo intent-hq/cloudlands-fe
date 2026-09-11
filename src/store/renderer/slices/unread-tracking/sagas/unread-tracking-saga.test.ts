@@ -6,6 +6,7 @@ import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 const marks = vi.hoisted(() => ({
   boundary: vi.fn(),
   finish: vi.fn(),
+  hydrated: vi.fn(),
   send: vi.fn(),
   view: vi.fn(),
 }));
@@ -14,6 +15,7 @@ vi.mock('$features/agent/mark-agent-seen', async (importOriginal) => {
   return {
     ...actual,
     markAgentSeenAtBoundary: marks.boundary,
+    markAgentSeenOnTranscriptHydrated: marks.hydrated,
     markAgentSeenOnTurnFinish: marks.finish,
     markAgentSeenOnUserSend: marks.send,
     markAgentSeenOnView: marks.view,
@@ -25,7 +27,8 @@ import {
   getCachedChatScroll,
   setCachedChatScroll,
 } from '$lib/components/chat/chat-scroll-cache';
-import { sendMessage } from '../../chat-state/chat-state-slice';
+import { replaceMessages } from '../../agent-session/agent-session-slice';
+import { sendMessage, transcriptHydrationSettled } from '../../chat-state/chat-state-slice';
 import { closeTab } from '../../panel-layout/panel-layout-slice';
 import { closePanel } from '../../sidebar-nav/sidebar-nav-slice';
 import { openWorkspaceTab } from '../../tab-state/tab-state-slice';
@@ -47,6 +50,7 @@ const snapshot = (overrides: Partial<DividerBoundarySnapshot> = {}): DividerBoun
 function state(
   current: DividerBoundarySnapshot,
   agentSessionsByAgentId: Record<string, { messages: unknown[]; isStreaming?: boolean }> = {},
+  currentlyViewedAgentId: string | null = null,
 ): StoreState {
   return {
     tabState: { currentTabId: current.activeWorkspaceId },
@@ -56,7 +60,7 @@ function state(
       hoveredItem: null,
     },
     unreadTracking: {
-      currentlyViewedAgentId: null,
+      currentlyViewedAgentId,
       dividerSessionByAgentId: Object.fromEntries(
         current.dividerSessionAgentIds.map((id) => [id, { anchorId: null }]),
       ),
@@ -179,6 +183,37 @@ describe('unreadTrackingSaga', () => {
     channel.put(markAgentAsViewed('a1'));
     await settle();
     expect(marks.view).toHaveBeenCalledWith('a1');
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('re-arms the view trigger when the viewed agent transcript hydrates late', async () => {
+    // Remote daemon: the chat.subscribe seq-0 snapshot (replaceMessages) and
+    // the hydration settle can both land after the view debounce fired
+    // against an empty transcript; either must re-trigger the view path for
+    // the agent still on screen.
+    const channel = stdChannel();
+    const current = snapshot();
+    const { task } = startSaga(channel, vi.fn(), () => state(current, {}, 'a1'));
+    channel.put(replaceMessages('a1', []));
+    await settle();
+    expect(marks.hydrated).toHaveBeenCalledTimes(1);
+    expect(marks.hydrated).toHaveBeenCalledWith('a1');
+    channel.put(transcriptHydrationSettled('a1'));
+    await settle();
+    expect(marks.hydrated).toHaveBeenCalledTimes(2);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('ignores transcript hydration for agents that are not the viewed one', async () => {
+    const channel = stdChannel();
+    const current = snapshot();
+    const { task } = startSaga(channel, vi.fn(), () => state(current, {}, 'a1'));
+    channel.put(replaceMessages('a2', []));
+    channel.put(transcriptHydrationSettled('a2'));
+    await settle();
+    expect(marks.hydrated).not.toHaveBeenCalled();
     task.cancel();
     await task.toPromise();
   });
