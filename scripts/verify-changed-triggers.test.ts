@@ -254,6 +254,14 @@ describe('requiresTriggerDeclaration', () => {
       'a shorthand cwd option',
       "const cwd = path.join(process.cwd(), 'src/shared'); globSync('*.ts', { cwd })",
     ],
+    [
+      'a cwd option beside a spread',
+      "const defaults = { withFileTypes: false }; globSync('*.ts', { ...defaults, cwd: process.cwd() })",
+    ],
+    [
+      'a bound options object with a spread',
+      "const defaults = { withFileTypes: false }; const opts = { ...defaults, cwd: process.cwd() }; globSync('*.ts', opts)",
+    ],
   ];
   for (const [label, read] of rootReads) {
     it(`flags a read derived from ${label}`, () => {
@@ -417,6 +425,21 @@ describe('requiresTriggerDeclaration', () => {
       "  fs.readFile(join(cwd, 'output.txt'), readOpts, (err, text) => {",
       '    expect(text).toContain(process.cwd());',
       '  });',
+      '});',
+    );
+    expect(requiresTriggerDeclaration(content, 'scripts/a.test.ts')).toBe(false);
+  });
+
+  it('does not flag or expand a spread beside a temp cwd option', () => {
+    const content = lines(
+      "import { globSync, mkdtempSync } from 'node:fs';",
+      "import { tmpdir } from 'node:os';",
+      "import { join } from 'node:path';",
+      "import { it } from 'vitest';",
+      "const tmp = mkdtempSync(join(tmpdir(), 'case-'));",
+      'const defaults = { withFileTypes: false, exclude: (name: string) => name.startsWith(process.cwd()) };',
+      "it('x', () => {",
+      "  expect(globSync('**/*', { ...defaults, cwd: tmp })).toHaveLength(0);",
       '});',
     );
     expect(requiresTriggerDeclaration(content, 'scripts/a.test.ts')).toBe(false);

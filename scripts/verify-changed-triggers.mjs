@@ -250,15 +250,17 @@ function optionObjects(argument, bindings) {
 // through a local binding, as `cwd: expr` or shorthand `{ cwd }`. Only that
 // property names a location a read resolves against (`globSync('*.ts', opts)`);
 // other options and callbacks are not inspected, so a callback body that
-// mentions `process.cwd()` does not make a read.
+// mentions `process.cwd()` does not make a read. Spread, method, and accessor
+// members have no plain name and are skipped without expansion.
 function cwdOptions(node, bindings) {
   const locations = [];
   for (const argument of node.arguments.slice(1)) {
     for (const object of optionObjects(argument, bindings)) {
       for (const property of object.properties) {
+        const assignment = ts.isPropertyAssignment(property);
+        if (!assignment && !ts.isShorthandPropertyAssignment(property)) continue;
         if (!ts.isIdentifier(property.name) || property.name.text !== 'cwd') continue;
-        if (ts.isPropertyAssignment(property)) locations.push(property.initializer);
-        else if (ts.isShorthandPropertyAssignment(property)) locations.push(property.name);
+        locations.push(assignment ? property.initializer : property.name);
       }
     }
   }
