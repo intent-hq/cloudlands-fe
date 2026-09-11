@@ -5,8 +5,7 @@ export const SUBSCRIPTION_ICON_CLASS = 'text-muted-foreground! opacity-100';
 export const SUBSCRIPTION_ACTION_ICON_CLASS = 'text-ghost opacity-60';
 export const SUBSCRIPTION_CARD_CONTAINMENT_CLASS =
   'w-full min-w-0 max-w-full overflow-hidden font-family-child';
-export const SUBSCRIPTION_CARD_SURFACE_CLASS =
-  'rounded-lg border border-border bg-card/80 shadow-sm';
+export const SUBSCRIPTION_CARD_SURFACE_CLASS = 'rounded-lg bg-sidebar';
 export const EVENT_WAKEUP_IN_THREAD_SPACING_CLASS = 'mt-8';
 export const SUBSCRIPTION_IN_THREAD_CARD_SPACING_CLASS = 'mt-5';
 export const SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS = 'type-body font-normal text-muted-foreground!'; // i18n-ignore (Tailwind class constants)
@@ -19,7 +18,7 @@ export const SUBSCRIPTION_INSET_TOP_DIVIDER_CLASS =
   "relative before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:h-px before:bg-border before:content-['']";
 export const SUBSCRIPTION_INSET_ROW_DIVIDER_CLASS = `${SUBSCRIPTION_INSET_TOP_DIVIDER_CLASS} first:before:hidden`;
 export const SUBSCRIPTION_DISCLOSURE_ROW_CLASS =
-  'type-body flex h-auto! min-h-9 w-full min-w-0 max-w-full items-center justify-start! gap-2 overflow-hidden px-3! py-2! font-normal text-muted-foreground!'; // i18n-ignore (Tailwind class constants)
+  'type-body flex h-auto! min-h-9 w-full min-w-0 max-w-full items-center justify-start! gap-2 overflow-hidden px-3! py-2! font-normal text-muted-foreground! [&_[data-slot=button]]:h-6!'; // i18n-ignore (Tailwind class constants)
 export const SUBSCRIPTION_CHEVRON_CLASS =
   'text-ghost opacity-60 transition-transform duration-[var(--motion-fast)] motion-reduce:transition-none';
 export const SUBSCRIPTION_CHEVRON_SIZE_CLASS = 'h-[16px]! w-[16px]!';

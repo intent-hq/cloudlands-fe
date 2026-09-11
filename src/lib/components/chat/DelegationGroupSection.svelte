@@ -101,7 +101,8 @@
     <Button
       type="button"
       variant="plain"
-      class="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded border-none bg-transparent p-0 text-left font-[inherit] text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring {deliveryPending
+      labelClass="type-body"
+      class="type-body flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded border-none bg-transparent p-0 text-left font-[inherit] text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring {deliveryPending
         ? 'text-warning-ink'
         : ''}"
       data-testid="group-summary-toggle"

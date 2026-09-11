@@ -474,7 +474,7 @@
             <Button
               type="button"
               variant="plain"
-              class="flex min-w-0 flex-1 cursor-pointer items-center gap-2 overflow-hidden rounded border-none bg-transparent p-0 text-left font-[inherit] text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              class="type-body flex min-w-0 flex-1 cursor-pointer items-center gap-2 overflow-hidden rounded border-none bg-transparent p-0 text-left font-[inherit] text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               aria-label={friendlySummary}
               aria-expanded={detailsOpen}
               aria-controls={detailsId}
@@ -546,7 +546,7 @@
                             >
                               {event.agentName}
                             </strong>
-                            <span class="type-caption font-normal text-muted-foreground">
+                            <span class="type-body font-normal text-muted-foreground">
                               {agentStatusLabel(event.type)}
                             </span>
                           {:else}

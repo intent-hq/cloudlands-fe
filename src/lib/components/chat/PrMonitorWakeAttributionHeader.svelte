@@ -55,19 +55,23 @@
 </script>
 
 <div
-  class="flex items-center gap-1.5 rounded-md text-xs {className}"
+  class="type-body flex items-center gap-1.5 rounded-md {className}"
   data-testid="pr-monitor-wake-attribution"
 >
-  <Fa icon={faCodePullRequest} class="w-3 h-3 text-ghost" />
+  <Fa icon={faCodePullRequest} class="h-3 w-3 text-ghost" />
   <Button
     type="button"
-    variant="link"
-    class="min-w-0 break-words text-left text-foreground font-medium hover:underline cursor-pointer"
+    variant="plain"
+    truncateLabel={false}
+    wrapContent={false}
+    class="type-body h-auto! min-w-0 cursor-pointer break-words p-0! text-left font-medium text-foreground hover:underline"
     data-testid="pr-monitor-wake-chip"
     title={m.chat_prMonitorWakeAttribution_openPr_tooltip()}
     onclick={handleOpenPr}
   >
     {chipLabel}
   </Button>
-  <span class="text-subtle">{m.chat_prMonitorWakeAttribution_wokeAgent_after()}</span>
+  <span class="font-normal text-muted-foreground"
+    >{m.chat_prMonitorWakeAttribution_wokeAgent_after()}</span
+  >
 </div>

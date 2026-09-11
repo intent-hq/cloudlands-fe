@@ -102,7 +102,7 @@
         type="button"
         variant="plain"
         truncateLabel={false}
-        class="h-auto min-w-0 max-w-full justify-start whitespace-normal break-words text-left font-inherit text-muted-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        class="type-body h-auto! min-w-0 max-w-full justify-start whitespace-normal break-words p-0! text-left font-inherit text-muted-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         data-testid="pr-monitor-wake-chip"
         title={m.chat_prMonitorWakeAttribution_openPrWithLabel_tooltip({ label: chipLabel })}
         onclick={openPr}

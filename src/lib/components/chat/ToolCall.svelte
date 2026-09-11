@@ -26,6 +26,7 @@
   import { resolveToolLeadingIcon } from './tool-leading-icon';
   import { resolveBrowserScreenshotSource } from './browser-screenshot-source';
   import { Button } from '$lib/components/ui/button';
+  import { cn } from '$lib/utils';
 
   interface Props {
     toolUse: ToolUseBlock;
@@ -242,7 +243,7 @@
           variant="plain"
           truncateLabel={false}
           data-testid="tool-call-file-link"
-          class="min-w-0 truncate whitespace-pre border-0 bg-transparent p-0 text-left font-normal underline-offset-2 hover:underline focus-visible:underline focus-visible:outline-none"
+          class="type-body min-w-0 truncate whitespace-pre border-0 bg-transparent p-0 text-left font-normal underline-offset-2 hover:underline focus-visible:underline focus-visible:outline-none"
           data-tool-secondary
           aria-label={displayModel.accessibleSentence}
           onclick={openFile}>{segment.text}</Button
@@ -273,7 +274,7 @@
     <a
       href={noteUrl(toolDisplay.noteId)}
       data-testid="tool-call-note-link"
-      class="{COMPACT_TOOL_TRAILING_CLASS} hover:underline"
+      class={cn(COMPACT_TOOL_TRAILING_CLASS, 'type-body hover:underline')}
       aria-label={displayModel.accessibleSentence}
       onclick={async (event) => {
         event.preventDefault();

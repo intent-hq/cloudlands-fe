@@ -44,12 +44,12 @@ export const CHAT_OPERATIONAL_ICON_CLASS = 'h-[16px]! w-[16px]! shrink-0';
 
 export const CHAT_OPERATIONAL_ROW_CLASS = `${OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS} relative grid h-7 w-full min-w-0 max-w-full grid-cols-[var(--operational-leading-slot-size)_minmax(0,1fr)_auto] items-center gap-[var(--operational-leading-gap)] overflow-hidden rounded-md px-[var(--operational-row-inline-padding)] type-body transition-colors duration-[var(--motion-fast)] motion-reduce:transition-none`;
 
-export const CHAT_OPERATIONAL_LEADING_CLASS = `a11y-ignore pointer-events-none flex size-[var(--operational-leading-slot-size)] min-w-[var(--operational-leading-slot-size)] shrink-0 items-center justify-center ${CHAT_OPERATIONAL_SUMMARY_TONE_CLASS}`;
+export const CHAT_OPERATIONAL_LEADING_CLASS = `a11y-ignore pointer-events-none flex size-[var(--operational-leading-slot-size)] min-w-[var(--operational-leading-slot-size)] shrink-0 items-center justify-center [&_svg]:size-[16px]! ${CHAT_OPERATIONAL_SUMMARY_TONE_CLASS}`;
 
-export const CHAT_OPERATIONAL_SUMMARY_CLASS = `block min-w-0 max-w-full truncate overflow-hidden text-ellipsis whitespace-nowrap border-0 bg-transparent p-0 text-left ${CHAT_OPERATIONAL_SUMMARY_TONE_CLASS}`;
+export const CHAT_OPERATIONAL_SUMMARY_CLASS = `type-body block min-w-0 max-w-full truncate overflow-hidden text-ellipsis whitespace-nowrap border-0 bg-transparent p-0 text-left ${CHAT_OPERATIONAL_SUMMARY_TONE_CLASS}`;
 
 export const CHAT_OPERATIONAL_TRAILING_CLASS =
-  'flex min-w-0 shrink-0 items-center gap-1 whitespace-nowrap';
+  'type-body flex min-w-0 shrink-0 items-center gap-1 whitespace-nowrap';
 
 export const CHAT_OPERATIONAL_CHEVRON_CLASS =
   'h-[16px]! w-[16px]! shrink-0 opacity-60 transition-transform duration-[var(--motion-fast)] motion-reduce:transition-none';

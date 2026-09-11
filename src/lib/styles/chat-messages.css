@@ -330,6 +330,23 @@
   font-family:
     ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New',
     monospace;
+}
+
+.agent-font-monospace .markdown-viewer,
+.agent-font-monospace .markdown-viewer p,
+.agent-font-monospace .markdown-viewer li,
+.agent-font-monospace .markdown-viewer span,
+.agent-font-monospace .markdown-viewer code,
+.agent-font-monospace .streaming-text,
+.agent-font-monospace .digest-card,
+.agent-font-monospace .font-family-child,
+.agent-font-monospace .user-message,
+.agent-font-monospace button[type='button']:not(.type-body) > span,
+.agent-font-monospace .agent-card-container,
+.agent-font-monospace .agent-card-container h3,
+.agent-font-monospace .agent-card-container p,
+.agent-font-monospace .diagram-node-html .node-label,
+.agent-font-monospace .diagram-node-html .node-kind-label {
   font-size: 0.92rem;
   /* slightly smaller than default */
 }
