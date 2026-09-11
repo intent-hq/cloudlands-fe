@@ -397,12 +397,11 @@
     let scrollTrackingTimeout: ReturnType<typeof setTimeout> | null = null;
     const strip = node.closest('[data-workspace-tab-strip]');
 
-    const runFrame = (allowClamp = true) => {
+    const runFrame = (allowClamp = true, sync = true) => {
       readPending = false;
       const shouldClamp = clampQueued;
       clampQueued = false;
       if (!active) return;
-
       const tabRect = node.getBoundingClientRect();
       const titlebarRect = node.closest('.window-title-bar')?.getBoundingClientRect() ?? null;
       const stripRect = strip?.getBoundingClientRect() ?? null;
@@ -427,7 +426,6 @@
       const fadeEdges = strip
         ? getWorkspaceTabScrollFadeState(strip.scrollLeft, strip.scrollWidth, strip.clientWidth)
         : undefined;
-
       if (writePending) cancelWrite?.();
       const writeBounds = () => {
         writePending = false;
@@ -442,6 +440,7 @@
               titlebarRect.left,
               fadeEdges,
             ),
+            { sync },
           );
           return;
         }
@@ -463,16 +462,16 @@
                 )
               : undefined,
           ),
+          { sync },
         );
       };
       if (!allowClamp) return writeBounds();
       writePending = true;
       cancelWrite = scheduleLayoutWrite(writeBounds);
     };
-
-    const reportVisibleActiveBounds = () => {
+    const reportVisibleActiveBounds = (sync = true) => {
       clampQueued = false;
-      runFrame(false);
+      runFrame(false, sync);
     };
 
     const schedule = () => {
@@ -506,15 +505,16 @@
     activeTabBoundsPollers.add(scheduleClampAndReport);
     activeTabBoundsReporters.add(reportVisibleActiveBounds);
     scheduleClampAndReport();
-
     const setActive = (nextIsActive: boolean) => {
       const wasActive = active;
       active = nextIsActive;
       node.dataset.active = String(nextIsActive);
+      // Action updates can run inside a parent render. Report immediately without
+      // a nested flush, which can strand sibling updates; frame reports stay sync.
       if (active) {
-        reportVisibleActiveBounds();
+        reportVisibleActiveBounds(false);
         scheduleClampAndReport();
-      } else if (wasActive) emitActiveTabBounds(null);
+      } else if (wasActive) emitActiveTabBounds(null, { sync: false });
     };
     const workspaceId = node.dataset.workspaceTab;
     if (workspaceId) activeTabBoundsControllers.set(workspaceId, setActive);
