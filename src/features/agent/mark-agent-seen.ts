@@ -14,6 +14,11 @@
  *      (`markAgentAsViewed`) while its newest persisted message is an
  *      assistant reply: opening an already-finished conversation is reading
  *      it, and no later turn-finish will arrive to advance the marker.
+ *      The transcript for a newly viewed agent arrives via the
+ *      `chat.subscribe` seq-0 snapshot AFTER `markAgentAsViewed`, and on a
+ *      remote daemon that can land after the debounce — so a view fire that
+ *      finds no persisted message re-arms, and the saga re-fires it once the
+ *      transcript hydrates (`markAgentSeenOnTranscriptHydrated`).
  *
  * The unread-tracking root saga observes all four triggers. Each trigger targets the newest
  * PERSISTED message id at fire time — streaming/partial rows are never
@@ -59,8 +64,30 @@ interface PendingTrigger {
   gates: FireGates;
 }
 
+const VIEW_GATES: FireGates = { requireViewedAndFocused: true, requireAssistantTail: true };
+
 const pendingByAgent = new Map<string, PendingTrigger>();
 const lastSentByAgent = new Map<string, string>();
+/**
+ * The agent whose view trigger fired before its transcript hydrated (no
+ * persisted message in the store yet). `markAgentSeenOnTranscriptHydrated`
+ * consumes it to re-fire the view gates once the transcript lands. A single
+ * slot, not a set: only the currently viewed conversation can be starved this
+ * way, so a fresh view of any agent, or the end of the viewing session
+ * (boundary / cleared view), releases it — bookkeeping cannot accumulate per
+ * agent across a long-lived renderer.
+ */
+let viewAwaitingTranscript: string | null = null;
+
+/**
+ * Release the view re-arm. Without an id (the viewed conversation was
+ * cleared) it always drops; with one, only when that agent holds the slot.
+ */
+export function releaseViewAwaitingTranscript(agentId?: string): void {
+  if (agentId === undefined || viewAwaitingTranscript === agentId) {
+    viewAwaitingTranscript = null;
+  }
+}
 
 /**
  * Bound on the per-agent dedupe map so it cannot grow without limit across
@@ -127,7 +154,26 @@ export function markAgentSeenOnUserSend(agentId: string): void {
  * turn-finish trigger.
  */
 export function markAgentSeenOnView(agentId: string): void {
-  scheduleDebounced(agentId, { requireViewedAndFocused: true, requireAssistantTail: true });
+  // Viewing a conversation ends any other conversation's viewing session.
+  releaseViewAwaitingTranscript();
+  scheduleDebounced(agentId, VIEW_GATES);
+}
+
+/**
+ * Transcript-hydrated re-arm of the view trigger: the conversation's
+ * transcript just landed in the store (`chat.subscribe` seq-0 snapshot /
+ * hydration settled). Only re-fires for an agent whose view trigger already
+ * fired against an empty transcript — the user has been looking at the
+ * conversation since, so this fires immediately with the same view gates
+ * (viewed + focused + assistant tail) re-evaluated from live state. Never
+ * displaces a pending debounced trigger: that trigger reads the hydrated
+ * transcript itself when it fires, and its own gates must win.
+ */
+export function markAgentSeenOnTranscriptHydrated(agentId: string): void {
+  if (viewAwaitingTranscript !== agentId) return;
+  if (pendingByAgent.has(agentId)) return;
+  viewAwaitingTranscript = null;
+  void fire(agentId, VIEW_GATES);
 }
 
 /**
@@ -140,6 +186,7 @@ export function markAgentSeenAtBoundary(agentIds: readonly string[]): void {
   for (const agentId of agentIds) {
     if (typeof agentId !== 'string' || agentId.length === 0) continue;
     cancelPendingMarkAgentSeen(agentId);
+    releaseViewAwaitingTranscript(agentId);
     void fire(agentId, { requireViewedAndFocused: false });
   }
 }
@@ -161,6 +208,7 @@ export function cancelPendingMarkAgentSeen(agentId: string): void {
  */
 function scheduleDebounced(agentId: string, gates: FireGates): void {
   cancelPendingMarkAgentSeen(agentId);
+  releaseViewAwaitingTranscript(agentId);
   const timer = setTimeout(() => {
     pendingByAgent.delete(agentId);
     void fire(agentId, gates);
@@ -221,7 +269,12 @@ async function fire(agentId: string, gates: FireGates): Promise<void> {
     const workspaceId = typeof session.workspaceId === 'string' ? session.workspaceId : '';
     if (workspaceId.length === 0) return;
     const target = newestPersistedMessage(session.messages ?? []);
-    if (!target) return;
+    if (!target) {
+      // View trigger that beat the transcript: re-arm so the hydration
+      // re-fire can target the newest persisted message once it lands.
+      if (gates.requireAssistantTail) viewAwaitingTranscript = agentId;
+      return;
+    }
     // Assistant-tail gate (view trigger): only a finished assistant reply
     // counts as read-by-viewing; a user-message tail means a turn is in
     // flight and turn-finish will handle it.

@@ -6,6 +6,7 @@ import { dirname, join } from 'path';
 import { existsSync, readFileSync, readdirSync, statSync } from 'fs';
 import { execSync } from 'child_process';
 import { intentdBridgePlugin } from './scripts/vite-plugin-intentd-bridge.mjs';
+import { compactParaglideDevPlugin } from './scripts/vite-plugin-paraglide-dev.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -321,13 +322,9 @@ export default defineConfig(({ command, mode, isPreview }) => {
   }
 
   return {
-    // Plugin order:
-    // 1. paraglideVitePlugin() - compiles messages/{locale}.json into src/shared/paraglide (typed m.* functions)
-    // 2. devHealthProbeSilencer() - dev-only: absorbs /health probes from the MCP bridge scanner before SvelteKit sees them
-    // 3. preventSvelteKitRegenHMR() - blocks HMR page reloads for .svelte-kit/generated files
-    // 4. sveltekit() - SvelteKit's virtual modules and SSR handling
-    // 5. handleUnhandledSvelteKitModules() - catches any __sveltekit/* modules not handled by SvelteKit
-    // 6. excludeNodeModules() - excludes Node.js-only code from browser bundle
+    // Registration order is not the full execution order: Vite also applies each
+    // plugin's enforce phase. compactParaglideDevPlugin is serve-only and uses
+    // enforce: 'pre' to compact generated translations before normal transforms.
     plugins: [
       {
         name: 'use-production-paraglide-bundle',
@@ -376,6 +373,7 @@ export default defineConfig(({ command, mode, isPreview }) => {
             // locale modules keep the same runtime contract with a bounded build graph.
             outputStructure: 'locale-modules',
           }),
+      compactParaglideDevPlugin(paraglideOutdir),
       devHealthProbeSilencer(),
       intentdBridgeRequested && intentdBridgePlugin(),
       preventSvelteKitRegenHMR(),

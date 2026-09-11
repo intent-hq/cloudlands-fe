@@ -26,7 +26,7 @@ describe('renderer Content Security Policy', () => {
     expect(scriptSrc).toBe("script-src 'self' 'unsafe-inline' 'unsafe-eval'");
   });
 
-  it('limits renderer connections to secure remote transports and local development', () => {
+  it('limits renderer connections to secure transports, local development and workspace media downloads', () => {
     const content = appHtml.match(/http-equiv="Content-Security-Policy"\s+content="([^"]+)"/)?.[1];
     expect(content).toBeDefined();
 
@@ -35,7 +35,7 @@ describe('renderer Content Security Policy', () => {
       .map((directive) => directive.trim())
       .find((directive) => directive.startsWith('connect-src '));
     expect(connectSrc).toBe(
-      "connect-src 'self' https: wss: http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:* workspace-file:",
+      "connect-src 'self' https: wss: http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:* workspace-file: workspace-asset:",
     );
   });
 });

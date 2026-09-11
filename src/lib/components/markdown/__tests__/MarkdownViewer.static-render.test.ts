@@ -5,8 +5,13 @@
  * EditorView is constructed for chat transcript messages.
  */
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import MarkdownViewer from '../MarkdownViewer.svelte';
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
 
 describe('MarkdownViewer static rendering', () => {
   it('renders plain text through the simple path', () => {
@@ -98,6 +103,27 @@ describe('MarkdownViewer static rendering', () => {
     expect(screen.getByRole('dialog', { name: /image preview/i })).toBeTruthy();
   });
 
+  it.each(['webm', 'mp4'])(
+    'opens a saved %s asset in the video player without file routing',
+    async (extension) => {
+      const src = `workspace-asset://ws-abc/mfr7-1234abcd.${extension}?backend=remote-1`;
+      const { container } = render(MarkdownViewer, {
+        props: {
+          content: `![saved demo](${src})`,
+          workspaceId: 'ws-abc',
+          chatImageThumbnails: true,
+        },
+      });
+      const trigger = await screen.findByRole('button', { name: /play saved demo/i });
+      expect(container.querySelector('img')).toBeNull();
+      await fireEvent.click(trigger);
+      const player = screen.getByTestId('chat-video-player') as HTMLVideoElement;
+      expect(player.src).toBe(src);
+      expect(player.controls).toBe(true);
+      expect(player.autoplay).toBe(false);
+    },
+  );
+
   it('offers image actions for a note workspace asset without chat thumbnails', async () => {
     const { container } = render(MarkdownViewer, {
       props: { content: '![note image](workspace-asset://asset-123)' },
@@ -116,7 +142,69 @@ describe('MarkdownViewer static rendering', () => {
     expect(await screen.findByRole('menuitem', { name: /copy image/i })).toBeTruthy();
   });
 
-  it('replaces a missing workspace image with its file placeholder and actions', async () => {
+  it.each([
+    ['recursive', 'workspace-asset://other-ws/demo.webm', 'ws-abc'],
+    ['inline', 'workspace-asset://ws-abc/demo.mp4?backend=bad%2Froute', 'ws-abc'],
+    ['static', 'workspace-asset://ws-abc/../demo.mp4', 'ws-abc'],
+    ['unknown workspace', 'workspace-asset://ws-abc/demo.webm', undefined],
+  ])('keeps rejected saved videos inert in %s rendering', async (mode, src, workspaceId) => {
+    const validSrc = 'workspace-asset://ws-abc/valid.mp4';
+    const markdown = `![rejected](${src})`;
+    const { container } = render(MarkdownViewer, {
+      props: {
+        content:
+          mode === 'recursive'
+            ? `![valid](${validSrc})\n\n${markdown}\n\nrender complete`
+            : `Recording: ${markdown}\n\nrender complete`,
+        workspaceId,
+        chatImageThumbnails: mode === 'recursive',
+      },
+    });
+    await screen.findByText('render complete');
+    const sources = Array.from(container.querySelectorAll('img[src], video[src]'), (node) =>
+      node.getAttribute('src'),
+    );
+    expect(sources).toEqual(mode === 'recursive' ? [validSrc] : []);
+  });
+
+  it.each(['webm', 'mp4'])(
+    'retains download recovery for a failed inline saved %s video',
+    async (extension) => {
+      const src = `workspace-asset://ws-abc/mfr7-1234abcd.${extension}?backend=remote-1`;
+      const fetchVideo = vi
+        .fn()
+        .mockResolvedValue({ ok: true, blob: async () => new Blob(['video']) });
+      vi.stubGlobal('fetch', fetchVideo);
+      vi.stubGlobal(
+        'URL',
+        Object.assign(URL, {
+          createObjectURL: vi.fn(() => 'blob:saved-video'),
+          revokeObjectURL: vi.fn(),
+        }),
+      );
+      const anchorClick = vi
+        .spyOn(HTMLAnchorElement.prototype, 'click')
+        .mockImplementation(() => {});
+      const { container } = render(MarkdownViewer, {
+        props: { content: `Here is the recording: ![saved demo](${src})`, workspaceId: 'ws-abc' },
+      });
+      await waitFor(() => expect(container.querySelector('video')).toBeTruthy());
+      await fireEvent.error(container.querySelector('video')!);
+      expect(screen.getByTestId('media-unavailable').dataset.reason).toBe('load-failed');
+      expect(screen.queryByRole('button', { name: /open file|copy path/i })).toBeNull();
+      const trigger = screen.getByRole('button', { name: /video options/i });
+      trigger.focus();
+      await fireEvent.keyDown(trigger, { key: 'ArrowDown' });
+      await fireEvent.click(await screen.findByRole('menuitem', { name: /download/i }));
+      await waitFor(() => expect(anchorClick).toHaveBeenCalledOnce());
+      expect(fetchVideo).toHaveBeenCalledWith(src);
+      expect((anchorClick.mock.instances[0] as HTMLAnchorElement).download).toBe(
+        `saved demo.${extension}`,
+      );
+    },
+  );
+
+  it('preserves file actions without claiming an image load error proves absence', async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, 'clipboard', {
       value: { writeText },
@@ -133,12 +221,12 @@ describe('MarkdownViewer static rendering', () => {
 
     await fireEvent.error(image);
 
-    expect(screen.getByRole('status').textContent).toContain('File is missing');
+    expect(screen.getByTestId('media-unavailable').dataset.reason).toBe('load-failed');
     await fireEvent.click(screen.getByRole('button', { name: /copy path/i }));
     await waitFor(() => expect(writeText).toHaveBeenCalledWith('out/missing image.png'));
   });
 
-  it('replaces a missing workspace video with its file placeholder', async () => {
+  it('does not label a workspace video load error as a missing file', async () => {
     const { container } = render(MarkdownViewer, {
       props: {
         content: '![demo](intent://local/file/out/demo.mp4)',
@@ -152,7 +240,7 @@ describe('MarkdownViewer static rendering', () => {
 
     const status = screen.getByRole('status');
     expect(status.textContent).toContain('demo');
-    expect(status.textContent).toContain('File is missing');
+    expect(status.dataset.reason).toBe('load-failed');
   });
 
   it('renders Mermaid fenced blocks as visible source when requested', async () => {

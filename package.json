@@ -1,6 +1,6 @@
 {
   "name": "intent",
-  "version": "2.145.1",
+  "version": "2.145.3",
   "description": "Intent",
   "type": "module",
   "main": "dist/main/index.js",
@@ -68,8 +68,9 @@
     "lint:renderer-side-effect-boundaries": "node scripts/check-renderer-side-effect-boundaries.mjs",
     "lint:saga-watcher-ownership": "node scripts/check-saga-watcher-ownership.mjs",
     "lint:browser-address-normalization": "node scripts/check-browser-address-normalization.mjs",
+    "lint:instruction-themis-pins": "node scripts/check-instruction-themis-pins.mjs",
     "lint:agent-architecture": "node scripts/check-workspace-event-dispatchers.mjs src/features/agent && node scripts/check-workspace-event-dispatchers.mjs src/features/mcp && node scripts/check-workspace-event-dispatchers.mjs src/store/main/slices/agent-subscriptions && pnpm run lint:reducer-determinism && pnpm run type-check:validate",
-    "validate:architecture": "pnpm run lint:agent-architecture && pnpm run lint:selector-active-workspace && pnpm run lint:redux-collections && pnpm run lint:renderer-side-effect-boundaries && pnpm run lint:saga-watcher-ownership && pnpm run lint:browser-address-normalization && pnpm run test:ui-invariants",
+    "validate:architecture": "pnpm run lint:agent-architecture && pnpm run lint:selector-active-workspace && pnpm run lint:redux-collections && pnpm run lint:renderer-side-effect-boundaries && pnpm run lint:saga-watcher-ownership && pnpm run lint:browser-address-normalization && pnpm run lint:instruction-themis-pins && pnpm run test:ui-invariants",
     "test": "pnpm run test:unit && pnpm run test:integration && pnpm run test:playwright",
     "test:unit": "vitest run --config vitest.config.ts",
     "test:ui-invariants": "node scripts/ui-invariant-suites.mjs",
@@ -193,6 +194,7 @@
   "devDependencies": {
     "@electron/notarize": "^3.1.1",
     "@electron/rebuild": "^4.2.0",
+    "@eslint/compat": "^2.1.1",
     "@eslint/js": "^10.0.1",
     "@faker-js/faker": "^10.6.0",
     "@fontsource-variable/inter": "^5.3.0",

@@ -86,6 +86,10 @@ test-harness-report.json
 .workspace-notes/
 .workspace-notes.backup/
 
+# Scratch/sandbox location (worktrees, probes); also excluded from vitest discovery
+.dev/
+.wt-*/
+
 # Prevent literal ~ directory (path expansion bug)
 ~/
 
