@@ -188,7 +188,7 @@
   <span
     data-slot="copy-input-value"
     class={cn(
-      'min-w-0 flex-1 select-none truncate text-left font-mono text-foreground',
+      'min-w-0 flex-1 select-none truncate text-left text-foreground',
       rowPadding,
       align === 'left' ? 'pl-1' : 'pl-0',
     )}
