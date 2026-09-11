@@ -1,3 +1,4 @@
+export { default as ConfirmRequestView } from './ConfirmRequestView.svelte';
 export { default as ConfirmHost } from './ConfirmHost.svelte';
 export { default as DestructiveConfirm } from './DestructiveConfirm.svelte';
 export { default as FormDialog } from './FormDialog.svelte';

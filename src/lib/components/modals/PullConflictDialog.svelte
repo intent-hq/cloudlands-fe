@@ -14,6 +14,8 @@
     faArrowUpRightFromSquare,
     faFolder,
   } from '@fortawesome/free-solid-svg-icons';
+  import { untrack } from 'svelte';
+  import { readable } from 'svelte/store';
   import { onMount } from 'svelte';
   import {
     fetchEditors,
@@ -55,6 +57,8 @@
 
   interface Props {
     open?: boolean;
+    static?: boolean;
+    staticData?: { editors: InstalledEditor[] };
     error?: string;
     repoPath?: string;
     branchName?: string;
@@ -67,6 +71,8 @@
 
   let {
     open = $bindable(false),
+    static: staticPosition = false,
+    staticData,
     error = '',
     repoPath = '',
     branchName = '',
@@ -74,7 +80,9 @@
     onCancel,
   }: Props = $props();
 
-  const installedEditors$ = selectInstalledEditorsFiltered();
+  const installedEditors$ = untrack(() =>
+    staticData ? readable(staticData.editors) : selectInstalledEditorsFiltered(),
+  );
 
   // Dropdown open state
   let dropdownOpen = $state(false);
@@ -86,12 +94,13 @@
   // The marker is leased per instance: overlapping dialogs (onboarding + the
   // global create flow) keep it until the last one detaches.
   $effect(() => {
-    if (!contentRef) return;
+    if (staticPosition || !contentRef) return;
     return acquireMarkerAttribute(contentRef.ownerDocument.body, 'data-pull-conflict-dialog-open');
   });
 
   // Fetch installed editors on mount
   onMount(() => {
+    if (staticData) return;
     console.log('PullConflictDialog mounted, fetching installed editors');
     appStore.dispatch(fetchEditors());
   });
@@ -146,7 +155,7 @@
    * Logic adapted from WorkspaceActionsMenu.svelte.
    */
   async function openInEditor(editor: InstalledEditor) {
-    if (!repoPath) return;
+    if (staticData || !repoPath) return;
 
     try {
       switch (editor.handlerType) {
@@ -185,7 +194,7 @@
   }
 </script>
 
-<Dialog.Root {open} onOpenChange={handleOpenChange}>
+<Dialog.Root {staticPosition} {open} onOpenChange={handleOpenChange}>
   <Dialog.Content
     bind:ref={contentRef}
     data-pull-conflict-dialog

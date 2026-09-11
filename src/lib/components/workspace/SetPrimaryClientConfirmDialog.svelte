@@ -4,15 +4,23 @@
 
   interface Props {
     open?: boolean;
+    static?: boolean;
     currentHost: string;
     onConfirm?: () => void;
     onCancel?: () => void;
   }
 
-  let { open = false, currentHost, onConfirm, onCancel }: Props = $props();
+  let {
+    static: staticPosition = false,
+    open = false,
+    currentHost,
+    onConfirm,
+    onCancel,
+  }: Props = $props();
 </script>
 
 <FormDialog
+  static={staticPosition}
   {open}
   class="max-w-sm"
   title={m.workspace_drivingClient_setPrimaryDialog_title()}

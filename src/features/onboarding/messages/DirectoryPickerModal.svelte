@@ -3,6 +3,7 @@
    * BE-driven shell for DirectoryPickerView. Directory reads remain in the
    * directory-picker read service; this component only dispatches intent.
    */
+  import { readable } from 'svelte/store';
   import { untrack } from 'svelte';
 
   import * as Dialog from '$lib/components/ui/dialog';
@@ -31,6 +32,8 @@
 
   interface Props {
     open: boolean;
+    static?: boolean;
+    staticData?: { listing: DirectoryPickerListing };
     title?: string;
     /** Path to open initially. Empty/undefined opens the daemon-host home. */
     initialPath?: string;
@@ -43,6 +46,8 @@
 
   let {
     open,
+    static: staticPosition = false,
+    staticData,
     title,
     initialPath,
     selectLabel,
@@ -59,11 +64,17 @@
   const resolvedTitle = $derived(title ?? modeDefaultLabel);
   const resolvedSelectLabel = $derived(selectLabel ?? modeDefaultLabel);
 
-  const listing$ = selectDirectoryPickerListing();
-  const loading$ = selectDirectoryPickerLoading();
-  const error$ = selectDirectoryPickerError();
-  const pathError$ = selectDirectoryPickerPathError();
-  const createError$ = selectDirectoryPickerCreateError();
+  const listing$ = untrack(() =>
+    staticData ? readable(staticData.listing) : selectDirectoryPickerListing(),
+  );
+  const loading$ = untrack(() => (staticData ? readable(false) : selectDirectoryPickerLoading()));
+  const error$ = untrack(() => (staticData ? readable(null) : selectDirectoryPickerError()));
+  const pathError$ = untrack(() =>
+    staticData ? readable(null) : selectDirectoryPickerPathError(),
+  );
+  const createError$ = untrack(() =>
+    staticData ? readable(null) : selectDirectoryPickerCreateError(),
+  );
   const listing: DirectoryPickerListing | null = $derived($listing$);
   const loading: boolean = $derived($loading$);
   const error: string | null = $derived($error$);
@@ -82,16 +93,18 @@
   );
 
   function requestDirectory(path: string | undefined) {
+    if (staticData) return;
     loadedFor = path ?? '';
     appStore.dispatch(loadDirectoryRequested(path));
   }
 
   function createDirectory(path: string) {
+    if (staticData) return;
     appStore.dispatch(createDirectoryRequested(path));
   }
 
   $effect(() => {
-    if (!open) return;
+    if (staticData || !open) return;
     const want = initialPath?.trim() || '';
     untrack(() => {
       if (loadedFor === null) requestDirectory(want || undefined);
@@ -99,14 +112,14 @@
   });
 
   $effect(() => {
-    if (!open) {
+    if (!staticData && !open) {
       loadedFor = null;
       appStore.dispatch(resetDirectoryPicker());
     }
   });
 
   $effect(() => {
-    if (!open) return;
+    if (staticData || !open) return;
     return pushEscapeLayer((event) => {
       const target = event.target as HTMLElement | null;
       if (target instanceof HTMLInputElement) {
@@ -128,6 +141,7 @@
 </script>
 
 <Dialog.Root
+  {staticPosition}
   bind:open={
     () => open,
     (next) => {
@@ -157,10 +171,10 @@
       {onSelect}
       {onClose}
       onNavigate={requestDirectory}
-      onNavigateToPath={(path) => appStore.dispatch(navigateToPathRequested(path))}
-      onClearPathError={() => appStore.dispatch(clearPathNavigationError())}
+      onNavigateToPath={(path) => !staticData && appStore.dispatch(navigateToPathRequested(path))}
+      onClearPathError={() => !staticData && appStore.dispatch(clearPathNavigationError())}
       onCreateDirectory={createDirectory}
-      onClearCreateError={() => appStore.dispatch(clearCreateDirectoryError())}
+      onClearCreateError={() => !staticData && appStore.dispatch(clearCreateDirectoryError())}
     />
   </Dialog.Content>
 </Dialog.Root>

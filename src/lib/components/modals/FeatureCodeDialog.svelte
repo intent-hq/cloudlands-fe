@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
+  import { readable } from 'svelte/store';
   import { Button } from '$lib/components/ui/button';
   import { FormDialog } from '$lib/components/patterns/confirm';
   import { Input } from '$lib/components/ui/input';
@@ -15,13 +17,24 @@
 
   interface Props {
     open?: boolean;
+    static?: boolean;
+    staticData?: { activeFeatures: string[] };
     onClose?: () => void;
   }
 
-  let { open = $bindable(false), onClose }: Props = $props();
+  let {
+    open = $bindable(false),
+    static: staticPosition = false,
+    staticData,
+    onClose,
+  }: Props = $props();
 
-  const activeFeatures$ = selectActiveFeatures();
-  const hasActiveFeatures$ = selectHasActiveFeatures();
+  const activeFeatures$ = untrack(() =>
+    staticData ? readable(staticData.activeFeatures) : selectActiveFeatures(),
+  );
+  const hasActiveFeatures$ = untrack(() =>
+    staticData ? readable(staticData.activeFeatures.length > 0) : selectHasActiveFeatures(),
+  );
 
   let inputValue = $state('');
   let inputRef: HTMLInputElement | null = $state(null);
@@ -60,6 +73,7 @@
   }
 
   async function confirm() {
+    if (staticData) return;
     if (!inputValue.trim() || isActivating) return;
     clearFeedbackTimeout();
     isActivating = true;
@@ -110,7 +124,7 @@
 
   // Focus input and load active features when dialog opens
   $effect(() => {
-    if (open) {
+    if (open && !staticData) {
       clearFeedbackTimeout();
       feedback = null;
       inputValue = '';
@@ -130,10 +144,12 @@
   }
 
   async function restartApp() {
+    if (staticData) return;
     await featureCodesClient.restartApp();
   }
 
   async function removeFeature(featureId: string) {
+    if (staticData) return;
     const result = await featureCodesClient.deactivateFeature(featureId);
     await refreshActiveFeatures();
     if (!result?.success) return;
@@ -145,6 +161,7 @@
 
 {#if open}
   <FormDialog
+    static={staticPosition}
     bind:open
     title={m.modals_featureCode_title()}
     submitLabel={m.modals_featureCode_activate_label()}

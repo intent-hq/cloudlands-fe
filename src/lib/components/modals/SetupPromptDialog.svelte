@@ -10,6 +10,8 @@
    * setup-needed backend redirect there (boot-route-gate), and the dialog
    * must not overlay the very wizard it would offer to open.
    */
+  import { untrack } from 'svelte';
+  import { readable } from 'svelte/store';
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
   import { Button } from '$lib/components/ui/button';
@@ -23,8 +25,9 @@
   import { selectShowRemoteSetupPrompt } from '$store/renderer/slices/setup-prompt/setup-prompt-selectors';
   import { setupPromptDismissed } from '$store/renderer/slices/setup-prompt/setup-prompt-slice';
 
-  const showPrompt = selectShowRemoteSetupPrompt();
-  const activeConnection = selectCurrentConnection();
+  let { staticData }: { staticData?: { backendLabel: string } } = $props();
+  const showPrompt = untrack(() => (staticData ? readable(true) : selectShowRemoteSetupPrompt()));
+  const activeConnection = untrack(() => (staticData ? readable(null) : selectCurrentConnection()));
 
   let dialogRef: HTMLDivElement | null = $state(null);
 
@@ -32,7 +35,7 @@
   // Escape dismisses regardless of where focus is and Tab cycles within the
   // dialog instead of escaping behind the overlay.
   $effect(() => {
-    if (!$showPrompt || !dialogRef) return;
+    if (staticData || !$showPrompt || !dialogRef) return;
     const trap = new FocusTrap(dialogRef);
     trap.activate();
     const releaseEscape = pushEscapeLayer(() => dismiss());
@@ -43,19 +46,23 @@
   });
 
   function dismiss() {
+    if (staticData) return;
     const connectionId = $activeConnection?.id;
     if (connectionId) appStore.dispatch(setupPromptDismissed(connectionId));
   }
 
   async function handleConfirm() {
+    if (staticData) return;
     dismiss();
     await goto('/workspace/new');
   }
 </script>
 
-{#if $showPrompt && $page.url.pathname !== '/workspace/new'}
+{#if staticData || ($showPrompt && $page.url.pathname !== '/workspace/new')}
   <div
-    class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+    class={staticData
+      ? 'flex items-center justify-center'
+      : 'fixed inset-0 bg-black/50 flex items-center justify-center z-50'}
     role="presentation"
     onclick={dismiss}
   >
@@ -65,7 +72,7 @@
       class="bg-background border border-border rounded-lg shadow-lg w-full max-w-md overflow-hidden flex flex-col"
       onclick={(e) => e.stopPropagation()}
       role="dialog"
-      aria-modal="true"
+      aria-modal={staticData ? undefined : true}
       aria-labelledby="setup-prompt-title"
       aria-describedby="setup-prompt-description"
       tabindex="-1"
@@ -94,7 +101,10 @@
       <div class="p-6">
         <p id="setup-prompt-description" class="text-sm text-subtle">
           {m.modals_setupPrompt_description({
-            backend: $activeConnection?.label ?? m.modals_setupPrompt_backend_fallback(),
+            backend:
+              staticData?.backendLabel ??
+              $activeConnection?.label ??
+              m.modals_setupPrompt_backend_fallback(),
           })}
         </p>
       </div>

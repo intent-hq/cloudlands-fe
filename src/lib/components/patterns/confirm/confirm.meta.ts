@@ -5,7 +5,15 @@ export const confirmMetadata = parsePatternMetadata({
   id: 'confirm',
   source: 'src/lib/components/patterns/confirm/index.ts',
   publicImport: '$lib/components/patterns/confirm',
-  exports: ['ConfirmHost', 'DestructiveConfirm', 'FormDialog', 'alert', 'confirm', 'prompt'],
+  exports: [
+    'ConfirmHost',
+    'ConfirmRequestView',
+    'DestructiveConfirm',
+    'FormDialog',
+    'alert',
+    'confirm',
+    'prompt',
+  ],
   owner: 'design-system',
   fixtures: confirmFixtures,
   useWhen: [

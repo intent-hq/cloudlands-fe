@@ -20,9 +20,25 @@
   import ModelSwitchConfirmDialog from '$lib/components/chat/ModelSwitchConfirmDialog.svelte';
   import DismissProposalConfirmDialog from '$lib/components/chat/proposals/DismissProposalConfirmDialog.svelte';
   import DismissQuestionsConfirmDialog from '$lib/components/chat/questions/DismissQuestionsConfirmDialog.svelte';
+  import NewSpaceModal from '$lib/components/modals/NewSpaceModal.svelte';
+  import SetupScriptModal from '$lib/components/modals/SetupScriptModal.svelte';
+  import InterruptedAgentsModal from '$lib/components/modals/InterruptedAgentsModal.svelte';
+  import AddRemoteSetupModal from '$lib/components/workspace/initializer/AddRemoteSetupModal.svelte';
+  import { Textarea } from '$lib/components/ui/textarea';
+  import { Label } from '$lib/components/ui/label';
   import type { UiComponentFixture } from '$lib/components/ui/component-metadata';
 
   let { fixture }: { componentId: 'modals'; fixture: UiComponentFixture } = $props();
+
+  import { ConfirmRequestView } from '$lib/components/patterns/confirm';
+  import WorkspaceWarningDialogs from '$lib/components/modals/WorkspaceWarningDialogs.svelte';
+  import SetupPromptDialog from '$lib/components/modals/SetupPromptDialog.svelte';
+  import PullConflictDialog from '$lib/components/modals/PullConflictDialog.svelte';
+  import FeatureCodeDialog from '$lib/components/modals/FeatureCodeDialog.svelte';
+  import SetPrimaryClientConfirmDialog from '$lib/components/workspace/SetPrimaryClientConfirmDialog.svelte';
+
+  const uid = $props.id();
+  const portalId = (state: string) => `${uid}-${state}-portal`;
 
   const primitiveStates = [
     ['default', 'Default'],
@@ -44,6 +60,17 @@
   type ModalState = (typeof primitiveStates)[number][0];
 
   const productStates = [
+    ['confirm-host-confirm', 'ConfirmHost — confirm'],
+    ['confirm-host-prompt', 'ConfirmHost — prompt'],
+    ['confirm-host-alert', 'ConfirmHost — alert'],
+    ['confirm-host-busy', 'ConfirmHost — busy'],
+    ['workspace-warning-dialogs', 'WorkspaceWarningDialogs'],
+    ['setup-prompt-dialog', 'SetupPromptDialog'],
+    ['pull-conflict-dialog', 'PullConflictDialog'],
+    ['feature-code-dialog', 'FeatureCodeDialog'],
+    ['directory-picker-modal', 'DirectoryPickerModal'],
+    ['set-primary-client-confirm-dialog', 'SetPrimaryClientConfirmDialog'],
+
     ['destructive-confirm-default', 'DestructiveConfirm — default'],
     ['destructive-confirm-busy', 'DestructiveConfirm — busy'],
     ['form-dialog-default', 'FormDialog — default'],
@@ -63,36 +90,12 @@
     ['model-switch-confirm-dialog', 'ModelSwitchConfirmDialog'],
     ['dismiss-proposal-confirm-dialog', 'DismissProposalConfirmDialog'],
     ['dismiss-questions-confirm-dialog', 'DismissQuestionsConfirmDialog'],
+    ['new-space-modal', 'NewSpaceModal'],
+    ['setup-script-modal', 'SetupScriptModal'],
+    ['interrupted-agents-modal', 'InterruptedAgentsModal'],
+    ['add-remote-setup-modal', 'AddRemoteSetupModal'],
   ] as const;
   type ProductModalState = (typeof productStates)[number][0];
-
-  const notRenderable = [
-    [
-      'ConfirmHost',
-      'Its singleton request queue cannot expose confirm, prompt, alert, and busy concurrently.',
-    ],
-    [
-      'NewSpaceModal',
-      'Its full workspace initializer transitively loads daemon and Monaco worker integrations.',
-    ],
-    [
-      'SetupScriptModal',
-      'Its production CodeEditor requires Monaco worker entrypoints unavailable in the catalog runtime.',
-    ],
-    [
-      'PullConflictDialog',
-      'Mounting requires initialized editor-discovery Redux state and dispatches native editor discovery.',
-    ],
-    ['InterruptedAgentsModal', 'It portals a full-screen takeover directly to document.body.'],
-    ['SetupPromptDialog', 'Visibility and content are owned by routed Redux connection state.'],
-    [
-      'WorkspaceWarningDialogs',
-      'This global Redux host has no prop seam; its child DeleteWarningDialog is shown above.',
-    ],
-    ['FeatureCodeDialog', 'Opening immediately fetches active feature codes from the daemon.'],
-    ['DirectoryPickerModal', 'Opening immediately requests a daemon-host filesystem listing.'],
-    ['AddRemoteSetupModal', 'It portals a bespoke full-screen form directly to document.body.'],
-  ] as const;
 
   const quitPayload = {
     requestId: 'catalog-quit',
@@ -218,7 +221,102 @@
 {/snippet}
 
 {#snippet productPreview(state: ProductModalState)}
-  {#if state === 'destructive-confirm-default'}
+  {#if state === 'confirm-host-confirm' || state === 'confirm-host-busy'}
+    <ConfirmRequestView
+      static
+      busy={state === 'confirm-host-busy'}
+      request={{
+        kind: 'confirm',
+        options: {
+          title: 'Delete workspace?',
+          description: 'Remove the local workspace and its files.',
+          destructive: true,
+          confirmLabel: 'Delete workspace',
+        },
+      }}
+      onAccept={() => {}}
+      onCancel={() => {}}
+    />
+  {:else if state === 'confirm-host-prompt'}
+    <ConfirmRequestView
+      static
+      value="Design system"
+      request={{
+        kind: 'prompt',
+        options: { title: 'Rename workspace', field: { label: 'Workspace name', required: true } },
+      }}
+      onAccept={() => {}}
+      onCancel={() => {}}
+    />
+  {:else if state === 'confirm-host-alert'}
+    <ConfirmRequestView
+      static
+      request={{
+        kind: 'alert',
+        options: { title: 'Workspace ready', description: 'Your workspace is ready to open.' },
+      }}
+      onAccept={() => {}}
+      onCancel={() => {}}
+    />
+  {:else if state === 'workspace-warning-dialogs'}
+    <WorkspaceWarningDialogs
+      staticData={{
+        open: true,
+        mode: 'archive',
+        agents: [{ id: 'catalog-reviewer', name: 'Reviewer', state: 'running' }],
+        hookNames: ['Watch release build'],
+      }}
+    />
+  {:else if state === 'setup-prompt-dialog'}
+    <SetupPromptDialog staticData={{ backendLabel: 'Development server' }} />
+  {:else if state === 'pull-conflict-dialog'}
+    <PullConflictDialog
+      open
+      static
+      staticData={{ editors: [] }}
+      branchName="design-system"
+      repoPath="/workspaces/design-system"
+      error={'CONFLICT (content): Merge conflict in src/components/Sidebar.svelte\nCONFLICT (content): Merge conflict in src/styles/tokens.css'}
+    />
+  {:else if state === 'feature-code-dialog'}
+    <FeatureCodeDialog
+      open
+      static
+      staticData={{ activeFeatures: ['Workspace sharing', 'Advanced previews'] }}
+    />
+  {:else if state === 'directory-picker-modal'}
+    {#await import('$features/onboarding/messages/DirectoryPickerModal.svelte') then module}
+      <module.default
+        open
+        static
+        staticData={{
+          listing: {
+            path: '/home/developer',
+            parent: '/home',
+            home: '/home/developer',
+            entries: [
+              {
+                name: 'Projects',
+                path: '/home/developer/Projects',
+                isDirectory: true,
+                isGitRepo: false,
+              },
+              {
+                name: 'design-system',
+                path: '/home/developer/design-system',
+                isDirectory: true,
+                isGitRepo: true,
+              },
+            ],
+          },
+        }}
+        onSelect={() => {}}
+        onClose={() => {}}
+      />
+    {/await}
+  {:else if state === 'set-primary-client-confirm-dialog'}
+    <SetPrimaryClientConfirmDialog open static currentHost="Studio Mac" />
+  {:else if state === 'destructive-confirm-default'}
     <DestructiveConfirm
       open
       static
@@ -285,7 +383,12 @@
       static
       mode={state === 'archive-warning-dialog' ? 'archive' : 'delete'}
       agents={[
-        { id: 'catalog-implementor', name: 'Implementor', specialist: 'implementor', state: 'running' },
+        {
+          id: 'catalog-implementor',
+          name: 'Implementor',
+          specialist: 'implementor',
+          state: 'running',
+        },
         { id: 'catalog-verifier', name: 'Verifier', specialist: 'verifier', state: 'running' },
       ]}
       localChanges={{
@@ -346,8 +449,92 @@
     />
   {:else if state === 'dismiss-proposal-confirm-dialog'}
     <DismissProposalConfirmDialog open static />
-  {:else}
+  {:else if state === 'dismiss-questions-confirm-dialog'}
     <DismissQuestionsConfirmDialog open static />
+  {:else if state === 'new-space-modal'}
+    <NewSpaceModal open static>
+      {#snippet initializer()}
+        <div class="grid gap-4">
+          <Textarea
+            aria-label="Initial prompt"
+            value="Review the design system and refine the workspace navigation."
+            rows={4}
+          />
+          <div class="grid gap-2">
+            <Label for={`${uid}-repo`}>Repository</Label>
+            <Input id={`${uid}-repo`} value="intent-hq/intent" />
+            <Label for={`${uid}-branch`}>Branch</Label>
+            <Input id={`${uid}-branch`} value="design-system" />
+          </div>
+          <div class="rounded-md border border-border p-3">
+            <p class="text-sm font-medium">Implementor</p>
+            <p class="text-xs text-muted-foreground">OpenAI · GPT-5.6 · High reasoning</p>
+          </div>
+          <Button variant="outline">Setup script: pnpm install</Button>
+          <Button variant="primary">Create workspace</Button>
+        </div>
+      {/snippet}
+    </NewSpaceModal>
+  {:else if state === 'setup-script-modal'}
+    <SetupScriptModal
+      open
+      static
+      value={'#!/bin/bash\npnpm install\npnpm run dev'}
+      scriptName="Frontend setup"
+    >
+      {#snippet editor(value, onChange)}
+        <div class="grid gap-3">
+          <p class="text-sm font-medium">Frontend setup</p>
+          <Textarea
+            aria-label="Setup script"
+            {value}
+            oninput={(event) => onChange(event.currentTarget.value)}
+            rows={10}
+            class="font-mono"
+          />
+        </div>
+      {/snippet}
+    </SetupScriptModal>
+  {:else if state === 'interrupted-agents-modal'}
+    <InterruptedAgentsModal
+      open
+      inline
+      portalTarget={`#${portalId(state)}`}
+      agents={[
+        {
+          agentId: 'interrupted-implementor',
+          agentName: 'Implementor',
+          workspaceId: 'design',
+          workspaceName: 'Design system',
+          prevStatus: 'running',
+          interruptedAt: '2026-09-11T12:00:00Z',
+        },
+        {
+          agentId: 'interrupted-reviewer',
+          agentName: 'Reviewer',
+          workspaceId: 'release',
+          workspaceName: 'Release prep',
+          prevStatus: 'waiting',
+          interruptedAt: '2026-09-11T12:00:00Z',
+        },
+      ]}
+    />
+  {:else if state === 'add-remote-setup-modal'}
+    <AddRemoteSetupModal
+      isOpen
+      inline
+      portalTarget={`#${portalId(state)}`}
+      initialSetup={{
+        name: 'Development server',
+        host: 'dev.example.com',
+        port: 22,
+        username: 'developer',
+        workspacePath: '/home/developer/intent',
+        branch: 'main',
+      }}
+      onclose={() => {}}
+      onsave={() => {}}
+    />
   {/if}
 {/snippet}
 
@@ -386,22 +573,12 @@
                 state === 'transfer-workspace-modal'}
               class="relative min-h-96 overflow-hidden rounded-md bg-muted/40 py-4"
             >
+              <div id={portalId(state)}></div>
               {@render productPreview(state)}
             </div>
           </article>
         {/each}
       </div>
-      <aside
-        class="rounded-md border border-border bg-muted/40 p-4"
-        aria-labelledby="not-renderable-title"
-      >
-        <h3 id="not-renderable-title" class="text-sm font-medium">Not renderable in catalog</h3>
-        <ul class="mt-2 list-disc space-y-1 pl-5 text-xs text-muted-foreground">
-          {#each notRenderable as [name, reason] (name)}
-            <li><strong class="font-medium text-foreground">{name}</strong> — {reason}</li>
-          {/each}
-        </ul>
-      </aside>
     </section>
   {/if}
 </div>
