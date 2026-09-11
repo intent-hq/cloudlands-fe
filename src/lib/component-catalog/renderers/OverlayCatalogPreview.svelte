@@ -94,8 +94,10 @@
                 >Deterministic open-state preview with focus restoration.</Dialog.Description
               ></Dialog.Header
             >
-            <Input aria-label="Open-state dialog field" />
-            <Button size="sm">Dialog nested action</Button>
+            <div class="grid gap-3">
+              <Input aria-label="Open-state dialog field" />
+              <Button>Dialog nested action</Button>
+            </div>
           </Dialog.Content>
         </Dialog.Root>
       </div>
@@ -109,8 +111,10 @@
                 >Host-independent dialog preview with deliberately long content for compact layouts.</Dialog.Description
               ></Dialog.Header
             >
-            <Input class="h-8" aria-label="Dialog preview field" />
-            <Button size="sm">Dialog nested action</Button>
+            <div class="grid gap-3">
+              <Input size="compact" aria-label="Dialog preview field" />
+              <Button size="compact">Dialog nested action</Button>
+            </div>
           </Dialog.Content>
         </Dialog.Root>
       </div>
