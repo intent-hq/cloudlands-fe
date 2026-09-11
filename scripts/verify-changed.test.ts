@@ -10,6 +10,7 @@ import {
   lockTimeout,
   parseArgs,
   printPlan,
+  runCli,
   runVerificationPlan,
   verificationLockKey,
 } from './verify-changed.mjs';
@@ -314,6 +315,44 @@ describe('verification planning', () => {
     expect(plan.checks.find((check) => check.id === 'vitest-integration')?.args).toContain(
       'tests/integration/vitest.integration.config.ts',
     );
+  });
+});
+
+describe('dependency freshness gate', () => {
+  function cliOptions(depsResult: { ok: boolean; reason: string | null }) {
+    const calls: string[] = [];
+    return {
+      calls,
+      options: {
+        log() {},
+        checkDeps() {
+          calls.push('checkDeps');
+          return depsResult;
+        },
+        async runPlan() {
+          calls.push('runPlan');
+        },
+      },
+    };
+  }
+
+  it('checks the install before running a plan and refuses a stale install', async () => {
+    const root = fixtureRoot({ 'src/lib/example.ts': 'export const value = 1;' });
+    const reason = 'node_modules is out of sync';
+    const stale = cliOptions({ ok: false, reason });
+    await expect(runCli(['src/lib/example.ts'], root, stale.options)).rejects.toThrow(reason);
+    expect(stale.calls).toEqual(['checkDeps']);
+
+    const fresh = cliOptions({ ok: true, reason: null });
+    await runCli(['src/lib/example.ts'], root, fresh.options);
+    expect(fresh.calls).toEqual(['checkDeps', 'runPlan']);
+  });
+
+  it('skips the install check for dry runs', async () => {
+    const root = fixtureRoot({ 'src/lib/example.ts': 'export const value = 1;' });
+    const stale = cliOptions({ ok: false, reason: 'node_modules is out of sync' });
+    await runCli(['--dry-run', 'src/lib/example.ts'], root, stale.options);
+    expect(stale.calls).toEqual([]);
   });
 });
 
