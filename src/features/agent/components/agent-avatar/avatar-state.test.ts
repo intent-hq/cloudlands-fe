@@ -136,24 +136,24 @@ describe('getAvatarState attention-request states', () => {
   });
 });
 
-describe('getAvatarStateForSession attention running-vs-idle gate', () => {
+describe('getAvatarStateForSession attention running-vs-idle precedence', () => {
   const pendingBlocker = {
     id: 'a1',
     attentionRequestKind: 'blocker',
     attentionRequestReason: 'sandbox broken',
   };
 
-  it('suppresses a pending attention request while a turn is live (running wins)', () => {
+  it('a pending attention request wins over a live turn', () => {
     expect(
       getAvatarStateForSession({
         ...pendingBlocker,
         status: AgentStatus.Active,
         isResponding: true,
       } as never),
-    ).toBe('running');
+    ).toBe('attention-blocker');
   });
 
-  it('surfaces the attention badge once the agent stops streaming', () => {
+  it('keeps the attention badge once the agent stops streaming', () => {
     expect(getAvatarStateForSession({ ...pendingBlocker, status: AgentStatus.Idle } as never)).toBe(
       'attention-blocker',
     );
