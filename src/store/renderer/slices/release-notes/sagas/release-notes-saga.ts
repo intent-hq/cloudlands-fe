@@ -5,6 +5,8 @@ import { releaseNotesClient } from '$features/release-notes/release-notes.client
 import type { ShowReleaseNotesPayload } from '$features/release-notes/types';
 import { createLogger } from '$lib/utils/client-logger';
 import {
+  closeReleaseNotesModal,
+  dismissReleaseNotes,
   initializeReleaseNotes,
   setInitialized,
   showReleaseNotes,
@@ -14,8 +16,15 @@ import {
 
 const logger = createLogger('ReleaseNotesSaga');
 
+const CLOSE_EVENT = 'close';
+type CloseEvent = typeof CLOSE_EVENT;
+
 function createReleaseNotesChannel(): EventChannel<ShowReleaseNotesPayload> {
   return eventChannel((emit) => releaseNotesClient.onShow(emit));
+}
+
+function createCloseChannel(): EventChannel<CloseEvent> {
+  return eventChannel((emit) => releaseNotesClient.onClose(() => emit(CLOSE_EVENT)));
 }
 
 function* fetchReleaseNotes(): SagaGenerator<void> {
@@ -37,6 +46,30 @@ function* claimPending(surfaced: Set<string>): SagaGenerator<void> {
     }
   } catch (error) {
     logger.warn('Failed to claim pending release notes', error);
+  }
+}
+
+function* notifyDismiss(): SagaGenerator<void> {
+  try {
+    yield* call([releaseNotesClient, releaseNotesClient.dismissReleaseNotes]);
+  } catch (error) {
+    logger.warn('Failed to notify main of release notes dismissal', error);
+  }
+}
+
+/**
+ * Main broadcast a close (another window dismissed): close locally via the
+ * non-propagating action so we never invoke `release-notes:dismiss` back.
+ */
+function* watchCloseEvents(channel: EventChannel<CloseEvent>): SagaGenerator<void> {
+  try {
+    while (true) {
+      const event = yield* take(channel);
+      if (event === (END as unknown as CloseEvent)) return;
+      yield* put(closeReleaseNotesModal());
+    }
+  } finally {
+    channel.close();
   }
 }
 
@@ -65,8 +98,11 @@ export function* releaseNotesSaga(): SagaGenerator<void> {
   yield* take(initializeReleaseNotes);
   const surfaced = new Set<string>();
   const channel = createReleaseNotesChannel();
+  const closeChannel = createCloseChannel();
   yield* put(setInitialized());
   yield* fork(claimPending, surfaced);
   yield* fork(watchShowEvents, channel, surfaced);
+  yield* fork(watchCloseEvents, closeChannel);
+  yield* takeEvery(dismissReleaseNotes, notifyDismiss);
   yield* takeEvery(showReleaseNotes, fetchReleaseNotes);
 }
