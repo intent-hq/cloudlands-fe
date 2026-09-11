@@ -21,17 +21,19 @@
  * The launcher pins `PLAYWRIGHT_HTML_OPEN=never` unless the caller opts in
  * from an interactive terminal (see `usage()`).
  */
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { nonFontPackagesFromDryRun } from './playwright-os-deps-lib.mjs';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 export const CT_HTML_REPORT_ENV = 'CT_HTML_REPORT';
 export const OPEN_REPORT_FLAG = '--open-report';
+export const PRINT_OS_DEPS_FLAG = '--print-os-deps';
 
 /** `CT_HTML_REPORT` values → Playwright html reporter `open` modes. */
 const CT_HTML_REPORT_MODES = {
@@ -65,7 +67,41 @@ export function usage() {
     'CI helpers:',
     '  --print-playwright-version   Print the CT-aligned playwright version.',
     '  --install-browsers [...]     Run `playwright install` with the CT-aligned CLI.',
+    `  ${PRINT_OS_DEPS_FLAG} [...]        Print the non-font OS packages from the CT-aligned`,
+    '                               `playwright install-deps --dry-run`, space-separated on',
+    '                               one line (fonts-*/xfonts-* dropped; intent-hq/intent#4723).',
   ].join('\n');
+}
+
+/**
+ * Run the CT-aligned `playwright install-deps --dry-run <browsers...>` and
+ * return the non-font packages it would install. The dry run prints the apt
+ * command without executing it; the parse is strict (see
+ * playwright-os-deps-lib.mjs) and throws on anything unexpected, so CI fails
+ * loudly instead of provisioning a partial package list. `spawnSyncImpl` is
+ * injectable for tests.
+ */
+export function collectNonFontOsDeps({
+  cliPath,
+  browsers,
+  cwd = repoRoot,
+  spawnSyncImpl = spawnSync,
+}) {
+  const dryRun = spawnSyncImpl(
+    process.execPath,
+    [cliPath, 'install-deps', '--dry-run', ...browsers],
+    {
+      cwd,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'inherit'],
+    },
+  );
+  if (dryRun.error || dryRun.status !== 0) {
+    throw new Error(
+      `install-deps --dry-run failed: ${dryRun.error?.message ?? `exit ${dryRun.status}`}`,
+    );
+  }
+  return { dryRun: dryRun.stdout, packages: nonFontPackagesFromDryRun(dryRun.stdout) };
 }
 
 /**
@@ -217,12 +253,27 @@ function main(argv) {
   }
 
   // CI helpers: browsers must match the CT-aligned runner version (not the
-  // repo's top-level playwright), so version printing (for cache keys) and
-  // browser installation go through this launcher too.
+  // repo's top-level playwright), so version printing (for cache keys),
+  // browser installation, and the OS dependency listing go through this
+  // launcher too.
   let args;
   if (forwarded[0] === '--print-playwright-version') {
     process.stdout.write(`${cli.version}\n`);
     process.exit(0);
+  } else if (forwarded[0] === PRINT_OS_DEPS_FLAG) {
+    console.error(`[run-ct-tests] using playwright@${cli.version} (${cli.cliPath})`);
+    try {
+      const { dryRun, packages } = collectNonFontOsDeps({
+        cliPath: cli.cliPath,
+        browsers: forwarded.slice(1),
+      });
+      console.error(`[run-ct-tests] install-deps --dry-run: ${dryRun.trim()}`);
+      process.stdout.write(`${packages.join(' ')}\n`);
+      process.exit(0);
+    } catch (error) {
+      console.error(`[run-ct-tests] ${error instanceof Error ? error.message : error}`);
+      process.exit(1);
+    }
   } else if (forwarded[0] === '--install-browsers') {
     args = ['install', ...forwarded.slice(1)];
   } else {
