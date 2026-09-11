@@ -178,7 +178,7 @@ describe('AgentCard pending-question avatar state', () => {
     expect(await findAvatarState()).toBe('question');
   });
 
-  it('flips to the question state when an out-of-tail marked question is recovered', async () => {
+  it('keeps the question state for an out-of-tail marked question through recovery', async () => {
     appStore.dispatch(
       bulkUpsertSessions([
         makeSession({
@@ -190,7 +190,9 @@ describe('AgentCard pending-question avatar state', () => {
     );
 
     render(AgentCard, { props: { agentId, panelRow: true } });
-    expect(await findAvatarState()).not.toBe('question');
+    // Fail-closed: a set marker whose row is not in the loaded tail is still
+    // an unanswered question until answered or dismissed.
+    expect(await findAvatarState()).toBe('question');
 
     appStore.dispatch(pendingQuestionRecoveryRequested(agentId, QUESTION_MESSAGE_ID));
     appStore.dispatch(

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { AgentStatus } from '$shared/types';
+import { AgentStatus, type AgentMessage } from '$shared/types';
+import { QUESTION_RESOURCE_MIME_TYPE } from '$shared/types/question-resource';
 
 const { getStateMock, selectAgentSessionMock, selectAgentIsRespondingMock } = vi.hoisted(() => ({
   getStateMock: vi.fn(() => ({ marker: 'state' })),
@@ -157,6 +158,87 @@ describe('getAvatarStateForSession attention running-vs-idle precedence', () => 
     expect(getAvatarStateForSession({ ...pendingBlocker, status: AgentStatus.Idle } as never)).toBe(
       'attention-blocker',
     );
+  });
+});
+
+describe('getAvatarStateForSession session-derived question state', () => {
+  const questionMessage: AgentMessage = {
+    id: 'msg-q1',
+    role: 'assistant',
+    timestamp: '2026-08-17T00:00:00.000Z',
+    contentBlocks: [
+      {
+        type: 'resource',
+        resource: {
+          uri: 'intent-question://tar-1',
+          name: 'Auth method',
+          mimeType: QUESTION_RESOURCE_MIME_TYPE,
+          text: JSON.stringify({
+            attachmentId: 'tar-1',
+            header: 'Auth method',
+            question: 'Which auth method?',
+            options: [{ label: 'OAuth' }, { label: 'API key' }],
+            multiSelect: false,
+          }),
+        },
+      } as unknown as AgentMessage['contentBlocks'][number],
+    ],
+  };
+  const blockedSession = {
+    id: 'a1',
+    status: AgentStatus.Idle,
+    isResponding: false,
+    isStreaming: false,
+    isProcessing: false,
+    attentionRequestKind: 'blocker',
+    attentionRequestReason: 'sandbox broken',
+    messages: [questionMessage],
+  };
+
+  it('derives question from the session marker even when a blocker is pending', () => {
+    expect(
+      getAvatarStateForSession({
+        ...blockedSession,
+        metadata: { pendingQuestionsMessageId: 'msg-q1' },
+      } as never),
+    ).toBe('question');
+  });
+
+  it('derives question from the legacy transcript tail with no marker', () => {
+    expect(getAvatarStateForSession({ ...blockedSession, metadata: {} } as never)).toBe('question');
+  });
+
+  it('falls back to attention-blocker once the question is dismissed', () => {
+    expect(
+      getAvatarStateForSession({
+        ...blockedSession,
+        metadata: { pendingQuestionsMessageId: 'msg-q1', dismissedQuestionsMessageId: 'msg-q1' },
+      } as never),
+    ).toBe('attention-blocker');
+  });
+
+  it('falls back to attention-blocker once the marker is cleared', () => {
+    expect(
+      getAvatarStateForSession({
+        ...blockedSession,
+        metadata: { pendingQuestionsMessageId: '' },
+      } as never),
+    ).toBe('attention-blocker');
+  });
+
+  it('treats the caller hasQuestion option as additive, never subtractive', () => {
+    expect(
+      getAvatarStateForSession(
+        { ...blockedSession, metadata: { pendingQuestionsMessageId: 'msg-q1' } } as never,
+        { hasQuestion: false },
+      ),
+    ).toBe('question');
+    expect(
+      getAvatarStateForSession(
+        { ...blockedSession, messages: [], metadata: { pendingQuestionsMessageId: '' } } as never,
+        { hasQuestion: true },
+      ),
+    ).toBe('question');
   });
 });
 

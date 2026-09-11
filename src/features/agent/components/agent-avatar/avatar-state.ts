@@ -1,3 +1,4 @@
+import { sessionHasPendingQuestion } from '$lib/components/chat/questions/pending-questions';
 import { AgentStatus } from '$shared/types/agent.types';
 import type { AgentSession } from '$shared/types';
 import type { AgentAttentionKind } from '$shared/utils/agent-attention';
@@ -54,7 +55,14 @@ export interface AvatarStateOptions {
   isCompleted?: boolean;
   /** Whether the agent has failed */
   isFailed?: boolean;
-  /** Whether the agent has an unanswered question */
+  /**
+   * Whether the agent has an unanswered question. For `getAvatarState` this is
+   * the sole question signal. For `getAvatarStateForSession` it is ADDITIVE:
+   * the session-derived `sessionHasPendingQuestion` predicate is always
+   * applied and OR-ed with this option, which exists for surfaces with
+   * store-only knowledge (HUD-captured question, wizard recovery projection).
+   * Callers can therefore over-report but never under-report a question.
+   */
   hasQuestion?: boolean;
   /** Whether the agent has a pending permission request that needs user action */
   hasPermissionRequest?: boolean;
@@ -185,6 +193,7 @@ export function getAvatarStateForSession(
 
   return getAvatarState(toAgentRuntimeStateInput(session), {
     ...options,
+    hasQuestion: sessionHasPendingQuestion(session) || options.hasQuestion === true,
     hasUnread: options.hasUnread ?? session.hasUnread,
     isCompleted: options.isCompleted ?? completedStatus,
     isFailed: options.isFailed ?? failedStatus,
