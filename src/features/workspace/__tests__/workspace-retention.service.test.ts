@@ -4,10 +4,6 @@ import { InMemoryWorkspaceRepository } from '../main/workspace.repository';
 import type { Workspace, WorkspaceId, WorkspaceUIContext } from '../../../shared/types';
 import { WorkspaceStatus } from '../../../shared/types';
 
-vi.mock('../../../store/main/redux-store-bridge', () => ({
-  mainDispatch: vi.fn((action: any) => action),
-}));
-
 // Stub the daemon client so WorkspaceService's activity-repair path
 // (`note.list` / `agent.list` per PROTOCOL.md §5.4/§5.5) and the retired
 // disk-read path's daemon replacement (`workspace.list` / `workspace.get` per

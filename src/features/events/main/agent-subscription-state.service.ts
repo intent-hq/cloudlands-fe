@@ -29,7 +29,7 @@ function reduce(action: { type: string; payload?: unknown }): void {
   state = agentSubscriptionsReducer(state, action);
 }
 
-export function getWorkspaceSubscriptionState(workspaceId: string): WorkspaceSubscriptionState {
+function getWorkspaceSubscriptionState(workspaceId: string): WorkspaceSubscriptionState {
   return state.byWorkspaceId[workspaceId] ?? emptyWorkspaceSubscriptionState;
 }
 
@@ -53,10 +53,6 @@ export function getDelegationGroupsForParent(
 
 export function getAgentSubscriptionStatus(workspaceId: string, agentId: string): AgentStatus {
   return getWorkspaceSubscriptionState(workspaceId).agentStatuses[agentId] ?? 'idle';
-}
-
-export function isAgentDeleted(workspaceId: string, agentId: string): boolean {
-  return agentId in getWorkspaceSubscriptionState(workspaceId).deletedAgents;
 }
 
 export const agentSubscriptionState = {
