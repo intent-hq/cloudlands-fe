@@ -19,6 +19,24 @@ const isCI = !!process.env.CI && process.env.CI !== 'false';
 // so on any core count the CI path differs from '50%' only via the 16 cap.
 const ciMaxWorkers = Math.max(1, Math.min(16, Math.round(os.availableParallelism() / 2)));
 
+// Derives vitest exclude globs from .gitignore's directory-style entries, so
+// .gitignore stays the single source of truth for scratch/sandbox exclusions
+// (matches eslint.config.js's includeIgnoreFile usage, intent-hq/cloudlands-fe#2322).
+// Only trimmed lines ending in '/' are considered; blanks, comments, and '!'
+// negations are skipped. Unanchored entries (no '/' before the trailing one,
+// e.g. '.dev/') become '**/<pattern>/**'; anchored entries (containing a '/',
+// e.g. 'build/ios/') become '<pattern>/**' with any leading '/' stripped.
+function gitignoreDirExcludes(gitignorePath: string): string[] {
+  return readFileSync(gitignorePath, 'utf8')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith('#') && !line.startsWith('!') && line.endsWith('/'))
+    .map((line) => {
+      const pattern = line.slice(0, -1);
+      return pattern.includes('/') ? `${pattern.replace(/^\//, '')}/**` : `**/${pattern}/**`;
+    });
+}
+
 export default defineConfig(async () => {
   const { svelte } = await import('@sveltejs/vite-plugin-svelte');
   const { paraglideVitePlugin } = await import('@inlang/paraglide-js');
@@ -61,11 +79,8 @@ export default defineConfig(async () => {
         '**/dist/**',
         '**/build/**',
         '**/.{idea,git,cache,output,temp}/**',
-        // Exclude any untracked git-worktree dirs (e.g. .wt-commit-details/) so
-        // vitest doesn't double-collect their test files alongside the primary tree.
-        '**/.wt-*/**',
-        // .dev/ is the scratch/sandbox location (worktrees, probes); never collect it.
-        '**/.dev/**',
+        // Scratch/sandbox excludes (worktrees, probes, .dev/, etc.) come from .gitignore.
+        ...gitignoreDirExcludes(path.join(__dirname, '.gitignore')),
         'test/**', // Exclude Playwright tests directory (package-root only; do not swallow src/test/**)
         // Required CI runs this suite separately with its Node-specific setup.
         'tests/integration/**',
