@@ -77,7 +77,11 @@ function defaultNow(): number {
 }
 
 function defaultLog(severity: LongTaskSeverity, message: string, report: LongTaskReport): void {
-  logger[severity](message, report);
+  if (severity === 'error') {
+    logger.error(message, undefined, report);
+    return;
+  }
+  logger.warn(message, report);
 }
 
 function isLongTaskObserverSupported(ctor: typeof PerformanceObserver | undefined): boolean {

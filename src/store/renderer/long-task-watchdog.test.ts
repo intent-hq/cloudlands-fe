@@ -1,5 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+const { clientLogger } = vi.hoisted(() => ({
+  clientLogger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+}));
+vi.mock('$lib/utils/client-logger', () => ({
+  createLogger: vi.fn(() => clientLogger),
+}));
+
 import { createActionTypeRingBuffer } from './middlewares/action-ring-buffer';
 import {
   LONG_TASK_ERROR_MS,
@@ -130,6 +137,34 @@ describe('startLongTaskWatchdog', () => {
     expect(log.mock.calls[0][2]).toMatchObject({
       activeWorkspaceId: null,
       previousWorkspaceId: null,
+    });
+  });
+
+  it('emits the report as the top-level log payload for both severities', () => {
+    clientLogger.warn.mockClear();
+    clientLogger.error.mockClear();
+    const fake = createFakeObserver();
+    stops.push(
+      startLongTaskWatchdog(createFakeStore('ws-a'), {
+        observerFactory: fake.Observer,
+        actionTypes: createActionTypeRingBuffer(1),
+        rateLimitMs: 0,
+      }),
+    );
+
+    fake.emit([LONG_TASK_WARN_MS, LONG_TASK_ERROR_MS]);
+
+    expect(clientLogger.warn).toHaveBeenCalledOnce();
+    expect(clientLogger.warn.mock.calls[0][1]).toMatchObject({
+      durationMs: LONG_TASK_WARN_MS,
+      activeWorkspaceId: 'ws-a',
+    });
+    expect(clientLogger.error).toHaveBeenCalledOnce();
+    const [, errorArg, errorData] = clientLogger.error.mock.calls[0];
+    expect(errorArg).toBeUndefined();
+    expect(errorData).toMatchObject({
+      durationMs: LONG_TASK_ERROR_MS,
+      activeWorkspaceId: 'ws-a',
     });
   });
 
