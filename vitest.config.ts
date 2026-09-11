@@ -64,6 +64,8 @@ export default defineConfig(async () => {
         // Exclude any untracked git-worktree dirs (e.g. .wt-commit-details/) so
         // vitest doesn't double-collect their test files alongside the primary tree.
         '**/.wt-*/**',
+        // .dev/ is the scratch/sandbox location (worktrees, probes); never collect it.
+        '**/.dev/**',
         'test/**', // Exclude Playwright tests directory (package-root only; do not swallow src/test/**)
         // Required CI runs this suite separately with its Node-specific setup.
         'tests/integration/**',
