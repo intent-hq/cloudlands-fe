@@ -12,7 +12,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { checkDepsFresh } from './check-deps-fresh.mjs';
 
@@ -245,6 +245,15 @@ function isKnownNonCode(file) {
   );
 }
 
+function isArchitectureSource(file) {
+  return (
+    (file.startsWith('src/') && CODE_EXTENSIONS.has(extname(file))) ||
+    /^scripts\/check-[^/]+\.mjs$/.test(file) ||
+    file === 'scripts/type-check.ts' ||
+    basename(file) === 'AGENTS.md'
+  );
+}
+
 function isRendererSource(file) {
   return (
     file.startsWith('src/') &&
@@ -302,6 +311,8 @@ export function createVerificationPlan(files, options = {}) {
   const preloadDrift =
     files.some((file) => PRELOAD_DRIFT_SOURCES.has(file)) &&
     !directUnit.includes(PRELOAD_DRIFT_TEST);
+  let architecture = files.some(isArchitectureSource);
+  const typeCheckWrapper = files.includes('scripts/type-check.ts');
   const boundaries = new Set();
   let svelteCheck = false;
   let fullUnit = false;
@@ -326,6 +337,7 @@ export function createVerificationPlan(files, options = {}) {
       );
     if (FULL_RISK_FILES.has(file) || !known) {
       fallbackReasons.push(file);
+      architecture = true;
       fullUnit = true;
       boundaries.add('renderer');
       boundaries.add('main');
@@ -347,6 +359,20 @@ export function createVerificationPlan(files, options = {}) {
     );
   if (lintFiles.length)
     checks.push(command('eslint', 'ESLint (changed files)', ['exec', 'eslint', ...lintFiles]));
+  if (architecture)
+    checks.push(
+      command('architecture', 'Architecture gates (repo-wide static scans)', [
+        'run',
+        'lint:architecture',
+      ]),
+    );
+  if (typeCheckWrapper)
+    checks.push(
+      command('type-check-validate', 'Type check (validate wrapper)', [
+        'run',
+        'type-check:validate',
+      ]),
+    );
   if (fullUnit)
     checks.push(
       command(

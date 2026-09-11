@@ -115,10 +115,104 @@ describe('verification planning', () => {
     expect(plan.checks.map((check) => check.id)).toEqual([
       'prettier',
       'eslint',
+      'architecture',
       'vitest-related',
       'vitest-ui-invariants',
       'tsc-renderer',
     ]);
+  });
+
+  it('runs the architecture gates for any code change under src/', () => {
+    const root = fixtureRoot({
+      'src/store/renderer/slices/unread-tracking/sagas/unread-tracking-saga.ts': '',
+      'src/main/index.ts': '',
+      'src/lib/__tests__/example.test.ts': '',
+    });
+    for (const file of [
+      'src/store/renderer/slices/unread-tracking/sagas/unread-tracking-saga.ts',
+      'src/main/index.ts',
+      'src/lib/__tests__/example.test.ts',
+    ]) {
+      const plan = createVerificationPlan([file], { root, ctTests: [] });
+      const architecture = plan.checks.find((check) => check.id === 'architecture');
+      expect(architecture?.args, file).toEqual(['run', 'lint:architecture']);
+      expect(architecture?.lockKind, file).toBeNull();
+    }
+  });
+
+  it('runs the architecture gates when a gate script itself changes', () => {
+    const root = fixtureRoot({
+      'scripts/check-saga-watcher-ownership.mjs': '',
+      'scripts/type-check.ts': '',
+      'scripts/verify-changed.mjs': '',
+    });
+    for (const file of ['scripts/check-saga-watcher-ownership.mjs', 'scripts/type-check.ts']) {
+      const plan = createVerificationPlan([file], { root, ctTests: [] });
+      expect(
+        plan.checks.map((check) => check.id),
+        file,
+      ).toContain('architecture');
+    }
+    const otherScript = createVerificationPlan(['scripts/verify-changed.mjs'], {
+      root,
+      ctTests: [],
+    });
+    expect(otherScript.checks.map((check) => check.id)).not.toContain('architecture');
+  });
+
+  it('runs the type-check:validate wrapper only when scripts/type-check.ts changes', () => {
+    const root = fixtureRoot({
+      'scripts/type-check.ts': '',
+      'src/store/renderer/slices/unread-tracking/sagas/unread-tracking-saga.ts': '',
+    });
+    const wrapper = createVerificationPlan(['scripts/type-check.ts'], { root, ctTests: [] });
+    const ids = wrapper.checks.map((check) => check.id);
+    expect(ids).toContain('architecture');
+    expect(ids).toContain('type-check-validate');
+    expect(ids.indexOf('type-check-validate')).toBe(ids.indexOf('architecture') + 1);
+    const validate = wrapper.checks.find((check) => check.id === 'type-check-validate');
+    expect(validate?.args).toEqual(['run', 'type-check:validate']);
+    expect(validate?.lockKind).toBeNull();
+
+    const saga = createVerificationPlan(
+      ['src/store/renderer/slices/unread-tracking/sagas/unread-tracking-saga.ts'],
+      { root, ctTests: [] },
+    );
+    expect(saga.checks.map((check) => check.id)).toContain('architecture');
+    expect(saga.checks.map((check) => check.id)).not.toContain('type-check-validate');
+  });
+
+  it('runs the architecture gates when an AGENTS.md instruction file changes', () => {
+    const root = fixtureRoot({
+      'AGENTS.md': '# agents',
+      'src/store/renderer/AGENTS.md': '# store agents',
+      'docs/AGENTS-notes.md': '# notes',
+    });
+    for (const file of ['AGENTS.md', 'src/store/renderer/AGENTS.md']) {
+      const plan = createVerificationPlan([file], { root, ctTests: [] });
+      expect(plan.fallbackReasons, file).toEqual([]);
+      expect(
+        plan.checks.map((check) => check.id),
+        file,
+      ).toContain('architecture');
+    }
+    const other = createVerificationPlan(['docs/AGENTS-notes.md'], { root, ctTests: [] });
+    expect(other.checks.map((check) => check.id)).not.toContain('architecture');
+  });
+
+  it('skips the architecture gates for docs, messages, and static changes', () => {
+    const root = fixtureRoot({
+      'README.md': '# readme',
+      'docs/guide.md': '# guide',
+      'messages/en.json': '{}',
+      'static/icon.svg': '<svg />',
+    });
+    const plan = createVerificationPlan(
+      ['README.md', 'docs/guide.md', 'messages/en.json', 'static/icon.svg'],
+      { root, ctTests: [] },
+    );
+    expect(plan.fallbackReasons).toEqual([]);
+    expect(plan.checks.map((check) => check.id)).not.toContain('architecture');
   });
 
   it('runs the repo-wide UI invariant suites for renderer source changes', () => {
@@ -295,6 +389,7 @@ describe('verification planning', () => {
     const plan = createVerificationPlan(['native/tool.bin'], { root, ctTests: [] });
     expect(plan.fallbackReasons).toEqual(['native/tool.bin']);
     expect(plan.checks.map((check) => check.id)).toEqual([
+      'architecture',
       'vitest-full',
       'svelte-check',
       'tsc-renderer',
