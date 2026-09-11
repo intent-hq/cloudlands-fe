@@ -371,11 +371,13 @@ describe('requiresTriggerDeclaration', () => {
       "import path from 'node:path';",
       "import { it } from 'vitest';",
       "const root = mkdtempSync(path.join(os.tmpdir(), 'x-'));",
+      'const opts = { cwd: root };',
       "it('x', () => {",
       "  writeFileSync(path.join(root, 'src/a.json'), '{}');",
       "  expect(readFileSync(path.join(root, 'src/a.json'), 'utf8')).toBe('{}');",
       "  expect(readFileSync(path.join(process.env.TMP ?? '/tmp', 'src/a.json'), 'utf8')).toBe('{}');",
       "  expect(globSync('**/*.json', { cwd: root })).toHaveLength(1);",
+      "  expect(globSync('**/*.json', opts)).toHaveLength(1);",
       '});',
     );
     expect(requiresTriggerDeclaration(content, 'scripts/a.test.ts')).toBe(false);
