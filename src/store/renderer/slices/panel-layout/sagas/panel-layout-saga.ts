@@ -106,6 +106,7 @@ import {
   panelLayoutScopeMounted,
   panelLayoutScopeUnmounted,
   preparePanelLayoutBackendRestore,
+  resetEmptiedByUserClose,
   reconcileStaleAgentTabs,
   reconcilePanelColumnCount,
   setPanelColumnCount,
@@ -417,6 +418,7 @@ const EXPLICIT_USER_CLOSE_ACTION_TYPES: ReadonlySet<string> = new Set([
   closeTab.type,
   closeActiveTab.type,
   closeAllTabs.type,
+  closeTabsByType.type,
   closePanel.type,
   resetLayout.type,
 ]);
@@ -1087,6 +1089,9 @@ function* handleBackendSwitch(lastBackend: { id: string }): SagaGenerator<void> 
   lastBackend.id = backendId;
   restoredWorkspaceIds.clear();
   restoredUnderBackendIds.clear();
+  // User-close provenance is session-scoped: the incoming backend's tabless
+  // layouts must reseed even where the outgoing session's user emptied them.
+  yield* put(resetEmptiedByUserClose());
   // Register every re-restore as in flight up front: until a workspace's
   // turn in the loop completes, the store still holds the OUTGOING backend's
   // layout, so an on-demand hydration caller (browser IPC) must wait here

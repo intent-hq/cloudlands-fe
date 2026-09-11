@@ -83,6 +83,7 @@ import {
   panelLayoutScopeMounted,
   panelLayoutScopeUnmounted,
   preparePanelLayoutBackendRestore,
+  resetEmptiedByUserClose,
   reconcilePanelColumnCount,
   reconcileStaleAgentTabs,
   reorderTabs,
@@ -1207,6 +1208,37 @@ describe('panelLayoutSaga', () => {
       await cancelSaga(run.task);
     });
 
+    it('reseeds a tabless layout restored from another backend even after a user close this session', async () => {
+      const initial = agent('agent-initial', 'Coordinator', undefined, { isInitialAgent: true });
+      const run = startRestoreSaga(layout, [initial]);
+      await settle();
+      run.dispatch(closeTab(WS_1, tab.id, 'panel-1', 30));
+      await settle();
+      expect(run.getState().panelLayout.byWorkspaceId[WS_1].emptiedByUserClose).toBe(true);
+      run.dispatch.mockClear();
+
+      // The incoming backend's stored layout is tabless too, but its user
+      // never emptied it: the outgoing session's close must not carry over.
+      mocks.getJSON.mockReturnValue(tablessSplitFixture());
+      run.setBackendId(REMOTE_ID);
+      run.send(
+        connectionsListReceived({
+          connections: [],
+          activeId: REMOTE_ID,
+          windowBackendId: REMOTE_ID,
+        }),
+      );
+      run.dispatch(setAgents(WS_1, [initial]));
+      await settle();
+
+      const workspace = run.getState().panelLayout.byWorkspaceId[WS_1];
+      expect(workspace.restoreStatus).toBe('restored');
+      expect(workspace.emptiedByUserClose).toBe(false);
+      const tabs = Object.values(workspace.panels).flatMap((panel: any) => panel.tabs);
+      expect(tabs).toEqual([expect.objectContaining({ type: 'agent', agentId: 'agent-initial' })]);
+      await cancelSaga(run.task);
+    });
+
     it.each([
       ['no user-message stamp', {}],
       ['wrong workspace', { workspaceId: WS_2 }],
@@ -2018,7 +2050,7 @@ describe('panelLayoutSaga', () => {
       await cancelSaga(task);
     });
 
-    it.each([closeTab, closeActiveTab, closeAllTabs, closePanel, resetLayout])(
+    it.each([closeTab, closeActiveTab, closeAllTabs, closeTabsByType, closePanel, resetLayout])(
       'still persists the tabless layout for the explicit user close $type',
       async (creator) => {
         const { channel, task } = await restoreThenEmptyInMemory();
@@ -2620,6 +2652,7 @@ describe('panelLayoutSaga', () => {
       await settle();
 
       expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
+        resetEmptiedByUserClose(),
         preparePanelLayoutBackendRestore(WS_1),
         setRestoreStatus(WS_1, 'pending'),
         initializeLayout(WS_1, layout),
@@ -2660,6 +2693,7 @@ describe('panelLayoutSaga', () => {
       // adds WS_1 at saga start, workspaceMounted adds WS_2 later), which is
       // guaranteed in JS — a reordering here means the switch loop changed.
       expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
+        resetEmptiedByUserClose(),
         preparePanelLayoutBackendRestore(WS_1),
         setRestoreStatus(WS_1, 'pending'),
         initializeLayout(WS_1, layout),
@@ -2718,6 +2752,7 @@ describe('panelLayoutSaga', () => {
       await waiter.toPromise();
       expect(waited).toBe(true);
       expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
+        resetEmptiedByUserClose(),
         preparePanelLayoutBackendRestore(WS_1),
         setRestoreStatus(WS_1, 'pending'),
         initializeLayout(WS_1, layout),
@@ -2755,6 +2790,7 @@ describe('panelLayoutSaga', () => {
       await settle();
 
       expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
+        resetEmptiedByUserClose(),
         preparePanelLayoutBackendRestore(WS_1),
         setRestoreStatus(WS_1, 'pending'),
         initializeLayout(WS_1, layout),
@@ -2788,17 +2824,18 @@ describe('panelLayoutSaga', () => {
 
       const dispatched = dispatch.mock.calls.map(([action]) => action);
       expect(dispatched.map((action) => action.type)).toEqual([
+        resetEmptiedByUserClose.type,
         preparePanelLayoutBackendRestore.type,
         setRestoreStatus.type,
         resetLayout.type,
         loadLayoutHistory.type,
         setRestoreStatus.type,
       ]);
-      expect(dispatched[0]).toEqual(preparePanelLayoutBackendRestore(WS_1));
-      expect(dispatched[1]).toEqual(setRestoreStatus(WS_1, 'pending'));
-      expect(dispatched[2].payload.wsId).toBe(WS_1);
-      expect(dispatched[3]).toEqual(loadLayoutHistory(WS_1, [], 0));
-      expect(dispatched[4]).toEqual(setRestoreStatus(WS_1, 'empty'));
+      expect(dispatched[1]).toEqual(preparePanelLayoutBackendRestore(WS_1));
+      expect(dispatched[2]).toEqual(setRestoreStatus(WS_1, 'pending'));
+      expect(dispatched[3].payload.wsId).toBe(WS_1);
+      expect(dispatched[4]).toEqual(loadLayoutHistory(WS_1, [], 0));
+      expect(dispatched[5]).toEqual(setRestoreStatus(WS_1, 'empty'));
       await cancelSaga(task);
     });
 
@@ -2833,6 +2870,7 @@ describe('panelLayoutSaga', () => {
       await settle();
 
       expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
+        resetEmptiedByUserClose(),
         preparePanelLayoutBackendRestore(WS_2),
         setRestoreStatus(WS_2, 'pending'),
         initializeLayout(WS_2, layout),

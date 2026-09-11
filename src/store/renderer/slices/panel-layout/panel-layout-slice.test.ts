@@ -8,6 +8,7 @@ import {
   openTab,
   openTabInRightmostColumn,
   preparePanelLayoutBackendRestore,
+  resetEmptiedByUserClose,
   openTabInAdjacentOrSplit,
   openTabInNewRootColumn,
   openBlankWorkingPanel,
@@ -1191,6 +1192,16 @@ describe('panelLayoutReducer', () => {
       expect(result.byWorkspaceId[WS].emptiedByUserClose).toBe(true);
     });
 
+    it('is set when a UI-driven closeTabsByType removes the last tab', () => {
+      const agentTab = { id: 'a1', type: 'agent', title: 'Agent', agentId: 'agent-1' };
+      const result = panelLayoutReducer(
+        stateWithPanel('p1', [agentTab]),
+        closeTabsByType(WS, 'agent', 'agentId', 'agent-1', 10),
+      );
+      expect(Object.values(result.byWorkspaceId[WS].panels).flatMap((p) => p.tabs)).toEqual([]);
+      expect(result.byWorkspaceId[WS].emptiedByUserClose).toBe(true);
+    });
+
     it('stays false when deleted-agent cleanup (closeTabsByAgentId) removes the last tab', () => {
       const agentTab = { id: 'a1', type: 'agent', title: 'Agent', agentId: 'agent-1' };
       const result = panelLayoutReducer(
@@ -1255,6 +1266,23 @@ describe('panelLayoutReducer', () => {
         const transitioned = panelLayoutReducer(reset, setRestoreStatus(WS, status));
         expect(transitioned.byWorkspaceId[WS].emptiedByUserClose).toBe(false);
       }
+    });
+
+    it('is cleared on every workspace by the backend-boundary reset', () => {
+      const other = 'ws-other';
+      let state = panelLayoutReducer(stateWithPanel('p1', [noteTab]), closeTab(WS, 't1', 'p1', 10));
+      state = panelLayoutReducer(
+        state,
+        openTab(other, { type: 'note', title: 'Note', noteId: 'n1' }, undefined, 't2', false, 11),
+      );
+      state = panelLayoutReducer(state, resetLayout(other));
+      expect(state.byWorkspaceId[WS].emptiedByUserClose).toBe(true);
+      expect(state.byWorkspaceId[other].emptiedByUserClose).toBe(true);
+
+      const reset = panelLayoutReducer(state, resetEmptiedByUserClose());
+      expect(reset.byWorkspaceId[WS].emptiedByUserClose).toBe(false);
+      expect(reset.byWorkspaceId[other].emptiedByUserClose).toBe(false);
+      expect(panelLayoutReducer(reset, resetEmptiedByUserClose())).toBe(reset);
     });
   });
 

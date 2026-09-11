@@ -213,6 +213,12 @@ export const preparePanelLayoutBackendRestore = createAction(
   (wsId: string) => [wsId] as const,
 );
 
+/**
+ * A backend switch ends the session every `emptiedByUserClose` belonged to:
+ * the incoming backend's tabless layouts were not emptied by this user.
+ */
+export const resetEmptiedByUserClose = createAction<[]>('panelLayout/resetEmptiedByUserClose');
+
 export const bootstrapNewWorkspaceLayout = createAction(
   'panelLayout/bootstrapNewWorkspaceLayout',
   (
@@ -2097,6 +2103,14 @@ panelLayoutReducer.with(initializeLayout, (state, { payload }) => {
 panelLayoutReducer.with(preparePanelLayoutBackendRestore, (state, { payload: [wsId] }) => {
   const ws = getWorkspaceState(state, wsId);
   return setWorkspaceState(state, wsId, { ...ws, columnCountInitialized: false });
+});
+panelLayoutReducer.with(resetEmptiedByUserClose, (state) => {
+  let result = state;
+  for (const [wsId, ws] of Object.entries(state.byWorkspaceId)) {
+    if (!ws.emptiedByUserClose) continue;
+    result = setWorkspaceState(result, wsId, { ...ws, emptiedByUserClose: false });
+  }
+  return result;
 });
 panelLayoutReducer.with(bootstrapNewWorkspaceLayout, (state, { payload }) => {
   const {
