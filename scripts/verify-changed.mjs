@@ -71,7 +71,6 @@ const FULL_RISK_FILES = new Set([
   'vite.config.mjs',
   'vitest.config.ts',
 ]);
-const GENERATED_PRELOAD = 'src/preload/index.ts';
 
 function slash(path) {
   return path.split(sep).join('/');
@@ -677,11 +676,6 @@ export function printPlan(plan, dryRun, log = console.log) {
   if (plan.triggerViolations?.length) {
     log(
       `verify:changed: warning: ${plan.triggerViolations.length} vitest suite(s) read the tree from disk without a ${TRIGGER_MARKER} header and are never selected here; see pnpm run lint:verify-changed-triggers`,
-    );
-  }
-  if (plan.files.includes(GENERATED_PRELOAD)) {
-    log(
-      `verify:changed: ${GENERATED_PRELOAD} is generated from src/preload/index.template.ts; regenerate with pnpm run generate:ipc-channels`,
     );
   }
   log(`verify:changed: ${plan.checks.length} check(s)`);

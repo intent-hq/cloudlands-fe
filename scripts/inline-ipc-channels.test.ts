@@ -14,7 +14,7 @@
  * every baseline is produced by running the generator into a temp fixture, so
  * the suite passes whether or not src/preload/index.ts exists locally.
  */
-// @verify-changed-triggers: src/preload/index.ts, src/preload/index.template.ts, src/shared/ipc-registry.ts, scripts/inline-ipc-channels.ts
+// @verify-changed-triggers: src/preload/index.template.ts, src/shared/ipc-registry.ts, scripts/inline-ipc-channels.ts
 
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';

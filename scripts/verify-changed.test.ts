@@ -374,7 +374,7 @@ describe('verification planning', () => {
     });
   });
 
-  it('prints the regeneration hint only when the generated preload is planned', () => {
+  it('never prints a regeneration hint for the untracked generated preload', () => {
     const root = fixtureRoot({
       'src/preload/index.ts': '',
       'src/preload/index.template.ts': '',
@@ -390,14 +390,9 @@ describe('verification planning', () => {
     const hint = (lines: string[]) =>
       lines.filter((line) => line.includes('pnpm run generate:ipc-channels'));
 
-    const generated = linesFor(['src/preload/index.ts']);
-    expect(hint(generated)).toHaveLength(1);
-    expect(hint(generated)[0]).toContain('src/preload/index.ts');
-    expect(hint(generated)[0]).toContain('src/preload/index.template.ts');
-    expect(hint(linesFor(['src/shared/ipc-registry.ts', 'src/preload/index.ts']))).toHaveLength(1);
-
+    expect(hint(linesFor(['src/preload/index.ts']))).toEqual([]);
     expect(hint(linesFor(['src/preload/index.template.ts']))).toEqual([]);
-    expect(hint(linesFor(['src/shared/ipc-registry.ts']))).toEqual([]);
+    expect(hint(linesFor(['src/shared/ipc-registry.ts', 'src/preload/index.ts']))).toEqual([]);
   });
 
   it('selects a component test that directly imports a changed Svelte component', () => {
@@ -440,10 +435,10 @@ describe('verification planning', () => {
   it('keeps main and preload type checks scoped to their boundaries', () => {
     const root = fixtureRoot({
       'src/features/system/main/status.ts': '',
-      'src/preload/index.ts': '',
+      'src/preload/index.template.ts': '',
     });
     const plan = createVerificationPlan(
-      ['src/features/system/main/status.ts', 'src/preload/index.ts'],
+      ['src/features/system/main/status.ts', 'src/preload/index.template.ts'],
       { root, ctTests: [] },
     );
     const ids = plan.checks.map((check) => check.id);
