@@ -302,6 +302,118 @@ describe('requiresTriggerDeclaration', () => {
     expect(requiresTriggerDeclaration(content, 'src/lib/__tests__/a.test.ts')).toBe(true);
   });
 
+  it('does not taint a helper parameter that shadows a tainted module-level name', () => {
+    const suite = (helperRead: string) =>
+      lines(
+        "import { spawnSync } from 'node:child_process';",
+        "import { mkdtempSync, readFileSync } from 'node:fs';",
+        "import { tmpdir } from 'node:os';",
+        "import { join } from 'node:path';",
+        "import { it } from 'vitest';",
+        "const args = ['--root', process.cwd()];",
+        "const tmp = mkdtempSync(join(tmpdir(), 'case-'));",
+        `function run(args: string[]) { return ${helperRead}; }`,
+        "it('x', () => {",
+        '  spawnSync(process.execPath, args);',
+        "  expect(run(['owner.json'])).toBe('{}');",
+        '});',
+      );
+    const fixtureOnly = suite("readFileSync(join(tmp, ...args), 'utf8')");
+    expect(requiresTriggerDeclaration(fixtureOnly, 'scripts/a.test.ts')).toBe(false);
+    const renamed = fixtureOnly
+      .replaceAll('run(args', 'run(files')
+      .replace('...args)', '...files)');
+    expect(requiresTriggerDeclaration(renamed, 'scripts/a.test.ts')).toBe(false);
+    const repoRead = suite("readFileSync(join(process.cwd(), ...args), 'utf8')");
+    expect(requiresTriggerDeclaration(repoRead, 'scripts/a.test.ts')).toBe(true);
+  });
+
+  it('lets block-scoped locals shadow a tainted outer name and still follows unshadowed ones', () => {
+    const shadowed = lines(
+      "import { mkdtempSync, readFileSync } from 'node:fs';",
+      "import { tmpdir } from 'node:os';",
+      "import { join } from 'node:path';",
+      "import { it } from 'vitest';",
+      "const root = join(process.cwd(), 'src');",
+      "const tmp = mkdtempSync(join(tmpdir(), 'case-'));",
+      "it('x', () => {",
+      "  const root = join(tmp, 'fixture');",
+      "  expect(readFileSync(join(root, 'a.json'), 'utf8')).toBe('{}');",
+      '});',
+    );
+    expect(requiresTriggerDeclaration(shadowed, 'scripts/a.test.ts')).toBe(false);
+    const unshadowed = lines(
+      "import { readFileSync } from 'node:fs';",
+      "import { join } from 'node:path';",
+      "import { it } from 'vitest';",
+      "const root = join(process.cwd(), 'src');",
+      "it('x', () => {",
+      "  const entry = join(root, 'a.ts');",
+      "  expect(readFileSync(entry, 'utf8')).toContain('x');",
+      '});',
+    );
+    expect(requiresTriggerDeclaration(unshadowed, 'scripts/a.test.ts')).toBe(true);
+    const reassignedParameter = lines(
+      "import { readFileSync } from 'node:fs';",
+      "import { join } from 'node:path';",
+      "import { it } from 'vitest';",
+      "function read(dir: string) { dir = process.cwd(); return readFileSync(join(dir, 'src/a.ts'), 'utf8'); }",
+      "it('x', () => expect(read('x')).toContain('x'));",
+    );
+    expect(requiresTriggerDeclaration(reassignedParameter, 'scripts/a.test.ts')).toBe(true);
+  });
+
+  it('follows a root through parameter and destructuring defaults', () => {
+    const suite = (helper: string) =>
+      lines(
+        "import { globSync, readFileSync } from 'node:fs';",
+        "import { join } from 'node:path';",
+        "import { it } from 'vitest';",
+        helper,
+        "it('x', () => expect(helper()).toBeTruthy());",
+      );
+    const parameterDefault = suite(
+      "function helper(root = process.cwd()) { return readFileSync(join(root, 'src/a.ts'), 'utf8'); }",
+    );
+    expect(requiresTriggerDeclaration(parameterDefault, 'scripts/a.test.ts')).toBe(true);
+    const optionsDefault = suite(
+      "function helper(opts = { cwd: process.cwd() }) { return globSync('*.ts', opts); }",
+    );
+    expect(requiresTriggerDeclaration(optionsDefault, 'scripts/a.test.ts')).toBe(true);
+    const destructuredDefault = suite(
+      "function helper({ root = process.cwd() } = {}) { return readFileSync(join(root, 'src/a.ts'), 'utf8'); }",
+    );
+    expect(requiresTriggerDeclaration(destructuredDefault, 'scripts/a.test.ts')).toBe(true);
+    const patternDefault = suite(
+      "function helper({ root } = { root: process.cwd() }) { return readFileSync(join(root, 'src/a.ts'), 'utf8'); }",
+    );
+    expect(requiresTriggerDeclaration(patternDefault, 'scripts/a.test.ts')).toBe(true);
+    const destructuredVariable = suite(
+      "function helper() { const { root } = { root: process.cwd() }; return readFileSync(join(root, 'src/a.ts'), 'utf8'); }",
+    );
+    expect(requiresTriggerDeclaration(destructuredVariable, 'scripts/a.test.ts')).toBe(true);
+    const destructuredOptions = suite(
+      "function helper({ opts } = { opts: { cwd: process.cwd() } }) { return globSync('*.ts', opts); }",
+    );
+    expect(requiresTriggerDeclaration(destructuredOptions, 'scripts/a.test.ts')).toBe(true);
+    const arrayDefault = suite(
+      "function helper([, root] = ['/tmp/a.json', process.cwd()]) { return readFileSync(join(root, 'src/a.ts'), 'utf8'); }",
+    );
+    expect(requiresTriggerDeclaration(arrayDefault, 'scripts/a.test.ts')).toBe(true);
+    const siblingFixture = suite(
+      "function helper({ fixture } = { fixture: '/tmp/a.json', source: process.cwd() }) { return readFileSync(fixture, 'utf8'); }",
+    );
+    expect(requiresTriggerDeclaration(siblingFixture, 'scripts/a.test.ts')).toBe(false);
+    const siblingArrayFixture = suite(
+      "function helper([fixture] = ['/tmp/a.json', process.cwd()]) { return readFileSync(fixture, 'utf8'); }",
+    );
+    expect(requiresTriggerDeclaration(siblingArrayFixture, 'scripts/a.test.ts')).toBe(false);
+    const fixtureDefault = suite(
+      "function helper(root = '/tmp/fixture') { return readFileSync(join(root, 'a.json'), 'utf8'); }",
+    );
+    expect(requiresTriggerDeclaration(fixtureDefault, 'scripts/a.test.ts')).toBe(false);
+  });
+
   it('does not flag a suite that imports a source module (vitest related selects it)', () => {
     for (const specifier of ['../Sidebar.svelte', '$lib/utils', 'src/lib/utils']) {
       const content = lines(`import { thing } from '${specifier}';`, cwdReader);

@@ -222,13 +222,13 @@ function isRootSource(node) {
 
 // A computed object key (`{ [file]: '' }`) names an entry a fixture creates,
 // not a location it reads, so taint does not flow through it.
-function containsRoot(node, tainted) {
+function containsRoot(node, references) {
   if (isRootSource(node)) return true;
-  if (ts.isIdentifier(node) && tainted.has(node.text)) return true;
+  if (ts.isIdentifier(node) && references.get(node)?.tainted) return true;
   if (ts.isPropertyAssignment(node) && ts.isComputedPropertyName(node.name)) {
-    return containsRoot(node.initializer, tainted);
+    return containsRoot(node.initializer, references);
   }
-  return ts.forEachChild(node, (child) => containsRoot(child, tainted) || undefined) === true;
+  return ts.forEachChild(node, (child) => containsRoot(child, references) || undefined) === true;
 }
 
 function readCallee(node) {
@@ -239,11 +239,11 @@ function readCallee(node) {
 }
 
 // The object literals an option argument may denote: the literal itself, or
-// every literal a local name is bound to (`const opts = { cwd }`).
-function optionObjects(argument, bindings) {
+// every literal the local name it resolves to is bound to (`const opts = { cwd }`).
+function optionObjects(argument, references) {
   if (ts.isObjectLiteralExpression(argument)) return [argument];
   if (!ts.isIdentifier(argument)) return [];
-  return (bindings.get(argument.text) ?? []).filter(ts.isObjectLiteralExpression);
+  return (references.get(argument)?.expressions ?? []).filter(ts.isObjectLiteralExpression);
 }
 
 // The `cwd` values of any option object after the target, written inline or
@@ -252,10 +252,10 @@ function optionObjects(argument, bindings) {
 // other options and callbacks are not inspected, so a callback body that
 // mentions `process.cwd()` does not make a read. Spread, method, and accessor
 // members have no plain name and are skipped without expansion.
-function cwdOptions(node, bindings) {
+function cwdOptions(node, references) {
   const locations = [];
   for (const argument of node.arguments.slice(1)) {
-    for (const object of optionObjects(argument, bindings)) {
+    for (const object of optionObjects(argument, references)) {
       for (const property of object.properties) {
         const assignment = ts.isPropertyAssignment(property);
         if (!assignment && !ts.isShorthandPropertyAssignment(property)) continue;
@@ -269,54 +269,178 @@ function cwdOptions(node, bindings) {
 
 // A read location is argument zero, or a `cwd` option; either counts when it is
 // a bare repo literal or derives from a root.
-function readsRootArgument(node, tainted, bindings) {
-  const locations = node.arguments[0] ? [node.arguments[0], ...cwdOptions(node, bindings)] : [];
-  return locations.some((location) => isRepoLiteral(location) || containsRoot(location, tainted));
+function readsRootArgument(node, references) {
+  const locations = node.arguments[0] ? [node.arguments[0], ...cwdOptions(node, references)] : [];
+  return locations.some(
+    (location) => isRepoLiteral(location) || containsRoot(location, references),
+  );
 }
 
-// Every expression a local name is bound to: variable initializers, function
-// bodies, and plain `name = expr` assignments.
-function collectBindings(sourceFile) {
-  const bindings = new Map();
-  const bind = (name, expression) => {
-    if (!bindings.has(name)) bindings.set(name, []);
-    bindings.get(name).push(expression);
-  };
-  const visit = (node) => {
-    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer) {
-      bind(node.name.text, node.initializer);
-    } else if (ts.isFunctionDeclaration(node) && node.name && node.body) {
-      bind(node.name.text, node.body);
-    } else if (
-      ts.isBinaryExpression(node) &&
-      node.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
-      ts.isIdentifier(node.left)
-    ) {
-      bind(node.left.text, node.right);
+const isPlainAssignment = (node) =>
+  ts.isBinaryExpression(node) &&
+  node.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+  ts.isIdentifier(node.left);
+
+// Function bodies, blocks, loop heads, `catch` clauses, and `switch` bodies
+// open a scope; `var` declarations hoist to the nearest function scope.
+const opensScope = (node) =>
+  ts.isFunctionLike(node) ||
+  ts.isBlock(node) ||
+  ts.isForStatement(node) ||
+  ts.isForInStatement(node) ||
+  ts.isForOfStatement(node) ||
+  ts.isCatchClause(node) ||
+  ts.isCaseBlock(node);
+
+const isBlockScoped = (parent) =>
+  ts.isCatchClause(parent) || (parent.flags & ts.NodeFlags.BlockScoped) !== 0;
+
+// An identifier that reads a binding, as opposed to one that names a
+// declaration, a property (`a.b`, `{ b: 1 }`, `{ b: alias } = o`), or a label.
+function isReference(node, parent) {
+  if (ts.isShorthandPropertyAssignment(parent)) return true;
+  if (parent.name === node) return false;
+  if (ts.isBindingElement(parent) && parent.propertyName === node) return false;
+  return !(
+    (ts.isLabeledStatement(parent) || ts.isBreakOrContinueStatement(parent)) &&
+    parent.label === node
+  );
+}
+
+const propertyKey = (name) =>
+  ts.isIdentifier(name) || ts.isStringLiteralLike(name) || ts.isNumericLiteral(name)
+    ? name.text
+    : undefined;
+
+// The expressions a pattern initializer contributes to one destructured
+// element. An object or array literal is projected to the member the element
+// names, so `{ fixture } = { fixture: '/tmp/a', source: process.cwd() }` does
+// not taint `fixture` with its sibling. A rest element, a spread, computed,
+// method, or accessor member, or a non-literal initializer is not statically
+// projectable and falls back to the whole initializer.
+function projectInitializer(initializer, pattern, element, index) {
+  if (element.dotDotDotToken) return [initializer];
+  if (ts.isObjectBindingPattern(pattern) && ts.isObjectLiteralExpression(initializer)) {
+    const key = propertyKey(element.propertyName ?? element.name);
+    if (key === undefined) return [initializer];
+    const members = [];
+    for (const property of initializer.properties) {
+      const assignment = ts.isPropertyAssignment(property);
+      if (!assignment && !ts.isShorthandPropertyAssignment(property)) return [initializer];
+      const name = propertyKey(property.name);
+      if (name === undefined) return [initializer];
+      if (name === key) members.push(assignment ? property.initializer : property.name);
     }
-    ts.forEachChild(node, visit);
-  };
-  visit(sourceFile);
-  return bindings;
+    return members;
+  }
+  if (ts.isArrayBindingPattern(pattern) && ts.isArrayLiteralExpression(initializer)) {
+    if (initializer.elements.some(ts.isSpreadElement)) return [initializer];
+    const member = initializer.elements[index];
+    return member && !ts.isOmittedExpression(member) ? [member] : [];
+  }
+  return [initializer];
 }
 
-// Names bound to expressions that derive from a repository root: variables and
-// functions whose initializer, assigned value, or body mentions a root source
-// or another tainted name. Iterates to a fixpoint so order does not matter.
-function collectTaintedNames(bindings) {
-  const tainted = new Set();
+// Every binding a suite declares — variables, parameters, destructured names,
+// functions, classes — resolved by scope, with the expressions each is bound
+// to: variable initializers, function bodies, and plain `name = expr`
+// assignments. A parameter or block-scoped local shadows an outer name of the
+// same spelling, so taint never crosses between them (intent-hq/intent#4737).
+// `references` maps each reading identifier node to the binding it resolves
+// to; unresolved names (imports, globals) are absent. Declarations are
+// collected before references resolve, so use-before-declaration order in the
+// source does not matter.
+function collectBindings(sourceFile) {
+  const bindings = [];
+  const references = new Map();
+  const pending = [];
+  const assignments = [];
+  const createScope = (parent, isFunction) => {
+    const scope = { parent, declarations: new Map() };
+    scope.functionScope = isFunction || !parent ? scope : parent.functionScope;
+    return scope;
+  };
+  const declare = (scope, name) => {
+    let binding = scope.declarations.get(name);
+    if (!binding) {
+      binding = { expressions: [], tainted: false };
+      scope.declarations.set(name, binding);
+      bindings.push(binding);
+    }
+    return binding;
+  };
+  // Declares every name in a binding target and attaches its initializers:
+  // the variable initializer, a parameter default, and every destructuring
+  // default on the way down, each projected onto the element it reaches, so
+  // `{ root } = { root: process.cwd() }` taints `root` with `process.cwd()`.
+  const declareNames = (scope, name, initializers) => {
+    if (ts.isIdentifier(name)) {
+      declare(scope, name.text).expressions.push(...initializers);
+      return;
+    }
+    name.elements.forEach((element, index) => {
+      if (!ts.isBindingElement(element)) return;
+      const projected = initializers.flatMap((e) => projectInitializer(e, name, element, index));
+      if (element.initializer) projected.push(element.initializer);
+      declareNames(scope, element.name, projected);
+    });
+  };
+  const lookup = (scope, name) => {
+    for (let current = scope; current; current = current.parent) {
+      const binding = current.declarations.get(name);
+      if (binding) return binding;
+    }
+    return undefined;
+  };
+  const root = createScope(undefined, true);
+  const visit = (node, scope, parent) => {
+    if (ts.isTypeNode(node) || ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) return;
+    if (ts.isIdentifier(node)) {
+      if (isReference(node, parent)) pending.push({ node, scope });
+      return;
+    }
+    if (ts.isFunctionDeclaration(node) && node.name) {
+      const binding = declare(scope, node.name.text);
+      if (node.body) binding.expressions.push(node.body);
+    } else if (ts.isClassDeclaration(node) && node.name) {
+      declare(scope, node.name.text);
+    } else if (isPlainAssignment(node)) {
+      assignments.push({ name: node.left.text, expression: node.right, scope });
+    }
+    const inner = opensScope(node) ? createScope(scope, ts.isFunctionLike(node)) : scope;
+    if (ts.isVariableDeclaration(node) || ts.isParameter(node)) {
+      const target = ts.isParameter(node) || isBlockScoped(parent) ? inner : inner.functionScope;
+      declareNames(target, node.name, node.initializer ? [node.initializer] : []);
+    }
+    ts.forEachChild(node, (child) => visit(child, inner, node));
+  };
+  visit(sourceFile, root, undefined);
+  for (const { name, expression, scope } of assignments) {
+    (lookup(scope, name) ?? declare(root, name)).expressions.push(expression);
+  }
+  for (const { node, scope } of pending) {
+    const binding = lookup(scope, node.text);
+    if (binding) references.set(node, binding);
+  }
+  return { bindings, references };
+}
+
+// Marks the bindings whose expressions derive from a repository root: variables
+// and functions whose initializer, assigned value, or body mentions a root
+// source or another tainted binding. Iterates to a fixpoint so order does not
+// matter.
+function markTaintedBindings(bindings, references) {
   let grew = true;
   while (grew) {
     grew = false;
-    for (const [name, expressions] of bindings) {
-      if (tainted.has(name)) continue;
-      if (expressions.some((e) => isRepoLiteral(e) || containsRoot(e, tainted))) {
-        tainted.add(name);
+    for (const binding of bindings) {
+      if (binding.tainted) continue;
+      if (binding.expressions.some((e) => isRepoLiteral(e) || containsRoot(e, references))) {
+        binding.tainted = true;
         grew = true;
       }
     }
   }
-  return tainted;
 }
 
 // A vitest suite that reads the repository tree from disk and imports nothing
@@ -329,15 +453,15 @@ export function requiresTriggerDeclaration(content, filePath = 'suite.test.ts') 
   const sourceFile = parseSuite(source, filePath);
   let importsSource = false;
   let readsRoot = false;
-  const bindings = collectBindings(sourceFile);
-  const tainted = collectTaintedNames(bindings);
+  const { bindings, references } = collectBindings(sourceFile);
+  markTaintedBindings(bindings, references);
   const visit = (node) => {
     if (importsSource) return;
     if (isSourceImport(moduleSpecifier(node), filePath)) {
       importsSource = true;
       return;
     }
-    if (!readsRoot && readCallee(node)) readsRoot = readsRootArgument(node, tainted, bindings);
+    if (!readsRoot && readCallee(node)) readsRoot = readsRootArgument(node, references);
     ts.forEachChild(node, visit);
   };
   visit(sourceFile);
