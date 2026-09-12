@@ -58,6 +58,7 @@ import {
   removeOptimisticNote,
 } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
 import { withPreservedUnmetDependsOn } from '$store/renderer/slices/workspace-notes/workspace-notes-normalization';
+import { registerNoteContentSettler } from '$store/renderer/slices/workspace-notes/note-content-settlement';
 import { createLogger } from '$lib/utils/client-logger';
 import { rebaseText } from '$lib/notes/text-rebase';
 
@@ -410,6 +411,10 @@ export async function settleNoteContent(workspaceId: string, noteId: string): Pr
     else await Promise.resolve();
   }
 }
+
+// The version-restore saga settles through this seam, so every dispatcher of
+// restoreNoteVersion is ordered after the note's saves, not only the editor.
+registerNoteContentSettler(settleNoteContent);
 
 async function flushContent(key: string, noteId: string): Promise<AppliedNoteContent | undefined> {
   const pending = pendingContent.get(key);
