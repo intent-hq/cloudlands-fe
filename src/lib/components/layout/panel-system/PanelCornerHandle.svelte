@@ -69,7 +69,7 @@
 <Button
   variant="ghost"
   type="button"
-  class={cn('app-resize-handle panel-corner-handle', isDragging && 'dragging')}
+  class={cn('app-resize-handle panel-corner-handle rounded-none', isDragging && 'dragging')}
   data-resize-axis="both"
   data-resizing={isDragging}
   aria-label={m.layout_panelCornerHandle_resize_ariaLabel()}
