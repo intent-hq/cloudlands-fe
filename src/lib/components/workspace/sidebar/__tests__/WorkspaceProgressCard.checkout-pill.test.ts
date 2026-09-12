@@ -125,6 +125,10 @@ vi.mock('$store/renderer/slices/ui-layout/ui-layout-slice', () => ({
 }));
 
 vi.mock('$store/renderer/slices/workspace-operations/workspace-operations-slice', () => ({
+  requestArchiveWorkspace: vi.fn((id: string) => ({
+    type: 'workspaceOperations/requestArchiveWorkspace',
+    payload: [id],
+  })),
   requestDeleteWorkspace: vi.fn((id: string) => ({
     type: 'workspaceOperations/delete',
     payload: [id],
