@@ -82,6 +82,7 @@ import {
 } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
+import type { ResolvedBrowserLink } from '$lib/utils/browser-url-resolution';
 import { createLogger } from '$lib/utils/client-logger';
 import type { BrowserTab, BrowserTabInput } from '$shared/types/browser-clients';
 import { selectActiveBackendId } from '../../../utils/backend-storage-namespace';
@@ -108,6 +109,8 @@ import {
   registrySnapshotAcknowledged,
   registryTabForgotten,
   registryTabReported,
+  registryTabResolved,
+  registryTabsUnresolved,
   type BrowserTabClosingState,
   type WorkspaceBrowserTabRegistryState,
 } from '../../browser-tab-registry/browser-tab-registry-slice';
@@ -139,7 +142,10 @@ import {
   setRestoreStatus,
 } from '../panel-layout-slice';
 import type { PanelTab, WorkspacePanelLayoutState } from '../panel-layout-types';
-import type { RehydratableBrowserTab } from '../browser-tab-rehydration';
+import {
+  rebaseRequestedUrlForNavigation,
+  type RehydratableBrowserTab,
+} from '../browser-tab-rehydration';
 import { rehydrateTunneledBrowserTabs } from './panel-layout-saga';
 
 const logger = createLogger('BrowserTabRegistrySaga');
@@ -339,6 +345,47 @@ function rehydratable(row: BrowserTab): RehydratableBrowserTab | null {
   return { tabId: row.tabId, requestedUrl: row.requestedUrl, storedUrl: row.url };
 }
 
+/**
+ * A tab this client hosts is local truth for its URL and title, but not for
+ * a claim it lost to persistence: a remount reinstalls the persisted layout,
+ * in which a registry-hosted tab is a geometry shell (owner, requested URL
+ * and emulated size stripped with the URL), and a guest that reports its
+ * location before the rows land makes the shell look complete. The row
+ * still holds the claim (only this host ever reports it, and no local
+ * change clears it short of destroying the tab), so the fields the tab
+ * lacks are taken from the row — the requested URL rebased onto the local
+ * URL when the guest moved, so a navigation off the row's origin still
+ * drops it. Null when the tab already carries everything the row holds.
+ */
+function claimFromRow(tab: PanelTab, row: BrowserTab): BrowserTab | null {
+  const url = tab.browserUrl ?? row.url;
+  const requestedUrl =
+    tab.browserRequestedUrl ??
+    (url === row.url
+      ? row.requestedUrl
+      : rebaseRequestedUrlForNavigation(row.url, url, row.requestedUrl));
+  const ownerAgentId = tab.ownerAgentId ?? row.ownerAgentId;
+  const ownerAgentName = tab.ownerAgentName ?? row.ownerAgentName;
+  const emulatedSize = tab.emulatedSize ?? row.emulatedSize;
+  if (
+    requestedUrl === tab.browserRequestedUrl &&
+    ownerAgentId === tab.ownerAgentId &&
+    ownerAgentName === tab.ownerAgentName &&
+    emulatedSize === tab.emulatedSize
+  ) {
+    return null;
+  }
+  return {
+    ...row,
+    url,
+    title: tab.title,
+    requestedUrl,
+    ownerAgentId,
+    ownerAgentName,
+    emulatedSize,
+  };
+}
+
 function* waitForOwnClientId(): SagaGenerator<string> {
   const known = yield* selectOwnClientId.effect();
   if (known) return known;
@@ -423,16 +470,23 @@ function* reconcileVisibility(
 /**
  * Apply the daemon's rows for one settled workspace over the local layout.
  * A tab this client already hosts that still carries a URL is local truth
- * (it may have navigated while the daemon was unreachable) and is only
- * acknowledged; everything else — including a mirror the daemon re-homed
- * here while we were away, whose URL and visibility are stale — follows the
- * row. A row for a tab being closed here is left alone: rematerialising it
- * would undo the close. Local tabs the registry no longer holds are
- * destroyed unless they can still be (re)reported from local state; they
- * are forgotten first, so the destroy is not read as a close to report. The
- * workspace becomes `applied` only if every materialised row is in the
- * layout; otherwise nothing is recorded and false is returned. A fence that
- * moved anywhere along the way ends the step.
+ * (it may have navigated while the daemon was unreachable): it is only
+ * acknowledged, completed with a claim it lost to persistence
+ * (`claimFromRow`), and — its guest being the one that produced the URL —
+ * not re-resolved, unless it is still `unresolved`: filled from a row at an
+ * earlier load without its tunnel re-resolution being established, its URL
+ * is the row's copy and the resolution is retried. Everything else —
+ * including a mirror the daemon re-homed here while we were away, whose URL
+ * and visibility are stale — follows the row, and a row of ours applied
+ * that way is queued for tunnel re-resolution, which marks the tab
+ * `unresolved` until it lands. A row for a tab being closed here is left alone:
+ * rematerialising it would undo the close. Local tabs the registry no
+ * longer holds are destroyed unless they can still be (re)reported from
+ * local state; they are forgotten first, so the destroy is not read as a
+ * close to report. The workspace becomes `applied` only if every
+ * materialised row is in the layout; otherwise nothing is recorded and
+ * false is returned. A fence that moved anywhere along the way ends the
+ * step.
  */
 function* applyRows(
   fence: WorkspaceFence,
@@ -442,6 +496,7 @@ function* applyRows(
   const { wsId } = fence;
   const layout = yield* selectPanelLayoutWorkspace.effect(wsId);
   const closing = yield* selectBrowserTabsClosing.effect();
+  const { unresolved } = yield* selectBrowserTabRegistryWorkspace.effect(wsId);
   // Rebuilt from the listing — what the daemon holds: anything acknowledged
   // earlier but absent now (cleared layout, other host, restart) is no longer ours.
   const reported: Record<string, BrowserTabInput> = {};
@@ -449,6 +504,11 @@ function* applyRows(
   const local = new Map(collectBrowserTabs(layout).map((h) => [h.tab.id, h]));
   const toRehydrate: RehydratableBrowserTab[] = [];
   const materialised: string[] = [];
+  const applied = (row: BrowserTab) => {
+    reported[row.tabId] = rowToInput(row);
+    const item = rehydratable(row);
+    if (item) toRehydrate.push(item);
+  };
   for (const row of rows) {
     const existing = local.get(row.tabId);
     const mine = row.hostClientId === ownClientId;
@@ -456,20 +516,23 @@ function* applyRows(
       if (row.tabId in closing) continue;
       yield* call(materialiseRow, fence, row);
       materialised.push(row.tabId);
-      if (mine) reported[row.tabId] = rowToInput(row);
+      if (mine) applied(row);
     } else if (mine && hostedHere(existing.tab, ownClientId) && hasReportableUrl(existing.tab)) {
       reported[row.tabId] = rowToInput(row);
-      if (existing.tab.hostClientId !== ownClientId) {
+      const claim = claimFromRow(existing.tab, row);
+      if (claim) {
+        yield* effect(fence, applyBrowserTabRegistryRow(wsId, row.tabId, claim));
+      } else if (existing.tab.hostClientId !== ownClientId) {
         yield* effect(fence, acknowledgeBrowserTabHost(wsId, row.tabId, ownClientId));
+      }
+      const requestedUrl = claim ? claim.requestedUrl : existing.tab.browserRequestedUrl;
+      if (row.tabId in unresolved && requestedUrl && existing.tab.browserUrl) {
+        toRehydrate.push({ tabId: row.tabId, requestedUrl, storedUrl: existing.tab.browserUrl });
       }
     } else {
       yield* effect(fence, applyBrowserTabRegistryRow(wsId, row.tabId, row));
       yield* call(reconcileVisibility, fence, existing, row);
-      if (mine) reported[row.tabId] = rowToInput(row);
-    }
-    if (mine) {
-      const item = rehydratable(row);
-      if (item) toRehydrate.push(item);
+      if (mine) applied(row);
     }
   }
   for (const [tabId, { tab }] of local) {
@@ -497,13 +560,35 @@ function* applyRows(
  * Re-resolve tunneled URLs detached from the caller (the resolution goes
  * over IPC and must not hold up the load), fenced: a resolution that lands
  * after the layout was torn down and rebuilt must not navigate the tab the
- * rebuild restored.
+ * rebuild restored. The tabs are `unresolved` until a resolution is
+ * established, so the next load retries the ones that failed.
+ * `resolveBrowserLinkUrl` never throws: a rewrite it could not establish
+ * comes back as the requested URL passed through, or as the rewritten
+ * target with an `error` — neither is established.
  */
 function* rehydrateUnderFence(
   fence: WorkspaceFence,
   tabs: RehydratableBrowserTab[],
 ): SagaGenerator<void> {
-  yield* spawn(rehydrateTunneledBrowserTabs, fence.wsId, tabs, () => isCurrent(fence));
+  const { wsId, generation } = fence;
+  yield* effect(
+    fence,
+    registryTabsUnresolved(
+      wsId,
+      generation,
+      tabs.map((tab) => tab.tabId),
+    ),
+  );
+  yield* spawn(
+    rehydrateTunneledBrowserTabs,
+    wsId,
+    tabs,
+    () => isCurrent(fence),
+    function* (tab: RehydratableBrowserTab, resolved: ResolvedBrowserLink) {
+      if (resolved.error || resolved.url === tab.requestedUrl) return;
+      yield* effect(fence, registryTabResolved(wsId, tab.tabId));
+    },
+  );
 }
 
 /**
@@ -743,7 +828,12 @@ function* applyRow(
     if (mine) yield* effect(fence, reported());
     return;
   }
-  if (mine && existing.tab.hostClientId === ownClientId) return;
+  if (mine && existing.tab.hostClientId === ownClientId) {
+    // Local truth; a claim the persisted shell lost is completed from the echo.
+    const claim = hasReportableUrl(existing.tab) ? claimFromRow(existing.tab, row) : null;
+    if (claim) yield* effect(fence, applyBrowserTabRegistryRow(wsId, row.tabId, claim));
+    return;
+  }
   if (mine && existing.tab.hostClientId === undefined) {
     // The registry took our unacknowledged report; local state stays truth.
     yield* effect(fence, acknowledgeBrowserTabHost(wsId, row.tabId, ownClientId));

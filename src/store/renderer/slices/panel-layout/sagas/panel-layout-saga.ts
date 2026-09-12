@@ -56,7 +56,7 @@ import {
   applyNoteUpdated,
   loadWorkspaceNotesSucceeded,
 } from '../../workspace-notes/workspace-notes-slice';
-import { resolveBrowserLinkUrl } from '$lib/utils/browser-url-resolution';
+import { resolveBrowserLinkUrl, type ResolvedBrowserLink } from '$lib/utils/browser-url-resolution';
 import {
   collectRehydratableBrowserTabs,
   type RehydratableBrowserTab,
@@ -550,12 +550,16 @@ function* reconcileEmptyRestoredLayout(wsId: string, agents?: AgentSession[]): S
  * dropped as stale otherwise. That pair check cannot tell a tab restored
  * again under a new lifecycle from the original; a caller that owns one
  * passes `stillCurrent`, consulted after each resolution, to drop results
- * that outlived it.
+ * that outlived it. `onResolved` sees every current resolution before it is
+ * applied — a failure included, as `resolveBrowserLinkUrl` reports one in
+ * its result, not by throwing — for a caller that tracks which tabs still
+ * need one.
  */
 export function* rehydrateTunneledBrowserTabs(
   wsId: string,
   tabs: RehydratableBrowserTab[],
   stillCurrent?: () => SagaGenerator<boolean>,
+  onResolved?: (tab: RehydratableBrowserTab, resolved: ResolvedBrowserLink) => SagaGenerator<void>,
 ): SagaGenerator<void> {
   for (const tab of tabs) {
     try {
@@ -567,6 +571,7 @@ export function* rehydrateTunneledBrowserTabs(
       // The resolution went over IPC: the caller's lifecycle may have moved on
       // (layout torn down and rebuilt) and the tab found below be a new one.
       if (stillCurrent && !(yield* call(stillCurrent))) return;
+      if (onResolved) yield* call(onResolved, tab, resolved);
       if (resolved.url === tab.storedUrl) continue;
       const workspace = yield* selectPanelLayoutWorkspace.effect(wsId);
       const current =

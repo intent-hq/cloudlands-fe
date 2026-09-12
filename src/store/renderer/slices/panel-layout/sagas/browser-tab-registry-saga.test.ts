@@ -55,6 +55,7 @@ import {
   openTabInRightmostColumnRequested,
   panelLayoutReducer as rawPanelLayoutReducer,
   setRestoreStatus,
+  setTabOwnerAgent,
   updateTabBrowserUrl,
   updateTabTitle,
 } from '../panel-layout-slice';
@@ -392,79 +393,244 @@ describe('browserTabRegistrySaga', () => {
       await stop(h);
     });
 
-    // TODO(intent-hq/intent#4835): `applyRows` treats a tab this client
-    // already hosts, with its URL present locally, as local truth (it is only
-    // acknowledged, never navigated from the row) — yet it still queues that
-    // row for `rehydrateUnderFence`, which re-runs the tunnel rewrite and, when
-    // the forward moved, navigates the live offscreen guest onto a new port.
-    // The guest reloads mid-capture: `evaluate` answers on a blank document
-    // and `screenshot` times out. Flip to `it` once rehydration is limited to
-    // tabs whose guest is not already alive in this window.
-    it.fails(
-      'does not re-resolve a tunneled tab this client already hosts when the workspace remounts',
-      async () => {
-        const REQUESTED = 'http://daemon.localhost:3000/';
-        const LIVE = 'http://127.0.0.1:52345/';
-        const MOVED = 'http://127.0.0.1:61111/';
-        mocks.listTabs.mockResolvedValue([
-          row({ url: LIVE, requestedUrl: REQUESTED, title: 'Sandbox' }),
+    // A tab restored as a geometry shell, in the order a session runs: the
+    // connect-time sync holds the daemon's row while the layout is still
+    // pending, the settled layout pulls the row in and re-resolves its tunnel,
+    // and the daemon is later reconnected on the same backend, its row then
+    // carrying what the first resolution produced.
+    describe('a restored shell re-resolved from its row, then a reconnect', () => {
+      const REQUESTED = 'http://daemon.localhost:3000/';
+      const STALE = 'http://127.0.0.1:52345/';
+      const MOVED = 'http://127.0.0.1:61111/';
+
+      async function restore(afterFirstResolution: string): Promise<Harness> {
+        const stale = row({ url: STALE, requestedUrl: REQUESTED, title: 'Sandbox' });
+        mocks.listTabs
+          .mockResolvedValueOnce([stale])
+          .mockResolvedValueOnce([stale])
+          .mockResolvedValue([
+            row({ url: afterFirstResolution, requestedUrl: REQUESTED, title: 'Sandbox' }),
+          ]);
+        const h = start({
+          layouts: {
+            [WS]: settledLayout(
+              [browserTab({ hostClientId: OWN, title: 'Sandbox' })],
+              'pending' as never,
+            ),
+          },
+        });
+        await flush(0);
+        expect(mocks.listTabs).toHaveBeenCalledTimes(1);
+        expect(mocks.resolveBrowserLinkUrl).not.toHaveBeenCalled();
+        h.dispatch(setRestoreStatus(WS, 'restored'));
+        await flush();
+        expect(mocks.resolveBrowserLinkUrl).toHaveBeenCalledTimes(1);
+        return h;
+      }
+
+      async function reconnect(h: Harness): Promise<void> {
+        h.setHealth('down', 1);
+        h.setHealth('healthy', 2);
+        h.dispatch(connectionStatusChanged('connected'));
+        await flush();
+      }
+
+      // A resolution that could not establish the rewrite passes the requested
+      // URL through (`resolveBrowserLinkUrl` never throws); the tab lands on
+      // it, reports it, and the daemon's row follows. The reconnect must
+      // retry: the URL is the row's, not the guest's, and nothing resolved it.
+      it('re-resolves a shell whose first resolution failed', async () => {
+        mocks.resolveBrowserLinkUrl
+          .mockResolvedValueOnce({ url: REQUESTED, rewritten: false })
+          .mockResolvedValue({
+            url: MOVED,
+            rewritten: true,
+            requestedUrl: REQUESTED,
+            tunneled: true,
+          });
+        const h = await restore(REQUESTED);
+        expect(h.tabs()[0]).toMatchObject({
+          browserUrl: REQUESTED,
+          browserRequestedUrl: REQUESTED,
+        });
+        expect(mocks.upsertTab.mock.calls).toEqual([
+          [WS, expectedInput({ url: REQUESTED, requestedUrl: REQUESTED, title: 'Sandbox' })],
         ]);
+        expect(h.registry().unresolved).toEqual({ b1: true });
+
+        await reconnect(h);
+        expect(mocks.resolveBrowserLinkUrl).toHaveBeenCalledTimes(2);
+        expect(h.tabs()[0]).toMatchObject({ browserUrl: MOVED, browserRequestedUrl: REQUESTED });
+        expect(h.registry().unresolved).toEqual({});
+        await stop(h);
+      });
+
+      // A rewritten target the probe could not reach comes back with `error`
+      // (the browser's own error page shows on it): not established either.
+      it('re-resolves a shell whose first resolution landed on an unreachable target', async () => {
+        const DEAD = 'http://198.51.100.7:3000/';
+        mocks.resolveBrowserLinkUrl
+          .mockResolvedValueOnce({
+            url: DEAD,
+            rewritten: true,
+            requestedUrl: REQUESTED,
+            error: 'unreachable',
+          })
+          .mockResolvedValue({
+            url: MOVED,
+            rewritten: true,
+            requestedUrl: REQUESTED,
+            tunneled: true,
+          });
+        const h = await restore(DEAD);
+        expect(h.tabs()[0]).toMatchObject({ browserUrl: DEAD, browserRequestedUrl: REQUESTED });
+        expect(h.registry().unresolved).toEqual({ b1: true });
+
+        await reconnect(h);
+        expect(mocks.resolveBrowserLinkUrl).toHaveBeenCalledTimes(2);
+        expect(h.tabs()[0]).toMatchObject({ browserUrl: MOVED, browserRequestedUrl: REQUESTED });
+        await stop(h);
+      });
+
+      // An established resolution is this session's live endpoint: the
+      // reconnect must not re-run it and re-navigate a healthy guest.
+      it('does not re-resolve a shell whose first resolution was established', async () => {
         mocks.resolveBrowserLinkUrl.mockResolvedValue({
           url: MOVED,
           rewritten: true,
           requestedUrl: REQUESTED,
           tunneled: true,
         });
-        const h = start({
-          layouts: {
-            [WS]: settledLayout(
-              [
-                browserTab({
-                  hostClientId: OWN,
-                  browserUrl: LIVE,
-                  browserRequestedUrl: REQUESTED,
-                  title: 'Sandbox',
-                }),
-              ],
-              'pending' as never,
-            ),
-          },
-          health: 'down',
-        });
-        h.setHealth('healthy', 1);
-        h.dispatch(setRestoreStatus(WS, 'restored'));
-        await flush();
+        const h = await restore(MOVED);
+        expect(h.tabs()[0]).toMatchObject({ browserUrl: MOVED, browserRequestedUrl: REQUESTED });
+        expect(h.registry().unresolved).toEqual({});
 
-        expect(mocks.resolveBrowserLinkUrl).not.toHaveBeenCalled();
-        expect(h.ofType(updateTabBrowserUrl.type)).toEqual([]);
-        expect(h.tabs()).toEqual([
-          expect.objectContaining({ id: 'b1', browserUrl: LIVE, browserRequestedUrl: REQUESTED }),
-        ]);
+        await reconnect(h);
+        expect(mocks.resolveBrowserLinkUrl).toHaveBeenCalledTimes(1);
+        expect(h.ofType(updateTabBrowserUrl.type)).toHaveLength(1);
         await stop(h);
-      },
-    );
+      });
+    });
 
-    // TODO(intent-hq/intent#4835): a remount restores the persisted layout,
-    // in which a registry-hosted tab is a geometry shell (URL, owner,
-    // requested URL and emulated size stripped by `stripRegistryHeldFields`).
-    // When a webview navigation report (`updateTabBrowserUrl`) gives the shell
-    // a URL before `browser.listTabs` answers, `applyRows` reads the shell as
-    // local truth (`hasReportableUrl`), only acknowledges it and records the
-    // row as reported; the reporter then diffs the shell against the row and
-    // sends `upsertTab` with `ownerAgentId` / `requestedUrl` / `emulatedSize`
-    // null — the daemon drops the claim. The now-unowned tab no longer hides
-    // on close: the next non-destroy `closeTab` destroys it and the removal
-    // diff sends `browser.removeTab`, hard-deleting the row. Flip to `it`
-    // once a shell that regained a URL takes the registry-held fields from
-    // the row instead of reporting their absence.
-    it.fails(
-      'keeps the registry claim on a restored shell that regained its URL before the rows arrived',
-      async () => {
-        const REQUESTED = 'http://daemon.localhost:5920/workspace/x';
-        const LIVE = 'http://127.0.0.1:63240/workspace/x';
+    // intent-hq/intent#4835: a tab this client already hosts, with its URL
+    // present locally, is local truth — its guest produced that URL — so the
+    // row must not be queued for `rehydrateUnderFence`: re-running the tunnel
+    // rewrite navigates the live offscreen guest onto a new port and it
+    // reloads mid-capture.
+    it('does not re-resolve a tunneled tab this client already hosts when the workspace remounts', async () => {
+      const REQUESTED = 'http://daemon.localhost:3000/';
+      const LIVE = 'http://127.0.0.1:52345/';
+      const MOVED = 'http://127.0.0.1:61111/';
+      mocks.listTabs.mockResolvedValue([
+        row({ url: LIVE, requestedUrl: REQUESTED, title: 'Sandbox' }),
+      ]);
+      mocks.resolveBrowserLinkUrl.mockResolvedValue({
+        url: MOVED,
+        rewritten: true,
+        requestedUrl: REQUESTED,
+        tunneled: true,
+      });
+      const h = start({
+        layouts: {
+          [WS]: settledLayout(
+            [
+              browserTab({
+                hostClientId: OWN,
+                browserUrl: LIVE,
+                browserRequestedUrl: REQUESTED,
+                title: 'Sandbox',
+              }),
+            ],
+            'pending' as never,
+          ),
+        },
+        health: 'down',
+      });
+      h.setHealth('healthy', 1);
+      h.dispatch(setRestoreStatus(WS, 'restored'));
+      await flush();
+
+      expect(mocks.resolveBrowserLinkUrl).not.toHaveBeenCalled();
+      expect(h.ofType(updateTabBrowserUrl.type)).toEqual([]);
+      expect(h.tabs()).toEqual([
+        expect.objectContaining({ id: 'b1', browserUrl: LIVE, browserRequestedUrl: REQUESTED }),
+      ]);
+      await stop(h);
+    });
+
+    // intent-hq/intent#4835: a remount restores the persisted layout, in
+    // which a registry-hosted tab is a geometry shell (URL, owner, requested
+    // URL and emulated size stripped by `stripRegistryHeldFields`). When a
+    // webview navigation report (`updateTabBrowserUrl`) gives the shell a URL
+    // before `browser.listTabs` answers, the shell reads as local truth; it
+    // must take the registry-held fields from the row instead of reporting
+    // their absence (which dropped the daemon's claim, so the next
+    // non-destroy close hard-deleted the row).
+    it('keeps the registry claim on a restored shell that regained its URL before the rows arrived', async () => {
+      const REQUESTED = 'http://daemon.localhost:5920/workspace/x';
+      const LIVE = 'http://127.0.0.1:63240/workspace/x';
+      const listing = deferred<BrowserTabListing[]>();
+      mocks.listTabs.mockReturnValue(listing.promise);
+      mocks.resolveBrowserLinkUrl.mockResolvedValue({ url: LIVE });
+      const h = start({
+        layouts: {
+          [WS]: settledLayout(
+            [browserTab({ hostClientId: OWN, title: 'Intent' })],
+            'pending' as never,
+          ),
+        },
+        health: 'down',
+      });
+      h.setHealth('healthy', 1);
+      h.dispatch(setRestoreStatus(WS, 'restored'));
+      await flush(0);
+      expect(mocks.listTabs).toHaveBeenCalledTimes(1);
+
+      // The live guest reports its location into the shell before the rows land.
+      h.dispatch(updateTabBrowserUrl(WS, 'b1', LIVE));
+      listing.resolve([
+        row({
+          url: LIVE,
+          requestedUrl: REQUESTED,
+          title: 'Intent',
+          ownerAgentId: 'agent-1',
+          emulatedSize: { width: 1280, height: 900 },
+        }),
+      ]);
+      await flush();
+
+      expect(mocks.upsertTab.mock.calls.filter(([, tab]) => tab.ownerAgentId === null)).toEqual([]);
+      expect(h.tabs()[0]).toMatchObject({
+        id: 'b1',
+        browserUrl: LIVE,
+        browserRequestedUrl: REQUESTED,
+        ownerAgentId: 'agent-1',
+        emulatedSize: { width: 1280, height: 900 },
+      });
+
+      // An owned tab hides on close; only an unowned one is destroyed and removed.
+      h.dispatch(closeTab(WS, 'b1', 'p1', 1000));
+      await flush();
+      expect(h.hidden().map((t) => t.id)).toEqual(['b1']);
+      expect(mocks.removeTab).not.toHaveBeenCalled();
+      await stop(h);
+    });
+
+    describe('a restored shell whose guest reported before the rows arrived', () => {
+      const REQUESTED = 'http://daemon.localhost:5920/workspace/x';
+      const LIVE = 'http://127.0.0.1:63240/workspace/x';
+      const SIZE = { width: 1280, height: 900 };
+      const claimedRow = () =>
+        row({
+          url: LIVE,
+          requestedUrl: REQUESTED,
+          title: 'Intent',
+          ownerAgentId: 'agent-1',
+          emulatedSize: SIZE,
+        });
+      const startShell = () => {
         const listing = deferred<BrowserTabListing[]>();
         mocks.listTabs.mockReturnValue(listing.promise);
-        mocks.resolveBrowserLinkUrl.mockResolvedValue({ url: LIVE });
         const h = start({
           layouts: {
             [WS]: settledLayout(
@@ -476,41 +642,98 @@ describe('browserTabRegistrySaga', () => {
         });
         h.setHealth('healthy', 1);
         h.dispatch(setRestoreStatus(WS, 'restored'));
+        return { h, listing };
+      };
+
+      it('reports a same-origin navigation with the claim kept and the requested URL rebased', async () => {
+        const { h, listing } = startShell();
         await flush(0);
-        expect(mocks.listTabs).toHaveBeenCalledTimes(1);
+        h.dispatch(updateTabBrowserUrl(WS, 'b1', 'http://127.0.0.1:63240/workspace/y'));
+        listing.resolve([claimedRow()]);
+        await flush();
 
-        // The live guest reports its location into the shell before the rows land.
-        h.dispatch(updateTabBrowserUrl(WS, 'b1', LIVE));
-        listing.resolve([
-          row({
-            url: LIVE,
-            requestedUrl: REQUESTED,
-            title: 'Intent',
-            ownerAgentId: 'agent-1',
-            emulatedSize: { width: 1280, height: 900 },
-          }),
+        expect(mocks.upsertTab.mock.calls).toEqual([
+          [
+            WS,
+            expectedInput({
+              url: 'http://127.0.0.1:63240/workspace/y',
+              requestedUrl: 'http://daemon.localhost:5920/workspace/y',
+              title: 'Intent',
+              ownerAgentId: 'agent-1',
+              emulatedSize: SIZE,
+            }),
+          ],
         ]);
-        await flush();
-
-        expect(mocks.upsertTab.mock.calls.filter(([, tab]) => tab.ownerAgentId === null)).toEqual(
-          [],
-        );
-        expect(h.tabs()[0]).toMatchObject({
-          id: 'b1',
-          browserUrl: LIVE,
-          browserRequestedUrl: REQUESTED,
-          ownerAgentId: 'agent-1',
-          emulatedSize: { width: 1280, height: 900 },
-        });
-
-        // An owned tab hides on close; only an unowned one is destroyed and removed.
-        h.dispatch(closeTab(WS, 'b1', 'p1', 1000));
-        await flush();
-        expect(h.hidden().map((t) => t.id)).toEqual(['b1']);
-        expect(mocks.removeTab).not.toHaveBeenCalled();
+        expect(mocks.resolveBrowserLinkUrl).not.toHaveBeenCalled();
         await stop(h);
-      },
-    );
+      });
+
+      it('reports a navigation off the tunnel origin without a requested URL, claim kept', async () => {
+        const { h, listing } = startShell();
+        await flush(0);
+        h.dispatch(updateTabBrowserUrl(WS, 'b1', 'http://other.test/'));
+        listing.resolve([claimedRow()]);
+        await flush();
+
+        expect(mocks.upsertTab.mock.calls).toEqual([
+          [
+            WS,
+            expectedInput({
+              url: 'http://other.test/',
+              title: 'Intent',
+              ownerAgentId: 'agent-1',
+              emulatedSize: SIZE,
+            }),
+          ],
+        ]);
+        await stop(h);
+      });
+
+      it('keeps a claim made locally over the one in the row and reports it', async () => {
+        const { h, listing } = startShell();
+        await flush(0);
+        h.dispatch(updateTabBrowserUrl(WS, 'b1', LIVE));
+        h.dispatch(setTabOwnerAgent(WS, 'b1', 'agent-2', { width: 800, height: 600 }, 'Two'));
+        listing.resolve([claimedRow()]);
+        await flush();
+
+        expect(mocks.upsertTab.mock.calls).toEqual([
+          [
+            WS,
+            expectedInput({
+              url: LIVE,
+              requestedUrl: REQUESTED,
+              title: 'Intent',
+              ownerAgentId: 'agent-2',
+              ownerAgentName: 'Two',
+              emulatedSize: { width: 800, height: 600 },
+            }),
+          ],
+        ]);
+        expect(h.tabs()[0]).toMatchObject({
+          browserRequestedUrl: REQUESTED,
+          ownerAgentId: 'agent-2',
+          emulatedSize: { width: 800, height: 600 },
+        });
+        await stop(h);
+      });
+
+      it('still removes the tab when its agent destroys it after the claim was completed', async () => {
+        const { h, listing } = startShell();
+        await flush(0);
+        h.dispatch(updateTabBrowserUrl(WS, 'b1', LIVE));
+        listing.resolve([claimedRow()]);
+        await flush();
+        expect(mocks.upsertTab).not.toHaveBeenCalled();
+
+        h.dispatch(closeTab(WS, 'b1', undefined, 2000, { destroy: true }));
+        await flush();
+        expect(mocks.removeTab.mock.calls).toEqual([['b1']]);
+        expect(mocks.upsertTab).not.toHaveBeenCalled();
+        expect(h.tabs()).toEqual([]);
+        await stop(h);
+      });
+    });
 
     it('forgets acknowledged tabs the listing no longer holds instead of removing them later', async () => {
       const h = start({ layouts: { [WS]: settledLayout([]) }, health: 'down', applied: true });
