@@ -1080,7 +1080,7 @@
     color: #7c3aed !important;
   }
   :global(.light .monaco-editor .mtk10) {
-    color: #6b7280 !important;
+    color: hsl(var(--muted-foreground)) !important;
   }
   :global(.light .monaco-editor .mtk13) {
     color: #b45309 !important;

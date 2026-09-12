@@ -479,7 +479,7 @@
       <Fa icon={faArrowLeft} class="type-caption opacity-50 mr-1" />
       <span>{backLabel}</span>
       <kbd
-        class="type-caption ml-2 px-1.5 py-0.5 font-medium bg-muted text-muted-foreground border border-border rounded opacity-60 group-hover:opacity-100 transition-opacity"
+        class="type-caption ml-2 px-1.5 py-0.5 font-medium bg-muted text-muted-foreground border border-border rounded"
       >
         {isMac ? '⌘' : 'Ctrl'},
       </kbd>

@@ -612,7 +612,7 @@
 
   .mention-subtitle {
     font-size: 11px;
-    color: hsl(var(--muted-foreground) / 0.6);
+    color: hsl(var(--muted-foreground));
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -622,7 +622,7 @@
 
   .group-arrow {
     flex-shrink: 0;
-    color: hsl(var(--muted-foreground) / 0.5);
+    color: hsl(var(--muted-foreground));
     transition:
       transform var(--spring-moderate) var(--spring-moderate-ease),
       color var(--spring-fast) var(--spring-fast-ease);

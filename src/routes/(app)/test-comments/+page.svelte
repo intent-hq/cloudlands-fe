@@ -183,14 +183,14 @@ More content here for testing purposes.`;
 
 <style>
   :global(.comment-highlight) {
-    background-color: rgba(255, 235, 59, 0.2);
-    border-bottom: 2px solid rgba(255, 235, 59, 0.5);
+    background-color: hsl(var(--warning) / 0.1);
+    border-bottom: 2px solid hsl(var(--warning) / 0.5);
     cursor: pointer;
     transition: all 0.2s ease;
   }
 
   :global(.comment-highlight:hover) {
-    background-color: rgba(255, 235, 59, 0.3);
-    border-bottom-color: rgba(255, 235, 59, 0.8);
+    background-color: hsl(var(--warning) / 0.2);
+    border-bottom-color: hsl(var(--warning) / 0.8);
   }
 </style>
