@@ -132,3 +132,7 @@ resources/keychain-helper/
 
 # Generated production-only Paraglide bundle
 static/generated/
+
+# Core dumps must stay out of the CT build source scan
+/core
+/core.[0-9]*

@@ -31,7 +31,7 @@
  * from an interactive terminal (see `usage()`).
  */
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
@@ -70,6 +70,7 @@ export function usage() {
     '                    written to playwright-report/ (view it with `pnpm exec playwright',
     '                    show-report`). Opt-in values only take effect on an interactive',
     '                    terminal; automated (non-TTY) runs never block on the report.',
+    '  CT_ALLOW_CORE=1   Allow CT runs with core dumps in the package root.',
     '  PLAYWRIGHT_HTML_OPEN',
     `                    When set, respected verbatim (overrides ${CT_HTML_REPORT_ENV}).`,
     '',
@@ -243,11 +244,35 @@ export function buildChildEnv({ env = process.env, isTTY, openReport = false, ro
   return { env: childEnv, notice };
 }
 
+/** Refuse core dumps before the CT source scanner can read them. */
+export function assertNoCoreDumps({ root = repoRoot, env = process.env } = {}) {
+  if (env.CT_ALLOW_CORE === '1') return;
+  const dumps = readdirSync(root)
+    .filter((name) => /^core(?:\.[0-9]+)?$/.test(name))
+    .flatMap((name) => {
+      const stat = statSync(path.join(root, name));
+      return stat.isFile() ? [`${name} (${stat.size} bytes)`] : [];
+    });
+  if (dumps.length) {
+    throw new Error(
+      `Refusing CT run: core dumps in ${root}: ${dumps.join(', ')}. ` +
+        'Move or remove them before running CT, or set CT_ALLOW_CORE=1 to override.',
+    );
+  }
+}
+
 function main(argv) {
   const { forwarded, openReport, help } = parseLauncherArgs(argv);
   if (help) {
     process.stdout.write(`${usage()}\n`);
     process.exit(0);
+  }
+
+  try {
+    assertNoCoreDumps();
+  } catch (error) {
+    console.error(`[run-ct-tests] ${error instanceof Error ? error.message : error}`);
+    process.exit(1);
   }
 
   let cli;

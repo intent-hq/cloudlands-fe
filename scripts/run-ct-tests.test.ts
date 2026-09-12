@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -7,6 +7,7 @@ import {
   CT_HTML_REPORT_ENV,
   OPEN_REPORT_FLAG,
   PRINT_OS_DEPS_FLAG,
+  assertNoCoreDumps,
   buildChildEnv,
   collectNonFontOsDeps,
   exitCodeFromChild,
@@ -239,5 +240,27 @@ describe('collectNonFontOsDeps', () => {
         })) as never,
       }),
     ).toThrow(/unexpected extra install-deps/);
+  });
+});
+
+describe('assertNoCoreDumps', () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'ct-core-guard-'));
+  afterAll(() => rmSync(root, { recursive: true, force: true }));
+
+  it('allows ordinary files and directories with core-like names', () => {
+    writeFileSync(path.join(root, 'core.ts'), 'source');
+    writeFileSync(path.join(root, 'core.123.txt'), 'source');
+    mkdirSync(path.join(root, 'core.456'));
+    expect(() => assertNoCoreDumps({ root, env: {} })).not.toThrow();
+  });
+
+  it('refuses dumps with their names and byte sizes unless explicitly overridden', () => {
+    writeFileSync(path.join(root, 'core'), Buffer.alloc(1024));
+    writeFileSync(path.join(root, 'core.123'), Buffer.alloc(2048));
+    for (const env of [{}, { CT_ALLOW_CORE: '0' }, { CT_ALLOW_CORE: 'true' }]) {
+      expect(() => assertNoCoreDumps({ root, env })).toThrow(/core \(1024 bytes\)/);
+      expect(() => assertNoCoreDumps({ root, env })).toThrow(/core\.123 \(2048 bytes\)/);
+    }
+    expect(() => assertNoCoreDumps({ root, env: { CT_ALLOW_CORE: '1' } })).not.toThrow();
   });
 });
