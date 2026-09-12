@@ -295,13 +295,14 @@ check_issue_completeness() {
   issue_state=$(sed -n '1p' <<<"$out")
   has_next=$(sed -n '2p' <<<"$out")
   nodes=$(tail -n +3 <<<"$out")
+  # Truncation stays indeterminate whatever the issue state.
+  if [[ "$has_next" == "true" ]]; then
+    gate_detail="issue has more than 100 linked PRs; enumeration truncated"
+    return 0
+  fi
   if [[ "$issue_state" != "CLOSED" ]]; then
     gate_result="incomplete"
     gate_detail="issue is still open"
-    return 0
-  fi
-  if [[ "$has_next" == "true" ]]; then
-    gate_detail="issue has more than 100 linked PRs; enumeration truncated"
     return 0
   fi
   while IFS=$'\t' read -r repo pr state merged sha; do
