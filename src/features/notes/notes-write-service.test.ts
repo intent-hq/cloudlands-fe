@@ -78,12 +78,22 @@ function seed(...notes: Note[]): void {
 }
 
 describe('notesWriteService (fake seam, real store)', () => {
+  // Suite invariant (AC10): every content save for a loaded note forwards a
+  // defined rev as expectedVersion. Only the never-loaded LWW test opts out.
+  let expectUnloadedSave = false;
+
   beforeAll(() => {
     appStore.init();
   });
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => {
     vi.runOnlyPendingTimers();
+    if (!expectUnloadedSave) {
+      for (const call of notesApi.setContent.mock.calls) {
+        expect(call[2], `setContent(${String(call[0])}) sent no rev`).toEqual(expect.any(Number));
+      }
+    }
+    expectUnloadedSave = false;
     vi.useRealTimers();
     vi.clearAllMocks();
     Object.values(notesApi).forEach((fn) => fn.mockResolvedValue({ success: true } as never));
@@ -125,6 +135,7 @@ describe('notesWriteService (fake seam, real store)', () => {
   // Documented LWW fallback: a note that was never loaded has no rev to send,
   // so expectedVersion is omitted (the daemon then writes last-writer-wins).
   it('omits expectedVersion only when the note was never loaded', async () => {
+    expectUnloadedSave = true;
     seed();
 
     updateNoteContent(WS, 'never-loaded', 'edited', { immediate: true });
@@ -471,6 +482,73 @@ describe('notesWriteService (fake seam, real store)', () => {
     expect(note?.rev).toBe(5);
   });
 
+  // The echo is authoritative even when its text equals what was sent: a
+  // refetch that landed older text (and an intermediate rev) during the
+  // round-trip must not win over the daemon's post-write state.
+  it('applies an echo equal to the sent content over an older refetch that landed in flight', async () => {
+    seed(makeNote('n1', { rev: 4, content: 'body' }));
+    let resolveSave!: (v: unknown) => void;
+    notesApi.setContent.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveSave = resolve;
+      }) as never,
+    );
+
+    updateNoteContent(WS, 'n1', 'mine');
+    const flushed = flushNoteContent(WS, 'n1');
+    await Promise.resolve();
+    expect(notesApi.setContent).toHaveBeenCalledWith('n1', 'mine', 4, WS);
+
+    seed(makeNote('n1', { rev: 5, content: 'refetched older content' }));
+    resolveSave({ success: true, newContent: 'mine', noteRev: 6 });
+
+    await expect(flushed).resolves.toEqual({ content: 'mine', rev: 6 });
+    const note = selectNoteById.select(appStore.state, WS, 'n1');
+    expect(note?.content).toBe('mine');
+    expect(note?.rev).toBe(6);
+  });
+
+  // A newer edit that was already flushed (queued behind the in-flight save)
+  // is no longer in the pending map, yet the older save's merged echo must
+  // still not overwrite it; the newer save carries its own merge.
+  it('keeps newer local text that is queued behind an older save when the older echo lands', async () => {
+    seed(makeNote('n1', { rev: 4, content: 'body' }));
+    let resolveFirst!: (v: unknown) => void;
+    let resolveSecond!: (v: unknown) => void;
+    notesApi.setContent
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveFirst = resolve;
+        }) as never,
+      )
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveSecond = resolve;
+        }) as never,
+      );
+
+    updateNoteContent(WS, 'n1', 'first');
+    const first = flushNoteContent(WS, 'n1');
+    await Promise.resolve();
+    updateNoteContent(WS, 'n1', 'first plus typing');
+    const second = flushNoteContent(WS, 'n1');
+
+    resolveFirst({ success: true, newContent: 'first plus agent', noteRev: 5 });
+    await expect(first).resolves.toEqual({ content: 'first plus typing', rev: 5 });
+    expect(selectNoteById.select(appStore.state, WS, 'n1')?.content).toBe('first plus typing');
+
+    await Promise.resolve();
+    // The queued save read the advanced rev, not the stale 4.
+    expect(notesApi.setContent).toHaveBeenLastCalledWith('n1', 'first plus typing', 5, WS);
+    resolveSecond({ success: true, newContent: 'first plus typing', noteRev: 6 });
+    await expect(second).resolves.toEqual({ content: 'first plus typing', rev: 6 });
+
+    const note = selectNoteById.select(appStore.state, WS, 'n1');
+    expect(note?.content).toBe('first plus typing');
+    expect(note?.rev).toBe(6);
+    expect(notesApi.setContent).toHaveBeenCalledTimes(2);
+  });
+
   // ---- §11.4-D: content saves no longer route to the conflict prompt --------
   // A `conflict` result on a content save is treated as a generic failure
   // (error toast + reconcile refetch) — never the "note changed" reload+toast.
@@ -526,6 +604,34 @@ describe('notesWriteService (fake seam, real store)', () => {
     // The debounce timer was cleared: nothing saves again.
     await vi.advanceTimersByTimeAsync(NOTE_CONTENT_SAVE_DEBOUNCE_MS + 1);
     expect(notesApi.setContent).toHaveBeenCalledTimes(1);
+  });
+
+  // AppliedNoteContent is "what the store holds now": when a newer debounced
+  // edit superseded the echo, the result reports that newer text, not the
+  // merge of the older text that was not applied.
+  it('flushNoteContent resolves with the store content when a newer edit is still debounced', async () => {
+    seed(makeNote('n1', { rev: 4, content: 'body' }));
+    let resolveFirst!: (v: unknown) => void;
+    notesApi.setContent.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveFirst = resolve;
+      }) as never,
+    );
+
+    updateNoteContent(WS, 'n1', 'first');
+    const first = flushNoteContent(WS, 'n1');
+    await Promise.resolve();
+    updateNoteContent(WS, 'n1', 'first plus typing');
+    resolveFirst({ success: true, newContent: 'first plus agent', noteRev: 5 });
+
+    const applied = await first;
+    const note = selectNoteById.select(appStore.state, WS, 'n1');
+    expect(note?.content).toBe('first plus typing');
+    expect(applied).toEqual({ content: note?.content, rev: 5 });
+
+    // The superseding edit saves on its own, against the advanced rev.
+    await vi.advanceTimersByTimeAsync(NOTE_CONTENT_SAVE_DEBOUNCE_MS + 1);
+    expect(notesApi.setContent).toHaveBeenLastCalledWith('n1', 'first plus typing', 5, WS);
   });
 
   it('flushNoteContent resolves undefined when nothing is pending', async () => {

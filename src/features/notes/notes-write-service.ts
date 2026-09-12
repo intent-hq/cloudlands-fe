@@ -68,6 +68,8 @@ export const NOTE_CONTENT_SAVE_DEBOUNCE_MS = 800;
 interface PendingContent {
   workspaceId: string;
   content: string;
+  /** Position in the note's local edit sequence (see `latestEditSeq`). */
+  seq: number;
 }
 
 // Debounce/queue state is keyed by `${workspaceId}:${noteId}` — note ids are
@@ -81,6 +83,12 @@ const pendingContent = new Map<string, PendingContent>();
 // `pendingContent` this spans the whole unacknowledged-save window: debounced
 // (pre-flush) saves live in `pendingContent`, flushed-but-unacked saves here.
 const inFlightContentSaves = new Map<string, number>();
+// Sequence number of the most recent local edit per key. A save's echo is
+// authoritative only when no later local edit exists — whether that edit is
+// still debounced, queued behind this save, or itself in flight — so the check
+// cannot rely on `pendingContent` alone (a flush removes the entry) nor on
+// comparing echoed text against sent text.
+const latestEditSeq = new Map<string, number>();
 
 function noteKey(workspaceId: string, noteId: string): string {
   return `${workspaceId}:${noteId}`;
@@ -292,7 +300,9 @@ export function updateNoteContent(
 ): void {
   appStore.dispatch(applyLocalNoteUpdate(workspaceId, noteId, { content }));
   const key = noteKey(workspaceId, noteId);
-  pendingContent.set(key, { workspaceId, content });
+  const seq = (latestEditSeq.get(key) ?? 0) + 1;
+  latestEditSeq.set(key, seq);
+  pendingContent.set(key, { workspaceId, content, seq });
 
   const existing = contentTimers.get(key);
   if (existing) clearTimeout(existing);
@@ -311,7 +321,11 @@ export function updateNoteContent(
   );
 }
 
-/** Outcome of an applied content save: the content and rev now in the store. */
+/**
+ * Outcome of an applied content save: the content and rev now in the store.
+ * When a newer local edit superseded the save's echo, this is that newer local
+ * text (the echo was not applied), not the daemon's merge of the older text.
+ */
 export interface AppliedNoteContent {
   content: string;
   rev?: number;
@@ -363,12 +377,17 @@ async function flushContent(key: string, noteId: string): Promise<AppliedNoteCon
         await refetchWorkspaceNotes(pending.workspaceId);
         return undefined;
       }
-      return applyContentSaveResult(pending.workspaceId, noteId, pending.content, rev, result);
+      return applyContentSaveResult(noteId, pending, rev, result);
     });
   } finally {
     const count = (inFlightContentSaves.get(key) ?? 1) - 1;
-    if (count <= 0) inFlightContentSaves.delete(key);
-    else inFlightContentSaves.set(key, count);
+    if (count <= 0) {
+      inFlightContentSaves.delete(key);
+      // Nothing left that could compare against the sequence.
+      if (!pendingContent.has(key)) latestEditSeq.delete(key);
+    } else {
+      inFlightContentSaves.set(key, count);
+    }
   }
 }
 
@@ -376,32 +395,32 @@ async function flushContent(key: string, noteId: string): Promise<AppliedNoteCon
  * Apply the daemon's `note.setContent` response as the authoritative local
  * state: the merged `newContent` replaces the store content, and the rev is
  * set from the echoed `rev` when the daemon reports one, else inferred as
- * `sentRev + 1` (older daemons). The merged text is only written when it
- * differs from what was sent, no newer local edit is pending (a keystroke
- * typed during the round-trip must not be overwritten by a stale echo), and a
- * concurrent refetch has not already landed a newer rev.
+ * `sentRev + 1` (older daemons). The echo is skipped when a newer local edit
+ * exists (its own save carries the daemon's merge of that text — applying the
+ * older echo would overwrite a keystroke) or a concurrent refetch already
+ * landed a newer rev. Resolves with what the store holds afterwards.
  */
 function applyContentSaveResult(
-  workspaceId: string,
   noteId: string,
-  sentContent: string,
+  sent: PendingContent,
   sentRev: number | undefined,
   result: MutationResult,
 ): AppliedNoteContent {
-  const content = result.newContent ?? sentContent;
+  const { workspaceId, seq } = sent;
+  const echoed = result.newContent ?? sent.content;
   const nextRev = result.noteRev ?? (sentRev !== undefined ? sentRev + 1 : undefined);
-  const storedRev = readNoteById(workspaceId, noteId)?.rev;
-  const storeIsNewer = storedRev !== undefined && nextRev !== undefined && storedRev > nextRev;
-  if (
-    content !== sentContent &&
-    !pendingContent.has(noteKey(workspaceId, noteId)) &&
-    !storeIsNewer
-  ) {
-    appStore.dispatch(applyLocalNoteUpdate(workspaceId, noteId, { content }));
+  const stored = readNoteById(workspaceId, noteId);
+  const superseded = latestEditSeq.get(noteKey(workspaceId, noteId)) !== seq;
+  const storeIsNewer = stored?.rev !== undefined && nextRev !== undefined && stored.rev > nextRev;
+  if (!superseded && !storeIsNewer && stored?.content !== echoed) {
+    appStore.dispatch(applyLocalNoteUpdate(workspaceId, noteId, { content: echoed }));
   }
   if (nextRev !== undefined) setNoteRevIfNewer(workspaceId, noteId, nextRev);
-  const rev = readNoteById(workspaceId, noteId)?.rev;
-  return rev !== undefined ? { content, rev } : { content };
+  const applied = readNoteById(workspaceId, noteId);
+  if (!applied) return { content: echoed };
+  return applied.rev !== undefined
+    ? { content: applied.content, rev: applied.rev }
+    : { content: applied.content };
 }
 
 /** Update a note's title optimistically; rolls back to the prior title on failure. */

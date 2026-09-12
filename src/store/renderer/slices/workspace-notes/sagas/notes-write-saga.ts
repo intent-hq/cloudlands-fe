@@ -47,7 +47,7 @@ import { toRuntimeNote } from './note-payload-mappers';
 const logger = createLogger('NotesWriteSaga');
 export const NOTE_CONTENT_SAVE_DEBOUNCE_MS = 800;
 
-type PendingContent = { workspaceId: string; noteId: string; content: string };
+type PendingContent = { workspaceId: string; noteId: string; content: string; seq: number };
 type ContentCommand = PendingContent & { kind: 'content' };
 type MetadataCommand = {
   kind: 'metadata';
@@ -64,6 +64,10 @@ type WorkspaceCleanupAction = ReturnType<typeof workspaceUnmounted>;
 type ObservedAction = { type: string; payload?: unknown };
 
 const pendingContent = new Map<string, PendingContent>();
+// Sequence number of the most recent local edit per key (mirrors
+// `notes-write-service.ts`): a save's echo is authoritative only when no later
+// local edit exists — debounced, queued behind it, or in flight.
+const latestEditSeq = new Map<string, number>();
 let noteMutationQueue: Channel<MutationEnvelope> | undefined;
 
 function noteKey(workspaceId: string, noteId: string): string {
@@ -174,31 +178,30 @@ function* advanceRevision(workspaceId: string, noteId: string, sentRev: number) 
  * Apply the daemon's `note.setContent` response as the authoritative local
  * state (mirrors `notes-write-service.ts`): the merged `newContent` replaces
  * the store content and the rev comes from the echoed `rev` when present, else
- * `sentRev + 1` (older daemons). The merged text is skipped when a newer local
- * edit is already pending or a refetch landed a newer rev.
+ * `sentRev + 1` (older daemons). The echo is skipped when a newer local edit
+ * exists (its own save carries the daemon's merge of that text) or a refetch
+ * already landed a newer rev.
  */
 function* applyContentSaveResult(
   command: ContentCommand,
   sentRev: number | undefined,
   result: MutationResult,
 ) {
-  const { workspaceId, noteId, content: sentContent } = command;
-  const content = result.newContent ?? sentContent;
+  const { workspaceId, noteId, seq } = command;
+  const echoed = result.newContent ?? command.content;
   const nextRev = result.noteRev ?? (sentRev !== undefined ? sentRev + 1 : undefined);
   const stored = yield* selectNoteById.effect(workspaceId, noteId);
+  const superseded = latestEditSeq.get(noteKey(workspaceId, noteId)) !== seq;
   const storeIsNewer = stored?.rev !== undefined && nextRev !== undefined && stored.rev > nextRev;
-  if (
-    content !== sentContent &&
-    !pendingContent.has(noteKey(workspaceId, noteId)) &&
-    !storeIsNewer
-  ) {
-    yield* put(applyLocalNoteUpdate(workspaceId, noteId, { content }));
+  if (!superseded && !storeIsNewer && stored?.content !== echoed) {
+    yield* put(applyLocalNoteUpdate(workspaceId, noteId, { content: echoed }));
   }
   if (nextRev !== undefined) yield* call(setRevisionIfNewer, workspaceId, noteId, nextRev);
 }
 
 function* saveContent(command: ContentCommand) {
   const { workspaceId, noteId, content } = command;
+  const key = noteKey(workspaceId, noteId);
   const note = yield* selectNoteById.effect(workspaceId, noteId);
   // The loaded note's rev is always sent; it is absent only when the note was
   // never loaded (last-writer-wins). The daemon merges rather than conflicts,
@@ -224,6 +227,9 @@ function* saveContent(command: ContentCommand) {
   } catch (error) {
     logger.error('Failed to save note content', error);
     yield* call(refetchWorkspaceNotes, workspaceId);
+  } finally {
+    // This was the latest edit and nothing later can compare against it.
+    if (latestEditSeq.get(key) === command.seq) latestEditSeq.delete(key);
   }
 }
 
@@ -325,7 +331,9 @@ function* handleContentAction(
   if (!workspaceId || !noteId || typeof content !== 'string') return;
   yield* put(applyLocalNoteUpdate(workspaceId, noteId, { content }));
   const key = noteKey(workspaceId, noteId);
-  const pending = { workspaceId, noteId, content };
+  const seq = (latestEditSeq.get(key) ?? 0) + 1;
+  latestEditSeq.set(key, seq);
+  const pending: PendingContent = { workspaceId, noteId, content, seq };
   pendingContent.set(key, pending);
   try {
     if (!immediate) yield* delay(NOTE_CONTENT_SAVE_DEBOUNCE_MS);
@@ -490,6 +498,9 @@ function* cleanupWorkspace(queue: Channel<MutationEnvelope>, action: WorkspaceCl
   for (const key of pendingContent.keys()) {
     if (key.startsWith(`${workspaceId}:`)) pendingContent.delete(key);
   }
+  for (const key of latestEditSeq.keys()) {
+    if (key.startsWith(`${workspaceId}:`)) latestEditSeq.delete(key);
+  }
   const queued = yield* flush(queue);
   for (const envelope of queued) {
     if (envelope.command.workspaceId === workspaceId) {
@@ -535,6 +546,7 @@ export function* notesWriteSaga() {
       if (envelope.completion) yield* put(envelope.completion, false);
     }
     pendingContent.clear();
+    latestEditSeq.clear();
     queue.close();
     if (noteMutationQueue === queue) noteMutationQueue = undefined;
   }

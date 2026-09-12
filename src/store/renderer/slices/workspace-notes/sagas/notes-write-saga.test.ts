@@ -75,11 +75,22 @@ function harness(seed: Note | Note[] = note()) {
     return action;
   };
   const task = runSaga({ channel, dispatch, getState: () => ({ workspaceNotes }) }, notesWriteSaga);
-  return { actions, channel, getState: () => workspaceNotes, task };
+  return { actions, channel, dispatch, getState: () => workspaceNotes, task };
 }
 
 describe('notesWriteSaga', () => {
+  // Suite invariant (AC10): every content save for a loaded note forwards a
+  // defined rev as expectedVersion. Only the never-loaded LWW test opts out.
+  let expectUnloadedSave = false;
+
   afterEach(() => {
+    const setContent = appClient.notes.setContent;
+    if (!expectUnloadedSave && vi.isMockFunction(setContent)) {
+      for (const call of setContent.mock.calls) {
+        expect(call[2], `setContent(${String(call[0])}) sent no rev`).toEqual(expect.any(Number));
+      }
+    }
+    expectUnloadedSave = false;
     vi.useRealTimers();
     vi.restoreAllMocks();
     vi.clearAllMocks();
@@ -351,7 +362,112 @@ describe('notesWriteSaga', () => {
     await run.task.toPromise();
   });
 
+  it('applies an echo equal to the sent content over an older refetch that landed in flight', async () => {
+    let resolveSave!: (result: unknown) => void;
+    const setContent = vi.spyOn(appClient.notes, 'setContent').mockReturnValue(
+      new Promise((resolve) => {
+        resolveSave = resolve;
+      }) as never,
+    );
+    const run = harness();
+
+    run.channel.put(updateNoteContent(WS, NOTE, 'mine', true));
+    await settle();
+    expect(setContent.mock.calls).toEqual([[NOTE, 'mine', 4, WS]]);
+
+    run.dispatch(
+      loadWorkspaceNotesSucceeded([WS], {
+        [WS]: [note({ content: 'refetched older content', rev: 5 })],
+      }),
+    );
+    resolveSave({ success: true, newContent: 'mine', noteRev: 6 });
+    await settle();
+
+    const applied = run.getState().byWorkspaceId[WS]?.notes.map[NOTE];
+    expect(applied?.content).toEqual('mine');
+    expect(applied?.rev).toEqual(6);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('keeps newer local text queued behind an older save when the older echo lands', async () => {
+    let resolveFirst!: (result: unknown) => void;
+    let resolveSecond!: (result: unknown) => void;
+    const setContent = vi
+      .spyOn(appClient.notes, 'setContent')
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveFirst = resolve;
+        }) as never,
+      )
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveSecond = resolve;
+        }) as never,
+      );
+    const run = harness();
+
+    run.channel.put(updateNoteContent(WS, NOTE, 'first', true));
+    await settle();
+    run.channel.put(updateNoteContent(WS, NOTE, 'first plus typing', true));
+    await settle();
+    expect(setContent.mock.calls).toEqual([[NOTE, 'first', 4, WS]]);
+
+    resolveFirst({ success: true, newContent: 'first plus agent', noteRev: 5 });
+    await settle();
+    let current = run.getState().byWorkspaceId[WS]?.notes.map[NOTE];
+    expect(current?.content).toEqual('first plus typing');
+    expect(current?.rev).toEqual(5);
+    // The queued save read the advanced rev, not the stale 4.
+    expect(setContent.mock.calls).toEqual([
+      [NOTE, 'first', 4, WS],
+      [NOTE, 'first plus typing', 5, WS],
+    ]);
+
+    resolveSecond({ success: true, newContent: 'first plus typing', noteRev: 6 });
+    await settle();
+    current = run.getState().byWorkspaceId[WS]?.notes.map[NOTE];
+    expect(current?.content).toEqual('first plus typing');
+    expect(current?.rev).toEqual(6);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('keeps a still-debounced newer edit when the older save echoes merged text', async () => {
+    vi.useFakeTimers();
+    let resolveFirst!: (result: unknown) => void;
+    const setContent = vi
+      .spyOn(appClient.notes, 'setContent')
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveFirst = resolve;
+        }) as never,
+      )
+      .mockResolvedValue({ success: true });
+    const run = harness();
+
+    run.channel.put(updateNoteContent(WS, NOTE, 'first', true));
+    await settle();
+    run.channel.put(updateNoteContent(WS, NOTE, 'first plus typing'));
+    await settle();
+
+    resolveFirst({ success: true, newContent: 'first plus agent', noteRev: 5 });
+    await settle();
+    const current = run.getState().byWorkspaceId[WS]?.notes.map[NOTE];
+    expect(current?.content).toEqual('first plus typing');
+    expect(current?.rev).toEqual(5);
+
+    await vi.advanceTimersByTimeAsync(NOTE_CONTENT_SAVE_DEBOUNCE_MS + 1);
+    expect(setContent.mock.calls).toEqual([
+      [NOTE, 'first', 4, WS],
+      [NOTE, 'first plus typing', 5, WS],
+    ]);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
   it('omits expectedVersion only when the note was never loaded', async () => {
+    expectUnloadedSave = true;
     const setContent = vi.spyOn(appClient.notes, 'setContent').mockResolvedValue({ success: true });
     const run = harness();
 
