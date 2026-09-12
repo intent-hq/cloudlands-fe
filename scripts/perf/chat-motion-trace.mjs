@@ -26,9 +26,11 @@ import {
   summarize,
 } from './chat-motion-lib.mjs';
 import {
+  FOOTER_HEADER_SELECTOR,
   VIEWPORT_SELECTOR,
   clickControl,
   installPageHelper,
+  waitForFooterHeader,
   waitForFrames,
 } from './chat-motion-page.mjs';
 
@@ -36,7 +38,6 @@ const USAGE =
   'usage: pnpm perf:chat-motion --url <app-url> --out <dir> [--scenario footer|context-well] [--inflate 10000] [--frames 40] [--scroll-up 800] [--quiet-ms 750] [--quiet-timeout 15000] [--timeout 180000] [--headed]';
 const TRANSCRIPT_INNER_SELECTOR = '[data-testid="chat-transcript-inner"]';
 const UTILITY_STACK_SELECTOR = '[data-testid="transcript-utility-stack"]';
-const FOOTER_HEADER_SELECTOR = '[aria-controls^="event-subscriptions-body"]';
 const CONTEXT_LAUNCHER_SELECTOR = '[data-sidebar-launcher="context"] button[aria-expanded="false"]';
 const CONTEXT_CARD_SELECTOR = '[data-sidebar-card-surface][data-sidebar-card-tab="context"]';
 const CONTEXT_CLOSE_SELECTOR = `${CONTEXT_CARD_SELECTOR} [data-sidebar-close]`;
@@ -216,7 +217,7 @@ const FOOTER_TARGET = {
   screenshots: { afterTrace: 'expanded.png', afterFirstMotion: 'collapsed.png' },
   async prepare(page, options) {
     const headerSelector = FOOTER_HEADER_SELECTOR;
-    await page.waitForSelector(headerSelector, { timeout: options.timeout });
+    await waitForFooterHeader(page, { timeout: options.timeout });
     if ((await page.locator(headerSelector).getAttribute('aria-expanded')) !== 'true') {
       await page.locator(headerSelector).evaluate((node) => node.click());
       await page.waitForFunction(

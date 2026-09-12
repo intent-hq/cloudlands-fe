@@ -5,8 +5,36 @@
 // analysis window instead of landing after it.
 
 export const VIEWPORT_SELECTOR = '[data-testid="chat-transcript-scroll-viewport"]';
+export const FOOTER_HEADER_SELECTOR = '[aria-controls^="event-subscriptions-body"]';
+const FOOTER_BODY_SELECTOR = '[data-testid="event-subscriptions-body"]';
+export const FOOTER_HEADER_PREREQUISITE =
+  'footer scenario needs a workspace whose event-subscriptions footer shows its disclosure header; agent-only subscriptions render no header';
 const CLICK_DISPATCH_TIMEOUT_MS = 5000;
 const CLICK_TIMEOUT_MS = 5000;
+const FOOTER_HEADER_GRACE_MS = 3000;
+
+// The footer card renders its body without a disclosure header when every subscription is
+// an agent (EventSubscriptionsCard `isAgentOnly`), so a body seen without a header within
+// the grace window is a prerequisite failure, not something worth the full timeout.
+export async function waitForFooterHeader(
+  page,
+  { timeout, headerGraceMs = FOOTER_HEADER_GRACE_MS },
+) {
+  await page.waitForSelector(`${FOOTER_HEADER_SELECTOR}, ${FOOTER_BODY_SELECTOR}`, {
+    state: 'attached',
+    timeout,
+  });
+  try {
+    await page.waitForSelector(FOOTER_HEADER_SELECTOR, {
+      state: 'attached',
+      timeout: headerGraceMs,
+    });
+  } catch {
+    throw new Error(
+      `${FOOTER_HEADER_PREREQUISITE} (found ${FOOTER_BODY_SELECTOR} without ${FOOTER_HEADER_SELECTOR} after ${headerGraceMs}ms)`,
+    );
+  }
+}
 
 export function installPageHelper(page, { frames, viewportSelector = VIEWPORT_SELECTOR }) {
   return page.evaluate(

@@ -14,8 +14,10 @@ import {
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore — plain .mjs module without type declarations
 import {
+  FOOTER_HEADER_PREREQUISITE,
   clickControl,
   installPageHelper,
+  waitForFooterHeader,
   waitForFrames,
 } from '../scripts/perf/chat-motion-page.mjs';
 
@@ -192,4 +194,35 @@ test('a click that lands on a re-rendered control fails naming the motion', asyn
   await expect(
     clickControl(page, { label: 'probe', mark: 'probe', selector: '#control', pointer: true }),
   ).rejects.toThrow(/^probe: click never dispatched on #control within 5000ms/);
+});
+
+// EventSubscriptionsCard renders its body without the disclosure header when every
+// subscription is an agent; the footer scenario must name that prerequisite promptly
+// instead of waiting the full --timeout for a header that never mounts.
+test('footer scenario: a body without a disclosure header fails naming the prerequisite', async ({
+  page,
+}) => {
+  await page.setContent('<div data-testid="event-subscriptions-body">agent-only</div>');
+  const startedAt = Date.now();
+  await expect(waitForFooterHeader(page, { timeout: 60_000, headerGraceMs: 500 })).rejects.toThrow(
+    FOOTER_HEADER_PREREQUISITE,
+  );
+  expect(Date.now() - startedAt).toBeLessThan(10_000);
+});
+
+test('footer scenario: a disclosure header that mounts after the body is accepted', async ({
+  page,
+}) => {
+  await page.setContent('<div data-testid="event-subscriptions-body">subscriptions</div>');
+  await page.evaluate(() => {
+    setTimeout(() => {
+      const header = document.createElement('button');
+      header.setAttribute('aria-controls', 'event-subscriptions-body-1');
+      header.setAttribute('aria-expanded', 'true');
+      document.body.prepend(header);
+    }, 300);
+  });
+  await expect(
+    waitForFooterHeader(page, { timeout: 5_000, headerGraceMs: 2_000 }),
+  ).resolves.toBeUndefined();
 });
