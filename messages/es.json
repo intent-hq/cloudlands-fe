@@ -2100,6 +2100,7 @@
   "chat_slashSkillSuggestionList_noResults_label": "No hay habilidades coincidentes",
   "chat_modelPicker_defaultModelList_title": "Mostrando la lista de modelos predeterminada.",
   "chat_modelPicker_defaultModel_description": "Dejar que el especialista elija el mejor modelo",
+  "chat_modelPicker_defaultModelPreview_label": "Predeterminado ({model})",
   "chat_modelPicker_defaultModel_label": "Modelo predeterminado",
   "chat_modelPicker_effort_label": "Esfuerzo: {levels}",
   "chat_modelPicker_groupModels_ariaLabel": "Modelos de {group}",

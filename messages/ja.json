@@ -2100,6 +2100,7 @@
   "chat_slashSkillSuggestionList_noResults_label": "一致するスキルがありません",
   "chat_modelPicker_defaultModelList_title": "デフォルトのモデルリストを表示しています。",
   "chat_modelPicker_defaultModel_description": "スペシャリストに最適なモデルを選ばせる",
+  "chat_modelPicker_defaultModelPreview_label": "デフォルト（{model}）",
   "chat_modelPicker_defaultModel_label": "デフォルトモデル",
   "chat_modelPicker_effort_label": "労力: {levels}",
   "chat_modelPicker_groupModels_ariaLabel": "{group} のモデル",

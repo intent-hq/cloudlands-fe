@@ -2100,6 +2100,7 @@
   "chat_slashSkillSuggestionList_noResults_label": "Aucune compétence correspondante",
   "chat_modelPicker_defaultModelList_title": "Affichage de la liste de modèles par défaut.",
   "chat_modelPicker_defaultModel_description": "Laisser le spécialiste choisir le meilleur modèle",
+  "chat_modelPicker_defaultModelPreview_label": "Par défaut ({model})",
   "chat_modelPicker_defaultModel_label": "Modèle par défaut",
   "chat_modelPicker_effort_label": "Effort : {levels}",
   "chat_modelPicker_groupModels_ariaLabel": "Modèles {group}",

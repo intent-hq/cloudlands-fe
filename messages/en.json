@@ -2101,6 +2101,7 @@
   "chat_slashSkillSuggestionList_noResults_label": "No matching skills",
   "chat_modelPicker_defaultModelList_title": "Showing default model list.",
   "chat_modelPicker_defaultModel_description": "Let the specialist choose the best model",
+  "chat_modelPicker_defaultModelPreview_label": "Default ({model})",
   "chat_modelPicker_defaultModel_label": "Default model",
   "chat_modelPicker_effort_label": "Effort: {levels}",
   "chat_modelPicker_groupModels_ariaLabel": "{group} models",

@@ -2100,6 +2100,7 @@
   "chat_slashSkillSuggestionList_noResults_label": "Keine passenden Skills",
   "chat_modelPicker_defaultModelList_title": "Standard-Modellliste wird angezeigt.",
   "chat_modelPicker_defaultModel_description": "Lassen Sie den Spezialisten das beste Modell wählen",
+  "chat_modelPicker_defaultModelPreview_label": "Standard ({model})",
   "chat_modelPicker_defaultModel_label": "Standardmodell",
   "chat_modelPicker_effort_label": "Aufwand: {levels}",
   "chat_modelPicker_groupModels_ariaLabel": "{group}-Modelle",

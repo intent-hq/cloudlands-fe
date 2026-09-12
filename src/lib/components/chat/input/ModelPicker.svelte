@@ -215,7 +215,7 @@
     defaultOptionDescription?: string;
     // Wraps the resolved defaultModelId label on the trigger when no explicit
     // model is selected (e.g. "Default ({model})" for the specialist editor's
-    // inherit state). Only applied when defaultModelId is set.
+    // inherit state). Also applies to the catalog-default fallback.
     formatDefaultModelLabel?: (modelLabel: string) => string;
     // Gates agent-session updates (updateAgentSessionFields, agent.setModel).
     updateGlobalStore?: boolean;
@@ -959,6 +959,11 @@
     defaultModelId ? mapDefaultPseudoSelection(defaultModelId) : undefined,
   );
 
+  function formatResolvedDefaultLabel(model: string): string {
+    if (formatDefaultModelLabel) return formatDefaultModelLabel(model);
+    return showDefaultOption ? m.chat_modelPicker_defaultModelPreview_label({ model }) : model;
+  }
+
   const currentModelLabel = $derived.by(() => {
     if (hasExplicitModel) {
       return localModel
@@ -972,17 +977,12 @@
     // defaultModelLabel (e.g. "Provider default"), then the bare model id. A
     // `<provider>:default` preview maps to its D2 row's label first.
     if (defaultModelId) {
-      const resolvedLabel =
-        defaultModelIdMappedOption?.label ??
-        getModelLabel(defaultModelId) ??
-        defaultModelLabel ??
-        parseCompoundModelId(defaultModelId).modelId;
-      return formatDefaultModelLabel ? formatDefaultModelLabel(resolvedLabel) : resolvedLabel;
+      const resolvedLabel = defaultModelIdMappedOption?.label ?? getModelLabel(defaultModelId);
+      if (resolvedLabel) return formatResolvedDefaultLabel(resolvedLabel);
+      return defaultModelLabel ?? parseCompoundModelId(defaultModelId).modelId;
     }
     if (catalogDefaultFallbackOption) {
-      return formatDefaultModelLabel
-        ? formatDefaultModelLabel(catalogDefaultFallbackOption.label)
-        : catalogDefaultFallbackOption.label;
+      return formatResolvedDefaultLabel(catalogDefaultFallbackOption.label);
     }
     return defaultModelLabel ?? m.chat_modelPicker_defaultModel_label();
   });

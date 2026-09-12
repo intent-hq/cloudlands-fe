@@ -2100,6 +2100,7 @@
   "chat_slashSkillSuggestionList_noResults_label": "没有匹配的技能",
   "chat_modelPicker_defaultModelList_title": "正在显示默认模型列表。",
   "chat_modelPicker_defaultModel_description": "让专家选择最佳模型",
+  "chat_modelPicker_defaultModelPreview_label": "默认（{model}）",
   "chat_modelPicker_defaultModel_label": "默认模型",
   "chat_modelPicker_effort_label": "推理力度：{levels}",
   "chat_modelPicker_groupModels_ariaLabel": "{group} 模型",

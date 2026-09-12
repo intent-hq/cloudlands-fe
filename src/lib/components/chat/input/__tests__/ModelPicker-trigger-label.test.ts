@@ -400,6 +400,52 @@ describe('ModelPicker trigger label regressions', () => {
     );
   });
 
+  it.each([
+    { showDefaultOption: true, expected: 'Default (Balanced)' },
+    { showDefaultOption: false, expected: 'Balanced' },
+  ])(
+    'signals inheritance only when the default option is shown: $showDefaultOption',
+    ({ showDefaultOption, expected }) => {
+      availableModels$.set([{ value: 'auggie:balanced', label: 'Balanced' }]);
+      render(ModelPicker, {
+        props: {
+          selectedModel: undefined,
+          defaultModelId: 'auggie:balanced',
+          showDefaultOption,
+          isLocked: true,
+        },
+      });
+      expect(screen.getByRole('button').textContent?.trim()).toBe(expected);
+    },
+  );
+
+  it('lets the caller format the resolved inherited model', () => {
+    availableModels$.set([{ value: 'auggie:balanced', label: 'Balanced' }]);
+    render(ModelPicker, {
+      props: {
+        selectedModel: undefined,
+        defaultModelId: 'auggie:balanced',
+        showDefaultOption: true,
+        formatDefaultModelLabel: (model) => `Inherited: ${model}`,
+        isLocked: true,
+      },
+    });
+    expect(screen.getByRole('button').textContent?.trim()).toBe('Inherited: Balanced');
+  });
+
+  it('wraps the resolved catalog default when inheritance is selected', () => {
+    availableModels$.set([{ value: 'auggie:balanced', label: 'Balanced', isDefault: true }]);
+    render(ModelPicker, {
+      props: {
+        selectedModel: undefined,
+        fallbackToCatalogDefault: true,
+        showDefaultOption: true,
+        isLocked: true,
+      },
+    });
+    expect(screen.getByRole('button').textContent?.trim()).toBe('Default (Balanced)');
+  });
+
   it('still renders the default-model fallback label for the bare "default" sentinel', () => {
     render(ModelPicker, {
       props: {
