@@ -102,6 +102,18 @@ describe('perf harness arguments', () => {
       message: /--scenario must be/,
     },
     {
+      args: ['--url', 'http://h/', '--out', 'x', '--scenario', 'constructor'],
+      message: /--scenario must be/,
+    },
+    {
+      args: ['--url', 'http://h/', '--out', 'x', '--scenario', '__proto__'],
+      message: /--scenario must be/,
+    },
+    {
+      args: ['--url', 'http://h/', '--out', 'x', '--scenario', 'toString'],
+      message: /--scenario must be/,
+    },
+    {
       args: ['--url', 'http://h/', '--out', 'x', '--frames', '1.5'],
       message: /--frames must be an integer/,
     },
@@ -109,6 +121,20 @@ describe('perf harness arguments', () => {
       args: ['--url', 'http://h/', '--out', 'x', '--inflate', 'many'],
       message: /--inflate must be an integer/,
     },
+    {
+      args: ['--url', 'http://h/', '--out', 'x', '--inflate', ''],
+      message: /--inflate must be an integer/,
+    },
+    {
+      args: ['--url', 'http://h/', '--out', 'x', '--quiet-ms', ' '],
+      message: /--quiet-ms must be an integer/,
+    },
+    {
+      args: ['--url', 'http://h/', '--out', 'x', '--scroll-up', '\t'],
+      message: /--scroll-up must be an integer/,
+    },
+    { args: ['--url', 'http://h/', '--out', 'x', 'constructor', '1'], message: /Unknown option/ },
+    { args: ['--url', 'http://h/', '--out', 'x', 'toString', '1'], message: /Unknown option/ },
     {
       args: ['--url', 'http://h/', '--out', 'x', '--frames', '0'],
       message: /--frames must be an integer from 1/,

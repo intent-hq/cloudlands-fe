@@ -17,6 +17,8 @@ const INTEGER_OPTIONS = {
   '--timeout': { key: 'timeout', min: 1 },
 };
 
+const hasOwn = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
+
 function optionValue(argv, index, flag) {
   const value = argv[index + 1];
   if (value === undefined || value.startsWith('--')) {
@@ -26,7 +28,7 @@ function optionValue(argv, index, flag) {
 }
 
 function integerOption(flag, value, { min, max = Number.MAX_SAFE_INTEGER }) {
-  const parsed = Number(value);
+  const parsed = value.trim() === '' ? Number.NaN : Number(value);
   if (!Number.isInteger(parsed) || parsed < min || parsed > max) {
     throw new Error(`${flag} must be an integer from ${min} to ${max}.`);
   }
@@ -73,11 +75,11 @@ export function parseArgs(argv) {
       options.out = optionValue(argv, index, flag);
     } else if (flag === '--scenario') {
       const value = optionValue(argv, index, flag);
-      if (!(value in SCENARIOS)) {
+      if (!hasOwn(SCENARIOS, value)) {
         throw new Error(`--scenario must be one of: ${Object.keys(SCENARIOS).join(', ')}.`);
       }
       options.scenario = value;
-    } else if (flag in INTEGER_OPTIONS) {
+    } else if (hasOwn(INTEGER_OPTIONS, flag)) {
       const { key, min } = INTEGER_OPTIONS[flag];
       options[key] = integerOption(flag, optionValue(argv, index, flag), { min });
     } else {
