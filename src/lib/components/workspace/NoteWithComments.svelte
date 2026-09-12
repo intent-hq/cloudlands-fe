@@ -991,16 +991,38 @@
   // The saga calls notesClient.restoreVersion and dispatches handleExternalNoteUpdate,
   // which triggers the existing external content update flow (Redux content change →
   // safety-net externalUpdateVersion increment → runExternalContentUpdateEffect).
-  function handleRestoreVersion(versionId: string) {
-    if (!noteId || !workspace?.id) {
+  async function handleRestoreVersion(versionId: string) {
+    const targetWorkspaceId = workspace?.id;
+    const targetNoteId = noteId;
+    if (!targetNoteId || !targetWorkspaceId) {
       logger.warn('[RestoreVersion] Cannot restore version: missing noteId or workspace');
       return;
     }
 
+    // Close the version history view
+    showVersionHistory = false;
+
+    // A save the user's typing already produced — still on the component's
+    // debounce or debounced in the write-service — must reach the daemon
+    // BEFORE the restore, as its own version. Sent after it, the daemon would
+    // merge that pre-restore draft onto the restored text (its base rev
+    // predates the restore), and the merged echo, not the restored version,
+    // is what the pipeline would then apply. A save already in flight is
+    // ahead of the restore on the wire. Mirrors the saga's own flush.
+    if (saveDebounceTimer) {
+      clearTimeout(saveDebounceTimer);
+      saveDebounceTimer = null;
+      void saveEditorContent();
+    }
+    await flushNoteContent(targetWorkspaceId, targetNoteId);
+    if (isComponentDestroyed || noteId !== targetNoteId || workspace?.id !== targetWorkspaceId) {
+      return;
+    }
+
     logger.info('[RestoreVersion] Dispatching restoreNoteVersion', {
-      noteId,
+      noteId: targetNoteId,
       versionId,
-      workspaceId: workspace.id,
+      workspaceId: targetWorkspaceId,
     });
 
     // The restored content is applied as a whole-document replacement (no
@@ -1010,7 +1032,7 @@
     // Dispatch to saga — the saga will call notesClient.restoreVersion and
     // dispatch handleExternalNoteUpdate, which flows through the existing
     // external update system to update the editor
-    appStore.dispatch(restoreNoteVersion(workspace.id, noteId, versionId));
+    appStore.dispatch(restoreNoteVersion(targetWorkspaceId, targetNoteId, versionId));
 
     // Safety: the saga surfaces no failure, so clear the flag after a timeout
     // in case the restore fails and never produces an update to apply.
@@ -1020,9 +1042,6 @@
         isRestorePending = false;
       }
     }, 5000);
-
-    // Close the version history view
-    showVersionHistory = false;
   }
 
   // Initialize editor
@@ -2123,6 +2142,7 @@
             workspaceId={workspace.id}
             {noteId}
             content={currentNoteContent}
+            rev={currentNoteRev}
             {editable}
             {isPanelFocused}
           />

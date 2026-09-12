@@ -13,6 +13,7 @@ import {
 } from '$features/notes/notes-write-service';
 
 const {
+  mockDispatch,
   mockInvoke,
   mockLogger,
   constantReadable,
@@ -235,12 +236,15 @@ vi.mock('$lib/components/tiptap/TaskMenu.svelte', async () => {
   return { default: MockSimple };
 });
 
-vi.mock('$lib/components/workspace/NoteVersionHistory.svelte', async () => {
-  const MockSimple = (
-    await import('$lib/components/workspace/sidebar/__tests__/mocks/MockSimple.svelte')
-  ).default;
-  return { default: MockSimple };
-});
+// Captures the version-history props so a test can drive `onRestore`.
+const versionHistory = vi.hoisted(() => ({
+  props: null as null | { onRestore?: (versionId: string) => unknown },
+}));
+vi.mock('$lib/components/workspace/NoteVersionHistory.svelte', () => ({
+  default: (_anchor: unknown, props: { onRestore?: (versionId: string) => unknown }) => {
+    versionHistory.props = props;
+  },
+}));
 
 vi.mock('$lib/components/workspace/NoteMetadataBar.svelte', async () => {
   const MockSimple = (
@@ -1000,6 +1004,69 @@ describe('NoteWithComments task conversion regression', () => {
 
       expect(editor.getText()).toBe('AGENT note A local');
     });
+  });
+
+  // Regression (PR #2404 review): a save the user's typing produced was still
+  // pending when they clicked restore. Sent after the restore RPC, the daemon
+  // merged that pre-restore draft onto the restored text, and the merged
+  // echo — not the restored version — is what the editor then showed.
+  it('saves pending typing before dispatching a version restore', async () => {
+    replaceNotes([createNote('spec', 'A', 'note A', { rev: 4 })]);
+    const view = await renderInitializedNote('spec', 'note A');
+    const editor = (view.container.querySelector('.ProseMirror') as any).editor;
+    await waitFor(() => expect(editor.getText()).toBe('note A'));
+    expect(versionHistory.props?.onRestore).toBeTypeOf('function');
+    vi.useFakeTimers();
+    await vi.advanceTimersByTimeAsync(1200);
+
+    let pending = false;
+    let resolveFlush!: (value: { content: string; rev: number }) => void;
+    const flushed = new Promise<{ content: string; rev: number }>((resolve) => {
+      resolveFlush = resolve;
+    });
+    vi.mocked(hasPendingNoteContent).mockImplementation((_ws, id) => id === 'spec' && pending);
+    vi.mocked(updateNoteContent).mockImplementation((_ws, id) => {
+      if (id === 'spec') pending = true;
+    });
+    vi.mocked(flushNoteContent).mockImplementation((_ws, id) =>
+      id === 'spec' ? flushed : Promise.resolve(undefined),
+    );
+    vi.mocked(flushNoteContent).mockClear();
+    mockDispatch.mockClear();
+    const restoreDispatched = () =>
+      mockDispatch.mock.calls.some(
+        ([action]) => action?.type === 'workspaceNotes/restoreNoteVersion',
+      );
+
+    try {
+      // A keystroke still on the component's save debounce when restore is clicked.
+      editor.commands.insertContentAt(editor.state.doc.content.size - 1, ' local');
+      const restore = versionHistory.props!.onRestore!('version-1');
+      await tick();
+
+      expect(updateNoteContent).toHaveBeenCalledWith('ws-1', 'spec', 'note A local', {
+        immediate: false,
+        baseRev: 4,
+      });
+      expect(flushNoteContent).toHaveBeenCalledWith('ws-1', 'spec');
+      expect(restoreDispatched()).toBe(false);
+
+      pending = false;
+      resolveFlush({ content: 'note A local', rev: 5 });
+      await restore;
+
+      expect(mockDispatch).toHaveBeenCalledWith({
+        type: 'workspaceNotes/restoreNoteVersion',
+        payload: { workspaceId: 'ws-1', noteId: 'spec', versionId: 'version-1' },
+      });
+    } finally {
+      // The suite's beforeEach only clears call history; a failure before
+      // `pending` is reset would otherwise leak a stuck pending flag into
+      // later `spec` tests through the unmount-time save.
+      vi.mocked(hasPendingNoteContent).mockImplementation(() => false);
+      vi.mocked(updateNoteContent).mockImplementation(() => undefined);
+      vi.mocked(flushNoteContent).mockImplementation(async () => undefined);
+    }
   });
 
   it('does not apply a pending note conversion after unmount', async () => {
