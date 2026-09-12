@@ -14,6 +14,15 @@
  * version always matches the CT transform version, then forwards all CLI
  * args to `playwright test -c playwright-ct.config.ts`.
  *
+ * Local CT bundle builds need the same 8 GB heap cap as CI's build step;
+ * Node's default heap can run out while Vite bundles the component registry.
+ * Default NODE_OPTIONS only when absent, preserving explicit caller options.
+ * CI keeps its per-step limits: 8 GB for building, 4 GB for cached test runs,
+ * so the larger build allowance does not leak into its long-lived test phase.
+ * Playwright rebuilds in-process when sources change between dependency
+ * population and begin(), so concurrent edits during a cold build can exceed
+ * the cap; this is upstream behavior, not a launcher concern.
+ *
  * It also owns the HTML-report policy (intent-hq/intent#4652): Playwright's
  * html reporter defaults to `open: 'on-failure'`, which keeps the process
  * alive serving the report on :9323 after a failing run, so chained
@@ -228,6 +237,7 @@ export function buildChildEnv({ env = process.env, isTTY, openReport = false, ro
     env.PWTEST_CACHE_DIR?.trim() ||
     path.join(root, 'node_modules', '.cache', 'playwright-transform');
   const childEnv = { ...env, PWTEST_CACHE_DIR: transformCacheDir };
+  if (env.NODE_OPTIONS === undefined) childEnv.NODE_OPTIONS = '--max-old-space-size=8192';
   const { open, notice } = resolveHtmlReportOpen({ env, isTTY, openReport });
   if (open) childEnv.PLAYWRIGHT_HTML_OPEN = open;
   return { env: childEnv, notice };
