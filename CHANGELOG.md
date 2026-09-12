@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.149.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.149.1...v2.149.2) (2026-09-12)
+
+
+### 🐛 Bug Fixes
+
+* **i18n:** rename driving browser label to browser-use on this client ([#2386](https://github.com/intent-hq/cloudlands-fe/issues/2386)) ([298bb6f](https://github.com/intent-hq/cloudlands-fe/commit/298bb6feb74cdab3d8e110f90e3e31d2b2d42603))
+
 ## [2.149.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.149.0...v2.149.1) (2026-09-12)
 
 
