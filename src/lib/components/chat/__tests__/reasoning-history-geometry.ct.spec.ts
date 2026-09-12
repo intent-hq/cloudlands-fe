@@ -141,11 +141,19 @@ async function assertExpandedFixture(fixture: Locator, zoom: number, includeAnsw
     const answerBlock = stack.locator(':scope > [data-message-content-block="text"]');
     const answerContent = answerBlock.locator('p').first();
     await expect(answerBlock).toContainText('Final assistant answer.');
-    const [groupBox, answerBox] = await Promise.all([
-      group.boundingBox(),
-      answerContent.boundingBox(),
-    ]);
-    expect(answerBox!.y - (groupBox!.y + groupBox!.height)).toBeCloseTo(28 * zoom, 1);
+    // Measure the group and the answer in one frame and wait for the freshly
+    // expanded group to settle: separate boundingBox() round trips can
+    // straddle a layout pass and misreport the seam under load.
+    const groupHandle = await group.elementHandle();
+    await expect
+      .poll(() =>
+        answerContent.evaluate(
+          (answer, groupElement) =>
+            answer.getBoundingClientRect().top - groupElement!.getBoundingClientRect().bottom,
+          groupHandle,
+        ),
+      )
+      .toBeCloseTo(28 * zoom, 1);
     expect(await group.evaluate((element) => getComputedStyle(element).marginBottom)).toBe('12px');
     expect(await answerBlock.evaluate((element) => getComputedStyle(element).paddingTop)).toBe(
       '16px',
