@@ -244,7 +244,8 @@ beforeAll(() => {
 });
 
 afterAll(() => {
-  rmSync(root, { recursive: true, force: true });
+  // `root` is unset when the jq preflight threw before setup ran.
+  if (root) rmSync(root, { recursive: true, force: true });
 });
 
 beforeEach(() => {
