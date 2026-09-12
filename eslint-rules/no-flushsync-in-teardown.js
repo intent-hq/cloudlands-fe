@@ -75,10 +75,15 @@ function getStaticProperty(object, key) {
   return match;
 }
 
-// A parameter written to anywhere but its own default initializer cannot be
-// proven from the call-site argument.
+// A parameter that is redeclared in the body (`var p = true`, `function p() {}`)
+// or written to anywhere but its own default initializer cannot be proven from
+// the call-site argument. With the parameter as the only definition, an `init`
+// write can only be that default.
 function isReassigned(variable) {
-  return variable.references.some((reference) => reference.isWrite() && !reference.init);
+  return (
+    variable.defs.length !== 1 ||
+    variable.references.some((reference) => reference.isWrite() && !reference.init)
+  );
 }
 
 // Binding resolution goes through the scope manager so aliases resolve and

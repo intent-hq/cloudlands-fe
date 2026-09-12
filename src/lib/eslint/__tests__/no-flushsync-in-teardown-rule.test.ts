@@ -478,6 +478,44 @@ describe('no-flushsync-in-teardown ESLint rule', () => {
     ]);
   });
 
+  it('does not prove an opt-out from a parameter that is redeclared in the helper', async () => {
+    const messages = await lintSvelte(
+      component(`
+        import { flushSync } from 'svelte';
+        function run(sync) {
+          var sync = true;
+          if (sync) flushSync();
+        }
+        function runEarly(sync) {
+          var sync = true;
+          if (!sync) return;
+          flushSync();
+        }
+        function runFn(sync) {
+          if (sync) flushSync();
+          function sync() {}
+        }
+        function runDefault(sync = false) {
+          var sync = true;
+          if (sync) flushSync();
+        }
+        $effect(() => () => {
+          run(false);
+          runEarly(false);
+          runFn(false);
+          runDefault();
+        });
+      `),
+    );
+
+    expect(messages.map((message) => [message.line, message.message.split(' runs ')[0]])).toEqual([
+      [22, 'run() (which calls flushSync)'],
+      [23, 'runEarly() (which calls flushSync)'],
+      [24, 'runFn() (which calls flushSync)'],
+      [25, 'runDefault() (which calls flushSync)'],
+    ]);
+  });
+
   it('follows a callback parameter to the helper binding, not the parameter', async () => {
     const messages = await lintSvelte(
       component(`
