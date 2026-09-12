@@ -81,8 +81,8 @@
   const agentSessionsById$ = selectAgentSessionsById();
   const storedHookCount = $derived(
     $hooks$.filter(
-      (hook) =>
-        hook.agentId === agentId && (hook.state === 'scheduled' || hook.state === 'running'),
+      ({ agentId: ownerAgentId, state: hookState }) =>
+        ownerAgentId === agentId && (hookState === 'scheduled' || hookState === 'running'),
     ).length,
   );
   const storedPrCount = $derived($monitors$.filter((monitor) => monitor.state === 'active').length);
