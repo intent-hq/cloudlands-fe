@@ -78,6 +78,30 @@ describe('package.json bare pnpm nesting guard', () => {
     ]);
   });
 
+  it.each(['constructor', 'toString', '__proto__', 'hasOwnProperty'])(
+    'flags a script named %s despite the empty allowlist',
+    (name) => {
+      const scripts = JSON.parse(`{"${name}": "pnpm run lint:i18n-strings"}`);
+      expect(findBarePnpmViolations(scripts)).toMatchObject([
+        { script: name, fragment: 'pnpm run lint:i18n-strings' },
+      ]);
+      expect(findBarePnpmViolations(scripts, {})).toHaveLength(1);
+    },
+  );
+
+  it('honours only an explicit allowlist entry for a prototype-colliding name', () => {
+    const scripts = JSON.parse('{"constructor": "pnpm run x", "toString": "pnpm run y"}');
+    expect(findBarePnpmViolations(scripts, { constructor: 'documented reason' })).toMatchObject([
+      { script: 'toString', fragment: 'pnpm run y' },
+    ]);
+  });
+
+  it('treats a prototype-colliding allowlist entry as stale only when its script is absent', () => {
+    const scripts = JSON.parse('{"constructor": "pnpm run x"}');
+    expect(findStaleAllowlistEntries(scripts, { constructor: 'reason' })).toEqual([]);
+    expect(findStaleAllowlistEntries({}, { toString: 'reason' })).toEqual(['toString']);
+  });
+
   it('reports allowlist entries whose script is missing or clean', () => {
     const scripts = { clean: 'node scripts/pnpm-run.mjs x', dirty: 'pnpm run x' };
     const allowlist = { clean: 'stale', dirty: 'still needed', gone: 'removed script' };

@@ -41,7 +41,7 @@ function suggestFix(fragment) {
 export function findBarePnpmViolations(scripts, allowlist = ALLOWLIST) {
   const violations = [];
   for (const [name, value] of Object.entries(scripts)) {
-    if (typeof value !== 'string' || name in allowlist) continue;
+    if (typeof value !== 'string' || Object.hasOwn(allowlist, name)) continue;
     for (const match of value.matchAll(BARE_PNPM_PATTERN)) {
       const tail = value.slice(match.index);
       const end = tail.search(FRAGMENT_END);
@@ -55,7 +55,8 @@ export function findBarePnpmViolations(scripts, allowlist = ALLOWLIST) {
 export function findStaleAllowlistEntries(scripts, allowlist = ALLOWLIST) {
   return Object.keys(allowlist).filter(
     (name) =>
-      !(name in scripts) || findBarePnpmViolations({ [name]: scripts[name] }, {}).length === 0,
+      !Object.hasOwn(scripts, name) ||
+      findBarePnpmViolations({ [name]: scripts[name] }, {}).length === 0,
   );
 }
 
