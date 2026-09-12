@@ -123,6 +123,7 @@ import {
   selectDaemonHealth,
 } from '../../daemon-health/daemon-health-selectors';
 import { connectionStatusChanged } from '../../daemon-health/daemon-health-slice';
+import { removeScript } from '../../scripts/scripts-slice';
 import {
   selectWorkspaceItems,
   selectWorkspaceListLoadedForBackend,
@@ -792,13 +793,21 @@ function reportContext(action: { type: string; payload?: unknown }): string | nu
   return null;
 }
 
+/**
+ * Actions of other slices that the panel-layout reducer also handles and that
+ * can reshape a workspace's live panels — `scripts/removeScript` destroys the
+ * script's terminal tabs and hands the active slot to a sibling, which
+ * changes a browser tab's `displayed` fact without any `panelLayout/*` action.
+ */
+const CROSS_SLICE_LAYOUT_MUTATIONS: ReadonlySet<string> = new Set([removeScript.type]);
+
 function isLayoutMutation(action: unknown): action is { type: string; payload?: unknown } {
   return (
     typeof action === 'object' &&
     action !== null &&
     'type' in action &&
     typeof action.type === 'string' &&
-    action.type.startsWith('panelLayout/') &&
+    (action.type.startsWith('panelLayout/') || CROSS_SLICE_LAYOUT_MUTATIONS.has(action.type)) &&
     reportContext(action as { type: string; payload?: unknown }) !== null
   );
 }

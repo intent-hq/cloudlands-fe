@@ -45,6 +45,7 @@ import {
 } from '../../browser-tab-registry/browser-tab-registry-slice';
 import type { BrowserTabRegistryState } from '../../browser-tab-registry/browser-tab-registry-slice';
 import { connectionStatusChanged } from '../../daemon-health/daemon-health-slice';
+import { removeScript } from '../../scripts/scripts-slice';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
   clearPanelLayout,
@@ -351,6 +352,43 @@ describe('browserTabRegistrySaga', () => {
 
       // Same layout fact again: nothing to report.
       h.dispatch(setActiveTab(WS, 'b2', 'p1', 2000));
+      await flush();
+      expect(mocks.upsertTab).not.toHaveBeenCalled();
+      await stop(h);
+    });
+
+    it('re-reports displayed when a cross-slice script removal hands the active slot to a browser tab', async () => {
+      const terminal: PanelTab = {
+        id: 't1',
+        type: 'terminal',
+        title: 'Script',
+        closable: true,
+        scriptId: 'script-1',
+      };
+      const h = start({
+        layouts: { [WS]: settledLayout([terminal, browserTab({ browserUrl: 'http://a.test/' })]) },
+        health: 'down',
+        applied: true,
+      });
+      h.setHealth('healthy', 1);
+      h.dispatch(updateTabTitle(WS, 'b1', 'Example page'));
+      await flush();
+      expect(mocks.upsertTab.mock.calls).toEqual([[WS, expectedInput({ displayed: false })]]);
+      // Drain the host acknowledgement's own re-report so nothing is pending.
+      await flush();
+      expect(mocks.upsertTab).toHaveBeenCalledTimes(1);
+      mocks.upsertTab.mockClear();
+
+      // `scripts/removeScript` is not a `panelLayout/*` action, yet the layout
+      // reducer destroys the terminal tab and activates its browser sibling.
+      h.dispatch(removeScript(WS, 'script-1'));
+      await flush();
+      expect(h.tabs().map((tab) => tab.id)).toEqual(['b1']);
+      expect(mocks.upsertTab.mock.calls).toEqual([[WS, expectedInput({ displayed: true })]]);
+      mocks.upsertTab.mockClear();
+
+      // A removal that leaves the layout fact alone reports nothing.
+      h.dispatch(removeScript(WS, 'script-1'));
       await flush();
       expect(mocks.upsertTab).not.toHaveBeenCalled();
       await stop(h);
