@@ -84,11 +84,7 @@
     data-slot="select-content"
     data-static-position
     data-surface-level={surface}
-    class={cn(
-      menuOverlay(),
-      'w-full max-h-60 rounded-(--radius-medium)',
-      className,
-    )}
+    class={cn(menuOverlay(), 'w-full max-h-60 rounded-(--radius-medium)', className)}
     style="max-width: calc(100vw - var(--space-4));"
     child={staticContentChild}
   />

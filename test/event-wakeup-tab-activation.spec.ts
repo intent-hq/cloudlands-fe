@@ -1,6 +1,53 @@
 import { expect, test, type Page } from '@playwright/test';
 
-const baseUrl = process.env.PANEL_LIVE_BASE_URL ?? 'http://127.0.0.1:5191';
+import { resolve } from 'node:path';
+import { svelte } from '@sveltejs/vite-plugin-svelte';
+import { createServer, type ViteDevServer } from 'vite';
+import { viteHarnessCacheDir } from './vite-harness-cache.mjs';
+
+let server: ViteDevServer;
+let baseUrl = process.env.PANEL_LIVE_BASE_URL?.replace(/\/$/, '') ?? '';
+
+test.beforeAll(async () => {
+  if (baseUrl) return;
+  server = await createServer({
+    configFile: false,
+    root: process.cwd(),
+    cacheDir: viteHarnessCacheDir('event-wakeup-tab-activation'),
+    plugins: [svelte({ configFile: resolve('svelte.config.js') })],
+    optimizeDeps: {
+      entries: [
+        'src/features/layout/tab-types/AgentTabType.svelte',
+        'src/store/renderer/slices/panel-layout/sagas/panel-layout-saga.ts',
+        'test/fixtures/RootLifecyclePanelHost.svelte',
+      ],
+    },
+    resolve: {
+      alias: [
+        { find: '$lib', replacement: resolve('src/lib') },
+        { find: '$store', replacement: resolve('src/store') },
+        { find: '$features', replacement: resolve('src/features') },
+        { find: '$shared', replacement: resolve('src/shared') },
+        { find: '$app', replacement: resolve('playwright/app-stubs') },
+        {
+          find: /^@fortawesome\/free-(?:solid|regular|brands)-svg-icons$/,
+          replacement: resolve('src/lib/icons/phosphor-icons.ts'),
+        },
+        {
+          find: '@fortawesome/fontawesome-svg-core',
+          replacement: resolve('src/lib/icons/phosphor-icons.ts'),
+        },
+        { find: 'svelte-fa', replacement: resolve('src/lib/components/shared/icons/fa-proxy.ts') },
+      ],
+    },
+    server: { host: '127.0.0.1', port: 0, strictPort: false, watch: { ignored: ['**/*'] } },
+  });
+  await server.listen();
+  baseUrl = server.resolvedUrls?.local[0]?.replace(/\/$/, '') ?? '';
+  expect(baseUrl).not.toBe('');
+});
+
+test.afterAll(async () => server?.close());
 
 async function mountWakeupLayout(page: Page, width: number) {
   await page.goto(`${baseUrl}/src/app.html`);
@@ -28,18 +75,22 @@ async function mountWakeupLayout(page: Page, width: number) {
     };
     let listenerId = 0;
     window.electronAPI = {
-      invoke: async (channel: string, payload?: { method?: string }) => {
+      invoke: async (
+        channel: string,
+        payload?: { method?: string; params?: { agentId?: string } },
+      ) => {
         if (channel === 'backend:request') {
           if (payload?.method === 'agent.getQueue') {
             return { ok: true, result: { queue: [] } };
           }
           if (payload?.method === 'agent.getConversation') {
+            const messages = payload.params?.agentId === 'agent-source' ? [eventMessage] : [];
             return {
               ok: true,
               result: {
-                messages: [eventMessage],
+                messages,
                 truncated: false,
-                totalMessages: 1,
+                totalMessages: messages.length,
                 nextToken: null,
                 prevToken: null,
               },
@@ -62,19 +113,12 @@ async function mountWakeupLayout(page: Page, width: number) {
       devPort: null,
     };
     const actionOrder: string[] = [];
-    const originalGroup = console.groupCollapsed;
-    console.groupCollapsed = (...args) => {
-      const title = String(args[0]).replace('%c', '');
-      if (/^(appLayout|panelLayout|workspaceAgents|multiPanelContext)\//.test(title)) {
-        actionOrder.push(title.split(' ')[0]);
-      }
-      originalGroup(...args);
-    };
     (window as typeof window & { __eventActionOrder?: string[] }).__eventActionOrder = actionOrder;
     const [
       { mount, tick },
       { store },
       { appLayoutNavigationSaga },
+      { watchRightmostColumnRequests },
       { tabTypeRegistry },
       { faBell },
       { default: AgentTabType },
@@ -86,6 +130,7 @@ async function mountWakeupLayout(page: Page, width: number) {
       import('/@id/svelte'),
       import('/src/store/renderer/store.ts'),
       import('/src/store/renderer/slices/app-layout/sagas/app-layout-navigation-saga.ts'),
+      import('/src/store/renderer/slices/panel-layout/sagas/panel-layout-saga.ts'),
       import('/src/features/layout/tab-types/registry.ts'),
       import('/@id/@fortawesome/free-solid-svg-icons'),
       import('/src/features/layout/tab-types/AgentTabType.svelte'),
@@ -94,6 +139,12 @@ async function mountWakeupLayout(page: Page, width: number) {
       import('/test/fixtures/PanelSiblingTab.svelte'),
       import('/test/fixtures/RootLifecyclePanelHost.svelte'),
     ]);
+    store.addMiddleware(() => (next) => (action) => {
+      if (/^(appLayout|panelLayout|workspaceAgents|multiPanelContext)\//.test(action.type)) {
+        actionOrder.push(action.type);
+      }
+      return next(action);
+    });
     tabTypeRegistry.register({
       type: 'file',
       component: PanelSiblingTab,
@@ -151,6 +202,8 @@ async function mountWakeupLayout(page: Page, width: number) {
       },
       focusedPanelId: 'source',
       canvasWidth: 960,
+      columnCount: 2 as const,
+      columnCountInitialized: true,
     };
     document.body.replaceChildren();
     const target = document.createElement('div');
@@ -162,7 +215,10 @@ async function mountWakeupLayout(page: Page, width: number) {
         workspaceId,
         layout,
         hmrData: {},
-        startSagas: () => [store.runSaga(appLayoutNavigationSaga)],
+        startSagas: () => [
+          store.runSaga(appLayoutNavigationSaga),
+          store.runSaga(watchRightmostColumnRequests),
+        ],
         beforeLayoutMount: () => {
           store.dispatch(
             workspaceActions.setWorkspaceEntity({
@@ -216,8 +272,7 @@ async function captureFirstMountedFrame(page: Page) {
     const sample = () => {
       const workspace = store.state.panelLayout.byWorkspaceId['event-wakeup-layout'];
       const panels = [...document.querySelectorAll<HTMLElement>('[data-panel-id][data-layout-id]')];
-      const source = document.querySelector<HTMLElement>('[data-panel-id="source"]')!;
-      const wrappers = [...source.querySelectorAll<HTMLElement>('.tab-content-wrapper')].map(
+      const wrappers = [...document.querySelectorAll<HTMLElement>('.tab-content-wrapper')].map(
         (wrapper) => ({
           display: getComputedStyle(wrapper).display,
           ariaHidden: wrapper.getAttribute('aria-hidden'),
@@ -251,53 +306,65 @@ async function captureFirstMountedFrame(page: Page) {
         ],
       };
     };
-    return new Promise<ReturnType<typeof sample>>((resolve) => {
+    return new Promise<ReturnType<typeof sample>>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        observer.disconnect();
+        reject(new Error(`Wake target did not mount: ${JSON.stringify(sample())}`));
+      }, 10_000);
       const observer = new MutationObserver(() => {
-        const source = store.state.panelLayout.byWorkspaceId['event-wakeup-layout']?.panels.source;
-        const wrappers = [
-          ...document.querySelectorAll<HTMLElement>(
-            '[data-panel-id="source"] .tab-content-wrapper',
-          ),
-        ];
+        const panels = store.state.panelLayout.byWorkspaceId['event-wakeup-layout']?.panels;
+        const targetTab = Object.values(panels ?? {})
+          .flatMap((panel) => panel.tabs)
+          .find((tab) => tab.type === 'agent' && tab.agentId === 'agent-wakeup-target');
+        const wrappers = [...document.querySelectorAll<HTMLElement>('.tab-content-wrapper')];
         const targetMounted = wrappers.some(
           (wrapper) =>
-            !wrapper.classList.contains('hidden') && !wrapper.querySelector('.event-wakeup-banner'),
+            wrapper.dataset.tabId === targetTab?.id && !wrapper.classList.contains('hidden'),
         );
-        if (source?.tabs.length !== 2 || wrappers.length !== 2 || !targetMounted) return;
+        if (!targetMounted) return;
         observer.disconnect();
+        clearTimeout(timeout);
         requestAnimationFrame(() => resolve(sample()));
       });
       observer.observe(host, { attributes: true, childList: true, subtree: true });
+      Object.assign(window, { __wakeupFrameObserverReady: true });
     });
   });
 }
 
 test.describe('EventWakeupBanner panel navigation geometry', () => {
   for (const width of [1400, 760]) {
-    test(`first wake target stays mounted in the source panel at ${width}px`, async ({ page }) => {
+    test(`first wake target opens in the rightmost panel at ${width}px`, async ({ page }) => {
       await mountWakeupLayout(page, width);
       const firstFramePromise = captureFirstMountedFrame(page);
+      await page.waitForFunction(
+        () =>
+          (window as Window & { __wakeupFrameObserverReady?: boolean }).__wakeupFrameObserverReady,
+      );
       await page
         .locator('[data-panel-id="source"] .event-wakeup-banner')
         .getByRole('button', { name: /^Open agent Wakeup target$/ })
         .click();
       const frame = await firstFramePromise;
-      const target = frame.source.tabs.find(
+      const target = frame.sibling.tabs.find(
         (tab: { agentId?: string }) => tab.agentId === 'agent-wakeup-target',
       );
 
       expect(frame.panelIds).toEqual(['source', 'sibling']);
       expect(frame.root).toMatchObject({ type: 'split', direction: 'horizontal' });
-      expect(frame.source.tabs).toHaveLength(2);
-      expect(frame.source.activeTabId).toBe(target?.id);
-      expect(frame.sibling.activeTabId).toBe('sibling-file');
-      expect(frame.focusedPanelId).toBe('source');
+      // ba53c575 routes default agent opens to the rightmost fixed column.
+      expect(frame.source.tabs).toHaveLength(1);
+      expect(frame.source.activeTabId).toBe('agent-source');
+      expect(frame.sibling.tabs).toHaveLength(2);
+      expect(target).toBeDefined();
+      expect(frame.sibling.activeTabId).toBe(target?.id);
+      expect(frame.focusedPanelId).toBe('sibling');
       expect(frame.rects[0].right).toBeLessThanOrEqual(frame.rects[1].left);
       expect(frame.activeElementInInactiveWrapper).toBe(false);
       expect(frame.wrappers).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
-            hasWakeup: true,
+            hasWakeup: false,
             display: 'none',
             ariaHidden: 'true',
             inert: true,
@@ -306,13 +373,16 @@ test.describe('EventWakeupBanner panel navigation geometry', () => {
           expect.objectContaining({ display: 'block', ariaHidden: 'false', inert: false }),
         ]),
       );
-      expect(frame.actionOrder.filter((type) => type !== 'panelLayout/focusPanel')).toEqual([
-        'workspaceAgents/ensureAgentSessionLoaded',
-        'panelLayout/openTab',
+      const routingActions = [
         'appLayout/openAgentTabRequested',
-        'multiPanelContext/setWorkspace',
-        'multiPanelContext/updatePanels',
-      ]);
+        'workspaceAgents/ensureAgentSessionLoaded',
+        'panelLayout/openTabInRightmostColumnRequested',
+        'panelLayout/reconcilePanelColumnCount',
+        'panelLayout/openTabInRightmostColumn',
+      ];
+      expect(frame.actionOrder.filter((type) => routingActions.includes(type))).toEqual(
+        routingActions,
+      );
     });
   }
 });

@@ -1019,7 +1019,7 @@
                   variant="plain"
                   type="button"
                   bind:ref={tabButtons[workspaceId]}
-                  class="flex h-full w-full min-w-0 touch-none cursor-pointer select-none items-center gap-1 truncate rounded-[inherit] pl-3 pr-1 text-left text-xs font-medium outline-none! focus-visible:text-foreground forced-colors:focus-visible:text-[HighlightText]"
+                  class="flex h-full w-full min-w-0 touch-none cursor-pointer select-none items-center gap-1 truncate rounded-[inherit] pl-3 pr-1 text-left text-xs font-medium focus-visible:text-foreground forced-colors:focus-visible:text-[HighlightText]"
                   onclick={(event) => handleTabClick(event, workspaceId)}
                   onkeydown={(event) => handleTabKeydown(event, workspaceId)}
                   onfocusin={() => pointerOpenEligibleWorkspaceHoverCardIds.delete(workspaceId)}

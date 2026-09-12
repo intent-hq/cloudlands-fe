@@ -417,11 +417,7 @@
       preventScroll={false}
       data-static-position
       data-surface-level={surface}
-      class={cn(
-        menuOverlay(),
-        'w-full max-h-72 rounded-(--radius-medium)',
-        contentClass,
-      )}
+      class={cn(menuOverlay(), 'w-full max-h-72 rounded-(--radius-medium)', contentClass)}
       style="max-width: calc(100vw - var(--space-4));"
       child={staticContentChild}
     />

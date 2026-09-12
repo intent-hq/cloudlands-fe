@@ -57,8 +57,10 @@ const virtualModules: Record<string, string> = {
       globalThis.__workspaceTabScenario.currentId = workspaceId;
       currentSubscribers.forEach((run) => run(workspaceId));
     };
-    export const selectWorkspaceTabOrder = () =>
-      readable(() => globalThis.__workspaceTabScenario.tabOrder);`,
+    export const selectWorkspaceTabOrder = Object.assign(
+      () => readable(() => globalThis.__workspaceTabScenario.tabOrder),
+      { select: () => globalThis.__workspaceTabScenario.tabOrder },
+    );`,
   '$store/renderer/slices/workspace/workspace-selectors': `
     const readable = (read) => ({ subscribe(run) { run(read()); return () => {}; } });
     export const selectWorkspaceItems = Object.assign(
@@ -73,9 +75,13 @@ const virtualModules: Record<string, string> = {
     export const store = {
       dispatch(action) { globalThis.__workspaceTabScenario.actions.push(action); },
       get state() { return {}; },
+      getReadableState() { return { subscribe(run) { run({}); return () => {}; } }; },
     };`,
   '$shared/paraglide/messages.js': `
     export const m = {
+      layout_panelTabBar_close_label: () => 'Close',
+      layout_panelTabBar_closeAllOthers_label: () => 'Close all others',
+      layout_panelTabBar_closeTabsToRight_label: () => 'Close tabs to the right',
       layout_workspaceTabStrip_openSpaces_ariaLabel: () => 'Open spaces',
       layout_workspaceTabStrip_untitled_label: () => 'Untitled',
       layout_workspaceTabStrip_status_ariaLabel: ({ name, statuses }) => name + '. ' + statuses,
@@ -138,11 +144,13 @@ function geometryStubs(): Plugin {
       if (source === 'svelte-fa')
         return resolve(process.cwd(), 'src/lib/components/ui/__tests__/mocks/Fa.svelte');
       const canonical = canonicalSource(source);
-      if (canonical) return virtualPrefix + canonical;
+      if (canonical) return virtualPrefix + canonical + '.js';
       return null;
     },
     load(id) {
-      return id.startsWith(virtualPrefix) ? virtualModules[id.slice(virtualPrefix.length)] : null;
+      return id.startsWith(virtualPrefix)
+        ? virtualModules[id.slice(virtualPrefix.length, -3)]
+        : null;
     },
   };
 }
@@ -224,8 +232,8 @@ async function mountStrip(
     target.append(mask);
     const stripProps = {
       onActiveTabBoundsChange(bounds: { left: number; width: number } | null) {
-        mask.style.left = bounds ? `${bounds.left - 6}px` : '';
-        mask.style.width = bounds ? `${Math.max(0, bounds.width + 13)}px` : '';
+        mask.style.left = bounds ? `${bounds.left}px` : '';
+        mask.style.width = bounds ? `${bounds.width}px` : '';
       },
       onActiveTabTrackingChange(tracking: boolean) {
         mask.dataset.tracking = String(tracking);
@@ -351,8 +359,9 @@ async function expectNormalActiveShape(
     box(trailingFlare),
   ]);
   const tabBottom = tabBox.y + tabBox.height;
-  expect(leadingFlareBox.y + leadingFlareBox.height).toBeCloseTo(tabBottom, 1);
-  expect(trailingFlareBox.y + trailingFlareBox.height).toBeCloseTo(tabBottom, 1);
+  // 8b092e33 aligns the extracted stroke with the seam using a 2px SVG inset.
+  expect(leadingFlareBox.y + leadingFlareBox.height).toBeCloseTo(tabBottom - 2 * zoom, 1);
+  expect(trailingFlareBox.y + trailingFlareBox.height).toBeCloseTo(tabBottom - 2 * zoom, 1);
   if (assertHeight) expect(tabBox.height).toBeCloseTo(36 * zoom, 0);
   return radii;
 }
@@ -812,6 +821,12 @@ test('drag keeps one horizontal real tab and drops it at the invisible reserved 
     await dragOver(pointerX);
     const tracked = await box(active);
     const titlebarBounds = await box(titlebar);
+    const scrollerBounds = await box(strip);
+    const clippedLeft = Math.max(tracked.x, scrollerBounds.x);
+    const clippedRight = Math.min(
+      tracked.x + tracked.width,
+      scrollerBounds.x + scrollerBounds.width,
+    );
     expect(tracked.x).toBeCloseTo(origin.x + pointerX - startX, 1);
     expect(tracked.y).toBeCloseTo(origin.y, 1);
     await expect(mask).toHaveAttribute('data-tracking', 'true');
@@ -822,9 +837,10 @@ test('drag keeps one horizontal real tab and drops it at the invisible reserved 
         width: Number.parseFloat((node as HTMLElement).style.width),
       })),
     ).toEqual({
-      left: expect.closeTo(tracked.x - titlebarBounds.x - 6, 1),
+      // Main 550fd55d clips the seam mask to the visible scroller interval.
+      left: expect.closeTo(clippedLeft - titlebarBounds.x, 1),
       transition: 'none',
-      width: expect.closeTo(tracked.width + 13, 1),
+      width: expect.closeTo(clippedRight - clippedLeft, 1),
     });
   }
 
@@ -862,8 +878,8 @@ test('drag keeps one horizontal real tab and drops it at the invisible reserved 
   });
   expect(dragged.x).toBeCloseTo(origin.x + dragX - startX, 1);
   expect(dragged.y).toBeCloseTo(origin.y, 1);
-  expect(leadingFlare.y + leadingFlare.height).toBeCloseTo(origin.y + origin.height, 1);
-  expect(trailingFlare.y + trailingFlare.height).toBeCloseTo(origin.y + origin.height, 1);
+  expect(leadingFlare.y + leadingFlare.height).toBeCloseTo(origin.y + origin.height - 2, 1);
+  expect(trailingFlare.y + trailingFlare.height).toBeCloseTo(origin.y + origin.height - 2, 1);
   expect(
     await page
       .locator('[data-workspace-tab-motion]')
