@@ -14,7 +14,7 @@ import * as fs from 'fs';
 import fsAsync from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockGetPath = vi.fn();
 const mockGetDisplayMatching = vi.fn();
@@ -183,6 +183,10 @@ describe('multi-backend window sessions', () => {
     mockRegisterWindowTitleListener.mockClear();
     _resetWindowSessionsCacheForTests();
     _resetHudWindowRefForTests();
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
   describe('per-backend save/restore', () => {

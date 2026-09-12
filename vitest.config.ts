@@ -42,6 +42,9 @@ export default defineConfig(async () => {
       globals: true,
       environment: 'jsdom',
       setupFiles: ['./src/test-setup.ts'],
+      // Redirects every worker's os.tmpdir() into a private root and fails the
+      // run if a test leaves a temp entry behind (see src/test-global-setup.ts).
+      globalSetup: ['./src/test-global-setup.ts'],
       // Cap workers at 50% of logical cores. Vitest defaults to one worker per
       // core; ~20 jsdom workers oversubscribe the CPU and, when the machine is
       // under external load (builds, other agents), heavy component suites blow
