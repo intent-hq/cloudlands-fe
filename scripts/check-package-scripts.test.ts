@@ -27,6 +27,17 @@ describe('package.json bare pnpm nesting guard', () => {
     ['a parenthesised pnpm run', '(pnpm run b)', 'pnpm run b'],
     ['an env-prefixed pnpm run', 'cross-env FOO=1 pnpm run b', 'pnpm run b'],
     ['a bare pnpm with no arguments', 'pnpm', 'pnpm'],
+    [
+      'a double-quoted executable token',
+      '"pnpm" run lint:i18n-strings',
+      'pnpm run lint:i18n-strings',
+    ],
+    ['a single-quoted executable token', "'pnpm' exec tsc", 'pnpm exec tsc'],
+    ['a semicolon-terminated pnpm', 'pnpm; node scripts/x.mjs', 'pnpm'],
+    ['an and-terminated pnpm', 'pnpm&& node scripts/x.mjs', 'pnpm'],
+    ['a pipe-terminated pnpm', 'pnpm| cat', 'pnpm'],
+    ['a parenthesis-terminated pnpm', '(pnpm)', 'pnpm'],
+    ['a quoted pnpm with no arguments', 'concurrently "pnpm" "node scripts/x.mjs"', 'pnpm'],
   ])('flags %s', (_name, value, fragment) => {
     expect(findBarePnpmViolations({ probe: value })).toMatchObject([{ script: 'probe', fragment }]);
   });
@@ -41,6 +52,11 @@ describe('package.json bare pnpm nesting guard', () => {
     ['a bare binary', 'tsc -p tsconfig.json --noEmit'],
     ['a direct scanner', 'node scripts/check-deps-fresh.mjs && eslint --cache .'],
     ['a pnpm-prefixed file name', 'vitest run scripts/pnpm-run.test.ts'],
+    [
+      'a quoted run wrapper path',
+      'sh -c "node scripts/pnpm-run.mjs a; node scripts/pnpm-launcher.mjs"',
+    ],
+    ['a launcher path before an operator', 'node scripts/pnpm-launcher.mjs; echo done'],
     ['pnpm inside an identifier', 'echo mypnpm && echo pnpmx'],
     ['npm version', 'npm version patch --no-git-tag-version'],
   ])('does not flag %s', (_name, value) => {

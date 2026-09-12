@@ -14,12 +14,14 @@ export const RUN_WRAPPER = 'node scripts/pnpm-run.mjs';
 export const ALLOWLIST = Object.freeze({});
 
 // A bare token is `pnpm` at the start of the value or after whitespace / a shell operator
-// / an opening parenthesis / a quote, followed by whitespace or the end of the value.
+// / an opening parenthesis / a quote, followed by whitespace, a shell operator, a closing
+// parenthesis, a quote, or the end of the value — so `"pnpm" run x` and `pnpm;` count.
 // `scripts/pnpm-run.mjs` and `pnpm-launcher.mjs` do not match: the former is preceded by
 // `/`, and both are followed by `-`.
-const BARE_PNPM_PATTERN = /(?<=^|[\s;&|(`'"])pnpm(?=\s|$)/g;
+const BARE_PNPM_PATTERN = /(?<=^|[\s;&|(`'"])pnpm(?=[\s;&|)`'"]|$)/g;
 // The offending fragment runs from the token to the next shell operator or quote.
 const FRAGMENT_END = /[;&|)`'"]/;
+const QUOTE = /['"`]/;
 
 function suggestFix(fragment) {
   const [, subcommand, ...rest] = fragment.split(/\s+/);
@@ -43,7 +45,12 @@ export function findBarePnpmViolations(scripts, allowlist = ALLOWLIST) {
   for (const [name, value] of Object.entries(scripts)) {
     if (typeof value !== 'string' || Object.hasOwn(allowlist, name)) continue;
     for (const match of value.matchAll(BARE_PNPM_PATTERN)) {
-      const tail = value.slice(match.index);
+      const before = value[match.index - 1];
+      const after = value[match.index + match[0].length];
+      const quoted = before !== undefined && QUOTE.test(before) && after === before;
+      const tail = quoted
+        ? match[0] + value.slice(match.index + match[0].length + 1)
+        : value.slice(match.index);
       const end = tail.search(FRAGMENT_END);
       const fragment = (end === -1 ? tail : tail.slice(0, end)).trim();
       violations.push({ script: name, fragment, fix: suggestFix(fragment) });
