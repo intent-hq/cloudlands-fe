@@ -34,6 +34,11 @@ describe('resolveCtWorkers', () => {
   it.each([
     [1, 1],
     [4, 1],
+    [7, 1],
+    [8, 2],
+    [11, 2],
+    [12, 3],
+    [15, 3],
     [16, 4],
     [64, 4],
   ])('formula: cpus=%i -> %i workers', (cpus, expected) => {

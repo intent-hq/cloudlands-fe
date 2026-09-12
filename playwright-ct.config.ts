@@ -18,10 +18,14 @@ const __dirname = fileURLToPath(new URL('.', import.meta.url));
 // CI keeps its single worker per shard (see .github/workflows/intent-pr.yml).
 const workers = resolveCtWorkers({ env: process.env, cpus: os.availableParallelism() });
 // The config is re-evaluated inside every worker process (which Playwright
-// marks with TEST_WORKER_INDEX); print the resolved count from the runner
-// process only, and never on CI where the count is fixed.
+// marks with TEST_WORKER_INDEX); print the config-resolved count from the
+// runner process only, and never on CI where the count is fixed. This is the
+// config default: a CLI `--workers=N` flag overrides it, and the run header
+// ("Running N tests using M workers") is the final value.
 if (!process.env.CI && !process.env.TEST_WORKER_INDEX) {
-  console.error(`[playwright-ct] workers: ${workers} (override with --workers=N or PW_WORKERS=N)`);
+  console.error(
+    `[playwright-ct] config workers: ${workers} (CLI --workers overrides; PW_WORKERS=N sets the default)`,
+  );
 }
 
 /**
