@@ -6169,7 +6169,7 @@
   "antigravity_setup_customPath_error": "ブリッジのカスタムパスが無効です。プロバイダーメニューで修正して再試行してください。",
   "antigravity_setup_cancelled_description": "設定をキャンセルしました。準備ができたら再度接続できます。",
   "antigravity_setup_cancel_label": "設定をキャンセル",
-  "workspace_drivingClient_here_label": "ブラウザを操作中",
+  "workspace_drivingClient_here_label": "このクライアントでブラウザを使用",
   "workspace_drivingClient_elsewhere_label": "{host} のブラウザ",
   "workspace_drivingClient_offline_label": "{host} のブラウザ（オフライン）",
   "workspace_drivingClient_here_description": "このワークスペースのエージェントのブラウザタブとトンネルは、このアプリで実行されます。",

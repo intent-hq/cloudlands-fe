@@ -6169,7 +6169,7 @@
   "antigravity_setup_customPath_error": "Der eigene Brückenpfad ist ungültig. Korrigiere ihn im Anbietermenü und versuche es erneut.",
   "antigravity_setup_cancelled_description": "Einrichtung abgebrochen. Du kannst die Verbindung später erneut herstellen.",
   "antigravity_setup_cancel_label": "Einrichtung abbrechen",
-  "workspace_drivingClient_here_label": "Steuert den Browser",
+  "workspace_drivingClient_here_label": "Browsernutzung auf diesem Client",
   "workspace_drivingClient_elsewhere_label": "Browser auf {host}",
   "workspace_drivingClient_offline_label": "Browser auf {host} (offline)",
   "workspace_drivingClient_here_description": "Agent-Browser-Tabs und Tunnel für diesen Workspace laufen in dieser App.",
