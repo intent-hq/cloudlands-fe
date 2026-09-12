@@ -728,6 +728,118 @@ describe('NoteWithComments task conversion regression', () => {
     });
   });
 
+  // Regression (verified live on a real stack): the editor loaded rev 4, the
+  // user typed continuously, an agent's note.add landed rev 5 in the store
+  // through the refetch, and only then was the draft staged for the first
+  // time. Staging claimed the store's rev 5 for text derived from rev 4, so
+  // the daemon saw no staleness, wrote the draft verbatim and the agent's
+  // block was gone from every later revision. The first staging must name
+  // the rev the editor text was derived from.
+  describe('draft base revision', () => {
+    /**
+     * Daemon model behind the mocked write-service (the service's own
+     * contract — first staging fixes the chain's base, immediate or 800 ms
+     * debounced flush — is modelled; the real service is covered in
+     * notes-write-service.test.ts). `expectedVersion === rev` writes the draft
+     * verbatim; a stale rev three-way merges it from that rev's text (results
+     * per the production `three_way_merge` oracle).
+     */
+    function modelExactWriteDaemon(content: string, rev: number) {
+      const daemon = { content, rev, history: new Map([[rev, content]]) };
+      const staleRevMerge: Record<string, string> = {
+        'base x1 x2': 'agent base x1 x2',
+      };
+      const sent: Array<{ text: string; expectedVersion?: number }> = [];
+      let pending: { text: string; baseRev?: number } | null = null;
+      let timer: ReturnType<typeof setTimeout> | null = null;
+
+      const flush = async () => {
+        if (timer) clearTimeout(timer);
+        timer = null;
+        if (!pending) return undefined;
+        const { text, baseRev } = pending;
+        pending = null;
+        sent.push({ text, expectedVersion: baseRev });
+        let merged = text;
+        if (baseRev !== daemon.rev) {
+          const staleMerge = staleRevMerge[text];
+          if (staleMerge === undefined) {
+            throw new Error(`no merge modelled for stale-rev write of ${JSON.stringify(text)}`);
+          }
+          merged = staleMerge;
+        }
+        daemon.rev += 1;
+        daemon.content = merged;
+        daemon.history.set(daemon.rev, merged);
+        await applyExternal(merged, daemon.rev);
+        return { content: merged, rev: daemon.rev };
+      };
+
+      vi.mocked(updateNoteContent).mockImplementation((_ws, _id, text, options) => {
+        pending = pending
+          ? { ...pending, text }
+          : { text, baseRev: options?.baseRev ?? getNoteById('spec')?.rev };
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(() => void flush(), options?.immediate ? 0 : 800);
+      });
+      vi.mocked(hasPendingNoteContent).mockImplementation(() => pending !== null);
+      vi.mocked(flushNoteContent).mockImplementation(flush);
+
+      const agentWrites = async (text: string) => {
+        daemon.rev += 1;
+        daemon.content = text;
+        daemon.history.set(daemon.rev, text);
+        await applyExternal(text, daemon.rev);
+      };
+      return { daemon, sent, agentWrites };
+    }
+
+    async function applyExternal(text: string, rev: number) {
+      replaceNotes([createNote('spec', 'Spec', text, { rev } as Partial<Note>)]);
+      await tick();
+    }
+
+    it('names the loaded rev, not the refetched rev, when typing is staged by an agent update', async () => {
+      replaceNotes([createNote('spec', 'Spec', 'base', { rev: 4 } as Partial<Note>)]);
+      const view = await renderInitializedNote('spec', 'base');
+      const editor = (view.container.querySelector('.ProseMirror') as any).editor;
+      await waitFor(() => expect(editor.getText()).toBe('base'));
+      vi.useFakeTimers();
+      await vi.advanceTimersByTimeAsync(1200);
+      const { daemon, sent, agentWrites } = modelExactWriteDaemon('base', 4);
+      vi.mocked(updateNoteContent).mockClear();
+
+      // Continuous typing: two keystrokes 100 ms apart, both inside the
+      // component's 1 s save debounce, so nothing has been staged yet.
+      editor.commands.insertContentAt(editor.state.doc.content.size - 1, ' x1');
+      await vi.advanceTimersByTimeAsync(100);
+      editor.commands.insertContentAt(editor.state.doc.content.size - 1, ' x2');
+      await vi.advanceTimersByTimeAsync(100);
+      expect(updateNoteContent).not.toHaveBeenCalled();
+
+      await agentWrites('agent base');
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(updateNoteContent).toHaveBeenCalledWith('ws-1', 'spec', 'base x1 x2', {
+        immediate: false,
+        baseRev: 4,
+      });
+      expect(sent).toEqual([{ text: 'base x1 x2', expectedVersion: 4 }]);
+      expect(daemon.content).toBe('agent base x1 x2');
+      expect(editor.getText()).toBe('agent base x1 x2');
+
+      // The chain settled and the editor text is the daemon's rev 6: the next
+      // keystroke names that rev and lands as an exact write.
+      editor.commands.insertContentAt(editor.state.doc.content.size - 1, ' x3');
+      await vi.advanceTimersByTimeAsync(1000 + 800 + 1);
+
+      expect(sent.at(-1)).toEqual({ text: 'agent base x1 x2 x3', expectedVersion: 6 });
+      expect(daemon.content).toBe('agent base x1 x2 x3');
+      expect(daemon.rev).toBe(7);
+      expect(editor.getText()).toBe('agent base x1 x2 x3');
+    });
+  });
+
   it('does not apply a pending note conversion after unmount', async () => {
     const view = await renderInitializedNote();
     mockApplyExternalUpdateHtml.mockClear();

@@ -583,6 +583,86 @@ describe('notesWriteService (fake seam, real store)', () => {
     );
   });
 
+  // ---- Caller-supplied draft base rev ---------------------------------------
+  // The editor loaded "body"@4 and the user typed "body local" before the
+  // component's save debounce fired. An agent's note.add then landed
+  // "AGENT\nbody"@5 in the store through the note:updated refetch, and only
+  // after that was the draft staged. The save must name rev 4 — the text the
+  // draft was derived from — so the daemon three-way merges from "body" and
+  // keeps both edits. Reading the store rev at staging (5) made it an exact
+  // write that deleted the agent's block (observed live on a real stack).
+
+  /**
+   * Daemon model, current text "AGENT\nbody"@5: an exact-rev write replaces;
+   * a stale rev 4 three-way merges from "body" (per the production
+   * `three_way_merge` oracle).
+   */
+  function daemonAfterAgentAdd(): (_: string, content: string, rev?: number) => Promise<unknown> {
+    const staleRevMerge: Record<string, string> = { 'body local': 'AGENT\nbody local' };
+    return (_id, content, rev) =>
+      Promise.resolve({
+        success: true,
+        newContent: rev === 5 ? content : (staleRevMerge[content] ?? content),
+        noteRev: 6,
+      });
+  }
+
+  it('sends the caller base rev, not the refetched store rev, on the first staging of a draft', async () => {
+    seed(makeNote('n1', { rev: 4, content: 'body' }));
+    seed(makeNote('n1', { rev: 5, content: 'AGENT\nbody' }));
+    notesApi.setContent.mockImplementationOnce(daemonAfterAgentAdd() as never);
+
+    updateNoteContent(WS, 'n1', 'body local', { baseRev: 4 });
+    const applied = await flushNoteContent(WS, 'n1');
+
+    expect(notesApi.setContent).toHaveBeenCalledWith('n1', 'body local', 4, WS);
+    expect(applied).toEqual({ content: 'AGENT\nbody local', rev: 6 });
+    const note = selectNoteById.select(appStore.state, WS, 'n1');
+    expect(note?.content).toBe('AGENT\nbody local');
+    expect(note?.rev).toBe(6);
+  });
+
+  it('without a caller base rev the refetched store rev is sent and the daemon overwrites (exact write)', async () => {
+    seed(makeNote('n1', { rev: 5, content: 'AGENT\nbody' }));
+    notesApi.setContent.mockImplementationOnce(daemonAfterAgentAdd() as never);
+
+    updateNoteContent(WS, 'n1', 'body local');
+    const applied = await flushNoteContent(WS, 'n1');
+
+    expect(notesApi.setContent).toHaveBeenCalledWith('n1', 'body local', 5, WS);
+    expect(applied).toEqual({ content: 'body local', rev: 6 });
+  });
+
+  it('a chain already under way keeps the base it was rebased onto over a later caller base rev', async () => {
+    seed(makeNote('n1', { rev: 4, content: 'body' }));
+    let resolveFirst!: (v: unknown) => void;
+    notesApi.setContent
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveFirst = resolve;
+        }) as never,
+      )
+      .mockImplementationOnce(daemonAfterAgentEdit() as never);
+
+    updateNoteContent(WS, 'n1', 'body first', { baseRev: 4 });
+    const first = flushNoteContent(WS, 'n1');
+    await Promise.resolve();
+    expect(notesApi.setContent).toHaveBeenLastCalledWith('n1', 'body first', 4, WS);
+
+    updateNoteContent(WS, 'n1', 'body first plus typing', { baseRev: 4 });
+    const second = flushNoteContent(WS, 'n1');
+    resolveFirst({ success: true, newContent: 'AGENT\nbody first', noteRev: 6 });
+    await first;
+    await second;
+
+    expect(notesApi.setContent).toHaveBeenLastCalledWith(
+      'n1',
+      'AGENT\nbody first plus typing',
+      6,
+      WS,
+    );
+  });
+
   it('rebases a queued undo onto the superseded echo instead of replaying the undone text', async () => {
     seed(makeNote('n1', { rev: 4, content: 'body' }));
     let resolveFirst!: (v: unknown) => void;

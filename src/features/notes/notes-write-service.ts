@@ -303,16 +303,27 @@ export async function createNote(
   return undefined;
 }
 
-/** Update note content optimistically; the network save is debounced per note. */
+/**
+ * Update note content optimistically; the network save is debounced per note.
+ *
+ * `baseRev` is the rev of the daemon text `content` was derived from. It is
+ * honoured only when it starts a new edit chain (nothing pending or in
+ * flight); a chain already under way keeps the base it was rebased onto. The
+ * store rev is the fallback, but it is not authoritative for the caller's
+ * text: a `note:updated` refetch can advance it before the first staging of a
+ * draft the editor derived from the older rev, and sending the newer rev as
+ * `expectedVersion` makes the daemon treat the draft as an exact write and
+ * delete the refetched change.
+ */
 export function updateNoteContent(
   workspaceId: string,
   noteId: string,
   content: string,
-  options?: { immediate?: boolean },
+  options?: { immediate?: boolean; baseRev?: number },
 ): void {
   const key = noteKey(workspaceId, noteId);
   if (!draftBaseRev.has(key)) {
-    const baseRev = readNoteById(workspaceId, noteId)?.rev;
+    const baseRev = options?.baseRev ?? readNoteById(workspaceId, noteId)?.rev;
     if (baseRev !== undefined) draftBaseRev.set(key, baseRev);
   }
   appStore.dispatch(applyLocalNoteUpdate(workspaceId, noteId, { content }));

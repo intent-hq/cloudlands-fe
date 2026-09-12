@@ -233,6 +233,7 @@ export function runExternalContentUpdateEffect({
   flushNoteContent,
   onPendingSaveSettled,
   getCurrentNoteContent,
+  getCurrentNoteRev,
   getLastKnownContent,
   setLastKnownContent,
   getHasUserEditedSinceLastSave,
@@ -285,8 +286,14 @@ export function runExternalContentUpdateEffect({
    */
   onPendingSaveSettled?: () => void;
   getCurrentNoteContent: () => string;
+  /** Rev of the store content `getCurrentNoteContent` returns, read together with it. */
+  getCurrentNoteRev?: () => number | undefined;
   getLastKnownContent: () => string;
-  setLastKnownContent: (value: string) => void;
+  /**
+   * Record the text the editor now derives from and, when known, the daemon
+   * rev that text is — the base the next save's `expectedVersion` must name.
+   */
+  setLastKnownContent: (value: string, rev?: number) => void;
   getHasUserEditedSinceLastSave: () => boolean;
   setHasUserEditedSinceLastSave: (value: boolean) => void;
   /**
@@ -389,7 +396,7 @@ export function runExternalContentUpdateEffect({
     }
   };
 
-  const applyIncomingContent = async (incoming: string): Promise<void> => {
+  const applyIncomingContent = async (incoming: string, incomingRev?: number): Promise<void> => {
     const editor = getEditor();
     if (!editor || editor.isDestroyed) return;
 
@@ -499,7 +506,7 @@ export function runExternalContentUpdateEffect({
 
       // Folded keystrokes stay unsaved relative to the incoming text; their
       // already-scheduled save carries them against the incoming rev.
-      setLastKnownContent(incoming);
+      setLastKnownContent(incoming, incomingRev);
       if (replacesWholeDocument) setIsRestorePending?.(false);
 
       if (didUpdate) {
@@ -532,7 +539,7 @@ export function runExternalContentUpdateEffect({
       }
     } else {
       // Content is the same (ignoring anchors), just update tracking
-      setLastKnownContent(incoming);
+      setLastKnownContent(incoming, incomingRev);
       if (replacesWholeDocument) setIsRestorePending?.(false);
       setHasUserEditedSinceLastSave(folded);
     }
@@ -579,7 +586,7 @@ export function runExternalContentUpdateEffect({
         );
         return;
       }
-      return applyIncomingContent(applied.content);
+      return applyIncomingContent(applied.content, applied.rev);
     });
   };
 
@@ -631,9 +638,10 @@ export function runExternalContentUpdateEffect({
       return flushDirtyEditorAndApply();
     }
     const freshContent = getCurrentNoteContent();
+    const freshRev = getCurrentNoteRev?.();
     const freshLastKnown = getLastKnownContent();
     if (freshContent === freshLastKnown) return;
 
-    return applyIncomingContent(freshContent);
+    return applyIncomingContent(freshContent, freshRev);
   });
 }

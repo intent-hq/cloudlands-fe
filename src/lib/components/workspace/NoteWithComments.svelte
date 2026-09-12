@@ -606,6 +606,12 @@
     return fallback;
   });
 
+  // Rev of the store content currentNoteContent derives from (undefined
+  // while the note is not in the store).
+  let currentNoteRev = $derived(
+    currentNote && currentNote.workspaceId === workspace?.id ? currentNote.rev : undefined,
+  );
+
   // Register markdown paste handler in capture phase so it fires BEFORE
   // ProseMirror's handler on the contenteditable child. This prevents double
   // paste: without capture, ProseMirror inserts plain text first, then our
@@ -697,6 +703,7 @@
     }
 
     lastKnownContent = currentNoteContent;
+    lastKnownRev = currentNoteRev;
     if (!isTooLargeForRichEditor) {
       isInitializing = false;
     }
@@ -787,6 +794,7 @@
         return;
       }
 
+      const baseline = lastKnownContent;
       // Update last known content when user saves
       lastKnownContent = markdownContent;
       // NOTE: We intentionally do NOT set hasUserEditedSinceLastSave = false here.
@@ -798,7 +806,20 @@
       {
         const note = selectNoteById.select(appStore.state, workspace.id, noteId);
         if (note) {
-          updateNoteContent(workspace.id, noteId, markdownContent, { immediate });
+          // The save's base is the rev the editor text was derived from, not
+          // whatever rev the store holds now: a note:updated refetch may
+          // have advanced the store past the text the user typed on, and
+          // naming that newer rev would make the daemon overwrite its change
+          // instead of merging. The store rev is that base only while it is
+          // authoritative (no save unacknowledged) and its content IS the
+          // editor's baseline — then it is also the freshest rev for it.
+          if (!hasPendingNoteContent(workspace.id, noteId) && (note.content || '') === baseline) {
+            lastKnownRev = note.rev;
+          }
+          updateNoteContent(workspace.id, noteId, markdownContent, {
+            immediate,
+            baseRev: lastKnownRev,
+          });
         }
       }
 
@@ -1015,11 +1036,13 @@
     const editorWorkspaceId = editorWorkspace?.id;
 
     let goalContent = '';
+    let goalRev: number | undefined;
     if (noteId && workspace?.id) {
       {
         const storeNote = selectNoteById.select(appStore.state, workspace.id, noteId);
         if (storeNote && storeNote.workspaceId === workspace.id) {
           goalContent = storeNote.content || '';
+          goalRev = storeNote.rev;
         }
       }
       // Fallback to content prop if note not found in store yet
@@ -1038,6 +1061,7 @@
 
     // Initialize last known content
     lastKnownContent = goalContent;
+    lastKnownRev = goalRev;
 
     logger.info('[NoteWithComments] initializeEditor: resolving goalContent', {
       noteId,
@@ -1359,6 +1383,11 @@
   // Track last known content to avoid unnecessary updates
   // NOTE: These are NOT $state to avoid triggering reactive loops when updated in effects
   let lastKnownContent: string = '';
+  // Daemon rev lastKnownContent was taken from (undefined when unknown):
+  // the base of the next save's expectedVersion, so a refetch that
+  // advances the store past the text the user typed on never gets claimed
+  // as that text's revision.
+  let lastKnownRev: number | undefined = undefined;
   let lastNoteId: string | undefined = undefined;
   let lastWorkspaceId: string | undefined = undefined;
   let lastSaveTimestamp: string | null = null; // Track when last save happened
@@ -1391,6 +1420,7 @@
       lastWorkspaceId = currentWorkspaceId;
       lastNoteId = currentNoteId;
       lastKnownContent = '';
+      lastKnownRev = undefined;
       hasUserEditedSinceLastSave = false;
       isRestorePending = false;
       lastSafetyNetSyncedContent = undefined;
@@ -1442,6 +1472,7 @@
         }
 
         const newContent = currentNoteContent;
+        const newRev = currentNoteRev;
         const conversionEditor = editor;
         const conversionWorkspaceId = workspace?.id;
         const conversionShowComments = showComments;
@@ -1464,6 +1495,7 @@
           isTooLargeForRichEditor = true;
           plainTextFallbackContent = newContent;
           lastKnownContent = newContent;
+          lastKnownRev = newRev;
           isInitializing = false;
           return;
         }
@@ -1517,6 +1549,7 @@
           });
 
           lastKnownContent = newContent;
+          lastKnownRev = newRev;
 
           if (!didUpdate) {
             // Content is the same, no need to update
@@ -1611,9 +1644,11 @@
         externalUpdateVersion = externalUpdateVersion + 1;
       },
       getCurrentNoteContent: () => currentNoteContent,
+      getCurrentNoteRev: () => currentNoteRev,
       getLastKnownContent: () => lastKnownContent,
-      setLastKnownContent: (value) => {
+      setLastKnownContent: (value, rev) => {
         lastKnownContent = value;
+        lastKnownRev = rev;
       },
       getHasUserEditedSinceLastSave: () => hasUserEditedSinceLastSave,
       setHasUserEditedSinceLastSave: (value) => {
