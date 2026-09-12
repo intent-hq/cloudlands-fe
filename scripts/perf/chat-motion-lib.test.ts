@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { mkdtemp, readdir, writeFile } from 'node:fs/promises';
+import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -171,15 +171,19 @@ describe('scrollSampleLabels', () => {
 describe('prepareOutDir', () => {
   it('creates a fresh directory and refuses to reuse an existing one', async () => {
     const base = await mkdtemp(path.join(tmpdir(), 'chat-motion-'));
-    const out = path.join(base, 'nested', 'run');
+    try {
+      const out = path.join(base, 'nested', 'run');
 
-    await expect(prepareOutDir(out)).resolves.toBe(out);
-    await writeFile(path.join(out, 'trace.json'), '{}');
+      await expect(prepareOutDir(out)).resolves.toBe(out);
+      await writeFile(path.join(out, 'trace.json'), '{}');
 
-    await expect(prepareOutDir(out)).rejects.toThrow(
-      `refusing to overwrite existing output directory ${out}`,
-    );
-    expect(await readdir(out)).toEqual(['trace.json']);
+      await expect(prepareOutDir(out)).rejects.toThrow(
+        `refusing to overwrite existing output directory ${out}`,
+      );
+      expect(await readdir(out)).toEqual(['trace.json']);
+    } finally {
+      await rm(base, { recursive: true, force: true });
+    }
   });
 });
 
