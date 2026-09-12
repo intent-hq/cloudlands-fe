@@ -253,7 +253,7 @@ describe('summarize', () => {
           frames: [{ top: 200, max: 900 }],
         },
       },
-      quiescence: { waitedMs: 1200, quietMs: 750 },
+      quiescence: { preTraceWaitedMs: 3400, waitedMs: 1200, quietMs: 750 },
     });
 
     expect(summary).toMatchObject({
@@ -261,8 +261,8 @@ describe('summarize', () => {
       scenario: 'footer',
       startedAt: '2026-09-12T00:00:00.000Z',
       nodeCounts: { total: 10_400, transcript: 9_900 },
-      quiescence: { waitedMs: 1200, quietMs: 750 },
     });
+    expect(summary.quiescence).toEqual({ preTraceWaitedMs: 3400, waitedMs: 1200, quietMs: 750 });
     expect(Object.keys(summary.motions)).toEqual(['collapse', 'expand']);
     expect(summary.scroll.pinnedCollapse).toEqual({
       frames: 2,

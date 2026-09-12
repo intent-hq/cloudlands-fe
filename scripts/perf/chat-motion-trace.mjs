@@ -59,6 +59,9 @@ function installPageHelper(page, { frames }) {
         geometry() {
           return { top: viewport.scrollTop, max: viewport.scrollHeight - viewport.clientHeight };
         },
+        quietKey() {
+          return `${viewport.scrollTop},${viewport.scrollHeight}`;
+        },
         frame() {
           const anchor = helper.anchor;
           return {
@@ -180,9 +183,8 @@ async function scrollUp(page, pixels) {
 async function waitForQuiescence(page, { quietMs, quietTimeout }) {
   await page.evaluate(() => {
     const helper = window.__chatMotion;
-    const geometry = helper.geometry();
     helper.quiet = {
-      value: `${geometry.top},${geometry.max}`,
+      value: helper.quietKey(),
       since: performance.now(),
       startedAt: performance.now(),
       lastChange: null,
@@ -192,8 +194,7 @@ async function waitForQuiescence(page, { quietMs, quietTimeout }) {
     await page.waitForFunction(
       (quietMs) => {
         const helper = window.__chatMotion;
-        const geometry = helper.geometry();
-        const current = `${geometry.top},${geometry.max}`;
+        const current = helper.quietKey();
         const now = performance.now();
         if (helper.quiet.value !== current) {
           helper.quiet.lastChange = {
@@ -242,6 +243,7 @@ async function runFooterScenario(page, options, outDir) {
   const nodeCounts = await inflateTranscript(page, options.inflate);
   await page.waitForTimeout(1000);
   await installPageHelper(page, { frames });
+  const preTrace = await waitForQuiescence(page, options);
 
   await page
     .context()
@@ -276,7 +278,8 @@ async function runFooterScenario(page, options, outDir) {
   });
 
   await scrollUp(page, options.scrollUp);
-  const quiescence = await waitForQuiescence(page, options);
+  const scrolledUp = await waitForQuiescence(page, options);
+  const quiescence = { preTraceWaitedMs: preTrace.waitedMs, ...scrolledUp };
   if (!(await pickAnchor())) {
     throw new Error(
       'no non-inflated [data-lazy-turn-key] row intersects the viewport after scrolling up',

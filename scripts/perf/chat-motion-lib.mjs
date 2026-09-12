@@ -192,6 +192,10 @@ export function summarize({
     nodeCounts,
     motions: analyzeTrace(traceEvents, { marks: SCENARIOS[scenario].marks, windowMs }),
     scroll,
-    quiescence,
+    quiescence: {
+      preTraceWaitedMs: quiescence.preTraceWaitedMs,
+      waitedMs: quiescence.waitedMs,
+      quietMs: quiescence.quietMs,
+    },
   };
 }
