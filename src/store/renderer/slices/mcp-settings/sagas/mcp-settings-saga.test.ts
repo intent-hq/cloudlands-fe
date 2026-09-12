@@ -772,6 +772,28 @@ describe('mcpSettingsSaga', () => {
     await run.task.toPromise();
   });
 
+  it('surfaces the structured error when the daemon record rejects the OAuth request', async () => {
+    const figma = {
+      id: 'srv-figma',
+      name: 'figma',
+      type: 'http' as const,
+      url: 'https://mcp.figma.com/mcp',
+    };
+    mocks.invoke.mockResolvedValue({
+      success: false,
+      error: { code: 'MCP_SERVER_URL_MISMATCH', message: 'URL did not match the saved server' },
+    });
+    const run = harness({ ...initialState, servers: [figma] });
+    run.channel.put(authenticateServer('figma'));
+    await settle();
+
+    expect(mocks.restartMcpServer).not.toHaveBeenCalled();
+    expect(run.state().statusMap.figma).toBe('auth_required');
+    expect(run.state().errorMessages.figma).toBe('URL did not match the saved server');
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
   it('dispatches exact failures for load, remove, update, import, toggle, and advanced save', async () => {
     mocks.getMcpServers.mockRejectedValueOnce(new Error('load rejected'));
     const loadRun = harness();
