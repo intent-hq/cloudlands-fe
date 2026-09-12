@@ -18,7 +18,10 @@
 // Run directly (`pnpm run generate:i18n`), it compiles the project with the
 // same options as `paraglide-js compile --output-structure locale-modules`;
 // `--if-stale` skips the compile while the recorded hash still matches, so
-// gates that merely need the outputs on disk (knip) stay cheap.
+// gates that merely need the outputs on disk (knip) stay cheap. The same
+// if-stale step runs from check-deps-fresh.mjs (first command of lint, check,
+// format:check, test:unit) and from verify:changed, so a fresh clone never has
+// to run generate:i18n by hand before a gate.
 import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
@@ -84,23 +87,44 @@ export async function ensureGeneratedParaglide({ ifStale = false, ...options }) 
   return generateParaglide(options);
 }
 
+export const PARAGLIDE_STALE_MESSAGE =
+  'messages kept changing while compiling; rerun generate:i18n';
+
+export function repoParaglidePaths(rootDir) {
+  return {
+    projectDir: join(rootDir, 'project.inlang'),
+    messagesDir: join(rootDir, 'messages'),
+    outdir: join(rootDir, 'src/shared/paraglide'),
+  };
+}
+
+/** `ensureGeneratedParaglide` for the package at `rootDir`, compiling with `@inlang/paraglide-js`. */
+export async function ensureRepoParaglide({ rootDir, ifStale = false, compile }) {
+  const paths = repoParaglidePaths(rootDir);
+  return ensureGeneratedParaglide({
+    ifStale,
+    ...paths,
+    compile:
+      compile ??
+      (async () => {
+        const { compile: compileProject } = await import('@inlang/paraglide-js');
+        return compileProject({
+          project: paths.projectDir,
+          outdir: paths.outdir,
+          outputStructure: PARAGLIDE_OUTPUT_STRUCTURE,
+        });
+      }),
+  });
+}
+
 const isDirectRun = process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1]);
 if (isDirectRun) {
-  const rootDir = join(dirname(fileURLToPath(import.meta.url)), '..');
-  const projectDir = join(rootDir, 'project.inlang');
-  const outdir = join(rootDir, 'src/shared/paraglide');
-  const ok = await ensureGeneratedParaglide({
+  const ok = await ensureRepoParaglide({
+    rootDir: join(dirname(fileURLToPath(import.meta.url)), '..'),
     ifStale: process.argv.includes('--if-stale'),
-    projectDir,
-    messagesDir: join(rootDir, 'messages'),
-    outdir,
-    compile: async () => {
-      const { compile } = await import('@inlang/paraglide-js');
-      return compile({ project: projectDir, outdir, outputStructure: PARAGLIDE_OUTPUT_STRUCTURE });
-    },
   });
   if (!ok) {
-    console.error('[generate:i18n] messages kept changing while compiling; rerun generate:i18n');
+    console.error(`[generate:i18n] ${PARAGLIDE_STALE_MESSAGE}`);
     process.exit(1);
   }
 }
