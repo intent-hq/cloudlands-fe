@@ -1,4 +1,5 @@
 <script lang="ts">
+  import * as m from '$shared/paraglide/messages.js';
   import { onMount, onDestroy } from 'svelte';
   import { Editor } from '@tiptap/core';
   import { createEditorConfig } from '$lib/utils/editor-config';
@@ -64,6 +65,7 @@ More content here for testing purposes.`;
     editor = new Editor(
       createEditorConfig({
         element: editorElement,
+        ariaLabel: m.workspace_noteWithComments_editor_ariaLabel(),
         content: testContent,
         editable: true,
         enableComments: true,

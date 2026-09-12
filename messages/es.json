@@ -6178,5 +6178,7 @@
   "workspace_drivingClient_setPrimaryDialog_description": "El navegador de este espacio de trabajo lo controla actualmente {host}. Se fijará a este cliente y todas las pestañas de los agentes se moverán aquí. El estado de la página no se conserva; las pestañas que abrió usted mismo no se ven afectadas.",
   "workspace_drivingClient_setPrimaryDialog_close_ariaLabel": "Cerrar",
   "workspace_drivingClient_setPrimaryDialog_cancel_label": "Cancelar",
-  "workspace_drivingClient_setPrimaryDialog_confirm_label": "Establecer como principal"
+  "workspace_drivingClient_setPrimaryDialog_confirm_label": "Establecer como principal",
+  "ui_richTextarea_prompt_ariaLabel": "Instrucción",
+  "chat_richInput_editor_ariaLabel": "Mensaje"
 }

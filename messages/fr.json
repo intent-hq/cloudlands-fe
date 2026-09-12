@@ -6178,5 +6178,7 @@
   "workspace_drivingClient_setPrimaryDialog_description": "Le navigateur de cet espace de travail est actuellement piloté par {host}. Il sera épinglé à ce client et tous les onglets des agents seront déplacés ici. L’état des pages n’est pas conservé ; les onglets que vous avez ouverts vous-même ne sont pas concernés.",
   "workspace_drivingClient_setPrimaryDialog_close_ariaLabel": "Fermer",
   "workspace_drivingClient_setPrimaryDialog_cancel_label": "Annuler",
-  "workspace_drivingClient_setPrimaryDialog_confirm_label": "Définir comme principal"
+  "workspace_drivingClient_setPrimaryDialog_confirm_label": "Définir comme principal",
+  "ui_richTextarea_prompt_ariaLabel": "Consigne",
+  "chat_richInput_editor_ariaLabel": "Message à envoyer"
 }

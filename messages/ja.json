@@ -6178,5 +6178,7 @@
   "workspace_drivingClient_setPrimaryDialog_description": "このワークスペースのブラウザは現在 {host} が制御しています。このクライアントに固定され、エージェントのタブはすべてここに移動します。ページの状態は保持されません。自分で開いたタブは影響を受けません。",
   "workspace_drivingClient_setPrimaryDialog_close_ariaLabel": "閉じる",
   "workspace_drivingClient_setPrimaryDialog_cancel_label": "キャンセル",
-  "workspace_drivingClient_setPrimaryDialog_confirm_label": "プライマリに設定"
+  "workspace_drivingClient_setPrimaryDialog_confirm_label": "プライマリに設定",
+  "ui_richTextarea_prompt_ariaLabel": "プロンプト",
+  "chat_richInput_editor_ariaLabel": "メッセージ"
 }

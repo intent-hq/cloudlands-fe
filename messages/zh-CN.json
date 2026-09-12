@@ -6178,5 +6178,7 @@
   "workspace_drivingClient_setPrimaryDialog_description": "此工作区的浏览器当前由 {host} 控制。它将固定到此客户端，智能体的所有标签页都会移到这里。页面状态不会保留；您自己打开的标签页不受影响。",
   "workspace_drivingClient_setPrimaryDialog_close_ariaLabel": "关闭",
   "workspace_drivingClient_setPrimaryDialog_cancel_label": "取消",
-  "workspace_drivingClient_setPrimaryDialog_confirm_label": "设为主客户端"
+  "workspace_drivingClient_setPrimaryDialog_confirm_label": "设为主客户端",
+  "ui_richTextarea_prompt_ariaLabel": "提示词",
+  "chat_richInput_editor_ariaLabel": "消息"
 }

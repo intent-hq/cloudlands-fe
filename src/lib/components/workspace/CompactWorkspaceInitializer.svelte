@@ -3009,6 +3009,7 @@
     <!-- Text area -->
     <div class="w-full relative overflow-hidden rounded-t-xl">
       <RichTextarea
+        ariaLabel={m.ui_richTextarea_prompt_ariaLabel()}
         bind:this={richTextarea}
         bind:value={initialPrompt}
         placeholder={m.workspace_compactInitializer_prompt_placeholder()}

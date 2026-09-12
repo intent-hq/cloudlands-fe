@@ -6178,5 +6178,7 @@
   "workspace_drivingClient_setPrimaryDialog_description": "This workspace's browser is currently driven by {host}. It will be pinned to this client and all of its agent-owned tabs will move here. Page state is not preserved; tabs you opened yourself are unaffected.",
   "workspace_drivingClient_setPrimaryDialog_close_ariaLabel": "Close",
   "workspace_drivingClient_setPrimaryDialog_cancel_label": "Cancel",
-  "workspace_drivingClient_setPrimaryDialog_confirm_label": "Set as Primary"
+  "workspace_drivingClient_setPrimaryDialog_confirm_label": "Set as Primary",
+  "ui_richTextarea_prompt_ariaLabel": "Prompt",
+  "chat_richInput_editor_ariaLabel": "Message"
 }

@@ -129,6 +129,7 @@
 
   interface Props {
     value?: string;
+    ariaLabel?: string;
     placeholder?: string;
     class?: string;
     disabled?: boolean;
@@ -162,6 +163,7 @@
 
   let {
     value = '',
+    ariaLabel = m.chat_richInput_editor_ariaLabel(),
     placeholder = m.chat_richInput_askAnything_placeholder(),
     disabled = false,
     editableWhileDisabled = false,
@@ -203,6 +205,10 @@
   let hoverPreview: any = null;
   let hoverPreviewContainer: HTMLDivElement | null = null;
   let isClearing = false;
+  $effect(() => {
+    if (editor) editor.view.dom.setAttribute('aria-label', ariaLabel);
+  });
+
   let editorFocused = $state(false);
   let slashContext = $state<SlashCommandContext | null>(null);
   let dismissedSlashContext = $state<string | null>(null);
@@ -903,6 +909,9 @@
         editorProps: {
           attributes: {
             class: `tiptap-editor ${editorClassName}`,
+            role: 'textbox',
+            'aria-multiline': 'true',
+            'aria-label': ariaLabel,
             autocomplete: 'off',
             spellcheck: 'false',
             autocorrect: 'off',

@@ -6178,5 +6178,7 @@
   "workspace_drivingClient_setPrimaryDialog_description": "이 워크스페이스의 브라우저는 현재 {host}이(가) 제어하고 있습니다. 이 클라이언트에 고정되며 에이전트의 모든 탭이 여기로 이동합니다. 페이지 상태는 보존되지 않으며, 직접 연 탭은 영향을 받지 않습니다.",
   "workspace_drivingClient_setPrimaryDialog_close_ariaLabel": "닫기",
   "workspace_drivingClient_setPrimaryDialog_cancel_label": "취소",
-  "workspace_drivingClient_setPrimaryDialog_confirm_label": "기본으로 설정"
+  "workspace_drivingClient_setPrimaryDialog_confirm_label": "기본으로 설정",
+  "ui_richTextarea_prompt_ariaLabel": "프롬프트",
+  "chat_richInput_editor_ariaLabel": "메시지"
 }

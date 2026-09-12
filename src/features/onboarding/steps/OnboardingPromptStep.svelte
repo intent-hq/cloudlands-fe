@@ -575,6 +575,7 @@
 
         <div class="w-full relative overflow-hidden rounded-t-xl" bind:this={richTextareaWrapper}>
           <RichTextarea
+            ariaLabel={m.ui_richTextarea_prompt_ariaLabel()}
             bind:this={onboardingRichTextarea}
             bind:value={onboardingInputValue}
             repoPath={projectSelection?.repoPath || undefined}
