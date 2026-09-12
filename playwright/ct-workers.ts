@@ -9,9 +9,12 @@
  * - `PW_WORKERS` parses to an integer ≥ 1 → that value.
  * - Otherwise `min(4, max(1, floor(cpus / 4)))`. Playwright's own default is
  *   50% of cores, which on the 32-logical-core shared daemon host launches 16
- *   Chromium-backed workers alongside builds and other agents, and mount
- *   timeouts follow (intent-hq/cloudlands-fe#2373). The divisor 4 leaves
- *   headroom for co-tenants; `PW_WORKERS` / `--workers` are the escape hatch.
+ *   Chromium-backed workers alongside builds and other agents. Observed while
+ *   verifying intent-hq/cloudlands-fe#2373 (a CSS-only change, cited as the
+ *   incident, not the cause): a 16-worker local full-suite run concurrent
+ *   with `build:web` produced 7 spurious mount timeouts across five files
+ *   that then passed 10/10 at `--workers=1`. The divisor 4 leaves headroom
+ *   for co-tenants; `PW_WORKERS` / `--workers` are the escape hatch.
  */
 const CT_WORKERS_MAX = 4;
 const CT_WORKERS_CPU_DIVISOR = 4;

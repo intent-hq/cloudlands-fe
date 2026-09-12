@@ -8,11 +8,14 @@ import { resolveCtWorkers } from './playwright/ct-workers';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 
-// Bound local workers on the shared daemon host (intent-hq/cloudlands-fe#2373;
-// the vitest precedent is intent-hq/monorepo#545). Playwright's default of 50%
-// of cores means 16 Chromium-backed workers on the 32-logical-core box, and
-// under external load (builds, other agents) component mounts time out in
-// full runs while passing in isolation. Local runs use
+// Bound local workers on the shared daemon host (the vitest precedent is
+// intent-hq/monorepo#545). Playwright's default of 50% of cores means 16
+// Chromium-backed workers on the 32-logical-core box. Observed while verifying
+// intent-hq/cloudlands-fe#2373 (a CSS-only change; the reference is to the
+// incident during its verification, not to its content): a 16-worker local
+// full-suite run under `build:web` load produced 7 spurious mount()/first-poll
+// timeouts across five files, all before any CSS assertion, that then passed
+// 10/10 at `--workers=1`. Local runs use
 // min(4, max(1, floor(availableParallelism / 4))); PW_WORKERS=N raises or
 // lowers it and the CLI `--workers=N` still wins over the config value.
 // CI keeps its single worker per shard (see .github/workflows/intent-pr.yml).
@@ -46,8 +49,9 @@ export default defineConfig({
   /* Fail the build on CI if you accidentally left test.only in the source code. */
   forbidOnly: !!process.env.CI,
   /* Retry twice on CI. Locally, retry once so a single load-induced mount
-     timeout on the shared host (intent-hq/cloudlands-fe#2373) reports as
-     flaky instead of failing the run; `trace: 'on-first-retry'` below then
+     timeout on the shared host (the incident seen while verifying
+     intent-hq/cloudlands-fe#2373, see `workers` above) reports as flaky
+     instead of failing the run; `trace: 'on-first-retry'` below then
      captures a trace for it. */
   retries: process.env.CI ? 2 : 1,
   /* 1 on CI; bounded locally — see `workers` above. */
