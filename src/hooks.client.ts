@@ -28,6 +28,100 @@ export const init: ClientInit = async () => {
   }
 };
 
+// bits-ui teardown signature: Svelte 5 compiles {@render snippet()} to n.call(...) with a
+// minified receiver, and bits-ui's deferred prop reads fail with exactly this message when a
+// tooltip/dismissible layer is destroyed mid-transition (see
+// https://github.com/huntabyte/bits-ui/discussions/1302, intent-hq/intent#1605). Both the
+// exact message and a bits-ui frame are required — a bundled `immutable/chunks/` stack alone
+// says nothing about the origin (intent-hq/intent#4774).
+const BITS_UI_TEARDOWN_MESSAGE = /^[a-zA-Z_$]{1,3}\.call is not a function$/;
+
+function isBitsUiTeardownError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    error.name === 'TypeError' &&
+    BITS_UI_TEARDOWN_MESSAGE.test(error.message) &&
+    typeof error.stack === 'string' &&
+    error.stack.includes('bits-ui')
+  );
+}
+
+// The generic fallthrough diagnostic is bounded and allowlisted: name, message, the first
+// stack frames and the route id, each scrubbed of full URLs (credentials, path, query and
+// hash can carry state — only scheme, host and a script basename:line:col survive) and then
+// truncated. No page URL and no arbitrary rejection payload is logged (intent-hq/intent#4774).
+const DIAGNOSTIC_TEXT_LIMIT = 500;
+const DIAGNOSTIC_STACK_FRAMES = 8;
+// A URL token runs to the next whitespace: parentheses and brackets are legal URL characters,
+// so they must not terminate the match. Trailing delimiters (the stack-frame ")", quotes,
+// sentence punctuation) are peeled off and re-appended around the scrubbed URL.
+const URL_PATTERN = /[a-z][a-z0-9+.-]*:\/\/\S+/gi;
+const TRAILING_DELIMITERS = /[)\]}>'".,;:]+$/;
+const SCRIPT_BASENAME = /[^/]+\.[cm]?[jt]s(?::\d+){0,2}$/;
+
+function scrubUrl(token: string): string {
+  const suffix = TRAILING_DELIMITERS.exec(token)?.[0] ?? '';
+  const url = token.slice(0, token.length - suffix.length);
+  const schemeEnd = url.indexOf('://');
+  const scheme = url.slice(0, schemeEnd);
+  const rest = url
+    .slice(schemeEnd + 3)
+    .split('#')[0]
+    .split('?')[0];
+  const slash = rest.indexOf('/');
+  const authority = slash === -1 ? rest : rest.slice(0, slash);
+  const host = authority.slice(authority.lastIndexOf('@') + 1);
+  const path = slash === -1 ? '' : rest.slice(slash);
+  if (path === '' || path === '/') return `${scheme}://${host}${suffix}`;
+  const script = SCRIPT_BASENAME.exec(path)?.[0];
+  return `${scheme}://${host}/${script ?? '<redacted>'}${suffix}`;
+}
+
+function sanitizeDiagnosticText(text: string): string {
+  const scrubbed = text.replace(URL_PATTERN, scrubUrl);
+  return scrubbed.length > DIAGNOSTIC_TEXT_LIMIT
+    ? `${scrubbed.slice(0, DIAGNOSTIC_TEXT_LIMIT)}…`
+    : scrubbed;
+}
+
+function firstStackFrames(stack: string | undefined): string | null {
+  if (typeof stack !== 'string' || stack.length === 0) return null;
+  return stack.split('\n').slice(0, DIAGNOSTIC_STACK_FRAMES).map(sanitizeDiagnosticText).join('\n');
+}
+
+interface ClientErrorDiagnostic {
+  name: string;
+  message: string;
+  stack: string | null;
+  routeId: string | null;
+}
+
+function clientErrorDiagnostic(error: unknown, routeId: string | null): ClientErrorDiagnostic {
+  if (error instanceof Error) {
+    return {
+      name: sanitizeDiagnosticText(String(error.name)),
+      message: sanitizeDiagnosticText(String(error.message)),
+      stack: firstStackFrames(error.stack),
+      routeId,
+    };
+  }
+  if (error && typeof error === 'object') {
+    const message = 'message' in error ? error.message : undefined;
+    return {
+      name: 'object',
+      message: typeof message === 'string' ? sanitizeDiagnosticText(message) : '[non-Error object]',
+      stack: null,
+      routeId,
+    };
+  }
+  return {
+    name: typeof error,
+    message: sanitizeDiagnosticText(String(error)),
+    stack: null,
+    routeId,
+  };
+}
+
 // Track if we've initialized - this helps suppress the initial "Not found: /index.html"
 // error that happens in SPA mode when the app first loads
 let initialized = false;
@@ -112,45 +206,6 @@ export const handleError: HandleClientError = ({ error, event }) => {
     }
   }
 
-  // Log other errors with full details
-  // Extract error details for better logging
-  let errorDetails: Record<string, unknown>;
-
-  if (error instanceof Error) {
-    errorDetails = {
-      message: error.message,
-      stack: error.stack,
-      name: error.name,
-      url: event.url.toString(),
-      routeId: event.route.id,
-    };
-  } else if (error && typeof error === 'object') {
-    // Handle non-Error objects (e.g., SvelteKit internal errors)
-    try {
-      errorDetails = {
-        ...error,
-        url: event.url.toString(),
-        routeId: event.route.id,
-        errorType: 'object',
-        errorKeys: Object.keys(error),
-      };
-    } catch {
-      errorDetails = {
-        message: String(error),
-        url: event.url.toString(),
-        routeId: event.route.id,
-        errorType: 'non-serializable-object',
-      };
-    }
-  } else {
-    errorDetails = {
-      message: String(error),
-      url: event.url.toString(),
-      routeId: event.route.id,
-      errorType: typeof error,
-    };
-  }
-
   // Suppress known Monaco Editor errors (e.g., TextMate grammar tokenization issues)
   // These are harmless and occur during syntax highlighting of certain code patterns
   if (shouldSuppressMonacoUnhandledRejection(error)) {
@@ -159,31 +214,15 @@ export const handleError: HandleClientError = ({ error, event }) => {
     };
   }
 
-  // Suppress bits-ui cleanup errors during component teardown
-  // In production, Svelte 5 compiles {@render snippet()} to n.call(...) where n is minified.
-  // When bits-ui tooltips are destroyed during workspace transitions, internal snippet
-  // references become undefined, causing: TypeError: n.call is not a function
-  // See: https://github.com/huntabyte/bits-ui/discussions/1302
-  const errorMsg = error instanceof Error ? error.message : String(error);
-  if (
-    errorMsg?.includes('.call is not a function') &&
-    (/^[a-zA-Z_$]{1,3}\.call is not a function$/.test(errorMsg) ||
-      (error instanceof Error && error.stack?.includes('immutable/chunks/')))
-  ) {
+  // Suppress bits-ui cleanup errors during component teardown; any other call-TypeError
+  // falls through to the diagnostic log below.
+  if (isBitsUiTeardownError(error)) {
     return {
       message: '',
     };
   }
 
-  logger.error('Client error:', errorDetails);
-  // Also log the raw error for debugging
-  console.error('[hooks.client] Raw error:', error);
-  // Try to log as JSON for better visibility
-  try {
-    console.error('[hooks.client] Error as JSON:', JSON.stringify(error, null, 2));
-  } catch {
-    console.error('[hooks.client] Error not JSON serializable');
-  }
+  logger.error('Client error:', clientErrorDiagnostic(error, event.route.id));
 
   // Return a user-friendly error message
   return {
