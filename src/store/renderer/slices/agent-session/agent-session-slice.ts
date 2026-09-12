@@ -1255,9 +1255,11 @@ export const agentSessionRetryWithModelRequested = createAsyncAction<
  * another provider — and it requires a concrete modelId. So the saga first
  * resolves a model on `providerId` from that provider's `models.list`
  * catalog, switches the session with it, and only then redrives the failed
- * turn via `agentSessionRetryLastMessageRequested`. Kept as its own action
- * (rather than reusing retry-with-model) because the caller genuinely does
- * not know a model id — picking one is the saga's job.
+ * turn through the retry-with-model path with that model as an explicit
+ * override (the plain last-message retry would re-send the exhausted
+ * provider's recorded model). Kept as its own action (rather than reusing
+ * retry-with-model) because the caller genuinely does not know a model id —
+ * picking one is the saga's job.
  */
 export const agentSessionRetryWithProviderRequested = createAsyncAction<
   [agentId: string, wsId: string, providerId: string],

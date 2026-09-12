@@ -519,10 +519,10 @@ function pickModelForProvider(
  *   2. Switch the LIVE session via `agent.setModel` with an explicit
  *      `providerId` — the only FE→daemon path that carries a provider for a
  *      running agent (the daemon owns the child respawn + history replay).
- *   3. Only on a successful switch, redrive the failed turn by dispatching
- *      the ordinary retry-last-message command. It is a `put`, not an
- *      awaited call: the same per-agent FIFO that runs this handler picks it
- *      up next, so awaiting it here would deadlock behind ourselves.
+ *   3. Only on a successful switch, redrive the failed turn through the
+ *      retry-with-model path with the picked model as an explicit override,
+ *      run inline in this handler so nothing queued behind it on the
+ *      per-agent FIFO can move the session again before the redrive goes out.
  *
  * A failed switch must NOT retry — that would re-send to the exhausted
  * provider and fail on quota all over again, which is exactly what the
@@ -603,13 +603,20 @@ function* handleRetryWithProvider(action: RetryProviderAction): SagaGenerator<vo
     // would re-send the model we just switched away from, defeating the whole
     // recovery. Passing `model.value` wins that `??` chain outright, so the
     // turn is issued on the provider the user actually picked.
+    //
+    // Run the redrive INLINE (a `call`, never a `put` back onto the FIFO):
+    // the provider buttons stay rendered while this handler's catalog and
+    // setModel RPCs are in flight, so a second click may already be queued
+    // behind us. A put-back redrive would land AFTER that click, whose own
+    // setModel has by then moved the session to a different provider, and
+    // `model.value` would be sent against the wrong live provider. Calling
+    // here keeps switch + redrive atomic per handler. `retryLastMessage`
+    // settles the synthetic action itself and never throws; nothing awaits
+    // its promise, so swallow the rejection a failed (self-reporting) retry
+    // would otherwise raise as unhandled.
     const redrive = agentSessionRetryWithModelRequested(agentId, wsId, model.value);
-    // Nothing awaits the redrive's promise — it settles on a later turn of the
-    // per-agent FIFO, so awaiting it here would deadlock behind this handler.
-    // Swallow its rejection so a failed retry (which reports itself) cannot
-    // surface as an unhandled rejection in the renderer.
     void redrive.promise.catch(() => undefined);
-    yield* put(redrive);
+    yield* call(retryLastMessage, redrive, model.value);
     yield* put(action.success(undefined as void));
     settled = true;
   } catch (error) {

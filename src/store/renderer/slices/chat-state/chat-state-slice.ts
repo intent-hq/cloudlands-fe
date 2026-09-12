@@ -960,7 +960,12 @@ chatStateReducer.with(chatInitialized, (state, { payload: [agentId, data] }) =>
   }),
 );
 chatStateReducer.with(chatInitFailed, (state, { payload: [agentId, error] }) =>
-  updateAgent(state, agentId, { error, failureCorrelation: undefined, modelUnavailable: null }),
+  updateAgent(state, agentId, {
+    error,
+    failureCorrelation: undefined,
+    modelUnavailable: null,
+    quotaExceeded: null,
+  }),
 );
 chatStateReducer.with(chatSendStarted, (state, { payload: { agentId, timestamp } }) =>
   updateAgent(state, agentId, {
@@ -1077,8 +1082,15 @@ chatStateReducer.with(chatInterrupted, (state, { payload: [agentId] }) =>
 chatStateReducer.with(chatModelUnavailableCleared, (state, { payload: [agentId] }) =>
   updateAgent(state, agentId, { modelUnavailable: null }),
 );
+// `quotaExceeded` (#4455) only qualifies a non-null `error` — it is set by the
+// same chatSendFailed that sets the error — so every recovery path that clears
+// the error (enqueue-success in chat-send-saga, the daemon-side redrive status
+// edge in the events bridge, the agent.retry toast) must drop it too, or
+// StreamingStatus keeps offering the provider buttons over the replacement
+// turn. Failed-turn idle reconciliation never dispatches this, so the banner
+// still survives a reload/reconcile like `modelUnavailable` does.
 chatStateReducer.with(chatErrorCleared, (state, { payload: [agentId] }) =>
-  updateAgent(state, agentId, { error: null, failureCorrelation: undefined }),
+  updateAgent(state, agentId, { error: null, failureCorrelation: undefined, quotaExceeded: null }),
 );
 chatStateReducer.with(chatStopInitiated, (state, { payload: [agentId] }) =>
   updateAgent(state, agentId, { isInterrupting: true }),

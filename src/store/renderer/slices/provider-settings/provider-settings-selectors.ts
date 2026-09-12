@@ -6,7 +6,10 @@ import {
   selectHasCheckedOnce,
   selectProviderStatusMap,
 } from '../agent-availability/agent-availability-selectors';
-import { selectProviderCatalogEntry } from '../provider-catalog/provider-catalog-selectors';
+import {
+  selectNormalizedProviderId,
+  selectProviderCatalogEntry,
+} from '../provider-catalog/provider-catalog-selectors';
 
 /**
  * Default provider id — the provider leg of the default model triple
@@ -88,6 +91,30 @@ export const selectAvailableEnabledProviderIds = store.createSelector((state): s
         selectIsProviderModelAccessAllowed.select(state, id),
     );
 });
+
+/**
+ * Providers a quota-exceeded turn can be retried on (#4455): the
+ * available+enabled set narrowed to providers whose sign-in is ready, minus
+ * the exhausted provider. `selectAvailableEnabledProviderIds` is a model-picker
+ * gate that only applies the auth rule to Antigravity, so a signed-out Codex /
+ * Droid / Auggie with `{ available: true, authenticated: false }` would
+ * otherwise be offered as a dead-end retry target. Unknown auth (no
+ * `authenticated` flag reported) stays offered, matching
+ * `isProviderAuthenticationReady`. Does not change the generic picker policy.
+ */
+export const selectQuotaRetryProviderIds = store.createSelector(
+  (state, exhaustedProviderId: string): string[] => {
+    const statusMap = selectProviderStatusMap.select(state);
+    const exhausted = selectNormalizedProviderId.select(state, exhaustedProviderId);
+    return selectAvailableEnabledProviderIds
+      .select(state)
+      .filter(
+        (id) =>
+          selectNormalizedProviderId.select(state, id) !== exhausted &&
+          isProviderAuthenticationReady(id, statusMap[id]?.authenticated),
+      );
+  },
+);
 
 /** Initial model fetches may precede general discovery, but not Antigravity auth. */
 export const selectModelFetchProviderIds = store.createSelector((state): string[] => {

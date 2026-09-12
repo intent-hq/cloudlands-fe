@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runSaga, stdChannel } from 'redux-saga';
 import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 
@@ -962,9 +962,17 @@ describe('chatSendSaga', () => {
   describe('retry on another provider (#4455)', () => {
     const OTHER_PROVIDER = 'codex';
 
-    it('switches the session to the provider default model, then redrives the turn', async () => {
-      // Row order matters: the isDefault row must win over the first row, so
-      // the catalog deliberately puts a non-default first.
+    beforeEach(() => {
+      // `vi.clearAllMocks()` keeps mock implementations, so without an
+      // explicit per-test seed each case would silently inherit the previous
+      // test's catalog and fail when run in isolation (`-t`). Reset both
+      // saga-facing mocks and install the default catalog; tests that need a
+      // different shape override it below. Row order matters: the isDefault
+      // row must win over the first row, so the catalog deliberately puts a
+      // non-default first.
+      mocks.getModelsForProvider.mockReset();
+      mocks.setModel.mockReset();
+      mocks.send.mockReset();
       mocks.getModelsForProvider.mockResolvedValue({
         models: [
           { value: 'gpt-5-mini', label: 'Mini' },
@@ -972,6 +980,19 @@ describe('chatSendSaga', () => {
         ],
       });
       mocks.setModel.mockResolvedValue({ ok: true, data: { success: true } });
+      mocks.send.mockResolvedValue(undefined);
+    });
+
+    /** The wire sends issued by the redrive, as `[agentId, text, model]`. */
+    function sentTurns() {
+      return mocks.send.mock.calls.map(([agentId, text, , options]) => [
+        agentId,
+        text,
+        options?.model,
+      ]);
+    }
+
+    it('switches the session to the provider default model, then redrives the turn', async () => {
       const run = harness();
       run.setChat(chatLastAttemptedMessageSet(AGENT, { text: 'retry me', options: {} }));
 
@@ -982,21 +1003,60 @@ describe('chatSendSaga', () => {
       expect(mocks.getModelsForProvider).toHaveBeenCalledWith(OTHER_PROVIDER);
       expect(mocks.setModel).toHaveBeenCalledWith(AGENT, 'gpt-5-codex', WS, OTHER_PROVIDER);
       // The redrive MUST carry the newly picked model as an explicit
-      // override: the plain last-message retry resolves the wire model from
-      // the recorded attempt (the exhausted provider's model) or the stale
-      // Redux session, either of which re-sends the model we just switched
-      // away from and defeats the recovery.
-      const redrives = run.dispatch.mock.calls.filter(
-        ([action]) => action.type === agentSessionRetryWithModelRequested.type,
-      );
-      expect(redrives).toHaveLength(1);
-      expect(redrives[0][0].payload).toEqual([AGENT, WS, 'gpt-5-codex']);
+      // override on the wire: the plain last-message retry resolves the
+      // model from the recorded attempt (the exhausted provider's model) or
+      // the stale Redux session, either of which re-sends the model we just
+      // switched away from and defeats the recovery.
+      expect(sentTurns()).toEqual([[AGENT, 'retry me', 'gpt-5-codex']]);
+      // The redrive ran inline; it is not re-queued as its own command.
       expect(
         run.dispatch.mock.calls.filter(
-          ([action]) => action.type === agentSessionRetryLastMessageRequested.type,
+          ([action]) =>
+            action.type === agentSessionRetryWithModelRequested.type ||
+            action.type === agentSessionRetryLastMessageRequested.type,
         ),
       ).toHaveLength(0);
       expect(mocks.toastError).not.toHaveBeenCalled();
+      run.task.cancel();
+      await run.task.toPromise();
+    });
+
+    it('a second provider click queued during the first switch cannot hijack the first redrive', async () => {
+      // The provider buttons stay rendered while the first click's catalog
+      // and setModel RPCs are in flight, so a second click is already queued
+      // on the per-agent FIFO by the time the first handler is ready to
+      // redrive. If that redrive were put back onto the FIFO it would run
+      // AFTER the second click's setModel, sending the first provider's
+      // model against the second provider's live session. Each click must
+      // therefore complete switch + send before the next click's switch.
+      const SECOND_PROVIDER = 'claude-code';
+      mocks.getModelsForProvider.mockImplementation(async (providerId: string) => ({
+        models:
+          providerId === OTHER_PROVIDER
+            ? [{ value: 'gpt-5-codex', label: 'Codex', isDefault: true }]
+            : [{ value: 'claude-opus', label: 'Opus', isDefault: true }],
+      }));
+      const run = harness();
+      run.setChat(chatLastAttemptedMessageSet(AGENT, { text: 'retry me', options: {} }));
+
+      const first = agentSessionRetryWithProviderRequested(AGENT, WS, OTHER_PROVIDER);
+      const second = agentSessionRetryWithProviderRequested(AGENT, WS, SECOND_PROVIDER);
+      run.channel.put(first);
+      run.channel.put(second);
+      await expect(first.promise).resolves.toBeUndefined();
+      await expect(second.promise).resolves.toBeUndefined();
+
+      expect(sentTurns()).toEqual([
+        [AGENT, 'retry me', 'gpt-5-codex'],
+        [AGENT, 'retry me', 'claude-opus'],
+      ]);
+      // Interleaving on the wire: switch(1) → send(1) → switch(2) → send(2),
+      // never switch(1) → switch(2) → send(1).
+      const [switch1, switch2] = mocks.setModel.mock.invocationCallOrder;
+      const [send1, send2] = mocks.send.mock.invocationCallOrder;
+      expect(switch1).toBeLessThan(send1);
+      expect(send1).toBeLessThan(switch2);
+      expect(switch2).toBeLessThan(send2);
       run.task.cancel();
       await run.task.toPromise();
     });
@@ -1007,7 +1067,6 @@ describe('chatSendSaga', () => {
       // and the daemon's creation-time chain honour. A failover that landed
       // on the provider's advertised default instead would silently override
       // an explicit preference.
-      mocks.setModel.mockResolvedValue({ ok: true, data: { success: true } });
       const run = harness(session(), undefined, undefined, {
         [OTHER_PROVIDER]: 'gpt-5-mini',
       });
@@ -1019,10 +1078,7 @@ describe('chatSendSaga', () => {
 
       // 'gpt-5-codex' is the catalog's isDefault row; the user's choice wins.
       expect(mocks.setModel).toHaveBeenCalledWith(AGENT, 'gpt-5-mini', WS, OTHER_PROVIDER);
-      const redrives = run.dispatch.mock.calls.filter(
-        ([action]) => action.type === agentSessionRetryWithModelRequested.type,
-      );
-      expect(redrives[0][0].payload).toEqual([AGENT, WS, 'gpt-5-mini']);
+      expect(sentTurns()).toEqual([[AGENT, 'retry me', 'gpt-5-mini']]);
       run.task.cancel();
       await run.task.toPromise();
     });
@@ -1030,7 +1086,6 @@ describe('chatSendSaga', () => {
     it('ignores a configured model the provider no longer serves (#4455)', async () => {
       // A persisted id that has been renamed or retired must not reach
       // agent.setModel, which would reject it — fall back to the catalog.
-      mocks.setModel.mockResolvedValue({ ok: true, data: { success: true } });
       const run = harness(session(), undefined, undefined, {
         [OTHER_PROVIDER]: 'model-that-no-longer-exists',
       });
@@ -1052,7 +1107,6 @@ describe('chatSendSaga', () => {
           { value: 'gpt-5-codex', label: 'Codex' },
         ],
       });
-      mocks.setModel.mockResolvedValue({ ok: true, data: { success: true } });
       const run = harness();
 
       const retry = agentSessionRetryWithProviderRequested(AGENT, WS, OTHER_PROVIDER);
@@ -1076,9 +1130,6 @@ describe('chatSendSaga', () => {
         expected: 'provider not installed',
       },
     ])('does not redrive when setModel reports a $mode', async ({ result, expected }) => {
-      mocks.getModelsForProvider.mockResolvedValue({
-        models: [{ value: 'gpt-5-codex', label: 'Codex', isDefault: true }],
-      });
       mocks.setModel.mockResolvedValue(result);
       const run = harness();
       run.setChat(chatLastAttemptedMessageSet(AGENT, { text: 'retry me', options: {} }));

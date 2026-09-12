@@ -330,9 +330,12 @@
     selectProviderCatalogEntries,
     selectProviderCatalogLoaded,
     selectProviderDisplayName,
-    selectNormalizedProviderId,
   } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
-  import { selectAvailableEnabledProviderIds } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
+  import {
+    selectAvailableEnabledProviderIds,
+    selectQuotaRetryProviderIds,
+  } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
+  import { selectProviderStatusMap } from '$store/renderer/slices/agent-availability/agent-availability-selectors';
   import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
   import { canChangeAgentProvider as resolveCanChangeAgentProvider } from './provider-lock';
   import ModelChangeNotice from './ModelChangeNotice.svelte';
@@ -484,7 +487,10 @@
   // Quota-exceeded recovery (#4455): the provider that ran out on the last
   // turn, plus the sibling providers we may offer instead.
   const chatQuotaExceeded$ = selectChatQuotaExceeded(agentIdStore);
+  // Reactivity anchors for the quota-retry offer list: the enabled/available
+  // set and the per-provider auth flags both live in other slices.
   const availableEnabledProviderIds$ = selectAvailableEnabledProviderIds();
+  const providerStatusMap$ = selectProviderStatusMap();
   // Read purely as a reactivity anchor for the display-name derivation below:
   // provider display names come from the catalog, which hydrates
   // asynchronously and can land after the quota failure does.
@@ -4998,19 +5004,21 @@
   });
 
   /**
-   * Providers we can offer as a quota retry target: the canonical
-   * "enabled ∧ visible ∧ probe-available ∧ model-access-allowed" set, minus
-   * the provider that just ran out. Offering the exhausted one back would
-   * only reproduce the same failure, and an empty list makes StreamingStatus
-   * fall back to the plain error banner rather than dangling a dead action.
+   * Providers we can offer as a quota retry target: the
+   * "enabled ∧ visible ∧ probe-available ∧ signed-in" set minus the provider
+   * that just ran out (`selectQuotaRetryProviderIds`). Offering the exhausted
+   * one back would only reproduce the same failure, a signed-out one would be
+   * a dead end, and an empty list makes StreamingStatus fall back to the plain
+   * error banner rather than dangling a dead action.
    */
   const quotaRetryProviders = $derived.by(() => {
     const quota = $chatQuotaExceeded$;
     if (!quota) return [];
     void $providerCatalogEntries$;
-    const exhausted = selectNormalizedProviderId.select(appStore.state, quota.providerId);
-    return $availableEnabledProviderIds$
-      .filter((id) => selectNormalizedProviderId.select(appStore.state, id) !== exhausted)
+    void $availableEnabledProviderIds$;
+    void $providerStatusMap$;
+    return selectQuotaRetryProviderIds
+      .select(appStore.state, quota.providerId)
       .map((id) => ({ id, displayName: selectProviderDisplayName.select(appStore.state, id) }));
   });
 

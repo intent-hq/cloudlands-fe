@@ -10104,6 +10104,36 @@ describe('daemonEventsBridge (daemon-side redrive clears stale error banner — 
     expect(readChatAgent()?.error).toBeNull();
   });
 
+  it('quota-failed turn redriven remotely (error→pending→active, no stream:start) drops the quota offer with the banner (#4455)', async () => {
+    // A quota failure sets `quotaExceeded` alongside `error`. When another
+    // client's agent.retry redrives the turn, the status edge is the only
+    // clear that runs (user-message turns emit no agent:stream:start), so the
+    // provider offer must go with the error or StreamingStatus keeps showing
+    // the retry-with buttons over the live replacement turn.
+    seedSession({ status: AgentStatus.Error });
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    appStore.dispatch(
+      chatSendFailed(AGENT, 'usage limit reached', 'turn-quota-1', undefined, {
+        providerId: 'claude-code',
+      }),
+    );
+    expect(readChatAgent()?.quotaExceeded).toEqual({ providerId: 'claude-code' });
+
+    handler(
+      notification('agent:status-changed', { agentId: AGENT, status: 'pending', isActive: false }),
+    );
+    expect(readChatAgent()?.error).toBeNull();
+    expect(readChatAgent()?.quotaExceeded).toBeNull();
+
+    handler(
+      notification('agent:status-changed', { agentId: AGENT, status: 'active', isActive: true }),
+    );
+    expect(readChatAgent()?.error).toBeNull();
+    expect(readChatAgent()?.quotaExceeded).toBeNull();
+  });
+
   it('failure-toast agent.retry repro: agent:failed → error → pending → active → queue:processing clears the banner', async () => {
     // Second live repro on monorepo#1106: the failure-toast Retry is
     // FE-initiated but routes through `agent.retry`, NOT the chat-send
