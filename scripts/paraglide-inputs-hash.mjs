@@ -16,7 +16,9 @@
 // next generation (or the preview's unplugin fallback) picks the edit up.
 //
 // Run directly (`pnpm run generate:i18n`), it compiles the project with the
-// same options as `paraglide-js compile --output-structure locale-modules`.
+// same options as `paraglide-js compile --output-structure locale-modules`;
+// `--if-stale` skips the compile while the recorded hash still matches, so
+// gates that merely need the outputs on disk (knip) stay cheap.
 import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
@@ -76,18 +78,26 @@ export function canReuseGeneratedParaglide({ projectDir, messagesDir, outdir }) 
   return recorded.length > 0 && recorded === hashParaglideInputs({ projectDir, messagesDir });
 }
 
+/** `generateParaglide`, skipped when `ifStale` is set and the outputs are current. */
+export async function ensureGeneratedParaglide({ ifStale = false, ...options }) {
+  if (ifStale && canReuseGeneratedParaglide(options)) return true;
+  return generateParaglide(options);
+}
+
 const isDirectRun = process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1]);
 if (isDirectRun) {
   const rootDir = join(dirname(fileURLToPath(import.meta.url)), '..');
-  const { compile } = await import('@inlang/paraglide-js');
   const projectDir = join(rootDir, 'project.inlang');
   const outdir = join(rootDir, 'src/shared/paraglide');
-  const ok = await generateParaglide({
+  const ok = await ensureGeneratedParaglide({
+    ifStale: process.argv.includes('--if-stale'),
     projectDir,
     messagesDir: join(rootDir, 'messages'),
     outdir,
-    compile: () =>
-      compile({ project: projectDir, outdir, outputStructure: PARAGLIDE_OUTPUT_STRUCTURE }),
+    compile: async () => {
+      const { compile } = await import('@inlang/paraglide-js');
+      return compile({ project: projectDir, outdir, outputStructure: PARAGLIDE_OUTPUT_STRUCTURE });
+    },
   });
   if (!ok) {
     console.error('[generate:i18n] messages kept changing while compiling; rerun generate:i18n');

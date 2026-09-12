@@ -88,7 +88,7 @@ corepack pnpm run dev           # Standard Electron launcher
 corepack pnpm run dev:cdp       # Electron launcher with CDP support
 corepack pnpm run build         # Production build
 corepack pnpm run check         # Svelte + TypeScript checks
-corepack pnpm run lint          # ESLint
+corepack pnpm run lint          # ESLint + i18n string/completeness checks + knip dead code
 corepack pnpm run format        # Prettier write pass
 corepack pnpm run format:check  # Prettier check (enforced in PR CI)
 corepack pnpm run test:unit     # Vitest suite
@@ -316,7 +316,13 @@ empty change set exits 2 instead of passing silently. Add `--dry-run` to inspect
 selected commands without running them. The command runs scoped Prettier and ESLint,
 related Vitest tests, directly imported colocated component tests, and only the
 renderer/main/preload TypeScript boundaries that changed. Ambiguous or high-risk files
-select a conservative suite instead of silently skipping coverage.
+select a conservative suite instead of silently skipping coverage. Any code change (or a
+`knip.jsonc` / `package.json` / `tsconfig*.json` change) also runs knip repo-wide (~3 s,
+also chained into `pnpm run lint`): dead-code detection is a whole-program check, so it
+cannot be scoped to changed files — dropping an import in one file can make an export in
+another unused. knip resolves `m.*()` imports against the gitignored i18n bundle, so
+`lint:dead-code` first runs `generate:i18n --if-stale`, which compiles only while the
+bundle is missing or its recorded input hash no longer matches `messages/*.json`.
 
 Any renderer source change also runs `pnpm run test:ui-invariants` (chained into
 `validate:architecture` too): the repo-wide UI ratchets and the component-catalog
