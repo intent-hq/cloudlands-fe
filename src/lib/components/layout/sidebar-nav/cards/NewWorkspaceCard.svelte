@@ -23,6 +23,7 @@
   import { WorkspaceStatusEnum } from '$shared/types';
   import { compareWorkspaceActivityDisplayTimeDesc } from '$shared/utils/workspace-activity-time';
   import Header from '$lib/components/ui/Header.svelte';
+  import GitHubAvatar from '$lib/components/ui/GitHubAvatar.svelte';
   import { store as appStore } from '$store/renderer/store';
   import { deriveRecentRepoEntries } from './recent-repos';
 
@@ -83,10 +84,6 @@
     appStore.dispatch(closeAll(false));
     appStore.dispatch(setShowCreateModal(true));
   }
-
-  function getGitHubAvatarUrl(owner: string, size: number = 24): string {
-    return `https://github.com/${owner}.png?size=${size}`;
-  }
 </script>
 
 <div class="px-3 pb-3 flex flex-col gap-2">
@@ -130,12 +127,11 @@
               )}
           >
             {#if repo.owner}
-              <img
-                src={getGitHubAvatarUrl(repo.owner)}
+              <GitHubAvatar
+                identity={repo.owner}
                 alt={repo.owner}
+                size={16}
                 class="size-4 rounded-full shrink-0"
-                loading="lazy"
-                onerror={(e) => ((e.currentTarget as HTMLImageElement).style.display = 'none')}
               />
             {:else}
               <span class="text-ghost shrink-0"><Fa icon={faFolder} size="xs" /></span>
