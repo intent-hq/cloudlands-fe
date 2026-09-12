@@ -9,7 +9,7 @@
     type ChatPolishGeometry,
   } from './chat-polish/chat-polish-geometry';
 
-  let { entry, mode = 'detail' }: { entry: CatalogEntry; mode?: 'gallery' | 'detail' } = $props();
+  let { entry }: { entry: CatalogEntry } = $props();
   const renderer = $derived(getCatalogRenderer(entry.slug));
   let chatPolishGeometry = $state<ChatPolishGeometry>({ ...defaultChatPolishGeometry });
   const visibleFixtures = $derived(
@@ -95,22 +95,14 @@
 {/snippet}
 
 <section
-  class={mode === 'gallery'
-    ? 'catalog-entry scroll-mt-24 overflow-hidden rounded-lg border border-border bg-card'
-    : 'catalog-detail w-full min-w-0 p-4 sm:p-6 lg:p-10'}
-  class:chat-polish-detail={entry.slug === 'chat-polish' && mode === 'detail'}
-  id={mode === 'gallery' ? `component-${entry.slug}` : undefined}
-  data-catalog-gallery-entry={mode === 'gallery' ? entry.slug : undefined}
+  class="catalog-detail w-full min-w-0 p-4 sm:p-6 lg:p-10"
+  class:chat-polish-detail={entry.slug === 'chat-polish'}
 >
   <header class="entry-header border-b border-border">
     <div class="min-w-0">
       <div class="flex flex-wrap items-baseline gap-2">
-        {#if mode === 'gallery'}
-          <h3 class="text-lg font-medium tracking-tight">{entry.name}</h3>
-        {:else}
-          <p class="text-xs font-medium text-muted-foreground">Component focus</p>
-          <h1 class="mt-1 text-3xl font-medium tracking-tight">{entry.name}</h1>
-        {/if}
+        <p class="text-xs font-medium text-muted-foreground">Component focus</p>
+        <h1 class="mt-1 text-3xl font-medium tracking-tight">{entry.name}</h1>
         <span
           class="rounded-full border border-border bg-muted px-2 py-0.5 text-xs text-muted-foreground"
         >
@@ -122,9 +114,6 @@
       </p>
     </div>
     <div class="flex shrink-0 items-center gap-2">
-      {#if mode === 'gallery'}
-        <a class="focus-link" href={`/sandbox/${entry.slug}`}>Focus view</a>
-      {/if}
       <details class="entry-inspector text-xs text-muted-foreground">
         <summary>Source</summary>
         <div class="inspector-popover">
@@ -135,23 +124,21 @@
     </div>
   </header>
 
-  {#if entry.slug !== 'chat-polish' || mode === 'detail'}
-    {#if entry.slug === 'chat-polish'}
-      <div class="chat-polish-layout" data-testid="chat-polish-layout">
-        <aside class="chat-polish-sidebar" data-testid="chat-polish-sidebar">
-          <ChatPolishGeometryControls bind:geometry={chatPolishGeometry} />
-        </aside>
-        <section
-          class="chat-polish-examples"
-          aria-label="Chat transcript examples"
-          data-testid="chat-polish-examples"
-        >
-          {@render fixtureGrid()}
-        </section>
-      </div>
-    {:else}
-      {@render fixtureGrid()}
-    {/if}
+  {#if entry.slug === 'chat-polish'}
+    <div class="chat-polish-layout" data-testid="chat-polish-layout">
+      <aside class="chat-polish-sidebar" data-testid="chat-polish-sidebar">
+        <ChatPolishGeometryControls bind:geometry={chatPolishGeometry} />
+      </aside>
+      <section
+        class="chat-polish-examples"
+        aria-label="Chat transcript examples"
+        data-testid="chat-polish-examples"
+      >
+        {@render fixtureGrid()}
+      </section>
+    </div>
+  {:else}
+    {@render fixtureGrid()}
   {/if}
 </section>
 
@@ -257,8 +244,7 @@
     background-color: hsl(var(--background));
   }
 
-  summary,
-  .focus-link {
+  summary {
     width: fit-content;
     cursor: pointer;
     border-radius: var(--radius-small);
@@ -267,13 +253,11 @@
     font-weight: var(--text-body-strong-weight);
   }
 
-  summary:hover,
-  .focus-link:hover {
+  summary:hover {
     text-decoration: underline;
   }
 
-  summary:focus-visible,
-  .focus-link:focus-visible {
+  summary:focus-visible {
     outline: 1px solid hsl(var(--ring));
     outline-offset: 2px;
   }

@@ -6,7 +6,6 @@ import axe from 'axe-core';
 import { createRawSnippet } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import CatalogFoundations from './CatalogFoundations.svelte';
-import CatalogGallery from './CatalogGallery.svelte';
 import CatalogIntroduction from './CatalogIntroduction.svelte';
 import CatalogShell from './CatalogShell.svelte';
 import CatalogSystemPage from './CatalogSystemPage.svelte';
@@ -173,20 +172,6 @@ describe('catalog workspace', () => {
     const springs = screen.getByTestId('foundation-springs');
     expect(springs.querySelector('[style*="animation"]')).toBeNull();
     expect(screen.getByText('--spring-slow-ease')).toBeTruthy();
-  });
-
-  it('filters the gallery and preserves hash navigation active state', async () => {
-    render(CatalogGallery);
-    const buttonLink = screen.getByRole('link', { name: 'Button', exact: true });
-    expect(buttonLink.getAttribute('href')).toBe('#component-button');
-    await fireEvent.click(buttonLink);
-    expect(buttonLink.getAttribute('aria-current')).toBe('location');
-
-    await fireEvent.input(screen.getByRole('searchbox', { name: 'Search components' }), {
-      target: { value: 'dialog' },
-    });
-    expect(screen.getByRole('heading', { name: 'Dialog' })).toBeTruthy();
-    expect(screen.queryByRole('heading', { name: 'Button' })).toBeNull();
   });
 
   it('presents the landing and system pages as navigable documentation', async () => {
