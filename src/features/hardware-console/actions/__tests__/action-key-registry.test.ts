@@ -4,6 +4,12 @@ import { m } from '$shared/paraglide/messages.js';
 import type { Workspace } from '$shared/types';
 import { QUESTION_RESOURCE_MIME_TYPE } from '$shared/types/question-resource';
 
+const { loggerWarnMock } = vi.hoisted(() => ({ loggerWarnMock: vi.fn() }));
+
+vi.mock('$lib/utils/client-logger', () => ({
+  createLogger: () => ({ error: vi.fn(), warn: loggerWarnMock, info: vi.fn(), debug: vi.fn() }),
+}));
+
 vi.mock('../../voice/voice-recorder', () => ({
   isVoiceRecordingSupported: vi.fn(() => true),
 }));
@@ -1284,6 +1290,314 @@ describe('round-robin across presses', () => {
     definition.execute(second.context);
     expect(activeAgentDispatches(dispatch)[0]).toEqual(['ws-1', 'a-1']);
     expect(activeAgentDispatches(second.dispatch)[0]).toEqual(['ws-1', 'a-2']);
+  });
+});
+
+describe('cycle step side-effect failures', () => {
+  /** Three unread agents across three workspaces; the walk starts at a-1. */
+  function makeUnreadState() {
+    return makeState({
+      workspaces: ['ws-1', 'ws-2', 'ws-3'],
+      agentsByWorkspace: {
+        'ws-1': { ids: ['a-1'], activeAgentId: 'a-1' },
+        'ws-2': { ids: ['b-1'], activeAgentId: null },
+        'ws-3': { ids: ['c-1'], activeAgentId: null },
+      },
+      unreadWorkspaceIds: ['ws-1', 'ws-2', 'ws-3'],
+      sessionOverrides: {
+        'a-1': { hasUnread: true, lastMessageId: 'm-a' },
+        'b-1': { hasUnread: true, lastMessageId: 'm-b' },
+        'c-1': { hasUnread: true, lastMessageId: 'm-c' },
+      },
+    });
+  }
+
+  function hudDispatches(dispatch: ReturnType<typeof vi.fn>): unknown[] {
+    return dispatch.mock.calls
+      .map(([action]) => action as { type: string })
+      .filter((action) => action.type === 'hardwareConsole/actionHudShown');
+  }
+
+  it('a rejected navigate is logged as a warning and does not throw', async () => {
+    const state = makeUnreadState();
+    const { context, navigate } = makeContext(state);
+    const error = new Error('goto stalled');
+    navigate.mockImplementation(() => Promise.reject(error));
+    const definition = getActionKeyDefinition('cycle-unread-agents');
+    expect(() => definition.execute(context)).not.toThrow();
+    expect(navigate).toHaveBeenCalledWith('/workspace/ws-2');
+    await vi.waitFor(() => expect(loggerWarnMock).toHaveBeenCalled());
+    expect(loggerWarnMock).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        actionId: 'cycle-unread-agents',
+        workspaceId: 'ws-2',
+        stopKey: 'b-1',
+        error,
+      }),
+    );
+  });
+
+  it('a throwing focus leaves the cursor on the previous stop and shows no HUD', () => {
+    const state = makeUnreadState();
+    const { context, dispatch } = makeContext(state);
+    const definition = getActionKeyDefinition('cycle-unread-agents');
+    const failure = new Error('dispatch failed');
+    dispatch.mockImplementation((action: { type: string }) => {
+      if (action.type === 'workspaceAgents/setActiveAgentId') throw failure;
+      return undefined;
+    });
+    expect(() => definition.execute(context)).toThrow(failure);
+    expect(hudDispatches(dispatch)).toEqual([]);
+    // The next press retries the same stop rather than skipping past it.
+    const second = makeContext(state);
+    definition.execute(second.context);
+    expect(activeAgentDispatches(second.dispatch)).toEqual([['ws-2', 'b-1']]);
+    expect(hudDispatches(second.dispatch)).toHaveLength(1);
+  });
+
+  it('a successful step advances the cursor and shows the HUD after focusing', () => {
+    const state = makeUnreadState();
+    const { context, dispatch } = makeContext(state);
+    const definition = getActionKeyDefinition('cycle-unread-agents');
+    definition.execute(context);
+    definition.execute(context);
+    expect(activeAgentDispatches(dispatch)).toEqual([
+      ['ws-2', 'b-1'],
+      ['ws-3', 'c-1'],
+    ]);
+    const types = dispatch.mock.calls.map(([action]) => (action as { type: string }).type);
+    expect(types.indexOf('hardwareConsole/actionHudShown')).toBeGreaterThan(
+      types.indexOf('workspaceAgents/setActiveAgentId'),
+    );
+  });
+
+  /**
+   * Three unread agents in ONE workspace with a dispatch that reduces
+   * `setActiveAgentId` into the state (like the real store) so a throw from a
+   * later dispatch leaves the focused agent already moved.
+   */
+  function makeStatefulSameWorkspace() {
+    const state = makeState({
+      agentsByWorkspace: { 'ws-1': { ids: ['a-1', 'b-1', 'c-1'], activeAgentId: 'a-1' } },
+      unreadWorkspaceIds: ['ws-1'],
+      sessionOverrides: {
+        'a-1': { hasUnread: true, lastMessageId: 'm-a' },
+        'b-1': { hasUnread: true, lastMessageId: 'm-b' },
+        'c-1': { hasUnread: true, lastMessageId: 'm-c' },
+      },
+    });
+    const press = (failOnOpenTab: Error | null) => {
+      const made = makeContext(state);
+      made.dispatch.mockImplementation((action: { type: string; payload: unknown }) => {
+        if (action.type === 'workspaceAgents/setActiveAgentId') {
+          const [wsId, agentId] = action.payload as [string, string];
+          state.workspaceAgents.byWorkspaceId[wsId].activeAgentId = agentId;
+        }
+        if (failOnOpenTab && action.type === 'appLayout/openAgentTabRequested') throw failOnOpenTab;
+        return undefined;
+      });
+      return made;
+    };
+    return { state, press };
+  }
+
+  it('retries the stop whose tab open failed even though the focus already moved to it', () => {
+    // Regression (PR #2315 review): setActiveAgentId(B) reduces into the
+    // store, then openAgentTabRequested throws. Anchoring the next press on
+    // the now-mutated focused agent (B) would select C and skip B.
+    const { state, press } = makeStatefulSameWorkspace();
+    const definition = getActionKeyDefinition('cycle-unread-agents');
+    const failure = new Error('open tab failed');
+
+    const first = press(failure);
+    expect(() => definition.execute(first.context)).toThrow(failure);
+    expect(activeAgentDispatches(first.dispatch)).toEqual([['ws-1', 'b-1']]);
+    expect(state.workspaceAgents.byWorkspaceId['ws-1'].activeAgentId).toBe('b-1');
+    expect(hudDispatches(first.dispatch)).toEqual([]);
+
+    const second = press(null);
+    definition.execute(second.context);
+    expect(activeAgentDispatches(second.dispatch)).toEqual([['ws-1', 'b-1']]);
+    expect(second.focusComposer).toHaveBeenCalledWith('b-1');
+    expect(hudDispatches(second.dispatch)).toHaveLength(1);
+
+    // The retry target is consumed by the successful step: the walk resumes.
+    const third = press(null);
+    definition.execute(third.context);
+    expect(activeAgentDispatches(third.dispatch)).toEqual([['ws-1', 'c-1']]);
+  });
+
+  it('retries the failed stop even when it is the only candidate left', () => {
+    // A and C get read elsewhere after the failed press: B is the sole
+    // candidate AND already the focused agent, which would otherwise be the
+    // "already there" hint path — but its tab never opened, so retry it.
+    const { state, press } = makeStatefulSameWorkspace();
+    const definition = getActionKeyDefinition('cycle-unread-agents');
+    expect(() => definition.execute(press(new Error('open tab failed')).context)).toThrow();
+    for (const agentId of ['a-1', 'c-1']) {
+      state.agentSessions.byAgentId[agentId] = makeSession(agentId, false, {
+        hasUnread: false,
+        lastMessageId: `m-${agentId}`,
+      });
+    }
+    const second = press(null);
+    definition.execute(second.context);
+    expect(activeAgentDispatches(second.dispatch)).toEqual([['ws-1', 'b-1']]);
+    expect(second.showHint).not.toHaveBeenCalled();
+    expect(hudDispatches(second.dispatch)).toHaveLength(1);
+  });
+
+  it('drops the retry target when the failed stop is no longer a candidate', () => {
+    const { state, press } = makeStatefulSameWorkspace();
+    const definition = getActionKeyDefinition('cycle-unread-agents');
+    expect(() => definition.execute(press(new Error('open tab failed')).context)).toThrow();
+
+    // B got read elsewhere before the retry press: the normal walk resumes
+    // (the focused B is not a candidate, so it restarts at the first stop).
+    state.agentSessions.byAgentId['b-1'] = makeSession('b-1', false, {
+      hasUnread: false,
+      lastMessageId: 'm-b',
+    });
+    const second = press(null);
+    definition.execute(second.context);
+    expect(activeAgentDispatches(second.dispatch)).toEqual([['ws-1', 'a-1']]);
+    // ...and the stale target does not resurface once B is unread again.
+    state.agentSessions.byAgentId['b-1'] = makeSession('b-1', false, {
+      hasUnread: true,
+      lastMessageId: 'm-b2',
+    });
+    const third = press(null);
+    definition.execute(third.context);
+    expect(activeAgentDispatches(third.dispatch)).toEqual([['ws-1', 'b-1']]);
+  });
+
+  it('a settled navigate rejection re-targets the failed stop on the next press', async () => {
+    // Regression (PR #2315 review): navigate() is async, so the cursor and
+    // HUD advance before the switch is known to fail. Once the rejection
+    // settles, the next press must retry the stop that never mounted rather
+    // than skipping past it.
+    const state = makeUnreadState();
+    const { context, navigate } = makeContext(state);
+    navigate.mockImplementation(() => Promise.reject(new Error('goto stalled')));
+    const definition = getActionKeyDefinition('cycle-unread-agents');
+    definition.execute(context);
+    expect(navigate).toHaveBeenCalledWith('/workspace/ws-2');
+    await vi.waitFor(() => expect(loggerWarnMock).toHaveBeenCalled());
+
+    const second = makeContext(state);
+    definition.execute(second.context);
+    expect(second.navigate).toHaveBeenCalledWith('/workspace/ws-2');
+    expect(activeAgentDispatches(second.dispatch)).toEqual([['ws-2', 'b-1']]);
+    expect(hudDispatches(second.dispatch)).toHaveLength(1);
+  });
+
+  it('a stale navigate rejection does not re-target once a later press moved on', async () => {
+    // The first switch is still pending when the user presses again and the
+    // second switch succeeds; the first rejection settling afterwards must
+    // not drag the walk back to the stop the user has already moved past.
+    const state = makeUnreadState();
+    const definition = getActionKeyDefinition('cycle-unread-agents');
+    let rejectFirst: (error: Error) => void = () => {};
+    const first = makeContext(state);
+    first.navigate.mockImplementation(
+      () =>
+        new Promise<void>((_, reject) => {
+          rejectFirst = reject;
+        }),
+    );
+    definition.execute(first.context);
+    expect(first.navigate).toHaveBeenCalledWith('/workspace/ws-2');
+
+    const second = makeContext(state);
+    definition.execute(second.context);
+    expect(second.navigate).toHaveBeenCalledWith('/workspace/ws-3');
+    expect(activeAgentDispatches(second.dispatch)).toEqual([['ws-3', 'c-1']]);
+
+    rejectFirst(new Error('goto stalled'));
+    await vi.waitFor(() => expect(loggerWarnMock).toHaveBeenCalled());
+
+    const third = makeContext(state);
+    definition.execute(third.context);
+    expect(third.navigate).not.toHaveBeenCalled();
+    expect(activeAgentDispatches(third.dispatch)).toEqual([['ws-1', 'a-1']]);
+  });
+
+  /** A press whose navigate stays pending until the returned `reject` runs. */
+  function pressWithPendingNavigate(state: TestActionKeyState) {
+    let reject: (error: Error) => void = () => {};
+    const made = makeContext(state);
+    made.navigate.mockImplementation(
+      () =>
+        new Promise<void>((_, rejectNavigate) => {
+          reject = rejectNavigate;
+        }),
+    );
+    return { ...made, reject: (error: Error) => reject(error) };
+  }
+
+  it('a stale navigate rejection does not override a later synchronous failure retry', async () => {
+    // B's switch is pending; the next press steps to C, reduces the active
+    // agent and then throws on the tab open (retry target = C, cursor still
+    // B). When B's rejection settles the cursor key still equals B — but the
+    // attempt is not current: the next press must retry C, not B.
+    const state = makeUnreadState();
+    const definition = getActionKeyDefinition('cycle-unread-agents');
+    const first = pressWithPendingNavigate(state);
+    definition.execute(first.context);
+    expect(first.navigate).toHaveBeenCalledWith('/workspace/ws-2');
+
+    const second = makeContext(state);
+    const failure = new Error('open tab failed');
+    second.dispatch.mockImplementation((action: { type: string; payload: unknown }) => {
+      if (action.type === 'workspaceAgents/setActiveAgentId') {
+        const [wsId, agentId] = action.payload as [string, string];
+        state.workspaceAgents.byWorkspaceId[wsId].activeAgentId = agentId;
+      }
+      if (action.type === 'appLayout/openAgentTabRequested') throw failure;
+      return undefined;
+    });
+    expect(() => definition.execute(second.context)).toThrow(failure);
+    expect(activeAgentDispatches(second.dispatch)).toEqual([['ws-3', 'c-1']]);
+
+    first.reject(new Error('goto stalled'));
+    await vi.waitFor(() => expect(loggerWarnMock).toHaveBeenCalled());
+
+    const third = makeContext(state);
+    definition.execute(third.context);
+    expect(activeAgentDispatches(third.dispatch)).toEqual([['ws-3', 'c-1']]);
+    expect(hudDispatches(third.dispatch)).toHaveLength(1);
+  });
+
+  it('a stale navigate rejection does not re-target after the walk wrapped back to its stop', async () => {
+    // B's switch is pending while the user keeps pressing: C, A, then B
+    // again succeed, so the cursor key equals B once more. B's old rejection
+    // settling now belongs to a superseded attempt — the next press must
+    // continue to C rather than replay B.
+    const state = makeUnreadState();
+    const definition = getActionKeyDefinition('cycle-unread-agents');
+    const first = pressWithPendingNavigate(state);
+    definition.execute(first.context);
+    expect(first.navigate).toHaveBeenCalledWith('/workspace/ws-2');
+
+    const targets: Array<[string, string]> = [];
+    for (let i = 0; i < 3; i += 1) {
+      const press = makeContext(state);
+      definition.execute(press.context);
+      targets.push(...(activeAgentDispatches(press.dispatch) as Array<[string, string]>));
+    }
+    expect(targets).toEqual([
+      ['ws-3', 'c-1'],
+      ['ws-1', 'a-1'],
+      ['ws-2', 'b-1'],
+    ]);
+
+    first.reject(new Error('goto stalled'));
+    await vi.waitFor(() => expect(loggerWarnMock).toHaveBeenCalled());
+
+    const next = makeContext(state);
+    definition.execute(next.context);
+    expect(activeAgentDispatches(next.dispatch)).toEqual([['ws-3', 'c-1']]);
   });
 });
 

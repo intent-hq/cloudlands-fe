@@ -129,7 +129,11 @@ test('renders object-envelope orphan text at payload-scoped search paths', async
   }
 });
 
-test('shows unavailable markdown image fallbacks on both browser surfaces', async ({ mount }) => {
+test('reports unconfirmed image load failures on both browser surfaces', async ({
+  mount,
+  page,
+}) => {
+  await page.route('https://example.com/unrelated.png', (route) => route.abort('connectionfailed'));
   const message = reconcileToolResultMessage(markdownImageOrphanBlocks(), true);
   const component = await mount(ToolResultRendererParityHost, {
     props: { content: message.contentBlocks ?? [], isStreaming: true },
@@ -138,8 +142,10 @@ test('shows unavailable markdown image fallbacks on both browser surfaces', asyn
     component.getByTestId('normal-workspace-surface'),
     component.getByTestId('dedicated-agent-surface'),
   ]) {
-    await expect(surface.getByText('File is missing.', { exact: true })).toHaveCount(1);
-    await expect(surface.getByText('Media could not load.', { exact: true })).toHaveCount(1);
+    const fallbacks = surface.getByTestId('media-unavailable');
+    await expect(fallbacks).toHaveCount(2);
+    await expect(fallbacks.nth(0)).toHaveAttribute('data-reason', 'load-failed');
+    await expect(fallbacks.nth(1)).toHaveAttribute('data-reason', 'load-failed');
     await expect(surface.getByRole('button', { name: 'Copy path' })).toHaveCount(1);
     await expect(surface.getByTestId('markdown-image-actions-overlay')).toHaveCount(0);
   }

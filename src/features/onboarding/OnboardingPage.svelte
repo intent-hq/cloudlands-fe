@@ -64,6 +64,7 @@
   } from '$lib/components/modals/PullConflictDialog.svelte';
 
   import AgentGrid from '$features/onboarding/messages/AgentGrid.svelte';
+  import ClaudeLoginButton from '$features/onboarding/messages/ClaudeLoginButton.svelte';
 
   import OnboardingPromptStep from '$features/onboarding/steps/OnboardingPromptStep.svelte';
   import OnboardingGitHubStep from '$features/onboarding/steps/OnboardingGitHubStep.svelte';
@@ -714,7 +715,7 @@
           message: m.onboarding_testPrompt_generic_error({
             message: rawMessage.split('\n', 1)[0],
           }),
-          showClaudeDesktopNote: false,
+          showClaudeLoginButton: false,
           isAuthRequired: false,
         };
         return;
@@ -1787,7 +1788,11 @@
                               class="mt-2 max-w-xl rounded-md border border-danger/40 bg-danger-background/5 p-3 text-sm"
                             >
                               <p>{onboardingTestPromptFailure.message}</p>
-                              {#if onboardingTestPromptFailure.loginCommandHint}
+                              {#if onboardingTestPromptFailure.showClaudeLoginButton}
+                                <div class="mt-2">
+                                  <ClaudeLoginButton />
+                                </div>
+                              {:else if onboardingTestPromptFailure.loginCommandHint}
                                 <div class="mt-2 text-xs">
                                   <span class="opacity-70"
                                     >{m.onboarding_testPrompt_runToLogIn_label()}</span
@@ -1803,11 +1808,6 @@
                                     />
                                   </div>
                                 </div>
-                              {/if}
-                              {#if onboardingTestPromptFailure.showClaudeDesktopNote}
-                                <p class="mt-2 text-xs opacity-70">
-                                  {m.onboarding_testPrompt_claudeDesktopNote_label()}
-                                </p>
                               {/if}
                               {#if onboardingTestPromptFailure.loginDocsUrl}
                                 {@const docsUrl = onboardingTestPromptFailure.loginDocsUrl}

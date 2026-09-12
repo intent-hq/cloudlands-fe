@@ -286,6 +286,7 @@ vi.mock('$lib/utils/smartScroll', () => ({
     };
   },
   scrollToBottom: vi.fn(),
+  hasActiveFollowBottomMutation: vi.fn(() => false),
 }));
 // Pass-through wrapper around the real tracker that additionally captures the
 // options so tests can drive `onChange` (set a pinned prompt) directly.

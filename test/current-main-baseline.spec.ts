@@ -5,6 +5,7 @@ import { relative, resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { createServer, type ViteDevServer } from 'vite';
+import { viteHarnessCacheDir } from './vite-harness-cache.mjs';
 import { approvedRowIds, baselineRows, target } from './current-main-baseline.matrix';
 import {
   createEvidenceRows,
@@ -104,6 +105,7 @@ test.beforeAll(async () => {
   server = await createServer({
     configFile: false,
     root: process.cwd(),
+    cacheDir: viteHarnessCacheDir('current-main-baseline'),
     plugins: [svelte({ configFile: resolve('svelte.config.js') })],
     resolve: {
       alias: [

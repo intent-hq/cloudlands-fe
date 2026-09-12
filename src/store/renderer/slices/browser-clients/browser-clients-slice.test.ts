@@ -5,7 +5,7 @@ vi.mock('svelte', async (importOriginal) => ({
   getContext: () => undefined,
 }));
 
-import type { BrowserTab, BrowserTabListing, LiveClient } from '$shared/types/browser-clients';
+import type { BrowserTab, LiveClient } from '$shared/types/browser-clients';
 import {
   resolveDrivingClientSwitch,
   resolveDrivingClientView,
@@ -24,7 +24,6 @@ import {
   liveClientsReceived,
   ownClientIdReceived,
   workspaceBrowserClientReceived,
-  workspaceBrowserTabsReceived,
 } from './browser-clients-slice';
 import {
   selectBrowserTabHost,
@@ -33,7 +32,6 @@ import {
   selectLiveClientsLoaded,
   selectOwnClientId,
   selectWorkspaceBrowserClient,
-  selectWorkspaceBrowserTabs,
   selectWorkspaceBrowserTabsRevision,
   selectWorkspaceDrivingClient,
 } from './browser-clients-selectors';
@@ -250,123 +248,22 @@ describe('browserClientsReducer', () => {
     });
   });
 
-  it('mirrors browser.listTabs rows and patches them from browser:tab-* events', () => {
-    const listed: BrowserTabListing = {
-      ...tab('tab-a', { title: 'Example', ownerAgentId: 'agent-1', ownerAgentName: 'Agent' }),
-      hostConnected: true,
-      hostName: 'Intent Desktop',
-    };
-    let state = browserClientsReducer(
-      initialState,
-      workspaceBrowserTabsReceived('ws-1', [listed], 0),
-    );
-    expect(selectWorkspaceBrowserTabs.select(asState(state), 'ws-1')).toEqual([listed]);
+  it('advances the per-workspace tabsRevision on every browser:tab-* event', () => {
+    expect(selectWorkspaceBrowserTabsRevision.select(asState(initialState), 'ws-1')).toBe(0);
 
-    // tab-updated: the event row is the canonical registry row — optional
-    // fields it omits (title, owner) were cleared and must not survive; only
-    // the listing's presence decoration carries over.
-    const moved = tab('tab-a', {
-      url: 'https://example.com/next',
-      updatedAt: '2026-09-07T00:00:05.000Z',
-    });
-    state = browserClientsReducer(state, browserTabUpserted('ws-1', moved));
-    expect(selectWorkspaceBrowserTabs.select(asState(state), 'ws-1')).toEqual([
-      { ...moved, hostConnected: true, hostName: 'Intent Desktop' },
-    ]);
-    expect(selectWorkspaceBrowserTabs.select(asState(state), 'ws-1')[0]).not.toHaveProperty(
-      'title',
-    );
-
-    // tab-opened: a new row appends.
-    state = browserClientsReducer(state, browserTabUpserted('ws-1', tab('tab-b')));
-    expect(selectWorkspaceBrowserTabs.select(asState(state), 'ws-1').map((t) => t.tabId)).toEqual([
-      'tab-a',
-      'tab-b',
-    ]);
-
-    // tab-closed: the row is removed; an unknown tabId leaves the rows alone.
-    const rowsBefore = selectWorkspaceBrowserTabs.select(asState(state), 'ws-1');
-    state = browserClientsReducer(state, browserTabClosed('ws-1', 'tab-nope'));
-    expect(selectWorkspaceBrowserTabs.select(asState(state), 'ws-1')).toEqual(rowsBefore);
+    // Opened / updated rows and closed ids (even for a tab never seen here)
+    // each advance the revision the registry saga compares its reads against.
+    let state = browserClientsReducer(initialState, browserTabUpserted('ws-1', tab('tab-a')));
+    expect(selectWorkspaceBrowserTabsRevision.select(asState(state), 'ws-1')).toBe(1);
+    state = browserClientsReducer(state, browserTabUpserted('ws-1', tab('tab-a')));
+    expect(selectWorkspaceBrowserTabsRevision.select(asState(state), 'ws-1')).toBe(2);
     state = browserClientsReducer(state, browserTabClosed('ws-1', 'tab-a'));
-    expect(selectWorkspaceBrowserTabs.select(asState(state), 'ws-1').map((t) => t.tabId)).toEqual([
-      'tab-b',
-    ]);
-  });
+    state = browserClientsReducer(state, browserTabClosed('ws-1', 'tab-never-seen'));
+    expect(selectWorkspaceBrowserTabsRevision.select(asState(state), 'ws-1')).toBe(4);
 
-  it('recomputes the presence decoration from client.list when a tab row moves to another host', () => {
-    const listed: BrowserTabListing = {
-      ...tab('tab-a', { hostClientId: 'cli-desk' }),
-      hostConnected: true,
-      hostName: 'Desk (hello name)',
-    };
-    const migrated = (hostClientId: string): BrowserTab =>
-      tab('tab-a', { hostClientId, updatedAt: '2026-09-07T00:00:05.000Z' });
-
-    // Live list read: the new host is listed → connected, with its hello name.
-    let state = browserClientsReducer(initialState, liveClientsReceived([desk, laptop]));
-    state = browserClientsReducer(state, workspaceBrowserTabsReceived('ws-1', [listed], 0));
-    state = browserClientsReducer(state, browserTabUpserted('ws-1', migrated('cli-laptop')));
-    expect(selectWorkspaceBrowserTabs.select(asState(state), 'ws-1')).toEqual([
-      { ...migrated('cli-laptop'), hostConnected: true, hostName: laptop.name },
-    ]);
-
-    // Live list read: the new host is not listed → disconnected, no stale name.
-    state = browserClientsReducer(state, browserTabUpserted('ws-1', migrated('cli-gone')));
-    expect(selectWorkspaceBrowserTabs.select(asState(state), 'ws-1')).toEqual([
-      { ...migrated('cli-gone'), hostConnected: false },
-    ]);
-
-    // Live list never read: the decoration is dropped rather than carried over.
-    let cold = browserClientsReducer(
-      initialState,
-      workspaceBrowserTabsReceived('ws-1', [listed], 0),
-    );
-    cold = browserClientsReducer(cold, browserTabUpserted('ws-1', migrated('cli-laptop')));
-    expect(selectWorkspaceBrowserTabs.select(asState(cold), 'ws-1')).toEqual([
-      migrated('cli-laptop'),
-    ]);
-  });
-
-  it('drops a browser.listTabs snapshot issued before a browser:tab-* patch landed', () => {
-    const listed = (tabId: string): BrowserTabListing => ({ ...tab(tabId), hostConnected: true });
-    let state = browserClientsReducer(
-      initialState,
-      workspaceBrowserTabsReceived('ws-1', [listed('tab-a'), listed('tab-b')], 0),
-    );
-    expect(selectWorkspaceBrowserTabsRevision.select(asState(state), 'ws-1')).toBe(0);
-
-    // A closed event (even for a row not yet mirrored) and an opened event
-    // each advance the revision the next read must be stamped with.
-    const staleRead = selectWorkspaceBrowserTabsRevision.select(asState(state), 'ws-1');
-    state = browserClientsReducer(state, browserTabClosed('ws-1', 'tab-a'));
-    state = browserClientsReducer(state, browserTabClosed('ws-1', 'tab-not-mirrored'));
-    state = browserClientsReducer(state, browserTabUpserted('ws-1', tab('tab-c')));
-    const current = selectWorkspaceBrowserTabsRevision.select(asState(state), 'ws-1');
-    expect(current).toBe(staleRead + 3);
-
-    // The snapshot from the stale read would resurrect tab-a and lose tab-c.
-    const patched = state;
-    state = browserClientsReducer(
-      state,
-      workspaceBrowserTabsReceived('ws-1', [listed('tab-a'), listed('tab-b')], staleRead),
-    );
-    expect(state).toBe(patched);
-    expect(selectWorkspaceBrowserTabs.select(asState(state), 'ws-1').map((t) => t.tabId)).toEqual([
-      'tab-b',
-      'tab-c',
-    ]);
-
-    // A snapshot stamped with the current revision applies; it does not bump it.
-    state = browserClientsReducer(
-      state,
-      workspaceBrowserTabsReceived('ws-1', [listed('tab-b'), listed('tab-c')], current),
-    );
-    expect(selectWorkspaceBrowserTabs.select(asState(state), 'ws-1').map((t) => t.tabId)).toEqual([
-      'tab-b',
-      'tab-c',
-    ]);
-    expect(selectWorkspaceBrowserTabsRevision.select(asState(state), 'ws-1')).toBe(current);
+    // Other workspaces are untouched.
+    expect(selectWorkspaceBrowserTabsRevision.select(asState(state), 'ws-2')).toBe(0);
+    expect(state.byWorkspaceId['ws-1']?.browserClient).toBeNull();
   });
 
   it.each([
@@ -391,9 +288,7 @@ describe('browserClientsReducer', () => {
 
     expect(state.byWorkspaceId['ws-1']).toBeUndefined();
     expect(selectWorkspaceBrowserClient.select(asState(state), 'ws-1')).toBeNull();
-    expect(selectWorkspaceBrowserTabs.select(asState(state), 'ws-1')).toEqual([]);
-    expect(selectWorkspaceBrowserTabs.select(asState(state), 'ws-2').map((t) => t.tabId)).toEqual([
-      'tab-z',
-    ]);
+    expect(selectWorkspaceBrowserTabsRevision.select(asState(state), 'ws-1')).toBe(0);
+    expect(selectWorkspaceBrowserTabsRevision.select(asState(state), 'ws-2')).toBe(1);
   });
 });

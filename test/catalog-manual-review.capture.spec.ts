@@ -3,6 +3,7 @@ import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import type { ViteDevServer } from 'vite';
 import { createServer } from 'vite';
+import { viteHarnessCacheDir } from './vite-harness-cache.mjs';
 
 const artifactDir = path.resolve('test-results/manual-catalog-review');
 const slugs = [
@@ -87,6 +88,7 @@ async function screenshotDetail(
 test.beforeAll(async () => {
   mkdirSync(artifactDir, { recursive: true });
   server = await createServer({
+    cacheDir: viteHarnessCacheDir('catalog-manual-review'),
     server: { host: '127.0.0.1', port: 0, watch: { ignored: ['**/*'] } },
   });
   await server.listen();

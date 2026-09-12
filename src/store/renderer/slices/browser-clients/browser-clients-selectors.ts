@@ -3,7 +3,7 @@
  */
 
 import { getItem, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
-import type { BrowserTab, LiveClient, WorkspaceBrowserClient } from '$shared/types/browser-clients';
+import type { LiveClient, WorkspaceBrowserClient } from '$shared/types/browser-clients';
 import type { BrowserTabHost } from '$lib/components/browser/browser-tab-host';
 import {
   browserClientDisplayName,
@@ -95,15 +95,10 @@ export const selectBrowserTabHost = store.createSelector(
   },
 );
 
-/** The workspace's daemon tab-registry rows. */
-export const selectWorkspaceBrowserTabs = store.createSelector(
-  (state, wsId: string): BrowserTab[] =>
-    getItems(
-      (state?.browserClients?.byWorkspaceId[wsId] ?? emptyWorkspaceBrowserClientsState).tabs,
-    ),
-);
-
-/** `browser:tab-*` patch counter the saga stamps on a `browser.listTabs` read. */
+/**
+ * `browser:tab-*` event counter the panel-layout registry saga reads around
+ * its `browser.listTabs` reads to detect a listing that may predate an event.
+ */
 export const selectWorkspaceBrowserTabsRevision = store.createSelector(
   (state, wsId: string): number =>
     (state?.browserClients?.byWorkspaceId[wsId] ?? emptyWorkspaceBrowserClientsState).tabsRevision,

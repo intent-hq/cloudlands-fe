@@ -1284,18 +1284,14 @@
       </div>
 
       {#if $isWorkspaceHostLocal$ || activeTab?.type === 'browser'}
-        <Menu.Separator />
-
-        <div class="type-caption px-2 pb-0.5 pt-1.5 font-medium text-muted-foreground">
-          {m.settings_section_openIn()}
-        </div>
-        <div data-panel-actions-section="open-in">
-          {#if activeTab}
-            {@const externalTarget = getPanelExternalOpenTarget(
-              activeTab,
-              workspaceId,
-              $isWorkspaceHostLocal$,
-            )}
+        {#if activeTab}
+          {@const externalTarget = getPanelExternalOpenTarget(
+            activeTab,
+            workspaceId,
+            $isWorkspaceHostLocal$,
+          )}
+          <div data-panel-actions-section="open-in">
+            <Menu.Separator />
             {#if externalTarget.kind === 'browser'}
               <Menu.CommandItem
                 icon={faArrowUpRightFromSquare}
@@ -1318,6 +1314,7 @@
                   showDeleteOption={false}
                   showArchiveOption={false}
                   showFileNameCopy={false}
+                  layout="submenu"
                   onClose={close}
                 />
               {/await}
@@ -1328,8 +1325,8 @@
                 disabled
               />
             {/if}
-          {/if}
-        </div>
+          </div>
+        {/if}
       {/if}
     {/snippet}
   </DropdownMenu>
