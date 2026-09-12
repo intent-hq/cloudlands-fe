@@ -1,9 +1,9 @@
 /**
  * @vitest-environment jsdom
  *
- * GitHubAvatar: the shared owner-avatar image whose load-failure state is keyed
- * on the identity it renders, so a node that outlives an identity switch shows
- * the next owner's avatar again (intent-hq/intent#4644).
+ * GitHubAvatar: the shared owner-avatar image whose load-failure state resets
+ * whenever the identity it renders changes, so a node that outlives an identity
+ * switch shows the next owner's avatar again (intent-hq/intent#4644).
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, fireEvent, render } from '@testing-library/svelte';
@@ -31,16 +31,34 @@ describe('GitHubAvatar', () => {
     const next = visibleImage(container);
     expect(next).not.toBeNull();
     expect(next!.src).toContain('/other.png');
+    await fireEvent.load(next!);
+    expect(visibleImage(container)).toBe(next);
   });
 
-  it('keeps the failure for the identity that failed', async () => {
+  it('retries an identity that failed earlier once it is rendered again', async () => {
     const { container, rerender } = render(GitHubAvatar, { props: { identity: 'octo' } });
 
     await fireEvent.error(visibleImage(container)!);
     await rerender({ identity: 'other' });
+    await fireEvent.load(visibleImage(container)!);
     await rerender({ identity: 'octo' });
 
-    expect(visibleImage(container)).toBeNull();
+    const retried = visibleImage(container);
+    expect(retried).not.toBeNull();
+    expect(retried!.src).toContain('/octo.png');
+    await fireEvent.load(retried!);
+    expect(visibleImage(container)).toBe(retried);
+  });
+
+  it('keeps a successfully loaded avatar visible across a same-identity rerender', async () => {
+    const { container, rerender } = render(GitHubAvatar, { props: { identity: 'octo' } });
+
+    const img = visibleImage(container)!;
+    await fireEvent.load(img);
+    await rerender({ identity: 'octo', alt: 'octo' });
+
+    expect(visibleImage(container)).not.toBeNull();
+    expect(visibleImage(container)!.src).toContain('/octo.png');
   });
 
   it('renders the fallback while the image is failed and drops it on identity switch', async () => {

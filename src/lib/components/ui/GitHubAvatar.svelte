@@ -2,10 +2,10 @@
   /**
    * GitHub owner avatar with a load-failure fallback.
    *
-   * The failure is remembered per identity, so switching the same node to another
-   * login retries the load instead of leaving the image hidden forever (the
-   * defect the hand-copied `onerror → display:none` pattern had, see
-   * intent-hq/intent#4644).
+   * The failure state is cleared whenever the identity changes, so switching the
+   * same node to another login (or back again) retries the load instead of
+   * leaving the image hidden forever (the defect the hand-copied
+   * `onerror → display:none` pattern had, see intent-hq/intent#4644).
    */
   import type { Snippet } from 'svelte';
 
@@ -28,9 +28,13 @@
 
   let { identity, size = 16, class: className = '', alt, fallback }: Props = $props();
 
-  let failedIdentity = $state<string | null>(null);
-  const failed = $derived(failedIdentity === identity);
+  let failed = $state(false);
   const src = $derived(`https://github.com/${identity}.png?size=${size * 2}`);
+
+  $effect.pre(() => {
+    void identity;
+    failed = false;
+  });
 </script>
 
 {#if failed}
@@ -42,9 +46,8 @@
     aria-hidden={alt === undefined ? 'true' : undefined}
     class={className}
     loading="lazy"
-    onerror={(e) => {
-      (e.currentTarget as HTMLImageElement).style.display = 'none';
-      failedIdentity = identity;
+    onerror={() => {
+      failed = true;
     }}
   />
 {/if}
