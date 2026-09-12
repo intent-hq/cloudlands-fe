@@ -462,7 +462,7 @@ describe('notesWriteService (fake seam, real store)', () => {
     expect(note?.rev).toBe(5);
   });
 
-  it('does not overwrite a newer local edit with the merged echo of an older save', async () => {
+  it('carries a newer local edit onto the merged echo of an older save instead of dropping either', async () => {
     seed(makeNote('n1', { rev: 4, content: 'body' }));
     let resolveSave!: (v: unknown) => void;
     notesApi.setContent.mockReturnValueOnce(
@@ -478,7 +478,7 @@ describe('notesWriteService (fake seam, real store)', () => {
     await vi.advanceTimersByTimeAsync(1);
 
     const note = selectNoteById.select(appStore.state, WS, 'n1');
-    expect(note?.content).toBe('first+more');
+    expect(note?.content).toBe('first+more (merged)');
     expect(note?.rev).toBe(5);
   });
 
@@ -508,27 +508,42 @@ describe('notesWriteService (fake seam, real store)', () => {
     expect(note?.rev).toBe(6);
   });
 
-  // A newer edit that was already flushed (queued behind the in-flight save)
-  // is no longer in the pending map, yet the older save's merged echo must
-  // still not overwrite it; the newer save carries its own merge. That queued
-  // save must go out against the rev its text was typed against (4), not the
-  // store rev the skipped echo advanced to (6): an exact-rev save would make
-  // the daemon replace "AGENT\nbody first" wholesale and lose AGENT.
-  it('sends a queued draft with its baseline rev so the daemon keeps a concurrent agent edit', async () => {
+  // ---- Draft rebase onto a superseded echo ----------------------------------
+  // "body"@4 is saved as "body first"@4 while the user keeps typing. An agent
+  // wrote at rev 5, so the daemon's echo is the merge "AGENT\nbody first"@6.
+  // The still-pending draft is rebased onto that echo and sent against rev 6:
+  // the daemon's exact-rev path then stores it verbatim. Sending the raw draft
+  // with rev 4 would three-way merge "body first" in again ("AGENT\nbody first
+  // first plus typing") and a queued undo back to "body" would be swallowed.
+
+  /**
+   * Daemon model for the second request, current text "AGENT\nbody first"@6:
+   * an exact-rev write replaces; a stale rev 4 three-way merges from "body"
+   * (results per the production `three_way_merge` oracle).
+   */
+  const STALE_REV_MERGE: Record<string, string> = {
+    'body first plus typing': 'AGENT\nbody first first plus typing',
+    body: 'AGENT\nbody first',
+  };
+  function daemonAfterAgentEdit(): (_: string, content: string, rev?: number) => Promise<unknown> {
+    return (_id, content, rev) =>
+      Promise.resolve({
+        success: true,
+        newContent: rev === 6 ? content : (STALE_REV_MERGE[content] ?? content),
+        noteRev: 7,
+      });
+  }
+
+  it('rebases a queued draft onto the superseded echo and sends it against the echo rev', async () => {
     seed(makeNote('n1', { rev: 4, content: 'body' }));
     let resolveFirst!: (v: unknown) => void;
-    let resolveSecond!: (v: unknown) => void;
     notesApi.setContent
       .mockReturnValueOnce(
         new Promise((resolve) => {
           resolveFirst = resolve;
         }) as never,
       )
-      .mockReturnValueOnce(
-        new Promise((resolve) => {
-          resolveSecond = resolve;
-        }) as never,
-      );
+      .mockImplementationOnce(daemonAfterAgentEdit() as never);
 
     updateNoteContent(WS, 'n1', 'body first');
     const first = flushNoteContent(WS, 'n1');
@@ -537,20 +552,21 @@ describe('notesWriteService (fake seam, real store)', () => {
     updateNoteContent(WS, 'n1', 'body first plus typing');
     const second = flushNoteContent(WS, 'n1');
 
-    // An agent wrote at rev 5; the daemon merged our save on top → rev 6.
     resolveFirst({ success: true, newContent: 'AGENT\nbody first', noteRev: 6 });
-    await expect(first).resolves.toEqual({ content: 'body first plus typing', rev: 6 });
-    expect(selectNoteById.select(appStore.state, WS, 'n1')?.content).toBe('body first plus typing');
+    // The echo is not applied verbatim (it would drop the typing); the pending
+    // draft is rebased onto it and that is what the store now shows.
+    await expect(first).resolves.toEqual({ content: 'AGENT\nbody first plus typing', rev: 6 });
+    expect(selectNoteById.select(appStore.state, WS, 'n1')?.content).toBe(
+      'AGENT\nbody first plus typing',
+    );
 
-    await Promise.resolve();
-    // (a) The queued draft carries its baseline rev, not the advanced store rev.
-    expect(notesApi.setContent).toHaveBeenLastCalledWith('n1', 'body first plus typing', 4, WS);
-    // Daemon three-way merge: base@4 "body", current "AGENT\nbody first",
-    // incoming "body first plus typing".
-    resolveSecond({ success: true, newContent: 'AGENT\nbody first plus typing', noteRev: 7 });
     await expect(second).resolves.toEqual({ content: 'AGENT\nbody first plus typing', rev: 7 });
-
-    // (b) Both the agent's addition and the local typing survive.
+    expect(notesApi.setContent).toHaveBeenLastCalledWith(
+      'n1',
+      'AGENT\nbody first plus typing',
+      6,
+      WS,
+    );
     const note = selectNoteById.select(appStore.state, WS, 'n1');
     expect(note?.content).toBe('AGENT\nbody first plus typing');
     expect(note?.rev).toBe(7);
@@ -565,6 +581,59 @@ describe('notesWriteService (fake seam, real store)', () => {
       7,
       WS,
     );
+  });
+
+  it('rebases a queued undo onto the superseded echo instead of replaying the undone text', async () => {
+    seed(makeNote('n1', { rev: 4, content: 'body' }));
+    let resolveFirst!: (v: unknown) => void;
+    notesApi.setContent
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveFirst = resolve;
+        }) as never,
+      )
+      .mockImplementationOnce(daemonAfterAgentEdit() as never);
+
+    updateNoteContent(WS, 'n1', 'body first');
+    const first = flushNoteContent(WS, 'n1');
+    await Promise.resolve();
+    updateNoteContent(WS, 'n1', 'body');
+    const second = flushNoteContent(WS, 'n1');
+
+    resolveFirst({ success: true, newContent: 'AGENT\nbody first', noteRev: 6 });
+    await expect(first).resolves.toEqual({ content: 'AGENT\nbody', rev: 6 });
+
+    await expect(second).resolves.toEqual({ content: 'AGENT\nbody', rev: 7 });
+    expect(notesApi.setContent).toHaveBeenLastCalledWith('n1', 'AGENT\nbody', 6, WS);
+    const note = selectNoteById.select(appStore.state, WS, 'n1');
+    expect(note?.content).toBe('AGENT\nbody');
+    expect(note?.rev).toBe(7);
+  });
+
+  it('rebases a still-debounced undo onto the superseded echo', async () => {
+    seed(makeNote('n1', { rev: 4, content: 'body' }));
+    let resolveFirst!: (v: unknown) => void;
+    notesApi.setContent
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveFirst = resolve;
+        }) as never,
+      )
+      .mockImplementationOnce(daemonAfterAgentEdit() as never);
+
+    updateNoteContent(WS, 'n1', 'body first');
+    const first = flushNoteContent(WS, 'n1');
+    await Promise.resolve();
+    updateNoteContent(WS, 'n1', 'body');
+    resolveFirst({ success: true, newContent: 'AGENT\nbody first', noteRev: 6 });
+    await expect(first).resolves.toEqual({ content: 'AGENT\nbody', rev: 6 });
+    expect(selectNoteById.select(appStore.state, WS, 'n1')?.content).toBe('AGENT\nbody');
+
+    await vi.advanceTimersByTimeAsync(NOTE_CONTENT_SAVE_DEBOUNCE_MS + 1);
+    expect(notesApi.setContent).toHaveBeenLastCalledWith('n1', 'AGENT\nbody', 6, WS);
+    const note = selectNoteById.select(appStore.state, WS, 'n1');
+    expect(note?.content).toBe('AGENT\nbody');
+    expect(note?.rev).toBe(7);
   });
 
   // ---- §11.4-D: content saves no longer route to the conflict prompt --------
@@ -625,9 +694,9 @@ describe('notesWriteService (fake seam, real store)', () => {
   });
 
   // AppliedNoteContent is "what the store holds now": when a newer debounced
-  // edit superseded the echo, the result reports that newer text, not the
-  // merge of the older text that was not applied.
-  it('flushNoteContent resolves with the store content when a newer edit is still debounced', async () => {
+  // edit superseded the echo, the result reports that newer text rebased onto
+  // the echo, not the merge of the older text that was not applied verbatim.
+  it('flushNoteContent resolves with the rebased draft when a newer edit is still debounced', async () => {
     seed(makeNote('n1', { rev: 4, content: 'body' }));
     let resolveFirst!: (v: unknown) => void;
     notesApi.setContent
@@ -636,11 +705,7 @@ describe('notesWriteService (fake seam, real store)', () => {
           resolveFirst = resolve;
         }) as never,
       )
-      .mockResolvedValueOnce({
-        success: true,
-        newContent: 'AGENT\nbody first plus typing',
-        noteRev: 7,
-      } as never);
+      .mockImplementationOnce(daemonAfterAgentEdit() as never);
 
     updateNoteContent(WS, 'n1', 'body first');
     const first = flushNoteContent(WS, 'n1');
@@ -650,13 +715,17 @@ describe('notesWriteService (fake seam, real store)', () => {
 
     const applied = await first;
     let note = selectNoteById.select(appStore.state, WS, 'n1');
-    expect(note?.content).toBe('body first plus typing');
+    expect(note?.content).toBe('AGENT\nbody first plus typing');
     expect(applied).toEqual({ content: note?.content, rev: 6 });
 
-    // The superseding edit saves on its own, against the rev it was typed
-    // against — not the store rev the skipped echo advanced to.
+    // The superseding edit saves on its own, rebased, against the echo rev.
     await vi.advanceTimersByTimeAsync(NOTE_CONTENT_SAVE_DEBOUNCE_MS + 1);
-    expect(notesApi.setContent).toHaveBeenLastCalledWith('n1', 'body first plus typing', 4, WS);
+    expect(notesApi.setContent).toHaveBeenLastCalledWith(
+      'n1',
+      'AGENT\nbody first plus typing',
+      6,
+      WS,
+    );
     note = selectNoteById.select(appStore.state, WS, 'n1');
     expect(note?.content).toBe('AGENT\nbody first plus typing');
     expect(note?.rev).toBe(7);
