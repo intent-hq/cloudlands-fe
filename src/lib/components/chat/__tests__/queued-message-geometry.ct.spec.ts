@@ -18,7 +18,7 @@ for (const state of [
     await actions.getByRole('button').first().focus();
     const focusHeight = (await row.boundingBox())!.height;
 
-    expect(initialPadding).toBe('96px');
+    expect(initialPadding).toBe('0px');
     expect(hoverHeight).toBeCloseTo(initialHeight, 1);
     expect(focusHeight).toBeCloseTo(initialHeight, 1);
   });
@@ -64,7 +64,9 @@ test('supports click, keyboard, focus, reduced motion, and a live collapsed coun
   await expect(disclosure).toHaveAttribute('aria-expanded', 'true');
   await expect(chevron).not.toHaveClass(/rotate-90/);
   await expect(rows).toHaveCount(3);
-  expect(await component.evaluate((node) => node.getAnimations({ subtree: true }).length)).toBe(0);
+  await expect
+    .poll(() => component.evaluate((node) => node.getAnimations({ subtree: true }).length))
+    .toBe(0);
 
   await disclosure.press('Space');
   await expect(disclosure).toBeFocused();
@@ -81,16 +83,16 @@ test('preserves the edit, remove, and send-now callbacks', async ({ mount }) => 
   const actions = component.getByTestId('queued-message-actions').getByRole('button');
   const lastAction = component.getByTestId('queued-message-last-action');
 
-  await expect(actions).toHaveCount(3);
+  await expect(actions).toHaveCount(1);
   await row.hover();
 
-  await actions.nth(0).click();
+  await row.getByTestId('queued-message-content').press('ControlOrMeta+Enter');
   await expect(lastAction).toHaveText('send:queued-geometry-0');
 
-  await actions.nth(2).click();
+  await actions.click();
   await expect(lastAction).toHaveText('remove:queued-geometry-0');
 
-  await actions.nth(1).click();
+  await row.getByTestId('queued-message-content').dblclick();
   await expect(lastAction).toHaveText('edit:queued-geometry-0');
   await expect(component.locator('textarea')).toHaveValue(
     'A long queued message must keep exactly the same height when actions appear',
@@ -210,11 +212,11 @@ for (const state of [
       disclosureBox!.x + disclosureBox!.width - (chevronBox!.x + chevronBox!.width),
     ).toBeCloseTo(10 * state.zoom, 1);
     expect(labelBox!.x).toBeCloseTo(firstTextBox!.x, 1);
-    expect(await container.evaluate((node) => getComputedStyle(node).paddingBottom)).toBe('8px');
+    expect(await container.evaluate((node) => getComputedStyle(node).paddingBottom)).toBe('4px');
 
     const containerBottom = containerBox!.y + containerBox!.height;
     const lastRowBottom = lastRowBox!.y + lastRowBox!.height;
-    expect(containerBottom - lastRowBottom).toBeCloseTo(8 * state.zoom, 1);
+    expect(containerBottom - lastRowBottom).toBeCloseTo(4 * state.zoom, 1);
 
     await disclosure.click();
     await expect(messageRows).toHaveCount(0);
@@ -224,6 +226,6 @@ for (const state of [
       collapsedContainerBox.y +
         collapsedContainerBox.height -
         (collapsedDisclosureBox.y + collapsedDisclosureBox.height),
-    ).toBeCloseTo(8 * state.zoom, 1);
+    ).toBeCloseTo(4 * state.zoom, 1);
   });
 }

@@ -71,9 +71,9 @@ for (const state of states) {
       const actionBox = action.getBoundingClientRect();
       const style = getComputedStyle(node);
       const probe = document.createElement('div');
-      probe.className = 'bg-sidebar';
+      probe.className = 'bg-surface-2';
       document.body.append(probe);
-      const sidebarBackground = getComputedStyle(probe).backgroundColor;
+      const surfaceBackground = getComputedStyle(probe).backgroundColor;
       probe.remove();
       return {
         box: [box.left, box.top, box.right, box.bottom],
@@ -81,7 +81,7 @@ for (const state of states) {
         prompt: [promptBox.left, promptBox.top, promptBox.right, promptBox.bottom],
         lane: [laneBox.left, laneBox.top, laneBox.right, laneBox.bottom],
         background: style.backgroundColor,
-        sidebarBackground,
+        surfaceBackground,
         borders: [
           style.borderTopWidth,
           style.borderRightWidth,
@@ -96,7 +96,7 @@ for (const state of states) {
       };
     });
 
-    expect(geometry.background).toBe(geometry.sidebarBackground);
+    expect(geometry.background).toBe(geometry.surfaceBackground);
     expect(geometry.borders).toEqual(['0px', '0px', '0px', '0px']);
     expect(geometry.radii[0]).toBe(geometry.radii[1]);
     expect(Number.parseFloat(geometry.radii[0])).toBeGreaterThan(0);

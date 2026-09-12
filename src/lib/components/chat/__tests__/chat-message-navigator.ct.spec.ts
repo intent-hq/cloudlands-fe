@@ -276,9 +276,10 @@ test.describe('chat message navigator production path', () => {
       await expect(initialOption).toHaveAttribute('aria-selected', 'true');
       expect(
         await initialOption
-          .locator('span')
+          .locator('[data-slot="button-label"] > span')
           .evaluate((element) => getComputedStyle(element).fontWeight),
       ).toBe('400');
+      await expect(search).toBeFocused();
       const searchFocus = await search.evaluate((element) => {
         const style = getComputedStyle(element);
         return {
@@ -304,9 +305,10 @@ test.describe('chat message navigator production path', () => {
         };
       });
       expect(searchFocus.backgroundColor).toBe(searchBlur.backgroundColor);
-      expect(searchFocus.borderColor).not.toBe(searchBlur.borderColor);
+      expect(searchFocus.borderColor).toBe(searchBlur.borderColor);
       expect(hasVisibleBoxShadow(searchBlur.boxShadow)).toBe(false);
       expect(searchFocus.outline).toBe(searchBlur.outline);
+      expect(searchFocus.boxShadow).toBe(searchBlur.boxShadow);
       const rowFocus = await initialOption.evaluate((element) => {
         const style = getComputedStyle(element);
         return {

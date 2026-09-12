@@ -3,7 +3,7 @@ import type { Locator, Page } from '@playwright/test';
 import ModelPickerGeometryHost from './ModelPickerGeometryHost.svelte';
 
 const outerMenu = (page: Page) =>
-  page.getByRole('listbox').filter({ has: page.getByRole('searchbox') });
+  page.locator('[data-slot="dropdown-content"]').filter({ has: page.getByRole('searchbox') });
 const innerMenu = (page: Page) => page.locator('[data-slot="select-content"]');
 const modelTrigger = (page: Page) => page.getByTestId('model-picker-host').getByRole('button');
 
@@ -80,15 +80,12 @@ for (const placement of ['settings', 'composer', 'modal'] as const) {
       await effortTrigger.click();
       const inner = innerMenu(page);
       await expectBounded(inner, page);
-      expect(
-        await effortTrigger.evaluate((element) =>
-          Boolean(
-            document
-              .getElementById(element.getAttribute('aria-controls')!)
-              ?.querySelector('[role="listbox"]'),
-          ),
-        ),
-      ).toBe(true);
+      const controlledListboxId = await effortTrigger.getAttribute('aria-controls');
+      expect(controlledListboxId).toBeTruthy();
+      const controlledListbox = page.locator('[id="' + controlledListboxId + '"]');
+      await expect(controlledListbox).toHaveCount(1);
+      await expect(controlledListbox).toHaveAttribute('role', 'listbox');
+      await expect(controlledListbox.getByRole('option')).toHaveCount(constrained ? 22 : 8);
       // The popup border emits mousedown (unlike option pointerdown, which
       // prevents it); it must not be mistaken for a click outside the parent.
       await inner.click({ position: { x: 1, y: 1 } });

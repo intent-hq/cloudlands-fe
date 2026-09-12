@@ -160,19 +160,19 @@ for (const { width, expectedLeftInset, expectedComposerInset, label } of transcr
     );
     await expect(component.locator('.tiptap-editor.regular-composer-content-inset')).toHaveCSS(
       'padding-left',
-      expectedComposerInset,
+      '0px',
     );
     await expect(component.locator('.tiptap-editor.regular-composer-content-inset')).toHaveCSS(
       'padding-right',
-      expectedComposerInset,
+      '0px',
     );
     await expect(component.locator('[data-chat-input-action-bar]')).toHaveCSS(
       'padding-left',
-      expectedComposerInset,
+      '0px',
     );
     await expect(component.locator('[data-chat-input-action-bar]')).toHaveCSS(
       'padding-right',
-      expectedComposerInset,
+      '0px',
     );
 
     if (width < 640) {

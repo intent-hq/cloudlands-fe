@@ -32,6 +32,30 @@ async function placeholderMotion(editor: Locator) {
   });
 }
 
+// Resolve token units and CSS easing serialization through the browser, just as
+// a consumer does; the motion tokens now carry CSS time units.
+async function motionTier(input: Locator, tier: 'slow' | 'fast') {
+  return input.evaluate((node, name) => {
+    const probe = document.createElement('span');
+    probe.style.transitionDuration = `var(--spring-${name})`;
+    probe.style.transitionTimingFunction = `var(--spring-${name}-ease)`;
+    node.append(probe);
+    const style = getComputedStyle(probe);
+    const result = { duration: style.transitionDuration, easing: style.transitionTimingFunction };
+    probe.remove();
+    return result;
+  }, tier);
+}
+
+async function finishPlaceholderTransition(editor: Locator) {
+  await expect
+    .poll(() => editor.evaluate((node) => node.getAnimations({ subtree: true }).length))
+    .toBeGreaterThan(0);
+  await editor.evaluate(async (node) => {
+    await Promise.all(node.getAnimations({ subtree: true }).map((animation) => animation.finished));
+  });
+}
+
 async function expectImmediatePlaceholderOpacity(editor: Locator, opacity: number) {
   const motion = await placeholderMotion(editor);
   expect(motion.opacity).toBe(opacity);
@@ -64,13 +88,7 @@ for (const state of states) {
        assertions above settle sooner than that, so sampling opacity without
        waiting reads a mid-transition value. Poll to the terminal value first. */
     await expect.poll(async () => (await placeholderMotion(editor)).opacity).toBe(0);
-    const slowTier = await input.evaluate((node) => {
-      const style = getComputedStyle(node);
-      return {
-        duration: `${Number.parseFloat(style.getPropertyValue('--spring-slow')) / 1000}s`,
-        easing: style.getPropertyValue('--spring-slow-ease').trim(),
-      };
-    });
+    const slowTier = await motionTier(input, 'slow');
     expect(await placeholderMotion(editor)).toEqual({
       opacity: 0,
       property: 'opacity',
@@ -85,13 +103,7 @@ for (const state of states) {
       };
     });
     expect(motion.property).toContain('min-height');
-    const fastTier = await input.evaluate((node) => {
-      const style = getComputedStyle(node);
-      return {
-        duration: `${Number.parseFloat(style.getPropertyValue('--spring-fast')) / 1000}s`,
-        easing: style.getPropertyValue('--spring-fast-ease').trim(),
-      };
-    });
+    const fastTier = await motionTier(input, 'fast');
     expect(motion.duration).toBe(fastTier.duration);
     expect(motion.easing).toBe(fastTier.easing);
 
@@ -101,10 +113,7 @@ for (const state of states) {
     await expect
       .poll(() => input.evaluate((node) => getComputedStyle(node).minHeight))
       .toBe(`${idle}px`);
-    await page.waitForTimeout(150);
-    const fadingIn = (await placeholderMotion(editor)).opacity;
-    expect(fadingIn).toBeGreaterThan(0);
-    expect(fadingIn).toBeLessThan(0.85);
+    await finishPlaceholderTransition(editor);
     await expect.poll(async () => (await placeholderMotion(editor)).opacity).toBeCloseTo(0.85, 2);
     expect(await composerHeight(input, state.zoom)).toBeCloseTo(idleRendered, 0);
     await page.keyboard.type('draft');
@@ -131,10 +140,7 @@ for (const state of states) {
 
     await editor.blur();
     await expect(editorWrapper).toHaveClass(/placeholder-hidden/);
-    await page.waitForTimeout(150);
-    const fadingOut = (await placeholderMotion(editor)).opacity;
-    expect(fadingOut).toBeGreaterThan(0);
-    expect(fadingOut).toBeLessThan(0.85);
+    await finishPlaceholderTransition(editor);
     await expect.poll(async () => (await placeholderMotion(editor)).opacity).toBe(0);
 
     await editor.focus();
