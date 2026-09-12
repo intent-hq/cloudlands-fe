@@ -1,9 +1,16 @@
 <script lang="ts">
+  import { SUBSCRIPTION_CARD_SURFACE_CLASS } from '$lib/components/chat/subscription-disclosure';
+  import AutomatedWakeCardHeader from '$lib/components/chat/AutomatedWakeCardHeader.svelte';
+  import BrowserTabsRow from '$lib/components/chat/BrowserTabsRow.svelte';
+  import { initializeLayout } from '$store/renderer/slices/panel-layout/panel-layout-slice';
   import { onDestroy } from 'svelte';
   import { extractAllContent, type AgentMessage } from '$shared/types';
   import PinnedUserPrompt from '$lib/components/chat/PinnedUserPrompt.svelte';
   import ChatMessage from '$lib/components/chat/ChatMessage.svelte';
   import EventWakeupBanner from '$lib/components/chat/EventWakeupBanner.svelte';
+  import ChatOperationalRow from '$lib/components/chat/ChatOperationalRow.svelte';
+  import Fa from 'svelte-fa';
+  import { faWrench } from '@fortawesome/free-solid-svg-icons';
   import ConversationTurnGap from '$lib/components/chat/ConversationTurnGap.svelte';
   import {
     attachPinnedPromptMessage,
@@ -23,6 +30,7 @@
 
   interface Props {
     panelId: string;
+    browserGeometry?: boolean;
     theme?: 'light' | 'dark';
     width?: number;
     zoom?: number;
@@ -35,6 +43,7 @@
 
   let {
     panelId,
+    browserGeometry = false,
     theme = 'light',
     width = 720,
     zoom = 1,
@@ -109,10 +118,93 @@
       },
     ],
   });
+  $effect(() => {
+    if (!browserGeometry) return;
+    store.dispatch(
+      initializeLayout(panelId, {
+        root: { type: 'panel', panelId: 'browser' },
+        panels: {
+          browser: {
+            id: 'browser',
+            activeTabId: 'docs',
+            tabs: [
+              {
+                id: 'docs',
+                type: 'browser',
+                ownerAgentId: 'geometry-agent',
+                closable: true,
+                title: labelLength === 'long' ? 'Documentation '.repeat(30) : 'Documentation',
+                browserUrl:
+                  labelLength === 'long' ? `https://example.test/${'long-path/'.repeat(30)}` : '',
+              },
+            ],
+          },
+        },
+        focusedPanelId: 'browser',
+      }),
+    );
+  });
 </script>
 
 <section class:dark={theme === 'dark'} style:width="{width}px" style:zoom data-panel={panelId}>
-  <div class="grid grid-cols-2 gap-4 bg-background p-4 text-foreground">
+  {#if browserGeometry}
+    <div class="transcript-geometry-grid bg-background p-4 text-foreground">
+      <ChatOperationalRow testId="browser-geometry-tool-row" toolIcon>
+        {#snippet leading()}<Fa icon={faWrench} size={16} />{/snippet}
+        {#snippet summary()}Reviewing{/snippet}
+      </ChatOperationalRow>
+      <div class={SUBSCRIPTION_CARD_SURFACE_CLASS}>
+        <BrowserTabsRow workspaceId={panelId} agentId="geometry-agent" />
+      </div>
+      <div data-testid="automated-geometry-cards">
+        <div class={SUBSCRIPTION_CARD_SURFACE_CLASS}>
+          <AutomatedWakeCardHeader
+            presentation={{
+              kind: 'hook',
+              state: 'delivered',
+              bodyText: '',
+              queueInfo: null,
+              attribution: {
+                hookId: 'geometry-hook',
+                reason: 'dispatched',
+                rawName: 'Build',
+                displayName:
+                  labelLength === 'long' ? 'Build completion check '.repeat(10) : 'Build',
+              },
+            }}
+            expanded={false}
+            controlsId="geometry-hook-details"
+            ontoggle={() => {}}
+          />
+        </div>
+        <div class={SUBSCRIPTION_CARD_SURFACE_CLASS}>
+          <AutomatedWakeCardHeader
+            presentation={{
+              kind: 'pr',
+              state: 'delivered',
+              bodyText: '',
+              queueInfo: null,
+              attribution: {
+                monitorId: 'geometry-pr',
+                repo:
+                  labelLength === 'long'
+                    ? `intent-hq/${'long-repository-'.repeat(10)}`
+                    : 'intent-hq/intent',
+                prNumber: 42,
+              },
+            }}
+            expanded={false}
+            controlsId="geometry-pr-details"
+            ontoggle={() => {}}
+          />
+        </div>
+      </div>
+    </div>
+  {/if}
+  <div
+    class:hidden={browserGeometry}
+    class="transcript-geometry-grid grid grid-cols-2 gap-4 bg-background p-4 text-foreground"
+  >
     <div>
       <div data-testid="sent-card" class={USER_MESSAGE_SURFACE_CLASS}>
         <span data-testid="ordinary-user-text" class={USER_MESSAGE_TEXT_CLASS}>
@@ -124,7 +216,15 @@
         <ChatMessage message={attributedMessage} />
       </div>
     </div>
-    <div>
+    <div data-testid="transcript-oracle-column">
+      <ChatOperationalRow testId="subscription-geometry-tool-row" toolIcon>
+        {#snippet leading()}
+          <Fa icon={faWrench} size={16} />
+        {/snippet}
+        {#snippet summary()}
+          <span data-testid="subscription-geometry-tool-summary">Reviewing</span>
+        {/snippet}
+      </ChatOperationalRow>
       <div data-testid="event-predecessor"></div>
       <EventWakeupBanner
         metadata={finishedMetadata}
@@ -193,6 +293,22 @@
 </section>
 
 <style>
+  section {
+    container-type: inline-size;
+  }
+
+  .transcript-geometry-grid {
+    --chat-operational-row-inline-padding: 0.5rem;
+    --chat-operational-leading-gap: 0.5rem;
+  }
+
+  @container (max-width: 639.98px) {
+    .transcript-geometry-grid {
+      --chat-operational-row-inline-padding: 0.125rem;
+      --chat-operational-leading-gap: 0.625rem;
+    }
+  }
+
   /* Prefer a classic scrollbar. The host reserves the same 16px lane when
      Chromium uses an overlay scrollbar, which keeps the geometry test strict. */
   .forced-scrollbar::-webkit-scrollbar {

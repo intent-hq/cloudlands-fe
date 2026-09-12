@@ -183,6 +183,103 @@ test('starts every icon-free peek exactly 10px after the primary label', async (
   }
 });
 
+for (const width of [360, 960]) {
+  for (const zoom of [1, 2]) {
+    test(`aligns watched-agent columns to the wake-up header at ${width}px and ${zoom * 100}%`, async ({
+      mount,
+    }) => {
+      const component = await mount(AgentSubscriptionInlineHost, {
+        props: {
+          geometryOracle: true,
+          mode: 'agents',
+          agentCount: 1,
+          initiallyExpanded: true,
+          width,
+          zoom,
+        },
+      });
+      await expect(component.getByTestId('event-wakeup-header')).toBeVisible();
+      await expect(component.getByTestId('agent-card-name')).toBeVisible();
+
+      const geometry = await component.evaluate((root) => {
+        const wakeupCard = root.querySelector('[data-testid="event-wakeup-card"]')!;
+        const watchedCard = root.querySelector('[data-testid="event-subscriptions-card"]')!;
+        const toolRow = root.querySelector(
+          '[data-testid="subscription-inline-tool-row"] [data-operational-disclosure-row]',
+        )!;
+        const toolLeading = root.querySelector(
+          '[data-testid="subscription-inline-tool-row"] [data-operational-leading]',
+        )!;
+        const toolSummary = root.querySelector('[data-testid="subscription-inline-tool-summary"]')!;
+        const wakeupIcon = root.querySelector('[data-testid="event-wakeup-leading-column"] svg')!;
+        const wakeupSummary = root.querySelector('[data-testid="event-wakeup-summary"]')!;
+        const watchedAvatar = root.querySelector('[data-testid="agent-card-avatar-wrapper"]')!;
+        const watchedName = root.querySelector('[data-testid="agent-card-name"]')!;
+        const wakeupLeading = root.querySelector('[data-testid="event-wakeup-leading-column"]')!;
+        const wakeupChevron = root.querySelector('[data-testid="event-wakeup-chevron-column"]')!;
+        const watchedLeading = root.querySelector('[data-testid="agent-card-avatar-wrapper"]')!;
+        const watchedTrailing = root.querySelector('[data-testid="agent-card-trailing-slot"]')!;
+        const centerX = (node: Element) => {
+          const box = node.getBoundingClientRect();
+          return (box.left + box.right) / 2;
+        };
+        const toolRect = toolRow.getBoundingClientRect();
+        const wakeupRect = wakeupCard.getBoundingClientRect();
+        const watchedRect = watchedCard.getBoundingClientRect();
+        return {
+          toolOuterLeft: toolRect.left,
+          toolOuterRight: toolRect.right,
+          toolLeadingInset: toolLeading.getBoundingClientRect().left - toolRect.left,
+          toolLeadingCenter: centerX(toolLeading),
+          toolTextStart: toolSummary.getBoundingClientRect().left,
+          wakeupOuterLeft: wakeupRect.left,
+          wakeupOuterRight: wakeupRect.right,
+          watchedOuterLeft: watchedRect.left,
+          watchedOuterRight: watchedRect.right,
+          wakeupLeadingCenter: centerX(wakeupIcon),
+          watchedLeadingCenter: centerX(watchedAvatar),
+          wakeupTextStart: wakeupSummary.getBoundingClientRect().left,
+          watchedTextStart: watchedName.getBoundingClientRect().left,
+          wakeupLeadingInset: wakeupLeading.getBoundingClientRect().left - wakeupRect.left,
+          wakeupTrailingInset: wakeupRect.right - wakeupChevron.getBoundingClientRect().right,
+          watchedLeadingInset: watchedLeading.getBoundingClientRect().left - watchedRect.left,
+          watchedTrailingInset: watchedRect.right - watchedTrailing.getBoundingClientRect().right,
+          wakeupOverflow:
+            (wakeupCard as HTMLElement).scrollWidth - (wakeupCard as HTMLElement).clientWidth,
+          watchedOverflow:
+            (watchedCard as HTMLElement).scrollWidth - (watchedCard as HTMLElement).clientWidth,
+        };
+      });
+
+      const expectedBleed = 12 * zoom - geometry.toolLeadingInset;
+      expect(geometry.toolOuterLeft - geometry.wakeupOuterLeft).toBeCloseTo(expectedBleed, 1);
+      expect(geometry.wakeupOuterRight - geometry.toolOuterRight).toBeCloseTo(expectedBleed, 1);
+      expect(Math.abs(geometry.watchedOuterLeft - geometry.wakeupOuterLeft)).toBeLessThanOrEqual(
+        0.5,
+      );
+      expect(Math.abs(geometry.watchedOuterRight - geometry.wakeupOuterRight)).toBeLessThanOrEqual(
+        0.5,
+      );
+      expect(geometry.wakeupLeadingCenter).toBeCloseTo(geometry.toolLeadingCenter, 1);
+      expect(geometry.wakeupTextStart).toBeCloseTo(geometry.toolTextStart, 1);
+      expect(
+        Math.abs(geometry.watchedLeadingCenter - geometry.wakeupLeadingCenter),
+      ).toBeLessThanOrEqual(0.5);
+      expect(Math.abs(geometry.watchedTextStart - geometry.wakeupTextStart)).toBeLessThanOrEqual(
+        0.5,
+      );
+      expect(geometry.watchedLeadingCenter).toBeCloseTo(geometry.toolLeadingCenter, 1);
+      expect(geometry.watchedTextStart).toBeCloseTo(geometry.toolTextStart, 1);
+      expect(geometry.wakeupLeadingInset).toBeCloseTo(12 * zoom, 1);
+      expect(geometry.wakeupTrailingInset).toBeCloseTo(12 * zoom, 1);
+      expect(geometry.watchedLeadingInset).toBeCloseTo(12 * zoom, 1);
+      expect(geometry.watchedTrailingInset).toBeCloseTo(12 * zoom, 1);
+      expect(geometry.wakeupOverflow).toBeLessThanOrEqual(0);
+      expect(geometry.watchedOverflow).toBeLessThanOrEqual(0);
+    });
+  }
+}
+
 test('keeps the waiting icon at the compact gap and on the header text tone', async ({ mount }) => {
   const component = await mount(AgentSubscriptionInlineHost);
   const cases = [
@@ -244,8 +341,8 @@ test('keeps the waiting icon at the compact gap and on the header text tone', as
 
           const deviceDelta = (left: number, right: number) =>
             Math.abs(left - right) * expanded.devicePixelRatio;
-          expect(expanded.slot.width).toBeCloseTo(14 * zoom, 1);
-          expect(expanded.slot.height).toBeCloseTo(14 * zoom, 1);
+          expect(expanded.slot.width).toBeCloseTo(20 * zoom, 1);
+          expect(expanded.slot.height).toBeCloseTo(20 * zoom, 1);
           expect(deviceDelta(expanded.slot.left, expanded.avatar.left)).toBeLessThanOrEqual(0.5);
           expect(deviceDelta(expanded.slot.centerX, expanded.icon.centerX)).toBeLessThanOrEqual(
             0.5,
@@ -262,7 +359,7 @@ test('keeps the waiting icon at the compact gap and on the header text tone', as
               expanded.avatar.centerY - expanded.agentRow.top,
             ),
           ).toBeLessThanOrEqual(0.5);
-          expect(expanded.title.left - expanded.icon.right).toBeCloseTo(6 * zoom, 1);
+          expect(deviceDelta(expanded.title.left, expanded.name.left)).toBeLessThanOrEqual(0.5);
           // The icon and summary title share one opaque muted secondary tone.
           // The agent name remains the opaque primary tone.
           expect(expanded.iconStyle.opacity).toBe('1');
@@ -434,8 +531,8 @@ test('shares exact header and agent-row padding and minimum height', async ({ mo
       const value = await measure(component, page);
       expect(value.rowGeometry).toEqual(value.headerGeometry);
       expect(value.rowGeometry).toEqual({
-        paddingInlineStart: '12px',
-        paddingInlineEnd: '12px',
+        paddingInlineStart: '11px',
+        paddingInlineEnd: '11px',
         paddingBlockStart: '8px',
         paddingBlockEnd: '8px',
         minHeight: '36px',
@@ -503,7 +600,7 @@ test('omits cohort time and pins the finished chevron across count and state', a
           expect(
             Math.abs(collapsed.slotRight - expectedRight) * collapsed.devicePixelRatio,
           ).toBeLessThanOrEqual(0.5);
-          expect(collapsed.rowRight - collapsed.slotRight).toBeCloseTo(12 * zoom, 1);
+          expect(collapsed.rowRight - collapsed.slotRight).toBeCloseTo(11 * zoom, 1);
           expect(collapsed.slotWidth).toBeCloseTo(24 * zoom, 1);
           expect(collapsed.slotHeight).toBeCloseTo(24 * zoom, 1);
           expect(
@@ -590,8 +687,8 @@ test('centers the finished summary and gives completed avatars a muted semantic 
         expect(
           Math.abs(geometry.titleCenterY - geometry.rowCenterY) * geometry.devicePixelRatio,
         ).toBeLessThanOrEqual(0.5);
-        expect(geometry.iconWidth).toBeCloseTo(14 * zoom, 1);
-        expect(geometry.iconHeight).toBeCloseTo(14 * zoom, 1);
+        expect(geometry.iconWidth).toBeCloseTo(16 * zoom, 1);
+        expect(geometry.iconHeight).toBeCloseTo(16 * zoom, 1);
 
         await summary.click();
         const completed = component
@@ -789,11 +886,14 @@ test('keeps the bell at the compact gap and on the outer-header text tone', asyn
               titleColor: getComputedStyle(title).color,
             };
           });
-          expect(geometry.slotWidth).toBeCloseTo(14 * zoom, 1);
-          expect(geometry.iconWidth).toBeCloseTo(14 * zoom, 1);
+          expect(geometry.slotWidth).toBeCloseTo(20 * zoom, 1);
+          expect(geometry.iconWidth).toBeCloseTo(16 * zoom, 1);
           expect(geometry.iconCenterX).toBeCloseTo(geometry.slotCenterX, 1);
           expect(geometry.iconCenterY).toBeCloseTo(geometry.slotCenterY, 1);
-          expect(geometry.titleLeft - geometry.iconRight).toBeCloseTo(6 * zoom, 1);
+          expect(geometry.titleLeft - (geometry.slotCenterX + geometry.slotWidth / 2)).toBeCloseTo(
+            10 * zoom,
+            1,
+          );
           expect(geometry.iconOpacity).toBe('1');
           expect(geometry.iconColor).toBe(geometry.titleColor);
           await expect(
@@ -1068,7 +1168,7 @@ test('pins the participant stack before a fixed trailing chevron slot', async ({
           ).toBeLessThanOrEqual(0.5);
           expect(collapsed.slotWidth).toBeCloseTo(24 * zoom, 1);
           expect(collapsed.slotHeight).toBeCloseTo(24 * zoom, 1);
-          expect(collapsed.headerRight - collapsed.slotRight).toBeCloseTo(12 * zoom, 1);
+          expect(collapsed.headerRight - collapsed.slotRight).toBeCloseTo(11 * zoom, 1);
           expect(
             Math.abs(collapsed.slotCenterY - collapsed.headerCenterY) * collapsed.devicePixelRatio,
           ).toBeLessThanOrEqual(0.5);

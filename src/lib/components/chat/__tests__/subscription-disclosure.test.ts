@@ -1,9 +1,16 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   safeSubscriptionRowTransition,
+  SUBSCRIPTION_CARD_INLINE_PADDING_CLASS,
+  SUBSCRIPTION_DISCLOSURE_ROW_CLASS,
+  SUBSCRIPTION_FINISHED_ROW_GEOMETRY_CLASS,
   SUBSCRIPTION_INSET_ROW_DIVIDER_CLASS,
   SUBSCRIPTION_INSET_TOP_DIVIDER_CLASS,
+  SUBSCRIPTION_LEADING_COLUMN_CLASS,
+  SUBSCRIPTION_LEADING_CONTENT_CLASS,
+  SUBSCRIPTION_ROW_GEOMETRY_CLASS,
 } from '../subscription-disclosure';
+import { OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS } from '../operational-disclosure-row';
 
 function rowStyle(): CSSStyleDeclaration {
   return {
@@ -24,6 +31,24 @@ afterEach(() => {
 });
 
 describe('safeSubscriptionRowTransition', () => {
+  it('derives subscription row columns from the operational geometry contract', () => {
+    for (const rowClass of [
+      SUBSCRIPTION_DISCLOSURE_ROW_CLASS,
+      SUBSCRIPTION_ROW_GEOMETRY_CLASS,
+      SUBSCRIPTION_FINISHED_ROW_GEOMETRY_CLASS,
+    ]) {
+      expect(rowClass).toContain(OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS);
+      expect(rowClass).toContain(SUBSCRIPTION_CARD_INLINE_PADDING_CLASS);
+    }
+    expect(SUBSCRIPTION_CARD_INLINE_PADDING_CLASS).toContain(
+      '--subscription-card-content-inline-padding',
+    );
+    expect(SUBSCRIPTION_LEADING_COLUMN_CLASS).toContain(
+      'size-[var(--operational-leading-slot-size)]',
+    );
+    expect(SUBSCRIPTION_LEADING_CONTENT_CLASS).toContain('gap-operational-leading');
+  });
+
   it('moves a clipped row from zero height and opacity to its measured natural box', () => {
     vi.spyOn(window, 'getComputedStyle').mockReturnValue(rowStyle());
     vi.stubGlobal(

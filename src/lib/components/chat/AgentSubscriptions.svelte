@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { CHAT_OPERATIONAL_ICON_CLASS } from './operational-disclosure-row';
   /**
    * AgentSubscriptions Component
    *
@@ -60,6 +61,7 @@
     SUBSCRIPTION_CARD_SURFACE_CLASS,
     SUBSCRIPTION_CHEVRON_CLASS,
     SUBSCRIPTION_CHEVRON_SIZE_CLASS,
+    SUBSCRIPTION_DISCLOSURE_ROW_CLASS,
     SUBSCRIPTION_FINISHED_ROW_GEOMETRY_CLASS,
     SUBSCRIPTION_ICON_CLASS,
     SUBSCRIPTION_INSET_ROW_DIVIDER_CLASS,
@@ -634,15 +636,21 @@
 {#if $wokenUpInfo$ && !showSubscriptionRow}
   <!-- Standalone woken-up indicator: shown only when no subscription row is active -->
   <div
-    class="flex items-end gap-2 px-3 py-2 text-subtle font-family-child {SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS}"
+    class="text-subtle {SUBSCRIPTION_DISCLOSURE_ROW_CLASS}"
     data-compact={compact}
     transition:safeSlide={{ axis: 'y', duration: 200 }}
   >
     <Tooltip.Provider delayDuration={0}>
       <Tooltip.Root delayDuration={0}>
         <Tooltip.Trigger>
-          <div class="shrink-0 flex items-center gap-2 pt-1.5 pb-0.5 text-subtle">
-            <Fa icon={faBolt} size={14} class="h-3.5! w-3.5! shrink-0 {SUBSCRIPTION_ICON_CLASS}" />
+          <div class="shrink-0 text-subtle {SUBSCRIPTION_LEADING_CONTENT_CLASS}">
+            <span class={SUBSCRIPTION_LEADING_COLUMN_CLASS}>
+              <Fa
+                icon={faBolt}
+                size={16}
+                class="{CHAT_OPERATIONAL_ICON_CLASS} {SUBSCRIPTION_ICON_CLASS}"
+              />
+            </span>
             <span>{m.chat_agentSubscriptions_wokenUp_label()}</span>
             <span class="text-subtle">
               {$wokenUpInfo$.eventCount === 1
@@ -698,15 +706,17 @@
     {#if isCompleted || $wokenUpInfo$}
       <!-- Slim status row: transitional "Completed" state and/or "Woken up" pill -->
       <div
-        class="flex w-full min-w-0 max-w-full items-center gap-2 overflow-hidden px-3 pt-1.5 pb-1 {SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS}"
+        class="flex w-full min-w-0 max-w-full items-center gap-operational-leading overflow-hidden {SUBSCRIPTION_ROW_GEOMETRY_CLASS} {SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS}"
       >
         {#if isCompleted}
           <span
-            class="shrink-0 flex items-center gap-2 whitespace-nowrap text-muted-foreground"
+            class="shrink-0 whitespace-nowrap text-muted-foreground {SUBSCRIPTION_LEADING_CONTENT_CLASS}"
             transition:fade={{ duration: 200 }}
           >
-            <Fa icon={faCircleCheck} size={14} class="h-3.5! w-3.5! shrink-0" />
-            {m.chat_agentSubscriptions_completed_label()}
+            <span class={SUBSCRIPTION_LEADING_COLUMN_CLASS}>
+              <Fa icon={faCircleCheck} size={16} class={CHAT_OPERATIONAL_ICON_CLASS} />
+            </span>
+            <span>{m.chat_agentSubscriptions_completed_label()}</span>
           </span>
         {/if}
         {#if $wokenUpInfo$}
@@ -714,15 +724,17 @@
             <Tooltip.Root delayDuration={0}>
               <Tooltip.Trigger>
                 <span
-                  class="inline-flex items-center gap-1 rounded-full bg-muted/50 px-1.5 py-0.5 {SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS}"
+                  class="rounded-full bg-muted/50 px-1.5 py-0.5 {SUBSCRIPTION_LEADING_CONTENT_CLASS} {SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS}"
                   transition:fade={{ duration: 200 }}
                 >
-                  <Fa
-                    icon={faBolt}
-                    size={14}
-                    class="h-3.5! w-3.5! shrink-0 {SUBSCRIPTION_ICON_CLASS}"
-                  />
-                  {m.chat_agentSubscriptions_wokenUp_label()}
+                  <span class={SUBSCRIPTION_LEADING_COLUMN_CLASS}>
+                    <Fa
+                      icon={faBolt}
+                      size={16}
+                      class="{CHAT_OPERATIONAL_ICON_CLASS} {SUBSCRIPTION_ICON_CLASS}"
+                    />
+                  </span>
+                  <span>{m.chat_agentSubscriptions_wokenUp_label()}</span>
                 </span>
               </Tooltip.Trigger>
               <Tooltip.Content side="top" class="text-xs">
@@ -775,14 +787,14 @@
                   {#if hasActiveAgentRows}
                     <Fa
                       icon={faHourglass}
-                      size={14}
-                      class="h-3.5! w-3.5! shrink-0 {SUBSCRIPTION_ICON_CLASS}"
+                      size={16}
+                      class="{CHAT_OPERATIONAL_ICON_CLASS} {SUBSCRIPTION_ICON_CLASS}"
                     />
                   {:else}
                     <Fa
                       icon={faCircleCheck}
-                      size={14}
-                      class="h-3.5! w-3.5! shrink-0 {SUBSCRIPTION_ICON_CLASS}"
+                      size={16}
+                      class="{CHAT_OPERATIONAL_ICON_CLASS} {SUBSCRIPTION_ICON_CLASS}"
                     />
                   {/if}
                 </span>
@@ -855,8 +867,8 @@
                   >
                     <Fa
                       icon={faCircleCheck}
-                      size={14}
-                      class="h-3.5! w-3.5! shrink-0 {SUBSCRIPTION_ICON_CLASS}"
+                      size={16}
+                      class="{CHAT_OPERATIONAL_ICON_CLASS} {SUBSCRIPTION_ICON_CLASS}"
                     />
                   </span>
                   <span

@@ -1,3 +1,4 @@
+import { CHAT_OPERATIONAL_ICON_CLASS } from '../operational-disclosure-row';
 /** Rendered contracts for the unified waiting-agent subscription disclosure. */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
@@ -537,7 +538,6 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
       const distinctSurfaceClass = /^(?:bg-|rounded(?:-|$)|shadow(?:-|$))/;
 
       expect(summary.getAttribute('aria-expanded')).toBe('false');
-      expect(summary.classList).toContain('px-3!');
       expect(summary.classList).toContain('py-2!');
       expect(summary.textContent?.trim()).toBe('2 agents finished');
       expect(
@@ -588,14 +588,11 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
       const waitingIcon = waitingSummary.querySelector('[data-icon="hourglass"]');
       const finishedIcon = finishedSummary.querySelector('[data-icon="circle-check"]');
 
-      expect(finishedSummary.classList).toContain('inline-flex');
-      expect(finishedSummary.classList).toContain('gap-1.5');
       expect(finishedSummary.classList).not.toContain('px-2');
       expect(waitingLeadingColumn.classList).not.toContain('size-5');
       expect(finishedLeadingColumn.classList).not.toContain('size-5');
       expect(finishedLeadingColumn.className).not.toMatch(/^-m(?:[lrxse])?-/);
       expect(screen.getByTestId('one-shot-agent-list').classList).not.toContain('px-1');
-      expect(screen.getByTestId('one-shot-summary-toggle').classList).toContain('px-3!');
       expect(finishedIcon).toBeTruthy();
       expect(finishedSummary.querySelector('[data-icon="check"]')).toBeNull();
       expect(finishedIcon?.classList).toContain('text-muted-foreground!');
@@ -604,7 +601,7 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
       expect(waitingIcon?.classList).toContain('text-muted-foreground!');
       expect(waitingIcon?.classList).toContain('opacity-100');
       expect(finishedIcon?.className.baseVal).not.toMatch(/green/);
-      for (const token of ['h-3.5!', 'w-3.5!', 'shrink-0']) {
+      for (const token of CHAT_OPERATIONAL_ICON_CLASS.split(' ')) {
         expect(finishedIcon?.classList).toContain(token);
         expect(waitingIcon?.classList).toContain(token);
       }

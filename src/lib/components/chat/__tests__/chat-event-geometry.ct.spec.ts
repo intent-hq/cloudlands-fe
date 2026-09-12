@@ -20,6 +20,107 @@ function contrastRatio(foreground: string, background: string): number {
   return (lighter + 0.05) / (darker + 0.05);
 }
 
+for (const width of [360, 960]) {
+  for (const zoom of [1, 2]) {
+    test(`aligns subscription and sent-message columns to a tool row at ${width}px and ${zoom * 100}%`, async ({
+      mount,
+    }) => {
+      const component = await mount(ChatEventGeometryHost, {
+        props: { panelId: `subscription-columns-${width}-${zoom}`, width, zoom },
+      });
+      const geometry = await component.evaluate((root) => {
+        const toolRow = root.querySelector(
+          '[data-testid="subscription-geometry-tool-row"] [data-operational-disclosure-row]',
+        )!;
+        const toolLeading = root.querySelector(
+          '[data-testid="subscription-geometry-tool-row"] [data-operational-leading]',
+        )!;
+        const toolSummary = root.querySelector(
+          '[data-testid="subscription-geometry-tool-row"] [data-operational-summary]',
+        )!;
+        const card = root.querySelector('[data-testid="event-wakeup-card"]')!;
+        const subscriptionLeading = root.querySelector(
+          '[data-testid="event-wakeup-leading-column"] svg',
+        )!;
+        const subscriptionSummary = root.querySelector('[data-testid="event-wakeup-summary"]')!;
+        const agentCard = root.querySelector(
+          '[data-testid="attributed-message-lane"] [data-testid="user-message-surface"]',
+        )!;
+        const agentLeading = root.querySelector('[data-testid="agent-message-avatar-column"]')!;
+        const agentSummary = root.querySelector('[data-testid="agent-message-actor-name"]')!;
+        const subscriptionRow = root.querySelector('[data-testid="event-wakeup-header"]')!;
+        const subscriptionLeadingColumn = root.querySelector(
+          '[data-testid="event-wakeup-leading-column"]',
+        )!;
+        const subscriptionChevron = root.querySelector(
+          '[data-testid="event-wakeup-chevron-column"]',
+        )!;
+        const agentRow = root.querySelector('[data-testid="agent-message-disclosure-header"]')!;
+        const center = (element: Element) => {
+          const box = element.getBoundingClientRect();
+          return (box.left + box.right) / 2;
+        };
+        const toolRect = toolRow.getBoundingClientRect();
+        const cardRect = card.getBoundingClientRect();
+        const agentCardRect = agentCard.getBoundingClientRect();
+        return {
+          toolOuterLeft: toolRect.left,
+          toolOuterRight: toolRect.right,
+          subscriptionOuterLeft: cardRect.left,
+          subscriptionOuterRight: cardRect.right,
+          toolLeadingCenter: center(toolLeading),
+          subscriptionLeadingCenter: center(subscriptionLeading),
+          subscriptionIconWidth: subscriptionLeading.getBoundingClientRect().width,
+          subscriptionIconHeight: subscriptionLeading.getBoundingClientRect().height,
+          toolTextStart: toolSummary.getBoundingClientRect().left,
+          subscriptionTextStart: subscriptionSummary.getBoundingClientRect().left,
+          agentOuterLeft: agentCard.getBoundingClientRect().left,
+          agentLeadingCenter: center(agentLeading),
+          agentTextStart: agentSummary.getBoundingClientRect().left,
+          toolLeadingInset: toolLeading.getBoundingClientRect().left - toolRect.left,
+          subscriptionLeadingInset:
+            subscriptionLeadingColumn.getBoundingClientRect().left - cardRect.left,
+          subscriptionTrailingInset:
+            cardRect.right - subscriptionChevron.getBoundingClientRect().right,
+          agentLeadingInset: agentLeading.getBoundingClientRect().left - agentCardRect.left,
+          subscriptionRowPadding: getComputedStyle(subscriptionRow).paddingInlineStart,
+          agentRowPadding: getComputedStyle(agentRow).paddingInlineStart,
+          subscriptionOverflow:
+            (card as HTMLElement).scrollWidth - (card as HTMLElement).clientWidth,
+          agentOverflow:
+            (agentCard as HTMLElement).scrollWidth - (agentCard as HTMLElement).clientWidth,
+        };
+      });
+
+      const expectedBleed = 12 * zoom - geometry.toolLeadingInset;
+      expect(geometry.toolOuterLeft - geometry.subscriptionOuterLeft).toBeCloseTo(expectedBleed, 1);
+      expect(geometry.subscriptionOuterRight - geometry.toolOuterRight).toBeCloseTo(
+        expectedBleed,
+        1,
+      );
+      expect(geometry.subscriptionIconWidth).toBeCloseTo(16 * zoom, 1);
+      expect(geometry.subscriptionIconHeight).toBeCloseTo(16 * zoom, 1);
+      expect(geometry.subscriptionLeadingCenter).toBeCloseTo(geometry.toolLeadingCenter, 1);
+      expect(geometry.subscriptionTextStart).toBeCloseTo(geometry.toolTextStart, 1);
+      expect(geometry.agentLeadingCenter - geometry.agentOuterLeft - expectedBleed).toBeCloseTo(
+        geometry.toolLeadingCenter - geometry.toolOuterLeft,
+        1,
+      );
+      expect(geometry.agentTextStart - geometry.agentOuterLeft - expectedBleed).toBeCloseTo(
+        geometry.toolTextStart - geometry.toolOuterLeft,
+        1,
+      );
+      expect(geometry.subscriptionLeadingInset).toBeCloseTo(12 * zoom, 1);
+      expect(geometry.subscriptionTrailingInset).toBeCloseTo(12 * zoom, 1);
+      expect(geometry.agentLeadingInset).toBeCloseTo(12 * zoom, 1);
+      expect(geometry.subscriptionRowPadding).toBe('11px');
+      expect(geometry.agentRowPadding).toBe('11px');
+      expect(geometry.subscriptionOverflow).toBeLessThanOrEqual(0);
+      expect(geometry.agentOverflow).toBeLessThanOrEqual(0);
+    });
+  }
+}
+
 test('measures the production finished-card turn gap across all required states', async ({
   mount,
   page,
@@ -81,7 +182,7 @@ test('measures the production finished-card turn gap across all required states'
                   surfaceInset: [surface.paddingInlineStart, surface.paddingBlockStart],
                 };
               });
-              expect(measurement.finishedInset).toEqual(measurement.sentInset);
+              expect(measurement.finishedInset).toEqual(['11px', measurement.sentInset[1]]);
               expect(measurement.finishedHeight).toBeCloseTo(40 * zoom, 1);
               expect(measurement.surfaceInset).toEqual(['0px', '0px']);
               const topGap = measurement.cardTop - measurement.predecessorBottom;
@@ -213,10 +314,10 @@ test('matches sent-message disclosures to real finished event rows', async ({ mo
           expect(collapsed.agentSurface).toEqual(collapsed.eventSurface);
           expect(collapsed.agentRow).toEqual(collapsed.eventRow);
           expect(collapsed.agentRowGap).toBe('4px');
-          expect(collapsed.eventRowGap).toBe('8px');
+          expect(collapsed.eventRowGap).toBe(width === 360 ? '10px' : '8px');
           expect(collapsed.agentRow['justify-content']).toBe('flex-start');
           expect(collapsed.agentNameRect.left - collapsed.agentIconRect.right).toBeCloseTo(
-            8 * zoom,
+            (width === 360 ? 10 : 8) * zoom,
             1,
           );
           expect(collapsed.agentActionRect.left - collapsed.agentActorRect.right).toBeCloseTo(
@@ -224,7 +325,7 @@ test('matches sent-message disclosures to real finished event rows', async ({ mo
             1,
           );
           expect(collapsed.eventSummaryRect.left - collapsed.eventIconRect.right).toBeCloseTo(
-            8 * zoom,
+            (width === 360 ? 12 : 10) * zoom,
             1,
           );
           expect(collapsed.eventStatusRect.left - collapsed.eventNameRect.right).toBeCloseTo(
@@ -232,7 +333,7 @@ test('matches sent-message disclosures to real finished event rows', async ({ mo
             1,
           );
           expect(collapsed.agentIconRect.left - collapsed.agentRowRect.left).toBeCloseTo(
-            12 * zoom,
+            11 * zoom,
             1,
           );
           expect(collapsed.agentRowRect.bottom - collapsed.agentRowRect.top).toBeCloseTo(
@@ -491,3 +592,73 @@ test('uses a deterministic non-animated sticky surface with reduced motion', asy
     await prompt.evaluate((node) => Number.parseFloat(getComputedStyle(node).transitionDuration)),
   ).toBeLessThanOrEqual(0.001);
 });
+
+for (const width of [360, 960]) {
+  for (const zoom of [1, 2]) {
+    for (const labelLength of ['short', 'long'] as const) {
+      test(`centers browser-tab dots on the first line at ${width}px and ${zoom * 100}% with ${labelLength} labels`, async ({
+        mount,
+        page,
+      }) => {
+        await page.emulateMedia({ reducedMotion: 'reduce' });
+        const component = await mount(ChatEventGeometryHost, {
+          props: {
+            panelId: `browser-${width}-${zoom}-${labelLength}`,
+            browserGeometry: true,
+            width,
+            zoom,
+            labelLength,
+          },
+        });
+        await component.getByTestId('browser-tabs-summary').click();
+        const row = component.getByTestId('browser-tab-item');
+        await expect(row).toBeVisible();
+        await page.evaluate(() => document.fonts.ready);
+        const geometry = await component.evaluate((root) => {
+          const row = root.querySelector('[data-testid="browser-tab-item"]')!;
+          const dot = row.firstElementChild!.firstElementChild!.getBoundingClientRect();
+          const title = row.children[1].children[0] as HTMLElement;
+          const titleBox = title.getBoundingClientRect();
+          const lineHeight = Number.parseFloat(getComputedStyle(title).lineHeight);
+          const scale = titleBox.height / title.offsetHeight;
+          const tool = root.querySelector('[data-testid="browser-geometry-tool-row"]')!;
+          const leading = tool.querySelector('[data-operational-leading]')!.getBoundingClientRect();
+          const text = tool.querySelector('[data-operational-summary]')!.getBoundingClientRect();
+          return {
+            lineHeight,
+            verticalDelta: (dot.top + dot.bottom) / 2 - (titleBox.top + (lineHeight * scale) / 2),
+            glyphDelta: (dot.left + dot.right - leading.left - leading.right) / 2,
+            textDelta: titleBox.left - text.left,
+            titleTruncated: title.scrollWidth > title.clientWidth,
+            urlTruncated:
+              row.children[1].children[1].scrollWidth > row.children[1].children[1].clientWidth,
+          };
+        });
+        const automated = await component
+          .getByTestId('automated-wake-header')
+          .evaluateAll((headers) =>
+            headers.map((header) => {
+              const glyph = header.querySelector('svg')!.getBoundingClientRect();
+              const lane = header.querySelector(
+                '[data-testid="automated-wake-text-lane"]',
+              ) as HTMLElement;
+              const box = lane.getBoundingClientRect();
+              const scale = box.height / lane.offsetHeight;
+              return (
+                (glyph.top + glyph.bottom) / 2 -
+                (box.top + (Number.parseFloat(getComputedStyle(lane).lineHeight) * scale) / 2)
+              );
+            }),
+          );
+        for (const delta of automated) expect(Math.abs(delta)).toBeLessThanOrEqual(0.5);
+        expect(Math.abs(geometry.verticalDelta)).toBeLessThanOrEqual(0.5);
+        expect(Math.abs(geometry.glyphDelta)).toBeLessThanOrEqual(0.5);
+        expect(Math.abs(geometry.textDelta)).toBeLessThanOrEqual(0.5);
+        if (labelLength === 'long') {
+          expect(geometry.titleTruncated).toBe(true);
+          expect(geometry.urlTruncated).toBe(true);
+        }
+      });
+    }
+  }
+}
