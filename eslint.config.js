@@ -11,12 +11,14 @@ import { svelte as themisFullConfig } from '@augmentcode/themis/eslint-plugins';
 import noProductionDynamicImportRule from './eslint-rules/no-production-dynamic-import.js';
 import noComponentAsyncDataFetchRule from './eslint-rules/no-component-async-data-fetch.js';
 import noColdSvelteImportInTestsRule from './eslint-rules/no-cold-svelte-import-in-tests.js';
+import noFlushSyncInTeardownRule from './eslint-rules/no-flushsync-in-teardown.js';
 
 const intentPlugin = {
   rules: {
     'no-component-async-data-fetch': noComponentAsyncDataFetchRule,
     'no-production-dynamic-import': noProductionDynamicImportRule,
     'no-cold-svelte-import-in-tests': noColdSvelteImportInTestsRule,
+    'no-flushsync-in-teardown': noFlushSyncInTeardownRule,
   },
 };
 
@@ -672,6 +674,18 @@ export default [
     },
     rules: {
       'intent/no-component-async-data-fetch': 'error',
+    },
+  },
+  // flushSync from an $effect cleanup, onDestroy callback, or action destroy()
+  // flushes unrelated effects mid-teardown; any component mounted by that flush
+  // throws effect_in_teardown (intent-hq/intent#4550, shipped in v2.141.0).
+  {
+    files: ['**/*.svelte'],
+    plugins: {
+      intent: intentPlugin,
+    },
+    rules: {
+      'intent/no-flushsync-in-teardown': 'error',
     },
   },
   ...themisFullConfig,
