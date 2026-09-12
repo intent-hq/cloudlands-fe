@@ -19,8 +19,9 @@ function measureGeometry(component: Locator) {
     const readGeometry = () => {
       const column = document.querySelector('[data-testid="panel-column"]') as HTMLElement;
       const inset = document.querySelector('[data-testid="panel-workspace-inset"]') as HTMLElement;
-      const canvas = inset?.querySelector('.panel-canvas-resize-handle')
-        ?.parentElement as HTMLElement | null;
+      const canvas = inset
+        ?.querySelector('.panel-canvas-resize-handle')
+        ?.closest('.panel-canvas-frame') as HTMLElement | null;
       const panels = Array.from(
         document.querySelectorAll<HTMLElement>('.panel-split-container > .panel-split-child'),
       );
@@ -68,8 +69,11 @@ function measureGeometry(component: Locator) {
 async function stableCanvasWidths(component: Locator) {
   return component.evaluate(async () => {
     const sample = () =>
-      (document.querySelector('.panel-canvas-resize-handle')?.parentElement as HTMLElement | null)
-        ?.offsetWidth ?? null;
+      (
+        document
+          .querySelector('.panel-canvas-resize-handle')
+          ?.closest('.panel-canvas-frame') as HTMLElement | null
+      )?.offsetWidth ?? null;
     const widths = [sample()];
     await new Promise(requestAnimationFrame);
     widths.push(sample());

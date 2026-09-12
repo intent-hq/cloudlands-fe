@@ -299,7 +299,7 @@ for (const scenario of [
 
     const geometry = await menu.evaluate((node) => {
       const item = node.querySelector<HTMLElement>('[data-slot="menu-command-item"]')!;
-      const label = item.querySelector<HTMLElement>(':scope > span')!;
+      const label = item.querySelector<HTMLElement>(':scope > span.truncate')!;
       const shortcut = item.querySelector<HTMLElement>('kbd')!;
       const box = node.getBoundingClientRect();
       return {

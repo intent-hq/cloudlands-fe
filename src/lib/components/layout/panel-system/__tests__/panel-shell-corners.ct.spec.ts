@@ -98,7 +98,9 @@ for (const theme of ['light', 'dark'] as const) {
         await expect(handle).toBeVisible();
         expect(await handle.evaluate((node) => getComputedStyle(node).width)).toBe('16px');
         expect(
-          await handle.locator('xpath=..').evaluate((node) => getComputedStyle(node).width),
+          await handle
+            .locator('xpath=ancestor::*[contains(@class, "panel-split-handle-wrapper")][1]')
+            .evaluate((node) => getComputedStyle(node).width),
         ).toBe('8px');
       });
     }

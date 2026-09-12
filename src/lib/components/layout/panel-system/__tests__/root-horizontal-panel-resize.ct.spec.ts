@@ -9,7 +9,7 @@ import {
 const GUTTER_WIDTH = 8;
 const UNCONTAINED_INLINE_CHROME = 20;
 const ROOT_HANDLE_SELECTOR =
-  '.panel-split-container.horizontal > .panel-split-handle-wrapper > button[data-resize-axis="x"]';
+  '.panel-split-container.horizontal > .panel-split-handle-wrapper button[data-resize-axis="x"]';
 
 type Geometry = {
   canvasWidth: number;
@@ -64,8 +64,9 @@ async function installGeometryReader(page: Page) {
         }
       },
       read: () => {
-        const canvas = document.querySelector('.panel-canvas-resize-handle')
-          ?.parentElement as HTMLElement;
+        const canvas = document
+          .querySelector('.panel-canvas-resize-handle')
+          ?.closest('.panel-canvas-frame') as HTMLElement;
         const outerHandle = document.querySelector('.panel-canvas-resize-handle') as HTMLElement;
         const root = document.querySelector('.panel-split-container.horizontal') as HTMLElement;
         const panels = Array.from(
@@ -73,7 +74,7 @@ async function installGeometryReader(page: Page) {
         );
         const dividers = Array.from(
           root.querySelectorAll<HTMLElement>(
-            ':scope > .panel-split-handle-wrapper > button[data-resize-axis="x"]',
+            ':scope > .panel-split-handle-wrapper button[data-resize-axis="x"]',
           ),
         );
         const canvasRect = canvas.getBoundingClientRect();
@@ -259,7 +260,7 @@ async function dragDividerBeforeNextFrame(
       const geometry = (window as GeometryWindow).__panelGeometry;
       if (!geometry) throw new Error('Geometry reader not installed');
       const handle = document.querySelectorAll<HTMLElement>(
-        '.panel-split-container.horizontal > .panel-split-handle-wrapper > button[data-resize-axis="x"]',
+        '.panel-split-container.horizontal > .panel-split-handle-wrapper button[data-resize-axis="x"]',
       )[dividerIndex];
       const rect = handle.getBoundingClientRect();
       const startX = rect.left + rect.width / 2;
