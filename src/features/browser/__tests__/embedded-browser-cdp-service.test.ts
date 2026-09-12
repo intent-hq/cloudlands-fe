@@ -977,3 +977,180 @@ describe('screenshot Page-domain hang fallback (#3154)', () => {
     service.unregisterTab('tab-fallback-hang');
   });
 });
+
+describe('capture stages bounded by the request deadline (intent-hq/intent#4835)', () => {
+  const LAYOUT_METRICS = {
+    layoutViewport: { clientWidth: 800, clientHeight: 600 },
+    cssVisualViewport: { clientWidth: 800, clientHeight: 600, pageX: 0, pageY: 0 },
+  };
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-12T12:00:00Z'));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  async function rejection(pending: Promise<unknown>) {
+    pending.catch(() => {});
+    try {
+      await pending;
+    } catch (err) {
+      return err as Error & { errorCode?: string; stage?: string };
+    }
+    throw new Error('expected rejection');
+  }
+
+  it('clamps a hanging Page command and the capturePage fallback to the deadline, naming the stage', async () => {
+    const service = await loadService();
+    const wc = fakeCdpWebview(71, { 'Page.getLayoutMetrics': 'hang' }, 'hang');
+    mocks.fromId.mockReturnValue(wc);
+    service.registerTab('tab-deadline', 71);
+
+    // 3 s left: the 5 s CDP cap collapses to 3 s, then nothing is left for
+    // the fallback — the whole chain answers at the deadline, not at 10 s.
+    const pending = service.screenshot('tab-deadline', { deadline: Date.now() + 3_000 });
+    const settled = rejection(pending);
+    await vi.advanceTimersByTimeAsync(2_999);
+    expect(wc.capturePage).not.toHaveBeenCalled();
+    // The fallback gets a zero budget, so the chain settles right after the
+    // deadline — well short of the 10 s the two uncapped stages would take.
+    await vi.advanceTimersByTimeAsync(101);
+
+    const err = await settled;
+    expect(err.errorCode).toBe('deadline-exhausted');
+    expect(err.stage).toBe('capturePage');
+    expect(err.message).toContain('Page.getLayoutMetrics timed out after 3000ms');
+    expect(err.message).toContain('request deadline was exhausted');
+    expect(err.message).toContain('capturePage timed out after 0ms');
+    expect(wc.capturePage).toHaveBeenCalledTimes(1);
+    service.unregisterTab('tab-deadline');
+  });
+
+  it('a fallback that times out on its own cap is reported as not-painting, not deadline-exhausted', async () => {
+    const service = await loadService();
+    const wc = fakeCdpWebview(
+      72,
+      { 'Page.getLayoutMetrics': new Error('Page domain unavailable') },
+      'hang',
+    );
+    mocks.fromId.mockReturnValue(wc);
+    service.registerTab('tab-not-painting', 72);
+
+    const pending = service.screenshot('tab-not-painting', { deadline: Date.now() + 18_000 });
+    const settled = rejection(pending);
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    const err = await settled;
+    expect(err.errorCode).toBe('not-painting');
+    expect(err.stage).toBe('capturePage');
+    expect(err.message).toContain('capturePage timed out after 5000ms: the tab is not painting');
+    service.unregisterTab('tab-not-painting');
+  });
+
+  it('a successful capture inside the budget is unaffected by the deadline', async () => {
+    const service = await loadService();
+    const wc = fakeCdpWebview(73, {
+      'Page.getLayoutMetrics': LAYOUT_METRICS,
+      'Page.captureScreenshot': { data: JPEG_1PX },
+    });
+    mocks.fromId.mockReturnValue(wc);
+    service.registerTab('tab-ok', 73);
+
+    await expect(service.screenshot('tab-ok', { deadline: Date.now() + 18_000 })).resolves.toEqual({
+      base64: JPEG_1PX,
+      width: 800,
+      height: 600,
+    });
+    service.unregisterTab('tab-ok');
+  });
+
+  it('bounds Runtime.evaluate by the deadline only when one is given', async () => {
+    const service = await loadService();
+    const wc = fakeCdpWebview(74, { 'Runtime.evaluate': 'hang' });
+    mocks.fromId.mockReturnValue(wc);
+    service.registerTab('tab-eval', 74);
+
+    const bounded = service.evaluate('tab-eval', '1', { deadline: Date.now() + 1_000 });
+    const settled = rejection(bounded);
+    let unboundedSettled = false;
+    service.evaluate('tab-eval', '1').finally(() => {
+      unboundedSettled = true;
+    });
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    const err = await settled;
+    expect(err.errorCode).toBe('deadline-exhausted');
+    expect(err.stage).toBe('Runtime.evaluate');
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(unboundedSettled).toBe(false);
+    service.unregisterTab('tab-eval');
+  });
+
+  describe('waitForTabLoad', () => {
+    function loadingWebview(id: number, url: string) {
+      const listeners = new Map<string, () => void>();
+      let loading = true;
+      return {
+        wc: {
+          ...fakeWebview(id, url),
+          isLoading: () => loading,
+          once: vi.fn((event: string, cb: () => void) => listeners.set(event, cb)),
+          removeListener: vi.fn((event: string) => listeners.delete(event)),
+        },
+        finishLoad() {
+          loading = false;
+          listeners.get('did-stop-loading')?.();
+        },
+      };
+    }
+
+    it('resolves undefined for a tab that is not mounted', async () => {
+      const service = await loadService();
+      await expect(service.waitForTabLoad('nope', 1_000)).resolves.toBeUndefined();
+    });
+
+    it('resolves immediately with the live URL when the guest is not loading', async () => {
+      const service = await loadService();
+      const wc = { ...fakeWebview(75, 'http://127.0.0.1:5199/app'), isLoading: () => false };
+      mocks.fromId.mockReturnValue(wc);
+      service.registerTab('tab-settled', 75);
+
+      await expect(service.waitForTabLoad('tab-settled', 5_000)).resolves.toEqual({
+        loading: false,
+        url: 'http://127.0.0.1:5199/app',
+      });
+      service.unregisterTab('tab-settled');
+    });
+
+    it('resolves loading: false once did-stop-loading fires within the budget', async () => {
+      const service = await loadService();
+      const { wc, finishLoad } = loadingWebview(76, 'http://127.0.0.1:5199/');
+      mocks.fromId.mockReturnValue(wc);
+      service.registerTab('tab-loading', 76);
+
+      const pending = service.waitForTabLoad('tab-loading', 5_000);
+      await vi.advanceTimersByTimeAsync(1_000);
+      finishLoad();
+
+      await expect(pending).resolves.toEqual({ loading: false, url: 'http://127.0.0.1:5199/' });
+      expect(wc.removeListener).toHaveBeenCalledWith('did-stop-loading', expect.any(Function));
+      service.unregisterTab('tab-loading');
+    });
+
+    it('resolves loading: true when the budget elapses first', async () => {
+      const service = await loadService();
+      const { wc } = loadingWebview(77, 'http://127.0.0.1:5199/');
+      mocks.fromId.mockReturnValue(wc);
+      service.registerTab('tab-still-loading', 77);
+
+      const pending = service.waitForTabLoad('tab-still-loading', 2_000);
+      await vi.advanceTimersByTimeAsync(2_000);
+
+      await expect(pending).resolves.toEqual({ loading: true, url: 'http://127.0.0.1:5199/' });
+      service.unregisterTab('tab-still-loading');
+    });
+  });
+});

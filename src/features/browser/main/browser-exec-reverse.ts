@@ -23,14 +23,39 @@ const logger = new Logger('BrowserExecReverse');
 
 export const BROWSER_EXEC_METHOD = 'browser.exec';
 
-/** Keep persistence below the outer 30-second workspace browser deadline. */
-const SCREENSHOT_ASSET_SAVE_TIMEOUT_MS = 5_000;
+/**
+ * intentd's reverse-request deadlines (`crates/intent-transport/src/reverse.rs`):
+ * a `browser.exec` batch containing a `screenshot` action gets 20 s, any
+ * other reverse request 30 s. The FE must answer inside that window or the
+ * daemon discards the reply and the agent sees a bare "reverse request timed
+ * out" (intent-hq/intent#4835).
+ */
+const DEFAULT_REVERSE_TIMEOUT_MS = 30_000;
+const SCREENSHOT_REVERSE_TIMEOUT_MS = 20_000;
+
+/**
+ * Time reserved between the FE's answer and the daemon's deadline for the
+ * reply to cross the transport. The request deadline handed to the executor
+ * and to asset persistence is the daemon deadline minus this margin.
+ */
+const REVERSE_TRANSPORT_MARGIN_MS = 2_000;
+
+/**
+ * How long after the request deadline the handler's own backstop fires. The
+ * executor clamps every stage to that deadline and answers with a per-action
+ * `deadline-exhausted` result naming the stage; the backstop must not race
+ * those stage timers (same instant, unordered) and replace a structured
+ * answer with an empty envelope, so it only wins when a stage overran its
+ * clamp. Fits inside the transport margin.
+ */
+const EXECUTOR_BACKSTOP_GRACE_MS = 1_000;
 
 /**
  * Signature of `executeBrowserActions` from `./browser.ipc`. Kept in-file to
  * avoid a static import of the browser IPC entry (and its Electron-touching
  * transitive deps) at module-load time — the wiring point loads it lazily
  * when the daemon actually issues the reverse intent (see below).
+ * `deadline` is the absolute epoch-ms request deadline (see above).
  */
 export type ExecuteBrowserActionsFn = (
   actions: unknown[],
@@ -38,6 +63,7 @@ export type ExecuteBrowserActionsFn = (
   agentId?: string,
   workspaceId?: string,
   backendContext?: BrowserExecutionBackendContext,
+  deadline?: number,
 ) => Promise<ExecutionResult>;
 
 /** Backend identity captured at the reverse-handler or renderer IPC boundary. */
@@ -85,10 +111,64 @@ const defaultExecutor: ExecuteBrowserActionsFn = async (
   agentId,
   workspaceId,
   backendContext,
+  deadline,
 ) => {
   const { executeBrowserActions } = await import('./browser.ipc');
-  return executeBrowserActions(actions, tabId, agentId, workspaceId, backendContext);
+  return executeBrowserActions(actions, tabId, agentId, workspaceId, backendContext, deadline);
 };
+
+/**
+ * The absolute deadline (epoch ms) for one reverse request, derived from its
+ * receipt: the daemon deadline that applies to this batch minus the transport
+ * margin. Mirrors the daemon's selection — any `screenshot` action puts the
+ * whole batch on the shorter screenshot deadline.
+ */
+function requestDeadline(receivedAt: number, actions: unknown[]): number {
+  const includesScreenshot = actions.some(
+    (action) =>
+      !!action &&
+      typeof action === 'object' &&
+      (action as { action?: unknown }).action === 'screenshot',
+  );
+  const daemonTimeoutMs = includesScreenshot
+    ? SCREENSHOT_REVERSE_TIMEOUT_MS
+    : DEFAULT_REVERSE_TIMEOUT_MS;
+  return receivedAt + daemonTimeoutMs - REVERSE_TRANSPORT_MARGIN_MS;
+}
+
+/**
+ * Backstop for the executor itself: every capture stage is clamped to the
+ * deadline, but should the batch still not settle shortly after it, answer
+ * with a truthful failure envelope before the daemon gives up rather than
+ * let the reply arrive after it. The abandoned batch's eventual result is
+ * dropped. Fires {@link EXECUTOR_BACKSTOP_GRACE_MS} past the deadline so a
+ * stage that answers at the deadline keeps its per-action error.
+ */
+async function executeWithinDeadline(
+  run: Promise<ExecutionResult>,
+  deadline: number,
+): Promise<ExecutionResult> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      run,
+      new Promise<ExecutionResult>((resolve) => {
+        timer = setTimeout(
+          () =>
+            resolve({
+              success: false,
+              results: [],
+              // i18n-ignore (agent-facing operational timeout, not user-facing)
+              error: `browser.exec: the actions did not settle within the request deadline (stage: action execution). Retry the request.`,
+            }),
+          Math.max(0, deadline + EXECUTOR_BACKSTOP_GRACE_MS - Date.now()),
+        );
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 /**
  * Register the `browser.exec` reverse-intent handler on the shared JSON-RPC
@@ -102,28 +182,35 @@ export function registerBrowserExecReverseHandler(
   const saveAsset = options.saveAsset;
 
   return client.registerMethod(BROWSER_EXEC_METHOD, async (rawParams) => {
+    const receivedAt = Date.now();
     const params = parseParams(rawParams);
+    const deadline = requestDeadline(receivedAt, params.actions);
     logger.info('Serving browser.exec reverse intent', {
       actionCount: params.actions.length,
       hasTabId: !!params.tabId,
       hasAgentId: !!params.agentId,
       hasWorkspaceId: !!params.workspaceId,
+      budgetMs: deadline - receivedAt,
     });
 
-    const result = await executor(
-      params.actions,
-      params.tabId,
-      params.agentId,
-      params.workspaceId,
-      {
-        client,
-        backendId: options.backendId ?? 'local',
-        savedRemote: options.savedRemote ?? false,
-      },
+    const result = await executeWithinDeadline(
+      executor(
+        params.actions,
+        params.tabId,
+        params.agentId,
+        params.workspaceId,
+        {
+          client,
+          backendId: options.backendId ?? 'local',
+          savedRemote: options.savedRemote ?? false,
+        },
+        deadline,
+      ),
+      deadline,
     );
 
     if (params.workspaceId && saveAsset && result.success) {
-      await rewriteScreenshotAssets(result, params.workspaceId, saveAsset);
+      await rewriteScreenshotAssets(result, params.workspaceId, saveAsset, deadline);
     }
 
     return result;
@@ -158,15 +245,24 @@ function optionalString(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined;
 }
 
+/** Own cap on asset persistence; further clamped to the request deadline. */
+const SCREENSHOT_ASSET_SAVE_TIMEOUT_MS = 5_000;
+
 /**
  * Replace inline `{ base64, width, height }` screenshot payloads with
  * `{ assetUrl, width, height }` so the wire response stays small. Mirrors
  * `browser-tools.ts` for parity with the pre-port MCP path.
+ *
+ * Persistence is bounded by whatever is left of the request `deadline`
+ * (at most its own cap): a capture that legitimately used most of the budget
+ * still answers with the usable inline base64 inside the deadline instead of
+ * overrunning into the daemon's transport timeout (#4835).
  */
 async function rewriteScreenshotAssets(
   result: ExecutionResult,
   workspaceId: string,
   saveAsset: SaveAssetFn,
+  deadline: number,
 ): Promise<void> {
   await Promise.all(
     result.results.map(async (actionResult) => {
@@ -174,6 +270,13 @@ async function rewriteScreenshotAssets(
       const data = actionResult.result as
         { base64?: string; width?: number; height?: number } | undefined;
       if (!data?.base64) return;
+      const saveBudgetMs = Math.min(SCREENSHOT_ASSET_SAVE_TIMEOUT_MS, deadline - Date.now());
+      if (saveBudgetMs <= 0) {
+        logger.warn('No request budget left for asset persistence; keeping base64 in result', {
+          workspaceId,
+        });
+        return;
+      }
       try {
         let timer: ReturnType<typeof setTimeout> | undefined;
         const saved = await Promise.race([
@@ -189,10 +292,10 @@ async function rewriteScreenshotAssets(
                 reject(
                   new Error(
                     // i18n-ignore (agent-facing operational timeout, not user-facing)
-                    `Asset persistence timed out after ${SCREENSHOT_ASSET_SAVE_TIMEOUT_MS}ms`,
+                    `Asset persistence timed out after ${saveBudgetMs}ms`,
                   ),
                 ),
-              SCREENSHOT_ASSET_SAVE_TIMEOUT_MS,
+              saveBudgetMs,
             );
           }),
         ]).finally(() => clearTimeout(timer));
