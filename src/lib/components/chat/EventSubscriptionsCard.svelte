@@ -37,6 +37,8 @@
     workspaceId: string;
     agentId: string;
     compact?: boolean;
+    /** Whether the owning chat is active, independent of disclosure state. */
+    isActive?: boolean;
     visible?: boolean;
     /** Static, daemon-free content used by catalog and visual-test previews. */
     isolatedPreview?: {
@@ -52,6 +54,7 @@
     workspaceId,
     agentId,
     compact = false,
+    isActive = true,
     visible = $bindable(false),
     isolatedPreview,
     previewContent,
@@ -78,7 +81,7 @@
   // collapsible row. Chief lives outside the tab strip; collapse must not
   // interrupt its snapshot or live updates.
   $effect(() => {
-    if (isolatedPreview || !workspaceId) return;
+    if (isolatedPreview || !workspaceId || !isActive) return;
     const currentWorkspaceId = workspaceId;
     untrack(() => appStore.dispatch(prMonitorsSubscribeRequested(currentWorkspaceId)));
     return () => appStore.dispatch(prMonitorsUnsubscribeRequested(currentWorkspaceId));

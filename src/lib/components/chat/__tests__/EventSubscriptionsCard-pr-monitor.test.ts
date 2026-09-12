@@ -199,6 +199,52 @@ describe('Chief PR-monitor subscription ownership', () => {
     expect(backendUnsubscribe).toHaveBeenCalledExactlyOnceWith(`pr-sub-${CHIEF_WORKSPACE_ID}`);
   });
 
+  it('releases an inactive Chief card and reloads its snapshot on reactivation', async () => {
+    vi.mocked(backendRequest).mockResolvedValue({ monitors: [monitor()] });
+    const view = render(EventSubscriptionsCard, {
+      workspaceId: CHIEF_WORKSPACE_ID,
+      agentId: AGENT,
+      isActive: true,
+    });
+    await waitFor(() => expect(screen.getByTestId('monitored-pr-chip')).toBeTruthy());
+    await view.rerender({ workspaceId: CHIEF_WORKSPACE_ID, agentId: AGENT, isActive: false });
+    expect(backendUnsubscribe).toHaveBeenCalledExactlyOnceWith(`pr-sub-${CHIEF_WORKSPACE_ID}`);
+
+    vi.mocked(backendRequest).mockClear().mockResolvedValue({ monitors: [] });
+    await view.rerender({ workspaceId: CHIEF_WORKSPACE_ID, agentId: AGENT, isActive: true });
+    await waitFor(() => expect(screen.queryByTestId('monitored-pr-chip')).toBeNull());
+    expect(backendRequest).toHaveBeenLastCalledWith('prMonitor.list', {
+      workspaceId: CHIEF_WORKSPACE_ID,
+    });
+    expect(backendSubscribe).toHaveBeenCalledTimes(2);
+    expect(backendSubscribe).toHaveBeenLastCalledWith({
+      eventTypes: ['prMonitor:*'],
+      workspaceId: CHIEF_WORKSPACE_ID,
+    });
+    view.unmount();
+    expect(backendUnsubscribe).toHaveBeenCalledTimes(2);
+    expect(appStore.state.tabState.currentTabId).toBeNull();
+  });
+
+  it('keeps the selected-tab lease but disposes a retained inactive card after switching away', async () => {
+    appStore.dispatch(openWorkspaceTab(OTHER_WORKSPACE));
+    const view = render(EventSubscriptionsCard, {
+      workspaceId: OTHER_WORKSPACE,
+      agentId: AGENT,
+      isActive: true,
+    });
+    await waitFor(() => expect(backendSubscribe).toHaveBeenCalledTimes(1));
+    await view.rerender({ workspaceId: OTHER_WORKSPACE, agentId: AGENT, isActive: false });
+    expect(backendUnsubscribe).not.toHaveBeenCalled();
+
+    appStore.dispatch(closeWorkspaceTab(OTHER_WORKSPACE));
+    await waitFor(() =>
+      expect(backendUnsubscribe).toHaveBeenCalledExactlyOnceWith(`pr-sub-${OTHER_WORKSPACE}`),
+    );
+    view.unmount();
+    expect(backendUnsubscribe).toHaveBeenCalledTimes(1);
+  });
+
   it('does not acquire subscriptions for isolated catalog previews', async () => {
     const view = render(EventSubscriptionsCard, {
       workspaceId: CHIEF_WORKSPACE_ID,

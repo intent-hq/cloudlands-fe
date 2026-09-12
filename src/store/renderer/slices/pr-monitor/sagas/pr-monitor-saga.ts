@@ -44,6 +44,7 @@ function createMonitorChannel(workspaceId: string): EventChannel<MonitorChannelM
 }
 
 function* forwardMonitorUpdates(
+  active: Map<string, SubscriptionEntry>,
   workspaceId: string,
   channel: EventChannel<MonitorChannelMessage>,
 ): SagaGenerator<void> {
@@ -51,6 +52,9 @@ function* forwardMonitorUpdates(
     while (true) {
       const message: MonitorChannelMessage = yield* take(channel);
       if (message === (END as unknown as MonitorChannelMessage)) return;
+      // A closed event channel can still drain its buffer. Only the current
+      // lease's channel may forward rows or failure after a release/reacquire.
+      if (active.get(workspaceId)?.channel !== channel) return;
       if (message.kind === 'rows') {
         yield* put(prMonitorsUpdated(workspaceId, message.monitors));
       } else {
@@ -76,7 +80,7 @@ function* acquireSubscription(
     markWorkspaceSeed(workspaceId, 'prSeedStarted');
     const channel = createMonitorChannel(workspaceId);
     entry.channel = channel;
-    yield* fork(forwardMonitorUpdates, workspaceId, channel);
+    yield* fork(forwardMonitorUpdates, active, workspaceId, channel);
   } catch (error) {
     logger.error('Failed to subscribe to prMonitor events', {
       workspaceId,

@@ -57,7 +57,7 @@ function createHarness(currentTabId: string | null = null) {
     prMonitorSaga,
   );
   if (currentTabId !== null) dispatch(openWorkspaceTab(currentTabId));
-  return { dispatch, getState: () => state, task };
+  return { dispatch, getState: () => state, subscribe: reduxStore.subscribe, task };
 }
 
 async function advanceReconciliation() {
@@ -381,6 +381,49 @@ describe('prMonitorSaga', () => {
       expect(snapshot.snapshotStatus).toBe('ready');
       expect(snapshot.monitors.map.fresh).toBe(monitor);
       expect(firstDispose).toHaveBeenCalledOnce();
+      expect(mocks.subscribePrMonitors.mock.results[1].value.dispose).not.toHaveBeenCalled();
+    } finally {
+      harness.task.cancel();
+      await harness.task.toPromise();
+    }
+    expect(mocks.subscribePrMonitors.mock.results[1].value.dispose).toHaveBeenCalledOnce();
+  });
+
+  it('rejects buffered rows and failure from a released channel after reacquisition', async () => {
+    const harness = createHarness();
+    try {
+      harness.dispatch(prMonitorsSubscribeRequested(CHIEF_WORKSPACE_ID));
+      const [first] = mocks.subscribePrMonitors.mock.calls;
+      const firstDispose = mocks.subscribePrMonitors.mock.results[0].value.dispose;
+      const fresh = {
+        monitorId: 'fresh',
+        workspaceId: CHIEF_WORKSPACE_ID,
+        state: 'active',
+      } as PrMonitorRow;
+      mocks.subscribePrMonitors.mockImplementationOnce((_workspaceId, emit) => {
+        emit([fresh]);
+        return { dispose: vi.fn() };
+      });
+      let swapped = false;
+      harness.subscribe(() => {
+        if (swapped || !harness.getState().prMonitor.byWorkspaceId[CHIEF_WORKSPACE_ID]) return;
+        swapped = true;
+        // The old forwarder is still inside its first put. These callbacks
+        // enter its real expanding buffer before the final lease is released.
+        first[1]([{ ...fresh, monitorId: 'stale' }]);
+        first[1]([]);
+        first[2]('failed');
+        harness.dispatch(prMonitorsUnsubscribeRequested(CHIEF_WORKSPACE_ID));
+        harness.dispatch(prMonitorsSubscribeRequested(CHIEF_WORKSPACE_ID));
+      });
+      first[1]([]);
+      await settle();
+
+      expect(firstDispose).toHaveBeenCalledOnce();
+      expect(mocks.subscribePrMonitors).toHaveBeenCalledTimes(2);
+      const snapshot = harness.getState().prMonitor.byWorkspaceId[CHIEF_WORKSPACE_ID];
+      expect(snapshot.snapshotStatus).toBe('ready');
+      expect(snapshot.monitors.ids).toEqual(['fresh']);
       expect(mocks.subscribePrMonitors.mock.results[1].value.dispose).not.toHaveBeenCalled();
     } finally {
       harness.task.cancel();
