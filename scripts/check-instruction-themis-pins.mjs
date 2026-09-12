@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -35,20 +36,50 @@ export function findInstructionThemisPinViolations(files) {
   return violations;
 }
 
-function collectInstructionFiles(directory) {
+const readInstructionFile = (root, relativePath) => ({
+  path: normalize(relativePath),
+  content: fs.readFileSync(path.join(root, relativePath), 'utf8'),
+});
+
+// Tracked plus ordinary untracked paths, honoring the repository's ignore rules.
+// Git lists a nested repository (checkout or worktree) as a bare directory entry
+// and never descends into it, so ignored verification artifacts such as
+// `.demo-artifacts/verify-*` and foreign checkouts stay out of the audit
+// (intent-hq/intent#4808). Returns null when `root` is not inside a Git repository.
+function listRepositoryInstructionFiles(root) {
+  let listing;
+  try {
+    listing = execFileSync(
+      'git',
+      ['ls-files', '--cached', '--others', '--exclude-standard', '-z'],
+      { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] },
+    );
+  } catch {
+    return null;
+  }
+  const candidates = new Set(
+    listing.split('\0').filter((entry) => entry && path.basename(entry) === INSTRUCTION_FILE_NAME),
+  );
+  return [...candidates]
+    .filter((entry) => fs.existsSync(path.join(root, entry)))
+    .map((entry) => readInstructionFile(root, entry));
+}
+
+function walkInstructionFiles(root, directory = root) {
   const files = [];
   for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
     const absolute = path.join(directory, entry.name);
     if (entry.isDirectory()) {
-      if (!SKIPPED_DIRECTORIES.has(entry.name)) files.push(...collectInstructionFiles(absolute));
+      if (!SKIPPED_DIRECTORIES.has(entry.name)) files.push(...walkInstructionFiles(root, absolute));
     } else if (entry.name === INSTRUCTION_FILE_NAME) {
-      files.push({
-        path: normalize(path.relative(process.cwd(), absolute)),
-        content: fs.readFileSync(absolute, 'utf8'),
-      });
+      files.push(readInstructionFile(root, path.relative(root, absolute)));
     }
   }
   return files;
+}
+
+function collectInstructionFiles(root) {
+  return listRepositoryInstructionFiles(root) ?? walkInstructionFiles(root);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

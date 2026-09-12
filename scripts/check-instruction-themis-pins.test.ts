@@ -1,7 +1,58 @@
+import { execFileSync } from 'node:child_process';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { findInstructionThemisPinViolations } from './check-instruction-themis-pins.mjs';
 
 const instructionFile = (path: string, lines: string[]) => ({ path, content: lines.join('\n') });
+
+const scriptPath = join(process.cwd(), 'scripts/check-instruction-themis-pins.mjs');
+const STALE_PIN = '`@augmentcode/themis@0.1.1` is the canonical Store implementation.\n';
+const CLEAN = 'Use the `@augmentcode/themis` version declared in `package.json`.\n';
+
+function git(cwd: string, ...args: string[]) {
+  execFileSync('git', args, { cwd, stdio: 'ignore' });
+}
+
+function writeFiles(root: string, files: Record<string, string>) {
+  for (const [name, content] of Object.entries(files)) {
+    mkdirSync(dirname(join(root, name)), { recursive: true });
+    writeFileSync(join(root, name), content);
+  }
+}
+
+function withRepo(
+  files: Record<string, string>,
+  run: (dir: string) => void,
+  { init = true }: { init?: boolean } = {},
+) {
+  const dir = mkdtempSync(join(tmpdir(), 'themis-pins-gate-'));
+  try {
+    if (init) git(dir, 'init', '-q');
+    writeFiles(dir, files);
+    run(dir);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+function runGate(cwd: string) {
+  try {
+    const stdout = execFileSync(process.execPath, [scriptPath], {
+      cwd,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    return { exitCode: 0, output: stdout };
+  } catch (error) {
+    const err = error as { status?: number; stdout?: Buffer | string; stderr?: Buffer | string };
+    return {
+      exitCode: err.status ?? 1,
+      output: `${err.stdout?.toString() ?? ''}${err.stderr?.toString() ?? ''}`,
+    };
+  }
+}
 
 describe('instruction Themis pin guard', () => {
   it('passes an instruction file that refers to the package.json version', () => {
@@ -78,5 +129,82 @@ describe('instruction Themis pin guard', () => {
       { path: 'AGENTS.md', line: 4, match: '@augmentcode/themis@next' },
       { path: 'src/AGENTS.md', line: 1, match: '@augmentcode/themis@^0.2.0' },
     ]);
+  });
+});
+
+// The CLI walks the tree it is run from. It must honor the repository's ignore
+// rules and nested repository boundaries (intent-hq/intent#4808: a gitignored
+// `.demo-artifacts/verify-*` worktree carried a stale pin the product tree had
+// already removed) while still auditing tracked and ordinary untracked files.
+describe('instruction Themis pin guard CLI traversal', () => {
+  it('audits tracked and ordinary untracked AGENTS.md files', () => {
+    withRepo({ 'AGENTS.md': CLEAN, 'src/features/AGENTS.md': STALE_PIN }, (dir) => {
+      git(dir, 'add', 'AGENTS.md');
+      const result = runGate(dir);
+      expect(result.exitCode).toBe(1);
+      expect(result.output).toContain('src/features/AGENTS.md:1: @augmentcode/themis@0.1.1');
+    });
+  });
+
+  it('skips a gitignored nested checkout carrying a stale pin', () => {
+    withRepo(
+      {
+        '.gitignore': '.demo-artifacts/\n',
+        'AGENTS.md': CLEAN,
+        '.demo-artifacts/verify-2298.256rAJ/src/store/renderer/AGENTS.md': STALE_PIN,
+      },
+      (dir) => {
+        git(join(dir, '.demo-artifacts/verify-2298.256rAJ'), 'init', '-q');
+        const result = runGate(dir);
+        expect(result).toMatchObject({ exitCode: 0 });
+        expect(result.output).toContain('1 AGENTS.md files');
+      },
+    );
+  });
+
+  it('skips gitignored instruction files outside any nested checkout', () => {
+    withRepo(
+      { '.gitignore': '.dev/\n', 'AGENTS.md': CLEAN, '.dev/probe/AGENTS.md': STALE_PIN },
+      (dir) => {
+        expect(runGate(dir)).toMatchObject({ exitCode: 0 });
+      },
+    );
+  });
+
+  it('does not cross into a nested repository that is not ignored', () => {
+    withRepo({ 'AGENTS.md': CLEAN, 'vendor/other/AGENTS.md': STALE_PIN }, (dir) => {
+      git(join(dir, 'vendor/other'), 'init', '-q');
+      expect(runGate(dir)).toMatchObject({ exitCode: 0 });
+    });
+  });
+
+  it('flags an ordinary nested untracked AGENTS.md with a stale pin', () => {
+    withRepo(
+      {
+        '.gitignore': '.demo-artifacts/\n',
+        'AGENTS.md': CLEAN,
+        'src/store/renderer/AGENTS.md': STALE_PIN,
+      },
+      (dir) => {
+        const result = runGate(dir);
+        expect(result.exitCode).toBe(1);
+        expect(result.output).toContain(
+          'src/store/renderer/AGENTS.md:1: @augmentcode/themis@0.1.1',
+        );
+      },
+    );
+  });
+
+  it('falls back to a filesystem walk outside a Git repository', () => {
+    withRepo(
+      { 'AGENTS.md': CLEAN, 'src/AGENTS.md': STALE_PIN, 'node_modules/pkg/AGENTS.md': STALE_PIN },
+      (dir) => {
+        const result = runGate(dir);
+        expect(result.exitCode).toBe(1);
+        expect(result.output).toContain('src/AGENTS.md:1: @augmentcode/themis@0.1.1');
+        expect(result.output).not.toContain('node_modules');
+      },
+      { init: false },
+    );
   });
 });
