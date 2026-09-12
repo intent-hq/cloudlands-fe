@@ -42,6 +42,8 @@
 {:else}
   <img
     {src}
+    width={size}
+    height={size}
     alt={alt ?? ''}
     aria-hidden={alt === undefined ? 'true' : undefined}
     class={className}

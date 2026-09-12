@@ -98,6 +98,8 @@ describe('GitHubAvatar', () => {
 
     const img = visibleImage(container)!;
     expect(new URL(img.src).searchParams.get('size')).toBe('48');
+    expect(img.getAttribute('width')).toBe('24');
+    expect(img.getAttribute('height')).toBe('24');
     expect(img.classList.contains('rounded-full')).toBe(true);
     expect(img.getAttribute('loading')).toBe('lazy');
   });
