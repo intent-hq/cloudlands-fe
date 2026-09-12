@@ -24,7 +24,6 @@
   import { TooltipRich } from '$lib/components/ui/tooltip';
   import CheckoutModePill from '$lib/components/workspace/CheckoutModePill.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
-  import { withToastCountdown } from '$lib/components/ui/toast';
   import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import WorkspaceActionsMenu, {
@@ -62,7 +61,10 @@
   import FlameGraph from './FlameGraph.svelte';
   import WorkspaceTokenUsage from './WorkspaceTokenUsage.svelte';
 
-  import { requestDeleteWorkspace } from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
+  import {
+    requestArchiveWorkspace,
+    requestDeleteWorkspace,
+  } from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
   import {
     loadWorkspacesRequested,
     setWorkspaceEntity,
@@ -252,35 +254,9 @@
     }
   }
 
-  async function handleArchive() {
+  function handleArchive() {
     if (!$workspace) return;
-    const { toast } = await import('svelte-sonner');
-    const workspaceTitle = $workspace.title || m.workspace_multiSelectSidebar_space_label();
-
-    const result = await workspaceClient.archive($workspace.id);
-    if (result.ok) {
-      appStore.dispatch(loadWorkspacesRequested());
-      toast.warning(
-        m.workspace_multiSelectSidebar_archivedSpace_toast({ title: workspaceTitle }),
-        withToastCountdown(
-          {
-            duration: 15000,
-            action: {
-              label: m.workspace_multiSelectSidebar_undo_label(),
-              onClick: async () => {
-                const undoResult = await workspaceClient.unarchive($workspace.id);
-                if (undoResult.ok) {
-                  appStore.dispatch(loadWorkspacesRequested());
-                }
-              },
-            },
-          },
-          { pauseOnHover: false },
-        ),
-      );
-    } else {
-      toast.error(m.workspace_multiSelectSidebar_archiveFailed_error());
-    }
+    appStore.dispatch(requestArchiveWorkspace($workspace.id));
   }
 
   async function handleUnarchive() {
