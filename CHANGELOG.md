@@ -4,6 +4,23 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.150.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.149.3...v2.150.0) (2026-09-12)
+
+
+### 🚀 Features
+
+* **lint:** reject flushSync inside Svelte effect cleanup and action destroy ([#2384](https://github.com/intent-hq/cloudlands-fe/issues/2384)) ([ddbc9a9](https://github.com/intent-hq/cloudlands-fe/commit/ddbc9a98f848983cb045c5b47f4c02b9d7e32e3b))
+* shared GitHubAvatar with identity-keyed failure recovery ([#2387](https://github.com/intent-hq/cloudlands-fe/issues/2387)) ([06e31a9](https://github.com/intent-hq/cloudlands-fe/commit/06e31a9106dede0dff3a3ed21e2667d748b089e1))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.44 ([#2395](https://github.com/intent-hq/cloudlands-fe/issues/2395)) ([097d483](https://github.com/intent-hq/cloudlands-fe/commit/097d483c76cfd3ab61b4284f7758463176b1013f))
+* **chat-ct:** make chat CT timing assertions load-tolerant ([#2388](https://github.com/intent-hq/cloudlands-fe/issues/2388)) ([546253a](https://github.com/intent-hq/cloudlands-fe/commit/546253a0a0392b56772e2f13240e69fbee7cedb0))
+* **fe:** route sidebar card archive through requestArchiveWorkspace ([#2392](https://github.com/intent-hq/cloudlands-fe/issues/2392)) ([8721410](https://github.com/intent-hq/cloudlands-fe/commit/87214103d8743af395b8301470538f01c0bc6ff7))
+* **modals:** constrain DeleteWarningDialog grid items so long rows truncate ([#2391](https://github.com/intent-hq/cloudlands-fe/issues/2391)) ([e362009](https://github.com/intent-hq/cloudlands-fe/commit/e3620099ea2ec303b6d37dae641edc75f1650a74))
+* **release-notes:** drop a Help-menu fetch result that lands after the modal closed ([#2382](https://github.com/intent-hq/cloudlands-fe/issues/2382)) ([faebfef](https://github.com/intent-hq/cloudlands-fe/commit/faebfef32308d4962a0d890e5aa3986cf1f7f3c5))
+
 ## [2.149.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.149.2...v2.149.3) (2026-09-12)
 
 
