@@ -21,6 +21,7 @@
     "sandbox:shot": "node scripts/sandbox/shot.mjs",
     "sandbox:probe": "node scripts/sandbox/probe.mjs",
     "sandbox:geometry:update": "cross-env SANDBOX_GEOMETRY_UPDATE=1 pnpm run test:ct -- --grep 'geometry snapshot'",
+    "perf:chat-motion": "node scripts/perf/chat-motion-trace.mjs",
     "dev:electron": "node scripts/dev-electron.js",
     "dev:electron:cdp": "node scripts/dev-electron.js --cdp",
     "kill:electron": "node scripts/kill-electron.js",
