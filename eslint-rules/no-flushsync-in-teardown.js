@@ -424,14 +424,22 @@ function createAnalyzer(sourceCode, actionIdentifiers) {
   return { findTeardownKind, getConditionGuards, evaluateGuardArgument, getParameterGuard };
 }
 
+function getGuardId(guard) {
+  return `${guard.variable.name}@${guard.variable.defs[0].name.range[0]}:${Number(guard.undefinedOn)}${Number(guard.omittedOn)}`;
+}
+
+// Collapse guards that resolve to the same parameter with the same semantics;
+// a recursive helper otherwise re-derives its own guard from both the lexical
+// condition and the forwarded argument on every visit, and the guard list (and
+// its visited key) grows without bound.
+function dedupeGuards(guards) {
+  const byId = new Map();
+  for (const guard of guards) byId.set(getGuardId(guard), guard);
+  return [...byId.values()];
+}
+
 function getGuardKey(guards) {
-  return guards
-    .map(
-      (guard) =>
-        `${guard.variable.name}@${guard.variable.defs[0].name.range[0]}:${Number(guard.undefinedOn)}${Number(guard.omittedOn)}`,
-    )
-    .sort()
-    .join(',');
+  return guards.map(getGuardId).sort().join(',');
 }
 
 export default {
@@ -492,11 +500,12 @@ export default {
           const helperVariable = helper ? getFunctionVariable(sourceCode, helper) : null;
           if (!helperVariable) continue;
 
-          const guards = analyzer.getConditionGuards(call, helper);
+          const collected = analyzer.getConditionGuards(call, helper);
           for (const { identifier, undefinedOn } of forwarded) {
             const guard = analyzer.getParameterGuard(identifier, helper, undefinedOn);
-            if (guard) guards.push(guard);
+            if (guard) collected.push(guard);
           }
+          const guards = dedupeGuards(collected);
           const key = `${helperVariable.defs[0].name.range[0]}:${getGuardKey(guards)}`;
           if (visited.has(key)) continue;
           visited.add(key);

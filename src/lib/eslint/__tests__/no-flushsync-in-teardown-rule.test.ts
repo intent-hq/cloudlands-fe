@@ -1,11 +1,52 @@
+import { execFileSync } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
-import { ESLint } from 'eslint';
+import { ESLint, type Linter } from 'eslint';
 import typescriptParser from '@typescript-eslint/parser';
 import svelteParser from 'svelte-eslint-parser';
 
 import noFlushSyncInTeardownRule from '../../../../eslint-rules/no-flushsync-in-teardown.js';
 
 const RULE_ID = 'intent/no-flushsync-in-teardown';
+const SUBPROCESS_TIMEOUT_MS = 20_000;
+
+const SUBPROCESS_LINT_SCRIPT = `
+  import { ESLint } from 'eslint';
+  import typescriptParser from '@typescript-eslint/parser';
+  import svelteParser from 'svelte-eslint-parser';
+  import rule from './eslint-rules/no-flushsync-in-teardown.js';
+  const eslint = new ESLint({
+    ignore: false,
+    overrideConfigFile: true,
+    overrideConfig: [{
+      files: ['**/*.svelte'],
+      languageOptions: {
+        parser: svelteParser,
+        parserOptions: { parser: typescriptParser, ecmaVersion: 2022, sourceType: 'module' },
+      },
+      plugins: { intent: { rules: { 'no-flushsync-in-teardown': rule } } },
+      rules: { ${JSON.stringify(RULE_ID)}: 'error' },
+    }],
+  });
+  const code = await new Promise((resolve) => {
+    let input = '';
+    process.stdin.setEncoding('utf8');
+    process.stdin.on('data', (chunk) => (input += chunk));
+    process.stdin.on('end', () => resolve(input));
+  });
+  const [result] = await eslint.lintText(code, { filePath: 'Component.svelte' });
+  process.stdout.write(JSON.stringify(result.messages));
+`;
+
+function lintSvelteInSubprocess(code: string): Linter.LintMessage[] {
+  const stdout = execFileSync('node', ['--input-type=module', '-e', SUBPROCESS_LINT_SCRIPT], {
+    cwd: process.cwd(),
+    input: code,
+    encoding: 'utf8',
+    timeout: SUBPROCESS_TIMEOUT_MS,
+    stdio: ['pipe', 'pipe', 'inherit'],
+  });
+  return JSON.parse(stdout) as Linter.LintMessage[];
+}
 
 async function lintSvelte(code: string) {
   const eslint = new ESLint({
@@ -616,5 +657,40 @@ describe('no-flushsync-in-teardown ESLint rule', () => {
     );
 
     expect(messages).toHaveLength(0);
+  });
+
+  it('terminates on guarded self- and mutual recursion and still reports the unsafe cleanup', () => {
+    // Linted in a subprocess with a hard timeout: a non-terminating traversal
+    // would otherwise block the vitest event loop instead of failing.
+    const messages = lintSvelteInSubprocess(
+      component(`
+        import { flushSync } from 'svelte';
+        function visit(sync, n) {
+          if (sync) {
+            flushSync();
+            if (n > 0) visit(sync, n - 1);
+          }
+        }
+        function ping(sync, n) {
+          if (!sync) return;
+          flushSync();
+          if (n > 0) pong(sync, n - 1);
+        }
+        function pong(sync, n) {
+          if (sync) ping(sync, n - 1);
+        }
+        $effect(() => () => {
+          visit(true, 1);
+          ping(true, 1);
+          visit(false, 1);
+          pong(false, 1);
+        });
+      `),
+    );
+
+    expect(messages.map((message) => [message.line, message.message.split(' runs ')[0]])).toEqual([
+      [19, 'visit() (which calls flushSync)'],
+      [20, 'ping() (which calls flushSync)'],
+    ]);
   });
 });
