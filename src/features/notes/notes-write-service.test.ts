@@ -48,6 +48,7 @@ import {
   deleteNote,
   flushNoteContent,
   hasPendingNoteContent,
+  settleNoteContent,
   updateNoteContent,
   updateNoteTitle,
 } from './notes-write-service';
@@ -242,6 +243,69 @@ describe('notesWriteService (fake seam, real store)', () => {
 
     await vi.advanceTimersByTimeAsync(NOTE_CONTENT_SAVE_DEBOUNCE_MS + 1);
     expect(hasPendingNoteContent(WS, 'spec')).toBe(false);
+  });
+
+  // Regression (PR #2404 fresh review): once the debounce has fired the
+  // debounced entry is gone, so `flushNoteContent` resolves immediately while
+  // the save is still unacknowledged; an operation that must be ordered after
+  // the save on the daemon (restore) has to wait on `settleNoteContent`.
+  it('settleNoteContent waits for an in-flight save that flushNoteContent no longer sees', async () => {
+    seed(makeNote('n1'));
+    let resolveSave!: (v: unknown) => void;
+    notesApi.setContent.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveSave = resolve;
+      }) as never,
+    );
+
+    updateNoteContent(WS, 'n1', 'edited');
+    await vi.advanceTimersByTimeAsync(NOTE_CONTENT_SAVE_DEBOUNCE_MS + 1);
+    expect(notesApi.setContent).toHaveBeenCalledTimes(1);
+    expect(hasPendingNoteContent(WS, 'n1')).toBe(true);
+
+    await expect(flushNoteContent(WS, 'n1')).resolves.toBeUndefined();
+    expect(hasPendingNoteContent(WS, 'n1')).toBe(true);
+
+    let settled = false;
+    const settling = settleNoteContent(WS, 'n1').then(() => {
+      settled = true;
+    });
+    await vi.advanceTimersByTimeAsync(1);
+    expect(settled).toBe(false);
+
+    resolveSave({ success: true, newContent: 'edited', noteRev: 2 });
+    await settling;
+    expect(hasPendingNoteContent(WS, 'n1')).toBe(false);
+    expect(notesApi.setContent).toHaveBeenCalledTimes(1);
+  });
+
+  it('settleNoteContent flushes a still-debounced draft and waits for its ack', async () => {
+    seed(makeNote('n1'));
+    let resolveSave!: (v: unknown) => void;
+    notesApi.setContent.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveSave = resolve;
+      }) as never,
+    );
+
+    updateNoteContent(WS, 'n1', 'edited');
+    let settled = false;
+    const settling = settleNoteContent(WS, 'n1').then(() => {
+      settled = true;
+    });
+    await vi.advanceTimersByTimeAsync(1);
+    expect(notesApi.setContent).toHaveBeenCalledWith('n1', 'edited', LOADED_REV, WS);
+    expect(settled).toBe(false);
+
+    resolveSave({ success: true, newContent: 'edited', noteRev: 2 });
+    await settling;
+    expect(hasPendingNoteContent(WS, 'n1')).toBe(false);
+  });
+
+  it('settleNoteContent resolves at once when nothing is pending', async () => {
+    seed(makeNote('n1'));
+    await settleNoteContent(WS, 'n1');
+    expect(notesApi.setContent).not.toHaveBeenCalled();
   });
 
   it('hasPendingNoteContent clears even when the save fails', async () => {

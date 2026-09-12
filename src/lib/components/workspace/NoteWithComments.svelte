@@ -81,6 +81,7 @@
   import {
     flushNoteContent,
     hasPendingNoteContent,
+    settleNoteContent,
     updateNoteContent,
   } from '$features/notes/notes-write-service';
   import {
@@ -1012,14 +1013,15 @@
     // BEFORE the restore, as its own version. Sent after it, the daemon would
     // merge that pre-restore draft onto the restored text (its base rev
     // predates the restore), and the merged echo, not the restored version,
-    // is what the pipeline would then apply. A save already in flight is
-    // ahead of the restore on the wire. Mirrors the saga's own flush.
+    // is what the pipeline would then apply. A save already in flight is not
+    // safe either: the daemon dispatches requests concurrently, so the restore
+    // could commit first — wait for its ack too. Mirrors the saga's own flush.
     if (saveDebounceTimer) {
       clearTimeout(saveDebounceTimer);
       saveDebounceTimer = null;
       void saveEditorContent();
     }
-    await flushNoteContent(targetWorkspaceId, targetNoteId);
+    await settleNoteContent(targetWorkspaceId, targetNoteId);
     if (isComponentDestroyed || noteId !== targetNoteId || workspace?.id !== targetWorkspaceId) {
       return;
     }

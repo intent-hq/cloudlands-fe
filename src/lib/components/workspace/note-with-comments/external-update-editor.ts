@@ -7,7 +7,7 @@ import type { LoggerLike } from './logger.types';
 export type ExternalUpdateDocLike = {
   content: { size: number };
   resolve: (pos: number) => { pos: number; parent: { inlineContent: boolean } };
-  textBetween: (from: number, to: number, blockSeparator?: string) => string;
+  textBetween: (from: number, to: number, blockSeparator?: string, leafText?: string) => string;
 };
 
 export type ExternalUpdateEditorLike = {
@@ -35,16 +35,23 @@ export const createTextSelectionForDoc: CreateTextSelectionLike = (doc, anchor, 
   TextSelection.create(doc, anchor, head);
 
 const BLOCK_SEPARATOR = '\n';
+// Placeholder for non-text leaf nodes (hard breaks, images, anchors). Without
+// it `textBetween` omits them, so the positions before and after a `<br>`
+// share an offset and the inverse mapping lands before the break.
+const LEAF_TEXT = '\uFFFC';
 
-/** The document's plain text, one `\n` between textblocks (`doc.textBetween`). */
+/**
+ * The document's plain text, one `\n` between textblocks and one placeholder
+ * per leaf node (`doc.textBetween`).
+ */
 function docPlainText(doc: ExternalUpdateDocLike): string {
-  return doc.textBetween(0, doc.content.size, BLOCK_SEPARATOR);
+  return doc.textBetween(0, doc.content.size, BLOCK_SEPARATOR, LEAF_TEXT);
 }
 
 /** UTF-16 offset into `docPlainText(doc)` of the document position `pos`. */
 export function textOffsetOfDocPos(doc: ExternalUpdateDocLike, pos: number): number {
   const clamped = Math.max(0, Math.min(pos, doc.content.size));
-  return doc.textBetween(0, clamped, BLOCK_SEPARATOR).length;
+  return doc.textBetween(0, clamped, BLOCK_SEPARATOR, LEAF_TEXT).length;
 }
 
 /**

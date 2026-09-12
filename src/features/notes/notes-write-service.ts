@@ -392,6 +392,25 @@ export function flushNoteContent(
   return flushContent(noteKey(workspaceId, noteId), noteId);
 }
 
+/**
+ * Flush any debounced content for this note and resolve once every content
+ * save for it has been acknowledged — including saves already in flight,
+ * which `flushNoteContent` does not wait for (a flush removes the debounced
+ * entry before its RPC settles, so a second flush finds nothing). For an
+ * operation that must be ordered after the user's typing on the daemon
+ * (note.restoreVersion): requests are dispatched concurrently on the daemon
+ * side, so being behind a save on the wire does not order it after the save.
+ */
+export async function settleNoteContent(workspaceId: string, noteId: string): Promise<void> {
+  const key = noteKey(workspaceId, noteId);
+  while (hasPendingNoteContent(workspaceId, noteId)) {
+    await flushContent(key, noteId);
+    const tail = noteMutationQueues.get(key);
+    if (tail) await tail;
+    else await Promise.resolve();
+  }
+}
+
 async function flushContent(key: string, noteId: string): Promise<AppliedNoteContent | undefined> {
   const pending = pendingContent.get(key);
   if (!pending) return undefined;

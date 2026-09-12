@@ -422,11 +422,23 @@ export function runExternalContentUpdateEffect({
   const isRestorePending = () => getIsRestorePending?.() ?? false;
   const canFoldUnsavedEdits = () => getHasUserEditedSinceLastSave() && !isRestorePending();
 
-  const readEditorMarkdown = (source: ExternalUpdateEffectEditorLike): string | undefined => {
+  // A dirty editor whose text cannot be serialized cannot have its keystrokes
+  // folded into the incoming text, and applying that text verbatim would erase
+  // them: the apply is abandoned instead (fail closed), leaving the document,
+  // baseline and dirty flag untouched for the next update or save to settle.
+  const readEditorMarkdown = (
+    source: ExternalUpdateEffectEditorLike,
+    stage: string,
+  ): string | undefined => {
     try {
       return processHTMLToMarkdown(source.getHTML(), { preserveAnchors: true });
     } catch (error) {
       logger.error('[NoteWithComments] Failed to normalize current editor content', error);
+      logger.warn(
+        // i18n-ignore (log line)
+        '[NoteWithComments] Dropping external apply - dirty editor could not be serialized',
+        { noteId, updateVersion, stage },
+      );
       return undefined;
     }
   };
@@ -445,11 +457,10 @@ export function runExternalContentUpdateEffect({
     let ours = getLastKnownContent();
     let target = incoming;
     if (!replacesWholeDocument && canFoldUnsavedEdits()) {
-      const current = readEditorMarkdown(editor);
-      if (current !== undefined) {
-        target = foldUnsavedEditsIntoIncoming({ base: ours, incoming, ours: current });
-        ours = current;
-      }
+      const current = readEditorMarkdown(editor, 'fold');
+      if (current === undefined) return;
+      target = foldUnsavedEditsIntoIncoming({ base: ours, incoming, ours: current });
+      ours = current;
     }
 
     // Render `target`, then re-read the editor: a keystroke that landed while
@@ -484,8 +495,9 @@ export function runExternalContentUpdateEffect({
         if (!liveEditor || liveEditor.isDestroyed) return undefined;
 
         if (replacesWholeDocument || !canFoldUnsavedEdits()) return { html, editor: liveEditor };
-        const typed = readEditorMarkdown(liveEditor);
-        if (typed === undefined || typed === ours) return { html, editor: liveEditor };
+        const typed = readEditorMarkdown(liveEditor, 'render');
+        if (typed === undefined) return undefined;
+        if (typed === ours) return { html, editor: liveEditor };
         target = foldUnsavedEditsIntoIncoming({ base: ours, incoming: target, ours: typed });
         ours = typed;
       }

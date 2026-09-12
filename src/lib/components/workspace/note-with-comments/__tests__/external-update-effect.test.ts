@@ -723,6 +723,58 @@ describe('external-update-effect with a real editor', () => {
     expect(one.state.last).toBe('one base');
   });
 
+  // Regression (PR #2404 fresh review, fault-injected): a dirty editor whose
+  // text could not be normalized was applied over verbatim — the unsaved
+  // keystrokes were erased and the dirty flag cleared. The apply now fails
+  // closed: document, baseline and dirty flag stay as they were.
+  it('keeps the dirty text when normalization fails before the render', async () => {
+    const { editor, args, state } = setup({ ours: 'base unsaved', incoming: 'AGENT base' });
+    state.last = 'base';
+    args.processHTMLToMarkdown = () => {
+      throw new Error('normalization failed');
+    };
+
+    const completion = runExternalContentUpdateEffect(args);
+    await vi.advanceTimersByTimeAsync(150);
+    await completion;
+
+    expect(editor.getText()).toBe('base unsaved');
+    expect(args.processMarkdownToHTML).not.toHaveBeenCalled();
+    expect(state.last).toBe('base');
+    expect(state.edited).toBe(true);
+    expect(logger.error).toHaveBeenCalledWith(
+      '[NoteWithComments] Failed to normalize current editor content',
+      expect.any(Error),
+    );
+  });
+
+  it('keeps a keystroke typed during the render when its normalization fails', async () => {
+    const { editor, args, state } = setup({ ours: 'base one', incoming: 'agent base' });
+    state.edited = false;
+    const render = deferred<string>();
+    args.processMarkdownToHTML.mockImplementation(async () => render.promise);
+    const normalize = vi.fn(() => {
+      throw new Error('normalization failed');
+    });
+    args.processHTMLToMarkdown = normalize;
+
+    const completion = runExternalContentUpdateEffect(args);
+    await vi.advanceTimersByTimeAsync(150);
+    // Clean editor at entry: nothing to fold, the incoming text renders as is.
+    expect(normalize).not.toHaveBeenCalled();
+    expect(args.processMarkdownToHTML).toHaveBeenCalledTimes(1);
+
+    typeAtEnd(editor, ' two');
+    render.resolve(html('agent base'));
+    await completion;
+
+    expect(normalize).toHaveBeenCalledTimes(1);
+    expect(editor.getText()).toBe('base one two');
+    expect(args.processMarkdownToHTML).toHaveBeenCalledTimes(1);
+    expect(state.last).toBe('base one');
+    expect(state.edited).toBe(true);
+  });
+
   it('applies an explicit restore as a whole-document replacement with a valid cursor and clears the pending restore', async () => {
     const { editor, args, state } = setup({ ours: 'base one unsaved', incoming: 'restored' });
     state.restorePending = true;

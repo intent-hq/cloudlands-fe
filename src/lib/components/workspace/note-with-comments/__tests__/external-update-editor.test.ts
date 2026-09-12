@@ -393,4 +393,60 @@ describe('external-update-editor with a real editor', () => {
     expect(logger.debug).not.toHaveBeenCalled();
     expect(editor.state.selection.anchor).toBe(4);
   });
+
+  // Regression (PR #2404 fresh review): `textBetween` without a leaf text
+  // omits hard breaks, so the positions before and after a `<br>` shared an
+  // offset and the caret came back before the break — the next keystroke
+  // landed on the wrong line although the user's paragraph never changed.
+  it('keeps the caret after a hard break when another paragraph changes', () => {
+    const editor = newEditor('<p>alpha<br>beta</p><p>end</p>');
+    editor.commands.setTextSelection(7);
+    expect(editor.state.selection.$anchor.nodeBefore?.type.name).toBe('hardBreak');
+    const logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+
+    applyExternalUpdateHtmlToEditorPreservingCursor({
+      editor,
+      html: '<p>alpha<br>beta</p><p>end plus agent</p>',
+      mapSelectionThroughDiff: true,
+      logger,
+    });
+
+    expect(logger.debug).not.toHaveBeenCalled();
+    expect(editor.state.selection.$anchor.nodeBefore?.type.name).toBe('hardBreak');
+    expect(editor.state.selection.anchor).toBe(7);
+  });
+
+  it('keeps the caret before a hard break when another paragraph changes', () => {
+    const editor = newEditor('<p>alpha<br>beta</p><p>end</p>');
+    editor.commands.setTextSelection(6);
+    expect(editor.state.selection.$anchor.nodeAfter?.type.name).toBe('hardBreak');
+    const logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+
+    applyExternalUpdateHtmlToEditorPreservingCursor({
+      editor,
+      html: '<p>alpha<br>beta</p><p>end plus agent</p>',
+      mapSelectionThroughDiff: true,
+      logger,
+    });
+
+    expect(editor.state.selection.$anchor.nodeAfter?.type.name).toBe('hardBreak');
+    expect(editor.state.selection.anchor).toBe(6);
+  });
+
+  it('shifts a caret after a hard break by an insertion before the break', () => {
+    const editor = newEditor('<p>alpha<br>beta</p>');
+    editor.commands.setTextSelection(9);
+    const logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+
+    applyExternalUpdateHtmlToEditorPreservingCursor({
+      editor,
+      html: '<p>agent alpha<br>beta</p>',
+      mapSelectionThroughDiff: true,
+      logger,
+    });
+
+    expect(logger.debug).not.toHaveBeenCalled();
+    expect(editor.state.selection.anchor).toBe(15);
+    expect(editor.state.doc.textBetween(editor.state.selection.anchor, 17)).toBe('ta');
+  });
 });

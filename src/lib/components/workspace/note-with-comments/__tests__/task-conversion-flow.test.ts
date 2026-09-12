@@ -9,6 +9,7 @@ import { ContentType, NoteVisibility } from '$shared/types';
 import {
   flushNoteContent,
   hasPendingNoteContent,
+  settleNoteContent,
   updateNoteContent,
 } from '$features/notes/notes-write-service';
 
@@ -364,6 +365,7 @@ vi.mock('$features/notes/notes-write-service', () => ({
   updateNoteContent: vi.fn(),
   hasPendingNoteContent: vi.fn(() => false),
   flushNoteContent: vi.fn(async () => undefined),
+  settleNoteContent: vi.fn(async () => undefined),
 }));
 
 vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-slice', () => ({
@@ -1128,18 +1130,18 @@ describe('NoteWithComments task conversion regression', () => {
     await vi.advanceTimersByTimeAsync(1200);
 
     let pending = false;
-    let resolveFlush!: (value: { content: string; rev: number }) => void;
-    const flushed = new Promise<{ content: string; rev: number }>((resolve) => {
-      resolveFlush = resolve;
+    let resolveSettled!: () => void;
+    const settled = new Promise<void>((resolve) => {
+      resolveSettled = resolve;
     });
     vi.mocked(hasPendingNoteContent).mockImplementation((_ws, id) => id === 'spec' && pending);
     vi.mocked(updateNoteContent).mockImplementation((_ws, id) => {
       if (id === 'spec') pending = true;
     });
-    vi.mocked(flushNoteContent).mockImplementation((_ws, id) =>
-      id === 'spec' ? flushed : Promise.resolve(undefined),
+    vi.mocked(settleNoteContent).mockImplementation((_ws, id) =>
+      id === 'spec' ? settled : Promise.resolve(),
     );
-    vi.mocked(flushNoteContent).mockClear();
+    vi.mocked(settleNoteContent).mockClear();
     mockDispatch.mockClear();
     const restoreDispatched = () =>
       mockDispatch.mock.calls.some(
@@ -1157,11 +1159,11 @@ describe('NoteWithComments task conversion regression', () => {
         baseRev: 4,
         baseContent: 'note A',
       });
-      expect(flushNoteContent).toHaveBeenCalledWith('ws-1', 'spec');
+      expect(settleNoteContent).toHaveBeenCalledWith('ws-1', 'spec');
       expect(restoreDispatched()).toBe(false);
 
       pending = false;
-      resolveFlush({ content: 'note A local', rev: 5 });
+      resolveSettled();
       await restore;
 
       expect(mockDispatch).toHaveBeenCalledWith({
@@ -1174,7 +1176,79 @@ describe('NoteWithComments task conversion regression', () => {
       // later `spec` tests through the unmount-time save.
       vi.mocked(hasPendingNoteContent).mockImplementation(() => false);
       vi.mocked(updateNoteContent).mockImplementation(() => undefined);
+      vi.mocked(settleNoteContent).mockImplementation(async () => undefined);
+    }
+  });
+
+  // Regression (PR #2404 fresh review, real component + REAL write service):
+  // the save produced by " local" has already left the debounce and is in
+  // flight when restore is clicked. `flushNoteContent` finds nothing debounced
+  // and resolves at once, so the restore used to be dispatched while that
+  // save was unacknowledged; the daemon dispatches requests concurrently, so
+  // the restore could commit first and the stale draft merge onto it.
+  it('waits for an already in-flight save before dispatching a version restore', async () => {
+    const service = await vi.importActual<typeof import('$features/notes/notes-write-service')>(
+      '$features/notes/notes-write-service',
+    );
+    const { appClient } = await import('$lib/client');
+    let resolveSave!: (value: unknown) => void;
+    const wire = vi.spyOn(appClient.notes, 'setContent').mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveSave = resolve;
+      }) as never,
+    );
+    replaceNotes([createNote('spec', 'A', 'note A', { rev: 4 })]);
+    const view = await renderInitializedNote('spec', 'note A');
+    const editor = (view.container.querySelector('.ProseMirror') as any).editor;
+    await waitFor(() => expect(editor.getText()).toBe('note A'));
+    vi.useFakeTimers();
+    await vi.advanceTimersByTimeAsync(1200);
+    vi.mocked(hasPendingNoteContent).mockImplementation(service.hasPendingNoteContent);
+    vi.mocked(updateNoteContent).mockImplementation(service.updateNoteContent);
+    vi.mocked(flushNoteContent).mockImplementation(service.flushNoteContent);
+    vi.mocked(settleNoteContent).mockImplementation(service.settleNoteContent);
+    mockDispatch.mockImplementation((action: any) => {
+      if (action.type === 'workspaceNotes/applyLocalNoteUpdate') {
+        const { noteId, update } = action.payload;
+        replaceNotes([{ ...getNoteById(noteId), ...update }]);
+      }
+      return action;
+    });
+    const restoreDispatched = () =>
+      mockDispatch.mock.calls.some(
+        ([action]) => action?.type === 'workspaceNotes/restoreNoteVersion',
+      );
+    const saveResult = { success: true, newContent: 'note A local', noteRev: 5 };
+    try {
+      editor.commands.insertContentAt(editor.state.doc.content.size - 1, ' local');
+      await vi.advanceTimersByTimeAsync(1801);
+      expect(wire).toHaveBeenCalledWith('spec', 'note A local', 4, 'ws-1');
+      expect(service.hasPendingNoteContent('ws-1', 'spec')).toBe(true);
+      mockDispatch.mockClear();
+
+      const restore = versionHistory.props!.onRestore!('version-1');
+      await tick();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(service.hasPendingNoteContent('ws-1', 'spec')).toBe(true);
+      expect(restoreDispatched()).toBe(false);
+
+      resolveSave(saveResult);
+      await restore;
+      expect(service.hasPendingNoteContent('ws-1', 'spec')).toBe(false);
+      expect(mockDispatch).toHaveBeenCalledWith({
+        type: 'workspaceNotes/restoreNoteVersion',
+        payload: { workspaceId: 'ws-1', noteId: 'spec', versionId: 'version-1' },
+      });
+    } finally {
+      resolveSave(saveResult);
+      await vi.advanceTimersByTimeAsync(0);
+      await service.settleNoteContent('ws-1', 'spec');
+      vi.mocked(hasPendingNoteContent).mockImplementation(() => false);
+      vi.mocked(updateNoteContent).mockImplementation(() => undefined);
       vi.mocked(flushNoteContent).mockImplementation(async () => undefined);
+      vi.mocked(settleNoteContent).mockImplementation(async () => undefined);
+      mockDispatch.mockImplementation((action: any) => action);
+      wire.mockRestore();
     }
   });
 
