@@ -111,7 +111,8 @@ import {
   updateTabTitle,
   updateTabViewport,
 } from '../panel-layout-slice';
-import { panelLayoutReducer } from '../panel-layout-slice';
+import { panelLayoutReducer as rawPanelLayoutReducer } from '../panel-layout-slice';
+import { withPanelLayoutInvariants } from '../panel-layout-invariants.test-helpers';
 import {
   initialState as userPreferencesInitialState,
   userPreferencesReducer,
@@ -143,6 +144,8 @@ import {
   waitForWorkspaceLayoutRestore,
   watchRightmostColumnRequests,
 } from './panel-layout-saga';
+
+const panelLayoutReducer = withPanelLayoutInvariants(rawPanelLayoutReducer);
 
 const WS_1 = 'ws-1';
 const WS_2 = 'ws-2';
