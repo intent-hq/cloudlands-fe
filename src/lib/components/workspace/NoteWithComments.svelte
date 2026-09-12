@@ -60,7 +60,6 @@
   import { setupCommentMarkClickHandlerV2 } from './note-with-comments/comment-mark-click-handler';
   import { Editor } from '@tiptap/core';
   import { NoteId } from '$shared/types/branded-ids';
-  import { TextSelection } from '@tiptap/pm/state';
 
   import { selectComments } from '$store/renderer/slices/comments/comments-selectors';
   import {
@@ -719,11 +718,10 @@
 
     userTypingTimeout = setTimeout(() => {
       isUserTyping = false;
-      // Re-queue external updates skipped during the typing window
-      // (monorepo#534): isUserTyping is a non-reactive "let", so nothing else
-      // re-runs the pipeline once typing stops — and the debounced save would
-      // otherwise erase the divergence from Redux while the daemon still holds
-      // the external change.
+      // Fallback re-queue for a divergence that slipped past the safety-net
+      // (monorepo#534; the pipeline itself no longer skips while typing): the
+      // debounced save would otherwise erase the divergence from Redux while
+      // the daemon still holds the external change.
       //
       // ORDERING DEPENDENCY: this check must run before saveEditorContent()
       // fires — the save updates lastKnownContent and optimistically
@@ -1509,7 +1507,6 @@
             editor: conversionEditor,
             html: newHtmlContent,
             cursorPos,
-            createTextSelection: TextSelection.create,
             logger,
           });
 
@@ -1579,9 +1576,17 @@
       isDestroyed: () => isComponentDestroyed,
       getEditor: () => editor as any,
       getIsInitialized: () => isInitialized,
-      getIsUserTyping: () => isUserTyping,
       getHasPendingNoteContent: () =>
         workspace?.id && noteId ? hasPendingNoteContent(workspace.id, noteId) : false,
+      // Hand the current editor text to the write-service now — the pending
+      // flush must carry keystrokes still waiting on saveDebounceTimer.
+      stageUnsavedEdits: () => {
+        if (saveDebounceTimer) {
+          clearTimeout(saveDebounceTimer);
+          saveDebounceTimer = null;
+        }
+        void saveEditorContent();
+      },
       flushNoteContent,
       onPendingSaveSettled: () => {
         // Re-queue once an in-flight save's window closes. Reset the
@@ -1612,7 +1617,6 @@
       getCommentManager: () => commentManager,
       processMarkdownToHTML,
       processHTMLToMarkdown,
-      createTextSelection: TextSelection.create,
       logger,
       workspaceFileVersion,
     });
@@ -1632,7 +1636,6 @@
         lastKnownContent,
         lastSafetyNetSyncedContent,
         isInitialized,
-        isUserTyping,
         isUpdatingFromExternal,
       })
     ) {

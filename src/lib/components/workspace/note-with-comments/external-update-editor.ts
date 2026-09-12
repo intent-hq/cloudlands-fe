@@ -1,3 +1,5 @@
+import { TextSelection } from '@tiptap/pm/state';
+
 import { mapOffsetThroughDiff } from '$lib/notes/text-rebase';
 
 import type { LoggerLike } from './logger.types';
@@ -20,6 +22,17 @@ export type ExternalUpdateEditorLike = {
     run: () => void;
   };
 };
+
+export type CreateTextSelectionLike = (doc: any, anchor: number, head?: number) => any;
+
+/**
+ * `TextSelection.create` bound to its class. prosemirror-state's `create` uses
+ * `new this(...)`, so passing the static method around unbound throws
+ * "this is not a constructor" inside the apply and the caret falls to the end
+ * of the document.
+ */
+export const createTextSelectionForDoc: CreateTextSelectionLike = (doc, anchor, head) =>
+  TextSelection.create(doc, anchor, head);
 
 const BLOCK_SEPARATOR = '\n';
 
@@ -93,7 +106,7 @@ export function applyExternalUpdateHtmlToEditorPreservingCursor({
   html,
   cursorPos,
   mapSelectionThroughDiff = false,
-  createTextSelection,
+  createTextSelection = createTextSelectionForDoc,
   logger,
 }: {
   editor: ExternalUpdateEditorLike;
@@ -105,7 +118,8 @@ export function applyExternalUpdateHtmlToEditorPreservingCursor({
    * given or the editor exposes no document.
    */
   mapSelectionThroughDiff?: boolean;
-  createTextSelection: (doc: any, anchor: number, head?: number) => any;
+  /** Test seam; production uses the bound `createTextSelectionForDoc`. */
+  createTextSelection?: CreateTextSelectionLike;
   logger: LoggerLike;
 }): boolean {
   const currentHtmlSnapshot = editor.getHTML();

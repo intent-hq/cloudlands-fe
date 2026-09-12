@@ -5,6 +5,8 @@ import type { TaskAgentAssociation } from '$store/renderer/slices/task-agent-ass
 import { reapplyCommentAnchorsAfterExternalUpdate } from './comment-manager-utils';
 import {
   applyExternalUpdateHtmlToEditorPreservingCursor,
+  createTextSelectionForDoc,
+  type CreateTextSelectionLike,
   type ExternalUpdateDocLike,
 } from './external-update-editor';
 import type { LoggerLike } from './logger.types';
@@ -22,27 +24,26 @@ export function shouldSafetyNetTrigger({
   lastKnownContent,
   lastSafetyNetSyncedContent,
   isInitialized,
-  isUserTyping,
   isUpdatingFromExternal,
 }: {
   reduxContent: string | undefined;
   lastKnownContent: string;
   lastSafetyNetSyncedContent: string | undefined;
   isInitialized: boolean;
-  isUserTyping: boolean;
   isUpdatingFromExternal: boolean;
 }): boolean {
   if (reduxContent === undefined) {
     return false;
   }
-  // NOTE: hasUserEditedSinceLastSave intentionally does NOT gate the safety-net.
-  // The flag latches on the first local edit and is only cleared by a successful
-  // external apply, so gating on it permanently disconnected open editors from
-  // server-side note growth (stale-editor incident: comment.add sent unfindable
-  // context; debounced saves tripped the daemon's content-reduction guard).
-  // Unsaved edits are flushed and folded into the applied text downstream in
-  // the pipeline instead.
-  if (!isInitialized || isUserTyping) {
+  // NOTE: neither hasUserEditedSinceLastSave nor isUserTyping gates the
+  // safety-net. The edit flag latches on the first local edit and is only
+  // cleared by a successful external apply, so gating on it permanently
+  // disconnected open editors from server-side note growth (stale-editor
+  // incident: comment.add sent unfindable context; debounced saves tripped the
+  // daemon's content-reduction guard). Gating on typing let active typing hold
+  // off the flush indefinitely. Unsaved edits are flushed and folded into the
+  // applied text downstream in the pipeline instead.
+  if (!isInitialized) {
     return false;
   }
   if (isUpdatingFromExternal) {
@@ -58,10 +59,12 @@ export function shouldSafetyNetTrigger({
 
 /**
  * Decides whether the pipeline should be re-queued (externalUpdateVersion bump)
- * when the user-typing timeout clears. External updates skipped because
- * `isUserTyping === true` were never re-queued — `isUserTyping` is a plain
- * non-reactive `let`, so nothing re-ran the pipeline once typing stopped and
- * the debounced save then clobbered the divergence out of Redux (monorepo#534).
+ * when the user-typing timeout clears. Historically external updates skipped
+ * because `isUserTyping === true` were never re-queued — `isUserTyping` is a
+ * plain non-reactive `let`, so nothing re-ran the pipeline once typing stopped
+ * and the debounced save then clobbered the divergence out of Redux
+ * (monorepo#534). The pipeline no longer skips while typing; this remains a
+ * fallback for a divergence that slipped past the safety-net.
  */
 export function shouldRequeueExternalUpdateAfterTypingStops({
   reduxContent,
@@ -202,13 +205,31 @@ function getDebounceState(noteId: string | null | undefined): DebounceState {
   return state;
 }
 
+// --- Apply generation per note (stale-render guard) ---
+// Each apply renders its markdown asynchronously. When a newer apply for the
+// same note starts before an older render resolves, the older result must be
+// dropped at apply time — the initial debounce cannot see it, and applying it
+// would regress the editor to the older text.
+const applyGenerationByNote = new Map<string, number>();
+
+function beginApplyGeneration(noteId: string | null | undefined): number {
+  const key = noteId ?? '__no_note__';
+  const generation = (applyGenerationByNote.get(key) ?? 0) + 1;
+  applyGenerationByNote.set(key, generation);
+  return generation;
+}
+
+function isCurrentApplyGeneration(noteId: string | null | undefined, generation: number): boolean {
+  return applyGenerationByNote.get(noteId ?? '__no_note__') === generation;
+}
+
 export function runExternalContentUpdateEffect({
   updateVersion,
   isDestroyed,
   getEditor,
   getIsInitialized,
-  getIsUserTyping,
   getHasPendingNoteContent,
+  stageUnsavedEdits,
   flushNoteContent,
   onPendingSaveSettled,
   getCurrentNoteContent,
@@ -224,7 +245,7 @@ export function runExternalContentUpdateEffect({
   getCommentManager,
   processMarkdownToHTML,
   processHTMLToMarkdown,
-  createTextSelection,
+  createTextSelection = createTextSelectionForDoc,
   logger,
   workspaceFileVersion,
 }: {
@@ -233,7 +254,6 @@ export function runExternalContentUpdateEffect({
   isDestroyed?: () => boolean;
   getEditor: () => ExternalUpdateEffectEditorLike | null | undefined;
   getIsInitialized: () => boolean;
-  getIsUserTyping: () => boolean;
   /**
    * Whether the write-service still holds an unacknowledged content save for
    * this note (debounced or in flight). While true, Redux may hold refetched
@@ -243,6 +263,14 @@ export function runExternalContentUpdateEffect({
    * synchronously instead and the daemon's merged result is applied.
    */
   getHasPendingNoteContent?: () => boolean;
+  /**
+   * Hand the editor's current content to the write-service now, bypassing the
+   * component's save debounce, so keystrokes still waiting on that debounce
+   * are part of the flush below instead of holding it off until typing stops.
+   * Called only while the editor holds unsaved edits and no whole-document
+   * replacement is in progress.
+   */
+  stageUnsavedEdits?: () => void;
   /**
    * Flush the note's debounced content save now and resolve with the daemon's
    * merged result (`undefined` when nothing was debounced or the save failed).
@@ -269,7 +297,8 @@ export function runExternalContentUpdateEffect({
   getCommentManager: () => CommentManagerV2 | null | undefined;
   processMarkdownToHTML: ProcessMarkdownToHTMLLike;
   processHTMLToMarkdown: ProcessHTMLToMarkdownLike;
-  createTextSelection: (doc: any, anchor: number, head?: number) => any;
+  /** Test seam; production uses the bound `createTextSelectionForDoc`. */
+  createTextSelection?: CreateTextSelectionLike;
   logger: LoggerLike;
   /**
    * The editor instance's cache-busting token for `workspace-file://` images,
@@ -288,7 +317,6 @@ export function runExternalContentUpdateEffect({
 
   const editor = getEditor();
   const isInitialized = getIsInitialized();
-  const isUserTyping = getIsUserTyping();
   const noteId = getNoteId();
 
   // NOTE: We intentionally do NOT check isUpdatingFromExternal here.
@@ -296,11 +324,12 @@ export function runExternalContentUpdateEffect({
   // programmatic changes. But when multiple external updates arrive rapidly
   // (e.g., when an agent delegates multiple tasks), we need to process them all.
   // The flag would block subsequent updates while the first one is being applied.
-  if (!editor || !isInitialized || isUserTyping) {
+  // Nor is active typing a reason to skip: a dirty editor is flushed now and
+  // keystrokes are folded into the applied text.
+  if (!editor || !isInitialized) {
     logger.info('[NoteWithComments] Skipping external effect', {
       hasEditor: !!editor,
       isInitialized,
-      isUserTyping,
       updateVersion,
       noteId,
     });
@@ -337,24 +366,82 @@ export function runExternalContentUpdateEffect({
 
   const workspaceId = getWorkspaceId();
 
+  // Keystrokes that never reached a save are replayed onto the text about to
+  // be applied; a whole-document replacement in progress (note.restoreVersion)
+  // is applied verbatim.
+  const canFoldUnsavedEdits = () => getHasUserEditedSinceLastSave() && !getIsUpdatingFromExternal();
+
+  const readEditorMarkdown = (source: ExternalUpdateEffectEditorLike): string | undefined => {
+    try {
+      return processHTMLToMarkdown(source.getHTML(), { preserveAnchors: true });
+    } catch (error) {
+      logger.error('[NoteWithComments] Failed to normalize current editor content', error);
+      return undefined;
+    }
+  };
+
   const applyIncomingContent = async (incoming: string): Promise<void> => {
     const editor = getEditor();
     if (!editor || editor.isDestroyed) return;
 
-    // Keystrokes that never reached a save (the editor moved past
-    // lastKnownContent) are replayed onto the incoming text: applying it
-    // verbatim would drop them, and the next save would then carry a text
-    // without the external change and delete it on the daemon. A whole-document
-    // replacement in progress (note.restoreVersion) is applied verbatim.
+    const generation = beginApplyGeneration(noteId);
+
+    // `ours` is the editor text `target` accounts for: the saved/applied
+    // baseline until unsaved keystrokes are folded in. Applying the incoming
+    // text verbatim over them would drop them, and the next save would then
+    // carry a text without the external change and delete it on the daemon.
+    let ours = getLastKnownContent();
     let target = incoming;
-    if (getHasUserEditedSinceLastSave() && !getIsUpdatingFromExternal()) {
-      try {
-        const ours = processHTMLToMarkdown(editor.getHTML(), { preserveAnchors: true });
-        target = foldUnsavedEditsIntoIncoming({ base: getLastKnownContent(), incoming, ours });
-      } catch (error) {
-        logger.error('[NoteWithComments] Failed to normalize current editor content', error);
+    if (canFoldUnsavedEdits()) {
+      const current = readEditorMarkdown(editor);
+      if (current !== undefined) {
+        target = foldUnsavedEditsIntoIncoming({ base: ours, incoming, ours: current });
+        ours = current;
       }
     }
+
+    // Render `target`, then re-read the editor: a keystroke that landed while
+    // the markdown was converting is folded onto the rendered text and the
+    // render repeated, since applying the now-stale HTML would overwrite it.
+    const renderLatest = async (): Promise<
+      { html: string; editor: ExternalUpdateEffectEditorLike } | undefined
+    > => {
+      for (;;) {
+        const html = await processMarkdownToHTML(target, {
+          preserveAnchors: true,
+          workspaceId,
+          workspaceFileVersion,
+        });
+
+        // CRITICAL: Check destruction flag FIRST, before accessing ANY reactive state.
+        // This prevents "N is not a function" errors when Svelte's reactive system
+        // tries to call nullified internal functions after component destruction.
+        // The promise callback may execute after the component has been destroyed.
+        if (isDestroyed?.()) return undefined;
+
+        if (!isCurrentApplyGeneration(noteId, generation)) {
+          logger.info('[NoteWithComments] Dropping stale external apply', {
+            noteId,
+            updateVersion,
+          });
+          return undefined;
+        }
+
+        const liveEditor = getEditor();
+        if (!liveEditor || liveEditor.isDestroyed) return undefined;
+
+        if (!canFoldUnsavedEdits()) return { html, editor: liveEditor };
+        const typed = readEditorMarkdown(liveEditor);
+        if (typed === undefined || typed === ours) return { html, editor: liveEditor };
+        target = foldUnsavedEditsIntoIncoming({ base: ours, incoming: target, ours: typed });
+        ours = typed;
+      }
+    };
+
+    const rendered = await renderLatest();
+    if (!rendered) return;
+    const { html: newHtmlContent, editor: liveEditor } = rendered;
+
     const folded = target !== incoming;
     if (folded) {
       logger.info('[NoteWithComments] Folding unsaved edits into external update', {
@@ -362,23 +449,6 @@ export function runExternalContentUpdateEffect({
         updateVersion,
       });
     }
-
-    const newHtmlContent = await processMarkdownToHTML(target, {
-      preserveAnchors: true,
-      workspaceId,
-      workspaceFileVersion,
-    });
-
-    // CRITICAL: Check destruction flag FIRST, before accessing ANY reactive state.
-    // This prevents "N is not a function" errors when Svelte's reactive system
-    // tries to call nullified internal functions after component destruction.
-    // The promise callback may execute after the component has been destroyed.
-    if (isDestroyed?.()) {
-      return;
-    }
-
-    const liveEditor = getEditor();
-    if (!liveEditor || liveEditor.isDestroyed) return;
 
     const currentEditorHtml = liveEditor.getHTML();
 
@@ -470,7 +540,8 @@ export function runExternalContentUpdateEffect({
   // in-flight save to settle: the daemon's `note:updated` refetch usually
   // re-queues the pipeline via the safety-net, and the scheduled recheck
   // covers the case where the resolved save leaves Redux unchanged.
-  const flushDirtyEditorAndApply = (getHasPending: () => boolean): Promise<void> | undefined => {
+  const flushDirtyEditorAndApply = (): Promise<void> | undefined => {
+    const getHasPending = getHasPendingNoteContent ?? (() => false);
     if (!flushNoteContent || !workspaceId || !noteId) {
       logger.info('[NoteWithComments] Deferring external effect - pending local save unflushed', {
         updateVersion,
@@ -508,6 +579,15 @@ export function runExternalContentUpdateEffect({
     });
   };
 
+  // Whether a content save must be flushed before applying. Keystrokes still
+  // waiting on the component's save debounce are staged into the
+  // write-service first so they ride the flush: "flush while dirty" means now,
+  // not once typing stops.
+  const hasPendingSaveAfterStaging = (): boolean => {
+    if (stageUnsavedEdits && canFoldUnsavedEdits()) stageUnsavedEdits();
+    return getHasPendingNoteContent?.() ?? false;
+  };
+
   // --- Debounce rapid updates ---
   // When an agent is streaming edits, dozens of updates arrive per second.
   // Debounce so we only run the expensive markdown→HTML pipeline for the
@@ -525,8 +605,8 @@ export function runExternalContentUpdateEffect({
   }
   debounce.version = updateVersion;
 
-  if (getHasPendingNoteContent?.()) {
-    return flushDirtyEditorAndApply(getHasPendingNoteContent);
+  if (hasPendingSaveAfterStaging()) {
+    return flushDirtyEditorAndApply();
   }
 
   return new Promise<void>((resolve) => {
@@ -543,8 +623,8 @@ export function runExternalContentUpdateEffect({
     if (isDestroyed?.()) return;
     // Re-check the pending-save window: a keystroke during the debounce may
     // have scheduled a new save — flush it and apply the merged result.
-    if (getHasPendingNoteContent?.()) {
-      return flushDirtyEditorAndApply(getHasPendingNoteContent);
+    if (hasPendingSaveAfterStaging()) {
+      return flushDirtyEditorAndApply();
     }
     const freshContent = getCurrentNoteContent();
     const freshLastKnown = getLastKnownContent();

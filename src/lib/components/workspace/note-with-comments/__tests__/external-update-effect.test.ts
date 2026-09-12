@@ -1,4 +1,6 @@
+import { Editor } from '@tiptap/core';
 import { Schema, type Node as PMNode } from '@tiptap/pm/model';
+import StarterKit from '@tiptap/starter-kit';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import {
@@ -124,7 +126,6 @@ describe('external-update-effect', () => {
       updateVersion: 1,
       getEditor: () => null,
       getIsInitialized: () => true,
-      getIsUserTyping: () => false,
       getCurrentNoteContent: () => 'new-md',
       getLastKnownContent: () => 'old-md',
       setLastKnownContent: vi.fn(),
@@ -152,7 +153,6 @@ describe('external-update-effect', () => {
       updateVersion: 2,
       getEditor: () => editor as any,
       getIsInitialized: () => true,
-      getIsUserTyping: () => false,
       getCurrentNoteContent: () => 'same-md',
       getLastKnownContent: () => 'same-md',
       setLastKnownContent: vi.fn(),
@@ -193,7 +193,6 @@ describe('external-update-effect', () => {
       updateVersion: 3,
       getEditor: () => editor as any,
       getIsInitialized: () => true,
-      getIsUserTyping: () => false,
       getCurrentNoteContent: () => 'new-md',
       getLastKnownContent: () => lastKnownContent,
       setLastKnownContent: (v) => {
@@ -267,7 +266,6 @@ describe('external-update-effect', () => {
       updateVersion: 4,
       getEditor: () => editor as any,
       getIsInitialized: () => true,
-      getIsUserTyping: () => false,
       getCurrentNoteContent: () => 'server-md',
       getLastKnownContent: () => lastKnownContent,
       setLastKnownContent: (v) => {
@@ -327,7 +325,6 @@ describe('external-update-effect', () => {
       updateVersion: 8,
       getEditor: () => editor as any,
       getIsInitialized: () => true,
-      getIsUserTyping: () => false,
       getHasPendingNoteContent: () => true,
       flushNoteContent,
       getCurrentNoteContent: () => 'hello world (refetched before the save landed)',
@@ -381,7 +378,6 @@ describe('external-update-effect', () => {
       updateVersion: 9,
       getEditor: () => editor as any,
       getIsInitialized: () => true,
-      getIsUserTyping: () => false,
       getHasPendingNoteContent: () => hasPending,
       flushNoteContent,
       onPendingSaveSettled,
@@ -425,7 +421,6 @@ describe('external-update-effect', () => {
       updateVersion: 5,
       getEditor: () => editor as any,
       getIsInitialized: () => true,
-      getIsUserTyping: () => false,
       getHasPendingNoteContent: () => true,
       getCurrentNoteContent: () => 'stale-refetched-md',
       getLastKnownContent: () => 'saved-md',
@@ -466,7 +461,6 @@ describe('external-update-effect', () => {
       updateVersion: 7,
       getEditor: () => editor as any,
       getIsInitialized: () => true,
-      getIsUserTyping: () => false,
       getHasPendingNoteContent: () => hasPending,
       onPendingSaveSettled,
       getCurrentNoteContent: () => 'stale-refetched-md',
@@ -512,7 +506,6 @@ describe('external-update-effect', () => {
       updateVersion: 6,
       getEditor: () => editor as any,
       getIsInitialized: () => true,
-      getIsUserTyping: () => false,
       getHasPendingNoteContent: () => hasPending,
       flushNoteContent,
       getCurrentNoteContent: () => 'stale-refetched-md',
@@ -544,6 +537,195 @@ describe('external-update-effect', () => {
     expect(processMarkdownToHTML).toHaveBeenCalledWith('merged-md', expect.anything());
     expect(getSetContentHtml()).toBe('<p>merged</p>');
     expect(lastKnownContent).toBe('merged-md');
+  });
+});
+
+// Real TipTap editor, production selection wiring (no createTextSelection
+// injected): these cover what the mock-editor suites above stub away.
+describe('external-update-effect with a real editor', () => {
+  const logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+  const editors: Editor[] = [];
+  let serial = 0;
+
+  const html = (text: string) => `<p>${text}</p>`;
+
+  function deferred<T>() {
+    let resolve!: (value: T) => void;
+    const promise = new Promise<T>((r) => {
+      resolve = r;
+    });
+    return { promise, resolve };
+  }
+
+  function typeAtEnd(editor: Editor, text: string) {
+    editor.commands.insertContentAt(editor.state.doc.content.size - 1, text);
+  }
+
+  function setup({ ours, incoming, merged }: { ours: string; incoming: string; merged?: string }) {
+    const editor = new Editor({ extensions: [StarterKit], content: html(ours) });
+    editors.push(editor);
+    const state = { last: ours, current: incoming, edited: true, updating: false };
+    const args = {
+      updateVersion: ++serial,
+      getEditor: () => editor,
+      getIsInitialized: () => true,
+      getHasPendingNoteContent: () => merged !== undefined,
+      flushNoteContent: vi.fn(async () =>
+        merged === undefined ? undefined : { content: merged, rev: 6 },
+      ),
+      getCurrentNoteContent: () => state.current,
+      getLastKnownContent: () => state.last,
+      setLastKnownContent: (v: string) => {
+        state.last = v;
+      },
+      getHasUserEditedSinceLastSave: () => state.edited,
+      setHasUserEditedSinceLastSave: (v: boolean) => {
+        state.edited = v;
+      },
+      getIsUpdatingFromExternal: () => state.updating,
+      setIsUpdatingFromExternal: (v: boolean) => {
+        state.updating = v;
+      },
+      getWorkspaceId: () => 'workspace-1',
+      getNoteId: () => `note-${serial}`,
+      getCommentManager: () => null,
+      processMarkdownToHTML: vi.fn(async (text: string) => html(text)),
+      processHTMLToMarkdown: () => editor.getText(),
+      logger,
+    };
+    return { editor, args, state };
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    for (const editor of editors.splice(0)) editor.destroy();
+    vi.clearAllTimers();
+    vi.useRealTimers();
+  });
+
+  it('flushes the dirty editor without a debounce wait and maps the caret through the merge with the production selection wiring', async () => {
+    const { editor, args, state } = setup({
+      ours: 'base one',
+      incoming: 'agent base',
+      merged: 'agent base one',
+    });
+    // Caret after "base on" (offset 7 → pos 8).
+    editor.commands.setTextSelection(8);
+
+    const completion = runExternalContentUpdateEffect(args);
+    expect(args.flushNoteContent).toHaveBeenCalledTimes(1);
+    expect(args.processMarkdownToHTML).not.toHaveBeenCalled();
+    await completion;
+
+    expect(editor.getText()).toBe('agent base one');
+    expect(state.last).toBe('agent base one');
+    // Regression: an unbound TextSelection.create threw "this is not a
+    // constructor" inside the apply and the caret fell to the end (pos 15).
+    expect(logger.debug).not.toHaveBeenCalledWith(
+      '[NoteWithComments] Could not restore cursor position',
+      expect.anything(),
+    );
+    expect(editor.state.selection.anchor).toBe(14);
+    expect(state.edited).toBe(false);
+  });
+
+  it('stages keystrokes still on the component save debounce before flushing', async () => {
+    const { args } = setup({ ours: 'base one', incoming: 'agent base', merged: 'agent base one' });
+    const order: string[] = [];
+    const stageUnsavedEdits = vi.fn(() => order.push('stage'));
+    args.flushNoteContent.mockImplementation(async () => {
+      order.push('flush');
+      return { content: 'agent base one', rev: 6 };
+    });
+
+    await runExternalContentUpdateEffect({ ...args, stageUnsavedEdits });
+
+    expect(order).toEqual(['stage', 'flush']);
+  });
+
+  it('does not stage while a whole-document replacement (restore) is in progress', async () => {
+    const { args, state } = setup({ ours: 'base one unsaved', incoming: 'restored' });
+    state.updating = true;
+    const stageUnsavedEdits = vi.fn();
+
+    const completion = runExternalContentUpdateEffect({ ...args, stageUnsavedEdits });
+    await vi.advanceTimersByTimeAsync(150);
+    await completion;
+
+    expect(stageUnsavedEdits).not.toHaveBeenCalled();
+    expect(args.flushNoteContent).not.toHaveBeenCalled();
+  });
+
+  it('keeps a keystroke typed while the merged markdown is being rendered', async () => {
+    const { editor, args } = setup({
+      ours: 'base one',
+      incoming: 'agent base',
+      merged: 'agent base one',
+    });
+    const firstRender = deferred<string>();
+    args.processMarkdownToHTML.mockImplementation(async (text: string) =>
+      text === 'agent base one' ? firstRender.promise : html(text),
+    );
+
+    const completion = runExternalContentUpdateEffect(args);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(args.processMarkdownToHTML).toHaveBeenCalledTimes(1);
+
+    typeAtEnd(editor, ' two');
+    firstRender.resolve(html('agent base one'));
+    await completion;
+
+    // The stale HTML was not applied over the keystroke: the fold re-ran and
+    // the folded text was rendered.
+    expect(args.processMarkdownToHTML).toHaveBeenLastCalledWith(
+      'agent base one two',
+      expect.anything(),
+    );
+    expect(editor.getText()).toBe('agent base one two');
+  });
+
+  it('drops an older render that resolves after a newer external update was applied', async () => {
+    const { editor, args, state } = setup({ ours: 'base', incoming: 'first base' });
+    const firstRender = deferred<string>();
+    args.processMarkdownToHTML.mockImplementation(async (text: string) =>
+      text === 'first base' ? firstRender.promise : html(text),
+    );
+
+    const olderApply = runExternalContentUpdateEffect(args);
+    await vi.advanceTimersByTimeAsync(150);
+
+    state.current = 'newest base';
+    const newerApply = runExternalContentUpdateEffect({
+      ...args,
+      updateVersion: args.updateVersion + 1,
+    });
+    await vi.advanceTimersByTimeAsync(150);
+    await newerApply;
+    expect(editor.getText()).toBe('newest base');
+
+    firstRender.resolve(html('first base'));
+    await olderApply;
+
+    expect(editor.getText()).toBe('newest base');
+    expect(state.last).toBe('newest base');
+  });
+
+  it('applies an explicit restore as a whole-document replacement with a valid cursor', async () => {
+    const { editor, args, state } = setup({ ours: 'base one unsaved', incoming: 'restored' });
+    state.updating = true;
+    editor.commands.setTextSelection(10);
+
+    const completion = runExternalContentUpdateEffect(args);
+    await vi.advanceTimersByTimeAsync(150);
+    await completion;
+
+    expect(editor.getText()).toBe('restored');
+    expect(editor.state.doc.resolve(editor.state.selection.anchor).parent.inlineContent).toBe(true);
   });
 });
 
@@ -639,7 +821,6 @@ describe('shouldSafetyNetTrigger', () => {
     lastKnownContent: 'old content',
     lastSafetyNetSyncedContent: undefined as string | undefined,
     isInitialized: true,
-    isUserTyping: false,
     isUpdatingFromExternal: false,
   };
 
@@ -657,8 +838,15 @@ describe('shouldSafetyNetTrigger', () => {
     expect(shouldSafetyNetTrigger({ ...baseArgs, isInitialized: false })).toBe(false);
   });
 
-  it('returns false when user is typing', () => {
-    expect(shouldSafetyNetTrigger({ ...baseArgs, isUserTyping: true })).toBe(false);
+  it('does not accept isUserTyping as an input (a dirty editor is flushed, not waited on)', () => {
+    // Gating on typing let active typing hold off the flush indefinitely: the
+    // pipeline flushes the dirty editor now and folds keystrokes into the apply.
+    expect(
+      shouldSafetyNetTrigger({
+        ...baseArgs,
+        isUserTyping: true,
+      } as Parameters<typeof shouldSafetyNetTrigger>[0]),
+    ).toBe(true);
   });
 
   it('does not accept hasUserEditedSinceLastSave as an input (guard decides downstream)', () => {

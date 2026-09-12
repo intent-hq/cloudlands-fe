@@ -1,5 +1,7 @@
+import { Editor } from '@tiptap/core';
 import { Schema, type Node as PMNode } from '@tiptap/pm/model';
-import { describe, it, expect, vi } from 'vitest';
+import StarterKit from '@tiptap/starter-kit';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 
 import {
   applyExternalUpdateHtmlToEditorPreservingCursor,
@@ -341,5 +343,54 @@ describe('external-update-editor', () => {
       '[NoteWithComments] Could not restore cursor position',
       expect.any(Error),
     );
+  });
+});
+
+// Production wiring: no createTextSelection injected. Regression for the
+// unbound TextSelection.create ("this is not a constructor") that made every
+// selection restore fall through to the end of the document.
+describe('external-update-editor with a real editor', () => {
+  const editors: Editor[] = [];
+  const newEditor = (html: string) => {
+    const editor = new Editor({ extensions: [StarterKit], content: html });
+    editors.push(editor);
+    return editor;
+  };
+
+  afterEach(() => {
+    for (const editor of editors.splice(0)) editor.destroy();
+  });
+
+  it('maps the selection through the diff with the default selection wiring', () => {
+    const editor = newEditor('<p>base one</p>');
+    editor.commands.setTextSelection(8);
+    const logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+
+    const didUpdate = applyExternalUpdateHtmlToEditorPreservingCursor({
+      editor,
+      html: '<p>agent base one</p>',
+      mapSelectionThroughDiff: true,
+      logger,
+    });
+
+    expect(didUpdate).toBe(true);
+    expect(editor.getText()).toBe('agent base one');
+    expect(logger.debug).not.toHaveBeenCalled();
+    expect(editor.state.selection.anchor).toBe(14);
+  });
+
+  it('restores an explicit cursorPos with the default selection wiring', () => {
+    const editor = newEditor('<p>base one</p>');
+    const logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+
+    applyExternalUpdateHtmlToEditorPreservingCursor({
+      editor,
+      html: '<p>restored text</p>',
+      cursorPos: 4,
+      logger,
+    });
+
+    expect(logger.debug).not.toHaveBeenCalled();
+    expect(editor.state.selection.anchor).toBe(4);
   });
 });
