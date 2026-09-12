@@ -301,4 +301,56 @@ describe('registerBrowserExecReverseHandler', () => {
       vi.useRealTimers();
     }
   });
+
+  // TODO(intent-hq/intent#4835): the asset-persistence timeout is a fixed
+  // 5 s on top of whatever the capture already spent, so a capture that
+  // legitimately used most of intentd's 20 s SCREENSHOT_REVERSE_TIMEOUT
+  // (CAPTURE_MOUNT_TIMEOUT_MS 10 s + SCREENSHOT_CDP_TIMEOUT_MS 5 s +
+  // SCREENSHOT_CAPTURE_PAGE_TIMEOUT_MS 5 s) answers after the daemon already
+  // gave up, and the agent sees a bare "reverse request timed out" instead of
+  // the captured image. Flip to `it` once persistence is bounded by the
+  // remaining reverse budget rather than a fixed 5 s.
+  it.fails(
+    'answers within the 20 s screenshot reverse budget when the capture was slow and persistence stalls',
+    async () => {
+      vi.useFakeTimers();
+      try {
+        const { client, socket } = makeClient();
+        const original = { base64: 'AAAA', width: 10, height: 20 };
+        executor.mockImplementation(
+          () =>
+            new Promise((resolve) =>
+              setTimeout(
+                () =>
+                  resolve({
+                    success: true,
+                    results: [{ action: 'screenshot', success: true, result: { ...original } }],
+                  }),
+                16_000,
+              ),
+            ),
+        );
+        const saveAsset = vi.fn(() => new Promise<never>(() => {}));
+        registerBrowserExecReverseHandler(client, { executor, saveAsset });
+
+        socket.receive(
+          `${JSON.stringify({
+            jsonrpc: '2.0',
+            id: 'rev-7',
+            method: BROWSER_EXEC_METHOD,
+            params: { actions: [{ action: 'screenshot' }], workspaceId: 'ws-1' },
+          })}\n`,
+        );
+        await vi.advanceTimersByTimeAsync(20_000);
+
+        expect(saveAsset).toHaveBeenCalledTimes(1);
+        expect(socket.writes).toHaveLength(1);
+        const response = JSON.parse(socket.writes[0]);
+        expect(response.result.results[0].result).toEqual(original);
+        client.dispose();
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
 });

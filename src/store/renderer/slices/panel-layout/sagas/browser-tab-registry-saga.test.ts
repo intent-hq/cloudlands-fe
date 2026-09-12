@@ -392,6 +392,58 @@ describe('browserTabRegistrySaga', () => {
       await stop(h);
     });
 
+    // TODO(intent-hq/intent#4835): `applyRows` treats a tab this client
+    // already hosts, with its URL present locally, as local truth (it is only
+    // acknowledged, never navigated from the row) — yet it still queues that
+    // row for `rehydrateUnderFence`, which re-runs the tunnel rewrite and, when
+    // the forward moved, navigates the live offscreen guest onto a new port.
+    // The guest reloads mid-capture: `evaluate` answers on a blank document
+    // and `screenshot` times out. Flip to `it` once rehydration is limited to
+    // tabs whose guest is not already alive in this window.
+    it.fails(
+      'does not re-resolve a tunneled tab this client already hosts when the workspace remounts',
+      async () => {
+        const REQUESTED = 'http://daemon.localhost:3000/';
+        const LIVE = 'http://127.0.0.1:52345/';
+        const MOVED = 'http://127.0.0.1:61111/';
+        mocks.listTabs.mockResolvedValue([
+          row({ url: LIVE, requestedUrl: REQUESTED, title: 'Sandbox' }),
+        ]);
+        mocks.resolveBrowserLinkUrl.mockResolvedValue({
+          url: MOVED,
+          rewritten: true,
+          requestedUrl: REQUESTED,
+          tunneled: true,
+        });
+        const h = start({
+          layouts: {
+            [WS]: settledLayout(
+              [
+                browserTab({
+                  hostClientId: OWN,
+                  browserUrl: LIVE,
+                  browserRequestedUrl: REQUESTED,
+                  title: 'Sandbox',
+                }),
+              ],
+              'pending' as never,
+            ),
+          },
+          health: 'down',
+        });
+        h.setHealth('healthy', 1);
+        h.dispatch(setRestoreStatus(WS, 'restored'));
+        await flush();
+
+        expect(mocks.resolveBrowserLinkUrl).not.toHaveBeenCalled();
+        expect(h.ofType(updateTabBrowserUrl.type)).toEqual([]);
+        expect(h.tabs()).toEqual([
+          expect.objectContaining({ id: 'b1', browserUrl: LIVE, browserRequestedUrl: REQUESTED }),
+        ]);
+        await stop(h);
+      },
+    );
+
     it('forgets acknowledged tabs the listing no longer holds instead of removing them later', async () => {
       const h = start({ layouts: { [WS]: settledLayout([]) }, health: 'down', applied: true });
       h.setHealth('healthy', 1);
