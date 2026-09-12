@@ -14,24 +14,60 @@ describe('parseArgs', () => {
     });
   });
 
-  it('splits forwarded arguments at the first "--"', () => {
+  it('keeps a user-written "--" and everything after it verbatim', () => {
     expect(parseArgs(['test:ct', '--', '--grep', 'geometry snapshot', '--'])).toEqual({
       scripts: ['test:ct'],
-      forwarded: ['--grep', 'geometry snapshot', '--'],
+      forwarded: ['--', '--grep', 'geometry snapshot', '--'],
     });
   });
 
   it('rejects an empty script list', () => {
     expect(() => parseArgs([])).toThrow(/No script name/);
     expect(() => parseArgs(['--', '--fix'])).toThrow(/No script name/);
+    expect(() => parseArgs(['--help'])).toThrow(/No script name/);
   });
 
-  it('rejects option-like tokens before "--"', () => {
-    expect(() => parseArgs(['--fix', 'lint'])).toThrow(/Unknown option "--fix"/);
+  it('forwards trailing flags appended by the outer pnpm to a single script', () => {
+    expect(parseArgs(['dev:web', '--help'])).toEqual({
+      scripts: ['dev:web'],
+      forwarded: ['--help'],
+    });
+    expect(parseArgs(['dev:web', '--port', '3100', '--host'])).toEqual({
+      scripts: ['dev:web'],
+      forwarded: ['--port', '3100', '--host'],
+    });
   });
 
-  it('rejects forwarded arguments when more than one script is named', () => {
-    expect(() => parseArgs(['lint', 'check', '--', '--fix'])).toThrow(/single script/);
+  it('forwards everything after the first flag, including later positionals', () => {
+    expect(parseArgs(['test:ct', '--grep', 'geometry', 'src/a.spec.ts'])).toEqual({
+      scripts: ['test:ct'],
+      forwarded: ['--grep', 'geometry', 'src/a.spec.ts'],
+    });
+  });
+
+  it('treats a positional that is not a known script as a forwarded argument', () => {
+    const isScript = (name: string) => name.startsWith('test:');
+    expect(parseArgs(['test:agent-launch', 'src/a.spec.ts'], { isScript })).toEqual({
+      scripts: ['test:agent-launch'],
+      forwarded: ['src/a.spec.ts'],
+    });
+    expect(
+      parseArgs(['test:unit', 'test:integration', 'src/a.spec.ts', '--bail'], { isScript }),
+    ).toEqual({
+      scripts: ['test:unit', 'test:integration'],
+      forwarded: ['src/a.spec.ts', '--bail'],
+    });
+  });
+
+  it('forwards trailing arguments after a chain of scripts', () => {
+    expect(parseArgs(['lint', 'check', '--fix'])).toEqual({
+      scripts: ['lint', 'check'],
+      forwarded: ['--fix'],
+    });
+    expect(parseArgs(['lint', 'check', '--', '--fix'])).toEqual({
+      scripts: ['lint', 'check'],
+      forwarded: ['--', '--fix'],
+    });
   });
 });
 
@@ -64,6 +100,24 @@ describe('planInvocations', () => {
       '--',
       '--grep',
       'a b',
+    ]);
+  });
+
+  it('forwards bare trailing flags to a single script without inserting "--"', () => {
+    const [invocation] = planInvocations(parseArgs(['dev:web', '--help']), options);
+    expect(invocation.args).toEqual([
+      '/store/pnpm/10.30.3/bin/pnpm.cjs',
+      'run',
+      'dev:web',
+      '--help',
+    ]);
+  });
+
+  it('forwards trailing arguments only to the last script of a chain', () => {
+    const plan = planInvocations(parseArgs(['lint', 'check', '--fix', 'src']), options);
+    expect(plan.map((invocation) => invocation.args)).toEqual([
+      ['/store/pnpm/10.30.3/bin/pnpm.cjs', 'run', 'lint'],
+      ['/store/pnpm/10.30.3/bin/pnpm.cjs', 'run', 'check', '--fix', 'src'],
     ]);
   });
 
