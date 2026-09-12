@@ -1660,6 +1660,7 @@
       },
       getWorkspaceId: () => workspace?.id,
       getNoteId: () => noteId,
+      getOwnerToken: () => noteConversionGeneration,
       getTaskAgentAssociations: () => {
         if (!workspace?.id || !noteId) return [];
         return selectAssociationsForNote.select(appStore.state, workspace.id, noteId);
@@ -1700,6 +1701,21 @@
       // Queue the existing external-update pipeline
       externalUpdateVersion = externalUpdateVersion + 1;
     }
+  });
+
+  // Baseline rev for an echo that changed nothing: a settled save whose merged
+  // text equals the editor baseline never goes through the external apply
+  // (the content matches), so nothing else records the rev it was
+  // acknowledged at, and a later refetch can then move the store past the
+  // baseline before the next draft is staged. Whenever the store text IS the
+  // baseline, its rev is the baseline's rev; it only ever advances, and a
+  // refetch holding other text never gets claimed for the baseline.
+  $effect(() => {
+    const reduxContent = currentNoteContent;
+    const reduxRev = currentNoteRev;
+    if (reduxRev === undefined || reduxContent !== lastKnownContent) return;
+    if (lastKnownRev !== undefined && reduxRev <= lastKnownRev) return;
+    lastKnownRev = reduxRev;
   });
 
   // // Watch for editable prop changes and update editor

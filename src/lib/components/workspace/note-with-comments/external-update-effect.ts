@@ -242,6 +242,7 @@ export function runExternalContentUpdateEffect({
   setIsRestorePending,
   getWorkspaceId,
   getNoteId,
+  getOwnerToken,
   getTaskAgentAssociations,
   getCommentManager,
   processMarkdownToHTML,
@@ -309,6 +310,14 @@ export function runExternalContentUpdateEffect({
   setIsRestorePending?: (value: boolean) => void;
   getWorkspaceId: () => string | undefined;
   getNoteId: () => string | null | undefined;
+  /**
+   * Identity of the note the editor currently shows (the component's
+   * note-conversion generation). Captured at entry together with the
+   * workspace/note ids and rechecked after every await: a flush or render
+   * that resolves once the editor shows another note — or the same note
+   * re-initialized — must neither touch that editor nor its baseline.
+   */
+  getOwnerToken?: () => unknown;
   getTaskAgentAssociations?: () => TaskAgentAssociation[];
   getCommentManager: () => CommentManagerV2 | null | undefined;
   processMarkdownToHTML: ProcessMarkdownToHTMLLike;
@@ -380,6 +389,26 @@ export function runExternalContentUpdateEffect({
   });
 
   const workspaceId = getWorkspaceId();
+  const ownerToken = getOwnerToken?.();
+
+  // Whether the editor has moved on to another note (or the same note was
+  // re-initialized) since this effect started. The live getEditor /
+  // getLastKnownContent bindings then belong to that other note, and the
+  // apply generation below is keyed by the note this effect started for, so
+  // it cannot invalidate a continuation held across the switch.
+  const ownerChanged = (): boolean =>
+    getNoteId() !== noteId || getWorkspaceId() !== workspaceId || getOwnerToken?.() !== ownerToken;
+
+  const dropIfOwnerChanged = (stage: string): boolean => {
+    if (!ownerChanged()) return false;
+    logger.info('[NoteWithComments] Dropping external apply - editor changed note owner', {
+      noteId,
+      currentNoteId: getNoteId(),
+      updateVersion,
+      stage,
+    });
+    return true;
+  };
 
   // Keystrokes that never reached a save are replayed onto the text about to
   // be applied; a whole-document replacement the user requested
@@ -435,6 +464,7 @@ export function runExternalContentUpdateEffect({
         // tries to call nullified internal functions after component destruction.
         // The promise callback may execute after the component has been destroyed.
         if (isDestroyed?.()) return undefined;
+        if (dropIfOwnerChanged('render')) return undefined;
 
         if (!isCurrentApplyGeneration(noteId, generation)) {
           logger.info('[NoteWithComments] Dropping stale external apply', {
@@ -572,6 +602,7 @@ export function runExternalContentUpdateEffect({
     });
     return flushNoteContent(workspaceId, noteId).then((applied) => {
       if (isDestroyed?.()) return;
+      if (dropIfOwnerChanged('flush')) return;
       if (!applied) {
         logger.info(
           // i18n-ignore (log line)
@@ -630,8 +661,9 @@ export function runExternalContentUpdateEffect({
     if (debounce.version !== updateVersion) {
       return;
     }
-    // Also re-check destruction / content in case things changed during the debounce window.
+    // Also re-check destruction / owner / content in case things changed during the debounce window.
     if (isDestroyed?.()) return;
+    if (dropIfOwnerChanged('debounce')) return;
     // Re-check the pending-save window: a keystroke during the debounce may
     // have scheduled a new save — flush it and apply the merged result.
     if (hasPendingSaveAfterStaging()) {
