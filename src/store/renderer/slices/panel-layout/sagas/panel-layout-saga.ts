@@ -80,6 +80,7 @@ import {
   closeTabsByType,
   closeTabsToRight,
   consumePendingFocus,
+  destroyHiddenTabsByOwnerAgent,
   destroyOwnedTabsForWorkspace,
   destroyTabsByOwnerAgent,
   emptyWorkspaceState,
@@ -164,6 +165,7 @@ const PERSIST_ACTIONS = [
   closeTabsByType,
   closeTabsByAgentId,
   destroyTabsByOwnerAgent,
+  destroyHiddenTabsByOwnerAgent,
   destroyOwnedTabsForWorkspace,
   restoreHiddenTab,
   activateVisibleTab,
@@ -222,6 +224,10 @@ const HISTORY_ACTIONS = [
   closeTabsToRight,
   closeAllTabs,
   closeAllOthersEverywhere,
+  // Destroying hidden owned tabs purges them from every history snapshot
+  // (monorepo#2857); the purged history must reach disk or a reload restores
+  // the pre-destroy history and goBack resurrects the tabs.
+  destroyHiddenTabsByOwnerAgent,
   splitPanel,
   closePanel,
   movePanel,
