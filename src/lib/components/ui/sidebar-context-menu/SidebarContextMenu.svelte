@@ -1,6 +1,6 @@
 <script lang="ts">
   import { createProximityHover, proximityItem, type ProximityHover } from '$lib/interaction';
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import type { Action } from 'svelte/action';
   import Fa from 'svelte-fa';
   import { faCheck, faChevronRight } from '@fortawesome/free-solid-svg-icons';
@@ -37,7 +37,8 @@
         $effect(() => {
           const hover = getHover();
           if (!hover) return;
-          const registration = proximityItem(node, { hover, index });
+          // Registration depends on the helper identity, not the geometry it measures.
+          const registration = untrack(() => proximityItem(node, { hover, index }));
           return () => registration?.destroy?.();
         });
       });

@@ -76,4 +76,19 @@ describe('SidebarContextMenu Escape handling (escape-layer stack)', () => {
     archive.blur();
     await waitFor(() => expect(archive.getAttribute('data-proximity-active')).toBe('false'));
   });
+  it('keeps menu actions responsive after the pointer enters the menu', async () => {
+    const onClick = vi.fn();
+    render(SidebarContextMenu, {
+      props: {
+        x: 10,
+        y: 10,
+        items: [{ id: 'rename', label: 'Rename', onClick }],
+      },
+    });
+    const menu = await screen.findByRole('menu');
+    const rename = screen.getByRole('menuitem', { name: 'Rename' });
+    await fireEvent.pointerMove(menu, { clientX: 12, clientY: 12 });
+    await fireEvent.click(rename);
+    expect(onClick).toHaveBeenCalledTimes(1);
+  });
 });
