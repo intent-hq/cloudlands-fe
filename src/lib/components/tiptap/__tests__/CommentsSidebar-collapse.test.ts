@@ -66,6 +66,13 @@ describe('CommentsSidebar Collapse action', () => {
     cleanup();
   });
 
+  // Focusing a comment schedules a short scroll-adjust timer in the sidebar
+  // that reads `document`; let it fire before continuing (or before the test
+  // ends and jsdom is torn down).
+  async function settlePostFocusTimers() {
+    await new Promise((resolve) => setTimeout(resolve, 150));
+  }
+
   async function renderAndFocusComment() {
     const { container } = render(CommentsSidebar, {
       props: { comments: [comment], editor: makeMockEditor() },
@@ -84,8 +91,8 @@ describe('CommentsSidebar Collapse action', () => {
       expect(thread.querySelectorAll('[contenteditable]').length).toBeGreaterThan(0);
     });
 
-    // Let the sidebar's post-focus click guard elapse before interacting.
-    await new Promise((resolve) => setTimeout(resolve, 150));
+    // Also lets the sidebar's post-focus click guard elapse before interacting.
+    await settlePostFocusTimers();
     return thread;
   }
 
@@ -114,5 +121,6 @@ describe('CommentsSidebar Collapse action', () => {
       expect(thread.classList.contains('is-focused')).toBe(true);
       expect(thread.querySelectorAll('[contenteditable]').length).toBeGreaterThan(0);
     });
+    await settlePostFocusTimers();
   });
 });
