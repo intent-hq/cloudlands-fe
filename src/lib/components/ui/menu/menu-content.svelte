@@ -21,6 +21,7 @@
     sideOffset = 4,
     onkeydown,
     onfocusin,
+    onOpenAutoFocus,
     // bits-ui 2.18.1: DropdownMenu.Content sizes via the 'dropdown-menu'-prefixed
     // floating CSS vars, while SubContent (menu-sub-content.svelte) uses the shared
     // 'menu' prefix — the differing var names between the two files are intentional.
@@ -56,6 +57,17 @@
     });
   });
 
+  function handleOpenAutoFocus(event: Event) {
+    onOpenAutoFocus?.(event);
+    if (event.defaultPrevented) return;
+    // Focus the content first so Bits initializes keyboard entry before our tab stop.
+    event.preventDefault();
+    const content = ref;
+    requestAnimationFrame(() => {
+      if (content && ref === content) content.focus();
+    });
+  }
+
   function handleKeydown(event: KeyboardEvent & { currentTarget: HTMLDivElement }) {
     onkeydown?.(event);
     if (!event.defaultPrevented) handleMenuPageKey(event.currentTarget, event);
@@ -79,6 +91,7 @@
     style="max-height: {maxHeight}"
     onkeydown={handleKeydown}
     onfocusin={handleFocusin}
+    onOpenAutoFocus={handleOpenAutoFocus}
     {...restProps as any}
   >
     <ListHighlight />
@@ -96,6 +109,7 @@
       style="max-height: {maxHeight}"
       onkeydown={handleKeydown}
       onfocusin={handleFocusin}
+      onOpenAutoFocus={handleOpenAutoFocus}
       {...restProps}
     >
       <ListHighlight />
@@ -113,6 +127,7 @@
     style="max-height: {maxHeight}"
     onkeydown={handleKeydown}
     onfocusin={handleFocusin}
+    onOpenAutoFocus={handleOpenAutoFocus}
     {...restProps}
   >
     <ListHighlight />
