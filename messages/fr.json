@@ -5382,6 +5382,7 @@
   "mcp_oauth_callbackComplete_message": "Authentification terminée. Vous pouvez fermer cette fenêtre.",
   "mcp_oauth_callbackFailed_message": "Échec de l’authentification. Revenez dans Intent pour plus de détails.",
   "mcp_oauth_signInFailed_error": "Échec de la connexion OAuth.",
+  "mcp_oauth_tokenAuthUnsupported_error": "Ce fournisseur OAuth n’annonce aucune méthode d’authentification par jeton prise en charge par Intent.",
   "specialists_loader_unknown_error": "Erreur inconnue",
   "specialists_loader_fileNotFound_error": "Fichier de spécialiste introuvable",
   "specialists_ipc_listFilesFailed_error": "Impossible de lister les fichiers de spécialistes",

@@ -5382,6 +5382,7 @@
   "mcp_oauth_callbackComplete_message": "認証が完了しました。このウィンドウを閉じることができます。",
   "mcp_oauth_callbackFailed_message": "認証に失敗しました。詳細については Intent に戻ってください。",
   "mcp_oauth_signInFailed_error": "OAuth サインインに失敗しました。",
+  "mcp_oauth_tokenAuthUnsupported_error": "この OAuth プロバイダーは、Intent が対応するトークン認証方式を公開していません。",
   "specialists_loader_unknown_error": "不明なエラー",
   "specialists_loader_fileNotFound_error": "スペシャリストファイルが見つかりません",
   "specialists_ipc_listFilesFailed_error": "スペシャリストファイルを一覧表示できませんでした",

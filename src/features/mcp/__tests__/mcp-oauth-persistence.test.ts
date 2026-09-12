@@ -1,3 +1,4 @@
+import { createHash, randomBytes } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { m } from '$shared/paraglide/messages.js';
 
@@ -27,7 +28,9 @@ interface DiscoveryOverrides {
   metadataIssuer?: string;
   authorizationEndpoint?: string;
   authorizationResponseIssuerSupported?: boolean;
+  tokenEndpointAuthMethods?: string[];
   registrationStatus?: number;
+  registrationClient?: Record<string, unknown>;
   includeChallengeMetadata?: boolean;
 }
 
@@ -61,6 +64,7 @@ function stubDiscovery(overrides: DiscoveryOverrides = {}): void {
           token_endpoint: 'https://auth.example.com/token',
           registration_endpoint: 'https://auth.example.com/register',
           code_challenge_methods_supported: ['S256'],
+          token_endpoint_auth_methods_supported: overrides.tokenEndpointAuthMethods,
           authorization_response_iss_parameter_supported:
             overrides.authorizationResponseIssuerSupported,
         });
@@ -68,7 +72,9 @@ function stubDiscovery(overrides: DiscoveryOverrides = {}): void {
       if (url === 'https://auth.example.com/register') {
         const status = overrides.registrationStatus ?? 201;
         return status === 201
-          ? Response.json({ client_id: 'intent-client' }, { status })
+          ? Response.json(overrides.registrationClient ?? { client_id: 'intent-client' }, {
+              status,
+            })
           : new Response(null, { status });
       }
       if (url === 'https://auth.example.com/token') {
@@ -181,9 +187,12 @@ describe('mcp-oauth ↔ daemon mcp.oauth.* (PROTOCOL.md §5.22)', () => {
     expect(authorizationUrl?.searchParams.get('resource')).toBe('https://mcp.example.com/mcp');
     expect(authorizationUrl?.searchParams.get('scope')).toBe('mcp:read mcp:write');
     expect(registrationBody).toMatchObject({
+      client_name: 'Intent',
+      client_uri: 'https://intentapp.dev',
       redirect_uris: [expect.stringMatching(/^http:\/\/127\.0\.0\.1:\d+\/callback$/)],
       token_endpoint_auth_method: 'none',
     });
+    expect(tokenBody?.has('client_secret')).toBe(false);
     expect(tokenBody?.get('resource')).toBe('https://mcp.example.com/mcp');
     expect(tokenBody?.get('code_verifier')).toMatch(/^[A-Za-z0-9_-]{43}$/);
     expect(requestMock).toHaveBeenCalledExactlyOnceWith('mcp.oauth.set', {
@@ -200,6 +209,185 @@ describe('mcp-oauth ↔ daemon mcp.oauth.* (PROTOCOL.md §5.22)', () => {
       },
     });
     now.mockRestore();
+  });
+
+  it('registers Intent with client_secret_post for Figma metadata and uses the DCR secret', async () => {
+    const clientSecret = randomBytes(32).toString('base64url');
+    let authorizationUrl: URL | undefined;
+    let registrationBody: Record<string, unknown> | undefined;
+    let tokenBody: URLSearchParams | undefined;
+    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      switch (String(input)) {
+        case 'https://mcp.figma.com/mcp':
+          return new Response(null, {
+            status: 401,
+            headers: {
+              'WWW-Authenticate':
+                'Bearer resource_metadata="https://mcp.figma.com/.well-known/oauth-protected-resource"',
+            },
+          });
+        case 'https://mcp.figma.com/.well-known/oauth-protected-resource':
+          return Response.json({
+            resource: 'https://mcp.figma.com/mcp',
+            authorization_servers: ['https://api.figma.com'],
+            scopes_supported: ['mcp:connect'],
+          });
+        case 'https://api.figma.com/.well-known/oauth-authorization-server':
+          return Response.json({
+            issuer: 'https://api.figma.com',
+            authorization_endpoint: 'https://www.figma.com/oauth/mcp',
+            token_endpoint: 'https://api.figma.com/v1/oauth/token',
+            registration_endpoint: 'https://api.figma.com/v1/oauth/mcp/register',
+            token_endpoint_auth_methods_supported: ['client_secret_basic', 'client_secret_post'],
+            code_challenge_methods_supported: ['S256'],
+            authorization_response_iss_parameter_supported: true,
+          });
+        case 'https://api.figma.com/v1/oauth/mcp/register':
+          registrationBody = JSON.parse(String(init?.body));
+          return Response.json(
+            {
+              client_id: 'intent-figma-client',
+              client_secret: clientSecret,
+              token_endpoint_auth_method: 'client_secret_post',
+            },
+            { status: 201 },
+          );
+        case 'https://api.figma.com/v1/oauth/token':
+          tokenBody = new URLSearchParams(String(init?.body));
+          expect(init?.headers).toEqual({ 'Content-Type': 'application/x-www-form-urlencoded' });
+          return Response.json({ access_token: 'access-value', refresh_token: 'refresh-value' });
+        default:
+          throw new Error(`Unexpected fetch: ${String(input)}`);
+      }
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    openExternalMock.mockImplementationOnce(async (value: string) => {
+      authorizationUrl = new URL(value);
+      const callback = new URL(authorizationUrl.searchParams.get('redirect_uri')!);
+      callback.search = new URLSearchParams({
+        code: 'authorization-code',
+        state: authorizationUrl.searchParams.get('state')!,
+        iss: 'https://api.figma.com',
+      }).toString();
+      expect((await realFetch(callback)).status).toBe(200);
+    });
+    const { initiateMcpOAuth } = await import('../main/mcp-oauth');
+
+    await expect(initiateMcpOAuth('srv-figma', 'https://mcp.figma.com/mcp')).resolves.toEqual({
+      success: true,
+    });
+
+    expect(registrationBody).toEqual({
+      client_name: 'Intent',
+      client_uri: 'https://intentapp.dev',
+      redirect_uris: [expect.stringMatching(/^http:\/\/127\.0\.0\.1:\d+\/callback$/)],
+      grant_types: ['authorization_code', 'refresh_token'],
+      response_types: ['code'],
+      token_endpoint_auth_method: 'client_secret_post',
+    });
+    expect(`${authorizationUrl?.origin}${authorizationUrl?.pathname}`).toBe(
+      'https://www.figma.com/oauth/mcp',
+    );
+    expect(authorizationUrl?.searchParams.get('scope')).toBe('mcp:connect');
+    expect(authorizationUrl?.searchParams.get('resource')).toBe('https://mcp.figma.com/mcp');
+    expect(authorizationUrl?.searchParams.has('client_secret')).toBe(false);
+    expect(authorizationUrl?.searchParams.get('code_challenge_method')).toBe('S256');
+    expect(authorizationUrl?.searchParams.get('code_challenge')).toBe(
+      createHash('sha256').update(tokenBody!.get('code_verifier')!).digest('base64url'),
+    );
+    expect(Object.fromEntries(tokenBody!)).toEqual({
+      grant_type: 'authorization_code',
+      code: 'authorization-code',
+      redirect_uri: authorizationUrl?.searchParams.get('redirect_uri'),
+      client_id: 'intent-figma-client',
+      client_secret: clientSecret,
+      code_verifier: expect.stringMatching(/^[A-Za-z0-9_-]{43}$/),
+      resource: 'https://mcp.figma.com/mcp',
+    });
+    expect(requestMock).toHaveBeenCalledExactlyOnceWith('mcp.oauth.set', {
+      serverId: 'srv-figma',
+      tokenBag: {
+        access_token: 'access-value',
+        refresh_token: 'refresh-value',
+        expires_at: undefined,
+        token_type: 'Bearer',
+        token_endpoint: 'https://api.figma.com/v1/oauth/token',
+        client_id: 'intent-figma-client',
+        client_secret: clientSecret,
+        scope: 'mcp:connect',
+      },
+    });
+    for (const [, init] of fetchMock.mock.calls) {
+      expect(init).toMatchObject({ redirect: 'error', signal: expect.any(AbortSignal) });
+    }
+  });
+
+  it.each([
+    { methods: undefined, selected: 'none' },
+    { methods: ['none'], selected: 'none' },
+    { methods: ['client_secret_basic', 'none'], selected: 'none' },
+    { methods: ['client_secret_post'], selected: 'client_secret_post' },
+    { methods: ['none', 'client_secret_post'], selected: 'client_secret_post' },
+  ])('requests $selected for advertised methods $methods', async ({ methods, selected }) => {
+    stubDiscovery({ tokenEndpointAuthMethods: methods, registrationStatus: 403 });
+    const { initiateMcpOAuth } = await import('../main/mcp-oauth');
+
+    const result = await initiateMcpOAuth('srv-provider', 'https://mcp.example.com/mcp');
+
+    const registrations = vi
+      .mocked(fetch)
+      .mock.calls.filter(([url]) => String(url).endsWith('/register'));
+    expect(registrations).toHaveLength(1);
+    expect(JSON.parse(String(registrations[0][1]?.body))).toMatchObject({
+      client_name: 'Intent',
+      client_uri: 'https://intentapp.dev',
+      token_endpoint_auth_method: selected,
+    });
+    expect(result).toEqual({ success: false, error: m.mcp_oauth_registrationRestricted_error() });
+    expect(openExternalMock).not.toHaveBeenCalled();
+    expect(requestMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { methods: ['client_secret_basic'] },
+    { methods: ['private_key_jwt'] },
+    { methods: [] },
+  ])('rejects unsupported method metadata $methods before registration', async ({ methods }) => {
+    stubDiscovery({ tokenEndpointAuthMethods: methods });
+    const { initiateMcpOAuth } = await import('../main/mcp-oauth');
+
+    const result = await initiateMcpOAuth('srv-provider', 'https://mcp.example.com/mcp');
+
+    expect(result).toEqual({
+      success: false,
+      error: m.mcp_oauth_tokenAuthUnsupported_error(),
+    });
+    expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).endsWith('/register'))).toBe(
+      false,
+    );
+    expect(openExternalMock).not.toHaveBeenCalled();
+    expect(requestMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { label: 'missing', secret: undefined },
+    { label: 'empty', secret: '' },
+    { label: 'null', secret: null },
+    { label: 'non-string', secret: 42 },
+  ])('rejects a $label client_secret for client_secret_post before consent', async ({ secret }) => {
+    stubDiscovery({
+      tokenEndpointAuthMethods: ['client_secret_post'],
+      registrationClient: { client_id: 'intent-client', client_secret: secret },
+    });
+    openExternalMock.mockRejectedValueOnce(new Error('Unexpected browser launch'));
+    const { initiateMcpOAuth } = await import('../main/mcp-oauth');
+
+    const result = await initiateMcpOAuth('srv-provider', 'https://mcp.example.com/mcp');
+
+    expect(result).toMatchObject({ success: false, error: expect.stringMatching(/registration/i) });
+    expect(openExternalMock).not.toHaveBeenCalled();
+    expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).endsWith('/token'))).toBe(false);
+    expect(requestMock).not.toHaveBeenCalled();
   });
 
   it('rejects protected-resource metadata for a different resource', async () => {
