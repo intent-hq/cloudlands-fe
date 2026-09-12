@@ -195,6 +195,7 @@ describe('verification planning', () => {
       'prettier',
       'eslint',
       'architecture',
+      'knip',
       'vitest-related',
       'vitest-ui-invariants',
       'tsc-renderer',
@@ -292,6 +293,25 @@ describe('verification planning', () => {
     );
     expect(plan.fallbackReasons).toEqual([]);
     expect(plan.checks.map((check) => check.id)).not.toContain('architecture');
+  });
+
+  it('runs knip repo-wide for code and knip-config changes but not for docs', () => {
+    const root = fixtureRoot({
+      'src/lib/example.ts': 'export const value = 1;',
+      'docs/guide.md': '# Guide',
+      'knip.jsonc': '{}',
+    });
+    const ids = (files: string[]) =>
+      createVerificationPlan(files, { root, ctTests: [] }).checks.map((check) => check.id);
+
+    const knip = createVerificationPlan(['src/lib/example.ts'], { root, ctTests: [] }).checks.find(
+      (check) => check.id === 'knip',
+    );
+    expect(knip?.args).toEqual(['run', 'lint:dead-code']);
+    expect(knip?.lockKind).toBeNull();
+
+    expect(ids(['docs/guide.md'])).not.toContain('knip');
+    expect(ids(['knip.jsonc'])).toEqual(['knip']);
   });
 
   it('runs the repo-wide UI invariant suites for renderer source changes', () => {

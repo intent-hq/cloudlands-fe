@@ -401,6 +401,13 @@ export function createVerificationPlan(files, options = {}) {
   );
   let architecture = files.some(isArchitectureSource);
   const typeCheckWrapper = files.includes('scripts/type-check.ts');
+  const deadCode = files.some(
+    (file) =>
+      CODE_EXTENSIONS.has(extname(file)) ||
+      file === 'knip.jsonc' ||
+      file === 'package.json' ||
+      /^tsconfig[^/]*\.json$/.test(file),
+  );
   const boundaries = new Set();
   let svelteCheck = false;
   let fullUnit = false;
@@ -421,6 +428,7 @@ export function createVerificationPlan(files, options = {}) {
     const known =
       CODE_EXTENSIONS.has(extname(file)) ||
       isKnownNonCode(file) ||
+      file === 'knip.jsonc' ||
       /^(?:scripts|tests\/integration)\//.test(file) ||
       /^(?:eslint|playwright|postcss|prettier|svelte|tailwind|tsconfig|vite|vitest)[^/]*\./.test(
         file,
@@ -463,6 +471,8 @@ export function createVerificationPlan(files, options = {}) {
         'type-check:validate',
       ]),
     );
+  if (deadCode)
+    checks.push(command('knip', 'Dead code (knip, repo-wide)', ['run', 'lint:dead-code']));
   if (fullUnit)
     checks.push(
       command(
