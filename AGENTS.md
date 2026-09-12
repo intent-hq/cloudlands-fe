@@ -47,6 +47,7 @@ in a monorepo checkout, where this repo mounts at `packages/cloudlands-fe/`.
 | module boundaries   | ../../docs/fe/MODULE_BOUNDARY_GUIDE.md                                                    |
 | motion perf traces  | `pnpm perf:chat-motion` — ../../docs/fe/DEVELOPER_GUIDE.md#chat-motion-performance-traces |
 | debugging           | ../../docs/fe/TROUBLESHOOTING_GUIDE.md, ../../docs/fe/IPC_DEBUG_GUIDE.md                  |
+| prod stack traces   | `pnpm resolve-stack <tag> < stack.txt` — rebuilds the tag with sourcemaps, maps frames    |
 | error handling      | ../../docs/fe/ERROR_HANDLING_SYSTEM.md                                                    |
 | TypeScript/types    | ../../docs/fe/TYPE_SYSTEM_GUIDE.md                                                        |
 | events/IPC          | ../../docs/fe/EVENT_SYSTEM.md                                                             |
