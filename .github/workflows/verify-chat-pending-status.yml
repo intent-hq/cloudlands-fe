@@ -23,10 +23,10 @@ jobs:
       - name: Checkout exact PR source
         uses: actions/checkout@v7
         with:
-          ref: f4652776e7f7bbae8943027655de615cc04edeae
+          ref: 46b070c77a58d250734c25c50b0b0e95d823df08
           persist-credentials: false
       - name: Verify source identity
-        run: test "$(git rev-parse HEAD)" = f4652776e7f7bbae8943027655de615cc04edeae
+        run: test "$(git rev-parse HEAD)" = 46b070c77a58d250734c25c50b0b0e95d823df08
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
         with:
@@ -53,12 +53,13 @@ jobs:
           src/lib/components/chat/__tests__/chat-panel-pending-status-spacing.ct.spec.ts
           src/lib/components/chat/__tests__/subscription-card-gap.ct.spec.ts
           src/lib/components/chat/__tests__/attention-flow-spacing-geometry.ct.spec.ts
+          src/lib/components/chat/__tests__/sticky-scroll-stability.ct.spec.ts
           --workers=1 --retries=0 --fail-on-flaky-tests --reporter=list,html,json
       - name: Upload browser evidence
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: chat-pending-status-f4652776
+          name: chat-pending-status-46b070c7
           path: |
             playwright-report/
             test-results/
