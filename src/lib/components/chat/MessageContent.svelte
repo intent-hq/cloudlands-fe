@@ -52,8 +52,8 @@
   import {
     getOperationalClusterSpacingClass,
     isAdjacentOperationalClusterRow,
+    isFollowedByOperationalClusterRow,
     isOperationalClusterBlock,
-    NESTED_REASONING_SECTION_SEAM_CLASS,
     OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS,
     OPERATIONAL_GROUP_CHILD_CONTENT_CLASS,
     OPERATIONAL_GROUP_CHILD_ROW_CLASS,
@@ -61,8 +61,10 @@
   import {
     dedupeKeys,
     getResponseGroupBlockKeys,
+    getResponseGroupCurrentChildIndex,
     isNestedReasoningSectionBoundary,
     isNestedReasoningSectionStart,
+    isTerminalResponseGroup,
     normalizeResponseGroups,
     shouldRenderResponseGroupInline,
   } from './response-group-blocks';
@@ -637,6 +639,7 @@
         content={getContentBlockText(block) || m.chat_shared_processing_fallback()}
         {workspaceId}
         {adjacentOperationalRow}
+        {searchPath}
       />
     {:else}
       <ThinkingBlock
@@ -644,6 +647,7 @@
         isStreaming={isStreaming && !nested && blockIndex === groupedBlocks.length - 1}
         {workspaceId}
         {adjacentOperationalRow}
+        {searchPath}
       />
     {/if}
   {/if}
@@ -655,6 +659,7 @@
   childBlock: ContentBlock,
   childIndex: number,
   nested: boolean = true,
+  suppressSpacing: boolean = false,
 )}
   {@const reasoningSectionStart = isNestedReasoningSectionStart(group, childIndex)}
   {@const reasoningSectionBoundary = isNestedReasoningSectionBoundary(
@@ -664,14 +669,9 @@
   )}
   <div
     class={`${
-      reasoningSectionBoundary
-        ? NESTED_REASONING_SECTION_SEAM_CLASS
-        : getOperationalClusterSpacingClass(
-            group.children,
-            childIndex,
-            isVisibleGroupChild,
-            group.isReasoningPhase,
-          )
+      suppressSpacing
+        ? ''
+        : getOperationalClusterSpacingClass(group.children, childIndex, isVisibleGroupChild)
     } ${
       nested
         ? isOperationalClusterBlock(childBlock)
@@ -714,6 +714,22 @@
           {/if}
         {/each}
       {:else}
+        {@const currentChildIndex = getResponseGroupCurrentChildIndex(group)}
+        {@const previewChildIndex =
+          group.isReasoningPhase && group.children[currentChildIndex]?.type !== 'tool_use'
+            ? -1
+            : currentChildIndex}
+        {@const currentChildKey = previewChildIndex >= 0 ? childKeys[previewChildIndex] : undefined}
+        {#snippet currentChild()}
+          {@render renderResponseGroupChild(
+            group,
+            blockIndex,
+            group.children[previewChildIndex],
+            previewChildIndex,
+            true,
+            true,
+          )}
+        {/snippet}
         <div
           class={getOperationalClusterSpacingClass(
             groupedBlocks,
@@ -726,12 +742,21 @@
           <ResponseGroup
             name={group.name}
             isStreaming={group.isStreaming}
-            isTerminal={blockIndex === lastVisibleTopLevelBlockIndex}
+            isTerminal={group.children.some((child) => child.type === 'thinking')
+              ? blockIndex === lastVisibleTopLevelBlockIndex
+              : isTerminalResponseGroup(groupedBlocks, blockIndex)}
             {isLastConversationMessage}
             blocks={group.children.filter(isVisibleGroupChild)}
             searchPath={chatSearchBlockPath(blockIndex)}
             reasoningPhase={group.isReasoningPhase}
+            currentChild={previewChildIndex >= 0 ? currentChild : undefined}
+            {currentChildKey}
             adjacentOperationalRow={isAdjacentOperationalClusterRow(
+              groupedBlocks,
+              blockIndex,
+              isVisibleTopLevelBlock,
+            )}
+            followedByOperationalRow={isFollowedByOperationalClusterRow(
               groupedBlocks,
               blockIndex,
               isVisibleTopLevelBlock,

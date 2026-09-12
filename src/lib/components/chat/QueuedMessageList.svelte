@@ -37,12 +37,13 @@
   } from './queued-message-row-motion';
 
   const QUEUE_ACTION_CLUSTER_CLASS =
-    'pointer-events-none absolute top-1/2 right-2.5 z-10 flex -translate-y-1/2 items-center gap-0.5 opacity-0 transition-opacity duration-[var(--motion-fast)] group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 motion-reduce:transition-none';
+    'queued-message-actions pointer-events-none absolute top-1/2 right-2.5 z-10 flex -translate-y-1/2 items-center gap-0.5 opacity-0 transition-opacity duration-[var(--motion-fast)] group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 motion-reduce:transition-none';
   const QUEUE_THREE_ACTION_CONTENT_CLASS = 'box-border pr-24';
 
   interface Props {
     messages: QueuedMessage[];
     disabled?: boolean;
+    compactMode?: boolean;
     onedit?: (
       messageId: string,
       content: string,
@@ -53,7 +54,15 @@
     ondone?: () => void;
   }
 
-  let { messages = [], disabled = false, onedit, onremove, onsendnow, ondone }: Props = $props();
+  let {
+    messages = [],
+    disabled = false,
+    compactMode = false,
+    onedit,
+    onremove,
+    onsendnow,
+    ondone,
+  }: Props = $props();
 
   const workspaceId = getWorkspaceRouteContext()?.workspaceId ?? undefined;
 
@@ -284,7 +293,7 @@
   }
 
   async function startEdit(message: QueuedMessage, programmatic = false) {
-    if (activeEditOperation || editingId === message.id) return;
+    if (disabled || activeEditOperation || editingId === message.id) return;
     const operation = beginEditOperation(message.id);
     await animateRowMutation(message.id, () => {
       editStartedProgrammatically = programmatic;
@@ -484,6 +493,9 @@
 {#if messages.length > 0}
   <div
     class="queued-messages-surface relative z-20 px-2 pt-3 pb-2"
+    class:pt-2={compactMode}
+    class:pb-1={compactMode}
+    data-compact={compactMode}
     data-testid="queued-messages-container"
     transition:safeSlide={{ duration: 200 }}
   >
@@ -590,9 +602,11 @@
                   {@render fileChips(message)}
                   <button
                     class="flex-1 min-w-0 text-left cursor-pointer {QUEUE_THREE_ACTION_CONTENT_CLASS}"
+                    class:cursor-default={disabled}
                     data-testid="queued-message-content"
                     data-mode="display"
                     onclick={() => startEdit(message)}
+                    {disabled}
                   >
                     <span class="block truncate" data-testid="queued-message-text">
                       {message.requeuedAfterFailure
@@ -648,3 +662,23 @@
   imageName={lightboxImageName}
   openerElement={lightboxOpenerElement}
 />
+
+<style>
+  .queued-messages-surface {
+    container-type: inline-size;
+  }
+
+  @container (max-width: 24rem) {
+    :global(.queued-message-actions) {
+      opacity: 1;
+      pointer-events: auto;
+    }
+  }
+
+  @media (hover: none) {
+    :global(.queued-message-actions) {
+      opacity: 1;
+      pointer-events: auto;
+    }
+  }
+</style>

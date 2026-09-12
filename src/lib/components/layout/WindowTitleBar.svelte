@@ -42,6 +42,7 @@
     WORKSPACE_TAB_MOTION_EASING,
     type WorkspaceTabBorderMaskBounds,
   } from './titlebar-geometry';
+  import { formatNativeWindowTitle } from './native-window-title';
   import DaemonStatusIndicator from './DaemonStatusIndicator.svelte';
   import WorkspaceTabStrip from './WorkspaceTabStrip.svelte';
   import WorkspaceRepoLauncher from './WorkspaceRepoLauncher.svelte';
@@ -179,10 +180,13 @@
       : '',
   );
 
-  // Update the native window title when displayText changes
+  // Update the shared native window title when its workspace context changes.
   $effect(() => {
-    const title = displayText || 'Intent';
-    // Update the native window title via IPC
+    const title = formatNativeWindowTitle({
+      focusedTabTitle: focusedTab?.title,
+      workspaceTitle: workspace?.title,
+      branch: workspace?.branch,
+    });
     invoke(IPC_CHANNELS.WINDOW.SET_TITLE, { title }).catch(() => {
       // Silently ignore errors (e.g., if not in Electron context)
     });

@@ -35,9 +35,12 @@
     /** True when the owning message is the conversation's final assistant message. */
     isLastConversationMessage?: boolean;
     children: Snippet;
+    currentChild?: Snippet;
+    currentChildKey?: string;
     blocks?: ContentBlock[];
     reasoningPhase?: boolean;
     adjacentOperationalRow?: boolean;
+    followedByOperationalRow?: boolean;
     searchPath?: string;
     class?: string;
   }
@@ -48,18 +51,34 @@
     isTerminal = false,
     isLastConversationMessage = false,
     children,
+    currentChild,
+    currentChildKey,
     blocks,
     reasoningPhase = false,
     adjacentOperationalRow = false,
+    followedByOperationalRow = false,
     searchPath,
     class: className = '',
   }: Props = $props();
 
-  const hasPreview = $derived((blocks?.length ?? 0) > 0);
-  // svelte-ignore state_referenced_locally -- intentional initial seed; the streaming-edge effect below manages transitions.
-  let isExpanded = $state(
-    (isStreaming && !hasPreview) || (!isStreaming && isTerminal && isLastConversationMessage),
+  const usesLegacyLifecycle = $derived(
+    !reasoningPhase ||
+      (blocks?.some((block) => block.type === 'tool_result') === true &&
+        !blocks.some((block) => block.type === 'thinking')),
   );
+
+  function automaticExpanded(
+    currentlyStreaming: boolean,
+    currentlyTerminal: boolean,
+    hasCurrentChild: boolean,
+  ): boolean {
+    if (!currentlyStreaming) return currentlyTerminal && isLastConversationMessage;
+    if (!usesLegacyLifecycle && currentlyTerminal) return true;
+    return reasoningPhase ? false : !hasCurrentChild;
+  }
+
+  // svelte-ignore state_referenced_locally -- intentional initial seed; the streaming-edge effect below manages transitions.
+  let isExpanded = $state(automaticExpanded(isStreaming, isTerminal, Boolean(currentChild)));
   let isClosing = $state(false);
   let isInitialized = false;
   let desiredExpanded = false;
@@ -108,19 +127,14 @@
   $effect(() => {
     const currentlyStreaming = isStreaming;
     const currentlyTerminal = isTerminal;
-    const currentlyHasPreview = hasPreview;
+    const hasCurrentChild = Boolean(currentChild);
     if (!isInitialized) {
       isInitialized = true;
       desiredExpanded = isExpanded;
       prevStreaming = currentlyStreaming;
       prevTerminal = currentlyTerminal;
-      if (currentlyStreaming && currentlyHasPreview && disclosureOverride === 'automatic') {
-        setExpanded(false);
-      } else if (!currentlyStreaming && disclosureOverride !== 'expanded-completed') {
-        // A terminal group of the conversation's final assistant message keeps
-        // its completed expansion across remounts (message finalization,
-        // reload); everything else in history mounts collapsed.
-        setExpanded(currentlyTerminal && isLastConversationMessage);
+      if (disclosureOverride === 'automatic') {
+        setExpanded(automaticExpanded(currentlyStreaming, currentlyTerminal, hasCurrentChild));
       }
       return;
     }
@@ -130,19 +144,35 @@
       if (!prevStreaming && disclosureOverride === 'expanded-completed') {
         disclosureOverride = 'automatic';
       }
-      if (disclosureOverride === 'automatic') setExpanded(!currentlyHasPreview);
+      if (!searchOwnsExpansion && disclosureOverride === 'automatic') {
+        setExpanded(automaticExpanded(currentlyStreaming, currentlyTerminal, hasCurrentChild));
+      }
       clearCollapseTimer();
     } else if (prevStreaming && !currentlyStreaming) {
-      if (currentlyTerminal) {
+      if (!usesLegacyLifecycle) {
+        clearCollapseTimer();
+        if (!searchOwnsExpansion && disclosureOverride === 'automatic') {
+          setExpanded(currentlyTerminal);
+        } else if (disclosureOverride === 'expanded-live') {
+          disclosureOverride = 'expanded-completed';
+        }
+      } else if (currentlyTerminal) {
         clearCollapseTimer();
         if (disclosureOverride !== 'collapsed') setExpanded(true);
       } else {
         scheduleCollapse();
       }
     } else if (prevTerminal && !currentlyTerminal) {
-      scheduleCollapse();
+      if (searchOwnsExpansion || disclosureOverride === 'expanded-completed') {
+        clearCollapseTimer();
+      } else {
+        scheduleCollapse();
+      }
     } else if (!prevTerminal && currentlyTerminal) {
       clearCollapseTimer();
+      if (!searchOwnsExpansion && disclosureOverride === 'automatic') {
+        setExpanded(true);
+      }
     } else if (
       !searchOwnsExpansion &&
       disclosureOverride !== 'expanded-completed' &&
@@ -181,11 +211,23 @@
   function restoreSearchExpansion() {
     if (!searchOwnsExpansion) return;
     searchOwnsExpansion = false;
-    if (isStreaming && disclosureOverride === 'automatic') {
-      setExpanded(!hasPreview);
+    if (usesLegacyLifecycle) {
+      if (isStreaming && disclosureOverride === 'automatic') {
+        setExpanded(!currentChild);
+        return;
+      }
+      setExpanded(false);
       return;
     }
-    setExpanded(false);
+    if (disclosureOverride === 'collapsed') setExpanded(false);
+    else if (
+      disclosureOverride === 'expanded-live' ||
+      disclosureOverride === 'expanded-completed'
+    ) {
+      setExpanded(true);
+    } else if (disclosureOverride === 'automatic') {
+      setExpanded(automaticExpanded(isStreaming, isTerminal, Boolean(currentChild)));
+    }
   }
 
   // Keep the collapsed row to one inert, current inline summary.
@@ -242,7 +284,7 @@
 {#snippet summary()}
   <span class="font-normal {OPERATIONAL_PRIMARY_CLASS}" data-testid="response-group-name"
     >{displayName}</span
-  >{#if textSnippet && !isExpanded && (!isStreaming || !hasPreview)}<InlineMarkdownSnippet
+  >{#if textSnippet && !isExpanded && (!isStreaming || !currentChild)}<InlineMarkdownSnippet
       content={textSnippet}
       class="ml-2.5 font-normal {OPERATIONAL_SECONDARY_CLASS}"
       testId="response-group-snippet"
@@ -250,14 +292,18 @@
 {/snippet}
 
 {#snippet preview()}
-  <CylinderScroller isActive={isStreaming} constrained>
+  <CylinderScroller isActive={isStreaming} constrained={false}>
     <div class="relative flex flex-col gap-0" data-response-group-content>
       <span
         class="operational-group-guide pointer-events-none absolute inset-y-0 w-px -translate-x-1/2 bg-border"
         data-operational-expanded-guide
         aria-hidden="true"
       ></span>
-      {@render children()}
+      {#key currentChildKey}
+        <div data-response-group-preview-child transition:safeDisclosureTransition>
+          {@render currentChild?.()}
+        </div>
+      {/key}
     </div>
   </CylinderScroller>
 {/snippet}
@@ -278,7 +324,7 @@
 <ChatOperationalRow
   {leading}
   {summary}
-  preview={!isExpanded && isStreaming && hasPreview ? preview : undefined}
+  preview={!isExpanded && isStreaming && currentChild ? preview : undefined}
   details={isExpanded ? details : undefined}
   interactive
   showChevron={false}
@@ -303,7 +349,7 @@
   testId="response-group"
   disclosureTestId="response-group-disclosure"
   summaryTestId="response-group-summary"
-  class={isExpanded ? `${className} mb-3` : className}
+  class={isExpanded && !followedByOperationalRow ? `${className} mb-3` : className}
   searchDisclosureId={searchPath ? `group:${searchPath}` : undefined}
   summarySearchPath={searchPath ? `${searchPath}:summary` : undefined}
   onSearchExpand={expandForSearch}

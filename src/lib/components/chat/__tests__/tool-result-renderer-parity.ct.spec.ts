@@ -72,7 +72,7 @@ test('renders grouped orphans in titled and headingless groups across both surfa
       'data-chat-search-block-path',
       'b:0:c:4',
     );
-    await expect(rows.first()).toHaveClass(/pt-1/);
+    await expect(rows.first()).toHaveClass(/pt-2/);
     await expect(rows.last()).toHaveClass(/pt-4/);
     expect(await rows.first().ariaSnapshot()).toContain('grouped-orphan-search-marker');
     const [groupBox, orphanBox] = await Promise.all([

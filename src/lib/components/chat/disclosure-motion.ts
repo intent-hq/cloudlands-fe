@@ -1,6 +1,6 @@
 import { cubicOut } from 'svelte/easing';
 import type { TransitionConfig } from 'svelte/transition';
-import { areAnimationsEnabled } from '$lib/utils/animations';
+import { areAnimationsEnabled, prefersReducedMotion } from '$lib/utils/animations';
 import { beforeFollowBottomMutation, type FollowBottomMutation } from '$lib/utils/smartScroll';
 
 interface DisclosureMotionParams {
@@ -11,13 +11,6 @@ interface DisclosureMotionParams {
 function numericStyle(style: CSSStyleDeclaration, property: keyof CSSStyleDeclaration): number {
   const value = Number.parseFloat(String(style[property]));
   return Number.isFinite(value) ? value : 0;
-}
-
-function prefersReducedMotion(): boolean {
-  return (
-    typeof window !== 'undefined' &&
-    window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true
-  );
 }
 
 /** Shared intrinsic-height disclosure motion with an optional followed-bottom lease. */

@@ -230,41 +230,40 @@ for (const theme of ['light', 'dark'] as const) {
         expect(toolBox.x).toBeCloseTo(laneBox.x, 1);
         expect(toolBox.x + toolBox.width).toBeCloseTo(laneBox.x + laneBox.width, 1);
 
-        const topLevelToolGeometry = await baseline
-          .locator('[data-testid="full-width-tool"] [data-operational-disclosure-row]')
-          .evaluate((element) => {
-            const row = element.getBoundingClientRect();
-            const icon = element
-              .querySelector('[data-operational-leading]')!
-              .getBoundingClientRect();
-            return { left: row.left, right: row.right, iconLeft: icon.left };
-          });
         for (const mode of ['static', 'streaming']) {
           const inlineGroup = component.locator(`[data-testid="headerless-inline-${mode}"]`);
-          await expect(inlineGroup.locator('[data-testid="response-group"]')).toHaveCount(0);
-          const inlineProse = inlineGroup.locator('[data-assistant-prose]');
+          const responseGroup = inlineGroup.locator('[data-testid="response-group"]');
+          await expect(responseGroup).toHaveCount(1);
+          const disclosure = responseGroup.getByTestId('response-group-disclosure');
+          if ((await disclosure.getAttribute('aria-expanded')) === 'false')
+            await disclosure.click();
+          const inlineProse = inlineGroup.getByText('Inline assistant prose', { exact: true });
           await expect(inlineProse).toHaveCount(1);
-          const inlineProseX = await inlineProse
-            .locator(':scope > *')
-            .first()
-            .evaluate((element) => element.getBoundingClientRect().left);
+          const inlineProseX = await inlineProse.evaluate(
+            (element) => element.getBoundingClientRect().left,
+          );
           expect(inlineProseX).toBeCloseTo(groupX, 1);
 
-          const inlineRows = inlineGroup.locator('[data-operational-disclosure-row]');
+          const inlineRows = responseGroup.locator(
+            '[data-response-group-child]:has([data-operational-disclosure-row])',
+          );
           await expect(inlineRows).toHaveCount(2);
           const inlineGeometry = await inlineRows.evaluateAll((elements) =>
             elements.map((element) => {
-              const row = element.getBoundingClientRect();
-              const icon = element
-                .querySelector('[data-operational-leading]')!
-                .getBoundingClientRect();
-              return { left: row.left, right: row.right, iconLeft: icon.left };
+              const box = element.getBoundingClientRect();
+              const parentBox = element.parentElement!.getBoundingClientRect();
+              return {
+                inset: box.left - parentBox.left,
+                marginLeft: getComputedStyle(element).marginLeft,
+                rightEdge: box.right,
+                parentRightEdge: parentBox.right,
+              };
             }),
           );
           for (const geometry of inlineGeometry) {
-            expect(geometry.left).toBeCloseTo(topLevelToolGeometry.left, 1);
-            expect(geometry.right).toBeCloseTo(topLevelToolGeometry.right, 1);
-            expect(geometry.iconLeft).toBeCloseTo(topLevelToolGeometry.iconLeft, 1);
+            expect(geometry.inset).toBeCloseTo(8 * zoom, 1);
+            expect(geometry.marginLeft).toBe('8px');
+            expect(geometry.rightEdge).toBeCloseTo(geometry.parentRightEdge, 1);
           }
         }
 

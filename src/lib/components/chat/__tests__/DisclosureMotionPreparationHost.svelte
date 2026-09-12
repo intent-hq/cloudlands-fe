@@ -68,6 +68,14 @@
   </div>
 {/snippet}
 
+{#snippet responseBody()}
+  <div class="flex flex-col gap-1.5 pb-4" data-testid="prepared-response-body">
+    <p data-testid="prepared-response-current">{responseText}</p>
+    <p>Second measured response line keeps the intrinsic destination non-trivial.</p>
+    <button type="button" data-testid="prepared-response-focus">Focusable response action</button>
+  </div>
+{/snippet}
+
 <section
   class="flex h-[520px] flex-col overflow-hidden bg-background text-foreground"
   class:dark={theme === 'dark'}
@@ -94,14 +102,13 @@
       <div class="h-24 border-b border-border/30 px-4 py-3">Historical turn {index}</div>
     {/each}
     <div class="h-16 px-4 py-3" data-testid="disclosure-visible-anchor">Visible anchor</div>
-    <ResponseGroup name="Prepared response group" {blocks} isStreaming={responseStreaming}>
-      <div class="flex flex-col gap-1.5 pb-4" data-testid="prepared-response-body">
-        <p data-testid="prepared-response-current">{responseText}</p>
-        <p>Second measured response line keeps the intrinsic destination non-trivial.</p>
-        <button type="button" data-testid="prepared-response-focus"
-          >Focusable response action</button
-        >
-      </div>
+    <ResponseGroup
+      name="Prepared response group"
+      {blocks}
+      isStreaming={responseStreaming}
+      currentChild={responseBody}
+    >
+      {@render responseBody()}
     </ResponseGroup>
     <EventSubscriptionsCard
       workspaceId="fixture-workspace"

@@ -3,6 +3,7 @@ import {
   getOperationalGroupContentSpacingClass,
   getOperationalClusterSpacingClass,
   isAdjacentOperationalClusterRow,
+  isFollowedByOperationalClusterRow,
 } from '../operational-disclosure-row';
 
 const blocks = (...types: string[]) => types.map((type) => ({ type }));
@@ -23,7 +24,6 @@ describe('operational cluster spacing', () => {
   it('adds 16px before group prose but keeps operational group children flush', () => {
     expect(getOperationalGroupContentSpacingClass(blocks('text'))).toBe('pt-4');
     expect(getOperationalGroupContentSpacingClass(blocks('tool_result', 'text'))).toBe('pt-4');
-    expect(getOperationalGroupContentSpacingClass(blocks('tool_result'))).toBe('pt-4');
     expect(getOperationalGroupContentSpacingClass(blocks('tool_use'))).toBe('');
     expect(getOperationalGroupContentSpacingClass(blocks('thinking'))).toBe('');
   });
@@ -43,6 +43,10 @@ describe('operational cluster spacing', () => {
     expect(content.map((_, index) => isAdjacentOperationalClusterRow(content, index))).toEqual([
       false,
       true,
+    ]);
+    expect(content.map((_, index) => isFollowedByOperationalClusterRow(content, index))).toEqual([
+      true,
+      false,
     ]);
   });
 
@@ -67,18 +71,20 @@ describe('operational cluster spacing', () => {
     expect(getOperationalClusterSpacingClass(blocks('thinking'), 0)).toBe('');
   });
 
-  it('adds 56px between consecutive reasoning groups', () => {
-    expect(getOperationalClusterSpacingClass(blocks('thinking', 'thinking'), 1)).toBe('pt-14');
+  it('keeps consecutive reasoning groups in the same compact operational cluster', () => {
+    expect(getOperationalClusterSpacingClass(blocks('thinking', 'thinking'), 1)).toBe('');
     expect(isAdjacentOperationalClusterRow(blocks('thinking', 'thinking'), 1)).toBe(true);
   });
 
-  it('keeps only consecutive nested history blocks compact when requested', () => {
+  it('keeps nested operational history compact without a special mode', () => {
     const content = blocks('text', 'thinking', 'thinking', 'tool_use');
-    const compact = (index: number) =>
-      getOperationalClusterSpacingClass(content, index, () => true, true);
 
-    expect(content.map((_, index) => compact(index))).toEqual(['', 'pt-4', '', '']);
-    expect(getOperationalClusterSpacingClass(content, 2)).toBe('pt-14');
+    expect(content.map((_, index) => getOperationalClusterSpacingClass(content, index))).toEqual([
+      '',
+      'pt-4',
+      '',
+      '',
+    ]);
   });
 
   it.each(['tool_use', 'content_group'])(
@@ -94,13 +100,13 @@ describe('operational cluster spacing', () => {
     expect(getOperationalClusterSpacingClass(blocks('tool_use'), 0)).toBe('');
   });
 
-  it('preserves 4px non-operational seams without a parent gap', () => {
+  it('uses one 8px seam between final-answer sections', () => {
     const content = blocks('text', 'image', 'proposal');
 
     expect(content.map((_, index) => getOperationalClusterSpacingClass(content, index))).toEqual([
       '',
-      'pt-1',
-      'pt-1',
+      'pt-2',
+      'pt-2',
     ]);
   });
 
@@ -110,9 +116,12 @@ describe('operational cluster spacing', () => {
 
     expect(
       content.map((_, index) => getOperationalClusterSpacingClass(content, index, visible)),
-    ).toEqual(['', 'pt-4', '', '', 'pt-6']);
+    ).toEqual(['', 'pt-4', '', '', 'pt-4']);
     expect(
       content.map((_, index) => isAdjacentOperationalClusterRow(content, index, visible)),
     ).toEqual([false, false, false, true, false]);
+    expect(
+      content.map((_, index) => isFollowedByOperationalClusterRow(content, index, visible)),
+    ).toEqual([false, true, false, false, false]);
   });
 });

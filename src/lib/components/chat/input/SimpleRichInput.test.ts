@@ -1331,6 +1331,28 @@ describe('SimpleRichInput automatic composer geometry', () => {
     expect(editorWrapper?.classList.contains('placeholder-hidden')).toBe(true);
   });
 
+  it('uses the host compact-mode decision instead of its local height', async () => {
+    renderInPanel(720, { compactMode: true });
+    const editor = screen.getByTestId('tiptap-editor');
+    const composer = screen.getByTestId('message-input');
+
+    await waitFor(() => expect(composer.getAttribute('style')).toContain('min-height: 56px'));
+    expect(composer.getAttribute('data-compact')).toBe('true');
+    await fireEvent.input(editor, { target: { value: 'draft' } });
+    await waitFor(() => expect(composer.getAttribute('style')).toContain('min-height: 65px'));
+  });
+
+  it('uses explicit normal mode instead of reapplying its local breakpoint', async () => {
+    renderInPanel(620, { compactMode: false });
+    const editor = screen.getByTestId('tiptap-editor');
+    const composer = screen.getByTestId('message-input');
+
+    await waitFor(() => expect(composer.getAttribute('style')).toContain('min-height: 80px'));
+    expect(composer.getAttribute('data-compact')).toBe('false');
+    await fireEvent.input(editor, { target: { value: 'draft' } });
+    await waitFor(() => expect(composer.getAttribute('style')).toContain('min-height: 100px'));
+  });
+
   it('settles rapid focus changes at the idle automatic height', async () => {
     renderInPanel(720);
     const editor = screen.getByTestId('tiptap-editor');

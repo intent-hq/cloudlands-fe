@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { extractReasoningHeading, extractReasoningHistory } from './reasoning-heading';
+import {
+  extractReasoningDisclosureHeading,
+  extractReasoningHeading,
+  extractReasoningHistory,
+} from './reasoning-heading';
 
 describe('extractReasoningHeading', () => {
   it('extracts a formatted Markdown heading after leading blank lines', () => {
@@ -41,6 +45,66 @@ describe('extractReasoningHeading', () => {
   });
 });
 
+describe('extractReasoningDisclosureHeading', () => {
+  it('promotes a specific formatted title after a generic provider heading', () => {
+    expect(
+      extractReasoningDisclosureHeading(
+        'Reasoning\n\n**Invoking workspace API to set title**\n\nCall the matching method.',
+      ),
+    ).toEqual({
+      heading: 'Invoking workspace API to set title',
+      body: 'Call the matching method.',
+    });
+  });
+
+  it('promotes only the first specific title and preserves later titles and body', () => {
+    expect(
+      extractReasoningDisclosureHeading(
+        'Thinking...\n\n**Inspecting state**\n\n**Calling the API**\n\nApply the result.',
+      ),
+    ).toEqual({
+      heading: 'Inspecting state',
+      body: '**Calling the API**\n\nApply the result.',
+    });
+  });
+
+  it('keeps a generic heading when only ordinary body prose follows', () => {
+    expect(extractReasoningDisclosureHeading('Reasoning\n\nInspect the current state.')).toEqual({
+      heading: 'Reasoning',
+      body: 'Inspect the current state.',
+    });
+  });
+
+  it('strips inline Markdown from the promoted title', () => {
+    expect(
+      extractReasoningDisclosureHeading(
+        'Reasoning\n\n**Invoking [workspace API](https://example.test) to set `title`**',
+      ),
+    ).toEqual({ heading: 'Invoking workspace API to set title', body: '' });
+  });
+
+  it.each([`**${'Detailed '.repeat(11).trim()}**`, `**${'x'.repeat(81)}**`])(
+    'does not promote a title outside the existing limits: %s',
+    (candidate) => {
+      const content = `Reasoning\n\n${candidate}`;
+      expect(extractReasoningDisclosureHeading(content)).toEqual({
+        heading: 'Reasoning',
+        body: candidate,
+      });
+    },
+  );
+
+  it.each(['reasoning...', 'REASONING…', 'Thinking!', 'thinking —'])(
+    'recognizes generic headings without case or punctuation sensitivity: %s',
+    (generic) => {
+      expect(extractReasoningDisclosureHeading(`${generic}\n\n**Inspecting state**`)).toEqual({
+        heading: 'Inspecting state',
+        body: '',
+      });
+    },
+  );
+});
+
 describe('extractReasoningHistory', () => {
   it('extracts every consecutive reasoning title before the body', () => {
     expect(
@@ -64,7 +128,7 @@ describe('extractReasoningHistory', () => {
     ]);
   });
 
-  it('stops title extraction when ordinary body content starts', () => {
+  it('extracts an explicit strong-only heading after ordinary body content', () => {
     expect(
       extractReasoningHistory(
         'Assessing delegation and tool availability\n\nBody paragraph.\n\n**Emphasized body text**',
@@ -72,8 +136,9 @@ describe('extractReasoningHistory', () => {
     ).toEqual([
       {
         title: 'Assessing delegation and tool availability',
-        body: 'Body paragraph.\n\n**Emphasized body text**',
+        body: 'Body paragraph.',
       },
+      { title: 'Emphasized body text', body: '' },
     ]);
   });
 });
