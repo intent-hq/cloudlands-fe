@@ -144,6 +144,7 @@ import {
   PANEL_LAYOUT_STORAGE_KEY_PREFIX,
   PANEL_LAYOUT_PERSISTENCE_VERSION,
   type PanelLayoutNode,
+  type PanelLayoutRestoreStatus,
   type PanelState,
   type PanelTab,
   type WorkspacePanelLayout,
@@ -245,11 +246,20 @@ const HISTORY_ACTIONS = [
 const restoredWorkspaceIds = new Set<string>();
 // Workspaces whose layout has been restored under the current backend
 // namespace this session. Unlike restoredWorkspaceIds (mount-lifecycle dedup,
-// cleared on unmount so a remount re-restores), this set survives unmounts: a
-// parked column's post-restore state stays authoritative, so background
-// mutations to it must keep persisting. Cleared only when the namespace's
-// provenance is void — backend switch, clearPanelLayout, saga teardown.
+// cleared on unmount), this set survives unmounts: a parked column's
+// post-restore in-memory state stays authoritative — background mutations to
+// it keep persisting, and a same-session scope remount keeps it instead of
+// re-installing the persisted copy (#4835). Cleared only when the namespace's
+// provenance is void — backend switch, clearPanelLayout, workspaceDeleted,
+// saga teardown.
 const restoredUnderBackendIds = new Set<string>();
+// Workspaces torn down by a full workspaceUnmounted (workspace tab closed)
+// since their last restore. Their guests and registry rows left with them
+// (the registry forgets what it reported), so the next mount is a reopen,
+// not an unpark: it restores from storage and settles again so the registry
+// reconciles the rows over the shell. Persistence keeps going meanwhile —
+// restoredUnderBackendIds is untouched.
+const tornDownWorkspaceIds = new Set<string>();
 // Workspaces with a mounted panel-layout scope. Backend switches re-restore
 // every mounted workspace (not just the active one): with the columns UI
 // several workspaces mount at boot, and their initial restore may have read
@@ -610,6 +620,10 @@ function* reconcileRestoredPanelColumns(wsId: string): SagaGenerator<boolean> {
   return true;
 }
 
+function isSettledRestoreStatus(status: PanelLayoutRestoreStatus): boolean {
+  return status === 'restored' || status === 'empty' || status === 'invalid';
+}
+
 function* handleWorkspaceMountedRestore(
   action: ReturnType<typeof workspaceMounted> | ReturnType<typeof panelLayoutScopeMounted>,
 ): SagaGenerator<void> {
@@ -624,12 +638,31 @@ function* handleWorkspaceMountedRestore(
     // missing storage entry here would replace it with a visually empty layout.
     restoredWorkspaceIds.add(wsId);
     restoredUnderBackendIds.add(wsId);
+    tornDownWorkspaceIds.delete(wsId);
     yield* call(resolvePendingInitialAgent, wsId);
     yield* call(persistPanelLayout, action);
     yield* call(reconcileDeferredSpec, wsId);
     return;
   }
+  if (
+    restoredUnderBackendIds.has(wsId) &&
+    !tornDownWorkspaceIds.has(wsId) &&
+    isSettledRestoreStatus(current.restoreStatus)
+  ) {
+    // Same-session scope remount (retention cap, workspace switch): the
+    // in-memory layout was restored under this backend and every mutation
+    // since has been persisted from it, so storage holds nothing newer.
+    // Re-running initializeLayout would install the persisted copy — a
+    // geometry shell for registry-hosted browser tabs
+    // (stripRegistryHeldFields) — over the live tabs and re-navigate the
+    // kept-alive offscreen guest (#4835). A restart, backend switch,
+    // workspaceDeleted, clearPanelLayout or a full workspaceUnmounted voids
+    // the provenance and still restores from storage.
+    restoredWorkspaceIds.add(wsId);
+    return;
+  }
   restoredWorkspaceIds.add(wsId);
+  tornDownWorkspaceIds.delete(wsId);
   let settleInflight!: () => void;
   inflightRestores.set(
     wsId,
@@ -920,6 +953,7 @@ function* handleWorkspaceUnmounted(
   const [wsId] = action.payload;
   restoredWorkspaceIds.delete(wsId);
   mountedWorkspaceIds.delete(wsId);
+  if (action.type === workspaceUnmounted.type) tornDownWorkspaceIds.add(wsId);
   yield* call(cancelHistoryForWorkspace, historyMailboxes, wsId);
   try {
     yield* call(clearPanelLayoutAdapter, wsId);
@@ -1232,6 +1266,7 @@ export function* panelLayoutSaga(options?: {
     }
     restoredWorkspaceIds.clear();
     restoredUnderBackendIds.clear();
+    tornDownWorkspaceIds.clear();
     mountedWorkspaceIds.clear();
   }
 }
