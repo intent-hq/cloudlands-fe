@@ -287,6 +287,34 @@ describe('handleError call-TypeError classification', () => {
       expect(everythingLogged()).not.toContain('DIAGNOSTIC-URL-SENTINEL');
     });
 
+    it.each([
+      ['an IPv6 host', 'https://[::1]/private?probe=URL-PROBE-SENTINEL#frag', 'https://[::1]/'],
+      [
+        'a parenthesized path',
+        'https://example.invalid/private(part)?probe=URL-PROBE-SENTINEL#frag',
+        'https://example.invalid/',
+      ],
+      [
+        'a bracketed query key',
+        'https://example.invalid/private?key[]=URL-PROBE-SENTINEL#frag',
+        'https://example.invalid/',
+      ],
+      [
+        'a quoted URL',
+        '"https://example.invalid/private?probe=URL-PROBE-SENTINEL#frag"',
+        'https://example.invalid/',
+      ],
+    ])('scrubs a message URL with %s', (_label, url, keptPrefix) => {
+      invoke(typeErrorWithStack(`fetch failed at ${url} (retrying)`, ''));
+
+      const message = String(reportedDetails().message);
+      expect(message).toContain(keptPrefix);
+      expect(message).toContain('(retrying)');
+      expect(message).not.toContain('URL-PROBE-SENTINEL');
+      expect(message).not.toContain('private');
+      expect(everythingLogged()).not.toContain('URL-PROBE-SENTINEL');
+    });
+
     it('scrubs a full URL embedded in a stack frame while keeping the script basename', () => {
       const frames = [
         '    at load (https://cdn.example.invalid/assets/deep/vendor.js:12:34?probe=STACK-URL-SENTINEL#hash)',

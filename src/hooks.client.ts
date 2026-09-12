@@ -52,10 +52,16 @@ function isBitsUiTeardownError(error: unknown): boolean {
 // truncated. No page URL and no arbitrary rejection payload is logged (intent-hq/intent#4774).
 const DIAGNOSTIC_TEXT_LIMIT = 500;
 const DIAGNOSTIC_STACK_FRAMES = 8;
-const URL_PATTERN = /[a-z][a-z0-9+.-]*:\/\/[^\s'"()<>[\]]+/gi;
+// A URL token runs to the next whitespace: parentheses and brackets are legal URL characters,
+// so they must not terminate the match. Trailing delimiters (the stack-frame ")", quotes,
+// sentence punctuation) are peeled off and re-appended around the scrubbed URL.
+const URL_PATTERN = /[a-z][a-z0-9+.-]*:\/\/\S+/gi;
+const TRAILING_DELIMITERS = /[)\]}>'".,;:]+$/;
 const SCRIPT_BASENAME = /[^/]+\.[cm]?[jt]s(?::\d+){0,2}$/;
 
-function scrubUrl(url: string): string {
+function scrubUrl(token: string): string {
+  const suffix = TRAILING_DELIMITERS.exec(token)?.[0] ?? '';
+  const url = token.slice(0, token.length - suffix.length);
   const schemeEnd = url.indexOf('://');
   const scheme = url.slice(0, schemeEnd);
   const rest = url
@@ -66,9 +72,9 @@ function scrubUrl(url: string): string {
   const authority = slash === -1 ? rest : rest.slice(0, slash);
   const host = authority.slice(authority.lastIndexOf('@') + 1);
   const path = slash === -1 ? '' : rest.slice(slash);
-  if (path === '' || path === '/') return `${scheme}://${host}`;
+  if (path === '' || path === '/') return `${scheme}://${host}${suffix}`;
   const script = SCRIPT_BASENAME.exec(path)?.[0];
-  return `${scheme}://${host}/${script ?? '<redacted>'}`;
+  return `${scheme}://${host}/${script ?? '<redacted>'}${suffix}`;
 }
 
 function sanitizeDiagnosticText(text: string): string {
