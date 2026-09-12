@@ -4,6 +4,29 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.151.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.150.0...v2.151.0) (2026-09-12)
+
+
+### 🚀 Features
+
+* add resolve-stack script for production stack traces ([#2400](https://github.com/intent-hq/cloudlands-fe/issues/2400)) ([b131ccc](https://github.com/intent-hq/cloudlands-fe/commit/b131ccc5a3d04d350d406a0bac5341d2abbb7936))
+
+
+### 🐛 Bug Fixes
+
+* **browser:** capture scale-to-fit tabs at their displayed scale ([#2397](https://github.com/intent-hq/cloudlands-fe/issues/2397)) ([344402c](https://github.com/intent-hq/cloudlands-fe/commit/344402c15213d64cb4f4b532f7bfaa9b1e520836))
+* **browser:** keep agent tabs alive and owned while their workspace is out of view ([#2410](https://github.com/intent-hq/cloudlands-fe/issues/2410)) ([f2df5d8](https://github.com/intent-hq/cloudlands-fe/commit/f2df5d8d00fda1f97e0f3e5105e2452c4b17c2b8))
+* bump intentd sidecar to v0.9.45 ([#2403](https://github.com/intent-hq/cloudlands-fe/issues/2403)) ([04a6577](https://github.com/intent-hq/cloudlands-fe/commit/04a65770c7b2c4d291116fb8d348729b38f3927f))
+* bump intentd sidecar to v0.9.46 ([#2408](https://github.com/intent-hq/cloudlands-fe/issues/2408)) ([0db4d71](https://github.com/intent-hq/cloudlands-fe/commit/0db4d71bfe21cf18436dcd72c6f1871e0c1b3642))
+* bump intentd sidecar to v0.9.47 ([#2411](https://github.com/intent-hq/cloudlands-fe/issues/2411)) ([23ace90](https://github.com/intent-hq/cloudlands-fe/commit/23ace90795a9b115f36430b2b8fb79f1fcf09124))
+* bump intentd sidecar to v0.9.48 ([#2413](https://github.com/intent-hq/cloudlands-fe/issues/2413)) ([b97b6cf](https://github.com/intent-hq/cloudlands-fe/commit/b97b6cfded4e14f8035bef7a02c24fd8e7b7644d))
+* **catalog:** wire operational row gap into chat polish preview ([#2406](https://github.com/intent-hq/cloudlands-fe/issues/2406)) ([0096b83](https://github.com/intent-hq/cloudlands-fe/commit/0096b8397f4512d724d6f77b9d8507c967ba29f4))
+* **comments:** stop Collapse click from re-focusing the comment card ([#2405](https://github.com/intent-hq/cloudlands-fe/issues/2405)) ([4b582ab](https://github.com/intent-hq/cloudlands-fe/commit/4b582ab9090471a0a18a53c5099d4cfd86c979d8))
+* **ct:** isolate the composer-geometry spec's browser context per test ([#2401](https://github.com/intent-hq/cloudlands-fe/issues/2401)) ([81674d0](https://github.com/intent-hq/cloudlands-fe/commit/81674d020b8be22d8fd9145de4e3555e6ab20868))
+* honor gitignore and nested repo boundaries in Themis pin scanner ([#2396](https://github.com/intent-hq/cloudlands-fe/issues/2396)) ([ace3b5b](https://github.com/intent-hq/cloudlands-fe/commit/ace3b5bc1a00acfc42386e3444ff1a1da0c49710))
+* key code-block syntax palette on the root theme class ([#2399](https://github.com/intent-hq/cloudlands-fe/issues/2399)) ([5212f90](https://github.com/intent-hq/cloudlands-fe/commit/5212f90495c5221123145b6e12246d19c8ec1dff))
+* **release:** only notify issues closed by a delivered fix PR ([#2394](https://github.com/intent-hq/cloudlands-fe/issues/2394)) ([d1ec266](https://github.com/intent-hq/cloudlands-fe/commit/d1ec26651cc3f101b740d3f970d7fd54bf4b0268))
+
 ## [2.150.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.149.3...v2.150.0) (2026-09-12)
 
 
