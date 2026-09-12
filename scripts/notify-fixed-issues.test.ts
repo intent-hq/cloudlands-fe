@@ -101,14 +101,19 @@ function git(...args: string[]) {
   return result.stdout.trim();
 }
 
-// Writes the stub's answer for issue `n`: state, no further pages, then one
-// TSV row per linked PR (merged follows from state; the oid is empty unless
-// given).
-function fixture(n: number, state: 'OPEN' | 'CLOSED', linked: LinkedPr[] = []) {
+// Writes the stub's answer for issue `n`: state, pageInfo.hasNextPage (false
+// unless given), then one TSV row per linked PR (merged follows from state;
+// the oid is empty unless given).
+function fixture(
+  n: number,
+  state: 'OPEN' | 'CLOSED',
+  linked: LinkedPr[] = [],
+  { hasNextPage = false }: { hasNextPage?: boolean } = {},
+) {
   const rows = linked.map((pr) =>
     [pr.repo, String(pr.number), pr.state, String(pr.state === 'MERGED'), pr.sha ?? ''].join('\t'),
   );
-  writeFileSync(join(issuesDir, String(n)), [state, 'false', ...rows, ''].join('\n'));
+  writeFileSync(join(issuesDir, String(n)), [state, String(hasNextPage), ...rows, ''].join('\n'));
 }
 
 function compareStatus(tag: string, sha: string, status: string) {
@@ -145,6 +150,12 @@ function expectControlOnly(stdout: string) {
 function expectGateSkip(stderr: string, detail: string) {
   expect(stderr).toContain(
     `issue #10: fix is not fully delivered by this release (${detail}); skipping — a later release picks it up`,
+  );
+}
+
+function expectIndeterminate(stderr: string, detail: string) {
+  expect(stderr).toContain(
+    `warning: issue #10: completeness is indeterminate (${detail}); skipping to avoid a possibly-false claim`,
   );
 }
 
@@ -305,8 +316,23 @@ describe('notify-fixed-issues.sh completeness gate', () => {
     const { status, stdout, stderr } = run();
     expect(status, stderr).toBe(0);
     expectControlOnly(stdout);
-    expect(stderr).toContain(
-      'warning: issue #10: completeness is indeterminate (could not enumerate linked fix PRs on intent-hq/intent#10); skipping to avoid a possibly-false claim',
-    );
+    expectIndeterminate(stderr, 'could not enumerate linked fix PRs on intent-hq/intent#10');
   });
+
+  it.each(['CLOSED', 'OPEN'] as const)(
+    'treats a truncated linked-PR list on a %s issue as indeterminate, with a warning',
+    (state) => {
+      fixture(
+        10,
+        state,
+        [{ repo: SOURCE_REPO, number: 77, state: 'MERGED', sha: CONTAINED_FE_SHA }],
+        { hasNextPage: true },
+      );
+      const { status, stdout, stderr } = run();
+      expect(status, stderr).toBe(0);
+      expectControlOnly(stdout);
+      expectIndeterminate(stderr, 'issue has more than 100 linked PRs; enumeration truncated');
+      expect(stderr).not.toContain('issue is still open');
+    },
+  );
 });
