@@ -104,7 +104,59 @@ describe('RawNoteCodeEditor', () => {
     expect(mockState.noteSelect).toHaveBeenCalledWith({}, 'ws-1', 'note-1');
     expect(mockState.updateNoteContent).toHaveBeenCalledWith('ws-1', 'note-1', '# Updated', {
       immediate: false,
+      baseContent: '# Heading',
     });
+  });
+
+  // The draft is saved against the rev of the text it was typed on. A
+  // note:updated refetch during the 1 s debounce advances the store; without
+  // the base rev the write-service would send the refetched rev and the daemon
+  // would treat the draft as an exact write over the agent's change.
+  it('saves a draft against the rev it was typed on, not a rev refetched during the debounce', async () => {
+    const { rerender } = render(RawNoteCodeEditor, {
+      props: { workspaceId: 'ws-1', noteId: 'note-1', content: '# Heading', rev: 4 },
+    });
+
+    await fireEvent.input(screen.getByTestId('code-editor'), {
+      target: { value: '# Heading local' },
+    });
+    await rerender({
+      workspaceId: 'ws-1',
+      noteId: 'note-1',
+      content: '# AGENT\n# Heading',
+      rev: 5,
+    });
+    await vi.advanceTimersByTimeAsync(1000);
+
+    expect(mockState.updateNoteContent).toHaveBeenCalledWith('ws-1', 'note-1', '# Heading local', {
+      immediate: false,
+      baseRev: 4,
+      baseContent: '# Heading',
+    });
+  });
+
+  it('bases the next draft on the rev of an external update it synced to', async () => {
+    const { rerender } = render(RawNoteCodeEditor, {
+      props: { workspaceId: 'ws-1', noteId: 'note-1', content: '# Heading', rev: 4 },
+    });
+
+    await rerender({
+      workspaceId: 'ws-1',
+      noteId: 'note-1',
+      content: '# AGENT\n# Heading',
+      rev: 5,
+    });
+    await fireEvent.input(screen.getByTestId('code-editor'), {
+      target: { value: '# AGENT\n# Heading local' },
+    });
+    await vi.advanceTimersByTimeAsync(1000);
+
+    expect(mockState.updateNoteContent).toHaveBeenCalledWith(
+      'ws-1',
+      'note-1',
+      '# AGENT\n# Heading local',
+      { immediate: false, baseRev: 5, baseContent: '# AGENT\n# Heading' },
+    );
   });
 
   it('updates editor content when the note content prop changes externally', async () => {
@@ -146,7 +198,7 @@ describe('RawNoteCodeEditor', () => {
       'ws-1',
       'note-1',
       '# Updated Before Toggle',
-      { immediate: true },
+      { immediate: true, baseContent: '# Heading' },
     );
   });
 
@@ -164,6 +216,7 @@ describe('RawNoteCodeEditor', () => {
     expect(mockState.noteSelect).toHaveBeenCalledWith({}, 'ws-1', 'note-1');
     expect(mockState.updateNoteContent).toHaveBeenCalledWith('ws-1', 'note-1', '# Note 1 Draft', {
       immediate: false,
+      baseContent: '# Note 1',
     });
     expect(mockState.updateNoteContent).not.toHaveBeenCalledWith(
       'ws-1',

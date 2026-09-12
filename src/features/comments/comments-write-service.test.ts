@@ -252,33 +252,31 @@ describe('commentsWriteService (fake seam, real store)', () => {
     expect(selectNoteById.select(appStore.state, WS, 'note-rev')?.rev).toBe(4);
   });
 
-  it('add then debounced content save carries the post-add rev — no conflict toast', async () => {
+  // Daemon model for the two race tests below: comment.add bumps the server
+  // rev (the daemon's anchor rewrite); setContent replaces on an exact rev and
+  // three-way merges on a stale one — never a conflict — echoing the merged
+  // text and the post-write rev. A stale-rev save here merges the editor's
+  // anchor insertion with the daemon's own anchor rewrite (identical inserts),
+  // so the text converges either way.
+  function daemonSetContent(server: { rev: number }) {
+    return (_id: string, content: string, _expectedVersion?: number) => {
+      server.rev += 1;
+      return Promise.resolve({ success: true, newContent: content, noteRev: server.rev });
+    };
+  }
+
+  it('add then debounced content save sends the draft baseline rev; the daemon merges — no conflict toast', async () => {
     vi.useFakeTimers();
     try {
       const WS = 'ws-rev-3';
       seedNote(WS, makeNote(WS, 'note-rev', { rev: 3, content: 'body' }));
 
-      // Stateful daemon-conditional mocks (§11.4-D): comment.add bumps the
-      // server rev (the daemon's anchor rewrite); setContent rejects with a
-      // -32005-shaped conflict when expectedVersion mismatches.
-      let serverRev = 3;
+      const server = { rev: 3 };
       commentsApi.add.mockImplementation(() => {
-        serverRev += 1;
+        server.rev += 1;
         return Promise.resolve({ success: true });
       });
-      notesApi.setContent.mockImplementation(
-        (_id: string, _c: string, expectedVersion?: number) => {
-          if (expectedVersion !== serverRev) {
-            return Promise.resolve({
-              success: false,
-              error: 'conflict',
-              conflict: { current: makeNote(WS, 'note-rev', { rev: serverRev }) },
-            });
-          }
-          serverRev += 1;
-          return Promise.resolve({ success: true });
-        },
-      );
+      notesApi.setContent.mockImplementation(daemonSetContent(server));
 
       // The editor's anchor insertion triggers the debounced save; the add is
       // still in flight when the debounce is armed (the race window).
@@ -290,11 +288,16 @@ describe('commentsWriteService (fake seam, real store)', () => {
       });
       updateNoteContent(WS, 'note-rev', 'body with anchors');
       await adding;
+      // The add advanced the stored rev to 4 without an echo of its text.
+      expect(selectNoteById.select(appStore.state, WS, 'note-rev')?.rev).toBe(4);
       await vi.advanceTimersByTimeAsync(NOTE_CONTENT_SAVE_DEBOUNCE_MS + 1);
 
-      // The save read the post-add rev (4), not the stale seeded rev (3).
-      expect(notesApi.setContent).toHaveBeenCalledWith('note-rev', 'body with anchors', 4, WS);
+      // The draft was typed against rev 3 and that is what it is based on:
+      // the save carries 3 (the daemon three-way merges), not the stored 4
+      // (an exact-rev save would replace the daemon's anchor rewrite).
+      expect(notesApi.setContent).toHaveBeenCalledWith('note-rev', 'body with anchors', 3, WS);
       expect(toast.warning).not.toHaveBeenCalled();
+      expect(toast.error).not.toHaveBeenCalled();
       expect(selectNoteById.select(appStore.state, WS, 'note-rev')?.rev).toBe(5);
     } finally {
       vi.runOnlyPendingTimers();
@@ -302,40 +305,28 @@ describe('commentsWriteService (fake seam, real store)', () => {
     }
   });
 
-  it('debounced save flushed while the add is STILL in flight queues behind it and reads the post-add rev', async () => {
+  it('debounced save flushed while the add is STILL in flight queues behind it and lands after it', async () => {
     // Pins the queue-serialization mechanism itself: the add is a deferred
     // promise that is still unresolved when the debounce fires, so
     // `flushContent` enqueues behind it on the note's mutation queue instead
-    // of racing it with the stale rev.
+    // of racing it to the daemon.
     vi.useFakeTimers();
     try {
       const WS = 'ws-rev-4';
       seedNote(WS, makeNote(WS, 'note-rev', { rev: 3, content: 'body' }));
 
-      let serverRev = 3;
+      const server = { rev: 3 };
       let resolveAdd!: (r: { success: boolean }) => void;
       commentsApi.add.mockImplementation(
         () =>
           new Promise((resolve) => {
             resolveAdd = (r) => {
-              serverRev += 1;
+              server.rev += 1;
               resolve(r);
             };
           }),
       );
-      notesApi.setContent.mockImplementation(
-        (_id: string, _c: string, expectedVersion?: number) => {
-          if (expectedVersion !== serverRev) {
-            return Promise.resolve({
-              success: false,
-              error: 'conflict',
-              conflict: { current: makeNote(WS, 'note-rev', { rev: serverRev }) },
-            });
-          }
-          serverRev += 1;
-          return Promise.resolve({ success: true });
-        },
-      );
+      notesApi.setContent.mockImplementation(daemonSetContent(server));
 
       const adding = addComment('note-rev', makeComment('c-race-2'), {
         workspaceId: WS,
@@ -345,7 +336,7 @@ describe('commentsWriteService (fake seam, real store)', () => {
       });
       updateNoteContent(WS, 'note-rev', 'body with anchors');
       // The debounce fires while comment.add is still unresolved — the flush
-      // must wait on the queue rather than read the stale rev 3.
+      // must wait on the queue rather than overtake the add.
       await vi.advanceTimersByTimeAsync(NOTE_CONTENT_SAVE_DEBOUNCE_MS + 1);
       expect(notesApi.setContent).not.toHaveBeenCalled();
 
@@ -354,8 +345,11 @@ describe('commentsWriteService (fake seam, real store)', () => {
       await vi.advanceTimersByTimeAsync(1);
 
       expect(notesApi.setContent).toHaveBeenCalledTimes(1);
-      expect(notesApi.setContent).toHaveBeenCalledWith('note-rev', 'body with anchors', 4, WS);
+      // The draft's baseline (3) is sent; the add's rev bump is the daemon's
+      // own rewrite, which the merge reconciles with the identical anchors.
+      expect(notesApi.setContent).toHaveBeenCalledWith('note-rev', 'body with anchors', 3, WS);
       expect(toast.warning).not.toHaveBeenCalled();
+      expect(toast.error).not.toHaveBeenCalled();
       expect(selectNoteById.select(appStore.state, WS, 'note-rev')?.rev).toBe(5);
     } finally {
       vi.runOnlyPendingTimers();

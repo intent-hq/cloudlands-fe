@@ -19,7 +19,6 @@ type KnownWindowEventName =
   // to reconcile workspace deltas missed while unfocused.
   | 'focus'
   | 'navigate-message'
-  | 'note-content-update'
   | 'note:restore-scroll-position'
   | 'panel:focus-content'
   // Browser-emitted built-in event; consumed by a saga via takeEveryFromWindowEvent

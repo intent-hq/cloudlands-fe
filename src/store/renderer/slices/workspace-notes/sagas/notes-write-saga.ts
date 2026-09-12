@@ -13,6 +13,7 @@ import {
 
 import { appClient } from '$lib/client';
 import type { MutationResult, NoteMetadataPatch } from '$lib/client';
+import { rebaseText } from '$lib/notes/text-rebase';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
 import { ContentType, NoteVisibility } from '$shared/types';
@@ -47,8 +48,16 @@ import { toRuntimeNote } from './note-payload-mappers';
 const logger = createLogger('NotesWriteSaga');
 export const NOTE_CONTENT_SAVE_DEBOUNCE_MS = 800;
 
-type PendingContent = { workspaceId: string; noteId: string; content: string };
-type ContentCommand = PendingContent & { kind: 'content' };
+// A draft is enqueued as the very same object that `unackedDrafts` holds, so
+// an in-place rebase reaches a command already waiting on the queue.
+type PendingContent = {
+  kind: 'content';
+  workspaceId: string;
+  noteId: string;
+  content: string;
+  seq: number;
+};
+type ContentCommand = PendingContent;
 type MetadataCommand = {
   kind: 'metadata';
   workspaceId: string;
@@ -64,6 +73,20 @@ type WorkspaceCleanupAction = ReturnType<typeof workspaceUnmounted>;
 type ObservedAction = { type: string; payload?: unknown };
 
 const pendingContent = new Map<string, PendingContent>();
+// Sequence number of the most recent local edit per key (mirrors
+// `notes-write-service.ts`): a save's echo is authoritative only when no later
+// local edit exists — debounced, queued behind it, or in flight.
+const latestEditSeq = new Map<string, number>();
+// Every draft not yet acknowledged by the daemon, per key, in edit order
+// (mirrors `notes-write-service.ts`): the debounced one plus those queued or
+// in flight. A superseded save's echo rebases the later drafts in place, so a
+// queued command's content is the rebased text by the time it is sent.
+const unackedDrafts = new Map<string, PendingContent[]>();
+// Rev of the daemon text the current local edit chain is based on (mirrors
+// `notes-write-service.ts`): set when a chain starts from a clean state,
+// advanced to each echo's rev as the pending drafts are rebased onto it, and
+// sent as `expectedVersion`.
+const draftBaseRev = new Map<string, number>();
 let noteMutationQueue: Channel<MutationEnvelope> | undefined;
 
 function noteKey(workspaceId: string, noteId: string): string {
@@ -160,26 +183,100 @@ function* reconcileConflict(
   return true;
 }
 
-function* advanceRevision(workspaceId: string, noteId: string, sentRev: number) {
+function* setRevisionIfNewer(workspaceId: string, noteId: string, nextRev: number) {
   const current = yield* selectNoteById.effect(workspaceId, noteId);
-  if (current?.rev !== undefined && current.rev >= sentRev + 1) return;
-  yield* put(applyLocalNoteUpdate(workspaceId, noteId, { rev: sentRev + 1 }));
+  if (current?.rev !== undefined && current.rev >= nextRev) return;
+  yield* put(applyLocalNoteUpdate(workspaceId, noteId, { rev: nextRev }));
+}
+
+function* advanceRevision(workspaceId: string, noteId: string, sentRev: number) {
+  yield* call(setRevisionIfNewer, workspaceId, noteId, sentRev + 1);
+}
+
+/**
+ * A superseded save's echo has landed (mirrors `notes-write-service.ts`):
+ * replay the later drafts' edits (relative to the sent text) onto the echoed
+ * text so the next save neither re-applies persisted intent nor swallows a
+ * local undo, re-base the chain on the echo's rev, and show the newest
+ * (rebased) draft in the store — unless a refetch already landed a rev newer
+ * than the echo (`storeIsNewer`), whose content must stay visible rather than
+ * be hidden by an older echo's draft while the store keeps the newer rev.
+ */
+function* rebasePendingDrafts(
+  command: ContentCommand,
+  echoed: string,
+  echoedRev: number | undefined,
+  storeIsNewer: boolean,
+) {
+  const { workspaceId, noteId } = command;
+  const key = noteKey(workspaceId, noteId);
+  const later = (unackedDrafts.get(key) ?? []).filter((d) => d.seq > command.seq);
+  if (echoed !== command.content) {
+    for (const draft of later) draft.content = rebaseText(command.content, echoed, draft.content);
+  }
+  if (echoedRev !== undefined) draftBaseRev.set(key, echoedRev);
+  if (storeIsNewer) return;
+  const newest = later[later.length - 1];
+  if (!newest) return;
+  const stored = yield* selectNoteById.effect(workspaceId, noteId);
+  if (stored?.content !== newest.content) {
+    yield* put(applyLocalNoteUpdate(workspaceId, noteId, { content: newest.content }));
+  }
+}
+
+/**
+ * Apply the daemon's `note.setContent` response as the authoritative local
+ * state (mirrors `notes-write-service.ts`): the merged `newContent` replaces
+ * the store content and the rev comes from the echoed `rev` when present, else
+ * `sentRev + 1` (older daemons). When a newer local edit exists the echo is
+ * not applied verbatim; the later drafts are rebased onto it instead
+ * (`rebasePendingDrafts`). A refetch that already landed a newer rev keeps its
+ * content on both paths.
+ */
+function* applyContentSaveResult(
+  command: ContentCommand,
+  sentRev: number | undefined,
+  result: MutationResult,
+) {
+  const { workspaceId, noteId, seq } = command;
+  const echoed = result.newContent ?? command.content;
+  const nextRev = result.noteRev ?? (sentRev !== undefined ? sentRev + 1 : undefined);
+  const stored = yield* selectNoteById.effect(workspaceId, noteId);
+  const superseded = latestEditSeq.get(noteKey(workspaceId, noteId)) !== seq;
+  const storeIsNewer = stored?.rev !== undefined && nextRev !== undefined && stored.rev > nextRev;
+  if (superseded) {
+    yield* call(rebasePendingDrafts, command, echoed, nextRev, storeIsNewer);
+  } else if (!storeIsNewer && stored?.content !== echoed) {
+    yield* put(applyLocalNoteUpdate(workspaceId, noteId, { content: echoed }));
+  }
+  if (nextRev !== undefined) yield* call(setRevisionIfNewer, workspaceId, noteId, nextRev);
+}
+
+function forgetDraft(key: string, draft: PendingContent): void {
+  const remaining = (unackedDrafts.get(key) ?? []).filter((d) => d !== draft);
+  if (remaining.length > 0) unackedDrafts.set(key, remaining);
+  else unackedDrafts.delete(key);
 }
 
 function* saveContent(command: ContentCommand) {
-  const { workspaceId, noteId, content } = command;
+  const { workspaceId, noteId } = command;
+  const key = noteKey(workspaceId, noteId);
   const note = yield* selectNoteById.effect(workspaceId, noteId);
-  const rev = note?.rev;
+  // The rev the draft is based on is always sent; it is absent only when the
+  // note was never loaded (last-writer-wins). The daemon merges rather than
+  // conflicts, so a failure here is a generic failure — no reload+toast
+  // conflict path. `command.content` is read here, not at enqueue time: an
+  // earlier save's echo may have rebased it while queued.
+  const rev = draftBaseRev.get(key) ?? note?.rev;
   try {
     const result: MutationResult = yield* call(
       [appClient.notes, appClient.notes.setContent],
       noteId,
-      content,
+      command.content,
       rev,
       workspaceId,
     );
     if (!result.success) {
-      if (yield* call(reconcileConflict, workspaceId, noteId, result)) return;
       logger.error('Failed to save note content', result.error);
       toast.error(m.notes_writeService_saveFailed_error(), {
         description: result.error ?? m.notes_writeService_unknown_error(),
@@ -187,10 +284,18 @@ function* saveContent(command: ContentCommand) {
       yield* call(refetchWorkspaceNotes, workspaceId);
       return;
     }
-    if (rev !== undefined) yield* call(advanceRevision, workspaceId, noteId, rev);
+    yield* call(applyContentSaveResult, command, rev, result);
   } catch (error) {
     logger.error('Failed to save note content', error);
     yield* call(refetchWorkspaceNotes, workspaceId);
+  } finally {
+    forgetDraft(key, command);
+    // This was the latest edit and nothing later can compare against it; the
+    // next edit chain starts from the store's (now in-sync) rev.
+    if (latestEditSeq.get(key) === command.seq) {
+      latestEditSeq.delete(key);
+      draftBaseRev.delete(key);
+    }
   }
 }
 
@@ -279,9 +384,8 @@ export function* flushPendingNoteContent(workspaceId: string, noteId: string) {
   const pending = pendingContent.get(key);
   if (!pending) return;
   pendingContent.delete(key);
-  const command: ContentCommand = { kind: 'content', ...pending };
-  if (noteMutationQueue) yield* enqueueMutation(noteMutationQueue, command, true);
-  else yield* call(runMutation, command);
+  if (noteMutationQueue) yield* enqueueMutation(noteMutationQueue, pending, true);
+  else yield* call(runMutation, pending);
 }
 
 function* handleContentAction(
@@ -290,17 +394,30 @@ function* handleContentAction(
 ) {
   const [workspaceId, noteId, content, immediate] = action.payload;
   if (!workspaceId || !noteId || typeof content !== 'string') return;
-  yield* put(applyLocalNoteUpdate(workspaceId, noteId, { content }));
   const key = noteKey(workspaceId, noteId);
-  const pending = { workspaceId, noteId, content };
+  if (!draftBaseRev.has(key)) {
+    const baseRev = (yield* selectNoteById.effect(workspaceId, noteId))?.rev;
+    if (baseRev !== undefined) draftBaseRev.set(key, baseRev);
+  }
+  yield* put(applyLocalNoteUpdate(workspaceId, noteId, { content }));
+  const seq = (latestEditSeq.get(key) ?? 0) + 1;
+  latestEditSeq.set(key, seq);
+  const pending: PendingContent = { kind: 'content', workspaceId, noteId, content, seq };
+  // A still-debounced draft is replaced, never sent.
+  const replaced = pendingContent.get(key);
+  if (replaced) forgetDraft(key, replaced);
+  unackedDrafts.set(key, [...(unackedDrafts.get(key) ?? []), pending]);
   pendingContent.set(key, pending);
   try {
     if (!immediate) yield* delay(NOTE_CONTENT_SAVE_DEBOUNCE_MS);
     if (pendingContent.get(key) !== pending) return;
     pendingContent.delete(key);
-    yield* enqueueMutation(queue, { kind: 'content', ...pending }, true);
+    yield* enqueueMutation(queue, pending, true);
   } finally {
-    if ((yield* cancelled()) && pendingContent.get(key) === pending) pendingContent.delete(key);
+    if ((yield* cancelled()) && pendingContent.get(key) === pending) {
+      pendingContent.delete(key);
+      forgetDraft(key, pending);
+    }
   }
 }
 
@@ -457,6 +574,15 @@ function* cleanupWorkspace(queue: Channel<MutationEnvelope>, action: WorkspaceCl
   for (const key of pendingContent.keys()) {
     if (key.startsWith(`${workspaceId}:`)) pendingContent.delete(key);
   }
+  for (const key of latestEditSeq.keys()) {
+    if (key.startsWith(`${workspaceId}:`)) latestEditSeq.delete(key);
+  }
+  for (const key of draftBaseRev.keys()) {
+    if (key.startsWith(`${workspaceId}:`)) draftBaseRev.delete(key);
+  }
+  for (const key of unackedDrafts.keys()) {
+    if (key.startsWith(`${workspaceId}:`)) unackedDrafts.delete(key);
+  }
   const queued = yield* flush(queue);
   for (const envelope of queued) {
     if (envelope.command.workspaceId === workspaceId) {
@@ -502,6 +628,9 @@ export function* notesWriteSaga() {
       if (envelope.completion) yield* put(envelope.completion, false);
     }
     pendingContent.clear();
+    latestEditSeq.clear();
+    draftBaseRev.clear();
+    unackedDrafts.clear();
     queue.close();
     if (noteMutationQueue === queue) noteMutationQueue = undefined;
   }

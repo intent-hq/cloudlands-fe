@@ -19,10 +19,19 @@
  * while a content save is still in flight, and every successful conditional
  * mutation advances the stored `rev` to `sentRev + 1` immediately
  * (`advanceNoteRev`) instead of waiting for the async `note:*`
- * subscribe→refetch loop. The daemon's success responses don't echo the entity,
- * but the advancement is authoritative: a conditional write succeeds only when
- * the stored rev equals `expectedVersion`, and every write bumps `rev` by
- * exactly one (intent-store `update_note_versioned`).
+ * subscribe→refetch loop. Metadata/delete responses don't echo the entity, but
+ * the advancement is authoritative: a conditional write succeeds only when the
+ * stored rev equals `expectedVersion`, and every write bumps `rev` by exactly
+ * one (intent-store `update_note_versioned`).
+ *
+ * Content saves are different: every save carries the loaded note's `rev` as
+ * `expectedVersion` (omitted only when the note was never loaded — plain
+ * last-writer-wins), and the daemon merges the write against concurrent edits
+ * instead of rejecting it. Its `note.setContent` response is therefore the
+ * authoritative local state: `newContent` replaces the store content and
+ * `rev` (when the daemon reports it; older daemons omit it and the
+ * `sentRev + 1` inference applies) replaces the stored rev. The reload+toast
+ * conflict path (`reconcileNoteConflict`) is kept for metadata and delete only.
  *
  * Dependency-light per src/store AGENTS.md: imports only the AppClient seam,
  * the configured store, slice actions/empty-state, collection-utils, and the
@@ -49,7 +58,9 @@ import {
   removeOptimisticNote,
 } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
 import { withPreservedUnmetDependsOn } from '$store/renderer/slices/workspace-notes/workspace-notes-normalization';
+import { registerNoteContentSettler } from '$store/renderer/slices/workspace-notes/note-content-settlement';
 import { createLogger } from '$lib/utils/client-logger';
+import { rebaseText } from '$lib/notes/text-rebase';
 
 const logger = createLogger('NotesWriteService');
 
@@ -59,6 +70,8 @@ export const NOTE_CONTENT_SAVE_DEBOUNCE_MS = 800;
 interface PendingContent {
   workspaceId: string;
   content: string;
+  /** Position in the note's local edit sequence (see `latestEditSeq`). */
+  seq: number;
 }
 
 // Debounce/queue state is keyed by `${workspaceId}:${noteId}` — note ids are
@@ -72,6 +85,23 @@ const pendingContent = new Map<string, PendingContent>();
 // `pendingContent` this spans the whole unacknowledged-save window: debounced
 // (pre-flush) saves live in `pendingContent`, flushed-but-unacked saves here.
 const inFlightContentSaves = new Map<string, number>();
+// Sequence number of the most recent local edit per key. A save's echo is
+// authoritative only when no later local edit exists — whether that edit is
+// still debounced, queued behind this save, or itself in flight — so the check
+// cannot rely on `pendingContent` alone (a flush removes the entry) nor on
+// comparing echoed text against sent text.
+const latestEditSeq = new Map<string, number>();
+// Every draft not yet acknowledged by the daemon, per key, in edit order —
+// the debounced one (also in `pendingContent`) plus those flushed and queued
+// or in flight. When a superseded save's echo lands, the later drafts are
+// rebased in place onto the echo (see `applyContentSaveResult`), so the object
+// a queued flush captured carries the rebased text by the time it is sent.
+const unackedDrafts = new Map<string, PendingContent[]>();
+// Rev of the daemon text the current local edit chain is based on, per key.
+// Set when a chain starts from a clean (in-sync) state, advanced to each echo's
+// rev as the pending draft is rebased onto that echo, and cleared once nothing
+// is pending or in flight. A save sends this as `expectedVersion`.
+const draftBaseRev = new Map<string, number>();
 
 function noteKey(workspaceId: string, noteId: string): string {
   return `${workspaceId}:${noteId}`;
@@ -197,6 +227,8 @@ async function refetchWorkspaceNotes(workspaceId: string): Promise<void> {
  * threaded `rev`), falling back to a workspace refetch when no entity is
  * supplied — and surface a non-destructive prompt. Returns `true` when a
  * conflict was handled so the caller skips the generic rollback/refetch path.
+ * Metadata and delete only: content saves are merged daemon-side and never
+ * route here.
  */
 function reconcileNoteConflict(
   workspaceId: string,
@@ -272,16 +304,51 @@ export async function createNote(
   return undefined;
 }
 
-/** Update note content optimistically; the network save is debounced per note. */
+/**
+ * Update note content optimistically; the network save is debounced per note.
+ *
+ * `baseRev` is the rev of the daemon text `content` was derived from. It is
+ * honoured only when it starts a new edit chain (nothing pending or in
+ * flight); a chain already under way keeps the base it was rebased onto. The
+ * store rev is the fallback, but it is not authoritative for the caller's
+ * text: a `note:updated` refetch can advance it before the first staging of a
+ * draft the editor derived from the older rev, and sending the newer rev as
+ * `expectedVersion` makes the daemon treat the draft as an exact write and
+ * delete the refetched change.
+ *
+ * `baseContent` is the text `content` was derived from. While a chain is
+ * under way its newest draft may have been rebased onto an echo the editor
+ * has not shown yet; a draft typed on the pre-rebase text would then read,
+ * relative to that newest draft, as deleting the rebased-in change. When
+ * `baseContent` differs from the newest draft, the caller's edits are replayed
+ * onto that draft instead. Without it the caller's text is taken to be derived
+ * from the newest draft.
+ */
 export function updateNoteContent(
   workspaceId: string,
   noteId: string,
   content: string,
-  options?: { immediate?: boolean },
+  options?: { immediate?: boolean; baseRev?: number; baseContent?: string },
 ): void {
-  appStore.dispatch(applyLocalNoteUpdate(workspaceId, noteId, { content }));
   const key = noteKey(workspaceId, noteId);
-  pendingContent.set(key, { workspaceId, content });
+  if (!draftBaseRev.has(key)) {
+    const baseRev = options?.baseRev ?? readNoteById(workspaceId, noteId)?.rev;
+    if (baseRev !== undefined) draftBaseRev.set(key, baseRev);
+  }
+  const newest = (unackedDrafts.get(key) ?? []).at(-1);
+  if (newest && options?.baseContent !== undefined && options.baseContent !== newest.content) {
+    content = rebaseText(options.baseContent, newest.content, content);
+  }
+  appStore.dispatch(applyLocalNoteUpdate(workspaceId, noteId, { content }));
+  const seq = (latestEditSeq.get(key) ?? 0) + 1;
+  latestEditSeq.set(key, seq);
+  const draft: PendingContent = { workspaceId, content, seq };
+  // A still-debounced draft is replaced, never sent.
+  const replaced = pendingContent.get(key);
+  const drafts = (unackedDrafts.get(key) ?? []).filter((d) => d !== replaced);
+  drafts.push(draft);
+  unackedDrafts.set(key, drafts);
+  pendingContent.set(key, draft);
 
   const existing = contentTimers.get(key);
   if (existing) clearTimeout(existing);
@@ -300,9 +367,58 @@ export function updateNoteContent(
   );
 }
 
-async function flushContent(key: string, noteId: string): Promise<void> {
+/**
+ * Outcome of an applied content save: the content and rev now in the store.
+ * When a newer local edit superseded the save's echo, this is that newer local
+ * text rebased onto the echo (the echo was not applied verbatim), not the
+ * daemon's merge of the older text. When a refetch had already landed a rev
+ * newer than the echo, the store keeps showing the refetch, and this is still
+ * the rebased local text at the echo's rev — what the editor must show.
+ */
+export interface AppliedNoteContent {
+  content: string;
+  rev?: number;
+}
+
+/**
+ * Flush any debounced content for this note immediately (no debounce wait)
+ * and resolve with the applied result once the daemon has answered. Resolves
+ * `undefined` when nothing was pending or the save failed. Serialized on the
+ * note's mutation queue like every other save.
+ */
+export function flushNoteContent(
+  workspaceId: string,
+  noteId: string,
+): Promise<AppliedNoteContent | undefined> {
+  return flushContent(noteKey(workspaceId, noteId), noteId);
+}
+
+/**
+ * Flush any debounced content for this note and resolve once every content
+ * save for it has been acknowledged — including saves already in flight,
+ * which `flushNoteContent` does not wait for (a flush removes the debounced
+ * entry before its RPC settles, so a second flush finds nothing). For an
+ * operation that must be ordered after the user's typing on the daemon
+ * (note.restoreVersion): requests are dispatched concurrently on the daemon
+ * side, so being behind a save on the wire does not order it after the save.
+ */
+export async function settleNoteContent(workspaceId: string, noteId: string): Promise<void> {
+  const key = noteKey(workspaceId, noteId);
+  while (hasPendingNoteContent(workspaceId, noteId)) {
+    await flushContent(key, noteId);
+    const tail = noteMutationQueues.get(key);
+    if (tail) await tail;
+    else await Promise.resolve();
+  }
+}
+
+// The version-restore saga settles through this seam, so every dispatcher of
+// restoreNoteVersion is ordered after the note's saves, not only the editor.
+registerNoteContentSettler(settleNoteContent);
+
+async function flushContent(key: string, noteId: string): Promise<AppliedNoteContent | undefined> {
   const pending = pendingContent.get(key);
-  if (!pending) return;
+  if (!pending) return undefined;
   pendingContent.delete(key);
   const timer = contentTimers.get(key);
   if (timer) {
@@ -311,13 +427,15 @@ async function flushContent(key: string, noteId: string): Promise<void> {
   }
   inFlightContentSaves.set(key, (inFlightContentSaves.get(key) ?? 0) + 1);
   try {
-    await enqueueNoteMutation(key, async () => {
-      // Forward the current known `rev` as `expectedVersion` (§11.4-D) when it is
-      // known; omit it entirely otherwise so behavior is unchanged (last-writer-wins).
-      // The explicit workspaceId pins the save to THIS workspace's note — shared
-      // ids like `spec` exist in every workspace and the fallback resolver cache
-      // is last-writer-wins across them.
-      const rev = readNoteById(pending.workspaceId, noteId)?.rev;
+    return await enqueueNoteMutation(key, async () => {
+      // Forward the rev the draft is based on as `expectedVersion` — the
+      // daemon merges against it. It is omitted only when the note was never
+      // loaded (no rev known), which degrades to last-writer-wins. The explicit
+      // workspaceId pins the save to THIS workspace's note — shared ids like
+      // `spec` exist in every workspace and the fallback resolver cache is
+      // last-writer-wins across them. `pending.content` is read here, not at
+      // flush time: an earlier save's echo may have rebased it while queued.
+      const rev = draftBaseRev.get(key) ?? readNoteById(pending.workspaceId, noteId)?.rev;
       const result = await appClient.notes.setContent(
         noteId,
         pending.content,
@@ -325,21 +443,109 @@ async function flushContent(key: string, noteId: string): Promise<void> {
         pending.workspaceId,
       );
       if (!result.success) {
-        if (reconcileNoteConflict(pending.workspaceId, noteId, result)) return;
         logger.error('Failed to save note content', result.error);
         toast.error(m.notes_writeService_saveFailed_error(), {
           description: result.error ?? m.notes_writeService_unknown_error(),
         });
         await refetchWorkspaceNotes(pending.workspaceId);
-        return;
+        return undefined;
       }
-      if (rev !== undefined) advanceNoteRev(pending.workspaceId, noteId, rev);
+      return applyContentSaveResult(noteId, pending, rev, result);
     });
   } finally {
+    const remaining = (unackedDrafts.get(key) ?? []).filter((d) => d !== pending);
+    if (remaining.length > 0) unackedDrafts.set(key, remaining);
+    else unackedDrafts.delete(key);
     const count = (inFlightContentSaves.get(key) ?? 1) - 1;
-    if (count <= 0) inFlightContentSaves.delete(key);
-    else inFlightContentSaves.set(key, count);
+    if (count <= 0) {
+      inFlightContentSaves.delete(key);
+      // Nothing left that could compare against the sequence, and the store
+      // is back in sync with the daemon: the next edit chain starts fresh.
+      if (!pendingContent.has(key)) {
+        latestEditSeq.delete(key);
+        draftBaseRev.delete(key);
+      }
+    } else {
+      inFlightContentSaves.set(key, count);
+    }
   }
+}
+
+/**
+ * A superseded save's echo has landed: replay the later drafts' edits
+ * (relative to the sent text) onto the echoed text so the next save neither
+ * re-applies intent the daemon already persisted nor swallows a local undo,
+ * and re-base the chain on the echo's rev. The newest draft is what the user
+ * sees, so it also replaces the store content — unless a refetch already
+ * landed a rev newer than the echo (`storeIsNewer`): that content is the
+ * daemon state the editor still has to apply, and an older echo's draft must
+ * not hide it while the store keeps the newer rev. The drafts are still
+ * rebased onto the echo and sent against its rev, so the daemon merges the
+ * newer change in rather than treating the draft as an exact write over it.
+ * Returns the newest draft's rebased text, if any.
+ */
+function rebasePendingDrafts(
+  key: string,
+  noteId: string,
+  sent: PendingContent,
+  echoed: string,
+  echoedRev: number | undefined,
+  storeIsNewer: boolean,
+): string | undefined {
+  const later = (unackedDrafts.get(key) ?? []).filter((d) => d.seq > sent.seq);
+  if (echoed !== sent.content) {
+    for (const draft of later) draft.content = rebaseText(sent.content, echoed, draft.content);
+  }
+  if (echoedRev !== undefined) draftBaseRev.set(key, echoedRev);
+  const newest = later[later.length - 1];
+  if (!newest) return undefined;
+  if (!storeIsNewer && readNoteById(sent.workspaceId, noteId)?.content !== newest.content) {
+    appStore.dispatch(applyLocalNoteUpdate(sent.workspaceId, noteId, { content: newest.content }));
+  }
+  return newest.content;
+}
+
+/**
+ * Apply the daemon's `note.setContent` response as the authoritative local
+ * state: the merged `newContent` replaces the store content, and the rev is
+ * set from the echoed `rev` when the daemon reports one, else inferred as
+ * `sentRev + 1` (older daemons). When a newer local edit exists (debounced,
+ * queued behind this save, or in flight) the echo is not applied verbatim —
+ * that would overwrite a keystroke — but the later drafts are rebased onto it
+ * (`rebasePendingDrafts`) so their save carries only the not-yet-persisted
+ * edits against the echo's rev. A concurrent refetch that already landed a
+ * newer rev keeps its content on both paths; the rebased draft is then
+ * resolved without replacing it, so the editor still receives every pending
+ * edit rather than a text that lacks them.
+ */
+function applyContentSaveResult(
+  noteId: string,
+  sent: PendingContent,
+  sentRev: number | undefined,
+  result: MutationResult,
+): AppliedNoteContent {
+  const { workspaceId, seq } = sent;
+  const key = noteKey(workspaceId, noteId);
+  const echoed = result.newContent ?? sent.content;
+  const nextRev = result.noteRev ?? (sentRev !== undefined ? sentRev + 1 : undefined);
+  const stored = readNoteById(workspaceId, noteId);
+  const superseded = latestEditSeq.get(key) !== seq;
+  const storeIsNewer = stored?.rev !== undefined && nextRev !== undefined && stored.rev > nextRev;
+  let rebased: string | undefined;
+  if (superseded) {
+    rebased = rebasePendingDrafts(key, noteId, sent, echoed, nextRev, storeIsNewer);
+  } else if (!storeIsNewer && stored?.content !== echoed) {
+    appStore.dispatch(applyLocalNoteUpdate(workspaceId, noteId, { content: echoed }));
+  }
+  if (nextRev !== undefined) setNoteRevIfNewer(workspaceId, noteId, nextRev);
+  if (storeIsNewer && rebased !== undefined) {
+    return nextRev !== undefined ? { content: rebased, rev: nextRev } : { content: rebased };
+  }
+  const applied = readNoteById(workspaceId, noteId);
+  if (!applied) return { content: echoed };
+  return applied.rev !== undefined
+    ? { content: applied.content, rev: applied.rev }
+    : { content: applied.content };
 }
 
 /** Update a note's title optimistically; rolls back to the prior title on failure. */

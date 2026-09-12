@@ -60,7 +60,6 @@
   import { setupCommentMarkClickHandlerV2 } from './note-with-comments/comment-mark-click-handler';
   import { Editor } from '@tiptap/core';
   import { NoteId } from '$shared/types/branded-ids';
-  import { TextSelection } from '@tiptap/pm/state';
 
   import { selectComments } from '$store/renderer/slices/comments/comments-selectors';
   import {
@@ -79,7 +78,12 @@
     restoreNoteVersion,
     clearNewlyCreatedNoteId,
   } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
-  import { hasPendingNoteContent, updateNoteContent } from '$features/notes/notes-write-service';
+  import {
+    flushNoteContent,
+    hasPendingNoteContent,
+    settleNoteContent,
+    updateNoteContent,
+  } from '$features/notes/notes-write-service';
   import {
     selectNoteById,
     selectNewlyCreatedNoteId,
@@ -526,7 +530,13 @@
   let isComponentDestroyed = false;
 
   // Track content updates
-  let isUpdatingFromExternal = false;
+  // Set by handleRestoreVersion and cleared by the external-update pipeline
+  // when it applies the restored content as a whole-document replacement.
+  // There is deliberately no "updating from external" flag around applies:
+  // the apply's transactions carry the external-update meta (filtered out of
+  // onUpdate by editor-config), so every update reaching debounceUpdate is
+  // user input, whenever it lands.
+  let isRestorePending = false;
   let saveDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   let isUserTyping = false;
   let userTypingTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -597,48 +607,11 @@
     return fallback;
   });
 
-  // Check if there are any active comments to display
-
-  $effect(() => {
-    const workspaceId = workspace?.id;
-    if (!noteId || !workspaceId) {
-      return;
-    }
-
-    const handleContentUpdate = (e: Event) => {
-      const detail = (e as CustomEvent).detail;
-      if (!detail || detail.workspaceId !== workspaceId || detail.noteId !== noteId) {
-        return;
-      }
-
-      const updatedContent = detail.content as string;
-      const source = detail.source as 'agent' | 'external';
-
-      logger.info('[NoteWithComments] Received store content update', {
-        noteId: detail.noteId,
-        updatedLength: updatedContent?.length ?? 0,
-        previousVersion: externalUpdateVersion,
-        source,
-        isUserTyping,
-      });
-
-      // Agent updates should be trusted - clear the user edit flag so the update is accepted
-      if (source === 'agent') {
-        logger.info('[NoteWithComments] Agent update - clearing hasUserEditedSinceLastSave', {
-          noteId: detail.noteId,
-        });
-        hasUserEditedSinceLastSave = false;
-      }
-
-      externalUpdateVersion = externalUpdateVersion + 1;
-    };
-
-    window.addEventListener('note-content-update', handleContentUpdate);
-
-    return () => {
-      window.removeEventListener('note-content-update', handleContentUpdate);
-    };
-  });
+  // Rev of the store content currentNoteContent derives from (undefined
+  // while the note is not in the store).
+  let currentNoteRev = $derived(
+    currentNote && currentNote.workspaceId === workspace?.id ? currentNote.rev : undefined,
+  );
 
   // Register markdown paste handler in capture phase so it fires BEFORE
   // ProseMirror's handler on the contenteditable child. This prevents double
@@ -731,6 +704,7 @@
     }
 
     lastKnownContent = currentNoteContent;
+    lastKnownRev = currentNoteRev;
     if (!isTooLargeForRichEditor) {
       isInitializing = false;
     }
@@ -739,12 +713,12 @@
 
   // Debounce content updates
   function debounceUpdate() {
-    // NOTE: intentionally NOT gated on isUpdatingFromExternal (monorepo#535).
-    // Programmatic applies never reach this handler — they carry the
+    // NOTE: programmatic applies never reach this handler — they carry the
     // external-update transaction meta, which editor-config's onUpdate
-    // filters out — so gating on the flag's fixed 200ms reset tail only
-    // dropped real keystrokes (no edit flag, no save timer → the keystroke was
-    // overwritten by the next external apply and never persisted).
+    // filters out — so everything arriving here is user input. A fixed
+    // post-apply reset tail used to gate this too and only dropped real
+    // keystrokes (no edit flag, no save timer → the keystroke was overwritten
+    // by the next external apply and never persisted; monorepo#535).
     if (shouldIgnoreLocalEditorUpdate({ isInitializing })) {
       return;
     }
@@ -758,11 +732,10 @@
 
     userTypingTimeout = setTimeout(() => {
       isUserTyping = false;
-      // Re-queue external updates skipped during the typing window
-      // (monorepo#534): isUserTyping is a non-reactive "let", so nothing else
-      // re-runs the pipeline once typing stops — and the debounced save would
-      // otherwise erase the divergence from Redux while the daemon still holds
-      // the external change.
+      // Fallback re-queue for a divergence that slipped past the safety-net
+      // (monorepo#534; the pipeline itself no longer skips while typing): the
+      // debounced save would otherwise erase the divergence from Redux while
+      // the daemon still holds the external change.
       //
       // ORDERING DEPENDENCY: this check must run before saveEditorContent()
       // fires — the save updates lastKnownContent and optimistically
@@ -822,6 +795,7 @@
         return;
       }
 
+      const baseline = lastKnownContent;
       // Update last known content when user saves
       lastKnownContent = markdownContent;
       // NOTE: We intentionally do NOT set hasUserEditedSinceLastSave = false here.
@@ -833,7 +807,25 @@
       {
         const note = selectNoteById.select(appStore.state, workspace.id, noteId);
         if (note) {
-          updateNoteContent(workspace.id, noteId, markdownContent, { immediate });
+          // The save's base is the rev the editor text was derived from, not
+          // whatever rev the store holds now: a note:updated refetch may
+          // have advanced the store past the text the user typed on, and
+          // naming that newer rev would make the daemon overwrite its change
+          // instead of merging. The store rev is that base only while it is
+          // authoritative (no save unacknowledged) and its content IS the
+          // editor's baseline — then it is also the freshest rev for it.
+          if (!hasPendingNoteContent(workspace.id, noteId) && (note.content || '') === baseline) {
+            lastKnownRev = note.rev;
+          }
+          // The baseline also names the text the draft was typed on: a
+          // pending draft the service has since rebased onto an echo the
+          // editor has not shown yet would otherwise make this draft read as
+          // deleting the rebased-in change.
+          updateNoteContent(workspace.id, noteId, markdownContent, {
+            immediate,
+            baseRev: lastKnownRev,
+            baseContent: baseline,
+          });
         }
       }
 
@@ -1003,39 +995,60 @@
   //
   // Restore a note to a specific version via saga.
   // The saga calls notesClient.restoreVersion and dispatches handleExternalNoteUpdate,
-  // which triggers the existing external content update flow (note-content-update event →
-  // externalUpdateVersion increment → runExternalContentUpdateEffect).
-  function handleRestoreVersion(versionId: string) {
-    if (!noteId || !workspace?.id) {
+  // which triggers the existing external content update flow (Redux content change →
+  // safety-net externalUpdateVersion increment → runExternalContentUpdateEffect).
+  async function handleRestoreVersion(versionId: string) {
+    const targetWorkspaceId = workspace?.id;
+    const targetNoteId = noteId;
+    if (!targetNoteId || !targetWorkspaceId) {
       logger.warn('[RestoreVersion] Cannot restore version: missing noteId or workspace');
       return;
     }
 
+    // Close the version history view
+    showVersionHistory = false;
+
+    // A save the user's typing already produced — still on the component's
+    // debounce or debounced in the write-service — must reach the daemon
+    // BEFORE the restore, as its own version. Sent after it, the daemon would
+    // merge that pre-restore draft onto the restored text (its base rev
+    // predates the restore), and the merged echo, not the restored version,
+    // is what the pipeline would then apply. A save already in flight is not
+    // safe either: the daemon dispatches requests concurrently, so the restore
+    // could commit first — wait for its ack too. Mirrors the saga's own flush.
+    if (saveDebounceTimer) {
+      clearTimeout(saveDebounceTimer);
+      saveDebounceTimer = null;
+      void saveEditorContent();
+    }
+    await settleNoteContent(targetWorkspaceId, targetNoteId);
+    if (isComponentDestroyed || noteId !== targetNoteId || workspace?.id !== targetWorkspaceId) {
+      return;
+    }
+
     logger.info('[RestoreVersion] Dispatching restoreNoteVersion', {
-      noteId,
+      noteId: targetNoteId,
       versionId,
-      workspaceId: workspace.id,
+      workspaceId: targetWorkspaceId,
     });
 
-    // Mark that we're expecting an external update (from the restore operation)
-    // This prevents the "newer writes in flight" logic from rejecting the restore
-    isUpdatingFromExternal = true;
+    // The restored content is applied as a whole-document replacement (no
+    // fold of unsaved edits); the pipeline clears this when it applies it.
+    isRestorePending = true;
 
     // Dispatch to saga — the saga will call notesClient.restoreVersion and
     // dispatch handleExternalNoteUpdate, which flows through the existing
     // external update system to update the editor
-    appStore.dispatch(restoreNoteVersion(workspace.id, noteId, versionId));
+    appStore.dispatch(restoreNoteVersion(targetWorkspaceId, targetNoteId, versionId));
 
-    // Safety: clear flag after timeout in case restore fails or doesn't trigger an update
+    // Safety: the saga surfaces no failure, so clear the flag after a timeout
+    // in case the restore fails and never produces an update to apply.
     setTimeout(() => {
-      if (isUpdatingFromExternal) {
-        logger.warn('[RestoreVersion] Safety timeout: clearing isUpdatingFromExternal flag');
-        isUpdatingFromExternal = false;
+      if (isRestorePending) {
+        logger.warn('[RestoreVersion] Safety timeout: clearing isRestorePending flag');
+        isRestorePending = false;
       }
     }, 5000);
-
-    // Close the version history view
-    showVersionHistory = false;
   }
 
   // Initialize editor
@@ -1049,11 +1062,13 @@
     const editorWorkspaceId = editorWorkspace?.id;
 
     let goalContent = '';
+    let goalRev: number | undefined;
     if (noteId && workspace?.id) {
       {
         const storeNote = selectNoteById.select(appStore.state, workspace.id, noteId);
         if (storeNote && storeNote.workspaceId === workspace.id) {
           goalContent = storeNote.content || '';
+          goalRev = storeNote.rev;
         }
       }
       // Fallback to content prop if note not found in store yet
@@ -1072,6 +1087,7 @@
 
     // Initialize last known content
     lastKnownContent = goalContent;
+    lastKnownRev = goalRev;
 
     logger.info('[NoteWithComments] initializeEditor: resolving goalContent', {
       noteId,
@@ -1393,6 +1409,11 @@
   // Track last known content to avoid unnecessary updates
   // NOTE: These are NOT $state to avoid triggering reactive loops when updated in effects
   let lastKnownContent: string = '';
+  // Daemon rev lastKnownContent was taken from (undefined when unknown):
+  // the base of the next save's expectedVersion, so a refetch that
+  // advances the store past the text the user typed on never gets claimed
+  // as that text's revision.
+  let lastKnownRev: number | undefined = undefined;
   let lastNoteId: string | undefined = undefined;
   let lastWorkspaceId: string | undefined = undefined;
   let lastSaveTimestamp: string | null = null; // Track when last save happened
@@ -1425,7 +1446,9 @@
       lastWorkspaceId = currentWorkspaceId;
       lastNoteId = currentNoteId;
       lastKnownContent = '';
+      lastKnownRev = undefined;
       hasUserEditedSinceLastSave = false;
+      isRestorePending = false;
       lastSafetyNetSyncedContent = undefined;
 
       // Clear comments from previous note and reset decorations immediately
@@ -1475,6 +1498,7 @@
         }
 
         const newContent = currentNoteContent;
+        const newRev = currentNoteRev;
         const conversionEditor = editor;
         const conversionWorkspaceId = workspace?.id;
         const conversionShowComments = showComments;
@@ -1497,14 +1521,13 @@
           isTooLargeForRichEditor = true;
           plainTextFallbackContent = newContent;
           lastKnownContent = newContent;
+          lastKnownRev = newRev;
           isInitializing = false;
-          isUpdatingFromExternal = false;
           return;
         }
         isTooLargeForRichEditor = false;
 
         isInitializing = true;
-        isUpdatingFromExternal = true;
 
         // Clear the editor and set new content
         processMarkdownToHTML(newContent, {
@@ -1548,21 +1571,20 @@
             editor: conversionEditor,
             html: newHtmlContent,
             cursorPos,
-            createTextSelection: TextSelection.create,
             logger,
           });
 
           lastKnownContent = newContent;
+          lastKnownRev = newRev;
 
           if (!didUpdate) {
             // Content is the same, no need to update
             if (!(await initializeCommentManager())) return;
 
-            // Ensure flags are cleared even when no update is needed.
+            // Ensure the flag is cleared even when no update is needed.
             setTimeout(() => {
               if (!ownsConversion()) return;
               isInitializing = false;
-              isUpdatingFromExternal = false;
             }, 200);
             return;
           }
@@ -1576,7 +1598,6 @@
           setTimeout(() => {
             if (!ownsConversion()) return;
             isInitializing = false;
-            isUpdatingFromExternal = false;
           }, 200);
         });
       }
@@ -1618,31 +1639,54 @@
       isDestroyed: () => isComponentDestroyed,
       getEditor: () => editor as any,
       getIsInitialized: () => isInitialized,
-      getIsUserTyping: () => isUserTyping,
       getHasPendingNoteContent: () =>
         workspace?.id && noteId ? hasPendingNoteContent(workspace.id, noteId) : false,
+      // Hand the current editor text to the write-service now — the pending
+      // flush must carry keystrokes still waiting on saveDebounceTimer.
+      stageUnsavedEdits: () => {
+        if (saveDebounceTimer) {
+          clearTimeout(saveDebounceTimer);
+          saveDebounceTimer = null;
+        }
+        const baseline = lastKnownContent;
+        void saveEditorContent();
+        // saveEditorContent moves lastKnownContent to the editor text before
+        // the write-service confirms it holds the save. A stage that queued
+        // nothing leaves those keystrokes unsaved: keep the baseline so the
+        // apply folds them in, and re-arm the debounced save to carry them.
+        if (lastKnownContent === baseline) return;
+        if (workspace?.id && noteId && hasPendingNoteContent(workspace.id, noteId)) return;
+        lastKnownContent = baseline;
+        saveDebounceTimer = setTimeout(() => {
+          saveEditorContent();
+        }, 1000);
+      },
+      flushNoteContent,
       onPendingSaveSettled: () => {
-        // Re-queue after a deferred apply's pending-save window closes. Reset
-        // the safety-net dedupe first: if the resolved save left the Redux
+        // Re-queue once an in-flight save's window closes. Reset the
+        // safety-net dedupe first: if the resolved save left the Redux
         // snapshot unchanged, the dedupe would otherwise block the re-fire.
         lastSafetyNetSyncedContent = undefined;
         externalUpdateVersion = externalUpdateVersion + 1;
       },
       getCurrentNoteContent: () => currentNoteContent,
+      getCurrentNoteRev: () => currentNoteRev,
       getLastKnownContent: () => lastKnownContent,
-      setLastKnownContent: (value) => {
+      setLastKnownContent: (value, rev) => {
         lastKnownContent = value;
+        lastKnownRev = rev;
       },
       getHasUserEditedSinceLastSave: () => hasUserEditedSinceLastSave,
       setHasUserEditedSinceLastSave: (value) => {
         hasUserEditedSinceLastSave = value;
       },
-      getIsUpdatingFromExternal: () => isUpdatingFromExternal,
-      setIsUpdatingFromExternal: (value) => {
-        isUpdatingFromExternal = value;
+      getIsRestorePending: () => isRestorePending,
+      setIsRestorePending: (value) => {
+        isRestorePending = value;
       },
       getWorkspaceId: () => workspace?.id,
       getNoteId: () => noteId,
+      getOwnerToken: () => noteConversionGeneration,
       getTaskAgentAssociations: () => {
         if (!workspace?.id || !noteId) return [];
         return selectAssociationsForNote.select(appStore.state, workspace.id, noteId);
@@ -1650,14 +1694,12 @@
       getCommentManager: () => commentManager,
       processMarkdownToHTML,
       processHTMLToMarkdown,
-      createTextSelection: TextSelection.create,
       logger,
       workspaceFileVersion,
     });
   });
 
-  // Safety-net effect: If the CustomEvent mechanism fails to fire,
-  // this watches Redux content directly and queues the existing
+  // Safety-net effect: watches Redux content directly and queues the
   // external-update pipeline by incrementing externalUpdateVersion.
   $effect(() => {
     // Read currentNoteContent reactively — this is $derived from the Redux selector
@@ -1671,8 +1713,6 @@
         lastKnownContent,
         lastSafetyNetSyncedContent,
         isInitialized,
-        isUserTyping,
-        isUpdatingFromExternal,
       })
     ) {
       logger.info('[NoteWithComments] Safety-net: Redux content diverged from lastKnownContent', {
@@ -1687,6 +1727,21 @@
       // Queue the existing external-update pipeline
       externalUpdateVersion = externalUpdateVersion + 1;
     }
+  });
+
+  // Baseline rev for an echo that changed nothing: a settled save whose merged
+  // text equals the editor baseline never goes through the external apply
+  // (the content matches), so nothing else records the rev it was
+  // acknowledged at, and a later refetch can then move the store past the
+  // baseline before the next draft is staged. Whenever the store text IS the
+  // baseline, its rev is the baseline's rev; it only ever advances, and a
+  // refetch holding other text never gets claimed for the baseline.
+  $effect(() => {
+    const reduxContent = currentNoteContent;
+    const reduxRev = currentNoteRev;
+    if (reduxRev === undefined || reduxContent !== lastKnownContent) return;
+    if (lastKnownRev !== undefined && reduxRev <= lastKnownRev) return;
+    lastKnownRev = reduxRev;
   });
 
   // // Watch for editable prop changes and update editor
@@ -1933,9 +1988,9 @@
                 contentsDiffer: delayedContent !== lastKnownContent,
               });
               // NOTE: hasUserEditedSinceLastSave intentionally does not gate this
-              // re-check — the flag latches on the first local edit, and genuinely
-              // unsaved edits are protected downstream by
-              // shouldRejectExternalUpdateDueToUnsavedEdits in the update pipeline.
+              // re-check — the flag latches on the first local edit, and unsaved
+              // edits are flushed and folded into the applied text downstream in
+              // the update pipeline.
               if (
                 delayedContent !== undefined &&
                 delayedContent !== lastKnownContent &&
@@ -2094,6 +2149,7 @@
             workspaceId={workspace.id}
             {noteId}
             content={currentNoteContent}
+            rev={currentNoteRev}
             {editable}
             {isPanelFocused}
           />
