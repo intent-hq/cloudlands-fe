@@ -100,7 +100,10 @@ export const selectAvailableEnabledProviderIds = store.createSelector((state): s
  * Droid / Auggie with `{ available: true, authenticated: false }` would
  * otherwise be offered as a dead-end retry target. Unknown auth (no
  * `authenticated` flag reported) stays offered, matching
- * `isProviderAuthenticationReady`. Does not change the generic picker policy.
+ * `isProviderAuthenticationReady`. The picker gate also always admits the
+ * active `defaultProviderId` even when explicitly disabled; a retry target
+ * must be genuinely enabled or the daemon's setModel gate rejects the switch.
+ * Does not change the generic picker policy.
  */
 export const selectQuotaRetryProviderIds = store.createSelector(
   (state, exhaustedProviderId: string): string[] => {
@@ -111,6 +114,7 @@ export const selectQuotaRetryProviderIds = store.createSelector(
       .filter(
         (id) =>
           selectNormalizedProviderId.select(state, id) !== exhausted &&
+          selectIsProviderEnabled.select(state, id) &&
           isProviderAuthenticationReady(id, statusMap[id]?.authenticated),
       );
   },

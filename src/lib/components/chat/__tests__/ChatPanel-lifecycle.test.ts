@@ -72,6 +72,10 @@ const mocks = vi.hoisted(() => {
       | undefined
     >(undefined),
     chatError: mutableReadable<string | null>(null),
+    chatQuotaExceeded: mutableReadable<{ providerId: string } | null>(null),
+    // Store state served by the app-store mock; tests seed real slice state
+    // here when a code path reads the store directly through `select`.
+    storeState: {} as unknown,
     failureCorrelation: mutableReadable<
       { turnCorrelation?: string; turnIdCorrelation?: string } | undefined
     >(undefined),
@@ -119,7 +123,7 @@ vi.mock('$lib/utils/stream-lifecycle-telemetry', async (importOriginal) => ({
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
-  return createAppStoreMockModule({ state: {}, dispatch: mocks.dispatch });
+  return createAppStoreMockModule({ state: () => mocks.storeState, dispatch: mocks.dispatch });
 });
 vi.mock('$lib/client', () => ({
   appClient: {
@@ -164,7 +168,7 @@ vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', () => ({
   selectChatLastChunkTime: mocks.selector(null),
   selectChatLiveStreamPhase: mocks.selector(null),
   selectChatModelUnavailable: mocks.selector(null),
-  selectChatQuotaExceeded: mocks.selector(null),
+  selectChatQuotaExceeded: Object.assign(() => mocks.chatQuotaExceeded, { select: () => null }),
   selectChatReceivedFirstChunk: mocks.selector(false),
   selectChatStatusEvents: mocks.selector([]),
   selectChatStreamingStartTime: mocks.selector(null),
@@ -380,6 +384,14 @@ import {
   chatInterestLeaseCount,
   clearAllChatInterestLeases,
 } from '$features/agent/utils/chat-interest-leases';
+import type { ProviderStatus } from '$store/renderer/slices/agent-availability/agent-availability-types';
+import { initialState as modelInitialState } from '$store/renderer/slices/model/model-slice';
+import {
+  initialState as providerCatalogInitialState,
+  providerCatalogLoaded,
+  providerCatalogReducer,
+} from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
+import { MOCK_PROVIDER_CATALOG } from '../../../../test/fixtures/provider-catalog.fixture';
 
 type Frame = { id: number; callback: FrameRequestCallback };
 let frames: Frame[];
@@ -665,6 +677,8 @@ beforeEach(() => {
   mocks.agentSessionIsStreaming.set(false);
   mocks.pendingProposalRecovery.set(undefined);
   mocks.chatError.set(null);
+  mocks.chatQuotaExceeded.set(null);
+  mocks.storeState = {};
   mocks.failureCorrelation.set(undefined);
   mocks.awaitingSwitchBackSnapshot.set(false);
   mocks.transcriptHydration.set('settled');
@@ -1246,6 +1260,112 @@ describe('ChatPanel mounted lifecycle', () => {
         turnCorrelation: expect.any(String),
       }),
     );
+  });
+
+  describe('quota-exceeded recovery banner (#4455)', () => {
+    // Seeds the real provider slices so the banner's alternatives come from
+    // the production `selectQuotaRetryProviderIds` policy, not a stubbed list.
+    function seedProviderState(
+      enabledProviders: Record<string, boolean>,
+      defaultProviderId: string,
+      providerStatusMap: Record<string, ProviderStatus>,
+    ) {
+      mocks.storeState = {
+        providerCatalog: providerCatalogReducer(
+          providerCatalogInitialState,
+          providerCatalogLoaded(MOCK_PROVIDER_CATALOG),
+        ),
+        model: { ...modelInitialState, defaultProviderId },
+        providerSettings: { enabledProviders, nonDisableableProviderIds: [] },
+        agentAvailability: {
+          providerStatusMap,
+          providerLoadingMap: {},
+          providerUserInfoLoadingMap: {},
+          hasCheckedOnce: true,
+          watchedTerminalIds: [],
+          npxStatus: null,
+        },
+      };
+    }
+
+    async function renderQuotaFailure() {
+      mocks.draftGet.mockResolvedValue(null);
+      mocks.agentMessages.set([
+        {
+          id: 'user-quota-1',
+          role: 'user',
+          content: 'do the thing',
+          timestamp: '2026-01-01T00:00:00.000Z',
+        },
+      ]);
+      const view = render(ChatPanel, {
+        props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+      });
+      await tick();
+      await tick();
+      mocks.chatError.set('usage limit reached');
+      mocks.chatQuotaExceeded.set({ providerId: 'claude-code' });
+      await tick();
+      await tick();
+      return view;
+    }
+
+    it('names the exhausted provider, offers only eligible alternatives, and retries on click', async () => {
+      seedProviderState({ auggie: true, 'claude-code': true, codex: true }, 'claude-code', {
+        auggie: { available: true, authenticated: true },
+        'claude-code': { available: true, authenticated: true },
+        codex: { available: true, authenticated: false },
+      });
+      const view = await renderQuotaFailure();
+
+      const banner = view.container.querySelector('[data-testid="error-quota-exceeded"]');
+      expect(banner).not.toBeNull();
+      expect(banner!.textContent).toContain('Anthropic Claude Code');
+      expect(view.container.querySelector('[data-testid="error-title"]')).toBeNull();
+
+      const retryButtons = screen.getAllByTestId('retry-with-provider');
+      expect(retryButtons.map((button) => button.textContent?.trim())).toEqual([
+        expect.stringContaining('Augment Auggie'),
+      ]);
+
+      mocks.dispatch.mockClear();
+      await fireEvent.click(retryButtons[0]);
+      expect(mocks.dispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'agentSessions/retryWithProviderRequested',
+          payload: ['agent-a', 'workspace-a', 'auggie'],
+        }),
+      );
+    });
+
+    it('does not offer a disabled default provider the model picker still admits', async () => {
+      seedProviderState({ auggie: true, 'claude-code': true, codex: false }, 'codex', {
+        auggie: { available: true, authenticated: true },
+        'claude-code': { available: true, authenticated: true },
+        codex: { available: true, authenticated: true },
+      });
+      await renderQuotaFailure();
+
+      const offered = screen
+        .getAllByTestId('retry-with-provider')
+        .map((button) => button.textContent ?? '');
+      expect(offered).toHaveLength(1);
+      expect(offered[0]).toContain('Augment Auggie');
+      expect(offered[0]).not.toContain('OpenAI Codex');
+    });
+
+    it('falls back to the plain failure banner when no alternative is eligible', async () => {
+      seedProviderState({ 'claude-code': true, codex: false }, 'claude-code', {
+        'claude-code': { available: true, authenticated: true },
+        codex: { available: true, authenticated: true },
+      });
+      const view = await renderQuotaFailure();
+
+      expect(view.container.querySelector('[data-testid="error-quota-exceeded"]')).toBeNull();
+      expect(screen.queryAllByTestId('retry-with-provider')).toEqual([]);
+      expect(view.container.querySelector('[data-stream-terminal-error="true"]')).not.toBeNull();
+      expect(view.container.querySelector('[data-testid="error-title"]')).not.toBeNull();
+    });
   });
 
   it('does not claim an assistant row is committed while first hydration hides it', async () => {

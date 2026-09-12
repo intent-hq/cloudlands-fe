@@ -254,7 +254,7 @@ describe('provider-settings selectors', () => {
 
   describe('selectQuotaRetryProviderIds (#4455)', () => {
     it('excludes the exhausted provider and keeps other signed-in providers', () => {
-      const state = mockState({ 'claude-code': true, codex: true }, 'auggie', {
+      const state = mockState({ auggie: true, 'claude-code': true, codex: true }, 'auggie', {
         auggie: { available: true, authenticated: true },
         'claude-code': { available: true, authenticated: true },
         codex: { available: true, authenticated: true },
@@ -265,7 +265,7 @@ describe('provider-settings selectors', () => {
     });
 
     it('excludes signed-out providers that the model-picker gate still admits', () => {
-      const state = mockState({ 'claude-code': true, codex: true }, 'auggie', {
+      const state = mockState({ auggie: true, 'claude-code': true, codex: true }, 'auggie', {
         auggie: { available: true, authenticated: true },
         'claude-code': { available: true, authenticated: true },
         codex: { available: true, authenticated: false },
@@ -277,7 +277,7 @@ describe('provider-settings selectors', () => {
     });
 
     it('keeps providers whose auth is unknown, matching isProviderAuthenticationReady', () => {
-      const state = mockState({ 'claude-code': true, codex: true }, 'auggie', {
+      const state = mockState({ auggie: true, 'claude-code': true, codex: true }, 'auggie', {
         auggie: { available: true },
         'claude-code': { available: true, authenticated: true },
         codex: { available: true },
@@ -293,6 +293,15 @@ describe('provider-settings selectors', () => {
         'claude-code': { available: true, authenticated: true },
         codex: { available: true, authenticated: true },
       });
+      expect(selectQuotaRetryProviderIds.select(state, 'claude-code')).toEqual([]);
+    });
+
+    it('excludes an explicitly disabled default provider that the model-picker gate still admits', () => {
+      const state = mockState({ 'claude-code': true, codex: false }, 'codex', {
+        'claude-code': { available: true, authenticated: true },
+        codex: { available: true, authenticated: true },
+      });
+      expect(selectAvailableEnabledProviderIds.select(state)).toContain('codex');
       expect(selectQuotaRetryProviderIds.select(state, 'claude-code')).toEqual([]);
     });
 
