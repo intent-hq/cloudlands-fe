@@ -125,6 +125,8 @@ export const preview = definePreview<ComponentProps<typeof ModelPicker>>({
       },
       setup: setupModels(true),
     },
+    // Open the “Default model” trigger to reveal the empty state and Retry button.
+    // No search is needed: both available providers return an empty model catalog.
     empty: {
       props: {
         selectedModel: null,

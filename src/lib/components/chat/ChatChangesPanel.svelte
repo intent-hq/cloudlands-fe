@@ -2776,38 +2776,15 @@
 </div>
 
 {#snippet commitDetailsSection()}
-  <div class="mb-3 px-1">
-    <div class="flex items-start gap-2.5 py-2">
-      <!-- Author avatar (GitHub image with initials fallback) -->
-      <div
-        class="shrink-0 mt-0.5 w-7 h-7 rounded-full bg-muted-foreground/15 flex items-center justify-center text-ui font-medium text-subtle select-none overflow-hidden"
-        title={commitInfo?.author || ''}
-      >
-        {#if getGitHubAvatarUrl(commitInfo?.authorEmail)}
-          <img
-            src={getGitHubAvatarUrl(commitInfo?.authorEmail) ?? ''}
-            alt={commitInfo?.author || ''}
-            class="w-full h-full object-cover"
-            loading="lazy"
-            onerror={(e) => {
-              (e.currentTarget as HTMLImageElement).style.display = 'none';
-              const sibling = (e.currentTarget as HTMLImageElement).nextElementSibling;
-              if (sibling) (sibling as HTMLElement).classList.remove('hidden');
-            }}
-          />
-          <span class="hidden">{getAuthorInitials(commitInfo?.author)}</span>
-        {:else}
-          {getAuthorInitials(commitInfo?.author)}
-        {/if}
-      </div>
-
+  <div class="mb-3">
+    <div class="flex items-center gap-2.5 py-2">
       <div class="flex-1 min-w-0 space-y-1">
         <!-- Commit title — clickable if GitHub URL available -->
         {#if hasCommitUrl()}
           <Button
             type="button"
             variant="link"
-            class="text-sm font-medium text-foreground hover:text-accent-foreground hover:underline underline-offset-2 text-left cursor-pointer transition-colors leading-snug"
+            class="h-auto justify-start px-0 text-sm font-medium text-foreground hover:text-accent-foreground hover:underline underline-offset-2 text-left cursor-pointer transition-colors leading-snug"
             onclick={openCommitInBrowser}
             title={m.chat_changesPanel_openOnGitHub_title()}
           >
@@ -2901,6 +2878,28 @@
           </div>
         {/if}
       </div>
+      <!-- Author avatar (GitHub image with initials fallback) -->
+      <div
+        class="shrink-0 w-7 h-7 rounded-full bg-muted-foreground/15 flex items-center justify-center text-ui font-medium text-subtle select-none overflow-hidden"
+        title={commitInfo?.author || ''}
+      >
+        {#if getGitHubAvatarUrl(commitInfo?.authorEmail)}
+          <img
+            src={getGitHubAvatarUrl(commitInfo?.authorEmail) ?? ''}
+            alt={commitInfo?.author || ''}
+            class="w-full h-full object-cover"
+            loading="lazy"
+            onerror={(e) => {
+              (e.currentTarget as HTMLImageElement).style.display = 'none';
+              const sibling = (e.currentTarget as HTMLImageElement).nextElementSibling;
+              if (sibling) (sibling as HTMLElement).classList.remove('hidden');
+            }}
+          />
+          <span class="hidden">{getAuthorInitials(commitInfo?.author)}</span>
+        {:else}
+          {getAuthorInitials(commitInfo?.author)}
+        {/if}
+      </div>
     </div>
   </div>
 {/snippet}
@@ -2920,7 +2919,7 @@
   >
     <!-- File Header (sticky within scroll container) -->
     <div
-      class="flex items-center gap-2 px-4 py-1.5 group relative sticky z-10 bg-sidebar {allChangesSearchHeaderMatchKeys.has(
+      class="flex items-center gap-2 px-0 py-1.5 group relative sticky z-10 bg-sidebar {allChangesSearchHeaderMatchKeys.has(
         expandKey,
       )
         ? 'ring-1 ring-warning/30 bg-warning/10'
@@ -2939,11 +2938,6 @@
         onclick={() => toggleFile(expandKey)}
         class="flex min-w-0 flex-1 shrink cursor-pointer items-center justify-start gap-2 text-left"
       >
-        <Fa
-          icon={expandedFiles.has(expandKey) ? faChevronDown : faChevronLeft}
-          class="text-subtle w-2.5! h-2.5! shrink-0"
-        />
-
         <span class="text-sm truncate shrink-0 max-w-full" title={displayPath}>
           {#each getAllChangesHighlightedTextSegments(getFileName(displayPath)) as segment, i (i)}
             {#if segment.isMatch}
@@ -2953,6 +2947,11 @@
             {/if}
           {/each}
         </span>
+        <Fa
+          icon={expandedFiles.has(expandKey) ? faChevronDown : faChevronLeft}
+          class="text-subtle w-2.5! h-2.5! shrink-0"
+        />
+
         {#if getDirectoryPath(displayPath)}
           <span class="text-xs text-subtle truncate hidden sm:inline shrink-6">
             {#each getAllChangesHighlightedTextSegments(getDirectoryPath(displayPath)) as segment, i (i)}
