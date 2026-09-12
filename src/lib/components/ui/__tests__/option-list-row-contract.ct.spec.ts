@@ -54,8 +54,9 @@ async function expectInset(container: Locator, row: Locator) {
 
 async function expectHighlight(row: Locator, highlight: Locator) {
   await expect(highlight).toBeVisible();
-  const [rowBox, highlightBox] = await Promise.all([row.boundingBox(), highlight.boundingBox()]);
-  expect(highlightBox).toEqual(rowBox);
+  const rowBox = await row.boundingBox();
+  expect(rowBox).not.toBeNull();
+  await expect.poll(() => highlight.boundingBox()).toEqual(rowBox);
 }
 
 async function firstTextStart(locator: Locator) {
