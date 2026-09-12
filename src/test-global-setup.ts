@@ -18,6 +18,9 @@ import * as path from 'path';
 
 let root: string | undefined;
 
+const TMP_ENV_KEYS = ['TMPDIR', 'TMP', 'TEMP'] as const;
+let originalEnv: Partial<Record<(typeof TMP_ENV_KEYS)[number], string | undefined>> = {};
+
 // Per-user caches that tools spawned by tests (tsx, Playwright CLI) create
 // under TMPDIR on their own; they are not test leaks.
 const TOOL_CACHE_ENTRY = /^(tsx|playwright-transform-cache)-\d+$/;
@@ -48,9 +51,21 @@ export function setup(): void {
     );
   }
   root = fs.mkdtempSync(path.join(os.tmpdir(), ROOT_TEMPLATE));
-  process.env.TMPDIR = root;
-  process.env.TMP = root;
-  process.env.TEMP = root;
+  originalEnv = {};
+  for (const key of TMP_ENV_KEYS) {
+    originalEnv[key] = process.env[key];
+    process.env[key] = root;
+  }
+}
+
+// Restore the inherited values so a watch-mode re-run of setup() does not
+// mkdtemp under the root that teardown just deleted.
+function restoreEnv(): void {
+  for (const key of TMP_ENV_KEYS) {
+    const value = originalEnv[key];
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
 }
 
 function fail(message: string): Error {
@@ -83,6 +98,9 @@ export function teardown(): void {
     fs.rmSync(root, { recursive: true, force: true });
   } catch (err) {
     failure ??= fail(`Temp-dir hygiene: could not remove ${root}: ${String(err)}`);
+  } finally {
+    restoreEnv();
+    root = undefined;
   }
 
   if (failure) throw failure;
