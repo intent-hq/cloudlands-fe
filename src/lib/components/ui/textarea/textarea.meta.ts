@@ -10,6 +10,8 @@ export const textareaMetadata = parseUiComponentMetadata({
   category: 'primitive',
   owner: '007-B2',
   callers: [
+    'src/features/artifacts/components/BoardView.svelte',
+    'src/features/artifacts/components/ImageView.svelte',
     'src/lib/component-catalog/renderers/ContentFieldCatalogPreview.svelte',
     'src/lib/components/chat/proposals/ProposalCard.svelte',
     'src/lib/components/modals/ReplaceAgentModal.svelte',

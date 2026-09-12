@@ -119,7 +119,10 @@ vi.mock('$lib/utils/stream-lifecycle-telemetry', async (importOriginal) => ({
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
-  return createAppStoreMockModule({ state: {}, dispatch: mocks.dispatch });
+  return createAppStoreMockModule({
+    state: { artifacts: { byWorkspaceId: {} } },
+    dispatch: mocks.dispatch,
+  });
 });
 vi.mock('$lib/client', () => ({
   appClient: {
