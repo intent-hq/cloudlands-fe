@@ -15,8 +15,11 @@
    * tabs" bulk action follows the list when hidden tabs exist (intent#4762).
    * Both DESTROY the owned tab(s) through the authoritative destroy lifecycle
    * (closeTab destroy / destroyHiddenTabsByOwnerAgent, monorepo#2857) — the
-   * tab-bar close stays hide-on-close. When the owning agent is running the
-   * action is gated behind a confirmation dialog.
+   * tab-bar close stays hide-on-close. A tab the registry homes on another
+   * client (a mirror, REV-2 §5.45) is closed through `browser.closeTab`
+   * instead — the host destroys it and the local mirror follows the
+   * `browser:tab-closed` echo — forced while that host is offline. When the
+   * owning agent is running the action is gated behind a confirmation dialog.
    */
 
   import Fa from 'svelte-fa';
@@ -38,6 +41,11 @@
     revealHiddenTabAvoidingPanel,
   } from '$store/renderer/slices/panel-layout/panel-layout-slice';
   import { selectAgentIsRunning } from '$store/renderer/slices/agent-session/agent-session-selectors';
+  import {
+    selectBrowserTabHost,
+    selectOwnClientId,
+  } from '$store/renderer/slices/browser-clients/browser-clients-selectors';
+  import { closeBrowserTabRequested } from '$store/renderer/slices/browser-clients/browser-clients-slice';
   import { store as appStore } from '$store/renderer/store';
   import {
     safeSubscriptionRowTransition,
@@ -167,16 +175,35 @@
   let confirmButtonRef: HTMLButtonElement | null = $state(null);
   let confirmHasFocus = $state(false);
 
+  function isHostedHere(tab: PanelTab, ownClientId: string | null): boolean {
+    return tab.hostClientId === undefined || tab.hostClientId === ownClientId;
+  }
+
+  // A mirror is closed on its host; `force` tombstones the daemon row when
+  // that host is offline (same as the viewer's "Close anyway").
+  function closeMirror(tab: PanelTab) {
+    const host = selectBrowserTabHost.select(appStore.state, tab.hostClientId ?? '');
+    appStore.dispatch(closeBrowserTabRequested(tab.id, !host.connected));
+  }
+
   function performClose(action: PendingClose) {
+    const ownClientId = selectOwnClientId.select(appStore.state);
     if (action.kind === 'tab') {
-      appStore.dispatch(
-        closeTab(workspaceId, action.entry.tab.id, action.entry.panelId, undefined, {
-          destroy: true,
-        }),
-      );
-    } else {
-      appStore.dispatch(destroyHiddenTabsByOwnerAgent(workspaceId, agentId));
+      const { tab, panelId } = action.entry;
+      if (isHostedHere(tab, ownClientId)) {
+        appStore.dispatch(closeTab(workspaceId, tab.id, panelId, undefined, { destroy: true }));
+      } else {
+        closeMirror(tab);
+      }
+      return;
     }
+    const hiddenMirrors = entries
+      .filter((entry) => entry.hidden && !isHostedHere(entry.tab, ownClientId))
+      .map((entry) => entry.tab);
+    if (hiddenMirrors.length < hiddenCount) {
+      appStore.dispatch(destroyHiddenTabsByOwnerAgent(workspaceId, agentId, ownClientId));
+    }
+    for (const tab of hiddenMirrors) closeMirror(tab);
   }
 
   function requestClose(action: PendingClose) {

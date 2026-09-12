@@ -8,25 +8,30 @@
  * reveal into a panel other than the one hosting the conversation, never
  * displacing the conversation tab or moving panel focus. Also the permanent
  * close actions (intent#4762): per-row Close destroys the owned tab, "Close
- * hidden tabs" destroys only this agent's hidden tabs, and both are gated
- * behind a confirmation while the owner agent is running.
+ * hidden tabs" destroys only this agent's hidden tabs, a mirror hosted by
+ * another client is closed on its host through `browser.closeTab` (forced
+ * while that host is offline), and both are gated behind a confirmation
+ * while the owner agent is running.
  */
 import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/svelte';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { resetAgentSubscriptionsViewStateForTests } from '../agent-subscriptions-view-state';
 
-const { dispatchMock, layoutState, agentState, setActiveTabMock, focusPanelMock } = vi.hoisted(
-  () => ({
+const { dispatchMock, layoutState, agentState, mockState, setActiveTabMock, focusPanelMock } =
+  vi.hoisted(() => ({
     dispatchMock: vi.fn(),
     layoutState: {
       panels: {} as Record<string, unknown>,
       hiddenTabs: [] as unknown[],
     },
     agentState: { running: false },
+    mockState: {
+      theme: { name: 'dark' },
+      browserClients: undefined as unknown,
+    },
     setActiveTabMock: vi.fn(),
     focusPanelMock: vi.fn(),
-  }),
-);
+  }));
 
 vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentIsRunning: { select: () => agentState.running },
@@ -43,7 +48,7 @@ vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({
-    state: () => ({ theme: { name: 'dark' } }),
+    state: () => mockState,
     dispatch: dispatchMock,
   });
 });
@@ -68,14 +73,41 @@ import {
   destroyHiddenTabsByOwnerAgent,
   revealHiddenTabAvoidingPanel,
 } from '$store/renderer/slices/panel-layout/panel-layout-slice';
+import {
+  browserClientsReducer,
+  closeBrowserTabRequested,
+  liveClientsReceived,
+  ownClientIdReceived,
+} from '$store/renderer/slices/browser-clients/browser-clients-slice';
+import { initialState as browserClientsInitialState } from '$store/renderer/slices/browser-clients/browser-clients-types';
+import type { LiveClient } from '$shared/types/browser-clients';
 
-const ownedTab = (id: string, title: string) => ({
+const ownedTab = (id: string, title: string, hostClientId?: string) => ({
   id,
   type: 'browser',
   title,
   browserUrl: `http://example.test/${id}`, // i18n-ignore (test fixture URL)
   ownerAgentId: 'agent-1',
+  ...(hostClientId === undefined ? {} : { hostClientId }),
 });
+
+/** PROTOCOL §5.17 `client.list` rows. */
+const liveClient = (clientId: string, hostname: string): LiveClient => ({
+  clientId,
+  name: 'Intent Desktop',
+  capabilities: { browserExec: true },
+  hostname,
+  connections: 1,
+  transports: ['ws'],
+  connectedAt: '2026-09-07T00:00:00.000Z',
+});
+
+/** This renderer is `cli-me`; `live` lists the connected clients. */
+function seedClients(live: LiveClient[]) {
+  let state = browserClientsReducer(browserClientsInitialState, ownClientIdReceived('cli-me'));
+  state = browserClientsReducer(state, liveClientsReceived(live));
+  mockState.browserClients = state;
+}
 
 function seedLayout() {
   layoutState.panels = {
@@ -101,6 +133,7 @@ afterEach(() => {
   layoutState.panels = {};
   layoutState.hiddenTabs = [];
   agentState.running = false;
+  mockState.browserClients = undefined;
   resetAgentSubscriptionsViewStateForTests();
 });
 
@@ -296,6 +329,97 @@ describe('BrowserTabsRow', () => {
       await fireEvent.click(screen.getByTestId('browser-tabs-close-dialog-confirm'));
       const bulk = dispatchedActions().find((a) => a.type === destroyHiddenType);
       expect(bulk?.payload).toMatchObject({ wsId: 'ws-1', agentId: 'agent-1' });
+    });
+  });
+
+  // A tab the registry homes on another client (REV-2 §5.45) has no local
+  // webview to destroy: a local destroy would only drop the mirror while the
+  // daemon row (and the host's tab) live on and re-materialise on the next
+  // event or reconnect. Such tabs close on their host via `browser.closeTab`.
+  describe('mirrors hosted by another client', () => {
+    const me = liveClient('cli-me', 'dev-box');
+    const other = liveClient('cli-other', 'travel-air');
+
+    function seedMixedLayout() {
+      layoutState.panels = {
+        chat: {
+          id: 'chat',
+          activeTabId: 'agent-tab',
+          tabs: [{ id: 'agent-tab', type: 'agent', title: 'Chat', agentId: 'agent-1' }],
+        },
+        p1: {
+          id: 'p1',
+          activeTabId: 'mine',
+          tabs: [ownedTab('mine', 'Mine', 'cli-me'), ownedTab('mirror', 'Mirror', 'cli-other')],
+        },
+      };
+      layoutState.hiddenTabs = [
+        ownedTab('hidden-mine', 'Hidden mine', 'cli-me'),
+        ownedTab('hidden-unhomed', 'Hidden unhomed'),
+        ownedTab('hidden-mirror', 'Hidden mirror', 'cli-other'),
+      ];
+    }
+
+    it('closes a visible mirror on its connected host instead of destroying it locally', async () => {
+      seedClients([me, other]);
+      seedMixedLayout();
+      renderRow();
+      await fireEvent.click(screen.getByTestId('browser-tabs-summary'));
+      await fireEvent.click(screen.getAllByTestId('browser-tab-close')[1]);
+
+      expect(dispatchedActions()).toEqual([closeBrowserTabRequested('mirror', false)]);
+    });
+
+    it('still destroys a tab hosted here locally', async () => {
+      seedClients([me, other]);
+      seedMixedLayout();
+      renderRow();
+      await fireEvent.click(screen.getByTestId('browser-tabs-summary'));
+      await fireEvent.click(screen.getAllByTestId('browser-tab-close')[0]);
+
+      const actions = dispatchedActions();
+      expect(actions).toHaveLength(1);
+      expect(actions[0].type).toBe(closeTabType);
+      expect(actions[0].payload).toMatchObject({ wsId: 'ws-1', tabId: 'mine', destroy: true });
+    });
+
+    it('force-closes a hidden mirror whose host is offline', async () => {
+      seedClients([me]);
+      seedMixedLayout();
+      renderRow();
+      await fireEvent.click(screen.getByTestId('browser-tabs-summary'));
+      await fireEvent.click(screen.getAllByTestId('browser-tab-close')[4]);
+
+      expect(dispatchedActions()).toEqual([closeBrowserTabRequested('hidden-mirror', true)]);
+    });
+
+    it('"Close hidden tabs" destroys the hidden tabs hosted here and closes hidden mirrors on their host', async () => {
+      seedClients([me, other]);
+      seedMixedLayout();
+      renderRow();
+      await fireEvent.click(screen.getByTestId('browser-tabs-summary'));
+      await fireEvent.click(screen.getByTestId('browser-tabs-close-hidden'));
+
+      const actions = dispatchedActions();
+      expect(actions).toHaveLength(2);
+      expect(actions[0].type).toBe(destroyHiddenType);
+      expect(actions[0].payload).toMatchObject({
+        wsId: 'ws-1',
+        agentId: 'agent-1',
+        ownClientId: 'cli-me',
+      });
+      expect(actions[1]).toEqual(closeBrowserTabRequested('hidden-mirror', false));
+    });
+
+    it('"Close hidden tabs" with only mirrors hidden dispatches no local destroy', async () => {
+      seedClients([me]);
+      seedMixedLayout();
+      layoutState.hiddenTabs = [ownedTab('hidden-mirror', 'Hidden mirror', 'cli-other')];
+      renderRow();
+      await fireEvent.click(screen.getByTestId('browser-tabs-summary'));
+      await fireEvent.click(screen.getByTestId('browser-tabs-close-hidden'));
+
+      expect(dispatchedActions()).toEqual([closeBrowserTabRequested('hidden-mirror', true)]);
     });
   });
 });

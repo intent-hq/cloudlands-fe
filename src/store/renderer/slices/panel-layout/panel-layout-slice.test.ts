@@ -4285,7 +4285,7 @@ describe('panelLayoutReducer', () => {
 
       const result = panelLayoutReducer(
         withHidden,
-        destroyHiddenTabsByOwnerAgent(WS, 'agent-1', 1002),
+        destroyHiddenTabsByOwnerAgent(WS, 'agent-1', null, 1002),
       );
       const ws = result.byWorkspaceId[WS];
       expect(getItems(ws.hiddenTabs).map((t) => t.id)).toEqual(['other']);
@@ -4295,9 +4295,41 @@ describe('panelLayoutReducer', () => {
 
     it('destroyHiddenTabsByOwnerAgent is a no-op when the agent has no hidden tabs', () => {
       const state = stateWithPanel('p1', [ownedTab, { id: 't2', type: 'note', title: 'A' }]);
-      expect(panelLayoutReducer(state, destroyHiddenTabsByOwnerAgent(WS, 'agent-1', 1000))).toBe(
-        state,
-      );
+      expect(
+        panelLayoutReducer(state, destroyHiddenTabsByOwnerAgent(WS, 'agent-1', null, 1000)),
+      ).toBe(state);
+    });
+
+    // A hidden mirror (registry row homed on another client, REV-2 §5.45)
+    // is closed on its host, not destroyed locally: the bulk destroy keeps
+    // it so the daemon's `browser:tab-closed` echo is what removes it.
+    it('destroyHiddenTabsByOwnerAgent keeps hidden mirrors hosted by another client', () => {
+      const state = stateWithPanel('p1', [
+        { ...ownedTab, hostClientId: 'cli-me' },
+        { ...ownedTab, id: 'unhomed', title: 'Unhomed' },
+        { ...ownedTab, id: 'mirror', title: 'Mirror', hostClientId: 'cli-other' },
+        { id: 't2', type: 'note', title: 'A' },
+      ] as any);
+      let hidden = state;
+      for (const id of ['owned', 'unhomed', 'mirror']) {
+        hidden = panelLayoutReducer(hidden, closeTab(WS, id, 'p1', 1000));
+      }
+      expect(getItems(hidden.byWorkspaceId[WS].hiddenTabs)).toHaveLength(3);
+
+      const ws = panelLayoutReducer(
+        hidden,
+        destroyHiddenTabsByOwnerAgent(WS, 'agent-1', 'cli-me', 1001),
+      ).byWorkspaceId[WS];
+      expect(getItems(ws.hiddenTabs).map((t) => t.id)).toEqual(['mirror']);
+      expect(ws.recentlyClosed).toHaveLength(0);
+
+      // With no own client identity yet, only tabs the registry never homed
+      // count as local.
+      const unknown = panelLayoutReducer(
+        hidden,
+        destroyHiddenTabsByOwnerAgent(WS, 'agent-1', null, 1001),
+      ).byWorkspaceId[WS];
+      expect(getItems(unknown.hiddenTabs).map((t) => t.id)).toEqual(['owned', 'mirror']);
     });
 
     it('destroyOwnedTabsForWorkspace removes all owned tabs (visible + hidden) but keeps unowned', () => {
@@ -4681,7 +4713,7 @@ describe('panelLayoutReducer', () => {
       const hidden = panelLayoutReducer(state, closeTab(WS, 'owned', 'p1', 1000));
       const destroyed = panelLayoutReducer(
         hidden,
-        destroyHiddenTabsByOwnerAgent(WS, 'agent-1', 1001),
+        destroyHiddenTabsByOwnerAgent(WS, 'agent-1', null, 1001),
       );
       for (const snapshot of destroyed.byWorkspaceId[WS].layoutHistory) {
         expect(snapshot.panels.p1.tabs.map((t) => t.id)).not.toContain('owned');

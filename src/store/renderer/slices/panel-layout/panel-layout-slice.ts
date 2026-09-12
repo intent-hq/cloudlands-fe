@@ -1846,12 +1846,16 @@ export const destroyTabsByOwnerAgent = createAction(
  * Visible owned tabs and other agents' hidden tabs are untouched. Routed
  * through the same destroy semantics as `destroyTabsByOwnerAgent` (removed
  * from `hiddenTabs`, purged from layout history, never in recentlyClosed).
+ * Only tabs hosted by `ownClientId` (or not yet homed by the registry) are
+ * destroyed: a mirror of a tab hosted elsewhere is closed on its host and
+ * leaves with the `browser:tab-closed` echo, never by a local destroy.
  */
 export const destroyHiddenTabsByOwnerAgent = createAction(
   'panelLayout/destroyHiddenTabsByOwnerAgent',
-  (wsId: string, agentId: string, timestamp?: number) => ({
+  (wsId: string, agentId: string, ownClientId: string | null = null, timestamp?: number) => ({
     wsId,
     agentId,
+    ownClientId,
     timestamp: timestamp ?? Date.now(),
   }),
 );
@@ -2704,10 +2708,13 @@ panelLayoutReducer.with(destroyTabsByOwnerAgent, (state, { payload }) => {
 });
 // --- Destroy Hidden Tabs By Owner Agent (intent#4762) ---
 panelLayoutReducer.with(destroyHiddenTabsByOwnerAgent, (state, { payload }) => {
-  const { wsId, agentId } = payload;
+  const { wsId, agentId, ownClientId } = payload;
   const ws = getWorkspaceState(state, wsId);
   const hiddenOwned = getItems(ws.hiddenTabs).filter(
-    (tab) => tab.type === 'browser' && tab.ownerAgentId === agentId,
+    (tab) =>
+      tab.type === 'browser' &&
+      tab.ownerAgentId === agentId &&
+      (tab.hostClientId === undefined || tab.hostClientId === ownClientId),
   );
   if (hiddenOwned.length === 0) return state;
   let hiddenTabs = ws.hiddenTabs;

@@ -61,6 +61,7 @@ import {
   closeTabsByType,
   closeTabsToRight,
   consumePendingFocus,
+  destroyHiddenTabsByOwnerAgent,
   emptyWorkspaceState,
   focusPanel,
   goBack,
@@ -360,6 +361,7 @@ const persistActionCreators = [
   closeFocusedPanelTab,
   closeTabsByType,
   closeTabsByAgentId,
+  destroyHiddenTabsByOwnerAgent,
   removeScript,
   reopenClosedTab,
   setActiveTab,
@@ -1946,6 +1948,58 @@ describe('panelLayoutSaga', () => {
     await vi.advanceTimersByTimeAsync(HISTORY_PERSIST_DEBOUNCE_MS);
     await settle();
     expect(mocks.saveHistory).not.toHaveBeenCalled();
+    await cancelSaga(task);
+  });
+
+  // The footer's "Close hidden tabs" destroy (monorepo#2857 semantics) must
+  // reach both stores: an unpersisted layout reloads with the hidden tab
+  // back, and unpersisted history lets goBack resurrect it after a reload.
+  it('persists the layout and purged history after destroyHiddenTabsByOwnerAgent', async () => {
+    const owned = {
+      id: 'tab-owned',
+      type: 'browser' as const,
+      title: 'Owned',
+      closable: true,
+      browserUrl: 'http://a.test/',
+      ownerAgentId: 'agent-1',
+    };
+    const before = storeState();
+    before.panelLayout.byWorkspaceId[WS_1] = {
+      ...workspaceState([{ ...snapshot, timestamp: 5 }, snapshot]),
+      panels: { 'panel-1': { id: 'panel-1', tabs: [tab, owned], activeTabId: tab.id } },
+    };
+    // The user hid the tab from the tab bar (hide-on-close), then destroyed it
+    // from the footer; the real reducers produce the post-destroy state.
+    const hidden = panelLayoutReducer(before.panelLayout, closeTab(WS_1, owned.id, 'panel-1', 10));
+    expect(getItem(hidden.byWorkspaceId[WS_1].hiddenTabs, owned.id)).toBeDefined();
+    const state = {
+      ...before,
+      panelLayout: panelLayoutReducer(
+        hidden,
+        destroyHiddenTabsByOwnerAgent(WS_1, 'agent-1', null, 11),
+      ),
+    };
+    mocks.getJSON.mockReturnValue(undefined);
+    const { channel, task } = startSaga(state);
+    await settle();
+    channel.put(destroyHiddenTabsByOwnerAgent(WS_1, 'agent-1', null, 11));
+    await settle();
+
+    expect(mocks.setJSON).toHaveBeenCalledTimes(1);
+    const stored = mocks.setJSON.mock.calls[0]?.[1] as WorkspacePanelLayout;
+    expect(stored.hiddenTabs ?? []).toEqual([]);
+    expect(stored.panels['panel-1'].tabs.map((t) => t.id)).toEqual([tab.id]);
+
+    await vi.advanceTimersByTimeAsync(HISTORY_PERSIST_DEBOUNCE_MS);
+    await settle();
+    expect(mocks.saveHistory).toHaveBeenCalledTimes(1);
+    const [savedWsId, savedHistory, savedBackendId] = mocks.saveHistory.mock.calls[0];
+    expect(savedWsId).toBe(WS_1);
+    expect(savedBackendId).toBe(LOCAL_CONNECTION_ID);
+    expect(savedHistory.history.length).toBeGreaterThan(0);
+    for (const entry of savedHistory.history) {
+      expect(entry.panels['panel-1'].tabs.map((t: { id: string }) => t.id)).not.toContain(owned.id);
+    }
     await cancelSaga(task);
   });
 
