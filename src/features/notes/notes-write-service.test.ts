@@ -583,6 +583,44 @@ describe('notesWriteService (fake seam, real store)', () => {
     );
   });
 
+  // A refetch that landed a rev NEWER than the superseded echo holds daemon
+  // state the editor has not applied yet. The rebased draft must not replace
+  // it in the store (the newer rev would then name the older text); it is
+  // still rebased onto the echo and sent against the echo rev so the daemon
+  // merges the newer change in.
+  it('keeps a newer refetch in the store when a superseded echo lands, and still rebases the draft onto the echo', async () => {
+    seed(makeNote('n1', { rev: 4, content: 'body' }));
+    let resolveFirst!: (v: unknown) => void;
+    notesApi.setContent
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveFirst = resolve;
+        }) as never,
+      )
+      .mockImplementationOnce(daemonAfterAgentEdit() as never);
+
+    updateNoteContent(WS, 'n1', 'body first');
+    const first = flushNoteContent(WS, 'n1');
+    await Promise.resolve();
+    updateNoteContent(WS, 'n1', 'body first plus typing');
+
+    seed(makeNote('n1', { rev: 8, content: 'AGENT\nbody first\nLATER' }));
+    resolveFirst({ success: true, newContent: 'AGENT\nbody first', noteRev: 6 });
+
+    await expect(first).resolves.toEqual({ content: 'AGENT\nbody first\nLATER', rev: 8 });
+    const note = selectNoteById.select(appStore.state, WS, 'n1');
+    expect(note?.content).toBe('AGENT\nbody first\nLATER');
+    expect(note?.rev).toBe(8);
+
+    await flushNoteContent(WS, 'n1');
+    expect(notesApi.setContent).toHaveBeenLastCalledWith(
+      'n1',
+      'AGENT\nbody first plus typing',
+      6,
+      WS,
+    );
+  });
+
   // ---- Caller-supplied draft base rev ---------------------------------------
   // The editor loaded "body"@4 and the user typed "body local" before the
   // component's save debounce fired. An agent's note.add then landed

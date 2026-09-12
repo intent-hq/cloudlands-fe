@@ -497,6 +497,48 @@ describe('notesWriteSaga', () => {
     });
   }
 
+  // Mirrors notes-write-service: a refetch that landed a rev NEWER than the
+  // superseded echo keeps its content in the store; the draft is still
+  // rebased onto the echo and sent against the echo rev.
+  it('keeps a newer refetch in the store when a superseded echo lands, and still rebases the draft onto the echo', async () => {
+    vi.useFakeTimers();
+    let resolveFirst!: (result: unknown) => void;
+    const setContent = vi
+      .spyOn(appClient.notes, 'setContent')
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveFirst = resolve;
+        }) as never,
+      )
+      .mockImplementation(daemonAfterAgentEdit() as never);
+    const run = harness(note({ content: 'body' }));
+
+    run.channel.put(updateNoteContent(WS, NOTE, 'body first', true));
+    await settle();
+    run.channel.put(updateNoteContent(WS, NOTE, 'body first plus typing'));
+    await settle();
+
+    run.dispatch(
+      loadWorkspaceNotesSucceeded([WS], {
+        [WS]: [note({ content: 'AGENT\nbody first\nLATER', rev: 8 })],
+      }),
+    );
+    resolveFirst({ success: true, newContent: 'AGENT\nbody first', noteRev: 6 });
+    await settle();
+    const current = run.getState().byWorkspaceId[WS]?.notes.map[NOTE];
+    expect(current?.content).toEqual('AGENT\nbody first\nLATER');
+    expect(current?.rev).toEqual(8);
+
+    await vi.advanceTimersByTimeAsync(NOTE_CONTENT_SAVE_DEBOUNCE_MS + 1);
+    await settle();
+    expect(setContent.mock.calls).toEqual([
+      [NOTE, 'body first', 4, WS],
+      [NOTE, 'AGENT\nbody first plus typing', 6, WS],
+    ]);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
   it('omits expectedVersion only when the note was never loaded', async () => {
     expectUnloadedSave = true;
     const setContent = vi.spyOn(appClient.notes, 'setContent').mockResolvedValue({ success: true });

@@ -438,7 +438,12 @@ async function flushContent(key: string, noteId: string): Promise<AppliedNoteCon
  * (relative to the sent text) onto the echoed text so the next save neither
  * re-applies intent the daemon already persisted nor swallows a local undo,
  * and re-base the chain on the echo's rev. The newest draft is what the user
- * sees, so it also replaces the store content.
+ * sees, so it also replaces the store content — unless a refetch already
+ * landed a rev newer than the echo (`storeIsNewer`): that content is the
+ * daemon state the editor still has to apply, and an older echo's draft must
+ * not hide it while the store keeps the newer rev. The drafts are still
+ * rebased onto the echo and sent against its rev, so the daemon merges the
+ * newer change in rather than treating the draft as an exact write over it.
  */
 function rebasePendingDrafts(
   key: string,
@@ -446,12 +451,14 @@ function rebasePendingDrafts(
   sent: PendingContent,
   echoed: string,
   echoedRev: number | undefined,
+  storeIsNewer: boolean,
 ): void {
   const later = (unackedDrafts.get(key) ?? []).filter((d) => d.seq > sent.seq);
   if (echoed !== sent.content) {
     for (const draft of later) draft.content = rebaseText(sent.content, echoed, draft.content);
   }
   if (echoedRev !== undefined) draftBaseRev.set(key, echoedRev);
+  if (storeIsNewer) return;
   const newest = later[later.length - 1];
   if (newest && readNoteById(sent.workspaceId, noteId)?.content !== newest.content) {
     appStore.dispatch(applyLocalNoteUpdate(sent.workspaceId, noteId, { content: newest.content }));
@@ -467,8 +474,8 @@ function rebasePendingDrafts(
  * that would overwrite a keystroke — but the later drafts are rebased onto it
  * (`rebasePendingDrafts`) so their save carries only the not-yet-persisted
  * edits against the echo's rev. A concurrent refetch that already landed a
- * newer rev also keeps its content. Resolves with what the store holds
- * afterwards.
+ * newer rev keeps its content on both paths. Resolves with what the store
+ * holds afterwards.
  */
 function applyContentSaveResult(
   noteId: string,
@@ -484,7 +491,7 @@ function applyContentSaveResult(
   const superseded = latestEditSeq.get(key) !== seq;
   const storeIsNewer = stored?.rev !== undefined && nextRev !== undefined && stored.rev > nextRev;
   if (superseded) {
-    rebasePendingDrafts(key, noteId, sent, echoed, nextRev);
+    rebasePendingDrafts(key, noteId, sent, echoed, nextRev, storeIsNewer);
   } else if (!storeIsNewer && stored?.content !== echoed) {
     appStore.dispatch(applyLocalNoteUpdate(workspaceId, noteId, { content: echoed }));
   }

@@ -198,12 +198,15 @@ function* advanceRevision(workspaceId: string, noteId: string, sentRev: number) 
  * replay the later drafts' edits (relative to the sent text) onto the echoed
  * text so the next save neither re-applies persisted intent nor swallows a
  * local undo, re-base the chain on the echo's rev, and show the newest
- * (rebased) draft in the store.
+ * (rebased) draft in the store — unless a refetch already landed a rev newer
+ * than the echo (`storeIsNewer`), whose content must stay visible rather than
+ * be hidden by an older echo's draft while the store keeps the newer rev.
  */
 function* rebasePendingDrafts(
   command: ContentCommand,
   echoed: string,
   echoedRev: number | undefined,
+  storeIsNewer: boolean,
 ) {
   const { workspaceId, noteId } = command;
   const key = noteKey(workspaceId, noteId);
@@ -212,6 +215,7 @@ function* rebasePendingDrafts(
     for (const draft of later) draft.content = rebaseText(command.content, echoed, draft.content);
   }
   if (echoedRev !== undefined) draftBaseRev.set(key, echoedRev);
+  if (storeIsNewer) return;
   const newest = later[later.length - 1];
   if (!newest) return;
   const stored = yield* selectNoteById.effect(workspaceId, noteId);
@@ -227,7 +231,7 @@ function* rebasePendingDrafts(
  * `sentRev + 1` (older daemons). When a newer local edit exists the echo is
  * not applied verbatim; the later drafts are rebased onto it instead
  * (`rebasePendingDrafts`). A refetch that already landed a newer rev keeps its
- * content.
+ * content on both paths.
  */
 function* applyContentSaveResult(
   command: ContentCommand,
@@ -241,7 +245,7 @@ function* applyContentSaveResult(
   const superseded = latestEditSeq.get(noteKey(workspaceId, noteId)) !== seq;
   const storeIsNewer = stored?.rev !== undefined && nextRev !== undefined && stored.rev > nextRev;
   if (superseded) {
-    yield* call(rebasePendingDrafts, command, echoed, nextRev);
+    yield* call(rebasePendingDrafts, command, echoed, nextRev, storeIsNewer);
   } else if (!storeIsNewer && stored?.content !== echoed) {
     yield* put(applyLocalNoteUpdate(workspaceId, noteId, { content: echoed }));
   }
