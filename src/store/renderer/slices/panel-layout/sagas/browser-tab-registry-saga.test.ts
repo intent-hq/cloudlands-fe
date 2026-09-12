@@ -54,6 +54,7 @@ import {
   openTabInRightmostColumn,
   openTabInRightmostColumnRequested,
   panelLayoutReducer as rawPanelLayoutReducer,
+  setActiveTab,
   setRestoreStatus,
   setTabOwnerAgent,
   updateTabBrowserUrl,
@@ -75,6 +76,11 @@ const OWN = 'cli-desk';
 const OTHER = 'cli-laptop';
 const NOW = '2026-09-07T00:00:00.000Z';
 
+/**
+ * A daemon row as the host reported it: `displayed` follows the layout the
+ * tests build (`settledLayout` activates the first tab; hidden is never
+ * displayed) unless a test overrides it.
+ */
 function row(overrides: Partial<BrowserTab> = {}): BrowserTabListing {
   return {
     tabId: 'b1',
@@ -82,6 +88,7 @@ function row(overrides: Partial<BrowserTab> = {}): BrowserTabListing {
     hostClientId: OWN,
     url: 'http://a.test/',
     visibility: 'visible',
+    displayed: overrides.visibility !== 'hidden',
     createdAt: NOW,
     updatedAt: NOW,
     hostConnected: true,
@@ -225,6 +232,7 @@ const expectedInput = (overrides: Record<string, unknown> = {}) => ({
   ownerAgentName: null,
   visibility: 'visible',
   emulatedSize: null,
+  displayed: true,
   ...overrides,
 });
 
@@ -297,13 +305,75 @@ describe('browserTabRegistrySaga', () => {
       h.dispatch(closeTab(WS, 'b1', 'p1', 1000));
       await flush();
       expect(mocks.upsertTab.mock.calls).toEqual([
-        [WS, expectedInput({ ownerAgentId: 'agent-1', visibility: 'hidden' })],
+        [WS, expectedInput({ ownerAgentId: 'agent-1', visibility: 'hidden', displayed: false })],
       ]);
 
       h.dispatch(closeTab(WS, 'b1', undefined, 2000, { destroy: true }));
       await flush();
       expect(mocks.removeTab.mock.calls).toEqual([['b1']]);
       expect(mocks.upsertTab).toHaveBeenCalledTimes(1);
+      await stop(h);
+    });
+
+    it('re-reports the displayed layout fact when the panel active tab changes (intent-hq/intent#4835)', async () => {
+      const h = start({
+        layouts: {
+          [WS]: settledLayout([
+            browserTab({ browserUrl: 'http://a.test/' }),
+            browserTab({ id: 'b2', browserUrl: 'http://b.test/' }),
+          ]),
+        },
+        health: 'down',
+        applied: true,
+      });
+      h.setHealth('healthy', 1);
+      h.dispatch(updateTabTitle(WS, 'b2', 'Second'));
+      await flush();
+      expect(mocks.upsertTab.mock.calls).toEqual([
+        [WS, expectedInput()],
+        [
+          WS,
+          expectedInput({ tabId: 'b2', url: 'http://b.test/', title: 'Second', displayed: false }),
+        ],
+      ]);
+      mocks.upsertTab.mockClear();
+
+      h.dispatch(setActiveTab(WS, 'b2', 'p1', 1000));
+      await flush();
+      expect(mocks.upsertTab.mock.calls).toEqual([
+        [WS, expectedInput({ displayed: false })],
+        [
+          WS,
+          expectedInput({ tabId: 'b2', url: 'http://b.test/', title: 'Second', displayed: true }),
+        ],
+      ]);
+      mocks.upsertTab.mockClear();
+
+      // Same layout fact again: nothing to report.
+      h.dispatch(setActiveTab(WS, 'b2', 'p1', 2000));
+      await flush();
+      expect(mocks.upsertTab).not.toHaveBeenCalled();
+      await stop(h);
+    });
+
+    it('re-reports displayed when the daemon row lacks it (process-local fact lost on a daemon restart)', async () => {
+      const { displayed: _unreported, ...restarted } = row({ title: 'Example page' });
+      mocks.listTabs.mockResolvedValue([restarted]);
+      const h = start({
+        layouts: {
+          [WS]: settledLayout(
+            [browserTab({ hostClientId: OWN, browserUrl: 'http://a.test/' })],
+            'pending' as never,
+          ),
+        },
+        health: 'down',
+      });
+      h.setHealth('healthy', 1);
+      h.dispatch(setRestoreStatus(WS, 'restored'));
+      await flush();
+
+      expect(mocks.listTabs.mock.calls).toEqual([[WS]]);
+      expect(mocks.upsertTab.mock.calls).toEqual([[WS, expectedInput({ displayed: true })]]);
       await stop(h);
     });
 
@@ -363,8 +433,20 @@ describe('browserTabRegistrySaga', () => {
           title: 'Mirror',
         }),
       ]);
-      // Rows applied from the registry are already what the daemon holds.
-      expect(mocks.upsertTab).not.toHaveBeenCalled();
+      // Rows applied from the registry are already what the daemon holds —
+      // except the layout fact that applying them changed: the materialised
+      // mirror took the panel's active slot, so b1 is no longer displayed.
+      expect(mocks.upsertTab.mock.calls).toEqual([
+        [
+          WS,
+          expectedInput({
+            url: 'http://a.test/restored',
+            title: 'Restored',
+            requestedUrl: 'http://localhost:1/',
+            displayed: false,
+          }),
+        ],
+      ]);
       await stop(h);
     });
 
@@ -789,7 +871,10 @@ describe('browserTabRegistrySaga', () => {
         [
           [
             { ...expectedInput(), workspaceId: WS },
-            { ...expectedInput({ tabId: 'legacy', url: 'http://legacy.test/' }), workspaceId: WS },
+            {
+              ...expectedInput({ tabId: 'legacy', url: 'http://legacy.test/', displayed: false }),
+              workspaceId: WS,
+            },
             {
               ...expectedInput({ tabId: 'remote-own', url: 'http://r.test/', title: null }),
               workspaceId: 'ws-2',
@@ -799,8 +884,12 @@ describe('browserTabRegistrySaga', () => {
       ]);
       expect(h.tabs().map((t) => t.id)).toEqual(['legacy']);
       expect(h.tabs()[0]).toMatchObject({ hostClientId: OWN });
-      // The snapshot already reported everything: no point upserts follow.
-      expect(mocks.upsertTab).not.toHaveBeenCalled();
+      // The snapshot already reported everything; the only point upsert that
+      // follows is the layout fact the drop changed — the destroyed tab was
+      // the panel's active one, so `legacy` became displayed.
+      expect(mocks.upsertTab.mock.calls).toEqual([
+        [WS, expectedInput({ tabId: 'legacy', url: 'http://legacy.test/', displayed: true })],
+      ]);
       await stop(h);
     });
 
