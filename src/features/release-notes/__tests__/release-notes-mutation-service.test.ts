@@ -16,6 +16,8 @@
  * - a Help-menu fetch that settles after the modal was closed (locally or via
  *   the close broadcast) does not re-open it, and a later explicit open still
  *   fetches and opens
+ * - a second open while a fetch is in flight supersedes it; the stale result
+ *   never lands
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -56,22 +58,30 @@ const flush = async () => {
   }
 };
 
-/** Register a `release-notes:get` handler whose settlement the test controls. */
+interface Deferred {
+  resolve: (value: unknown) => void;
+  reject: (reason: unknown) => void;
+}
+
+/**
+ * Register a `release-notes:get` handler whose settlement the test controls.
+ * Each invocation parks a new deferred in `calls` (in call order); `resolve`
+ * and `reject` settle the first one.
+ */
 function deferGet() {
-  let resolve!: (value: unknown) => void;
-  let reject!: (reason: unknown) => void;
+  const calls: Deferred[] = [];
   const getSpy = vi.fn(
     () =>
-      new Promise((res, rej) => {
-        resolve = res;
-        reject = rej;
+      new Promise((resolve, reject) => {
+        calls.push({ resolve, reject });
       }),
   );
   registerMockIpcHandler(RELEASE_NOTES_CHANNELS.GET, getSpy);
   return {
     getSpy,
-    resolve: (value: unknown) => resolve(value),
-    reject: (reason: unknown) => reject(reason),
+    calls,
+    resolve: (value: unknown) => calls[0].resolve(value),
+    reject: (reason: unknown) => calls[0].reject(reason),
   };
 }
 
@@ -328,6 +338,34 @@ describe('release-notes-mutation-service', () => {
       expect(appStore.state.releaseNotes.showModal).toBe(true);
       expect(appStore.state.releaseNotes.releaseNotes).toEqual(NOTES);
       expect(appStore.state.releaseNotes.loading).toBe(false);
+    });
+
+    it('ignores the superseded fetch when a second open overlaps the first', async () => {
+      const deferred = deferGet();
+      const STALE_NOTES = { ...NOTES, version: '2.0.0', notes: '## Stale' };
+
+      appStore.dispatch(initializeReleaseNotes());
+      await flush();
+      emitMockIpcEvent(RELEASE_NOTES_CHANNELS.SHOW, { notes: null });
+      await flush();
+      emitMockIpcEvent(RELEASE_NOTES_CHANNELS.SHOW, { notes: null });
+      await flush();
+      expect(deferred.calls).toHaveLength(2);
+      expect(appStore.state.releaseNotes.loading).toBe(true);
+
+      deferred.calls[0].resolve({ success: true, data: STALE_NOTES });
+      await flush();
+
+      expect(appStore.state.releaseNotes.showModal).toBe(true);
+      expect(appStore.state.releaseNotes.loading).toBe(true);
+      expect(appStore.state.releaseNotes.releaseNotes).toBeNull();
+
+      deferred.calls[1].resolve({ success: true, data: NOTES });
+      await flush();
+
+      expect(appStore.state.releaseNotes.showModal).toBe(true);
+      expect(appStore.state.releaseNotes.loading).toBe(false);
+      expect(appStore.state.releaseNotes.releaseNotes).toEqual(NOTES);
     });
   });
 });
