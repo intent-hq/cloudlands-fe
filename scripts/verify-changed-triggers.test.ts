@@ -384,6 +384,14 @@ describe('requiresTriggerDeclaration', () => {
       "function helper({ root = process.cwd() } = {}) { return readFileSync(join(root, 'src/a.ts'), 'utf8'); }",
     );
     expect(requiresTriggerDeclaration(destructuredDefault, 'scripts/a.test.ts')).toBe(true);
+    const patternDefault = suite(
+      "function helper({ root } = { root: process.cwd() }) { return readFileSync(join(root, 'src/a.ts'), 'utf8'); }",
+    );
+    expect(requiresTriggerDeclaration(patternDefault, 'scripts/a.test.ts')).toBe(true);
+    const destructuredVariable = suite(
+      "function helper() { const { root } = { root: process.cwd() }; return readFileSync(join(root, 'src/a.ts'), 'utf8'); }",
+    );
+    expect(requiresTriggerDeclaration(destructuredVariable, 'scripts/a.test.ts')).toBe(true);
     const fixtureDefault = suite(
       "function helper(root = '/tmp/fixture') { return readFileSync(join(root, 'a.json'), 'utf8'); }",
     );
