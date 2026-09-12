@@ -137,12 +137,16 @@ describe('handleError call-TypeError classification', () => {
     '    at app://workspaces/app/immutable/chunks/CuKvStvg.js:8:6761',
   ].join('\n');
 
+  const URL_SENTINEL = 'token=SECRET-URL-SENTINEL';
+  const ROUTE_ID = '/(app)/workspaces/[id]';
+
   let errorSpy: ReturnType<typeof vi.spyOn>;
+  let consoleSpy: ReturnType<typeof vi.spyOn>;
 
   function invoke(error: unknown): ReturnType<typeof handleError> {
     const event = {
-      url: new URL('http://localhost/workspaces/ws-1'),
-      route: { id: '/(app)/workspaces/[id]' },
+      url: new URL(`http://localhost/workspaces/ws-1?${URL_SENTINEL}`),
+      route: { id: ROUTE_ID },
     } as unknown as HandleErrorInput['event'];
     return handleError({
       error,
@@ -164,9 +168,13 @@ describe('handleError call-TypeError classification', () => {
     return details;
   }
 
+  function everythingLogged(): string {
+    return JSON.stringify([...errorSpy.mock.calls, ...consoleSpy.mock.calls]);
+  }
+
   beforeEach(() => {
     errorSpy = vi.spyOn(logger, 'error').mockImplementation(() => {});
-    vi.spyOn(console, 'error').mockImplementation(() => {});
+    consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
   });
 
   afterEach(() => {
@@ -188,6 +196,7 @@ describe('handleError call-TypeError classification', () => {
     expect(details.name).toBe('TypeError');
     expect(details.message).toBe('n.call is not a function');
     expect(details.stack).toBe(error.stack);
+    expect(details.routeId).toBe(ROUTE_ID);
   });
 
   it('reports an unrelated call TypeError with a non-bits bundled stack', () => {
@@ -210,5 +219,66 @@ describe('handleError call-TypeError classification', () => {
 
     expect(invoke(error)?.message).not.toBe('');
     expect(reportedDetails().message).toBe('handler.call is not a function');
+  });
+
+  describe('bounded diagnostic', () => {
+    it('never logs the page URL, only the route id', () => {
+      invoke(typeErrorWithStack('n.call is not a function', BUNDLED_FRAMES));
+
+      expect(everythingLogged()).not.toContain(URL_SENTINEL);
+      expect(everythingLogged()).not.toContain('http://localhost');
+      expect(reportedDetails().routeId).toBe(ROUTE_ID);
+    });
+
+    it('does not log the payload of a non-Error object rejection', () => {
+      const PAYLOAD_SENTINEL = 'SECRET-PAYLOAD-SENTINEL';
+      const rejection = {
+        message: 'n.call is not a function',
+        workspaceState: { token: PAYLOAD_SENTINEL },
+      };
+
+      expect(invoke(rejection)?.message).not.toBe('');
+      expect(everythingLogged()).not.toContain(PAYLOAD_SENTINEL);
+      expect(reportedDetails()).toEqual({
+        name: 'object',
+        message: 'n.call is not a function',
+        stack: null,
+        routeId: ROUTE_ID,
+      });
+    });
+
+    it('logs only the first stack frames', () => {
+      const frames = Array.from(
+        { length: 30 },
+        (_, i) => `    at fn${i} (app://workspaces/app/immutable/chunks/chunk${i}.js:1:${i})`,
+      );
+      const error = typeErrorWithStack('n.call is not a function', frames.join('\n'));
+
+      invoke(error);
+      const logged = String(reportedDetails().stack);
+      expect(logged).toContain('at fn0 ');
+      expect(logged).not.toContain('at fn29 ');
+      expect(logged.split('\n').length).toBeLessThan(frames.length);
+      expect(everythingLogged()).not.toContain('at fn29 ');
+    });
+
+    it('truncates an oversized message', () => {
+      const oversized = `n.call is not a function ${'x'.repeat(5000)}END-SENTINEL`;
+
+      invoke(typeErrorWithStack(oversized, BUNDLED_FRAMES));
+      const message = String(reportedDetails().message);
+      expect(message.length).toBeLessThan(oversized.length);
+      expect(message.startsWith('n.call is not a function')).toBe(true);
+      expect(everythingLogged()).not.toContain('END-SENTINEL');
+    });
+
+    it('logs a single allowlisted diagnostic and nothing to console.error', () => {
+      invoke(typeErrorWithStack('n.call is not a function', BUNDLED_FRAMES));
+
+      expect(consoleSpy).not.toHaveBeenCalled();
+      expect(Object.keys(reportedDetails()).sort()).toEqual(
+        ['message', 'name', 'routeId', 'stack'].sort(),
+      );
+    });
   });
 });

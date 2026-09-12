@@ -46,6 +46,56 @@ function isBitsUiTeardownError(error: unknown): boolean {
   );
 }
 
+// The generic fallthrough diagnostic is bounded and allowlisted: name, a truncated message,
+// the first stack frames and the route id. No URL (query/hash can carry state) and no
+// arbitrary rejection payload is logged (intent-hq/intent#4774).
+const DIAGNOSTIC_MESSAGE_LIMIT = 500;
+const DIAGNOSTIC_STACK_FRAMES = 8;
+
+function truncateDiagnostic(text: string): string {
+  return text.length > DIAGNOSTIC_MESSAGE_LIMIT
+    ? `${text.slice(0, DIAGNOSTIC_MESSAGE_LIMIT)}…`
+    : text;
+}
+
+function firstStackFrames(stack: string | undefined): string | null {
+  if (typeof stack !== 'string' || stack.length === 0) return null;
+  return stack.split('\n').slice(0, DIAGNOSTIC_STACK_FRAMES).map(truncateDiagnostic).join('\n');
+}
+
+interface ClientErrorDiagnostic {
+  name: string;
+  message: string;
+  stack: string | null;
+  routeId: string | null;
+}
+
+function clientErrorDiagnostic(error: unknown, routeId: string | null): ClientErrorDiagnostic {
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: truncateDiagnostic(error.message),
+      stack: firstStackFrames(error.stack),
+      routeId,
+    };
+  }
+  if (error && typeof error === 'object') {
+    const message = 'message' in error ? error.message : undefined;
+    return {
+      name: 'object',
+      message: typeof message === 'string' ? truncateDiagnostic(message) : '[non-Error object]',
+      stack: null,
+      routeId,
+    };
+  }
+  return {
+    name: typeof error,
+    message: truncateDiagnostic(String(error)),
+    stack: null,
+    routeId,
+  };
+}
+
 // Track if we've initialized - this helps suppress the initial "Not found: /index.html"
 // error that happens in SPA mode when the app first loads
 let initialized = false;
@@ -130,45 +180,6 @@ export const handleError: HandleClientError = ({ error, event }) => {
     }
   }
 
-  // Log other errors with full details
-  // Extract error details for better logging
-  let errorDetails: Record<string, unknown>;
-
-  if (error instanceof Error) {
-    errorDetails = {
-      message: error.message,
-      stack: error.stack,
-      name: error.name,
-      url: event.url.toString(),
-      routeId: event.route.id,
-    };
-  } else if (error && typeof error === 'object') {
-    // Handle non-Error objects (e.g., SvelteKit internal errors)
-    try {
-      errorDetails = {
-        ...error,
-        url: event.url.toString(),
-        routeId: event.route.id,
-        errorType: 'object',
-        errorKeys: Object.keys(error),
-      };
-    } catch {
-      errorDetails = {
-        message: String(error),
-        url: event.url.toString(),
-        routeId: event.route.id,
-        errorType: 'non-serializable-object',
-      };
-    }
-  } else {
-    errorDetails = {
-      message: String(error),
-      url: event.url.toString(),
-      routeId: event.route.id,
-      errorType: typeof error,
-    };
-  }
-
   // Suppress known Monaco Editor errors (e.g., TextMate grammar tokenization issues)
   // These are harmless and occur during syntax highlighting of certain code patterns
   if (shouldSuppressMonacoUnhandledRejection(error)) {
@@ -185,15 +196,7 @@ export const handleError: HandleClientError = ({ error, event }) => {
     };
   }
 
-  logger.error('Client error:', errorDetails);
-  // Also log the raw error for debugging
-  console.error('[hooks.client] Raw error:', error);
-  // Try to log as JSON for better visibility
-  try {
-    console.error('[hooks.client] Error as JSON:', JSON.stringify(error, null, 2));
-  } catch {
-    console.error('[hooks.client] Error not JSON serializable');
-  }
+  logger.error('Client error:', clientErrorDiagnostic(error, event.route.id));
 
   // Return a user-friendly error message
   return {
