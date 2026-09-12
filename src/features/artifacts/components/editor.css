@@ -92,7 +92,7 @@
 }
 .artifact-editor .artifact-grouped {
   border-style: dashed;
-  border-color: #9881ca;
+  border-color: hsl(var(--primary));
 }
 .artifact-editor .artifact-selected {
   outline: 2px solid #7c6bdf;
