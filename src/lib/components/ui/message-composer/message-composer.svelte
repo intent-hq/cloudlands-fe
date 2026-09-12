@@ -527,7 +527,7 @@
                   size={24}
                   aria-hidden="true"
                 />{:else}<FileIcon size={24} aria-hidden="true" />{/if}
-              <span class="mt-1 w-full truncate text-center text-[10px]">{file.name}</span>
+              <span class="mt-1 w-full truncate text-center text-xs">{file.name}</span>
               <Button
                 variant="plain"
                 size="icon-xs"

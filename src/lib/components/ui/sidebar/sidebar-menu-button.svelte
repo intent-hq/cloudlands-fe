@@ -160,7 +160,7 @@
             class={cn(
               'size-2 rounded-full transition-colors duration-spring-fast ease-spring-fast motion-reduce:transition-none',
               resolvedDot === 'ring' ? 'border border-current' : 'bg-current',
-              lit ? 'text-foreground/60' : 'text-muted-foreground/50',
+              lit ? 'text-foreground' : 'text-ghost',
             )}
           ></span>
         </span>

@@ -470,7 +470,7 @@
 {#snippet shortcut()}
   <kbd
     aria-hidden="true"
-    class="hidden h-[18px] min-w-[18px] items-center justify-center rounded-(--radius-small) bg-primary-ink/15 px-1 font-sans text-[11px] leading-none tracking-wide text-primary-ink sm:inline-flex"
+    class="hidden h-[18px] min-w-[18px] items-center justify-center rounded-(--radius-small) bg-primary-ink/15 px-1 font-sans text-xs leading-none tracking-wide text-primary-ink sm:inline-flex"
   >
     {typeof navigator !== 'undefined' && /mac/i.test(navigator.platform) ? '⌘' : '⌃'}↵
   </kbd>
@@ -496,8 +496,8 @@
         class={cn(
           'flex items-center text-muted-foreground',
           compact
-            ? 'px-3.5 pt-2.5 pb-1.5 text-[11px] sm:px-4 sm:pt-3'
-            : 'px-4 pt-3.5 pb-2 text-[12px] sm:px-5 sm:pt-4',
+            ? 'px-3.5 pt-2.5 pb-1.5 type-caption sm:px-4 sm:pt-3'
+            : 'px-4 pt-3.5 pb-2 type-caption sm:px-5 sm:pt-4',
         )}
       >
         {#if showCounter}
@@ -533,7 +533,7 @@
                 {question.title}
               </h3>
               {#if question.description}
-                <p class="text-[12px] leading-snug text-muted-foreground">
+                <p class="text-xs leading-snug text-muted-foreground">
                   {question.description}
                 </p>
               {/if}
@@ -574,7 +574,7 @@
                     }}
                     class={cn(
                       'block min-h-0! w-full resize-none overflow-hidden rounded-none border-0 bg-transparent p-0 text-foreground shadow-none placeholder:text-muted-foreground',
-                      compact ? 'text-[12px]' : 'text-[13px]',
+                      compact ? 'text-xs' : 'type-caption',
                     )}
                   />
                 </div>
@@ -660,7 +660,7 @@
                           <span
                             aria-hidden="true"
                             class={cn(
-                              'absolute inline-flex items-center justify-center text-[11px] transition-[opacity,font-weight] duration-spring-fast ease-spring-fast motion-reduce:transition-none',
+                              'absolute inline-flex items-center justify-center text-xs transition-[opacity,font-weight] duration-spring-fast ease-spring-fast motion-reduce:transition-none',
                               compact ? 'size-[18px]' : 'size-5',
                               isMulti && 'rounded-(--radius-small) border',
                               isMulti && selected
@@ -698,7 +698,7 @@
                       <span
                         class={cn(
                           'min-w-0 flex-1 leading-snug',
-                          compact ? 'text-[12px]' : 'text-[13px]',
+                          compact ? 'text-xs' : 'type-caption',
                           question.layout === 'stacked'
                             ? 'flex flex-col gap-0.5'
                             : 'inline-flex items-center',
@@ -716,8 +716,7 @@
                           <span
                             class={cn(
                               'text-muted-foreground',
-                              question.layout === 'stacked' &&
-                                (compact ? 'text-[11px]' : 'text-[12px]'),
+                              question.layout === 'stacked' && 'text-xs',
                             )}>{option.description}</span
                           >
                         {/if}
@@ -768,7 +767,7 @@
                         <span
                           aria-hidden="true"
                           class={cn(
-                            'inline-flex shrink-0 items-center justify-center text-[11px]',
+                            'inline-flex shrink-0 items-center justify-center text-xs',
                             compact ? 'size-6' : 'size-7',
                           )}>{otherIndex + 1}</span
                         >
@@ -790,14 +789,14 @@
                         onclick={(event) => event.stopPropagation()}
                         class={cn(
                           'min-h-0! min-w-0 flex-1 resize-none overflow-hidden rounded-none border-0 bg-transparent p-0 leading-snug text-foreground shadow-none placeholder:text-muted-foreground',
-                          compact ? 'text-[12px]' : 'text-[13px]',
+                          compact ? 'text-xs' : 'type-caption',
                         )}
                       />
                       {#if question.chipPosition !== 'left'}
                         <span
                           aria-hidden="true"
                           class={cn(
-                            'inline-flex shrink-0 items-center justify-center text-[11px]',
+                            'inline-flex shrink-0 items-center justify-center text-xs',
                             compact ? 'size-6' : 'size-7',
                           )}>{otherIndex + 1}</span
                         >
@@ -829,7 +828,7 @@
                         <p
                           id={errorId}
                           role="alert"
-                          class="min-w-0 px-2 text-left text-[12px] leading-snug text-danger sm:px-3"
+                          class="min-w-0 px-2 text-left text-xs leading-snug text-danger sm:px-3"
                           in:springIn={{ tier: 'fast', y: -2 }}
                         >
                           {freeTextError}

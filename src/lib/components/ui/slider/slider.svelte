@@ -395,7 +395,7 @@
       {#if previewValue !== null && tooltipReady}
         <output
           data-slot="slider-tooltip"
-          class="pointer-events-none absolute top-[-20px] z-30 -translate-x-1/2 whitespace-nowrap rounded-(--shape-input-radius) bg-foreground px-2 py-1 text-[12px] text-background tabular-nums"
+          class="pointer-events-none absolute top-[-20px] z-30 -translate-x-1/2 whitespace-nowrap rounded-(--shape-input-radius) bg-foreground px-2 py-1 text-xs text-background tabular-nums"
           style:left={centerStyle(previewPercent ?? 0)}
           style:font-variation-settings="'wght' 500"
           hidden={pressed}
