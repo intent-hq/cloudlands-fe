@@ -13,6 +13,9 @@
  * - a user dismissal closes the modal and invokes `release-notes:dismiss` once
  * - the main-broadcast `release-notes:close` closes the modal without echoing
  *   a dismiss back to main
+ * - a Help-menu fetch that settles after the modal was closed (locally or via
+ *   the close broadcast) does not re-open it, and a later explicit open still
+ *   fetches and opens
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -52,6 +55,25 @@ const flush = async () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
   }
 };
+
+/** Register a `release-notes:get` handler whose settlement the test controls. */
+function deferGet() {
+  let resolve!: (value: unknown) => void;
+  let reject!: (reason: unknown) => void;
+  const getSpy = vi.fn(
+    () =>
+      new Promise((res, rej) => {
+        resolve = res;
+        reject = rej;
+      }),
+  );
+  registerMockIpcHandler(RELEASE_NOTES_CHANNELS.GET, getSpy);
+  return {
+    getSpy,
+    resolve: (value: unknown) => resolve(value),
+    reject: (reason: unknown) => reject(reason),
+  };
+}
 
 beforeAll(() => {
   let listenerIdCounter = 0;
@@ -218,5 +240,94 @@ describe('release-notes-mutation-service', () => {
     expect(appStore.state.releaseNotes.showModal).toBe(false);
     expect(appStore.state.releaseNotes.releaseNotes).toEqual(NOTES);
     expect(dismissSpy).not.toHaveBeenCalled();
+  });
+
+  describe('a Help-menu fetch that settles after the modal was closed', () => {
+    beforeEach(() => {
+      registerMockIpcHandler(RELEASE_NOTES_CHANNELS.DISMISS, async () => ({ success: true }));
+    });
+
+    it('does not re-open the modal when the fetch resolves after a user dismissal', async () => {
+      const deferred = deferGet();
+
+      appStore.dispatch(initializeReleaseNotes());
+      await flush();
+      emitMockIpcEvent(RELEASE_NOTES_CHANNELS.SHOW, { notes: null });
+      await flush();
+      expect(appStore.state.releaseNotes.showModal).toBe(true);
+      expect(deferred.getSpy).toHaveBeenCalledTimes(1);
+
+      appStore.dispatch(dismissReleaseNotes());
+      await flush();
+      expect(appStore.state.releaseNotes.showModal).toBe(false);
+
+      deferred.resolve({ success: true, data: NOTES });
+      await flush();
+
+      expect(appStore.state.releaseNotes.showModal).toBe(false);
+    });
+
+    it('does not re-open the modal when the fetch resolves after the close broadcast', async () => {
+      const deferred = deferGet();
+
+      appStore.dispatch(initializeReleaseNotes());
+      await flush();
+      emitMockIpcEvent(RELEASE_NOTES_CHANNELS.SHOW, { notes: null });
+      await flush();
+      expect(appStore.state.releaseNotes.showModal).toBe(true);
+
+      emitMockIpcEvent(RELEASE_NOTES_CHANNELS.CLOSE, undefined);
+      await flush();
+      expect(appStore.state.releaseNotes.showModal).toBe(false);
+
+      deferred.resolve({ success: true, data: NOTES });
+      await flush();
+
+      expect(appStore.state.releaseNotes.showModal).toBe(false);
+    });
+
+    it('does not re-open the modal when the fetch rejects after the modal was closed', async () => {
+      const deferred = deferGet();
+
+      appStore.dispatch(initializeReleaseNotes());
+      await flush();
+      emitMockIpcEvent(RELEASE_NOTES_CHANNELS.SHOW, { notes: null });
+      await flush();
+      expect(appStore.state.releaseNotes.showModal).toBe(true);
+
+      appStore.dispatch(dismissReleaseNotes());
+      await flush();
+      expect(appStore.state.releaseNotes.showModal).toBe(false);
+
+      deferred.reject(new Error('bridge unavailable'));
+      await flush();
+
+      expect(appStore.state.releaseNotes.showModal).toBe(false);
+    });
+
+    it('still opens and fetches on a later explicit Help-menu open', async () => {
+      const deferred = deferGet();
+
+      appStore.dispatch(initializeReleaseNotes());
+      await flush();
+      emitMockIpcEvent(RELEASE_NOTES_CHANNELS.SHOW, { notes: null });
+      await flush();
+      appStore.dispatch(dismissReleaseNotes());
+      await flush();
+      deferred.resolve({ success: true, data: NOTES });
+      await flush();
+      expect(appStore.state.releaseNotes.showModal).toBe(false);
+
+      const getSpy = vi.fn(async () => ({ success: true, data: NOTES }));
+      registerMockIpcHandler(RELEASE_NOTES_CHANNELS.GET, getSpy);
+
+      emitMockIpcEvent(RELEASE_NOTES_CHANNELS.SHOW, { notes: null });
+      await flush();
+
+      expect(getSpy).toHaveBeenCalledTimes(1);
+      expect(appStore.state.releaseNotes.showModal).toBe(true);
+      expect(appStore.state.releaseNotes.releaseNotes).toEqual(NOTES);
+      expect(appStore.state.releaseNotes.loading).toBe(false);
+    });
   });
 });
