@@ -67,6 +67,54 @@ const SCREENSHOT_CDP_TIMEOUT_MS = 5_000;
  */
 const SCREENSHOT_CAPTURE_PAGE_TIMEOUT_MS = 5_000;
 
+/**
+ * Per-request options for the capture ops (screenshot / evaluate /
+ * getAccessibilityTree). `deadline` is an absolute epoch-ms instant by which
+ * the enclosing request must have answered (intent-hq/intent#4835): every
+ * stage's timeout is clamped to the time remaining, so a slow mount + CDP +
+ * fallback chain reports a truthful stage error before the daemon's reverse
+ * deadline instead of overrunning into a bare "reverse request timed out".
+ */
+interface CaptureOptions {
+  deadline?: number;
+}
+
+/** Structured cause of a failed capture stage (intent-hq/intent#4835). */
+export type CaptureErrorCode = 'not-painting' | 'deadline-exhausted';
+
+/**
+ * A capture-stage failure carrying a structured `errorCode` so the action
+ * executor can surface it alongside the message. `stage` names the command
+ * or fallback that failed.
+ */
+class CaptureStageError extends Error {
+  constructor(
+    message: string,
+    readonly errorCode: CaptureErrorCode,
+    readonly stage: string,
+  ) {
+    super(message);
+    this.name = 'CaptureStageError';
+  }
+}
+
+/**
+ * Timeout for one capture stage: its own cap, clamped to the time left until
+ * `deadline` (never negative). `deadlineBound` is true when the deadline, not
+ * the cap, is the binding constraint — a timeout then means the request
+ * budget ran out, not that the stage itself is unhealthy.
+ */
+function stageBudget(
+  capMs: number,
+  deadline: number | undefined,
+): { timeoutMs: number; deadlineBound: boolean } {
+  if (deadline === undefined) return { timeoutMs: capMs, deadlineBound: false };
+  const remaining = Math.max(0, deadline - Date.now());
+  return remaining < capMs
+    ? { timeoutMs: remaining, deadlineBound: true }
+    : { timeoutMs: capMs, deadlineBound: false };
+}
+
 interface TabInfo {
   tabId: string;
   webContentsId: number;
@@ -471,6 +519,39 @@ class EmbeddedBrowserCdpService {
    */
   isTabMounted(tabId: string): boolean {
     return this.resolveTabId(tabId) !== undefined;
+  }
+
+  /**
+   * Wait (at most `timeoutMs`) for a mounted tab's guest to stop loading and
+   * report its live state: whether it is still loading and the URL it shows.
+   * Resolves immediately when the guest is not loading; resolves `undefined`
+   * when the tab is not mounted. Never rejects. Capture ops consult this so a
+   * request landing mid-navigation is answered truthfully instead of falling
+   * through to the paint timeout (intent-hq/intent#4835).
+   */
+  waitForTabLoad(
+    tabId: string,
+    timeoutMs: number,
+  ): Promise<{ loading: boolean; url: string } | undefined> {
+    const webContentsId = this.resolveTabId(tabId);
+    const wc = webContentsId === undefined ? undefined : webContents.fromId(webContentsId);
+    if (!wc || wc.isDestroyed()) return Promise.resolve(undefined);
+    const state = () =>
+      wc.isDestroyed()
+        ? { loading: false, url: '' }
+        : { loading: wc.isLoading(), url: wc.getURL() };
+    if (!wc.isLoading() || timeoutMs <= 0) return Promise.resolve(state());
+    return new Promise((resolve) => {
+      const settle = () => {
+        clearTimeout(timer);
+        wc.removeListener('did-stop-loading', settle);
+        wc.removeListener('destroyed', settle);
+        resolve(state());
+      };
+      const timer = setTimeout(settle, timeoutMs);
+      wc.once('did-stop-loading', settle);
+      wc.once('destroyed', settle);
+    });
   }
 
   /**
@@ -1706,9 +1787,10 @@ class EmbeddedBrowserCdpService {
   }
 
   /**
-   * Get the accessibility tree for a tab
+   * Get the accessibility tree for a tab. With a `deadline`, each CDP command
+   * is bounded by the remaining request budget (#4835).
    */
-  async getAccessibilityTree(tabId?: string): Promise<string> {
+  async getAccessibilityTree(tabId?: string, options: CaptureOptions = {}): Promise<string> {
     const webContentsId = tabId ? this.resolveTabId(tabId) : this.getFirstTab()?.webContentsId;
 
     if (webContentsId === undefined) {
@@ -1720,10 +1802,18 @@ class EmbeddedBrowserCdpService {
     }
 
     // Enable accessibility domain
-    await this.sendCommand(webContentsId, 'Accessibility.enable');
+    await this.withDeadline(
+      this.sendCommand(webContentsId, 'Accessibility.enable'),
+      'Accessibility.enable',
+      options.deadline,
+    );
 
     // Get the full accessibility tree
-    const result = (await this.sendCommand(webContentsId, 'Accessibility.getFullAXTree')) as {
+    const result = (await this.withDeadline(
+      this.sendCommand(webContentsId, 'Accessibility.getFullAXTree'),
+      'Accessibility.getFullAXTree',
+      options.deadline,
+    )) as {
       nodes: Array<{
         nodeId: string;
         role?: { value: string };
@@ -1784,21 +1874,35 @@ class EmbeddedBrowserCdpService {
   }
 
   /**
-   * Race a Page-domain screenshot command against a bounded timeout. The
-   * command promise is returned as-is when it settles first; on timeout the
-   * caller falls back to webContents.capturePage() (monorepo#3154).
-   * Rejections are prefixed with the command label so the fallback's warn
-   * log always identifies which CDP command failed.
+   * Race a capture-stage promise against a bounded timeout. The promise is
+   * returned as-is when it settles first. Rejections are prefixed with the
+   * stage label so every failure names the stage (monorepo#3154); a timeout
+   * caused by the request deadline (not the stage's own cap) rejects with a
+   * `deadline-exhausted` {@link CaptureStageError} (#4835).
    */
-  private async withScreenshotCdpTimeout<T>(promise: Promise<T>, label: string): Promise<T> {
+  private async withStageTimeout<T>(
+    promise: Promise<T>,
+    label: string,
+    budget: { timeoutMs: number; deadlineBound: boolean },
+  ): Promise<T> {
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       return await Promise.race([
         promise,
         new Promise<never>((_, reject) => {
           timer = setTimeout(
-            () => reject(new Error(`${label} timed out after ${SCREENSHOT_CDP_TIMEOUT_MS}ms`)),
-            SCREENSHOT_CDP_TIMEOUT_MS,
+            () =>
+              reject(
+                budget.deadlineBound
+                  ? new CaptureStageError(
+                      // i18n-ignore (agent-facing operational diagnostic, not user-facing)
+                      `${label} timed out after ${budget.timeoutMs}ms: the request deadline was exhausted before this stage finished`,
+                      'deadline-exhausted',
+                      label,
+                    )
+                  : new Error(`${label} timed out after ${budget.timeoutMs}ms`),
+              ),
+            budget.timeoutMs,
           );
         }),
       ]);
@@ -1808,6 +1912,27 @@ class EmbeddedBrowserCdpService {
     } finally {
       clearTimeout(timer);
     }
+  }
+
+  /** Page-domain screenshot command bounded by its cap and the request deadline. */
+  private withScreenshotCdpTimeout<T>(
+    promise: Promise<T>,
+    label: string,
+    deadline?: number,
+  ): Promise<T> {
+    return this.withStageTimeout(promise, label, stageBudget(SCREENSHOT_CDP_TIMEOUT_MS, deadline));
+  }
+
+  /**
+   * Bound a non-screenshot CDP command by the request deadline only: without
+   * a deadline the command runs unbounded, as before (#4835).
+   */
+  private withDeadline<T>(promise: Promise<T>, label: string, deadline?: number): Promise<T> {
+    if (deadline === undefined) return promise;
+    return this.withStageTimeout(promise, label, {
+      timeoutMs: Math.max(0, deadline - Date.now()),
+      deadlineBound: true,
+    });
   }
 
   /**
@@ -1832,11 +1957,13 @@ class EmbeddedBrowserCdpService {
    */
   private async capturePageFallback(
     webContentsId: number,
+    deadline?: number,
   ): Promise<{ base64: string; width: number; height: number }> {
     const wc = webContents.fromId(webContentsId);
     if (!wc || wc.isDestroyed()) {
       throw new Error(`WebContents ${webContentsId} not found or destroyed`);
     }
+    const budget = stageBudget(SCREENSHOT_CAPTURE_PAGE_TIMEOUT_MS, deadline);
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       const image = await Promise.race([
@@ -1845,27 +1972,40 @@ class EmbeddedBrowserCdpService {
           timer = setTimeout(
             () =>
               reject(
-                new Error(
-                  // i18n-ignore (agent-facing protocol error, not user-facing)
-                  `capturePage timed out after ${SCREENSHOT_CAPTURE_PAGE_TIMEOUT_MS}ms: the tab is not painting. A visible tab paints only while it is on screen: its panel's active tab (listTabs reports displayed: true — otherwise use { action: "showTab", tabId } to activate it without stealing focus, or focusTab to activate and focus), with its workspace in view in the app and its panel not hidden by zoom; then capture again.`,
-                ),
+                budget.deadlineBound
+                  ? new CaptureStageError(
+                      // i18n-ignore (agent-facing protocol error, not user-facing)
+                      `capturePage timed out after ${budget.timeoutMs}ms: the request deadline was exhausted before the fallback capture finished; retry the capture`,
+                      'deadline-exhausted',
+                      'capturePage',
+                    )
+                  : new CaptureStageError(
+                      // i18n-ignore (agent-facing protocol error, not user-facing)
+                      `capturePage timed out after ${budget.timeoutMs}ms: the tab is not painting. A visible tab paints only while it is on screen: its panel's active tab (listTabs reports displayed: true — otherwise use { action: "showTab", tabId } to activate it without stealing focus, or focusTab to activate and focus), with its workspace in view in the app and its panel not hidden by zoom; then capture again.`,
+                      'not-painting',
+                      'capturePage',
+                    ),
               ),
-            SCREENSHOT_CAPTURE_PAGE_TIMEOUT_MS,
+            budget.timeoutMs,
           );
         }),
       ]);
       const size = image.getSize();
       if (image.isEmpty?.() || size.width <= 0 || size.height <= 0) {
-        throw new Error(
+        throw new CaptureStageError(
           // i18n-ignore (agent-facing operational diagnostic, not user-facing)
           `webContents.capturePage returned an empty image (${size.width}x${size.height}): the tab surface has not painted. A visible tab paints only while it is on screen: its panel's active tab (listTabs reports displayed: true — otherwise use { action: "showTab", tabId } to activate it without stealing focus, or focusTab to activate and focus), with its workspace in view in the app and its panel not hidden by zoom; then capture again.`,
+          'not-painting',
+          'capturePage',
         );
       }
       const jpeg = image.toJPEG(80);
       if (jpeg.length === 0) {
-        throw new Error(
+        throw new CaptureStageError(
           // i18n-ignore (agent-facing operational diagnostic, not user-facing)
           `webContents.capturePage encoded an empty image (${size.width}x${size.height}): the tab surface has not painted. A visible tab paints only while it is on screen: its panel's active tab (listTabs reports displayed: true — otherwise use { action: "showTab", tabId } to activate it without stealing focus, or focusTab to activate and focus), with its workspace in view in the app and its panel not hidden by zoom; then capture again.`,
+          'not-painting',
+          'capturePage',
         );
       }
       return {
@@ -1879,9 +2019,14 @@ class EmbeddedBrowserCdpService {
   }
 
   /**
-   * Take a screenshot of a tab
+   * Take a screenshot of a tab. With a `deadline`, the CDP commands and the
+   * capturePage fallback are each clamped to the remaining request budget,
+   * and a failure carries the fallback stage's structured cause (#4835).
    */
-  async screenshot(tabId?: string): Promise<{ base64: string; width: number; height: number }> {
+  async screenshot(
+    tabId?: string,
+    options: CaptureOptions = {},
+  ): Promise<{ base64: string; width: number; height: number }> {
     const firstTab = tabId ? undefined : this.getFirstTab();
     const webContentsId = tabId ? this.resolveTabId(tabId) : firstTab?.webContentsId;
 
@@ -1894,7 +2039,7 @@ class EmbeddedBrowserCdpService {
     }
 
     try {
-      return await this.screenshotViaCdp(webContentsId, tabId ?? firstTab?.tabId);
+      return await this.screenshotViaCdp(webContentsId, tabId ?? firstTab?.tabId, options.deadline);
     } catch (cdpError) {
       // The Page domain can hang (or fail) on some guests while the rest of
       // the debugger session works; degrade to capturePage() instead of
@@ -1904,15 +2049,16 @@ class EmbeddedBrowserCdpService {
         error: cdpError instanceof Error ? cdpError.message : String(cdpError),
       });
       try {
-        return await this.capturePageFallback(webContentsId);
+        return await this.capturePageFallback(webContentsId, options.deadline);
       } catch (fallbackError) {
         const cdpMessage = cdpError instanceof Error ? cdpError.message : String(cdpError);
         const fallbackMessage =
           fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
-        throw new Error(
-          // i18n-ignore (agent-facing operational diagnostic, not user-facing)
-          `Screenshot capture failed: CDP stage: ${cdpMessage}; Electron fallback stage: ${fallbackMessage}`,
-        );
+        // i18n-ignore (agent-facing operational diagnostic, not user-facing)
+        const message = `Screenshot capture failed: CDP stage: ${cdpMessage}; Electron fallback stage: ${fallbackMessage}`;
+        throw fallbackError instanceof CaptureStageError
+          ? new CaptureStageError(message, fallbackError.errorCode, fallbackError.stage)
+          : new Error(message);
       }
     }
   }
@@ -1921,6 +2067,7 @@ class EmbeddedBrowserCdpService {
   private async screenshotViaCdp(
     webContentsId: number,
     tabId?: string,
+    deadline?: number,
   ): Promise<{ base64: string; width: number; height: number }> {
     // An emulation command dispatched just before this capture (registerTab,
     // setViewport, a bounds report) already affects the guest when the
@@ -1929,7 +2076,11 @@ class EmbeddedBrowserCdpService {
     const pendingEmulation =
       tabId === undefined ? undefined : this.pendingViewportEmulation.get(tabId);
     if (pendingEmulation) {
-      await this.withScreenshotCdpTimeout(pendingEmulation, 'Emulation.setDeviceMetricsOverride');
+      await this.withScreenshotCdpTimeout(
+        pendingEmulation,
+        'Emulation.setDeviceMetricsOverride',
+        deadline,
+      );
     }
 
     // Get layout metrics to determine viewport size.
@@ -1940,6 +2091,7 @@ class EmbeddedBrowserCdpService {
     const layoutMetrics = (await this.withScreenshotCdpTimeout(
       this.sendCommand(webContentsId, 'Page.getLayoutMetrics'),
       'Page.getLayoutMetrics',
+      deadline,
     )) as {
       layoutViewport: { clientWidth: number; clientHeight: number };
       cssVisualViewport?: {
@@ -1997,6 +2149,7 @@ class EmbeddedBrowserCdpService {
         },
       }),
       'Page.captureScreenshot',
+      deadline,
     )) as { data: string };
 
     if (!result.data) {
@@ -2014,9 +2167,14 @@ class EmbeddedBrowserCdpService {
   }
 
   /**
-   * Evaluate JavaScript in a tab
+   * Evaluate JavaScript in a tab. With a `deadline`, the command is bounded
+   * by the remaining request budget (#4835).
    */
-  async evaluate(tabId: string | undefined, expression: string): Promise<unknown> {
+  async evaluate(
+    tabId: string | undefined,
+    expression: string,
+    options: CaptureOptions = {},
+  ): Promise<unknown> {
     const webContentsId = tabId ? this.resolveTabId(tabId) : this.getFirstTab()?.webContentsId;
 
     if (webContentsId === undefined) {
@@ -2027,10 +2185,14 @@ class EmbeddedBrowserCdpService {
       );
     }
 
-    const result = (await this.sendCommand(webContentsId, 'Runtime.evaluate', {
-      expression,
-      returnByValue: true,
-    })) as { result: { value: unknown } };
+    const result = (await this.withDeadline(
+      this.sendCommand(webContentsId, 'Runtime.evaluate', {
+        expression,
+        returnByValue: true,
+      }),
+      'Runtime.evaluate',
+      options.deadline,
+    )) as { result: { value: unknown } };
 
     return result.result.value;
   }

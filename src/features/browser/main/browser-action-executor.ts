@@ -17,6 +17,7 @@ import {
   AGENT_VIEWPORT_MIN_PX,
   DEFAULT_AGENT_VIEWPORT,
   embeddedBrowserCdp,
+  type CaptureErrorCode,
 } from './embedded-browser-cdp-service';
 import { browserCapture } from './browser-capture-service';
 import type { SnapshotOptions, SessionOptions, CaptureStepOptions } from './browser-capture-types';
@@ -39,6 +40,29 @@ const logger = new Logger('BrowserActionExecutor');
  * as a generic transport timeout instead of a structured result.
  */
 const CAPTURE_MOUNT_TIMEOUT_MS = 10_000;
+
+/**
+ * How long (ms) a capture op waits for a mounted guest that is still loading
+ * (or mid-navigation) to settle before answering `still-loading`
+ * (intent-hq/intent#4835). Clamped to the request deadline like every other
+ * capture stage.
+ */
+const CAPTURE_LOAD_SETTLE_TIMEOUT_MS = 5_000;
+
+/**
+ * Timeout for one capture stage: its own cap, clamped to the time left until
+ * the request `deadline` (epoch ms; never negative). Without a deadline the
+ * cap applies unchanged.
+ */
+function stageBudgetMs(capMs: number, deadline?: number): number {
+  return deadline === undefined ? capMs : Math.max(0, Math.min(capMs, deadline - Date.now()));
+}
+
+/** Structured cause carried by a capture-stage error thrown by the CDP service. */
+function captureErrorCode(error: unknown): CaptureErrorCode | undefined {
+  const code = (error as { errorCode?: unknown } | null)?.errorCode;
+  return code === 'not-painting' || code === 'deadline-exhausted' ? code : undefined;
+}
 
 // ============================================================================
 // Action Schemas
@@ -373,14 +397,29 @@ async function readTabDisplayed(
  * `warning` to merge into the success result when the tab was mounted on
  * demand for a not-visible workspace, or a structured `failure` result when
  * the mount is impossible (workspace open nowhere, tab gone, or the webview
- * never registered).
+ * never registered). `registryUrl` echoes the tab list's URL when the tab
+ * was mounted on demand, so the caller can detect a guest that moved away.
+ *
+ * The registration wait is clamped to the request `deadline` (#4835).
  */
 async function ensureCaptureTabMounted(
   actionName: string,
   tabId: string | undefined,
   workspaceId: string | undefined,
-): Promise<{ failure?: ActionResult; warning?: string }> {
+  deadline?: number,
+): Promise<{ failure?: ActionResult; warning?: string; registryUrl?: string }> {
   if (!tabId || !workspaceId || embeddedBrowserCdp.isTabMounted(tabId)) return {};
+
+  const exhaustedBeforeMount = (): { failure: ActionResult } => ({
+    failure: {
+      action: actionName,
+      success: false,
+      errorCode: 'deadline-exhausted',
+      // i18n-ignore (agent-facing protocol error, not user-facing)
+      error: `Cannot run '${actionName}' on tab ${tabId}: the request deadline was exhausted before the tab's webview could be mounted. Retry the capture.`,
+    },
+  });
+  if (stageBudgetMs(CAPTURE_MOUNT_TIMEOUT_MS, deadline) <= 0) return exhaustedBeforeMount();
 
   let listed: Awaited<ReturnType<typeof embeddedBrowserCdp.listAllTabs>>;
   try {
@@ -424,18 +463,29 @@ async function ensureCaptureTabMounted(
   }
 
   // The tab-list request hydrated the layout; the offscreen host mounts the
-  // tab and its registerTab settles this bounded wait (never rejects).
-  const mounted = await embeddedBrowserCdp.waitForTabRegistration(tabId, CAPTURE_MOUNT_TIMEOUT_MS);
+  // tab and its registerTab settles this bounded wait (never rejects). The
+  // wait is the mount cap or the request budget remaining now — after the
+  // listing round-trip, not before it — whichever is less.
+  const mountBudgetMs = stageBudgetMs(CAPTURE_MOUNT_TIMEOUT_MS, deadline);
+  if (mountBudgetMs <= 0) return exhaustedBeforeMount();
+  const mounted = await embeddedBrowserCdp.waitForTabRegistration(tabId, mountBudgetMs);
   if (!mounted) {
     const notVisible = getWindowIdForWorkspace(workspaceId) === undefined;
+    const deadlineBound = mountBudgetMs < CAPTURE_MOUNT_TIMEOUT_MS;
     return {
       failure: {
         action: actionName,
         success: false,
-        ...(notVisible ? { errorCode: 'workspace-not-visible' as const } : {}),
-        error: notVisible
-          ? `Cannot run '${actionName}' on tab ${tabId}: the tab's webview did not mount within the wait budget (workspace ${workspaceId} is not visible in the app and the offscreen mount did not complete). Retry shortly, or use { action: "listTabs" } to verify the tab still exists.` // i18n-ignore (agent-facing protocol error, not user-facing)
-          : `Cannot run '${actionName}' on tab ${tabId}: the tab's webview did not mount within the wait budget. Use { action: "focusTab", tabId: "${tabId}" } to mount it, or { action: "listTabs" } to verify the tab still exists.`, // i18n-ignore (agent-facing protocol error, not user-facing)
+        ...(deadlineBound
+          ? { errorCode: 'deadline-exhausted' as const }
+          : notVisible
+            ? { errorCode: 'workspace-not-visible' as const }
+            : {}),
+        error: deadlineBound
+          ? `Cannot run '${actionName}' on tab ${tabId}: the tab's webview did not mount within the ${mountBudgetMs}ms left of the request deadline. Retry the capture, or use { action: "listTabs" } to verify the tab still exists.` // i18n-ignore (agent-facing protocol error, not user-facing)
+          : notVisible
+            ? `Cannot run '${actionName}' on tab ${tabId}: the tab's webview did not mount within the wait budget (workspace ${workspaceId} is not visible in the app and the offscreen mount did not complete). Retry shortly, or use { action: "listTabs" } to verify the tab still exists.` // i18n-ignore (agent-facing protocol error, not user-facing)
+            : `Cannot run '${actionName}' on tab ${tabId}: the tab's webview did not mount within the wait budget. Use { action: "focusTab", tabId: "${tabId}" } to mount it, or { action: "listTabs" } to verify the tab still exists.`, // i18n-ignore (agent-facing protocol error, not user-facing)
       },
     };
   }
@@ -443,7 +493,67 @@ async function ensureCaptureTabMounted(
   // standard not-visible caveat so the caller knows the capture ran against
   // an offscreen webview (a hidden tab in a displayed workspace mounts with
   // no warning).
-  return { ...workspaceNotVisibleWarning(workspaceId) };
+  const registryUrl = listed.tabs.find((t) => t.tabId === tabId)?.url;
+  return {
+    ...workspaceNotVisibleWarning(workspaceId),
+    ...(registryUrl ? { registryUrl } : {}),
+  };
+}
+
+/** Whether two URLs name different origins; false when either does not parse. */
+function originMoved(registryUrl: string, guestUrl: string): boolean {
+  try {
+    return new URL(registryUrl).origin !== new URL(guestUrl).origin;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Settle the capture target's guest before a capture op runs
+ * (intent-hq/intent#4835). A request that lands while the guest is loading
+ * (offscreen mount just fired dom-ready, or a navigation is in flight) waits
+ * a bounded time for the load to finish; if it is still loading, or the
+ * guest now shows a different origin than the tab list recorded, the op
+ * answers with a structured `still-loading` / `navigated-away` failure
+ * instead of falling through to the paint timeout or capturing the wrong
+ * page. Returns `{}` when the target is unknown or not mounted — the capture
+ * op then fails with its own descriptive error.
+ */
+async function ensureCaptureGuestSettled(
+  actionName: string,
+  tabId: string | undefined,
+  registryUrl: string | undefined,
+  deadline?: number,
+): Promise<{ failure?: ActionResult }> {
+  const targetTabId = tabId ?? embeddedBrowserCdp.getFirstTab()?.tabId;
+  if (!targetTabId) return {};
+  const settleBudgetMs = stageBudgetMs(CAPTURE_LOAD_SETTLE_TIMEOUT_MS, deadline);
+  const guest = await embeddedBrowserCdp.waitForTabLoad(targetTabId, settleBudgetMs);
+  if (!guest) return {};
+  if (guest.loading) {
+    return {
+      failure: {
+        action: actionName,
+        success: false,
+        errorCode: 'still-loading',
+        // i18n-ignore (agent-facing protocol error, not user-facing)
+        error: `Cannot run '${actionName}' on tab ${targetTabId}: the page (${guest.url || 'about:blank'}) is still loading after waiting ${settleBudgetMs}ms. Retry shortly, or use { action: "snapshot", tabId: "${targetTabId}", waitFor: { networkIdle: 500 } } to wait for the load to settle.`,
+      },
+    };
+  }
+  if (registryUrl && guest.url && originMoved(registryUrl, guest.url)) {
+    return {
+      failure: {
+        action: actionName,
+        success: false,
+        errorCode: 'navigated-away',
+        // i18n-ignore (agent-facing protocol error, not user-facing)
+        error: `Cannot run '${actionName}' on tab ${targetTabId}: the tab now shows ${guest.url}, not the ${registryUrl} the tab list recorded — the guest navigated away. Use { action: "navigate", tabId: "${targetTabId}", url: "${registryUrl}" } to return to it, or { action: "listTabs" } to re-check the tab.`,
+      },
+    };
+  }
+  return {};
 }
 
 /**
@@ -483,11 +593,20 @@ interface ActionResult {
   /** Successful result with a caveat (e.g. listTabs answered from a stale cache). */
   warning?: string;
   /**
-   * Structured error code: ownership errors (monorepo#2857), or a capture op
+   * Structured error code: ownership errors (monorepo#2857), a capture op
    * whose target tab could not be mounted because its workspace is not
-   * visible in the app (monorepo#4103).
+   * visible in the app (monorepo#4103), or a capture op that answered
+   * truthfully within the request deadline (intent-hq/intent#4835): the
+   * guest was still loading or had navigated to another origin, the tab is
+   * not painting, or the deadline ran out at a named stage.
    */
-  errorCode?: 'not-owner' | 'already-claimed' | 'workspace-not-visible';
+  errorCode?:
+    | 'not-owner'
+    | 'already-claimed'
+    | 'workspace-not-visible'
+    | 'still-loading'
+    | 'navigated-away'
+    | CaptureErrorCode;
   /** Owning agent for ownership errors; null when the tab is unowned. */
   ownerAgentId?: string | null;
   /** Owning agent's display name for ownership errors, when resolvable. */
@@ -618,7 +737,8 @@ async function notOwnerResult(
  * Agent callers (agentId present) are ownership-enforced: tab-manipulating
  * actions on tabs the agent does not own fail with a structured `not-owner`
  * error. Calls without agentId are the user and are unrestricted
- * (monorepo#2857).
+ * (monorepo#2857). `deadline` (epoch ms) bounds every capture stage to the
+ * remaining request budget (#4835).
  */
 async function executeAction(
   action: BrowserAction,
@@ -640,6 +760,7 @@ async function executeAction(
   getLoopbackContext?: () => LoopbackRewriteContext,
   getTunnelProvider?: () => TunnelProvider | null,
   ownerNameCache?: OwnerNameCache,
+  deadline?: number,
 ): Promise<ActionResult> {
   const tabId = ('tabId' in action ? action.tabId : undefined) || defaultTabId;
 
@@ -808,9 +929,16 @@ async function executeAction(
       }
 
       case 'getAccessibilityTree': {
-        const mount = await ensureCaptureTabMounted(action.action, tabId, workspaceId);
+        const mount = await ensureCaptureTabMounted(action.action, tabId, workspaceId, deadline);
         if (mount.failure) return mount.failure;
-        const result = await embeddedBrowserCdp.getAccessibilityTree(tabId);
+        const guest = await ensureCaptureGuestSettled(
+          action.action,
+          tabId,
+          mount.registryUrl,
+          deadline,
+        );
+        if (guest.failure) return guest.failure;
+        const result = await embeddedBrowserCdp.getAccessibilityTree(tabId, { deadline });
         return {
           action: 'getAccessibilityTree',
           success: true,
@@ -820,9 +948,16 @@ async function executeAction(
       }
 
       case 'screenshot': {
-        const mount = await ensureCaptureTabMounted(action.action, tabId, workspaceId);
+        const mount = await ensureCaptureTabMounted(action.action, tabId, workspaceId, deadline);
         if (mount.failure) return mount.failure;
-        const result = await embeddedBrowserCdp.screenshot(tabId);
+        const guest = await ensureCaptureGuestSettled(
+          action.action,
+          tabId,
+          mount.registryUrl,
+          deadline,
+        );
+        if (guest.failure) return guest.failure;
+        const result = await embeddedBrowserCdp.screenshot(tabId, { deadline });
         return {
           action: 'screenshot',
           success: true,
@@ -832,9 +967,16 @@ async function executeAction(
       }
 
       case 'evaluate': {
-        const mount = await ensureCaptureTabMounted(action.action, tabId, workspaceId);
+        const mount = await ensureCaptureTabMounted(action.action, tabId, workspaceId, deadline);
         if (mount.failure) return mount.failure;
-        const result = await embeddedBrowserCdp.evaluate(tabId, action.expression);
+        const guest = await ensureCaptureGuestSettled(
+          action.action,
+          tabId,
+          mount.registryUrl,
+          deadline,
+        );
+        if (guest.failure) return guest.failure;
+        const result = await embeddedBrowserCdp.evaluate(tabId, action.expression, { deadline });
         return {
           action: 'evaluate',
           success: true,
@@ -1527,9 +1669,11 @@ async function executeAction(
     }
   } catch (error) {
     logger.error('Action execution failed', { action: action.action, error });
+    const errorCode = captureErrorCode(error);
     return {
       action: action.action,
       success: false,
+      ...(errorCode ? { errorCode } : {}),
       // i18n-ignore (agent-facing protocol error, not user-facing)
       error: error instanceof Error ? error.message : 'Unknown error',
     };
@@ -1550,6 +1694,10 @@ async function executeAction(
  * @param getTunnelProvider - Injectable tunnel seam for the probe-failure
  *   fallback; when absent (non-Electron contexts) an unreachable rewritten
  *   remote origin keeps failing with the explanatory probe error
+ * @param deadline - Absolute epoch-ms instant by which the whole batch must
+ *   have answered (the reverse-request deadline minus transport margin,
+ *   intent-hq/intent#4835); every capture stage is clamped to what remains.
+ *   Absent for callers without a transport deadline (renderer IPC).
  */
 export async function executeActions(
   input: unknown,
@@ -1569,6 +1717,7 @@ export async function executeActions(
   workspaceId?: string,
   getLoopbackContext?: () => LoopbackRewriteContext,
   getTunnelProvider?: () => TunnelProvider | null,
+  deadline?: number,
 ): Promise<ExecutionResult> {
   // Validate input against schema
   const parseResult = ActionSequenceSchema.safeParse(input);
@@ -1598,6 +1747,7 @@ export async function executeActions(
       getLoopbackContext,
       getTunnelProvider,
       ownerNameCache,
+      deadline,
     );
     results.push(result);
 

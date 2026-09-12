@@ -1,19 +1,37 @@
 import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createCollection, getItem } from '@augmentcode/themis/utils/collections/collection-utils';
+import {
+  createCollection,
+  getItem,
+  getItems,
+} from '@augmentcode/themis/utils/collections/collection-utils';
 
 const mocks = vi.hoisted(() => ({
   clearAdapter: vi.fn(),
   getJSON: vi.fn(),
+  listTabs: vi.fn(),
   loadHistory: vi.fn(),
   removeItem: vi.fn(),
+  removeTab: vi.fn(),
   resolveBrowserLinkUrl: vi.fn(),
   saveHistory: vi.fn(),
   setJSON: vi.fn(),
+  syncTabs: vi.fn(),
+  upsertTab: vi.fn(),
 }));
 
 vi.mock('$features/layout/panel-layout-adapter', () => ({
   clearPanelLayoutAdapter: mocks.clearAdapter,
+}));
+vi.mock('$lib/client', () => ({
+  appClient: {
+    browser: {
+      listTabs: mocks.listTabs,
+      upsertTab: mocks.upsertTab,
+      removeTab: mocks.removeTab,
+      syncTabs: mocks.syncTabs,
+    },
+  },
 }));
 vi.mock('$features/layout/panel-layout-history.client', () => ({
   loadPanelLayoutHistory: mocks.loadHistory,
@@ -37,9 +55,20 @@ vi.mock('../../../utils/safe-local-storage-saga', () => ({
   },
 }));
 
+import { fork } from 'typed-redux-saga';
 import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
 import type { AgentSession, ContextLink, Note, Workspace } from '$shared/types';
+import type { BrowserTabListing } from '$shared/types/browser-clients';
 import { ContentType, NoteVisibility } from '$shared/types';
+import {
+  browserClientsReducer,
+  initialState as browserClientsInitialState,
+} from '../../browser-clients/browser-clients-slice';
+import {
+  browserTabRegistryReducer,
+  initialState as browserTabRegistryInitialState,
+} from '../../browser-tab-registry/browser-tab-registry-slice';
+import { connectionStatusChanged } from '../../daemon-health/daemon-health-slice';
 import { connectionsListReceived } from '../../connections/connections-slice';
 import { setWorkspaceEntity, setWorkspaceHasLoaded } from '../../workspace/workspace-slice';
 import {
@@ -130,6 +159,7 @@ import {
   PANEL_LAYOUT_PERSISTENCE_VERSION,
   PANEL_LAYOUT_STORAGE_KEY_PREFIX,
   type LayoutSnapshot,
+  type PanelTab,
   type WorkspacePanelLayout,
 } from '../panel-layout-types';
 import {
@@ -137,6 +167,7 @@ import {
   narrowOverlappingGeometryFixture,
   tablessSplitFixture,
 } from '../panel-layout-restore.test-fixtures';
+import { browserTabRegistrySaga, REPORT_DEBOUNCE_MS } from './browser-tab-registry-saga';
 import {
   hydrateWorkspaceLayout,
   isStoredLayoutValid,
@@ -865,35 +896,17 @@ describe('panelLayoutSaga', () => {
     await cancelSaga(second.task);
   });
 
-  it('derives a legacy one-panel count after a stale same-backend remount', async () => {
+  it('derives a legacy one-panel count when the column count was selected before the restore', async () => {
     const selected = panelLayoutReducer(undefined, setPanelColumnCount(WS_1, 3, 10)).byWorkspaceId[
       WS_1
     ];
-    const current: WorkspacePanelLayout = {
-      version: PANEL_LAYOUT_PERSISTENCE_VERSION,
-      root: selected.root,
-      panels: selected.panels,
-      focusedPanelId: selected.focusedPanelId,
-      canvasWidth: selected.canvasWidth,
-      canvasWidthSource: selected.canvasWidthSource,
-      columnCount: 3,
-    };
     const legacy: WorkspacePanelLayout = {
       root: { type: 'panel', panelId: 'legacy' },
       panels: { legacy: { id: 'legacy', tabs: [tab], activeTabId: tab.id } },
       focusedPanelId: 'legacy',
       canvasWidth: 1600,
     };
-    const run = startRestoreSaga(current, [], selected);
-    await settle();
-    const history = run.getState().panelLayout.byWorkspaceId[WS_1].layoutHistory;
-    mocks.getJSON.mockReturnValue(legacy);
-    run.dispatch.mockClear();
-    mocks.setJSON.mockClear();
-
-    run.send(panelLayoutScopeUnmounted(WS_1));
-    await settle();
-    run.send(panelLayoutScopeMounted(WS_1));
+    const run = startRestoreSaga(legacy, [], selected);
     await settle();
 
     const restored = run.getState().panelLayout.byWorkspaceId[WS_1];
@@ -917,7 +930,6 @@ describe('panelLayoutSaga', () => {
       columnCount: 1,
     });
     expect(restored.panels.legacy).toMatchObject({ activeTabId: tab.id, tabs: [tab] });
-    expect(restored.layoutHistory).toBe(history);
     expect(mocks.saveHistory).not.toHaveBeenCalled();
     expect(mocks.setJSON.mock.calls.at(-1)).toEqual([
       STORAGE_KEY_1,
@@ -930,6 +942,351 @@ describe('panelLayoutSaga', () => {
       }),
     ]);
     await cancelSaga(run.task);
+  });
+
+  // intent-hq/intent#4835: the retention cap unmounts an out-of-view
+  // workspace's panel-layout scope and remounts it later in the same session.
+  // Storage holds only what was persisted from this in-memory layout (with
+  // registry-held browser fields stripped), so re-installing it would replace
+  // the live tabs with geometry shells and re-navigate the offscreen guest.
+  it('keeps the live in-memory layout across a same-session scope remount', async () => {
+    const run = startRestoreSaga(layout, []);
+    await settle();
+    run.dispatch(
+      openTab(
+        WS_1,
+        {
+          type: 'browser',
+          title: 'Sandbox',
+          closable: true,
+          hostClientId: 'cli-desk',
+          browserUrl: 'http://127.0.0.1:52345/',
+          browserRequestedUrl: 'http://daemon.localhost:3000/',
+          ownerAgentId: 'agent-1',
+          emulatedSize: { width: 1280, height: 900 },
+        },
+        'panel-1',
+        'b1',
+      ),
+    );
+    await settle();
+    const live = run.getState().panelLayout.byWorkspaceId[WS_1];
+    const persisted = mocks.setJSON.mock.calls.at(-1)?.[1] as WorkspacePanelLayout;
+    expect(Object.values(persisted.panels).flatMap((panel) => panel.tabs)).toContainEqual(
+      expect.not.objectContaining({ browserUrl: expect.anything() }),
+    );
+    mocks.getJSON.mockReturnValue(persisted);
+    mocks.getJSON.mockClear();
+    run.dispatch.mockClear();
+
+    run.send(panelLayoutScopeUnmounted(WS_1));
+    await settle();
+    run.send(panelLayoutScopeMounted(WS_1));
+    await settle();
+
+    expect(mocks.getJSON).not.toHaveBeenCalled();
+    expect(run.dispatch.mock.calls.map(([action]) => action.type)).not.toContain(
+      initializeLayout.type,
+    );
+    expect(run.dispatch.mock.calls.map(([action]) => action.type)).not.toContain(
+      setRestoreStatus.type,
+    );
+    expect(run.getState().panelLayout.byWorkspaceId[WS_1]).toBe(live);
+
+    // The remounted workspace is still a mounted one: a later mutation persists.
+    mocks.setJSON.mockClear();
+    run.dispatch(updateTabTitle(WS_1, 'b1', 'Renamed'));
+    await settle();
+    expect(mocks.setJSON).toHaveBeenCalledTimes(1);
+    await cancelSaga(run.task);
+  });
+
+  it('restores from storage again after clearPanelLayout voided the in-memory provenance', async () => {
+    const run = startRestoreSaga(layout, []);
+    await settle();
+    run.dispatch.mockClear();
+    mocks.getJSON.mockClear();
+
+    run.send(panelLayoutScopeUnmounted(WS_1));
+    run.dispatch(clearPanelLayout(WS_1));
+    await settle();
+    run.send(panelLayoutScopeMounted(WS_1));
+    await settle();
+
+    expect(mocks.getJSON).toHaveBeenCalledWith(STORAGE_KEY_1);
+    expect(
+      run.dispatch.mock.calls.find(([action]) => action.type === initializeLayout.type)?.[0].payload
+        .layout,
+    ).toMatchObject({ panels: layout.panels });
+    expect(run.getState().panelLayout.byWorkspaceId[WS_1].restoreStatus).toBe('restored');
+    await cancelSaga(run.task);
+  });
+
+  describe('same-session scope remount with the registry saga (intent-hq/intent#4835)', () => {
+    const OWN = 'cli-desk';
+    const REQUESTED = 'http://daemon.localhost:5920/workspace/x';
+    const LIVE = 'http://127.0.0.1:63240/workspace/x';
+    const MOVED = 'http://127.0.0.1:61111/workspace/x';
+    const SIZE = { width: 1280, height: 900 };
+    const claimedRow = (): BrowserTabListing => ({
+      tabId: 'b1',
+      workspaceId: WS_1,
+      hostClientId: OWN,
+      url: LIVE,
+      requestedUrl: REQUESTED,
+      title: 'Intent',
+      ownerAgentId: 'agent-1',
+      emulatedSize: SIZE,
+      visibility: 'visible',
+      createdAt: NOW.toISOString(),
+      updatedAt: NOW.toISOString(),
+      hostConnected: true,
+    });
+    // What `stripRegistryHeldFields` leaves in storage for a registry-hosted tab.
+    const storedShell: WorkspacePanelLayout = {
+      ...layout,
+      panels: {
+        'panel-1': {
+          id: 'panel-1',
+          tabs: [{ id: 'b1', type: 'browser', title: 'Intent', closable: true, hostClientId: OWN }],
+          activeTabId: 'b1',
+        },
+      },
+    };
+
+    async function flush(ms = REPORT_DEBOUNCE_MS) {
+      await vi.advanceTimersByTimeAsync(ms);
+      await vi.advanceTimersByTimeAsync(0);
+    }
+
+    function deferred<T>() {
+      let resolve!: (value: T) => void;
+      const promise = new Promise<T>((r) => {
+        resolve = r;
+      });
+      return { promise, resolve };
+    }
+
+    /** Both sagas over the production reducers, the way the app runs them. */
+    function startComposedSaga(stored: WorkspacePanelLayout) {
+      mocks.getJSON.mockReturnValue(stored);
+      let state: any = {
+        ...storeState(WS_1),
+        panelLayout: { byWorkspaceId: {} },
+        browserTabRegistry: browserTabRegistryInitialState,
+        browserClients: { ...browserClientsInitialState, ownClientId: OWN },
+        daemonHealth: { health: 'healthy', connectionGeneration: 1 },
+        workspaceAgents: { byWorkspaceId: { [WS_1]: { agentIds: [], foregroundAgentIds: [] } } },
+        agentSessions: { byAgentId: {} },
+        workspaceNotes: workspaceNotesReducer(undefined, { type: '@@test/init' }),
+        workspace: {
+          workspaces: createCollection('id', [{ id: WS_1 } as unknown as Workspace]),
+          hasLoaded: true,
+          loadedBackendId: LOCAL_CONNECTION_ID,
+        },
+      };
+      const channel = stdChannel();
+      const dispatch = vi.fn((action) => {
+        state = {
+          ...state,
+          panelLayout: panelLayoutReducer(state.panelLayout, action),
+          browserTabRegistry: browserTabRegistryReducer(state.browserTabRegistry, action),
+          browserClients: browserClientsReducer(state.browserClients, action),
+        };
+        channel.put(action);
+      });
+      const task = runSaga({ channel, dispatch, getState: () => state }, function* root() {
+        yield* fork(browserTabRegistrySaga);
+        yield* panelLayoutSaga({ activeWorkspaceId: WS_1 });
+      });
+      return {
+        dispatch,
+        getState: () => state,
+        send: channel.put,
+        setConnectionGeneration: (connectionGeneration: number) => {
+          state = { ...state, daemonHealth: { health: 'healthy', connectionGeneration } };
+        },
+        tabs: () =>
+          Object.values(state.panelLayout.byWorkspaceId[WS_1]?.panels ?? {}).flatMap(
+            (panel: any) => panel.tabs as PanelTab[],
+          ),
+        hidden: () => getItems(state.panelLayout.byWorkspaceId[WS_1].hiddenTabs) as PanelTab[],
+        task,
+      };
+    }
+
+    beforeEach(() => {
+      mocks.listTabs.mockResolvedValue([claimedRow()]);
+      mocks.syncTabs.mockResolvedValue({ drop: [] });
+      mocks.removeTab.mockResolvedValue({ ok: true });
+      mocks.upsertTab.mockImplementation(async (workspaceId: string, input: { tabId: string }) => ({
+        ...claimedRow(),
+        ...input,
+        workspaceId,
+      }));
+    });
+
+    // The retention cap unmounts an out-of-view workspace's scope and
+    // remounts it later while its agent-owned tab's guest is kept alive
+    // offscreen. The remount must not reinstall the persisted shell over the
+    // live tab: the guest's own navigation report (`updateTabBrowserUrl`)
+    // then lands on the live tab, not on a de-owned shell, and rows arriving
+    // afterwards (here: a reconnect) complete nothing and re-resolve nothing.
+    it('keeps the live tab, its claim and its guest across a retention-cap remount', async () => {
+      mocks.resolveBrowserLinkUrl.mockResolvedValue({
+        url: LIVE,
+        rewritten: true,
+        requestedUrl: REQUESTED,
+        tunneled: true,
+      });
+      const run = startComposedSaga(storedShell);
+      await flush();
+      // Restart path: the shell is restored and filled from the registry row.
+      expect(run.tabs()).toEqual([
+        expect.objectContaining({
+          id: 'b1',
+          browserUrl: LIVE,
+          browserRequestedUrl: REQUESTED,
+          ownerAgentId: 'agent-1',
+          emulatedSize: SIZE,
+        }),
+      ]);
+      const live = run.tabs()[0];
+      const persisted = mocks.setJSON.mock.calls.at(-1)?.[1] as WorkspacePanelLayout | undefined;
+      expect(Object.values((persisted ?? storedShell).panels).flatMap((p) => p.tabs)[0]).toEqual(
+        expect.not.objectContaining({ ownerAgentId: expect.anything() }),
+      );
+      mocks.getJSON.mockReturnValue(persisted ?? storedShell);
+      mocks.getJSON.mockClear();
+      mocks.listTabs.mockClear();
+      mocks.upsertTab.mockClear();
+      mocks.syncTabs.mockClear();
+      mocks.resolveBrowserLinkUrl.mockClear();
+      run.dispatch.mockClear();
+      // The tunnel forward moved meanwhile: a re-resolution would navigate
+      // the kept-alive guest to a new port.
+      mocks.resolveBrowserLinkUrl.mockResolvedValue({
+        url: MOVED,
+        rewritten: true,
+        requestedUrl: REQUESTED,
+        tunneled: true,
+      });
+
+      run.send(panelLayoutScopeUnmounted(WS_1));
+      await flush(0);
+      run.send(panelLayoutScopeMounted(WS_1));
+      await flush();
+
+      expect(mocks.getJSON).not.toHaveBeenCalled();
+      expect(mocks.listTabs).not.toHaveBeenCalled();
+      expect(run.dispatch.mock.calls.map(([action]) => action.type)).not.toContain(
+        initializeLayout.type,
+      );
+      expect(run.tabs()[0]).toBe(live);
+
+      // The guest reports its location; the rows land only afterwards.
+      run.dispatch(updateTabBrowserUrl(WS_1, 'b1', LIVE));
+      const listing = deferred<BrowserTabListing[]>();
+      mocks.listTabs.mockReturnValue(listing.promise);
+      run.setConnectionGeneration(2);
+      run.dispatch(connectionStatusChanged('connected'));
+      await flush(0);
+      listing.resolve([claimedRow()]);
+      await flush();
+
+      expect(mocks.resolveBrowserLinkUrl).not.toHaveBeenCalled();
+      expect(
+        run.dispatch.mock.calls
+          .filter(([action]) => action.type === updateTabBrowserUrl.type)
+          .map(([action]) => action.payload[2]),
+      ).toEqual([LIVE]);
+      expect(mocks.upsertTab.mock.calls.filter(([, input]) => input.ownerAgentId === null)).toEqual(
+        [],
+      );
+      expect(
+        mocks.syncTabs.mock.calls.flatMap(([inputs]) =>
+          (inputs as { ownerAgentId: string | null }[]).filter((i) => i.ownerAgentId === null),
+        ),
+      ).toEqual([]);
+      expect(run.tabs()).toEqual([
+        expect.objectContaining({
+          id: 'b1',
+          browserUrl: LIVE,
+          browserRequestedUrl: REQUESTED,
+          ownerAgentId: 'agent-1',
+          emulatedSize: SIZE,
+        }),
+      ]);
+
+      // Still owned: a close hides the tab instead of removing the row.
+      run.dispatch(closeTab(WS_1, 'b1', 'panel-1', 1000));
+      await flush();
+      expect(run.hidden().map((t) => t.id)).toEqual(['b1']);
+      expect(mocks.removeTab).not.toHaveBeenCalled();
+      await cancelSaga(run.task);
+    });
+
+    // Closing the workspace tab is a full teardown (`workspaceUnmounted`, on
+    // top of the scope unmount): the guests left with the workspace and the
+    // registry forgot what it reported. A reopen is not an unpark — it must
+    // restore from storage and settle again, or the registry stays
+    // `unmounted` (no rows applied, no reports) until the next reconnect.
+    it('restores from storage and re-reconciles the registry after a full workspaceUnmounted', async () => {
+      mocks.resolveBrowserLinkUrl.mockResolvedValue({
+        url: LIVE,
+        rewritten: true,
+        requestedUrl: REQUESTED,
+        tunneled: true,
+      });
+      const run = startComposedSaga(storedShell);
+      await flush();
+      expect(run.tabs()[0]).toEqual(expect.objectContaining({ id: 'b1', ownerAgentId: 'agent-1' }));
+      const persisted = mocks.setJSON.mock.calls.at(-1)?.[1] as WorkspacePanelLayout | undefined;
+      mocks.getJSON.mockReturnValue(persisted ?? storedShell);
+      mocks.getJSON.mockClear();
+      mocks.listTabs.mockClear();
+      mocks.upsertTab.mockClear();
+      run.dispatch.mockClear();
+
+      run.dispatch(panelLayoutScopeUnmounted(WS_1));
+      run.dispatch(workspaceUnmounted(WS_1));
+      await flush(0);
+      expect(run.getState().browserTabRegistry.byWorkspaceId[WS_1].phase).toBe('unmounted');
+
+      // Scope mount first — the guard must not key off the action type.
+      run.dispatch(panelLayoutScopeMounted(WS_1));
+      run.dispatch(workspaceMounted(WS_1));
+      await flush();
+
+      const types = run.dispatch.mock.calls.map(([action]) => action.type);
+      expect(mocks.getJSON).toHaveBeenCalled();
+      expect(types).toContain(initializeLayout.type);
+      expect(
+        run.dispatch.mock.calls
+          .filter(([action]) => action.type === setRestoreStatus.type)
+          .map(([action]) => action.payload[1]),
+      ).toEqual(['pending', 'restored']);
+      expect(mocks.listTabs).toHaveBeenCalledTimes(1);
+      expect(run.getState().browserTabRegistry.byWorkspaceId[WS_1].phase).toBe('applied');
+      expect(run.tabs()).toEqual([
+        expect.objectContaining({
+          id: 'b1',
+          browserUrl: LIVE,
+          browserRequestedUrl: REQUESTED,
+          ownerAgentId: 'agent-1',
+          emulatedSize: SIZE,
+        }),
+      ]);
+
+      // The reporter is live again: a mutation reaches the daemon.
+      run.dispatch(updateTabBrowserUrl(WS_1, 'b1', MOVED));
+      await flush();
+      expect(mocks.upsertTab).toHaveBeenCalledWith(
+        WS_1,
+        expect.objectContaining({ tabId: 'b1', url: MOVED }),
+      );
+      await cancelSaga(run.task);
+    });
   });
 
   it('restores a legacy initial-agent layout without adding pin state', async () => {
