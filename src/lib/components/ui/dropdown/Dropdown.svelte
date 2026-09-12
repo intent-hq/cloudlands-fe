@@ -870,7 +870,7 @@
         data-highlighted={isHighlighted ? 'true' : undefined}
         data-menu-item
         style="scroll-margin-top: var(--control-height-medium)"
-        class={cn(menuItem(), 'gap-1.5 overflow-hidden', option.class)}
+        class={cn(menuItem(), 'h-auto gap-1.5 overflow-hidden', option.class)}
         role={popupRole === 'menu' ? 'menuitem' : 'option'}
         aria-selected={popupRole === 'listbox' ? isSelected(option.value) : undefined}
         aria-haspopup={option.type === 'submenu' ? 'menu' : undefined}
