@@ -5,10 +5,8 @@ import NeutralBorderContractHost from './NeutralBorderContractHost.svelte';
 type Edge = 'top' | 'right';
 
 const probes = [
-  ['subscription', '[data-testid="event-subscriptions-card"]', 'top'],
   ['launcher', '[data-sidebar-launcher="browser"]', 'top'],
   ['popover', '[data-slot="menu-content"]', 'top'],
-  ['dialog', '[data-slot="dialog-content"]', 'top'],
   ['form', '[data-slot="input"]', 'top'],
 ] as const satisfies ReadonlyArray<readonly [string, string, Edge]>;
 
@@ -16,7 +14,9 @@ const transparentBorderProbes = [['panel', '.panel', 'top']] as const satisfies 
   readonly [string, string, Edge]
 >;
 
+// Batch 11-L subscription surfaces intentionally have no border, like user prompts.
 const borderlessProbes = [
+  ['subscription', '[data-testid="event-subscriptions-card"]', 'top'],
   ['chat', '[data-testid="pinned-user-prompt"]', 'top'],
 ] as const satisfies ReadonlyArray<readonly [string, string, Edge]>;
 
@@ -116,6 +116,13 @@ test('production neutral borders share color and single-edge geometry', async ({
       expect(
         borderlessStyles.every(({ width, ownerCount }) => width === '0px' && ownerCount === 0),
       ).toBe(true);
+
+      // The shared overlay recipe (85641bef) uses a dark-only structural border.
+      const dialogBorder = await border(page.locator('[data-slot="dialog-content"]'), 'top');
+      expect(dialogBorder.width).toBe(theme === 'dark' ? '1px' : '0px');
+      expect(dialogBorder.ownerCount).toBe(theme === 'dark' ? 1 : 0);
+      if (theme === 'dark') expect(dialogBorder.color).toBe(styles[0].color);
+      else expect(dialogBorder.color).toBe('rgba(0, 0, 0, 0)');
 
       const seams = await Promise.all([
         seam(

@@ -133,7 +133,16 @@ for (const theme of ['light', 'dark'] as const) {
           (await row.boundingBox())!.width -
           (await indicator.boundingBox())!.x,
       ).toBe(24);
-      await expectFocusTuple(row);
+      // Batch 18-E: the moving highlight is the menu's keyboard-focus indicator.
+      await expect(row).toBeFocused();
+      await expect(row).toHaveCSS('outline-style', 'none');
+      await page.keyboard.press('ArrowUp');
+      const previousRow = page.getByRole('menuitemradio', { name: 'Compact' });
+      await expect(previousRow).toBeFocused();
+      await expectHighlight(previousRow, menu.locator('.bg-hover'));
+      await page.keyboard.press('ArrowDown');
+      await expect(row).toBeFocused();
+      await expectHighlight(row, menu.locator('.bg-selected'));
       if (process.env.CAPTURE_OPTION_ROWS === '1') {
         console.log(
           `[option-row-colors] menu-${theme} ${JSON.stringify(await measureColors(row, menu.locator('.bg-selected'), menu))}`,
