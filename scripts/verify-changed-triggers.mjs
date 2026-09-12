@@ -307,6 +307,40 @@ function isReference(node, parent) {
   );
 }
 
+const propertyKey = (name) =>
+  ts.isIdentifier(name) || ts.isStringLiteralLike(name) || ts.isNumericLiteral(name)
+    ? name.text
+    : undefined;
+
+// The expressions a pattern initializer contributes to one destructured
+// element. An object or array literal is projected to the member the element
+// names, so `{ fixture } = { fixture: '/tmp/a', source: process.cwd() }` does
+// not taint `fixture` with its sibling. A rest element, a spread, computed,
+// method, or accessor member, or a non-literal initializer is not statically
+// projectable and falls back to the whole initializer.
+function projectInitializer(initializer, pattern, element, index) {
+  if (element.dotDotDotToken) return [initializer];
+  if (ts.isObjectBindingPattern(pattern) && ts.isObjectLiteralExpression(initializer)) {
+    const key = propertyKey(element.propertyName ?? element.name);
+    if (key === undefined) return [initializer];
+    const members = [];
+    for (const property of initializer.properties) {
+      const assignment = ts.isPropertyAssignment(property);
+      if (!assignment && !ts.isShorthandPropertyAssignment(property)) return [initializer];
+      const name = propertyKey(property.name);
+      if (name === undefined) return [initializer];
+      if (name === key) members.push(assignment ? property.initializer : property.name);
+    }
+    return members;
+  }
+  if (ts.isArrayBindingPattern(pattern) && ts.isArrayLiteralExpression(initializer)) {
+    if (initializer.elements.some(ts.isSpreadElement)) return [initializer];
+    const member = initializer.elements[index];
+    return member && !ts.isOmittedExpression(member) ? [member] : [];
+  }
+  return [initializer];
+}
+
 // Every binding a suite declares — variables, parameters, destructured names,
 // functions, classes — resolved by scope, with the expressions each is bound
 // to: variable initializers, function bodies, and plain `name = expr`
@@ -337,21 +371,19 @@ function collectBindings(sourceFile) {
   };
   // Declares every name in a binding target and attaches its initializers:
   // the variable initializer, a parameter default, and every destructuring
-  // default on the way down. A pattern's initializer reaches each name it
-  // binds, so `{ root } = { root: process.cwd() }` taints `root`.
+  // default on the way down, each projected onto the element it reaches, so
+  // `{ root } = { root: process.cwd() }` taints `root` with `process.cwd()`.
   const declareNames = (scope, name, initializers) => {
     if (ts.isIdentifier(name)) {
       declare(scope, name.text).expressions.push(...initializers);
       return;
     }
-    for (const element of name.elements) {
-      if (!ts.isBindingElement(element)) continue;
-      declareNames(
-        scope,
-        element.name,
-        element.initializer ? [...initializers, element.initializer] : initializers,
-      );
-    }
+    name.elements.forEach((element, index) => {
+      if (!ts.isBindingElement(element)) return;
+      const projected = initializers.flatMap((e) => projectInitializer(e, name, element, index));
+      if (element.initializer) projected.push(element.initializer);
+      declareNames(scope, element.name, projected);
+    });
   };
   const lookup = (scope, name) => {
     for (let current = scope; current; current = current.parent) {

@@ -392,6 +392,22 @@ describe('requiresTriggerDeclaration', () => {
       "function helper() { const { root } = { root: process.cwd() }; return readFileSync(join(root, 'src/a.ts'), 'utf8'); }",
     );
     expect(requiresTriggerDeclaration(destructuredVariable, 'scripts/a.test.ts')).toBe(true);
+    const destructuredOptions = suite(
+      "function helper({ opts } = { opts: { cwd: process.cwd() } }) { return globSync('*.ts', opts); }",
+    );
+    expect(requiresTriggerDeclaration(destructuredOptions, 'scripts/a.test.ts')).toBe(true);
+    const arrayDefault = suite(
+      "function helper([, root] = ['/tmp/a.json', process.cwd()]) { return readFileSync(join(root, 'src/a.ts'), 'utf8'); }",
+    );
+    expect(requiresTriggerDeclaration(arrayDefault, 'scripts/a.test.ts')).toBe(true);
+    const siblingFixture = suite(
+      "function helper({ fixture } = { fixture: '/tmp/a.json', source: process.cwd() }) { return readFileSync(fixture, 'utf8'); }",
+    );
+    expect(requiresTriggerDeclaration(siblingFixture, 'scripts/a.test.ts')).toBe(false);
+    const siblingArrayFixture = suite(
+      "function helper([fixture] = ['/tmp/a.json', process.cwd()]) { return readFileSync(fixture, 'utf8'); }",
+    );
+    expect(requiresTriggerDeclaration(siblingArrayFixture, 'scripts/a.test.ts')).toBe(false);
     const fixtureDefault = suite(
       "function helper(root = '/tmp/fixture') { return readFileSync(join(root, 'a.json'), 'utf8'); }",
     );
