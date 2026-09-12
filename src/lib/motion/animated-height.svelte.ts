@@ -20,7 +20,20 @@ function measuredHeight(node: HTMLElement): number {
   const targets = node.querySelectorAll<HTMLElement>('[data-animated-height-target]');
   const content =
     targets.item(targets.length - 1) || (node.firstElementChild as HTMLElement | null);
-  return content?.getBoundingClientRect().height ?? node.scrollHeight;
+  if (!content) return node.scrollHeight;
+  // CSS height needs layout pixels, not the zoomed/transformed visual rectangle.
+  const style = getComputedStyle(content);
+  const height = Number.parseFloat(style.height);
+  if (!Number.isFinite(height)) return content.offsetHeight;
+  if (style.boxSizing === 'border-box') return height;
+  return (
+    height +
+    ['paddingTop', 'paddingBottom', 'borderTopWidth', 'borderBottomWidth'].reduce(
+      (total, property) =>
+        total + (Number.parseFloat(style[property as keyof CSSStyleDeclaration] as string) || 0),
+      0,
+    )
+  );
 }
 
 function prefersReducedMotion(): MediaQueryList | undefined {

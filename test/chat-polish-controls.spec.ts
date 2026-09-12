@@ -51,7 +51,10 @@ test('opens directly to one long conversation with no scenario gallery', async (
   await page.setViewportSize({ width: 1440, height: 900 });
   await openSandbox(page);
   await expect(page.getByRole('combobox')).toHaveCount(0);
-  await expect(page.locator('[data-catalog-fixture]')).toHaveCount(1);
+  // Wave 11 catalog shell (388bffff) renders the conversation through the preview hook.
+  await expect(
+    page.locator('[data-catalog-preview="chat-polish"][data-catalog-fixture-id]'),
+  ).toHaveCount(1);
   await expect(
     page.locator('[data-chat-polish-conversation="comprehensive-conversation"]'),
   ).toBeVisible();
@@ -127,9 +130,11 @@ test('saves, restores, and resets the operational gap without leaking it', async
 test('remains usable in narrow, dark, compact, and reduced-motion modes', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await openSandbox(page);
+  // Wave 11 docs shell (388bffff) collapses customization at narrow widths.
+  await page.getByRole('button', { name: 'Customize preview' }).click();
   await page.getByRole('radio', { name: 'Dark' }).click();
   await page.getByRole('switch', { name: 'Reduce motion' }).click();
-  await page.getByRole('checkbox', { name: 'Compact mode' }).click();
+  await page.getByRole('switch', { name: 'Compact mode' }).click();
   await expect(page.locator('html')).toHaveClass(/dark/);
   await expect(page.getByTestId('catalog-shell')).toHaveAttribute('data-catalog-motion', 'reduced');
   await expect(page.getByTestId('chat-polish-preview')).toHaveAttribute('data-compact', 'true');

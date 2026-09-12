@@ -58,6 +58,20 @@ test('keeps resource tiles and compact header insets exact across the geometry m
 
   const results = await page.locator('[data-resource-geometry-case]').evaluateAll((cases) =>
     cases.map((scenario) => {
+      for (const selector of [
+        '[data-panel-tabless-header]',
+        '[data-panel-header-leading-surface]',
+        '[data-resource-icon-tile]',
+        '[data-resource-icon-glyph]',
+        '[data-panel-tab-bar] [data-resource-icon-tile]',
+        '[data-testid="chat-message-navigator-trigger"] svg',
+        '[data-testid="chat-scroll-to-bottom-button"] svg',
+        '[data-testid="panel-actions-trigger"] svg',
+        '[data-testid="panel-close-button"] svg',
+      ]) {
+        if (!scenario.querySelector(selector))
+          throw new Error(`Missing geometry element: ${selector}`);
+      }
       const header = scenario.querySelector<HTMLElement>('[data-panel-tabless-header]')!;
       const leading = header.querySelector<HTMLElement>('[data-panel-header-leading-surface]')!;
       const tile = header.querySelector<HTMLElement>('[data-resource-icon-tile]')!;
@@ -87,6 +101,7 @@ test('keeps resource tiles and compact header insets exact across the geometry m
       const probeStyle = getComputedStyle(probe);
       return {
         scenario: (scenario as HTMLElement).dataset.resourceGeometryCase,
+        scale: Number((scenario as HTMLElement).dataset.zoom),
         kind: tile.dataset.resourceKind,
         tileWidth: tileStyle.width,
         tileHeight: tileStyle.height,
@@ -127,14 +142,15 @@ test('keeps resource tiles and compact header insets exact across the geometry m
     expect(result.radius, result.scenario).toBe('7px');
     expect(result.glyphWidth, result.scenario).toBe('16px');
     expect(result.glyphHeight, result.scenario).toBe('16px');
-    expect(result.listWidth, result.scenario).toBe('12px');
-    expect(result.listHeight, result.scenario).toBe('12px');
-    expect(result.arrowWidth, result.scenario).toBe('11px');
-    expect(result.arrowHeight, result.scenario).toBe('11px');
-    expect(result.kebabWidth, result.scenario).toBe('12px');
-    expect(result.kebabHeight, result.scenario).toBe('12px');
-    expect(result.closeWidth, result.scenario).toBe('12px');
-    expect(result.closeHeight, result.scenario).toBe('12px');
+    // Upstream panel polish (668dd5c2): compact actions use 14px; scroll uses its 16px icon.
+    expect(result.listWidth, result.scenario).toBe('14px');
+    expect(result.listHeight, result.scenario).toBe('14px');
+    expect(result.arrowWidth, result.scenario).toBe('16px');
+    expect(result.arrowHeight, result.scenario).toBe('16px');
+    expect(result.kebabWidth, result.scenario).toBe('14px');
+    expect(result.kebabHeight, result.scenario).toBe('14px');
+    expect(result.closeWidth, result.scenario).toBe('14px');
+    expect(result.closeHeight, result.scenario).toBe('14px');
     expect(result.background, result.scenario).toBe(result.expectedBackground);
     expect(result.foreground, result.scenario).toBe(result.expectedForeground);
     expect(result.background, result.scenario).not.toBe('rgba(0, 0, 0, 0)');
@@ -142,9 +158,14 @@ test('keeps resource tiles and compact header insets exact across the geometry m
     expect(result.stripHeight, result.scenario).toBe('20px');
     expect(result.centerX, result.scenario).toBeLessThanOrEqual(0.5);
     expect(result.centerY, result.scenario).toBeLessThanOrEqual(0.5);
-    expect(Math.abs(result.leftInset - result.topInset), result.scenario).toBeLessThanOrEqual(0.5);
-    expect(Math.abs(result.leftInset - result.bottomInset), result.scenario).toBeLessThanOrEqual(
-      0.5,
+    // Upstream pane-stack polish (668dd5c2) adds 4px inline inset and retains the 0.5px optical offset.
+    expect((result.leftInset - result.topInset) / result.scale, result.scenario).toBeCloseTo(
+      3.5,
+      1,
+    );
+    expect((result.leftInset - result.bottomInset) / result.scale, result.scenario).toBeCloseTo(
+      4.5,
+      1,
     );
   }
 });
@@ -219,7 +240,9 @@ test('keeps sidebar card paint and visible-surface label alignment exact', async
       for (const tabId of ['agents', 'context']) {
         const card = page.locator(`[data-sidebar-launcher="${tabId}"]`);
         const delta = await card.evaluate((element) => {
-          const visible = element.querySelector<HTMLElement>('[data-sidebar-launcher-glyph]')!;
+          const visible = element.querySelector<HTMLElement>(
+            '[data-sidebar-launcher-glyph], [data-agent-avatar-with-state]',
+          )!;
           const label = element.querySelector<HTMLElement>('[data-sidebar-launcher-label]')!;
           return Math.abs(
             visible.getBoundingClientRect().left - label.getBoundingClientRect().left,
@@ -232,7 +255,8 @@ test('keeps sidebar card paint and visible-surface label alignment exact', async
       }
     }
     for (const [visibleSelector, overflowSelector] of [
-      ['[data-sidebar-agent]', '[data-sidebar-agent-overflow]'],
+      // Upstream avatar stack (0519bd81) exposes overflow through its shared test id.
+      ['[data-sidebar-agent]', '[data-testid="sidebar-agent-overflow"]'],
       ['[data-sidebar-context]', '[data-sidebar-context-overflow]'],
     ] as const) {
       const visibleCount = await page.locator(visibleSelector).count();

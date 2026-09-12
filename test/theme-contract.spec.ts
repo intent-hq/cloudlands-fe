@@ -69,7 +69,8 @@ const DEFAULT_NEUTRAL_RGB = {
     foreground: 'rgb(0, 0, 0)',
     card: 'rgb(255, 255, 255)',
     'card-foreground': 'rgb(0, 0, 0)',
-    popover: 'rgb(236, 236, 234)',
+    // Batch 18-F (4593049e): popovers match the card surface.
+    popover: 'rgb(255, 255, 255)',
     'popover-foreground': 'rgb(0, 0, 0)',
     secondary: 'rgb(229, 229, 229)',
     'secondary-foreground': 'rgb(0, 0, 0)',
@@ -91,7 +92,8 @@ const DEFAULT_NEUTRAL_RGB = {
     foreground: 'rgb(255, 255, 255)',
     card: 'rgb(26, 26, 26)',
     'card-foreground': 'rgb(255, 255, 255)',
-    popover: 'rgb(38, 38, 38)',
+    // Batch 18-F (4593049e): popovers match the card surface.
+    popover: 'rgb(26, 26, 26)',
     'popover-foreground': 'rgb(255, 255, 255)',
     secondary: 'rgb(38, 38, 38)',
     'secondary-foreground': 'rgb(225, 223, 222)',
@@ -723,8 +725,8 @@ test('browser resolves the semantic hatch and compact foundation geometry in bot
         pillRadius: style.getPropertyValue('--radius-pill').trim(),
       };
     }, className);
-    expect(foundations.hatch).toContain('repeating-linear-gradient');
-    expect(foundations.hatch).toMatch(/hsl\(/g);
+    // Wave 9 foundations cleanup (388bffff) retired the unused surface hatch token.
+    expect(foundations.hatch).toBe('');
     expect(foundations).toMatchObject({
       compactControl: '1.75rem',
       smallControl: '1.75rem',
@@ -825,7 +827,8 @@ test('standalone foundations contact sheet stays readable across required modes'
       headingCssHeight: document.querySelector('h1')!.getBoundingClientRect().height,
     }));
     expect(evidence.overflow, name).toBeLessThanOrEqual(0);
-    expect(evidence.hatch, name).toContain('repeating-linear-gradient');
+    // Wave 9 foundations cleanup (388bffff): retired hatches paint no background image.
+    expect(evidence.hatch, name).toBe('none');
     expect(evidence.viewportWidth, name).toBe(width);
     if (reducedMotion === 'reduce') {
       expect(['0.01ms', '1e-05s'], name).toContain(evidence.transition);

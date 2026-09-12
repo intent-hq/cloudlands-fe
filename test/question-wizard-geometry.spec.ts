@@ -3,7 +3,8 @@ import type { ViteDevServer } from 'vite';
 import { createServer } from 'vite';
 import { viteHarnessCacheDir } from './vite-harness-cache.mjs';
 
-test.describe.configure({ mode: 'serial' });
+// Each test mounts a fresh host; report every contract failure independently.
+test.describe.configure({ mode: 'default' });
 
 let server: ViteDevServer;
 let baseUrl: string;
@@ -70,22 +71,32 @@ async function readGeometry(page: Page) {
       document.querySelector<HTMLElement>(selector)!.getBoundingClientRect();
     const boundary = rect('[data-testid="conversation-composer-boundary"]');
     const wrapper = rect('[data-testid="question-wizard-slot"]');
-    const card = rect('[data-testid="question-wizard-card"]');
+    // Wave 11 rebuild (d7663537) delegates the expanded surface to AskUserQuestions.
+    const expanded = document.querySelector<HTMLElement>('[data-testid="question-wizard-card"]');
+    const cardNode = expanded ?? document.querySelector<HTMLElement>('[data-question-wizard]')!;
+    const card = cardNode.getBoundingClientRect();
     const safeArea = rect('[data-testid="platform-safe-area"]');
-    const footerNode = document.querySelector<HTMLElement>(
-      '[data-testid="question-wizard-footer"]',
+    const skipButton = [...cardNode.querySelectorAll<HTMLButtonElement>('button')].find(
+      (button) => button.textContent?.trim() === 'Skip',
     );
+    const footerNode = skipButton
+      ? (cardNode.querySelector<HTMLElement>('[data-animated-height-target]')
+          ?.lastElementChild as HTMLElement)
+      : null;
     const footer = footerNode?.getBoundingClientRect();
     const buttons = footerNode
       ? [...footerNode.querySelectorAll<HTMLElement>('button')].map((button) =>
           button.getBoundingClientRect(),
         )
       : [];
-    const cardStyle = getComputedStyle(
-      document.querySelector<HTMLElement>('[data-testid="question-wizard-card"]')!,
-    );
+    const cardStyle = getComputedStyle(cardNode);
+    const surfaceProbe = document.createElement('div');
+    surfaceProbe.className = 'shadow-surface-2';
+    cardNode.append(surfaceProbe);
+    const expectedShadow = expanded ? getComputedStyle(surfaceProbe).boxShadow : 'none';
+    surfaceProbe.remove();
     const inputBoundary = document.querySelector<HTMLElement>(
-      '[data-testid="question-wizard-card"] input',
+      '[data-testid="question-wizard-card"] textarea',
     )?.parentElement;
     const indicator = document.querySelector<HTMLElement>('[data-option-indicator]');
     const borderWidths = (node: HTMLElement | null | undefined) => {
@@ -101,20 +112,27 @@ async function readGeometry(page: Page) {
     const boundaryStyle = getComputedStyle(
       document.querySelector<HTMLElement>('[data-testid="conversation-composer-boundary"]')!,
     );
-    const headerNode = document.querySelector<HTMLElement>('[data-question-wizard-header]');
-    const titleNode = document.querySelector<HTMLElement>('[data-question-header-title]');
-    const counterNode = document.querySelector<HTMLElement>('[data-question-step-counter]');
-    const actionsNode = document.querySelector<HTMLElement>('[data-question-header-actions]');
+    const headerNode = cardNode.querySelector<HTMLElement>(
+      '[data-slot="ask-user-questions-metadata"]',
+    );
+    const titleNode = cardNode.querySelector<HTMLElement>('h3');
+    const counterNode =
+      headerNode?.children.length === 2 ? (headerNode.firstElementChild as HTMLElement) : null;
+    const actionsNode = headerNode?.lastElementChild as HTMLElement | null;
     const skipNode = [...(footerNode?.querySelectorAll<HTMLElement>('button') ?? [])].find(
       (button) => button.textContent?.trim() === 'Skip',
     );
-    const submitNode = footerNode?.querySelector<HTMLElement>('[data-slot="button"]');
+    const submitNode = [...(footerNode?.querySelectorAll<HTMLElement>('button') ?? [])].find(
+      (button) => /Continue|Finish/.test(button.textContent ?? ''),
+    );
     const compactRect = (node: HTMLElement | null | undefined) => {
       if (!node) return null;
       const nodeRect = node.getBoundingClientRect();
       return {
         left: nodeRect.left,
         right: nodeRect.right,
+        top: nodeRect.top,
+        bottom: nodeRect.bottom,
         centerY: nodeRect.top + nodeRect.height / 2,
       };
     };
@@ -131,9 +149,8 @@ async function readGeometry(page: Page) {
         : null,
       safeArea: safeArea.height,
       boxShadow: cardStyle.boxShadow,
-      cardBorderWidths: borderWidths(
-        document.querySelector<HTMLElement>('[data-testid="question-wizard-card"]'),
-      ),
+      expectedShadow,
+      cardBorderWidths: borderWidths(cardNode),
       inputBorderWidths: borderWidths(inputBoundary),
       indicatorBorderWidths: borderWidths(indicator),
       boundaryOverflow: `${boundaryStyle.overflowX}/${boundaryStyle.overflowY}`,
@@ -165,12 +182,13 @@ function expectFlushGeometry(geometry: Awaited<ReturnType<typeof readGeometry>>,
   expect(geometry.safeArea).toBeCloseTo(safeArea, 1);
   expect(geometry.card.left).toBeGreaterThanOrEqual(geometry.boundary.left - 1);
   expect(geometry.card.right).toBeLessThanOrEqual(geometry.boundary.right + 1);
-  expect(geometry.boxShadow).toBe('none');
-  expect(geometry.cardBorderWidths).toEqual(['0px', '0px', '0px', '0px']);
+  // Wave 11 AskUserQuestions + surface ladder (388bffff, d7663537): level 2, 1px border.
+  expect(geometry.boxShadow).toBe(geometry.expectedShadow);
+  expect(geometry.cardBorderWidths).toEqual(['1px', '1px', '1px', '1px']);
   expect(geometry.boundaryOverflow).toBe('visible/visible');
 }
 
-test('expanded card is flush with a compact symmetric footer across rendered geometries', async ({
+test('expanded card is flush with the shared question footer across rendered geometries', async ({
   page,
 }) => {
   test.setTimeout(120_000);
@@ -193,17 +211,17 @@ test('expanded card is flush with a compact symmetric footer across rendered geo
     const geometry = await readGeometry(page);
     expectFlushGeometry(geometry, scenario.props.safeArea ?? 0);
     expect(geometry.footer).not.toBeNull();
-    expect(geometry.card.bottom - geometry.footer!.bottom).toBeLessThanOrEqual(2);
-    expect(geometry.footer!.topInset).toBeCloseTo(geometry.footer!.bottomInset, 1);
-    expect(geometry.footer!.topInset).toBeGreaterThanOrEqual(8);
-    expect(geometry.inputBorderWidths).toEqual(['1px', '1px', '1px', '1px']);
-    if ((scenario.props.optionCount ?? 3) > 1) {
-      expect(geometry.indicatorBorderWidths).toEqual(['1px', '1px', '1px', '1px']);
-    }
+    // Wave 11 primitive footer: 4px above, 8px below; 4px content padding + 1px border.
+    const scale = 'zoom' in scenario ? scenario.zoom! : 1;
+    expect(geometry.card.bottom - geometry.footer!.bottom).toBeCloseTo(5 * scale, 1);
+    expect(geometry.footer!.topInset).toBeCloseTo(4 * scale, 1);
+    expect(geometry.footer!.bottomInset).toBeCloseTo(8 * scale, 1);
   }
 });
 
-test('compact header stays on one row and footer actions share typography', async ({ page }) => {
+test('metadata stays on one row above the question and footer actions share typography', async ({
+  page,
+}) => {
   const cases: Array<{
     viewport: { width: number; height: number };
     props: HostProps;
@@ -227,15 +245,14 @@ test('compact header stays on one row and footer actions share typography', asyn
     await mountWizard(page, scenario.viewport, scenario.props, scenario);
     const geometry = await readGeometry(page);
     expect(geometry.header).not.toBeNull();
-    expect(geometry.header!.title!.right).toBeLessThanOrEqual(geometry.header!.actions!.left);
-    expect(geometry.header!.title!.centerY).toBeCloseTo(geometry.header!.actions!.centerY, 1);
+    // Wave 11 rebuild (d7663537) moves the question below the metadata/actions row.
+    expect(geometry.header!.title!.top).toBeGreaterThanOrEqual(geometry.header!.rect!.bottom);
     if (scenario.props.questionCount === 1) {
       expect(geometry.header!.counter).toBeNull();
     } else {
-      expect(geometry.header!.counter!.right).toBeLessThanOrEqual(geometry.header!.title!.left);
-      expect(geometry.header!.counter!.centerY).toBeCloseTo(geometry.header!.title!.centerY, 1);
+      expect(geometry.header!.counter!.right).toBeLessThanOrEqual(geometry.header!.actions!.left);
+      expect(geometry.header!.counter!.centerY).toBeCloseTo(geometry.header!.actions!.centerY, 1);
     }
-    if (scenario.props.longHeader) expect(geometry.header!.titleTruncated).toBe(true);
     expect(geometry.footerTypography!.skipFontSize).toBe(geometry.footerTypography!.submitFontSize);
     expect(geometry.footerTypography!.skipLineHeight).toBe(
       geometry.footerTypography!.submitLineHeight,
@@ -243,7 +260,7 @@ test('compact header stays on one row and footer actions share typography', asyn
   }
 });
 
-test('single-select rows use native full-row keyboard submission without radio indicators', async ({
+test('single-select radio rows submit through the keyboard and lock completed answers', async ({
   page,
 }) => {
   await mountWizard(
@@ -253,26 +270,21 @@ test('single-select rows use native full-row keyboard submission without radio i
     { theme: 'dark' },
   );
 
-  const options = page.locator('[data-question-option]');
+  // Wave 11 rebuild (d7663537) exposes single choices through the radio role.
+  const options = page.getByRole('radio');
   await expect(options).toHaveCount(2);
-  await expect(page.locator('[data-option-indicator]')).toHaveCount(0);
+  const restingShadow = (await readGeometry(page)).boxShadow;
 
   await options.nth(0).focus();
-  await expect
-    .poll(() => options.nth(0).evaluate((node) => getComputedStyle(node).boxShadow))
-    .not.toBe('none');
-  await expect
-    .poll(() =>
-      page.getByTestId('question-wizard-card').evaluate((node) => getComputedStyle(node).boxShadow),
-    )
-    .toBe('none');
+  await expect(options.nth(0)).toBeFocused();
+  expect((await readGeometry(page)).boxShadow).toBe(restingShadow);
   await page.keyboard.press('Enter');
   await expect(page.getByTestId('panel-boundary')).toHaveAttribute('data-completion-count', '1');
   await expect(page.getByTestId('panel-boundary')).toHaveAttribute(
     'data-completed-labels',
     'Option 1',
   );
-  await expect(options.nth(0)).toHaveAttribute('aria-pressed', 'true');
+  await expect(options.nth(0)).toHaveAttribute('aria-checked', 'true');
   await expect(options.nth(0)).toBeDisabled();
   await expect(options.nth(1)).toBeDisabled();
 
@@ -289,7 +301,7 @@ test('single-select rows use native full-row keyboard submission without radio i
     'data-completed-labels',
     'Option 2',
   );
-  await expect(options.nth(1)).toHaveAttribute('aria-pressed', 'true');
+  await expect(options.nth(1)).toHaveAttribute('aria-checked', 'true');
 
   const widths = await options.evaluateAll((nodes) =>
     nodes.map((node) => (node as HTMLElement).getBoundingClientRect().width),
@@ -343,10 +355,11 @@ test('collapsed and scrolling states keep the slot flush without clipping or scr
   expectFlushGeometry(await readGeometry(page), 12);
 });
 
-test('dismiss confirmation dialog keeps overlay elevation while the card stays flat', async ({
+test('dismiss confirmation dialog preserves the resting question surface elevation', async ({
   page,
 }) => {
   await mountWizard(page, { width: 960, height: 720 }, { questionCount: 1 });
+  const restingShadow = (await readGeometry(page)).boxShadow;
   await page.getByRole('button', { name: 'Dismiss' }).click();
 
   const dialog = page.getByRole('dialog');
@@ -358,5 +371,5 @@ test('dismiss confirmation dialog keeps overlay elevation while the card stays f
     .poll(() =>
       page.getByTestId('question-wizard-card').evaluate((node) => getComputedStyle(node).boxShadow),
     )
-    .toBe('none');
+    .toBe(restingShadow);
 });

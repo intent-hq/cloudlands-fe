@@ -161,6 +161,9 @@
     gap: 8px;
   }
 
+  /* Wave 11 Button (388bffff): mirror its content wrapper in this token-only host. */
+  [data-coordinator-message-card] :global([data-slot='button-content']),
+  [data-attribution-state-card] :global([data-slot='button-content']),
   [data-coordinator-message-card] :global(button),
   [data-coordinator-message-card] :global([data-agent-message-leading-identity]),
   [data-attribution-state-card] :global(button),

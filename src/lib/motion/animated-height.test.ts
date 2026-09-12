@@ -55,9 +55,7 @@ describe('animatedHeight', () => {
     let contentHeight = 20;
     const wrapper = document.createElement('div');
     const content = document.createElement('div');
-    vi.spyOn(content, 'getBoundingClientRect').mockImplementation(
-      () => ({ height: contentHeight }) as DOMRect,
-    );
+    vi.spyOn(content, 'offsetHeight', 'get').mockImplementation(() => contentHeight);
     wrapper.append(content);
 
     const action = animatedHeight(wrapper);
@@ -88,9 +86,7 @@ describe('animatedHeight', () => {
     let contentHeight = 20;
     const wrapper = document.createElement('div');
     const content = document.createElement('div');
-    vi.spyOn(content, 'getBoundingClientRect').mockImplementation(
-      () => ({ height: contentHeight }) as DOMRect,
-    );
+    vi.spyOn(content, 'offsetHeight', 'get').mockImplementation(() => contentHeight);
     wrapper.append(content);
 
     const action = animatedHeight(wrapper);
@@ -108,7 +104,7 @@ describe('animatedHeight', () => {
     reducedMotion = true;
     const wrapper = document.createElement('div');
     const content = document.createElement('div');
-    vi.spyOn(content, 'getBoundingClientRect').mockReturnValue({ height: 48 } as DOMRect);
+    vi.spyOn(content, 'offsetHeight', 'get').mockReturnValue(48);
     wrapper.append(content);
 
     const action = animatedHeight(wrapper, { open: false, tier: 'moderate' });
@@ -128,7 +124,7 @@ describe('animatedHeight', () => {
     const stack = document.createElement('div');
     const outgoing = document.createElement('div');
     outgoing.dataset.animatedHeightTarget = '';
-    vi.spyOn(outgoing, 'getBoundingClientRect').mockReturnValue({ height: 80 } as DOMRect);
+    vi.spyOn(outgoing, 'offsetHeight', 'get').mockReturnValue(80);
     stack.append(outgoing);
     wrapper.append(stack);
 
@@ -138,13 +134,26 @@ describe('animatedHeight', () => {
 
     const incoming = document.createElement('div');
     incoming.dataset.animatedHeightTarget = '';
-    vi.spyOn(incoming, 'getBoundingClientRect').mockReturnValue({ height: 44 } as DOMRect);
+    vi.spyOn(incoming, 'offsetHeight', 'get').mockReturnValue(44);
     stack.append(incoming);
     await Promise.resolve();
     flushSync();
 
     expect(wrapper.style.height).toBe('44px');
     expect(frames).toHaveLength(0);
+    action?.destroy?.();
+  });
+  it('preserves fractional layout height under zoom and transforms', () => {
+    reducedMotion = true;
+    const wrapper = document.createElement('div');
+    const content = document.createElement('div');
+    content.style.cssText =
+      'height: 20.5px; padding: 2px; border: 1px solid; transform: scale(2); zoom: 2';
+    vi.spyOn(content, 'getBoundingClientRect').mockReturnValue({ height: 106 } as DOMRect);
+    wrapper.append(content);
+    const action = animatedHeight(wrapper);
+    flushSync();
+    expect(wrapper.style.height).toBe('26.5px');
     action?.destroy?.();
   });
 });
