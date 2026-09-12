@@ -34,6 +34,10 @@
     workspaceId: string;
     noteId: string;
     content: string;
+    // The text the draft was typed on: the last text synced from the store or
+    // sent to the write service. Also the draft's content baseline, so edits
+    // typed before a superseded echo rebased the in-flight draft are replayed
+    // onto it instead of reading as a deletion of the echoed change.
     lastSavedContent: string;
     baseRev: number | undefined;
   }
@@ -131,6 +135,7 @@
     updateNoteContent(target.workspaceId, target.noteId, target.content, {
       immediate,
       baseRev: target.baseRev,
+      baseContent: target.lastSavedContent,
     });
   }
 

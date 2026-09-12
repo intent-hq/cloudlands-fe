@@ -104,6 +104,7 @@ describe('RawNoteCodeEditor', () => {
     expect(mockState.noteSelect).toHaveBeenCalledWith({}, 'ws-1', 'note-1');
     expect(mockState.updateNoteContent).toHaveBeenCalledWith('ws-1', 'note-1', '# Updated', {
       immediate: false,
+      baseContent: '# Heading',
     });
   });
 
@@ -130,6 +131,7 @@ describe('RawNoteCodeEditor', () => {
     expect(mockState.updateNoteContent).toHaveBeenCalledWith('ws-1', 'note-1', '# Heading local', {
       immediate: false,
       baseRev: 4,
+      baseContent: '# Heading',
     });
   });
 
@@ -153,7 +155,7 @@ describe('RawNoteCodeEditor', () => {
       'ws-1',
       'note-1',
       '# AGENT\n# Heading local',
-      { immediate: false, baseRev: 5 },
+      { immediate: false, baseRev: 5, baseContent: '# AGENT\n# Heading' },
     );
   });
 
@@ -196,7 +198,7 @@ describe('RawNoteCodeEditor', () => {
       'ws-1',
       'note-1',
       '# Updated Before Toggle',
-      { immediate: true },
+      { immediate: true, baseContent: '# Heading' },
     );
   });
 
@@ -214,6 +216,7 @@ describe('RawNoteCodeEditor', () => {
     expect(mockState.noteSelect).toHaveBeenCalledWith({}, 'ws-1', 'note-1');
     expect(mockState.updateNoteContent).toHaveBeenCalledWith('ws-1', 'note-1', '# Note 1 Draft', {
       immediate: false,
+      baseContent: '# Note 1',
     });
     expect(mockState.updateNoteContent).not.toHaveBeenCalledWith(
       'ws-1',
