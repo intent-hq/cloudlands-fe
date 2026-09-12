@@ -694,6 +694,35 @@ describe('external-update-effect with a real editor', () => {
     expect(state.last).toBe('newest base');
   });
 
+  // Note ids repeat across workspaces (every workspace has a `spec`): an
+  // apply for ws-2's note must not mark ws-1's still-rendering apply for the
+  // same note id as stale.
+  it('keeps a pending render for a same-id note in another workspace', async () => {
+    const one = setup({ ours: 'base', incoming: 'one base' });
+    const two = setup({ ours: 'base', incoming: 'two base' });
+    const sharedNoteId = 'spec';
+    one.args.getNoteId = () => sharedNoteId;
+    two.args.getNoteId = () => sharedNoteId;
+    two.args.getWorkspaceId = () => 'workspace-2';
+    const oneRender = deferred<string>();
+    one.args.processMarkdownToHTML.mockImplementation(async (text: string) =>
+      text === 'one base' ? oneRender.promise : html(text),
+    );
+
+    const applyOne = runExternalContentUpdateEffect(one.args);
+    await vi.advanceTimersByTimeAsync(150);
+    const applyTwo = runExternalContentUpdateEffect(two.args);
+    await vi.advanceTimersByTimeAsync(150);
+    await applyTwo;
+    expect(two.editor.getText()).toBe('two base');
+
+    oneRender.resolve(html('one base'));
+    await applyOne;
+
+    expect(one.editor.getText()).toBe('one base');
+    expect(one.state.last).toBe('one base');
+  });
+
   it('applies an explicit restore as a whole-document replacement with a valid cursor and clears the pending restore', async () => {
     const { editor, args, state } = setup({ ours: 'base one unsaved', incoming: 'restored' });
     state.restorePending = true;

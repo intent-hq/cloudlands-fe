@@ -163,6 +163,14 @@ interface DebounceState {
 }
 const debounceByNote = new Map<string, DebounceState>();
 
+// Per-note state below is keyed by workspace AND note: note ids repeat across
+// workspaces (every workspace has a `spec`), so two editors showing same-id
+// notes in different workspaces must never share a debounce, recheck or apply
+// generation — an apply in one would mark the other's pending render stale.
+function noteStateKey(workspaceId: string | undefined, noteId: string | null | undefined): string {
+  return `${workspaceId ?? '__no_workspace__'}:${noteId ?? '__no_note__'}`;
+}
+
 // --- Deferred-recheck state for an in-flight save (monorepo#533) ---
 // When the editor is dirty but nothing is debounced (the save is already in
 // flight, or the flush failed), the apply waits for that save to settle.
@@ -175,13 +183,12 @@ const PENDING_SAVE_RECHECK_INTERVAL_MS = 250;
 const pendingSaveRecheckByNote = new Map<string, ReturnType<typeof setTimeout>>();
 
 function scheduleDeferredRecheckWhenSaveSettles(
-  noteId: string | null | undefined,
+  key: string,
   getHasPendingNoteContent: () => boolean,
   onPendingSaveSettled: (() => void) | undefined,
   isDestroyed: (() => boolean) | undefined,
 ): void {
   if (!onPendingSaveSettled) return;
-  const key = noteId ?? '__no_note__';
   if (pendingSaveRecheckByNote.has(key)) return;
   const poll = () => {
     pendingSaveRecheckByNote.delete(key);
@@ -195,8 +202,7 @@ function scheduleDeferredRecheckWhenSaveSettles(
   pendingSaveRecheckByNote.set(key, setTimeout(poll, PENDING_SAVE_RECHECK_INTERVAL_MS));
 }
 
-function getDebounceState(noteId: string | null | undefined): DebounceState {
-  const key = noteId ?? '__no_note__';
+function getDebounceState(key: string): DebounceState {
   let state = debounceByNote.get(key);
   if (!state) {
     state = { timer: null, version: -1 };
@@ -212,15 +218,14 @@ function getDebounceState(noteId: string | null | undefined): DebounceState {
 // would regress the editor to the older text.
 const applyGenerationByNote = new Map<string, number>();
 
-function beginApplyGeneration(noteId: string | null | undefined): number {
-  const key = noteId ?? '__no_note__';
+function beginApplyGeneration(key: string): number {
   const generation = (applyGenerationByNote.get(key) ?? 0) + 1;
   applyGenerationByNote.set(key, generation);
   return generation;
 }
 
-function isCurrentApplyGeneration(noteId: string | null | undefined, generation: number): boolean {
-  return applyGenerationByNote.get(noteId ?? '__no_note__') === generation;
+function isCurrentApplyGeneration(key: string, generation: number): boolean {
+  return applyGenerationByNote.get(key) === generation;
 }
 
 export function runExternalContentUpdateEffect({
@@ -390,6 +395,7 @@ export function runExternalContentUpdateEffect({
 
   const workspaceId = getWorkspaceId();
   const ownerToken = getOwnerToken?.();
+  const stateKey = noteStateKey(workspaceId, noteId);
 
   // Whether the editor has moved on to another note (or the same note was
   // re-initialized) since this effect started. The live getEditor /
@@ -429,7 +435,7 @@ export function runExternalContentUpdateEffect({
     const editor = getEditor();
     if (!editor || editor.isDestroyed) return;
 
-    const generation = beginApplyGeneration(noteId);
+    const generation = beginApplyGeneration(stateKey);
     const replacesWholeDocument = isRestorePending();
 
     // `ours` is the editor text `target` accounts for: the saved/applied
@@ -466,7 +472,7 @@ export function runExternalContentUpdateEffect({
         if (isDestroyed?.()) return undefined;
         if (dropIfOwnerChanged('render')) return undefined;
 
-        if (!isCurrentApplyGeneration(noteId, generation)) {
+        if (!isCurrentApplyGeneration(stateKey, generation)) {
           logger.info('[NoteWithComments] Dropping stale external apply', {
             noteId,
             updateVersion,
@@ -589,7 +595,7 @@ export function runExternalContentUpdateEffect({
         noteId,
       });
       scheduleDeferredRecheckWhenSaveSettles(
-        noteId,
+        stateKey,
         getHasPending,
         onPendingSaveSettled,
         isDestroyed,
@@ -610,7 +616,7 @@ export function runExternalContentUpdateEffect({
           { updateVersion, noteId },
         );
         scheduleDeferredRecheckWhenSaveSettles(
-          noteId,
+          stateKey,
           getHasPending,
           onPendingSaveSettled,
           isDestroyed,
@@ -635,7 +641,7 @@ export function runExternalContentUpdateEffect({
   // Debounce so we only run the expensive markdown→HTML pipeline for the
   // *last* update in a burst, avoiding redundant worker calls and
   // editor.setContent thrashing.
-  const debounce = getDebounceState(noteId);
+  const debounce = getDebounceState(stateKey);
   if (debounce.timer !== null) {
     clearTimeout(debounce.timer);
     debounce.timer = null;
