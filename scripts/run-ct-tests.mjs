@@ -70,6 +70,7 @@ export function usage() {
     '                    written to playwright-report/ (view it with `pnpm exec playwright',
     '                    show-report`). Opt-in values only take effect on an interactive',
     '                    terminal; automated (non-TTY) runs never block on the report.',
+    '  CT_NODE_ARGS      Space-separated Node flags (default: empty; no shell quoting).',
     '  CT_ALLOW_CORE=1   Allow CT runs with core dumps in the package root.',
     '  PLAYWRIGHT_HTML_OPEN',
     `                    When set, respected verbatim (overrides ${CT_HTML_REPORT_ENV}).`,
@@ -188,13 +189,22 @@ export function runPlaywright({
   env = process.env,
   spawnImpl = spawn,
   exit = (code) => process.exit(code),
+  printError = console.error,
 }) {
-  const child = spawnImpl(process.execPath, [cliPath, ...args], { cwd, stdio: 'inherit', env });
+  const flags = env.CT_NODE_ARGS?.trim().split(/\s+/).filter(Boolean) ?? [];
+  const child = spawnImpl(process.execPath, [...flags, cliPath, ...args], {
+    cwd,
+    stdio: 'inherit',
+    env,
+  });
   child.on('error', (error) => {
-    console.error(`[run-ct-tests] failed to spawn playwright: ${error.message}`);
+    printError(`[run-ct-tests] failed to spawn playwright: ${error.message}`);
     exit(1);
   });
-  child.on('exit', (code, signal) => exit(exitCodeFromChild(code, signal)));
+  child.on('exit', (code, signal) => {
+    if (code === null && signal) printError(`playwright died with ${signal}`);
+    exit(exitCodeFromChild(code, signal));
+  });
   return child;
 }
 

@@ -1,3 +1,4 @@
+import { EventEmitter } from 'node:events';
 import { describe, expect, it } from 'vitest';
 import {
   MIN_FILES,
@@ -6,6 +7,7 @@ import {
   formatDiagnostic,
   parseMachineLine,
   syncEnv,
+  runSvelteCheck,
 } from './run-svelte-check.mjs';
 
 describe('parseMachineLine', () => {
@@ -235,5 +237,49 @@ describe('evaluateRun', () => {
     const failures = evaluateRun({ exitCode: 0, completed: { ...completed, errors: 2 } });
     expect(failures).toHaveLength(1);
     expect(failures[0]).toContain('2 errors');
+  });
+});
+
+describe('runSvelteCheck', () => {
+  it.each([undefined, '', '  ', '--single-threaded-gc', '  --single-threaded-gc   --no-opt  '])(
+    'passes node arguments %s',
+    async (nodeArgs) => {
+      const child = new EventEmitter();
+      const calls: unknown[][] = [];
+      const result = runSvelteCheck({
+        cliPath: '/checker.js',
+        args: ['--output', 'machine-verbose'],
+        outputFd: 42,
+        env: { CT_NODE_ARGS: nodeArgs },
+        spawnImpl: ((...args: unknown[]) => {
+          calls.push(args);
+          return child;
+        }) as never,
+      });
+      expect(calls[0]?.[0]).toBe(process.execPath);
+      expect(calls[0]?.[1]).toEqual([
+        ...(nodeArgs?.trim() ? nodeArgs.trim().split(/\s+/) : []),
+        '/checker.js',
+        '--output',
+        'machine-verbose',
+      ]);
+      child.emit('close', 0, null);
+      await expect(result).resolves.toBe(0);
+    },
+  );
+
+  it.each(['SIGSEGV', 'SIGTERM'])('reports %s and fails when killed', async (signal) => {
+    const child = new EventEmitter();
+    const errors: string[] = [];
+    const result = runSvelteCheck({
+      cliPath: '/checker.js',
+      args: [],
+      outputFd: 42,
+      spawnImpl: (() => child) as never,
+      printError: (message: string) => errors.push(message),
+    });
+    child.emit('close', null, signal);
+    await expect(result).resolves.toBe(1);
+    expect(errors).toEqual([`svelte-check died with ${signal}`]);
   });
 });

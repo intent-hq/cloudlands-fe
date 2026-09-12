@@ -160,6 +160,29 @@ describe('runPlaywright', () => {
       runPlaywright({ ...options, exit: resolve });
     });
 
+  it.each([undefined, '', '  ', '--single-threaded-gc', '  --single-threaded-gc   --no-opt  '])(
+    'passes node arguments %s',
+    (nodeArgs) => {
+      const calls: unknown[][] = [];
+      runPlaywright({
+        cliPath: '/ct/cli.js',
+        args: ['test', '--workers=2'],
+        env: { ...baseEnv, CT_NODE_ARGS: nodeArgs },
+        spawnImpl: ((...args: unknown[]) => {
+          calls.push(args);
+          return new EventEmitter();
+        }) as never,
+      });
+      expect(calls[0]?.[0]).toBe(process.execPath);
+      expect(calls[0]?.[1]).toEqual([
+        ...(nodeArgs?.trim() ? nodeArgs.trim().split(/\s+/) : []),
+        '/ct/cli.js',
+        'test',
+        '--workers=2',
+      ]);
+    },
+  );
+
   it('propagates a non-zero child exit code as the process exit code', async () => {
     const fakeCli = path.join(dir, 'fake-cli.cjs');
     writeFileSync(fakeCli, 'process.exit(Number(process.argv[2]));\n');
@@ -174,6 +197,23 @@ describe('runPlaywright', () => {
     await expect(waitForExit({ cliPath: fakeCli, args: [], cwd: dir, env: baseEnv })).resolves.toBe(
       0,
     );
+  });
+
+  it.each(['SIGSEGV', 'SIGTERM'])('reports %s and exits non-zero', (signal) => {
+    const child = new EventEmitter();
+    const errors: string[] = [];
+    const exits: number[] = [];
+    runPlaywright({
+      cliPath: '/ct/cli.js',
+      args: [],
+      spawnImpl: (() => child) as never,
+      printError: (message: string) => errors.push(message),
+      exit: (code: number) => exits.push(code),
+    });
+    child.emit('exit', null, signal);
+    expect(errors).toEqual([`playwright died with ${signal}`]);
+    expect(exits).toEqual([exitCodeFromChild(null, signal)]);
+    expect(exits[0]).toBeGreaterThan(0);
   });
 
   it('exits 1 when the child cannot be spawned', async () => {
