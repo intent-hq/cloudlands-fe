@@ -10,7 +10,7 @@ import type {
   ArtifactSelectionSnapshot,
 } from '$shared/types/visual-artifact';
 
-export const MAX_ARTIFACT_BYTES = 1_048_576;
+const MAX_ARTIFACT_BYTES = 1_048_576;
 
 /** Bound nesting before recursive schema validation, including adversarial agent output. */
 export function isBoundedJson(value: unknown, maxBytes = MAX_ARTIFACT_BYTES): boolean {

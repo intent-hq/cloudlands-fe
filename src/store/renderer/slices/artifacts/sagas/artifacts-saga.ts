@@ -47,7 +47,7 @@ export function* loadArtifactImages(
   }
 }
 
-export function* loadArtifactWorker(
+function* loadArtifactWorker(
   action: ReturnType<typeof artifactLoadRequested>,
 ): SagaGenerator<void> {
   try {
@@ -56,7 +56,7 @@ export function* loadArtifactWorker(
     yield* put(action.failure(error instanceof Error ? error : new Error(String(error))));
   }
 }
-export function* saveArtifactWorker(
+function* saveArtifactWorker(
   action: ReturnType<typeof artifactSaveRequested>,
 ): SagaGenerator<void> {
   try {
@@ -65,7 +65,7 @@ export function* saveArtifactWorker(
     yield* put(action.failure(error instanceof Error ? error : new Error(String(error))));
   }
 }
-export function* createArtifactWorker(
+function* createArtifactWorker(
   action: ReturnType<typeof artifactCreateRequested>,
 ): SagaGenerator<void> {
   try {
@@ -74,7 +74,7 @@ export function* createArtifactWorker(
     yield* put(action.failure(error instanceof Error ? error : new Error(String(error))));
   }
 }
-export function* captureArtifactWorker(
+function* captureArtifactWorker(
   action: ReturnType<typeof artifactCaptureRequested>,
 ): SagaGenerator<void> {
   try {

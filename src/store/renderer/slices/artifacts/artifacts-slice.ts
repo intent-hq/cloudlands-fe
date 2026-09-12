@@ -15,7 +15,7 @@ import type {
   ArtifactChatItem,
 } from './artifacts-types';
 
-export const emptyArtifactsWorkspaceState: ArtifactsWorkspaceState = { pending: {}, images: {} };
+const emptyArtifactsWorkspaceState: ArtifactsWorkspaceState = { pending: {}, images: {} };
 export const initialState: ArtifactsState = { byWorkspaceId: {} };
 const { getWorkspaceState, setWorkspaceState, clearWorkspaceState } = createWorkspaceScopedHelpers(
   emptyArtifactsWorkspaceState,

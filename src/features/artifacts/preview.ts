@@ -1,7 +1,7 @@
 import type { ArtifactJson } from '$shared/types/visual-artifact';
 import { isBoundedJson } from './model';
 
-export const MAX_PREVIEW_STATE_BYTES = 32768;
+const MAX_PREVIEW_STATE_BYTES = 32768;
 
 export { isAllowedArtifactImageSource } from '$shared/types/visual-artifact';
 

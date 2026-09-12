@@ -26,7 +26,7 @@ const imageSource = z
   .min(1)
   .max(200000)
   .refine(isAllowedArtifactImageSource, 'Unsupported image source');
-export const ArtifactRegionSchema = z
+const ArtifactRegionSchema = z
   .object({
     x: z.number().min(0).max(1),
     y: z.number().min(0).max(1),
@@ -45,7 +45,7 @@ export const ArtifactSelectionSchema = z
   .strict();
 export type ArtifactSelection = z.infer<typeof ArtifactSelectionSchema>;
 
-export const ArtifactItemSchema = z
+const ArtifactItemSchema = z
   .object({
     id,
     type: z.enum(['card', 'text', 'image']),
