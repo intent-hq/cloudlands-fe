@@ -1937,6 +1937,72 @@ describe('ChatPanel mounted lifecycle', () => {
     expect(frames).toHaveLength(0);
   });
 
+  it('releases the retained chat PR lease while inactive and reacquires on return', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    const currentWorkspace = workspace('workspace-a');
+    const view = render(ChatPanel, {
+      props: { workspace: currentWorkspace, agentId: 'agent-a', isActive: true },
+    });
+    await tick();
+    const leases = () =>
+      mocks.dispatch.mock.calls
+        .map(([action]) => action)
+        .filter(
+          (action) =>
+            action.type === 'prMonitor/subscribeRequested' ||
+            action.type === 'prMonitor/unsubscribeRequested',
+        );
+    expect(leases()).toEqual([
+      expect.objectContaining({ type: 'prMonitor/subscribeRequested', payload: ['workspace-a'] }),
+    ]);
+
+    await view.rerender({ workspace: currentWorkspace, agentId: 'agent-a', isActive: false });
+    await tick();
+    expect(leases().map((action) => action.type)).toEqual([
+      'prMonitor/subscribeRequested',
+      'prMonitor/unsubscribeRequested',
+    ]);
+
+    await view.rerender({ workspace: currentWorkspace, agentId: 'agent-a', isActive: true });
+    await tick();
+    expect(leases().map((action) => action.type)).toEqual([
+      'prMonitor/subscribeRequested',
+      'prMonitor/unsubscribeRequested',
+      'prMonitor/subscribeRequested',
+    ]);
+    view.unmount();
+    expect(leases().map((action) => action.type)).toEqual([
+      'prMonitor/subscribeRequested',
+      'prMonitor/unsubscribeRequested',
+      'prMonitor/subscribeRequested',
+      'prMonitor/unsubscribeRequested',
+    ]);
+  });
+
+  it('does not acquire a PR lease when hydration mounts an inactive retained footer', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.transcriptHydratedOnce.set(false);
+    mocks.transcriptHydration.set('loading');
+    const currentWorkspace = workspace('workspace-a');
+    const view = render(ChatPanel, {
+      props: { workspace: currentWorkspace, agentId: 'agent-a', isActive: false },
+    });
+    await tick();
+    mocks.transcriptHydration.set('settled');
+    mocks.transcriptHydratedOnce.set(true);
+    await tick();
+    expect(dispatchedTypes()).not.toContain('prMonitor/subscribeRequested');
+
+    await view.rerender({ workspace: currentWorkspace, agentId: 'agent-a', isActive: true });
+    await tick();
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'prMonitor/subscribeRequested',
+        payload: ['workspace-a'],
+      }),
+    );
+  });
+
   it('detaches IPC, observer, and scroll-action lifecycles while inactive and restores them', async () => {
     mocks.draftGet.mockResolvedValue(null);
     const currentWorkspace = workspace('workspace-a');
