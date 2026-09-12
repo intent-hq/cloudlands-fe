@@ -549,7 +549,7 @@
         <div class="flex flex-col gap-1">
           {#each messages as message (message.id)}
             <div
-              class="group relative type-caption flex min-h-8 select-none items-center gap-2 rounded-(--radius-medium) bg-muted px-2.5 font-normal! text-foreground/85 {message.editing
+              class="group relative type-caption flex min-h-8 select-none items-center gap-2 rounded-(--radius-medium) bg-muted px-2.5 font-normal! text-muted-foreground {message.editing
                 ? 'opacity-60'
                 : ''}"
               data-testid="queued-message-row"
