@@ -482,18 +482,68 @@ describe('EmbeddedBrowser', () => {
     });
 
     it('keeps the webview source current across full and in-page navigation', async () => {
-      const { container } = renderPage();
+      const onNavigate = vi.fn();
+      const { container } = renderPage({ onNavigate });
       const webview = container.querySelector('webview')!;
       const navigate = new Event('did-navigate');
       Object.defineProperty(navigate, 'url', { value: 'https://next.test/docs' });
       webview.dispatchEvent(navigate);
       await waitFor(() => expect(webview.getAttribute('src')).toBe('https://next.test/docs'));
+      expect(onNavigate).toHaveBeenLastCalledWith('https://next.test/docs');
 
       const inPage = new Event('did-navigate-in-page');
       Object.defineProperty(inPage, 'url', { value: 'https://next.test/docs#api' });
+      Object.defineProperty(inPage, 'isMainFrame', { value: true });
       webview.dispatchEvent(inPage);
       await waitFor(() => expect(webview.getAttribute('src')).toBe('https://next.test/docs#api'));
+      expect(onNavigate).toHaveBeenLastCalledWith('https://next.test/docs#api');
     });
+
+    // intent#4767: iframe history changes must not replace the tab's URL or src.
+    it.each(['about:blank', 'https://iframe.test/widget#section'])(
+      'ignores subframe in-page navigation to %s',
+      async (url) => {
+        const mainUrl = 'https://example.test/docs';
+        const onNavigate = vi.fn();
+        const { container } = renderPage({ url: mainUrl, onNavigate });
+        const webview = container.querySelector('webview')!;
+
+        await fireEvent(
+          webview,
+          Object.assign(new Event('did-navigate-in-page'), { url, isMainFrame: false }),
+        );
+
+        expect(onNavigate).not.toHaveBeenCalled();
+        expect(webview.getAttribute('src')).toBe(mainUrl);
+
+        await fireEvent(
+          webview,
+          Object.assign(new Event('did-navigate-in-page'), {
+            url: `${mainUrl}#next`,
+            isMainFrame: true,
+          }),
+        );
+        expect(onNavigate).toHaveBeenCalledExactlyOnceWith(`${mainUrl}#next`);
+        expect(webview.getAttribute('src')).toBe(`${mainUrl}#next`);
+      },
+    );
+
+    it.each(['did-navigate', 'did-navigate-in-page'])(
+      'preserves deliberate main-frame blank navigation via %s',
+      async (eventType) => {
+        const onNavigate = vi.fn();
+        const { container } = renderPage({ onNavigate });
+        const webview = container.querySelector('webview')!;
+
+        await fireEvent(
+          webview,
+          Object.assign(new Event(eventType), { url: 'about:blank', isMainFrame: true }),
+        );
+
+        expect(onNavigate).toHaveBeenCalledExactlyOnceWith('about:blank');
+        expect(webview.getAttribute('src')).toBe('about:blank');
+      },
+    );
 
     it('shows the URL placeholder for a blank page and edits its full URL', async () => {
       const { getByRole } = render(EmbeddedBrowser, {

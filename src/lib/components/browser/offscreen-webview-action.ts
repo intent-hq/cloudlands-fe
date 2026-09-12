@@ -109,6 +109,12 @@ export function offscreenWebview(node: HTMLElement, entry: OffscreenWebviewEntry
     if (url) appStore.dispatch(updateTabBrowserUrl(current.workspaceId, current.tabId, url));
   };
 
+  const handleDidNavigateInPage = (event: Event) => {
+    // Unlike did-navigate, in-page events include iframes (intent#4767).
+    if (!(event as Event & { isMainFrame: boolean }).isMainFrame) return;
+    handleDidNavigate(event);
+  };
+
   // NOT { once: true }: reparenting the <webview> makes Electron destroy
   // and re-create the guest webContents, and the new guest fires dom-ready
   // again — registration (gated on webContentsId above) and muting must
@@ -119,7 +125,7 @@ export function offscreenWebview(node: HTMLElement, entry: OffscreenWebviewEntry
   webview.addEventListener('did-navigate', handleDidNavigate);
   // Hash/history navigation does not fire did-navigate; the visible
   // EmbeddedBrowser syncs it too, so mirror it here.
-  webview.addEventListener('did-navigate-in-page', handleDidNavigate);
+  webview.addEventListener('did-navigate-in-page', handleDidNavigateInPage);
 
   return {
     update(next: OffscreenWebviewEntry) {
@@ -129,7 +135,7 @@ export function offscreenWebview(node: HTMLElement, entry: OffscreenWebviewEntry
     destroy() {
       webview.removeEventListener('dom-ready', handleDomReady);
       webview.removeEventListener('did-navigate', handleDidNavigate);
-      webview.removeEventListener('did-navigate-in-page', handleDidNavigate);
+      webview.removeEventListener('did-navigate-in-page', handleDidNavigateInPage);
     },
   };
 }

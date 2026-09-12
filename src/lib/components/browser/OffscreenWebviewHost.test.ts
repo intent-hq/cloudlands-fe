@@ -5,7 +5,7 @@
  * state is removed (archive/delete), and enforces the LRU cap.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, waitFor } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, waitFor } from '@testing-library/svelte';
 
 const { layoutsStore, ownClientIdStore, dispatchMock } = vi.hoisted(() => {
   // Minimal svelte-store-contract writable (vi.hoisted runs before imports).
@@ -240,14 +240,87 @@ describe('OffscreenWebviewHost', () => {
       payload: ['ws-bg', 'tab-bg', 'https://example.test/next'],
     });
 
-    const inPage = new Event('did-navigate-in-page') as Event & { url?: string };
+    const inPage = new Event('did-navigate-in-page') as Event & {
+      url?: string;
+      isMainFrame?: boolean;
+    };
     inPage.url = 'https://example.test/next#section';
+    inPage.isMainFrame = true;
     webview.dispatchEvent(inPage);
     expect(dispatchMock).toHaveBeenCalledWith({
       type: 'panelLayout/updateTabBrowserUrl',
       payload: ['ws-bg', 'tab-bg', 'https://example.test/next#section'],
     });
   });
+
+  // intent#4767: a hidden tab must not persist its iframe's URL as its own.
+  it.each(['about:blank', 'https://iframe.test/widget#section'])(
+    'ignores hidden-tab subframe in-page navigation to %s',
+    async (url) => {
+      const mainUrl = 'https://example.test/docs';
+      layoutsStore.set({
+        'ws-shown': {
+          panels: {},
+          hiddenTabs: {
+            ids: ['tab-hidden'],
+            map: {
+              'tab-hidden': {
+                id: 'tab-hidden',
+                type: 'browser',
+                title: 'Docs',
+                browserUrl: mainUrl,
+                ownerAgentId: 'agent-1',
+              },
+            },
+          },
+        },
+      });
+      const { container } = render(OffscreenWebviewHost, {
+        props: { excludedWorkspaceIds: new Set(['ws-shown']) },
+      });
+      await waitFor(() => expect(mountedTabIds(container)).toEqual(['tab-hidden']));
+      const webview = container.querySelector('[data-offscreen-webview-tab="tab-hidden"]')!;
+
+      await fireEvent(
+        webview,
+        Object.assign(new Event('did-navigate-in-page'), { url, isMainFrame: false }),
+      );
+      expect(dispatchMock).not.toHaveBeenCalled();
+
+      await fireEvent(
+        webview,
+        Object.assign(new Event('did-navigate-in-page'), {
+          url: `${mainUrl}#next`,
+          isMainFrame: true,
+        }),
+      );
+      expect(dispatchMock).toHaveBeenCalledExactlyOnceWith({
+        type: 'panelLayout/updateTabBrowserUrl',
+        payload: ['ws-shown', 'tab-hidden', `${mainUrl}#next`],
+      });
+    },
+  );
+
+  it.each(['did-navigate', 'did-navigate-in-page'])(
+    'persists deliberate main-frame blank navigation via %s',
+    async (eventType) => {
+      layoutsStore.set({ 'ws-bg': browserLayout([{ id: 'tab-bg' }]) });
+      const { container } = render(OffscreenWebviewHost, {
+        props: { excludedWorkspaceIds: new Set() },
+      });
+      await waitFor(() => expect(mountedTabIds(container)).toEqual(['tab-bg']));
+      const webview = container.querySelector('[data-offscreen-webview-tab="tab-bg"]')!;
+
+      await fireEvent(
+        webview,
+        Object.assign(new Event(eventType), { url: 'about:blank', isMainFrame: true }),
+      );
+      expect(dispatchMock).toHaveBeenCalledExactlyOnceWith({
+        type: 'panelLayout/updateTabBrowserUrl',
+        payload: ['ws-bg', 'tab-bg', 'about:blank'],
+      });
+    },
+  );
 
   it('unmounts a tab when its workspace becomes displayed and when its layout is removed', async () => {
     layoutsStore.set({

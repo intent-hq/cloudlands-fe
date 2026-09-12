@@ -592,7 +592,9 @@
       updateNavigationState();
     });
 
-    addWebviewListener('did-navigate-in-page', (e: any) => {
+    addWebviewListener('did-navigate-in-page', (e: { url: string; isMainFrame: boolean }) => {
+      // Iframe history changes must not replace the tab URL or webview src (intent#4767).
+      if (!e.isMainFrame) return;
       currentWebviewUrl = e.url;
       displayUrl = e.url;
       isSecure = e.url?.startsWith('https://');
