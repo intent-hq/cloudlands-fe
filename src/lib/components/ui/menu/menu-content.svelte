@@ -64,7 +64,7 @@
     event.preventDefault();
     const content = ref;
     requestAnimationFrame(() => {
-      if (content && ref === content) content.focus();
+      if (content && ref === content && content.dataset.state === 'open') content.focus();
     });
   }
 
