@@ -1,3 +1,5 @@
+import { Editor } from '@tiptap/core';
+import StarterKit from '@tiptap/starter-kit';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ContentType, NoteVisibility } from '$shared/types';
 import type { Note } from '$shared/types';
@@ -39,6 +41,7 @@ import {
   selectAllNotes,
   selectNoteById,
 } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
+import { runExternalContentUpdateEffect } from '$lib/components/workspace/note-with-comments/external-update-effect';
 import {
   NOTE_CONTENT_SAVE_DEBOUNCE_MS,
   createNote,
@@ -587,8 +590,11 @@ describe('notesWriteService (fake seam, real store)', () => {
   // state the editor has not applied yet. The rebased draft must not replace
   // it in the store (the newer rev would then name the older text); it is
   // still rebased onto the echo and sent against the echo rev so the daemon
-  // merges the newer change in.
-  it('keeps a newer refetch in the store when a superseded echo lands, and still rebases the draft onto the echo', async () => {
+  // merges the newer change in. The flush resolves with that rebased draft —
+  // not the refetch — so the editor keeps the pending edit rather than being
+  // reset to a text that lacks it (PR #2404 re-verification: the reset made
+  // the next save an exact write that deleted the agent's text).
+  it('keeps a newer refetch in the store when a superseded echo lands, and resolves the draft rebased onto the echo', async () => {
     seed(makeNote('n1', { rev: 4, content: 'body' }));
     let resolveFirst!: (v: unknown) => void;
     notesApi.setContent
@@ -607,7 +613,7 @@ describe('notesWriteService (fake seam, real store)', () => {
     seed(makeNote('n1', { rev: 8, content: 'AGENT\nbody first\nLATER' }));
     resolveFirst({ success: true, newContent: 'AGENT\nbody first', noteRev: 6 });
 
-    await expect(first).resolves.toEqual({ content: 'AGENT\nbody first\nLATER', rev: 8 });
+    await expect(first).resolves.toEqual({ content: 'AGENT\nbody first plus typing', rev: 6 });
     const note = selectNoteById.select(appStore.state, WS, 'n1');
     expect(note?.content).toBe('AGENT\nbody first\nLATER');
     expect(note?.rev).toBe(8);
@@ -616,6 +622,77 @@ describe('notesWriteService (fake seam, real store)', () => {
     expect(notesApi.setContent).toHaveBeenLastCalledWith(
       'n1',
       'AGENT\nbody first plus typing',
+      6,
+      WS,
+    );
+  });
+
+  // ---- Caller-supplied draft base content ------------------------------------
+  // The pending draft was rebased onto an echo (gaining "AGENT") before the
+  // editor showed it; the user's next keystroke is typed on the pre-rebase
+  // text. Relative to the rebased draft that text reads as deleting AGENT, so
+  // the caller names the text it typed on and its edit is replayed instead.
+  it('replays a draft typed on the pre-rebase text onto the rebased pending draft', async () => {
+    seed(makeNote('n1', { rev: 4, content: 'body' }));
+    let resolveFirst!: (v: unknown) => void;
+    notesApi.setContent
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveFirst = resolve;
+        }) as never,
+      )
+      .mockImplementation(((_id: string, content: string, rev: number) =>
+        Promise.resolve({ success: true, newContent: content, noteRev: rev + 1 })) as never);
+
+    updateNoteContent(WS, 'n1', 'body first', { baseContent: 'body' });
+    const first = flushNoteContent(WS, 'n1');
+    await Promise.resolve();
+    updateNoteContent(WS, 'n1', 'body first plus typing', { baseContent: 'body first' });
+    resolveFirst({ success: true, newContent: 'AGENT\nbody first', noteRev: 6 });
+    await first;
+    expect(selectNoteById.select(appStore.state, WS, 'n1')?.content).toBe(
+      'AGENT\nbody first plus typing',
+    );
+
+    updateNoteContent(WS, 'n1', 'body first plus typing after', {
+      baseContent: 'body first plus typing',
+    });
+    expect(selectNoteById.select(appStore.state, WS, 'n1')?.content).toBe(
+      'AGENT\nbody first plus typing after',
+    );
+    await flushNoteContent(WS, 'n1');
+    expect(notesApi.setContent).toHaveBeenLastCalledWith(
+      'n1',
+      'AGENT\nbody first plus typing after',
+      6,
+      WS,
+    );
+  });
+
+  it('takes a draft without base content as typed on the rebased pending draft', async () => {
+    seed(makeNote('n1', { rev: 4, content: 'body' }));
+    let resolveFirst!: (v: unknown) => void;
+    notesApi.setContent
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveFirst = resolve;
+        }) as never,
+      )
+      .mockImplementation(((_id: string, content: string, rev: number) =>
+        Promise.resolve({ success: true, newContent: content, noteRev: rev + 1 })) as never);
+
+    updateNoteContent(WS, 'n1', 'body first');
+    const first = flushNoteContent(WS, 'n1');
+    await Promise.resolve();
+    updateNoteContent(WS, 'n1', 'body first plus typing');
+    resolveFirst({ success: true, newContent: 'AGENT\nbody first', noteRev: 6 });
+    await first;
+
+    updateNoteContent(WS, 'n1', 'AGENT\nbody first plus typing after');
+    await flushNoteContent(WS, 'n1');
+    expect(notesApi.setContent).toHaveBeenLastCalledWith(
+      'n1',
+      'AGENT\nbody first plus typing after',
       6,
       WS,
     );
@@ -928,5 +1005,110 @@ describe('notesWriteService (fake seam, real store)', () => {
     expect(note?.title).toBe('Server');
     expect(note?.content).toBe('server');
     expect(toast.warning).toHaveBeenCalledTimes(1);
+  });
+});
+
+// The editor's external-update pipeline chained to the REAL service: what the
+// flush resolves with is what the editor renders, with unsaved keystrokes
+// folded on top.
+describe('notesWriteService chained to the editor external-update effect', () => {
+  const NOTE = 'n';
+
+  beforeAll(() => {
+    appStore.init();
+  });
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => {
+    vi.runOnlyPendingTimers();
+    vi.useRealTimers();
+    vi.clearAllMocks();
+    Object.values(notesApi).forEach((fn) => fn.mockResolvedValue({ success: true } as never));
+    notesApi.list.mockResolvedValue([] as never);
+  });
+
+  // Regression (PR #2404 re-verification): a refetch landed rev 8 while the
+  // first save was in flight and a second draft was staged. The superseded
+  // echo (rev 6) then arrived. The store must keep the rev-8 text, yet the
+  // editor must keep the echoed AGENT text AND the staged "plus typing" AND
+  // the unstaged "newest" — and the next save must carry all of them against
+  // the echo rev, so the daemon merges the rev-8 change (LATER) in instead of
+  // treating the draft as an exact write that deletes it.
+  it('retains staged and unstaged typing in the editor when a superseded echo lands after a newer refetch', async () => {
+    seed(makeNote(NOTE, { rev: 4, content: 'body' }));
+    const editor = new Editor({ extensions: [StarterKit], content: '<p>body first</p>' });
+    let resolveFirst!: (v: unknown) => void;
+    notesApi.setContent
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveFirst = resolve;
+        }) as never,
+      )
+      // The daemon three-way merges a rev-6 draft with its rev-8 change.
+      .mockImplementation(((_id: string, content: string, rev: number) =>
+        Promise.resolve({
+          success: true,
+          newContent: rev === 6 ? content.replace('newest', 'newest LATER') : content,
+          noteRev: 9,
+        })) as never);
+    updateNoteContent(WS, NOTE, 'body first');
+    let last = 'body first';
+    let edited = true;
+    // The refetch that triggers the pipeline while the first save is pending.
+    seed(makeNote(NOTE, { rev: 5, content: 'AGENT body' }));
+    const logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const completion = runExternalContentUpdateEffect({
+      updateVersion: 999,
+      getEditor: () => editor,
+      getIsInitialized: () => true,
+      getHasPendingNoteContent: () => hasPendingNoteContent(WS, NOTE),
+      flushNoteContent,
+      getCurrentNoteContent: () => selectNoteById.select(appStore.state, WS, NOTE)?.content ?? '',
+      getLastKnownContent: () => last,
+      setLastKnownContent: (value) => {
+        last = value;
+      },
+      getHasUserEditedSinceLastSave: () => edited,
+      setHasUserEditedSinceLastSave: (value) => {
+        edited = value;
+      },
+      getIsRestorePending: () => false,
+      getWorkspaceId: () => WS,
+      getNoteId: () => NOTE,
+      getCommentManager: () => null,
+      processMarkdownToHTML: async (text) => `<p>${text}</p>`,
+      processHTMLToMarkdown: () => editor.getText(),
+      logger,
+    });
+    await Promise.resolve();
+    editor.commands.insertContentAt(editor.state.doc.content.size - 1, ' plus typing');
+    updateNoteContent(WS, NOTE, 'body first plus typing');
+    last = 'body first plus typing';
+    editor.commands.insertContentAt(editor.state.doc.content.size - 1, ' newest');
+    seed(makeNote(NOTE, { rev: 8, content: 'AGENT body first LATER' }));
+    resolveFirst({ success: true, newContent: 'AGENT body first', noteRev: 6 });
+    try {
+      await completion;
+      expect(selectNoteById.select(appStore.state, WS, NOTE)?.content).toBe(
+        'AGENT body first LATER',
+      );
+      expect(editor.getText()).toBe('AGENT body first plus typing newest');
+
+      editor.commands.insertContentAt(editor.state.doc.content.size - 1, ' after');
+      updateNoteContent(WS, NOTE, editor.getText());
+      await flushNoteContent(WS, NOTE);
+      expect(notesApi.setContent).toHaveBeenLastCalledWith(
+        NOTE,
+        'AGENT body first plus typing newest after',
+        6,
+        WS,
+      );
+      expect(selectNoteById.select(appStore.state, WS, NOTE)).toMatchObject({
+        content: 'AGENT body first plus typing newest LATER after',
+        rev: 9,
+      });
+    } finally {
+      await flushNoteContent(WS, NOTE);
+      editor.destroy();
+    }
   });
 });

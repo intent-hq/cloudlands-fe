@@ -816,9 +816,14 @@
           if (!hasPendingNoteContent(workspace.id, noteId) && (note.content || '') === baseline) {
             lastKnownRev = note.rev;
           }
+          // The baseline also names the text the draft was typed on: a
+          // pending draft the service has since rebased onto an echo the
+          // editor has not shown yet would otherwise make this draft read as
+          // deleting the rebased-in change.
           updateNoteContent(workspace.id, noteId, markdownContent, {
             immediate,
             baseRev: lastKnownRev,
+            baseContent: baseline,
           });
         }
       }

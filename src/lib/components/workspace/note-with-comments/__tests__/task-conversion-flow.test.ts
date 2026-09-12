@@ -119,7 +119,14 @@ const {
       return readableSelector;
     },
     dispatch: mockDispatch,
-    state: {},
+    // Shaped like the real workspace-notes slice so the REAL write service
+    // (when a test un-mocks it) reads the same notes the component renders.
+    get state() {
+      const map = state.notesById;
+      return {
+        workspaceNotes: { byWorkspaceId: { 'ws-1': { notes: { map, ids: Object.keys(map) } } } },
+      };
+    },
   };
 
   return {
@@ -363,6 +370,10 @@ vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-slice', () => ({
   restoreNoteVersion: vi.fn((workspaceId: string, noteId: string, versionId: string) => ({
     type: 'workspaceNotes/restoreNoteVersion',
     payload: { workspaceId, noteId, versionId },
+  })),
+  applyLocalNoteUpdate: vi.fn((workspaceId: string, noteId: string, update: Partial<Note>) => ({
+    type: 'workspaceNotes/applyLocalNoteUpdate',
+    payload: { workspaceId, noteId, update },
   })),
   clearNewlyCreatedNoteId: vi.fn((workspaceId: string) => ({
     type: 'workspaceNotes/clearNewlyCreatedNoteId',
@@ -833,6 +844,7 @@ describe('NoteWithComments task conversion regression', () => {
       expect(updateNoteContent).toHaveBeenCalledWith('ws-1', 'spec', 'base x1 x2', {
         immediate: false,
         baseRev: 4,
+        baseContent: 'base',
       });
       expect(sent).toEqual([{ text: 'base x1 x2', expectedVersion: 4 }]);
       expect(daemon.content).toBe('agent base x1 x2');
@@ -878,6 +890,7 @@ describe('NoteWithComments task conversion regression', () => {
         expect(updateNoteContent).toHaveBeenLastCalledWith('ws-1', 'spec', 'body first', {
           immediate: false,
           baseRev: 4,
+          baseContent: 'body',
         });
 
         // The save settles with identical content at rev 5.
@@ -900,6 +913,7 @@ describe('NoteWithComments task conversion regression', () => {
         expect(updateNoteContent).toHaveBeenCalledWith('ws-1', 'spec', expectedDraft, {
           immediate: false,
           baseRev: 5,
+          baseContent: 'body first',
         });
       },
     );
@@ -1006,6 +1020,100 @@ describe('NoteWithComments task conversion regression', () => {
     });
   });
 
+  // Regression (PR #2404 re-verification, real component + REAL write service):
+  // body@4; " first" is staged by the refetch AGENT body@5 and its save held;
+  // " plus typing" is staged by the debounce; " newest" is typed; the refetch
+  // AGENT body first LATER@8 lands; then the superseded echo AGENT body first@6
+  // arrives. Before the fix the chain's rebased drafts never reached the
+  // editor, so the next keystroke was staged from the pre-rebase text and,
+  // relative to the rebased in-flight draft, read as deleting AGENT: the third
+  // save was an exact write at rev 9 without it. The drafts are sent against
+  // the echo rev, so the daemon merges LATER in (mocked on the second echo).
+  it('keeps the agent text, the newer refetch and every keystroke through a superseded echo behind a newer refetch (real write service)', async () => {
+    const service = await vi.importActual<typeof import('$features/notes/notes-write-service')>(
+      '$features/notes/notes-write-service',
+    );
+    const { appClient } = await import('$lib/client');
+    let resolveFirst!: (v: unknown) => void;
+    let resolveSecond!: (v: unknown) => void;
+    const first = new Promise((resolve) => {
+      resolveFirst = resolve;
+    });
+    const second = new Promise((resolve) => {
+      resolveSecond = resolve;
+    });
+    const wire = vi
+      .spyOn(appClient.notes, 'setContent')
+      .mockReturnValueOnce(first as never)
+      .mockReturnValueOnce(second as never)
+      .mockImplementation(((_id: string, content: string) =>
+        Promise.resolve({ success: true, newContent: content, noteRev: 10 })) as never);
+    replaceNotes([createNote('spec', 'Spec', 'body', { rev: 4 })]);
+    const view = await renderInitializedNote('spec', 'body');
+    const editor = (view.container.querySelector('.ProseMirror') as any).editor;
+    await waitFor(() => expect(editor.getText()).toBe('body'));
+    vi.useFakeTimers();
+    await vi.advanceTimersByTimeAsync(1200);
+    vi.mocked(hasPendingNoteContent).mockImplementation(service.hasPendingNoteContent);
+    vi.mocked(updateNoteContent).mockImplementation(service.updateNoteContent);
+    vi.mocked(flushNoteContent).mockImplementation(service.flushNoteContent);
+    // Optimistic store writes from the real service land in the mock store.
+    mockDispatch.mockImplementation((action: any) => {
+      if (action.type === 'workspaceNotes/applyLocalNoteUpdate') {
+        const { noteId, update } = action.payload;
+        replaceNotes([{ ...getNoteById(noteId), ...update }]);
+      }
+      return action;
+    });
+    try {
+      editor.commands.insertContentAt(editor.state.doc.content.size - 1, ' first');
+      replaceNotes([createNote('spec', 'Spec', 'AGENT body', { rev: 5 })]);
+      await tick();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(wire).toHaveBeenCalledWith('spec', 'body first', 4, 'ws-1');
+
+      editor.commands.insertContentAt(editor.state.doc.content.size - 1, ' plus typing');
+      await vi.advanceTimersByTimeAsync(1000);
+      editor.commands.insertContentAt(editor.state.doc.content.size - 1, ' newest');
+      replaceNotes([createNote('spec', 'Spec', 'AGENT body first LATER', { rev: 8 })]);
+      resolveFirst({ success: true, newContent: 'AGENT body first', noteRev: 6 });
+      await tick();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(wire).toHaveBeenCalledTimes(2);
+      expect(wire.mock.calls[1]?.[1]).toBe('AGENT body first plus typing newest');
+      expect(wire.mock.calls[1]?.[2]).toBe(6);
+
+      editor.commands.insertContentAt(editor.state.doc.content.size - 1, ' after');
+      await vi.advanceTimersByTimeAsync(1000);
+      resolveSecond({
+        success: true,
+        newContent: 'AGENT body first plus typing newest LATER',
+        noteRev: 9,
+      });
+      await tick();
+      await vi.advanceTimersByTimeAsync(3000);
+
+      const finalText = 'AGENT body first plus typing newest after LATER';
+      expect(editor.getText()).toBe(finalText);
+      expect(wire).toHaveBeenCalledTimes(3);
+      expect(wire.mock.calls[2]).toEqual(['spec', finalText, 9, 'ws-1']);
+      expect(getNoteById('spec')).toMatchObject({ content: finalText, rev: 10 });
+    } finally {
+      resolveFirst({ success: true, newContent: 'AGENT body first', noteRev: 6 });
+      resolveSecond({
+        success: true,
+        newContent: 'AGENT body first plus typing newest LATER',
+        noteRev: 9,
+      });
+      await service.flushNoteContent('ws-1', 'spec');
+      vi.mocked(hasPendingNoteContent).mockImplementation(() => false);
+      vi.mocked(updateNoteContent).mockImplementation(() => undefined);
+      vi.mocked(flushNoteContent).mockImplementation(async () => undefined);
+      mockDispatch.mockImplementation((action: any) => action);
+      wire.mockRestore();
+    }
+  });
+
   // Regression (PR #2404 review): a save the user's typing produced was still
   // pending when they clicked restore. Sent after the restore RPC, the daemon
   // merged that pre-restore draft onto the restored text, and the merged
@@ -1047,6 +1155,7 @@ describe('NoteWithComments task conversion regression', () => {
       expect(updateNoteContent).toHaveBeenCalledWith('ws-1', 'spec', 'note A local', {
         immediate: false,
         baseRev: 4,
+        baseContent: 'note A',
       });
       expect(flushNoteContent).toHaveBeenCalledWith('ws-1', 'spec');
       expect(restoreDispatched()).toBe(false);
