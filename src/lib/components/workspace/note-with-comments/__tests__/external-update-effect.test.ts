@@ -131,8 +131,6 @@ describe('external-update-effect', () => {
       setLastKnownContent: vi.fn(),
       getHasUserEditedSinceLastSave: () => false,
       setHasUserEditedSinceLastSave: vi.fn(),
-      getIsUpdatingFromExternal: () => false,
-      setIsUpdatingFromExternal: vi.fn(),
       getWorkspaceId: () => undefined,
       getNoteId: () => 'note-1',
       getCommentManager: () => null,
@@ -158,8 +156,6 @@ describe('external-update-effect', () => {
       setLastKnownContent: vi.fn(),
       getHasUserEditedSinceLastSave: () => false,
       setHasUserEditedSinceLastSave: vi.fn(),
-      getIsUpdatingFromExternal: () => false,
-      setIsUpdatingFromExternal: vi.fn(),
       getWorkspaceId: () => undefined,
       getNoteId: () => 'note-1',
       getCommentManager: () => null,
@@ -182,7 +178,6 @@ describe('external-update-effect', () => {
 
     let lastKnownContent = 'old-md';
     let hasUserEditedSinceLastSave = true;
-    let isUpdatingFromExternal = false;
 
     const commentManager = {
       reapplyAnchorsForCurrentComments: vi.fn(async () => {}),
@@ -201,10 +196,6 @@ describe('external-update-effect', () => {
       getHasUserEditedSinceLastSave: () => hasUserEditedSinceLastSave,
       setHasUserEditedSinceLastSave: (v) => {
         hasUserEditedSinceLastSave = v;
-      },
-      getIsUpdatingFromExternal: () => isUpdatingFromExternal,
-      setIsUpdatingFromExternal: (v) => {
-        isUpdatingFromExternal = v;
       },
       getWorkspaceId: () => 'workspace-1',
       getNoteId: () => 'note-1',
@@ -232,11 +223,6 @@ describe('external-update-effect', () => {
     });
     expect(lastKnownContent).toBe('new-md');
     expect(hasUserEditedSinceLastSave).toBe(false);
-
-    // Flag flips to true immediately, then resets after 200ms
-    expect(isUpdatingFromExternal).toBe(true);
-    await vi.advanceTimersByTimeAsync(200);
-    expect(isUpdatingFromExternal).toBe(false);
 
     // Anchors were present, so we attempt to reapply
     expect(commentManager.reapplyAnchorsForCurrentComments).toHaveBeenCalledWith({
@@ -275,8 +261,6 @@ describe('external-update-effect', () => {
       setHasUserEditedSinceLastSave: (v) => {
         hasUserEditedSinceLastSave = v;
       },
-      getIsUpdatingFromExternal: () => false,
-      setIsUpdatingFromExternal: vi.fn(),
       getWorkspaceId: () => undefined,
       getNoteId: () => 'note-1',
       getCommentManager: () => null,
@@ -334,8 +318,6 @@ describe('external-update-effect', () => {
       },
       getHasUserEditedSinceLastSave: () => true,
       setHasUserEditedSinceLastSave: vi.fn(),
-      getIsUpdatingFromExternal: () => false,
-      setIsUpdatingFromExternal: vi.fn(),
       getWorkspaceId: () => 'workspace-1',
       getNoteId: () => 'note-1',
       getCommentManager: () => null,
@@ -386,8 +368,6 @@ describe('external-update-effect', () => {
       setLastKnownContent: vi.fn(),
       getHasUserEditedSinceLastSave: () => false,
       setHasUserEditedSinceLastSave: vi.fn(),
-      getIsUpdatingFromExternal: () => false,
-      setIsUpdatingFromExternal: vi.fn(),
       getWorkspaceId: () => 'workspace-1',
       getNoteId: () => 'note-inflight',
       getCommentManager: () => null,
@@ -427,8 +407,6 @@ describe('external-update-effect', () => {
       setLastKnownContent: vi.fn(),
       getHasUserEditedSinceLastSave: () => false,
       setHasUserEditedSinceLastSave: vi.fn(),
-      getIsUpdatingFromExternal: () => false,
-      setIsUpdatingFromExternal: vi.fn(),
       getWorkspaceId: () => undefined,
       getNoteId: () => 'note-1',
       getCommentManager: () => null,
@@ -468,8 +446,6 @@ describe('external-update-effect', () => {
       setLastKnownContent: vi.fn(),
       getHasUserEditedSinceLastSave: () => false,
       setHasUserEditedSinceLastSave: vi.fn(),
-      getIsUpdatingFromExternal: () => false,
-      setIsUpdatingFromExternal: vi.fn(),
       getWorkspaceId: () => undefined,
       getNoteId: () => 'note-recheck',
       getCommentManager: () => null,
@@ -515,8 +491,6 @@ describe('external-update-effect', () => {
       },
       getHasUserEditedSinceLastSave: () => false,
       setHasUserEditedSinceLastSave: vi.fn(),
-      getIsUpdatingFromExternal: () => false,
-      setIsUpdatingFromExternal: vi.fn(),
       getWorkspaceId: () => 'workspace-1',
       getNoteId: () => 'note-1',
       getCommentManager: () => null,
@@ -564,7 +538,12 @@ describe('external-update-effect with a real editor', () => {
   function setup({ ours, incoming, merged }: { ours: string; incoming: string; merged?: string }) {
     const editor = new Editor({ extensions: [StarterKit], content: html(ours) });
     editors.push(editor);
-    const state = { last: ours, current: incoming, edited: true, updating: false };
+    const state = { last: ours, current: incoming, edited: true, restorePending: false };
+    // Mirrors editor-config's onUpdate → debounceUpdate: every transaction not
+    // marked as an external apply is user input and sets the edited flag.
+    editor.on('update', ({ transaction }) => {
+      if (!transaction.getMeta('external-update')) state.edited = true;
+    });
     const args = {
       updateVersion: ++serial,
       getEditor: () => editor,
@@ -582,9 +561,9 @@ describe('external-update-effect with a real editor', () => {
       setHasUserEditedSinceLastSave: (v: boolean) => {
         state.edited = v;
       },
-      getIsUpdatingFromExternal: () => state.updating,
-      setIsUpdatingFromExternal: (v: boolean) => {
-        state.updating = v;
+      getIsRestorePending: () => state.restorePending,
+      setIsRestorePending: (v: boolean) => {
+        state.restorePending = v;
       },
       getWorkspaceId: () => 'workspace-1',
       getNoteId: () => `note-${serial}`,
@@ -647,9 +626,9 @@ describe('external-update-effect with a real editor', () => {
     expect(order).toEqual(['stage', 'flush']);
   });
 
-  it('does not stage while a whole-document replacement (restore) is in progress', async () => {
+  it('does not stage while a whole-document replacement (restore) is pending', async () => {
     const { args, state } = setup({ ours: 'base one unsaved', incoming: 'restored' });
-    state.updating = true;
+    state.restorePending = true;
     const stageUnsavedEdits = vi.fn();
 
     const completion = runExternalContentUpdateEffect({ ...args, stageUnsavedEdits });
@@ -715,9 +694,9 @@ describe('external-update-effect with a real editor', () => {
     expect(state.last).toBe('newest base');
   });
 
-  it('applies an explicit restore as a whole-document replacement with a valid cursor', async () => {
+  it('applies an explicit restore as a whole-document replacement with a valid cursor and clears the pending restore', async () => {
     const { editor, args, state } = setup({ ours: 'base one unsaved', incoming: 'restored' });
-    state.updating = true;
+    state.restorePending = true;
     editor.commands.setTextSelection(10);
 
     const completion = runExternalContentUpdateEffect(args);
@@ -726,7 +705,82 @@ describe('external-update-effect with a real editor', () => {
 
     expect(editor.getText()).toBe('restored');
     expect(editor.state.doc.resolve(editor.state.selection.anchor).parent.inlineContent).toBe(true);
+    // Consumed by the apply itself, not by a timer.
+    expect(state.restorePending).toBe(false);
   });
+
+  // Regression (verifier, production component + TipTap): an agent writing
+  // twice in a row is a normal burst, and a keystroke landing between the two
+  // applies was erased by the second one — the fold was gated on a flag that
+  // a 200ms timer cleared after every apply, so input in that tail was
+  // treated as part of the apply. Input is now recognised per transaction
+  // (unmarked = user), so the keystroke is staged, flushed and merged no
+  // matter when it lands relative to an apply.
+  it.each([10, 100])(
+    'keeps a keystroke typed %i ms after an apply when a second external update arrived at +25 ms',
+    async (keystrokeAtMs) => {
+      const { editor, args, state } = setup({ ours: 'base', incoming: 'agent base' });
+      state.edited = false;
+      let pending = false;
+      let staged = '';
+      const flushedDrafts: string[] = [];
+      const bindings = {
+        ...args,
+        getHasPendingNoteContent: () => pending,
+        // Component's stageUnsavedEdits → saveEditorContent: the editor text
+        // becomes lastKnownContent and a save is queued in the write-service.
+        stageUnsavedEdits: () => {
+          staged = editor.getText();
+          state.last = staged;
+          pending = true;
+        },
+        // The daemon merges the flushed draft with the second update.
+        flushNoteContent: vi.fn(async () => {
+          pending = false;
+          flushedDrafts.push(staged);
+          return { content: 'agentX base second', rev: 7 };
+        }),
+      };
+
+      const firstApply = runExternalContentUpdateEffect(bindings);
+      await vi.advanceTimersByTimeAsync(150);
+      await firstApply;
+      expect(editor.getText()).toBe('agent base');
+      expect(state.edited).toBe(false);
+
+      let secondApply: Promise<void> | void;
+      const events: Array<[number, () => void]> = [
+        [
+          25,
+          () => {
+            state.current = 'agent base second';
+            secondApply = runExternalContentUpdateEffect({
+              ...bindings,
+              updateVersion: args.updateVersion + 1,
+            });
+          },
+        ],
+        // Caret after "agent" (offset 5 → pos 6).
+        [keystrokeAtMs, () => editor.commands.insertContentAt(6, 'X')],
+      ];
+      events.sort((a, b) => a[0] - b[0]);
+      let now = 0;
+      for (const [at, run] of events) {
+        await vi.advanceTimersByTimeAsync(at - now);
+        now = at;
+        run();
+      }
+      expect(editor.getText()).toBe('agentX base');
+
+      await vi.advanceTimersByTimeAsync(200);
+      await secondApply;
+
+      expect(editor.getText()).toBe('agentX base second');
+      expect(flushedDrafts).toEqual(['agentX base']);
+      expect(state.last).toBe('agentX base second');
+      expect(state.edited).toBe(false);
+    },
+  );
 });
 
 describe('foldUnsavedEditsIntoIncoming', () => {
@@ -821,7 +875,6 @@ describe('shouldSafetyNetTrigger', () => {
     lastKnownContent: 'old content',
     lastSafetyNetSyncedContent: undefined as string | undefined,
     isInitialized: true,
-    isUpdatingFromExternal: false,
   };
 
   it('returns true when Redux content diverges from lastKnownContent (missed CustomEvent path)', () => {
@@ -863,8 +916,16 @@ describe('shouldSafetyNetTrigger', () => {
     ).toBe(true);
   });
 
-  it('returns false when an external update is in progress', () => {
-    expect(shouldSafetyNetTrigger({ ...baseArgs, isUpdatingFromExternal: true })).toBe(false);
+  it('does not accept isUpdatingFromExternal as an input (a divergence during an apply is still queued)', () => {
+    // The timer-cleared flag left a wall-clock window in which a second
+    // external update was never re-queued; superseded updates are handled by
+    // the pipeline's debounce and apply generation instead.
+    expect(
+      shouldSafetyNetTrigger({
+        ...baseArgs,
+        isUpdatingFromExternal: true,
+      } as Parameters<typeof shouldSafetyNetTrigger>[0]),
+    ).toBe(true);
   });
 
   it('returns false when content matches lastKnownContent (no divergence)', () => {

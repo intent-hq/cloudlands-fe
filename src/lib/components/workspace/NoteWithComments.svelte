@@ -529,7 +529,13 @@
   let isComponentDestroyed = false;
 
   // Track content updates
-  let isUpdatingFromExternal = false;
+  // Set by handleRestoreVersion and cleared by the external-update pipeline
+  // when it applies the restored content as a whole-document replacement.
+  // There is deliberately no "updating from external" flag around applies:
+  // the apply's transactions carry the external-update meta (filtered out of
+  // onUpdate by editor-config), so every update reaching debounceUpdate is
+  // user input, whenever it lands.
+  let isRestorePending = false;
   let saveDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   let isUserTyping = false;
   let userTypingTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -699,12 +705,12 @@
 
   // Debounce content updates
   function debounceUpdate() {
-    // NOTE: intentionally NOT gated on isUpdatingFromExternal (monorepo#535).
-    // Programmatic applies never reach this handler — they carry the
+    // NOTE: programmatic applies never reach this handler — they carry the
     // external-update transaction meta, which editor-config's onUpdate
-    // filters out — so gating on the flag's fixed 200ms reset tail only
-    // dropped real keystrokes (no edit flag, no save timer → the keystroke was
-    // overwritten by the next external apply and never persisted).
+    // filters out — so everything arriving here is user input. A fixed
+    // post-apply reset tail used to gate this too and only dropped real
+    // keystrokes (no edit flag, no save timer → the keystroke was overwritten
+    // by the next external apply and never persisted; monorepo#535).
     if (shouldIgnoreLocalEditorUpdate({ isInitializing })) {
       return;
     }
@@ -976,20 +982,21 @@
       workspaceId: workspace.id,
     });
 
-    // Mark that we're expecting an external update (from the restore operation)
-    // This prevents the "newer writes in flight" logic from rejecting the restore
-    isUpdatingFromExternal = true;
+    // The restored content is applied as a whole-document replacement (no
+    // fold of unsaved edits); the pipeline clears this when it applies it.
+    isRestorePending = true;
 
     // Dispatch to saga — the saga will call notesClient.restoreVersion and
     // dispatch handleExternalNoteUpdate, which flows through the existing
     // external update system to update the editor
     appStore.dispatch(restoreNoteVersion(workspace.id, noteId, versionId));
 
-    // Safety: clear flag after timeout in case restore fails or doesn't trigger an update
+    // Safety: the saga surfaces no failure, so clear the flag after a timeout
+    // in case the restore fails and never produces an update to apply.
     setTimeout(() => {
-      if (isUpdatingFromExternal) {
-        logger.warn('[RestoreVersion] Safety timeout: clearing isUpdatingFromExternal flag');
-        isUpdatingFromExternal = false;
+      if (isRestorePending) {
+        logger.warn('[RestoreVersion] Safety timeout: clearing isRestorePending flag');
+        isRestorePending = false;
       }
     }, 5000);
 
@@ -1385,6 +1392,7 @@
       lastNoteId = currentNoteId;
       lastKnownContent = '';
       hasUserEditedSinceLastSave = false;
+      isRestorePending = false;
       lastSafetyNetSyncedContent = undefined;
 
       // Clear comments from previous note and reset decorations immediately
@@ -1457,13 +1465,11 @@
           plainTextFallbackContent = newContent;
           lastKnownContent = newContent;
           isInitializing = false;
-          isUpdatingFromExternal = false;
           return;
         }
         isTooLargeForRichEditor = false;
 
         isInitializing = true;
-        isUpdatingFromExternal = true;
 
         // Clear the editor and set new content
         processMarkdownToHTML(newContent, {
@@ -1516,11 +1522,10 @@
             // Content is the same, no need to update
             if (!(await initializeCommentManager())) return;
 
-            // Ensure flags are cleared even when no update is needed.
+            // Ensure the flag is cleared even when no update is needed.
             setTimeout(() => {
               if (!ownsConversion()) return;
               isInitializing = false;
-              isUpdatingFromExternal = false;
             }, 200);
             return;
           }
@@ -1534,7 +1539,6 @@
           setTimeout(() => {
             if (!ownsConversion()) return;
             isInitializing = false;
-            isUpdatingFromExternal = false;
           }, 200);
         });
       }
@@ -1604,9 +1608,9 @@
       setHasUserEditedSinceLastSave: (value) => {
         hasUserEditedSinceLastSave = value;
       },
-      getIsUpdatingFromExternal: () => isUpdatingFromExternal,
-      setIsUpdatingFromExternal: (value) => {
-        isUpdatingFromExternal = value;
+      getIsRestorePending: () => isRestorePending,
+      setIsRestorePending: (value) => {
+        isRestorePending = value;
       },
       getWorkspaceId: () => workspace?.id,
       getNoteId: () => noteId,
@@ -1636,7 +1640,6 @@
         lastKnownContent,
         lastSafetyNetSyncedContent,
         isInitialized,
-        isUpdatingFromExternal,
       })
     ) {
       logger.info('[NoteWithComments] Safety-net: Redux content diverged from lastKnownContent', {

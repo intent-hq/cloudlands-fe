@@ -24,13 +24,11 @@ export function shouldSafetyNetTrigger({
   lastKnownContent,
   lastSafetyNetSyncedContent,
   isInitialized,
-  isUpdatingFromExternal,
 }: {
   reduxContent: string | undefined;
   lastKnownContent: string;
   lastSafetyNetSyncedContent: string | undefined;
   isInitialized: boolean;
-  isUpdatingFromExternal: boolean;
 }): boolean {
   if (reduxContent === undefined) {
     return false;
@@ -42,11 +40,12 @@ export function shouldSafetyNetTrigger({
   // incident: comment.add sent unfindable context; debounced saves tripped the
   // daemon's content-reduction guard). Gating on typing let active typing hold
   // off the flush indefinitely. Unsaved edits are flushed and folded into the
-  // applied text downstream in the pipeline instead.
+  // applied text downstream in the pipeline instead. Nor does an apply in
+  // progress gate it: the pipeline dedupes rapid updates itself (debounce +
+  // per-note apply generation), and the former timer-cleared
+  // "updating from external" flag left a wall-clock window in which a
+  // divergence was never re-queued.
   if (!isInitialized) {
-    return false;
-  }
-  if (isUpdatingFromExternal) {
     return false;
   }
   // Dedupe: already synced this exact snapshot
@@ -80,11 +79,12 @@ export function shouldRequeueExternalUpdateAfterTypingStops({
 /**
  * Decides whether the editor's onUpdate callback should ignore a local editor
  * update. Programmatic applies are filtered upstream by the `external-update`
- * transaction meta (editor-config's onUpdate never forwards them), so this
- * intentionally does NOT gate on `isUpdatingFromExternal`: suppressing all
- * input for the fixed 200ms post-apply reset tail dropped real keystrokes —
- * neither `hasUserEditedSinceLastSave` nor a save timer was set, so the next
- * external apply overwrote and never persisted them (monorepo#535).
+ * transaction meta (editor-config's onUpdate never forwards them), so every
+ * update reaching the callback is user input and the only suppression input is
+ * initialization. A fixed post-apply reset tail used to suppress input here
+ * too and dropped real keystrokes — neither `hasUserEditedSinceLastSave` nor a
+ * save timer was set, so the next external apply overwrote and never persisted
+ * them (monorepo#535).
  */
 export function shouldIgnoreLocalEditorUpdate({
   isInitializing,
@@ -237,8 +237,8 @@ export function runExternalContentUpdateEffect({
   setLastKnownContent,
   getHasUserEditedSinceLastSave,
   setHasUserEditedSinceLastSave,
-  getIsUpdatingFromExternal,
-  setIsUpdatingFromExternal,
+  getIsRestorePending,
+  setIsRestorePending,
   getWorkspaceId,
   getNoteId,
   getTaskAgentAssociations,
@@ -289,8 +289,17 @@ export function runExternalContentUpdateEffect({
   setLastKnownContent: (value: string) => void;
   getHasUserEditedSinceLastSave: () => boolean;
   setHasUserEditedSinceLastSave: (value: boolean) => void;
-  getIsUpdatingFromExternal: () => boolean;
-  setIsUpdatingFromExternal: (value: boolean) => void;
+  /**
+   * Whether a `note.restoreVersion` the user requested is still awaiting its
+   * content. The next apply is then a whole-document replacement: unsaved
+   * edits are neither staged nor folded, and the flag is cleared by that
+   * apply (not by a timer). User input is identified per transaction — the
+   * apply's own transactions carry the `external-update` meta and never reach
+   * the component's onUpdate, every unmarked transaction does — so outside a
+   * pending restore there is no window in which a keystroke is ignored.
+   */
+  getIsRestorePending?: () => boolean;
+  setIsRestorePending?: (value: boolean) => void;
   getWorkspaceId: () => string | undefined;
   getNoteId: () => string | null | undefined;
   getTaskAgentAssociations?: () => TaskAgentAssociation[];
@@ -319,13 +328,12 @@ export function runExternalContentUpdateEffect({
   const isInitialized = getIsInitialized();
   const noteId = getNoteId();
 
-  // NOTE: We intentionally do NOT check isUpdatingFromExternal here.
-  // That flag is used to tell the editor's onUpdate handler to ignore
-  // programmatic changes. But when multiple external updates arrive rapidly
-  // (e.g., when an agent delegates multiple tasks), we need to process them all.
-  // The flag would block subsequent updates while the first one is being applied.
-  // Nor is active typing a reason to skip: a dirty editor is flushed now and
-  // keystrokes are folded into the applied text.
+  // NOTE: an apply already in progress is not a reason to skip. When multiple
+  // external updates arrive rapidly (e.g., when an agent delegates multiple
+  // tasks), we need to process them all; the debounce and the per-note apply
+  // generation below take care of superseded updates. Nor is active typing a
+  // reason to skip: a dirty editor is flushed now and keystrokes are folded
+  // into the applied text.
   if (!editor || !isInitialized) {
     logger.info('[NoteWithComments] Skipping external effect', {
       hasEditor: !!editor,
@@ -367,9 +375,10 @@ export function runExternalContentUpdateEffect({
   const workspaceId = getWorkspaceId();
 
   // Keystrokes that never reached a save are replayed onto the text about to
-  // be applied; a whole-document replacement in progress (note.restoreVersion)
-  // is applied verbatim.
-  const canFoldUnsavedEdits = () => getHasUserEditedSinceLastSave() && !getIsUpdatingFromExternal();
+  // be applied; a whole-document replacement the user requested
+  // (note.restoreVersion) is applied verbatim.
+  const isRestorePending = () => getIsRestorePending?.() ?? false;
+  const canFoldUnsavedEdits = () => getHasUserEditedSinceLastSave() && !isRestorePending();
 
   const readEditorMarkdown = (source: ExternalUpdateEffectEditorLike): string | undefined => {
     try {
@@ -385,6 +394,7 @@ export function runExternalContentUpdateEffect({
     if (!editor || editor.isDestroyed) return;
 
     const generation = beginApplyGeneration(noteId);
+    const replacesWholeDocument = isRestorePending();
 
     // `ours` is the editor text `target` accounts for: the saved/applied
     // baseline until unsaved keystrokes are folded in. Applying the incoming
@@ -392,7 +402,7 @@ export function runExternalContentUpdateEffect({
     // carry a text without the external change and delete it on the daemon.
     let ours = getLastKnownContent();
     let target = incoming;
-    if (canFoldUnsavedEdits()) {
+    if (!replacesWholeDocument && canFoldUnsavedEdits()) {
       const current = readEditorMarkdown(editor);
       if (current !== undefined) {
         target = foldUnsavedEditsIntoIncoming({ base: ours, incoming, ours: current });
@@ -430,7 +440,7 @@ export function runExternalContentUpdateEffect({
         const liveEditor = getEditor();
         if (!liveEditor || liveEditor.isDestroyed) return undefined;
 
-        if (!canFoldUnsavedEdits()) return { html, editor: liveEditor };
+        if (replacesWholeDocument || !canFoldUnsavedEdits()) return { html, editor: liveEditor };
         const typed = readEditorMarkdown(liveEditor);
         if (typed === undefined || typed === ours) return { html, editor: liveEditor };
         target = foldUnsavedEditsIntoIncoming({ base: ours, incoming: target, ours: typed });
@@ -475,61 +485,55 @@ export function runExternalContentUpdateEffect({
         strategy: hasAnchors ? 'reapply-anchors' : 'direct-update',
       });
 
-      setIsUpdatingFromExternal(true);
+      // The apply's transactions carry the `external-update` meta, which is
+      // what keeps them out of the component's onUpdate; no flag is raised
+      // around the apply, so a keystroke landing right after it is user input
+      // like any other.
+      const didUpdate = applyExternalUpdateHtmlToEditorPreservingCursor({
+        editor: liveEditor,
+        html: newHtmlContent,
+        mapSelectionThroughDiff: true,
+        createTextSelection,
+        logger,
+      });
 
-      const resetExternalUpdateFlag = () => {
-        setTimeout(() => {
-          setIsUpdatingFromExternal(false);
-        }, 200);
-      };
+      // Folded keystrokes stay unsaved relative to the incoming text; their
+      // already-scheduled save carries them against the incoming rev.
+      setLastKnownContent(incoming);
+      if (replacesWholeDocument) setIsRestorePending?.(false);
 
-      try {
-        const didUpdate = applyExternalUpdateHtmlToEditorPreservingCursor({
-          editor: liveEditor,
-          html: newHtmlContent,
-          mapSelectionThroughDiff: true,
-          createTextSelection,
+      if (didUpdate) {
+        setHasUserEditedSinceLastSave(folded);
+
+        if (workspaceId && noteId) {
+          logger.debug(
+            // i18n-ignore (log line)
+            '[NoteWithComments] Restoring task-agent associations after external update',
+            {
+              noteId,
+              updateVersion,
+            },
+          );
+          restoreTaskAgentAssociations(
+            liveEditor as any,
+            getTaskAgentAssociations?.() ?? [],
+            logger,
+          );
+        }
+
+        await reapplyCommentAnchorsAfterExternalUpdate({
+          hasAnchors,
+          commentManager: getCommentManager(),
+          noteId: noteId ?? undefined,
+          updateVersion,
+          anchorCount,
           logger,
         });
-
-        // Folded keystrokes stay unsaved relative to the incoming text; their
-        // already-scheduled save carries them against the incoming rev.
-        setLastKnownContent(incoming);
-
-        if (didUpdate) {
-          setHasUserEditedSinceLastSave(folded);
-
-          if (workspaceId && noteId) {
-            logger.debug(
-              // i18n-ignore (log line)
-              '[NoteWithComments] Restoring task-agent associations after external update',
-              {
-                noteId,
-                updateVersion,
-              },
-            );
-            restoreTaskAgentAssociations(
-              liveEditor as any,
-              getTaskAgentAssociations?.() ?? [],
-              logger,
-            );
-          }
-
-          await reapplyCommentAnchorsAfterExternalUpdate({
-            hasAnchors,
-            commentManager: getCommentManager(),
-            noteId: noteId ?? undefined,
-            updateVersion,
-            anchorCount,
-            logger,
-          });
-        }
-      } finally {
-        resetExternalUpdateFlag();
       }
     } else {
       // Content is the same (ignoring anchors), just update tracking
       setLastKnownContent(incoming);
+      if (replacesWholeDocument) setIsRestorePending?.(false);
       setHasUserEditedSinceLastSave(folded);
     }
   };
