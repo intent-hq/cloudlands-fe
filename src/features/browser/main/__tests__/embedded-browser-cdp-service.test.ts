@@ -411,7 +411,7 @@ describe('embedded browser CDP workspace routing', () => {
   // scale must match the scale the tab is actually drawn at so the request
   // equals the surface.
   describe('screenshot clip on scale-to-fit tabs (intent-hq/intent#4627)', () => {
-    function screenshotWebContents() {
+    function screenshotWebContents(opts: { emulationDelayMs?: number } = {}) {
       const sendCommand = vi.fn((method: string) => {
         if (method === 'Page.getLayoutMetrics') {
           return Promise.resolve({
@@ -420,14 +420,38 @@ describe('embedded browser CDP workspace routing', () => {
           });
         }
         if (method === 'Page.captureScreenshot') return Promise.resolve({ data: 'anVuaw==' });
+        if (method === 'Emulation.setDeviceMetricsOverride' && opts.emulationDelayMs) {
+          return new Promise((resolve) => setTimeout(resolve, opts.emulationDelayMs));
+        }
         return Promise.resolve(undefined);
       });
+      const debuggerListeners = new Map<string, (event: unknown, reason: string) => void>();
       mocks.fromId.mockReturnValue({
         isDestroyed: () => false,
         once: vi.fn(),
-        debugger: { isAttached: () => true, sendCommand, on: vi.fn() },
+        debugger: {
+          isAttached: () => true,
+          sendCommand,
+          detach: vi.fn(),
+          on: vi.fn((event: string, listener: (event: unknown, reason: string) => void) => {
+            debuggerListeners.set(event, listener);
+          }),
+        },
       });
-      return sendCommand;
+      return { sendCommand, debuggerListeners };
+    }
+
+    function captureScreenshotClip(sendCommand: ReturnType<typeof vi.fn>) {
+      const calls = sendCommand.mock.calls.filter(
+        ([method]) => method === 'Page.captureScreenshot',
+      );
+      return (calls.at(-1)?.[1] as { clip: { scale: number } } | undefined)?.clip;
+    }
+
+    function ownScaledTab(tabId: string, webContentsId: number) {
+      embeddedBrowserCdp.registerTab(tabId, webContentsId);
+      embeddedBrowserCdp.setTabOwner(tabId, 'agent-1', undefined, { width: 1280, height: 800 });
+      embeddedBrowserCdp.reportTabViewBounds(tabId, 640, 400);
     }
 
     async function flushAsync() {
@@ -435,13 +459,8 @@ describe('embedded browser CDP workspace routing', () => {
     }
 
     it('requests the clip at the fit scale the tab is displayed at', async () => {
-      const sendCommand = screenshotWebContents();
-      embeddedBrowserCdp.registerTab('tab-shot-fit', 501);
-      embeddedBrowserCdp.setTabOwner('tab-shot-fit', 'agent-1', undefined, {
-        width: 1280,
-        height: 800,
-      });
-      embeddedBrowserCdp.reportTabViewBounds('tab-shot-fit', 640, 400);
+      const { sendCommand } = screenshotWebContents();
+      ownScaledTab('tab-shot-fit', 501);
       await flushAsync();
 
       try {
@@ -461,7 +480,7 @@ describe('embedded browser CDP workspace routing', () => {
     });
 
     it('keeps clip scale 1 when the emulated viewport is not shrunk to fit', async () => {
-      const sendCommand = screenshotWebContents();
+      const { sendCommand } = screenshotWebContents();
       embeddedBrowserCdp.registerTab('tab-shot-unscaled', 502);
       embeddedBrowserCdp.setTabOwner('tab-shot-unscaled', 'agent-1', undefined, {
         width: 1280,
@@ -480,6 +499,58 @@ describe('embedded browser CDP workspace routing', () => {
         );
       } finally {
         embeddedBrowserCdp.unregisterTab('tab-shot-unscaled');
+      }
+    });
+
+    // Chromium disposes the emulation with the CDP session, so after any
+    // detach the guest is back at its native size until the next
+    // applyViewportEmulation; a stale override flag would shrink the clip
+    // of a full-size surface.
+    it('drops the fit scale after forceDetachDebugger resets the session', async () => {
+      const { sendCommand } = screenshotWebContents();
+      ownScaledTab('tab-shot-reset', 503);
+      await flushAsync();
+
+      try {
+        await embeddedBrowserCdp.screenshot('tab-shot-reset');
+        expect(captureScreenshotClip(sendCommand)?.scale).toBe(0.5);
+
+        embeddedBrowserCdp.forceDetachDebugger(503);
+        await embeddedBrowserCdp.screenshot('tab-shot-reset');
+        expect(captureScreenshotClip(sendCommand)?.scale).toBe(1);
+      } finally {
+        embeddedBrowserCdp.unregisterTab('tab-shot-reset');
+      }
+    });
+
+    it('drops the fit scale when the debugger detaches externally', async () => {
+      const { sendCommand, debuggerListeners } = screenshotWebContents();
+      ownScaledTab('tab-shot-detach', 504);
+      await flushAsync();
+
+      try {
+        await embeddedBrowserCdp.screenshot('tab-shot-detach');
+        expect(captureScreenshotClip(sendCommand)?.scale).toBe(0.5);
+
+        const onDetach = debuggerListeners.get('detach');
+        expect(onDetach).toBeTypeOf('function');
+        onDetach?.({}, 'target closed');
+        await embeddedBrowserCdp.screenshot('tab-shot-detach');
+        expect(captureScreenshotClip(sendCommand)?.scale).toBe(1);
+      } finally {
+        embeddedBrowserCdp.unregisterTab('tab-shot-detach');
+      }
+    });
+
+    it('waits for an in-flight emulation before choosing the clip scale', async () => {
+      const { sendCommand } = screenshotWebContents({ emulationDelayMs: 20 });
+      ownScaledTab('tab-shot-race', 505);
+
+      try {
+        await embeddedBrowserCdp.screenshot('tab-shot-race');
+        expect(captureScreenshotClip(sendCommand)?.scale).toBe(0.5);
+      } finally {
+        embeddedBrowserCdp.unregisterTab('tab-shot-race');
       }
     });
   });

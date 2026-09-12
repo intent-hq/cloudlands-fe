@@ -8,7 +8,7 @@
  * a network port - only the main process can access the debugger.
  */
 
-import { webContents, ipcMain } from 'electron';
+import { webContents, ipcMain, type WebContents } from 'electron';
 import { Logger } from '../../../shared/logger';
 import { IPC_CHANNELS } from '../../../shared/ipc-registry';
 import {
@@ -181,8 +181,19 @@ class EmbeddedBrowserCdpService {
   /** Per-tab viewport mode for owned and unowned tabs. */
   private tabViewports = new Map<string, BrowserTabViewport>();
 
-  /** Tabs whose current webContents has received a device-metrics override. */
+  /**
+   * Tabs whose current webContents has received a device-metrics override.
+   * Cleared whenever that guest's CDP session detaches: Chromium drops the
+   * emulation with the session, so a stale entry would misreport the scale
+   * the tab is drawn at.
+   */
   private tabsWithDeviceMetricsOverride = new Set<string>();
+
+  /** In-flight emulation command per tab (always settles; see applyViewportEmulation). */
+  private pendingViewportEmulation = new Map<string, Promise<void>>();
+
+  /** WebContents whose debugger 'detach' event is already observed. */
+  private debuggerDetachListeners = new Set<number>();
 
   /**
    * Agents whose owned tabs were destroyed via {@link clearAgentTabs}
@@ -409,6 +420,7 @@ class EmbeddedBrowserCdpService {
           this.tabViewBounds.delete(tabId);
         }
         this.attachedDebuggers.delete(webContentsId);
+        this.debuggerDetachListeners.delete(webContentsId);
       });
     }
   }
@@ -983,6 +995,7 @@ class EmbeddedBrowserCdpService {
     if (wc.debugger.isAttached()) {
       // Just update our tracking - the debugger is already usable
       this.attachedDebuggers.add(webContentsId);
+      this.observeDebuggerDetach(wc, webContentsId);
       logger.info('Debugger already attached (by another service), tracking it', { webContentsId });
       return;
     }
@@ -1001,23 +1014,44 @@ class EmbeddedBrowserCdpService {
 
       this.attachedDebuggers.add(webContentsId);
       logger.info('Attached debugger', { webContentsId });
-
-      // Clean up when debugger detaches
-      wc.debugger.on('detach', (_event, reason) => {
-        logger.info('Debugger detached', { webContentsId, reason });
-        this.attachedDebuggers.delete(webContentsId);
-      });
+      this.observeDebuggerDetach(wc, webContentsId);
     } catch (error) {
       // Handle race condition: debugger might have been attached between our check and attach
       const errMsg = (error as Error).message || '';
       if (errMsg.includes('already attached')) {
         // That's fine - just track it
         this.attachedDebuggers.add(webContentsId);
+        this.observeDebuggerDetach(wc, webContentsId);
         logger.info('Debugger attached by another service (race), tracking it', { webContentsId });
         return;
       }
       logger.error('Failed to attach debugger', { webContentsId, error });
       throw error;
+    }
+  }
+
+  /** Clean up when the session ends, whoever attached it (once per webContents). */
+  private observeDebuggerDetach(wc: WebContents, webContentsId: number): void {
+    if (this.debuggerDetachListeners.has(webContentsId)) return;
+    this.debuggerDetachListeners.add(webContentsId);
+    wc.debugger.on('detach', (_event, reason) => {
+      logger.info('Debugger detached', { webContentsId, reason });
+      this.onDebuggerDetached(webContentsId);
+    });
+  }
+
+  /**
+   * Forget a guest's CDP session. Chromium disposes the session's handlers
+   * on detach, which clears any device-metrics override with it, so the
+   * tabs mapped to this webContents are no longer emulated until the next
+   * applyViewportEmulation.
+   */
+  private onDebuggerDetached(webContentsId: number): void {
+    this.attachedDebuggers.delete(webContentsId);
+    for (const [tabId, mappedWebContentsId] of this.tabRegistry) {
+      if (mappedWebContentsId === webContentsId) {
+        this.tabsWithDeviceMetricsOverride.delete(tabId);
+      }
     }
   }
 
@@ -1037,7 +1071,7 @@ class EmbeddedBrowserCdpService {
         // Ignore errors during detach
       }
     }
-    this.attachedDebuggers.delete(webContentsId);
+    this.onDebuggerDetached(webContentsId);
   }
 
   /**
@@ -1049,7 +1083,7 @@ class EmbeddedBrowserCdpService {
     const wc = webContents.fromId(webContentsId);
     if (!wc || wc.isDestroyed()) {
       // Still clear our tracking state
-      this.attachedDebuggers.delete(webContentsId);
+      this.onDebuggerDetached(webContentsId);
       return false;
     }
 
@@ -1069,7 +1103,7 @@ class EmbeddedBrowserCdpService {
     }
 
     // Clear our tracking state
-    this.attachedDebuggers.delete(webContentsId);
+    this.onDebuggerDetached(webContentsId);
 
     return didDetach;
   }
@@ -1242,7 +1276,9 @@ class EmbeddedBrowserCdpService {
    * preset/custom use exact dimensions with scale-to-fit. Fire-and-forget:
    * unmounted tabs are skipped (registerTab
    * re-applies on mount) and CDP failures are logged, never thrown — sizing
-   * must not fail the ownership bookkeeping that triggered it.
+   * must not fail the ownership bookkeeping that triggered it. The in-flight
+   * command is recorded in pendingViewportEmulation so a screenshot issued
+   * right behind it waits for the override bookkeeping to settle.
    */
   private applyViewportEmulation(tabId: string): void {
     const ownership = this.tabOwnership.get(tabId);
@@ -1253,43 +1289,60 @@ class EmbeddedBrowserCdpService {
     const viewport = explicitViewport ?? { mode: 'fit' as const };
     if (viewport.mode === 'fit' && !ownership) {
       if (!this.tabsWithDeviceMetricsOverride.has(tabId)) return;
-      void this.sendCommand(webContentsId, 'Emulation.clearDeviceMetricsOverride')
-        .then(() => this.tabsWithDeviceMetricsOverride.delete(tabId))
-        .catch((error) => {
-          logger.warn('Failed to clear viewport emulation', {
-            tabId,
-            webContentsId,
-            error: (error as Error).message,
-          });
-        });
+      this.trackViewportEmulation(
+        tabId,
+        this.sendCommand(webContentsId, 'Emulation.clearDeviceMetricsOverride')
+          .then(() => {
+            this.tabsWithDeviceMetricsOverride.delete(tabId);
+          })
+          .catch((error) => {
+            logger.warn('Failed to clear viewport emulation', {
+              tabId,
+              webContentsId,
+              error: (error as Error).message,
+            });
+          }),
+      );
       return;
     }
     const { size, scale } = this.resolveEmulationGeometry(tabId);
-    void this.sendCommand(webContentsId, 'Emulation.setDeviceMetricsOverride', {
-      width: size.width,
-      height: size.height,
-      // 0 preserves the display's native device scale factor.
-      deviceScaleFactor: 0,
-      mobile: false,
-      scale,
-    })
-      .then(() => {
-        if (this.tabRegistry.get(tabId) !== webContentsId) return;
-        this.tabsWithDeviceMetricsOverride.add(tabId);
-        const currentViewport = this.tabViewports.get(tabId) ?? { mode: 'fit' as const };
-        if (currentViewport.mode === 'fit' && !this.tabOwnership.has(tabId)) {
-          this.applyViewportEmulation(tabId);
-        }
+    this.trackViewportEmulation(
+      tabId,
+      this.sendCommand(webContentsId, 'Emulation.setDeviceMetricsOverride', {
+        width: size.width,
+        height: size.height,
+        // 0 preserves the display's native device scale factor.
+        deviceScaleFactor: 0,
+        mobile: false,
+        scale,
       })
-      .catch((error) => {
-        logger.warn('Failed to apply viewport emulation', {
-          tabId,
-          webContentsId,
-          ...size,
-          scale,
-          error: (error as Error).message,
-        });
-      });
+        .then(() => {
+          if (this.tabRegistry.get(tabId) !== webContentsId) return;
+          this.tabsWithDeviceMetricsOverride.add(tabId);
+          const currentViewport = this.tabViewports.get(tabId) ?? { mode: 'fit' as const };
+          if (currentViewport.mode === 'fit' && !this.tabOwnership.has(tabId)) {
+            this.applyViewportEmulation(tabId);
+          }
+        })
+        .catch((error) => {
+          logger.warn('Failed to apply viewport emulation', {
+            tabId,
+            webContentsId,
+            ...size,
+            scale,
+            error: (error as Error).message,
+          });
+        }),
+    );
+  }
+
+  private trackViewportEmulation(tabId: string, settled: Promise<void>): void {
+    this.pendingViewportEmulation.set(tabId, settled);
+    void settled.then(() => {
+      if (this.pendingViewportEmulation.get(tabId) === settled) {
+        this.pendingViewportEmulation.delete(tabId);
+      }
+    });
   }
 
   /**
@@ -1869,6 +1922,16 @@ class EmbeddedBrowserCdpService {
     webContentsId: number,
     tabId?: string,
   ): Promise<{ base64: string; width: number; height: number }> {
+    // An emulation command dispatched just before this capture (registerTab,
+    // setViewport, a bounds report) already affects the guest when the
+    // capture reaches it; wait for its bookkeeping so the clip scale below
+    // matches. The promise always settles (failures are logged upstream).
+    const pendingEmulation =
+      tabId === undefined ? undefined : this.pendingViewportEmulation.get(tabId);
+    if (pendingEmulation) {
+      await this.withScreenshotCdpTimeout(pendingEmulation, 'Emulation.setDeviceMetricsOverride');
+    }
+
     // Get layout metrics to determine viewport size.
     // layoutViewport reflects the page's internal layout (may exceed visible area
     // if the page sets min-width larger than the panel).
