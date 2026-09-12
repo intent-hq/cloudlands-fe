@@ -341,6 +341,7 @@ vi.mock('$store/renderer/slices/workspace-navigation/workspace-navigation-select
 vi.mock('$features/notes/notes-write-service', () => ({
   updateNoteContent: vi.fn(),
   hasPendingNoteContent: vi.fn(() => false),
+  flushNoteContent: vi.fn(async () => undefined),
 }));
 
 vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-slice', () => ({
@@ -735,7 +736,7 @@ describe('NoteWithComments task conversion regression', () => {
 
     // Simulate the race: the editor mounts from stale/raw content, then the
     // Redux-backed selector catches up with the already-converted note content
-    // without any note-content-update CustomEvent being delivered.
+    // through the safety-net alone.
     replaceNotes([convertedSpecNote, linkedTaskNote]);
 
     await waitFor(

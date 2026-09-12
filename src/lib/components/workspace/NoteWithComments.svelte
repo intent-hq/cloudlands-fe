@@ -79,7 +79,11 @@
     restoreNoteVersion,
     clearNewlyCreatedNoteId,
   } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
-  import { hasPendingNoteContent, updateNoteContent } from '$features/notes/notes-write-service';
+  import {
+    flushNoteContent,
+    hasPendingNoteContent,
+    updateNoteContent,
+  } from '$features/notes/notes-write-service';
   import {
     selectNoteById,
     selectNewlyCreatedNoteId,
@@ -597,49 +601,6 @@
     return fallback;
   });
 
-  // Check if there are any active comments to display
-
-  $effect(() => {
-    const workspaceId = workspace?.id;
-    if (!noteId || !workspaceId) {
-      return;
-    }
-
-    const handleContentUpdate = (e: Event) => {
-      const detail = (e as CustomEvent).detail;
-      if (!detail || detail.workspaceId !== workspaceId || detail.noteId !== noteId) {
-        return;
-      }
-
-      const updatedContent = detail.content as string;
-      const source = detail.source as 'agent' | 'external';
-
-      logger.info('[NoteWithComments] Received store content update', {
-        noteId: detail.noteId,
-        updatedLength: updatedContent?.length ?? 0,
-        previousVersion: externalUpdateVersion,
-        source,
-        isUserTyping,
-      });
-
-      // Agent updates should be trusted - clear the user edit flag so the update is accepted
-      if (source === 'agent') {
-        logger.info('[NoteWithComments] Agent update - clearing hasUserEditedSinceLastSave', {
-          noteId: detail.noteId,
-        });
-        hasUserEditedSinceLastSave = false;
-      }
-
-      externalUpdateVersion = externalUpdateVersion + 1;
-    };
-
-    window.addEventListener('note-content-update', handleContentUpdate);
-
-    return () => {
-      window.removeEventListener('note-content-update', handleContentUpdate);
-    };
-  });
-
   // Register markdown paste handler in capture phase so it fires BEFORE
   // ProseMirror's handler on the contenteditable child. This prevents double
   // paste: without capture, ProseMirror inserts plain text first, then our
@@ -1003,8 +964,8 @@
   //
   // Restore a note to a specific version via saga.
   // The saga calls notesClient.restoreVersion and dispatches handleExternalNoteUpdate,
-  // which triggers the existing external content update flow (note-content-update event →
-  // externalUpdateVersion increment → runExternalContentUpdateEffect).
+  // which triggers the existing external content update flow (Redux content change →
+  // safety-net externalUpdateVersion increment → runExternalContentUpdateEffect).
   function handleRestoreVersion(versionId: string) {
     if (!noteId || !workspace?.id) {
       logger.warn('[RestoreVersion] Cannot restore version: missing noteId or workspace');
@@ -1621,9 +1582,10 @@
       getIsUserTyping: () => isUserTyping,
       getHasPendingNoteContent: () =>
         workspace?.id && noteId ? hasPendingNoteContent(workspace.id, noteId) : false,
+      flushNoteContent,
       onPendingSaveSettled: () => {
-        // Re-queue after a deferred apply's pending-save window closes. Reset
-        // the safety-net dedupe first: if the resolved save left the Redux
+        // Re-queue once an in-flight save's window closes. Reset the
+        // safety-net dedupe first: if the resolved save left the Redux
         // snapshot unchanged, the dedupe would otherwise block the re-fire.
         lastSafetyNetSyncedContent = undefined;
         externalUpdateVersion = externalUpdateVersion + 1;
@@ -1656,8 +1618,7 @@
     });
   });
 
-  // Safety-net effect: If the CustomEvent mechanism fails to fire,
-  // this watches Redux content directly and queues the existing
+  // Safety-net effect: watches Redux content directly and queues the
   // external-update pipeline by incrementing externalUpdateVersion.
   $effect(() => {
     // Read currentNoteContent reactively — this is $derived from the Redux selector
@@ -1933,9 +1894,9 @@
                 contentsDiffer: delayedContent !== lastKnownContent,
               });
               // NOTE: hasUserEditedSinceLastSave intentionally does not gate this
-              // re-check — the flag latches on the first local edit, and genuinely
-              // unsaved edits are protected downstream by
-              // shouldRejectExternalUpdateDueToUnsavedEdits in the update pipeline.
+              // re-check — the flag latches on the first local edit, and unsaved
+              // edits are flushed and folded into the applied text downstream in
+              // the update pipeline.
               if (
                 delayedContent !== undefined &&
                 delayedContent !== lastKnownContent &&

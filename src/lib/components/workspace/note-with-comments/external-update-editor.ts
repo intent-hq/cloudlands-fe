@@ -1,9 +1,18 @@
+import { mapOffsetThroughDiff } from '$lib/notes/text-rebase';
+
 import type { LoggerLike } from './logger.types';
+
+export type ExternalUpdateDocLike = {
+  content: { size: number };
+  resolve: (pos: number) => { pos: number; parent: { inlineContent: boolean } };
+  textBetween: (from: number, to: number, blockSeparator?: string) => string;
+};
 
 export type ExternalUpdateEditorLike = {
   getHTML: () => string;
   state: {
-    selection?: { anchor?: number };
+    doc?: ExternalUpdateDocLike;
+    selection?: { anchor?: number; head?: number };
   };
   chain: () => {
     command: (fn: any) => any;
@@ -12,28 +21,116 @@ export type ExternalUpdateEditorLike = {
   };
 };
 
+const BLOCK_SEPARATOR = '\n';
+
+/** The document's plain text, one `\n` between textblocks (`doc.textBetween`). */
+function docPlainText(doc: ExternalUpdateDocLike): string {
+  return doc.textBetween(0, doc.content.size, BLOCK_SEPARATOR);
+}
+
+/** UTF-16 offset into `docPlainText(doc)` of the document position `pos`. */
+export function textOffsetOfDocPos(doc: ExternalUpdateDocLike, pos: number): number {
+  const clamped = Math.max(0, Math.min(pos, doc.content.size));
+  return doc.textBetween(0, clamped, BLOCK_SEPARATOR).length;
+}
+
+/**
+ * Inverse of `textOffsetOfDocPos`: the first document position whose prefix
+ * text reaches `offset`, advanced past container-block boundaries onto the
+ * first inline position at that same offset so the result can host a text
+ * selection.
+ */
+export function docPosOfTextOffset(doc: ExternalUpdateDocLike, offset: number): number {
+  const size = doc.content.size;
+  let lo = 0;
+  let hi = size;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if (textOffsetOfDocPos(doc, mid) >= offset) hi = mid;
+    else lo = mid + 1;
+  }
+  let pos = lo;
+  while (
+    pos < size &&
+    !doc.resolve(pos).parent.inlineContent &&
+    textOffsetOfDocPos(doc, pos + 1) === textOffsetOfDocPos(doc, pos)
+  ) {
+    pos += 1;
+  }
+  return pos;
+}
+
+/**
+ * Map a selection from `oldDoc` into `newDoc` through the character diff of
+ * their plain texts: positions before a change stay put, positions inside a
+ * replaced/deleted span clamp to the span's end in `newDoc`, positions after
+ * shift by the net length delta.
+ */
+export function mapDocSelectionThroughDiff({
+  oldDoc,
+  newDoc,
+  anchor,
+  head,
+}: {
+  oldDoc: ExternalUpdateDocLike;
+  newDoc: ExternalUpdateDocLike;
+  anchor: number;
+  head: number;
+}): { anchor: number; head: number } {
+  const oursText = docPlainText(oldDoc);
+  const mergedText = docPlainText(newDoc);
+  const map = (pos: number) =>
+    docPosOfTextOffset(
+      newDoc,
+      mapOffsetThroughDiff(oursText, mergedText, textOffsetOfDocPos(oldDoc, pos)),
+    );
+  const mappedAnchor = map(anchor);
+  return { anchor: mappedAnchor, head: head === anchor ? mappedAnchor : map(head) };
+}
+
 export function applyExternalUpdateHtmlToEditorPreservingCursor({
   editor,
   html,
   cursorPos,
+  mapSelectionThroughDiff = false,
   createTextSelection,
   logger,
 }: {
   editor: ExternalUpdateEditorLike;
   html: string;
   cursorPos?: number | null;
+  /**
+   * Restore the selection by mapping it through the old→new plain-text diff
+   * instead of clamping the numeric position. Ignored when `cursorPos` is
+   * given or the editor exposes no document.
+   */
+  mapSelectionThroughDiff?: boolean;
   createTextSelection: (doc: any, anchor: number, head?: number) => any;
   logger: LoggerLike;
 }): boolean {
   const currentHtmlSnapshot = editor.getHTML();
   if (currentHtmlSnapshot === html) return false;
 
+  const selection = editor.state.selection;
   const resolvedCursorPos =
     typeof cursorPos === 'number'
       ? cursorPos
-      : typeof editor.state.selection?.anchor === 'number'
-        ? (editor.state.selection.anchor as number)
+      : typeof selection?.anchor === 'number'
+        ? (selection.anchor as number)
         : null;
+
+  const oldDoc = editor.state.doc;
+  const diffSelection =
+    mapSelectionThroughDiff &&
+    typeof cursorPos !== 'number' &&
+    oldDoc &&
+    typeof selection?.anchor === 'number'
+      ? {
+          oldDoc,
+          anchor: selection.anchor,
+          head: typeof selection.head === 'number' ? selection.head : selection.anchor,
+        }
+      : null;
 
   editor
     .chain()
@@ -43,7 +140,15 @@ export function applyExternalUpdateHtmlToEditorPreservingCursor({
     })
     .setContent(html)
     .command((ctx: any) => {
-      if (resolvedCursorPos !== null) {
+      if (diffSelection) {
+        try {
+          const newDoc = ctx.state.doc as ExternalUpdateDocLike;
+          const mapped = mapDocSelectionThroughDiff({ ...diffSelection, newDoc });
+          ctx.tr.setSelection(createTextSelection(newDoc, mapped.anchor, mapped.head));
+        } catch (e) {
+          logger.debug('[NoteWithComments] Could not restore cursor position', e);
+        }
+      } else if (resolvedCursorPos !== null) {
         try {
           const maxPos = ctx.state.doc.content.size;
           const newPos = Math.min(resolvedCursorPos, maxPos);

@@ -1,20 +1,43 @@
+import { Schema, type Node as PMNode } from '@tiptap/pm/model';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import {
+  foldUnsavedEditsIntoIncoming,
   runExternalContentUpdateEffect,
   shouldIgnoreLocalEditorUpdate,
   shouldRequeueExternalUpdateAfterTypingStops,
   shouldSafetyNetTrigger,
 } from '../external-update-effect';
 
+const schema = new Schema({
+  nodes: {
+    doc: { content: 'block+' },
+    paragraph: { group: 'block', content: 'inline*' },
+    text: { group: 'inline' },
+  },
+});
+
+function docOf(...paragraphs: string[]): PMNode {
+  return schema.node(
+    'doc',
+    null,
+    paragraphs.map((text) => schema.node('paragraph', null, text ? [schema.text(text)] : [])),
+  );
+}
+
 function createMockEditor({
   initialHtml,
   selectionAnchor,
   docSize,
+  doc: realDoc,
+  nextDoc,
 }: {
   initialHtml: string;
   selectionAnchor?: number;
   docSize?: number;
+  /** Real ProseMirror documents: `doc` before the apply, `nextDoc` after `setContent`. */
+  doc?: PMNode;
+  nextDoc?: PMNode;
 }) {
   const operations: Array<
     { type: 'command'; fn: (ctx: any) => any } | { type: 'setContent'; html: string }
@@ -26,7 +49,7 @@ function createMockEditor({
     setSelection: vi.fn(),
   };
 
-  const doc = {
+  const doc = realDoc ?? {
     content: { size: docSize ?? 10 },
     resolve: vi.fn((pos: number) => ({ pos })),
   };
@@ -50,7 +73,10 @@ function createMockEditor({
     run() {
       for (const op of operations) {
         if (op.type === 'command') op.fn(ctx);
-        else setContentHtml = op.html;
+        else {
+          setContentHtml = op.html;
+          if (nextDoc) ctx.state.doc = nextDoc;
+        }
       }
     },
   };
@@ -59,8 +85,10 @@ function createMockEditor({
     isDestroyed: false,
     getHTML: vi.fn(() => initialHtml),
     state: {
+      doc: realDoc,
       selection: {
         anchor: selectionAnchor,
+        head: selectionAnchor,
       },
     },
     chain: vi.fn(() => chainObj),
@@ -68,6 +96,7 @@ function createMockEditor({
 
   return {
     editor,
+    tr,
     getSetContentHtml: () => setContentHtml,
   };
 }
@@ -217,11 +246,12 @@ describe('external-update-effect', () => {
     });
   });
 
-  it('rejects at apply time when the user types during the 150ms debounce window', async () => {
-    // Timing regression guard: the entry-point isUserTyping check passes before the
-    // debounce, but the unsaved-edits guard reads getHasUserEditedSinceLastSave()
-    // and the editor content fresh at apply time. A keystroke landing inside the
-    // debounce window must still block the external apply.
+  it('folds keystrokes typed during the 150ms debounce window into the applied text', async () => {
+    // The entry-point isUserTyping check passes before the debounce, but a
+    // keystroke landing inside the window leaves the editor ahead of
+    // lastKnownContent with no save scheduled yet. Applying the incoming text
+    // verbatim would drop it; rejecting would let the next save delete the
+    // external change. The keystroke is replayed onto the incoming text.
     vi.useFakeTimers();
 
     const { editor, getSetContentHtml } = createMockEditor({
@@ -231,6 +261,7 @@ describe('external-update-effect', () => {
     let editorMarkdown = 'saved-md';
     let lastKnownContent = 'saved-md';
     let hasUserEditedSinceLastSave = false;
+    const processMarkdownToHTML = vi.fn(async () => '<p>server plus typing</p>');
 
     const result = runExternalContentUpdateEffect({
       updateVersion: 4,
@@ -243,35 +274,147 @@ describe('external-update-effect', () => {
         lastKnownContent = v;
       },
       getHasUserEditedSinceLastSave: () => hasUserEditedSinceLastSave,
-      setHasUserEditedSinceLastSave: vi.fn(),
+      setHasUserEditedSinceLastSave: (v) => {
+        hasUserEditedSinceLastSave = v;
+      },
       getIsUpdatingFromExternal: () => false,
       setIsUpdatingFromExternal: vi.fn(),
       getWorkspaceId: () => undefined,
       getNoteId: () => 'note-1',
       getCommentManager: () => null,
-      processMarkdownToHTML: async () => '<p>server</p>',
+      processMarkdownToHTML,
       processHTMLToMarkdown: () => editorMarkdown,
       createTextSelection: vi.fn(),
       logger,
     });
 
-    // Simulate a keystroke arriving inside the debounce window: the flag latches
-    // and the editor now differs from both lastKnownContent and the incoming content.
     hasUserEditedSinceLastSave = true;
     editorMarkdown = 'saved-md plus unsaved typing';
 
     await vi.advanceTimersByTimeAsync(200);
     await result;
 
-    expect(getSetContentHtml()).toBeNull();
-    expect(lastKnownContent).toBe('saved-md');
-    expect(logger.info).toHaveBeenCalledWith(
-      '[NoteWithComments] Rejecting external update - user has unsaved edits',
-      expect.objectContaining({ noteId: 'note-1', updateVersion: 4 }),
+    expect(processMarkdownToHTML).toHaveBeenCalledWith(
+      'server-md plus unsaved typing',
+      expect.anything(),
     );
+    expect(getSetContentHtml()).toBe('<p>server plus typing</p>');
+    // The incoming text is the saved baseline; the folded keystroke stays unsaved.
+    expect(lastKnownContent).toBe('server-md');
+    expect(hasUserEditedSinceLastSave).toBe(true);
   });
 
-  it('defers at entry when a local save is unflushed (monorepo#533 flush-window revert)', () => {
+  it('flushes the pending save synchronously when dirty and applies the merged text with the selection mapped through the diff', async () => {
+    vi.useFakeTimers();
+
+    // "hello world" with the caret after "hello w" (offset 7 → pos 8).
+    const oldDoc = docOf('hello world');
+    // The daemon merged an agent insertion of "big " before the caret.
+    const mergedDoc = docOf('hello big world');
+    const { editor, getSetContentHtml } = createMockEditor({
+      initialHtml: '<p>hello world</p>',
+      selectionAnchor: 8,
+      doc: oldDoc,
+      nextDoc: mergedDoc,
+    });
+
+    let lastKnownContent = 'hello world';
+    const flushNoteContent = vi.fn(async () => ({ content: 'hello big world', rev: 4 }));
+    const processMarkdownToHTML = vi.fn(async () => '<p>hello big world</p>');
+    const createTextSelection = vi.fn(() => ({ selection: true }));
+
+    const result = runExternalContentUpdateEffect({
+      updateVersion: 8,
+      getEditor: () => editor as any,
+      getIsInitialized: () => true,
+      getIsUserTyping: () => false,
+      getHasPendingNoteContent: () => true,
+      flushNoteContent,
+      getCurrentNoteContent: () => 'hello world (refetched before the save landed)',
+      getLastKnownContent: () => lastKnownContent,
+      setLastKnownContent: (v) => {
+        lastKnownContent = v;
+      },
+      getHasUserEditedSinceLastSave: () => true,
+      setHasUserEditedSinceLastSave: vi.fn(),
+      getIsUpdatingFromExternal: () => false,
+      setIsUpdatingFromExternal: vi.fn(),
+      getWorkspaceId: () => 'workspace-1',
+      getNoteId: () => 'note-1',
+      getCommentManager: () => null,
+      processMarkdownToHTML,
+      processHTMLToMarkdown: () => 'hello world',
+      createTextSelection,
+      logger,
+    });
+
+    // No debounce wait: the flush is issued before any timer fires.
+    expect(flushNoteContent).toHaveBeenCalledTimes(1);
+    expect(flushNoteContent).toHaveBeenCalledWith('workspace-1', 'note-1');
+
+    await result;
+
+    // The merged result is what lands in the editor — not the stale Redux refetch.
+    expect(processMarkdownToHTML).toHaveBeenCalledWith(
+      'hello big world',
+      expect.objectContaining({ preserveAnchors: true, workspaceId: 'workspace-1' }),
+    );
+    expect(getSetContentHtml()).toBe('<p>hello big world</p>');
+    expect(lastKnownContent).toBe('hello big world');
+    // Caret offset 7 shifts by the 4 inserted characters → offset 11 → pos 12.
+    expect(createTextSelection).toHaveBeenCalledWith(mergedDoc, 12, 12);
+  });
+
+  it('waits for the in-flight save when the flush resolves without content', async () => {
+    // hasPendingNoteContent is also true while a save is in flight with nothing
+    // debounced; flushNoteContent then resolves undefined. The apply waits for
+    // the in-flight save via the recheck poll instead of applying stale Redux.
+    vi.useFakeTimers();
+
+    const { editor, getSetContentHtml } = createMockEditor({ initialHtml: '<p>saved</p>' });
+    let hasPending = true;
+    const onPendingSaveSettled = vi.fn();
+    const flushNoteContent = vi.fn(async () => undefined);
+    const processMarkdownToHTML = vi.fn(async () => '<p>stale</p>');
+
+    const result = runExternalContentUpdateEffect({
+      updateVersion: 9,
+      getEditor: () => editor as any,
+      getIsInitialized: () => true,
+      getIsUserTyping: () => false,
+      getHasPendingNoteContent: () => hasPending,
+      flushNoteContent,
+      onPendingSaveSettled,
+      getCurrentNoteContent: () => 'stale-refetched-md',
+      getLastKnownContent: () => 'saved-md',
+      setLastKnownContent: vi.fn(),
+      getHasUserEditedSinceLastSave: () => false,
+      setHasUserEditedSinceLastSave: vi.fn(),
+      getIsUpdatingFromExternal: () => false,
+      setIsUpdatingFromExternal: vi.fn(),
+      getWorkspaceId: () => 'workspace-1',
+      getNoteId: () => 'note-inflight',
+      getCommentManager: () => null,
+      processMarkdownToHTML,
+      processHTMLToMarkdown: () => 'saved-md',
+      createTextSelection: vi.fn(),
+      logger,
+    });
+
+    await result;
+    expect(flushNoteContent).toHaveBeenCalledWith('workspace-1', 'note-inflight');
+    expect(processMarkdownToHTML).not.toHaveBeenCalled();
+    expect(getSetContentHtml()).toBeNull();
+
+    await vi.advanceTimersByTimeAsync(600);
+    expect(onPendingSaveSettled).not.toHaveBeenCalled();
+
+    hasPending = false;
+    await vi.advanceTimersByTimeAsync(600);
+    expect(onPendingSaveSettled).toHaveBeenCalledTimes(1);
+  });
+
+  it('defers at entry when a local save is unflushed and no flush binding is available (monorepo#533)', () => {
     // Regression: after saveEditorContent, the write-service holds the content
     // for 800ms before flushing. A note:updated refetch landing in that window
     // puts pre-save content in Redux; applying it would revert the editor.
@@ -355,13 +498,15 @@ describe('external-update-effect', () => {
     expect(onPendingSaveSettled).toHaveBeenCalledTimes(1);
   });
 
-  it('defers at apply time when a pending save appears during the debounce window (monorepo#533)', async () => {
+  it('flushes and applies the merged text when a pending save appears during the debounce window (monorepo#533)', async () => {
     vi.useFakeTimers();
 
     const { editor, getSetContentHtml } = createMockEditor({ initialHtml: '<p>saved</p>' });
 
     let hasPending = false;
-    const setLastKnownContent = vi.fn();
+    let lastKnownContent = 'saved-md';
+    const flushNoteContent = vi.fn(async () => ({ content: 'merged-md' }));
+    const processMarkdownToHTML = vi.fn(async () => '<p>merged</p>');
 
     const result = runExternalContentUpdateEffect({
       updateVersion: 6,
@@ -369,17 +514,20 @@ describe('external-update-effect', () => {
       getIsInitialized: () => true,
       getIsUserTyping: () => false,
       getHasPendingNoteContent: () => hasPending,
+      flushNoteContent,
       getCurrentNoteContent: () => 'stale-refetched-md',
-      getLastKnownContent: () => 'saved-md',
-      setLastKnownContent,
+      getLastKnownContent: () => lastKnownContent,
+      setLastKnownContent: (v) => {
+        lastKnownContent = v;
+      },
       getHasUserEditedSinceLastSave: () => false,
       setHasUserEditedSinceLastSave: vi.fn(),
       getIsUpdatingFromExternal: () => false,
       setIsUpdatingFromExternal: vi.fn(),
-      getWorkspaceId: () => undefined,
+      getWorkspaceId: () => 'workspace-1',
       getNoteId: () => 'note-1',
       getCommentManager: () => null,
-      processMarkdownToHTML: async () => '<p>stale</p>',
+      processMarkdownToHTML,
       processHTMLToMarkdown: () => 'saved-md',
       createTextSelection: vi.fn(),
       logger,
@@ -387,16 +535,35 @@ describe('external-update-effect', () => {
 
     // A keystroke lands inside the 150ms debounce and schedules a save.
     hasPending = true;
+    expect(flushNoteContent).not.toHaveBeenCalled();
 
     await vi.advanceTimersByTimeAsync(200);
     await result;
 
-    expect(getSetContentHtml()).toBeNull();
-    expect(setLastKnownContent).not.toHaveBeenCalled();
-    expect(logger.info).toHaveBeenCalledWith(
-      '[NoteWithComments] Deferring external apply - pending local save appeared during debounce',
-      expect.objectContaining({ noteId: 'note-1', updateVersion: 6 }),
-    );
+    expect(flushNoteContent).toHaveBeenCalledWith('workspace-1', 'note-1');
+    expect(processMarkdownToHTML).toHaveBeenCalledWith('merged-md', expect.anything());
+    expect(getSetContentHtml()).toBe('<p>merged</p>');
+    expect(lastKnownContent).toBe('merged-md');
+  });
+});
+
+describe('foldUnsavedEditsIntoIncoming', () => {
+  it('returns the incoming text when the editor matches the saved baseline', () => {
+    expect(foldUnsavedEditsIntoIncoming({ base: 'a', incoming: 'ab', ours: 'a' })).toBe('ab');
+  });
+
+  it('returns the incoming text when the editor already holds it', () => {
+    expect(foldUnsavedEditsIntoIncoming({ base: 'a', incoming: 'ab', ours: 'ab' })).toBe('ab');
+  });
+
+  it('replays unsaved keystrokes onto the incoming text', () => {
+    expect(
+      foldUnsavedEditsIntoIncoming({
+        base: 'hello world',
+        incoming: 'hello brave world',
+        ours: 'hello world!',
+      }),
+    ).toBe('hello brave world!');
   });
 });
 
@@ -499,8 +666,7 @@ describe('shouldSafetyNetTrigger', () => {
     // first local edit and nothing clears it on save, so gating the safety-net on it
     // permanently disconnected open editors from server-side note growth. The
     // safety-net must still queue the pipeline regardless of local edit history;
-    // protecting genuinely-unsaved edits is
-    // shouldRejectExternalUpdateDueToUnsavedEdits' job.
+    // unsaved edits are flushed and folded into the applied text downstream.
     expect(
       shouldSafetyNetTrigger({
         ...baseArgs,

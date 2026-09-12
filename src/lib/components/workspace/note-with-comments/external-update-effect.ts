@@ -1,12 +1,12 @@
 import type { CommentManagerV2 } from '$features/comments/comment-manager-v2';
+import { rebaseText } from '$lib/notes/text-rebase';
 import type { TaskAgentAssociation } from '$store/renderer/slices/task-agent-associations/task-agent-associations-types';
 
 import { reapplyCommentAnchorsAfterExternalUpdate } from './comment-manager-utils';
-import { applyExternalUpdateHtmlToEditorPreservingCursor } from './external-update-editor';
 import {
-  shouldRejectExternalUpdateDueToUnsavedEdits,
-  type ProcessHTMLToMarkdownLike,
-} from './external-update-guard';
+  applyExternalUpdateHtmlToEditorPreservingCursor,
+  type ExternalUpdateDocLike,
+} from './external-update-editor';
 import type { LoggerLike } from './logger.types';
 import { restoreTaskAgentAssociations } from './task-item-utils';
 
@@ -40,8 +40,8 @@ export function shouldSafetyNetTrigger({
   // external apply, so gating on it permanently disconnected open editors from
   // server-side note growth (stale-editor incident: comment.add sent unfindable
   // context; debounced saves tripped the daemon's content-reduction guard).
-  // Protecting genuinely-unsaved edits is the job of
-  // shouldRejectExternalUpdateDueToUnsavedEdits downstream in the pipeline.
+  // Unsaved edits are flushed and folded into the applied text downstream in
+  // the pipeline instead.
   if (!isInitialized || isUserTyping) {
     return false;
   }
@@ -100,11 +100,24 @@ export type ProcessMarkdownToHTMLLike = (
   },
 ) => Promise<string>;
 
+export type ProcessHTMLToMarkdownLike = (
+  html: string,
+  opts: {
+    preserveAnchors: boolean;
+  },
+) => string;
+
+export type FlushNoteContentLike = (
+  workspaceId: string,
+  noteId: string,
+) => Promise<{ content: string; rev?: number } | undefined>;
+
 export type ExternalUpdateEffectEditorLike = {
   isDestroyed?: boolean;
   getHTML: () => string;
   state: {
-    selection?: { anchor?: number };
+    doc?: ExternalUpdateDocLike;
+    selection?: { anchor?: number; head?: number };
   };
   chain: () => {
     command: (fn: any) => any;
@@ -112,6 +125,25 @@ export type ExternalUpdateEffectEditorLike = {
     run: () => void;
   };
 };
+
+/**
+ * The text to put in the editor for an incoming external `incoming`: when the
+ * editor still holds keystrokes that never reached a save (`ours` differs from
+ * the last saved/applied `base`), they are replayed onto `incoming` so the
+ * apply neither drops them nor lets the next save delete the external change.
+ */
+export function foldUnsavedEditsIntoIncoming({
+  base,
+  incoming,
+  ours,
+}: {
+  base: string;
+  incoming: string;
+  ours: string;
+}): string {
+  if (ours === base || ours === incoming) return incoming;
+  return rebaseText(base, incoming, ours);
+}
 
 // --- Debounce state for rapid external updates (e.g. agent editing) ---
 // When the agent streams edits, many content updates arrive in quick succession.
@@ -128,9 +160,10 @@ interface DebounceState {
 }
 const debounceByNote = new Map<string, DebounceState>();
 
-// --- Deferred-recheck state for the pending-save deferral (monorepo#533) ---
-// When an external apply is deferred because a local save is unacknowledged,
-// relying solely on the daemon's note:updated refetch to re-queue is a
+// --- Deferred-recheck state for an in-flight save (monorepo#533) ---
+// When the editor is dirty but nothing is debounced (the save is already in
+// flight, or the flush failed), the apply waits for that save to settle.
+// Relying solely on the daemon's note:updated refetch to re-queue is a
 // potential dead end: if the resolved save leaves the Redux snapshot unchanged
 // (e.g. a conflict reload matching an already-refetched value), no reactive
 // dep changes and the safety-net dedupe blocks a re-fire. This poll re-queues
@@ -176,6 +209,7 @@ export function runExternalContentUpdateEffect({
   getIsInitialized,
   getIsUserTyping,
   getHasPendingNoteContent,
+  flushNoteContent,
   onPendingSaveSettled,
   getCurrentNoteContent,
   getLastKnownContent,
@@ -205,16 +239,21 @@ export function runExternalContentUpdateEffect({
    * this note (debounced or in flight). While true, Redux may hold refetched
    * content that predates the save, so applying it would visibly revert the
    * editor — and typing on the reverted doc before the flush would silently
-   * drop the earlier edit (monorepo#533). The apply is deferred; once the save
-   * flushes, the daemon's `note:updated` refetch re-triggers the pipeline via
-   * the safety-net.
+   * drop the earlier edit (monorepo#533). The pending save is flushed
+   * synchronously instead and the daemon's merged result is applied.
    */
   getHasPendingNoteContent?: () => boolean;
   /**
-   * Called (once) when a deferral's pending-save window closes, so the caller
-   * can re-queue the pipeline (bump externalUpdateVersion). Needed because the
-   * daemon refetch may leave the Redux snapshot unchanged — no reactive dep
-   * changes and the safety-net dedupe would block a re-fire (dead end).
+   * Flush the note's debounced content save now and resolve with the daemon's
+   * merged result (`undefined` when nothing was debounced or the save failed).
+   */
+  flushNoteContent?: FlushNoteContentLike;
+  /**
+   * Called (once) when a flush resolved without a result and the in-flight
+   * save's window closes, so the caller can re-queue the pipeline (bump
+   * externalUpdateVersion). Needed because the daemon refetch may leave the
+   * Redux snapshot unchanged — no reactive dep changes and the safety-net
+   * dedupe would block a re-fire (dead end).
    */
   onPendingSaveSettled?: () => void;
   getCurrentNoteContent: () => string;
@@ -268,25 +307,6 @@ export function runExternalContentUpdateEffect({
     return;
   }
 
-  // Defer while a local content save is unflushed/unacked (monorepo#533):
-  // Redux may hold a refetch that predates the pending save, and applying it
-  // would revert the editor. Once the save lands, the daemon's `note:updated`
-  // refetch usually re-queues the pipeline via the safety-net; the scheduled
-  // recheck covers the case where the resolved save leaves Redux unchanged.
-  if (getHasPendingNoteContent?.()) {
-    logger.info('[NoteWithComments] Deferring external effect - pending local save unflushed', {
-      updateVersion,
-      noteId,
-    });
-    scheduleDeferredRecheckWhenSaveSettles(
-      noteId,
-      getHasPendingNoteContent,
-      onPendingSaveSettled,
-      isDestroyed,
-    );
-    return;
-  }
-
   const newContent = getCurrentNoteContent();
   const lastKnownContent = getLastKnownContent();
 
@@ -315,6 +335,179 @@ export function runExternalContentUpdateEffect({
     contentChanged: newContent !== lastKnownContent,
   });
 
+  const workspaceId = getWorkspaceId();
+
+  const applyIncomingContent = async (incoming: string): Promise<void> => {
+    const editor = getEditor();
+    if (!editor || editor.isDestroyed) return;
+
+    // Keystrokes that never reached a save (the editor moved past
+    // lastKnownContent) are replayed onto the incoming text: applying it
+    // verbatim would drop them, and the next save would then carry a text
+    // without the external change and delete it on the daemon. A whole-document
+    // replacement in progress (note.restoreVersion) is applied verbatim.
+    let target = incoming;
+    if (getHasUserEditedSinceLastSave() && !getIsUpdatingFromExternal()) {
+      try {
+        const ours = processHTMLToMarkdown(editor.getHTML(), { preserveAnchors: true });
+        target = foldUnsavedEditsIntoIncoming({ base: getLastKnownContent(), incoming, ours });
+      } catch (error) {
+        logger.error('[NoteWithComments] Failed to normalize current editor content', error);
+      }
+    }
+    const folded = target !== incoming;
+    if (folded) {
+      logger.info('[NoteWithComments] Folding unsaved edits into external update', {
+        noteId,
+        updateVersion,
+      });
+    }
+
+    const newHtmlContent = await processMarkdownToHTML(target, {
+      preserveAnchors: true,
+      workspaceId,
+      workspaceFileVersion,
+    });
+
+    // CRITICAL: Check destruction flag FIRST, before accessing ANY reactive state.
+    // This prevents "N is not a function" errors when Svelte's reactive system
+    // tries to call nullified internal functions after component destruction.
+    // The promise callback may execute after the component has been destroyed.
+    if (isDestroyed?.()) {
+      return;
+    }
+
+    const liveEditor = getEditor();
+    if (!liveEditor || liveEditor.isDestroyed) return;
+
+    const currentEditorHtml = liveEditor.getHTML();
+
+    // For comparison, strip out anchor spans from both HTML strings
+    // This allows us to detect actual content changes vs just anchor differences
+    const stripAnchors = (html: string) =>
+      html.replace(/<span[^>]*data-anchor-id[^>]*><\/span>/g, '');
+
+    const currentWithoutAnchors = stripAnchors(currentEditorHtml);
+    const newWithoutAnchors = stripAnchors(newHtmlContent);
+
+    if (currentWithoutAnchors !== newWithoutAnchors) {
+      const hasAnchors = currentEditorHtml.includes('data-anchor-id');
+      const anchorCount = hasAnchors
+        ? (currentEditorHtml.match(/data-anchor-id/g) || []).length
+        : 0;
+
+      logger.debug('[NoteWithComments] External content change detected', {
+        noteId,
+        updateVersion,
+        newContentLength: incoming?.length,
+        hasAnchors,
+        anchorCount,
+        strategy: hasAnchors ? 'reapply-anchors' : 'direct-update',
+      });
+
+      setIsUpdatingFromExternal(true);
+
+      const resetExternalUpdateFlag = () => {
+        setTimeout(() => {
+          setIsUpdatingFromExternal(false);
+        }, 200);
+      };
+
+      try {
+        const didUpdate = applyExternalUpdateHtmlToEditorPreservingCursor({
+          editor: liveEditor,
+          html: newHtmlContent,
+          mapSelectionThroughDiff: true,
+          createTextSelection,
+          logger,
+        });
+
+        // Folded keystrokes stay unsaved relative to the incoming text; their
+        // already-scheduled save carries them against the incoming rev.
+        setLastKnownContent(incoming);
+
+        if (didUpdate) {
+          setHasUserEditedSinceLastSave(folded);
+
+          if (workspaceId && noteId) {
+            logger.debug(
+              // i18n-ignore (log line)
+              '[NoteWithComments] Restoring task-agent associations after external update',
+              {
+                noteId,
+                updateVersion,
+              },
+            );
+            restoreTaskAgentAssociations(
+              liveEditor as any,
+              getTaskAgentAssociations?.() ?? [],
+              logger,
+            );
+          }
+
+          await reapplyCommentAnchorsAfterExternalUpdate({
+            hasAnchors,
+            commentManager: getCommentManager(),
+            noteId: noteId ?? undefined,
+            updateVersion,
+            anchorCount,
+            logger,
+          });
+        }
+      } finally {
+        resetExternalUpdateFlag();
+      }
+    } else {
+      // Content is the same (ignoring anchors), just update tracking
+      setLastKnownContent(incoming);
+      setHasUserEditedSinceLastSave(folded);
+    }
+  };
+
+  // Dirty editor: flush the pending save now (no debounce wait) and apply the
+  // daemon's merged result. Without a flush binding, or when nothing was
+  // debounced (the save is already in flight) or the save failed, wait for the
+  // in-flight save to settle: the daemon's `note:updated` refetch usually
+  // re-queues the pipeline via the safety-net, and the scheduled recheck
+  // covers the case where the resolved save leaves Redux unchanged.
+  const flushDirtyEditorAndApply = (getHasPending: () => boolean): Promise<void> | undefined => {
+    if (!flushNoteContent || !workspaceId || !noteId) {
+      logger.info('[NoteWithComments] Deferring external effect - pending local save unflushed', {
+        updateVersion,
+        noteId,
+      });
+      scheduleDeferredRecheckWhenSaveSettles(
+        noteId,
+        getHasPending,
+        onPendingSaveSettled,
+        isDestroyed,
+      );
+      return undefined;
+    }
+    logger.info('[NoteWithComments] Flushing pending local save before external apply', {
+      updateVersion,
+      noteId,
+    });
+    return flushNoteContent(workspaceId, noteId).then((applied) => {
+      if (isDestroyed?.()) return;
+      if (!applied) {
+        logger.info(
+          // i18n-ignore (log line)
+          '[NoteWithComments] Flush returned no content - waiting for the in-flight save',
+          { updateVersion, noteId },
+        );
+        scheduleDeferredRecheckWhenSaveSettles(
+          noteId,
+          getHasPending,
+          onPendingSaveSettled,
+          isDestroyed,
+        );
+        return;
+      }
+      return applyIncomingContent(applied.content);
+    });
+  };
+
   // --- Debounce rapid updates ---
   // When an agent is streaming edits, dozens of updates arrive per second.
   // Debounce so we only run the expensive markdown→HTML pipeline for the
@@ -330,9 +523,13 @@ export function runExternalContentUpdateEffect({
       newVersion: updateVersion,
     });
   }
+  debounce.version = updateVersion;
+
+  if (getHasPendingNoteContent?.()) {
+    return flushDirtyEditorAndApply(getHasPendingNoteContent);
+  }
 
   return new Promise<void>((resolve) => {
-    debounce.version = updateVersion;
     debounce.timer = setTimeout(() => {
       debounce.timer = null;
       resolve();
@@ -345,150 +542,14 @@ export function runExternalContentUpdateEffect({
     // Also re-check destruction / content in case things changed during the debounce window.
     if (isDestroyed?.()) return;
     // Re-check the pending-save window: a keystroke during the debounce may
-    // have scheduled a new save whose flush hasn't been acknowledged yet.
+    // have scheduled a new save — flush it and apply the merged result.
     if (getHasPendingNoteContent?.()) {
-      logger.info(
-        // i18n-ignore (log line)
-        '[NoteWithComments] Deferring external apply - pending local save appeared during debounce',
-        { updateVersion, noteId },
-      );
-      scheduleDeferredRecheckWhenSaveSettles(
-        noteId,
-        getHasPendingNoteContent,
-        onPendingSaveSettled,
-        isDestroyed,
-      );
-      return;
+      return flushDirtyEditorAndApply(getHasPendingNoteContent);
     }
     const freshContent = getCurrentNoteContent();
     const freshLastKnown = getLastKnownContent();
     if (freshContent === freshLastKnown) return;
 
-    return processMarkdownToHTML(freshContent, {
-      preserveAnchors: true,
-      workspaceId: getWorkspaceId(),
-      workspaceFileVersion,
-    }).then(async (newHtmlContent) => {
-      // CRITICAL: Check destruction flag FIRST, before accessing ANY reactive state.
-      // This prevents "N is not a function" errors when Svelte's reactive system
-      // tries to call nullified internal functions after component destruction.
-      // The promise callback may execute after the component has been destroyed.
-      if (isDestroyed?.()) {
-        return;
-      }
-
-      const editor = getEditor();
-      if (!editor || editor.isDestroyed) return;
-
-      // CRITICAL: Check if user has genuinely-unsaved edits before applying.
-      // The guard combines the hasUserEditedSinceLastSave flag (fast path) with a
-      // content comparison against lastKnownContent, because the flag alone
-      // latches on the first local edit and cannot distinguish "unsaved edits"
-      // from "saved edits + stale editor".
-      //
-      // Scenario: User types "A" → saves → types "B" → external update arrives with "A"
-      // Editor ("AB") differs from both lastKnownContent and the incoming content,
-      // so the update is rejected and the user's typing is preserved.
-      //
-      // Scenario: User types "A" → saves → agent appends server-side ("A + more")
-      // Editor matches lastKnownContent ("A"), so the grown content is applied.
-      if (
-        shouldRejectExternalUpdateDueToUnsavedEdits({
-          hasUserEditedSinceLastSave: getHasUserEditedSinceLastSave(),
-          isUpdatingFromExternal: getIsUpdatingFromExternal(),
-          editor,
-          newContent: freshContent,
-          lastKnownContent: getLastKnownContent(),
-          processHTMLToMarkdown,
-          noteId: getNoteId(),
-          updateVersion,
-          logger,
-        })
-      ) {
-        return;
-      }
-
-      const currentEditorHtml = editor.getHTML();
-
-      // For comparison, strip out anchor spans from both HTML strings
-      // This allows us to detect actual content changes vs just anchor differences
-      const stripAnchors = (html: string) =>
-        html.replace(/<span[^>]*data-anchor-id[^>]*><\/span>/g, '');
-
-      const currentWithoutAnchors = stripAnchors(currentEditorHtml);
-      const newWithoutAnchors = stripAnchors(newHtmlContent);
-
-      if (currentWithoutAnchors !== newWithoutAnchors) {
-        const hasAnchors = currentEditorHtml.includes('data-anchor-id');
-        const anchorCount = hasAnchors
-          ? (currentEditorHtml.match(/data-anchor-id/g) || []).length
-          : 0;
-
-        logger.debug('[NoteWithComments] External content change detected', {
-          noteId: getNoteId(),
-          updateVersion,
-          newContentLength: freshContent?.length,
-          hasAnchors,
-          anchorCount,
-          strategy: hasAnchors ? 'reapply-anchors' : 'direct-update',
-        });
-
-        setIsUpdatingFromExternal(true);
-
-        const resetExternalUpdateFlag = () => {
-          setTimeout(() => {
-            setIsUpdatingFromExternal(false);
-          }, 200);
-        };
-
-        try {
-          const didUpdate = applyExternalUpdateHtmlToEditorPreservingCursor({
-            editor,
-            html: newHtmlContent,
-            createTextSelection,
-            logger,
-          });
-
-          setLastKnownContent(freshContent);
-
-          if (didUpdate) {
-            setHasUserEditedSinceLastSave(false);
-
-            const workspaceId = getWorkspaceId();
-            const noteId = getNoteId();
-            if (workspaceId && noteId) {
-              logger.debug(
-                // i18n-ignore (log line)
-                '[NoteWithComments] Restoring task-agent associations after external update',
-                {
-                  noteId,
-                  updateVersion,
-                },
-              );
-              restoreTaskAgentAssociations(
-                editor as any,
-                getTaskAgentAssociations?.() ?? [],
-                logger,
-              );
-            }
-
-            await reapplyCommentAnchorsAfterExternalUpdate({
-              hasAnchors,
-              commentManager: getCommentManager(),
-              noteId: noteId ?? undefined,
-              updateVersion,
-              anchorCount,
-              logger,
-            });
-          }
-        } finally {
-          resetExternalUpdateFlag();
-        }
-      } else {
-        // Content is the same (ignoring anchors), just update tracking
-        setLastKnownContent(freshContent);
-        setHasUserEditedSinceLastSave(false);
-      }
-    });
+    return applyIncomingContent(freshContent);
   });
 }
