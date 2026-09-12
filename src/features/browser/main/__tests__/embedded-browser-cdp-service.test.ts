@@ -1,3 +1,4 @@
+import sharp from 'sharp';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
@@ -411,15 +412,88 @@ describe('embedded browser CDP workspace routing', () => {
   // scale must match the scale the tab is actually drawn at so the request
   // equals the surface.
   describe('screenshot clip on scale-to-fit tabs (intent-hq/intent#4627)', () => {
-    function screenshotWebContents(opts: { emulationDelayMs?: number } = {}) {
-      const sendCommand = vi.fn((method: string) => {
+    type CaptureRequest = {
+      format: 'jpeg' | 'png';
+      quality?: number;
+      clip: { width: number; height: number; scale: number };
+    };
+
+    const MARKER = 16;
+    const isMarkerRed = (r: number, g: number, b: number) => r > 180 && g < 90 && b < 90;
+
+    /**
+     * Independent model of Chromium's PageHandler::CaptureScreenshot for a
+     * <webview> guest (content/browser/devtools/protocol/page_handler.cc): the
+     * guest keeps the element's physical size because a child-frame view
+     * ignores SetSize, the handler expects clip × clip.scale × DPR pixels, and
+     * on a mismatch it fills the request by repeating the surface bitmap
+     * (SkBitmapOperations::CreateTiledBitmap). The page is white with one red
+     * MARKER×MARKER square at its origin, so a repeated page shows extra
+     * squares.
+     */
+    async function chromiumGuestCapture(
+      request: CaptureRequest,
+      guest: { dpr: number; elementDip: { width: number; height: number } },
+    ): Promise<{ data: string }> {
+      const surface = {
+        width: Math.round(guest.elementDip.width * guest.dpr),
+        height: Math.round(guest.elementDip.height * guest.dpr),
+      };
+      const requested = {
+        width: Math.round(request.clip.width * request.clip.scale * guest.dpr),
+        height: Math.round(request.clip.height * request.clip.scale * guest.dpr),
+      };
+      const surfaceRow = Buffer.alloc(surface.width * 4, 255);
+      const markerRow = Buffer.from(surfaceRow);
+      markerRow.fill(Buffer.from([255, 0, 0, 255]), 0, MARKER * 4);
+      const out = Buffer.alloc(requested.width * requested.height * 4);
+      for (let y = 0; y < requested.height; y++) {
+        const source = y % surface.height < MARKER ? markerRow : surfaceRow;
+        for (let x = 0; x < requested.width; x += surface.width) {
+          const span = Math.min(surface.width, requested.width - x);
+          source.copy(out, (y * requested.width + x) * 4, 0, span * 4);
+        }
+      }
+      const image = sharp(out, { raw: { ...requested, channels: 4 } });
+      const encoded = await (
+        request.format === 'png' ? image.png() : image.jpeg({ quality: request.quality ?? 80 })
+      ).toBuffer();
+      return { data: encoded.toString('base64') };
+    }
+
+    async function decodeCapture(base64: string) {
+      const { data, info } = await sharp(Buffer.from(base64, 'base64'))
+        .ensureAlpha()
+        .raw()
+        .toBuffer({ resolveWithObject: true });
+      const markerPixels: Array<{ x: number; y: number }> = [];
+      for (let i = 0; i < data.length; i += info.channels) {
+        if (isMarkerRed(data[i], data[i + 1], data[i + 2])) {
+          const pixel = i / info.channels;
+          markerPixels.push({ x: pixel % info.width, y: Math.floor(pixel / info.width) });
+        }
+      }
+      return { width: info.width, height: info.height, markerPixels };
+    }
+
+    function screenshotWebContents(
+      opts: {
+        emulationDelayMs?: number;
+        capture?: (request: CaptureRequest) => Promise<{ data: string }>;
+      } = {},
+    ) {
+      const sendCommand = vi.fn((method: string, params?: unknown) => {
         if (method === 'Page.getLayoutMetrics') {
           return Promise.resolve({
             layoutViewport: { clientWidth: 1280, clientHeight: 800 },
             cssVisualViewport: { clientWidth: 1280, clientHeight: 800, pageX: 0, pageY: 0 },
           });
         }
-        if (method === 'Page.captureScreenshot') return Promise.resolve({ data: 'anVuaw==' });
+        if (method === 'Page.captureScreenshot') {
+          return opts.capture
+            ? opts.capture(params as CaptureRequest)
+            : Promise.resolve({ data: 'anVuaw==' });
+        }
         if (method === 'Emulation.setDeviceMetricsOverride' && opts.emulationDelayMs) {
           return new Promise((resolve) => setTimeout(resolve, opts.emulationDelayMs));
         }
@@ -478,6 +552,40 @@ describe('embedded browser CDP workspace routing', () => {
         embeddedBrowserCdp.unregisterTab('tab-shot-fit');
       }
     });
+
+    // The capture is decoded and inspected: a 1280x800 tab shown in a 640x400
+    // panel must come back as one page at the panel's physical size, never as
+    // a 2x2 repeat. The guest model above tiles on a request/surface mismatch
+    // exactly as Chromium does, so a clip.scale of 1 fails both cases.
+    for (const dpr of [1, 2]) {
+      it(`captures a scale-to-fit tab untiled at its displayed size (DPR ${dpr})`, async () => {
+        const guest = { dpr, elementDip: { width: 640, height: 400 } };
+        const tabId = `tab-shot-dpr-${dpr}`;
+        screenshotWebContents({ capture: (request) => chromiumGuestCapture(request, guest) });
+        ownScaledTab(tabId, 510 + dpr);
+        await flushAsync();
+
+        try {
+          const result = await embeddedBrowserCdp.screenshot(tabId);
+          expect(result).toMatchObject({ width: 1280, height: 800 });
+
+          const image = await decodeCapture(result.base64);
+          expect({
+            width: image.width,
+            height: image.height,
+            markerSquares: Math.round(image.markerPixels.length / (MARKER * MARKER)),
+            markerWithinFirstPage: image.markerPixels.every((p) => p.x < MARKER && p.y < MARKER),
+          }).toEqual({
+            width: 640 * dpr,
+            height: 400 * dpr,
+            markerSquares: 1,
+            markerWithinFirstPage: true,
+          });
+        } finally {
+          embeddedBrowserCdp.unregisterTab(tabId);
+        }
+      });
+    }
 
     it('keeps clip scale 1 when the emulated viewport is not shrunk to fit', async () => {
       const { sendCommand } = screenshotWebContents();
