@@ -1841,6 +1841,22 @@ export const destroyTabsByOwnerAgent = createAction(
 );
 
 /**
+ * Destroy only the HIDDEN browser tabs owned by an agent in a workspace
+ * (intent#4762): the conversation footer's "Close hidden tabs" bulk action.
+ * Visible owned tabs and other agents' hidden tabs are untouched. Routed
+ * through the same destroy semantics as `destroyTabsByOwnerAgent` (removed
+ * from `hiddenTabs`, purged from layout history, never in recentlyClosed).
+ */
+export const destroyHiddenTabsByOwnerAgent = createAction(
+  'panelLayout/destroyHiddenTabsByOwnerAgent',
+  (wsId: string, agentId: string, timestamp?: number) => ({
+    wsId,
+    agentId,
+    timestamp: timestamp ?? Date.now(),
+  }),
+);
+
+/**
  * Destroy every agent-owned browser tab in a workspace — visible and hidden
  * (monorepo#2857). Dispatched on workspace archive: the protocol contract
  * discards all tabs on archive/delete, and pinned owned webviews would
@@ -2685,6 +2701,24 @@ panelLayoutReducer.with(destroyTabsByOwnerAgent, (state, { payload }) => {
     result = selfDispatch(result, closeTab(wsId, tabId, panelId, timestamp, true));
   }
   return result;
+});
+// --- Destroy Hidden Tabs By Owner Agent (intent#4762) ---
+panelLayoutReducer.with(destroyHiddenTabsByOwnerAgent, (state, { payload }) => {
+  const { wsId, agentId } = payload;
+  const ws = getWorkspaceState(state, wsId);
+  const hiddenOwned = getItems(ws.hiddenTabs).filter(
+    (tab) => tab.type === 'browser' && tab.ownerAgentId === agentId,
+  );
+  if (hiddenOwned.length === 0) return state;
+  let hiddenTabs = ws.hiddenTabs;
+  for (const tab of hiddenOwned) {
+    hiddenTabs = removeItem(hiddenTabs, tab.id);
+  }
+  let next: WorkspacePanelLayoutState = { ...ws, hiddenTabs };
+  for (const tab of hiddenOwned) {
+    next = purgeTabFromLayoutHistory(next, tab.id);
+  }
+  return setWorkspaceState(state, wsId, next);
 });
 // --- Destroy Owned Tabs For Workspace (monorepo#2857) ---
 panelLayoutReducer.with(destroyOwnedTabsForWorkspace, (state, { payload }) => {

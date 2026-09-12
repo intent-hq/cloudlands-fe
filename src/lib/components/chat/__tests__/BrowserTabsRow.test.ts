@@ -6,20 +6,30 @@
  * expanded tab rows, and the click-to-reveal wiring — visible tabs
  * activate + focus via the panel layout manager (sidebar path), hidden tabs
  * reveal into a panel other than the one hosting the conversation, never
- * displacing the conversation tab or moving panel focus.
+ * displacing the conversation tab or moving panel focus. Also the permanent
+ * close actions (intent#4762): per-row Close destroys the owned tab, "Close
+ * hidden tabs" destroys only this agent's hidden tabs, and both are gated
+ * behind a confirmation while the owner agent is running.
  */
-import { render, screen, fireEvent, cleanup } from '@testing-library/svelte';
+import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/svelte';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { resetAgentSubscriptionsViewStateForTests } from '../agent-subscriptions-view-state';
 
-const { dispatchMock, layoutState, setActiveTabMock, focusPanelMock } = vi.hoisted(() => ({
-  dispatchMock: vi.fn(),
-  layoutState: {
-    panels: {} as Record<string, unknown>,
-    hiddenTabs: [] as unknown[],
-  },
-  setActiveTabMock: vi.fn(),
-  focusPanelMock: vi.fn(),
+const { dispatchMock, layoutState, agentState, setActiveTabMock, focusPanelMock } = vi.hoisted(
+  () => ({
+    dispatchMock: vi.fn(),
+    layoutState: {
+      panels: {} as Record<string, unknown>,
+      hiddenTabs: [] as unknown[],
+    },
+    agentState: { running: false },
+    setActiveTabMock: vi.fn(),
+    focusPanelMock: vi.fn(),
+  }),
+);
+
+vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
+  selectAgentIsRunning: { select: () => agentState.running },
 }));
 
 vi.mock('$features/layout/panel-layout-adapter', () => ({
@@ -53,7 +63,11 @@ vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => {
 });
 
 import BrowserTabsRow from '../BrowserTabsRow.svelte';
-import { revealHiddenTabAvoidingPanel } from '$store/renderer/slices/panel-layout/panel-layout-slice';
+import {
+  closeTab,
+  destroyHiddenTabsByOwnerAgent,
+  revealHiddenTabAvoidingPanel,
+} from '$store/renderer/slices/panel-layout/panel-layout-slice';
 
 const ownedTab = (id: string, title: string) => ({
   id,
@@ -86,12 +100,17 @@ afterEach(() => {
   focusPanelMock.mockClear();
   layoutState.panels = {};
   layoutState.hiddenTabs = [];
+  agentState.running = false;
   resetAgentSubscriptionsViewStateForTests();
 });
 
 function renderRow() {
   return render(BrowserTabsRow, { workspaceId: 'ws-1', agentId: 'agent-1' });
 }
+
+const dispatchedActions = () => dispatchMock.mock.calls.map(([action]) => action);
+const closeTabType = closeTab('ws', 't').type;
+const destroyHiddenType = destroyHiddenTabsByOwnerAgent('ws', 'a').type;
 
 describe('BrowserTabsRow', () => {
   it('renders nothing when the agent owns no browser tabs', () => {
@@ -177,5 +196,106 @@ describe('BrowserTabsRow', () => {
       (a) => a.type === revealHiddenTabAvoidingPanel('ws-1', 'x', null).type,
     );
     expect(reveal?.payload).toMatchObject({ wsId: 'ws-1', tabId: 'hidden-1', avoidPanelId: null });
+  });
+
+  describe('permanent close actions (intent#4762)', () => {
+    it('per-row Close destroys a visible owned tab without activating it', async () => {
+      seedLayout();
+      renderRow();
+      await fireEvent.click(screen.getByTestId('browser-tabs-summary'));
+      const closeButtons = screen.getAllByTestId('browser-tab-close');
+      expect(closeButtons).toHaveLength(2);
+      expect(closeButtons[0].getAttribute('aria-label')).toContain('Docs');
+
+      await fireEvent.click(closeButtons[0]);
+
+      const close = dispatchedActions().find((a) => a.type === closeTabType);
+      expect(close?.payload).toMatchObject({
+        wsId: 'ws-1',
+        tabId: 'visible-1',
+        panelId: 'p1',
+        destroy: true,
+      });
+      expect(screen.queryByRole('dialog')).toBeNull();
+      expect(setActiveTabMock).not.toHaveBeenCalled();
+      expect(focusPanelMock).not.toHaveBeenCalled();
+    });
+
+    it('per-row Close destroys a hidden owned tab instead of revealing it', async () => {
+      seedLayout();
+      renderRow();
+      await fireEvent.click(screen.getByTestId('browser-tabs-summary'));
+      await fireEvent.click(screen.getAllByTestId('browser-tab-close')[1]);
+
+      const actions = dispatchedActions();
+      const close = actions.find((a) => a.type === closeTabType);
+      expect(close?.payload).toMatchObject({ wsId: 'ws-1', tabId: 'hidden-1', destroy: true });
+      expect(
+        actions.some((a) => a.type === revealHiddenTabAvoidingPanel('ws-1', 'x', null).type),
+      ).toBe(false);
+    });
+
+    it('"Close hidden tabs" destroys only this agent hidden tabs and is absent without hidden tabs', async () => {
+      seedLayout();
+      renderRow();
+      await fireEvent.click(screen.getByTestId('browser-tabs-summary'));
+      await fireEvent.click(screen.getByTestId('browser-tabs-close-hidden'));
+
+      const actions = dispatchedActions();
+      const bulk = actions.find((a) => a.type === destroyHiddenType);
+      expect(bulk?.payload).toMatchObject({ wsId: 'ws-1', agentId: 'agent-1' });
+      expect(actions.some((a) => a.type === closeTabType)).toBe(false);
+      cleanup();
+
+      seedLayout();
+      layoutState.hiddenTabs = [];
+      renderRow();
+      await fireEvent.click(screen.getByTestId('browser-tabs-summary'));
+      expect(screen.queryByTestId('browser-tabs-close-hidden')).toBeNull();
+    });
+
+    it('asks for confirmation before destroying a tab while the owner agent is running', async () => {
+      seedLayout();
+      agentState.running = true;
+      renderRow();
+      await fireEvent.click(screen.getByTestId('browser-tabs-summary'));
+      await fireEvent.click(screen.getAllByTestId('browser-tab-close')[0]);
+
+      expect(dispatchedActions().some((a) => a.type === closeTabType)).toBe(false);
+      const dialog = screen.getByRole('dialog');
+      expect(dialog.getAttribute('aria-modal')).toBe('true');
+
+      await fireEvent.click(screen.getByTestId('browser-tabs-close-dialog-confirm'));
+      const close = dispatchedActions().find((a) => a.type === closeTabType);
+      expect(close?.payload).toMatchObject({ wsId: 'ws-1', tabId: 'visible-1', destroy: true });
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    });
+
+    it('cancelling the confirmation destroys nothing', async () => {
+      seedLayout();
+      agentState.running = true;
+      renderRow();
+      await fireEvent.click(screen.getByTestId('browser-tabs-summary'));
+      await fireEvent.click(screen.getByTestId('browser-tabs-close-hidden'));
+      expect(screen.getByRole('dialog')).toBeTruthy();
+
+      await fireEvent.click(screen.getByTestId('browser-tabs-close-dialog-cancel'));
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+      expect(dispatchedActions().some((a) => a.type === destroyHiddenType)).toBe(false);
+      expect(dispatchedActions().some((a) => a.type === closeTabType)).toBe(false);
+    });
+
+    it('confirms the bulk close while the owner agent is running, then dispatches it', async () => {
+      seedLayout();
+      agentState.running = true;
+      renderRow();
+      await fireEvent.click(screen.getByTestId('browser-tabs-summary'));
+      await fireEvent.click(screen.getByTestId('browser-tabs-close-hidden'));
+      expect(dispatchedActions().some((a) => a.type === destroyHiddenType)).toBe(false);
+
+      await fireEvent.click(screen.getByTestId('browser-tabs-close-dialog-confirm'));
+      const bulk = dispatchedActions().find((a) => a.type === destroyHiddenType);
+      expect(bulk?.payload).toMatchObject({ wsId: 'ws-1', agentId: 'agent-1' });
+    });
   });
 });

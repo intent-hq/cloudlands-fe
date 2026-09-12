@@ -10,12 +10,20 @@
    * hosting this conversation (splitting when it is the only panel) and
    * activates it there WITHOUT stealing focus from the conversation.
    * Hidden entirely when the agent owns no browser tabs.
+   *
+   * Each row also carries a permanent Close action, and a "Close hidden
+   * tabs" bulk action follows the list when hidden tabs exist (intent#4762).
+   * Both DESTROY the owned tab(s) through the authoritative destroy lifecycle
+   * (closeTab destroy / destroyHiddenTabsByOwnerAgent, monorepo#2857) — the
+   * tab-bar close stays hide-on-close. When the owning agent is running the
+   * action is gated behind a confirmation dialog.
    */
 
   import Fa from 'svelte-fa';
-  import { faChevronDown, faWindowMaximize } from '@fortawesome/free-solid-svg-icons';
+  import { faChevronDown, faWindowMaximize, faXmark } from '@fortawesome/free-solid-svg-icons';
   import { writable } from 'svelte/store';
   import { Button } from '$lib/components/ui/button';
+  import * as Dialog from '$lib/components/ui/dialog';
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
@@ -24,13 +32,19 @@
     selectHiddenTabs,
     selectPanels,
   } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
-  import { revealHiddenTabAvoidingPanel } from '$store/renderer/slices/panel-layout/panel-layout-slice';
+  import {
+    closeTab,
+    destroyHiddenTabsByOwnerAgent,
+    revealHiddenTabAvoidingPanel,
+  } from '$store/renderer/slices/panel-layout/panel-layout-slice';
+  import { selectAgentIsRunning } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { store as appStore } from '$store/renderer/store';
   import {
     safeSubscriptionRowTransition,
     safeSubscriptionSlide,
     SUBSCRIPTION_CHEVRON_CLASS,
     SUBSCRIPTION_CHEVRON_SIZE_CLASS,
+    SUBSCRIPTION_ACTION_ICON_CLASS,
     SUBSCRIPTION_DISCLOSURE_ROW_CLASS,
     SUBSCRIPTION_ICON_CLASS,
     SUBSCRIPTION_ICON_BUTTON_CLASS,
@@ -101,6 +115,7 @@
   });
 
   const heading = $derived(m.chat_browserTabs_heading({ count: formatInteger(entries.length) }));
+  const hiddenCount = $derived(entries.filter((entry) => entry.hidden).length);
 
   let expanded = $state(false);
   let disclosureKey = $state('');
@@ -143,6 +158,48 @@
       manager.setActiveTab(entry.tab.id, entry.panelId);
       manager.focusPanel(entry.panelId);
     }
+  }
+
+  type PendingClose = { kind: 'tab'; entry: BrowserTabEntry } | { kind: 'hidden' };
+
+  // Close request awaiting confirmation (owner agent running); null otherwise.
+  let pendingClose = $state<PendingClose | null>(null);
+  let confirmButtonRef: HTMLButtonElement | null = $state(null);
+  let confirmHasFocus = $state(false);
+
+  function performClose(action: PendingClose) {
+    if (action.kind === 'tab') {
+      appStore.dispatch(
+        closeTab(workspaceId, action.entry.tab.id, action.entry.panelId, undefined, {
+          destroy: true,
+        }),
+      );
+    } else {
+      appStore.dispatch(destroyHiddenTabsByOwnerAgent(workspaceId, agentId));
+    }
+  }
+
+  function requestClose(action: PendingClose) {
+    if (selectAgentIsRunning.select(appStore.state, agentId)) {
+      pendingClose = action;
+      return;
+    }
+    performClose(action);
+  }
+
+  function confirmPendingClose() {
+    const action = pendingClose;
+    pendingClose = null;
+    if (action) performClose(action);
+  }
+
+  function cancelPendingClose() {
+    pendingClose = null;
+  }
+
+  function handleDialogOpenAutoFocus(event: Event) {
+    event.preventDefault();
+    confirmButtonRef?.focus();
   }
 </script>
 
@@ -202,14 +259,14 @@
         {#each entries as entry (entry.tab.id)}
           {@const tabTitle = entry.tab.title || m.layout_panelLayout_browser_fallback()}
           <div
-            class="overflow-hidden {SUBSCRIPTION_INSET_ROW_DIVIDER_CLASS}"
+            class="flex min-w-0 items-center overflow-hidden pr-2 {SUBSCRIPTION_INSET_ROW_DIVIDER_CLASS}"
             data-subscription-motion-row="browser-tab"
             transition:safeSubscriptionRowTransition
           >
             <Button
               variant="plain"
               type="button"
-              class="flex h-auto min-h-9 w-full min-w-0 max-w-full items-center justify-start! gap-2 overflow-hidden rounded-none border-0 px-3! py-2! text-left {SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS} {SUBSCRIPTION_ICON_BUTTON_CLASS} focus-visible:ring-1 focus-visible:ring-inset"
+              class="flex h-auto min-h-9 min-w-0 flex-1 items-center justify-start! gap-2 overflow-hidden rounded-none border-0 px-3! py-2! text-left {SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS} {SUBSCRIPTION_ICON_BUTTON_CLASS} focus-visible:ring-1 focus-visible:ring-inset"
               data-testid="browser-tab-item"
               data-browser-tab-id={entry.tab.id}
               data-hidden={entry.hidden || undefined}
@@ -231,9 +288,92 @@
                 </span>
               </span>
             </Button>
+            <Button
+              variant="plain"
+              size="icon-xs"
+              type="button"
+              class="h-6 w-6 shrink-0 border-0 {SUBSCRIPTION_ACTION_ICON_CLASS} {SUBSCRIPTION_ICON_BUTTON_CLASS} focus-visible:ring-1"
+              data-testid="browser-tab-close"
+              data-browser-tab-id={entry.tab.id}
+              aria-label={m.chat_browserTabs_closeTab_ariaLabel({ title: tabTitle })}
+              title={m.chat_browserTabs_closeTab_ariaLabel({ title: tabTitle })}
+              onclick={(event) => {
+                event.stopPropagation();
+                requestClose({ kind: 'tab', entry });
+              }}
+            >
+              <Fa icon={faXmark} class="h-3 w-3" />
+            </Button>
           </div>
         {/each}
+        {#if hiddenCount > 0}
+          <div
+            class="flex min-w-0 items-center justify-end px-2 py-1 {SUBSCRIPTION_INSET_ROW_DIVIDER_CLASS}"
+            data-subscription-motion-row="browser-tabs-close-hidden"
+            transition:safeSubscriptionRowTransition
+          >
+            <Button
+              variant="ghost-light"
+              size="xs"
+              type="button"
+              data-testid="browser-tabs-close-hidden"
+              onclick={() => requestClose({ kind: 'hidden' })}
+            >
+              <Fa icon={faXmark} class="h-2.5 w-2.5" />
+              {m.chat_browserTabs_closeHidden_label({ count: formatInteger(hiddenCount) })}
+            </Button>
+          </div>
+        {/if}
       </div>
     {/if}
   </div>
 {/if}
+
+<Dialog.Root
+  open={pendingClose !== null}
+  onOpenChange={(nextOpen) => !nextOpen && cancelPendingClose()}
+>
+  <Dialog.Content
+    class="max-w-sm gap-0 overflow-hidden p-0"
+    closeLabel={m.chat_browserTabs_closeDialog_close_ariaLabel()}
+    onOpenAutoFocus={handleDialogOpenAutoFocus}
+  >
+    <div class="p-5 pr-12">
+      <Dialog.Header class="gap-2 pr-0">
+        <Dialog.Title>
+          {pendingClose?.kind === 'hidden'
+            ? m.chat_browserTabs_closeHiddenDialog_title()
+            : m.chat_browserTabs_closeDialog_title()}
+        </Dialog.Title>
+        <Dialog.Description class="leading-5">
+          {pendingClose?.kind === 'hidden'
+            ? m.chat_browserTabs_closeHiddenDialog_description()
+            : m.chat_browserTabs_closeDialog_description()}
+        </Dialog.Description>
+      </Dialog.Header>
+    </div>
+
+    <Dialog.Footer class="mt-0 flex-row items-center justify-end border-0 px-5 pb-5 pt-0">
+      <Button
+        variant="ghost-light"
+        data-testid="browser-tabs-close-dialog-cancel"
+        onclick={cancelPendingClose}
+      >
+        {m.chat_browserTabs_closeDialog_cancel_label()}
+      </Button>
+      <Button
+        variant="destructive"
+        bind:ref={confirmButtonRef}
+        class={confirmHasFocus ? 'ring-ring/50 ring-2' : undefined}
+        data-testid="browser-tabs-close-dialog-confirm"
+        onfocus={() => (confirmHasFocus = true)}
+        onblur={() => (confirmHasFocus = false)}
+        onclick={confirmPendingClose}
+      >
+        {pendingClose?.kind === 'hidden'
+          ? m.chat_browserTabs_closeHiddenDialog_confirm_label()
+          : m.chat_browserTabs_closeDialog_confirm_label()}
+      </Button>
+    </Dialog.Footer>
+  </Dialog.Content>
+</Dialog.Root>
