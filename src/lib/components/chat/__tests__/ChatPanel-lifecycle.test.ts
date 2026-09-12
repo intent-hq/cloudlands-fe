@@ -123,7 +123,13 @@ vi.mock('$lib/utils/stream-lifecycle-telemetry', async (importOriginal) => ({
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
-  return createAppStoreMockModule({ state: () => mocks.storeState, dispatch: mocks.dispatch });
+  // Shallow-dedup emits like the production selector stream, so a test that
+  // toggles store state proves the component anchors on the right selector.
+  return createAppStoreMockModule({
+    state: () => mocks.storeState,
+    dispatch: mocks.dispatch,
+    dedupeEmits: true,
+  });
 });
 vi.mock('$lib/client', () => ({
   appClient: {
@@ -386,6 +392,7 @@ import {
 } from '$features/agent/utils/chat-interest-leases';
 import type { ProviderStatus } from '$store/renderer/slices/agent-availability/agent-availability-types';
 import { initialState as modelInitialState } from '$store/renderer/slices/model/model-slice';
+import { store as appStore } from '$store/renderer/store';
 import {
   initialState as providerCatalogInitialState,
   providerCatalogLoaded,
@@ -1288,6 +1295,25 @@ describe('ChatPanel mounted lifecycle', () => {
       };
     }
 
+    // Toggles one provider's enabled flag in place and re-emits the store the
+    // way a settings change would: only slices whose selected value actually
+    // changed re-notify (see `dedupeEmits`).
+    async function setProviderEnabled(providerId: string, enabled: boolean) {
+      const state = mocks.storeState as {
+        providerSettings: { enabledProviders: Record<string, boolean> };
+      };
+      mocks.storeState = {
+        ...state,
+        providerSettings: {
+          ...state.providerSettings,
+          enabledProviders: { ...state.providerSettings.enabledProviders, [providerId]: enabled },
+        },
+      };
+      (appStore as unknown as { emitState: () => void }).emitState();
+      await tick();
+      await tick();
+    }
+
     async function renderQuotaFailure() {
       mocks.draftGet.mockResolvedValue(null);
       mocks.agentMessages.set([
@@ -1352,6 +1378,30 @@ describe('ChatPanel mounted lifecycle', () => {
       expect(offered).toHaveLength(1);
       expect(offered[0]).toContain('Augment Auggie');
       expect(offered[0]).not.toContain('OpenAI Codex');
+    });
+
+    it('drops an offered default provider when it is disabled while the banner is mounted', async () => {
+      // Codex is the default provider, so the model-picker set keeps admitting
+      // it after it is disabled and that anchor never re-emits; the banner must
+      // still react to the raw enabled flags.
+      seedProviderState({ 'claude-code': true, codex: true }, 'codex', {
+        'claude-code': { available: true, authenticated: true },
+        codex: { available: true, authenticated: true },
+      });
+      const view = await renderQuotaFailure();
+      expect(
+        screen.getAllByTestId('retry-with-provider').map((button) => button.textContent ?? ''),
+      ).toEqual([expect.stringContaining('OpenAI Codex')]);
+
+      await setProviderEnabled('codex', false);
+      expect(screen.queryAllByTestId('retry-with-provider')).toEqual([]);
+      expect(view.container.querySelector('[data-testid="error-quota-exceeded"]')).toBeNull();
+      expect(view.container.querySelector('[data-stream-terminal-error="true"]')).not.toBeNull();
+
+      await setProviderEnabled('codex', true);
+      expect(
+        screen.getAllByTestId('retry-with-provider').map((button) => button.textContent ?? ''),
+      ).toEqual([expect.stringContaining('OpenAI Codex')]);
     });
 
     it('falls back to the plain failure banner when no alternative is eligible', async () => {

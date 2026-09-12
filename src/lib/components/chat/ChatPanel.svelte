@@ -333,6 +333,7 @@
   } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import {
     selectAvailableEnabledProviderIds,
+    selectEnabledProviders,
     selectQuotaRetryProviderIds,
   } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import { selectProviderStatusMap } from '$store/renderer/slices/agent-availability/agent-availability-selectors';
@@ -488,8 +489,12 @@
   // turn, plus the sibling providers we may offer instead.
   const chatQuotaExceeded$ = selectChatQuotaExceeded(agentIdStore);
   // Reactivity anchors for the quota-retry offer list: the enabled/available
-  // set and the per-provider auth flags both live in other slices.
+  // set, the raw enabled flags, and the per-provider auth flags all live in
+  // other slices. The raw flags are anchored separately because the picker set
+  // always admits the default provider, so toggling it leaves that array
+  // shallow-equal and the selector stream deduplicates the change away.
   const availableEnabledProviderIds$ = selectAvailableEnabledProviderIds();
+  const enabledProviders$ = selectEnabledProviders();
   const providerStatusMap$ = selectProviderStatusMap();
   // Read purely as a reactivity anchor for the display-name derivation below:
   // provider display names come from the catalog, which hydrates
@@ -5016,6 +5021,7 @@
     if (!quota) return [];
     void $providerCatalogEntries$;
     void $availableEnabledProviderIds$;
+    void $enabledProviders$;
     void $providerStatusMap$;
     return selectQuotaRetryProviderIds
       .select(appStore.state, quota.providerId)
