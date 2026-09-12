@@ -1,20 +1,29 @@
 #!/usr/bin/env node
 
 // Chat-motion perf trace harness. Drives Playwright Chromium against a running app
-// sandbox, records a CDP trace around the footer (event subscriptions) collapse/expand,
-// then samples scroll geometry per animation frame: pinned toggles, a scrolled-up
-// no-toggle control after a hydration-quiescence wait, and scrolled-up toggles.
+// sandbox, records a CDP trace around one motion pair, then samples scroll geometry per
+// animation frame: pinned toggles, a scrolled-up no-toggle control after a
+// hydration-quiescence wait, and scrolled-up toggles. Scenarios:
+//   footer        — the transcript footer (event subscriptions) collapse/expand
+//   context-well  — the sidebar Context card open/close (launcher tile → card close button)
 // Prerequisites: `make dev-sandbox-app` (or `dev-sandbox-stack`) is healthy and `--url`
 // is a workspace page whose transcript is long enough to scroll. `--out` must not exist.
 // Example:
 //   pnpm perf:chat-motion --url http://127.0.0.1:8264/workspace/<id> --out .demo-artifacts/perf/footer-1
+//   pnpm perf:chat-motion --scenario context-well --url http://127.0.0.1:8264/workspace/<id> --out .demo-artifacts/perf/context-well-1
 // Writes trace.json, summary.json, samples.json and screenshots into --out and prints the
 // summary JSON. Exit 0 on success, 1 on runtime failure, 2 for usage / refused overwrite.
 
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { chromium } from 'playwright';
-import { SCENARIOS, parseArgs, prepareOutDir, summarize } from './chat-motion-lib.mjs';
+import {
+  SCENARIOS,
+  parseArgs,
+  prepareOutDir,
+  scrollSampleLabels,
+  summarize,
+} from './chat-motion-lib.mjs';
 
 const USAGE =
   'usage: pnpm perf:chat-motion --url <app-url> --out <dir> [--scenario footer|context-well] [--inflate 10000] [--frames 40] [--scroll-up 800] [--quiet-ms 750] [--quiet-timeout 15000] [--timeout 180000] [--headed]';
@@ -22,6 +31,11 @@ const VIEWPORT_SELECTOR = '[data-testid="chat-transcript-scroll-viewport"]';
 const TRANSCRIPT_INNER_SELECTOR = '[data-testid="chat-transcript-inner"]';
 const UTILITY_STACK_SELECTOR = '[data-testid="transcript-utility-stack"]';
 const FOOTER_HEADER_SELECTOR = '[aria-controls^="event-subscriptions-body"]';
+const CONTEXT_LAUNCHER_SELECTOR = '[data-sidebar-launcher="context"] button[aria-expanded="false"]';
+const CONTEXT_CARD_SELECTOR = '[data-sidebar-card-surface][data-sidebar-card-tab="context"]';
+const CONTEXT_CLOSE_SELECTOR = `${CONTEXT_CARD_SELECTOR} [data-sidebar-close]`;
+const ANY_CARD_CLOSE_SELECTOR =
+  '[data-sidebar-card-surface][data-sidebar-card-tab] [data-sidebar-close]';
 const TRACE_CATEGORIES = [
   '-*',
   'devtools.timeline',
@@ -86,6 +100,23 @@ function installPageHelper(page, { frames }) {
   );
 }
 
+// The sidebar mounts before the transcript hydrates, so a scenario whose starting state
+// does not live in the transcript must wait for a rendered turn before inflating.
+function waitForTranscriptRows(page, options) {
+  return page.waitForFunction(
+    ({ innerSelector, utilitySelector }) => {
+      const inner = document.querySelector(innerSelector);
+      const utility = document.querySelector(utilitySelector);
+      if (!inner || !utility) return false;
+      return [...inner.children].some(
+        (child) => child !== utility && child.querySelectorAll('*').length > 20,
+      );
+    },
+    { innerSelector: TRANSCRIPT_INNER_SELECTOR, utilitySelector: UTILITY_STACK_SELECTOR },
+    { timeout: options.timeout },
+  );
+}
+
 function inflateTranscript(page, target) {
   return page.evaluate(
     ({ innerSelector, utilitySelector, viewportSelector, target, maxClones }) => {
@@ -129,14 +160,19 @@ function inflateTranscript(page, target) {
   );
 }
 
-function readState(page, headerSelector) {
-  return page.evaluate((selector) => {
-    const header = document.querySelector(selector);
+// A motion target describes how a scenario reads its expanded state and which control
+// toggles it: `state.kind` is `aria-expanded` (attribute on `state.selector`) or
+// `presence` (`state.selector` exists in the DOM); `control(expanded)` is the selector to
+// click from that state; `prepare` brings the page to the scenario's starting state.
+function readState(page, { state }) {
+  return page.evaluate(({ kind, selector }) => {
+    const node = document.querySelector(selector);
     return {
       ...window.__chatMotion.geometry(),
-      expanded: header?.getAttribute('aria-expanded') === 'true',
+      expanded:
+        kind === 'presence' ? node !== null : node?.getAttribute('aria-expanded') === 'true',
     };
-  }, headerSelector);
+  }, state);
 }
 
 async function waitForFrames(page, frames) {
@@ -146,29 +182,31 @@ async function waitForFrames(page, frames) {
   return page.evaluate(() => window.__chatMotion.frames);
 }
 
-async function toggle(page, { label, mark, headerSelector, pointer }) {
-  const before = await readState(page, headerSelector);
+async function toggle(page, { label, mark, target, pointer }) {
+  const before = await readState(page, target);
+  const controlSelector = target.control(before.expanded);
+  await page.waitForSelector(controlSelector, { state: 'attached', timeout: TOGGLE_TIMEOUT_MS });
   await page.evaluate((name) => performance.mark(name), mark);
-  const header = page.locator(headerSelector);
-  if (pointer) await header.click({ timeout: TOGGLE_TIMEOUT_MS });
-  else await header.evaluate((node) => node.click());
+  const control = page.locator(controlSelector);
+  if (pointer) await control.click({ timeout: TOGGLE_TIMEOUT_MS });
+  else await control.evaluate((node) => node.click());
   await page.waitForTimeout(TOGGLE_SETTLE_MS);
-  const after = await readState(page, headerSelector);
+  const after = await readState(page, target);
   if (before.expanded === after.expanded) throw new Error(`${label} did not toggle`);
   return { before, after };
 }
 
-async function sampleToggle(page, samples, { label, headerSelector, pointer, frames }) {
+async function sampleToggle(page, samples, { label, target, pointer, frames }) {
   await page.evaluate(() => window.__chatMotion.startSampling());
-  const result = await toggle(page, { label, mark: label, headerSelector, pointer });
+  const result = await toggle(page, { label, mark: label, target, pointer });
   samples[label] = { ...result, frames: await waitForFrames(page, frames) };
 }
 
-async function sampleControl(page, samples, { headerSelector, frames }) {
+async function sampleControl(page, samples, { target, frames }) {
   await page.evaluate(() => window.__chatMotion.startSampling());
-  const before = await readState(page, headerSelector);
+  const before = await readState(page, target);
   const sampled = await waitForFrames(page, frames);
-  const after = await readState(page, headerSelector);
+  const after = await readState(page, target);
   samples.control = { before, after, frames: sampled };
 }
 
@@ -225,21 +263,54 @@ async function waitForQuiescence(page, { quietMs, quietTimeout }) {
   return { waitedMs: Math.round(waitedMs), quietMs };
 }
 
-async function runFooterScenario(page, options, outDir) {
-  const headerSelector = FOOTER_HEADER_SELECTOR;
-  const [collapseMark, expandMark] = SCENARIOS.footer.marks;
+const FOOTER_TARGET = {
+  state: { kind: 'aria-expanded', selector: FOOTER_HEADER_SELECTOR },
+  control: () => FOOTER_HEADER_SELECTOR,
+  screenshots: { afterTrace: 'expanded.png', afterFirstMotion: 'collapsed.png' },
+  async prepare(page, options) {
+    const headerSelector = FOOTER_HEADER_SELECTOR;
+    await page.waitForSelector(headerSelector, { timeout: options.timeout });
+    if ((await page.locator(headerSelector).getAttribute('aria-expanded')) !== 'true') {
+      await page.locator(headerSelector).evaluate((node) => node.click());
+      await page.waitForFunction(
+        (selector) => document.querySelector(selector)?.getAttribute('aria-expanded') === 'true',
+        headerSelector,
+        { timeout: TOGGLE_TIMEOUT_MS },
+      );
+      await page.waitForTimeout(TOGGLE_SETTLE_MS);
+    }
+  },
+};
+
+const CONTEXT_WELL_TARGET = {
+  state: { kind: 'presence', selector: CONTEXT_CARD_SELECTOR },
+  control: (expanded) => (expanded ? CONTEXT_CLOSE_SELECTOR : CONTEXT_LAUNCHER_SELECTOR),
+  screenshots: { afterTrace: 'closed.png', afterFirstMotion: 'opened.png' },
+  async prepare(page, options) {
+    // The launcher grid unmounts while any card is expanded; close it to reach the tiles.
+    await page.waitForSelector(`${CONTEXT_LAUNCHER_SELECTOR}, ${ANY_CARD_CLOSE_SELECTOR}`, {
+      state: 'attached',
+      timeout: options.timeout,
+    });
+    const openCardClose = page.locator(ANY_CARD_CLOSE_SELECTOR);
+    if ((await openCardClose.count()) > 0) {
+      await openCardClose.first().evaluate((node) => node.click());
+      await page.waitForTimeout(TOGGLE_SETTLE_MS);
+    }
+    await page.waitForSelector(CONTEXT_LAUNCHER_SELECTOR, {
+      state: 'attached',
+      timeout: TOGGLE_TIMEOUT_MS,
+    });
+  },
+};
+
+async function runScenario(page, options, outDir, target) {
+  const [firstMark, secondMark] = SCENARIOS[options.scenario].marks;
+  const labels = scrollSampleLabels(options.scenario);
   const { frames } = options;
   await page.goto(options.url, { waitUntil: 'domcontentloaded', timeout: options.timeout });
-  await page.waitForSelector(headerSelector, { timeout: options.timeout });
-  if ((await page.locator(headerSelector).getAttribute('aria-expanded')) !== 'true') {
-    await page.locator(headerSelector).evaluate((node) => node.click());
-    await page.waitForFunction(
-      (selector) => document.querySelector(selector)?.getAttribute('aria-expanded') === 'true',
-      headerSelector,
-      { timeout: TOGGLE_TIMEOUT_MS },
-    );
-    await page.waitForTimeout(TOGGLE_SETTLE_MS);
-  }
+  await target.prepare(page, options);
+  await waitForTranscriptRows(page, options);
   const nodeCounts = await inflateTranscript(page, options.inflate);
   await page.waitForTimeout(1000);
   await installPageHelper(page, { frames });
@@ -252,27 +323,27 @@ async function runFooterScenario(page, options, outDir) {
       path: path.join(outDir, 'trace.json'),
       categories: TRACE_CATEGORIES,
     });
-  await toggle(page, { label: collapseMark, mark: collapseMark, headerSelector, pointer: true });
-  await toggle(page, { label: expandMark, mark: expandMark, headerSelector, pointer: true });
+  await toggle(page, { label: firstMark, mark: firstMark, target, pointer: true });
+  await toggle(page, { label: secondMark, mark: secondMark, target, pointer: true });
   const traceBuffer = await page.context().browser().stopTracing();
   const parsedTrace = JSON.parse(traceBuffer.toString('utf8'));
   const traceEvents = Array.isArray(parsedTrace) ? parsedTrace : parsedTrace.traceEvents;
-  await page.screenshot({ path: path.join(outDir, 'expanded.png') });
+  await page.screenshot({ path: path.join(outDir, target.screenshots.afterTrace) });
 
   const samples = {};
   const pickAnchor = () => page.evaluate(() => window.__chatMotion.pickAnchor());
   await pickAnchor();
   await sampleToggle(page, samples, {
-    label: 'pinnedCollapse',
-    headerSelector,
+    label: labels.pinned[0],
+    target,
     pointer: true,
     frames,
   });
-  await page.screenshot({ path: path.join(outDir, 'collapsed.png') });
+  await page.screenshot({ path: path.join(outDir, target.screenshots.afterFirstMotion) });
   await pickAnchor();
   await sampleToggle(page, samples, {
-    label: 'pinnedExpand',
-    headerSelector,
+    label: labels.pinned[1],
+    target,
     pointer: true,
     frames,
   });
@@ -285,16 +356,16 @@ async function runFooterScenario(page, options, outDir) {
       'no non-inflated [data-lazy-turn-key] row intersects the viewport after scrolling up',
     );
   }
-  await sampleControl(page, samples, { headerSelector, frames });
+  await sampleControl(page, samples, { target, frames });
   await sampleToggle(page, samples, {
-    label: 'scrolledUpCollapse',
-    headerSelector,
+    label: labels.scrolledUp[0],
+    target,
     pointer: false,
     frames,
   });
   await sampleToggle(page, samples, {
-    label: 'scrolledUpExpand',
-    headerSelector,
+    label: labels.scrolledUp[1],
+    target,
     pointer: false,
     frames,
   });
@@ -303,7 +374,7 @@ async function runFooterScenario(page, options, outDir) {
   return { nodeCounts, traceEvents, samples, quiescence };
 }
 
-const SCENARIO_RUNNERS = { footer: runFooterScenario };
+const SCENARIO_TARGETS = { footer: FOOTER_TARGET, 'context-well': CONTEXT_WELL_TARGET };
 
 async function main(argv) {
   let options;
@@ -312,8 +383,8 @@ async function main(argv) {
   } catch (error) {
     throw new UsageError(`${error.message}\n${USAGE}`);
   }
-  const run = SCENARIO_RUNNERS[options.scenario];
-  if (!run) throw new UsageError(`--scenario ${options.scenario} is not implemented yet.`);
+  const target = SCENARIO_TARGETS[options.scenario];
+  if (!target) throw new UsageError(`--scenario ${options.scenario} is not implemented yet.`);
   let outDir;
   try {
     outDir = await prepareOutDir(options.out);
@@ -326,7 +397,7 @@ async function main(argv) {
   let result;
   try {
     const page = await browser.newPage({ viewport: BROWSER_VIEWPORT });
-    result = await run(page, options, outDir);
+    result = await runScenario(page, options, outDir, target);
   } finally {
     await browser.close();
   }

@@ -10,6 +10,7 @@ import {
   analyzeTrace,
   parseArgs,
   prepareOutDir,
+  scrollSampleLabels,
   summarize,
 } from './chat-motion-lib.mjs';
 
@@ -153,6 +154,19 @@ describe('perf harness arguments', () => {
   });
 });
 
+describe('scrollSampleLabels', () => {
+  it('derives the pinned and scrolled-up sample labels from the scenario marks', () => {
+    expect(scrollSampleLabels('footer')).toEqual({
+      pinned: ['pinnedCollapse', 'pinnedExpand'],
+      scrolledUp: ['scrolledUpCollapse', 'scrolledUpExpand'],
+    });
+    expect(scrollSampleLabels('context-well')).toEqual({
+      pinned: ['pinnedOpen', 'pinnedClose'],
+      scrolledUp: ['scrolledUpOpen', 'scrolledUpClose'],
+    });
+  });
+});
+
 describe('prepareOutDir', () => {
   it('creates a fresh directory and refuses to reuse an existing one', async () => {
     const base = await mkdtemp(path.join(tmpdir(), 'chat-motion-'));
@@ -275,5 +289,47 @@ describe('summarize', () => {
       toggled: true,
     });
     expect(summary.scroll.control).toMatchObject({ toggled: false, maxBottomGap: 700 });
+  });
+
+  it('reports the context-well marks and card-presence toggles with the same fields', () => {
+    const summary = summarize({
+      url: 'http://127.0.0.1:5173/workspace/w',
+      scenario: 'context-well',
+      startedAt: '2026-09-12T00:00:00.000Z',
+      nodeCounts: { total: 10_400, transcript: 9_900 },
+      traceEvents: [
+        event('open', MARK_TS),
+        event('RunTask', MARK_TS + 1_000, 18_000),
+        event('UpdateLayoutTree', MARK_TS + 2_000, 12_000, { args: { elementCount: 640 } }),
+        event('close', MARK_TS + 900_000),
+        event('RunTask', MARK_TS + 901_000, 3_000),
+      ],
+      samples: {
+        pinnedOpen: {
+          before: { top: 1000, expanded: false },
+          after: { top: 1000, expanded: true },
+          frames: [{ top: 1000, max: 1000, anchorTop: 300, anchorConnected: true }],
+        },
+        scrolledUpClose: {
+          before: { top: 200, expanded: true },
+          after: { top: 200, expanded: true },
+          frames: [{ top: 200, max: 900, anchorTop: 120, anchorConnected: true }],
+        },
+      },
+      quiescence: { preTraceWaitedMs: 800, waitedMs: 750, quietMs: 750 },
+    });
+
+    expect(summary.scenario).toBe('context-well');
+    expect(Object.keys(summary.motions)).toEqual(['open', 'close']);
+    expect(Object.keys(summary.motions.open)).toEqual(Object.keys(summary.motions.close));
+    expect(summary.motions.open).toMatchObject({
+      taskCount: 1,
+      maxTaskMs: 18,
+      tasksOver16_7: [{ offsetMs: 1, durationMs: 18 }],
+      maxUpdateLayoutTreeMs: 12,
+      maxUpdateLayoutTreeElements: 640,
+    });
+    expect(summary.scroll.pinnedOpen).toMatchObject({ toggled: true, anchorDriftPx: 0 });
+    expect(summary.scroll.scrolledUpClose).toMatchObject({ toggled: false });
   });
 });

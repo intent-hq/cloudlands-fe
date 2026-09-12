@@ -6,6 +6,16 @@ export const SCENARIOS = {
   'context-well': { marks: ['open', 'close'] },
 };
 const DEFAULT_WINDOW_MS = 400;
+
+const capitalize = (value) => value.charAt(0).toUpperCase() + value.slice(1);
+
+export function scrollSampleLabels(scenario) {
+  const marks = SCENARIOS[scenario].marks;
+  return {
+    pinned: marks.map((mark) => `pinned${capitalize(mark)}`),
+    scrolledUp: marks.map((mark) => `scrolledUp${capitalize(mark)}`),
+  };
+}
 const FRAME_BUDGET_MS = 16.7;
 
 const INTEGER_OPTIONS = {
