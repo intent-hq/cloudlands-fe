@@ -553,5 +553,8 @@ single tracker for all components; never track issues in markdown files. Label w
 `component:fe` + `agent-filed`. See the root [`AGENTS.md`](../../AGENTS.md) → Filing
 Issues for the full conventions (dedup, cross-referencing, `Fixes intent-hq/intent#N` —
 the release notifier `scripts/notify-fixed-issues.sh` comments on the issue once a
-release fully delivers the fix, i.e. every linked fix PR across cloudlands-fe and
-intentd is merged and contained in the released versions).
+release fully delivers the fix, i.e. the issue is closed, at least one linked fix PR
+across cloudlands-fe and intentd is merged and contained in the released versions, no
+linked fix PR is still open, and every merged one is contained (PRs closed without
+merging are ignored); a plain `intent-hq/intent#N` mention never earns a release
+comment, only a closing-keyword reference on the actual fix PR does).
