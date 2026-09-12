@@ -6,6 +6,11 @@ import { cleanup, render, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import type { Note } from '$shared/types';
 import { ContentType, NoteVisibility } from '$shared/types';
+import {
+  flushNoteContent,
+  hasPendingNoteContent,
+  updateNoteContent,
+} from '$features/notes/notes-write-service';
 
 const {
   mockInvoke,
@@ -614,6 +619,113 @@ describe('NoteWithComments task conversion regression', () => {
     expect(mockMaybeCreateCommentManagerV2).toHaveBeenCalledWith(
       expect.objectContaining({ noteId: 'note-b' }),
     );
+  });
+
+  // Regression (verifier, production component + TipTap): an agent writing
+  // twice in a row is a normal burst, and a keystroke typed between the two
+  // applies was erased by the second one — the fold was gated on a flag that a
+  // 200ms timer cleared after every apply. Input is recognised per transaction
+  // now, so the keystroke is staged, flushed and merged whenever it lands.
+  describe('keystrokes between two external applies', () => {
+    async function renderAppliedNote() {
+      replaceNotes([createNote('spec', 'Spec', 'base')]);
+      const view = await renderInitializedNote('spec', 'base');
+      const editor = (view.container.querySelector('.ProseMirror') as any).editor;
+      await waitFor(() => expect(editor.getText()).toBe('base'));
+      vi.useFakeTimers();
+      // Past the initialisation tail and the typing/save debounces.
+      await vi.advanceTimersByTimeAsync(1200);
+      return editor;
+    }
+
+    async function applyExternal(text: string, rev: number) {
+      replaceNotes([createNote('spec', 'Spec', text, { rev } as Partial<Note>)]);
+      await tick();
+    }
+
+    // Write-service model: a staged draft is pending until flushed; the flush
+    // returns the daemon's merge of the draft with the newer note.
+    function modelWriteService() {
+      let pending = false;
+      let draft = '';
+      const flushed: string[] = [];
+      vi.mocked(updateNoteContent).mockImplementation((_ws, _id, text) => {
+        pending = true;
+        draft = text;
+      });
+      vi.mocked(hasPendingNoteContent).mockImplementation(() => pending);
+      vi.mocked(flushNoteContent).mockImplementation(async () => {
+        pending = false;
+        flushed.push(draft);
+        const merged = `${draft} second`;
+        await applyExternal(merged, 7);
+        return { content: merged, rev: 7 };
+      });
+      return { flushed };
+    }
+
+    it.each([10, 25, 49, 100, 199])(
+      'keeps a keystroke typed %i ms after an apply when the next update arrives with it',
+      async (delay) => {
+        const editor = await renderAppliedNote();
+        const { flushed } = modelWriteService();
+
+        await applyExternal('agent base', 5);
+        await vi.advanceTimersByTimeAsync(150);
+        expect(editor.getText()).toBe('agent base');
+
+        await vi.advanceTimersByTimeAsync(delay);
+        editor.commands.insertContentAt(editor.state.doc.content.size - 1, ' X');
+        expect(editor.getText()).toBe('agent base X');
+        await applyExternal('agent base second', 6);
+        await vi.advanceTimersByTimeAsync(160);
+
+        expect(editor.getText()).toBe('agent base X second');
+        expect(flushed).toEqual(['agent base X']);
+      },
+    );
+
+    it('keeps a keystroke typed 100 ms after an apply when a second update arrived at +25 ms', async () => {
+      const editor = await renderAppliedNote();
+      const { flushed } = modelWriteService();
+
+      await applyExternal('agent base', 5);
+      await vi.advanceTimersByTimeAsync(150);
+      expect(editor.getText()).toBe('agent base');
+
+      await vi.advanceTimersByTimeAsync(25);
+      await applyExternal('agent base second', 6);
+      await vi.advanceTimersByTimeAsync(75);
+      editor.commands.insertContentAt(editor.state.doc.content.size - 1, ' X');
+      expect(editor.getText()).toBe('agent base X');
+      await vi.advanceTimersByTimeAsync(75 + 1100);
+
+      expect(editor.getText()).toBe('agent base X second');
+      expect(flushed).toEqual(['agent base X']);
+    });
+
+    it('folds and re-saves a keystroke when staging it queued nothing in the write-service', async () => {
+      const editor = await renderAppliedNote();
+      vi.mocked(updateNoteContent).mockImplementation(() => undefined);
+      vi.mocked(hasPendingNoteContent).mockReturnValue(false);
+
+      await applyExternal('agent base', 5);
+      await vi.advanceTimersByTimeAsync(150);
+      expect(editor.getText()).toBe('agent base');
+
+      await vi.advanceTimersByTimeAsync(25);
+      await applyExternal('agent base second', 6);
+      await vi.advanceTimersByTimeAsync(75);
+      editor.commands.insertContentAt(editor.state.doc.content.size - 1, ' X');
+      vi.mocked(updateNoteContent).mockClear();
+      await vi.advanceTimersByTimeAsync(75);
+
+      expect(editor.getText()).toBe('agent base X second');
+
+      await vi.advanceTimersByTimeAsync(1100);
+      const saved = vi.mocked(updateNoteContent).mock.calls.map((call) => call[2]);
+      expect(saved.at(-1)).toBe('agent base X second');
+    });
   });
 
   it('does not apply a pending note conversion after unmount', async () => {

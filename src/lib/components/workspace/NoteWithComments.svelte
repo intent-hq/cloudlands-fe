@@ -1589,7 +1589,18 @@
           clearTimeout(saveDebounceTimer);
           saveDebounceTimer = null;
         }
+        const baseline = lastKnownContent;
         void saveEditorContent();
+        // saveEditorContent moves lastKnownContent to the editor text before
+        // the write-service confirms it holds the save. A stage that queued
+        // nothing leaves those keystrokes unsaved: keep the baseline so the
+        // apply folds them in, and re-arm the debounced save to carry them.
+        if (lastKnownContent === baseline) return;
+        if (workspace?.id && noteId && hasPendingNoteContent(workspace.id, noteId)) return;
+        lastKnownContent = baseline;
+        saveDebounceTimer = setTimeout(() => {
+          saveEditorContent();
+        }, 1000);
       },
       flushNoteContent,
       onPendingSaveSettled: () => {
