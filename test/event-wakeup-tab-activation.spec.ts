@@ -50,6 +50,8 @@ test.beforeAll(async () => {
 test.afterAll(async () => server?.close());
 
 async function mountWakeupLayout(page: Page, width: number) {
+  // A cold Vite graph is loaded by the imports below before geometry can be exercised.
+  test.setTimeout(120_000);
   await page.goto(`${baseUrl}/src/app.html`);
   await page.addStyleTag({ url: `${baseUrl}/src/app.css` });
   await page.evaluate(async (containerWidth) => {

@@ -126,6 +126,8 @@ for (const viewport of [
 
       await page.goto(`${baseUrl}sandbox/${slug}`, { waitUntil: 'networkidle' });
       const previews = page.locator(`[data-catalog-preview="${slug}"]`);
+      // CSR hydration can finish after networkidle on a cold module graph.
+      await expect(previews.first()).toBeVisible({ timeout: 30_000 });
       const previewCount = await previews.count();
       expect(previewCount).toBeGreaterThan(0);
       for (let index = 0; index < previewCount; index += 1) {
@@ -560,8 +562,10 @@ async function assertIntroduction(page: Page) {
   const dialog = page.getByRole('main').locator('a[href="/sandbox/dialog"]');
   await dialog.focus();
   await dialog.press('Enter');
-  await expect(page).toHaveURL(/\/sandbox\/dialog(?:\?|$)/);
-  await expect(page.locator('[data-catalog-preview="dialog"]').first()).toBeVisible();
+  await expect(page).toHaveURL(/\/sandbox\/dialog(?:\?|$)/, { timeout: 30_000 });
+  await expect(page.locator('[data-catalog-preview="dialog"]').first()).toBeVisible({
+    timeout: 30_000,
+  });
   await page.reload({ waitUntil: 'networkidle' });
   await expect(page.locator('[data-catalog-preview="dialog"]').first()).toBeVisible();
   await page.goto(`${baseUrl}sandbox`, { waitUntil: 'networkidle' });
@@ -886,6 +890,7 @@ for (const route of ['', '/button', '/checkbox', '/fields']) {
   test(`shell accessibility and preferences on /sandbox${route}`, async ({ page }) => {
     test.setTimeout(120_000);
     await page.goto(`${baseUrl}sandbox${route}`, { waitUntil: 'networkidle' });
+    await expect(page.getByTestId('catalog-shell')).toBeVisible({ timeout: 30_000 });
     await expect(page.getByRole('main')).toBeVisible();
     await expect(
       page.getByRole('navigation', { name: 'Component catalog', exact: true }),
@@ -903,6 +908,11 @@ for (const route of ['', '/button', '/checkbox', '/fields']) {
       .getByRole('switch', { name: 'Reduce motion' })
       .evaluate((element) => getComputedStyle(element).transitionDuration);
     expect(maxDurationMs(motion)).toBeLessThanOrEqual(0.01);
+    // The preference attribute precedes the effect applying the root theme and its colours.
+    await expect(page.locator('html')).toHaveClass(/\bdark\b/);
+    await expect(
+      page.locator('.catalog-sidebar a[data-slot="sidebar-menu-button"]').first(),
+    ).toHaveCSS('color', 'rgb(255, 255, 255)', { timeout: 30_000 });
     await page.addScriptTag({ path: require.resolve('axe-core/axe.min.js') });
     const violations = await page.evaluate(async () => {
       const axe = (window as unknown as { axe: { run: () => Promise<{ violations: unknown[] }> } })
