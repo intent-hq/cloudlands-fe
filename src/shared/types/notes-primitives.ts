@@ -9,12 +9,13 @@
  */
 
 import { z } from 'zod';
+import { ArtifactBlockSchema, type ArtifactBlock } from './visual-artifact';
 
 // ============================================================================
 // Base Types
 // ============================================================================
 
-type NotePrimitiveType = 'reference' | 'cli' | 'agent_action' | 'patch' | 'diagram';
+type NotePrimitiveType = 'reference' | 'cli' | 'agent_action' | 'patch' | 'diagram' | 'artifact';
 
 type CreatedByType = 'user' | 'agent' | 'system';
 
@@ -402,8 +403,18 @@ export interface DiagramPrimitive extends BasePrimitive {
 // Union Types
 // ============================================================================
 
+export interface ArtifactPrimitive extends BasePrimitive {
+  type: 'artifact';
+  artifact: ArtifactBlock;
+}
+
 export type NotePrimitive =
-  ReferencePrimitive | CliPrimitive | AgentActionPrimitive | PatchPrimitive | DiagramPrimitive;
+  | ReferencePrimitive
+  | CliPrimitive
+  | AgentActionPrimitive
+  | PatchPrimitive
+  | DiagramPrimitive
+  | ArtifactPrimitive;
 
 // ============================================================================
 // Zod Schemas for Runtime Validation
@@ -412,7 +423,7 @@ export type NotePrimitive =
 // Base schema
 const BasePrimitiveSchema = z.object({
   id: z.string().uuid(),
-  type: z.enum(['reference', 'cli', 'agent_action', 'patch', 'diagram']),
+  type: z.enum(['reference', 'cli', 'agent_action', 'patch', 'diagram', 'artifact']),
   version: z.literal(1),
   label: z.string().optional(),
   description: z.string().optional(),
@@ -689,6 +700,11 @@ export const DiagramPrimitiveSchema = BasePrimitiveSchema.extend({
   currentStateId: z.string().optional(),
 });
 
+export const ArtifactPrimitiveSchema = BasePrimitiveSchema.extend({
+  type: z.literal('artifact'),
+  artifact: ArtifactBlockSchema,
+});
+
 // Union schema
 export const NotePrimitiveSchema = z.discriminatedUnion('type', [
   ReferencePrimitiveSchema,
@@ -696,6 +712,7 @@ export const NotePrimitiveSchema = z.discriminatedUnion('type', [
   AgentActionPrimitiveSchema,
   PatchPrimitiveSchema,
   DiagramPrimitiveSchema,
+  ArtifactPrimitiveSchema,
 ]);
 
 // ============================================================================

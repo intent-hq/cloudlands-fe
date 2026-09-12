@@ -50,7 +50,7 @@ vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({
-    state: () => ({ browser: { byWorkspaceId: {} } }),
+    state: () => ({ browser: { byWorkspaceId: {} }, artifacts: { byWorkspaceId: {} } }),
     dispatch: testState.dispatch,
   });
 });

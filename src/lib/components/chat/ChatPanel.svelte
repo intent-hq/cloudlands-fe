@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { selectPendingArtifactSelections } from '$store/renderer/slices/artifacts/artifacts-selectors';
+  import { artifactSelectionConsumed } from '$store/renderer/slices/artifacts/artifacts-slice';
   /* eslint-disable max-lines */
   /**
    * Chat Panel Component
@@ -443,6 +445,10 @@
 
   // Reactive subscription to all panel-layout tabs — triggers availablePanelContexts recompute on tab changes
   const allPanelLayoutTabs$ = selectPanelLayoutAllTabs(workspaceIdStore);
+  const pendingArtifactSelections$ = selectPendingArtifactSelections(
+    workspaceIdStore,
+    agentIdStore,
+  );
   const pendingBrowserElementCaptures$ = selectPendingBrowserElementCaptures(workspaceIdStore);
 
   // Redux selectors for chat values — called at init time, reactive via Svelte store protocol
@@ -1791,6 +1797,19 @@
     for (const capture of targeted) {
       appStore.dispatch(clearBrowserElementCapture(workspaceId, capture.id));
     }
+    void tick().then(() => inputComponent?.focus?.());
+  });
+
+  $effect(() => {
+    const pending = $pendingArtifactSelections$;
+    const items = pending.flatMap((entry) => entry.items);
+    const wsId = workspace?.id;
+    if (!wsId || !agentId || !isActive || items.length === 0) return;
+    untrack(() => {
+      const existing = new Set(contextItems.map((item) => item.id));
+      contextItems = [...contextItems, ...items.filter((item) => !existing.has(item.id))];
+    });
+    for (const item of items) appStore.dispatch(artifactSelectionConsumed(wsId, agentId, item.id));
     void tick().then(() => inputComponent?.focus?.());
   });
 

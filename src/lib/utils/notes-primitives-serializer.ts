@@ -7,6 +7,7 @@
  * - TipTap document nodes
  */
 
+import { parseArtifactBlock, serializeArtifactBlock } from '../../features/artifacts/model';
 import type { JSONContent } from '@tiptap/core';
 import { v4 as uuidv4 } from 'uuid';
 import { Logger } from '../../shared/logger';
@@ -116,42 +117,55 @@ function parseMarkdownToPrimitives(
   const lines = markdown.split('\n');
 
   let inWsBlock = false;
+  let delimiter = '';
+  let ignoredFence = '';
   let blockStartLine = -1;
   let blockContent: string[] = [];
 
   let blockTypeSuffix = ''; // Track the type suffix from the fence
 
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
+    const line = lines[i].replace(/\r$/, '');
 
-    // Check for ws-block start (with or without type suffix)
-    if (line.trim().startsWith('```ws-block')) {
-      inWsBlock = true;
-      blockStartLine = i;
-      blockContent = [];
-      // Extract type suffix (e.g., "reference" from "```ws-block:reference")
-      const match = line.trim().match(/^```ws-block:(\w+)/);
-      blockTypeSuffix = match ? match[1] : '';
+    const fence = line.match(/^ {0,3}(`{3,}|~{3,})([^\r\n]*)$/);
+    if (!inWsBlock && fence) {
+      const language = fence[2].trim();
+      if (ignoredFence) {
+        if (fence[1][0] === ignoredFence[0] && fence[1].length >= ignoredFence.length && !language)
+          ignoredFence = '';
+        continue;
+      }
+      const type = language.match(/^ws-block(?::(\w+))?$/);
+      if (type || language === 'diagram') {
+        inWsBlock = true;
+        delimiter = fence[1];
+        blockStartLine = i;
+        blockContent = [];
+        blockTypeSuffix = type ? (type[1] ?? '') : 'diagram';
+      } else {
+        ignoredFence = fence[1];
+      }
       continue;
     }
 
-    // Check for diagram block start
-    if (line.trim().startsWith('```diagram')) {
-      logger.info('[parseMarkdownToPrimitives] Found diagram block start', { line: i });
-      inWsBlock = true; // Treat diagram blocks the same as ws-blocks
-      blockStartLine = i;
-      blockContent = [];
-      blockTypeSuffix = 'diagram';
-      continue;
-    }
-
-    // Check for block end
-    if (inWsBlock && line.trim() === '```') {
+    // Only a matching fence can terminate an artifact; partial streams remain text.
+    if (
+      inWsBlock &&
+      fence &&
+      fence[1][0] === delimiter[0] &&
+      fence[1].length >= delimiter.length &&
+      !fence[2].trim()
+    ) {
       inWsBlock = false;
 
       try {
         const jsonContent = blockContent.join('\n');
-        const parsed = JSON.parse(jsonContent);
+        let parsed = JSON.parse(jsonContent);
+        if (blockTypeSuffix === 'artifact') {
+          const artifact = parseArtifactBlock(parsed);
+          if (!artifact) continue;
+          parsed = { type: 'artifact', artifact };
+        }
 
         // Infer type from fence suffix if not present in JSON
         if (!parsed.type && blockTypeSuffix) {
@@ -396,6 +410,9 @@ export function serializePrimitiveToMarkdown(
   options: SerializationOptions = {},
 ): string {
   const { prettyPrint = true, preserveIds = true } = options;
+  if (primitive.type === 'artifact') {
+    return serializeArtifactBlock(primitive.artifact);
+  }
 
   // Clone primitive to avoid mutation
   const toSerialize = { ...primitive };

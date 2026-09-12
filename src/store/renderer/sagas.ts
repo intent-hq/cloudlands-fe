@@ -1,3 +1,4 @@
+import { artifactsSaga } from './slices/artifacts/sagas/artifacts-saga';
 /**
  * Root app saga registry.
  *
@@ -201,6 +202,7 @@ export const sagas = [
   browserTabRegistrySaga,
   unreadTrackingSaga,
   releaseNotesSaga,
+  artifactsSaga,
   browserPersistenceSaga,
   browserClientsSaga,
   fileContentPruneSaga,

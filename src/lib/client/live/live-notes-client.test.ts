@@ -56,7 +56,7 @@ describe('LiveNotesClient mutations (fake transport)', () => {
       content: 'C',
     } as CreateNoteRequest);
 
-    expect(result).toEqual({ success: true });
+    expect(result).toEqual({ success: true, id: 'note-1' });
     expect(mockedRequest).toHaveBeenCalledWith(
       'note.create',
       expect.objectContaining({

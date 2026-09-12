@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ArtifactBlock from '$features/artifacts/ArtifactBlock.svelte';
   import type { ContentBlock, ToolUseBlock, MessageRole } from '$shared/types';
   import { dedupeAgentVideoContentBlocks, normalizeAgentVideoContentBlocks } from '$shared/types';
   import {
@@ -635,6 +636,10 @@
         {parsedBlock.content}
       </div>
     </div>
+  {:else if parsedBlock.type === 'artifact' && parsedBlock.metadata?.artifactData}
+    {#key `${workspaceId}:${'noteId' in parsedBlock.metadata.artifactData ? parsedBlock.metadata.artifactData.noteId + ':' + parsedBlock.metadata.artifactData.artifactId : parsedBlock.metadata.artifactData.document.id}`}
+      <ArtifactBlock block={parsedBlock.metadata.artifactData} {workspaceId} {agentId} />
+    {/key}
   {:else if parsedBlock.type === 'diagram' && parsedBlock.metadata?.diagramData}
     <div class="diagram-block my-2">
       <DiagramRenderer

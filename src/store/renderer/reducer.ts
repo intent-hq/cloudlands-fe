@@ -1,3 +1,4 @@
+import { artifactsReducer } from './slices/artifacts/artifacts-slice';
 import { providerSettingsReducer } from './slices/provider-settings/provider-settings-slice';
 import { antigravitySetupReducer } from './slices/antigravity-setup/antigravity-setup-slice';
 import { providerCatalogReducer } from './slices/provider-catalog/provider-catalog-slice';
@@ -140,6 +141,7 @@ export const reducers = {
   linearAuth: linearAuthReducer,
   voiceSettings: voiceSettingsReducer,
   sentryAuth: sentryAuthReducer,
+  artifacts: artifactsReducer,
   browser: browserReducer,
   browserClients: browserClientsReducer,
   browserTabRegistry: browserTabRegistryReducer,

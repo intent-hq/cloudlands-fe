@@ -1,3 +1,5 @@
+import type { ArtifactBlock } from '../../shared/types/visual-artifact';
+import { extractArtifactFences } from '../../features/artifacts/model';
 /**
  * Utilities for parsing and formatting agent messages
  * Handles mixed content like file operations, command outputs, and regular text
@@ -37,6 +39,7 @@ export interface ParsedContent {
     | 'augment_code_snippet'
     | 'diff'
     | 'commit_message'
+    | 'artifact'
     | 'diagram'
     | 'digest'
     | 'mermaid'
@@ -58,6 +61,7 @@ export interface ParsedContent {
     lineNumbers?: boolean;
     path?: string;
     mode?: string;
+    artifactData?: ArtifactBlock;
     diagramData?: unknown; // Parsed DiagramPrimitive data
     workspaceCardData?: { workspaceIds: string[] };
     navLinkData?: { target: string; label?: string };
@@ -815,11 +819,26 @@ export function parseAgentMessage(content: string, workspaceId?: string): Parsed
   // Instead of running 5 separate regex passes, we find all special blocks at once
   const specialBlocks: Array<{ start: number; end: number; block: ParsedContent }> = [];
 
+  for (const artifact of extractArtifactFences(content)) {
+    specialBlocks.push({
+      start: artifact.start,
+      end: artifact.end,
+      block: {
+        type: 'artifact',
+        content: content.slice(artifact.start, artifact.end),
+        metadata: { artifactData: artifact.block },
+      },
+    });
+  }
+
   // Reset regex state
   COMBINED_SPECIAL_REGEX.lastIndex = 0;
 
   let match;
   while ((match = COMBINED_SPECIAL_REGEX.exec(content)) !== null) {
+    const matchIndex = match.index;
+    if (specialBlocks.some((block) => matchIndex >= block.start && matchIndex < block.end))
+      continue;
     const blockText = match[0];
     const parsed = parseSpecialBlock(blockText);
     if (parsed) {

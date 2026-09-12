@@ -1,3 +1,4 @@
+import { serializePrimitiveToMarkdown } from './notes-primitives-serializer';
 import { Logger } from '$shared/logger';
 import { createTiptapTaskListMarked } from './tiptap-task-list-extension';
 import { renderTaskBlocksAsReadableMarkdown } from './tiptap-task-block-extension';
@@ -353,7 +354,7 @@ function renderRichFencePlaceholdersAsCode(html: string): string {
  */
 function processWsBlocks(content: string): string {
   // Check if there are any ws-blocks, diagram blocks, or potential bare code blocks with primitives
-  const hasWsBlocks = content.includes('```ws-block');
+  const hasWsBlocks = /(?:`{3,}|~{3,})ws-block/.test(content);
   const hasDiagramBlocks = content.includes('```diagram');
   // Also check for bare code blocks that might contain primitive JSON
   const hasBareCodeBlocks = content.includes('```\n{');
@@ -508,7 +509,7 @@ export async function processMarkdownToHTML(
   // Skip processing if content already looks like HTML (but not if it's just anchor comments)
   if (skipIfHTML && content.trim().startsWith('<') && !content.trim().startsWith('<!--anchor:')) {
     // But don't skip if content has ws-blocks that need processing
-    if (content.includes('```ws-block')) {
+    if (/(?:`{3,}|~{3,})ws-block/.test(content)) {
       logger.debug('Content looks like HTML but has ws-blocks, processing anyway');
     } else {
       return sanitizeMarkdownHTML(content, workspaceId);
@@ -557,7 +558,7 @@ export async function processMarkdownToHTML(
       processedContent = processWsBlocks(contentWithEscapedTags);
 
       // Debug: Check if primitive blocks were processed
-      const hasWsBlocksInInput = contentWithEscapedTags.includes('```ws-block');
+      const hasWsBlocksInInput = /(?:`{3,}|~{3,})ws-block/.test(contentWithEscapedTags);
       const hasDiagramBlocksInInput = contentWithEscapedTags.includes('```diagram');
       const hasPrimitiveDivsInOutput = processedContent.includes('data-primitive-type');
       if (hasWsBlocksInInput || hasDiagramBlocksInInput) {
@@ -1692,7 +1693,9 @@ export function processHTMLToMarkdown(
           // Parse the primitive JSON and re-serialize to ws-block format
           const primitive = JSON.parse(primitiveDataAttr.replace(/&#39;/g, "'"));
           const jsonContent = JSON.stringify(primitive, null, 2);
-          return `\`\`\`ws-block\n${jsonContent}\n\`\`\`\n\n`;
+          return primitive.type === 'artifact'
+            ? serializePrimitiveToMarkdown(primitive) + '\n\n'
+            : `\`\`\`ws-block\n${jsonContent}\n\`\`\`\n\n`;
         } catch (e) {
           logger.error('[markdown-processor] Failed to parse primitive data', e);
         }
@@ -1708,6 +1711,7 @@ export function processHTMLToMarkdown(
         'agent_action_block',
         'patch_block',
         'diagram_block',
+        'artifact_block',
       ];
       logger.debug('[markdown-processor] Found data-type div', {
         dataType,
@@ -1723,7 +1727,9 @@ export function processHTMLToMarkdown(
           try {
             const primitive = JSON.parse(primitiveDataAttr.replace(/&#39;/g, "'"));
             const jsonContent = JSON.stringify(primitive, null, 2);
-            return `\`\`\`ws-block\n${jsonContent}\n\`\`\`\n\n`;
+            return primitive.type === 'artifact'
+              ? serializePrimitiveToMarkdown(primitive) + '\n\n'
+              : `\`\`\`ws-block\n${jsonContent}\n\`\`\`\n\n`;
           } catch (e) {
             logger.error('[markdown-processor] Failed to parse TipTap primitive data', e);
           }
@@ -1742,7 +1748,9 @@ export function processHTMLToMarkdown(
                 id: primitive.id,
               });
               const jsonContent = JSON.stringify(primitive, null, 2);
-              return `\`\`\`ws-block\n${jsonContent}\n\`\`\`\n\n`;
+              return primitive.type === 'artifact'
+                ? serializePrimitiveToMarkdown(primitive) + '\n\n'
+                : `\`\`\`ws-block\n${jsonContent}\n\`\`\`\n\n`;
             }
           } catch {
             // Not valid JSON, continue to warning

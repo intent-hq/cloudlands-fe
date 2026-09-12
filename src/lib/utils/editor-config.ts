@@ -1,3 +1,4 @@
+import { ArtifactBlockNode } from './tiptap-primitives/artifact-block-node';
 import type { EditorOptions } from '@tiptap/core';
 import { Extension } from '@tiptap/core';
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
@@ -473,6 +474,7 @@ export function createEditorConfig(options: EditorConfigOptions): EditorOptions 
               PatchBlockNode.configure({
                 workspaceId: workspace.id,
               }),
+              ArtifactBlockNode.configure({ workspaceId: workspace.id }),
               DiagramBlockNode.configure({
                 workspaceId: workspace.id,
               }),
@@ -887,6 +889,7 @@ export function createEditorConfig(options: EditorConfigOptions): EditorOptions 
               PatchBlockNode.configure({
                 workspaceId: workspace.id,
               }),
+              ArtifactBlockNode.configure({ workspaceId: workspace.id }),
               DiagramBlockNode.configure({
                 workspaceId: workspace.id,
               }),

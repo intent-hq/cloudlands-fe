@@ -1,0 +1,259 @@
+.artifact-editor {
+  color: hsl(var(--foreground));
+  background: hsl(var(--background));
+  font-size: 13px;
+  min-width: 0;
+}
+.artifact-editor button {
+  font: inherit;
+  cursor: pointer;
+  color: inherit;
+  border: 1px solid hsl(var(--border, 220 15% 85%));
+  background: hsl(var(--background, 0 0% 100%));
+  border-radius: 7px;
+  padding: 7px 11px;
+}
+.artifact-editor button:hover:not(:disabled) {
+  background: hsl(var(--muted, 220 20% 96%));
+}
+.artifact-editor button:focus-visible,
+.artifact-editor input:focus-visible,
+.artifact-editor textarea:focus-visible {
+  outline: 2px solid #7c6bdf;
+  outline-offset: 3px;
+}
+.artifact-editor button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.artifact-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 12px;
+}
+.artifact-divider {
+  height: 20px;
+  width: 1px;
+  background: hsl(var(--border, 220 15% 85%));
+  margin: 0 4px;
+}
+.artifact-hint {
+  color: hsl(var(--muted-foreground, 240 4% 46%));
+  font-size: 12px;
+  margin: 0;
+  padding: 8px 12px 12px;
+}
+.artifact-toolbar .artifact-hint {
+  padding: 0 4px;
+}
+.artifact-board-scroll {
+  overflow: auto;
+  max-height: 520px;
+  border-block: 1px solid hsl(var(--border, 220 15% 85%));
+}
+.artifact-board {
+  position: relative;
+  background-image: radial-gradient(circle, #9296a344 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+.artifact-edges {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: visible;
+}
+.artifact-edges line {
+  stroke: #9189bd;
+  stroke-width: 2;
+}
+.artifact-editor .artifact-node {
+  position: absolute;
+  padding: 18px;
+  text-align: left;
+  white-space: pre-wrap;
+  overflow: hidden;
+  box-shadow: 0 3px 10px #0000000c;
+  touch-action: none;
+  user-select: none;
+  border-radius: 10px;
+  cursor: grab;
+}
+.artifact-node span {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.artifact-editor .artifact-node.artifact-text {
+  box-shadow: none;
+  background: hsl(var(--background, 0 0% 100%));
+  border-color: transparent;
+  font-size: 18px;
+}
+.artifact-editor .artifact-grouped {
+  border-style: dashed;
+  border-color: #9881ca;
+}
+.artifact-editor .artifact-selected {
+  outline: 2px solid #7c6bdf;
+  outline-offset: 2px;
+}
+.artifact-node img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+}
+.artifact-inspector {
+  padding: 12px;
+  display: flex;
+  align-items: end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.artifact-inspector label {
+  display: flex;
+  flex: 1;
+  min-width: 140px;
+  flex-direction: column;
+  gap: 6px;
+  color: hsl(var(--muted-foreground, 240 4% 46%));
+}
+.artifact-inspector textarea,
+.artifact-inspector input {
+  font: inherit;
+  background: hsl(var(--background, 0 0% 100%));
+  color: hsl(var(--foreground));
+  border: 1px solid hsl(var(--border, 220 15% 85%));
+  border-radius: 6px;
+  padding: 8px;
+  width: 100%;
+  box-sizing: border-box;
+}
+.artifact-inspector textarea {
+  resize: vertical;
+  min-height: 64px;
+}
+.artifact-connections {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 12px;
+}
+.artifact-connections button {
+  max-width: 100%;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.artifact-image-wrap {
+  padding: 12px;
+  text-align: center;
+}
+.artifact-image-stage {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  vertical-align: top;
+}
+.artifact-image {
+  display: block;
+  max-width: 100%;
+  max-height: 560px;
+}
+.artifact-editor .artifact-image-target {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: none;
+  border-radius: 0;
+  background: transparent !important;
+  touch-action: none;
+  cursor: crosshair;
+  padding: 0;
+}
+.artifact-region {
+  position: absolute;
+  box-sizing: border-box;
+  border: 2px solid #7c6bdf;
+  background: #7c6bdf25;
+  pointer-events: none;
+}
+.artifact-saved-region {
+  border-style: dashed;
+  border-color: #d59424;
+  background: #d5942415;
+}
+.artifact-annotations {
+  display: grid;
+  gap: 6px;
+  padding: 0 12px 12px;
+}
+.artifact-annotation {
+  display: flex;
+  gap: 6px;
+}
+.artifact-annotation-text {
+  flex: 1;
+  text-align: left;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.artifact-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr));
+  gap: 14px;
+  padding: 12px;
+}
+.artifact-option {
+  border: 1px solid hsl(var(--border, 220 15% 85%));
+  border-radius: 12px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+.artifact-editor .artifact-option-content {
+  flex: 1;
+  border: 0;
+  text-align: left;
+  padding: 8px;
+  min-height: 110px;
+}
+.artifact-option-content img {
+  width: 100%;
+  height: 150px;
+  object-fit: contain;
+  border-radius: 6px;
+  margin-bottom: 14px;
+}
+.artifact-option-content span {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.artifact-editor .artifact-chosen {
+  background: #7c6bdf20;
+  border-color: #7c6bdf;
+}
+.artifact-preview {
+  width: 100%;
+  height: 460px;
+  border: 0;
+  border-top: 1px solid hsl(var(--border, 220 15% 85%));
+  background: white;
+}
+
+.artifact-editor .artifact-option-content {
+  display: block;
+  height: auto;
+  width: 100%;
+}
+.artifact-editor .artifact-annotation-text {
+  height: auto;
+  justify-content: flex-start;
+}
+.artifact-editor .artifact-node {
+  display: block;
+}

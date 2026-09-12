@@ -32,6 +32,7 @@ import {
   rememberNoteWorkspace,
   resolveNoteWorkspaceId,
   runMutation,
+  runMutationWithId,
   subscribeWorkspaceIds,
 } from './live-support';
 
@@ -204,7 +205,7 @@ export class LiveNotesClient implements NotesClient {
   // `resolveNoteWorkspaceId` (fallback-only; the cache is last-writer-wins).
 
   async create(request: CreateNoteRequest): Promise<MutationResult> {
-    return runMutation('note.create', { ...request, idempotencyKey: newIdempotencyKey() });
+    return runMutationWithId('note.create', { ...request, idempotencyKey: newIdempotencyKey() });
   }
 
   async setContent(
