@@ -919,6 +919,96 @@ describe('browserTabRegistrySaga', () => {
       await stop(h);
     });
 
+    // A tunneled row materialised from the event carries the old host's
+    // loopback URL, not one this client's guest produced: it is re-resolved
+    // like a row applied from a listing, and a resolution that failed the
+    // first time is retried on reconnect (the tab is `unresolved`, so the
+    // reconnect's local-truth guard does not skip it).
+    describe('a tunneled own-host row materialised from the event', () => {
+      const REQUESTED = 'http://daemon.localhost:3000/';
+      const STALE = 'http://127.0.0.1:52345/';
+      const MOVED = 'http://127.0.0.1:61111/';
+      const established = { url: MOVED, rewritten: true, requestedUrl: REQUESTED, tunneled: true };
+
+      // Connected first (the connect-time sync finds nothing), then the event.
+      async function materialise(): Promise<Harness> {
+        const h = start({ layouts: { [WS]: settledLayout([]) } });
+        await flush(0);
+        expect(mocks.listTabs).toHaveBeenCalledTimes(1);
+        h.dispatch(
+          browserTabUpserted(
+            WS,
+            row({
+              tabId: 'b2',
+              hostClientId: OWN,
+              ownerAgentId: 'agent-1',
+              url: STALE,
+              requestedUrl: REQUESTED,
+              title: 'Sandbox',
+            }),
+          ),
+        );
+        await flush();
+        expect(mocks.resolveBrowserLinkUrl).toHaveBeenCalledTimes(1);
+        return h;
+      }
+
+      async function reconnect(h: Harness, listed: string): Promise<void> {
+        mocks.listTabs.mockResolvedValue([
+          row({
+            tabId: 'b2',
+            hostClientId: OWN,
+            ownerAgentId: 'agent-1',
+            url: listed,
+            requestedUrl: REQUESTED,
+            title: 'Sandbox',
+          }),
+        ]);
+        h.setHealth('down', 1);
+        h.setHealth('healthy', 2);
+        h.dispatch(connectionStatusChanged('connected'));
+        await flush();
+      }
+
+      it('re-resolves the row onto a live tunnel', async () => {
+        mocks.resolveBrowserLinkUrl.mockResolvedValue(established);
+        const h = await materialise();
+        expect(h.tabs()[0]).toMatchObject({
+          id: 'b2',
+          hostClientId: OWN,
+          ownerAgentId: 'agent-1',
+          browserUrl: MOVED,
+          browserRequestedUrl: REQUESTED,
+        });
+        expect(h.registry().unresolved).toEqual({});
+
+        await reconnect(h, MOVED);
+        expect(mocks.resolveBrowserLinkUrl).toHaveBeenCalledTimes(1);
+        expect(h.ofType(updateTabBrowserUrl.type)).toHaveLength(1);
+        await stop(h);
+      });
+
+      it('retries on reconnect when the first resolution failed', async () => {
+        mocks.resolveBrowserLinkUrl
+          .mockResolvedValueOnce({ url: REQUESTED, rewritten: false })
+          .mockResolvedValue(established);
+        const h = await materialise();
+        expect(h.tabs()[0]).toMatchObject({ id: 'b2', browserUrl: REQUESTED });
+        expect(h.registry().unresolved).toEqual({ b2: true });
+
+        await reconnect(h, REQUESTED);
+        expect(mocks.resolveBrowserLinkUrl).toHaveBeenCalledTimes(2);
+        expect(h.tabs()[0]).toMatchObject({
+          id: 'b2',
+          ownerAgentId: 'agent-1',
+          browserUrl: MOVED,
+          browserRequestedUrl: REQUESTED,
+        });
+        expect(h.registry().unresolved).toEqual({});
+        await stop(h);
+      });
+    });
+
     it('moves an existing tab between hidden and visible to match the row, without re-reporting it', async () => {
       const hiddenMirror = browserTab({
         hostClientId: OTHER,

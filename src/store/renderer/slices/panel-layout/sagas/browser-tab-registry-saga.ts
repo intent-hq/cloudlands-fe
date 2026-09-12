@@ -796,6 +796,9 @@ function isLayoutMutation(action: unknown): action is { type: string; payload?: 
  * `browser:tab-opened` / `browser:tab-updated`. Applied to an applied
  * workspace only: a row landing while the workspace is loading moves its
  * `tabsRevision`, which makes the load re-read and apply the row itself.
+ * A row of ours materialised or re-homed here from the event enters the
+ * same fenced re-resolution as one applied from a listing: its URL is the
+ * row's, not a guest's, and `applyRows` only retries what is `unresolved`.
  */
 function* onRegistryRow(action: ReturnType<typeof browserTabUpserted>): SagaGenerator<void> {
   const [wsId, row] = action.payload;
@@ -821,11 +824,16 @@ function* applyRow(
   const { wsId, generation } = fence;
   const mine = row.hostClientId === ownClientId;
   const reported = () => registryTabReported(wsId, generation, row.tabId, rowToInput(row));
+  const applied = function* (): SagaGenerator<void> {
+    yield* effect(fence, reported());
+    const item = rehydratable(row);
+    if (item) yield* call(rehydrateUnderFence, fence, [item]);
+  };
   if (!existing) {
     // An echo for a tab being closed here: the daemon is being told.
     if (row.tabId in (yield* selectBrowserTabsClosing.effect())) return;
     yield* call(materialiseRow, fence, row);
-    if (mine) yield* effect(fence, reported());
+    if (mine) yield* call(applied);
     return;
   }
   if (mine && existing.tab.hostClientId === ownClientId) {
@@ -842,9 +850,7 @@ function* applyRow(
   yield* effect(fence, applyBrowserTabRegistryRow(wsId, row.tabId, row));
   yield* call(reconcileVisibility, fence, existing, row);
   if (mine) {
-    yield* effect(fence, reported());
-    const item = rehydratable(row);
-    if (item) yield* call(rehydrateUnderFence, fence, [item]);
+    yield* call(applied);
   } else if (row.tabId in registry.reported) {
     yield* effect(fence, registryTabForgotten(wsId, row.tabId));
   }
