@@ -1,7 +1,7 @@
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 
-const SCENARIOS = {
+export const SCENARIOS = {
   footer: { marks: ['collapse', 'expand'] },
   'context-well': { marks: ['open', 'close'] },
 };
