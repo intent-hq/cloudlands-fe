@@ -43,6 +43,7 @@ import {
   NOTE_CONTENT_SAVE_DEBOUNCE_MS,
   createNote,
   deleteNote,
+  flushNoteContent,
   hasPendingNoteContent,
   updateNoteContent,
   updateNoteTitle,
@@ -50,6 +51,8 @@ import {
 
 const notesApi = appClient.notes as unknown as Record<string, ReturnType<typeof vi.fn>>;
 const WS = 'ws-svc-1';
+// Every loaded note carries a daemon `rev`; content saves must forward it.
+const LOADED_REV = 1;
 
 function makeNote(id: string, overrides: Partial<Note> = {}): Note {
   const now = new Date().toISOString();
@@ -63,6 +66,7 @@ function makeNote(id: string, overrides: Partial<Note> = {}): Note {
     isPinned: false,
     isArchived: false,
     visibility: NoteVisibility.Workspace,
+    rev: LOADED_REV,
     createdAt: now,
     updatedAt: now,
     ...overrides,
@@ -95,7 +99,7 @@ describe('notesWriteService (fake seam, real store)', () => {
 
     await vi.advanceTimersByTimeAsync(NOTE_CONTENT_SAVE_DEBOUNCE_MS + 1);
     expect(notesApi.setContent).toHaveBeenCalledTimes(1);
-    expect(notesApi.setContent).toHaveBeenCalledWith('n1', 'edited', undefined, WS);
+    expect(notesApi.setContent).toHaveBeenCalledWith('n1', 'edited', LOADED_REV, WS);
   });
 
   it('coalesces rapid edits into a single debounced save', async () => {
@@ -107,7 +111,7 @@ describe('notesWriteService (fake seam, real store)', () => {
     await vi.advanceTimersByTimeAsync(NOTE_CONTENT_SAVE_DEBOUNCE_MS + 1);
 
     expect(notesApi.setContent).toHaveBeenCalledTimes(1);
-    expect(notesApi.setContent).toHaveBeenCalledWith('n1', 'abc', undefined, WS);
+    expect(notesApi.setContent).toHaveBeenCalledWith('n1', 'abc', LOADED_REV, WS);
   });
 
   it('immediate save bypasses the debounce', async () => {
@@ -115,7 +119,17 @@ describe('notesWriteService (fake seam, real store)', () => {
 
     updateNoteContent(WS, 'n1', 'now', { immediate: true });
     await Promise.resolve();
-    expect(notesApi.setContent).toHaveBeenCalledWith('n1', 'now', undefined, WS);
+    expect(notesApi.setContent).toHaveBeenCalledWith('n1', 'now', LOADED_REV, WS);
+  });
+
+  // Documented LWW fallback: a note that was never loaded has no rev to send,
+  // so expectedVersion is omitted (the daemon then writes last-writer-wins).
+  it('omits expectedVersion only when the note was never loaded', async () => {
+    seed();
+
+    updateNoteContent(WS, 'never-loaded', 'edited', { immediate: true });
+    await Promise.resolve();
+    expect(notesApi.setContent).toHaveBeenCalledWith('never-loaded', 'edited', undefined, WS);
   });
 
   // Round-5 regression: debounce state is keyed by `${workspaceId}:${noteId}`,
@@ -135,8 +149,8 @@ describe('notesWriteService (fake seam, real store)', () => {
     await vi.advanceTimersByTimeAsync(NOTE_CONTENT_SAVE_DEBOUNCE_MS + 1);
 
     expect(notesApi.setContent).toHaveBeenCalledTimes(2);
-    expect(notesApi.setContent).toHaveBeenCalledWith('spec', 'ws1 edit', undefined, WS);
-    expect(notesApi.setContent).toHaveBeenCalledWith('spec', 'ws2 edit', undefined, WS2);
+    expect(notesApi.setContent).toHaveBeenCalledWith('spec', 'ws1 edit', LOADED_REV, WS);
+    expect(notesApi.setContent).toHaveBeenCalledWith('spec', 'ws2 edit', LOADED_REV, WS2);
   });
 
   // ---- monorepo#533: the unacknowledged-save window is observable -----------
@@ -253,7 +267,7 @@ describe('notesWriteService (fake seam, real store)', () => {
     notesApi.updateMetadata.mockResolvedValueOnce({ success: false, error: 'no' } as never);
 
     await updateNoteTitle(WS, 'n1', 'New');
-    expect(notesApi.updateMetadata).toHaveBeenCalledWith('n1', { title: 'New' }, undefined, WS);
+    expect(notesApi.updateMetadata).toHaveBeenCalledWith('n1', { title: 'New' }, LOADED_REV, WS);
     expect(selectNoteById.select(appStore.state, WS, 'n1')?.title).toBe('Old');
     expect(toast.error).toHaveBeenCalledWith(
       'Failed to update note title',
@@ -266,7 +280,7 @@ describe('notesWriteService (fake seam, real store)', () => {
     notesApi.delete.mockResolvedValueOnce({ success: false, error: 'no' } as never);
 
     await deleteNote(WS, 'n1');
-    expect(notesApi.delete).toHaveBeenCalledWith('n1', undefined, WS);
+    expect(notesApi.delete).toHaveBeenCalledWith('n1', LOADED_REV, WS);
     expect(selectNoteById.select(appStore.state, WS, 'n1')).toBeDefined();
     expect(toast.error).toHaveBeenCalledWith(
       'Failed to delete note',
@@ -403,25 +417,133 @@ describe('notesWriteService (fake seam, real store)', () => {
     expect(notesApi.list).not.toHaveBeenCalled();
   });
 
-  // ---- §11.4-D: conflict outcome → reload-to-latest + prompt ----------------
+  // ---- daemon merged response is the authoritative local state --------------
+  // The daemon merges a content save against concurrent edits and echoes the
+  // merged `newContent` plus (on newer daemons) the post-write `rev`.
 
-  it('reloads to the server note and prompts on a content-save conflict (no generic refetch)', async () => {
+  it('applies newContent and the echoed rev from a successful content save', async () => {
+    seed(makeNote('n1', { rev: 4, content: 'body' }));
+    notesApi.setContent.mockResolvedValueOnce({
+      success: true,
+      newContent: 'merged: mine + agent',
+      noteRev: 7,
+    } as never);
+
+    updateNoteContent(WS, 'n1', 'mine', { immediate: true });
+    await vi.advanceTimersByTimeAsync(1);
+
+    const note = selectNoteById.select(appStore.state, WS, 'n1');
+    expect(note?.content).toBe('merged: mine + agent');
+    expect(note?.rev).toBe(7);
+    expect(toast.warning).not.toHaveBeenCalled();
+    expect(notesApi.list).not.toHaveBeenCalled();
+  });
+
+  it('falls back to sentRev + 1 when the response carries newContent but no rev (older daemon)', async () => {
+    seed(makeNote('n1', { rev: 4, content: 'body' }));
+    notesApi.setContent.mockResolvedValueOnce({ success: true, newContent: 'merged' } as never);
+
+    updateNoteContent(WS, 'n1', 'mine', { immediate: true });
+    await vi.advanceTimersByTimeAsync(1);
+
+    const note = selectNoteById.select(appStore.state, WS, 'n1');
+    expect(note?.content).toBe('merged');
+    expect(note?.rev).toBe(5);
+  });
+
+  it('does not overwrite a newer local edit with the merged echo of an older save', async () => {
+    seed(makeNote('n1', { rev: 4, content: 'body' }));
+    let resolveSave!: (v: unknown) => void;
+    notesApi.setContent.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveSave = resolve;
+      }) as never,
+    );
+
+    updateNoteContent(WS, 'n1', 'first', { immediate: true });
+    // A keystroke lands while the first save is in flight.
+    updateNoteContent(WS, 'n1', 'first+more');
+    resolveSave({ success: true, newContent: 'first (merged)', noteRev: 5 });
+    await vi.advanceTimersByTimeAsync(1);
+
+    const note = selectNoteById.select(appStore.state, WS, 'n1');
+    expect(note?.content).toBe('first+more');
+    expect(note?.rev).toBe(5);
+  });
+
+  // ---- §11.4-D: content saves no longer route to the conflict prompt --------
+  // A `conflict` result on a content save is treated as a generic failure
+  // (error toast + reconcile refetch) — never the "note changed" reload+toast.
+
+  it('treats a conflict result on a content save as a generic failure (no reload prompt)', async () => {
     seed(makeNote('n1', { rev: 3, content: 'mine' }));
     notesApi.setContent.mockResolvedValueOnce({
       success: false,
+      error: 'conflict',
       conflict: { current: makeNote('n1', { rev: 8, content: 'server' }) },
     } as never);
+    notesApi.list.mockResolvedValueOnce([
+      makeNote('n1', { rev: 9, content: 'refetched' }),
+    ] as never);
 
     updateNoteContent(WS, 'n1', 'mine-edited', { immediate: true });
     await vi.advanceTimersByTimeAsync(1);
 
+    expect(toast.warning).not.toHaveBeenCalled();
+    expect(toast.error).toHaveBeenCalledWith(
+      'Failed to save note',
+      expect.objectContaining({ description: 'conflict' }),
+    );
+    // The conflict entity is NOT applied directly; the generic refetch reconciles.
+    expect(notesApi.list).toHaveBeenCalledWith(WS);
     const note = selectNoteById.select(appStore.state, WS, 'n1');
-    expect(note?.content).toBe('server');
-    expect(note?.rev).toBe(8);
-    expect(toast.warning).toHaveBeenCalledTimes(1);
-    // Conflict path must NOT fall through to the generic reconcile refetch.
-    expect(notesApi.list).not.toHaveBeenCalled();
+    expect(note?.content).toBe('refetched');
+    expect(note?.rev).toBe(9);
   });
+
+  // ---- flushNoteContent: immediate flush that resolves with the applied result
+
+  it('flushNoteContent flushes a debounced save immediately and resolves with the applied content', async () => {
+    seed(makeNote('n1', { rev: 4, content: 'body' }));
+    notesApi.setContent.mockResolvedValueOnce({
+      success: true,
+      newContent: 'merged',
+      noteRev: 9,
+    } as never);
+
+    updateNoteContent(WS, 'n1', 'edited');
+    expect(notesApi.setContent).not.toHaveBeenCalled();
+
+    const flushed = flushNoteContent(WS, 'n1');
+    // No debounce wait: the save is issued synchronously by the flush.
+    await Promise.resolve();
+    expect(notesApi.setContent).toHaveBeenCalledWith('n1', 'edited', 4, WS);
+
+    await expect(flushed).resolves.toEqual({ content: 'merged', rev: 9 });
+    expect(selectNoteById.select(appStore.state, WS, 'n1')?.content).toBe('merged');
+    expect(hasPendingNoteContent(WS, 'n1')).toBe(false);
+
+    // The debounce timer was cleared: nothing saves again.
+    await vi.advanceTimersByTimeAsync(NOTE_CONTENT_SAVE_DEBOUNCE_MS + 1);
+    expect(notesApi.setContent).toHaveBeenCalledTimes(1);
+  });
+
+  it('flushNoteContent resolves undefined when nothing is pending', async () => {
+    seed(makeNote('n1'));
+
+    await expect(flushNoteContent(WS, 'n1')).resolves.toBeUndefined();
+    expect(notesApi.setContent).not.toHaveBeenCalled();
+  });
+
+  it('flushNoteContent resolves undefined when the save fails', async () => {
+    seed(makeNote('n1'));
+    notesApi.setContent.mockResolvedValueOnce({ success: false, error: 'boom' } as never);
+
+    updateNoteContent(WS, 'n1', 'edited');
+    await expect(flushNoteContent(WS, 'n1')).resolves.toBeUndefined();
+  });
+
+  // ---- §11.4-D: metadata/delete conflicts still reload-to-latest + prompt ---
 
   it('reloads to the server title and prompts on a title-update conflict (no rollback)', async () => {
     seed(makeNote('n1', { title: 'Old', rev: 2 }));
@@ -451,22 +573,21 @@ describe('notesWriteService (fake seam, real store)', () => {
         },
       }),
     );
-    notesApi.setContent.mockResolvedValueOnce({
+    notesApi.updateMetadata.mockResolvedValueOnce({
       success: false,
       conflict: {
         current: makeNote('n1', {
           rev: 8,
-          content: 'server',
+          title: 'Server Title',
           metadata: { task: { status: 'not_started', dependsOn: [NoteId('dep-1')] } },
         }),
       },
     } as never);
 
-    updateNoteContent(WS, 'n1', 'mine-edited', { immediate: true });
-    await vi.advanceTimersByTimeAsync(1);
+    await updateNoteTitle(WS, 'n1', 'Mine');
 
     const note = selectNoteById.select(appStore.state, WS, 'n1');
-    expect(note?.content).toBe('server');
+    expect(note?.title).toBe('Server Title');
     expect(note?.metadata?.task?.unmetDependsOn).toEqual([NoteId('dep-1')]);
   });
 

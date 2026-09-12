@@ -6,6 +6,7 @@ vi.mock('svelte-sonner', () => ({
 }));
 
 import { appClient } from '$lib/client';
+import { toast } from 'svelte-sonner';
 import { ContentType, NoteVisibility, type Note } from '$shared/types';
 import { NoteId, WorkspaceId } from '$shared/types/branded-ids';
 import {
@@ -81,6 +82,7 @@ describe('notesWriteSaga', () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();
+    vi.clearAllMocks();
   });
 
   it('serializes content before metadata and threads the advanced revision', async () => {
@@ -311,7 +313,57 @@ describe('notesWriteSaga', () => {
     await run.task.toPromise();
   });
 
-  it('applies the daemon note directly after a content conflict without a generic refetch', async () => {
+  it('applies the merged newContent and the echoed rev after a successful content save', async () => {
+    const setContent = vi.spyOn(appClient.notes, 'setContent').mockResolvedValue({
+      success: true,
+      newContent: 'mine + agent',
+      noteRev: 7,
+    });
+    const list = vi.spyOn(appClient.notes, 'list');
+    const run = harness();
+
+    run.channel.put(updateNoteContent(WS, NOTE, 'mine', true));
+    await settle();
+
+    expect(setContent.mock.calls).toEqual([[NOTE, 'mine', 4, WS]]);
+    expect(list.mock.calls).toEqual([]);
+    const applied = run.getState().byWorkspaceId[WS]?.notes.map[NOTE];
+    expect(applied?.content).toEqual('mine + agent');
+    expect(applied?.rev).toEqual(7);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('falls back to sentRev + 1 when a successful content save echoes no rev', async () => {
+    vi.spyOn(appClient.notes, 'setContent').mockResolvedValue({
+      success: true,
+      newContent: 'merged',
+    });
+    const run = harness();
+
+    run.channel.put(updateNoteContent(WS, NOTE, 'mine', true));
+    await settle();
+
+    const applied = run.getState().byWorkspaceId[WS]?.notes.map[NOTE];
+    expect(applied?.content).toEqual('merged');
+    expect(applied?.rev).toEqual(5);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('omits expectedVersion only when the note was never loaded', async () => {
+    const setContent = vi.spyOn(appClient.notes, 'setContent').mockResolvedValue({ success: true });
+    const run = harness();
+
+    run.channel.put(updateNoteContent(WS, 'never-loaded', 'mine', true));
+    await settle();
+
+    expect(setContent.mock.calls).toEqual([['never-loaded', 'mine', undefined, WS]]);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('treats a conflict result on a content save as a generic failure (refetch, no reload prompt)', async () => {
     const canonical = note({ content: 'server body', rev: 8 });
     const wireCanonical = {
       ...canonical,
@@ -322,15 +374,45 @@ describe('notesWriteSaga', () => {
     } as Note;
     const setContent = vi.spyOn(appClient.notes, 'setContent').mockResolvedValue({
       success: false,
+      error: 'conflict',
       conflict: { current: wireCanonical },
     });
-    const list = vi.spyOn(appClient.notes, 'list');
+    const list = vi.spyOn(appClient.notes, 'list').mockResolvedValue([wireCanonical]);
     const run = harness();
 
     run.channel.put(updateNoteContent(WS, NOTE, 'mine', true));
     await settle();
 
     expect(setContent.mock.calls).toEqual([[NOTE, 'mine', 4, WS]]);
+    expect(toast.warning).not.toHaveBeenCalled();
+    expect(toast.error).toHaveBeenCalledTimes(1);
+    expect(run.actions.filter((action) => action.type === applyNoteUpdated.type)).toEqual([]);
+    expect(list.mock.calls).toEqual([[WS]]);
+    expect(run.getState().byWorkspaceId[WS]?.notes.map[NOTE]).toEqual(canonical);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('applies the daemon note directly after a metadata conflict without a generic refetch', async () => {
+    const canonical = note({ title: 'Server', rev: 8 });
+    const wireCanonical = {
+      ...canonical,
+      is_pinned: true,
+      is_archived: true,
+      created_at: 'wire-created',
+      updated_at: 'wire-updated',
+    } as Note;
+    const updateMetadata = vi.spyOn(appClient.notes, 'updateMetadata').mockResolvedValue({
+      success: false,
+      conflict: { current: wireCanonical },
+    });
+    const list = vi.spyOn(appClient.notes, 'list');
+    const run = harness();
+
+    run.channel.put(updateNoteTitle(WS, NOTE, 'Mine'));
+    await settle();
+
+    expect(updateMetadata.mock.calls).toEqual([[NOTE, { title: 'Mine' }, 4, WS]]);
     expect(list.mock.calls).toEqual([]);
     expect(run.actions.filter((action) => action.type === applyNoteUpdated.type)).toEqual([
       applyNoteUpdated(WS, NOTE, canonical),
@@ -351,21 +433,21 @@ describe('notesWriteSaga', () => {
       },
     });
     const wireCurrent = note({
-      content: 'server body',
+      title: 'Server',
       rev: 8,
       metadata: { task: { status: 'not_started', dependsOn: [NoteId('dep-1')] } },
     });
-    vi.spyOn(appClient.notes, 'setContent').mockResolvedValue({
+    vi.spyOn(appClient.notes, 'updateMetadata').mockResolvedValue({
       success: false,
       conflict: { current: wireCurrent },
     });
     const run = harness(cached);
 
-    run.channel.put(updateNoteContent(WS, NOTE, 'mine', true));
+    run.channel.put(updateNoteTitle(WS, NOTE, 'Mine'));
     await settle();
 
     const applied = run.getState().byWorkspaceId[WS]?.notes.map[NOTE];
-    expect(applied?.content).toEqual('server body');
+    expect(applied?.title).toEqual('Server');
     expect(applied?.metadata?.task?.unmetDependsOn).toEqual([NoteId('dep-1')]);
     run.task.cancel();
     await run.task.toPromise();
@@ -382,7 +464,7 @@ describe('notesWriteSaga', () => {
       },
     });
     const wireCurrent = note({
-      content: 'server body',
+      title: 'Server',
       rev: 8,
       metadata: {
         task: {
@@ -392,13 +474,13 @@ describe('notesWriteSaga', () => {
         },
       },
     });
-    vi.spyOn(appClient.notes, 'setContent').mockResolvedValue({
+    vi.spyOn(appClient.notes, 'updateMetadata').mockResolvedValue({
       success: false,
       conflict: { current: wireCurrent },
     });
     const run = harness(cached);
 
-    run.channel.put(updateNoteContent(WS, NOTE, 'mine', true));
+    run.channel.put(updateNoteTitle(WS, NOTE, 'Mine'));
     await settle();
 
     const applied = run.getState().byWorkspaceId[WS]?.notes.map[NOTE];
@@ -418,17 +500,17 @@ describe('notesWriteSaga', () => {
       },
     });
     const wireCurrent = note({
-      content: 'server body',
+      title: 'Server',
       rev: 8,
       metadata: { task: { status: 'not_started', dependsOn: [NoteId('dep-2')] } },
     });
-    vi.spyOn(appClient.notes, 'setContent').mockResolvedValue({
+    vi.spyOn(appClient.notes, 'updateMetadata').mockResolvedValue({
       success: false,
       conflict: { current: wireCurrent },
     });
     const run = harness(cached);
 
-    run.channel.put(updateNoteContent(WS, NOTE, 'mine', true));
+    run.channel.put(updateNoteTitle(WS, NOTE, 'Mine'));
     await settle();
 
     const applied = run.getState().byWorkspaceId[WS]?.notes.map[NOTE];
@@ -448,17 +530,17 @@ describe('notesWriteSaga', () => {
       },
     });
     const wireCurrent = note({
-      content: 'server body',
+      title: 'Server',
       rev: 8,
       metadata: { task: { status: 'not_started' } },
     });
-    vi.spyOn(appClient.notes, 'setContent').mockResolvedValue({
+    vi.spyOn(appClient.notes, 'updateMetadata').mockResolvedValue({
       success: false,
       conflict: { current: wireCurrent },
     });
     const run = harness(cached);
 
-    run.channel.put(updateNoteContent(WS, NOTE, 'mine', true));
+    run.channel.put(updateNoteTitle(WS, NOTE, 'Mine'));
     await settle();
 
     const applied = run.getState().byWorkspaceId[WS]?.notes.map[NOTE];

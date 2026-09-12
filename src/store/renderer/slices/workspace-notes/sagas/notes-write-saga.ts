@@ -160,15 +160,49 @@ function* reconcileConflict(
   return true;
 }
 
-function* advanceRevision(workspaceId: string, noteId: string, sentRev: number) {
+function* setRevisionIfNewer(workspaceId: string, noteId: string, nextRev: number) {
   const current = yield* selectNoteById.effect(workspaceId, noteId);
-  if (current?.rev !== undefined && current.rev >= sentRev + 1) return;
-  yield* put(applyLocalNoteUpdate(workspaceId, noteId, { rev: sentRev + 1 }));
+  if (current?.rev !== undefined && current.rev >= nextRev) return;
+  yield* put(applyLocalNoteUpdate(workspaceId, noteId, { rev: nextRev }));
+}
+
+function* advanceRevision(workspaceId: string, noteId: string, sentRev: number) {
+  yield* call(setRevisionIfNewer, workspaceId, noteId, sentRev + 1);
+}
+
+/**
+ * Apply the daemon's `note.setContent` response as the authoritative local
+ * state (mirrors `notes-write-service.ts`): the merged `newContent` replaces
+ * the store content and the rev comes from the echoed `rev` when present, else
+ * `sentRev + 1` (older daemons). The merged text is skipped when a newer local
+ * edit is already pending or a refetch landed a newer rev.
+ */
+function* applyContentSaveResult(
+  command: ContentCommand,
+  sentRev: number | undefined,
+  result: MutationResult,
+) {
+  const { workspaceId, noteId, content: sentContent } = command;
+  const content = result.newContent ?? sentContent;
+  const nextRev = result.noteRev ?? (sentRev !== undefined ? sentRev + 1 : undefined);
+  const stored = yield* selectNoteById.effect(workspaceId, noteId);
+  const storeIsNewer = stored?.rev !== undefined && nextRev !== undefined && stored.rev > nextRev;
+  if (
+    content !== sentContent &&
+    !pendingContent.has(noteKey(workspaceId, noteId)) &&
+    !storeIsNewer
+  ) {
+    yield* put(applyLocalNoteUpdate(workspaceId, noteId, { content }));
+  }
+  if (nextRev !== undefined) yield* call(setRevisionIfNewer, workspaceId, noteId, nextRev);
 }
 
 function* saveContent(command: ContentCommand) {
   const { workspaceId, noteId, content } = command;
   const note = yield* selectNoteById.effect(workspaceId, noteId);
+  // The loaded note's rev is always sent; it is absent only when the note was
+  // never loaded (last-writer-wins). The daemon merges rather than conflicts,
+  // so a failure here is a generic failure — no reload+toast conflict path.
   const rev = note?.rev;
   try {
     const result: MutationResult = yield* call(
@@ -179,7 +213,6 @@ function* saveContent(command: ContentCommand) {
       workspaceId,
     );
     if (!result.success) {
-      if (yield* call(reconcileConflict, workspaceId, noteId, result)) return;
       logger.error('Failed to save note content', result.error);
       toast.error(m.notes_writeService_saveFailed_error(), {
         description: result.error ?? m.notes_writeService_unknown_error(),
@@ -187,7 +220,7 @@ function* saveContent(command: ContentCommand) {
       yield* call(refetchWorkspaceNotes, workspaceId);
       return;
     }
-    if (rev !== undefined) yield* call(advanceRevision, workspaceId, noteId, rev);
+    yield* call(applyContentSaveResult, command, rev, result);
   } catch (error) {
     logger.error('Failed to save note content', error);
     yield* call(refetchWorkspaceNotes, workspaceId);

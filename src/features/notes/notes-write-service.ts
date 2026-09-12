@@ -19,10 +19,19 @@
  * while a content save is still in flight, and every successful conditional
  * mutation advances the stored `rev` to `sentRev + 1` immediately
  * (`advanceNoteRev`) instead of waiting for the async `note:*`
- * subscribe→refetch loop. The daemon's success responses don't echo the entity,
- * but the advancement is authoritative: a conditional write succeeds only when
- * the stored rev equals `expectedVersion`, and every write bumps `rev` by
- * exactly one (intent-store `update_note_versioned`).
+ * subscribe→refetch loop. Metadata/delete responses don't echo the entity, but
+ * the advancement is authoritative: a conditional write succeeds only when the
+ * stored rev equals `expectedVersion`, and every write bumps `rev` by exactly
+ * one (intent-store `update_note_versioned`).
+ *
+ * Content saves are different: every save carries the loaded note's `rev` as
+ * `expectedVersion` (omitted only when the note was never loaded — plain
+ * last-writer-wins), and the daemon merges the write against concurrent edits
+ * instead of rejecting it. Its `note.setContent` response is therefore the
+ * authoritative local state: `newContent` replaces the store content and
+ * `rev` (when the daemon reports it; older daemons omit it and the
+ * `sentRev + 1` inference applies) replaces the stored rev. The reload+toast
+ * conflict path (`reconcileNoteConflict`) is kept for metadata and delete only.
  *
  * Dependency-light per src/store AGENTS.md: imports only the AppClient seam,
  * the configured store, slice actions/empty-state, collection-utils, and the
@@ -197,6 +206,8 @@ async function refetchWorkspaceNotes(workspaceId: string): Promise<void> {
  * threaded `rev`), falling back to a workspace refetch when no entity is
  * supplied — and surface a non-destructive prompt. Returns `true` when a
  * conflict was handled so the caller skips the generic rollback/refetch path.
+ * Metadata and delete only: content saves are merged daemon-side and never
+ * route here.
  */
 function reconcileNoteConflict(
   workspaceId: string,
@@ -300,9 +311,28 @@ export function updateNoteContent(
   );
 }
 
-async function flushContent(key: string, noteId: string): Promise<void> {
+/** Outcome of an applied content save: the content and rev now in the store. */
+export interface AppliedNoteContent {
+  content: string;
+  rev?: number;
+}
+
+/**
+ * Flush any debounced content for this note immediately (no debounce wait)
+ * and resolve with the applied result once the daemon has answered. Resolves
+ * `undefined` when nothing was pending or the save failed. Serialized on the
+ * note's mutation queue like every other save.
+ */
+export function flushNoteContent(
+  workspaceId: string,
+  noteId: string,
+): Promise<AppliedNoteContent | undefined> {
+  return flushContent(noteKey(workspaceId, noteId), noteId);
+}
+
+async function flushContent(key: string, noteId: string): Promise<AppliedNoteContent | undefined> {
   const pending = pendingContent.get(key);
-  if (!pending) return;
+  if (!pending) return undefined;
   pendingContent.delete(key);
   const timer = contentTimers.get(key);
   if (timer) {
@@ -311,12 +341,13 @@ async function flushContent(key: string, noteId: string): Promise<void> {
   }
   inFlightContentSaves.set(key, (inFlightContentSaves.get(key) ?? 0) + 1);
   try {
-    await enqueueNoteMutation(key, async () => {
-      // Forward the current known `rev` as `expectedVersion` (§11.4-D) when it is
-      // known; omit it entirely otherwise so behavior is unchanged (last-writer-wins).
-      // The explicit workspaceId pins the save to THIS workspace's note — shared
-      // ids like `spec` exist in every workspace and the fallback resolver cache
-      // is last-writer-wins across them.
+    return await enqueueNoteMutation(key, async () => {
+      // Forward the loaded note's `rev` as `expectedVersion` — the daemon merges
+      // against it. It is omitted only when the note was never loaded (no rev
+      // known), which degrades to last-writer-wins. The explicit workspaceId
+      // pins the save to THIS workspace's note — shared ids like `spec` exist in
+      // every workspace and the fallback resolver cache is last-writer-wins
+      // across them.
       const rev = readNoteById(pending.workspaceId, noteId)?.rev;
       const result = await appClient.notes.setContent(
         noteId,
@@ -325,21 +356,52 @@ async function flushContent(key: string, noteId: string): Promise<void> {
         pending.workspaceId,
       );
       if (!result.success) {
-        if (reconcileNoteConflict(pending.workspaceId, noteId, result)) return;
         logger.error('Failed to save note content', result.error);
         toast.error(m.notes_writeService_saveFailed_error(), {
           description: result.error ?? m.notes_writeService_unknown_error(),
         });
         await refetchWorkspaceNotes(pending.workspaceId);
-        return;
+        return undefined;
       }
-      if (rev !== undefined) advanceNoteRev(pending.workspaceId, noteId, rev);
+      return applyContentSaveResult(pending.workspaceId, noteId, pending.content, rev, result);
     });
   } finally {
     const count = (inFlightContentSaves.get(key) ?? 1) - 1;
     if (count <= 0) inFlightContentSaves.delete(key);
     else inFlightContentSaves.set(key, count);
   }
+}
+
+/**
+ * Apply the daemon's `note.setContent` response as the authoritative local
+ * state: the merged `newContent` replaces the store content, and the rev is
+ * set from the echoed `rev` when the daemon reports one, else inferred as
+ * `sentRev + 1` (older daemons). The merged text is only written when it
+ * differs from what was sent, no newer local edit is pending (a keystroke
+ * typed during the round-trip must not be overwritten by a stale echo), and a
+ * concurrent refetch has not already landed a newer rev.
+ */
+function applyContentSaveResult(
+  workspaceId: string,
+  noteId: string,
+  sentContent: string,
+  sentRev: number | undefined,
+  result: MutationResult,
+): AppliedNoteContent {
+  const content = result.newContent ?? sentContent;
+  const nextRev = result.noteRev ?? (sentRev !== undefined ? sentRev + 1 : undefined);
+  const storedRev = readNoteById(workspaceId, noteId)?.rev;
+  const storeIsNewer = storedRev !== undefined && nextRev !== undefined && storedRev > nextRev;
+  if (
+    content !== sentContent &&
+    !pendingContent.has(noteKey(workspaceId, noteId)) &&
+    !storeIsNewer
+  ) {
+    appStore.dispatch(applyLocalNoteUpdate(workspaceId, noteId, { content }));
+  }
+  if (nextRev !== undefined) setNoteRevIfNewer(workspaceId, noteId, nextRev);
+  const rev = readNoteById(workspaceId, noteId)?.rev;
+  return rev !== undefined ? { content, rev } : { content };
 }
 
 /** Update a note's title optimistically; rolls back to the prior title on failure. */
