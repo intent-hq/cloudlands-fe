@@ -107,8 +107,9 @@
     "entry": ["playwright-ct.config.ts", "playwright/index.ts", "src/**/*.ct.spec.ts"],
   },
   // System/external binaries, not npm packages: pkill/iconutil (macOS), duckdb, flatpak,
-  // idea (JetBrains launcher), auggie (Augment CLI, expected on dev/CI hosts)
-  "ignoreBinaries": ["pkill", "iconutil", "duckdb", "flatpak", "idea", "auggie"],
+  // idea (JetBrains launcher), auggie (Augment CLI, expected on dev/CI hosts), jq (the
+  // notify-fixed-issues.sh test stub applies the script's --jq projection with it)
+  "ignoreBinaries": ["pkill", "iconutil", "duckdb", "flatpak", "idea", "auggie", "jq"],
   "ignoreDependencies": [
     // Optional coverage provider: scripts/run-integration-coverage-if-available.ts probes it
     // with require.resolve and exits gracefully when absent — intentionally not declared

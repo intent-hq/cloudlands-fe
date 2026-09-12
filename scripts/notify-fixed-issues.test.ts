@@ -13,6 +13,12 @@
  * scenario and #11 is a fixed positive control (closed, delivered fix PR), so
  * a "no comment on #10" assertion is never satisfied by a run that posts
  * nothing at all.
+ *
+ * The linked-PR enumeration is stubbed at the `gh api graphql` boundary with
+ * raw GraphQL response bodies, and the stub applies the script's own `--jq`
+ * projection to them with the `jq` CLI (required on PATH), so a renamed field
+ * or wrong path in that projection breaks these scenarios instead of silently
+ * changing what gets posted.
  */
 import { spawnSync } from 'node:child_process';
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -33,15 +39,18 @@ const WOULD_COMMENT_11 = '--- would comment on intent-hq/intent#11: ---';
 const EXPECTED_MESSAGE = 'This fix is included in cloudlands-fe v2.150.0 (bundles intentd v1.2.3).';
 const EXPECTED_MARKER = '<!-- release-notifier: cloudlands-fe v2.150.0 -->';
 
-// Stub gh, answering exactly what the real calls' --jq filters would leave:
+// Stub gh:
 //   api repos/*/pulls?...           -> the token-visibility probe; succeeds
-//   api graphql -F number=N         -> $STUB_ISSUES_DIR/N verbatim (issue state,
-//                                      pageInfo.hasNextPage, then one TSV row
-//                                      "<repo> <pr> <state> <merged> <oid>" per
-//                                      linked PR); a missing file fails the
-//                                      call like an API error would
-//   api repos/*/compare/T...S       -> $STUB_COMPARE_DIR/T...S verbatim (the
-//                                      compare status); missing => API error
+//   api graphql -F number=N --jq F  -> like the real gh: applies the script's
+//                                      filter F with `jq -r` to the raw GraphQL
+//                                      response body in $STUB_ISSUES_DIR/N.json;
+//                                      a missing file fails the call like an
+//                                      API error would, and a call without
+//                                      --jq fails loudly (the fixtures are
+//                                      never served unprojected)
+//   api repos/*/compare/T...S       -> $STUB_COMPARE_DIR/T...S verbatim (what
+//                                      the call's `--jq .status` would leave);
+//                                      missing => API error
 //   api repos/*/issues/N/comments   -> no existing comments
 // Anything else (pr view, issue comment, ...) fails loudly: the fixture range
 // has no "(#N)" subjects, and a dry-run must never post.
@@ -50,12 +59,21 @@ const STUB_GH = [
   'set -euo pipefail',
   'case "$1 ${2:-}" in',
   '  "api graphql")',
-  '    number=""',
-  '    for a in "$@"; do',
-  '      case "$a" in number=*) IFS== read -r _ number <<<"$a" ;; esac',
+  '    number="" filter=""',
+  '    while (($#)); do',
+  '      case "$1" in',
+  '        number=*) number="${1#number=}" ;;',
+  '        --jq) shift; filter="${1:-}" ;;',
+  '        --jq=*) filter="${1#--jq=}" ;;',
+  '      esac',
+  '      shift',
   '    done',
-  '    [[ -n "$number" ]] || exit 1',
-  '    cat "$STUB_ISSUES_DIR/$number"',
+  '    [[ -n "$number" ]] || { echo "stub gh: api graphql without -F number=N: $*" >&2; exit 1; }',
+  '    if [[ -z "$filter" ]]; then',
+  '      echo "stub gh: api graphql without --jq; the stub only serves fixtures through the script\'s projection" >&2',
+  '      exit 1',
+  '    fi',
+  '    jq -r "$filter" "$STUB_ISSUES_DIR/$number.json"',
   '    ;;',
   '  "api repos/"*"/pulls?"*) ;;',
   '  "api repos/"*"/compare/"*)',
@@ -101,19 +119,35 @@ function git(...args: string[]) {
   return result.stdout.trim();
 }
 
-// Writes the stub's answer for issue `n`: state, pageInfo.hasNextPage (false
-// unless given), then one TSV row per linked PR (merged follows from state;
-// the oid is empty unless given).
+// Writes the raw GraphQL response body for issue `n` in the shape GitHub
+// returns for the script's gate query: the issue state, pageInfo.hasNextPage
+// (false unless given), and one closedByPullRequestsReferences node per
+// linked PR (`merged` follows from state; `mergeCommit` is null unless a sha
+// is given).
 function fixture(
   n: number,
   state: 'OPEN' | 'CLOSED',
   linked: LinkedPr[] = [],
   { hasNextPage = false }: { hasNextPage?: boolean } = {},
 ) {
-  const rows = linked.map((pr) =>
-    [pr.repo, String(pr.number), pr.state, String(pr.state === 'MERGED'), pr.sha ?? ''].join('\t'),
-  );
-  writeFileSync(join(issuesDir, String(n)), [state, String(hasNextPage), ...rows, ''].join('\n'));
+  const nodes = linked.map((pr) => ({
+    number: pr.number,
+    state: pr.state,
+    merged: pr.state === 'MERGED',
+    mergeCommit: pr.sha === undefined ? null : { oid: pr.sha },
+    repository: { nameWithOwner: pr.repo },
+  }));
+  const body = {
+    data: {
+      repository: {
+        issue: {
+          state,
+          closedByPullRequestsReferences: { pageInfo: { hasNextPage }, nodes },
+        },
+      },
+    },
+  };
+  writeFileSync(join(issuesDir, `${n}.json`), `${JSON.stringify(body)}\n`);
 }
 
 function compareStatus(tag: string, sha: string, status: string) {
@@ -160,6 +194,15 @@ function expectIndeterminate(stderr: string, detail: string) {
 }
 
 beforeAll(() => {
+  const jq = spawnSync('jq', ['--version'], { encoding: 'utf8' });
+  if (jq.error || jq.status !== 0) {
+    throw new Error(
+      'notify-fixed-issues.test.ts needs the `jq` CLI on PATH: the stub gh applies the ' +
+        "script's --jq projection to raw GraphQL fixtures with it. Install jq " +
+        '(e.g. `apt install jq` / `brew install jq`; ubuntu-latest CI runners ship it).',
+    );
+  }
+
   root = mkdtempSync(join(tmpdir(), 'notify-fixed-issues-'));
   repo = join(root, 'repo');
   issuesDir = join(root, 'issues');
@@ -201,7 +244,8 @@ beforeAll(() => {
 });
 
 afterAll(() => {
-  rmSync(root, { recursive: true, force: true });
+  // `root` is unset when the jq preflight threw before setup ran.
+  if (root) rmSync(root, { recursive: true, force: true });
 });
 
 beforeEach(() => {
@@ -311,8 +355,20 @@ describe('notify-fixed-issues.sh completeness gate', () => {
     );
   });
 
+  it('comments when an open linked PR in a repo outside the gate accompanies a delivered fe fix PR', () => {
+    fixture(10, 'CLOSED', [
+      { repo: 'intent-hq/ios', number: 5, state: 'OPEN' },
+      { repo: SOURCE_REPO, number: 77, state: 'MERGED', sha: CONTAINED_FE_SHA },
+    ]);
+    const { status, stdout, stderr } = run();
+    expect(status, stderr).toBe(0);
+    expect(stdout).toContain(WOULD_COMMENT_10);
+    expectComments(stdout, 2);
+    expect(stderr).toContain('issue #10: completeness gate passed');
+  });
+
   it('skips an issue whose linked PRs cannot be enumerated, with a warning', () => {
-    rmSync(join(issuesDir, '10'), { force: true });
+    rmSync(join(issuesDir, '10.json'), { force: true });
     const { status, stdout, stderr } = run();
     expect(status, stderr).toBe(0);
     expectControlOnly(stdout);
