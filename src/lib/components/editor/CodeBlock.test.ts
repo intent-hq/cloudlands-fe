@@ -3,15 +3,6 @@ import hljs from 'highlight.js';
 import { cleanup, render, waitFor } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('$store/renderer/slices/theme/theme-selectors', () => ({
-  selectIsDarkTheme: () => ({
-    subscribe: (run: (value: boolean) => void) => {
-      run(true);
-      return () => undefined;
-    },
-  }),
-}));
-
 import CodeBlock from './CodeBlock.svelte';
 import { clearHighlightCache } from '$lib/utils/code-highlighter';
 
