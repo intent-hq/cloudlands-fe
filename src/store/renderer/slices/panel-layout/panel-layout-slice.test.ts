@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createCollection, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
 import {
-  panelLayoutReducer,
+  panelLayoutReducer as rawPanelLayoutReducer,
   emptyWorkspaceState,
   initializeLayout,
   setRestoreStatus,
@@ -81,6 +81,7 @@ import type {
   WorkspacePanelLayoutState,
 } from './panel-layout-types';
 import { getPanelOrder } from './panel-layout-tabless';
+import { withPanelLayoutInvariants } from './panel-layout-invariants.test-helpers';
 import type { ContextLink } from '../../../../shared/types';
 import {
   DEFAULT_BROWSER_PANEL_WIDTH,
@@ -91,6 +92,9 @@ import {
 } from '../../../../shared/panel-layout-sizing';
 
 const WS = 'test-ws';
+
+/** Every reducer call below is invariant-checked (monorepo#4569). */
+const panelLayoutReducer = withPanelLayoutInvariants(rawPanelLayoutReducer);
 
 function emptyState(): PanelLayoutSliceState {
   return { byWorkspaceId: {} };
@@ -5824,5 +5828,49 @@ describe('panelLayoutReducer', () => {
         state,
       );
     });
+  });
+});
+
+describe('withPanelLayoutInvariants (monorepo#4569)', () => {
+  const passThrough = withPanelLayoutInvariants(
+    (state: PanelLayoutSliceState | undefined) => state ?? emptyState(),
+  );
+
+  it('fails a reducer call whose result leaves a populated panel flagged pristine', () => {
+    const state = stateWithPanel('p1', [{ id: 't1', type: 'note', title: 'A' }]);
+    state.byWorkspaceId[WS].panels.p1.pristine = true;
+    expect(() => passThrough(state, { type: 'panelLayout/someAction' })).toThrow(
+      /after action "panelLayout\/someAction"[\s\S]*panel "p1": holds 1 tab\(s\) but pristine === true/,
+    );
+  });
+
+  it('fails when activeTabId does not match the tab list', () => {
+    const dangling = stateWithPanel('p1', [{ id: 't1', type: 'note', title: 'A' }]);
+    dangling.byWorkspaceId[WS].panels.p1.activeTabId = 'gone';
+    expect(() => passThrough(dangling, { type: 'x' })).toThrow(/activeTabId "gone" is not one of/);
+
+    const emptyWithActive = stateWithPanel('p1');
+    emptyWithActive.byWorkspaceId[WS].panels.p1.activeTabId = 't1';
+    expect(() => passThrough(emptyWithActive, { type: 'x' })).toThrow(
+      /has no tabs but activeTabId/,
+    );
+
+    const populatedWithoutActive = stateWithPanel('p1', [{ id: 't1', type: 'note', title: 'A' }]);
+    populatedWithoutActive.byWorkspaceId[WS].panels.p1.activeTabId = null;
+    expect(() => passThrough(populatedWithoutActive, { type: 'x' })).toThrow(
+      /but activeTabId is null/,
+    );
+  });
+
+  it('fails when focusedPanelId names a missing panel', () => {
+    const state = stateWithPanel('p1');
+    state.byWorkspaceId[WS].focusedPanelId = 'p9';
+    expect(() => passThrough(state, { type: 'x' })).toThrow(/focusedPanelId "p9" names no panel/);
+  });
+
+  it('returns the reducer result unchanged when every invariant holds', () => {
+    const state = stateWithPanel('p1', [{ id: 't1', type: 'note', title: 'A' }]);
+    expect(passThrough(state, { type: 'x' })).toBe(state);
+    expect(passThrough(undefined, { type: '@@INIT' })).toEqual(emptyState());
   });
 });

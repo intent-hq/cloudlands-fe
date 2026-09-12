@@ -3,12 +3,15 @@ import {
   bootstrapNewWorkspaceLayout,
   initializeLayout,
   openTabInNewRootColumn,
-  panelLayoutReducer,
+  panelLayoutReducer as rawPanelLayoutReducer,
   resolveNewWorkspaceInitialAgent,
 } from './panel-layout-slice';
 import type { PanelLayoutSliceState } from './panel-layout-types';
+import { withPanelLayoutInvariants } from './panel-layout-invariants.test-helpers';
 
 const WS = 'initial-agent-contract';
+
+const panelLayoutReducer = withPanelLayoutInvariants(rawPanelLayoutReducer);
 
 function initialState(): PanelLayoutSliceState {
   return { byWorkspaceId: {} };
