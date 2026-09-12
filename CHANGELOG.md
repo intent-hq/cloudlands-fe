@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.149.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.149.2...v2.149.3) (2026-09-12)
+
+
+### 🐛 Bug Fixes
+
+* load Chief chat PR subscriptions independently ([#2303](https://github.com/intent-hq/cloudlands-fe/issues/2303)) ([cd31452](https://github.com/intent-hq/cloudlands-fe/commit/cd3145203118c3e2563547f041fa298273f07031))
+
 ## [2.149.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.149.1...v2.149.2) (2026-09-12)
 
 
