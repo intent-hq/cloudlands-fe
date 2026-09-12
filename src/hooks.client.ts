@@ -46,21 +46,41 @@ function isBitsUiTeardownError(error: unknown): boolean {
   );
 }
 
-// The generic fallthrough diagnostic is bounded and allowlisted: name, a truncated message,
-// the first stack frames and the route id. No URL (query/hash can carry state) and no
-// arbitrary rejection payload is logged (intent-hq/intent#4774).
-const DIAGNOSTIC_MESSAGE_LIMIT = 500;
+// The generic fallthrough diagnostic is bounded and allowlisted: name, message, the first
+// stack frames and the route id, each scrubbed of full URLs (credentials, path, query and
+// hash can carry state — only scheme, host and a script basename:line:col survive) and then
+// truncated. No page URL and no arbitrary rejection payload is logged (intent-hq/intent#4774).
+const DIAGNOSTIC_TEXT_LIMIT = 500;
 const DIAGNOSTIC_STACK_FRAMES = 8;
+const URL_PATTERN = /[a-z][a-z0-9+.-]*:\/\/[^\s'"()<>[\]]+/gi;
+const SCRIPT_BASENAME = /[^/]+\.[cm]?[jt]s(?::\d+){0,2}$/;
 
-function truncateDiagnostic(text: string): string {
-  return text.length > DIAGNOSTIC_MESSAGE_LIMIT
-    ? `${text.slice(0, DIAGNOSTIC_MESSAGE_LIMIT)}…`
-    : text;
+function scrubUrl(url: string): string {
+  const schemeEnd = url.indexOf('://');
+  const scheme = url.slice(0, schemeEnd);
+  const rest = url
+    .slice(schemeEnd + 3)
+    .split('#')[0]
+    .split('?')[0];
+  const slash = rest.indexOf('/');
+  const authority = slash === -1 ? rest : rest.slice(0, slash);
+  const host = authority.slice(authority.lastIndexOf('@') + 1);
+  const path = slash === -1 ? '' : rest.slice(slash);
+  if (path === '' || path === '/') return `${scheme}://${host}`;
+  const script = SCRIPT_BASENAME.exec(path)?.[0];
+  return `${scheme}://${host}/${script ?? '<redacted>'}`;
+}
+
+function sanitizeDiagnosticText(text: string): string {
+  const scrubbed = text.replace(URL_PATTERN, scrubUrl);
+  return scrubbed.length > DIAGNOSTIC_TEXT_LIMIT
+    ? `${scrubbed.slice(0, DIAGNOSTIC_TEXT_LIMIT)}…`
+    : scrubbed;
 }
 
 function firstStackFrames(stack: string | undefined): string | null {
   if (typeof stack !== 'string' || stack.length === 0) return null;
-  return stack.split('\n').slice(0, DIAGNOSTIC_STACK_FRAMES).map(truncateDiagnostic).join('\n');
+  return stack.split('\n').slice(0, DIAGNOSTIC_STACK_FRAMES).map(sanitizeDiagnosticText).join('\n');
 }
 
 interface ClientErrorDiagnostic {
@@ -73,8 +93,8 @@ interface ClientErrorDiagnostic {
 function clientErrorDiagnostic(error: unknown, routeId: string | null): ClientErrorDiagnostic {
   if (error instanceof Error) {
     return {
-      name: error.name,
-      message: truncateDiagnostic(error.message),
+      name: sanitizeDiagnosticText(String(error.name)),
+      message: sanitizeDiagnosticText(String(error.message)),
       stack: firstStackFrames(error.stack),
       routeId,
     };
@@ -83,14 +103,14 @@ function clientErrorDiagnostic(error: unknown, routeId: string | null): ClientEr
     const message = 'message' in error ? error.message : undefined;
     return {
       name: 'object',
-      message: typeof message === 'string' ? truncateDiagnostic(message) : '[non-Error object]',
+      message: typeof message === 'string' ? sanitizeDiagnosticText(message) : '[non-Error object]',
       stack: null,
       routeId,
     };
   }
   return {
     name: typeof error,
-    message: truncateDiagnostic(String(error)),
+    message: sanitizeDiagnosticText(String(error)),
     stack: null,
     routeId,
   };

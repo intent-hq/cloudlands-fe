@@ -195,7 +195,8 @@ describe('handleError call-TypeError classification', () => {
     const details = reportedDetails();
     expect(details.name).toBe('TypeError');
     expect(details.message).toBe('n.call is not a function');
-    expect(details.stack).toBe(error.stack);
+    expect(String(details.stack)).toContain('TypeError: n.call is not a function');
+    expect(String(details.stack)).toContain('CuKvStvg.js:8:6761');
     expect(details.routeId).toBe(ROUTE_ID);
   });
 
@@ -206,7 +207,7 @@ describe('handleError call-TypeError classification', () => {
     const details = reportedDetails();
     expect(details.name).toBe('TypeError');
     expect(details.message).toBe('this.scheduler.flush.call is not a function');
-    expect(details.stack).toBe(error.stack);
+    expect(String(details.stack)).toContain('BQ9p2Xk1.js:1:2210');
   });
 
   it('reports a string rejection carrying the minified call message', () => {
@@ -270,6 +271,46 @@ describe('handleError call-TypeError classification', () => {
       expect(message.length).toBeLessThan(oversized.length);
       expect(message.startsWith('n.call is not a function')).toBe(true);
       expect(everythingLogged()).not.toContain('END-SENTINEL');
+    });
+
+    it('scrubs a full URL embedded in the message', () => {
+      const EMBEDDED_URL =
+        'https://user:pw@example.invalid/private/path?probe=DIAGNOSTIC-URL-SENTINEL#frag';
+      const error = typeErrorWithStack(`fetch failed for ${EMBEDDED_URL}`, BUNDLED_FRAMES);
+
+      invoke(error);
+      const message = String(reportedDetails().message);
+      expect(message).toContain('https://example.invalid/');
+      expect(message).not.toContain('DIAGNOSTIC-URL-SENTINEL');
+      expect(message).not.toContain('/private/path');
+      expect(message).not.toContain('user:pw');
+      expect(everythingLogged()).not.toContain('DIAGNOSTIC-URL-SENTINEL');
+    });
+
+    it('scrubs a full URL embedded in a stack frame while keeping the script basename', () => {
+      const frames = [
+        '    at load (https://cdn.example.invalid/assets/deep/vendor.js:12:34?probe=STACK-URL-SENTINEL#hash)',
+        '    at run (app://workspaces/app/immutable/chunks/CuKvStvg.js:8:6761)',
+      ].join('\n');
+      const error = typeErrorWithStack('n.call is not a function', frames);
+
+      invoke(error);
+      const stack = String(reportedDetails().stack);
+      expect(stack).toContain('CuKvStvg.js:8:6761');
+      expect(stack).not.toContain('STACK-URL-SENTINEL');
+      expect(stack).not.toContain('/assets/deep/');
+      expect(everythingLogged()).not.toContain('STACK-URL-SENTINEL');
+    });
+
+    it('scrubs and bounds the error name', () => {
+      const error = typeErrorWithStack('n.call is not a function', BUNDLED_FRAMES);
+      error.name = `https://example.invalid/leak?probe=NAME-URL-SENTINEL ${'N'.repeat(10000)}NAME-END-SENTINEL`;
+
+      invoke(error);
+      const name = String(reportedDetails().name);
+      expect(name.length).toBeLessThan(1000);
+      expect(everythingLogged()).not.toContain('NAME-URL-SENTINEL');
+      expect(everythingLogged()).not.toContain('NAME-END-SENTINEL');
     });
 
     it('logs a single allowlisted diagnostic and nothing to console.error', () => {
