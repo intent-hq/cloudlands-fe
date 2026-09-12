@@ -1207,6 +1207,36 @@ class EmbeddedBrowserCdpService {
   }
 
   /**
+   * Emulated CSS size and scale-to-fit factor a tab's device-metrics override
+   * uses (docs/protocol §5.9): fit mode and tabs without reported bounds draw
+   * at scale 1; preset/custom sizes shrink to the reported bounds, never
+   * upscale. Shared by emulation and the CDP screenshot clip so both agree on
+   * the scale the tab is actually drawn at.
+   */
+  private resolveEmulationGeometry(tabId: string): {
+    size: { width: number; height: number };
+    scale: number;
+  } {
+    const ownership = this.tabOwnership.get(tabId);
+    const viewport = this.tabViewports.get(tabId) ?? { mode: 'fit' as const };
+    const bounds = this.tabViewBounds.get(tabId);
+    const size =
+      viewport.mode === 'fit'
+        ? bounds
+          ? {
+              width: Math.max(1, Math.round(bounds.width)),
+              height: Math.max(1, Math.round(bounds.height)),
+            }
+          : (ownership?.emulatedSize ?? DEFAULT_AGENT_VIEWPORT)
+        : { width: viewport.width, height: viewport.height };
+    const scale =
+      viewport.mode === 'fit' || !bounds
+        ? 1
+        : Math.min(1, bounds.width / size.width, bounds.height / size.height);
+    return { size, scale };
+  }
+
+  /**
    * Apply CDP device-metrics viewport emulation to a mounted tab. Fit follows
    * visible bounds for owned tabs and stays native for unowned tabs;
    * preset/custom use exact dimensions with scale-to-fit. Fire-and-forget:
@@ -1234,20 +1264,7 @@ class EmbeddedBrowserCdpService {
         });
       return;
     }
-    const bounds = this.tabViewBounds.get(tabId);
-    const size =
-      viewport.mode === 'fit'
-        ? bounds
-          ? {
-              width: Math.max(1, Math.round(bounds.width)),
-              height: Math.max(1, Math.round(bounds.height)),
-            }
-          : (ownership?.emulatedSize ?? DEFAULT_AGENT_VIEWPORT)
-        : { width: viewport.width, height: viewport.height };
-    const scale =
-      viewport.mode === 'fit' || !bounds
-        ? 1
-        : Math.min(1, bounds.width / size.width, bounds.height / size.height);
+    const { size, scale } = this.resolveEmulationGeometry(tabId);
     void this.sendCommand(webContentsId, 'Emulation.setDeviceMetricsOverride', {
       width: size.width,
       height: size.height,
@@ -1812,7 +1829,8 @@ class EmbeddedBrowserCdpService {
    * Take a screenshot of a tab
    */
   async screenshot(tabId?: string): Promise<{ base64: string; width: number; height: number }> {
-    const webContentsId = tabId ? this.resolveTabId(tabId) : this.getFirstTab()?.webContentsId;
+    const firstTab = tabId ? undefined : this.getFirstTab();
+    const webContentsId = tabId ? this.resolveTabId(tabId) : firstTab?.webContentsId;
 
     if (webContentsId === undefined) {
       throw new Error(
@@ -1823,7 +1841,7 @@ class EmbeddedBrowserCdpService {
     }
 
     try {
-      return await this.screenshotViaCdp(webContentsId);
+      return await this.screenshotViaCdp(webContentsId, tabId ?? firstTab?.tabId);
     } catch (cdpError) {
       // The Page domain can hang (or fail) on some guests while the rest of
       // the debugger session works; degrade to capturePage() instead of
@@ -1849,6 +1867,7 @@ class EmbeddedBrowserCdpService {
   /** Page-domain screenshot with per-command timeouts (see screenshot()). */
   private async screenshotViaCdp(
     webContentsId: number,
+    tabId?: string,
   ): Promise<{ base64: string; width: number; height: number }> {
     // Get layout metrics to determine viewport size.
     // layoutViewport reflects the page's internal layout (may exceed visible area
@@ -1890,6 +1909,18 @@ class EmbeddedBrowserCdpService {
       );
     }
 
+    // Capture at the scale the tab is drawn at. Page.captureScreenshot
+    // expects an image of clip × clip.scale × display DPR pixels and resizes
+    // the view to clip × clip.scale to get it — but a <webview> guest cannot
+    // be resized that way (its child-frame view ignores SetSize), so the
+    // surface stays at the element's size and Chromium tiles it to fill the
+    // request. On a tab shrunk to fit its panel (scale < 1) a scale-1 clip
+    // therefore returned a repeated 2x2 page (intent-hq/intent#4627); a clip
+    // at the emulation's fit scale requests exactly the surface that exists.
+    const clipScale =
+      tabId !== undefined && this.tabsWithDeviceMetricsOverride.has(tabId)
+        ? this.resolveEmulationGeometry(tabId).scale
+        : 1;
     const result = (await this.withScreenshotCdpTimeout(
       this.sendCommand(webContentsId, 'Page.captureScreenshot', {
         format: 'jpeg',
@@ -1899,7 +1930,7 @@ class EmbeddedBrowserCdpService {
           y: scrollY,
           width,
           height,
-          scale: 1,
+          scale: clipScale,
         },
       }),
       'Page.captureScreenshot',

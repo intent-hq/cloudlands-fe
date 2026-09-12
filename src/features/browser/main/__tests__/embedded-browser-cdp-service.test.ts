@@ -403,6 +403,87 @@ describe('embedded browser CDP workspace routing', () => {
     });
   });
 
+  // Regression (intent-hq/intent#4627): Page.captureScreenshot cannot resize a
+  // <webview> guest (its RenderWidgetHostViewChildFrame ignores SetSize), so
+  // Chromium tiles whatever the guest surface holds into the requested
+  // clip.width × clip.height × clip.scale × DPR image. A tab displayed at
+  // scale-to-fit 0.5 therefore came back as a 2x2 repeat of the page; the clip
+  // scale must match the scale the tab is actually drawn at so the request
+  // equals the surface.
+  describe('screenshot clip on scale-to-fit tabs (intent-hq/intent#4627)', () => {
+    function screenshotWebContents() {
+      const sendCommand = vi.fn((method: string) => {
+        if (method === 'Page.getLayoutMetrics') {
+          return Promise.resolve({
+            layoutViewport: { clientWidth: 1280, clientHeight: 800 },
+            cssVisualViewport: { clientWidth: 1280, clientHeight: 800, pageX: 0, pageY: 0 },
+          });
+        }
+        if (method === 'Page.captureScreenshot') return Promise.resolve({ data: 'anVuaw==' });
+        return Promise.resolve(undefined);
+      });
+      mocks.fromId.mockReturnValue({
+        isDestroyed: () => false,
+        once: vi.fn(),
+        debugger: { isAttached: () => true, sendCommand, on: vi.fn() },
+      });
+      return sendCommand;
+    }
+
+    async function flushAsync() {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+
+    it('requests the clip at the fit scale the tab is displayed at', async () => {
+      const sendCommand = screenshotWebContents();
+      embeddedBrowserCdp.registerTab('tab-shot-fit', 501);
+      embeddedBrowserCdp.setTabOwner('tab-shot-fit', 'agent-1', undefined, {
+        width: 1280,
+        height: 800,
+      });
+      embeddedBrowserCdp.reportTabViewBounds('tab-shot-fit', 640, 400);
+      await flushAsync();
+
+      try {
+        await expect(embeddedBrowserCdp.screenshot('tab-shot-fit')).resolves.toEqual({
+          base64: 'anVuaw==',
+          width: 1280,
+          height: 800,
+        });
+        expect(sendCommand).toHaveBeenCalledWith('Page.captureScreenshot', {
+          format: 'jpeg',
+          quality: 80,
+          clip: { x: 0, y: 0, width: 1280, height: 800, scale: 0.5 },
+        });
+      } finally {
+        embeddedBrowserCdp.unregisterTab('tab-shot-fit');
+      }
+    });
+
+    it('keeps clip scale 1 when the emulated viewport is not shrunk to fit', async () => {
+      const sendCommand = screenshotWebContents();
+      embeddedBrowserCdp.registerTab('tab-shot-unscaled', 502);
+      embeddedBrowserCdp.setTabOwner('tab-shot-unscaled', 'agent-1', undefined, {
+        width: 1280,
+        height: 800,
+      });
+      embeddedBrowserCdp.reportTabViewBounds('tab-shot-unscaled', 2000, 1500);
+      await flushAsync();
+
+      try {
+        await embeddedBrowserCdp.screenshot('tab-shot-unscaled');
+        expect(sendCommand).toHaveBeenCalledWith(
+          'Page.captureScreenshot',
+          expect.objectContaining({
+            clip: { x: 0, y: 0, width: 1280, height: 800, scale: 1 },
+          }),
+        );
+      } finally {
+        embeddedBrowserCdp.unregisterTab('tab-shot-unscaled');
+      }
+    });
+  });
+
   // showTab (monorepo#3045): reveal delivery + confirm-by-list discipline.
   describe('showTab', () => {
     it.each([undefined, null, ''])(
