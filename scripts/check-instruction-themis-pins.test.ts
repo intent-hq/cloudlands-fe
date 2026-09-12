@@ -155,10 +155,11 @@ describe('instruction Themis pin guard', () => {
 // already removed) while still auditing tracked and ordinary untracked files.
 describe('instruction Themis pin guard CLI traversal', () => {
   it('audits tracked and ordinary untracked AGENTS.md files', () => {
-    withRepo({ 'AGENTS.md': CLEAN, 'src/features/AGENTS.md': STALE_PIN }, (dir) => {
-      git(dir, ['add', 'AGENTS.md']);
+    withRepo({ 'src/store/AGENTS.md': STALE_PIN, 'src/features/AGENTS.md': STALE_PIN }, (dir) => {
+      git(dir, ['add', 'src/store/AGENTS.md']);
       const result = runGate(dir);
       expect(result.exitCode).toBe(1);
+      expect(result.output).toContain('src/store/AGENTS.md:1: @augmentcode/themis@0.1.1');
       expect(result.output).toContain('src/features/AGENTS.md:1: @augmentcode/themis@0.1.1');
     });
   });
