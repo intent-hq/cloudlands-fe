@@ -2330,14 +2330,51 @@ export function setupSystemIPC() {
   // handler is needed in the daemon-backed build. The `SETTINGS_CHANNELS`
   // constants remain exported for the bridge seeder + its tests.
 
-  // Run interactive OAuth for a daemon-saved hosted MCP server.
+  // Run interactive OAuth for a daemon-saved hosted MCP server. The OAuth
+  // target URL is resolved from the daemon's server record by `serverId`
+  // (PROTOCOL §5.22 `mcp.servers.list`); the renderer-supplied `url` is
+  // advisory and rejected when it disagrees with the daemon record.
   ipcMain.handle(
     USER_MCP_CHANNELS.AUTHENTICATE,
     createSafeValidatedHandler(
       UserMcpAuthenticateSchema,
       async (_event, validated) => {
+        const { servers } = await getBackendClient().request<{
+          servers?: Array<{ id?: string; url?: string }>;
+        }>('mcp.servers.list');
+        const record = servers?.find((server) => server.id === validated.serverId);
+        if (!record) {
+          return {
+            success: false,
+            error: {
+              code: 'MCP_SERVER_NOT_FOUND',
+              message: m.system_ipc_mcpAuthServerNotFound_error(),
+            },
+          };
+        }
+        if (typeof record.url !== 'string' || !record.url) {
+          return {
+            success: false,
+            error: {
+              code: 'MCP_SERVER_URL_MISSING',
+              message: m.system_ipc_mcpAuthServerUrlMissing_error(),
+            },
+          };
+        }
+        if (validated.url !== undefined && validated.url !== record.url) {
+          logger.warn('MCP OAuth URL from renderer disagrees with daemon record', {
+            serverId: validated.serverId,
+          });
+          return {
+            success: false,
+            error: {
+              code: 'MCP_SERVER_URL_MISMATCH',
+              message: m.system_ipc_mcpAuthServerUrlMismatch_error(),
+            },
+          };
+        }
         const { initiateMcpOAuth } = await import('../../mcp/main/mcp-oauth');
-        const result = await initiateMcpOAuth(validated.serverId, validated.url);
+        const result = await initiateMcpOAuth(validated.serverId, record.url);
         return { success: true, data: result };
       },
       USER_MCP_CHANNELS.AUTHENTICATE,

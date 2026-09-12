@@ -491,7 +491,7 @@ function* restart(name: string): SagaGenerator<void> {
 interface McpAuthenticateIpcResponse {
   success: boolean;
   data?: { success: boolean; error?: string };
-  error?: string;
+  error?: string | { code: string; message: string };
 }
 
 function* authenticate(name: string): SagaGenerator<void> {
@@ -512,7 +512,10 @@ function* authenticate(name: string): SagaGenerator<void> {
     );
     if (!response.success || !response.data?.success) {
       throw new Error(
-        response.data?.error ?? response.error ?? m.mcp_management_authFailed_error(),
+        toMcpErrorMessage(
+          response.data?.error ?? response.error,
+          m.mcp_management_authFailed_error(),
+        ),
       );
     }
     yield* call(restart, name);
