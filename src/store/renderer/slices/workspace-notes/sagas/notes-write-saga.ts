@@ -68,6 +68,12 @@ const pendingContent = new Map<string, PendingContent>();
 // `notes-write-service.ts`): a save's echo is authoritative only when no later
 // local edit exists — debounced, queued behind it, or in flight.
 const latestEditSeq = new Map<string, number>();
+// Rev of the daemon text the current local edit chain was typed against
+// (mirrors `notes-write-service.ts`): sent as `expectedVersion` instead of the
+// store's rev, so a draft queued behind a superseded echo still merges
+// three-way from its true base rather than replacing the daemon's concurrent
+// edits with an exact-rev save.
+const draftBaseRev = new Map<string, number>();
 let noteMutationQueue: Channel<MutationEnvelope> | undefined;
 
 function noteKey(workspaceId: string, noteId: string): string {
@@ -180,7 +186,8 @@ function* advanceRevision(workspaceId: string, noteId: string, sentRev: number) 
  * the store content and the rev comes from the echoed `rev` when present, else
  * `sentRev + 1` (older daemons). The echo is skipped when a newer local edit
  * exists (its own save carries the daemon's merge of that text) or a refetch
- * already landed a newer rev.
+ * already landed a newer rev. A skipped echo still advances the store rev but
+ * leaves `draftBaseRev` untouched.
  */
 function* applyContentSaveResult(
   command: ContentCommand,
@@ -203,10 +210,11 @@ function* saveContent(command: ContentCommand) {
   const { workspaceId, noteId, content } = command;
   const key = noteKey(workspaceId, noteId);
   const note = yield* selectNoteById.effect(workspaceId, noteId);
-  // The loaded note's rev is always sent; it is absent only when the note was
-  // never loaded (last-writer-wins). The daemon merges rather than conflicts,
-  // so a failure here is a generic failure — no reload+toast conflict path.
-  const rev = note?.rev;
+  // The rev the draft was typed against is always sent; it is absent only when
+  // the note was never loaded (last-writer-wins). The daemon merges rather
+  // than conflicts, so a failure here is a generic failure — no reload+toast
+  // conflict path.
+  const rev = draftBaseRev.get(key) ?? note?.rev;
   try {
     const result: MutationResult = yield* call(
       [appClient.notes, appClient.notes.setContent],
@@ -228,8 +236,12 @@ function* saveContent(command: ContentCommand) {
     logger.error('Failed to save note content', error);
     yield* call(refetchWorkspaceNotes, workspaceId);
   } finally {
-    // This was the latest edit and nothing later can compare against it.
-    if (latestEditSeq.get(key) === command.seq) latestEditSeq.delete(key);
+    // This was the latest edit and nothing later can compare against it; the
+    // next edit chain starts from the store's (now in-sync) rev.
+    if (latestEditSeq.get(key) === command.seq) {
+      latestEditSeq.delete(key);
+      draftBaseRev.delete(key);
+    }
   }
 }
 
@@ -329,8 +341,12 @@ function* handleContentAction(
 ) {
   const [workspaceId, noteId, content, immediate] = action.payload;
   if (!workspaceId || !noteId || typeof content !== 'string') return;
-  yield* put(applyLocalNoteUpdate(workspaceId, noteId, { content }));
   const key = noteKey(workspaceId, noteId);
+  if (!draftBaseRev.has(key)) {
+    const baseRev = (yield* selectNoteById.effect(workspaceId, noteId))?.rev;
+    if (baseRev !== undefined) draftBaseRev.set(key, baseRev);
+  }
+  yield* put(applyLocalNoteUpdate(workspaceId, noteId, { content }));
   const seq = (latestEditSeq.get(key) ?? 0) + 1;
   latestEditSeq.set(key, seq);
   const pending: PendingContent = { workspaceId, noteId, content, seq };
@@ -501,6 +517,9 @@ function* cleanupWorkspace(queue: Channel<MutationEnvelope>, action: WorkspaceCl
   for (const key of latestEditSeq.keys()) {
     if (key.startsWith(`${workspaceId}:`)) latestEditSeq.delete(key);
   }
+  for (const key of draftBaseRev.keys()) {
+    if (key.startsWith(`${workspaceId}:`)) draftBaseRev.delete(key);
+  }
   const queued = yield* flush(queue);
   for (const envelope of queued) {
     if (envelope.command.workspaceId === workspaceId) {
@@ -547,6 +566,7 @@ export function* notesWriteSaga() {
     }
     pendingContent.clear();
     latestEditSeq.clear();
+    draftBaseRev.clear();
     queue.close();
     if (noteMutationQueue === queue) noteMutationQueue = undefined;
   }

@@ -390,7 +390,10 @@ describe('notesWriteSaga', () => {
     await run.task.toPromise();
   });
 
-  it('keeps newer local text queued behind an older save when the older echo lands', async () => {
+  // The queued draft must go out against the rev its text was typed against
+  // (4), not the store rev the skipped echo advanced to (6): an exact-rev save
+  // would make the daemon replace "AGENT\nbody first" wholesale and lose AGENT.
+  it('sends a queued draft with its baseline rev so the daemon keeps a concurrent agent edit', async () => {
     let resolveFirst!: (result: unknown) => void;
     let resolveSecond!: (result: unknown) => void;
     const setContent = vi
@@ -404,31 +407,41 @@ describe('notesWriteSaga', () => {
         new Promise((resolve) => {
           resolveSecond = resolve;
         }) as never,
-      );
-    const run = harness();
+      )
+      .mockResolvedValue({ success: true });
+    const run = harness(note({ content: 'body' }));
 
-    run.channel.put(updateNoteContent(WS, NOTE, 'first', true));
+    run.channel.put(updateNoteContent(WS, NOTE, 'body first', true));
     await settle();
-    run.channel.put(updateNoteContent(WS, NOTE, 'first plus typing', true));
+    run.channel.put(updateNoteContent(WS, NOTE, 'body first plus typing', true));
     await settle();
-    expect(setContent.mock.calls).toEqual([[NOTE, 'first', 4, WS]]);
+    expect(setContent.mock.calls).toEqual([[NOTE, 'body first', 4, WS]]);
 
-    resolveFirst({ success: true, newContent: 'first plus agent', noteRev: 5 });
+    // An agent wrote at rev 5; the daemon merged our save on top → rev 6.
+    resolveFirst({ success: true, newContent: 'AGENT\nbody first', noteRev: 6 });
     await settle();
     let current = run.getState().byWorkspaceId[WS]?.notes.map[NOTE];
-    expect(current?.content).toEqual('first plus typing');
-    expect(current?.rev).toEqual(5);
-    // The queued save read the advanced rev, not the stale 4.
+    expect(current?.content).toEqual('body first plus typing');
+    expect(current?.rev).toEqual(6);
+    // (a) The queued draft carries its baseline rev, not the advanced store rev.
     expect(setContent.mock.calls).toEqual([
-      [NOTE, 'first', 4, WS],
-      [NOTE, 'first plus typing', 5, WS],
+      [NOTE, 'body first', 4, WS],
+      [NOTE, 'body first plus typing', 4, WS],
     ]);
 
-    resolveSecond({ success: true, newContent: 'first plus typing', noteRev: 6 });
+    // Daemon three-way merge: base@4 "body", current "AGENT\nbody first",
+    // incoming "body first plus typing".
+    resolveSecond({ success: true, newContent: 'AGENT\nbody first plus typing', noteRev: 7 });
     await settle();
+    // (b) Both the agent's addition and the local typing survive.
     current = run.getState().byWorkspaceId[WS]?.notes.map[NOTE];
-    expect(current?.content).toEqual('first plus typing');
-    expect(current?.rev).toEqual(6);
+    expect(current?.content).toEqual('AGENT\nbody first plus typing');
+    expect(current?.rev).toEqual(7);
+
+    // The chain settled: the next edit starts from the in-sync store rev.
+    run.channel.put(updateNoteContent(WS, NOTE, 'AGENT\nbody first plus typing more', true));
+    await settle();
+    expect(setContent.mock.calls[2]).toEqual([NOTE, 'AGENT\nbody first plus typing more', 7, WS]);
     run.task.cancel();
     await run.task.toPromise();
   });
@@ -443,25 +456,35 @@ describe('notesWriteSaga', () => {
           resolveFirst = resolve;
         }) as never,
       )
-      .mockResolvedValue({ success: true });
-    const run = harness();
+      .mockResolvedValue({
+        success: true,
+        newContent: 'AGENT\nbody first plus typing',
+        noteRev: 7,
+      });
+    const run = harness(note({ content: 'body' }));
 
-    run.channel.put(updateNoteContent(WS, NOTE, 'first', true));
+    run.channel.put(updateNoteContent(WS, NOTE, 'body first', true));
     await settle();
-    run.channel.put(updateNoteContent(WS, NOTE, 'first plus typing'));
+    run.channel.put(updateNoteContent(WS, NOTE, 'body first plus typing'));
     await settle();
 
-    resolveFirst({ success: true, newContent: 'first plus agent', noteRev: 5 });
+    resolveFirst({ success: true, newContent: 'AGENT\nbody first', noteRev: 6 });
     await settle();
-    const current = run.getState().byWorkspaceId[WS]?.notes.map[NOTE];
-    expect(current?.content).toEqual('first plus typing');
-    expect(current?.rev).toEqual(5);
+    let current = run.getState().byWorkspaceId[WS]?.notes.map[NOTE];
+    expect(current?.content).toEqual('body first plus typing');
+    expect(current?.rev).toEqual(6);
 
+    // The debounced edit saves against the rev it was typed against — not the
+    // store rev the skipped echo advanced to.
     await vi.advanceTimersByTimeAsync(NOTE_CONTENT_SAVE_DEBOUNCE_MS + 1);
+    await settle();
     expect(setContent.mock.calls).toEqual([
-      [NOTE, 'first', 4, WS],
-      [NOTE, 'first plus typing', 5, WS],
+      [NOTE, 'body first', 4, WS],
+      [NOTE, 'body first plus typing', 4, WS],
     ]);
+    current = run.getState().byWorkspaceId[WS]?.notes.map[NOTE];
+    expect(current?.content).toEqual('AGENT\nbody first plus typing');
+    expect(current?.rev).toEqual(7);
     run.task.cancel();
     await run.task.toPromise();
   });

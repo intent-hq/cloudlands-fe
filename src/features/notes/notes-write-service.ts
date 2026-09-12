@@ -89,6 +89,14 @@ const inFlightContentSaves = new Map<string, number>();
 // cannot rely on `pendingContent` alone (a flush removes the entry) nor on
 // comparing echoed text against sent text.
 const latestEditSeq = new Map<string, number>();
+// Rev of the daemon text the current local edit chain was typed against, per
+// key. Set when a chain starts from a clean (in-sync) state and carried while
+// edits keep coming; cleared once nothing is pending or in flight. A save
+// sends this — not the store's rev — as `expectedVersion`: when a superseded
+// echo advances the store rev without its text being incorporated, the queued
+// draft must still merge three-way from its true base, or an exact-rev save
+// would replace the daemon's concurrent edits.
+const draftBaseRev = new Map<string, number>();
 
 function noteKey(workspaceId: string, noteId: string): string {
   return `${workspaceId}:${noteId}`;
@@ -298,8 +306,12 @@ export function updateNoteContent(
   content: string,
   options?: { immediate?: boolean },
 ): void {
-  appStore.dispatch(applyLocalNoteUpdate(workspaceId, noteId, { content }));
   const key = noteKey(workspaceId, noteId);
+  if (!draftBaseRev.has(key)) {
+    const baseRev = readNoteById(workspaceId, noteId)?.rev;
+    if (baseRev !== undefined) draftBaseRev.set(key, baseRev);
+  }
+  appStore.dispatch(applyLocalNoteUpdate(workspaceId, noteId, { content }));
   const seq = (latestEditSeq.get(key) ?? 0) + 1;
   latestEditSeq.set(key, seq);
   pendingContent.set(key, { workspaceId, content, seq });
@@ -356,13 +368,13 @@ async function flushContent(key: string, noteId: string): Promise<AppliedNoteCon
   inFlightContentSaves.set(key, (inFlightContentSaves.get(key) ?? 0) + 1);
   try {
     return await enqueueNoteMutation(key, async () => {
-      // Forward the loaded note's `rev` as `expectedVersion` — the daemon merges
-      // against it. It is omitted only when the note was never loaded (no rev
-      // known), which degrades to last-writer-wins. The explicit workspaceId
-      // pins the save to THIS workspace's note — shared ids like `spec` exist in
-      // every workspace and the fallback resolver cache is last-writer-wins
-      // across them.
-      const rev = readNoteById(pending.workspaceId, noteId)?.rev;
+      // Forward the rev the draft was typed against as `expectedVersion` — the
+      // daemon merges against it. It is omitted only when the note was never
+      // loaded (no rev known), which degrades to last-writer-wins. The explicit
+      // workspaceId pins the save to THIS workspace's note — shared ids like
+      // `spec` exist in every workspace and the fallback resolver cache is
+      // last-writer-wins across them.
+      const rev = draftBaseRev.get(key) ?? readNoteById(pending.workspaceId, noteId)?.rev;
       const result = await appClient.notes.setContent(
         noteId,
         pending.content,
@@ -383,8 +395,12 @@ async function flushContent(key: string, noteId: string): Promise<AppliedNoteCon
     const count = (inFlightContentSaves.get(key) ?? 1) - 1;
     if (count <= 0) {
       inFlightContentSaves.delete(key);
-      // Nothing left that could compare against the sequence.
-      if (!pendingContent.has(key)) latestEditSeq.delete(key);
+      // Nothing left that could compare against the sequence, and the store
+      // is back in sync with the daemon: the next edit chain starts fresh.
+      if (!pendingContent.has(key)) {
+        latestEditSeq.delete(key);
+        draftBaseRev.delete(key);
+      }
     } else {
       inFlightContentSaves.set(key, count);
     }
@@ -398,7 +414,9 @@ async function flushContent(key: string, noteId: string): Promise<AppliedNoteCon
  * `sentRev + 1` (older daemons). The echo is skipped when a newer local edit
  * exists (its own save carries the daemon's merge of that text — applying the
  * older echo would overwrite a keystroke) or a concurrent refetch already
- * landed a newer rev. Resolves with what the store holds afterwards.
+ * landed a newer rev. The store rev still advances, but a skipped echo leaves
+ * `draftBaseRev` untouched: the pending draft was not typed against this
+ * text. Resolves with what the store holds afterwards.
  */
 function applyContentSaveResult(
   noteId: string,
