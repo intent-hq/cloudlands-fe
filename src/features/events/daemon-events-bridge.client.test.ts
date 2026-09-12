@@ -3611,7 +3611,13 @@ describe('daemonEventsBridge (queue drain-start — agent:queue:processing → c
     const failedCalls = dispatchCalls.filter((a) => a.type === 'chatState/sendFailed');
     expect(failedCalls).toEqual([
       expect.objectContaining({
-        payload: [AGENT, 'boom', 'turn-failed-1', { turnIdCorrelation: '12c09885d6571b4e' }],
+        payload: [
+          AGENT,
+          'boom',
+          'turn-failed-1',
+          { turnIdCorrelation: '12c09885d6571b4e' },
+          undefined,
+        ],
       }),
     ]);
   });
@@ -3625,7 +3631,7 @@ describe('daemonEventsBridge (queue drain-start — agent:queue:processing → c
 
     const failedCalls = dispatchCalls.filter((a) => a.type === 'chatState/sendFailed');
     expect(failedCalls).toEqual([
-      expect.objectContaining({ payload: [AGENT, 'boom', undefined, undefined] }),
+      expect.objectContaining({ payload: [AGENT, 'boom', undefined, undefined, undefined] }),
     ]);
   });
 });

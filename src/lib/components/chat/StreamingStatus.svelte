@@ -342,9 +342,7 @@
             <Fa icon={faExclamationTriangle} class="shrink-0 text-warning/70" />
             <span class="text-warning" data-testid="error-quota-exceeded">
               {m.chat_streamingStatus_quotaExceeded_before()}
-              <code class="px-1 py-0.5 bg-muted rounded text-ui"
-                >{quotaProviderLabel}</code
-              >
+              <code class="px-1 py-0.5 bg-muted rounded text-ui">{quotaProviderLabel}</code>
               {m.chat_streamingStatus_quotaExceeded_after()}
             </span>
           {:else if status === 'error' && errorDisplay}

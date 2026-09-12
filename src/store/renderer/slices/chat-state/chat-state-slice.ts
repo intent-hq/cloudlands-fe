@@ -604,23 +604,22 @@ export const chatQueuedRetryRecordsCleared = createAction<[agentId: string]>(
  * failed turn's record may still be parked (its requeued entry has a new id,
  * so no drain-start event under this client's key ever promoted it).
  */
-export const chatSendFailed =
-  createAction<
-    [
-      agentId: string,
-      error: string,
-      turnId?: string,
-      failureCorrelation?: StreamFailureCorrelation,
-      /**
-       * Present only when the daemon classified the failure as a provider
-       * usage/quota exhaustion (`errorCode: "quota-exceeded"`). Drives the
-       * retry-on-another-provider banner; absent for every other failure, so
-       * older daemons (which never send the code) simply keep today's
-       * behavior.
-       */
-      quotaExceeded?: QuotaExceededInfo,
-    ]
-  >('chatState/sendFailed');
+export const chatSendFailed = createAction<
+  [
+    agentId: string,
+    error: string,
+    turnId?: string,
+    failureCorrelation?: StreamFailureCorrelation,
+    /**
+     * Present only when the daemon classified the failure as a provider
+     * usage/quota exhaustion (`errorCode: "quota-exceeded"`). Drives the
+     * retry-on-another-provider banner; absent for every other failure, so
+     * older daemons (which never send the code) simply keep today's
+     * behavior.
+     */
+    quotaExceeded?: QuotaExceededInfo,
+  ]
+>('chatState/sendFailed');
 
 /**
  * `agent:queue:processing` drain-start signal (PROTOCOL §6.5): the daemon

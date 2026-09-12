@@ -1047,7 +1047,10 @@ describe('chatSendSaga', () => {
 
     it('falls back to the first catalog row when no model is flagged default', async () => {
       mocks.getModelsForProvider.mockResolvedValue({
-        models: [{ value: 'gpt-5-mini', label: 'Mini' }, { value: 'gpt-5-codex', label: 'Codex' }],
+        models: [
+          { value: 'gpt-5-mini', label: 'Mini' },
+          { value: 'gpt-5-codex', label: 'Codex' },
+        ],
       });
       mocks.setModel.mockResolvedValue({ ok: true, data: { success: true } });
       const run = harness();
@@ -1100,7 +1103,10 @@ describe('chatSendSaga', () => {
     });
 
     it.each([
-      { mode: 'an empty catalog', setup: () => mocks.getModelsForProvider.mockResolvedValue({ models: [] }) },
+      {
+        mode: 'an empty catalog',
+        setup: () => mocks.getModelsForProvider.mockResolvedValue({ models: [] }),
+      },
       {
         mode: 'a failed catalog fetch',
         setup: () => mocks.getModelsForProvider.mockRejectedValue(new Error('models.list failed')),
