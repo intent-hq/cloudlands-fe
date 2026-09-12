@@ -284,9 +284,11 @@ const SHELL_META_RE = /["'`$|;<>()\\]/;
 
 /**
  * Turn a package.json `build:renderer` chain into spawnable steps with the
- * sourcemap kill switch removed. Only the simple `a && b && c` shape with
- * `cross-env KEY=VALUE …` prefixes is supported; anything needing a real shell
- * is rejected so the caller can fall back to `--dist`.
+ * sourcemap kill switch forced off. Every step gets INTENT_DISABLE_SOURCEMAPS=0
+ * so a value inherited from the caller's shell cannot disable maps either. Only
+ * the simple `a && b && c` shape with `cross-env KEY=VALUE …` prefixes is
+ * supported; anything needing a real shell is rejected so the caller can fall
+ * back to `--dist`.
  */
 export function planRendererBuild(script) {
   if (SHELL_META_RE.test(script)) {
@@ -298,8 +300,9 @@ export function planRendererBuild(script) {
     const env = {};
     while (tokens.length && /^[A-Z_][A-Z0-9_]*=/.test(tokens[0])) {
       const [key, ...rest] = tokens.shift().split('=');
-      if (key !== 'INTENT_DISABLE_SOURCEMAPS') env[key] = rest.join('=');
+      env[key] = rest.join('=');
     }
+    env.INTENT_DISABLE_SOURCEMAPS = '0';
     if (!tokens.length) throw new Error(`build:renderer segment has no command: ${segment}`);
     return { command: tokens[0], args: tokens.slice(1), env };
   });

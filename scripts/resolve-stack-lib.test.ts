@@ -174,19 +174,26 @@ describe('resolveStack', () => {
 });
 
 describe('planRendererBuild', () => {
-  it('drops the sourcemap kill switch and splits the chain into spawnable steps', () => {
+  it('forces the sourcemap kill switch off and splits the chain into spawnable steps', () => {
     const steps = planRendererBuild(
       'pnpm run build:i18n-bundle && cross-env GIT_TERMINAL_PROMPT=0 NODE_ENV=production INTENT_DISABLE_SOURCEMAPS=1 node scripts/vite-build.mjs && node scripts/fix-renderer-paths.js',
     );
+    const off = { INTENT_DISABLE_SOURCEMAPS: '0' };
     expect(steps).toEqual([
-      { command: 'pnpm', args: ['run', 'build:i18n-bundle'], env: {} },
+      { command: 'pnpm', args: ['run', 'build:i18n-bundle'], env: off },
       {
         command: 'node',
         args: ['scripts/vite-build.mjs'],
-        env: { GIT_TERMINAL_PROMPT: '0', NODE_ENV: 'production' },
+        env: { GIT_TERMINAL_PROMPT: '0', NODE_ENV: 'production', ...off },
       },
-      { command: 'node', args: ['scripts/fix-renderer-paths.js'], env: {} },
+      { command: 'node', args: ['scripts/fix-renderer-paths.js'], env: off },
     ]);
+  });
+
+  it('overrides an inherited INTENT_DISABLE_SOURCEMAPS=1 when merged over process.env', () => {
+    const [step] = planRendererBuild('node scripts/vite-build.mjs');
+    const merged = { ...{ INTENT_DISABLE_SOURCEMAPS: '1', PATH: '/bin' }, ...step.env };
+    expect(merged.INTENT_DISABLE_SOURCEMAPS).toBe('0');
   });
 
   it('rejects chains it cannot split safely', () => {
