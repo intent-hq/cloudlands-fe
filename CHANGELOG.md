@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.149.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.149.0...v2.149.1) (2026-09-12)
+
+
+### 🐛 Bug Fixes
+
+* **scripts:** route nested package.json pnpm runs through the invoking pnpm ([#2380](https://github.com/intent-hq/cloudlands-fe/issues/2380)) ([a5054fd](https://github.com/intent-hq/cloudlands-fe/commit/a5054fd96585561b5eefbbf25ee6d0d912793502))
+
 ## [2.149.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.148.2...v2.149.0) (2026-09-12)
 
 
