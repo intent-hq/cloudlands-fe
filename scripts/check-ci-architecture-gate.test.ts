@@ -31,7 +31,7 @@ const GATE_SCRIPT = 'lint:architecture';
 const SINGLE_ENTRY_POINT = `pnpm run ${ENTRY_POINT_SCRIPT}`;
 const DIRECT_SCANNER = /scripts\/check-[\w-]+\.mjs/;
 const PNPM_RUN = /pnpm run ([\w:.-]+)/g;
-const PNPM_RUN_WRAPPER = /node scripts\/pnpm-run\.mjs((?: [\w:.][\w:.-]*)+)/g;
+const PNPM_RUN_WRAPPER = /node scripts\/pnpm-run\.mjs ([\w:.][\w:.-]*)/g;
 
 type Scripts = Record<string, string>;
 
@@ -48,7 +48,7 @@ const codeLines = (workflow: string): WorkflowLine[] =>
 
 const runTargets = (text: string): string[] => [
   ...[...text.matchAll(PNPM_RUN)].map(([, name]) => name),
-  ...[...text.matchAll(PNPM_RUN_WRAPPER)].flatMap(([, names]) => names.trim().split(' ')),
+  ...[...text.matchAll(PNPM_RUN_WRAPPER)].map(([, name]) => name),
 ];
 
 const scriptClosure = (scripts: Scripts, root: string): Set<string> => {
@@ -109,7 +109,8 @@ describe('CI architecture gate detector', () => {
     'lint:agent-dispatchers':
       'node scripts/check-workspace-event-dispatchers.mjs src/features/agent',
     'lint:dispatch-gate': 'node scripts/check-workspace-event-dispatchers.mjs',
-    'verify:agent-operability': 'node scripts/pnpm-run.mjs lint:dispatch-gate lint -- --flag',
+    'verify:agent-operability':
+      'node scripts/pnpm-run.mjs lint:dispatch-gate && node scripts/pnpm-run.mjs lint -- --flag',
     lint: 'node scripts/check-deps-fresh.mjs && eslint . && pnpm run lint:i18n-strings',
     'lint:i18n-strings': 'node scripts/check-hardcoded-strings.mjs',
     'test:unit': 'node scripts/check-deps-fresh.mjs && vitest run',

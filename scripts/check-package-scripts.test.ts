@@ -43,7 +43,10 @@ describe('package.json bare pnpm nesting guard', () => {
   });
 
   it.each([
-    ['the run wrapper', 'node scripts/pnpm-run.mjs lint:i18n-strings lint:dead-code'],
+    [
+      'the run wrapper',
+      'node scripts/pnpm-run.mjs lint:i18n-strings && node scripts/pnpm-run.mjs lint:dead-code',
+    ],
     [
       'a quoted run wrapper',
       'concurrently "node scripts/pnpm-run.mjs a" "node scripts/pnpm-run.mjs b"',

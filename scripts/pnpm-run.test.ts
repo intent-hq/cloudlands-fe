@@ -1,5 +1,5 @@
-import { describe, expect, it, vi } from 'vitest';
-import { parseArgs, planInvocations, runInvocations } from './pnpm-run.mjs';
+import { describe, expect, it } from 'vitest';
+import { parseArgs, planInvocation } from './pnpm-run.mjs';
 
 const PNPM_ENV = {
   npm_execpath: '/store/pnpm/10.30.3/bin/pnpm.cjs',
@@ -7,92 +7,62 @@ const PNPM_ENV = {
 };
 
 describe('parseArgs', () => {
-  it('collects every positional argument as a script name', () => {
-    expect(parseArgs(['lint', 'check', 'test:unit'])).toEqual({
-      scripts: ['lint', 'check', 'test:unit'],
-      forwarded: [],
+  it('takes exactly the first argument as the script name', () => {
+    expect(parseArgs(['lint'])).toEqual({ script: 'lint', forwarded: [] });
+  });
+
+  it('forwards a positional that equals another script name instead of running it', () => {
+    expect(parseArgs(['test:unit', 'test:integration'])).toEqual({
+      script: 'test:unit',
+      forwarded: ['test:integration'],
+    });
+    expect(parseArgs(['capture', 'other', '--help'])).toEqual({
+      script: 'capture',
+      forwarded: ['other', '--help'],
     });
   });
 
   it('keeps a user-written "--" and everything after it verbatim', () => {
     expect(parseArgs(['test:ct', '--', '--grep', 'geometry snapshot', '--'])).toEqual({
-      scripts: ['test:ct'],
+      script: 'test:ct',
       forwarded: ['--', '--grep', 'geometry snapshot', '--'],
     });
+    expect(parseArgs(['lint', '--', 'x'])).toEqual({ script: 'lint', forwarded: ['--', 'x'] });
   });
 
-  it('rejects an empty script list', () => {
+  it('rejects a missing script name', () => {
     expect(() => parseArgs([])).toThrow(/No script name/);
     expect(() => parseArgs(['--', '--fix'])).toThrow(/No script name/);
     expect(() => parseArgs(['--help'])).toThrow(/No script name/);
   });
 
-  it('forwards trailing flags appended by the outer pnpm to a single script', () => {
-    expect(parseArgs(['dev:web', '--help'])).toEqual({
-      scripts: ['dev:web'],
-      forwarded: ['--help'],
-    });
+  it('forwards trailing flags appended by the outer pnpm', () => {
+    expect(parseArgs(['dev:web', '--help'])).toEqual({ script: 'dev:web', forwarded: ['--help'] });
     expect(parseArgs(['dev:web', '--port', '3100', '--host'])).toEqual({
-      scripts: ['dev:web'],
+      script: 'dev:web',
       forwarded: ['--port', '3100', '--host'],
     });
-  });
-
-  it('forwards everything after the first flag, including later positionals', () => {
     expect(parseArgs(['test:ct', '--grep', 'geometry', 'src/a.spec.ts'])).toEqual({
-      scripts: ['test:ct'],
+      script: 'test:ct',
       forwarded: ['--grep', 'geometry', 'src/a.spec.ts'],
-    });
-  });
-
-  it('treats a positional that is not a known script as a forwarded argument', () => {
-    const isScript = (name: string) => name.startsWith('test:');
-    expect(parseArgs(['test:agent-launch', 'src/a.spec.ts'], { isScript })).toEqual({
-      scripts: ['test:agent-launch'],
-      forwarded: ['src/a.spec.ts'],
-    });
-    expect(
-      parseArgs(['test:unit', 'test:integration', 'src/a.spec.ts', '--bail'], { isScript }),
-    ).toEqual({
-      scripts: ['test:unit', 'test:integration'],
-      forwarded: ['src/a.spec.ts', '--bail'],
-    });
-  });
-
-  it('forwards trailing arguments after a chain of scripts', () => {
-    expect(parseArgs(['lint', 'check', '--fix'])).toEqual({
-      scripts: ['lint', 'check'],
-      forwarded: ['--fix'],
-    });
-    expect(parseArgs(['lint', 'check', '--', '--fix'])).toEqual({
-      scripts: ['lint', 'check'],
-      forwarded: ['--', '--fix'],
     });
   });
 });
 
-describe('planInvocations', () => {
+describe('planInvocation', () => {
   const options = { env: PNPM_ENV, platform: 'linux', execPath: '/node' };
 
-  it('routes each script through the invoking pnpm in order', () => {
-    expect(planInvocations(parseArgs(['lint', 'check']), options)).toEqual([
-      {
-        script: 'lint',
-        executable: '/node',
-        args: ['/store/pnpm/10.30.3/bin/pnpm.cjs', 'run', 'lint'],
-        shell: false,
-      },
-      {
-        script: 'check',
-        executable: '/node',
-        args: ['/store/pnpm/10.30.3/bin/pnpm.cjs', 'run', 'check'],
-        shell: false,
-      },
-    ]);
+  it('routes the script through the invoking pnpm', () => {
+    expect(planInvocation(parseArgs(['lint']), options)).toEqual({
+      script: 'lint',
+      executable: '/node',
+      args: ['/store/pnpm/10.30.3/bin/pnpm.cjs', 'run', 'lint'],
+      shell: false,
+    });
   });
 
   it('forwards "--" arguments exactly as pnpm run would receive them', () => {
-    const [invocation] = planInvocations(parseArgs(['test:ct', '--', '--grep', 'a b']), options);
+    const invocation = planInvocation(parseArgs(['test:ct', '--', '--grep', 'a b']), options);
     expect(invocation.args).toEqual([
       '/store/pnpm/10.30.3/bin/pnpm.cjs',
       'run',
@@ -103,8 +73,8 @@ describe('planInvocations', () => {
     ]);
   });
 
-  it('forwards bare trailing flags to a single script without inserting "--"', () => {
-    const [invocation] = planInvocations(parseArgs(['dev:web', '--help']), options);
+  it('forwards bare trailing flags without inserting "--"', () => {
+    const invocation = planInvocation(parseArgs(['dev:web', '--help']), options);
     expect(invocation.args).toEqual([
       '/store/pnpm/10.30.3/bin/pnpm.cjs',
       'run',
@@ -113,16 +83,20 @@ describe('planInvocations', () => {
     ]);
   });
 
-  it('forwards trailing arguments only to the last script of a chain', () => {
-    const plan = planInvocations(parseArgs(['lint', 'check', '--fix', 'src']), options);
-    expect(plan.map((invocation) => invocation.args)).toEqual([
-      ['/store/pnpm/10.30.3/bin/pnpm.cjs', 'run', 'lint'],
-      ['/store/pnpm/10.30.3/bin/pnpm.cjs', 'run', 'check', '--fix', 'src'],
+  it('never consumes more than one script, so shell chains forward to the last member', () => {
+    const invocation = planInvocation(parseArgs(['check', 'lint', '--fix', 'src']), options);
+    expect(invocation.args).toEqual([
+      '/store/pnpm/10.30.3/bin/pnpm.cjs',
+      'run',
+      'check',
+      'lint',
+      '--fix',
+      'src',
     ]);
   });
 
   it('uses the cmd.exe-quoted PATH fallback on Windows without npm_execpath', () => {
-    const [invocation] = planInvocations(parseArgs(['dev:web']), {
+    const invocation = planInvocation(parseArgs(['dev:web']), {
       env: {},
       platform: 'win32',
       execPath: 'node.exe',
@@ -133,48 +107,5 @@ describe('planInvocations', () => {
       args: ['^"run^"', '^"dev:web^"'],
       shell: true,
     });
-  });
-});
-
-describe('runInvocations', () => {
-  const invocations = planInvocations(parseArgs(['a', 'b', 'c']), {
-    env: PNPM_ENV,
-    platform: 'linux',
-    execPath: '/node',
-  });
-
-  it('runs every script sequentially and exits 0 when all succeed', async () => {
-    const order: string[] = [];
-    const spawnScript = vi.fn(async (invocation: { script: string }) => {
-      order.push(invocation.script);
-      return 0;
-    });
-    await expect(runInvocations(invocations, spawnScript)).resolves.toBe(0);
-    expect(order).toEqual(['a', 'b', 'c']);
-  });
-
-  it('stops at the first failure and propagates its exit code', async () => {
-    const spawnScript = vi.fn(async (invocation: { script: string }) =>
-      invocation.script === 'b' ? 7 : 0,
-    );
-    await expect(runInvocations(invocations, spawnScript)).resolves.toBe(7);
-    expect(spawnScript.mock.calls.map(([invocation]) => invocation.script)).toEqual(['a', 'b']);
-  });
-
-  it('does not start a later script while an earlier one is still running', async () => {
-    let resolveFirst: (code: number) => void = () => {};
-    const spawnScript = vi.fn(
-      (invocation: { script: string }) =>
-        new Promise<number>((resolve) => {
-          if (invocation.script === 'a') resolveFirst = resolve;
-          else resolve(0);
-        }),
-    );
-    const run = runInvocations(invocations, spawnScript);
-    await Promise.resolve();
-    expect(spawnScript).toHaveBeenCalledTimes(1);
-    resolveFirst(0);
-    await expect(run).resolves.toBe(0);
-    expect(spawnScript).toHaveBeenCalledTimes(3);
   });
 });
