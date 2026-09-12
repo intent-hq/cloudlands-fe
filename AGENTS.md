@@ -89,7 +89,7 @@ corepack pnpm run dev           # Standard Electron launcher
 corepack pnpm run dev:cdp       # Electron launcher with CDP support
 corepack pnpm run build         # Production build
 corepack pnpm run check         # Svelte + TypeScript checks
-corepack pnpm run lint          # ESLint + i18n string/completeness checks + knip dead code
+corepack pnpm run lint          # ESLint + i18n string/completeness + package-script pnpm nesting + knip dead code
 corepack pnpm run format        # Prettier write pass
 corepack pnpm run format:check  # Prettier check (enforced in PR CI)
 corepack pnpm run test:unit     # Vitest suite
