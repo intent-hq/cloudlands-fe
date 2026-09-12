@@ -8,9 +8,10 @@ import { selectWorkspaceTabOrder } from '$store/renderer/slices/tab-state/tab-st
 import {
   closeFocusedPanelTab,
   closePanel,
-  panelLayoutReducer,
+  panelLayoutReducer as rawPanelLayoutReducer,
   initialState as panelLayoutInitialState,
 } from '$store/renderer/slices/panel-layout/panel-layout-slice';
+import { withPanelLayoutInvariants } from '$store/renderer/slices/panel-layout/panel-layout-invariants.test-helpers';
 import type {
   PanelLayoutSliceState,
   PanelState,
@@ -29,6 +30,8 @@ import {
   reopenWorkspaceTab,
   selectWorkspaceTabByPosition,
 } from './workspace-tab-navigation';
+
+const panelLayoutReducer = withPanelLayoutInvariants(rawPanelLayoutReducer);
 
 const makeTabState = (currentTabId: string | null = 'ws-1'): TabState => ({
   isDragging: false,
