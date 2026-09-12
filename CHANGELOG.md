@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.148.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.148.0...v2.148.1) (2026-09-12)
+
+
+### ⚡ Performance
+
+* **sidebar:** contain note rows and drop transition-all on the row root ([#2358](https://github.com/intent-hq/cloudlands-fe/issues/2358)) ([1adac85](https://github.com/intent-hq/cloudlands-fe/commit/1adac85236484e0b1e7ba79874c7a09fe5570b53))
+
 ## [2.148.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.147.1...v2.148.0) (2026-09-11)
 
 
