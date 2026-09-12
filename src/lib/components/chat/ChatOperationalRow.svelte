@@ -209,7 +209,6 @@
     <div
       bind:this={detailsElement}
       id={expanded ? detailsId : undefined}
-      class={detailsClass}
       data-operational-expanded-content={expanded ? '' : undefined}
       data-response-group-motion="animated-height"
       inert={!expanded || detailsInert}
@@ -217,7 +216,7 @@
       use:animatedHeight={expanded}
     >
       {#if expanded}
-        <div>{@render details()}</div>
+        <div class={detailsClass}>{@render details()}</div>
       {/if}
     </div>
   {:else if details}

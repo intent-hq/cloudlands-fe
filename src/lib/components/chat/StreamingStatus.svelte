@@ -317,7 +317,7 @@
                   iconOnly
                   tooltip={m.error_boundary_copyDetails_tooltip()}
                   aria-label={m.error_boundary_copyDetails_tooltip()}
-                  class="absolute top-3 left-0 -translate-y-1/2 text-muted-foreground"
+                  class="absolute top-2 left-0 -translate-y-1/2 text-muted-foreground"
                 >
                   <Fa icon={errorCopied ? faCheck : faCopy} class="shrink-0" />
                 </Button>

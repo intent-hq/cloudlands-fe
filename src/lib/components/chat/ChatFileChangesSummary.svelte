@@ -145,6 +145,7 @@
     <Button
       type="button"
       variant="plain"
+      wrapContent={false}
       onclick={handleClick}
       aria-disabled={readOnly}
       tabindex={readOnly ? -1 : undefined}
