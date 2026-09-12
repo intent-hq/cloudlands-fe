@@ -51,6 +51,10 @@ describe('css :has() invalidation audit', () => {
       ['a keyed anchor', '.dialog:has(.open) .menu { z-index: 1; }'],
       ['a body attribute marker without :has()', 'body[data-dialog-open] .menu { z-index: 1; }'],
       ['a keyed subject after :has()', '.foo:has(.bar) :is(.baz) { color: red; }'],
+      ['a class-keyed wrapped subject', '.foo:has(.bar) :is(*, .baz).qux { color: red; }'],
+      ['a negated body constraint', '.x:not(body):has(.y) .menu { color: red; }'],
+      ['a keyed :has() argument', '.has-\\[\\>svg\\]\\:pl-2:has(> svg) { padding: 1px; }'],
+      ['the dark variant', '.dark\\:pr-8:where(.dark, .dark *) { padding: 1px; }'],
       ['a nested keyed rule under body', 'body { .dialog:has(.open) .menu { z-index: 1; } }'],
       ['a :has() nested under a keyed parent', '.shell { &:has(.open) .menu { z-index: 1; } }'],
       [
@@ -125,6 +129,26 @@ describe('css :has() invalidation audit', () => {
       ['a universal subject', '.foo:has(.bar) * { color: red; }', '.foo:has(.bar) *'],
       ['a child universal subject', '.foo:has(.bar) > * { color: red; }', '.foo:has(.bar) > *'],
       ['an :is(*) subject', '.foo:has(.bar) :is(*) { color: red; }', '.foo:has(.bar) :is(*)'],
+      [
+        'a universal branch of a wrapped subject',
+        '.foo:has(.bar) :is(*, .baz) { color: red; }',
+        '.foo:has(.bar) :is(*, .baz)',
+      ],
+      [
+        'a pseudo-class-narrowed :where(*) subject',
+        '.foo:has(.bar) :where(*):hover { color: red; }',
+        '.foo:has(.bar) :where(*):hover',
+      ],
+      [
+        'a :root marker after a class',
+        '.dark:root:has(.probe) .menu { color: red; }',
+        '.dark:root:has(.probe) .menu',
+      ],
+      [
+        'an :is(body) marker after a class',
+        '.utility:is(body):has(.probe) { color: red; }',
+        '.utility:is(body):has(.probe)',
+      ],
       ['a nested universal subject', '.foo:has(.bar) { * { color: red; } }', '.foo:has(.bar) *'],
     ])('rejects %s', (_label, css, expected) => {
       expect(auditStylesheet(css)).toEqual([expected]);

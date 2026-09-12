@@ -49,19 +49,26 @@ describe('compiled css :has() invalidation audit', () => {
     it.each([
       ['[body:has(.probe)_&]:pr-8', 'body:has(.probe)'],
       ['group-has-[open]:pr-8', ':where(.group):has(:is(open)) *'],
+      ['[.foo:has(.bar)_:is(*,.baz)]:pr-8', ':is(.foo:has(.bar) :is(*, .baz))'],
+      ['[.foo:has(.bar)_:where(*):hover]:pr-8', ':is(.foo:has(.bar) :where(*):hover)'],
+      ['[&:is(body):has(.probe)]:pr-8', ':is(body):has(.probe)'],
+      ['[.dark:root:has(.probe)_&]:pr-8', '.dark:root:has(.probe) '],
     ])('rejects the utility %s', async (candidate, emittedShape) => {
       const violations = auditCompiled(await compile(candidateStylesheet([candidate])));
       expect(violations).toHaveLength(1);
       expect(violations[0]).toContain(emittedShape);
     });
 
-    it.each([['has-[>svg]:pl-2'], ['dark:pr-8']])('accepts the utility %s', async (candidate) => {
-      const css = await compile(candidateStylesheet([candidate]));
-      expect(compiledSelectors(css).some((s) => s.includes(':pl-2') || s.includes(':pr-8'))).toBe(
-        true,
-      );
-      expect(auditCompiled(css)).toEqual([]);
-    });
+    it.each([['has-[>svg]:pl-2'], ['dark:pr-8'], ['[.x:not(body):has(.y)_&]:pr-8']])(
+      'accepts the utility %s',
+      async (candidate) => {
+        const css = await compile(candidateStylesheet([candidate]));
+        expect(compiledSelectors(css).some((s) => s.includes(':pl-2') || s.includes(':pr-8'))).toBe(
+          true,
+        );
+        expect(auditCompiled(css)).toEqual([]);
+      },
+    );
   });
 
   describe('production stylesheet', () => {

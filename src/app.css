@@ -10,13 +10,16 @@
 
 /* Tailwind v4 auto-detects sources by scanning the whole package, so class-name
    strings that only live in tests, scripts, and docs would otherwise reach the
-   production stylesheet. Exclude test code and tooling; keep `.svelte`/`.html`
-   fixtures (test/fixtures, __tests__/*.svelte, playwright/) because the CT and
-   Playwright harnesses import this file and need their utilities. */
+   production stylesheet. Exclude test code, tooling, and docs (including the
+   Markdown nested under src/); keep `.svelte`/`.html` fixtures (test/fixtures,
+   __tests__/*.svelte, playwright/) because the CT and Playwright harnesses
+   import this file and need their utilities. */
 @source not '**/*.test.ts';
 @source not '**/*.spec.ts';
+@source not '**/*.md';
 @source not '**/*-snapshots/**';
 @source not '**/__tests__/**/*.ts';
+@source not 'test/**/*.ts';
 @source not '../test/**/*.ts';
 @source not '../test/**/*.mts';
 @source not '../test/**/*.mjs';

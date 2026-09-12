@@ -6,9 +6,10 @@
 // subject (`:has(…) *`, what Tailwind `group-has-*` / `peer-has-*` compile to)
 // restyles the whole subtree when it fires.
 const compoundSuffix = String.raw`(?:#[\w-]+|\.[\w-]+|\[[^\]]*\]|:(?!has\b)[\w-]+(?:\((?:[^()]|\([^()]*\))*\))?)*`;
-const documentCompound = new RegExp(String.raw`^(?:html|body|:root)${compoundSuffix}$`);
-const wrappedCompound = /^:(?:is|where|global)\(/;
-const universalCompound = /^\*(?::(?!has\b)[\w-]+(?:\([^()]*\))?)*$|^:(?:is|where)\(\s*\*\s*\)$/;
+const documentSimple = /^(?:html|body|:root)$/i;
+const documentWrapper = /^:(?:is|where|global)\(/;
+const universalWrapper = /^:(?:is|where)\(/;
+const pseudoClass = /^:(?!has\b)[\w-]+/;
 const wrappedArguments = /:(?:is|where|not|global)\(/g;
 const documentAnchoredHasInMarkup = new RegExp(
   String.raw`(?:^|[\s>+~,({\['"\x60])(?::global\()?(?:html|body|:root)${compoundSuffix}:has\(`,
@@ -64,13 +65,53 @@ export function closingParen(text: string, openIndex: number): number {
   return -1;
 }
 
+/** The simple selectors of a compound (`.dark:root` → `.dark`, `:root`); backslash escapes never split. */
+export function simpleSelectors(compound: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i < compound.length; i++) {
+    const ch = compound[i];
+    if (ch === '\\') {
+      i++;
+      continue;
+    }
+    if (depth === 0 && i > start && /[.#:[]/.test(ch) && compound[i - 1] !== ':') {
+      parts.push(compound.slice(start, i));
+      start = i;
+    }
+    if (ch === '(' || ch === '[') depth++;
+    else if (ch === ')' || ch === ']') depth--;
+  }
+  parts.push(compound.slice(start));
+  return parts.filter(Boolean);
+}
+
+/** The top-level arguments of one functional pseudo-class such as `:is(body, .shell)`. */
+function functionArguments(simple: string): string[] {
+  const open = simple.indexOf('(');
+  const close = closingParen(simple, open);
+  return close === -1 ? [] : splitTopLevel(simple.slice(open + 1, close), ',');
+}
+
+/** The compound selector a (possibly complex) selector ends with. */
+function subjectCompound(selector: string): string {
+  const trimmed = selector.trimEnd();
+  return compoundBefore(trimmed, trimmed.length);
+}
+
+/**
+ * Whether a compound is constrained to the document root: it contains `html`,
+ * `body`, or `:root` anywhere, directly or inside an `:is()` / `:where()` /
+ * `:global()` branch. `:not(body)` is a negative constraint, not an anchor.
+ */
 export function isDocumentCompound(compound: string): boolean {
-  if (documentCompound.test(compound)) return true;
-  if (!wrappedCompound.test(compound)) return false;
-  const open = compound.indexOf('(');
-  const close = closingParen(compound, open);
-  if (close === -1) return false;
-  return splitTopLevel(compound.slice(open + 1, close), ',').some(isDocumentCompound);
+  return simpleSelectors(compound).some(
+    (simple) =>
+      documentSimple.test(simple) ||
+      (documentWrapper.test(simple) &&
+        functionArguments(simple).some((arg) => isDocumentCompound(subjectCompound(arg)))),
+  );
 }
 
 /** `:has()` whose anchor compound is `html`, `body`, or `:root` (optionally narrowed by id/class/attribute/pseudo). */
@@ -80,11 +121,29 @@ export function anchorsHasAtDocument(selector: string): boolean {
   );
 }
 
-/** A `:has()` somewhere before a universal subject (`*`, `:is(*)`, `:where(*)`). */
+/**
+ * Whether a compound matches every element: `*`, or an `:is()` / `:where()`
+ * with a universal branch (`:is(*, .baz)`), narrowed at most by pseudo-classes
+ * (`:where(*):hover`). A class, id, or attribute in the compound keys it.
+ */
+export function isUniversalCompound(compound: string): boolean {
+  const simples = simpleSelectors(compound);
+  const isUniversal = (simple: string): boolean =>
+    simple === '*' ||
+    (universalWrapper.test(simple) &&
+      functionArguments(simple).some((arg) => isUniversalCompound(subjectCompound(arg))));
+  return (
+    simples.some(isUniversal) &&
+    simples.every((simple) => isUniversal(simple) || pseudoClass.test(simple))
+  );
+}
+
+/** A `:has()` somewhere before a universal subject (`*`, `:is(*)`, `:where(*):hover`, …). */
 export function hasUniversalSubject(selector: string): boolean {
-  const trimmed = selector.trimEnd();
-  const subject = compoundBefore(trimmed, trimmed.length);
-  return universalCompound.test(subject) && trimmed.slice(0, -subject.length).includes(':has(');
+  const subject = subjectCompound(selector);
+  return (
+    isUniversalCompound(subject) && selector.trimEnd().slice(0, -subject.length).includes(':has(')
+  );
 }
 
 /**
