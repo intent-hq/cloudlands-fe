@@ -53,18 +53,21 @@ import {
   initializeLayout,
   openTabInRightmostColumn,
   openTabInRightmostColumnRequested,
-  panelLayoutReducer,
+  panelLayoutReducer as rawPanelLayoutReducer,
   setRestoreStatus,
   updateTabBrowserUrl,
   updateTabTitle,
 } from '../panel-layout-slice';
 import type { PanelTab } from '../panel-layout-types';
+import { withPanelLayoutInvariants } from '../panel-layout-invariants.test-helpers';
 import {
   browserTabRegistrySaga,
   REPORT_DEBOUNCE_MS,
   SYNC_RETRY_MS,
 } from './browser-tab-registry-saga';
 import { watchRightmostColumnRequests } from './panel-layout-saga';
+
+const panelLayoutReducer = withPanelLayoutInvariants(rawPanelLayoutReducer);
 
 const WS = 'ws-1';
 const OWN = 'cli-desk';
