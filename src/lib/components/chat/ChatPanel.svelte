@@ -6418,6 +6418,7 @@
               <EventSubscriptionsCard
                 workspaceId={workspace.id}
                 {agentId}
+                {isActive}
                 compact={isCompactMode}
                 bind:visible={hasVisibleTranscriptUtility}
               />

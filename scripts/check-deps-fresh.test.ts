@@ -1,11 +1,18 @@
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { INSTALL_COMMAND, checkDepsFresh } from './check-deps-fresh.mjs';
+import { INSTALL_COMMAND, checkDepsFresh, ensureI18nFresh } from './check-deps-fresh.mjs';
+import {
+  PARAGLIDE_INPUTS_HASH_FILE,
+  PARAGLIDE_STALE_MESSAGE,
+  hashParaglideInputs,
+  repoParaglidePaths,
+} from './paraglide-inputs-hash.mjs';
 
-const SCRIPT_PATH = resolve(process.cwd(), 'scripts', 'check-deps-fresh.mjs');
+const SCRIPTS_DIR = resolve(process.cwd(), 'scripts');
+const CLI_SCRIPTS = ['check-deps-fresh.mjs', 'paraglide-inputs-hash.mjs'];
 
 const temporaryPaths: string[] = [];
 
@@ -22,6 +29,17 @@ function fixtureRoot(files: Record<string, string>) {
 }
 
 const LOCKFILE = "lockfileVersion: '9.0'\nimporters:\n  .:\n    dependencies:\n      a: 1.0.0\n";
+
+/** i18n inputs plus generated outputs whose recorded hash matches, so --if-stale compiles nothing. */
+function writeCurrentI18nBundle(root: string) {
+  const paths = repoParaglidePaths(root);
+  for (const dir of Object.values(paths)) mkdirSync(dir, { recursive: true });
+  writeFileSync(join(paths.projectDir, 'settings.json'), JSON.stringify({ baseLocale: 'en' }));
+  writeFileSync(join(paths.messagesDir, 'en.json'), JSON.stringify({ hello: 'Hello' }));
+  writeFileSync(join(paths.outdir, 'messages.js'), 'export const m = {};\n');
+  writeFileSync(join(paths.outdir, 'runtime.js'), 'export const baseLocale = "en";\n');
+  writeFileSync(join(paths.outdir, PARAGLIDE_INPUTS_HASH_FILE), `${hashParaglideInputs(paths)}\n`);
+}
 
 afterEach(() => {
   for (const path of temporaryPaths.splice(0)) rmSync(path, { recursive: true, force: true });
@@ -71,21 +89,58 @@ describe('check-deps-fresh', () => {
   });
 });
 
+describe('ensureI18nFresh', () => {
+  it('provisions the bundle for the given root only while it is stale', async () => {
+    const calls: unknown[] = [];
+    const result = await ensureI18nFresh('/pkg', {
+      ensure: async (options) => {
+        calls.push(options);
+        return true;
+      },
+    });
+    expect(calls).toEqual([{ rootDir: '/pkg', ifStale: true }]);
+    expect(result).toEqual({ ok: true, reason: null });
+  });
+
+  it('reports the generate:i18n remediation when the compile never settles', async () => {
+    const result = await ensureI18nFresh('/pkg', { ensure: async () => false });
+    expect(result).toEqual({ ok: false, reason: PARAGLIDE_STALE_MESSAGE });
+    expect(result.reason).toContain('generate:i18n');
+  });
+});
+
 describe('check-deps-fresh CLI', () => {
   function runCli(root: string) {
-    const script = join(root, 'scripts', 'check-deps-fresh.mjs');
     mkdirSync(join(root, 'scripts'), { recursive: true });
-    copyFileSync(SCRIPT_PATH, script);
+    for (const file of CLI_SCRIPTS)
+      copyFileSync(join(SCRIPTS_DIR, file), join(root, 'scripts', file));
+    const script = join(root, 'scripts', 'check-deps-fresh.mjs');
     const result = spawnSync(process.execPath, [script], { cwd: root, encoding: 'utf8' });
     return { status: result.status, stdout: result.stdout, stderr: result.stderr };
   }
 
-  it('exits 0 silently on a fresh install', () => {
+  it('exits 0 silently on a fresh install with a current i18n bundle', () => {
     const root = fixtureRoot({
       'pnpm-lock.yaml': LOCKFILE,
       'node_modules/.pnpm/lock.yaml': LOCKFILE,
     });
+    writeCurrentI18nBundle(root);
+    const sidecar = join(repoParaglidePaths(root).outdir, PARAGLIDE_INPUTS_HASH_FILE);
+    const before = statSync(sidecar).mtimeMs;
     expect(runCli(root)).toEqual({ status: 0, stdout: '', stderr: '' });
+    expect(statSync(sidecar).mtimeMs).toBe(before);
+  });
+
+  it('reports a missing i18n bundle under the generate:i18n prefix once deps are fresh', () => {
+    const root = fixtureRoot({
+      'pnpm-lock.yaml': LOCKFILE,
+      'node_modules/.pnpm/lock.yaml': LOCKFILE,
+    });
+    const result = runCli(root);
+    expect(result.status).toBe(1);
+    expect(result.stdout).toBe('');
+    expect(result.stderr).toMatch(/^\[generate:i18n\] /);
+    expect(result.stderr).not.toContain('[deps:check]');
   });
 
   it('exits 1 with a single prefixed stderr line on a stale install', () => {

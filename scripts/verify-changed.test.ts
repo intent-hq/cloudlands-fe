@@ -583,6 +583,23 @@ describe('verification planning', () => {
     expect(ids).not.toContain('vitest-ui-invariants');
   });
 
+  it('provisions the gitignored main build config before the main type check only', () => {
+    const root = fixtureRoot({ 'src/main/index.ts': '', 'src/lib/utils.ts': '' });
+    const mainPlan = createVerificationPlan(['src/main/index.ts'], { root, ctTests: [] });
+    const ids = mainPlan.checks.map((check) => check.id);
+    expect(ids.indexOf('generate-build-config')).toBeGreaterThanOrEqual(0);
+    expect(ids.indexOf('generate-build-config')).toBeLessThan(ids.indexOf('tsc-main'));
+    expect(mainPlan.checks.find((check) => check.id === 'generate-build-config')?.args).toEqual([
+      'run',
+      'generate:build-config',
+      '--',
+      '--if-missing',
+    ]);
+
+    const rendererPlan = createVerificationPlan(['src/lib/utils.ts'], { root, ctTests: [] });
+    expect(rendererPlan.checks.map((check) => check.id)).not.toContain('generate-build-config');
+  });
+
   it('checks all process boundaries for shared source', () => {
     const root = fixtureRoot({ 'src/shared/protocol.ts': '' });
     const plan = createVerificationPlan(['src/shared/protocol.ts'], { root, ctTests: [] });
@@ -599,6 +616,7 @@ describe('verification planning', () => {
       'vitest-full',
       'svelte-check',
       'tsc-renderer',
+      'generate-build-config',
       'tsc-main',
       'generate-ipc-channels',
       'tsc-preload',
@@ -923,7 +941,8 @@ describe('empty change set guard', () => {
 });
 
 describe('dependency freshness gate', () => {
-  function cliOptions(depsResult: { ok: boolean; reason: string | null }) {
+  type StepResult = { ok: boolean; reason: string | null };
+  function cliOptions(depsResult: StepResult, i18nResult: StepResult = { ok: true, reason: null }) {
     const calls: string[] = [];
     return {
       calls,
@@ -933,6 +952,10 @@ describe('dependency freshness gate', () => {
           calls.push('checkDeps');
           return depsResult;
         },
+        async ensureI18n(root: string) {
+          calls.push(`ensureI18n:${root}`);
+          return i18nResult;
+        },
         async runPlan() {
           calls.push('runPlan');
         },
@@ -940,7 +963,7 @@ describe('dependency freshness gate', () => {
     };
   }
 
-  it('checks the install before running a plan and refuses a stale install', async () => {
+  it('checks the install, then the i18n bundle, before running a plan', async () => {
     const root = fixtureRoot({ 'src/lib/example.ts': 'export const value = 1;' });
     const reason = 'node_modules is out of sync';
     const stale = cliOptions({ ok: false, reason });
@@ -949,7 +972,15 @@ describe('dependency freshness gate', () => {
 
     const fresh = cliOptions({ ok: true, reason: null });
     await runCli(['src/lib/example.ts'], root, fresh.options);
-    expect(fresh.calls).toEqual(['checkDeps', 'runPlan']);
+    expect(fresh.calls).toEqual(['checkDeps', `ensureI18n:${root}`, 'runPlan']);
+  });
+
+  it('refuses to run a plan when the i18n bundle cannot be provisioned', async () => {
+    const root = fixtureRoot({ 'src/lib/example.ts': 'export const value = 1;' });
+    const reason = 'messages kept changing while compiling';
+    const { calls, options } = cliOptions({ ok: true, reason: null }, { ok: false, reason });
+    await expect(runCli(['src/lib/example.ts'], root, options)).rejects.toThrow(reason);
+    expect(calls).toEqual(['checkDeps', `ensureI18n:${root}`]);
   });
 
   it('skips the install check for dry runs', async () => {

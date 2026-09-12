@@ -6166,7 +6166,7 @@
   "antigravity_setup_customPath_error": "사용자 지정 브리지 경로가 잘못되었습니다. 제공업체 메뉴에서 수정한 후 다시 시도하세요.",
   "antigravity_setup_cancelled_description": "설정이 취소되었습니다. 준비되면 다시 연결할 수 있습니다.",
   "antigravity_setup_cancel_label": "설정 취소",
-  "workspace_drivingClient_here_label": "브라우저 구동 중",
+  "workspace_drivingClient_here_label": "이 클라이언트에서 브라우저 사용",
   "workspace_drivingClient_elsewhere_label": "{host}의 브라우저",
   "workspace_drivingClient_offline_label": "{host}의 브라우저(오프라인)",
   "workspace_drivingClient_here_description": "이 워크스페이스의 에이전트 브라우저 탭과 터널은 이 앱에서 실행됩니다.",

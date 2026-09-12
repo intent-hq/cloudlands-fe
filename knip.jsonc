@@ -25,7 +25,7 @@
     "e2e/global-teardown.ts",
     "e2e/mock-acp-agent.js",
     // $app alias stubs wired in playwright-ct.config.ts ctViteConfig (alias resolution
-    // is not followed by knip); playwright/index.ts is a CT plugin default entry already
+    // is not followed by knip); playwright/index.ts is listed under "playwright-ct" below
     "playwright/app-stubs/*.ts",
     // Loaded via <script src> in operate-patterns.visual.html (visual test harness)
     "src/lib/components/ui/card/operate-patterns.visual.ts",
@@ -97,6 +97,14 @@
       // e2e/playwright.config.e2e.ts + e2e/build-smoke.config.ts: testMatch **/*.e2e.ts
       "e2e/**/*.e2e.ts",
     ],
+  },
+  "playwright-ct": {
+    // Same known issue as "playwright": knip resolves the `playwright test --config=…`
+    // flags in package.json scripts and loads those @playwright/test configs first, after
+    // which loading playwright-ct.config.ts fails. Config loading is disabled and the CT
+    // plugin's default entries are replicated here.
+    "config": [],
+    "entry": ["playwright-ct.config.ts", "playwright/index.ts", "src/**/*.ct.spec.ts"],
   },
   // System/external binaries, not npm packages: pkill/iconutil (macOS), duckdb, flatpak,
   // idea (JetBrains launcher), auggie (Augment CLI, expected on dev/CI hosts)

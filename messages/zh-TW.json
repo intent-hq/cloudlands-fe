@@ -6166,7 +6166,7 @@
   "antigravity_setup_customPath_error": "自訂橋接程式路徑無效。請在提供者選單中修正後重試。",
   "antigravity_setup_cancelled_description": "設定已取消。準備好後可再次連線。",
   "antigravity_setup_cancel_label": "取消設定",
-  "workspace_drivingClient_here_label": "正在驅動瀏覽器",
+  "workspace_drivingClient_here_label": "在此用戶端使用瀏覽器",
   "workspace_drivingClient_elsewhere_label": "瀏覽器位於 {host}",
   "workspace_drivingClient_offline_label": "瀏覽器位於 {host}（離線）",
   "workspace_drivingClient_here_description": "此工作區的代理程式瀏覽器分頁和通道在本應用程式中執行。",

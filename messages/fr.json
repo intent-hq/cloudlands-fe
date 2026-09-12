@@ -6166,7 +6166,7 @@
   "antigravity_setup_customPath_error": "Le chemin personnalisé vers la passerelle est invalide. Corrigez-le dans le menu du fournisseur, puis réessayez.",
   "antigravity_setup_cancelled_description": "Configuration annulée. Vous pourrez vous reconnecter quand vous le souhaiterez.",
   "antigravity_setup_cancel_label": "Annuler la configuration",
-  "workspace_drivingClient_here_label": "Pilote le navigateur",
+  "workspace_drivingClient_here_label": "Utilisation du navigateur sur ce client",
   "workspace_drivingClient_elsewhere_label": "Navigateur sur {host}",
   "workspace_drivingClient_offline_label": "Navigateur sur {host} (hors ligne)",
   "workspace_drivingClient_here_description": "Les onglets de navigateur et tunnels des agents de cet espace de travail s’exécutent dans cette application.",

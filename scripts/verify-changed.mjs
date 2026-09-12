@@ -15,7 +15,7 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { escape as escapeGlob, globSync } from 'glob';
-import { checkDepsFresh } from './check-deps-fresh.mjs';
+import { checkDepsFresh, ensureI18nFresh } from './check-deps-fresh.mjs';
 import { pnpmInvocation } from './pnpm-launcher.mjs';
 import {
   listDeclaredSuites,
@@ -594,6 +594,12 @@ export function createVerificationPlan(files, options = {}) {
   }
   if (boundaries.has('main')) {
     checks.push(
+      command('generate-build-config', 'Generate main build config (if missing)', [
+        'run',
+        'generate:build-config',
+        '--',
+        '--if-missing',
+      ]),
       command('tsc-main', 'TypeScript (main)', [
         'exec',
         'tsc',
@@ -788,6 +794,7 @@ export async function runVerificationPlan(plan, root, options = {}) {
 export async function runCli(argv = process.argv.slice(2), root = REPO_ROOT, options = {}) {
   const log = options.log ?? console.log;
   const checkDeps = options.checkDeps ?? checkDepsFresh;
+  const ensureI18n = options.ensureI18n ?? ensureI18nFresh;
   const runPlan = options.runPlan ?? runVerificationPlan;
   const args = parseArgs(argv);
   if (args.help) {
@@ -810,6 +817,8 @@ export async function runCli(argv = process.argv.slice(2), root = REPO_ROOT, opt
 
   const deps = checkDeps(root);
   if (!deps.ok) throw new Error(deps.reason);
+  const i18n = await ensureI18n(root);
+  if (!i18n.ok) throw new Error(i18n.reason);
   await runPlan(plan, root);
   return 0;
 }

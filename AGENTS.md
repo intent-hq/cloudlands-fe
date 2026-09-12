@@ -34,23 +34,24 @@ src/
 FE docs live in the monorepo's `docs/fe/` — the `../../docs/fe/` paths below resolve
 in a monorepo checkout, where this repo mounts at `packages/cloudlands-fe/`.
 
-| Working on…         | Open                                                                                 |
-| ------------------- | ------------------------------------------------------------------------------------ |
-| agents              | ../../docs/fe/agent-message-dedup-and-stream-sagas.md, ../../docs/fe/RULES_SYSTEM.md |
-| state/store         | ../../docs/fe/STATE_MANAGEMENT.md, src/store/renderer/docs/                          |
-| component design    | ../../docs/fe/COMPONENTS_DESIGN.md                                                   |
-| UI invariant gates  | `pnpm run test:ui-invariants` — ratchets + catalog `*.meta.ts` ledgers, see below    |
-| deps freshness      | `pnpm run deps:check` — gates refuse to run on a stale node_modules install          |
-| panels/layout       | ../../docs/fe/panel-system-refactoring.md, ../../docs/fe/PANEL_TAB_UX_SPEC.md        |
-| PR descriptions     | ../../docs/fe/PR_DESCRIPTION_GUIDE.md                                                |
-| browser/CDP         | ../../docs/fe/BROWSER_PANEL_SPEC.md, ../../docs/fe/CDP_MCP_TOOLS.md                  |
-| module boundaries   | ../../docs/fe/MODULE_BOUNDARY_GUIDE.md                                               |
-| debugging           | ../../docs/fe/TROUBLESHOOTING_GUIDE.md, ../../docs/fe/IPC_DEBUG_GUIDE.md             |
-| error handling      | ../../docs/fe/ERROR_HANDLING_SYSTEM.md                                               |
-| TypeScript/types    | ../../docs/fe/TYPE_SYSTEM_GUIDE.md                                                   |
-| events/IPC          | ../../docs/fe/EVENT_SYSTEM.md                                                        |
-| keybindings         | ../../docs/fe/KEYBINDINGS.md                                                         |
-| deploying/releasing | ../../docs/fe/DEPLOYING.md                                                           |
+| Working on…         | Open                                                                                      |
+| ------------------- | ----------------------------------------------------------------------------------------- |
+| agents              | ../../docs/fe/agent-message-dedup-and-stream-sagas.md, ../../docs/fe/RULES_SYSTEM.md      |
+| state/store         | ../../docs/fe/STATE_MANAGEMENT.md, src/store/renderer/docs/                               |
+| component design    | ../../docs/fe/COMPONENTS_DESIGN.md                                                        |
+| UI invariant gates  | `pnpm run test:ui-invariants` — ratchets + catalog `*.meta.ts` ledgers, see below         |
+| deps freshness      | `pnpm run deps:check` — gates refuse to run on a stale node_modules install               |
+| panels/layout       | ../../docs/fe/panel-system-refactoring.md, ../../docs/fe/PANEL_TAB_UX_SPEC.md             |
+| PR descriptions     | ../../docs/fe/PR_DESCRIPTION_GUIDE.md                                                     |
+| browser/CDP         | ../../docs/fe/BROWSER_PANEL_SPEC.md, ../../docs/fe/CDP_MCP_TOOLS.md                       |
+| module boundaries   | ../../docs/fe/MODULE_BOUNDARY_GUIDE.md                                                    |
+| motion perf traces  | `pnpm perf:chat-motion` — ../../docs/fe/DEVELOPER_GUIDE.md#chat-motion-performance-traces |
+| debugging           | ../../docs/fe/TROUBLESHOOTING_GUIDE.md, ../../docs/fe/IPC_DEBUG_GUIDE.md                  |
+| error handling      | ../../docs/fe/ERROR_HANDLING_SYSTEM.md                                                    |
+| TypeScript/types    | ../../docs/fe/TYPE_SYSTEM_GUIDE.md                                                        |
+| events/IPC          | ../../docs/fe/EVENT_SYSTEM.md                                                             |
+| keybindings         | ../../docs/fe/KEYBINDINGS.md                                                              |
+| deploying/releasing | ../../docs/fe/DEPLOYING.md                                                                |
 
 ## Key conventions
 
@@ -88,7 +89,7 @@ corepack pnpm run dev           # Standard Electron launcher
 corepack pnpm run dev:cdp       # Electron launcher with CDP support
 corepack pnpm run build         # Production build
 corepack pnpm run check         # Svelte + TypeScript checks
-corepack pnpm run lint          # ESLint + i18n string/completeness checks + knip dead code
+corepack pnpm run lint          # ESLint + i18n string/completeness + package-script pnpm nesting + knip dead code
 corepack pnpm run format        # Prettier write pass
 corepack pnpm run format:check  # Prettier check (enforced in PR CI)
 corepack pnpm run test:unit     # Vitest suite
