@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest';
 import {
   analyzeSamples,
   analyzeTrace,
+  assertMotionClicks,
   parseArgs,
   prepareOutDir,
   scrollSampleLabels,
@@ -204,6 +205,27 @@ describe('analyzeTrace', () => {
 
     expect(Object.keys(motions)).toEqual(['open']);
     expect(motions.open).toMatchObject({ taskCount: 0, maxTaskMs: 0, maxUpdateLayoutTreeMs: 0 });
+  });
+});
+
+describe('assertMotionClicks', () => {
+  it('accepts motions whose window contains the click dispatch', () => {
+    const motions = analyzeTrace(TRACE, { marks: ['collapse'] });
+    expect(() => assertMotionClicks(motions, ['collapse'])).not.toThrow();
+  });
+
+  it('fails a motion whose window holds no click, naming the motion', () => {
+    const motions = analyzeTrace(TRACE, { marks: ['collapse', 'expand'] });
+    expect(() => assertMotionClicks(motions, ['collapse', 'expand'])).toThrow(
+      'expand: no click event in the 400ms trace window',
+    );
+  });
+
+  it('fails a motion whose mark never reached the trace', () => {
+    const motions = analyzeTrace(TRACE, { marks: ['open', 'close'] });
+    expect(() => assertMotionClicks(motions, ['open', 'close'])).toThrow(
+      'open: mark missing from the trace; close: mark missing from the trace',
+    );
   });
 });
 

@@ -19,15 +19,21 @@ import path from 'node:path';
 import { chromium } from 'playwright';
 import {
   SCENARIOS,
+  assertMotionClicks,
   parseArgs,
   prepareOutDir,
   scrollSampleLabels,
   summarize,
 } from './chat-motion-lib.mjs';
+import {
+  VIEWPORT_SELECTOR,
+  clickControl,
+  installPageHelper,
+  waitForFrames,
+} from './chat-motion-page.mjs';
 
 const USAGE =
   'usage: pnpm perf:chat-motion --url <app-url> --out <dir> [--scenario footer|context-well] [--inflate 10000] [--frames 40] [--scroll-up 800] [--quiet-ms 750] [--quiet-timeout 15000] [--timeout 180000] [--headed]';
-const VIEWPORT_SELECTOR = '[data-testid="chat-transcript-scroll-viewport"]';
 const TRANSCRIPT_INNER_SELECTOR = '[data-testid="chat-transcript-inner"]';
 const UTILITY_STACK_SELECTOR = '[data-testid="transcript-utility-stack"]';
 const FOOTER_HEADER_SELECTOR = '[aria-controls^="event-subscriptions-body"]';
@@ -51,54 +57,6 @@ const TOGGLE_TIMEOUT_MS = 5000;
 const BROWSER_VIEWPORT = { width: 1280, height: 900 };
 
 class UsageError extends Error {}
-
-function installPageHelper(page, { frames }) {
-  return page.evaluate(
-    ({ viewportSelector, frames }) => {
-      const viewport = document.querySelector(viewportSelector);
-      const helper = {
-        anchor: null,
-        frames: [],
-        pickAnchor() {
-          const bounds = viewport.getBoundingClientRect();
-          helper.anchor =
-            [...viewport.querySelectorAll('[data-lazy-turn-key]')]
-              .filter((node) => !node.closest('[data-inflated]'))
-              .find((node) => {
-                const rect = node.getBoundingClientRect();
-                return rect.bottom > bounds.top + 40 && rect.top < bounds.bottom;
-              }) ?? null;
-          return helper.anchor !== null;
-        },
-        geometry() {
-          return { top: viewport.scrollTop, max: viewport.scrollHeight - viewport.clientHeight };
-        },
-        quietKey() {
-          return `${viewport.scrollTop},${viewport.scrollHeight}`;
-        },
-        frame() {
-          const anchor = helper.anchor;
-          return {
-            ...helper.geometry(),
-            anchorTop: anchor ? anchor.getBoundingClientRect().top : undefined,
-            anchorConnected: anchor ? anchor.isConnected : undefined,
-          };
-        },
-        startSampling() {
-          helper.frames = [];
-          let count = 0;
-          const tick = () => {
-            helper.frames.push(helper.frame());
-            if (++count < frames) requestAnimationFrame(tick);
-          };
-          requestAnimationFrame(tick);
-        },
-      };
-      window.__chatMotion = helper;
-    },
-    { viewportSelector: VIEWPORT_SELECTOR, frames },
-  );
-}
 
 // The sidebar mounts before the transcript hydrates, so a scenario whose starting state
 // does not live in the transcript must wait for a rendered turn before inflating.
@@ -175,21 +133,11 @@ function readState(page, { state }) {
   }, state);
 }
 
-async function waitForFrames(page, frames) {
-  await page.waitForFunction((count) => window.__chatMotion.frames.length >= count, frames, {
-    timeout: frames * 250 + 2000,
-  });
-  return page.evaluate(() => window.__chatMotion.frames);
-}
-
-async function toggle(page, { label, mark, target, pointer }) {
+async function toggle(page, { label, mark, target, pointer, sample = false }) {
   const before = await readState(page, target);
-  const controlSelector = target.control(before.expanded);
-  await page.waitForSelector(controlSelector, { state: 'attached', timeout: TOGGLE_TIMEOUT_MS });
-  await page.evaluate((name) => performance.mark(name), mark);
-  const control = page.locator(controlSelector);
-  if (pointer) await control.click({ timeout: TOGGLE_TIMEOUT_MS });
-  else await control.evaluate((node) => node.click());
+  const selector = target.control(before.expanded);
+  await page.waitForSelector(selector, { state: 'attached', timeout: TOGGLE_TIMEOUT_MS });
+  await clickControl(page, { label, mark, selector, pointer, sample });
   await page.waitForTimeout(TOGGLE_SETTLE_MS);
   const after = await readState(page, target);
   if (before.expanded === after.expanded) throw new Error(`${label} did not toggle`);
@@ -197,8 +145,7 @@ async function toggle(page, { label, mark, target, pointer }) {
 }
 
 async function sampleToggle(page, samples, { label, target, pointer, frames }) {
-  await page.evaluate(() => window.__chatMotion.startSampling());
-  const result = await toggle(page, { label, mark: label, target, pointer });
+  const result = await toggle(page, { label, mark: label, target, pointer, sample: true });
   samples[label] = { ...result, frames: await waitForFrames(page, frames) };
 }
 
@@ -402,6 +349,7 @@ async function main(argv) {
     await browser.close();
   }
   const summary = summarize({ url: options.url, scenario: options.scenario, startedAt, ...result });
+  assertMotionClicks(summary.motions, SCENARIOS[options.scenario].marks);
   await writeFile(
     path.join(outDir, 'samples.json'),
     `${JSON.stringify(result.samples, null, 2)}\n`,

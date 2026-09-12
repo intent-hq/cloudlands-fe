@@ -159,6 +159,19 @@ export function analyzeTrace(traceEvents, { marks, windowMs = DEFAULT_WINDOW_MS 
   return motions;
 }
 
+// A traced motion whose window holds no click did not capture the interaction (the mark
+// landed before or after the dispatch); its costs are meaningless rather than zero.
+export function assertMotionClicks(motions, marks) {
+  const missing = marks
+    .filter((mark) => !(motions[mark]?.clicks.length > 0))
+    .map((mark) =>
+      motions[mark]
+        ? `${mark}: no click event in the ${motions[mark].windowMs}ms trace window`
+        : `${mark}: mark missing from the trace`,
+    );
+  if (missing.length) throw new Error(missing.join('; '));
+}
+
 export function analyzeSamples(frames) {
   const tops = frames.map((frame) => frame.top);
   const anchorTops = frames
