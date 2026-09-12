@@ -6169,7 +6169,7 @@
   "antigravity_setup_customPath_error": "La ruta personalizada al puente no es válida. Corrígela en el menú del proveedor e inténtalo de nuevo.",
   "antigravity_setup_cancelled_description": "Configuración cancelada. Puedes volver a conectar cuando quieras.",
   "antigravity_setup_cancel_label": "Cancelar configuración",
-  "workspace_drivingClient_here_label": "Controla el navegador",
+  "workspace_drivingClient_here_label": "Uso del navegador en este cliente",
   "workspace_drivingClient_elsewhere_label": "Navegador en {host}",
   "workspace_drivingClient_offline_label": "Navegador en {host} (sin conexión)",
   "workspace_drivingClient_here_description": "Las pestañas de navegador y túneles de agentes de este espacio de trabajo se ejecutan en esta aplicación.",

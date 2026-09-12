@@ -6169,7 +6169,7 @@
   "antigravity_setup_customPath_error": "The custom bridge path is invalid. Correct it in the provider menu, then retry.",
   "antigravity_setup_cancelled_description": "Setup cancelled. You can connect again when ready.",
   "antigravity_setup_cancel_label": "Cancel setup",
-  "workspace_drivingClient_here_label": "Driving browser",
+  "workspace_drivingClient_here_label": "Browser-use on this client",
   "workspace_drivingClient_elsewhere_label": "Browser on {host}",
   "workspace_drivingClient_offline_label": "Browser on {host} (offline)",
   "workspace_drivingClient_here_description": "Agent browser tabs and tunnels for this workspace run in this app.",

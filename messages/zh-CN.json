@@ -6169,7 +6169,7 @@
   "antigravity_setup_customPath_error": "自定义桥接程序路径无效。请在提供商菜单中修正后重试。",
   "antigravity_setup_cancelled_description": "设置已取消。准备好后可再次连接。",
   "antigravity_setup_cancel_label": "取消设置",
-  "workspace_drivingClient_here_label": "正在驱动浏览器",
+  "workspace_drivingClient_here_label": "在此客户端使用浏览器",
   "workspace_drivingClient_elsewhere_label": "浏览器位于 {host}",
   "workspace_drivingClient_offline_label": "浏览器位于 {host}（离线）",
   "workspace_drivingClient_here_description": "此工作区的智能体浏览器标签页和隧道在本应用中运行。",
