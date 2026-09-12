@@ -444,6 +444,74 @@ describe('browserTabRegistrySaga', () => {
       },
     );
 
+    // TODO(intent-hq/intent#4835): a remount restores the persisted layout,
+    // in which a registry-hosted tab is a geometry shell (URL, owner,
+    // requested URL and emulated size stripped by `stripRegistryHeldFields`).
+    // When a webview navigation report (`updateTabBrowserUrl`) gives the shell
+    // a URL before `browser.listTabs` answers, `applyRows` reads the shell as
+    // local truth (`hasReportableUrl`), only acknowledges it and records the
+    // row as reported; the reporter then diffs the shell against the row and
+    // sends `upsertTab` with `ownerAgentId` / `requestedUrl` / `emulatedSize`
+    // null — the daemon drops the claim. The now-unowned tab no longer hides
+    // on close: the next non-destroy `closeTab` destroys it and the removal
+    // diff sends `browser.removeTab`, hard-deleting the row. Flip to `it`
+    // once a shell that regained a URL takes the registry-held fields from
+    // the row instead of reporting their absence.
+    it.fails(
+      'keeps the registry claim on a restored shell that regained its URL before the rows arrived',
+      async () => {
+        const REQUESTED = 'http://daemon.localhost:5920/workspace/x';
+        const LIVE = 'http://127.0.0.1:63240/workspace/x';
+        const listing = deferred<BrowserTabListing[]>();
+        mocks.listTabs.mockReturnValue(listing.promise);
+        mocks.resolveBrowserLinkUrl.mockResolvedValue({ url: LIVE });
+        const h = start({
+          layouts: {
+            [WS]: settledLayout(
+              [browserTab({ hostClientId: OWN, title: 'Intent' })],
+              'pending' as never,
+            ),
+          },
+          health: 'down',
+        });
+        h.setHealth('healthy', 1);
+        h.dispatch(setRestoreStatus(WS, 'restored'));
+        await flush(0);
+        expect(mocks.listTabs).toHaveBeenCalledTimes(1);
+
+        // The live guest reports its location into the shell before the rows land.
+        h.dispatch(updateTabBrowserUrl(WS, 'b1', LIVE));
+        listing.resolve([
+          row({
+            url: LIVE,
+            requestedUrl: REQUESTED,
+            title: 'Intent',
+            ownerAgentId: 'agent-1',
+            emulatedSize: { width: 1280, height: 900 },
+          }),
+        ]);
+        await flush();
+
+        expect(mocks.upsertTab.mock.calls.filter(([, tab]) => tab.ownerAgentId === null)).toEqual(
+          [],
+        );
+        expect(h.tabs()[0]).toMatchObject({
+          id: 'b1',
+          browserUrl: LIVE,
+          browserRequestedUrl: REQUESTED,
+          ownerAgentId: 'agent-1',
+          emulatedSize: { width: 1280, height: 900 },
+        });
+
+        // An owned tab hides on close; only an unowned one is destroyed and removed.
+        h.dispatch(closeTab(WS, 'b1', 'p1', 1000));
+        await flush();
+        expect(h.hidden().map((t) => t.id)).toEqual(['b1']);
+        expect(mocks.removeTab).not.toHaveBeenCalled();
+        await stop(h);
+      },
+    );
+
     it('forgets acknowledged tabs the listing no longer holds instead of removing them later', async () => {
       const h = start({ layouts: { [WS]: settledLayout([]) }, health: 'down', applied: true });
       h.setHealth('healthy', 1);
