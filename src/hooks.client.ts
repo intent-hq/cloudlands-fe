@@ -28,6 +28,24 @@ export const init: ClientInit = async () => {
   }
 };
 
+// bits-ui teardown signature: Svelte 5 compiles {@render snippet()} to n.call(...) with a
+// minified receiver, and bits-ui's deferred prop reads fail with exactly this message when a
+// tooltip/dismissible layer is destroyed mid-transition (see
+// https://github.com/huntabyte/bits-ui/discussions/1302, intent-hq/intent#1605). Both the
+// exact message and a bits-ui frame are required — a bundled `immutable/chunks/` stack alone
+// says nothing about the origin (intent-hq/intent#4774).
+const BITS_UI_TEARDOWN_MESSAGE = /^[a-zA-Z_$]{1,3}\.call is not a function$/;
+
+function isBitsUiTeardownError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    error.name === 'TypeError' &&
+    BITS_UI_TEARDOWN_MESSAGE.test(error.message) &&
+    typeof error.stack === 'string' &&
+    error.stack.includes('bits-ui')
+  );
+}
+
 // Track if we've initialized - this helps suppress the initial "Not found: /index.html"
 // error that happens in SPA mode when the app first loads
 let initialized = false;
@@ -159,17 +177,9 @@ export const handleError: HandleClientError = ({ error, event }) => {
     };
   }
 
-  // Suppress bits-ui cleanup errors during component teardown
-  // In production, Svelte 5 compiles {@render snippet()} to n.call(...) where n is minified.
-  // When bits-ui tooltips are destroyed during workspace transitions, internal snippet
-  // references become undefined, causing: TypeError: n.call is not a function
-  // See: https://github.com/huntabyte/bits-ui/discussions/1302
-  const errorMsg = error instanceof Error ? error.message : String(error);
-  if (
-    errorMsg?.includes('.call is not a function') &&
-    (/^[a-zA-Z_$]{1,3}\.call is not a function$/.test(errorMsg) ||
-      (error instanceof Error && error.stack?.includes('immutable/chunks/')))
-  ) {
+  // Suppress bits-ui cleanup errors during component teardown; any other call-TypeError
+  // falls through to the diagnostic log below.
+  if (isBitsUiTeardownError(error)) {
     return {
       message: '',
     };

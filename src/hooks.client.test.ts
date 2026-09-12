@@ -17,6 +17,8 @@ vi.mock('$lib/utils/platform-capabilities', () => ({
 }));
 
 import { IPC_CHANNELS } from '$shared/ipc-registry';
+import { logger } from '$shared/logger';
+import { handleError } from './hooks.client';
 import {
   daemonHealthReducer,
   initialState,
@@ -119,5 +121,94 @@ describe('client startup', () => {
 
     task.cancel();
     await task.toPromise();
+  });
+});
+
+describe('handleError call-TypeError classification', () => {
+  type HandleErrorInput = Parameters<typeof handleError>[0];
+
+  const BUNDLED_FRAMES = [
+    '    at app://workspaces/app/immutable/chunks/CuKvStvg.js:8:6761',
+    '    at app://workspaces/app/immutable/chunks/BQ9p2Xk1.js:1:2210',
+  ].join('\n');
+
+  const BITS_UI_FRAMES = [
+    '    at DismissibleLayerState.#handleFocus (node_modules/bits-ui/dist/bits/utilities/dismissible-layer/use-dismissable-layer.svelte.js:70:41)',
+    '    at app://workspaces/app/immutable/chunks/CuKvStvg.js:8:6761',
+  ].join('\n');
+
+  let errorSpy: ReturnType<typeof vi.spyOn>;
+
+  function invoke(error: unknown): ReturnType<typeof handleError> {
+    const event = {
+      url: new URL('http://localhost/workspaces/ws-1'),
+      route: { id: '/(app)/workspaces/[id]' },
+    } as unknown as HandleErrorInput['event'];
+    return handleError({
+      error,
+      event,
+      status: 500,
+      message: 'Internal Error',
+    } as HandleErrorInput);
+  }
+
+  function typeErrorWithStack(message: string, stack: string): TypeError {
+    const error = new TypeError(message);
+    error.stack = `TypeError: ${message}\n${stack}`;
+    return error;
+  }
+
+  function reportedDetails(): Record<string, unknown> {
+    expect(errorSpy).toHaveBeenCalledTimes(1);
+    const [, details] = errorSpy.mock.calls[0] as unknown as [string, Record<string, unknown>];
+    return details;
+  }
+
+  beforeEach(() => {
+    errorSpy = vi.spyOn(logger, 'error').mockImplementation(() => {});
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('suppresses the genuine bits-ui teardown TypeError', () => {
+    const error = typeErrorWithStack('n.call is not a function', BITS_UI_FRAMES);
+
+    expect(invoke(error)).toEqual({ message: '' });
+    expect(errorSpy).not.toHaveBeenCalled();
+  });
+
+  it('reports an unrelated call TypeError with a minified receiver', () => {
+    const error = typeErrorWithStack('n.call is not a function', BUNDLED_FRAMES);
+
+    expect(invoke(error)?.message).not.toBe('');
+    const details = reportedDetails();
+    expect(details.name).toBe('TypeError');
+    expect(details.message).toBe('n.call is not a function');
+    expect(details.stack).toBe(error.stack);
+  });
+
+  it('reports an unrelated call TypeError with a non-bits bundled stack', () => {
+    const error = typeErrorWithStack('this.scheduler.flush.call is not a function', BUNDLED_FRAMES);
+
+    expect(invoke(error)?.message).not.toBe('');
+    const details = reportedDetails();
+    expect(details.name).toBe('TypeError');
+    expect(details.message).toBe('this.scheduler.flush.call is not a function');
+    expect(details.stack).toBe(error.stack);
+  });
+
+  it('reports a string rejection carrying the minified call message', () => {
+    expect(invoke('n.call is not a function')?.message).not.toBe('');
+    expect(reportedDetails().message).toBe('n.call is not a function');
+  });
+
+  it('reports a bits-ui stack whose message is not the minified teardown shape', () => {
+    const error = typeErrorWithStack('handler.call is not a function', BITS_UI_FRAMES);
+
+    expect(invoke(error)?.message).not.toBe('');
+    expect(reportedDetails().message).toBe('handler.call is not a function');
   });
 });
