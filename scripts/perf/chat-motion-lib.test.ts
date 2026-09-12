@@ -31,7 +31,7 @@ const TRACE = [
   event('RunTask', MARK_TS + 399_000, 8_000),
   event('RunTask', MARK_TS + 400_000, 90_000),
   event('RunTask', MARK_TS + 20_000, 90_000, { tid: 7 }),
-  event('RunTask', MARK_TS - 1, 90_000),
+  event('RunTask', MARK_TS - 100_000, 90_000),
   event('UpdateLayoutTree', MARK_TS + 2_000, 3_500, { args: { elementCount: 120 } }),
   event('UpdateLayoutTree', MARK_TS + 12_000, 1_200, { args: { elementCount: 9_800 } }),
   event('EventDispatch', MARK_TS + 500, 200, { args: { data: { type: 'click' } } }),
@@ -198,6 +198,61 @@ describe('analyzeTrace', () => {
       transitionFinishes: [{ offsetMs: 250, durationMs: 0.4 }],
     });
     expect(motions.expand).toMatchObject({ taskCount: 1, maxTaskMs: 2, tasksOver16_7: [] });
+  });
+
+  it('counts the task enclosing the mark, which starts before it and ends inside the window', () => {
+    const motions = analyzeTrace(
+      [
+        event('open', MARK_TS),
+        event('RunTask', MARK_TS - 1_232, 103_188),
+        event('EventDispatch', MARK_TS + 796, 100_509, { args: { data: { type: 'click' } } }),
+        event('RunTask', MARK_TS + 110_000, 8_371),
+      ],
+      { marks: ['open'] },
+    );
+
+    expect(motions.open).toMatchObject({
+      taskCount: 2,
+      maxTaskMs: 103.188,
+      tasksOver16_7: [{ offsetMs: -1.232, durationMs: 103.188 }],
+      clicks: [{ offsetMs: 0.796, durationMs: 100.509 }],
+    });
+  });
+
+  it('keeps excluding tasks that end before the window and tasks that start at its end', () => {
+    const motions = analyzeTrace(
+      [
+        event('open', MARK_TS),
+        event('RunTask', MARK_TS - 50_000, 50_000),
+        event('RunTask', MARK_TS - 100_000, 90_000),
+        event('RunTask', MARK_TS + 400_000, 90_000),
+        event('RunTask', MARK_TS + 399_999, 90_000),
+      ],
+      { marks: ['open'] },
+    );
+
+    expect(motions.open).toMatchObject({
+      taskCount: 1,
+      maxTaskMs: 90,
+      tasksOver16_7: [{ offsetMs: 399.999, durationMs: 90 }],
+    });
+  });
+
+  it('keeps start-time filtering for non-task events', () => {
+    const motions = analyzeTrace(
+      [
+        event('open', MARK_TS),
+        event('UpdateLayoutTree', MARK_TS - 500, 30_000, { args: { elementCount: 5_000 } }),
+        event('EventDispatch', MARK_TS - 100, 20_000, { args: { data: { type: 'click' } } }),
+      ],
+      { marks: ['open'] },
+    );
+
+    expect(motions.open).toMatchObject({
+      maxUpdateLayoutTreeMs: 0,
+      maxUpdateLayoutTreeElements: 0,
+      clicks: [],
+    });
   });
 
   it('omits marks absent from the trace and reports zeros for empty windows', () => {

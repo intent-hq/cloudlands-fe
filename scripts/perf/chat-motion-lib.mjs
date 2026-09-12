@@ -124,18 +124,26 @@ export function analyzeTrace(traceEvents, { marks, windowMs = DEFAULT_WINDOW_MS 
   const motions = {};
   const windowUs = windowMs * 1000;
   for (const mark of traceEvents.filter((event) => marks.includes(event.name))) {
-    const window = traceEvents.filter(
-      (event) =>
-        event.pid === mark.pid &&
-        event.tid === mark.tid &&
-        (event.ts ?? 0) >= mark.ts &&
-        (event.ts ?? 0) < mark.ts + windowUs,
+    const windowStart = mark.ts;
+    const windowEnd = mark.ts + windowUs;
+    const onThread = traceEvents.filter(
+      (event) => event.pid === mark.pid && event.tid === mark.tid,
+    );
+    const window = onThread.filter(
+      (event) => (event.ts ?? 0) >= windowStart && (event.ts ?? 0) < windowEnd,
     );
     const timing = (event) => ({
       offsetMs: (event.ts - mark.ts) / 1000,
       durationMs: durationMs(event),
     });
-    const tasks = window.filter((event) => event.name === 'RunTask');
+    // The mark is emitted inside the click's dispatch, so the RunTask running it starts
+    // before mark.ts: tasks count when they overlap the window, not only when they start in it.
+    const tasks = onThread.filter(
+      (event) =>
+        event.name === 'RunTask' &&
+        (event.ts ?? 0) < windowEnd &&
+        (event.ts ?? 0) + (event.dur ?? 0) > windowStart,
+    );
     const styles = window.filter((event) => event.name === 'UpdateLayoutTree');
     motions[mark.name] = {
       windowMs,

@@ -32,6 +32,7 @@ declare global {
 const FRAMES = 20;
 const ENABLE_AFTER_MS = 1000;
 const SHIFT_PX = 100;
+const BUSY_CLICK_MS = 100;
 const FIXTURE = `<!doctype html>
 <div data-testid="chat-transcript-scroll-viewport" style="height:300px;overflow:auto;overflow-anchor:none">
   <div id="spacer" style="height:1200px"></div>
@@ -113,6 +114,40 @@ test('pointer click: mark, trace window and samples align with the delayed dispa
     anchorDriftPx: SHIFT_PX,
     anchorStayedConnected: true,
   });
+});
+
+test('an expensive click handler is attributed to the motion via its enclosing task', async ({
+  page,
+}) => {
+  await mountFixture(page);
+  // The mark is emitted inside the click dispatch, so the RunTask running the handler
+  // starts before the mark; the task must still count toward the motion.
+  await page.evaluate((busyMs) => {
+    document.getElementById('control')!.addEventListener('click', () => {
+      const until = performance.now() + busyMs;
+      while (performance.now() < until) {
+        /* spin */
+      }
+    });
+  }, BUSY_CLICK_MS);
+  const browser = page.context().browser()!;
+  await browser.startTracing(page, {
+    categories: [
+      '-*',
+      'devtools.timeline',
+      'disabled-by-default-devtools.timeline',
+      'blink.user_timing',
+    ],
+  });
+  await clickControl(page, { label: 'probe', mark: 'probe', selector: '#control', pointer: true });
+  const traceEvents = JSON.parse((await browser.stopTracing()).toString('utf8')).traceEvents;
+
+  const motions = analyzeTrace(traceEvents, { marks: ['probe'] });
+  expect(() => assertMotionClicks(motions, ['probe'])).not.toThrow();
+  expect(motions.probe.clicks[0].durationMs).toBeGreaterThanOrEqual(BUSY_CLICK_MS);
+  expect(motions.probe.maxTaskMs).toBeGreaterThanOrEqual(BUSY_CLICK_MS);
+  expect(motions.probe.tasksOver16_7.length).toBeGreaterThan(0);
+  expect(motions.probe.tasksOver16_7[0].offsetMs).toBeLessThanOrEqual(0);
 });
 
 test('programmatic click: the capture-phase click listener aligns the mark and samples', async ({
