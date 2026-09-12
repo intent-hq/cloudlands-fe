@@ -1,6 +1,6 @@
 {
   "name": "intent",
-  "version": "2.148.2",
+  "version": "2.149.0",
   "description": "Intent",
   "type": "module",
   "main": "dist/main/index.js",
@@ -21,6 +21,7 @@
     "sandbox:shot": "node scripts/sandbox/shot.mjs",
     "sandbox:probe": "node scripts/sandbox/probe.mjs",
     "sandbox:geometry:update": "cross-env SANDBOX_GEOMETRY_UPDATE=1 node scripts/pnpm-run.mjs test:ct -- --grep 'geometry snapshot'",
+    "perf:chat-motion": "node scripts/perf/chat-motion-trace.mjs",
     "dev:electron": "node scripts/dev-electron.js",
     "dev:electron:cdp": "node scripts/dev-electron.js --cdp",
     "kill:electron": "node scripts/kill-electron.js",
