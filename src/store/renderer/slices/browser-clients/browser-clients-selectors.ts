@@ -3,12 +3,12 @@
  */
 
 import { getItem, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
-import type { BrowserTab, LiveClient, WorkspaceBrowserClient } from '$shared/types/browser-clients';
+import type { LiveClient, WorkspaceBrowserClient } from '$shared/types/browser-clients';
 import type { BrowserTabHost } from '$lib/components/browser/browser-tab-host';
 import {
   browserClientDisplayName,
   type BrowserClientSummary,
-  type DrivingClientInput,
+  type ResolvedBrowserClients,
 } from '$lib/components/workspace/driving-indicator';
 import { store } from '../../store';
 import { emptyWorkspaceBrowserClientsState, initialState } from './browser-clients-types';
@@ -58,7 +58,7 @@ function liveClientSummary(client: LiveClient): BrowserClientSummary {
  * and `null` when unpinned with nothing eligible or before the first read.
  */
 export const selectWorkspaceDrivingClient = store.createSelector(
-  (state, wsId: string): DrivingClientInput => {
+  (state, wsId: string): ResolvedBrowserClients => {
     const slice = state?.browserClients ?? initialState;
     const eligibleClients = getItems(slice.liveClients)
       .filter((client) => client.capabilities.browserExec === true)
@@ -95,15 +95,10 @@ export const selectBrowserTabHost = store.createSelector(
   },
 );
 
-/** The workspace's daemon tab-registry rows. */
-export const selectWorkspaceBrowserTabs = store.createSelector(
-  (state, wsId: string): BrowserTab[] =>
-    getItems(
-      (state?.browserClients?.byWorkspaceId[wsId] ?? emptyWorkspaceBrowserClientsState).tabs,
-    ),
-);
-
-/** `browser:tab-*` patch counter the saga stamps on a `browser.listTabs` read. */
+/**
+ * `browser:tab-*` event counter the panel-layout registry saga reads around
+ * its `browser.listTabs` reads to detect a listing that may predate an event.
+ */
 export const selectWorkspaceBrowserTabsRevision = store.createSelector(
   (state, wsId: string): number =>
     (state?.browserClients?.byWorkspaceId[wsId] ?? emptyWorkspaceBrowserClientsState).tabsRevision,

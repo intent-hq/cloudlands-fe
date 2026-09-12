@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import { pnpmInvocation } from './pnpm-launcher.mjs';
 
 const TEST_FILE = 'src/features/agent/testing/reliability-stress-runner.test.ts';
 const DEFAULT_SEEDS = ['1592639710', '1592639711', '1592639712'];
@@ -20,8 +21,10 @@ console.log(
 
 for (const seed of seeds) {
   console.log(`\n--- stress seed=${seed} iterations=${iterations} ---`);
-  const result = spawnSync('pnpm', ['vitest', 'run', TEST_FILE], {
+  const launcher = pnpmInvocation(['vitest', 'run', TEST_FILE]);
+  const result = spawnSync(launcher.executable, launcher.args, {
     stdio: 'inherit',
+    shell: launcher.shell,
     env: {
       ...process.env,
       AGENT_RELIABILITY_STRESS_SEED: seed,

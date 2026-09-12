@@ -50,6 +50,7 @@ vi.mock('svelte-fa', async () => {
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { store as appStore } from '$store/renderer/store';
 import { resetMockIpcRouter, setMockIpcInvokeFallback } from '$shared/ipc-mock-router';
+import { m } from '$shared/paraglide/messages.js';
 // Side-effect import: bridges `file:getDirectoryStatus` → daemon `host.directoryStatus`.
 import '$store/renderer/seeders/host-bridge-seeder';
 
@@ -96,10 +97,9 @@ async function openGithubTab(
   onProjectChange: (selection: ProjectSelection) => void,
 ): Promise<HTMLInputElement> {
   render(ProjectPickerMessage, { props: { onProjectChange } });
-  const tabButton = Array.from(document.body.querySelectorAll('button')).find(
-    (b) => b.textContent?.trim() === 'GitHub repo',
-  );
-  if (!tabButton) throw new Error('GitHub repo tab button not found');
+  const tabButton = screen.getByRole('button', {
+    name: m.onboarding_projectPicker_githubRepo_label(),
+  });
   await fireEvent.click(tabButton);
   return waitFor(() => {
     const el = document.body.querySelector('input[role="combobox"]');

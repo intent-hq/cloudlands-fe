@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import type { ViteDevServer } from 'vite';
 import { createServer } from 'vite';
+import { viteHarnessCacheDir } from './vite-harness-cache.mjs';
 
 let server: ViteDevServer;
 let baseUrl: string;
@@ -10,6 +11,7 @@ test.beforeAll(async () => {
   test.setTimeout(360_000);
   const port = Number.parseInt(process.env.CHAT_POLISH_TEST_PORT ?? '0', 10);
   server = await createServer({
+    cacheDir: viteHarnessCacheDir('chat-polish-controls'),
     server: { host: '127.0.0.1', port, strictPort: port > 0, watch: { ignored: ['**/*'] } },
   });
   await server.listen();

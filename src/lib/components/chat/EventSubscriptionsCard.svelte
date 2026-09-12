@@ -1,6 +1,11 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
-  import { tick } from 'svelte';
+  import { tick, untrack } from 'svelte';
+  import { store as appStore } from '$store/renderer/store';
+  import {
+    prMonitorsSubscribeRequested,
+    prMonitorsUnsubscribeRequested,
+  } from '$store/renderer/slices/pr-monitor/pr-monitor-slice';
   import AgentSubscriptions from './AgentSubscriptions.svelte';
   import BackgroundHooksRow from './BackgroundHooksRow.svelte';
   import BrowserTabsRow from './BrowserTabsRow.svelte';
@@ -36,6 +41,8 @@
     compact?: boolean;
     /** The surrounding transcript/preview owns the complete gap before this card. */
     suppressTopGap?: boolean;
+    /** Whether the owning chat is active, independent of disclosure state. */
+    isActive?: boolean;
     visible?: boolean;
     /** Static, daemon-free content used by catalog and visual-test previews. */
     isolatedPreview?: {
@@ -52,6 +59,7 @@
     agentId,
     compact = false,
     suppressTopGap = false,
+    isActive = true,
     visible = $bindable(false),
     isolatedPreview,
     previewContent,
@@ -73,6 +81,17 @@
   let bodyElement: HTMLElement | undefined = $state();
   const componentId = $props.id();
   const bodyId = `event-subscriptions-body-${componentId}`;
+
+  // The visible chat owns this lease, not the selected workspace tab or the
+  // collapsible row. Chief lives outside the tab strip; collapse must not
+  // interrupt its snapshot or live updates.
+  $effect(() => {
+    if (isolatedPreview || !workspaceId || !isActive) return;
+    const currentWorkspaceId = workspaceId;
+    untrack(() => appStore.dispatch(prMonitorsSubscribeRequested(currentWorkspaceId)));
+    return () => appStore.dispatch(prMonitorsUnsubscribeRequested(currentWorkspaceId));
+  });
+
   const hasEventSubscriptions = $derived(
     isolatedPreview ? isolatedPreview.count > 0 : agentsVisible || hooksVisible || prsVisible,
   );

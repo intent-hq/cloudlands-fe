@@ -1,3 +1,9 @@
+// @verify-changed-triggers: ../MultiSelectTabbedSidebar.svelte, ../sidebar/FilesPanel.svelte,
+//   ../sidebar/ExpandableFileSearch.svelte, ../sidebar/SidebarExpandableSearch.svelte,
+//   ../../file-explorer/file-tree-view.svelte, ../../file-explorer/VirtualizedFileTree.svelte,
+//   ../../file-explorer/VSCodeFileExplorer.svelte, ../../ui/VSCodeScrollablePanel.svelte,
+//   ../../ui/list/ListItem.svelte
+
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 

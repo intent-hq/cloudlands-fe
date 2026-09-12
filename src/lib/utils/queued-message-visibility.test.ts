@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isUserQueuedMessage } from './queued-message-visibility';
+import { isUserQueuedMessage, omitDrainedQueuedMessages } from './queued-message-visibility';
 import type { QueuedMessage } from '$shared/types';
 
 function makeMessage(messageMetadata?: unknown, content = 'hello'): QueuedMessage {
@@ -121,5 +121,73 @@ describe('isUserQueuedMessage', () => {
         makeMessage({ source: 'system' }, '[WORKSPACE EVENTS] You have been woken up'),
       ),
     ).toBe(false);
+  });
+});
+
+describe('omitDrainedQueuedMessages', () => {
+  const entry = (id: string): QueuedMessage => ({ ...makeMessage(), id });
+  // Literal wire shape of a drained user row's metadata (PROTOCOL §5.5): the
+  // daemon stamps `queueInfo.queuedMessageId` with the source entry's `id`.
+  const drainedRow = (queuedMessageId: string, extra: Record<string, unknown> = {}) => ({
+    metadata: {
+      queueInfo: {
+        queuedAt: '2026-08-04T00:00:00Z',
+        waitedMs: 12000,
+        queuedMessageId,
+        ...extra,
+      },
+    },
+  });
+
+  it('omits the entry named by a transcript row stamp', () => {
+    const queue = [entry('qm-1'), entry('qm-2')];
+    expect(omitDrainedQueuedMessages(queue, [drainedRow('qm-1')]).map((m) => m.id)).toEqual([
+      'qm-2',
+    ]);
+  });
+
+  it('keeps every entry when rows carry no stamp or a foreign stamp', () => {
+    const queue = [entry('qm-1'), entry('qm-2')];
+    const legacyRow = {
+      metadata: { queueInfo: { queuedAt: '2026-08-04T00:00:00Z', waitedMs: 1 } },
+    };
+    expect(omitDrainedQueuedMessages(queue, []).map((m) => m.id)).toEqual(['qm-1', 'qm-2']);
+    expect(omitDrainedQueuedMessages(queue, [legacyRow, {}]).map((m) => m.id)).toEqual([
+      'qm-1',
+      'qm-2',
+    ]);
+    expect(omitDrainedQueuedMessages(queue, [drainedRow('qm-other')]).map((m) => m.id)).toEqual([
+      'qm-1',
+      'qm-2',
+    ]);
+  });
+
+  it('hides only the corresponding entries for batch rows sharing a turnId', () => {
+    const queue = [entry('qm-1'), entry('qm-2'), entry('qm-3')];
+    const rows = [
+      { turnId: 'turn-head', ...drainedRow('qm-1', { batchId: 'batch-a' }) },
+      { turnId: 'turn-head', ...drainedRow('qm-3', { batchId: 'batch-a' }) },
+    ];
+    expect(omitDrainedQueuedMessages(queue, rows).map((m) => m.id)).toEqual(['qm-2']);
+  });
+
+  it('ignores malformed stamps', () => {
+    const queue = [entry('qm-1')];
+    const rows = [
+      { metadata: { queueInfo: { queuedMessageId: '' } } },
+      { metadata: { queueInfo: { queuedMessageId: 42 } } },
+      { metadata: { queueInfo: 'soon' } },
+      { metadata: null },
+    ];
+    expect(omitDrainedQueuedMessages(queue, rows).map((m) => m.id)).toEqual(['qm-1']);
+  });
+
+  it('never mutates the canonical queue array', () => {
+    const queue = [entry('qm-1'), entry('qm-2')];
+    const snapshot = queue.map((m) => ({ ...m }));
+    const visible = omitDrainedQueuedMessages(queue, [drainedRow('qm-1')]);
+    expect(visible).not.toBe(queue);
+    expect(queue).toEqual(snapshot);
+    expect(queue).toHaveLength(2);
   });
 });

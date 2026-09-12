@@ -147,6 +147,11 @@
 
   let nowMs = $state(Date.now());
   let elapsedInterval: ReturnType<typeof setInterval> | undefined;
+  // The thinking row's elapsed text is only revealed on hover, so it is
+  // refreshed on pointerenter and ticks only while hovered; the stalled row's
+  // duration is always visible and ticks whenever it is shown.
+  let thinkingHovered = $state(false);
+  let thinkingElapsedTicking = $derived(thinkingVisible && !!latestStatusEvent && thinkingHovered);
 
   function clearElapsedInterval() {
     if (elapsedInterval === undefined) return;
@@ -155,7 +160,7 @@
   }
 
   $effect(() => {
-    if ((!thinkingVisible || !latestStatusEvent) && !stalledEvent) {
+    if (!thinkingElapsedTicking && !stalledEvent) {
       clearElapsedInterval();
       return;
     }
@@ -215,6 +220,7 @@
   message={statusMessage}
   lifecycleMessage={latestStatusEvent?.message}
   elapsed={elapsedTime}
+  onHoverChange={(hovered) => (thinkingHovered = hovered)}
   variant={markVariant}
   {seed}
   class="mt-2 {className}"

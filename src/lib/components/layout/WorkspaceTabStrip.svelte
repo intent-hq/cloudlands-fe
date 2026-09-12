@@ -287,7 +287,6 @@
       workspaceHoverCardIntentSession.notifyClosed();
     }
   }
-
   // Overflow detection drives the strip's right margin: while tabs are
   // clipped, the clipped tab edge (not the pr-3 padding) sits at the strip's
   // right border, so the -mr-2.5 pull toward the "+" launcher must be
@@ -398,12 +397,11 @@
     let scrollTrackingTimeout: ReturnType<typeof setTimeout> | null = null;
     const strip = node.closest('[data-workspace-tab-strip]');
 
-    const runFrame = (allowClamp = true) => {
+    const runFrame = (allowClamp = true, sync = true) => {
       readPending = false;
       const shouldClamp = clampQueued;
       clampQueued = false;
       if (!active) return;
-
       const tabRect = node.getBoundingClientRect();
       const titlebarRect = node.closest('.window-title-bar')?.getBoundingClientRect() ?? null;
       const stripRect = strip?.getBoundingClientRect() ?? null;
@@ -428,7 +426,6 @@
       const fadeEdges = strip
         ? getWorkspaceTabScrollFadeState(strip.scrollLeft, strip.scrollWidth, strip.clientWidth)
         : undefined;
-
       if (writePending) cancelWrite?.();
       const writeBounds = () => {
         writePending = false;
@@ -443,6 +440,7 @@
               titlebarRect.left,
               fadeEdges,
             ),
+            { sync },
           );
           return;
         }
@@ -464,16 +462,16 @@
                 )
               : undefined,
           ),
+          { sync },
         );
       };
       if (!allowClamp) return writeBounds();
       writePending = true;
       cancelWrite = scheduleLayoutWrite(writeBounds);
     };
-
-    const reportVisibleActiveBounds = () => {
+    const reportVisibleActiveBounds = (sync = true) => {
       clampQueued = false;
-      runFrame(false);
+      runFrame(false, sync);
     };
 
     const schedule = () => {
@@ -507,15 +505,16 @@
     activeTabBoundsPollers.add(scheduleClampAndReport);
     activeTabBoundsReporters.add(reportVisibleActiveBounds);
     scheduleClampAndReport();
-
     const setActive = (nextIsActive: boolean) => {
       const wasActive = active;
       active = nextIsActive;
       node.dataset.active = String(nextIsActive);
+      // Action updates can run inside a parent render. Report immediately without
+      // a nested flush, which can strand sibling updates; frame reports stay sync.
       if (active) {
-        reportVisibleActiveBounds();
+        reportVisibleActiveBounds(false);
         scheduleClampAndReport();
-      } else if (wasActive) emitActiveTabBounds(null);
+      } else if (wasActive) emitActiveTabBounds(null, { sync: false });
     };
     const workspaceId = node.dataset.workspaceTab;
     if (workspaceId) activeTabBoundsControllers.set(workspaceId, setActive);
@@ -1029,57 +1028,59 @@
               visible={isCurrent}
               durationMs={isDragged ? 0 : WORKSPACE_TAB_MOTION_DURATION_MS}
             />
-            <TooltipRich
-              side="bottom"
-              align="start"
-              delayDuration={workspaceHoverCardOpenDelay}
-              onOpenChange={(open) => handleWorkspaceHoverCardOpenChange(workspaceId, open)}
-              disableHoverableContent={true}
-              disabled={draggedWorkspaceId !== null}
-              showArrow={false}
-              maxWidth="none"
-              class="absolute -inset-px rounded-[inherit]"
-              contentClass="border-0 bg-transparent p-0 shadow-none"
-              contentContainerClass="space-y-0! p-0!"
-            >
-              {#snippet content()}
-                <div data-workspace-tab-hover-content={workspaceId}>
-                  <WorkspaceHoverCard {workspace} activeAgentIds={runningAgentIds} />
-                </div>
-              {/snippet}
-              <button
-                type="button"
-                use:registerTabButton={workspaceId}
-                class="flex h-full w-full min-w-0 touch-none cursor-pointer select-none items-center gap-1 truncate rounded-[inherit] pl-3 pr-1 text-left text-xs font-medium outline-none! focus-visible:text-foreground forced-colors:focus-visible:text-[HighlightText]"
-                onclick={(event) => handleTabClick(event, workspaceId)}
-                onkeydown={(event) => handleTabKeydown(event, workspaceId)}
-                onfocusin={() => pointerOpenEligibleWorkspaceHoverCardIds.delete(workspaceId)}
-                role="tab"
-                aria-selected={isCurrent}
-                aria-current={isCurrent ? 'page' : undefined}
-                aria-label={tabAccessibleLabel(workspaceTitle, workspaceStatusState, tabStatus)}
-                tabindex={isCurrent ? 0 : -1}
-                data-workspace-tab-hover-trigger
+            {#key isCurrent && pointerOpenEligibleWorkspaceHoverCardIds.has(workspaceId)}
+              <TooltipRich
+                side="bottom"
+                align="start"
+                delayDuration={workspaceHoverCardOpenDelay}
+                onOpenChange={(open) => handleWorkspaceHoverCardOpenChange(workspaceId, open)}
+                disableHoverableContent={true}
+                disabled={isCurrent || draggedWorkspaceId !== null}
+                showArrow={false}
+                maxWidth="none"
+                class="absolute -inset-px rounded-[inherit]"
+                contentClass="border-0 bg-transparent p-0 shadow-none"
+                contentContainerClass="space-y-0! p-0!"
               >
-                <span
-                  class={cn('min-w-0 flex-1 truncate', isArchived && 'opacity-60')}
-                  data-workspace-tab-title>{workspaceTitle}</span
-                >
-                <span
-                  class="pointer-events-none ml-auto flex shrink-0 items-center gap-1"
-                  data-workspace-tab-controls
+                {#snippet content()}
+                  <div data-workspace-tab-hover-content={workspaceId}>
+                    <WorkspaceHoverCard {workspace} activeAgentIds={runningAgentIds} />
+                  </div>
+                {/snippet}
+                <button
+                  type="button"
+                  use:registerTabButton={workspaceId}
+                  class="flex h-full w-full min-w-0 touch-none cursor-pointer select-none items-center gap-1 truncate rounded-[inherit] pl-3 pr-1 text-left text-xs font-medium outline-none! focus-visible:text-foreground forced-colors:focus-visible:text-[HighlightText]"
+                  onclick={(event) => handleTabClick(event, workspaceId)}
+                  onkeydown={(event) => handleTabKeydown(event, workspaceId)}
+                  onfocusin={() => pointerOpenEligibleWorkspaceHoverCardIds.delete(workspaceId)}
+                  role="tab"
+                  aria-selected={isCurrent}
+                  aria-current={isCurrent ? 'page' : undefined}
+                  aria-label={tabAccessibleLabel(workspaceTitle, workspaceStatusState, tabStatus)}
+                  tabindex={isCurrent ? 0 : -1}
+                  data-workspace-tab-hover-trigger
                 >
                   <span
-                    class="pointer-events-none flex h-4 max-w-14 shrink-0 items-center justify-end overflow-hidden"
-                    data-workspace-tab-status-cluster
+                    class={cn('min-w-0 flex-1 truncate', isArchived && 'opacity-60')}
+                    data-workspace-tab-title>{workspaceTitle}</span
                   >
-                    <WorkspaceStatusIcon status={workspaceStatusState} size={14} decorative />
+                  <span
+                    class="pointer-events-none ml-auto flex shrink-0 items-center gap-1"
+                    data-workspace-tab-controls
+                  >
+                    <span
+                      class="pointer-events-none flex h-4 max-w-14 shrink-0 items-center justify-end overflow-hidden"
+                      data-workspace-tab-status-cluster
+                    >
+                      <WorkspaceStatusIcon status={workspaceStatusState} size={14} decorative />
+                    </span>
+                    <span class="size-5 shrink-0" data-workspace-tab-close-space aria-hidden="true"
+                    ></span>
                   </span>
-                  <span class="size-5 shrink-0" data-workspace-tab-close-space aria-hidden="true"
-                  ></span>
-                </span>
-              </button>
-            </TooltipRich>
+                </button>
+              </TooltipRich>
+            {/key}
             <button
               type="button"
               class={cn(

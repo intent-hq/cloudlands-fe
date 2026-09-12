@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ToolUseBlock } from '$shared/types';
 
 vi.mock('$store/renderer/store', async () => {
@@ -51,6 +51,7 @@ vi.mock('$lib/components/editor/CodeBlock.svelte', async () => ({
 }));
 
 import ContextEngineToolCall from '../ContextEngineToolCall.svelte';
+import { streamingPulse } from '../streaming-pulse';
 import ToolCall from '../ToolCall.svelte';
 
 const genericTool = {
@@ -71,7 +72,8 @@ afterEach(cleanup);
 function expectRunningIdentityOnly(container: HTMLElement) {
   const leading = container.querySelector('[data-tool-icon]');
   expect(leading).toBeTruthy();
-  expect(leading?.className).toContain('animate-pulse');
+  expect(leading?.hasAttribute('data-streaming-pulse')).toBe(true);
+  expect(leading?.className).not.toContain('animate-pulse');
   expect(container.querySelector('[data-operational-trailing]')).toBeNull();
   expect(container.querySelector('[data-testid="tool-call-status"]')).toBeNull();
   expect(container.querySelector('[data-icon="spinner"]')).toBeNull();
@@ -130,5 +132,117 @@ describe('tool-call running status presentation', () => {
     await fireEvent.keyDown(disclosure, { key: 'Enter' });
     expect(disclosure.getAttribute('aria-expanded')).toBe('true');
     expect(document.querySelector('#tool-details-generic-running')).toBeTruthy();
+  });
+});
+
+describe('streaming pulse under prefers-reduced-motion', () => {
+  const frameCallbacks = new Map<number, FrameRequestCallback>();
+  let frameId = 0;
+  let nowMs = 0;
+  let reducedMotion = false;
+  let mediaChange: (() => void) | undefined;
+  const mediaListeners = { add: vi.fn(), remove: vi.fn() };
+
+  function advanceFrames(count: number): void {
+    for (let frame = 0; frame < count; frame += 1) {
+      nowMs += 1000 / 60;
+      const due = [...frameCallbacks.values()];
+      frameCallbacks.clear();
+      due.forEach((callback) => callback(nowMs));
+    }
+  }
+
+  function countOpacityWrites(node: HTMLElement, frames: number): number {
+    const setter = vi.spyOn(node.style, 'opacity', 'set');
+    advanceFrames(frames);
+    const writes = setter.mock.calls.length;
+    setter.mockRestore();
+    return writes;
+  }
+
+  beforeEach(() => {
+    frameCallbacks.clear();
+    frameId = 0;
+    nowMs += 10_007;
+    reducedMotion = false;
+    mediaChange = undefined;
+    mediaListeners.add.mockClear();
+    mediaListeners.remove.mockClear();
+    vi.spyOn(performance, 'now').mockImplementation(() => nowMs);
+    vi.stubGlobal(
+      'requestAnimationFrame',
+      vi.fn((callback: FrameRequestCallback) => {
+        frameId += 1;
+        frameCallbacks.set(frameId, callback);
+        return frameId;
+      }),
+    );
+    vi.stubGlobal(
+      'cancelAnimationFrame',
+      vi.fn((id: number) => frameCallbacks.delete(id)),
+    );
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      value: vi.fn(() => ({
+        get matches() {
+          return reducedMotion;
+        },
+        addEventListener: (_event: string, callback: () => void) => {
+          mediaListeners.add(callback);
+          mediaChange = callback;
+        },
+        removeEventListener: mediaListeners.remove,
+      })),
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it('drives the icon opacity from the frame clock when motion is allowed', () => {
+    const node = document.createElement('span');
+    const action = streamingPulse(node, true)!;
+    expect(node.hasAttribute('data-streaming-pulse')).toBe(true);
+    expect(node.style.opacity).not.toBe('');
+    expect(countOpacityWrites(node, 60)).toBeGreaterThan(5);
+    action.destroy!();
+    expect(node.style.opacity).toBe('');
+    expect(node.hasAttribute('data-streaming-pulse')).toBe(false);
+    expect(frameCallbacks.size).toBe(0);
+    expect(countOpacityWrites(node, 60)).toBe(0);
+    expect(mediaListeners.remove).toHaveBeenCalledWith(
+      'change',
+      mediaListeners.add.mock.calls[0][0],
+    );
+  });
+
+  it('holds normal opacity with zero writes while reduced motion is preferred', () => {
+    reducedMotion = true;
+    const node = document.createElement('span');
+    const action = streamingPulse(node, true)!;
+    expect(node.hasAttribute('data-streaming-pulse')).toBe(true);
+    expect(node.style.opacity).toBe('');
+    expect(frameCallbacks.size).toBe(0);
+    expect(countOpacityWrites(node, 60)).toBe(0);
+
+    reducedMotion = false;
+    mediaChange!();
+    expect(node.style.opacity).not.toBe('');
+    expect(countOpacityWrites(node, 60)).toBeGreaterThan(5);
+
+    reducedMotion = true;
+    mediaChange!();
+    expect(node.style.opacity).toBe('');
+    expect(frameCallbacks.size).toBe(0);
+    expect(countOpacityWrites(node, 60)).toBe(0);
+
+    action.destroy!();
+    expect(node.hasAttribute('data-streaming-pulse')).toBe(false);
+    reducedMotion = false;
+    mediaChange!();
+    expect(node.style.opacity).toBe('');
+    expect(frameCallbacks.size).toBe(0);
   });
 });

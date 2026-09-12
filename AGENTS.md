@@ -34,22 +34,24 @@ src/
 FE docs live in the monorepo's `docs/fe/` — the `../../docs/fe/` paths below resolve
 in a monorepo checkout, where this repo mounts at `packages/cloudlands-fe/`.
 
-| Working on…         | Open                                                                                 |
-| ------------------- | ------------------------------------------------------------------------------------ |
-| agents              | ../../docs/fe/agent-message-dedup-and-stream-sagas.md, ../../docs/fe/RULES_SYSTEM.md |
-| state/store         | ../../docs/fe/STATE_MANAGEMENT.md, src/store/renderer/docs/                          |
-| component design    | ../../docs/fe/COMPONENTS_DESIGN.md                                                   |
-| UI invariant gates  | `pnpm run test:ui-invariants` — ratchets + catalog `*.meta.ts` ledgers, see below    |
-| panels/layout       | ../../docs/fe/panel-system-refactoring.md, ../../docs/fe/PANEL_TAB_UX_SPEC.md        |
-| PR descriptions     | ../../docs/fe/PR_DESCRIPTION_GUIDE.md                                                |
-| browser/CDP         | ../../docs/fe/BROWSER_PANEL_SPEC.md, ../../docs/fe/CDP_MCP_TOOLS.md                  |
-| module boundaries   | ../../docs/fe/MODULE_BOUNDARY_GUIDE.md                                               |
-| debugging           | ../../docs/fe/TROUBLESHOOTING_GUIDE.md, ../../docs/fe/IPC_DEBUG_GUIDE.md             |
-| error handling      | ../../docs/fe/ERROR_HANDLING_SYSTEM.md                                               |
-| TypeScript/types    | ../../docs/fe/TYPE_SYSTEM_GUIDE.md                                                   |
-| events/IPC          | ../../docs/fe/EVENT_SYSTEM.md                                                        |
-| keybindings         | ../../docs/fe/KEYBINDINGS.md                                                         |
-| deploying/releasing | ../../docs/fe/DEPLOYING.md                                                           |
+| Working on…         | Open                                                                                      |
+| ------------------- | ----------------------------------------------------------------------------------------- |
+| agents              | ../../docs/fe/agent-message-dedup-and-stream-sagas.md, ../../docs/fe/RULES_SYSTEM.md      |
+| state/store         | ../../docs/fe/STATE_MANAGEMENT.md, src/store/renderer/docs/                               |
+| component design    | ../../docs/fe/COMPONENTS_DESIGN.md                                                        |
+| UI invariant gates  | `pnpm run test:ui-invariants` — ratchets + catalog `*.meta.ts` ledgers, see below         |
+| deps freshness      | `pnpm run deps:check` — gates refuse to run on a stale node_modules install               |
+| panels/layout       | ../../docs/fe/panel-system-refactoring.md, ../../docs/fe/PANEL_TAB_UX_SPEC.md             |
+| PR descriptions     | ../../docs/fe/PR_DESCRIPTION_GUIDE.md                                                     |
+| browser/CDP         | ../../docs/fe/BROWSER_PANEL_SPEC.md, ../../docs/fe/CDP_MCP_TOOLS.md                       |
+| module boundaries   | ../../docs/fe/MODULE_BOUNDARY_GUIDE.md                                                    |
+| motion perf traces  | `pnpm perf:chat-motion` — ../../docs/fe/DEVELOPER_GUIDE.md#chat-motion-performance-traces |
+| debugging           | ../../docs/fe/TROUBLESHOOTING_GUIDE.md, ../../docs/fe/IPC_DEBUG_GUIDE.md                  |
+| error handling      | ../../docs/fe/ERROR_HANDLING_SYSTEM.md                                                    |
+| TypeScript/types    | ../../docs/fe/TYPE_SYSTEM_GUIDE.md                                                        |
+| events/IPC          | ../../docs/fe/EVENT_SYSTEM.md                                                             |
+| keybindings         | ../../docs/fe/KEYBINDINGS.md                                                              |
+| deploying/releasing | ../../docs/fe/DEPLOYING.md                                                                |
 
 ## Key conventions
 
@@ -87,7 +89,7 @@ corepack pnpm run dev           # Standard Electron launcher
 corepack pnpm run dev:cdp       # Electron launcher with CDP support
 corepack pnpm run build         # Production build
 corepack pnpm run check         # Svelte + TypeScript checks
-corepack pnpm run lint          # ESLint
+corepack pnpm run lint          # ESLint + i18n string/completeness + package-script pnpm nesting + knip dead code
 corepack pnpm run format        # Prettier write pass
 corepack pnpm run format:check  # Prettier check (enforced in PR CI)
 corepack pnpm run test:unit     # Vitest suite
@@ -144,6 +146,16 @@ Shared options are `--theme light|dark|system` (default `light`), `--width 240..
 (default `720`), `--motion reduced|full` (default `reduced`), `--scale 1|2` (default
 `1`), `--timeout <milliseconds>` (default `30000`), `--out <path>`, and
 `--allow-console-errors`. Set `SANDBOX_DEBUG=1` for runner diagnostics.
+
+The in-process server, like every `test/*.spec.ts` Vite harness, uses its own optimizer
+cache under `node_modules/.vite-harness/<harness>` (via `test/vite-harness-cache.mjs`)
+instead of the shared `node_modules/.vite`, so a probe never invalidates a running
+`dev:ui` / `dev:web` server's optimized deps or vice versa. The runner fails fast with the
+cause named — a `504 Outdated Optimize Dep` / `Optimize Deps Processing Error` on a module
+URL, or an esbuild dependency-scan / optimizer failure from the dev-server log — instead
+of a generic ready-marker timeout. `SANDBOX_GOMAXPROCS=<n>` exports `GOMAXPROCS` to the
+esbuild service for that run; it is a diagnostic knob for the dependency-scan crashes in
+intent-hq/intent#4617, not a fix, so leave it unset normally.
 
 `sandbox:shot` captures the complete component frame without shell chrome or scrolling.
 By default it writes
@@ -226,7 +238,11 @@ corepack pnpm run test:ct -- src/features/agent/components/agent-avatar/__tests_
 ```
 
 The CT harness defaults to port 3100 (the `CT_PORT` env var overrides it). Stop the
-process on that port before retrying if it is occupied. The full workflow is in
+process on that port before retrying if it is occupied. The run exits with Playwright's
+status as soon as the tests finish — the HTML report is written to `playwright-report/`
+but never served automatically. To browse it after the run, opt in from an interactive
+terminal with `CT_HTML_REPORT=open` (or `-- --open-report`); `node
+scripts/run-ct-tests.mjs --help` lists the options. The full workflow is in
 `../../docs/fe/DEVELOPER_GUIDE.md#fast-ui-preview-workflow`.
 
 ## Dogfooding a dev FE against a daemon
@@ -295,26 +311,56 @@ produced — manual install/testing only.
 ## Verification
 
 Use `pnpm run verify:changed -- <paths...>` during local work. With no paths, it reads
-staged, unstaged, deleted, and untracked frontend files. Add `--dry-run` to inspect the
+staged, unstaged, deleted, and untracked frontend files, plus the commits since
+`git merge-base <ref> HEAD` when `--base <ref>` (e.g. `--base origin/main`) is given; an
+empty change set exits 2 instead of passing silently. Add `--dry-run` to inspect the
 selected commands without running them. The command runs scoped Prettier and ESLint,
 related Vitest tests, directly imported colocated component tests, and only the
 renderer/main/preload TypeScript boundaries that changed. Ambiguous or high-risk files
-select a conservative suite instead of silently skipping coverage.
+select a conservative suite instead of silently skipping coverage. Any code change (or a
+`knip.jsonc` / `package.json` / `tsconfig*.json` change) also runs knip repo-wide (~3 s,
+also chained into `pnpm run lint`): dead-code detection is a whole-program check, so it
+cannot be scoped to changed files — dropping an import in one file can make an export in
+another unused. knip resolves `m.*()` imports against the gitignored i18n bundle, so
+`lint:dead-code` first runs `generate:i18n --if-stale`, which compiles only while the
+bundle is missing or its recorded input hash no longer matches `messages/*.json`.
 
 Any renderer source change also runs `pnpm run test:ui-invariants` (chained into
 `validate:architecture` too): the repo-wide UI ratchets and the component-catalog
-`*.meta.ts` caller ledgers. These suites read the tree from the filesystem rather than
-importing every component they audit, so `vitest related` and targeted runs miss them —
-cloudlands-fe#2256 hit CI red twice this way. Membership is derived, not listed:
+`*.meta.ts` caller ledgers. Membership is derived, not listed:
 `scripts/ui-invariant-suites.mjs` scans the vitest test files under `scripts/` and `src/`
 (`*.{test,spec}.*`, minus the Playwright `*.ct.spec.*` / `*.visual.spec.*` suites), runs
 every one whose leading comments carry `// @ui-invariant`, and fails when a test whose
 parsed code (comments, string bodies, and regex literals never count) references
 `buildUiComponentInventory` or imports a `*.meta` module and reads a `.callers` ledger has
-neither that marker nor
-`// @ui-invariant-exempt: <reason>`. Add the marker to any new inventory or ledger suite;
-`node scripts/ui-invariant-suites.mjs --list` shows the current set and `--check`
-validates markers without running anything.
+neither that marker nor `// @ui-invariant-exempt: <reason>`. Add the marker to any new
+inventory or ledger suite; `node scripts/ui-invariant-suites.mjs --list` shows the current
+set and `--check` validates markers without running anything. Likewise, any code change
+under `src/`, any `AGENTS.md` change (root or nested — `lint:instruction-themis-pins` scans
+them all), and any edit to the `scripts/check-*.mjs` gates themselves also runs
+`pnpm run lint:architecture` — the repo-wide static architecture scans CI runs through
+`validate:architecture` (its only architecture step; new gates go into `lint:architecture`
+in `package.json`, never into a separate workflow step, so local and CI cannot diverge —
+`scripts/check-ci-architecture-gate.test.ts` fails on any other scanner or wrapper-script
+step in `intent-pr.yml`, and an edit to that workflow runs it locally) —
+because those scans are cross-file graph checks that per-file linting cannot see:
+cloudlands-fe#2315 passed `verify:changed` locally and failed CI in
+`lint:saga-watcher-ownership`. A change to `scripts/type-check.ts` additionally runs
+`pnpm run type-check:validate`, since `lint:architecture` omits that wrapper and the
+per-boundary checks invoke `tsc` directly.
+
+`vitest related` follows the import graph, so a suite that reads the tree from disk is
+invisible to `verify:changed` (cloudlands-fe#2256 and #2314 both failed only on CI). Such a
+suite declares its triggers in its leading comments —
+`// @verify-changed-triggers: src/preload/index.template.ts, src/lib/components/**`
+(repo-relative paths or globs; `./` and `../` entries resolve from the test file's
+directory) — or opts out with `// @verify-changed-exempt: <reason>`; `// @ui-invariant`
+suites are already covered by the renderer trigger. `pnpm run lint:verify-changed-triggers`
+(in `validate:architecture`) fails an undeclared disk-reading suite. `src/preload/index.ts`
+is untracked and generated by `pnpm run generate:ipc-channels` (run by `dev`, `build`, and
+CI before it is needed), so a hand edit to it can no longer be committed by accident, and
+the generator's guard rejects a locally edited copy on regeneration (cloudlands-fe#2314
+edited it, and only CI caught it).
 
 Only checks that genuinely conflict use host-wide locks, held for one check at a time:
 Playwright CT uses `ct-<CT_PORT>` (default `ct-3100`) and the full Vitest fallback uses
@@ -330,10 +376,10 @@ pnpm vitest run <targeted-test-files>
 pnpm run check                              # Svelte + TypeScript consumers
 pnpm tsc -p tsconfig.json --noEmit          # renderer
 pnpm tsc -p tsconfig.main.json --noEmit     # main process
-pnpm tsc -p tsconfig.preload.json --noEmit  # preload
+pnpm run generate:ipc-channels && pnpm tsc -p tsconfig.preload.json --noEmit  # preload
 ```
 
-`pnpm run check` must run alongside plain `tsc` because Svelte component consumers are not fully type-checked by `tsc` alone. All three typechecks must pass. The main typecheck requires `pnpm run generate:build-config` to have been run at least once.
+`pnpm run check` must run alongside plain `tsc` because Svelte component consumers are not fully type-checked by `tsc` alone. All three typechecks must pass. The main typecheck requires `pnpm run generate:build-config` to have been run at least once; the preload typecheck requires `pnpm run generate:ipc-channels` first, since the untracked `src/preload/index.ts` is the preload `tsconfig`'s only input and is absent after a fresh install.
 
 ## Frontend philosophy & testing
 

@@ -24,6 +24,7 @@
   import { invoke } from '$lib/electron-bridge';
   import { toast } from 'svelte-sonner';
   import { createLogger } from '$lib/utils/client-logger';
+  import { acquireMarkerAttribute } from '$lib/utils/marker-attribute-lease';
   import { m } from '$shared/paraglide/messages.js';
 
   // Icon components for well-known editors
@@ -77,6 +78,17 @@
 
   // Dropdown open state
   let dropdownOpen = $state(false);
+  let contentRef: HTMLElement | null = $state(null);
+
+  // Mark <body> while the dialog content is mounted (including its outro) so the
+  // layering rules below can key off an attribute. A `body:has(...)` anchor would
+  // make every DOM/style mutation in the page a candidate `:has()` invalidation.
+  // The marker is leased per instance: overlapping dialogs (onboarding + the
+  // global create flow) keep it until the last one detaches.
+  $effect(() => {
+    if (!contentRef) return;
+    return acquireMarkerAttribute(contentRef.ownerDocument.body, 'data-pull-conflict-dialog-open');
+  });
 
   // Fetch installed editors on mount
   onMount(() => {
@@ -175,6 +187,7 @@
 
 <Dialog.Root {open} onOpenChange={handleOpenChange}>
   <Dialog.Content
+    bind:ref={contentRef}
     data-pull-conflict-dialog
     showCloseButton={false}
     class="app-no-drag max-w-md gap-0 overflow-hidden rounded-lg p-0"
@@ -289,17 +302,17 @@
 </Dialog.Root>
 
 <style>
-  :global(body:has([data-pull-conflict-dialog]) [data-slot='dialog-overlay']) {
+  :global(body[data-pull-conflict-dialog-open] [data-slot='dialog-overlay']) {
     z-index: 10000 !important;
     -webkit-app-region: no-drag;
   }
 
-  :global(body:has([data-pull-conflict-dialog]) [data-slot='dialog-content']) {
+  :global(body[data-pull-conflict-dialog-open] [data-slot='dialog-content']) {
     z-index: 10001 !important;
     -webkit-app-region: no-drag;
   }
 
-  :global(body:has([data-pull-conflict-dialog]) [data-slot='menu-content']) {
+  :global(body[data-pull-conflict-dialog-open] [data-slot='menu-content']) {
     z-index: 10002 !important;
   }
 </style>
