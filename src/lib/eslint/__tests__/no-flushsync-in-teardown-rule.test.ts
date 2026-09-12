@@ -303,6 +303,140 @@ describe('no-flushsync-in-teardown ESLint rule', () => {
     expect(messages.map((message) => message.line)).toEqual([8, 9]);
   });
 
+  it('applies the parameter default when the argument is undefined, directly or forwarded', async () => {
+    const withDefault = await lintSvelte(
+      component(`
+        import { flushSync } from 'svelte';
+        function run(sync = true) {
+          if (sync) flushSync();
+        }
+        function runOptions({ sync = true } = {}) {
+          if (sync) flushSync();
+        }
+        function relay(sync) {
+          run(sync);
+        }
+        $effect(() => () => {
+          run(undefined);
+          run(void 0);
+          runOptions({ sync: undefined });
+          relay();
+          relay(undefined);
+        });
+      `),
+    );
+    expect(
+      withDefault.map((message) => [message.line, message.message.split(' runs ')[0]]),
+    ).toEqual([
+      [14, 'run() (which calls flushSync)'],
+      [15, 'run() (which calls flushSync)'],
+      [16, 'runOptions() (which calls flushSync)'],
+      [17, 'relay() (which calls flushSync)'],
+      [18, 'relay() (which calls flushSync)'],
+    ]);
+
+    const withoutDefault = await lintSvelte(
+      component(`
+        import { flushSync } from 'svelte';
+        function run(sync) {
+          if (sync) flushSync();
+        }
+        function runOff(sync = false) {
+          if (sync) flushSync();
+        }
+        function runOptions({ sync } = {}) {
+          if (sync) flushSync();
+        }
+        function relay(sync) {
+          run(sync);
+        }
+        $effect(() => () => {
+          run(undefined);
+          runOff(undefined);
+          runOptions({ sync: undefined });
+          runOptions();
+          relay();
+        });
+      `),
+    );
+    expect(withoutDefault).toHaveLength(0);
+  });
+
+  it('does not treat a binding named undefined as the global undefined', async () => {
+    const messages = await lintSvelte(
+      component(`
+        import { flushSync } from 'svelte';
+        function run(sync) {
+          if (sync) flushSync();
+        }
+        function relay(undefined) {
+          run(undefined);
+        }
+        $effect(() => () => relay(true));
+      `),
+    );
+
+    expect(messages.map((message) => [message.line, message.message.split(' runs ')[0]])).toEqual([
+      [10, 'relay() (which calls flushSync)'],
+    ]);
+  });
+
+  it('reads object arguments with last-write semantics and treats computed keys as unknown', async () => {
+    const script = (args: string) => `
+        import { flushSync } from 'svelte';
+        const key = 'sync';
+        function run({ sync } = {}) {
+          if (sync) flushSync();
+        }
+        $effect(() => () => run(${args}));
+      `;
+
+    expect(
+      (await lintSvelte(component(script('{ sync: false, sync: true }')))).map(
+        (message) => message.line,
+      ),
+    ).toEqual([8]);
+    expect(
+      (await lintSvelte(component(script('{ [key]: true }')))).map((message) => message.line),
+    ).toEqual([8]);
+    expect(await lintSvelte(component(script('{ sync: true, sync: false }')))).toHaveLength(0);
+  });
+
+  it('does not prove an opt-out from a parameter that is reassigned in the helper', async () => {
+    const messages = await lintSvelte(
+      component(`
+        import { flushSync } from 'svelte';
+        function run(sync: boolean) {
+          sync = true;
+          if (sync) flushSync();
+        }
+        function runEarly(sync: boolean) {
+          sync = true;
+          if (!sync) return;
+          flushSync();
+        }
+        function flush(sync: boolean) {
+          if (sync) flushSync();
+        }
+        function relay(sync: boolean) {
+          sync = true;
+          flush(sync);
+        }
+        $effect(() => () => {
+          run(false);
+          runEarly(false);
+          relay(false);
+        });
+      `),
+    );
+
+    expect(messages.map((message) => [message.line, message.message.split(' runs ')[0]])).toEqual([
+      [21, 'run() (which calls flushSync)'],
+      [22, 'runEarly() (which calls flushSync)'],
+      [23, 'relay() (which calls flushSync)'],
+    ]);
+  });
+
   it('follows a callback parameter to the helper binding, not the parameter', async () => {
     const messages = await lintSvelte(
       component(`

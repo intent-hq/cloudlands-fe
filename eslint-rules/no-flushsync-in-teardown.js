@@ -9,9 +9,11 @@
 // flush is guarded by one of the helper's own parameters (`if (sync)`,
 // `sync ? flushSync(fn) : fn()`, `sync && flushSync()`, `if (!sync) return`),
 // a call is exempt only when its argument provably disables the flush: a falsy
-// literal, an omitted value with no truthy default, or a parameter of the
-// caller that is itself carried to the caller's call sites. Anything else —
-// `true`, a default of `true`, component state — counts as a flush.
+// literal, an omitted or `undefined` value whose default is not truthy, or a
+// parameter of the caller that is itself carried to the caller's call sites
+// (keeping the callee's default semantics). Anything else — `true`, a default
+// of `true`, component state, a computed object key, a parameter that is
+// reassigned in the helper body — counts as a flush.
 // Analysis is lexical: a flush inside a nested callback (rAF, forEach, ...) is
 // attributed to that callback, not to the helper that schedules it.
 
@@ -61,17 +63,22 @@ function getKeyName(property) {
   return null;
 }
 
-function isProvenFalsy(node) {
-  const value = unwrapExpression(node);
-  if (!value) return false;
-  if (value.type === 'Literal') return !value.value;
-  if (value.type === 'Identifier') return value.name === 'undefined';
-  return value.type === 'UnaryExpression' && value.operator === 'void';
+// The last static property named `key` of an object literal, `undefined` when
+// the key is absent, or null when the literal cannot be read (spread, computed
+// key) and must be treated as unknown.
+function getStaticProperty(object, key) {
+  let match;
+  for (const property of object.properties) {
+    if (property.type !== 'Property' || property.computed) return null;
+    if (getKeyName(property) === key) match = property;
+  }
+  return match;
 }
 
-function isEmptyObjectLiteral(node) {
-  const value = unwrapExpression(node);
-  return value?.type === 'ObjectExpression' && value.properties.length === 0;
+// A parameter written to anywhere but its own default initializer cannot be
+// proven from the call-site argument.
+function isReassigned(variable) {
+  return variable.references.some((reference) => reference.isWrite() && !reference.init);
 }
 
 // Binding resolution goes through the scope manager so aliases resolve and
@@ -241,14 +248,54 @@ function createAnalyzer(sourceCode, actionIdentifiers) {
     return null;
   }
 
+  // What a value expression contributes to a guard: 'undefined' (the global
+  // `undefined` or `void`), 'falsy' (a falsy literal), 'forward' (some other
+  // binding), or 'unknown' (anything else — treated as truthy).
+  function classifyValue(node) {
+    const value = unwrapExpression(node);
+    if (value.type === 'Literal') return !value.value ? 'falsy' : 'unknown';
+    if (value.type === 'UnaryExpression' && value.operator === 'void') return 'undefined';
+    if (value.type === 'Identifier') {
+      const variable = resolve(value);
+      const isGlobal = !variable || variable.defs.length === 0;
+      return value.name === 'undefined' && isGlobal ? 'undefined' : 'forward';
+    }
+    return 'unknown';
+  }
+
+  // Whether an `undefined` value flushes once `defaultNode` (the parameter's
+  // default, or null) is applied; `undefinedOn` is what `undefined` means to
+  // whoever consumes the parameter downstream.
+  function applyDefault(defaultNode, undefinedOn) {
+    if (!defaultNode) return undefinedOn;
+    const kind = classifyValue(defaultNode);
+    if (kind === 'undefined') return undefinedOn;
+    return kind !== 'falsy';
+  }
+
+  // Whether omitting the whole argument flushes when the guard is destructured
+  // from an object parameter with default `defaultNode`.
+  function applyObjectDefault(defaultNode, key, undefinedOn) {
+    const object = defaultNode ? unwrapExpression(defaultNode) : null;
+    if (object?.type !== 'ObjectExpression') return true;
+    const property = getStaticProperty(object, key);
+    if (property === null) return true;
+    if (property === undefined) return undefinedOn;
+    const kind = classifyValue(property.value);
+    if (kind === 'undefined') return undefinedOn;
+    return kind !== 'falsy';
+  }
+
   // A guard is a parameter of `fn` whose falsy value disables the flush:
   // `index` is its position, `key` the destructured property (or null), and
-  // `defaultsOn` / `omittedOn` whether leaving the value / the whole argument
-  // out still flushes.
-  function getParameterGuard(identifier, fn) {
+  // `undefinedOn` / `omittedOn` whether passing `undefined` / leaving the whole
+  // argument out still flushes. `undefinedOn` on input is what `undefined`
+  // means downstream: false for a lexical `if (p)` guard, the callee's own
+  // value for a forwarded parameter.
+  function getParameterGuard(identifier, fn, undefinedOn = false) {
     const variable = resolve(identifier);
     const definition = variable?.defs.find((candidate) => candidate.type === 'Parameter');
-    if (!definition || definition.node !== fn) return null;
+    if (!definition || definition.node !== fn || isReassigned(variable)) return null;
     const name = definition.name;
     const index = fn.params.findIndex((param) => isWithin(name, param));
     if (index < 0) return null;
@@ -261,8 +308,14 @@ function createAnalyzer(sourceCode, actionIdentifiers) {
     }
     if (param.type === 'Identifier') {
       if (param !== name) return null;
-      const defaultsOn = outerDefault ? !isProvenFalsy(outerDefault) : false;
-      return { variable, index, key: null, defaultsOn, omittedOn: defaultsOn };
+      const effectiveUndefinedOn = applyDefault(outerDefault, undefinedOn);
+      return {
+        variable,
+        index,
+        key: null,
+        undefinedOn: effectiveUndefinedOn,
+        omittedOn: effectiveUndefinedOn,
+      };
     }
     if (param.type !== 'ObjectPattern') return null;
     for (const property of param.properties) {
@@ -276,9 +329,14 @@ function createAnalyzer(sourceCode, actionIdentifiers) {
       if (value !== name) continue;
       const key = getKeyName(property);
       if (key === null) return null;
-      const defaultsOn = propertyDefault ? !isProvenFalsy(propertyDefault) : false;
-      const omittedOn = outerDefault && isEmptyObjectLiteral(outerDefault) ? defaultsOn : true;
-      return { variable, index, key, defaultsOn, omittedOn };
+      const effectiveUndefinedOn = applyDefault(propertyDefault, undefinedOn);
+      return {
+        variable,
+        index,
+        key,
+        undefinedOn: effectiveUndefinedOn,
+        omittedOn: applyObjectDefault(outerDefault, key, effectiveUndefinedOn),
+      };
     }
     return null;
   }
@@ -333,23 +391,33 @@ function createAnalyzer(sourceCode, actionIdentifiers) {
   }
 
   // How `call` sets `guard`: 'off' (provably falsy — no flush), 'forward' (a
-  // parameter of the caller decides), or 'on' (anything else).
+  // binding of the caller decides; `undefinedOn` travels with it), or 'on'
+  // (anything else).
   function evaluateGuardArgument(call, guard) {
     if (call.arguments.some((argument) => argument.type === 'SpreadElement')) {
       return { state: 'on' };
     }
     const argument = call.arguments[guard.index];
     if (!argument) return { state: guard.omittedOn ? 'on' : 'off' };
-    let value = unwrapExpression(argument);
+    let value = argument;
     if (guard.key !== null) {
-      if (value.type !== 'ObjectExpression') return { state: 'on' };
-      if (value.properties.some((property) => property.type !== 'Property')) return { state: 'on' };
-      const property = value.properties.find((candidate) => getKeyName(candidate) === guard.key);
-      if (!property) return { state: guard.defaultsOn ? 'on' : 'off' };
-      value = unwrapExpression(property.value);
+      const object = unwrapExpression(argument);
+      if (object.type !== 'ObjectExpression') return { state: 'on' };
+      const property = getStaticProperty(object, guard.key);
+      if (property === null) return { state: 'on' };
+      if (property === undefined) return { state: guard.undefinedOn ? 'on' : 'off' };
+      value = property.value;
     }
-    if (isProvenFalsy(value)) return { state: 'off' };
-    if (value.type === 'Identifier') return { state: 'forward', identifier: value };
+    const kind = classifyValue(value);
+    if (kind === 'undefined') return { state: guard.undefinedOn ? 'on' : 'off' };
+    if (kind === 'falsy') return { state: 'off' };
+    if (kind === 'forward') {
+      return {
+        state: 'forward',
+        identifier: unwrapExpression(value),
+        undefinedOn: guard.undefinedOn,
+      };
+    }
     return { state: 'on' };
   }
 
@@ -358,7 +426,10 @@ function createAnalyzer(sourceCode, actionIdentifiers) {
 
 function getGuardKey(guards) {
   return guards
-    .map((guard) => `${guard.variable.name}@${guard.variable.defs[0].name.range[0]}`)
+    .map(
+      (guard) =>
+        `${guard.variable.name}@${guard.variable.defs[0].name.range[0]}:${Number(guard.undefinedOn)}${Number(guard.omittedOn)}`,
+    )
     .sort()
     .join(',');
 }
@@ -395,8 +466,9 @@ export default {
         const analyzer = createAnalyzer(sourceCode, actionIdentifiers);
         const visited = new Set();
         // Each entry is a call that flushes synchronously when it runs, except
-        // when one of `forwarded` (arguments that are plain identifiers) turns
-        // out to be a falsy parameter of the enclosing helper.
+        // when one of `forwarded` (identifier arguments, each with what
+        // `undefined` means to the callee) turns out to be a falsy parameter of
+        // the enclosing helper.
         const queue = [];
         for (const variable of flushSyncVariables) {
           for (const call of getCallsOf(variable)) {
@@ -421,8 +493,8 @@ export default {
           if (!helperVariable) continue;
 
           const guards = analyzer.getConditionGuards(call, helper);
-          for (const identifier of forwarded) {
-            const guard = analyzer.getParameterGuard(identifier, helper);
+          for (const { identifier, undefinedOn } of forwarded) {
+            const guard = analyzer.getParameterGuard(identifier, helper, undefinedOn);
             if (guard) guards.push(guard);
           }
           const key = `${helperVariable.defs[0].name.range[0]}:${getGuardKey(guards)}`;
@@ -438,7 +510,7 @@ export default {
               label: helperLabel,
               forwarded: states
                 .filter((state) => state.state === 'forward')
-                .map((state) => state.identifier),
+                .map(({ identifier, undefinedOn }) => ({ identifier, undefinedOn })),
             });
           }
         }
