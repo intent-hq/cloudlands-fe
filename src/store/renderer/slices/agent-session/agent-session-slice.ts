@@ -22,7 +22,10 @@ import {
 } from '$shared/utils/message-dedup';
 import { getAgentAttentionRequest } from '$shared/utils/agent-attention';
 import { eventReceived } from '../workspace-events/workspace-events-slice';
-import { workspaceDeleted } from '../workspace-lifecycle/workspace-lifecycle-slice';
+import {
+  workspaceChatStateReclaimed,
+  workspaceDeleted,
+} from '../workspace-lifecycle/workspace-lifecycle-slice';
 import {
   chatSendStarted,
   chatSendFailed,
@@ -1557,6 +1560,51 @@ agentSessionReducer.with(removeWorkspaceSessions, (state, { payload: [wsId] }) =
     { ...state, byAgentId, agentIdsByWorkspace: restWorkspaces },
     agentIds,
   );
+});
+agentSessionReducer.with(workspaceChatStateReclaimed, (state, { payload: [wsId, agentIds] }) => {
+  if (agentIds.length === 0) return state;
+  const doomed = new Set(agentIds);
+  const byAgentId = { ...state.byAgentId };
+  const retainedIds = new Set<string>();
+  let changed = false;
+
+  for (const id of doomed) {
+    const session = byAgentId[id];
+    if (!session) continue;
+    // Daemon-persisted rows carry `seq`; preserve only local optimistic user
+    // rows so a final-close cleanup never destroys an unacknowledged send.
+    const optimisticUserMessages = session.messages.filter(
+      (message) => message.role === 'user' && message.seq === undefined,
+    );
+    if (optimisticUserMessages.length > 0) {
+      retainedIds.add(id);
+      if (optimisticUserMessages.length !== session.messages.length) {
+        byAgentId[id] = { ...session, messages: optimisticUserMessages, tailCapPruned: undefined };
+        changed = true;
+      }
+    } else {
+      delete byAgentId[id];
+      changed = true;
+    }
+  }
+
+  const indexed = state.agentIdsByWorkspace[wsId];
+  let agentIdsByWorkspace = state.agentIdsByWorkspace;
+  if (indexed) {
+    const remaining = indexed.filter((id) => !doomed.has(id) || retainedIds.has(id));
+    if (remaining.length !== indexed.length) {
+      if (remaining.length === 0) {
+        const { [wsId]: _removed, ...rest } = agentIdsByWorkspace;
+        agentIdsByWorkspace = rest;
+      } else {
+        agentIdsByWorkspace = { ...agentIdsByWorkspace, [wsId]: remaining };
+      }
+      changed = true;
+    }
+  }
+
+  const nextState = changed ? { ...state, byAgentId, agentIdsByWorkspace } : state;
+  return removeHistorySegmentsFor(nextState, doomed);
 });
 agentSessionReducer.with(workspaceDeleted, (state, { payload: [wsId, agentIds] }) => {
   const indexedAgentIds = state.agentIdsByWorkspace[wsId] ?? [];

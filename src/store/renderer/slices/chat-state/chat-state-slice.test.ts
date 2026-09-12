@@ -63,7 +63,10 @@ import {
   selectPendingProposalRecovery,
   selectTranscriptHydration,
 } from './chat-state-selectors';
-import { workspaceDeleted } from '../workspace-lifecycle/workspace-lifecycle-slice';
+import {
+  workspaceChatStateReclaimed,
+  workspaceDeleted,
+} from '../workspace-lifecycle/workspace-lifecycle-slice';
 import { eventReceived } from '../workspace-events/workspace-events-slice';
 import type { AgentIdleEvent, AgentStatusChangedEvent } from '$features/events/types';
 
@@ -1007,6 +1010,36 @@ describe('chatStateReducer', () => {
       const state = chatStateReducer(initialState, chatSendStarted(AGENT));
       const next = chatStateReducer(state, workspaceDeleted('ws-1', ['unknown']));
       expect(next).toBe(state);
+    });
+  });
+
+  describe('workspaceChatStateReclaimed', () => {
+    it('purges transient chat state while preserving retry payloads', () => {
+      let state = chatStateReducer(initialState, chatSendStarted('agent-a'));
+      state = chatStateReducer(state, chatLastAttemptedMessageSet('agent-a', { text: 'retry me' }));
+      state = chatStateReducer(
+        state,
+        chatQueuedRetryRecordSet('agent-a', 'queue-1', { text: 'queued retry' }, 'turn-1'),
+      );
+      state = chatStateReducer(state, transcriptHydrationStarted('agent-a'));
+      state = chatStateReducer(state, chatSendStarted('agent-b'));
+
+      state = chatStateReducer(state, workspaceChatStateReclaimed('ws-1', ['agent-a', 'agent-b']));
+
+      expect(state.byAgentId['agent-a'].lastAttemptedMessage).toEqual({ text: 'retry me' });
+      expect(state.byAgentId['agent-a'].queuedRetryRecords).toEqual({
+        'queue-1': { seq: 1, record: { text: 'queued retry' }, turnId: 'turn-1' },
+      });
+      expect(state.byAgentId['agent-a'].transcriptHydration).toBeUndefined();
+      expect(state.byAgentId['agent-a'].statusEvents).toEqual([]);
+      expect(state.byAgentId['agent-b']).toBeUndefined();
+    });
+
+    it('is a no-op when none of the bounded agents have chat state', () => {
+      const state = chatStateReducer(initialState, chatSendStarted(AGENT));
+      expect(chatStateReducer(state, workspaceChatStateReclaimed('ws-1', ['unknown-agent']))).toBe(
+        state,
+      );
     });
   });
 

@@ -142,7 +142,10 @@ import {
   replaceMessages,
   updateSession,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
-import { workspaceDeleted } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
+import {
+  workspaceChatStateReclaimed,
+  workspaceDeleted,
+} from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import {
   clearCurrentlyViewedAgent,
   markAgentAsViewed,
@@ -1168,6 +1171,7 @@ type ChatSubscribeAction =
   | ReturnType<typeof bulkUpsertSessions>
   | ReturnType<typeof removeSession>
   | ReturnType<typeof removeWorkspaceSessions>
+  | ReturnType<typeof workspaceChatStateReclaimed>
   | ReturnType<typeof workspaceDeleted>
   | ReturnType<typeof clearAllSessions>;
 
@@ -1276,6 +1280,12 @@ function* routeLifecycleAction(
   } else if (action.type === removeWorkspaceSessions.type) {
     const [wsId] = action.payload as ReturnType<typeof removeWorkspaceSessions>['payload'];
     closeMatchingSlots(coordinator, (_agentId, slot) => slot.wsId === wsId, true);
+  } else if (action.type === workspaceChatStateReclaimed.type) {
+    const [, agentIds] = action.payload as ReturnType<
+      typeof workspaceChatStateReclaimed
+    >['payload'];
+    for (const agentId of agentIds) resumeAnchors.delete(agentId);
+    closeMatchingSlots(coordinator, (agentId) => agentIds.includes(agentId), true);
   } else if (action.type === workspaceDeleted.type) {
     const [wsId, agentIds] = action.payload as ReturnType<typeof workspaceDeleted>['payload'];
     for (const agentId of agentIds) resumeAnchors.delete(agentId);
@@ -1359,6 +1369,7 @@ export function* chatSubscribeSaga(): SagaGenerator<void> {
       bulkUpsertSessions,
       removeSession,
       removeWorkspaceSessions,
+      workspaceChatStateReclaimed,
       workspaceDeleted,
       clearAllSessions,
     ],

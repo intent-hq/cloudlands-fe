@@ -44,6 +44,7 @@ import {
 import { deduplicateAgentMessages } from '$shared/utils/message-dedup';
 import { createLogger } from '$lib/utils/client-logger';
 import { isAgentDeletionPending } from './utils/pending-agent-deletions';
+import { acquireChatInterestLease, releaseChatInterestLease } from './utils/chat-interest-leases';
 import { readAgentSession } from './agent-read-service';
 
 const logger = createLogger('ChatReadService');
@@ -53,6 +54,7 @@ const inFlight = new Map<string, Promise<void>>();
 
 /** Pending follow-up loads keyed by agent id; at most one rerun per in-flight load. */
 const pendingRerun = new Map<string, Promise<void>>();
+let hydrationLeaseSeq = 0;
 
 /** Dependency-light one-time read of the store's current transcript (no selector import). */
 function readCurrentMessages(agentId: string): AgentMessage[] {
@@ -87,9 +89,16 @@ export async function loadChatTranscript(agentId: string): Promise<void> {
     // never in an unbounded loop.
     const scheduledRerun = pendingRerun.get(agentId);
     if (scheduledRerun) return scheduledRerun;
-    const rerun = pending.then(() => {
+    hydrationLeaseSeq += 1;
+    const rerunLeaseHolder = `chat-read-service:rerun:${hydrationLeaseSeq}`;
+    acquireChatInterestLease(agentId, rerunLeaseHolder);
+    const rerun = pending.then(async () => {
       pendingRerun.delete(agentId);
-      return loadChatTranscript(agentId);
+      try {
+        await loadChatTranscript(agentId);
+      } finally {
+        releaseChatInterestLease(agentId, rerunLeaseHolder);
+      }
     });
     pendingRerun.set(agentId, rerun);
     return rerun;
@@ -103,6 +112,9 @@ export async function loadChatTranscript(agentId: string): Promise<void> {
 
   // Register in inFlight BEFORE dispatching to prevent re-entrant calls
   inFlight.set(agentId, runPromise);
+  hydrationLeaseSeq += 1;
+  const leaseHolder = `chat-read-service:${hydrationLeaseSeq}`;
+  acquireChatInterestLease(agentId, leaseHolder);
 
   // BASELINE snapshot (monorepo#1019): identity set (id + appMessageId) of the
   // store's messages at the moment this read begins. The merge guard below
@@ -124,6 +136,7 @@ export async function loadChatTranscript(agentId: string): Promise<void> {
     // If dispatch throws, clean up inFlight but do NOT resolve the promise
     // (coalesced callers should see the failure, not a fake success)
     inFlight.delete(agentId);
+    releaseChatInterestLease(agentId, leaseHolder);
     throw error;
   }
 
@@ -219,8 +232,12 @@ export async function loadChatTranscript(agentId: string): Promise<void> {
       try {
         appStore.dispatch(transcriptHydrationSettled(agentId));
       } finally {
-        inFlight.delete(agentId);
-        resolveRun();
+        try {
+          releaseChatInterestLease(agentId, leaseHolder);
+        } finally {
+          inFlight.delete(agentId);
+          resolveRun();
+        }
       }
     }
   })();

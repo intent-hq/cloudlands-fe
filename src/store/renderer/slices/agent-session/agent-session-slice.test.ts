@@ -59,7 +59,10 @@ import {
   splitUnloadedRows,
 } from '$lib/components/chat/chat-scrollback-composition';
 import { eventReceived } from '../workspace-events/workspace-events-slice';
-import { workspaceDeleted } from '../workspace-lifecycle/workspace-lifecycle-slice';
+import {
+  workspaceChatStateReclaimed,
+  workspaceDeleted,
+} from '../workspace-lifecycle/workspace-lifecycle-slice';
 import {
   selectAgentSession,
   selectAgentSessionsByIds,
@@ -2844,6 +2847,46 @@ describe('agent-session-slice reducer', () => {
       expect(state.byAgentId['a1']).toBeUndefined();
       expect(state.byAgentId['a2']).toBeUndefined();
       expect(state.byAgentId['a3']).toBeDefined();
+    });
+  });
+
+  describe('workspaceChatStateReclaimed', () => {
+    it('drops persisted transcripts while preserving local optimistic user messages', () => {
+      const persisted = makeUniqueMessage('persisted-user', 'user', '2026-01-01T00:00:00.000Z');
+      persisted.seq = 1;
+      const optimistic: AgentMessage = {
+        id: 'optimistic-user',
+        appMessageId: 'app-message-1',
+        role: 'user',
+        timestamp: '2026-01-01T00:00:01.000Z',
+        contentBlocks: [{ type: 'text', text: 'not acknowledged yet' }],
+      };
+      let state = agentSessionReducer(
+        initialState,
+        bulkUpsertSessions([
+          makeSession('a1', 'ws-1', { messages: [persisted, optimistic] }),
+          makeSession('a2', 'ws-1', { messages: [persisted] }),
+          makeSession('a3', 'ws-2', { messages: [persisted] }),
+        ]),
+      );
+
+      state = agentSessionReducer(state, workspaceChatStateReclaimed('ws-1', ['a1', 'a2']));
+
+      expect(state.byAgentId['a1']?.messages).toEqual([optimistic]);
+      expect(state.byAgentId['a2']).toBeUndefined();
+      expect(state.byAgentId['a3']).toBeDefined();
+      expect(state.agentIdsByWorkspace['ws-1']).toEqual(['a1']);
+    });
+
+    it('is a state-identity no-op for unknown agent ids', () => {
+      const state = agentSessionReducer(
+        initialState,
+        bulkUpsertSessions([makeSession('a1', 'ws-1')]),
+      );
+
+      expect(agentSessionReducer(state, workspaceChatStateReclaimed('ws-1', ['unknown']))).toBe(
+        state,
+      );
     });
   });
 
@@ -6320,6 +6363,11 @@ describe('history segment (scrollback)', () => {
 
     it('workspaceDeleted drops history segments for the doomed agents', () => {
       const state = agentSessionReducer(withHistory(), workspaceDeleted('ws-1', ['a1']));
+      expect(getHistory(state, 'a1')).toBeUndefined();
+    });
+
+    it('workspaceChatStateReclaimed drops history segments for finally closed agents', () => {
+      const state = agentSessionReducer(withHistory(), workspaceChatStateReclaimed('ws-1', ['a1']));
       expect(getHistory(state, 'a1')).toBeUndefined();
     });
 

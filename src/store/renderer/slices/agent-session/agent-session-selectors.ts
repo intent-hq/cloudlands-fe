@@ -330,6 +330,12 @@ export const selectAgentSessionWorkspaceId = store.createSelector(
     state.agentSessions?.byAgentId[agentId]?.workspaceId,
 );
 
+/** Agent IDs captured from the workspace index before final-close reclamation. */
+export const selectAgentSessionIdsForWorkspace = store.createSelector(
+  (state, workspaceId: string): string[] =>
+    state.agentSessions?.agentIdsByWorkspace[workspaceId] ?? [],
+);
+
 /**
  * Current reasoning effort for an agent session (Option B first-class session
  * field, PROTOCOL §5.5). Rendered verbatim from the stored session:
