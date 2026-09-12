@@ -230,15 +230,25 @@ describe('createTunneledSocket', () => {
       spawn: fakeSpawn(children, []),
       createInner: (localPort) => net.connect(localPort, '127.0.0.1'),
     });
-    await new Promise<void>((resolve) => facade.once('connect', resolve));
-    // Kill the child mid-stream: the inner loopback socket closes, which
-    // must surface on the facade as end-of-stream (push(null) → 'end') so
-    // the JSON-RPC client sees a disconnect rather than a hang.
-    const ended = new Promise<void>((resolve) => facade.once('end', resolve));
-    facade.resume();
-    children[0]!.kill();
-    await ended;
-    facade.destroy();
+    try {
+      await new Promise<void>((resolve) => facade.once('connect', resolve));
+      // The client's `connect` and the forwarder's accept callback (which
+      // spawns the child) are separate event-loop tasks with no ordering
+      // guarantee, so wait until the spawn is observable before killing it.
+      const child = await vi.waitFor(() => {
+        expect(children).toHaveLength(1);
+        return children[0]!;
+      });
+      // Kill the child mid-stream: the inner loopback socket closes, which
+      // must surface on the facade as end-of-stream (push(null) → 'end') so
+      // the JSON-RPC client sees a disconnect rather than a hang.
+      const ended = new Promise<void>((resolve) => facade.once('end', resolve));
+      facade.resume();
+      child.kill();
+      await ended;
+    } finally {
+      facade.destroy();
+    }
   });
 
   it('losing the connect race to a direct candidate tears down the tailcat children', async () => {
