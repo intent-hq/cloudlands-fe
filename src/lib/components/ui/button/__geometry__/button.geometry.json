@@ -3,22 +3,22 @@
     "420": {
       "probes": {
         "data-slot=button": {
-          "fontSize": 15,
+          "fontSize": 13,
           "fontWeight": 400,
           "gap": 6,
-          "height": 32,
-          "lineHeight": 22,
+          "height": 36,
+          "lineHeight": 18,
           "marginBottom": 0,
           "marginTop": 0,
-          "paddingLeft": 12,
-          "paddingRight": 12,
-          "width": 89.09,
+          "paddingLeft": 16,
+          "paddingRight": 16,
+          "width": 87.97,
           "x": 25,
           "y": 25
         }
       },
       "root": {
-        "height": 82,
+        "height": 86,
         "width": 420
       }
     }
@@ -27,22 +27,22 @@
     "420": {
       "probes": {
         "data-slot=button": {
-          "fontSize": 15,
+          "fontSize": 13,
           "fontWeight": 400,
           "gap": 6,
-          "height": 32,
-          "lineHeight": 22,
+          "height": 36,
+          "lineHeight": 18,
           "marginBottom": 0,
           "marginTop": 0,
-          "paddingLeft": 12,
-          "paddingRight": 12,
-          "width": 151.17,
+          "paddingLeft": 16,
+          "paddingRight": 16,
+          "width": 141.92,
           "x": 25,
           "y": 25
         }
       },
       "root": {
-        "height": 82,
+        "height": 86,
         "width": 420
       }
     }
@@ -51,22 +51,22 @@
     "420": {
       "probes": {
         "data-slot=button": {
-          "fontSize": 15,
+          "fontSize": 13,
           "fontWeight": 400,
           "gap": 6,
-          "height": 32,
-          "lineHeight": 22,
+          "height": 36,
+          "lineHeight": 18,
           "marginBottom": 0,
           "marginTop": 0,
-          "paddingLeft": 12,
-          "paddingRight": 12,
-          "width": 105.38,
+          "paddingLeft": 16,
+          "paddingRight": 16,
+          "width": 101.58,
           "x": 25,
           "y": 25
         }
       },
       "root": {
-        "height": 82,
+        "height": 86,
         "width": 420
       }
     }
@@ -75,22 +75,22 @@
     "420": {
       "probes": {
         "data-slot=button": {
-          "fontSize": 15,
+          "fontSize": 13,
           "fontWeight": 400,
           "gap": 6,
-          "height": 32,
-          "lineHeight": 22,
+          "height": 36,
+          "lineHeight": 18,
           "marginBottom": 0,
           "marginTop": 0,
-          "paddingLeft": 12,
-          "paddingRight": 12,
-          "width": 92.56,
+          "paddingLeft": 16,
+          "paddingRight": 16,
+          "width": 72.23,
           "x": 25,
           "y": 25
         }
       },
       "root": {
-        "height": 82,
+        "height": 86,
         "width": 420
       }
     }

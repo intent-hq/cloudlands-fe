@@ -88,7 +88,7 @@
         },
         "data-workspace-hover-card-agent-context": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 0,
           "height": 18,
           "lineHeight": 18,
@@ -96,13 +96,13 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 333.98,
+          "width": 337.98,
           "x": 142,
           "y": 308
         },
         "data-workspace-hover-card-agent-context#2": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 0,
           "height": 18,
           "lineHeight": 18,
@@ -110,13 +110,13 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 365.34,
+          "width": 368.34,
           "x": 142,
           "y": 582
         },
         "data-workspace-hover-card-agent-context#3": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 0,
           "height": 18,
           "lineHeight": 18,
@@ -130,7 +130,7 @@
         },
         "data-workspace-hover-card-agent-context#4": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 0,
           "height": 18,
           "lineHeight": 18,
@@ -138,13 +138,13 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 288.77,
+          "width": 292.77,
           "x": 142,
           "y": 1148
         },
         "data-workspace-hover-card-agent-context#5": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 0,
           "height": 18,
           "lineHeight": 18,
@@ -152,13 +152,13 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 333.98,
+          "width": 337.98,
           "x": 142,
           "y": 1200
         },
         "data-workspace-hover-card-agent-context#6": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 0,
           "height": 18,
           "lineHeight": 18,
@@ -166,13 +166,13 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 250.28,
+          "width": 254.28,
           "x": 142,
           "y": 1252
         },
         "data-workspace-hover-card-agent-context#7": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 0,
           "height": 18,
           "lineHeight": 18,
@@ -180,13 +180,13 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 398.81,
+          "width": 401.81,
           "x": 142,
           "y": 1513
         },
         "data-workspace-hover-card-agent-context#8": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 0,
           "height": 18,
           "lineHeight": 18,
@@ -194,13 +194,13 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 288.42,
+          "width": 290.42,
           "x": 142,
           "y": 1565
         },
         "data-workspace-hover-card-agent-detail": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 6,
           "height": 18,
           "lineHeight": 18,
@@ -214,7 +214,7 @@
         },
         "data-workspace-hover-card-agent-detail#2": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 6,
           "height": 18,
           "lineHeight": 18,
@@ -228,7 +228,7 @@
         },
         "data-workspace-hover-card-agent-detail#3": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 6,
           "height": 18,
           "lineHeight": 18,
@@ -242,7 +242,7 @@
         },
         "data-workspace-hover-card-agent-detail#4": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 6,
           "height": 18,
           "lineHeight": 18,
@@ -256,7 +256,7 @@
         },
         "data-workspace-hover-card-agent-detail#5": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 6,
           "height": 18,
           "lineHeight": 18,
@@ -270,7 +270,7 @@
         },
         "data-workspace-hover-card-agent-detail#6": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 6,
           "height": 18,
           "lineHeight": 18,
@@ -284,7 +284,7 @@
         },
         "data-workspace-hover-card-agent-detail#7": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 6,
           "height": 18,
           "lineHeight": 18,
@@ -298,7 +298,7 @@
         },
         "data-workspace-hover-card-agent-detail#8": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 6,
           "height": 18,
           "lineHeight": 18,
@@ -320,7 +320,7 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 440.38,
+          "width": 441.38,
           "x": 142,
           "y": 286
         },
@@ -334,7 +334,7 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 440.38,
+          "width": 441.38,
           "x": 142,
           "y": 560
         },
@@ -348,7 +348,7 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 440.38,
+          "width": 441.38,
           "x": 142,
           "y": 852
         },
@@ -362,7 +362,7 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 446.38,
+          "width": 447.38,
           "x": 142,
           "y": 1126
         },
@@ -376,7 +376,7 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 446.38,
+          "width": 447.38,
           "x": 142,
           "y": 1178
         },
@@ -390,7 +390,7 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 446.38,
+          "width": 447.38,
           "x": 142,
           "y": 1230
         },
@@ -404,7 +404,7 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 446.38,
+          "width": 447.38,
           "x": 142,
           "y": 1491
         },
@@ -418,7 +418,7 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 446.38,
+          "width": 447.38,
           "x": 142,
           "y": 1543
         },
@@ -536,7 +536,7 @@
         },
         "data-workspace-hover-card-agent-time": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 0,
           "height": 22,
           "lineHeight": 18,
@@ -544,13 +544,13 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 27.63,
-          "x": 592.38,
+          "width": 26.63,
+          "x": 593.38,
           "y": 286
         },
         "data-workspace-hover-card-agent-time#2": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 0,
           "height": 22,
           "lineHeight": 18,
@@ -558,13 +558,13 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 27.63,
-          "x": 592.38,
+          "width": 26.63,
+          "x": 593.38,
           "y": 560
         },
         "data-workspace-hover-card-agent-time#3": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 0,
           "height": 22,
           "lineHeight": 18,
@@ -572,13 +572,13 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 27.63,
-          "x": 592.38,
+          "width": 26.63,
+          "x": 593.38,
           "y": 852
         },
         "data-workspace-hover-card-agent-time#4": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 0,
           "height": 22,
           "lineHeight": 18,
@@ -586,13 +586,13 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 21.63,
-          "x": 598.38,
+          "width": 20.63,
+          "x": 599.38,
           "y": 1126
         },
         "data-workspace-hover-card-agent-time#5": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 0,
           "height": 22,
           "lineHeight": 18,
@@ -600,13 +600,13 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 21.63,
-          "x": 598.38,
+          "width": 20.63,
+          "x": 599.38,
           "y": 1178
         },
         "data-workspace-hover-card-agent-time#6": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 0,
           "height": 22,
           "lineHeight": 18,
@@ -614,13 +614,13 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 21.63,
-          "x": 598.38,
+          "width": 20.63,
+          "x": 599.38,
           "y": 1230
         },
         "data-workspace-hover-card-agent-time#7": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 0,
           "height": 22,
           "lineHeight": 18,
@@ -628,13 +628,13 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 21.63,
-          "x": 598.38,
+          "width": 20.63,
+          "x": 599.38,
           "y": 1491
         },
         "data-workspace-hover-card-agent-time#8": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 0,
           "height": 22,
           "lineHeight": 18,
@@ -642,8 +642,8 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 21.63,
-          "x": 598.38,
+          "width": 20.63,
+          "x": 599.38,
           "y": 1543
         },
         "data-workspace-hover-card-columns": {
@@ -942,7 +942,7 @@
         },
         "data-workspace-hover-card-question-meta": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 0,
           "height": 18,
           "lineHeight": 18,
@@ -950,13 +950,13 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 18.63,
-          "x": 513.34,
+          "width": 17.63,
+          "x": 516.34,
           "y": 582
         },
         "data-workspace-hover-card-repo": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 0,
           "height": 18,
           "lineHeight": 18,
@@ -970,7 +970,7 @@
         },
         "data-workspace-hover-card-repo#2": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 0,
           "height": 18,
           "lineHeight": 18,
@@ -984,7 +984,7 @@
         },
         "data-workspace-hover-card-repo#3": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 0,
           "height": 18,
           "lineHeight": 18,
@@ -998,7 +998,7 @@
         },
         "data-workspace-hover-card-repo#4": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 0,
           "height": 18,
           "lineHeight": 18,
@@ -1012,7 +1012,7 @@
         },
         "data-workspace-hover-card-repo#5": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 0,
           "height": 18,
           "lineHeight": 18,
@@ -1026,7 +1026,7 @@
         },
         "data-workspace-hover-card-status": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 6,
           "height": 18,
           "lineHeight": 18,
@@ -1034,13 +1034,13 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 118.06,
-          "x": 501.94,
+          "width": 119.06,
+          "x": 500.94,
           "y": 189
         },
         "data-workspace-hover-card-status-label": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 0,
           "height": 18,
           "lineHeight": 18,
@@ -1048,13 +1048,13 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 96.06,
-          "x": 501.94,
+          "width": 97.06,
+          "x": 500.94,
           "y": 189
         },
         "data-workspace-hover-card-status-label#2": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 0,
           "height": 18,
           "lineHeight": 18,
@@ -1062,13 +1062,13 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 96.06,
-          "x": 501.94,
+          "width": 97.06,
+          "x": 500.94,
           "y": 463
         },
         "data-workspace-hover-card-status-label#3": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 0,
           "height": 18,
           "lineHeight": 18,
@@ -1076,13 +1076,13 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 96.06,
-          "x": 501.94,
+          "width": 97.06,
+          "x": 500.94,
           "y": 755
         },
         "data-workspace-hover-card-status-label#4": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 0,
           "height": 18,
           "lineHeight": 18,
@@ -1090,13 +1090,13 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 96.06,
-          "x": 501.94,
+          "width": 97.06,
+          "x": 500.94,
           "y": 1029
         },
         "data-workspace-hover-card-status-label#5": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 0,
           "height": 18,
           "lineHeight": 18,
@@ -1104,13 +1104,13 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 96.06,
-          "x": 501.94,
+          "width": 97.06,
+          "x": 500.94,
           "y": 1394
         },
         "data-workspace-hover-card-status#2": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 6,
           "height": 18,
           "lineHeight": 18,
@@ -1118,13 +1118,13 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 118.06,
-          "x": 501.94,
+          "width": 119.06,
+          "x": 500.94,
           "y": 463
         },
         "data-workspace-hover-card-status#3": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 6,
           "height": 18,
           "lineHeight": 18,
@@ -1132,13 +1132,13 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 118.06,
-          "x": 501.94,
+          "width": 119.06,
+          "x": 500.94,
           "y": 755
         },
         "data-workspace-hover-card-status#4": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 6,
           "height": 18,
           "lineHeight": 18,
@@ -1146,13 +1146,13 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 118.06,
-          "x": 501.94,
+          "width": 119.06,
+          "x": 500.94,
           "y": 1029
         },
         "data-workspace-hover-card-status#5": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 6,
           "height": 18,
           "lineHeight": 18,
@@ -1160,13 +1160,13 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 118.06,
-          "x": 501.94,
+          "width": 119.06,
+          "x": 500.94,
           "y": 1394
         },
         "data-workspace-hover-card-summary": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 0,
           "height": 18,
           "lineHeight": 18,
@@ -1180,7 +1180,7 @@
         },
         "data-workspace-hover-card-summary#2": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 0,
           "height": 18,
           "lineHeight": 18,
@@ -1194,7 +1194,7 @@
         },
         "data-workspace-hover-card-summary#3": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 0,
           "height": 18,
           "lineHeight": 18,
@@ -1208,7 +1208,7 @@
         },
         "data-workspace-hover-card-summary#4": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 0,
           "height": 18,
           "lineHeight": 18,
@@ -1222,7 +1222,7 @@
         },
         "data-workspace-hover-card-summary#5": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 0,
           "height": 18,
           "lineHeight": 18,
@@ -1400,7 +1400,7 @@
         },
         "data-workspace-hover-card-agent-context": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 0,
           "height": 18,
           "lineHeight": 18,
@@ -1414,7 +1414,7 @@
         },
         "data-workspace-hover-card-agent-context#2": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 0,
           "height": 18,
           "lineHeight": 18,
@@ -1428,7 +1428,7 @@
         },
         "data-workspace-hover-card-agent-context#3": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 0,
           "height": 18,
           "lineHeight": 18,
@@ -1442,7 +1442,7 @@
         },
         "data-workspace-hover-card-agent-context#4": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 0,
           "height": 18,
           "lineHeight": 18,
@@ -1456,7 +1456,7 @@
         },
         "data-workspace-hover-card-agent-context#5": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 0,
           "height": 18,
           "lineHeight": 18,
@@ -1470,7 +1470,7 @@
         },
         "data-workspace-hover-card-agent-detail": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 6,
           "height": 18,
           "lineHeight": 18,
@@ -1484,7 +1484,7 @@
         },
         "data-workspace-hover-card-agent-detail#2": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 6,
           "height": 18,
           "lineHeight": 18,
@@ -1498,7 +1498,7 @@
         },
         "data-workspace-hover-card-agent-detail#3": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 6,
           "height": 18,
           "lineHeight": 18,
@@ -1512,7 +1512,7 @@
         },
         "data-workspace-hover-card-agent-detail#4": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 6,
           "height": 18,
           "lineHeight": 18,
@@ -1526,7 +1526,7 @@
         },
         "data-workspace-hover-card-agent-detail#5": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 6,
           "height": 18,
           "lineHeight": 18,
@@ -1548,7 +1548,7 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 442.38,
+          "width": 443.38,
           "x": 142,
           "y": 284
         },
@@ -1562,7 +1562,7 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 447.25,
+          "width": 449.25,
           "x": 142,
           "y": 336
         },
@@ -1604,7 +1604,7 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 440.38,
+          "width": 441.38,
           "x": 142,
           "y": 492
         },
@@ -1680,7 +1680,7 @@
         },
         "data-workspace-hover-card-agent-time": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 0,
           "height": 22,
           "lineHeight": 18,
@@ -1688,13 +1688,13 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 25.63,
-          "x": 594.38,
+          "width": 24.63,
+          "x": 595.38,
           "y": 284
         },
         "data-workspace-hover-card-agent-time#2": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 0,
           "height": 22,
           "lineHeight": 18,
@@ -1702,13 +1702,13 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 20.75,
-          "x": 599.25,
+          "width": 18.75,
+          "x": 601.25,
           "y": 336
         },
         "data-workspace-hover-card-agent-time#3": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 0,
           "height": 22,
           "lineHeight": 18,
@@ -1722,7 +1722,7 @@
         },
         "data-workspace-hover-card-agent-time#4": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 0,
           "height": 22,
           "lineHeight": 18,
@@ -1736,7 +1736,7 @@
         },
         "data-workspace-hover-card-agent-time#5": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 0,
           "height": 22,
           "lineHeight": 18,
@@ -1744,8 +1744,8 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 27.63,
-          "x": 592.38,
+          "width": 26.63,
+          "x": 593.38,
           "y": 492
         },
         "data-workspace-hover-card-columns": {
@@ -1834,7 +1834,7 @@
         },
         "data-workspace-hover-card-pr-number": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 0,
           "height": 18,
           "lineHeight": 18,
@@ -1862,7 +1862,7 @@
         },
         "data-workspace-hover-card-pr-status": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 0,
           "height": 18,
           "lineHeight": 18,
@@ -1904,7 +1904,7 @@
         },
         "data-workspace-hover-card-repo": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 0,
           "height": 18,
           "lineHeight": 18,
@@ -1918,7 +1918,7 @@
         },
         "data-workspace-hover-card-status": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 6,
           "height": 18,
           "lineHeight": 18,
@@ -1926,13 +1926,13 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 118.06,
-          "x": 501.94,
+          "width": 119.06,
+          "x": 500.94,
           "y": 169
         },
         "data-workspace-hover-card-status-label": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 0,
           "height": 18,
           "lineHeight": 18,
@@ -1940,13 +1940,13 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 96.06,
-          "x": 501.94,
+          "width": 97.06,
+          "x": 500.94,
           "y": 169
         },
         "data-workspace-hover-card-summary": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 0,
           "height": 36,
           "lineHeight": 18,
@@ -1968,7 +1968,7 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 389.94,
+          "width": 388.94,
           "x": 100,
           "y": 167
         }
@@ -2106,7 +2106,7 @@
         },
         "data-workspace-hover-card-agent-context": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 0,
           "height": 18,
           "lineHeight": 18,
@@ -2120,7 +2120,7 @@
         },
         "data-workspace-hover-card-agent-detail": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 6,
           "height": 18,
           "lineHeight": 18,
@@ -2162,7 +2162,7 @@
         },
         "data-workspace-hover-card-agent-time": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 0,
           "height": 22,
           "lineHeight": 18,
@@ -2260,7 +2260,7 @@
         },
         "data-workspace-hover-card-pr-number": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 0,
           "height": 18,
           "lineHeight": 18,
@@ -2288,7 +2288,7 @@
         },
         "data-workspace-hover-card-pr-status": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 0,
           "height": 18,
           "lineHeight": 18,
@@ -2330,7 +2330,7 @@
         },
         "data-workspace-hover-card-repo": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 0,
           "height": 18,
           "lineHeight": 18,
@@ -2344,7 +2344,7 @@
         },
         "data-workspace-hover-card-status": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 6,
           "height": 18,
           "lineHeight": 18,
@@ -2358,7 +2358,7 @@
         },
         "data-workspace-hover-card-status-label": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 0,
           "height": 18,
           "lineHeight": 18,
@@ -2372,7 +2372,7 @@
         },
         "data-workspace-hover-card-summary": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 0,
           "height": 54,
           "lineHeight": 18,
@@ -2438,7 +2438,7 @@
         },
         "data-workspace-hover-card-agent-context": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 0,
           "height": 18,
           "lineHeight": 18,
@@ -2452,7 +2452,7 @@
         },
         "data-workspace-hover-card-agent-context#2": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 0,
           "height": 18,
           "lineHeight": 18,
@@ -2466,7 +2466,7 @@
         },
         "data-workspace-hover-card-agent-detail": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 6,
           "height": 18,
           "lineHeight": 18,
@@ -2480,7 +2480,7 @@
         },
         "data-workspace-hover-card-agent-detail#2": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 6,
           "height": 18,
           "lineHeight": 18,
@@ -2502,7 +2502,7 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 447.25,
+          "width": 449.25,
           "x": 142,
           "y": 266
         },
@@ -2550,7 +2550,7 @@
         },
         "data-workspace-hover-card-agent-time": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 0,
           "height": 22,
           "lineHeight": 18,
@@ -2558,13 +2558,13 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 20.75,
-          "x": 599.25,
+          "width": 18.75,
+          "x": 601.25,
           "y": 266
         },
         "data-workspace-hover-card-agent-time#2": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 0,
           "height": 22,
           "lineHeight": 18,
@@ -2662,7 +2662,7 @@
         },
         "data-workspace-hover-card-pr-number": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 0,
           "height": 18,
           "lineHeight": 18,
@@ -2690,7 +2690,7 @@
         },
         "data-workspace-hover-card-pr-status": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 0,
           "height": 18,
           "lineHeight": 18,
@@ -2732,7 +2732,7 @@
         },
         "data-workspace-hover-card-repo": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 0,
           "height": 18,
           "lineHeight": 18,
@@ -2746,7 +2746,7 @@
         },
         "data-workspace-hover-card-status": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 6,
           "height": 18,
           "lineHeight": 18,
@@ -2760,7 +2760,7 @@
         },
         "data-workspace-hover-card-status-label": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 0,
           "height": 18,
           "lineHeight": 18,
@@ -2774,7 +2774,7 @@
         },
         "data-workspace-hover-card-summary": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 0,
           "height": 18,
           "lineHeight": 18,
@@ -2840,7 +2840,7 @@
         },
         "data-workspace-hover-card-agent-context": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 0,
           "height": 18,
           "lineHeight": 18,
@@ -2854,7 +2854,7 @@
         },
         "data-workspace-hover-card-agent-context#2": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 0,
           "height": 18,
           "lineHeight": 18,
@@ -2868,7 +2868,7 @@
         },
         "data-workspace-hover-card-agent-detail": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 6,
           "height": 18,
           "lineHeight": 18,
@@ -2882,7 +2882,7 @@
         },
         "data-workspace-hover-card-agent-detail#2": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 6,
           "height": 18,
           "lineHeight": 18,
@@ -2904,7 +2904,7 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 447.25,
+          "width": 449.25,
           "x": 142,
           "y": 266
         },
@@ -2952,7 +2952,7 @@
         },
         "data-workspace-hover-card-agent-time": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 0,
           "height": 22,
           "lineHeight": 18,
@@ -2960,13 +2960,13 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 20.75,
-          "x": 599.25,
+          "width": 18.75,
+          "x": 601.25,
           "y": 266
         },
         "data-workspace-hover-card-agent-time#2": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 0,
           "height": 22,
           "lineHeight": 18,
@@ -3064,7 +3064,7 @@
         },
         "data-workspace-hover-card-pr-number": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 0,
           "height": 18,
           "lineHeight": 18,
@@ -3092,7 +3092,7 @@
         },
         "data-workspace-hover-card-pr-status": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 0,
           "height": 18,
           "lineHeight": 18,
@@ -3134,7 +3134,7 @@
         },
         "data-workspace-hover-card-repo": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 0,
           "height": 18,
           "lineHeight": 18,
@@ -3148,7 +3148,7 @@
         },
         "data-workspace-hover-card-status": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 6,
           "height": 18,
           "lineHeight": 18,
@@ -3162,7 +3162,7 @@
         },
         "data-workspace-hover-card-status-label": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 0,
           "height": 18,
           "lineHeight": 18,
@@ -3176,7 +3176,7 @@
         },
         "data-workspace-hover-card-summary": {
           "fontSize": 13,
-          "fontWeight": 500,
+          "fontWeight": 400,
           "gap": 0,
           "height": 18,
           "lineHeight": 18,
