@@ -19,16 +19,18 @@
 # linked fix PRs are enumerated via GraphQL closedByPullRequestsReferences
 # and filtered to SOURCE_REPO and INTENTD_REPO. The comment
 #   "This fix is included in <component> vX.Y.Z (bundles intentd vA.B.C)."
-# is posted only when no linked PR is open and every merged one's merge
-# commit is contained in the released fe tag (SOURCE_REPO PRs) / the bundled
-# intentd tag (INTENTD_REPO PRs). Containment uses the compare API:
-# tag...sha status "identical" or "behind". An open or uncontained linked PR
-# skips the issue (a later release picks it up); anything indeterminate (API
-# error, a token that cannot see a repo's PRs, more than 100 linked PRs)
-# skips with a warning — never post a possibly-false claim. Issues with no
-# linked fix PRs at all (or only abandoned, closed-without-merging ones)
-# fall back to the range-scan evidence and are posted best-effort. Comments
-# never name a channel.
+# is posted only when the issue is closed, at least one linked PR on those
+# repos is merged and delivered, no linked PR is open, and every merged one's
+# merge commit is contained in the released fe tag (SOURCE_REPO PRs) / the
+# bundled intentd tag (INTENTD_REPO PRs). Containment uses the compare API:
+# tag...sha status "identical" or "behind". An open issue, an open or
+# uncontained linked PR skips the issue (a later release picks it up);
+# anything indeterminate (API error, a token that cannot see a repo's PRs,
+# more than 100 linked PRs) skips with a warning — never post a
+# possibly-false claim. The range scan is only a candidate pre-filter:
+# an issue that is merely mentioned (no delivered linked fix PR, or only
+# abandoned, closed-without-merging ones) is never posted. Comments never
+# name a channel.
 #
 # Scope: only SOURCE_REPO and INTENTD_REPO PRs are gated. Linked fix PRs in
 # any other repo (intent-hq/ios, the monorepo itself) are ignored — the
@@ -246,16 +248,19 @@ if [[ -n "$probe_failed" ]]; then
 fi
 
 # Completeness gate: enumerate the issue's linked fix PRs (closing-keyword
-# references, e.g. "Fixes intent-hq/intent#N") and require every one to be
-# delivered by this release. Sets gate_result to "post" (all linked PRs
-# merged and contained, or none delivered at all -> range-scan fallback),
-# "incomplete" (an open or not-yet-contained linked PR), or "indeterminate"
-# (an API failure, or >100 linked PRs — the enumeration is unpaginated, and
-# a truncated list could hide an open PR); gate_detail carries the reason.
+# references, e.g. "Fixes intent-hq/intent#N") and require the issue to be
+# closed with every one of them delivered by this release. Sets gate_result
+# to "post" (issue closed, at least one linked PR delivered, all linked PRs
+# merged and contained), "incomplete" (issue still open, an open or
+# not-yet-contained linked PR, or no delivered linked PR at all — a
+# mention-only reference), or "indeterminate" (an API failure, or >100
+# linked PRs — the enumeration is unpaginated, and a truncated list could
+# hide an open PR); gate_detail carries the reason.
 # shellcheck disable=SC2016  # $owner/$repo/$number are GraphQL variables
 gate_query='query($owner:String!,$repo:String!,$number:Int!){
   repository(owner:$owner,name:$repo){
     issue(number:$number){
+      state
       closedByPullRequestsReferences(first:100,includeClosedPrs:true){
         pageInfo{hasNextPage}
         nodes{number state merged mergeCommit{oid} repository{nameWithOwner}}
@@ -275,19 +280,26 @@ compare_status() {
 }
 
 check_issue_completeness() {
-  local n="$1" out has_next nodes repo pr state merged sha tag status delivered=0
+  local n="$1" out issue_state has_next nodes repo pr state merged sha tag status delivered=0
   gate_result="indeterminate"
   gate_detail=""
-  # First output line is pageInfo.hasNextPage; TSV node rows follow.
+  # First output line is the issue state, second is pageInfo.hasNextPage;
+  # TSV node rows follow.
   if ! out=$(gh_issues api graphql \
     -f query="$gate_query" \
     -f owner="${ISSUES_REPO%%/*}" -f repo="${ISSUES_REPO##*/}" -F number="$n" \
-    --jq '.data.repository.issue.closedByPullRequestsReferences | (.pageInfo.hasNextPage|tostring), (.nodes[] | [.repository.nameWithOwner, (.number|tostring), .state, (.merged|tostring), (.mergeCommit.oid // "")] | @tsv)' 2>/dev/null); then
+    --jq '.data.repository.issue | .state, (.closedByPullRequestsReferences | (.pageInfo.hasNextPage|tostring), (.nodes[] | [.repository.nameWithOwner, (.number|tostring), .state, (.merged|tostring), (.mergeCommit.oid // "")] | @tsv))' 2>/dev/null); then
     gate_detail="could not enumerate linked fix PRs on $ISSUES_REPO#$n"
     return 0
   fi
-  has_next="${out%%$'\n'*}"
-  nodes=$(tail -n +2 <<<"$out")
+  issue_state=$(sed -n '1p' <<<"$out")
+  has_next=$(sed -n '2p' <<<"$out")
+  nodes=$(tail -n +3 <<<"$out")
+  if [[ "$issue_state" != "CLOSED" ]]; then
+    gate_result="incomplete"
+    gate_detail="issue is still open"
+    return 0
+  fi
   if [[ "$has_next" == "true" ]]; then
     gate_detail="issue has more than 100 linked PRs; enumeration truncated"
     return 0
@@ -322,14 +334,15 @@ check_issue_completeness() {
     fi
     delivered=$((delivered + 1))
   done <<<"$nodes"
-  gate_result="post"
   if [[ "$delivered" -eq 0 ]]; then
-    # No linked fix PRs at all, or only abandoned (closed-unmerged) ones:
-    # the claim rests on range-scan evidence only.
-    gate_detail="no delivered linked fix PRs; falling back to range-scan evidence"
-  else
-    gate_detail="all $delivered delivered linked fix PR(s) merged and contained"
+    # No linked fix PRs on the gated repos, or only abandoned (closed-unmerged)
+    # ones: the range-scan hit is a mention, not evidence of a fix.
+    gate_result="incomplete"
+    gate_detail="no delivered linked fix PR on $SOURCE_REPO/$INTENTD_REPO; mention-only reference"
+    return 0
   fi
+  gate_result="post"
+  gate_detail="all $delivered delivered linked fix PR(s) merged and contained"
 }
 
 marker="<!-- release-notifier: ${COMPONENT} v${VERSION} -->"
