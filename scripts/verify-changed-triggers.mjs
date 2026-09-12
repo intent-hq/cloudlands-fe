@@ -335,12 +335,17 @@ function collectBindings(sourceFile) {
     }
     return binding;
   };
-  const declareNames = (scope, name) => {
-    if (ts.isIdentifier(name)) return declare(scope, name.text);
-    for (const element of name.elements) {
-      if (ts.isBindingElement(element)) declareNames(scope, element.name);
+  // Declares every name in a binding target and attaches its initializer:
+  // the variable initializer, a parameter default, or a destructuring default.
+  const declareNames = (scope, name, initializer) => {
+    if (ts.isIdentifier(name)) {
+      const binding = declare(scope, name.text);
+      if (initializer) binding.expressions.push(initializer);
+      return;
     }
-    return undefined;
+    for (const element of name.elements) {
+      if (ts.isBindingElement(element)) declareNames(scope, element.name, element.initializer);
+    }
   };
   const lookup = (scope, name) => {
     for (let current = scope; current; current = current.parent) {
@@ -367,10 +372,9 @@ function collectBindings(sourceFile) {
     const inner = opensScope(node) ? createScope(scope, ts.isFunctionLike(node)) : scope;
     if (ts.isVariableDeclaration(node)) {
       const target = isBlockScoped(parent) ? inner : inner.functionScope;
-      const binding = declareNames(target, node.name);
-      if (binding && node.initializer) binding.expressions.push(node.initializer);
+      declareNames(target, node.name, node.initializer);
     } else if (ts.isParameter(node)) {
-      declareNames(scope, node.name);
+      declareNames(scope, node.name, node.initializer);
     }
     ts.forEachChild(node, (child) => visit(child, inner, node));
   };

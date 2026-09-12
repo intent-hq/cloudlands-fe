@@ -363,6 +363,33 @@ describe('requiresTriggerDeclaration', () => {
     expect(requiresTriggerDeclaration(reassignedParameter, 'scripts/a.test.ts')).toBe(true);
   });
 
+  it('follows a root through parameter and destructuring defaults', () => {
+    const suite = (helper: string) =>
+      lines(
+        "import { globSync, readFileSync } from 'node:fs';",
+        "import { join } from 'node:path';",
+        "import { it } from 'vitest';",
+        helper,
+        "it('x', () => expect(helper()).toBeTruthy());",
+      );
+    const parameterDefault = suite(
+      "function helper(root = process.cwd()) { return readFileSync(join(root, 'src/a.ts'), 'utf8'); }",
+    );
+    expect(requiresTriggerDeclaration(parameterDefault, 'scripts/a.test.ts')).toBe(true);
+    const optionsDefault = suite(
+      "function helper(opts = { cwd: process.cwd() }) { return globSync('*.ts', opts); }",
+    );
+    expect(requiresTriggerDeclaration(optionsDefault, 'scripts/a.test.ts')).toBe(true);
+    const destructuredDefault = suite(
+      "function helper({ root = process.cwd() } = {}) { return readFileSync(join(root, 'src/a.ts'), 'utf8'); }",
+    );
+    expect(requiresTriggerDeclaration(destructuredDefault, 'scripts/a.test.ts')).toBe(true);
+    const fixtureDefault = suite(
+      "function helper(root = '/tmp/fixture') { return readFileSync(join(root, 'a.json'), 'utf8'); }",
+    );
+    expect(requiresTriggerDeclaration(fixtureDefault, 'scripts/a.test.ts')).toBe(false);
+  });
+
   it('does not flag a suite that imports a source module (vitest related selects it)', () => {
     for (const specifier of ['../Sidebar.svelte', '$lib/utils', 'src/lib/utils']) {
       const content = lines(`import { thing } from '${specifier}';`, cwdReader);
