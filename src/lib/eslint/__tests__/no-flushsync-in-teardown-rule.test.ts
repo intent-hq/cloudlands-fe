@@ -229,6 +229,196 @@ describe('no-flushsync-in-teardown ESLint rule', () => {
     expect(messages).toHaveLength(0);
   });
 
+  it('reports the same parameter-guarded helpers when the teardown opts in or uses the default', async () => {
+    const script = (trackingArgs: string, boundsArgs: string) => `
+        import { flushSync } from 'svelte';
+        let { onTrackingChange, onBoundsChange } = $props();
+        let layoutTracking = false;
+        const run = (sync: boolean, fn: () => void) => (sync ? flushSync(fn) : fn());
+        const reportTracking = ({ sync = true } = {}) =>
+          run(sync, () => onTrackingChange?.(layoutTracking));
+        const emitBounds = (bounds: DOMRect | null, { sync = true } = {}) =>
+          run(sync, () => onBoundsChange?.(bounds));
+        $effect(() => {
+          return () => reportTracking(${trackingArgs});
+        });
+        function reportBounds(node: HTMLElement) {
+          return {
+            destroy() {
+              emitBounds(null${boundsArgs});
+            },
+          };
+        }
+      `;
+    const markup = '<div use:reportBounds></div>';
+
+    const optedIn = await lintSvelte(
+      component(script('{ sync: true }', ', { sync: true }'), markup),
+    );
+    expect(optedIn.map((message) => [message.line, message.message.split(' runs ')[0]])).toEqual([
+      [12, 'reportTracking() (which calls flushSync)'],
+      [17, 'emitBounds() (which calls flushSync)'],
+    ]);
+
+    const defaulted = await lintSvelte(component(script('', ''), markup));
+    expect(defaulted.map((message) => message.line)).toEqual([12, 17]);
+
+    const optedOut = await lintSvelte(
+      component(script('{ sync: false }', ', { sync: false }'), markup),
+    );
+    expect(optedOut).toHaveLength(0);
+  });
+
+  it('reports a positional guard whose default or argument keeps the flush on', async () => {
+    const script = (args: string) => `
+        import { flushSync } from 'svelte';
+        function run(sync = true) {
+          if (!sync) return;
+          flushSync();
+        }
+        $effect(() => () => run(${args}));
+      `;
+
+    expect((await lintSvelte(component(script('')))).map((message) => message.line)).toEqual([8]);
+    expect((await lintSvelte(component(script('true')))).map((message) => message.line)).toEqual([
+      8,
+    ]);
+    expect(await lintSvelte(component(script('false')))).toHaveLength(0);
+  });
+
+  it('does not treat a guard as an opt-out when the argument is not provably falsy', async () => {
+    const messages = await lintSvelte(
+      component(`
+        import { flushSync } from 'svelte';
+        let mode = $state({ sync: true });
+        const run = (sync: boolean) => sync && flushSync();
+        const relay = (options: { sync: boolean }) => run(options.sync);
+        $effect(() => () => {
+          run(mode.sync);
+          relay({ sync: false });
+        });
+      `),
+    );
+
+    expect(messages.map((message) => message.line)).toEqual([8, 9]);
+  });
+
+  it('follows a callback parameter to the helper binding, not the parameter', async () => {
+    const messages = await lintSvelte(
+      component(`
+        import { flushSync } from 'svelte';
+        function initialize(callback: () => void) {
+          flushSync();
+          $effect(() => () => callback());
+        }
+        function reset() {
+          flushSync();
+        }
+        function teardown() {
+          reset();
+        }
+        initialize(() => console.log('cleanup'));
+        $effect(() => () => teardown());
+      `),
+    );
+
+    expect(messages.map((message) => [message.line, message.message.split(' runs ')[0]])).toEqual([
+      [15, 'teardown() (which calls flushSync)'],
+    ]);
+  });
+
+  it('resolves lifecycle bindings: aliased onDestroy is reported, a shadowing local is not', async () => {
+    const aliased = await lintSvelte(
+      component(`
+        import { flushSync, onDestroy as dispose } from 'svelte';
+        dispose(() => flushSync());
+      `),
+    );
+    expect(aliased.map((message) => message.line)).toEqual([4]);
+    expect(aliased[0]?.message).toContain('onDestroy');
+
+    const shadowed = await lintSvelte(
+      component(`
+        import { flushSync } from 'svelte';
+        function onDestroy(callback: () => void) {
+          callback();
+        }
+        function onMount(callback: () => () => void) {
+          return callback();
+        }
+        onDestroy(() => flushSync());
+        onMount(() => () => flushSync());
+      `),
+    );
+    expect(shadowed).toHaveLength(0);
+  });
+
+  it('resolves the use: reference to its binding instead of matching the action name', async () => {
+    const messages = await lintSvelte(
+      component(
+        `
+        import { flushSync } from 'svelte';
+        function action(node: HTMLElement) {
+          return {
+            destroy() {
+              flushSync();
+            },
+          };
+        }
+        function safe(node: HTMLElement) {
+          return { destroy() {} };
+        }
+        const actions = [safe];
+      `,
+        '{#each actions as action}<div use:action></div>{/each}',
+      ),
+    );
+
+    expect(messages).toHaveLength(0);
+  });
+
+  it('recognizes cleanup and destroy values annotated with satisfies', async () => {
+    const messages = await lintSvelte(
+      component(
+        `
+        import { flushSync } from 'svelte';
+        import type { ActionReturn } from 'svelte/action';
+        $effect(() => {
+          return (() => flushSync()) satisfies () => void;
+        });
+        function measure(node: HTMLElement) {
+          return {
+            destroy() {
+              flushSync();
+            },
+          } satisfies ActionReturn;
+        }
+      `,
+        '<div use:measure></div>',
+      ),
+    );
+
+    expect(messages.map((message) => message.line)).toEqual([6, 11]);
+  });
+
+  it('recognizes a destroy function bound to a variable and returned as shorthand', async () => {
+    const messages = await lintSvelte(
+      component(
+        `
+        import { flushSync } from 'svelte';
+        function measure(node: HTMLElement) {
+          const destroy = () => flushSync();
+          return { destroy };
+        }
+      `,
+        '<div use:measure></div>',
+      ),
+    );
+
+    expect(messages.map((message) => message.line)).toEqual([5]);
+    expect(messages[0]?.message).toContain('use:measure');
+  });
+
   it('still follows a helper whose flush is guarded only by component state', async () => {
     const messages = await lintSvelte(
       component(`
