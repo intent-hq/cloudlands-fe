@@ -973,6 +973,7 @@ describe('chatSendSaga', () => {
       mocks.getModelsForProvider.mockReset();
       mocks.setModel.mockReset();
       mocks.send.mockReset();
+      mocks.queue.mockReset();
       mocks.getModelsForProvider.mockResolvedValue({
         models: [
           { value: 'gpt-5-mini', label: 'Mini' },
@@ -1029,6 +1030,11 @@ describe('chatSendSaga', () => {
       // AFTER the second click's setModel, sending the first provider's
       // model against the second provider's live session. Each click must
       // therefore complete switch + send before the next click's switch.
+      //
+      // Once the first redrive's turn is live the session is responding, so
+      // the second click's redrive takes the ordinary enqueue path (the
+      // daemon drains it on the session's then-current provider) rather than
+      // a second direct send — the same rule as any send during a turn.
       const SECOND_PROVIDER = 'claude-code';
       mocks.getModelsForProvider.mockImplementation(async (providerId: string) => ({
         models:
@@ -1036,6 +1042,7 @@ describe('chatSendSaga', () => {
             ? [{ value: 'gpt-5-codex', label: 'Codex', isDefault: true }]
             : [{ value: 'claude-opus', label: 'Opus', isDefault: true }],
       }));
+      mocks.queue.mockResolvedValue({ success: true });
       const run = harness();
       run.setChat(chatLastAttemptedMessageSet(AGENT, { text: 'retry me', options: {} }));
 
@@ -1046,17 +1053,22 @@ describe('chatSendSaga', () => {
       await expect(first.promise).resolves.toBeUndefined();
       await expect(second.promise).resolves.toBeUndefined();
 
-      expect(sentTurns()).toEqual([
-        [AGENT, 'retry me', 'gpt-5-codex'],
-        [AGENT, 'retry me', 'claude-opus'],
-      ]);
-      // Interleaving on the wire: switch(1) → send(1) → switch(2) → send(2),
+      // The first provider's model is what went out on the first (and only
+      // direct) send; the second click did not hijack it.
+      expect(sentTurns()).toEqual([[AGENT, 'retry me', 'gpt-5-codex']]);
+      expect(mocks.setModel).toHaveBeenNthCalledWith(1, AGENT, 'gpt-5-codex', WS, OTHER_PROVIDER);
+      expect(mocks.setModel).toHaveBeenNthCalledWith(2, AGENT, 'claude-opus', WS, SECOND_PROVIDER);
+      // Interleaving on the wire: switch(1) → send(1) → switch(2) → queue(2),
       // never switch(1) → switch(2) → send(1).
       const [switch1, switch2] = mocks.setModel.mock.invocationCallOrder;
-      const [send1, send2] = mocks.send.mock.invocationCallOrder;
+      const [send1] = mocks.send.mock.invocationCallOrder;
+      const [queue2] = mocks.queue.mock.invocationCallOrder;
       expect(switch1).toBeLessThan(send1);
       expect(send1).toBeLessThan(switch2);
-      expect(switch2).toBeLessThan(send2);
+      expect(switch2).toBeLessThan(queue2);
+      expect(mocks.queue).toHaveBeenCalledTimes(1);
+      expect(mocks.queue).toHaveBeenCalledWith(AGENT, 'retry me');
+      expect(mocks.toastError).not.toHaveBeenCalled();
       run.task.cancel();
       await run.task.toPromise();
     });
