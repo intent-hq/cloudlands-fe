@@ -15,7 +15,7 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { escape as escapeGlob, globSync } from 'glob';
-import { checkDepsFresh, ensureI18nFresh } from './check-deps-fresh.mjs';
+import { checkDepsFresh, checkNodeSupport, ensureI18nFresh } from './check-deps-fresh.mjs';
 import { pnpmInvocation } from './pnpm-launcher.mjs';
 import {
   listDeclaredSuites,
@@ -793,6 +793,7 @@ export async function runVerificationPlan(plan, root, options = {}) {
 
 export async function runCli(argv = process.argv.slice(2), root = REPO_ROOT, options = {}) {
   const log = options.log ?? console.log;
+  const checkNode = options.checkNode ?? checkNodeSupport;
   const checkDeps = options.checkDeps ?? checkDepsFresh;
   const ensureI18n = options.ensureI18n ?? ensureI18nFresh;
   const runPlan = options.runPlan ?? runVerificationPlan;
@@ -815,6 +816,8 @@ export async function runCli(argv = process.argv.slice(2), root = REPO_ROOT, opt
   printPlan(plan, args.dryRun, log);
   if (args.dryRun || plan.checks.length === 0) return 0;
 
+  const node = checkNode({ root });
+  if (!node.ok) throw new Error(node.reason);
   const deps = checkDeps(root);
   if (!deps.ok) throw new Error(deps.reason);
   const i18n = await ensureI18n(root);
