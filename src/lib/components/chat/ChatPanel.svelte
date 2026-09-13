@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { COMPOSER_INSET_CLASS } from './composer-inset';
   /* eslint-disable max-lines */
   /**
    * Chat Panel Component
@@ -6545,7 +6546,7 @@
                 <div
                   class="w-full {isCompactMode ? 'pb-1' : 'pb-2'} {isChiefWorkspace
                     ? 'px-0'
-                    : 'regular-composer-content-inset'}"
+                    : COMPOSER_INSET_CLASS}"
                 >
                   <SuggestedPrompts
                     prompts={suggestedPrompts}
@@ -6580,15 +6581,9 @@
                 {agentId}
                 selectedModel={hydratedInputModel}
                 compactMode={isCompactMode}
-                editorClassName={isChiefWorkspace
-                  ? 'w-full px-0!'
-                  : 'regular-composer-content-inset w-full'}
-                contentInsetClassName={isChiefWorkspace
-                  ? 'w-full px-0'
-                  : 'regular-composer-content-inset w-full'}
-                actionBarEndClassName={isChiefWorkspace
-                  ? 'pr-0!'
-                  : 'regular-composer-content-inset'}
+                editorClassName={`${COMPOSER_INSET_CLASS} w-full`}
+                contentInsetClassName={`${COMPOSER_INSET_CLASS} w-full`}
+                actionBarEndClassName={COMPOSER_INSET_CLASS}
                 edgeDocked
                 externalDropTarget
                 requiresModelSwitchConfirmation={!canChangeProvider}
@@ -6625,11 +6620,6 @@
     padding-right: 1rem;
   }
 
-  :global(.regular-composer-content-inset) {
-    padding-right: 0 !important;
-    padding-left: 0 !important;
-  }
-
   .workspace-setup-card-alignment {
     --chat-operational-row-inline-padding: 0.5rem;
     --chat-operational-leading-gap: 0.5rem;
@@ -6652,11 +6642,6 @@
     .regular-chat-content-inset {
       padding-left: 3.1rem;
       padding-right: 3.1rem;
-    }
-
-    :global(.regular-composer-content-inset) {
-      padding-right: 0 !important;
-      padding-left: 0 !important;
     }
   }
 

@@ -1,3 +1,4 @@
+import { safeDisclosureTransition } from '../disclosure-motion';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   safeSubscriptionRowTransition,
@@ -76,5 +77,30 @@ describe('safeSubscriptionRowTransition', () => {
       height: 'auto',
     } as CSSStyleDeclaration);
     expect(safeSubscriptionRowTransition(document.createElement('div'))).toEqual({ duration: 0 });
+  });
+});
+
+describe('queue disclosure outro', () => {
+  it('retains a measurable intermediate box and collapses height, spacing and opacity to zero', () => {
+    vi.spyOn(window, 'getComputedStyle').mockReturnValue({
+      ...rowStyle(),
+      paddingTop: '4px',
+    } as CSSStyleDeclaration);
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn(() => ({ matches: false })),
+    );
+    const node = document.createElement('div');
+    const config = safeDisclosureTransition(node, { tier: 'moderate' }, { direction: 'out' });
+    expect(config.duration).toBeGreaterThan(0);
+    config.tick?.(1, 0);
+    expect(node.style.height).toBe('36px');
+    config.tick?.(0.5, 0.5);
+    expect(node.style.height).toBe('18px');
+    expect(node.style.paddingTop).toBe('2px');
+    config.tick?.(0, 1);
+    expect(node.style.height).toBe('0px');
+    expect(node.style.paddingTop).toBe('0px');
+    expect(node.style.opacity).toBe('0');
   });
 });

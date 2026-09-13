@@ -17,7 +17,7 @@ export const badgeMetadata = parseUiComponentMetadata({
   ],
   replacement: null,
   characterizationTest: 'src/lib/components/ui/badge/badge.test.ts',
-  removalGate: 'Retain while exported and semantic variants and fixtures pass.',
+  removalGate: 'Retain while exported and solid/dot colors, legacy aliases and fixtures pass.',
   dynamicImports: [],
   fixtures: badgeFixtures,
 });

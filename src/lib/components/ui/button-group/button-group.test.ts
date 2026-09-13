@@ -18,7 +18,6 @@ describe('ButtonGroup', () => {
     expect(source.match(/\btv\(/g)).toHaveLength(1);
     expect(source.match(/export type ButtonGroupVariant\b/g)).toHaveLength(1);
     expect(buttonGroupVariants({ orientation: 'vertical' })).toContain('flex-col');
-    expect(buttonGroupVariants()).toContain('bg-border');
     expect(buttonGroupVariants()).toContain('gap-px');
     expect(source).toContain('[&_[data-slot=button-surface]]:rounded-[inherit]');
     expect(source).toContain('[&_[data-slot=button]]:border-transparent');

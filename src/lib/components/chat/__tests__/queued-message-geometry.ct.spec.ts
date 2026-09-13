@@ -210,7 +210,7 @@ for (const state of [
     expect(chevronBox!.height).toBeCloseTo(16 * state.zoom, 1);
     expect(
       disclosureBox!.x + disclosureBox!.width - (chevronBox!.x + chevronBox!.width),
-    ).toBeCloseTo(10 * state.zoom, 1);
+    ).toBeCloseTo(8 * state.zoom, 1);
     expect(labelBox!.x).toBeCloseTo(firstTextBox!.x, 1);
     expect(await container.evaluate((node) => getComputedStyle(node).paddingBottom)).toBe('4px');
 
@@ -229,3 +229,29 @@ for (const state of [
     ).toBeCloseTo(4 * state.zoom, 1);
   });
 }
+
+test('queue collapse paints intermediate heights before removing the body', async ({
+  mount,
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  const component = await mount(QueuedMessageGeometryHost, {
+    props: { width: 480, messageCount: 3 },
+  });
+  const disclosure = component.getByTestId('queued-messages-disclosure');
+  await expect(component.getByTestId('queued-message-row')).toHaveCount(3);
+  await page.screenshot({ path: '.dev/show/ux2-queue-open-light.png' });
+  const heights = await disclosure.evaluate(async (button) => {
+    const body = document.querySelector('[data-testid="queued-messages-content"]')!;
+    const heights = [body.getBoundingClientRect().height];
+    (button as HTMLButtonElement).click();
+    while (body.isConnected && heights.length < 120) {
+      await new Promise(requestAnimationFrame);
+      heights.push(body.getBoundingClientRect().height);
+    }
+    return heights;
+  });
+  expect(heights.some((height) => height > 0 && height < heights[0])).toBe(true);
+  await expect(component.getByTestId('queued-messages-content')).toHaveCount(0);
+  await page.screenshot({ path: '.dev/show/ux2-queue-closed-light.png' });
+});

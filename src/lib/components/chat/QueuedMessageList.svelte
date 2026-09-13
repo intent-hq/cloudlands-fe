@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { COMPOSER_INSET_CLASS } from './composer-inset';
   /**
    * QueuedMessageList Component
    *
@@ -28,7 +29,6 @@
   import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
-  import { safeSubscriptionSlide } from './subscription-disclosure';
   import {
     cancelQueuedMessageRowMotion,
     captureQueuedMessageRowMotion,
@@ -514,7 +514,7 @@
     <Button
       type="button"
       variant="plain"
-      class="type-caption flex w-full cursor-pointer items-center rounded-(--radius-medium) border-0 bg-transparent px-2.5 py-0 text-left text-subtle"
+      class="type-caption flex w-full cursor-pointer items-center rounded-(--radius-medium) border-0 bg-transparent {COMPOSER_INSET_CLASS} py-0 text-left text-subtle"
       aria-expanded={expanded}
       aria-controls={contentId}
       data-testid="queued-messages-disclosure"
@@ -544,12 +544,12 @@
         id={contentId}
         class="pt-1"
         data-testid="queued-messages-content"
-        transition:safeSubscriptionSlide
+        transition:safeDisclosureTransition={{ tier: 'moderate' }}
       >
         <div class="flex flex-col gap-1">
           {#each messages as message (message.id)}
             <div
-              class="group relative type-caption flex min-h-8 select-none items-center gap-2 rounded-(--radius-medium) bg-muted px-2.5 font-normal! text-muted-foreground {message.editing
+              class="group relative type-caption flex min-h-8 select-none items-center gap-2 rounded-(--radius-medium) bg-muted {COMPOSER_INSET_CLASS} font-normal! text-muted-foreground {message.editing
                 ? 'opacity-60'
                 : ''}"
               data-testid="queued-message-row"

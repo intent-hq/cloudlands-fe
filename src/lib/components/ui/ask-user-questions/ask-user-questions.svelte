@@ -12,7 +12,12 @@
   import { Button } from '$lib/components/ui/button';
   import { ProximityHighlight } from '$lib/components/ui/proximity-highlight';
   import SizeProvider from '$lib/components/ui/SizeProvider.svelte';
-  import { clampSurface, surfaceClasses, useSurface } from '$lib/components/ui/surface-context';
+  import {
+    clampSurface,
+    surfaceClasses,
+    SURFACE_VALUE,
+    useSurface,
+  } from '$lib/components/ui/surface-context';
   import { Textarea } from '$lib/components/ui/textarea';
   import { createProximityHover, type ProximityHover } from '$lib/interaction';
   import { animatedHeight, crispOut, scale, springIn } from '$lib/motion';
@@ -479,6 +484,7 @@
 {#snippet component()}
   <div
     bind:this={rootElement}
+    data-slot="ask-user-questions"
     class={cn(
       'relative w-full max-w-[520px] overflow-hidden rounded-(--radius-large) border border-border',
       surfaceClasses(clampSurface(surface + 1)),
@@ -496,8 +502,8 @@
         class={cn(
           'flex items-center text-muted-foreground',
           compact
-            ? 'px-3.5 pt-2.5 pb-1.5 type-caption sm:px-4 sm:pt-3'
-            : 'px-4 pt-3.5 pb-2 type-caption sm:px-5 sm:pt-4',
+            ? 'px-4.5 pt-2.5 pb-1.5 type-caption sm:px-5 sm:pt-3'
+            : 'px-5 pt-3.5 pb-2 type-caption sm:px-5 sm:pt-4',
         )}
       >
         {#if showCounter}
@@ -518,7 +524,7 @@
               data-animated-height-target
               class={cn(
                 'col-start-1 row-start-1 flex flex-col gap-2',
-                compact ? 'px-3.5 sm:px-4' : 'px-4 sm:px-5',
+                compact ? 'px-4.5 sm:px-5' : 'px-5',
                 showFooter ? 'pb-1' : compact ? 'pb-2 sm:pb-2.5' : 'pb-2.5 sm:pb-3',
               )}
               in:stepIn
@@ -541,9 +547,10 @@
               {#if isFreeText}
                 <div
                   role="group"
+                  style:--color-card={`hsl(${SURFACE_VALUE[clampSurface(surface + 1)]})`}
                   aria-labelledby={titleId}
                   class={cn(
-                    'relative mt-1 cursor-text rounded-(--radius-small) transition-colors duration-spring-fast ease-spring-fast motion-reduce:transition-none',
+                    'relative mt-1 cursor-text rounded-(--radius-small) hover:bg-hover focus-within:bg-card! focus-within:ring-1 focus-within:ring-inset focus-within:ring-border transition-colors duration-spring-fast ease-spring-fast motion-reduce:transition-none',
                     compact ? '-mx-2.5 px-2.5 py-2' : '-mx-3 px-3 py-2.5',
                     multiline ? 'min-h-[76px]' : compact ? 'min-h-8' : 'min-h-10',
                   )}
@@ -573,7 +580,7 @@
                       }
                     }}
                     class={cn(
-                      'block min-h-0! w-full resize-none overflow-hidden rounded-none border-0 bg-transparent p-0 text-foreground shadow-none placeholder:text-muted-foreground',
+                      'block min-h-0! w-full resize-none overflow-hidden rounded-none border-0 bg-transparent hover:bg-transparent p-0 text-foreground shadow-none placeholder:text-muted-foreground',
                       compact ? 'text-xs' : 'type-caption',
                     )}
                   />
@@ -584,7 +591,7 @@
                   use:connectRows
                   role={isMulti ? 'group' : 'radiogroup'}
                   aria-labelledby={titleId}
-                  class="relative -mx-1 flex flex-col gap-0.5"
+                  class={cn('relative flex flex-col gap-0.5', compact ? '-mx-2.5' : '-mx-3')}
                   onfocusin={handleRowsFocus}
                   onfocusout={handleRowsBlur}
                   onkeydown={handleRowsKeydown}
@@ -619,7 +626,7 @@
                         : -1}
                       class={cn(
                         'group/question-row relative z-10 flex cursor-pointer select-none',
-                        'px-1',
+                        compact ? 'px-2.5' : 'px-3',
                         chipPosition === 'left' ? 'gap-2' : 'gap-3',
                         question.layout === 'stacked' ? 'items-start' : 'items-center',
                         question.layout === 'stacked'
@@ -755,7 +762,7 @@
                       data-state={otherText.length > 0 ? 'checked' : 'unchecked'}
                       class={cn(
                         'relative z-10 flex cursor-text items-center rounded-(--radius-small)',
-                        'px-1',
+                        compact ? 'px-2.5' : 'px-3',
                         question.chipPosition === 'left' ? 'gap-2' : 'gap-3',
                         compact ? 'min-h-8 py-1' : 'min-h-10 py-1.5',
                       )}
@@ -788,7 +795,7 @@
                         }}
                         onclick={(event) => event.stopPropagation()}
                         class={cn(
-                          'min-h-0! min-w-0 flex-1 resize-none overflow-hidden rounded-none border-0 bg-transparent p-0 leading-snug text-foreground shadow-none placeholder:text-muted-foreground',
+                          'min-h-0! min-w-0 flex-1 resize-none overflow-hidden rounded-none border-0 bg-transparent hover:bg-transparent p-0 leading-snug text-foreground shadow-none placeholder:text-muted-foreground',
                           compact ? 'text-xs' : 'type-caption',
                         )}
                       />

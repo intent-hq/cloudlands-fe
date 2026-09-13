@@ -3,8 +3,11 @@ import type { UiComponentFixture } from '../component-metadata';
 export const badgeFixtures = [
   {
     id: 'semantic-states',
-    title: 'Badge semantic states',
+    title: 'Solid, Dot and Colors',
     states: [
+      'solid',
+      'dot',
+      'colors',
       'default',
       'outline',
       'destructive',

@@ -2,7 +2,7 @@
   import { faPlus, faTrash } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
 
-  import { Badge } from '$lib/components/ui/badge';
+  import { Badge, badgeColors, type BadgeColor } from '$lib/components/ui/badge';
   import { Button } from '$lib/components/ui/button';
   import { ButtonGroup } from '$lib/components/ui/button-group';
   import { Checkbox } from '$lib/components/ui/checkbox';
@@ -46,18 +46,38 @@
 >
   {#if componentId === 'badge'}
     <div
-      class="flex min-w-0 max-w-full flex-wrap gap-2"
-      data-catalog-rendered-state="default outline destructive success-ring-dot info-ring-dot leading-icon removable keyboard-focus long-label light dark compact"
+      class="grid min-w-0 gap-4"
+      data-catalog-rendered-state="solid dot colors default outline destructive success-ring-dot info-ring-dot leading-icon removable keyboard-focus long-label light dark compact"
     >
-      <Badge>Default badge</Badge>
-      <Badge variant="outline">Outline badge</Badge>
-      <Badge variant="destructive">Error badge</Badge>
-      <Badge variant="success" dot>Ready</Badge>
-      <Badge variant="info" dot>Informational</Badge>
-      <Badge leadingIcon={badgeIcon}>With icon</Badge>
-      <Badge removable removeLabel="Remove badge" onRemove={() => undefined}>Removable</Badge>
-      <Badge href="#badge-preview">Focusable badge link</Badge>
-      <Badge variant="outline" class="max-w-full truncate"
+      <section class="grid gap-2">
+        <h3 class="type-caption font-medium">Solid</h3>
+        <div class="flex flex-wrap items-center gap-2">
+          <Badge>Default</Badge><Badge color="blue">Blue</Badge><Badge size="compact">Compact</Badge
+          >
+          <Badge leadingIcon={badgeIcon}>With icon</Badge>
+          <Badge removable removeLabel="Remove badge" onRemove={() => undefined}>Removable</Badge>
+        </div>
+      </section>
+      <section class="grid gap-2">
+        <h3 class="type-caption font-medium">Dot</h3>
+        <div class="flex flex-wrap items-center gap-2">
+          <Badge variant="dot">Default</Badge><Badge variant="dot" color="green">Ready</Badge>
+          <Badge variant="dot" color="blue" size="compact">Compact</Badge>
+          <Badge variant="dot" href="#badge-preview">Focusable badge link</Badge>
+        </div>
+      </section>
+      <section class="grid gap-2">
+        <h3 class="type-caption font-medium">Colors</h3>
+        <div class="grid grid-cols-2 gap-2 sm:grid-cols-3">
+          {#each Object.keys(badgeColors) as color}
+            <div class="flex flex-wrap gap-2">
+              <Badge color={color as BadgeColor}>{color}</Badge>
+              <Badge variant="dot" color={color as BadgeColor}>{color}</Badge>
+            </div>
+          {/each}
+        </div>
+      </section>
+      <Badge variant="dot" class="max-w-full truncate"
         >A deliberately long badge label for truncation review</Badge
       >
     </div>

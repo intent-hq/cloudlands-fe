@@ -4226,18 +4226,18 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
               "both"
           <div class="bg-background border border-border fixture-preview min-h-20 rounded-md svelte-<scope>" data-catalog-fixture-id="chip-on-left" data-catalog-preview="ask-user-questions">
             <div class="flex justify-center w-full" data-catalog-rendered-state="left-chip trailing-action" data-catalog-renderer-fixture="chip-on-left">
-              <div class="bg-surface-2 border border-border max-w-[520px] overflow-hidden relative rounded-(--radius-large) shadow-surface-2 w-full">
-                <div class="flex items-center pb-2 pt-3.5 px-4 sm:pt-4 sm:px-5 text-muted-foreground type-caption" data-slot="ask-user-questions-metadata">
+              <div class="bg-surface-2 border border-border max-w-[520px] overflow-hidden relative rounded-(--radius-large) shadow-surface-2 w-full" data-slot="ask-user-questions">
+                <div class="flex items-center pb-2 pt-3.5 px-5 sm:pt-4 sm:px-5 text-muted-foreground type-caption" data-slot="ask-user-questions-metadata">
                   <span class="shrink-0 tabular-nums">
                     "Question 1 of 1"
                 <div>
                   <div class="grid">
-                    <div class="col-start-1 flex flex-col gap-2 pb-2.5 px-4 row-start-1 sm:pb-3 sm:px-5" data-animated-height-target="">
+                    <div class="col-start-1 flex flex-col gap-2 pb-2.5 px-5 row-start-1 sm:pb-3" data-animated-height-target="">
                       <h3 class="font-semibold leading-snug text-[16px] text-foreground" id="c<id>-order-title">
                         "Choose the first step"
-                      <div aria-labelledby="c<id>-order-title" class="-mx-1 flex flex-col gap-0.5 relative" role="radiogroup">
+                      <div aria-labelledby="c<id>-order-title" class="-mx-3 flex flex-col gap-0.5 relative" role="radiogroup">
                         <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
-                        <div aria-checked="false" class="cursor-pointer flex gap-2 group/question-row items-center min-h-10 px-1 py-1.5 relative rounded-(--radius-small) select-none z-10" data-chip-position="left" data-layout="inline" data-proximity-index="0" data-state="unchecked" role="radio" tabindex="0">
+                        <div aria-checked="false" class="cursor-pointer flex gap-2 group/question-row items-center min-h-10 px-3 py-1.5 relative rounded-(--radius-small) select-none z-10" data-chip-position="left" data-layout="inline" data-proximity-index="0" data-state="unchecked" role="radio" tabindex="0">
                           <span class="inline-flex items-center justify-center relative shrink-0 size-7">
                             <span aria-hidden="true" class="absolute duration-spring-fast ease-spring-fast inline-flex items-center justify-center motion-reduce:transition-none size-5 text-muted-foreground text-xs transition-[opacity,font-weight]">
                               "1"
@@ -4251,7 +4251,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
                             <span aria-hidden="true" class="absolute bg-primary duration-spring-fast ease-spring-fast group-focus/question-row:opacity-100 group-focus/question-row:scale-100 group-hover/question-row:opacity-100 group-hover/question-row:scale-100 inline-flex inset-0 items-center justify-center motion-reduce:transition-none opacity-0 rounded-(--radius-small) scale-75 text-primary-foreground transition-[opacity,transform]">
                               <svg class="size-3.5">
                                 <path>
-                        <div aria-checked="false" class="cursor-pointer flex gap-2 group/question-row items-center min-h-10 px-1 py-1.5 relative rounded-(--radius-small) select-none z-10" data-chip-position="left" data-layout="inline" data-proximity-index="1" data-state="unchecked" role="radio" tabindex="-1">
+                        <div aria-checked="false" class="cursor-pointer flex gap-2 group/question-row items-center min-h-10 px-3 py-1.5 relative rounded-(--radius-small) select-none z-10" data-chip-position="left" data-layout="inline" data-proximity-index="1" data-state="unchecked" role="radio" tabindex="-1">
                           <span class="inline-flex items-center justify-center relative shrink-0 size-7">
                             <span aria-hidden="true" class="absolute duration-spring-fast ease-spring-fast inline-flex items-center justify-center motion-reduce:transition-none size-5 text-muted-foreground text-xs transition-[opacity,font-weight]">
                               "2"
@@ -4265,7 +4265,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
                             <span aria-hidden="true" class="absolute bg-primary duration-spring-fast ease-spring-fast group-focus/question-row:opacity-100 group-focus/question-row:scale-100 group-hover/question-row:opacity-100 group-hover/question-row:scale-100 inline-flex inset-0 items-center justify-center motion-reduce:transition-none opacity-0 rounded-(--radius-small) scale-75 text-primary-foreground transition-[opacity,transform]">
                               <svg class="size-3.5">
                                 <path>
-                        <div aria-checked="false" class="cursor-pointer flex gap-2 group/question-row items-center min-h-10 px-1 py-1.5 relative rounded-(--radius-small) select-none z-10" data-chip-position="left" data-layout="inline" data-proximity-index="2" data-state="unchecked" role="radio" tabindex="-1">
+                        <div aria-checked="false" class="cursor-pointer flex gap-2 group/question-row items-center min-h-10 px-3 py-1.5 relative rounded-(--radius-small) select-none z-10" data-chip-position="left" data-layout="inline" data-proximity-index="2" data-state="unchecked" role="radio" tabindex="-1">
                           <span class="inline-flex items-center justify-center relative shrink-0 size-7">
                             <span aria-hidden="true" class="absolute duration-spring-fast ease-spring-fast inline-flex items-center justify-center motion-reduce:transition-none size-5 text-muted-foreground text-xs transition-[opacity,font-weight]">
                               "3"
@@ -4334,18 +4334,18 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
               "both"
           <div class="bg-background border border-border fixture-preview min-h-20 rounded-md svelte-<scope>" data-catalog-fixture-id="controlled" data-catalog-preview="ask-user-questions">
             <div class="flex justify-center w-full" data-catalog-rendered-state="controlled-index controlled-answers" data-catalog-renderer-fixture="controlled">
-              <div class="bg-surface-2 border border-border max-w-[520px] overflow-hidden relative rounded-(--radius-large) shadow-surface-2 w-full">
-                <div class="flex items-center pb-2 pt-3.5 px-4 sm:pt-4 sm:px-5 text-muted-foreground type-caption" data-slot="ask-user-questions-metadata">
+              <div class="bg-surface-2 border border-border max-w-[520px] overflow-hidden relative rounded-(--radius-large) shadow-surface-2 w-full" data-slot="ask-user-questions">
+                <div class="flex items-center pb-2 pt-3.5 px-5 sm:pt-4 sm:px-5 text-muted-foreground type-caption" data-slot="ask-user-questions-metadata">
                   <span class="shrink-0 tabular-nums">
                     "Question 1 of 2"
                 <div>
                   <div class="grid">
-                    <div class="col-start-1 flex flex-col gap-2 pb-1 px-4 row-start-1 sm:px-5" data-animated-height-target="">
+                    <div class="col-start-1 flex flex-col gap-2 pb-1 px-5 row-start-1" data-animated-height-target="">
                       <h3 class="font-semibold leading-snug text-[16px] text-foreground" id="c<id>-priority-title">
                         "What should we prioritize?"
-                      <div aria-labelledby="c<id>-priority-title" class="-mx-1 flex flex-col gap-0.5 relative" role="radiogroup">
+                      <div aria-labelledby="c<id>-priority-title" class="-mx-3 flex flex-col gap-0.5 relative" role="radiogroup">
                         <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
-                        <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-center min-h-10 px-1 py-1.5 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="inline" data-proximity-index="0" data-state="unchecked" role="radio" tabindex="0">
+                        <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-center min-h-10 px-3 py-1.5 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="inline" data-proximity-index="0" data-state="unchecked" role="radio" tabindex="0">
                           <span class="flex-1 inline-flex items-center min-w-0 type-caption">
                             <span class="duration-spring-fast ease-spring-fast font-medium motion-reduce:transition-none text-foreground transition-[font-weight]">
                               "Speed"
@@ -4358,7 +4358,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
                             <span aria-hidden="true" class="absolute bg-primary duration-spring-fast ease-spring-fast group-focus/question-row:opacity-100 group-focus/question-row:scale-100 group-hover/question-row:opacity-100 group-hover/question-row:scale-100 inline-flex inset-0 items-center justify-center motion-reduce:transition-none opacity-0 rounded-(--radius-small) scale-75 text-primary-foreground transition-[opacity,transform]">
                               <svg class="size-3.5">
                                 <path>
-                        <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-center min-h-10 px-1 py-1.5 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="inline" data-proximity-index="1" data-state="unchecked" role="radio" tabindex="-1">
+                        <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-center min-h-10 px-3 py-1.5 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="inline" data-proximity-index="1" data-state="unchecked" role="radio" tabindex="-1">
                           <span class="flex-1 inline-flex items-center min-w-0 type-caption">
                             <span class="duration-spring-fast ease-spring-fast font-medium motion-reduce:transition-none text-foreground transition-[font-weight]">
                               "Quality"
@@ -4371,7 +4371,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
                             <span aria-hidden="true" class="absolute bg-primary duration-spring-fast ease-spring-fast group-focus/question-row:opacity-100 group-focus/question-row:scale-100 group-hover/question-row:opacity-100 group-hover/question-row:scale-100 inline-flex inset-0 items-center justify-center motion-reduce:transition-none opacity-0 rounded-(--radius-small) scale-75 text-primary-foreground transition-[opacity,transform]">
                               <svg class="size-3.5">
                                 <path>
-                        <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-center min-h-10 px-1 py-1.5 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="inline" data-proximity-index="2" data-state="unchecked" role="radio" tabindex="-1">
+                        <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-center min-h-10 px-3 py-1.5 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="inline" data-proximity-index="2" data-state="unchecked" role="radio" tabindex="-1">
                           <span class="flex-1 inline-flex items-center min-w-0 type-caption">
                             <span class="duration-spring-fast ease-spring-fast font-medium motion-reduce:transition-none text-foreground transition-[font-weight]">
                               "Balance"
@@ -4454,17 +4454,17 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
               "both"
           <div class="bg-background border border-border fixture-preview min-h-20 rounded-md svelte-<scope>" data-catalog-fixture-id="free-text" data-catalog-preview="ask-user-questions">
             <div class="flex justify-center w-full" data-catalog-rendered-state="multiline command-enter auto-focus" data-catalog-renderer-fixture="free-text">
-              <div class="bg-surface-2 border border-border max-w-[520px] overflow-hidden relative rounded-(--radius-large) shadow-surface-2 w-full">
-                <div class="flex items-center pb-2 pt-3.5 px-4 sm:pt-4 sm:px-5 text-muted-foreground type-caption" data-slot="ask-user-questions-metadata">
+              <div class="bg-surface-2 border border-border max-w-[520px] overflow-hidden relative rounded-(--radius-large) shadow-surface-2 w-full" data-slot="ask-user-questions">
+                <div class="flex items-center pb-2 pt-3.5 px-5 sm:pt-4 sm:px-5 text-muted-foreground type-caption" data-slot="ask-user-questions-metadata">
                   <span class="shrink-0 tabular-nums">
                     "Question 1 of 1"
                 <div>
                   <div class="grid">
-                    <div class="col-start-1 flex flex-col gap-2 pb-1 px-4 row-start-1 sm:px-5" data-animated-height-target="">
+                    <div class="col-start-1 flex flex-col gap-2 pb-1 px-5 row-start-1" data-animated-height-target="">
                       <h3 class="font-semibold leading-snug text-[16px] text-foreground" id="c<id>-context-title">
                         "What context should we know?"
-                      <div aria-labelledby="c<id>-context-title" class="-mx-3 cursor-text duration-spring-fast ease-spring-fast min-h-[76px] motion-reduce:transition-none mt-1 px-3 py-2.5 relative rounded-(--radius-small) transition-colors" role="group">
-                        <textarea aria-labelledby="c<id>-context-title" class="aria-invalid:border-danger bg-transparent block border-0 border-border data-[state=hover]:bg-hover disabled:bg-transparent disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:opacity-60 duration-(--spring-fast) focus-visible:outline-none hover:bg-hover min-h-0! min-h-20 motion-reduce:transition-none overflow-hidden p-0 placeholder:text-muted-foreground read-only:text-muted-foreground resize-none rounded-none shadow-none text-foreground transition-[background-color,border-color,box-shadow,color] type-caption w-full" data-size="default" data-slot="textarea">
+                      <div aria-labelledby="c<id>-context-title" class="-mx-3 cursor-text duration-spring-fast ease-spring-fast focus-within:bg-card! focus-within:ring-1 focus-within:ring-border focus-within:ring-inset hover:bg-hover min-h-[76px] motion-reduce:transition-none mt-1 px-3 py-2.5 relative rounded-(--radius-small) transition-colors" role="group" tokens=["--surface-2"]>
+                        <textarea aria-labelledby="c<id>-context-title" class="aria-invalid:border-danger bg-transparent block border-0 border-border data-[state=hover]:bg-hover disabled:bg-transparent disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:opacity-60 duration-(--spring-fast) focus-visible:outline-none hover:bg-transparent min-h-0! min-h-20 motion-reduce:transition-none overflow-hidden p-0 placeholder:text-muted-foreground read-only:text-muted-foreground resize-none rounded-none shadow-none text-foreground transition-[background-color,border-color,box-shadow,color] type-caption w-full" data-size="default" data-slot="textarea">
                       <div class="pb-2 pt-1">
                         <div class="-mx-2 flex gap-2 items-center justify-between sm:-mx-3">
                           <div class="flex flex-1 gap-2 items-center min-w-0 relative">
@@ -4535,17 +4535,17 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
               "both"
           <div class="bg-background border border-border fixture-preview min-h-20 rounded-md svelte-<scope>" data-catalog-fixture-id="free-text-validation" data-catalog-preview="ask-user-questions">
             <div class="flex justify-center w-full" data-catalog-rendered-state="invalid error valid" data-catalog-renderer-fixture="free-text-validation">
-              <div class="bg-surface-2 border border-border max-w-[520px] overflow-hidden relative rounded-(--radius-large) shadow-surface-2 w-full">
-                <div class="flex items-center pb-2 pt-3.5 px-4 sm:pt-4 sm:px-5 text-muted-foreground type-caption" data-slot="ask-user-questions-metadata">
+              <div class="bg-surface-2 border border-border max-w-[520px] overflow-hidden relative rounded-(--radius-large) shadow-surface-2 w-full" data-slot="ask-user-questions">
+                <div class="flex items-center pb-2 pt-3.5 px-5 sm:pt-4 sm:px-5 text-muted-foreground type-caption" data-slot="ask-user-questions-metadata">
                   <span class="shrink-0 tabular-nums">
                     "Question 1 of 1"
                 <div>
                   <div class="grid">
-                    <div class="col-start-1 flex flex-col gap-2 pb-1 px-4 row-start-1 sm:px-5" data-animated-height-target="">
+                    <div class="col-start-1 flex flex-col gap-2 pb-1 px-5 row-start-1" data-animated-height-target="">
                       <h3 class="font-semibold leading-snug text-[16px] text-foreground" id="c<id>-name-title">
                         "Name this project"
-                      <div aria-labelledby="c<id>-name-title" class="-mx-3 cursor-text duration-spring-fast ease-spring-fast min-h-10 motion-reduce:transition-none mt-1 px-3 py-2.5 relative rounded-(--radius-small) transition-colors" role="group">
-                        <textarea aria-labelledby="c<id>-name-title" class="aria-invalid:border-danger bg-transparent block border-0 border-border data-[state=hover]:bg-hover disabled:bg-transparent disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:opacity-60 duration-(--spring-fast) focus-visible:outline-none hover:bg-hover min-h-0! min-h-20 motion-reduce:transition-none overflow-hidden p-0 placeholder:text-muted-foreground read-only:text-muted-foreground resize-none rounded-none shadow-none text-foreground transition-[background-color,border-color,box-shadow,color] type-caption w-full" data-size="default" data-slot="textarea">
+                      <div aria-labelledby="c<id>-name-title" class="-mx-3 cursor-text duration-spring-fast ease-spring-fast focus-within:bg-card! focus-within:ring-1 focus-within:ring-border focus-within:ring-inset hover:bg-hover min-h-10 motion-reduce:transition-none mt-1 px-3 py-2.5 relative rounded-(--radius-small) transition-colors" role="group" tokens=["--surface-2"]>
+                        <textarea aria-labelledby="c<id>-name-title" class="aria-invalid:border-danger bg-transparent block border-0 border-border data-[state=hover]:bg-hover disabled:bg-transparent disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:opacity-60 duration-(--spring-fast) focus-visible:outline-none hover:bg-transparent min-h-0! min-h-20 motion-reduce:transition-none overflow-hidden p-0 placeholder:text-muted-foreground read-only:text-muted-foreground resize-none rounded-none shadow-none text-foreground transition-[background-color,border-color,box-shadow,color] type-caption w-full" data-size="default" data-slot="textarea">
                       <div class="pb-2 pt-1">
                         <div class="-mx-2 flex gap-2 items-center justify-between sm:-mx-3">
                           <div class="flex flex-1 gap-2 items-center min-w-0 relative">
@@ -4616,18 +4616,18 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
               "both"
           <div class="bg-background border border-border fixture-preview min-h-20 rounded-md svelte-<scope>" data-catalog-fixture-id="multi-select" data-catalog-preview="ask-user-questions">
             <div class="flex justify-center w-full" data-catalog-rendered-state="multiple-selection continue finish" data-catalog-renderer-fixture="multi-select">
-              <div class="bg-surface-2 border border-border max-w-[520px] overflow-hidden relative rounded-(--radius-large) shadow-surface-2 w-full">
-                <div class="flex items-center pb-2 pt-3.5 px-4 sm:pt-4 sm:px-5 text-muted-foreground type-caption" data-slot="ask-user-questions-metadata">
+              <div class="bg-surface-2 border border-border max-w-[520px] overflow-hidden relative rounded-(--radius-large) shadow-surface-2 w-full" data-slot="ask-user-questions">
+                <div class="flex items-center pb-2 pt-3.5 px-5 sm:pt-4 sm:px-5 text-muted-foreground type-caption" data-slot="ask-user-questions-metadata">
                   <span class="shrink-0 tabular-nums">
                     "Question 1 of 1"
                 <div>
                   <div class="grid">
-                    <div class="col-start-1 flex flex-col gap-2 pb-1 px-4 row-start-1 sm:px-5" data-animated-height-target="">
+                    <div class="col-start-1 flex flex-col gap-2 pb-1 px-5 row-start-1" data-animated-height-target="">
                       <h3 class="font-semibold leading-snug text-[16px] text-foreground" id="c<id>-features-title">
                         "Which features matter?"
-                      <div aria-labelledby="c<id>-features-title" class="-mx-1 flex flex-col gap-0.5 relative" role="group">
+                      <div aria-labelledby="c<id>-features-title" class="-mx-3 flex flex-col gap-0.5 relative" role="group">
                         <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
-                        <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-center min-h-10 px-1 py-1.5 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="inline" data-proximity-index="0" data-state="unchecked" role="checkbox" tabindex="0">
+                        <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-center min-h-10 px-3 py-1.5 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="inline" data-proximity-index="0" data-state="unchecked" role="checkbox" tabindex="0">
                           <span class="flex-1 inline-flex items-center min-w-0 type-caption">
                             <span class="duration-spring-fast ease-spring-fast font-medium motion-reduce:transition-none text-foreground transition-[font-weight]">
                               "Speed"
@@ -4637,7 +4637,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
                           <span class="inline-flex items-center justify-center relative shrink-0 size-7">
                             <span aria-hidden="true" class="absolute border border-border duration-spring-fast ease-spring-fast inline-flex items-center justify-center motion-reduce:transition-none rounded-(--radius-small) size-5 text-muted-foreground text-xs transition-[opacity,font-weight]">
                               "1"
-                        <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-center min-h-10 px-1 py-1.5 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="inline" data-proximity-index="1" data-state="unchecked" role="checkbox" tabindex="-1">
+                        <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-center min-h-10 px-3 py-1.5 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="inline" data-proximity-index="1" data-state="unchecked" role="checkbox" tabindex="-1">
                           <span class="flex-1 inline-flex items-center min-w-0 type-caption">
                             <span class="duration-spring-fast ease-spring-fast font-medium motion-reduce:transition-none text-foreground transition-[font-weight]">
                               "Quality"
@@ -4647,7 +4647,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
                           <span class="inline-flex items-center justify-center relative shrink-0 size-7">
                             <span aria-hidden="true" class="absolute border border-border duration-spring-fast ease-spring-fast inline-flex items-center justify-center motion-reduce:transition-none rounded-(--radius-small) size-5 text-muted-foreground text-xs transition-[opacity,font-weight]">
                               "2"
-                        <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-center min-h-10 px-1 py-1.5 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="inline" data-proximity-index="2" data-state="unchecked" role="checkbox" tabindex="-1">
+                        <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-center min-h-10 px-3 py-1.5 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="inline" data-proximity-index="2" data-state="unchecked" role="checkbox" tabindex="-1">
                           <span class="flex-1 inline-flex items-center min-w-0 type-caption">
                             <span class="duration-spring-fast ease-spring-fast font-medium motion-reduce:transition-none text-foreground transition-[font-weight]">
                               "Balance"
@@ -4727,18 +4727,18 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
               "both"
           <div class="bg-background border border-border fixture-preview min-h-20 rounded-md svelte-<scope>" data-catalog-fixture-id="multiple-questions" data-catalog-preview="ask-user-questions">
             <div class="flex justify-center w-full" data-catalog-rendered-state="progress advance finish" data-catalog-renderer-fixture="multiple-questions">
-              <div class="bg-surface-2 border border-border max-w-[520px] overflow-hidden relative rounded-(--radius-large) shadow-surface-2 w-full">
-                <div class="flex items-center pb-2 pt-3.5 px-4 sm:pt-4 sm:px-5 text-muted-foreground type-caption" data-slot="ask-user-questions-metadata">
+              <div class="bg-surface-2 border border-border max-w-[520px] overflow-hidden relative rounded-(--radius-large) shadow-surface-2 w-full" data-slot="ask-user-questions">
+                <div class="flex items-center pb-2 pt-3.5 px-5 sm:pt-4 sm:px-5 text-muted-foreground type-caption" data-slot="ask-user-questions-metadata">
                   <span class="shrink-0 tabular-nums">
                     "Question 1 of 2"
                 <div>
                   <div class="grid">
-                    <div class="col-start-1 flex flex-col gap-2 pb-1 px-4 row-start-1 sm:px-5" data-animated-height-target="">
+                    <div class="col-start-1 flex flex-col gap-2 pb-1 px-5 row-start-1" data-animated-height-target="">
                       <h3 class="font-semibold leading-snug text-[16px] text-foreground" id="c<id>-priority-title">
                         "What should we prioritize?"
-                      <div aria-labelledby="c<id>-priority-title" class="-mx-1 flex flex-col gap-0.5 relative" role="radiogroup">
+                      <div aria-labelledby="c<id>-priority-title" class="-mx-3 flex flex-col gap-0.5 relative" role="radiogroup">
                         <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
-                        <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-center min-h-10 px-1 py-1.5 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="inline" data-proximity-index="0" data-state="unchecked" role="radio" tabindex="0">
+                        <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-center min-h-10 px-3 py-1.5 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="inline" data-proximity-index="0" data-state="unchecked" role="radio" tabindex="0">
                           <span class="flex-1 inline-flex items-center min-w-0 type-caption">
                             <span class="duration-spring-fast ease-spring-fast font-medium motion-reduce:transition-none text-foreground transition-[font-weight]">
                               "Speed"
@@ -4751,7 +4751,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
                             <span aria-hidden="true" class="absolute bg-primary duration-spring-fast ease-spring-fast group-focus/question-row:opacity-100 group-focus/question-row:scale-100 group-hover/question-row:opacity-100 group-hover/question-row:scale-100 inline-flex inset-0 items-center justify-center motion-reduce:transition-none opacity-0 rounded-(--radius-small) scale-75 text-primary-foreground transition-[opacity,transform]">
                               <svg class="size-3.5">
                                 <path>
-                        <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-center min-h-10 px-1 py-1.5 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="inline" data-proximity-index="1" data-state="unchecked" role="radio" tabindex="-1">
+                        <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-center min-h-10 px-3 py-1.5 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="inline" data-proximity-index="1" data-state="unchecked" role="radio" tabindex="-1">
                           <span class="flex-1 inline-flex items-center min-w-0 type-caption">
                             <span class="duration-spring-fast ease-spring-fast font-medium motion-reduce:transition-none text-foreground transition-[font-weight]">
                               "Quality"
@@ -4764,7 +4764,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
                             <span aria-hidden="true" class="absolute bg-primary duration-spring-fast ease-spring-fast group-focus/question-row:opacity-100 group-focus/question-row:scale-100 group-hover/question-row:opacity-100 group-hover/question-row:scale-100 inline-flex inset-0 items-center justify-center motion-reduce:transition-none opacity-0 rounded-(--radius-small) scale-75 text-primary-foreground transition-[opacity,transform]">
                               <svg class="size-3.5">
                                 <path>
-                        <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-center min-h-10 px-1 py-1.5 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="inline" data-proximity-index="2" data-state="unchecked" role="radio" tabindex="-1">
+                        <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-center min-h-10 px-3 py-1.5 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="inline" data-proximity-index="2" data-state="unchecked" role="radio" tabindex="-1">
                           <span class="flex-1 inline-flex items-center min-w-0 type-caption">
                             <span class="duration-spring-fast ease-spring-fast font-medium motion-reduce:transition-none text-foreground transition-[font-weight]">
                               "Balance"
@@ -4846,18 +4846,18 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
               "both"
           <div class="bg-background border border-border fixture-preview min-h-20 rounded-md svelte-<scope>" data-catalog-fixture-id="playground" data-catalog-preview="ask-user-questions">
             <div class="flex justify-center w-full" data-catalog-rendered-state="single-select digit-shortcuts" data-catalog-renderer-fixture="playground">
-              <div class="bg-surface-2 border border-border max-w-[520px] overflow-hidden relative rounded-(--radius-large) shadow-surface-2 w-full">
-                <div class="flex items-center pb-2 pt-3.5 px-4 sm:pt-4 sm:px-5 text-muted-foreground type-caption" data-slot="ask-user-questions-metadata">
+              <div class="bg-surface-2 border border-border max-w-[520px] overflow-hidden relative rounded-(--radius-large) shadow-surface-2 w-full" data-slot="ask-user-questions">
+                <div class="flex items-center pb-2 pt-3.5 px-5 sm:pt-4 sm:px-5 text-muted-foreground type-caption" data-slot="ask-user-questions-metadata">
                   <span class="shrink-0 tabular-nums">
                     "Question 1 of 1"
                 <div>
                   <div class="grid">
-                    <div class="col-start-1 flex flex-col gap-2 pb-2.5 px-4 row-start-1 sm:pb-3 sm:px-5" data-animated-height-target="">
+                    <div class="col-start-1 flex flex-col gap-2 pb-2.5 px-5 row-start-1 sm:pb-3" data-animated-height-target="">
                       <h3 class="font-semibold leading-snug text-[16px] text-foreground" id="c<id>-priority-title">
                         "What should we prioritize?"
-                      <div aria-labelledby="c<id>-priority-title" class="-mx-1 flex flex-col gap-0.5 relative" role="radiogroup">
+                      <div aria-labelledby="c<id>-priority-title" class="-mx-3 flex flex-col gap-0.5 relative" role="radiogroup">
                         <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
-                        <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-center min-h-10 px-1 py-1.5 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="inline" data-proximity-index="0" data-state="unchecked" role="radio" tabindex="0">
+                        <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-center min-h-10 px-3 py-1.5 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="inline" data-proximity-index="0" data-state="unchecked" role="radio" tabindex="0">
                           <span class="flex-1 inline-flex items-center min-w-0 type-caption">
                             <span class="duration-spring-fast ease-spring-fast font-medium motion-reduce:transition-none text-foreground transition-[font-weight]">
                               "Speed"
@@ -4870,7 +4870,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
                             <span aria-hidden="true" class="absolute bg-primary duration-spring-fast ease-spring-fast group-focus/question-row:opacity-100 group-focus/question-row:scale-100 group-hover/question-row:opacity-100 group-hover/question-row:scale-100 inline-flex inset-0 items-center justify-center motion-reduce:transition-none opacity-0 rounded-(--radius-small) scale-75 text-primary-foreground transition-[opacity,transform]">
                               <svg class="size-3.5">
                                 <path>
-                        <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-center min-h-10 px-1 py-1.5 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="inline" data-proximity-index="1" data-state="unchecked" role="radio" tabindex="-1">
+                        <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-center min-h-10 px-3 py-1.5 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="inline" data-proximity-index="1" data-state="unchecked" role="radio" tabindex="-1">
                           <span class="flex-1 inline-flex items-center min-w-0 type-caption">
                             <span class="duration-spring-fast ease-spring-fast font-medium motion-reduce:transition-none text-foreground transition-[font-weight]">
                               "Quality"
@@ -4883,7 +4883,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
                             <span aria-hidden="true" class="absolute bg-primary duration-spring-fast ease-spring-fast group-focus/question-row:opacity-100 group-focus/question-row:scale-100 group-hover/question-row:opacity-100 group-hover/question-row:scale-100 inline-flex inset-0 items-center justify-center motion-reduce:transition-none opacity-0 rounded-(--radius-small) scale-75 text-primary-foreground transition-[opacity,transform]">
                               <svg class="size-3.5">
                                 <path>
-                        <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-center min-h-10 px-1 py-1.5 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="inline" data-proximity-index="2" data-state="unchecked" role="radio" tabindex="-1">
+                        <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-center min-h-10 px-3 py-1.5 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="inline" data-proximity-index="2" data-state="unchecked" role="radio" tabindex="-1">
                           <span class="flex-1 inline-flex items-center min-w-0 type-caption">
                             <span class="duration-spring-fast ease-spring-fast font-medium motion-reduce:transition-none text-foreground transition-[font-weight]">
                               "Balance"
@@ -4952,18 +4952,18 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
               "both"
           <div class="bg-background border border-border fixture-preview min-h-20 rounded-md svelte-<scope>" data-catalog-fixture-id="skippable" data-catalog-preview="ask-user-questions">
             <div class="flex justify-center w-full" data-catalog-rendered-state="skip callback advance" data-catalog-renderer-fixture="skippable">
-              <div class="bg-surface-2 border border-border max-w-[520px] overflow-hidden relative rounded-(--radius-large) shadow-surface-2 w-full">
-                <div class="flex items-center pb-2 pt-3.5 px-4 sm:pt-4 sm:px-5 text-muted-foreground type-caption" data-slot="ask-user-questions-metadata">
+              <div class="bg-surface-2 border border-border max-w-[520px] overflow-hidden relative rounded-(--radius-large) shadow-surface-2 w-full" data-slot="ask-user-questions">
+                <div class="flex items-center pb-2 pt-3.5 px-5 sm:pt-4 sm:px-5 text-muted-foreground type-caption" data-slot="ask-user-questions-metadata">
                   <span class="shrink-0 tabular-nums">
                     "Question 1 of 2"
                 <div>
                   <div class="grid">
-                    <div class="col-start-1 flex flex-col gap-2 pb-1 px-4 row-start-1 sm:px-5" data-animated-height-target="">
+                    <div class="col-start-1 flex flex-col gap-2 pb-1 px-5 row-start-1" data-animated-height-target="">
                       <h3 class="font-semibold leading-snug text-[16px] text-foreground" id="c<id>-priority-title">
                         "What should we prioritize?"
-                      <div aria-labelledby="c<id>-priority-title" class="-mx-1 flex flex-col gap-0.5 relative" role="radiogroup">
+                      <div aria-labelledby="c<id>-priority-title" class="-mx-3 flex flex-col gap-0.5 relative" role="radiogroup">
                         <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
-                        <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-center min-h-10 px-1 py-1.5 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="inline" data-proximity-index="0" data-state="unchecked" role="radio" tabindex="0">
+                        <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-center min-h-10 px-3 py-1.5 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="inline" data-proximity-index="0" data-state="unchecked" role="radio" tabindex="0">
                           <span class="flex-1 inline-flex items-center min-w-0 type-caption">
                             <span class="duration-spring-fast ease-spring-fast font-medium motion-reduce:transition-none text-foreground transition-[font-weight]">
                               "Speed"
@@ -4976,7 +4976,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
                             <span aria-hidden="true" class="absolute bg-primary duration-spring-fast ease-spring-fast group-focus/question-row:opacity-100 group-focus/question-row:scale-100 group-hover/question-row:opacity-100 group-hover/question-row:scale-100 inline-flex inset-0 items-center justify-center motion-reduce:transition-none opacity-0 rounded-(--radius-small) scale-75 text-primary-foreground transition-[opacity,transform]">
                               <svg class="size-3.5">
                                 <path>
-                        <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-center min-h-10 px-1 py-1.5 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="inline" data-proximity-index="1" data-state="unchecked" role="radio" tabindex="-1">
+                        <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-center min-h-10 px-3 py-1.5 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="inline" data-proximity-index="1" data-state="unchecked" role="radio" tabindex="-1">
                           <span class="flex-1 inline-flex items-center min-w-0 type-caption">
                             <span class="duration-spring-fast ease-spring-fast font-medium motion-reduce:transition-none text-foreground transition-[font-weight]">
                               "Quality"
@@ -4989,7 +4989,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
                             <span aria-hidden="true" class="absolute bg-primary duration-spring-fast ease-spring-fast group-focus/question-row:opacity-100 group-focus/question-row:scale-100 group-hover/question-row:opacity-100 group-hover/question-row:scale-100 inline-flex inset-0 items-center justify-center motion-reduce:transition-none opacity-0 rounded-(--radius-small) scale-75 text-primary-foreground transition-[opacity,transform]">
                               <svg class="size-3.5">
                                 <path>
-                        <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-center min-h-10 px-1 py-1.5 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="inline" data-proximity-index="2" data-state="unchecked" role="radio" tabindex="-1">
+                        <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-center min-h-10 px-3 py-1.5 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="inline" data-proximity-index="2" data-state="unchecked" role="radio" tabindex="-1">
                           <span class="flex-1 inline-flex items-center min-w-0 type-caption">
                             <span class="duration-spring-fast ease-spring-fast font-medium motion-reduce:transition-none text-foreground transition-[font-weight]">
                               "Balance"
@@ -5071,18 +5071,18 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
               "both"
           <div class="bg-background border border-border fixture-preview min-h-20 rounded-md svelte-<scope>" data-catalog-fixture-id="stacked-layout" data-catalog-preview="ask-user-questions">
             <div class="flex justify-center w-full" data-catalog-rendered-state="stacked long-description" data-catalog-renderer-fixture="stacked-layout">
-              <div class="bg-surface-2 border border-border max-w-[520px] overflow-hidden relative rounded-(--radius-large) shadow-surface-2 w-full">
-                <div class="flex items-center pb-2 pt-3.5 px-4 sm:pt-4 sm:px-5 text-muted-foreground type-caption" data-slot="ask-user-questions-metadata">
+              <div class="bg-surface-2 border border-border max-w-[520px] overflow-hidden relative rounded-(--radius-large) shadow-surface-2 w-full" data-slot="ask-user-questions">
+                <div class="flex items-center pb-2 pt-3.5 px-5 sm:pt-4 sm:px-5 text-muted-foreground type-caption" data-slot="ask-user-questions-metadata">
                   <span class="shrink-0 tabular-nums">
                     "Question 1 of 1"
                 <div>
                   <div class="grid">
-                    <div class="col-start-1 flex flex-col gap-2 pb-2.5 px-4 row-start-1 sm:pb-3 sm:px-5" data-animated-height-target="">
+                    <div class="col-start-1 flex flex-col gap-2 pb-2.5 px-5 row-start-1 sm:pb-3" data-animated-height-target="">
                       <h3 class="font-semibold leading-snug text-[16px] text-foreground" id="c<id>-approach-title">
                         "Choose an approach"
-                      <div aria-labelledby="c<id>-approach-title" class="-mx-1 flex flex-col gap-0.5 relative" role="radiogroup">
+                      <div aria-labelledby="c<id>-approach-title" class="-mx-3 flex flex-col gap-0.5 relative" role="radiogroup">
                         <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
-                        <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-start min-h-14 px-1 py-2 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="stacked" data-proximity-index="0" data-state="unchecked" role="radio" tabindex="0">
+                        <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-start min-h-14 px-3 py-2 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="stacked" data-proximity-index="0" data-state="unchecked" role="radio" tabindex="0">
                           <span class="flex flex-1 flex-col gap-0.5 min-w-0 type-caption">
                             <span class="duration-spring-fast ease-spring-fast font-medium motion-reduce:transition-none text-foreground transition-[font-weight]">
                               "Speed"
@@ -5094,7 +5094,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
                             <span aria-hidden="true" class="absolute bg-primary duration-spring-fast ease-spring-fast group-focus/question-row:opacity-100 group-focus/question-row:scale-100 group-hover/question-row:opacity-100 group-hover/question-row:scale-100 inline-flex inset-0 items-center justify-center motion-reduce:transition-none opacity-0 rounded-(--radius-small) scale-75 text-primary-foreground transition-[opacity,transform]">
                               <svg class="size-3.5">
                                 <path>
-                        <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-start min-h-14 px-1 py-2 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="stacked" data-proximity-index="1" data-state="unchecked" role="radio" tabindex="-1">
+                        <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-start min-h-14 px-3 py-2 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="stacked" data-proximity-index="1" data-state="unchecked" role="radio" tabindex="-1">
                           <span class="flex flex-1 flex-col gap-0.5 min-w-0 type-caption">
                             <span class="duration-spring-fast ease-spring-fast font-medium motion-reduce:transition-none text-foreground transition-[font-weight]">
                               "Quality"
@@ -5106,7 +5106,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
                             <span aria-hidden="true" class="absolute bg-primary duration-spring-fast ease-spring-fast group-focus/question-row:opacity-100 group-focus/question-row:scale-100 group-hover/question-row:opacity-100 group-hover/question-row:scale-100 inline-flex inset-0 items-center justify-center motion-reduce:transition-none opacity-0 rounded-(--radius-small) scale-75 text-primary-foreground transition-[opacity,transform]">
                               <svg class="size-3.5">
                                 <path>
-                        <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-start min-h-14 px-1 py-2 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="stacked" data-proximity-index="2" data-state="unchecked" role="radio" tabindex="-1">
+                        <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-start min-h-14 px-3 py-2 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="stacked" data-proximity-index="2" data-state="unchecked" role="radio" tabindex="-1">
                           <span class="flex flex-1 flex-col gap-0.5 min-w-0 type-caption">
                             <span class="duration-spring-fast ease-spring-fast font-medium motion-reduce:transition-none text-foreground transition-[font-weight]">
                               "Balance"
@@ -5174,18 +5174,18 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
               "both"
           <div class="bg-background border border-border fixture-preview min-h-20 rounded-md svelte-<scope>" data-catalog-fixture-id="with-other" data-catalog-preview="ask-user-questions">
             <div class="flex justify-center w-full" data-catalog-rendered-state="other enter shift-enter" data-catalog-renderer-fixture="with-other">
-              <div class="bg-surface-2 border border-border max-w-[520px] overflow-hidden relative rounded-(--radius-large) shadow-surface-2 w-full">
-                <div class="flex items-center pb-2 pt-3.5 px-4 sm:pt-4 sm:px-5 text-muted-foreground type-caption" data-slot="ask-user-questions-metadata">
+              <div class="bg-surface-2 border border-border max-w-[520px] overflow-hidden relative rounded-(--radius-large) shadow-surface-2 w-full" data-slot="ask-user-questions">
+                <div class="flex items-center pb-2 pt-3.5 px-5 sm:pt-4 sm:px-5 text-muted-foreground type-caption" data-slot="ask-user-questions-metadata">
                   <span class="shrink-0 tabular-nums">
                     "Question 1 of 1"
                 <div>
                   <div class="grid">
-                    <div class="col-start-1 flex flex-col gap-2 pb-2.5 px-4 row-start-1 sm:pb-3 sm:px-5" data-animated-height-target="">
+                    <div class="col-start-1 flex flex-col gap-2 pb-2.5 px-5 row-start-1 sm:pb-3" data-animated-height-target="">
                       <h3 class="font-semibold leading-snug text-[16px] text-foreground" id="c<id>-direction-title">
                         "Choose a direction"
-                      <div aria-labelledby="c<id>-direction-title" class="-mx-1 flex flex-col gap-0.5 relative" role="radiogroup">
+                      <div aria-labelledby="c<id>-direction-title" class="-mx-3 flex flex-col gap-0.5 relative" role="radiogroup">
                         <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
-                        <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-center min-h-10 px-1 py-1.5 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="inline" data-proximity-index="0" data-state="unchecked" role="radio" tabindex="0">
+                        <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-center min-h-10 px-3 py-1.5 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="inline" data-proximity-index="0" data-state="unchecked" role="radio" tabindex="0">
                           <span class="flex-1 inline-flex items-center min-w-0 type-caption">
                             <span class="duration-spring-fast ease-spring-fast font-medium motion-reduce:transition-none text-foreground transition-[font-weight]">
                               "Speed"
@@ -5198,7 +5198,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
                             <span aria-hidden="true" class="absolute bg-primary duration-spring-fast ease-spring-fast group-focus/question-row:opacity-100 group-focus/question-row:scale-100 group-hover/question-row:opacity-100 group-hover/question-row:scale-100 inline-flex inset-0 items-center justify-center motion-reduce:transition-none opacity-0 rounded-(--radius-small) scale-75 text-primary-foreground transition-[opacity,transform]">
                               <svg class="size-3.5">
                                 <path>
-                        <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-center min-h-10 px-1 py-1.5 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="inline" data-proximity-index="1" data-state="unchecked" role="radio" tabindex="-1">
+                        <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-center min-h-10 px-3 py-1.5 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="inline" data-proximity-index="1" data-state="unchecked" role="radio" tabindex="-1">
                           <span class="flex-1 inline-flex items-center min-w-0 type-caption">
                             <span class="duration-spring-fast ease-spring-fast font-medium motion-reduce:transition-none text-foreground transition-[font-weight]">
                               "Quality"
@@ -5211,8 +5211,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
                             <span aria-hidden="true" class="absolute bg-primary duration-spring-fast ease-spring-fast group-focus/question-row:opacity-100 group-focus/question-row:scale-100 group-hover/question-row:opacity-100 group-hover/question-row:scale-100 inline-flex inset-0 items-center justify-center motion-reduce:transition-none opacity-0 rounded-(--radius-small) scale-75 text-primary-foreground transition-[opacity,transform]">
                               <svg class="size-3.5">
                                 <path>
-                        <div class="cursor-text flex gap-3 items-center min-h-10 px-1 py-1.5 relative rounded-(--radius-small) z-10" data-chip-position="right" data-proximity-index="2" data-state="unchecked" role="presentation">
-                          <textarea aria-label="Describe in your own words" class="aria-invalid:border-danger bg-transparent border-0 border-border data-[state=hover]:bg-hover disabled:bg-transparent disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:opacity-60 duration-(--spring-fast) flex flex-1 focus-visible:outline-none hover:bg-hover min-h-0! min-h-20 min-w-0 motion-reduce:transition-none overflow-hidden p-0 placeholder:text-muted-foreground read-only:text-muted-foreground resize-none rounded-none shadow-none text-foreground transition-[background-color,border-color,box-shadow,color] type-caption w-full" data-size="default" data-slot="textarea">
+                        <div class="cursor-text flex gap-3 items-center min-h-10 px-3 py-1.5 relative rounded-(--radius-small) z-10" data-chip-position="right" data-proximity-index="2" data-state="unchecked" role="presentation">
+                          <textarea aria-label="Describe in your own words" class="aria-invalid:border-danger bg-transparent border-0 border-border data-[state=hover]:bg-hover disabled:bg-transparent disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:opacity-60 duration-(--spring-fast) flex flex-1 focus-visible:outline-none hover:bg-transparent min-h-0! min-h-20 min-w-0 motion-reduce:transition-none overflow-hidden p-0 placeholder:text-muted-foreground read-only:text-muted-foreground resize-none rounded-none shadow-none text-foreground transition-[background-color,border-color,box-shadow,color] type-caption w-full" data-size="default" data-slot="textarea">
                           <span aria-hidden="true" class="inline-flex items-center justify-center shrink-0 size-7 text-xs">
                             "3"
           <details class="fixture-inspector svelte-<scope> text-muted-foreground text-xs">
@@ -5235,6 +5235,9 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
 exports[`catalog DOM, token, and accessibility contracts > 'primitive:badge:semantic-states' 1`] = `
 {
   "declaredStates": [
+    "solid",
+    "dot",
+    "colors",
     "default",
     "outline",
     "destructive",
@@ -5275,43 +5278,206 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:badge:sema
         <article class="fixture-card svelte-<scope>" data-catalog-fixture="semantic-states">
           <div class="fixture-heading svelte-<scope>">
             <h2 class="font-medium text-sm">
-              "Badge semantic states"
+              "Solid, Dot and Colors"
             <span class="bg-muted border border-border px-2 py-0.5 rounded-full text-muted-foreground text-xs">
               "both"
           <div class="bg-background border border-border fixture-preview min-h-20 rounded-md svelte-<scope>" data-catalog-fixture-id="semantic-states" data-catalog-preview="badge">
             <div class="flex flex-wrap gap-3 items-center max-w-full min-w-0" data-catalog-renderer-fixture="semantic-states">
-              <div class="flex flex-wrap gap-2 max-w-full min-w-0" data-catalog-rendered-state="default outline destructive success-ring-dot info-ring-dot leading-icon removable keyboard-focus long-label light dark compact">
-                <span class="[&_svg]:pointer-events-none [&_svg]:size-3 [a&]:active:brightness-90 [a&]:hover:brightness-95 aria-invalid:ring-2 aria-invalid:ring-danger/25 bg-primary duration-spring-fast ease-spring-fast font-normal gap-1 h-5 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2 py-0.5 rounded-(--radius-medium) shrink-0 text-primary-foreground transition-[background-color,color,box-shadow,filter] type-caption w-fit whitespace-nowrap" data-slot="badge">
-                  "Default badge"
-                <span class="[&_svg]:pointer-events-none [&_svg]:size-3 [a&]:active:bg-active [a&]:hover:bg-hover aria-invalid:ring-2 aria-invalid:ring-danger/25 bg-muted duration-spring-fast ease-spring-fast font-normal gap-1 h-5 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2 py-0.5 rounded-(--radius-medium) shrink-0 text-foreground transition-[background-color,color,box-shadow,filter] type-caption w-fit whitespace-nowrap" data-slot="badge">
-                  "Outline badge"
-                <span class="[&_svg]:pointer-events-none [&_svg]:size-3 [a&]:active:brightness-90 [a&]:hover:brightness-95 aria-invalid:ring-2 aria-invalid:ring-danger/25 bg-danger-background duration-spring-fast ease-spring-fast font-normal gap-1 h-5 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2 py-0.5 rounded-(--radius-medium) shrink-0 text-danger transition-[background-color,color,box-shadow,filter] type-caption w-fit whitespace-nowrap" data-slot="badge">
-                  "Error badge"
-                <span class="[&_svg]:pointer-events-none [&_svg]:size-3 [a&]:active:brightness-90 [a&]:hover:brightness-95 aria-invalid:ring-2 aria-invalid:ring-danger/25 bg-success duration-spring-fast ease-spring-fast font-normal gap-1 h-5 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2 py-0.5 rounded-(--radius-medium) shrink-0 text-success-foreground transition-[background-color,color,box-shadow,filter] type-caption w-fit whitespace-nowrap" data-slot="badge">
-                  <span class="bg-current rounded-full shrink-0 size-1.5" data-slot="badge-dot">
-                  "Ready"
-                <span class="[&_svg]:pointer-events-none [&_svg]:size-3 [a&]:active:brightness-90 [a&]:hover:brightness-95 aria-invalid:ring-2 aria-invalid:ring-danger/25 bg-info duration-spring-fast ease-spring-fast font-normal gap-1 h-5 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2 py-0.5 rounded-(--radius-medium) shrink-0 text-info-foreground transition-[background-color,color,box-shadow,filter] type-caption w-fit whitespace-nowrap" data-slot="badge">
-                  <span class="bg-current rounded-full shrink-0 size-1.5" data-slot="badge-dot">
-                  "Informational"
-                <span class="[&_svg]:pointer-events-none [&_svg]:size-3 [a&]:active:brightness-90 [a&]:hover:brightness-95 aria-invalid:ring-2 aria-invalid:ring-danger/25 bg-primary duration-spring-fast ease-spring-fast font-normal gap-1 h-5 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2 py-0.5 rounded-(--radius-medium) shrink-0 text-primary-foreground transition-[background-color,color,box-shadow,filter] type-caption w-fit whitespace-nowrap" data-slot="badge">
-                  <span class="inline-flex shrink-0" data-slot="badge-icon">
-                    <svg aria-hidden="true" data-icon="plus" data-weight="bold" role="img">
-                      <rect>
-                      <path>
-                  "With icon"
-                <span class="[&_svg]:pointer-events-none [&_svg]:size-3 [a&]:active:brightness-90 [a&]:hover:brightness-95 aria-invalid:ring-2 aria-invalid:ring-danger/25 bg-primary duration-spring-fast ease-spring-fast font-normal gap-1 h-5 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2 py-0.5 rounded-(--radius-medium) shrink-0 text-primary-foreground transition-[background-color,color,box-shadow,filter] type-caption w-fit whitespace-nowrap" data-removable="true" data-slot="badge">
-                  "Removable"
-                  <div>
-                    <button aria-label="Remove badge" class="-mr-1 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-3.5 active:bg-active aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast duration-spring-fast ease-spring-fast ease-spring-fast font-normal gap-1.5 group/button hover:bg-hover inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 relative rounded-full shrink-0 size-4 text-current transition-colors type-caption whitespace-nowrap" data-slot="badge-remove" type="button">
-                      <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
-                      <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
-                        <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <span aria-hidden="true">
-                            "×"
-                <a class="[&_svg]:pointer-events-none [&_svg]:size-3 [a&]:active:brightness-90 [a&]:hover:brightness-95 aria-invalid:ring-2 aria-invalid:ring-danger/25 bg-primary duration-spring-fast ease-spring-fast font-normal gap-1 h-5 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2 py-0.5 rounded-(--radius-medium) shrink-0 text-primary-foreground transition-[background-color,color,box-shadow,filter] type-caption w-fit whitespace-nowrap" data-slot="badge" href="#badge-preview">
-                  "Focusable badge link"
-                <span class="[&_svg]:pointer-events-none [&_svg]:size-3 [a&]:active:bg-active [a&]:hover:bg-hover aria-invalid:ring-2 aria-invalid:ring-danger/25 bg-muted duration-spring-fast ease-spring-fast font-normal gap-1 h-5 inline-flex items-center justify-center max-w-full motion-reduce:transition-none overflow-hidden px-2 py-0.5 rounded-(--radius-medium) shrink-0 text-foreground transition-[background-color,color,box-shadow,filter] truncate type-caption w-fit whitespace-nowrap" data-slot="badge">
-                  "A deliberately long badge label for truncation review"
+              <div class="gap-4 grid min-w-0" data-catalog-rendered-state="solid dot colors default outline destructive success-ring-dot info-ring-dot leading-icon removable keyboard-focus long-label light dark compact">
+                <section class="gap-2 grid">
+                  <h3 class="font-medium type-caption">
+                    "Solid"
+                  <div class="flex flex-wrap gap-2 items-center">
+                    <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="gray" data-size="default" data-slot="badge" data-variant="solid" tokens=["--accent"]>
+                      <span class="[text-box:trim-both_cap_alphabetic]">
+                        "Default"
+                    <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="blue" data-size="default" data-slot="badge" data-variant="solid" tokens=["--background"]>
+                      <span class="[text-box:trim-both_cap_alphabetic]">
+                        "Blue"
+                    <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1 h-5 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2 rounded-(--radius-medium) shrink-0 text-[11px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="gray" data-size="compact" data-slot="badge" data-variant="solid" tokens=["--accent"]>
+                      <span class="[text-box:trim-both_cap_alphabetic]">
+                        "Compact"
+                    <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="gray" data-size="default" data-slot="badge" data-variant="solid" tokens=["--accent"]>
+                      <span class="inline-flex shrink-0" data-slot="badge-icon">
+                        <svg aria-hidden="true" data-icon="plus" data-weight="bold" role="img">
+                          <rect>
+                          <path>
+                      <span class="[text-box:trim-both_cap_alphabetic]">
+                        "With icon"
+                    <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="gray" data-removable="true" data-size="default" data-slot="badge" data-variant="solid" tokens=["--accent"]>
+                      <span class="[text-box:trim-both_cap_alphabetic]">
+                        "Removable"
+                      <div>
+                        <button aria-label="Remove badge" class="-mr-1 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-3.5 active:bg-active aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast duration-spring-fast ease-spring-fast ease-spring-fast font-normal gap-1.5 group/button hover:bg-hover inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 relative rounded-full shrink-0 size-4 text-current transition-colors type-caption whitespace-nowrap" data-slot="badge-remove" type="button">
+                          <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                          <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                            <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                              <span aria-hidden="true">
+                                "×"
+                <section class="gap-2 grid">
+                  <h3 class="font-medium type-caption">
+                    "Dot"
+                  <div class="flex flex-wrap gap-2 items-center">
+                    <span class="[&_svg]:pointer-events-none [&_svg]:size-3 border border-border duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="gray" data-size="default" data-slot="badge" data-variant="dot">
+                      <span class="rounded-full shrink-0 size-[7px]" data-slot="badge-dot" tokens=["--muted-foreground"]>
+                      <span class="[text-box:trim-both_cap_alphabetic]">
+                        "Default"
+                    <span class="[&_svg]:pointer-events-none [&_svg]:size-3 border border-border duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="green" data-size="default" data-slot="badge" data-variant="dot">
+                      <span class="rounded-full shrink-0 size-[7px]" data-slot="badge-dot">
+                      <span class="[text-box:trim-both_cap_alphabetic]">
+                        "Ready"
+                    <span class="[&_svg]:pointer-events-none [&_svg]:size-3 border border-border duration-spring-fast ease-spring-fast font-medium gap-1 h-5 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2 rounded-(--radius-medium) shrink-0 text-[11px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="blue" data-size="compact" data-slot="badge" data-variant="dot">
+                      <span class="rounded-full shrink-0 size-1.5" data-slot="badge-dot">
+                      <span class="[text-box:trim-both_cap_alphabetic]">
+                        "Compact"
+                    <a class="[&_svg]:pointer-events-none [&_svg]:size-3 border border-border duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="gray" data-size="default" data-slot="badge" data-variant="dot" href="#badge-preview">
+                      <span class="rounded-full shrink-0 size-[7px]" data-slot="badge-dot" tokens=["--muted-foreground"]>
+                      <span class="[text-box:trim-both_cap_alphabetic]">
+                        "Focusable badge link"
+                <section class="gap-2 grid">
+                  <h3 class="font-medium type-caption">
+                    "Colors"
+                  <div class="gap-2 grid grid-cols-2 sm:grid-cols-3">
+                    <div class="flex flex-wrap gap-2">
+                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="gray" data-size="default" data-slot="badge" data-variant="solid" tokens=["--accent"]>
+                        <span class="[text-box:trim-both_cap_alphabetic]">
+                          "gray"
+                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 border border-border duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="gray" data-size="default" data-slot="badge" data-variant="dot">
+                        <span class="rounded-full shrink-0 size-[7px]" data-slot="badge-dot" tokens=["--muted-foreground"]>
+                        <span class="[text-box:trim-both_cap_alphabetic]">
+                          "gray"
+                    <div class="flex flex-wrap gap-2">
+                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="red" data-size="default" data-slot="badge" data-variant="solid" tokens=["--background"]>
+                        <span class="[text-box:trim-both_cap_alphabetic]">
+                          "red"
+                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 border border-border duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="red" data-size="default" data-slot="badge" data-variant="dot">
+                        <span class="rounded-full shrink-0 size-[7px]" data-slot="badge-dot">
+                        <span class="[text-box:trim-both_cap_alphabetic]">
+                          "red"
+                    <div class="flex flex-wrap gap-2">
+                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="orange" data-size="default" data-slot="badge" data-variant="solid" tokens=["--background"]>
+                        <span class="[text-box:trim-both_cap_alphabetic]">
+                          "orange"
+                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 border border-border duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="orange" data-size="default" data-slot="badge" data-variant="dot">
+                        <span class="rounded-full shrink-0 size-[7px]" data-slot="badge-dot">
+                        <span class="[text-box:trim-both_cap_alphabetic]">
+                          "orange"
+                    <div class="flex flex-wrap gap-2">
+                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="amber" data-size="default" data-slot="badge" data-variant="solid" tokens=["--background"]>
+                        <span class="[text-box:trim-both_cap_alphabetic]">
+                          "amber"
+                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 border border-border duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="amber" data-size="default" data-slot="badge" data-variant="dot">
+                        <span class="rounded-full shrink-0 size-[7px]" data-slot="badge-dot">
+                        <span class="[text-box:trim-both_cap_alphabetic]">
+                          "amber"
+                    <div class="flex flex-wrap gap-2">
+                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="yellow" data-size="default" data-slot="badge" data-variant="solid" tokens=["--background"]>
+                        <span class="[text-box:trim-both_cap_alphabetic]">
+                          "yellow"
+                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 border border-border duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="yellow" data-size="default" data-slot="badge" data-variant="dot">
+                        <span class="rounded-full shrink-0 size-[7px]" data-slot="badge-dot">
+                        <span class="[text-box:trim-both_cap_alphabetic]">
+                          "yellow"
+                    <div class="flex flex-wrap gap-2">
+                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="lime" data-size="default" data-slot="badge" data-variant="solid" tokens=["--background"]>
+                        <span class="[text-box:trim-both_cap_alphabetic]">
+                          "lime"
+                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 border border-border duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="lime" data-size="default" data-slot="badge" data-variant="dot">
+                        <span class="rounded-full shrink-0 size-[7px]" data-slot="badge-dot">
+                        <span class="[text-box:trim-both_cap_alphabetic]">
+                          "lime"
+                    <div class="flex flex-wrap gap-2">
+                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="green" data-size="default" data-slot="badge" data-variant="solid" tokens=["--background"]>
+                        <span class="[text-box:trim-both_cap_alphabetic]">
+                          "green"
+                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 border border-border duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="green" data-size="default" data-slot="badge" data-variant="dot">
+                        <span class="rounded-full shrink-0 size-[7px]" data-slot="badge-dot">
+                        <span class="[text-box:trim-both_cap_alphabetic]">
+                          "green"
+                    <div class="flex flex-wrap gap-2">
+                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="emerald" data-size="default" data-slot="badge" data-variant="solid" tokens=["--background"]>
+                        <span class="[text-box:trim-both_cap_alphabetic]">
+                          "emerald"
+                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 border border-border duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="emerald" data-size="default" data-slot="badge" data-variant="dot">
+                        <span class="rounded-full shrink-0 size-[7px]" data-slot="badge-dot">
+                        <span class="[text-box:trim-both_cap_alphabetic]">
+                          "emerald"
+                    <div class="flex flex-wrap gap-2">
+                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="teal" data-size="default" data-slot="badge" data-variant="solid" tokens=["--background"]>
+                        <span class="[text-box:trim-both_cap_alphabetic]">
+                          "teal"
+                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 border border-border duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="teal" data-size="default" data-slot="badge" data-variant="dot">
+                        <span class="rounded-full shrink-0 size-[7px]" data-slot="badge-dot">
+                        <span class="[text-box:trim-both_cap_alphabetic]">
+                          "teal"
+                    <div class="flex flex-wrap gap-2">
+                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="cyan" data-size="default" data-slot="badge" data-variant="solid" tokens=["--background"]>
+                        <span class="[text-box:trim-both_cap_alphabetic]">
+                          "cyan"
+                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 border border-border duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="cyan" data-size="default" data-slot="badge" data-variant="dot">
+                        <span class="rounded-full shrink-0 size-[7px]" data-slot="badge-dot">
+                        <span class="[text-box:trim-both_cap_alphabetic]">
+                          "cyan"
+                    <div class="flex flex-wrap gap-2">
+                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="blue" data-size="default" data-slot="badge" data-variant="solid" tokens=["--background"]>
+                        <span class="[text-box:trim-both_cap_alphabetic]">
+                          "blue"
+                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 border border-border duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="blue" data-size="default" data-slot="badge" data-variant="dot">
+                        <span class="rounded-full shrink-0 size-[7px]" data-slot="badge-dot">
+                        <span class="[text-box:trim-both_cap_alphabetic]">
+                          "blue"
+                    <div class="flex flex-wrap gap-2">
+                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="indigo" data-size="default" data-slot="badge" data-variant="solid" tokens=["--background"]>
+                        <span class="[text-box:trim-both_cap_alphabetic]">
+                          "indigo"
+                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 border border-border duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="indigo" data-size="default" data-slot="badge" data-variant="dot">
+                        <span class="rounded-full shrink-0 size-[7px]" data-slot="badge-dot">
+                        <span class="[text-box:trim-both_cap_alphabetic]">
+                          "indigo"
+                    <div class="flex flex-wrap gap-2">
+                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="violet" data-size="default" data-slot="badge" data-variant="solid" tokens=["--background"]>
+                        <span class="[text-box:trim-both_cap_alphabetic]">
+                          "violet"
+                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 border border-border duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="violet" data-size="default" data-slot="badge" data-variant="dot">
+                        <span class="rounded-full shrink-0 size-[7px]" data-slot="badge-dot">
+                        <span class="[text-box:trim-both_cap_alphabetic]">
+                          "violet"
+                    <div class="flex flex-wrap gap-2">
+                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="purple" data-size="default" data-slot="badge" data-variant="solid" tokens=["--background"]>
+                        <span class="[text-box:trim-both_cap_alphabetic]">
+                          "purple"
+                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 border border-border duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="purple" data-size="default" data-slot="badge" data-variant="dot">
+                        <span class="rounded-full shrink-0 size-[7px]" data-slot="badge-dot">
+                        <span class="[text-box:trim-both_cap_alphabetic]">
+                          "purple"
+                    <div class="flex flex-wrap gap-2">
+                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="fuchsia" data-size="default" data-slot="badge" data-variant="solid" tokens=["--background"]>
+                        <span class="[text-box:trim-both_cap_alphabetic]">
+                          "fuchsia"
+                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 border border-border duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="fuchsia" data-size="default" data-slot="badge" data-variant="dot">
+                        <span class="rounded-full shrink-0 size-[7px]" data-slot="badge-dot">
+                        <span class="[text-box:trim-both_cap_alphabetic]">
+                          "fuchsia"
+                    <div class="flex flex-wrap gap-2">
+                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="pink" data-size="default" data-slot="badge" data-variant="solid" tokens=["--background"]>
+                        <span class="[text-box:trim-both_cap_alphabetic]">
+                          "pink"
+                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 border border-border duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="pink" data-size="default" data-slot="badge" data-variant="dot">
+                        <span class="rounded-full shrink-0 size-[7px]" data-slot="badge-dot">
+                        <span class="[text-box:trim-both_cap_alphabetic]">
+                          "pink"
+                    <div class="flex flex-wrap gap-2">
+                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="rose" data-size="default" data-slot="badge" data-variant="solid" tokens=["--background"]>
+                        <span class="[text-box:trim-both_cap_alphabetic]">
+                          "rose"
+                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 border border-border duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="rose" data-size="default" data-slot="badge" data-variant="dot">
+                        <span class="rounded-full shrink-0 size-[7px]" data-slot="badge-dot">
+                        <span class="[text-box:trim-both_cap_alphabetic]">
+                          "rose"
+                <span class="[&_svg]:pointer-events-none [&_svg]:size-3 border border-border duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center max-w-full motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] truncate w-fit whitespace-nowrap" data-color="gray" data-size="default" data-slot="badge" data-variant="dot">
+                  <span class="rounded-full shrink-0 size-[7px]" data-slot="badge-dot" tokens=["--muted-foreground"]>
+                  <span class="[text-box:trim-both_cap_alphabetic]">
+                    "A deliberately long badge label for truncation review"
           <details class="fixture-inspector svelte-<scope> text-muted-foreground text-xs">
             <summary class="svelte-<scope>">
               "Fixture details"
@@ -5320,7 +5486,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:badge:sema
                 <dt>
                   "States"
                 <dd class="mt-1 text-foreground">
-                  "default, outline, destructive, success-ring-dot, info-ring-dot, leading-icon, removable, keyboard-focus, long-label, light, dark, compact"
+                  "solid, dot, colors, default, outline, destructive, success-ring-dot, info-ring-dot, leading-icon, removable, keyboard-focus, long-label, light, dark, compact"
               <div>
                 <dt>
                   "Themes"
@@ -5826,7 +5992,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:button-gro
                 <div class="gap-1 grid">
                   <p class="text-muted-foreground type-caption">
                     "One-shot actions"
-                  <div aria-label="Document actions" class="[&_[data-slot=button-surface]]:rounded-[inherit] [&_[data-slot=button]:focus-visible]:z-20 [&_[data-slot=button]:hover]:z-10 [&_[data-slot=button][data-state=active]]:z-10 [&_[data-slot=button]]:border-transparent [&_[data-slot=button]]:rounded-sm bg-border flex-row gap-px inline-flex isolate items-stretch p-px rounded-md" data-orientation="horizontal" data-slot="button-group" role="group">
+                  <div aria-label="Document actions" class="[&_[data-slot=button-surface]]:rounded-[inherit] [&_[data-slot=button]:focus-visible]:z-20 [&_[data-slot=button]:hover]:z-10 [&_[data-slot=button][data-state=active]]:z-10 [&_[data-slot=button]]:border-transparent [&_[data-slot=button]]:rounded-sm bg-sidebar flex-row gap-px inline-flex isolate items-stretch p-px rounded-md svelte-<scope>" data-orientation="horizontal" data-slot="button-group" role="group">
                     <div>
                       <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border border-border cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
                         <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-hover/button:bg-hover inset-px motion-reduce:transition-none pointer-events-none shadow-none transition-[box-shadow,background-color,filter]" data-slot="button-surface">
@@ -5848,7 +6014,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:button-gro
                 <div class="gap-1 grid">
                   <p class="text-muted-foreground type-caption">
                     "Transient active state — Share menu open"
-                  <div aria-label="Document actions with share menu open" class="[&_[data-slot=button-surface]]:rounded-[inherit] [&_[data-slot=button]:focus-visible]:z-20 [&_[data-slot=button]:hover]:z-10 [&_[data-slot=button][data-state=active]]:z-10 [&_[data-slot=button]]:border-transparent [&_[data-slot=button]]:rounded-sm bg-border flex-row gap-px inline-flex isolate items-stretch p-px rounded-md" data-orientation="horizontal" data-slot="button-group" role="group">
+                  <div aria-label="Document actions with share menu open" class="[&_[data-slot=button-surface]]:rounded-[inherit] [&_[data-slot=button]:focus-visible]:z-20 [&_[data-slot=button]:hover]:z-10 [&_[data-slot=button][data-state=active]]:z-10 [&_[data-slot=button]]:border-transparent [&_[data-slot=button]]:rounded-sm bg-sidebar flex-row gap-px inline-flex isolate items-stretch p-px rounded-md svelte-<scope>" data-orientation="horizontal" data-slot="button-group" role="group">
                     <div>
                       <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border border-border cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
                         <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-hover/button:bg-hover inset-px motion-reduce:transition-none pointer-events-none shadow-none transition-[box-shadow,background-color,filter]" data-slot="button-surface">

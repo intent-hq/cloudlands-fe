@@ -120,7 +120,7 @@ describe('SuggestedPrompts', () => {
       },
     });
 
-    const hint = screen.getByText(/(?:⌃|Alt\+)1/);
+    const hint = screen.getByText(/(?:⌃|Alt\+)1/).closest<HTMLElement>('[data-slot="badge"]')!;
     expect(hint.className).toContain('!font-normal');
     expect(hint.className).toContain('text-muted-foreground!');
     for (const className of COMPACT_TOOL_TRAILING_CLASS.replace('text-ui', '').split(' ')) {

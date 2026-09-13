@@ -1475,7 +1475,7 @@
     isAutoExpand
       ? 'transition-[border-color,background-color,box-shadow,min-height]'
       : 'transition-[border-color,background-color,box-shadow]',
-    edgeDocked ? 'border-0' : 'border border-transparent',
+    edgeDocked ? 'border-0 px-0' : 'border border-transparent',
     {
       'border-primary-ink border-dashed': isDragging,
     },

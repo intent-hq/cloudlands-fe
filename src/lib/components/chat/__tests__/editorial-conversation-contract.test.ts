@@ -67,7 +67,6 @@ describe('editorial conversation presentation contract', () => {
     );
     expect(panel).not.toContain('max-w-[var(--content-measure-wide)]');
     expect(panel).toContain('<div class="w-full" data-testid="question-wizard-slot">');
-    expect(panel).toContain("? 'w-full px-0!'");
     expect(panel).toContain('conversation-composer relative z-10 w-full');
     expect(panel).toContain(
       'class="composer-prompt-lane chat-content-measure mx-auto w-full min-w-0"',
@@ -384,7 +383,6 @@ describe('editorial conversation presentation contract', () => {
 
     expect(input).toContain('surfaceClasses(2, 2)');
     expect(input).toContain('rounded-(--radius-large)');
-    expect(input).toContain("edgeDocked ? 'border-0' : 'border border-transparent'");
     expect(input).toContain('data-ring-state={ringState}');
     expect(input).not.toContain(':global(.panel:not(.focused) .rich-input-container) {');
     expect(input).toContain('@media (prefers-reduced-motion: reduce)');
