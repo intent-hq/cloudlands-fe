@@ -50,6 +50,20 @@ export interface ToolResult {
 }
 
 /**
+ * Serve-time author projection the daemon attaches to every `user` row of a
+ * multiplayer workspace (PROTOCOL §5.5, intent-hq/intentd#1869): the
+ * principal resolved from the row's `metadata.fromPrincipalId` stamp, else
+ * the workspace's legacy author, else its owner. Profile fields are `null`
+ * when the principal row is gone; `principalId` is always the row's id.
+ */
+export interface MessageAuthor {
+  principalId: string;
+  login: string | null;
+  displayName: string | null;
+  avatarUrl: string | null;
+}
+
+/**
  * Message metadata containing operational information
  */
 export interface MessageMetadata {
@@ -128,6 +142,11 @@ export interface MessageMetadata {
     queuedMessageId?: string;
   };
 
+  // Daemon-stamped authoring principal on user-origin rows (PROTOCOL §5.5,
+  // intent-hq/intentd#1869). Overwrites any client-supplied value; stripped
+  // from non-user-origin rows. The resolved profile rides `AgentMessage.author`.
+  fromPrincipalId?: string;
+
   // Allow additional properties
   [key: string]: any;
 }
@@ -178,6 +197,11 @@ export interface AgentMessage {
   // construction when a §7.1 snapshot/delta replaces the row by id (transcript
   // rows never carry it) and by dedup when a canonical row merges into it.
   provisional?: true;
+
+  // Serve-time author projection on `user` rows (PROTOCOL §5.5,
+  // intent-hq/intentd#1869). Absent on non-user rows, on local-only optimistic
+  // rows before the daemon echo, and on rows from older daemons.
+  author?: MessageAuthor;
 
   // Metadata
   metadata?: MessageMetadata;

@@ -623,6 +623,45 @@ describe('LiveWorkspacesClient.list (PROTOCOL §5.1, fake transport)', () => {
     expect(workspaces[0]?.displayStatus).toBeUndefined();
   });
 
+  it('passes the membership summary through normalization (intent-hq/intentd#1868)', async () => {
+    // `ownerPrincipalId` / `myRole` / `memberCount` ride every workspace
+    // payload once the daemon tracks members; the normalizer retains them
+    // verbatim so chat can gate author identity on `memberCount >= 2`.
+    mockedRequest.mockResolvedValueOnce({
+      workspaces: [
+        {
+          id: '66666666-6666-4666-8666-666666666666',
+          title: 'Shared ws',
+          branch: 'intent/shared',
+          status: 'Active',
+          ownerPrincipalId: 'principal-owner',
+          myRole: 'collaborator',
+          memberCount: 2,
+          createdAt: '2026-09-01T00:00:00.000Z',
+          updatedAt: '2026-09-01T00:00:00.000Z',
+        },
+        {
+          id: '77777777-7777-4777-8777-777777777777',
+          title: 'Legacy ws',
+          branch: 'intent/legacy',
+          status: 'Active',
+        },
+      ],
+    });
+    const client = new LiveWorkspacesClient();
+
+    const workspaces = await client.list();
+
+    expect(workspaces[0]).toMatchObject({
+      ownerPrincipalId: 'principal-owner',
+      myRole: 'collaborator',
+      memberCount: 2,
+    });
+    expect(workspaces[1]?.myRole).toBeUndefined();
+    expect(workspaces[1]?.memberCount).toBeUndefined();
+    expect(workspaces[1]?.ownerPrincipalId).toBeUndefined();
+  });
+
   it('passes the BE-owned attention flag through normalization (PROTOCOL §5.1 / §9.9)', async () => {
     // The daemon serves `attention` on every `workspace.*` Workspace payload
     // (snake_case wire values `none`/`unread`/`review_required`); the

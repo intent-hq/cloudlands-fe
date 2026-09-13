@@ -56,6 +56,7 @@
   import type { ContentBlock } from '$shared/types/content-block';
   import AgentMessageAttributionHeader from './AgentMessageAttributionHeader.svelte';
   import { getAgentMessageAttribution } from '$lib/utils/agent-message-attribution';
+  import { getHumanMessageAuthor, getMessageAuthorLabel } from '$lib/utils/message-authorship';
   import { getQueueInfo } from '$lib/utils/queue-info';
   import { getPresentedUserMessageText } from '$lib/utils/user-message-presentation';
   import AutomatedWakeCardHeader from './AutomatedWakeCardHeader.svelte';
@@ -404,6 +405,21 @@
   );
   let isAutomatedWakeExpanded = $state(false);
   let automatedWakeBodyId = $derived(`automated-wake-body-${message?.id ?? 'pending'}`);
+
+  // Human author identity (multiplayer w2): shown only once the workspace has
+  // more than one member, on plain human rows — agent-to-agent sends and
+  // automated wakes carry their own sender header. Reads the daemon's
+  // serve-time `author` projection verbatim; single-member workspaces and
+  // rows without the projection render unchanged.
+  let humanAuthor = $derived(
+    role === 'user' &&
+      (workspace?.memberCount ?? 0) >= 2 &&
+      !agentAttribution &&
+      !automatedWakePresentation
+      ? getHumanMessageAuthor(message)
+      : null,
+  );
+  let humanAuthorLabel = $derived(humanAuthor ? getMessageAuthorLabel(humanAuthor) : null);
 
   // Local state
   let messageElement = $state<HTMLDivElement>();
@@ -1467,6 +1483,38 @@
               {workspace}
               ontoggle={() => (isAutomatedWakeExpanded = !isAutomatedWakeExpanded)}
             />
+          {/if}
+
+          <!-- Human author identity in multi-member workspaces -->
+          {#if humanAuthor && !isSticky}
+            <div
+              class="type-caption mb-1 flex min-w-0 items-center gap-1.5 text-subtle"
+              data-testid="user-message-author"
+              data-principal-id={humanAuthor.principalId}
+              aria-label={m.chat_chatMessage_author_ariaLabel({
+                name: humanAuthorLabel ?? m.chat_chatMessage_authorUnknown_label(),
+              })}
+            >
+              {#if humanAuthor.avatarUrl}
+                <img
+                  src={humanAuthor.avatarUrl}
+                  alt=""
+                  class="size-4 shrink-0 rounded-full"
+                  referrerpolicy="no-referrer"
+                  data-testid="user-message-author-avatar"
+                />
+              {:else}
+                <span
+                  aria-hidden="true"
+                  class="flex size-4 shrink-0 items-center justify-center rounded-full bg-muted text-[9px] font-medium uppercase text-muted-foreground"
+                  data-testid="user-message-author-avatar-fallback"
+                  >{(humanAuthorLabel ?? '?').slice(0, 1)}</span
+                >
+              {/if}
+              <span class="truncate" data-testid="user-message-author-name"
+                >{humanAuthorLabel ?? m.chat_chatMessage_authorUnknown_label()}</span
+              >
+            </div>
           {/if}
 
           {#if (!agentAttribution || isAgentMessageExpanded) && (!automatedWakePresentation || isAutomatedWakeExpanded)}
