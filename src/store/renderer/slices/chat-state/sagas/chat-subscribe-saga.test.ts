@@ -1608,6 +1608,33 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
       expect(stale?.isStreaming).toBe(true);
     });
 
+    it('settles the retained row on the next snapshot after the raced one consumed the marker', () => {
+      // Pins the trade-off of the exemption above: sparing the optimistic row
+      // spares the frozen one too, but only until the following snapshot —
+      // the raced `isStreaming: true` page consumes the local-start marker, so
+      // the next page is authoritative about liveness again.
+      const agentId = 'agent-stale-local-start-then-next';
+      seedFrozenPartial(agentId);
+      const sub = openChat(agentId);
+      appStore.dispatch(chatSendStarted(agentId, WS));
+
+      sub.handler(standardWindow([makeMessage(PRIOR, 'turn 2185 answer')], true));
+      expect(
+        selectAgentMessages.select(appStore.state, agentId).find((message) => message.id === STALE)
+          ?.isStreaming,
+      ).toBe(true);
+
+      sub.handler(standardWindow([makeMessage(PRIOR, 'turn 2185 answer')], true));
+
+      const stale = selectAgentMessages
+        .select(appStore.state, agentId)
+        .find((message) => message.id === STALE);
+      expect(stale?.isStreaming).toBe(false);
+      expect(stale?.streamingComplete).toBe(true);
+      // Flags only — the frozen content is never rewritten.
+      expect(stale?.contentBlocks?.[0]).toMatchObject({ text: 'frozen at block 152' });
+    });
+
     // A dropped or held snapshot is the failure mode behind a panel stuck on a
     // stale in-flight turn, so every guard leaves a breadcrumb instead of
     // returning silently.
@@ -1646,16 +1673,23 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
         }),
       );
 
-      // Token-dropped registration: the snapshot lands after the close.
+      // Token-dropped registration: the snapshot lands after the close. The
+      // wire callback outliving its registration names itself `-emit`, apart
+      // from the `-queued` drain-time drop.
       vi.mocked(reportStreamLifecycle).mockClear();
       appStore.dispatch(clearCurrentlyViewedAgent());
       sub.handler(standardWindow([newestInFlight()], false));
       expect(reportStreamLifecycle).toHaveBeenLastCalledWith(
         expect.objectContaining({
           stage: 'subscription',
-          event: 'snapshot-dropped-stale-registration',
+          event: 'snapshot-dropped-stale-registration-emit',
           callbackResult: 'ignored',
         }),
+      );
+      // The guard cannot read the store's stream state, so it reports none
+      // rather than passing the transcript's own liveness off as it.
+      expect(vi.mocked(reportStreamLifecycle).mock.lastCall?.[0]).not.toHaveProperty(
+        'storeStreamState',
       );
     });
   });
