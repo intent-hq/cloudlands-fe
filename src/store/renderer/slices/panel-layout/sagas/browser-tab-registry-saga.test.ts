@@ -474,6 +474,34 @@ describe('browserTabRegistrySaga', () => {
       await stop(h);
     });
 
+    it('reports on the explicit request after applying rows, even when applying mutated no layout', async () => {
+      const { displayed: _unreported, ...restarted } = row({ title: 'Example page' });
+      const listing = deferred<BrowserTabListing[]>();
+      mocks.listTabs.mockReturnValueOnce(listing.promise);
+      const h = start({
+        layouts: {
+          [WS]: settledLayout(
+            [browserTab({ hostClientId: OWN, browserUrl: 'http://a.test/' })],
+            'pending' as never,
+          ),
+        },
+        health: 'down',
+      });
+      h.setHealth('healthy', 1);
+      h.dispatch(setRestoreStatus(WS, 'restored'));
+      // The settle mutation's reporter runs while the registry is still loading and exits.
+      await flush();
+      expect(mocks.listTabs.mock.calls).toEqual([[WS]]);
+      expect(mocks.upsertTab).not.toHaveBeenCalled();
+
+      const layoutBefore = h.layout();
+      listing.resolve([restarted]);
+      await flush();
+      expect(h.layout()).toBe(layoutBefore);
+      expect(mocks.upsertTab.mock.calls).toEqual([[WS, expectedInput({ displayed: true })]]);
+      await stop(h);
+    });
+
     it('does not report tabs hosted elsewhere or geometry-only shells', async () => {
       const h = start({
         layouts: {

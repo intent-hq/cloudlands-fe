@@ -709,10 +709,25 @@ function changedWorkspaces(layouts: Record<string, WorkspacePanelLayoutState>): 
  */
 function* onLayoutMutation(reports: Channel<string>): SagaGenerator<void> {
   const changed = changedWorkspaces(yield* selectPanelLayoutWorkspaces.effect());
-  for (const wsId of changed) {
-    yield* call(recordRemovals, wsId);
-    yield* put(reports, wsId);
-  }
+  for (const wsId of changed) yield* call(requestReport, reports, wsId);
+}
+
+/**
+ * The saga's own "report now" trigger, sent once rows are applied and once
+ * a connect sync completes. It is not a reducer case — the layout may be
+ * exactly as it was — so it reaches the reporter here, not via the
+ * mutation watcher.
+ */
+function* onReportRequested(
+  reports: Channel<string>,
+  action: ReturnType<typeof browserTabRegistryReportRequested>,
+): SagaGenerator<void> {
+  yield* call(requestReport, reports, action.payload[0]);
+}
+
+function* requestReport(reports: Channel<string>, wsId: string): SagaGenerator<void> {
+  yield* call(recordRemovals, wsId);
+  yield* put(reports, wsId);
 }
 
 /**
@@ -1124,6 +1139,7 @@ export function* browserTabRegistrySaga(): SagaGenerator<void> {
   seenLayouts = yield* selectPanelLayoutWorkspaces.effect();
   const reports = createChannel<string>(buffers.expanding());
   yield* takeEvery(isLayoutMutation, onLayoutMutation, reports);
+  yield* takeEvery(browserTabRegistryReportRequested, onReportRequested, reports);
   yield* takeSingleFlightInContext(reports, (wsId) => wsId, reportHostedTabs);
   yield* takeEvery(setRestoreStatus, reconcileOnSettle);
   yield* takeEvery(browserTabUpserted, onRegistryRow);
