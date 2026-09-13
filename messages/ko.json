@@ -2310,6 +2310,7 @@
   "chat_queuedMessages_heldForEditing_title": "편집을 위해 보류됨",
   "chat_queuedMessages_save_tooltip": "저장",
   "chat_queuedMessages_cancel_tooltip": "취소",
+  "chat_queuedMessages_author_ariaLabel": "{name}이(가) 대기열에 추가함",
   "chat_queuedMessages_failedWillRetry_label": "실패 — 다시 시도합니다",
   "chat_queuedMessages_failedWillRetryPrefix_label": "(실패 — 다시 시도합니다)",
   "chat_queuedMessages_sendNow_tooltip": "지금 보내기(현재 스트림 중단)",

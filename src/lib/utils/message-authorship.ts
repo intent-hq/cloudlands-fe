@@ -71,3 +71,40 @@ export function getMessageAuthorLabel(author: MessageAuthor): string | null {
   if (typeof author.login === 'string' && author.login.trim() !== '') return author.login;
   return null;
 }
+
+/**
+ * The `author` projections the transcript already carries, keyed by
+ * `principalId` (later rows win). Queue entries carry only the daemon's
+ * `messageMetadata.fromPrincipalId` stamp, so the queue surface resolves its
+ * author against the transcript's projections instead of a second RPC.
+ */
+export function collectMessageAuthors(
+  messages: ReadonlyArray<{ role: MessageRole; author?: unknown; metadata?: unknown }>,
+): Map<string, MessageAuthor> {
+  const authors = new Map<string, MessageAuthor>();
+  for (const message of messages) {
+    const author = getHumanMessageAuthor(message);
+    if (author) authors.set(author.principalId, author);
+  }
+  return authors;
+}
+
+/**
+ * The human author of a queue entry, or null: the entry must pass
+ * `isUserAuthoredMetadata`, carry a `fromPrincipalId` stamp, and that
+ * principal must be resolvable from `authors` (see `collectMessageAuthors`).
+ * Unstamped entries (older daemons) and unresolvable principals yield null —
+ * the caller renders no attribution rather than a placeholder.
+ */
+export function getQueuedMessageAuthor(
+  queued: { messageMetadata?: unknown } | null | undefined,
+  authors: ReadonlyMap<string, MessageAuthor> | null | undefined,
+): MessageAuthor | null {
+  if (!queued || !authors || authors.size === 0) return null;
+  const metadata = queued.messageMetadata;
+  if (!isUserAuthoredMetadata(metadata)) return null;
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return null;
+  const { fromPrincipalId } = metadata as { fromPrincipalId?: unknown };
+  if (typeof fromPrincipalId !== 'string' || fromPrincipalId.length === 0) return null;
+  return authors.get(fromPrincipalId) ?? null;
+}
