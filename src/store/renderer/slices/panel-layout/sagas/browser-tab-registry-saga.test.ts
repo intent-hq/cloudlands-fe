@@ -1424,15 +1424,17 @@ describe('browserTabRegistrySaga', () => {
           [WS]: settledLayout([
             browserTab({ id: 'b1', hostClientId: OTHER, browserUrl: 'http://a.test/' }),
             browserTab({ id: 'b2', hostClientId: OWN, browserUrl: 'http://b.test/' }),
+            browserTab({ id: 'b3', browserUrl: 'http://c.test/' }),
           ]),
         },
       });
       await flush();
 
-      // A mirror of another host is no longer ours to show; a tab this client
-      // hosts stays local (nothing can be reported on this connection).
+      // The refusal is the authoritative listing for every local browser tab:
+      // another host's mirror, a tab this client hosts, and one not yet hosted
+      // all go, since a collaborator can neither mirror nor host one.
       expect(h.registry()).toMatchObject({ phase: 'applied', reported: {} });
-      expect(h.tabs().map((tab) => tab.id)).toEqual(['b2']);
+      expect(h.tabs().map((tab) => tab.id)).toEqual([]);
       expect(mocks.listTabs).toHaveBeenCalledTimes(1);
       expect(mocks.upsertTab).not.toHaveBeenCalled();
       expect(mocks.syncTabs).not.toHaveBeenCalled();
@@ -1442,6 +1444,19 @@ describe('browserTabRegistrySaga', () => {
       expect(h.registry().phase).not.toBe('loading');
       expect(h.registry().reported).toEqual({});
       expect(mocks.listTabs).toHaveBeenCalledTimes(1);
+      expect(mocks.upsertTab).not.toHaveBeenCalled();
+
+      // A reconnect re-dials once; a tab that reached the already-restored
+      // layout in between is closed by the refused listing too.
+      h.dispatch(openTabInRightmostColumn(WS, browserTab({ browserUrl: 'http://d.test/' })));
+      await flush();
+      expect(h.tabs().map((tab) => tab.type)).toEqual(['browser']);
+      h.setHealth('healthy', 2);
+      h.dispatch(connectionStatusChanged('connected'));
+      await flush();
+      expect(mocks.listTabs).toHaveBeenCalledTimes(2);
+      expect(h.tabs().map((tab) => tab.id)).toEqual([]);
+      expect(h.registry()).toMatchObject({ phase: 'applied', reported: {} });
       expect(mocks.upsertTab).not.toHaveBeenCalled();
       await stop(h);
     });
