@@ -38,10 +38,10 @@ describe('spring tiers', () => {
     expect(Math.abs(simulatedSettleMs(spring[name]).settleMs - expectedMs)).toBeLessThan(10);
   });
 
-  it('keeps only the slow tier visibly underdamped', () => {
+  it('keeps every tier at or below its resting target', () => {
     expect(simulatedSettleMs(spring.fast).peak).toBeLessThanOrEqual(1);
     expect(simulatedSettleMs(spring.moderate).peak).toBeLessThanOrEqual(1);
-    expect(simulatedSettleMs(spring.slow).peak).toBeGreaterThan(1.005);
+    expect(simulatedSettleMs(spring.slow).peak).toBeLessThanOrEqual(1);
   });
 
   it('derives deferred-unmount fallbacks from each exit tween', () => {

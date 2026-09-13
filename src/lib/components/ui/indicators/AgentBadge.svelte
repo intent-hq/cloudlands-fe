@@ -69,7 +69,7 @@
   }
 
   .agent-badge.updating {
-    animation: badge-pulse var(--spring-slow) var(--spring-slow-ease);
+    animation: badge-update var(--spring-slow) var(--spring-slow-ease);
   }
 
   .badge-text {
@@ -88,12 +88,9 @@
     }
   }
 
-  @keyframes badge-pulse {
+  @keyframes badge-update {
     0% {
-      transform: scale(1);
-    }
-    50% {
-      transform: scale(1.1);
+      transform: scale(0.95);
     }
     100% {
       transform: scale(1);

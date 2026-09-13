@@ -80,7 +80,9 @@
             class={cn(
               emphasis === 'prominent'
                 ? 'type-title font-semibold text-foreground'
-                : 'type-body font-normal',
+                : density === 'compact'
+                  ? 'type-caption font-normal'
+                  : 'type-body font-normal',
               emphasis === 'routine' && 'text-muted-foreground',
             )}
           >
@@ -90,7 +92,11 @@
         {#if description}
           <div
             data-slot="empty-state-description"
-            class={cn(title ? 'mt-1 type-caption' : 'type-body', 'text-muted-foreground')}
+            class={cn(
+              title && 'mt-1',
+              title || density === 'compact' ? 'type-caption' : 'type-body',
+              'text-muted-foreground',
+            )}
           >
             {@render description()}
           </div>

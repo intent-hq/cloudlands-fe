@@ -154,7 +154,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
             <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
               <div class="absolute bg-selected" tokens=["--radius-row"]>
             <div>
-              <div aria-selected="false" class="focus-visible:-outline-offset-1 group/collection-row min-w-0 relative rounded-(--radius-row) z-10" data-list-index="0" data-slot="list-view-item" role="option" tabindex="0">
+              <div aria-selected="false" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="0" data-slot="list-view-item" role="option" tabindex="0">
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
@@ -182,7 +182,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                                 <span aria-hidden="true">
                                   "•••"
-              <div aria-selected="true" class="focus-visible:-outline-offset-1 group/collection-row min-w-0 relative rounded-(--radius-row) z-10" data-list-index="1" data-slot="list-view-item" role="option" tabindex="-1">
+              <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="1" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
@@ -210,7 +210,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                                 <span aria-hidden="true">
                                   "•••"
-              <div aria-selected="true" class="focus-visible:-outline-offset-1 group/collection-row min-w-0 relative rounded-(--radius-row) z-10" data-list-index="2" data-slot="list-view-item" role="option" tabindex="-1">
+              <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="2" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
@@ -248,7 +248,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
             <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
               <div class="absolute bg-selected" tokens=["--radius-row"]>
             <div>
-              <div aria-selected="false" class="focus-visible:-outline-offset-1 group/collection-row min-w-0 relative rounded-(--radius-row) z-10" data-list-index="0" data-slot="list-view-item" role="option" tabindex="0">
+              <div aria-selected="false" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="0" data-slot="list-view-item" role="option" tabindex="0">
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
@@ -276,7 +276,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                                 <span aria-hidden="true">
                                   "•••"
-              <div aria-selected="true" class="focus-visible:-outline-offset-1 group/collection-row min-w-0 relative rounded-(--radius-row) z-10" data-list-index="1" data-slot="list-view-item" role="option" tabindex="-1">
+              <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="1" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
@@ -304,7 +304,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                                 <span aria-hidden="true">
                                   "•••"
-              <div aria-selected="true" class="focus-visible:-outline-offset-1 group/collection-row min-w-0 relative rounded-(--radius-row) z-10" data-list-index="2" data-slot="list-view-item" role="option" tabindex="-1">
+              <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="2" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
@@ -342,7 +342,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
             <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
               <div class="absolute bg-selected" tokens=["--radius-row"]>
             <div>
-              <div aria-selected="false" class="focus-visible:-outline-offset-1 group/collection-row min-w-0 relative rounded-(--radius-row) z-10" data-list-index="0" data-slot="list-view-item" role="option" tabindex="0">
+              <div aria-selected="false" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="0" data-slot="list-view-item" role="option" tabindex="0">
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
@@ -370,7 +370,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                                 <span aria-hidden="true">
                                   "•••"
-              <div aria-selected="true" class="focus-visible:-outline-offset-1 group/collection-row min-w-0 relative rounded-(--radius-row) z-10" data-list-index="1" data-slot="list-view-item" role="option" tabindex="-1">
+              <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="1" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
@@ -398,7 +398,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                                 <span aria-hidden="true">
                                   "•••"
-              <div aria-selected="true" class="focus-visible:-outline-offset-1 group/collection-row min-w-0 relative rounded-(--radius-row) z-10" data-list-index="2" data-slot="list-view-item" role="option" tabindex="-1">
+              <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="2" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
@@ -436,7 +436,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
             <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
               <div class="absolute bg-selected" tokens=["--radius-row"]>
             <div>
-              <div aria-selected="false" class="focus-visible:-outline-offset-1 group/collection-row min-w-0 relative rounded-(--radius-row) z-10" data-list-index="0" data-slot="list-view-item" role="option" tabindex="0">
+              <div aria-selected="false" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="0" data-slot="list-view-item" role="option" tabindex="0">
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
@@ -464,7 +464,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                                 <span aria-hidden="true">
                                   "•••"
-              <div aria-selected="true" class="focus-visible:-outline-offset-1 group/collection-row min-w-0 relative rounded-(--radius-row) z-10" data-list-index="1" data-slot="list-view-item" role="option" tabindex="-1">
+              <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="1" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
@@ -492,7 +492,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                                 <span aria-hidden="true">
                                   "•••"
-              <div aria-selected="true" class="focus-visible:-outline-offset-1 group/collection-row min-w-0 relative rounded-(--radius-row) z-10" data-list-index="2" data-slot="list-view-item" role="option" tabindex="-1">
+              <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="2" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
@@ -530,7 +530,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
             <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
               <div class="absolute bg-selected" tokens=["--radius-row"]>
             <div>
-              <div aria-selected="false" class="focus-visible:-outline-offset-1 group/collection-row min-w-0 relative rounded-(--radius-row) z-10" data-list-index="0" data-slot="list-view-item" role="option" tabindex="0">
+              <div aria-selected="false" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="0" data-slot="list-view-item" role="option" tabindex="0">
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
@@ -558,7 +558,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                                 <span aria-hidden="true">
                                   "•••"
-              <div aria-selected="true" class="focus-visible:-outline-offset-1 group/collection-row min-w-0 relative rounded-(--radius-row) z-10" data-list-index="1" data-slot="list-view-item" role="option" tabindex="-1">
+              <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="1" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
@@ -586,7 +586,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                                 <span aria-hidden="true">
                                   "•••"
-              <div aria-selected="true" class="focus-visible:-outline-offset-1 group/collection-row min-w-0 relative rounded-(--radius-row) z-10" data-list-index="2" data-slot="list-view-item" role="option" tabindex="-1">
+              <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="2" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
@@ -624,7 +624,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
             <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
               <div class="absolute bg-selected" tokens=["--radius-row"]>
             <div>
-              <div aria-selected="false" class="focus-visible:-outline-offset-1 group/collection-row min-w-0 relative rounded-(--radius-row) z-10" data-list-index="0" data-slot="list-view-item" role="option" tabindex="0">
+              <div aria-selected="false" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="0" data-slot="list-view-item" role="option" tabindex="0">
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
@@ -652,7 +652,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                                 <span aria-hidden="true">
                                   "•••"
-              <div aria-selected="true" class="focus-visible:-outline-offset-1 group/collection-row min-w-0 relative rounded-(--radius-row) z-10" data-list-index="1" data-slot="list-view-item" role="option" tabindex="-1">
+              <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="1" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
@@ -680,7 +680,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                                 <span aria-hidden="true">
                                   "•••"
-              <div aria-selected="true" class="focus-visible:-outline-offset-1 group/collection-row min-w-0 relative rounded-(--radius-row) z-10" data-list-index="2" data-slot="list-view-item" role="option" tabindex="-1">
+              <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="2" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
@@ -718,7 +718,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
             <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
               <div class="absolute bg-selected" tokens=["--radius-row"]>
             <div>
-              <div aria-selected="false" class="focus-visible:-outline-offset-1 group/collection-row min-w-0 relative rounded-(--radius-row) z-10" data-list-index="0" data-slot="list-view-item" role="option" tabindex="0">
+              <div aria-selected="false" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="0" data-slot="list-view-item" role="option" tabindex="0">
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
@@ -746,7 +746,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                                 <span aria-hidden="true">
                                   "•••"
-              <div aria-selected="true" class="focus-visible:-outline-offset-1 group/collection-row min-w-0 relative rounded-(--radius-row) z-10" data-list-index="1" data-slot="list-view-item" role="option" tabindex="-1">
+              <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="1" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
@@ -774,7 +774,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                                 <span aria-hidden="true">
                                   "•••"
-              <div aria-selected="true" class="focus-visible:-outline-offset-1 group/collection-row min-w-0 relative rounded-(--radius-row) z-10" data-list-index="2" data-slot="list-view-item" role="option" tabindex="-1">
+              <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="2" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
@@ -812,7 +812,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
             <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
               <div class="absolute bg-selected" tokens=["--radius-row"]>
             <div>
-              <div aria-selected="false" class="focus-visible:-outline-offset-1 group/collection-row min-w-0 relative rounded-(--radius-row) z-10" data-list-index="0" data-slot="list-view-item" role="option" tabindex="0">
+              <div aria-selected="false" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="0" data-slot="list-view-item" role="option" tabindex="0">
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
@@ -840,7 +840,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                                 <span aria-hidden="true">
                                   "•••"
-              <div aria-selected="true" class="focus-visible:-outline-offset-1 group/collection-row min-w-0 relative rounded-(--radius-row) z-10" data-list-index="1" data-slot="list-view-item" role="option" tabindex="-1">
+              <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="1" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
@@ -868,7 +868,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                                 <span aria-hidden="true">
                                   "•••"
-              <div aria-selected="true" class="focus-visible:-outline-offset-1 group/collection-row min-w-0 relative rounded-(--radius-row) z-10" data-list-index="2" data-slot="list-view-item" role="option" tabindex="-1">
+              <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="2" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
@@ -906,21 +906,26 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
             <div class="break-words font-semibold leading-tight min-w-0 text-foreground type-title" data-slot="card-title">
               "Workspace activity"
           <div class="min-w-0 p-0 type-body" data-flush="true" data-slot="card-content">
-            <div class="flex gap-3 items-center min-h-12 min-w-0 px-4 py-2.5" data-density="default" data-inset="card" data-slot="list-row">
-              <div class="flex-1 min-w-0">
-                <div class="flex gap-2 items-baseline min-w-0">
-                  <div class="font-medium min-w-0 text-foreground text-sm truncate">
-                    "Active workspace"
+            <div class="min-w-0 overflow-auto" data-slot="list-view" role="listbox">
+              <div class="min-w-0 relative">
+                <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
+                <div>
+                  <div aria-selected="false" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="0" data-slot="list-view-item" role="option" tabindex="0">
+                    <div class="flex gap-3 items-center min-h-12 min-w-0 mx-2 px-2 py-2.5" data-density="default" data-inset="card" data-slot="list-row">
+                      <div class="flex-1 min-w-0">
+                        <div class="flex gap-2 items-baseline min-w-0">
+                          <div class="font-medium min-w-0 text-foreground text-sm truncate">
+                            "Active workspace"
             <section class="border-border border-t flex items-center justify-start min-h-28 px-4 py-6 text-center" data-density="compact" data-emphasis="routine" data-inset="card" data-severity="routine" data-slot="empty-state">
               <div class="flex flex-col gap-3 max-w-none text-left w-full">
                 <div>
-                  <div class="text-muted-foreground type-body" data-slot="empty-state-description">
+                  <div class="text-muted-foreground type-caption" data-slot="empty-state-description">
                     "No archived workspaces yet."
       <section data-catalog-rendered-state="empty">
         <section class="flex h-48 items-center justify-center min-h-28 px-4 py-6 text-center" data-density="compact" data-emphasis="routine" data-severity="routine" data-slot="empty-state" data-state-kind="empty">
           <div class="flex flex-col gap-3 max-w-md w-full">
             <div>
-              <div class="text-muted-foreground type-body" data-slot="empty-state-description">
+              <div class="text-muted-foreground type-caption" data-slot="empty-state-description">
                 "No items"
       <section data-catalog-rendered-state="loading">
         <div aria-label="Loading" class="flex flex-col gap-(--state-list-row-gap) h-48 px-(--state-list-inline-inset)" data-density="default" data-recipe="list" data-slot="loading-state" role="status">
@@ -931,7 +936,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
         <section class="flex h-48 items-center justify-center min-h-28 px-4 py-6 text-center" data-density="compact" data-emphasis="routine" data-severity="routine" data-slot="empty-state" data-state-kind="error" role="alert">
           <div class="flex flex-col gap-3 max-w-md w-full">
             <div>
-              <div class="text-muted-foreground type-body" data-slot="empty-state-description">
+              <div class="text-muted-foreground type-caption" data-slot="empty-state-description">
                 "Something went wrong"
       <section data-catalog-rendered-state="sectioned">
         <div aria-label="Test collection" aria-multiselectable="true" class="min-w-0 overflow-auto" data-slot="list-view" role="listbox">
@@ -939,7 +944,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
             <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
               <div class="absolute bg-selected" tokens=["--radius-row"]>
             <div>
-              <div aria-selected="false" class="focus-visible:-outline-offset-1 group/collection-row min-w-0 relative rounded-(--radius-row) z-10" data-list-index="0" data-slot="list-view-item" role="option" tabindex="0">
+              <div aria-selected="false" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="0" data-slot="list-view-item" role="option" tabindex="0">
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
@@ -967,7 +972,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                                 <span aria-hidden="true">
                                   "•••"
-              <div aria-selected="true" class="focus-visible:-outline-offset-1 group/collection-row min-w-0 relative rounded-(--radius-row) z-10" data-list-index="1" data-slot="list-view-item" role="option" tabindex="-1">
+              <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="1" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
@@ -995,7 +1000,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                                 <span aria-hidden="true">
                                   "•••"
-              <div aria-selected="true" class="focus-visible:-outline-offset-1 group/collection-row min-w-0 relative rounded-(--radius-row) z-10" data-list-index="2" data-slot="list-view-item" role="option" tabindex="-1">
+              <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="2" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
@@ -1033,7 +1038,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
             <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
               <div class="absolute bg-selected" tokens=["--radius-row"]>
             <div>
-              <div aria-selected="false" class="focus-visible:-outline-offset-1 group/collection-row min-w-0 relative rounded-(--radius-row) z-10" data-list-index="0" data-slot="list-view-item" role="option" tabindex="0">
+              <div aria-selected="false" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="0" data-slot="list-view-item" role="option" tabindex="0">
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
@@ -1061,7 +1066,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                                 <span aria-hidden="true">
                                   "•••"
-              <div aria-selected="true" class="focus-visible:-outline-offset-1 group/collection-row min-w-0 relative rounded-(--radius-row) z-10" data-list-index="1" data-slot="list-view-item" role="option" tabindex="-1">
+              <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="1" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
@@ -1089,7 +1094,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                                 <span aria-hidden="true">
                                   "•••"
-              <div aria-selected="true" class="focus-visible:-outline-offset-1 group/collection-row min-w-0 relative rounded-(--radius-row) z-10" data-list-index="2" data-slot="list-view-item" role="option" tabindex="-1">
+              <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="2" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
@@ -1127,7 +1132,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
             <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
               <div class="absolute bg-selected" tokens=["--radius-row"]>
             <div>
-              <div aria-selected="false" class="focus-visible:-outline-offset-1 group/collection-row min-w-0 relative rounded-(--radius-row) z-10" data-list-index="0" data-slot="list-view-item" role="option" tabindex="0">
+              <div aria-selected="false" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="0" data-slot="list-view-item" role="option" tabindex="0">
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
@@ -1155,7 +1160,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                                 <span aria-hidden="true">
                                   "•••"
-              <div aria-selected="true" class="focus-visible:-outline-offset-1 group/collection-row min-w-0 relative rounded-(--radius-row) z-10" data-list-index="1" data-slot="list-view-item" role="option" tabindex="-1">
+              <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="1" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
@@ -1183,7 +1188,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                                 <span aria-hidden="true">
                                   "•••"
-              <div aria-selected="true" class="focus-visible:-outline-offset-1 group/collection-row min-w-0 relative rounded-(--radius-row) z-10" data-list-index="2" data-slot="list-view-item" role="option" tabindex="-1">
+              <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="2" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
@@ -1221,7 +1226,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
             <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
               <div class="absolute bg-selected" tokens=["--radius-row"]>
             <div>
-              <div aria-selected="false" class="focus-visible:-outline-offset-1 group/collection-row min-w-0 relative rounded-(--radius-row) z-10" data-list-index="0" data-slot="list-view-item" role="option" tabindex="0">
+              <div aria-selected="false" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="0" data-slot="list-view-item" role="option" tabindex="0">
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
@@ -1249,7 +1254,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                                 <span aria-hidden="true">
                                   "•••"
-              <div aria-selected="true" class="focus-visible:-outline-offset-1 group/collection-row min-w-0 relative rounded-(--radius-row) z-10" data-list-index="1" data-slot="list-view-item" role="option" tabindex="-1">
+              <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="1" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
@@ -1277,7 +1282,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                                 <span aria-hidden="true">
                                   "•••"
-              <div aria-selected="true" class="focus-visible:-outline-offset-1 group/collection-row min-w-0 relative rounded-(--radius-row) z-10" data-list-index="2" data-slot="list-view-item" role="option" tabindex="-1">
+              <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="2" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
@@ -1315,7 +1320,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
             <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
               <div class="absolute bg-selected" tokens=["--radius-row"]>
             <div>
-              <div aria-selected="false" class="focus-visible:-outline-offset-1 group/collection-row min-w-0 relative rounded-(--radius-row) z-10" data-list-index="0" data-slot="list-view-item" role="option" tabindex="0">
+              <div aria-selected="false" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="0" data-slot="list-view-item" role="option" tabindex="0">
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
@@ -1343,7 +1348,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                                 <span aria-hidden="true">
                                   "•••"
-              <div aria-selected="true" class="focus-visible:-outline-offset-1 group/collection-row min-w-0 relative rounded-(--radius-row) z-10" data-list-index="1" data-slot="list-view-item" role="option" tabindex="-1">
+              <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="1" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
@@ -1371,7 +1376,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                                 <span aria-hidden="true">
                                   "•••"
-              <div aria-selected="true" class="focus-visible:-outline-offset-1 group/collection-row min-w-0 relative rounded-(--radius-row) z-10" data-list-index="2" data-slot="list-view-item" role="option" tabindex="-1">
+              <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="2" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
@@ -15627,7 +15632,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:modals:produ
                                                   <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
                                                     <div class="absolute bg-selected" tokens=["--radius-row"]>
                                                   <div>
-                                                    <div aria-selected="true" class="focus-visible:-outline-offset-1 group/collection-row min-w-0 relative rounded-(--radius-row) z-10" data-list-index="0" data-slot="list-view-item" role="option" tabindex="0">
+                                                    <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="0" data-slot="list-view-item" role="option" tabindex="0">
                                                       <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                                                         <div class="flex items-center justify-center shrink-0">
                                                           <span aria-hidden="true" class="bg-primary border-[1.5px] border-primary inline-flex items-center justify-center rounded-(--radius-small) shadow-(--elevation-raised) shrink-0 size-4 text-primary-foreground">
@@ -15651,7 +15656,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:modals:produ
                                                   <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
                                                     <div class="absolute bg-selected" tokens=["--radius-row"]>
                                                   <div>
-                                                    <div aria-selected="true" class="focus-visible:-outline-offset-1 group/collection-row min-w-0 relative rounded-(--radius-row) z-10" data-list-index="0" data-slot="list-view-item" role="option" tabindex="0">
+                                                    <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="0" data-slot="list-view-item" role="option" tabindex="0">
                                                       <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                                                         <div class="flex items-center justify-center shrink-0">
                                                           <span aria-hidden="true" class="bg-primary border-[1.5px] border-primary inline-flex items-center justify-center rounded-(--radius-small) shadow-(--elevation-raised) shrink-0 size-4 text-primary-foreground">
@@ -17093,7 +17098,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:screen-state
                       <section class="flex items-center justify-center min-h-28 px-4 py-6 text-center" data-density="compact" data-emphasis="routine" data-severity="routine" data-slot="empty-state">
                         <div class="flex flex-col gap-3 max-w-md w-full">
                           <div>
-                            <div class="font-normal text-muted-foreground type-body" data-slot="empty-state-title">
+                            <div class="font-normal text-muted-foreground type-caption" data-slot="empty-state-title">
                               <h3>
                                 "No workspaces yet"
                             <div class="mt-1 text-muted-foreground type-caption" data-slot="empty-state-description">

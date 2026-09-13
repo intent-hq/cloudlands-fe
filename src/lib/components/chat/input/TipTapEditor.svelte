@@ -1761,10 +1761,6 @@
       opacity: 0.15;
       transform: translateY(2px) scale(0.98);
     }
-    55% {
-      opacity: 0.75;
-      transform: translateY(0) scale(1.03);
-    }
     100% {
       opacity: 0.4;
       transform: translateY(0) scale(1);

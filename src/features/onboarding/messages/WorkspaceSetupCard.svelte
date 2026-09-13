@@ -524,12 +524,9 @@
 </div>
 
 <style>
-  @keyframes celebrate-bounce {
+  @keyframes celebrate-settle {
     0% {
-      transform: scale(1);
-    }
-    50% {
-      transform: scale(1.005);
+      transform: scale(0.995);
     }
     100% {
       transform: scale(1);
@@ -538,10 +535,7 @@
 
   @keyframes celebrate-glow {
     0% {
-      box-shadow: 0 0 0 0 hsl(var(--primary) / 0.15);
-    }
-    40% {
-      box-shadow: 0 0 16px 2px hsl(var(--primary) / 0.12);
+      box-shadow: 0 0 16px 2px hsl(var(--primary) / 0.15);
     }
     100% {
       box-shadow: 0 0 0 0 hsl(var(--primary) / 0);
@@ -550,7 +544,7 @@
 
   :global(.setup-card-celebrate) {
     animation:
-      celebrate-bounce 0.3s cubic-bezier(0.34, 1.56, 0.64, 1),
+      celebrate-settle var(--spring-slow) var(--ease-spring-slow),
       celebrate-glow 1.2s ease-out;
   }
 </style>

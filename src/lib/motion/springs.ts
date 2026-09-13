@@ -24,7 +24,7 @@ export interface SpringTier extends Required<SpringOptions> {
 
 /**
  * Shared Svelte Spring options. Pass a tier directly to `new Spring(value, tier)`.
- * Fast and moderate are critically damped; slow has a small intentional overshoot.
+ * Every tier is critically damped and approaches its resting target without overshoot.
  */
 export const spring = {
   fast: {
@@ -43,7 +43,7 @@ export const spring = {
   },
   slow: {
     stiffness: 0.25,
-    damping: 0.65,
+    damping: 0.75,
     precision: 0.001,
     settleMs: 240,
     exit: { duration: 160, easing: cubicOut },

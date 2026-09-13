@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/experimental-ct-svelte';
 import CollectionHarness from './CollectionHarness.svelte';
+import CardInsetContractHarness from './CardInsetContractHarness.svelte';
 import InterruptedAgentsModal from '../../modals/InterruptedAgentsModal.svelte';
 
 for (const key of ['Enter', 'Space']) {
@@ -82,4 +83,38 @@ test('selectable modal rows toggle after pointer hover without reactive loops', 
   await option.press('Enter');
   await expect(option).toHaveAttribute('aria-selected', 'false');
   expect(errors).toEqual([]);
+});
+
+test('card row hover and selection keep a gutter while text stays aligned', async ({
+  mount,
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const component = await mount(CardInsetContractHarness);
+  const row = component.getByRole('option');
+  const card = component.locator('[data-slot="card-content"]');
+  const assertGutter = async (selector: string) => {
+    await expect
+      .poll(async () => {
+        const outer = await card.boundingBox();
+        const highlight = await component.locator(selector).boundingBox();
+        if (!outer || !highlight) return null;
+        return [highlight.x - outer.x, outer.x + outer.width - highlight.x - highlight.width];
+      })
+      .toEqual([8, 8]);
+    await expect(component.locator(selector)).toHaveCSS('border-radius', '8px');
+  };
+  await row.hover();
+  await assertGutter('.bg-hover');
+  await row.click();
+  await expect(row).toHaveAttribute('aria-selected', 'true');
+  await assertGutter('.bg-selected');
+  const title = await component.locator('[data-slot="card-title"]').boundingBox();
+  const text = await row.getByText('Active workspace').boundingBox();
+  const empty = component.locator('[data-slot="empty-state-description"]');
+  const emptyBox = await empty.boundingBox();
+  expect(title).not.toBeNull();
+  expect(text?.x).toBe(title?.x);
+  expect(emptyBox?.x).toBe(title?.x);
+  await expect(empty).toHaveCSS('font-size', '13px');
 });

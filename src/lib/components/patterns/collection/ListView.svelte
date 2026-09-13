@@ -271,7 +271,7 @@
             data-slot="list-view-item"
             data-list-index={index}
             data-highlighted={hover?.activeIndex === index || undefined}
-            class="group/collection-row relative z-10 min-w-0 rounded-(--radius-row) focus-visible:-outline-offset-1"
+            class="group/collection-row relative z-10 min-w-0 rounded-(--radius-row) focus-visible:-outline-offset-1 has-[>[data-inset=card]]:mx-2 [&>[data-inset=card]]:mx-0"
             role={selectable ? 'option' : 'listitem'}
             aria-selected={selectable ? selectedSet.has(key) : undefined}
             tabindex={index === activeIndex ? 0 : -1}

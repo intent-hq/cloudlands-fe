@@ -9,6 +9,7 @@ export const cardMetadata = parseUiComponentMetadata({
   exports: [
     'Action',
     'CARD_CONTENT_INSET_CLASS',
+    'CARD_ROW_GUTTER_CLASS',
     'Card',
     'CardAction',
     'CardContent',
