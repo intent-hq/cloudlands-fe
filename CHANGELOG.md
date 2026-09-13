@@ -4,6 +4,20 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.155.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.154.0...v2.155.0) (2026-09-13)
+
+
+### 🚀 Features
+
+* **changes:** open a root-scoped diff from secondary-root changed files ([#2428](https://github.com/intent-hq/cloudlands-fe/issues/2428)) ([53f287b](https://github.com/intent-hq/cloudlands-fe/commit/53f287be8a1e37db5ed49046e4f780c7f2e79eed))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.53 ([#2431](https://github.com/intent-hq/cloudlands-fe/issues/2431)) ([63b8c96](https://github.com/intent-hq/cloudlands-fe/commit/63b8c9640ac36fee613d185274c22fb30f8124b2))
+* **chat:** settle stale streaming rows when a re-subscribe snapshot is applied ([#2425](https://github.com/intent-hq/cloudlands-fe/issues/2425)) ([d8c3af6](https://github.com/intent-hq/cloudlands-fe/commit/d8c3af647ecb180371aae83aadf10871e6dc9ad6))
+* fail gates fast on unsupported Node ([#2423](https://github.com/intent-hq/cloudlands-fe/issues/2423)) ([455c6dc](https://github.com/intent-hq/cloudlands-fe/commit/455c6dc527258f3ec0ce7c32aad79cc46112d75c))
+
 ## [2.154.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.153.0...v2.154.0) (2026-09-13)
 
 
