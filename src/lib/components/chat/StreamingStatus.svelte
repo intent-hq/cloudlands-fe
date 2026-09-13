@@ -65,6 +65,21 @@
       failedModel: string;
       nextAvailableModel: string;
     } | null;
+    /**
+     * Provider usage-limit recovery (#4455): set when the daemon reported
+     * `errorCode: "quota-exceeded"` for the failed turn. `providerId` is the
+     * provider that ran out (already excluded from `quotaRetryProviders`).
+     * Retrying the same provider cannot succeed, so the banner offers the
+     * available alternatives instead of a bare "Try again".
+     */
+    quotaExceeded?: { providerId: string; displayName?: string } | null;
+    /**
+     * Alternative providers offerable for a quota retry — enabled, installed
+     * and authenticated, minus the exhausted one. Empty means no alternative
+     * is usable, so the banner falls back to the plain error surface rather
+     * than dangling an action that cannot work.
+     */
+    quotaRetryProviders?: Array<{ id: string; displayName: string }>;
     /** Transient lifecycle status events from the backend */
     statusEvents?: Array<{
       phase: string;
@@ -80,6 +95,11 @@
     onRetry?: () => void;
     /** Callback to retry with a specific model */
     onRetryWithModel?: (model: string) => void;
+    /**
+     * Callback to retry the failed turn on a different provider (#4455).
+     * Switches the live session to `providerId` and redrives the turn.
+     */
+    onRetryWithProvider?: (providerId: string) => void;
     /** Callback to stop streaming */
     onStop?: () => void;
     /** Callback to cancel the stalled turn and re-send the last input (monorepo#3402) */
@@ -103,12 +123,15 @@
     failedAt = null,
     authGuidance = null,
     modelUnavailable = null,
+    quotaExceeded = null,
+    quotaRetryProviders = [],
     statusEvents = [],
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     streamingStartTime = null,
     hasPendingPermission = false,
     onRetry,
     onRetryWithModel,
+    onRetryWithProvider,
     onStop,
     onStalledRetry,
     seed,
@@ -116,13 +139,28 @@
   }: Props = $props();
 
   // Determine current status
-  type Status = 'normal' | 'error' | 'model-unavailable';
+  type Status = 'normal' | 'error' | 'model-unavailable' | 'quota-exceeded';
 
   let status: Status = $derived.by(() => {
     if (modelUnavailable) return 'model-unavailable';
+    // Only claim the quota surface when there is somewhere to go: with no
+    // usable alternative provider the offer would be a dead end, so fall
+    // through to the ordinary error banner and its "Try again".
+    if (quotaExceeded && quotaRetryProviders.length > 0) return 'quota-exceeded';
     if (error) return 'error';
     return 'normal';
   });
+
+  /**
+   * Display name of the exhausted provider. It cannot be looked up in
+   * `quotaRetryProviders` — that list deliberately EXCLUDES the exhausted
+   * provider — so the parent supplies the catalog display name alongside the
+   * id. The raw id is the fallback so a provider the renderer has no catalog
+   * row for still names itself rather than rendering an empty code span.
+   */
+  let quotaProviderLabel = $derived(
+    quotaExceeded ? (quotaExceeded.displayName ?? quotaExceeded.providerId) : '',
+  );
 
   // Should we show at all?
   // Don't show thinking indicator when waiting for permission - the permission UI takes over.
@@ -282,7 +320,7 @@
       class={cn(
         'type-caption flex flex-col gap-0 py-2 pr-1',
         status === 'error' && 'mt-2',
-        status === 'model-unavailable' &&
+        (status === 'model-unavailable' || status === 'quota-exceeded') &&
           'rounded-md border border-warning/20 bg-warning/5 pl-2 pr-3',
         className,
       )}
@@ -299,6 +337,13 @@
                 >{modelUnavailable.failedModel}</code
               >
               {m.chat_streamingStatus_modelUnavailable_after()}
+            </span>
+          {:else if status === 'quota-exceeded' && quotaExceeded}
+            <Fa icon={faExclamationTriangle} class="shrink-0 text-warning/70" />
+            <span class="text-warning" data-testid="error-quota-exceeded">
+              {m.chat_streamingStatus_quotaExceeded_before()}
+              <code class="px-1 py-0.5 bg-muted rounded text-ui">{quotaProviderLabel}</code>
+              {m.chat_streamingStatus_quotaExceeded_after()}
             </span>
           {:else if status === 'error' && errorDisplay}
             <div class="flex min-w-0 flex-1 flex-col gap-0.5">
@@ -376,7 +421,20 @@
         </div>
 
         <div class="flex items-center gap-1">
-          {#if status === 'model-unavailable' && modelUnavailable && onRetryWithModel}
+          {#if status === 'quota-exceeded' && onRetryWithProvider}
+            {#each quotaRetryProviders as alt (alt.id)}
+              <Button
+                variant="default"
+                size="sm"
+                onclick={() => onRetryWithProvider(alt.id)}
+                data-testid="retry-with-provider"
+                class="type-caption h-7 gap-1.5 px-2"
+              >
+                <Fa icon={faRotateRight} class="size-3" />
+                {m.chat_streamingStatus_retryOnProvider_label({ provider: alt.displayName })}
+              </Button>
+            {/each}
+          {:else if status === 'model-unavailable' && modelUnavailable && onRetryWithModel}
             <Button
               variant="default"
               size="sm"

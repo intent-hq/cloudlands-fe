@@ -8,6 +8,7 @@ import type {
   LastAttemptedMessage,
   LiveStreamPhase,
   ModelUnavailableInfo,
+  QuotaExceededInfo,
   QueuedRetryRecord,
   SendMessagePayload,
   InitializeChatOptions,
@@ -51,6 +52,7 @@ export const emptyChatAgentState: ChatAgentState = {
   lastAttemptedMessage: null,
   queuedRetryRecords: {},
   modelUnavailable: null,
+  quotaExceeded: null,
   statusEvents: [],
   trackedWorkspaceId: null,
   isRebinding: false,
@@ -360,6 +362,7 @@ function reduceQueueProcessing(
     queuedRetryRecords: remaining,
     error: null,
     modelUnavailable: null,
+    quotaExceeded: null,
   });
 }
 
@@ -434,6 +437,7 @@ function reduceAgentStreamUpdate(
     return updateAgent(state, payload.agentId, {
       error: null,
       modelUnavailable: null,
+      quotaExceeded: null,
       lastChunkTime: timestamp,
       receivedFirstChunk: false,
       statusEvents: [],
@@ -475,6 +479,7 @@ function reduceAgentStreamUpdate(
           ? null
           : getAgent(state, payload.agentId).lastAttemptedMessage,
       modelUnavailable,
+      quotaExceeded: null,
       error: failureMessage,
     });
   }
@@ -483,6 +488,7 @@ function reduceAgentStreamUpdate(
       streamingStartTime: null,
       statusEvents: [],
       modelUnavailable: null,
+      quotaExceeded: null,
       error: getStreamFailureMessage(payload) || m.chat_state_interrupted_error(),
     });
   }
@@ -598,10 +604,22 @@ export const chatQueuedRetryRecordsCleared = createAction<[agentId: string]>(
  * failed turn's record may still be parked (its requeued entry has a new id,
  * so no drain-start event under this client's key ever promoted it).
  */
-export const chatSendFailed =
-  createAction<
-    [agentId: string, error: string, turnId?: string, failureCorrelation?: StreamFailureCorrelation]
-  >('chatState/sendFailed');
+export const chatSendFailed = createAction<
+  [
+    agentId: string,
+    error: string,
+    turnId?: string,
+    failureCorrelation?: StreamFailureCorrelation,
+    /**
+     * Present only when the daemon classified the failure as a provider
+     * usage/quota exhaustion (`errorCode: "quota-exceeded"`). Drives the
+     * retry-on-another-provider banner; absent for every other failure, so
+     * older daemons (which never send the code) simply keep today's
+     * behavior.
+     */
+    quotaExceeded?: QuotaExceededInfo,
+  ]
+>('chatState/sendFailed');
 
 /**
  * `agent:queue:processing` drain-start signal (PROTOCOL §6.5): the daemon
@@ -942,13 +960,19 @@ chatStateReducer.with(chatInitialized, (state, { payload: [agentId, data] }) =>
   }),
 );
 chatStateReducer.with(chatInitFailed, (state, { payload: [agentId, error] }) =>
-  updateAgent(state, agentId, { error, failureCorrelation: undefined, modelUnavailable: null }),
+  updateAgent(state, agentId, {
+    error,
+    failureCorrelation: undefined,
+    modelUnavailable: null,
+    quotaExceeded: null,
+  }),
 );
 chatStateReducer.with(chatSendStarted, (state, { payload: { agentId, timestamp } }) =>
   updateAgent(state, agentId, {
     error: null,
     failureCorrelation: undefined,
     modelUnavailable: null,
+    quotaExceeded: null,
     streamingStartTime: timestamp,
     lastMessageTime: timestamp,
     lastChunkTime: null,
@@ -1019,7 +1043,7 @@ chatStateReducer.with(chatQueueProcessingReceived, (state, { payload: [agentId, 
 );
 chatStateReducer.with(
   chatSendFailed,
-  (state, { payload: [agentId, error, turnId, failureCorrelation] }) => {
+  (state, { payload: [agentId, error, turnId, failureCorrelation, quotaExceeded] }) => {
     // monorepo#1057: when the failure names a turn whose record is still
     // PARKED (e.g. an agent.retry redrive that failed again — its requeued
     // entry has a new id, so no processing event promoted it under this
@@ -1036,6 +1060,7 @@ chatStateReducer.with(
         error,
         failureCorrelation,
         modelUnavailable: null,
+        quotaExceeded: quotaExceeded ?? null,
         lastAttemptedMessage: agent.queuedRetryRecords[key].record,
         queuedRetryRecords: remaining,
       });
@@ -1045,6 +1070,7 @@ chatStateReducer.with(
       error,
       failureCorrelation,
       modelUnavailable: null,
+      quotaExceeded: quotaExceeded ?? null,
     });
   },
 );
@@ -1056,8 +1082,15 @@ chatStateReducer.with(chatInterrupted, (state, { payload: [agentId] }) =>
 chatStateReducer.with(chatModelUnavailableCleared, (state, { payload: [agentId] }) =>
   updateAgent(state, agentId, { modelUnavailable: null }),
 );
+// `quotaExceeded` (#4455) only qualifies a non-null `error` — it is set by the
+// same chatSendFailed that sets the error — so every recovery path that clears
+// the error (enqueue-success in chat-send-saga, the daemon-side redrive status
+// edge in the events bridge, the agent.retry toast) must drop it too, or
+// StreamingStatus keeps offering the provider buttons over the replacement
+// turn. Failed-turn idle reconciliation never dispatches this, so the banner
+// still survives a reload/reconcile like `modelUnavailable` does.
 chatStateReducer.with(chatErrorCleared, (state, { payload: [agentId] }) =>
-  updateAgent(state, agentId, { error: null, failureCorrelation: undefined }),
+  updateAgent(state, agentId, { error: null, failureCorrelation: undefined, quotaExceeded: null }),
 );
 chatStateReducer.with(chatStopInitiated, (state, { payload: [agentId] }) =>
   updateAgent(state, agentId, { isInterrupting: true }),

@@ -1541,7 +1541,21 @@ function handleAgentFailedStream(event: WorkspaceEvent, workspaceId: string): vo
     if (!hasParent) {
       recordAgentFailure({ agentId, workspaceId, error });
     }
-    appStore.dispatch(chatSendFailed(agentId, error, turnId, failureCorrelation));
+    // Structured quota classification (`errorCode: "quota-exceeded"`): the
+    // daemon tells us the turn died on a provider usage limit rather than
+    // leaving the FE to regex the rendered prose the way the auth banner
+    // has to. Both fields must be present and non-empty to count — a
+    // pre-#4455 daemon sends neither, which lands as `undefined` and keeps
+    // exactly today's behavior.
+    const errorCode = data?.errorCode;
+    const quotaProviderId = data?.providerId;
+    const quotaExceeded =
+      errorCode === 'quota-exceeded' &&
+      typeof quotaProviderId === 'string' &&
+      quotaProviderId.length > 0
+        ? { providerId: quotaProviderId }
+        : undefined;
+    appStore.dispatch(chatSendFailed(agentId, error, turnId, failureCorrelation, quotaExceeded));
     reportStreamLifecycle({
       stage: 'bridge',
       event: 'agent-failed-dispatched',

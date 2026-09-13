@@ -1,6 +1,16 @@
+import { shallowEqual } from 'fast-equals';
+
 type AppStoreMockOptions = {
   state?: unknown | (() => unknown);
   dispatch?: (...args: any[]) => unknown;
+  /**
+   * When true, `emitState()` re-notifies a readable only if its selected value
+   * is no longer shallow-equal to the last value it delivered, mirroring the
+   * Themis selector stream's `skipDuplicates(shallowEqual)`. Use it when a
+   * test must prove a component anchors on the right selector: the default
+   * re-notify-everything mode masks a missing reactivity dependency.
+   */
+  dedupeEmits?: boolean;
 };
 type StoreReadableStateSource = {
   state?: unknown;
@@ -35,15 +45,25 @@ export const createStoreMockModule = <TStore extends object>(appStore: TStore) =
   store: appStore,
 });
 
-export const createAppStoreMock = ({ state, dispatch }: AppStoreMockOptions = {}) => {
+export const createAppStoreMock = ({
+  state,
+  dispatch,
+  dedupeEmits = false,
+}: AppStoreMockOptions = {}) => {
   // Live subscribers to the mock's readables; `emitState()` re-notifies them
   // all so tests can simulate a store-state change after mutating the state
   // source (e.g. clearing a seeded slice).
   const listeners = new Set<() => void>();
   const readable = <T>(getter: () => T) => ({
     subscribe: (listener: (value: T) => void) => {
-      listener(getter());
-      const notify = () => listener(getter());
+      let last = getter();
+      listener(last);
+      const notify = () => {
+        const next = getter();
+        if (dedupeEmits && shallowEqual(last, next)) return;
+        last = next;
+        listener(next);
+      };
       listeners.add(notify);
       return () => {
         listeners.delete(notify);

@@ -103,6 +103,7 @@ vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', () => ({
   selectChatLastChunkTime: testState.selector(null),
   selectChatLiveStreamPhase: testState.selector(null),
   selectChatModelUnavailable: testState.selector(null),
+  selectChatQuotaExceeded: testState.selector(null),
   selectChatReceivedFirstChunk: testState.selector(false),
   selectChatStatusEvents: testState.selector([]),
   selectChatStreamingStartTime: testState.selector(null),
@@ -155,7 +156,10 @@ vi.mock('$store/renderer/slices/specialists/specialists-selectors', () => ({
 vi.mock('$store/renderer/slices/provider-catalog/provider-catalog-selectors', () => ({
   selectEffectiveDefaultProviderId: testState.selector(''),
   selectProviderCatalogLoaded: testState.selector(false),
+  selectProviderCatalogEntries: testState.selector([] as unknown[]),
   selectProviderAuthFailureGuidance: { select: () => null },
+  selectProviderDisplayName: { select: (_state: unknown, id: string) => id },
+  selectNormalizedProviderId: { select: (_state: unknown, id: string) => id },
 }));
 
 vi.mock('../input/SimpleRichInput.svelte', async () => ({

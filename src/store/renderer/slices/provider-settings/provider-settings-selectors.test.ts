@@ -37,6 +37,7 @@ import {
   selectIsProviderEnabled,
   selectIsProviderModelAccessAllowed,
   selectModelFetchProviderIds,
+  selectQuotaRetryProviderIds,
 } from './provider-settings-selectors';
 
 const providerCatalog = providerCatalogReducer(
@@ -248,6 +249,67 @@ describe('provider-settings selectors', () => {
     it('should report the active provider as unavailable when nothing has been checked yet', () => {
       const state = mockState({}, 'auggie');
       expect(selectIsActiveProviderAvailable.select(state)).toBe(false);
+    });
+  });
+
+  describe('selectQuotaRetryProviderIds (#4455)', () => {
+    it('excludes the exhausted provider and keeps other signed-in providers', () => {
+      const state = mockState({ auggie: true, 'claude-code': true, codex: true }, 'auggie', {
+        auggie: { available: true, authenticated: true },
+        'claude-code': { available: true, authenticated: true },
+        codex: { available: true, authenticated: true },
+      });
+      const ids = selectQuotaRetryProviderIds.select(state, 'claude-code');
+      expect(ids).not.toContain('claude-code');
+      expect(ids).toEqual(expect.arrayContaining(['auggie', 'codex']));
+    });
+
+    it('excludes signed-out providers that the model-picker gate still admits', () => {
+      const state = mockState({ auggie: true, 'claude-code': true, codex: true }, 'auggie', {
+        auggie: { available: true, authenticated: true },
+        'claude-code': { available: true, authenticated: true },
+        codex: { available: true, authenticated: false },
+      });
+      expect(selectAvailableEnabledProviderIds.select(state)).toContain('codex');
+      const ids = selectQuotaRetryProviderIds.select(state, 'claude-code');
+      expect(ids).toContain('auggie');
+      expect(ids).not.toContain('codex');
+    });
+
+    it('keeps providers whose auth is unknown, matching isProviderAuthenticationReady', () => {
+      const state = mockState({ auggie: true, 'claude-code': true, codex: true }, 'auggie', {
+        auggie: { available: true },
+        'claude-code': { available: true, authenticated: true },
+        codex: { available: true },
+      });
+      expect(selectQuotaRetryProviderIds.select(state, 'claude-code')).toEqual(
+        expect.arrayContaining(['auggie', 'codex']),
+      );
+    });
+
+    it('still excludes unavailable and disabled providers', () => {
+      const state = mockState({ 'claude-code': true, codex: false }, 'auggie', {
+        auggie: { available: false, authenticated: true },
+        'claude-code': { available: true, authenticated: true },
+        codex: { available: true, authenticated: true },
+      });
+      expect(selectQuotaRetryProviderIds.select(state, 'claude-code')).toEqual([]);
+    });
+
+    it('excludes an explicitly disabled default provider that the model-picker gate still admits', () => {
+      const state = mockState({ 'claude-code': true, codex: false }, 'codex', {
+        'claude-code': { available: true, authenticated: true },
+        codex: { available: true, authenticated: true },
+      });
+      expect(selectAvailableEnabledProviderIds.select(state)).toContain('codex');
+      expect(selectQuotaRetryProviderIds.select(state, 'claude-code')).toEqual([]);
+    });
+
+    it('returns an empty list when the exhausted provider was the only option', () => {
+      const state = mockState({ 'claude-code': true }, 'claude-code', {
+        'claude-code': { available: true, authenticated: true },
+      });
+      expect(selectQuotaRetryProviderIds.select(state, 'claude-code')).toEqual([]);
     });
   });
 });
