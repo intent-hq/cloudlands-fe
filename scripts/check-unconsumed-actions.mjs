@@ -26,6 +26,29 @@ const SELF = 'scripts/check-unconsumed-actions.mjs';
 // (pattern, getContext, worker) watcher counts as an explicit consumer.
 const PATTERN_CONTEXT_WATCHERS = new Set([...CONTEXT_WATCHERS, 'takeLatestByContext']);
 const PATTERN_EFFECTS = new Set([...WILDCARD_EFFECTS, 'takeLatestByContext']);
+// Exceptions are anchored per action (`<slice file>#<action name>$`), never per
+// file, so a new dispatch in the same slice is not silently exempted. Each entry
+// names the non-syntactic consumer that observes the action (today: a predicate
+// comparing `action.type` inside an `actionChannel` filter, which the scanner
+// cannot attribute). An entry whose pattern matches no action origin at all
+// fails the gate as stale, so exceptions cannot outlive the action they cover.
+//
+// Analysis bounds — the gate is syntactic:
+// - Actions: top-level `const x = createAction(...)` / `createAsyncAction(...)`
+//   declarations in slice files (plus the derived `.success` / `.failure`
+//   stages), resolved through the same provenance resolvers as the
+//   watcher-ownership gate.
+// - Dispatches: any call of a resolved creator (`creator(...)`,
+//   `creator.success(...)`), wherever it appears.
+// - Consumers: `reducer.with(pattern, ...)` and the recognized watcher effects
+//   (`take*`, `actionChannel`, `takeLatestByContext`, ...) whose pattern is a
+//   creator, a local creator array, a `creator.type` access, or the literal
+//   type string.
+// Not covered: creators reached through aliases or re-exports the resolvers
+// do not follow, hand-built plain action objects (`{ type: 'x/y' }`), and
+// watcher wrappers such as `fork(takeLeading, pattern, worker)` — those
+// dispatch or consume without the shapes above and are neither flagged nor
+// credited.
 const UNCONSUMED_ACTION_EXCEPTIONS = [
   {
     pattern: /settings-events-slice\.ts#settingsChanged$/,
