@@ -133,6 +133,13 @@ describe('mintPlacementIdempotencyKey', () => {
     mockState.daemonHealth.stats = { protocolVersion: '9.12' };
     expect(mintPlacementIdempotencyKey()).toBeUndefined();
   });
+
+  it('reuses the retained key against a 9.13+ daemon, drops it against an older one', () => {
+    mockState.daemonHealth.stats = { protocolVersion: '9.13' };
+    expect(mintPlacementIdempotencyKey(KEY)).toBe(KEY);
+    mockState.daemonHealth.stats = { protocolVersion: '9.12' };
+    expect(mintPlacementIdempotencyKey(KEY)).toBeUndefined();
+  });
 });
 
 describe('recoverPlacementByKey', () => {
@@ -537,6 +544,10 @@ describe('placeAttachmentViaTransport — chunked upload (>25MB remote)', () => 
 });
 
 describe('placeAttachmentViaTransport — idempotencyKey (v9.13)', () => {
+  beforeEach(() => {
+    mockState.daemonHealth.stats = { protocolVersion: '9.13' };
+  });
+
   it('threads the key onto the sourcePath arm (local sidecar)', async () => {
     placeAttachmentMock.mockResolvedValueOnce(placedResult);
 
@@ -555,6 +566,7 @@ describe('placeAttachmentViaTransport — idempotencyKey (v9.13)', () => {
   });
 
   it('sends no key when none was minted (older daemon — behavior unchanged)', async () => {
+    mockState.daemonHealth.stats = { protocolVersion: '9.12' };
     placeAttachmentMock.mockResolvedValueOnce(placedResult);
 
     await placeAttachmentViaTransport('ws-1', 'notes.txt', {
@@ -566,6 +578,26 @@ describe('placeAttachmentViaTransport — idempotencyKey (v9.13)', () => {
     const [, , source] = placeAttachmentMock.mock.calls[0];
     expect(source).toEqual({ sourcePath: '/home/user/notes.txt', mimeType: 'text/plain' });
     expect('idempotencyKey' in source).toBe(false);
+  });
+
+  it('drops a key retained across a reconnect to a pre-9.13 daemon (no key sent, no lookup)', async () => {
+    // The item kept its key from a 9.13 session; the daemon connected now is older.
+    mockState.daemonHealth.stats = { protocolVersion: '9.12' };
+    placeAttachmentMock.mockRejectedValueOnce(transportLoss());
+
+    await expect(
+      placeAttachmentViaTransport('ws-1', 'notes.txt', {
+        sourcePath: '/home/user/notes.txt',
+        mimeType: 'text/plain',
+        idempotencyKey: KEY,
+      }),
+    ).rejects.toThrow('Request timed out');
+
+    expect(placeAttachmentMock).toHaveBeenCalledWith('ws-1', 'notes.txt', {
+      sourcePath: '/home/user/notes.txt',
+      mimeType: 'text/plain',
+    });
+    expect(backendRequestMock).not.toHaveBeenCalled();
   });
 
   it('passes a replayed result through untouched', async () => {
@@ -688,6 +720,7 @@ describe('placeAttachmentViaTransport — chunked upload with idempotencyKey (v9
 
   beforeEach(() => {
     mockState.daemonHealth.hostLocality = 'remote';
+    mockState.daemonHealth.stats = { protocolVersion: '9.13' };
     mockChunkedIpc(FILE_SIZE);
   });
 

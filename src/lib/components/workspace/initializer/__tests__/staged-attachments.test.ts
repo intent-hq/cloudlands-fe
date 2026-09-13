@@ -22,7 +22,13 @@ vi.mock('$store/renderer/store', async () => {
 
 import type { ContextItem } from '$lib/components/chat/input/context-api';
 import {
+  ImagePlacementError,
+  type WireImageBlock,
+} from '$lib/components/chat/input/image-attachment-placement';
+import {
+  heldImageBlocks,
   redeemStagedAttachments,
+  retainImagePlacementIdentity,
   sendHeldFirstMessage,
   type HeldFirstMessage,
 } from '../staged-attachments';
@@ -37,6 +43,8 @@ const stagedItem = (overrides: Partial<ContextItem> = {}): ContextItem => ({
   sourcePath: '/home/user/notes.txt',
   ...overrides,
 });
+
+const KEY = '3f2b6c1e-9d3a-4e7b-8a2c-5f1d0e9b7c64';
 
 const placeOk = vi.fn().mockResolvedValue({
   ok: true,
@@ -164,8 +172,6 @@ describe('redeemStagedAttachments', () => {
   });
 
   describe('idempotencyKey (v9.13)', () => {
-    const KEY = '3f2b6c1e-9d3a-4e7b-8a2c-5f1d0e9b7c64';
-
     it('mints a key on first placement, sends it, and keeps it on the placed item', async () => {
       const place = vi.fn().mockResolvedValue({
         ok: true,
@@ -316,8 +322,106 @@ describe('sendHeldFirstMessage', () => {
       failingToReferences,
     );
 
-    expect(result).toEqual({ sent: false, errorDetail: 'image-1.png (attachment too large)' });
+    expect(result).toEqual({
+      sent: false,
+      errorDetail: 'image-1.png (attachment too large)',
+      // Not a placement-identity failure: the retry resends the attempted blocks as-is.
+      imageBlocks: heldMessage().imageBlocks,
+    });
     expect(request).not.toHaveBeenCalled();
+  });
+
+  describe('image placement identity across retries (v9.13)', () => {
+    const imageItem = (id: string, data: string, overrides: Partial<ContextItem> = {}) =>
+      ({
+        id,
+        type: 'file',
+        label: `${id}.png`,
+        imageData: data,
+        imageMimeType: 'image/png',
+        ...overrides,
+      }) satisfies ContextItem;
+
+    it('hands back the placement retry blocks so the resumed send replays instead of re-placing', async () => {
+      const retryBlocks: WireImageBlock[] = [
+        { type: 'image', attachmentId: 'att-first', mimeType: 'image/png' },
+        {
+          type: 'image',
+          data: 'ZGVm',
+          mimeType: 'image/png',
+          placementIdempotencyKey: KEY,
+          placementFileName: 'image-1700000000000-2.png',
+        },
+      ];
+      const failingToReferences = vi.fn(async () => {
+        throw new ImagePlacementError('image-1700000000000-2.png (Request timed out)', retryBlocks);
+      });
+
+      const result = await sendHeldFirstMessage(
+        heldMessage({
+          imageBlocks: [
+            { type: 'image', data: 'YWJj', mimeType: 'image/png' },
+            { type: 'image', data: 'ZGVm', mimeType: 'image/png' },
+          ],
+        }),
+        [],
+        vi.fn(),
+        failingToReferences,
+      );
+
+      expect(result.sent).toBe(false);
+      expect(result.imageBlocks).toBe(retryBlocks);
+    });
+
+    it('round-trips the retained identity through the composer items (onboarding held send)', () => {
+      const items = [
+        imageItem('img-1', 'YWJj'),
+        stagedItem(),
+        imageItem('img-2', 'ZGVm'),
+        imageItem('img-3', 'Z2hp'),
+      ];
+      // First attempt: no identity yet — plain inline blocks in item order.
+      expect(heldImageBlocks(items)).toEqual([
+        { type: 'image', data: 'YWJj', mimeType: 'image/png' },
+        { type: 'image', data: 'ZGVm', mimeType: 'image/png' },
+        { type: 'image', data: 'Z2hp', mimeType: 'image/png' },
+      ]);
+
+      // The failed attempt placed img-1, failed img-2 (keyed) and img-3 (unkeyed daemon).
+      const retained = retainImagePlacementIdentity(items, [
+        { type: 'image', attachmentId: 'att-first', mimeType: 'image/png' },
+        {
+          type: 'image',
+          data: 'ZGVm',
+          mimeType: 'image/png',
+          placementIdempotencyKey: KEY,
+          placementFileName: 'image-1700000000000-2.png',
+        },
+        { type: 'image', data: 'Z2hp', mimeType: 'image/png' },
+      ]);
+
+      expect(retained[1]).toBe(items[1]);
+      expect(retained[0]).toEqual(items[0]);
+      expect(retained[2]).toEqual({
+        ...items[2],
+        placementIdempotencyKey: KEY,
+        placementFileName: 'image-1700000000000-2.png',
+      });
+      expect(retained[3]).toEqual(items[3]);
+      // The resumed send carries the identity on the same block position.
+      expect(heldImageBlocks(retained)[1]).toEqual({
+        type: 'image',
+        data: 'ZGVm',
+        mimeType: 'image/png',
+        placementIdempotencyKey: KEY,
+        placementFileName: 'image-1700000000000-2.png',
+      });
+    });
+
+    it('leaves the items untouched when the failure carried no retry blocks', () => {
+      const items = [imageItem('img-1', 'YWJj')];
+      expect(retainImagePlacementIdentity(items, undefined)).toBe(items);
+    });
   });
 
   it('omits empty imageBlocks/fileBlocks/contextReferences instead of sending empty arrays', async () => {

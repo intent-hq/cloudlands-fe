@@ -8,9 +8,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   base64DecodedBytes,
+  ImagePlacementError,
+  imageRetryBlocks,
   placeImageAttachment,
   toImageReferenceBlocks,
   type ImagePlacementApi,
+  type WireImageBlock,
 } from '../image-attachment-placement';
 
 const placedResult = (attachmentId: string, mimeType?: string) => ({
@@ -242,6 +245,52 @@ describe('placeImageAttachment — idempotencyKey (v9.13)', () => {
     expect(api.getAttachmentInfo).not.toHaveBeenCalled();
     expect(api.abortAttachmentUpload).toHaveBeenCalledWith('up-1');
   });
+
+  it('recovers through the lookup when begin says the key is already committed (lost commit reply)', async () => {
+    const bigData = btoa('abc').repeat((30 * 1024 * 1024) / 3);
+    const api = makeApi({
+      beginAttachmentUpload: vi.fn(async () => {
+        throw invalidParams(
+          `idempotencyKey "${KEY}" already committed; look it up via file.getAttachmentInfo { workspaceId, idempotencyKey }`,
+        );
+      }),
+      getAttachmentInfo: vi.fn(async () => ({
+        ...recoveredRow,
+        fileName: 'big.png',
+        size: 30 * 1024 * 1024,
+      })),
+    });
+    const result = await placeImageAttachment(
+      'ws-1',
+      'big.png',
+      { data: bigData, mimeType: 'image/png', idempotencyKey: KEY },
+      api,
+    );
+    expect(api.beginAttachmentUpload).toHaveBeenCalledTimes(1);
+    expect(api.getAttachmentInfo).toHaveBeenCalledWith({
+      workspaceId: 'ws-1',
+      idempotencyKey: KEY,
+    });
+    expect(api.sendAttachmentUploadChunk).not.toHaveBeenCalled();
+    expect(api.commitAttachmentUpload).not.toHaveBeenCalled();
+    expect(api.abortAttachmentUpload).not.toHaveBeenCalled();
+    expect(result.attachmentId).toBe('att-recovered');
+    expect(result.replayed).toBe(true);
+  });
+
+  it('rethrows other begin -32602 refusals without a lookup', async () => {
+    const bigData = btoa('abc').repeat((30 * 1024 * 1024) / 3);
+    const api = makeApi({
+      beginAttachmentUpload: vi.fn(async () => {
+        throw invalidParams('idempotencyKey already used with a different payload');
+      }),
+    });
+    await expect(
+      placeImageAttachment('ws-1', 'big.png', { data: bigData, idempotencyKey: KEY }, api),
+    ).rejects.toThrow('different payload');
+    expect(api.getAttachmentInfo).not.toHaveBeenCalled();
+    expect(api.abortAttachmentUpload).not.toHaveBeenCalled();
+  });
 });
 
 describe('toImageReferenceBlocks', () => {
@@ -313,5 +362,101 @@ describe('toImageReferenceBlocks', () => {
     );
     const [, , source] = (api.placeAttachment as ReturnType<typeof vi.fn>).mock.calls[0];
     expect('idempotencyKey' in (source as object)).toBe(false);
+  });
+
+  describe('retry identity', () => {
+    /** 9.13+ daemon: reuses a retained key, mints `fresh-N` otherwise. */
+    function keyed(overrides: Partial<ImagePlacementApi> = {}) {
+      let n = 0;
+      return makeApi({
+        mintIdempotencyKey: vi.fn((existing?: string) => existing ?? `fresh-${++n}`),
+        ...overrides,
+      });
+    }
+
+    it('rejects with the retry blocks: references for placed images, keyed inline blocks for failed ones', async () => {
+      const api = keyed({
+        placeAttachment: vi.fn(async (_ws: string, fileName: string) => {
+          if (fileName.endsWith('-2.png')) throw transportLoss();
+          return placedResult('att-first', 'image/png');
+        }),
+      });
+      const blocks: WireImageBlock[] = [
+        { type: 'image', data: btoa('abc'), mimeType: 'image/png' },
+        { type: 'image', data: btoa('def'), mimeType: 'image/png' },
+        { type: 'image', attachmentId: 'att-existing', mimeType: 'image/webp' },
+      ];
+
+      const error: unknown = await toImageReferenceBlocks('ws-1', blocks, api).catch((e) => e);
+
+      expect(error).toBeInstanceOf(ImagePlacementError);
+      const retry = (error as ImagePlacementError).retryBlocks;
+      const [, requestedName] = (api.placeAttachment as ReturnType<typeof vi.fn>).mock.calls[1];
+      expect(retry).toEqual([
+        { type: 'image', attachmentId: 'att-first', mimeType: 'image/png' },
+        {
+          type: 'image',
+          data: btoa('def'),
+          mimeType: 'image/png',
+          placementIdempotencyKey: 'fresh-2',
+          placementFileName: requestedName,
+        },
+        { type: 'image', attachmentId: 'att-existing', mimeType: 'image/webp' },
+      ]);
+      expect(imageRetryBlocks(error, blocks)).toBe(retry);
+    });
+
+    it('resends a tagged block with its retained key and file name (exact wire shape), placing nothing twice', async () => {
+      const api = keyed();
+      await toImageReferenceBlocks(
+        'ws-1',
+        [
+          { type: 'image', attachmentId: 'att-first', mimeType: 'image/png' },
+          {
+            type: 'image',
+            data: btoa('def'),
+            mimeType: 'image/png',
+            placementIdempotencyKey: KEY,
+            placementFileName: 'image-1700000000000-2.png',
+          },
+        ],
+        api,
+      );
+      expect(api.mintIdempotencyKey).toHaveBeenCalledWith(KEY);
+      expect(api.placeAttachment).toHaveBeenCalledTimes(1);
+      expect(api.placeAttachment).toHaveBeenCalledWith('ws-1', 'image-1700000000000-2.png', {
+        data: btoa('def'),
+        mimeType: 'image/png',
+        idempotencyKey: KEY,
+      });
+    });
+
+    it('drops a retained key when the daemon connected now predates 9.13', async () => {
+      const api = makeApi();
+      await toImageReferenceBlocks(
+        'ws-1',
+        [
+          {
+            type: 'image',
+            data: btoa('def'),
+            mimeType: 'image/png',
+            placementIdempotencyKey: KEY,
+            placementFileName: 'image-1700000000000-1.png',
+          },
+        ],
+        api,
+      );
+      expect(api.placeAttachment).toHaveBeenCalledWith('ws-1', 'image-1700000000000-1.png', {
+        data: btoa('def'),
+        mimeType: 'image/png',
+      });
+    });
+
+    it('imageRetryBlocks falls back to the attempted blocks for any other error', () => {
+      const blocks: WireImageBlock[] = [
+        { type: 'image', data: btoa('abc'), mimeType: 'image/png' },
+      ];
+      expect(imageRetryBlocks(new Error('boom'), blocks)).toBe(blocks);
+    });
   });
 });

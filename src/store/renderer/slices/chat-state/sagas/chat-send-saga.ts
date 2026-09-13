@@ -16,6 +16,7 @@ import {
 } from '$features/agent/agent-queue-read-service';
 import { buildRecordedAttempt } from '$features/agent/utils/build-recorded-attempt';
 import {
+  imageRetryBlocks,
   toImageReferenceBlocks,
   type WireImageBlock,
 } from '$lib/components/chat/input/image-attachment-placement';
@@ -205,20 +206,26 @@ function* dispatchToLifecycle(
   // After success the recorded attempt carries the reference blocks (no
   // MB-scale base64 parked in Redux; a retry passes references through
   // untouched). Placement failure fails the send with the per-image reason
-  // (never a silent drop) and records the ORIGINAL inline blocks so "Try
-  // again" re-runs placement.
+  // (never a silent drop) and records the retry blocks — references for the
+  // images that did place, the inline blocks tagged with their placement
+  // identity for the rest — so "Try again" replays instead of re-placing.
   if ((options.imageBlocks?.length ?? 0) > 0 && wsId !== CHIEF_WORKSPACE_ID) {
+    const imageBlocks = options.imageBlocks as WireImageBlock[];
     try {
       options = {
         ...options,
-        imageBlocks: yield* call(
-          toImageReferenceBlocks,
-          wsId,
-          options.imageBlocks as WireImageBlock[],
-        ),
+        imageBlocks: yield* call(toImageReferenceBlocks, wsId, imageBlocks),
       };
     } catch (error) {
-      yield* put(chatLastAttemptedMessageSet(agentId, buildRecordedAttempt(content, options)));
+      yield* put(
+        chatLastAttemptedMessageSet(
+          agentId,
+          buildRecordedAttempt(content, {
+            ...options,
+            imageBlocks: imageRetryBlocks(error, imageBlocks),
+          }),
+        ),
+      );
       yield* put(chatSendFailed(agentId, error instanceof Error ? error.message : String(error)));
       return;
     }

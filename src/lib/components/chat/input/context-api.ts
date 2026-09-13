@@ -72,6 +72,10 @@ export interface ContextItem {
   // the committed attachment instead of placing a duplicate. Minted once
   // per item when the daemon supports it; absent against older daemons.
   placementIdempotencyKey?: string;
+  // File name requested by a keyed image placement whose attempt failed
+  // (in-memory images get a generated name), retained with the key so the
+  // retry resends the identical placement the daemon can replay.
+  placementFileName?: string;
 }
 
 /** True when any attachment item still blocks sending: placement in flight or failed. */

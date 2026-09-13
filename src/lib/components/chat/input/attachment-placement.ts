@@ -104,14 +104,22 @@ export function supportsIdempotentPlacementProtocol(protocolVersion?: string | n
   return major > 9 || (major === 9 && minor >= 13);
 }
 
+/** Whether the daemon connected right now accepts keyed placement. */
+function daemonSupportsIdempotentPlacement(): boolean {
+  return supportsIdempotentPlacementProtocol(appStore.state?.daemonHealth?.stats?.protocolVersion);
+}
+
 /**
- * Mint a fresh placement `idempotencyKey` (a UUID) when the connected daemon
- * supports keyed placement, else `undefined` (unkeyed, pre-9.13 behavior).
- * Callers keep the key on the attachment item so every retry reuses it.
+ * Resolve the placement `idempotencyKey` for an attempt: `existing` (the key
+ * retained on the item from an earlier attempt) when the connected daemon
+ * supports keyed placement, a fresh UUID when there is none yet, and
+ * `undefined` (unkeyed, pre-9.13 behavior) when it does not — a key retained
+ * across a reconnect to an older daemon is dropped rather than sent.
+ * Callers keep the result on the attachment item so every retry reuses it.
  */
-export function mintPlacementIdempotencyKey(): string | undefined {
-  const protocolVersion = appStore.state?.daemonHealth?.stats?.protocolVersion;
-  return supportsIdempotentPlacementProtocol(protocolVersion) ? crypto.randomUUID() : undefined;
+export function mintPlacementIdempotencyKey(existing?: string): string | undefined {
+  if (!daemonSupportsIdempotentPlacement()) return undefined;
+  return existing ?? crypto.randomUUID();
 }
 
 /** A daemon `-32602` rejection (the request was received and refused). */
@@ -126,7 +134,7 @@ function isInvalidParamsError(error: unknown): boolean {
  * attachment (PROTOCOL §5.9, v9.13) — the earlier commit's reply was lost;
  * the attachment is recovered through the lookup arm.
  */
-function isAlreadyCommittedError(error: unknown): boolean {
+export function isAlreadyCommittedError(error: unknown): boolean {
   return (
     isInvalidParamsError(error) &&
     /already committed/i.test(String((error as { message?: unknown }).message ?? ''))
@@ -304,9 +312,11 @@ const GENERIC_PLACEMENT_MESSAGES = new Set([
  * daemon and the rejection satisfies `isPlacementCancellation`. With
  * `source.idempotencyKey` (v9.13; callers mint it via
  * `mintPlacementIdempotencyKey` and reuse it on retry) a lost reply is
- * recovered through `file.getAttachmentInfo` before the failure surfaces.
- * Errors propagate — use `extractPlacementErrorDetail` to surface the
- * daemon's reason.
+ * recovered through `file.getAttachmentInfo` before the failure surfaces;
+ * the key is checked against the daemon connected NOW, so one retained
+ * across a reconnect to a pre-9.13 daemon is dropped, not sent. Errors
+ * propagate — use `extractPlacementErrorDetail` to surface the daemon's
+ * reason.
  */
 export async function placeAttachmentViaTransport(
   workspaceId: string,
@@ -315,10 +325,10 @@ export async function placeAttachmentViaTransport(
   onProgress?: UploadProgressCallback,
   signal?: AbortSignal,
 ): Promise<PlaceAttachmentResult> {
-  const keyed =
-    source.idempotencyKey !== undefined ? { idempotencyKey: source.idempotencyKey } : {};
+  const idempotencyKey = daemonSupportsIdempotentPlacement() ? source.idempotencyKey : undefined;
+  const keyed = idempotencyKey !== undefined ? { idempotencyKey } : {};
   if (!isRemoteBackend()) {
-    return placeWithRecovery(workspaceId, source.idempotencyKey, signal, () =>
+    return placeWithRecovery(workspaceId, idempotencyKey, signal, () =>
       placeAttachment(workspaceId, fileName, {
         sourcePath: source.sourcePath,
         mimeType: source.mimeType,
@@ -336,11 +346,18 @@ export async function placeAttachmentViaTransport(
     );
   }
   if (size > MAX_REMOTE_ATTACHMENT_BYTES) {
-    return placeAttachmentChunked(workspaceId, fileName, source, size, onProgress, signal);
+    return placeAttachmentChunked(
+      workspaceId,
+      fileName,
+      { ...source, idempotencyKey },
+      size,
+      onProgress,
+      signal,
+    );
   }
   const data = await readFileBase64(source.sourcePath);
   throwIfAborted(signal);
-  return placeWithRecovery(workspaceId, source.idempotencyKey, signal, () =>
+  return placeWithRecovery(workspaceId, idempotencyKey, signal, () =>
     placeAttachment(workspaceId, fileName, { data, mimeType: source.mimeType, ...keyed }),
   );
 }

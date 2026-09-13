@@ -17,6 +17,7 @@ import {
   placeAttachmentViaTransport,
 } from '$lib/components/chat/input/attachment-placement';
 import {
+  imageRetryBlocks,
   toImageReferenceBlocks,
   type WireImageBlock,
 } from '$lib/components/chat/input/image-attachment-placement';
@@ -145,6 +146,63 @@ export interface SendHeldFirstMessageResult {
    * structured `data.detail` / non-generic message), when available.
    */
   errorDetail?: string;
+  /**
+   * Set when image placement failed: the blocks the resumed send must pass
+   * back in place of the originals — references for the images that did
+   * place, inline blocks tagged with their placement identity for the rest —
+   * so the retry replays committed placements instead of duplicating them.
+   */
+  imageBlocks?: WireImageBlock[];
+}
+
+/**
+ * Inline image blocks for the held first message, built from the composer's
+ * image items and carrying the placement identity a previous failed send
+ * retained on them (see `retainImagePlacementIdentity`).
+ */
+export function heldImageBlocks(items: ContextItem[]): WireImageBlock[] {
+  return items
+    .filter((item) => item.imageData && item.imageMimeType)
+    .map((item) => ({
+      type: 'image' as const,
+      data: item.imageData as string,
+      mimeType: item.imageMimeType as string,
+      ...(item.placementIdempotencyKey !== undefined
+        ? { placementIdempotencyKey: item.placementIdempotencyKey }
+        : {}),
+      ...(item.placementFileName !== undefined
+        ? { placementFileName: item.placementFileName }
+        : {}),
+    }));
+}
+
+/**
+ * Carry a failed held-first-message send's `imageBlocks` (its retry blocks)
+ * back onto the composer's image items — positionally, over the items
+ * `heldImageBlocks` built them from — so the next `heldImageBlocks` pass
+ * resends the same placement identity. Returns the items unchanged when
+ * there is nothing to retain.
+ */
+export function retainImagePlacementIdentity(
+  items: ContextItem[],
+  retryBlocks: WireImageBlock[] | undefined,
+): ContextItem[] {
+  if (!retryBlocks) return items;
+  let index = 0;
+  return items.map((item) => {
+    if (!(item.imageData && item.imageMimeType)) return item;
+    const block = retryBlocks[index++];
+    if (!block || !('data' in block)) return item;
+    return {
+      ...item,
+      ...(block.placementIdempotencyKey !== undefined
+        ? { placementIdempotencyKey: block.placementIdempotencyKey }
+        : {}),
+      ...(block.placementFileName !== undefined
+        ? { placementFileName: block.placementFileName }
+        : {}),
+    };
+  });
 }
 
 /**
@@ -183,10 +241,15 @@ export async function sendHeldFirstMessage(
   // message stays pending and the create button resumes the flow.
   let imageBlocks: ImageBlock[] = pending.imageBlocks;
   if (imageBlocks.length > 0) {
+    const attempted = imageBlocks as WireImageBlock[];
     try {
-      imageBlocks = await toReferences(pending.workspaceId, imageBlocks as WireImageBlock[]);
+      imageBlocks = await toReferences(pending.workspaceId, attempted);
     } catch (error) {
-      return { sent: false, errorDetail: extractPlacementErrorDetail(error) };
+      return {
+        sent: false,
+        errorDetail: extractPlacementErrorDetail(error),
+        imageBlocks: imageRetryBlocks(error, attempted),
+      };
     }
   }
 
