@@ -72,6 +72,7 @@
  * including one equal to that label — is reported and restored verbatim.
  */
 import { deepEqual } from 'fast-equals';
+import { buffers, channel as createChannel, type Channel } from 'redux-saga';
 import {
   all,
   call,
@@ -123,7 +124,6 @@ import {
   selectDaemonHealth,
 } from '../../daemon-health/daemon-health-selectors';
 import { connectionStatusChanged } from '../../daemon-health/daemon-health-slice';
-import { removeScript } from '../../scripts/scripts-slice';
 import {
   selectWorkspaceItems,
   selectWorkspaceListLoadedForBackend,
@@ -132,10 +132,12 @@ import { setWorkspaceHasLoaded } from '../../workspace/workspace-slice';
 import {
   collectBrowserTabs,
   selectPanelLayoutWorkspace,
+  selectPanelLayoutWorkspaces,
   type BrowserTabVisibility as Visibility,
   type LayoutBrowserTab as HostedTab,
 } from '../panel-layout-selectors';
 import {
+  PANEL_LAYOUT_HANDLED_ACTION_TYPES,
   acknowledgeBrowserTabHost,
   applyBrowserTabRegistryRow,
   browserTabRegistryReportRequested,
@@ -201,6 +203,12 @@ let syncedBackendId: string | null = null;
 let syncedConnectionGeneration: number | null = null;
 /** Removals being sent, so two workspaces' reporters do not send the same one. */
 const removalsInFlight = new Set<string>();
+/**
+ * Each workspace's layout as the mutation watcher last saw it. The reducer
+ * returns the same reference for an untouched workspace, so a moved reference
+ * — an entry added, replaced or removed — is the workspace a mutation changed.
+ */
+let seenLayouts: Record<string, WorkspacePanelLayoutState> = {};
 
 function isActive(ws: WorkspaceBrowserTabRegistryState): boolean {
   return ws.phase === 'applied' || ws.phase === 'reporting';
@@ -665,19 +673,75 @@ function* reconcileOnSettle(action: ReturnType<typeof setRestoreStatus>): SagaGe
 }
 
 /**
- * Every layout mutation: the tabs the workspace reported that its layout no
- * longer holds were closed here. They are recorded as pending removals in
- * the same dispatch — before the debounced reporter, so a close made right
- * before an unmount, or while the daemon is unreachable, survives both —
- * and every reporter run sends them, every snapshot omits them, until the
- * daemon acknowledges. The reducer bumps the generation on `clearPanelLayout`
- * before this runs, so closing the last panel records its tabs under the
- * new one; an unmount leaves the layout in place and forgets the map
- * instead (its tabs left with the workspace).
+ * An action the panel-layout reducer handles — derived from its registrations,
+ * so a cross-slice case (`scripts/removeScript` destroying a script's tabs
+ * and handing the active slot to a browser sibling; intent-hq/intent#4835)
+ * is covered the moment it is registered. Which workspaces it changed is
+ * read from the state, not the payload (`changedWorkspaces`).
  */
-function* recordRemovals(action: { type: string; payload?: unknown }): SagaGenerator<void> {
-  const wsId = reportContext(action);
-  if (wsId === null) return;
+function isLayoutMutation(action: unknown): action is { type: string } {
+  return (
+    typeof action === 'object' &&
+    action !== null &&
+    'type' in action &&
+    typeof action.type === 'string' &&
+    PANEL_LAYOUT_HANDLED_ACTION_TYPES.has(action.type)
+  );
+}
+
+/** The workspaces whose layout reference moved since the previous call; records the new baseline. */
+function changedWorkspaces(layouts: Record<string, WorkspacePanelLayoutState>): string[] {
+  const previous = seenLayouts;
+  seenLayouts = layouts;
+  if (previous === layouts) return [];
+  const changed: string[] = [];
+  for (const wsId of new Set([...Object.keys(previous), ...Object.keys(layouts)])) {
+    if (previous[wsId] !== layouts[wsId]) changed.push(wsId);
+  }
+  return changed;
+}
+
+/**
+ * Every layout mutation, in the same dispatch: record the removals of each
+ * workspace the reducer changed, then hand it to the single-flight reporter.
+ * A mutation the reducer answered with the same state changes no workspace
+ * and reports nothing.
+ */
+function* onLayoutMutation(reports: Channel<string>): SagaGenerator<void> {
+  const changed = changedWorkspaces(yield* selectPanelLayoutWorkspaces.effect());
+  for (const wsId of changed) yield* call(requestReport, reports, wsId);
+}
+
+/**
+ * The saga's own "report now" trigger, sent once rows are applied and once
+ * a connect sync completes. It is not a reducer case — the layout may be
+ * exactly as it was — so it reaches the reporter here, not via the
+ * mutation watcher.
+ */
+function* onReportRequested(
+  reports: Channel<string>,
+  action: ReturnType<typeof browserTabRegistryReportRequested>,
+): SagaGenerator<void> {
+  yield* call(requestReport, reports, action.payload[0]);
+}
+
+function* requestReport(reports: Channel<string>, wsId: string): SagaGenerator<void> {
+  yield* call(recordRemovals, wsId);
+  yield* put(reports, wsId);
+}
+
+/**
+ * The tabs the workspace reported that its layout no longer holds were
+ * closed here. They are recorded as pending removals in the same dispatch —
+ * before the debounced reporter, so a close made right before an unmount,
+ * or while the daemon is unreachable, survives both — and every reporter
+ * run sends them, every snapshot omits them, until the daemon acknowledges.
+ * The reducer bumps the generation on `clearPanelLayout` before this runs,
+ * so closing the last panel records its tabs under the new one; a deletion
+ * or an unmount forgets the map instead (its tabs left with the workspace),
+ * so there is nothing to record.
+ */
+function* recordRemovals(wsId: string): SagaGenerator<void> {
   const registry = yield* selectBrowserTabRegistryWorkspace.effect(wsId);
   const reported = Object.keys(registry.reported);
   if (reported.length === 0) return;
@@ -717,11 +781,6 @@ function* sendRemoval(fence: RemovalFence): SagaGenerator<void> {
 
 function findBrowserTab(layout: WorkspacePanelLayoutState, tabId: string): PanelTab | undefined {
   return collectBrowserTabs(layout).find((h) => h.tab.id === tabId)?.tab;
-}
-
-function* reportWorkspaceTabs(action: { type: string; payload?: unknown }): SagaGenerator<void> {
-  const wsId = reportContext(action);
-  if (wsId !== null) yield* call(reportHostedTabs, wsId);
 }
 
 /**
@@ -780,36 +839,6 @@ function* reportUnder(
       yield* effect(fence, acknowledgeBrowserTabHost(wsId, tab.id, row.hostClientId));
     }
   }
-}
-
-function reportContext(action: { type: string; payload?: unknown }): string | null {
-  const payload = action.payload;
-  if (typeof payload === 'string') return payload;
-  if (Array.isArray(payload) && typeof payload[0] === 'string') return payload[0];
-  if (payload && typeof payload === 'object' && 'wsId' in payload) {
-    const { wsId } = payload as { wsId?: unknown };
-    if (typeof wsId === 'string') return wsId;
-  }
-  return null;
-}
-
-/**
- * Actions of other slices that the panel-layout reducer also handles and that
- * can reshape a workspace's live panels — `scripts/removeScript` destroys the
- * script's terminal tabs and hands the active slot to a sibling, which
- * changes a browser tab's `displayed` fact without any `panelLayout/*` action.
- */
-const CROSS_SLICE_LAYOUT_MUTATIONS: ReadonlySet<string> = new Set([removeScript.type]);
-
-function isLayoutMutation(action: unknown): action is { type: string; payload?: unknown } {
-  return (
-    typeof action === 'object' &&
-    action !== null &&
-    'type' in action &&
-    typeof action.type === 'string' &&
-    (action.type.startsWith('panelLayout/') || CROSS_SLICE_LAYOUT_MUTATIONS.has(action.type)) &&
-    reportContext(action as { type: string; payload?: unknown }) !== null
-  );
 }
 
 /**
@@ -1107,12 +1136,11 @@ export function* browserTabRegistrySaga(): SagaGenerator<void> {
   syncedBackendId = null;
   syncedConnectionGeneration = null;
   removalsInFlight.clear();
-  yield* takeEvery(isLayoutMutation, recordRemovals);
-  yield* takeSingleFlightInContext(
-    isLayoutMutation,
-    (action) => reportContext(action) as string,
-    reportWorkspaceTabs,
-  );
+  seenLayouts = yield* selectPanelLayoutWorkspaces.effect();
+  const reports = createChannel<string>(buffers.expanding());
+  yield* takeEvery(isLayoutMutation, onLayoutMutation, reports);
+  yield* takeEvery(browserTabRegistryReportRequested, onReportRequested, reports);
+  yield* takeSingleFlightInContext(reports, (wsId) => wsId, reportHostedTabs);
   yield* takeEvery(setRestoreStatus, reconcileOnSettle);
   yield* takeEvery(browserTabUpserted, onRegistryRow);
   yield* takeEvery(browserTabClosed, onRegistryClose);

@@ -6,6 +6,7 @@ vi.mock('svelte-sonner', () => ({
 }));
 
 import { appClient } from '$lib/client';
+import { toast } from 'svelte-sonner';
 import { ContentType, NoteVisibility, type Note } from '$shared/types';
 import { NoteId, WorkspaceId } from '$shared/types/branded-ids';
 import {
@@ -74,13 +75,25 @@ function harness(seed: Note | Note[] = note()) {
     return action;
   };
   const task = runSaga({ channel, dispatch, getState: () => ({ workspaceNotes }) }, notesWriteSaga);
-  return { actions, channel, getState: () => workspaceNotes, task };
+  return { actions, channel, dispatch, getState: () => workspaceNotes, task };
 }
 
 describe('notesWriteSaga', () => {
+  // Suite invariant (AC10): every content save for a loaded note forwards a
+  // defined rev as expectedVersion. Only the never-loaded LWW test opts out.
+  let expectUnloadedSave = false;
+
   afterEach(() => {
+    const setContent = appClient.notes.setContent;
+    if (!expectUnloadedSave && vi.isMockFunction(setContent)) {
+      for (const call of setContent.mock.calls) {
+        expect(call[2], `setContent(${String(call[0])}) sent no rev`).toEqual(expect.any(Number));
+      }
+    }
+    expectUnloadedSave = false;
     vi.useRealTimers();
     vi.restoreAllMocks();
+    vi.clearAllMocks();
   });
 
   it('serializes content before metadata and threads the advanced revision', async () => {
@@ -311,7 +324,235 @@ describe('notesWriteSaga', () => {
     await run.task.toPromise();
   });
 
-  it('applies the daemon note directly after a content conflict without a generic refetch', async () => {
+  it('applies the merged newContent and the echoed rev after a successful content save', async () => {
+    const setContent = vi.spyOn(appClient.notes, 'setContent').mockResolvedValue({
+      success: true,
+      newContent: 'mine + agent',
+      noteRev: 7,
+    });
+    const list = vi.spyOn(appClient.notes, 'list');
+    const run = harness();
+
+    run.channel.put(updateNoteContent(WS, NOTE, 'mine', true));
+    await settle();
+
+    expect(setContent.mock.calls).toEqual([[NOTE, 'mine', 4, WS]]);
+    expect(list.mock.calls).toEqual([]);
+    const applied = run.getState().byWorkspaceId[WS]?.notes.map[NOTE];
+    expect(applied?.content).toEqual('mine + agent');
+    expect(applied?.rev).toEqual(7);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('falls back to sentRev + 1 when a successful content save echoes no rev', async () => {
+    vi.spyOn(appClient.notes, 'setContent').mockResolvedValue({
+      success: true,
+      newContent: 'merged',
+    });
+    const run = harness();
+
+    run.channel.put(updateNoteContent(WS, NOTE, 'mine', true));
+    await settle();
+
+    const applied = run.getState().byWorkspaceId[WS]?.notes.map[NOTE];
+    expect(applied?.content).toEqual('merged');
+    expect(applied?.rev).toEqual(5);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('applies an echo equal to the sent content over an older refetch that landed in flight', async () => {
+    let resolveSave!: (result: unknown) => void;
+    const setContent = vi.spyOn(appClient.notes, 'setContent').mockReturnValue(
+      new Promise((resolve) => {
+        resolveSave = resolve;
+      }) as never,
+    );
+    const run = harness();
+
+    run.channel.put(updateNoteContent(WS, NOTE, 'mine', true));
+    await settle();
+    expect(setContent.mock.calls).toEqual([[NOTE, 'mine', 4, WS]]);
+
+    run.dispatch(
+      loadWorkspaceNotesSucceeded([WS], {
+        [WS]: [note({ content: 'refetched older content', rev: 5 })],
+      }),
+    );
+    resolveSave({ success: true, newContent: 'mine', noteRev: 6 });
+    await settle();
+
+    const applied = run.getState().byWorkspaceId[WS]?.notes.map[NOTE];
+    expect(applied?.content).toEqual('mine');
+    expect(applied?.rev).toEqual(6);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  // ---- Draft rebase onto a superseded echo ----------------------------------
+  // "body"@4 is saved as "body first"@4 while the user keeps typing. An agent
+  // wrote at rev 5, so the daemon's echo is the merge "AGENT\nbody first"@6.
+  // The still-pending draft is rebased onto that echo and sent against rev 6:
+  // the daemon's exact-rev path then stores it verbatim. Sending the raw draft
+  // with rev 4 would three-way merge "body first" in again ("AGENT\nbody first
+  // first plus typing") and a queued undo back to "body" would be swallowed.
+
+  /**
+   * Daemon model for the second request, current text "AGENT\nbody first"@6:
+   * an exact-rev write replaces; a stale rev 4 three-way merges from "body"
+   * (results per the production `three_way_merge` oracle).
+   */
+  const STALE_REV_MERGE: Record<string, string> = {
+    'body first plus typing': 'AGENT\nbody first first plus typing',
+    body: 'AGENT\nbody first',
+  };
+  function daemonAfterAgentEdit(): (_: string, content: string, rev?: number) => Promise<unknown> {
+    return (_id, content, rev) =>
+      Promise.resolve({
+        success: true,
+        newContent: rev === 6 ? content : (STALE_REV_MERGE[content] ?? content),
+        noteRev: 7,
+      });
+  }
+
+  for (const [label, draft, rebased] of [
+    ['typing', 'body first plus typing', 'AGENT\nbody first plus typing'],
+    ['undo', 'body', 'AGENT\nbody'],
+  ] as const) {
+    it(`rebases a queued ${label} draft onto the superseded echo and sends it against the echo rev`, async () => {
+      let resolveFirst!: (result: unknown) => void;
+      const setContent = vi
+        .spyOn(appClient.notes, 'setContent')
+        .mockReturnValueOnce(
+          new Promise((resolve) => {
+            resolveFirst = resolve;
+          }) as never,
+        )
+        .mockImplementation(daemonAfterAgentEdit() as never);
+      const run = harness(note({ content: 'body' }));
+
+      run.channel.put(updateNoteContent(WS, NOTE, 'body first', true));
+      await settle();
+      run.channel.put(updateNoteContent(WS, NOTE, draft, true));
+      await settle();
+      expect(setContent.mock.calls).toEqual([[NOTE, 'body first', 4, WS]]);
+
+      resolveFirst({ success: true, newContent: 'AGENT\nbody first', noteRev: 6 });
+      await settle();
+      // The echo is not applied verbatim (it would drop the local edit); the
+      // pending draft is rebased onto it and sent against the echo rev.
+      expect(setContent.mock.calls).toEqual([
+        [NOTE, 'body first', 4, WS],
+        [NOTE, rebased, 6, WS],
+      ]);
+      const current = run.getState().byWorkspaceId[WS]?.notes.map[NOTE];
+      expect(current?.content).toEqual(rebased);
+      expect(current?.rev).toEqual(7);
+
+      // The chain settled: the next edit starts from the in-sync store rev.
+      run.channel.put(updateNoteContent(WS, NOTE, `${rebased} more`, true));
+      await settle();
+      expect(setContent.mock.calls[2]).toEqual([NOTE, `${rebased} more`, 7, WS]);
+      run.task.cancel();
+      await run.task.toPromise();
+    });
+
+    it(`rebases a still-debounced ${label} draft onto the superseded echo`, async () => {
+      vi.useFakeTimers();
+      let resolveFirst!: (result: unknown) => void;
+      const setContent = vi
+        .spyOn(appClient.notes, 'setContent')
+        .mockReturnValueOnce(
+          new Promise((resolve) => {
+            resolveFirst = resolve;
+          }) as never,
+        )
+        .mockImplementation(daemonAfterAgentEdit() as never);
+      const run = harness(note({ content: 'body' }));
+
+      run.channel.put(updateNoteContent(WS, NOTE, 'body first', true));
+      await settle();
+      run.channel.put(updateNoteContent(WS, NOTE, draft));
+      await settle();
+
+      resolveFirst({ success: true, newContent: 'AGENT\nbody first', noteRev: 6 });
+      await settle();
+      let current = run.getState().byWorkspaceId[WS]?.notes.map[NOTE];
+      expect(current?.content).toEqual(rebased);
+      expect(current?.rev).toEqual(6);
+      expect(setContent.mock.calls).toEqual([[NOTE, 'body first', 4, WS]]);
+
+      await vi.advanceTimersByTimeAsync(NOTE_CONTENT_SAVE_DEBOUNCE_MS + 1);
+      await settle();
+      expect(setContent.mock.calls).toEqual([
+        [NOTE, 'body first', 4, WS],
+        [NOTE, rebased, 6, WS],
+      ]);
+      current = run.getState().byWorkspaceId[WS]?.notes.map[NOTE];
+      expect(current?.content).toEqual(rebased);
+      expect(current?.rev).toEqual(7);
+      run.task.cancel();
+      await run.task.toPromise();
+    });
+  }
+
+  // Mirrors notes-write-service: a refetch that landed a rev NEWER than the
+  // superseded echo keeps its content in the store; the draft is still
+  // rebased onto the echo and sent against the echo rev.
+  it('keeps a newer refetch in the store when a superseded echo lands, and still rebases the draft onto the echo', async () => {
+    vi.useFakeTimers();
+    let resolveFirst!: (result: unknown) => void;
+    const setContent = vi
+      .spyOn(appClient.notes, 'setContent')
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveFirst = resolve;
+        }) as never,
+      )
+      .mockImplementation(daemonAfterAgentEdit() as never);
+    const run = harness(note({ content: 'body' }));
+
+    run.channel.put(updateNoteContent(WS, NOTE, 'body first', true));
+    await settle();
+    run.channel.put(updateNoteContent(WS, NOTE, 'body first plus typing'));
+    await settle();
+
+    run.dispatch(
+      loadWorkspaceNotesSucceeded([WS], {
+        [WS]: [note({ content: 'AGENT\nbody first\nLATER', rev: 8 })],
+      }),
+    );
+    resolveFirst({ success: true, newContent: 'AGENT\nbody first', noteRev: 6 });
+    await settle();
+    const current = run.getState().byWorkspaceId[WS]?.notes.map[NOTE];
+    expect(current?.content).toEqual('AGENT\nbody first\nLATER');
+    expect(current?.rev).toEqual(8);
+
+    await vi.advanceTimersByTimeAsync(NOTE_CONTENT_SAVE_DEBOUNCE_MS + 1);
+    await settle();
+    expect(setContent.mock.calls).toEqual([
+      [NOTE, 'body first', 4, WS],
+      [NOTE, 'AGENT\nbody first plus typing', 6, WS],
+    ]);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('omits expectedVersion only when the note was never loaded', async () => {
+    expectUnloadedSave = true;
+    const setContent = vi.spyOn(appClient.notes, 'setContent').mockResolvedValue({ success: true });
+    const run = harness();
+
+    run.channel.put(updateNoteContent(WS, 'never-loaded', 'mine', true));
+    await settle();
+
+    expect(setContent.mock.calls).toEqual([['never-loaded', 'mine', undefined, WS]]);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('treats a conflict result on a content save as a generic failure (refetch, no reload prompt)', async () => {
     const canonical = note({ content: 'server body', rev: 8 });
     const wireCanonical = {
       ...canonical,
@@ -322,15 +563,45 @@ describe('notesWriteSaga', () => {
     } as Note;
     const setContent = vi.spyOn(appClient.notes, 'setContent').mockResolvedValue({
       success: false,
+      error: 'conflict',
       conflict: { current: wireCanonical },
     });
-    const list = vi.spyOn(appClient.notes, 'list');
+    const list = vi.spyOn(appClient.notes, 'list').mockResolvedValue([wireCanonical]);
     const run = harness();
 
     run.channel.put(updateNoteContent(WS, NOTE, 'mine', true));
     await settle();
 
     expect(setContent.mock.calls).toEqual([[NOTE, 'mine', 4, WS]]);
+    expect(toast.warning).not.toHaveBeenCalled();
+    expect(toast.error).toHaveBeenCalledTimes(1);
+    expect(run.actions.filter((action) => action.type === applyNoteUpdated.type)).toEqual([]);
+    expect(list.mock.calls).toEqual([[WS]]);
+    expect(run.getState().byWorkspaceId[WS]?.notes.map[NOTE]).toEqual(canonical);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('applies the daemon note directly after a metadata conflict without a generic refetch', async () => {
+    const canonical = note({ title: 'Server', rev: 8 });
+    const wireCanonical = {
+      ...canonical,
+      is_pinned: true,
+      is_archived: true,
+      created_at: 'wire-created',
+      updated_at: 'wire-updated',
+    } as Note;
+    const updateMetadata = vi.spyOn(appClient.notes, 'updateMetadata').mockResolvedValue({
+      success: false,
+      conflict: { current: wireCanonical },
+    });
+    const list = vi.spyOn(appClient.notes, 'list');
+    const run = harness();
+
+    run.channel.put(updateNoteTitle(WS, NOTE, 'Mine'));
+    await settle();
+
+    expect(updateMetadata.mock.calls).toEqual([[NOTE, { title: 'Mine' }, 4, WS]]);
     expect(list.mock.calls).toEqual([]);
     expect(run.actions.filter((action) => action.type === applyNoteUpdated.type)).toEqual([
       applyNoteUpdated(WS, NOTE, canonical),
@@ -351,21 +622,21 @@ describe('notesWriteSaga', () => {
       },
     });
     const wireCurrent = note({
-      content: 'server body',
+      title: 'Server',
       rev: 8,
       metadata: { task: { status: 'not_started', dependsOn: [NoteId('dep-1')] } },
     });
-    vi.spyOn(appClient.notes, 'setContent').mockResolvedValue({
+    vi.spyOn(appClient.notes, 'updateMetadata').mockResolvedValue({
       success: false,
       conflict: { current: wireCurrent },
     });
     const run = harness(cached);
 
-    run.channel.put(updateNoteContent(WS, NOTE, 'mine', true));
+    run.channel.put(updateNoteTitle(WS, NOTE, 'Mine'));
     await settle();
 
     const applied = run.getState().byWorkspaceId[WS]?.notes.map[NOTE];
-    expect(applied?.content).toEqual('server body');
+    expect(applied?.title).toEqual('Server');
     expect(applied?.metadata?.task?.unmetDependsOn).toEqual([NoteId('dep-1')]);
     run.task.cancel();
     await run.task.toPromise();
@@ -382,7 +653,7 @@ describe('notesWriteSaga', () => {
       },
     });
     const wireCurrent = note({
-      content: 'server body',
+      title: 'Server',
       rev: 8,
       metadata: {
         task: {
@@ -392,13 +663,13 @@ describe('notesWriteSaga', () => {
         },
       },
     });
-    vi.spyOn(appClient.notes, 'setContent').mockResolvedValue({
+    vi.spyOn(appClient.notes, 'updateMetadata').mockResolvedValue({
       success: false,
       conflict: { current: wireCurrent },
     });
     const run = harness(cached);
 
-    run.channel.put(updateNoteContent(WS, NOTE, 'mine', true));
+    run.channel.put(updateNoteTitle(WS, NOTE, 'Mine'));
     await settle();
 
     const applied = run.getState().byWorkspaceId[WS]?.notes.map[NOTE];
@@ -418,17 +689,17 @@ describe('notesWriteSaga', () => {
       },
     });
     const wireCurrent = note({
-      content: 'server body',
+      title: 'Server',
       rev: 8,
       metadata: { task: { status: 'not_started', dependsOn: [NoteId('dep-2')] } },
     });
-    vi.spyOn(appClient.notes, 'setContent').mockResolvedValue({
+    vi.spyOn(appClient.notes, 'updateMetadata').mockResolvedValue({
       success: false,
       conflict: { current: wireCurrent },
     });
     const run = harness(cached);
 
-    run.channel.put(updateNoteContent(WS, NOTE, 'mine', true));
+    run.channel.put(updateNoteTitle(WS, NOTE, 'Mine'));
     await settle();
 
     const applied = run.getState().byWorkspaceId[WS]?.notes.map[NOTE];
@@ -448,17 +719,17 @@ describe('notesWriteSaga', () => {
       },
     });
     const wireCurrent = note({
-      content: 'server body',
+      title: 'Server',
       rev: 8,
       metadata: { task: { status: 'not_started' } },
     });
-    vi.spyOn(appClient.notes, 'setContent').mockResolvedValue({
+    vi.spyOn(appClient.notes, 'updateMetadata').mockResolvedValue({
       success: false,
       conflict: { current: wireCurrent },
     });
     const run = harness(cached);
 
-    run.channel.put(updateNoteContent(WS, NOTE, 'mine', true));
+    run.channel.put(updateNoteTitle(WS, NOTE, 'Mine'));
     await settle();
 
     const applied = run.getState().byWorkspaceId[WS]?.notes.map[NOTE];

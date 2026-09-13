@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.153.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.152.0...v2.153.0) (2026-09-13)
+
+
+### 🚀 Features
+
+* **attachments:** key placements with idempotencyKey and recover lost replies ([#2418](https://github.com/intent-hq/cloudlands-fe/issues/2418)) ([4fea236](https://github.com/intent-hq/cloudlands-fe/commit/4fea2360c24673f928ab0de2f3c930d65d0dda18))
+
 ## [2.152.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.151.2...v2.152.0) (2026-09-13)
 
 
