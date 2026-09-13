@@ -80,7 +80,9 @@ for (const theme of ['light', 'dark'] as const) {
           const styles = await shellStyles(panel, page);
           expect(styles.background).toBe(styles.expectedBackground);
           expect(styles.emptyStateBackground).toBe(styles.expectedBackground);
-          expect(styles.borders).toEqual(['1px', '1px', '1px', '1px']);
+          expect(styles.borders).toEqual(
+            index === 0 ? ['1px', '1px', '1px', '1px'] : ['0px', '0px', '0px', '0px'],
+          );
           expect(styles.focused).toBe(index === 0 ? 'true' : 'false');
           expect(styles.focusBorderVisible).toBe(index === 0 ? 'true' : 'false');
           expect(new Set(styles.borderColors)).toEqual(

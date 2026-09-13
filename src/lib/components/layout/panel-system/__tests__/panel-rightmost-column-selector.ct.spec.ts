@@ -80,15 +80,17 @@ test('keeps Add column in every populated and empty panel header', async ({ moun
     const panelBorders = await component.locator('[data-panel-id]').evaluateAll((panels) =>
       panels.map((node) => ({
         color: getComputedStyle(node).borderTopColor,
+        empty: node.getAttribute('data-empty-panel-shell') === 'true',
         focused: node.getAttribute('data-focused'),
         width: getComputedStyle(node).borderTopWidth,
       })),
     );
-    expect(panelBorders.every(({ width }) => width === '1px')).toBe(true);
     expect(
-      panelBorders
-        .filter(({ focused }) => focused === 'false')
-        .every(({ color }) => color === 'rgba(0, 0, 0, 0)'),
+      panelBorders.every(({ color, empty, focused, width }) => {
+        if (focused === 'true') return width === '1px' && color !== 'rgba(0, 0, 0, 0)';
+        if (empty) return width === '0px' && color === 'rgba(0, 0, 0, 0)';
+        return width === '1px' && color === 'rgba(0, 0, 0, 0)';
+      }),
     ).toBe(true);
     await expect(component.locator('[data-column-focused]')).toHaveCount(1);
   }
