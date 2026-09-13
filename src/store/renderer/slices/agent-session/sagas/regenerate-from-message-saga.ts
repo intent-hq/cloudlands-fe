@@ -1,5 +1,6 @@
 import { call, cancelled, put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
 
+import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
 import type { AgentMessage, ContentBlock } from '$shared/types';
 import { m } from '$shared/paraglide/messages.js';
@@ -19,7 +20,7 @@ type FileBlocks = NonNullable<AgentSessionSendMessageOptions['fileBlocks']>;
  * The user message a regenerate request replays: the target itself when it
  * is a user message, otherwise the nearest user message preceding it.
  */
-export function findRegenerateSource(
+function findRegenerateSource(
   messages: AgentMessage[],
   messageId: string,
 ): AgentMessage | undefined {
@@ -39,34 +40,105 @@ function storedText(blocks: ContentBlock[]): string {
     .join('');
 }
 
+class UnreplayableBlockError extends Error {
+  constructor(
+    readonly reason: string,
+    readonly detail: Record<string, unknown>,
+  ) {
+    super(m.agent_editRegenerate_failed_error());
+  }
+}
+
+/** A slim-projection inline image: its stored `data` is a write-time thumbnail or omitted (PROTOCOL §5.5). */
+function isSlimInlineImage(block: ContentBlock): boolean {
+  return (
+    block.type === 'image' && !block.attachmentId && (block.dataTruncated === true || !block.data)
+  );
+}
+
+/**
+ * Fetch the canonical bytes of a slim inline image through
+ * `agent.getMessageBlock` (the same seam `hydrateMessageBlockWorker` uses).
+ * Throws when the fetch fails — the regenerate must not replace the message
+ * with a thumbnail or drop the image.
+ */
+function* hydrateSlimImage(
+  agentId: string,
+  messageId: string,
+  block: ContentBlock,
+): SagaGenerator<ContentBlock> {
+  const blockId = block.id;
+  if (!blockId) {
+    throw new UnreplayableBlockError('slim image block without id', { messageId });
+  }
+  try {
+    return yield* call(
+      [appClient.agents, appClient.agents.getMessageBlock],
+      agentId,
+      messageId,
+      blockId,
+    );
+  } catch (error) {
+    throw new UnreplayableBlockError('image hydration failed', {
+      messageId,
+      blockId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
 // Mirrors the edit strip's block restoration (ChatMessage handleStartEdit →
 // handleConfirmEditSubmit) so a regenerate carries exactly what an
 // unchanged edit would: image references pass through by attachmentId,
-// inline images ride inline (the edit saga places them), and
-// attachment-reference file blocks are re-sent as references.
-function storedBlocks(blocks: ContentBlock[]): {
-  imageBlocks: ImageBlocks;
-  fileBlocks: FileBlocks;
-} {
+// inline images ride inline with their canonical bytes (the edit saga
+// places them), and attachment-reference file blocks are re-sent as
+// references. Anything the wire cannot carry — a legacy inline file (the
+// `fileBlocks` contract has no bytes arm; the edit strip's fileData path
+// drops those at submit), an image with neither bytes nor reference —
+// fails closed rather than silently dropping the attachment from the
+// regenerated message.
+function* replayBlocks(
+  agentId: string,
+  messageId: string,
+  blocks: ContentBlock[],
+): SagaGenerator<{ imageBlocks: ImageBlocks; fileBlocks: FileBlocks }> {
   const imageBlocks: ImageBlocks = [];
   const fileBlocks: FileBlocks = [];
-  for (const block of blocks) {
-    if (block.type === 'image' && block.attachmentId) {
-      imageBlocks.push({
-        type: 'image',
-        attachmentId: block.attachmentId,
-        ...(block.mimeType ? { mimeType: block.mimeType } : {}),
-      });
-    } else if (block.type === 'image' && block.data && block.mimeType) {
-      imageBlocks.push({ type: 'image', data: block.data, mimeType: block.mimeType });
-    } else if (block.type === 'file' && block.attachmentId && block.fileName) {
-      fileBlocks.push({
-        type: 'file',
-        attachmentId: block.attachmentId,
-        fileName: block.fileName,
-        ...(block.mimeType ? { mimeType: block.mimeType } : {}),
-        ...(block.size !== undefined ? { size: block.size } : {}),
-      });
+  for (const stored of blocks) {
+    if (stored.type === 'image') {
+      const block = isSlimInlineImage(stored)
+        ? yield* hydrateSlimImage(agentId, messageId, stored)
+        : stored;
+      if (block.attachmentId) {
+        imageBlocks.push({
+          type: 'image',
+          attachmentId: block.attachmentId,
+          ...(block.mimeType ? { mimeType: block.mimeType } : {}),
+        });
+      } else if (block.dataTruncated !== true && block.data && block.mimeType) {
+        imageBlocks.push({ type: 'image', data: block.data, mimeType: block.mimeType });
+      } else {
+        throw new UnreplayableBlockError('image block has no replayable bytes or reference', {
+          messageId,
+          blockId: stored.id,
+        });
+      }
+    } else if (stored.type === 'file') {
+      if (stored.attachmentId && stored.fileName) {
+        fileBlocks.push({
+          type: 'file',
+          attachmentId: stored.attachmentId,
+          fileName: stored.fileName,
+          ...(stored.mimeType ? { mimeType: stored.mimeType } : {}),
+          ...(stored.size !== undefined ? { size: stored.size } : {}),
+        });
+      } else {
+        throw new UnreplayableBlockError('file block is not an attachment reference', {
+          messageId,
+          blockId: stored.id,
+          fileName: stored.fileName,
+        });
+      }
     }
   }
   return { imageBlocks, fileBlocks };
@@ -88,7 +160,7 @@ function* regenerateFromMessage(action: RegenerateAction): SagaGenerator<void> {
       return;
     }
     const blocks = source.contentBlocks ?? [];
-    const { imageBlocks, fileBlocks } = storedBlocks(blocks);
+    const { imageBlocks, fileBlocks } = yield* replayBlocks(agentId, source.id, blocks);
     const options: AgentSessionSendMessageOptions | undefined =
       rawOptions || imageBlocks.length > 0 || fileBlocks.length > 0
         ? {
@@ -111,6 +183,12 @@ function* regenerateFromMessage(action: RegenerateAction): SagaGenerator<void> {
     yield* put(action.success(undefined as never));
     settled = true;
   } catch (error) {
+    if (error instanceof UnreplayableBlockError) {
+      logger.warn(`Regenerate aborted before edit: ${error.reason}`, {
+        agentId,
+        ...error.detail,
+      });
+    }
     const resolved =
       error instanceof Error
         ? error

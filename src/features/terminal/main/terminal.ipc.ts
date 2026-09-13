@@ -775,8 +775,8 @@ export function registerTerminalHandlers() {
 // ---------------------------------------------------------------------------
 
 /**
- * Create a terminal via the daemon and dispatch `terminalCreated` so the
- * renderer's terminal tabs pick it up. Used by workspace setup and by the
+ * Create a terminal via the daemon; the renderer's terminal tabs pick it up
+ * from the daemon's terminal events. Used by workspace setup and by the
  * `terminal:createWithCommand` handler above.
  */
 async function createTerminalFromBackend(options: {

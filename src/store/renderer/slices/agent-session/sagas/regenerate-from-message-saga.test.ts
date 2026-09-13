@@ -1,7 +1,12 @@
 import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { AgentMessage, AgentSession } from '$shared/types';
+const mocks = vi.hoisted(() => ({ getMessageBlock: vi.fn() }));
+vi.mock('$lib/client', () => ({
+  appClient: { agents: { getMessageBlock: mocks.getMessageBlock } },
+}));
+
+import type { AgentMessage, AgentSession, ContentBlock } from '$shared/types';
 import { AgentStatus } from '$shared/types';
 import {
   agentSessionEditAndRegenerateRequested,
@@ -59,6 +64,23 @@ const leadingAssistantOnly: AgentMessage[] = [
 ];
 
 type EditAction = ReturnType<typeof agentSessionEditAndRegenerateRequested>;
+
+function userMessageWith(blocks: ContentBlock[]): AgentMessage[] {
+  return [
+    {
+      id: 'u9',
+      role: 'user',
+      contentBlocks: [{ type: 'text', text: 'see attached' }, ...blocks],
+      timestamp: '2026-01-01',
+    } as AgentMessage,
+    {
+      id: 'a9',
+      role: 'assistant',
+      contentBlocks: [{ type: 'text', text: 'ok' }],
+      timestamp: '2026-01-02',
+    } as AgentMessage,
+  ];
+}
 
 function start(sessionMessages: AgentMessage[] = messages) {
   const channel = stdChannel();
@@ -180,5 +202,175 @@ describe('regenerateFromMessageSaga', () => {
     expect(dispatched.at(-1).type).toBe(action.failure(new Error('x')).type);
     task.cancel();
     await task.toPromise();
+  });
+
+  describe('slim-projection inline images (PROTOCOL §5.5 agent.getMessageBlock)', () => {
+    const FULL = 'RkFVTExfQllURVM=';
+
+    it('hydrates a write-time thumbnail through getMessageBlock before the edit put', async () => {
+      mocks.getMessageBlock.mockResolvedValue({
+        id: 'blk-thumb',
+        type: 'image',
+        data: FULL,
+        mimeType: 'image/png',
+      });
+      const { channel, edits, task } = start(
+        userMessageWith([
+          {
+            id: 'blk-thumb',
+            type: 'image',
+            data: 'dGh1bWI=',
+            mimeType: 'image/png',
+            dataTruncated: true,
+            dataIsThumbnail: true,
+          },
+        ]),
+      );
+      const action = agentSessionRegenerateFromMessageRequested(AGENT, WS, 'a9');
+      channel.put(action);
+      await settle();
+
+      expect(mocks.getMessageBlock).toHaveBeenCalledWith(AGENT, 'u9', 'blk-thumb');
+      expect(edits).toHaveLength(1);
+      expect(edits[0].payload[4]).toEqual({
+        imageBlocks: [{ type: 'image', data: FULL, mimeType: 'image/png' }],
+      });
+      edits[0].success(undefined as never);
+      await expect(action.promise).resolves.toBeUndefined();
+      task.cancel();
+      await task.toPromise();
+    });
+
+    it('hydrates a slim row whose data is omitted entirely', async () => {
+      mocks.getMessageBlock.mockResolvedValue({
+        id: 'blk-omitted',
+        type: 'image',
+        data: FULL,
+        mimeType: 'image/webp',
+      });
+      const { channel, edits, task } = start(
+        userMessageWith([{ id: 'blk-omitted', type: 'image', mimeType: 'image/webp' }]),
+      );
+      const action = agentSessionRegenerateFromMessageRequested(AGENT, WS, 'a9');
+      channel.put(action);
+      await settle();
+
+      expect(mocks.getMessageBlock).toHaveBeenCalledWith(AGENT, 'u9', 'blk-omitted');
+      expect(edits[0].payload[4]).toEqual({
+        imageBlocks: [{ type: 'image', data: FULL, mimeType: 'image/webp' }],
+      });
+      edits[0].success(undefined as never);
+      await expect(action.promise).resolves.toBeUndefined();
+      task.cancel();
+      await task.toPromise();
+    });
+
+    it('does not fetch a full-data inline image or an attachment reference', async () => {
+      const { channel, edits, task } = start();
+      const action = agentSessionRegenerateFromMessageRequested(AGENT, WS, 'a2');
+      channel.put(action);
+      await settle();
+
+      expect(mocks.getMessageBlock).not.toHaveBeenCalled();
+      expect(edits).toHaveLength(1);
+      edits[0].success(undefined as never);
+      await action.promise;
+      task.cancel();
+      await task.toPromise();
+    });
+
+    it('fails the regenerate without an edit put when getMessageBlock rejects', async () => {
+      mocks.getMessageBlock.mockRejectedValue(new Error('block gone'));
+      const { channel, edits, dispatched, task } = start(
+        userMessageWith([
+          {
+            id: 'blk-thumb',
+            type: 'image',
+            data: 'dGh1bWI=',
+            mimeType: 'image/png',
+            dataTruncated: true,
+          },
+        ]),
+      );
+      const action = agentSessionRegenerateFromMessageRequested(AGENT, WS, 'a9');
+      channel.put(action);
+      await expect(action.promise).rejects.toBeInstanceOf(Error);
+
+      expect(edits).toHaveLength(0);
+      expect(dispatched.map((item) => item.type)).toEqual([action.failure(new Error('x')).type]);
+      task.cancel();
+      await task.toPromise();
+    });
+
+    it('fails closed on a truncated image block that carries no id', async () => {
+      const { channel, edits, task } = start(
+        userMessageWith([
+          { type: 'image', data: 'dGh1bWI=', mimeType: 'image/png', dataTruncated: true },
+        ]),
+      );
+      const action = agentSessionRegenerateFromMessageRequested(AGENT, WS, 'a9');
+      channel.put(action);
+      await expect(action.promise).rejects.toBeInstanceOf(Error);
+
+      expect(mocks.getMessageBlock).not.toHaveBeenCalled();
+      expect(edits).toHaveLength(0);
+      task.cancel();
+      await task.toPromise();
+    });
+
+    it('fails closed when the hydrated block still has no replayable bytes', async () => {
+      mocks.getMessageBlock.mockResolvedValue({
+        id: 'blk-thumb',
+        type: 'image',
+        mimeType: 'image/png',
+      });
+      const { channel, edits, task } = start(
+        userMessageWith([
+          { id: 'blk-thumb', type: 'image', mimeType: 'image/png', dataTruncated: true },
+        ]),
+      );
+      const action = agentSessionRegenerateFromMessageRequested(AGENT, WS, 'a9');
+      channel.put(action);
+      await expect(action.promise).rejects.toBeInstanceOf(Error);
+
+      expect(edits).toHaveLength(0);
+      task.cancel();
+      await task.toPromise();
+    });
+  });
+
+  describe('file blocks', () => {
+    it('re-sends an attachment-reference file block unchanged', async () => {
+      const { channel, edits, task } = start(
+        userMessageWith([{ type: 'file', attachmentId: 'f1', fileName: 'a.csv', size: 3 }]),
+      );
+      const action = agentSessionRegenerateFromMessageRequested(AGENT, WS, 'a9');
+      channel.put(action);
+      await settle();
+
+      expect(edits[0].payload[4]).toEqual({
+        fileBlocks: [{ type: 'file', attachmentId: 'f1', fileName: 'a.csv', size: 3 }],
+      });
+      edits[0].success(undefined as never);
+      await action.promise;
+      task.cancel();
+      await task.toPromise();
+    });
+
+    it('fails closed on a legacy inline file block instead of dropping it', async () => {
+      const { channel, edits, dispatched, task } = start(
+        userMessageWith([
+          { type: 'file', data: 'aGVsbG8=', fileName: 'legacy.txt', mimeType: 'text/plain' },
+        ]),
+      );
+      const action = agentSessionRegenerateFromMessageRequested(AGENT, WS, 'a9');
+      channel.put(action);
+      await expect(action.promise).rejects.toBeInstanceOf(Error);
+
+      expect(edits).toHaveLength(0);
+      expect(dispatched.map((item) => item.type)).toEqual([action.failure(new Error('x')).type]);
+      task.cancel();
+      await task.toPromise();
+    });
   });
 });
