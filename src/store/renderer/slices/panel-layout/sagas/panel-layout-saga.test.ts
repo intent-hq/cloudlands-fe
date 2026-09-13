@@ -293,7 +293,7 @@ function startRestoreSaga(
   agents: AgentSession[],
   initialLayout = emptyWorkspaceState,
   contextLinks?: ContextLink[],
-  opts: { workspaceListLoaded?: boolean } = {},
+  opts: { workspaceListLoaded?: boolean; myRole?: 'owner' | 'collaborator' } = {},
 ) {
   mocks.getJSON.mockReturnValue(stored);
   let backendId = LOCAL_CONNECTION_ID;
@@ -315,7 +315,9 @@ function startRestoreSaga(
     workspace: {
       workspaces: createCollection(
         'id',
-        contextLinks ? [{ id: WS_1, contextLinks } as unknown as Workspace] : [],
+        contextLinks || opts.myRole
+          ? [{ id: WS_1, contextLinks, myRole: opts.myRole } as unknown as Workspace]
+          : [],
       ),
       hasLoaded: opts.workspaceListLoaded ?? true,
     },
@@ -1438,6 +1440,86 @@ describe('panelLayoutSaga', () => {
         [terminalTab.id, ownedBrowserTab.id, plainBrowserTab.id].sort(),
       );
       expect(getItems(ws.hiddenTabs).map((t) => t.id)).toEqual([hiddenOwnedBrowserTab.id]);
+    });
+
+    const ownerOnlyTabsInHistory = (ws: WorkspacePanelLayoutState) =>
+      ws.layoutHistory.flatMap((snapshot) =>
+        Object.values(snapshot.panels)
+          .flatMap((p) => p.tabs)
+          .filter((t) => t.type === 'terminal' || t.type === 'browser')
+          .map((t) => t.id),
+      );
+
+    it('keeps owner-only tabs out of disk history that lands after the restore purge', async () => {
+      let resolveHistory!: (value: unknown) => void;
+      mocks.loadHistory.mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveHistory = resolve;
+        }),
+      );
+      const run = startRestoreSaga(mixedLayout, [], emptyWorkspaceState, undefined, {
+        myRole: 'collaborator',
+      });
+      await settle();
+      expect(run.getState().panelLayout.byWorkspaceId[WS_1].restoreStatus).toBe('restored');
+      expect(ownerOnlyTabs(run.getState().panelLayout.byWorkspaceId[WS_1])).toEqual([]);
+
+      resolveHistory({
+        history: [
+          { ...mixedLayout, timestamp: 1 },
+          { ...mixedLayout, timestamp: 2 },
+        ],
+        historyIndex: 1,
+      });
+      await settle();
+
+      const imported = run.getState().panelLayout.byWorkspaceId[WS_1];
+      expect(imported.layoutHistory).toHaveLength(2);
+      expect(ownerOnlyTabsInHistory(imported)).toEqual([]);
+
+      run.dispatch(goBack(WS_1));
+      run.dispatch(goForward(WS_1));
+      const navigated = run.getState().panelLayout.byWorkspaceId[WS_1];
+      expect(ownerOnlyTabs(navigated)).toEqual([]);
+      expect(getItems(navigated.hiddenTabs)).toEqual([]);
+      await cancelSaga(run.task);
+    });
+
+    it('withholds owner-only tabs when a backend switch re-restores a mounted workspace', async () => {
+      const run = startRestoreSaga(mixedLayout, [], emptyWorkspaceState, undefined, {
+        myRole: 'collaborator',
+      });
+      await settle();
+      expect(ownerOnlyTabs(run.getState().panelLayout.byWorkspaceId[WS_1])).toEqual([]);
+
+      run.dispatch.mockClear();
+      run.setBackendId(REMOTE_ID);
+      run.send(
+        connectionsListReceived({
+          connections: [],
+          activeId: REMOTE_ID,
+          windowBackendId: REMOTE_ID,
+        }),
+      );
+      await settle();
+
+      const actions = run.dispatch.mock.calls.map(([action]) => action);
+      const initializedAt = actions.findIndex((action) => action.type === initializeLayout.type);
+      const restoredAt = actions.findIndex(
+        (action) => action.type === setRestoreStatus.type && action.payload[1] === 'restored',
+      );
+      const destroyAt = actions.findIndex((action) => action.type === destroyTabsByType.type);
+      expect(initializedAt).toBeGreaterThanOrEqual(0);
+      expect(destroyAt).toBeGreaterThan(initializedAt);
+      expect(destroyAt).toBeLessThan(restoredAt);
+
+      const ws = run.getState().panelLayout.byWorkspaceId[WS_1];
+      expect(ws.restoreStatus).toBe('restored');
+      expect(ownerOnlyTabs(ws)).toEqual([]);
+      expect(getItems(ws.hiddenTabs)).toEqual([]);
+      expect(ws.recentlyClosed.map((entry) => entry.tab.type)).not.toContain('terminal');
+      expect(ws.recentlyClosed.map((entry) => entry.tab.type)).not.toContain('browser');
+      await cancelSaga(run.task);
     });
   });
 

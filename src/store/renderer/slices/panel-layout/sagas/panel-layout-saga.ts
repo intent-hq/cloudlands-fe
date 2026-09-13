@@ -961,6 +961,9 @@ function* loadHistoryForWorkspace(
           timestamp: snapshot.timestamp,
         }));
         yield* put(loadLayoutHistory(wsId, history, data.historyIndex));
+        // The disk history lands after the restore's purge; Back/Forward
+        // must not bring an owner-only pane back from an imported snapshot.
+        yield* call(stripOwnerOnlyTabsForCollaborator, wsId);
       }
     }
   } catch {
@@ -1121,6 +1124,7 @@ function* restoreAfterBackendSwitch(wsId: string | null): SagaGenerator<void> {
       const normalized = normalizeLayoutForWorkspace(wsId, stored);
       repairedLayout = !deepEqual(normalized, stored);
       yield* put(initializeLayout(wsId, normalized));
+      yield* call(stripOwnerOnlyTabsForCollaborator, wsId);
       repairedColumns = yield* call(reconcileRestoredPanelColumns, wsId);
       yield* put(setRestoreStatus(wsId, 'restored'));
       // Mirror the mount path: restored tunneled tabs re-resolve against the
