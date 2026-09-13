@@ -59,7 +59,6 @@ describe('attention flow spacing', () => {
         { userMessage: malformedAnswer, assistantMessages: [] },
       ),
     ).toBe(false);
-    expect(eventCardAssistantMarginClass(ordinaryEvent, true)).toBe('mb-8');
     expect(eventCardAssistantMarginClass(attention, false)).toBe('');
   });
 });

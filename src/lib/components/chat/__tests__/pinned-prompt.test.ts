@@ -18,7 +18,6 @@ describe('pinned prompt controller', () => {
     turn.dataset.conversationTurn = '';
     turn.getBoundingClientRect = () => ({ bottom: turnBottom }) as DOMRect;
     const source = document.createElement('div');
-    source.dataset.pinnableUserPrompt = '';
     source.dataset.pinnedPromptId = id;
     source.getBoundingClientRect = () => ({ bottom: sourceBottom, height: 42 }) as DOMRect;
     const value = message(id);
@@ -72,7 +71,7 @@ describe('pinned prompt controller', () => {
     expect(secondController.update(secondPanel, true)).toBeNull();
 
     const streamed = message('streamed-content');
-    attachPinnedPromptMessage(first.source, streamed);
+    attachPinnedPromptMessage(first.source, first.message).update(streamed);
     expect(firstController.update(firstPanel, true)?.message).toBe(streamed);
     expect(secondController.update(secondPanel, true)).toBeNull();
   });
@@ -88,7 +87,6 @@ describe('pinned prompt controller', () => {
     earlier.dataset.conversationTurn = '';
     earlier.getBoundingClientRect = () => ({ bottom: 95 }) as DOMRect;
     const source = document.createElement('div');
-    source.dataset.pinnableUserPrompt = '';
     source.dataset.pinnedPromptId = 'earlier';
     source.getBoundingClientRect = () => ({ bottom: 80 }) as DOMRect;
     attachPinnedPromptMessage(source, message('earlier'));
@@ -97,12 +95,91 @@ describe('pinned prompt controller', () => {
 
     expect(controller.update(container, true)?.id).toBe('current');
   });
+
+  it('hands off to automated turn starters and ignores passive subscription cards', () => {
+    const container = document.createElement('div');
+    container.getBoundingClientRect = () => ({ top: 100 }) as DOMRect;
+    const human = addPrompt(container, 'human', 90, 200);
+    const wake = addPrompt(container, 'wake', 250, 450);
+    attachPinnedPromptMessage(wake.source, {
+      ...wake.message,
+      metadata: { type: 'event_notification', eventCount: 1, eventTypes: ['agent:idle'] },
+    });
+    const passive = document.createElement('div');
+    passive.textContent = 'Waiting for agents';
+    container.append(passive);
+    const controller = createPinnedPromptController();
+    expect(controller.update(container, true)?.id).toBe('human');
+
+    human.turn.getBoundingClientRect = () => ({ bottom: 80 }) as DOMRect;
+    wake.source.getBoundingClientRect = () => ({ bottom: 90 }) as DOMRect;
+    expect(controller.update(container, true)?.id).toBe('wake');
+    wake.turn.getBoundingClientRect = () => ({ bottom: 80 }) as DOMRect;
+    expect(controller.update(container, true)).toBeNull();
+  });
 });
 
 describe('pinned prompt tracker lifecycle', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
+  });
+
+  it('refreshes same-id metadata without DOM mutations and stops refreshing while disabled', () => {
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      frames.push(callback);
+      return frames.length;
+    });
+    vi.stubGlobal('cancelAnimationFrame', vi.fn());
+    const flush = () => frames.splice(0).forEach((callback) => callback(0));
+    class SilentObserver {
+      observe() {}
+      disconnect() {}
+    }
+    vi.stubGlobal('ResizeObserver', SilentObserver);
+    vi.stubGlobal('MutationObserver', SilentObserver);
+    const container = document.createElement('div');
+    container.getBoundingClientRect = () => ({ top: 100 }) as DOMRect;
+    const turn = document.createElement('div');
+    turn.dataset.conversationTurn = '';
+    turn.getBoundingClientRect = () => ({ bottom: 500 }) as DOMRect;
+    const source = document.createElement('div');
+    source.dataset.pinnedPromptId = 'wake';
+    source.getBoundingClientRect = () => ({ bottom: 90 }) as DOMRect;
+    turn.append(source);
+    container.append(turn);
+    const original = message('wake');
+    const attached = attachPinnedPromptMessage(source, original);
+    const onChange = vi.fn();
+    const tracker = trackPinnedPrompt(container, { enabled: true, onChange });
+    flush();
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ message: original }));
+
+    const replacement = {
+      ...original,
+      contentBlocks: [{ type: 'text' as const, text: 'updated' }],
+    };
+    attached.update(replacement);
+    attached.update(replacement);
+    flush();
+    expect(onChange).toHaveBeenCalledTimes(2);
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ message: replacement }));
+
+    tracker.update({ enabled: false, onChange });
+    expect(onChange).toHaveBeenLastCalledWith(null);
+    onChange.mockClear();
+    attached.update(original);
+    flush();
+    expect(onChange).not.toHaveBeenCalled();
+    tracker.update({ enabled: true, onChange });
+    flush();
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ message: original }));
+    tracker.destroy();
+    onChange.mockClear();
+    attached.update(replacement);
+    flush();
+    expect(onChange).not.toHaveBeenCalled();
   });
 
   it('disconnects and restores listeners and observers when disabled', () => {

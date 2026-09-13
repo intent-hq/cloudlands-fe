@@ -8,6 +8,12 @@
   import { m } from '$shared/paraglide/messages.js';
   import { chatPolishFixtureAdapter } from '../chat-polish/chat-polish-fixture-adapter';
   import { getChatPolishScenario } from '../chat-polish/chat-polish-scenarios';
+  import {
+    getSubscriptionCardSeam,
+    isChatCardMessage,
+    isSubscriptionCardMessage,
+  } from '$lib/components/chat/subscription-card-spacing';
+  import type { ChatPolishScenario } from '../chat-polish/chat-polish-types';
 
   let {
     fixture,
@@ -15,6 +21,14 @@
     stickySimulation = false,
   }: { fixture: UiComponentFixture; compact?: boolean; stickySimulation?: boolean } = $props();
   const scenario = $derived(getChatPolishScenario(fixture.id));
+
+  function isCard(item: ChatPolishScenario['items'][number] | undefined) {
+    return (
+      item?.kind === 'wake' ||
+      item?.kind === 'subscriptions' ||
+      (item?.kind === 'message' && isChatCardMessage(item.message))
+    );
+  }
 
   function subscriptionAgents(count: number, finishedCount = 0) {
     return Array.from({ length: count }, (_, index) => ({
@@ -38,12 +52,30 @@
       data-chat-polish-conversation={scenario.id}
       data-testid="chat-polish-conversation"
     >
-      {#each scenario.items as item (item.kind === 'message' ? item.message.id : item.id)}
+      {#each scenario.items as item, index (item.kind === 'message' ? item.message.id : item.id)}
+        {@const previousItem = scenario.items[index - 1]}
+        {@const previousIsCard = isCard(previousItem)}
+        {@const currentIsCard = isCard(item)}
+        {@const seam =
+          index > 0 ? getSubscriptionCardSeam(previousIsCard, currentIsCard) : undefined}
+        {#if seam}
+          <div
+            class="chat-polish-card-gap"
+            data-card-seam={seam}
+            data-before-card={currentIsCard}
+            data-after-user-bubble={seam === 'content' &&
+              previousItem?.kind === 'message' &&
+              previousIsCard &&
+              !isSubscriptionCardMessage(previousItem.message)}
+            aria-hidden="true"
+          ></div>
+        {/if}
         {#if item.kind === 'message'}
           <div class="chat-polish-message" data-preview-message-role={item.message.role}>
             <ChatMessage
               message={item.message}
               isStreaming={item.isStreaming}
+              suppressAutomatedWakeTopSpacing
               isSticky={item.message.role === 'user' && (stickySimulation || item.isSticky)}
               readOnly={chatPolishFixtureAdapter.readOnly}
               {...chatPolishFixtureAdapter.messageProps}
@@ -54,6 +86,7 @@
             <EventWakeupBanner
               metadata={{ type: 'event_notification', ...item.wake }}
               asDivider
+              suppressTopGap
               {compact}
               showAgentCards={false}
             />
@@ -74,6 +107,7 @@
                 agents: subscriptionAgents(item.agentCount, item.finishedCount),
               }}
               {compact}
+              suppressTopGap
             />
           </div>
         {:else if item.kind === 'changed-files'}
@@ -98,14 +132,18 @@
     padding: var(--chat-polish-content-inset, 22px);
     border-radius: var(--chat-polish-card-radius, 9px);
   }
-  .chat-polish-message[data-preview-message-role='user'] {
-    margin-bottom: var(--chat-polish-user-bottom-gap, 24px);
+  .chat-polish-card-gap {
+    height: var(--chat-polish-wake-bottom-gap, 24px);
+    flex-shrink: 0;
   }
-  .chat-polish-wake {
-    margin-block: var(--chat-polish-wake-top-gap, 20px) var(--chat-polish-wake-bottom-gap, 16px);
+  .chat-polish-card-gap[data-before-card='true'] {
+    height: var(--chat-polish-wake-top-gap, 24px);
   }
-  .chat-polish-subscription {
-    margin-bottom: var(--chat-polish-subscription-bottom-gap, 16px);
+  .chat-polish-card-gap[data-after-user-bubble='true'] {
+    height: var(--chat-polish-user-bottom-gap, 24px);
+  }
+  .chat-polish-card-gap[data-card-seam='cards'] {
+    height: var(--chat-polish-subscription-bottom-gap, 16px);
   }
   :global(.chat-polish-preview .turn-failure-notice) {
     margin-block: var(--chat-polish-failure-notice-top-gap, 16px)

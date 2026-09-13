@@ -18,6 +18,8 @@
     type AgentAvatarStackItem,
   } from '$features/agent/components/agent-avatar/AgentAvatarStack.svelte';
   import {
+    SUBSCRIPTION_CARD_CONTAINMENT_CLASS,
+    SUBSCRIPTION_CARD_SURFACE_CLASS,
     SUBSCRIPTION_CHEVRON_CLASS,
     SUBSCRIPTION_CHEVRON_SIZE_CLASS,
     SUBSCRIPTION_DISCLOSURE_ROW_CLASS,
@@ -37,6 +39,8 @@
     workspaceId: string;
     agentId: string;
     compact?: boolean;
+    /** The surrounding transcript/preview owns the complete gap before this card. */
+    suppressTopGap?: boolean;
     /** Whether the owning chat is active, independent of disclosure state. */
     isActive?: boolean;
     visible?: boolean;
@@ -54,6 +58,7 @@
     workspaceId,
     agentId,
     compact = false,
+    suppressTopGap = false,
     isActive = true,
     visible = $bindable(false),
     isolatedPreview,
@@ -173,13 +178,13 @@
 </script>
 
 <div
-  class="w-full min-w-0 max-w-full {compact ? 'mt-6' : 'mt-8'}"
+  class="w-full min-w-0 max-w-full {suppressTopGap ? 'mt-0' : 'mt-6'}"
   class:hidden={!hasSubscriptions}
   data-testid="subscription-utility-area"
   data-has-subscriptions={hasSubscriptions}
 >
   <section
-    class="w-full min-w-0 max-w-full overflow-hidden rounded-lg border border-border bg-card/80 shadow-sm font-family-child"
+    class="{SUBSCRIPTION_CARD_CONTAINMENT_CLASS} {SUBSCRIPTION_CARD_SURFACE_CLASS}"
     data-conversation-layer="event-subscriptions"
     data-testid="event-subscriptions-card"
     aria-label={cardAriaLabel}
