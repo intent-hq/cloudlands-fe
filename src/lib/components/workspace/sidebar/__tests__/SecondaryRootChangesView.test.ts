@@ -151,11 +151,12 @@ function makeEntry(
   branch: string | undefined,
   rootId = 'root-1',
   registeredCommitSha?: string,
+  path = 'packages/sub',
 ): WorkspaceGitRootEntry {
   return {
     key: rootId,
     isPrimary: false,
-    path: 'packages/sub',
+    path,
     branch,
     gitRoot: { id: rootId, ...(registeredCommitSha ? { registeredCommitSha } : {}) },
   } as WorkspaceGitRootEntry;
@@ -462,7 +463,7 @@ describe('SecondaryRootChangesView', () => {
         { path: 'src/staged.ts', status: 'A', staged: true },
       ];
       mocks.getStatus.mockResolvedValue({ ok: true, data: status });
-      const view = await renderView(makeEntry('main', 'root-9'));
+      const view = await renderView(makeEntry('main', 'root-9', undefined, '/repo/packages/sub'));
       const rows = await waitFor(() => {
         const found = view.getAllByTestId('secondary-root-file-open');
         expect(found).toHaveLength(2);
@@ -481,7 +482,7 @@ describe('SecondaryRootChangesView', () => {
       expect(action.payload[0]).toBe('ws-1');
       expect(action.payload[1]).toMatchObject({
         id: 'root-root-9-unstaged-src/unstaged.ts',
-        file: 'packages/sub/src/unstaged.ts',
+        file: '/repo/packages/sub/src/unstaged.ts',
         relativePath: 'src/unstaged.ts',
         stage: 'unstaged',
         status: 'modified',
@@ -490,8 +491,8 @@ describe('SecondaryRootChangesView', () => {
       });
       expect(action.payload[2]).toEqual({
         gitRootId: 'root-9',
-        gitRootPath: 'packages/sub',
-        filePath: 'packages/sub/src/unstaged.ts',
+        gitRootPath: '/repo/packages/sub',
+        filePath: '/repo/packages/sub/src/unstaged.ts',
         changeId: 'root-root-9-unstaged-src/unstaged.ts',
         openInAdjacentPanel: false,
         sourcePanelId: 'panel-focused',
@@ -511,7 +512,7 @@ describe('SecondaryRootChangesView', () => {
       });
       expect(action.payload[2]).toMatchObject({
         gitRootId: 'root-9',
-        gitRootPath: 'packages/sub',
+        gitRootPath: '/repo/packages/sub',
         changeId: 'root-root-9-staged-src/staged.ts',
       });
     });
@@ -538,6 +539,34 @@ describe('SecondaryRootChangesView', () => {
         openInAdjacentPanel: true,
         sourcePanelId: 'panel-focused',
       });
+    });
+
+    it('opens in the adjacent panel on a platform modifier Enter and prevents the default', async () => {
+      const { rows } = await renderRows();
+      const isMac = navigator.platform.toUpperCase().includes('MAC');
+
+      const notPrevented = await fireEvent.keyDown(
+        rows[0],
+        isMac ? { key: 'Enter', metaKey: true } : { key: 'Enter', ctrlKey: true },
+      );
+
+      expect(notPrevented).toBe(false);
+      const actions = diffActions();
+      expect(actions).toHaveLength(1);
+      expect(actions[0].payload[2]).toMatchObject({
+        gitRootId: 'root-9',
+        openInAdjacentPanel: true,
+        sourcePanelId: 'panel-focused',
+      });
+    });
+
+    it('leaves a plain Enter keydown to the native button activation', async () => {
+      const { rows } = await renderRows();
+
+      const notPrevented = await fireEvent.keyDown(rows[0], { key: 'Enter' });
+
+      expect(notPrevented).toBe(true);
+      expect(diffActions()).toHaveLength(0);
     });
 
     it('renders no staging or revert affordances on the read-only rows', async () => {
