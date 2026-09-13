@@ -135,6 +135,33 @@ describe('chatReadService (fake seam, real store)', () => {
     expect(stored.map((m) => m.id)).toEqual(['019f3d27-user-seq0', '019f3d27-asst-seq1']);
   });
 
+  it('hydrates a persisted plan snapshot without changing its entries', async () => {
+    const agentId = 'agent-plan-hydration';
+    const plan = {
+      type: 'plan' as const,
+      id: 'msg-plan:0',
+      entries: [
+        { content: 'Inspect the code', priority: 'high' as const, status: 'completed' as const },
+        { content: 'Run tests', priority: 'medium' as const, status: 'in_progress' as const },
+      ],
+    };
+    agentsApi.get.mockResolvedValueOnce(makeSession({ id: agentId }) as never);
+    agentsApi.getConversation.mockResolvedValueOnce(
+      conversation([
+        {
+          id: 'msg-plan',
+          role: 'assistant',
+          timestamp: '2026-01-01T00:00:00.000Z',
+          contentBlocks: [plan],
+        },
+      ]) as never,
+    );
+
+    await loadChatTranscript(agentId);
+
+    expect(selectAgentMessages.select(appStore.state, agentId)[0]?.contentBlocks).toEqual([plan]);
+  });
+
   it('skips hydration when the session read returns null (no fabricated session)', async () => {
     const agentId = 'agent-chat-null';
     agentsApi.get.mockResolvedValueOnce(null as never);

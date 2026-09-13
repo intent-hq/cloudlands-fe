@@ -36,6 +36,22 @@ function addSourcePanel(state: PanelState): HTMLElement {
   return panel;
 }
 
+function addPanelModeStyles(): HTMLStyleElement {
+  const styles = document.createElement('style');
+  styles.textContent = `
+    .actual-panel-shell .panel-content {
+      padding-inline-start: 24px;
+      padding-inline-end: 20px;
+    }
+    .actual-panel-shell.contained .panel-content {
+      padding-inline-start: 8px;
+      padding-inline-end: 8px;
+    }
+  `;
+  document.head.append(styles);
+  return styles;
+}
+
 beforeEach(() => {
   vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(function () {
     return this.classList.contains('panel-drag-preview-split') ? 1000 : 0;
@@ -271,4 +287,56 @@ describe('PanelDragPreview', () => {
     source.remove();
     target.remove();
   });
+
+  it.each([
+    { contained: false, expectedPadding: ['24px', '20px'] },
+    { contained: true, expectedPadding: ['8px', '8px'] },
+  ])(
+    'preserves content classes and inline padding during panel-header move preview (contained=$contained)',
+    ({ contained, expectedPadding }) => {
+      const styles = addPanelModeStyles();
+      const draggedState = panel('dragged-panel', ['dragged']);
+      const stableState = panel('stable-panel', ['stable']);
+      const dragged = addSourcePanel(draggedState);
+      const stable = addSourcePanel(stableState);
+      stable.classList.toggle('contained', contained);
+      const stableContent = stable.querySelector<HTMLElement>('.panel-content');
+      const { container } = render(PanelDragPreview, {
+        props: {
+          panels: { 'dragged-panel': draggedState, 'stable-panel': stableState },
+          draggedPanelId: 'dragged-panel',
+          node: {
+            type: 'split',
+            direction: 'horizontal',
+            sizes: [50, 50],
+            children: [
+              { type: 'panel', panelId: 'dragged-panel' },
+              { type: 'panel', panelId: 'stable-panel' },
+            ],
+          },
+        },
+      });
+
+      const snapshot = container.querySelector<HTMLElement>(
+        '[data-panel-layout-preview-snapshot="stable-panel"]',
+      );
+      const snapshotContent = snapshot?.querySelector<HTMLElement>('.panel-content');
+      expect(snapshot?.classList.contains('contained')).toBe(contained);
+      expect(snapshotContent?.className).toBe(stableContent?.className);
+      expect(stableContent).toBeTruthy();
+      expect(snapshotContent).toBeTruthy();
+      expect([
+        getComputedStyle(snapshotContent!).paddingInlineStart,
+        getComputedStyle(snapshotContent!).paddingInlineEnd,
+      ]).toEqual(expectedPadding);
+      expect([
+        getComputedStyle(stableContent!).paddingInlineStart,
+        getComputedStyle(stableContent!).paddingInlineEnd,
+      ]).toEqual(expectedPadding);
+
+      dragged.remove();
+      stable.remove();
+      styles.remove();
+    },
+  );
 });

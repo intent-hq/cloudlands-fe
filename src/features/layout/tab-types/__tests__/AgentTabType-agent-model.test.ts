@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, waitFor } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 
 const mockState = vi.hoisted(() => {
   type Subscriber<T> = (value: T) => void;
@@ -47,16 +47,24 @@ vi.mock('svelte-fa', async () => ({
   default: (await import('$lib/components/ui/__tests__/mocks/Fa.svelte')).default,
 }));
 vi.mock('@fortawesome/free-solid-svg-icons', () => ({
+  faArrowDown: { iconName: 'arrow-down' },
   faCheck: { iconName: 'check' },
+  faChevronDown: { iconName: 'chevron-down' },
+  faChevronRight: { iconName: 'chevron-right' },
+  faCircle: { iconName: 'circle' },
+  faCircleQuestion: { iconName: 'circle-question' },
   faCircleInfo: { iconName: 'circle-info' },
+  faClock: { iconName: 'clock' },
   faCopy: { iconName: 'copy' },
+  faEye: { iconName: 'eye' },
+  faList: { iconName: 'list' },
+  faListCheck: { iconName: 'list-check' },
+  faSpinner: { iconName: 'spinner' },
   faSliders: { iconName: 'sliders' },
   faTrash: { iconName: 'trash' },
+  faTriangleExclamation: { iconName: 'triangle-exclamation' },
 }));
 vi.mock('$lib/icons/faNote', () => ({ faNote: { iconName: 'note' } }));
-vi.mock('$lib/components/layout/panel-system/panel-header-context.svelte', () => ({
-  getPanelHeaderContext: () => ({ registerActions: vi.fn(), registerState: vi.fn() }),
-}));
 vi.mock('$features/agent/browser', () => ({
   subscribeToAgent: (agentId: string, run: (session: any) => void) => {
     run(mockState.agents.get()[agentId]);
@@ -175,7 +183,7 @@ vi.mock('$lib/utils/client-logger', () => ({
   createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
 }));
 
-import AgentTabType from '../AgentTabType.svelte';
+import AgentTabTypePrimaryActionsHarness from './mocks/AgentTabTypePrimaryActionsHarness.svelte';
 
 describe('AgentTabType agent model reactivity', () => {
   beforeEach(() => {
@@ -194,7 +202,7 @@ describe('AgentTabType agent model reactivity', () => {
   });
 
   it('updates the ChatPanel agentModel prop when Redux session model changes', async () => {
-    render(AgentTabType, {
+    render(AgentTabTypePrimaryActionsHarness, {
       props: {
         tab: { id: 'tab-1', type: 'agent', title: 'Agent', agentId: 'agent-1' },
         workspaceId: 'ws-1',
@@ -219,5 +227,43 @@ describe('AgentTabType agent model reactivity', () => {
         'anthropic:claude-opus-4-7',
       );
     });
+  });
+
+  it('renders checklist task progress in the registered primary header actions', async () => {
+    render(AgentTabTypePrimaryActionsHarness, {
+      props: {
+        tab: { id: 'tab-1', type: 'agent', title: 'Agent', agentId: 'agent-1' },
+        workspaceId: 'ws-1',
+        isActive: true,
+        isPanelFocused: true,
+      },
+    });
+
+    const header = await screen.findByTestId('agent-primary-header-actions');
+    await waitFor(() => expect(screen.getByTestId('task-progress-trigger')).toBeTruthy());
+    expect(header.contains(screen.getByTestId('task-progress-trigger'))).toBe(true);
+    expect(screen.getByTestId('task-progress-trigger').getAttribute('aria-label')).toBe(
+      'Task progress: 1 of 2 completed',
+    );
+    expect(screen.getByTestId('task-progress-trigger').className).toContain(
+      'h-(--row-action-target-compact)',
+    );
+    expect(screen.getByTestId('task-progress-trigger').className).toContain(
+      'min-w-(--row-action-target-compact)',
+    );
+    expect(screen.getByTestId('task-progress-trigger').className).toContain('w-fit');
+    expect(screen.getByTestId('task-progress-checklist-icon')).toBeTruthy();
+    expect(header.querySelectorAll('[data-icon="list-check"]')).toHaveLength(1);
+    expect(header.querySelector('[data-testid="task-progress-icon-stack"]')).toBeNull();
+    expect(header.querySelector('[data-testid="task-progress-status-icon"]')).toBeNull();
+
+    screen.getByTestId('task-progress-trigger').focus();
+    expect(screen.queryByRole('dialog', { name: 'Agent tasks' })).toBeNull();
+    await fireEvent.click(screen.getByTestId('task-progress-trigger'));
+    const dialog = await screen.findByRole('dialog', { name: 'Agent tasks' });
+    expect(dialog.querySelectorAll('[data-testid="task-progress-row"]')).toHaveLength(2);
+    expect(dialog.querySelectorAll('[data-testid="task-progress-row-status-icon"]')).toHaveLength(
+      2,
+    );
   });
 });

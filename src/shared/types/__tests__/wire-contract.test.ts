@@ -43,6 +43,168 @@ describe('PROTOCOL.md §7 ContentBlock wire contract', () => {
     expect(out).toEqual(wire);
   });
 
+  it.each([
+    {
+      label: 'full image',
+      wire: { type: 'image', id: 'img-full', data: 'AAAA', mimeType: 'image/png' },
+    },
+    {
+      label: 'slim thumbnail',
+      wire: {
+        type: 'image',
+        id: 'img-thumbnail',
+        data: 'BBBB',
+        mimeType: 'image/webp',
+        dataTruncated: true,
+        dataIsThumbnail: true,
+        dataBytes: 8192,
+      },
+    },
+    {
+      label: 'zero-byte slim thumbnail',
+      wire: {
+        type: 'image',
+        id: 'img-zero-thumbnail',
+        data: 'BBBB',
+        mimeType: 'image/webp',
+        dataTruncated: true,
+        dataIsThumbnail: true,
+        dataBytes: 0,
+      },
+    },
+    {
+      label: 'legacy slim placeholder',
+      wire: {
+        type: 'image',
+        id: 'img-placeholder',
+        mimeType: 'image/jpeg',
+        dataTruncated: true,
+        dataBytes: 16384,
+      },
+    },
+    {
+      label: 'zero-byte legacy slim placeholder',
+      wire: {
+        type: 'image',
+        id: 'img-zero-placeholder',
+        mimeType: 'image/jpeg',
+        dataTruncated: true,
+        dataBytes: 0,
+      },
+    },
+  ])('passes a protocol-valid $label through unchanged', ({ wire }) => {
+    expect(migrateFromLegacy(wire)).toEqual(wire);
+  });
+
+  it.each([
+    ['undefined', undefined],
+    ['null', null],
+    ['number', 42],
+    ['boolean', false],
+    ['object', { base64: 'AAAA' }],
+    ['array', ['AAAA']],
+  ])('rejects a slim image with present %s data', (_label, data) => {
+    expect(() =>
+      migrateFromLegacy({
+        type: 'image',
+        data,
+        mimeType: 'image/png',
+        dataTruncated: true,
+        dataBytes: 8192,
+      }),
+    ).toThrow(/image block/);
+  });
+
+  it.each([
+    ['data omitted without slim metadata', { type: 'image', mimeType: 'image/png' }],
+    ['missing MIME type', { type: 'image', data: 'AAAA' }],
+    ['empty MIME type', { type: 'image', data: 'AAAA', mimeType: '' }],
+    ['non-image MIME type', { type: 'image', data: 'AAAA', mimeType: 'text/plain' }],
+    [
+      'thumbnail marker without truncation',
+      { type: 'image', data: 'AAAA', mimeType: 'image/png', dataIsThumbnail: true },
+    ],
+    [
+      'truncated data without thumbnail marker',
+      {
+        type: 'image',
+        data: 'AAAA',
+        mimeType: 'image/png',
+        dataTruncated: true,
+        dataBytes: 8192,
+      },
+    ],
+    [
+      'placeholder with thumbnail marker',
+      {
+        type: 'image',
+        mimeType: 'image/png',
+        dataTruncated: true,
+        dataIsThumbnail: true,
+        dataBytes: 8192,
+      },
+    ],
+    [
+      'truncated placeholder without byte count',
+      { type: 'image', mimeType: 'image/png', dataTruncated: true },
+    ],
+    [
+      'truncated placeholder with fractional byte count',
+      { type: 'image', mimeType: 'image/png', dataTruncated: true, dataBytes: 3.5 },
+    ],
+    [
+      'truncated placeholder with negative byte count',
+      { type: 'image', mimeType: 'image/png', dataTruncated: true, dataBytes: -1 },
+    ],
+    [
+      'full image with orphan byte count',
+      { type: 'image', data: 'AAAA', mimeType: 'image/png', dataBytes: 4 },
+    ],
+    [
+      'explicit false truncation flag',
+      { type: 'image', data: 'AAAA', mimeType: 'image/png', dataTruncated: false },
+    ],
+  ])('rejects an image with %s', (_label, wire) => {
+    expect(() => migrateFromLegacy(wire)).toThrow(/image block/);
+  });
+
+  it.each([
+    { type: 'audio', data: null, mimeType: 'audio/mpeg' },
+    { type: 'file', data: false, mimeType: 'text/plain', fileName: 'notes.txt' },
+  ])('keeps non-image media data validation strict for $type blocks', (wire) => {
+    expect(() => migrateFromLegacy(wire)).toThrow(/required/);
+  });
+
+  it('strips provider metadata from an otherwise valid bounded plan snapshot', () => {
+    const wire = {
+      type: 'plan',
+      id: 'blk_plan',
+      entries: [
+        {
+          content: 'Inspect the code',
+          priority: 'high',
+          status: 'completed',
+          _meta: { provider: 'codex' },
+          providerExtension: { traceId: 'provider-only' },
+        },
+      ],
+    };
+    expect(migrateFromLegacy(wire)).toEqual({
+      type: 'plan',
+      id: 'blk_plan',
+      entries: [{ content: 'Inspect the code', priority: 'high', status: 'completed' }],
+    });
+  });
+
+  it('rejects a plan snapshot with an unsupported entry value', () => {
+    expect(() =>
+      migrateFromLegacy({
+        type: 'plan',
+        entries: [{ content: 'Inspect the code', priority: 'high', status: 'cancelled' }],
+      }),
+    ).toThrow(/plan block/);
+  });
+
   it('rejects a block that aliases `text` as `content` (§7 divergence)', () => {
     expect(() => migrateFromLegacy({ type: 'text', content: 'hello' })).toThrow(/content/);
   });

@@ -42,7 +42,7 @@ describe('ChatPolishCatalogPreview', () => {
     expect(view.container.textContent).toContain('Command failed with exit code 1.');
   });
 
-  it('renders both subscription cohorts and avatar overflow', () => {
+  it('renders both subscription cohorts with checklist-only delegated task controls', () => {
     const view = render(ChatPolishCatalogPreview, { props: { fixture } });
     expect(view.container.querySelectorAll('[data-subscription-cohort="after_all"]')).toHaveLength(
       2,
@@ -56,6 +56,24 @@ describe('ChatPolishCatalogPreview', () => {
     expect(
       view.container.querySelectorAll('[data-testid="agent-list-item"]').length,
     ).toBeGreaterThan(6);
+    const expandedRows = view.container.querySelector(
+      '[data-subscription-cohort="after_all"][data-subscription-expanded="true"]',
+    );
+    const triggers = expandedRows?.querySelectorAll('[data-testid="task-progress-trigger"]') ?? [];
+    expect(triggers).toHaveLength(7);
+    expect(Array.from(triggers).map((trigger) => trigger.getAttribute('aria-label'))).toEqual(
+      expect.arrayContaining([
+        'Task progress: 0 of 1 completed',
+        'Task progress: 1 of 1 completed',
+        'Task progress: 1 of 3 completed',
+        'Task progress: 1 of 7 completed',
+      ]),
+    );
+    for (const trigger of triggers) {
+      expect(trigger.querySelectorAll('[data-icon="list-check"]')).toHaveLength(1);
+      expect(trigger.querySelector('[data-testid="task-progress-icon-stack"]')).toBeNull();
+      expect(trigger.querySelector('[data-testid="task-progress-overflow-indicator"]')).toBeNull();
+    }
   });
 
   it('keeps long labels accessible while their visible row can truncate', () => {

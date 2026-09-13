@@ -78,7 +78,7 @@ const semanticSelectors: Record<string, SemanticSelector[]> = {
   'CHAT-03': [
     selector(
       ['mounted', 'runtime-success', 'keyboard'],
-      'renders the compact legacy spinner and Thinking row',
+      'renders one active 16px phase mark and the localized Thinking row',
       ['mounted', 'runtime-success', 'keyboard'],
     ),
     selector(['runtime-error'], 'renders explicit failed response copy'),
@@ -89,7 +89,7 @@ const semanticSelectors: Record<string, SemanticSelector[]> = {
   'CHAT-04': [
     selector(
       ['mounted', 'runtime-success', 'keyboard'],
-      'renders the compact legacy spinner and Thinking row',
+      'shows the newest daemon message and maps all lifecycle phases to mark variants',
       ['mounted', 'runtime-success', 'keyboard'],
     ),
     selector(['runtime-error'], 'renders explicit failed response copy'),
@@ -270,24 +270,32 @@ const semanticSelectors: Record<string, SemanticSelector[]> = {
       'affirms coordinator and Spec ordering in every required visual state',
       [...visualStates],
     ),
-    selector(['open'], 'opens each compact agent and note exactly once'),
+    selector(['open'], 'keeps compact Context-card and Spec-icon actions separate'),
   ],
   'WORKSPACE-21': [
-    selector(['reuse'], 'opens each compact agent and note exactly once'),
-    selector(['new'], 'opens the isolated compact Files chooser'),
+    selector(
+      ['reuse', 'new'],
+      'opens a running target as new and restores an existing hidden browser tab',
+    ),
   ],
   'WORKSPACE-22': [
-    selector(['reuse'], 'opens each compact agent and note exactly once'),
-    selector(['loading'], 'keeps the compact Agents launcher stable while sessions are loading'),
     selector(
-      ['error', 'empty'],
-      'renders +0 Agents and Context items as six plus semantic overflow',
+      ['reuse', 'empty'],
+      'opens an existing terminal and renders truthful empty shell states',
     ),
+    selector(['loading'], 'keeps pending controls disabled, busy, and geometrically stable'),
+    selector(['error'], 'keeps pending and failure state isolated by workspace'),
   ],
   'WORKSPACE-27': [
     selector(['focus-restore'], 'contained outline-free keyboard focus states'),
-    selector(['outside-dismiss'], 'overlay that dismisses only from its backdrop'),
-    selector(['escape'], 'dismisses the expanded card with Escape'),
+    selector(
+      ['outside-dismiss'],
+      'dismisses expanded overlay and footer backdrops without navigator propagation',
+    ),
+    selector(
+      ['escape'],
+      'dismisses the expanded card with Escape while preserving nested interaction isolation',
+    ),
   ],
   'WORKSPACE-28': [
     selector(
@@ -318,7 +326,11 @@ const semanticSelectors: Record<string, SemanticSelector[]> = {
       ['close'],
       'keeps the close control outside the hover trigger and isolated from navigation',
     ),
-    selector(['drag', 'reorder'], 'supports keyboard and pointer drag reordering'),
+    selector(['drag'], 'tracks every horizontal pointer move and keeps activation unchanged'),
+    selector(
+      ['reorder'],
+      'supports keyboard reordering in both directions without moving past endpoints',
+    ),
   ],
   'WORKSPACE-30': [
     selector(
@@ -337,7 +349,7 @@ const semanticSelectors: Record<string, SemanticSelector[]> = {
   'WORKSPACE-36': [
     selector(
       ['mounted', 'cleanup'],
-      'fills one-panel viewports and preserves explicit overflow preferences',
+      'fills one-panel viewports and normalizes explicit saved widths',
     ),
     selector(
       ['runtime-success', 'edges'],
@@ -352,7 +364,7 @@ const semanticSelectors: Record<string, SemanticSelector[]> = {
   'WORKSPACE-37': [
     selector(
       ['mounted', 'cleanup'],
-      'fills one-panel viewports and preserves explicit overflow preferences',
+      'fills one-panel viewports and normalizes explicit saved widths',
     ),
     selector(['runtime-success'], 'uses the edge panel when the layout has no valid focus'),
     selector(['runtime-error'], 'skips empty workspaces and wraps in display order'),
@@ -455,7 +467,7 @@ const semanticSelectors: Record<string, SemanticSelector[]> = {
       ['editor'],
       'opens the isolated compact Files chooser and routes the installed editor action',
     ),
-    selector(['other'], 'keeps plain +N text adjacent to the last left-packed icon-grid item'),
+    selector(['other'], 'keeps plain +N text inside the shared logical-start stack'),
     selector(
       ['focus-restore'],
       'uses contained outline-free keyboard focus states for every preview target',

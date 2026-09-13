@@ -70,11 +70,24 @@ function createParaglideFixtureRoot(): { root: string; paths: FixturePaths } {
   return { root, paths };
 }
 
-function readPluginNames(uiPreview: boolean, configDir = resolve('.')): string[] {
+function readPluginNames({
+  uiPreview,
+  canReuse,
+  mode = 'development',
+  configDir = resolve('.'),
+}: {
+  uiPreview: boolean;
+  canReuse?: boolean;
+  mode?: string;
+  configDir?: string;
+}): string[] {
   const configUrl = pathToFileURL(join(configDir, 'vite.config.mjs')).href;
   const script = `
     import createViteConfig from ${JSON.stringify(configUrl)};
-    const config = createViteConfig({ command: 'serve', mode: 'development' });
+    const config = createViteConfig(
+      { command: 'serve', mode: ${JSON.stringify(mode)} },
+      ${canReuse === undefined ? '{}' : `{ canReuseGeneratedParaglide: () => ${JSON.stringify(canReuse)} }`},
+    );
     process.stdout.write(JSON.stringify(config.plugins.map((plugin) => plugin.name)));
   `;
   const output = execFileSync(process.execPath, ['--input-type=module', '-e', script], {
@@ -105,8 +118,26 @@ describe('production web Vite configuration', () => {
     expect(define['process.env.VITE_INTENTD_WS_URL']).toBe('"ws://127.0.0.1:5181/rpc"');
   });
 
+  it('reuses generated messages for the UI preview when the output is fresh', () => {
+    expect(readPluginNames({ uiPreview: true, canReuse: true })).toContain(
+      'reuse-generated-paraglide',
+    );
+  });
+
+  it('never reuses stale generated messages even for the UI preview', () => {
+    const plugins = readPluginNames({ uiPreview: true, canReuse: false });
+    expect(plugins).not.toContain('reuse-generated-paraglide');
+    expect(plugins).toContain('unplugin-paraglide-js');
+  });
+
+  it.each(['development', 'test'])('uses full compilation in %s mode outside preview', (mode) => {
+    const plugins = readPluginNames({ uiPreview: false, canReuse: true, mode });
+    expect(plugins).toContain('unplugin-paraglide-js');
+    expect(plugins).not.toContain('reuse-generated-paraglide');
+  });
+
   it('compiles messages with unplugin outside the UI preview', () => {
-    expect(readPluginNames(false)).toContain('unplugin-paraglide-js');
+    expect(readPluginNames({ uiPreview: false })).toContain('unplugin-paraglide-js');
   });
 });
 
@@ -125,19 +156,29 @@ describe('generated Paraglide reuse in the UI preview', () => {
     const { root, paths } = createParaglideFixtureRoot();
     fixtures.push(root);
 
-    expect(readPluginNames(true, root)).toContain('unplugin-paraglide-js');
+    expect(readPluginNames({ uiPreview: true, configDir: root })).toContain(
+      'unplugin-paraglide-js',
+    );
 
     await expect(recordSidecar(paths)).resolves.toBe(true);
-    expect(readPluginNames(true, root)).toContain('reuse-generated-paraglide');
-    expect(readPluginNames(false, root)).toContain('unplugin-paraglide-js');
+    expect(readPluginNames({ uiPreview: true, configDir: root })).toContain(
+      'reuse-generated-paraglide',
+    );
+    expect(readPluginNames({ uiPreview: false, configDir: root })).toContain(
+      'unplugin-paraglide-js',
+    );
 
     // Touching an input without changing content must not invalidate the outputs.
     const koCatalog = join(paths.messagesDir, 'ko.json');
     writeFileSync(koCatalog, JSON.stringify({ hello: '안녕하세요' }));
-    expect(readPluginNames(true, root)).toContain('reuse-generated-paraglide');
+    expect(readPluginNames({ uiPreview: true, configDir: root })).toContain(
+      'reuse-generated-paraglide',
+    );
 
     writeFileSync(koCatalog, JSON.stringify({ hello: '안녕' }));
-    expect(readPluginNames(true, root)).toContain('unplugin-paraglide-js');
+    expect(readPluginNames({ uiPreview: true, configDir: root })).toContain(
+      'unplugin-paraglide-js',
+    );
   });
 
   it('requires both the sidecar and the generated outputs', async () => {

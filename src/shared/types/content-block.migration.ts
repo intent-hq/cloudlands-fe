@@ -18,8 +18,8 @@
  * wire-shaped envelopes — and remain.
  */
 
-import type { ContentBlock } from './content-block';
-import { normalizeContentBlock } from './content-block';
+import type { ContentBlock, PlanContentBlock, PlanEntry } from './content-block';
+import { isPlanContentBlock, normalizeContentBlock } from './content-block';
 import { isProposalKind } from './proposal';
 import { getProposalFromResourceBlock } from './proposal-resource';
 
@@ -34,7 +34,67 @@ const CANONICAL_BLOCK_TYPES = new Set<ContentBlock['type']>([
   'file',
   'nav-link',
   'proposal',
+  'plan',
 ]);
+
+function canonicalPlanEntry(entry: PlanEntry): PlanEntry {
+  return { content: entry.content, priority: entry.priority, status: entry.status };
+}
+
+function canonicalPlanBlock(block: Record<string, any>): PlanContentBlock {
+  if (!isPlanContentBlock(block)) {
+    throw new Error(
+      `Invalid plan block: required bounded 'entries' snapshot missing (PROTOCOL §7). Received: ${JSON.stringify(block)}`,
+    );
+  }
+  return {
+    type: 'plan',
+    ...(typeof block.id === 'string' ? { id: block.id } : {}),
+    entries: block.entries.map(canonicalPlanEntry),
+  };
+}
+
+const IMAGE_MIME_PATTERN = /^image\/[a-z0-9][a-z0-9.+-]*$/i;
+
+function validateImageBlock(block: Record<string, any>): void {
+  const hasData = Object.prototype.hasOwnProperty.call(block, 'data');
+  const hasStringData = typeof block.data === 'string';
+  const hasTruncationFlag = block.dataTruncated !== undefined;
+  const hasThumbnailFlag = block.dataIsThumbnail !== undefined;
+  const hasByteCount = block.dataBytes !== undefined;
+
+  if (typeof block.mimeType !== 'string' || !IMAGE_MIME_PATTERN.test(block.mimeType)) {
+    throw new Error(
+      `Invalid image block: required image 'mimeType'. Received: ${JSON.stringify(block)}`,
+    );
+  }
+
+  if (hasData && !hasStringData) {
+    throw new Error(
+      `Invalid image block: present 'data' must be a string. Received: ${JSON.stringify(block)}`,
+    );
+  }
+
+  if (!hasTruncationFlag) {
+    if (!hasStringData || hasThumbnailFlag || hasByteCount) {
+      throw new Error(
+        `Invalid image block: full images require 'data' without slim flags. Received: ${JSON.stringify(block)}`,
+      );
+    }
+    return;
+  }
+
+  if (
+    block.dataTruncated !== true ||
+    !Number.isSafeInteger(block.dataBytes) ||
+    block.dataBytes < 0 ||
+    (hasStringData ? block.dataIsThumbnail !== true : hasThumbnailFlag)
+  ) {
+    throw new Error(
+      `Invalid image block: malformed slim projection metadata. Received: ${JSON.stringify(block)}`,
+    );
+  }
+}
 
 /**
  * Strictly validate a ContentBlock-shaped payload against the canonical PROTOCOL.md §7
@@ -170,6 +230,8 @@ export function convertFromACP(acpBlock: any): ContentBlock {
     );
   }
 
+  if (acpBlock.type === 'plan') return canonicalPlanBlock(acpBlock);
+
   const block: ContentBlock = { type: acpBlock.type };
 
   // Text content
@@ -206,6 +268,8 @@ export function convertFromACP(acpBlock: any): ContentBlock {
  */
 export function convertToACP(block: ContentBlock): any {
   const normalized = normalizeContentBlock(block);
+
+  if (normalized.type === 'plan') return canonicalPlanBlock(normalized);
 
   const acpBlock: any = {
     type: normalized.type,
@@ -292,6 +356,8 @@ function validateCanonicalBlock(block: Record<string, any>): ContentBlock {
       }
       break;
     case 'image':
+      validateImageBlock(block);
+      break;
     case 'audio':
       if (typeof block.data !== 'string' || typeof block.mimeType !== 'string') {
         throw new Error(
@@ -315,6 +381,8 @@ function validateCanonicalBlock(block: Record<string, any>): ContentBlock {
     case 'proposal':
       // Handled by dedicated branches above or carries no required text/tool fields.
       break;
+    case 'plan':
+      return canonicalPlanBlock(block);
   }
   return { ...block } as ContentBlock;
 }

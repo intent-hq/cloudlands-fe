@@ -32,6 +32,7 @@
     setEventSubscriptionsExpanded,
   } from './agent-subscriptions-view-state';
   import { safeSubscriptionSlide } from './subscription-disclosure';
+  import type { TaskProgressItem } from './workspace-task-fallback';
 
   interface Props {
     workspaceId: string;
@@ -45,7 +46,12 @@
       count: number;
       initiallyExpanded?: boolean;
       mode?: 'generic' | 'agents' | 'mixed';
-      agents?: Array<{ id: string; name: string; finished?: boolean }>;
+      agents?: Array<{
+        id: string;
+        name: string;
+        finished?: boolean;
+        taskProgress?: TaskProgressItem[];
+      }>;
     };
     previewContent?: Snippet;
   }

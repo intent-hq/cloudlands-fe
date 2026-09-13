@@ -20,6 +20,8 @@ import {
   isStreamingMessage,
   hasToolCalls,
 } from '../guards';
+import { assertAgentMessage } from '../assertions';
+import { safeParseAgentMessage } from '../parsers';
 import { isWorkspaceDisplayStatus, WORKSPACE_DISPLAY_STATUS_VALUES } from '../../types';
 import type { AgentMessage } from '../agent-message';
 
@@ -64,6 +66,24 @@ describe('Type Guards', () => {
         };
         expect(isAgentMessage(message)).toBe(true);
       });
+    });
+
+    it('accepts protocol tool messages consistently and rejects unknown roles', () => {
+      const toolMessage = {
+        id: 'msg_tool_123',
+        role: 'tool',
+        contentBlocks: [{ type: 'tool_result', tool_use_id: 'call-123', content: 'done' }],
+        timestamp: '2026-09-04T00:00:00Z',
+      };
+
+      expect(isAgentMessage(toolMessage)).toBe(true);
+      expect(safeParseAgentMessage(toolMessage)).toBe(toolMessage);
+      expect(() => assertAgentMessage(toolMessage)).not.toThrow();
+
+      const unknownRoleMessage = { ...toolMessage, role: 'observer' };
+      expect(isAgentMessage(unknownRoleMessage)).toBe(false);
+      expect(safeParseAgentMessage(unknownRoleMessage)).toBeNull();
+      expect(() => assertAgentMessage(unknownRoleMessage)).toThrow();
     });
 
     it('should reject invalid messages', () => {

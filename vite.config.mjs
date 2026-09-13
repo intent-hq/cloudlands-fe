@@ -299,7 +299,7 @@ const excludeNodeModules = () => ({
   },
 });
 
-export default defineConfig(({ command, mode, isPreview }) => {
+export default defineConfig(({ command, mode, isPreview }, testOverrides = {}) => {
   // Web profile: `INTENT_BUILD_TARGET=web` (set by the dev:web / build:web
   // scripts) builds the renderer for a plain browser — no Electron main or
   // preload. svelte.config.js switches the adapter output to dist/web for the
@@ -314,6 +314,7 @@ export default defineConfig(({ command, mode, isPreview }) => {
   const useBundledMessages = mode === 'production';
   const i18nVirtualMessages = '\0intent-paraglide-messages';
   const i18nVirtualRuntime = '\0intent-paraglide-runtime';
+  const canReuse = testOverrides.canReuseGeneratedParaglide ?? canReuseGeneratedParaglide;
   const env = loadEnv(mode, __dirname, '');
 
   const webDefines = {};
@@ -372,7 +373,7 @@ export default defineConfig(({ command, mode, isPreview }) => {
           return null;
         },
       },
-      isUiPreview && canReuseGeneratedParaglide()
+      isUiPreview && canReuse()
         ? reuseGeneratedParaglide()
         : paraglideVitePlugin({
             project: paraglideProject,

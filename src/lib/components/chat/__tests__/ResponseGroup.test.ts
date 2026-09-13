@@ -1088,6 +1088,7 @@ describe('MessageContent - top-level response rows', () => {
         {
           id: 'message-result-visibility',
           role: 'assistant',
+          timestamp: '2026-01-01T00:00:00.000Z',
           contentBlocks,
         },
       ],

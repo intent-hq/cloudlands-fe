@@ -14,6 +14,10 @@ import {
   createTestWorkspaceId,
   createTestAgentId,
 } from '../../../../test/factories/workspace.factory';
+import {
+  configuredVisualStates,
+  exerciseVisualStates,
+} from '$lib/components/__tests__/helpers/visual-state-characterization';
 import { workspaceHoverCardIntentSession } from '../utils/workspace-hover-card-intent';
 
 const mocks = vi.hoisted(() => {
@@ -87,6 +91,20 @@ function makeWorkspace(overrides: Partial<Workspace> = {}): Workspace {
     agentSummary: { agentIds: [], hasActiveAgents: false },
     ...overrides,
   } as Workspace;
+}
+
+function rect(top: number, left: number, width: number, height: number): DOMRect {
+  return {
+    x: left,
+    y: top,
+    top,
+    left,
+    width,
+    height,
+    right: left + width,
+    bottom: top + height,
+    toJSON: () => ({}),
+  } as DOMRect;
 }
 
 describe('WorkspaceCard compact agent metadata', () => {
@@ -384,6 +402,46 @@ describe('WorkspaceCard hover-intent delay', () => {
   const hoverCard = () => document.querySelector('[role="tooltip"]');
 
   beforeEach(() => workspaceHoverCardIntentSession.reset());
+
+  it('affirms hover-card placement and dismissal in every required visual state', async () => {
+    vi.useFakeTimers();
+    const cardRect = rect(0, 0, 300, 120);
+    const rectSpy = vi
+      .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockImplementation(function getMockRect(this: HTMLElement) {
+        return this.getAttribute('role') === 'tooltip' ? cardRect : rect(0, 0, 0, 0);
+      });
+    try {
+      const observed = await exerciseVisualStates(async ({ width }) => {
+        const view = render(WorkspaceCard, { props: { workspace: makeWorkspace() } });
+        const row = view.container.querySelector<HTMLElement>('[data-workspace-card-row]')!;
+        row.tabIndex = 0;
+        row.getBoundingClientRect = vi.fn(() => rect(40, 16, 224, 28));
+        return {
+          ...view,
+          target: row,
+          assertCapability: async () => {
+            await vi.advanceTimersByTimeAsync(250);
+            await tick();
+            await vi.advanceTimersByTimeAsync(16);
+            const card = hoverCard() as HTMLElement | null;
+            expect(card?.classList.contains('fixed')).toBe(true);
+            const left = Number.parseFloat(card?.style.left ?? '');
+            expect(left).toBeGreaterThanOrEqual(8);
+            expect(left + cardRect.width).toBeLessThanOrEqual(width - 8);
+            await fireEvent.mouseLeave(row);
+            await fireEvent.focusOut(row, { relatedTarget: document.body });
+            await tick();
+            expect(hoverCard()).toBeNull();
+          },
+        };
+      });
+      expect(observed).toEqual(configuredVisualStates);
+    } finally {
+      rectSpy.mockRestore();
+      vi.useRealTimers();
+    }
+  });
 
   it('mounts the hover card only after the pointer rests on the row', async () => {
     vi.useFakeTimers();

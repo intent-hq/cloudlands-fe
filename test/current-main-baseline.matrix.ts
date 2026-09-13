@@ -223,7 +223,7 @@ export const baselineRows = [
     ['src/lib/components/layout/sidebar-nav/__tests__/all-workspaces-card-pinned-ordering.test.ts'],
   ),
   row('WORKSPACE-11', 'Workspace-hover-card sidebar placement', 'sidebar', visual, [
-    'src/lib/components/layout/sidebar-nav/__tests__/sidebar-nav-hover-card-dismissal.test.ts',
+    'src/lib/components/workspace/__tests__/WorkspaceCard.idle-activity.test.ts',
   ]),
   row(
     'WORKSPACE-14',
@@ -266,14 +266,14 @@ export const baselineRows = [
     'Browser expanded list reuse/new behavior',
     'sidebar',
     [...visual, 'reuse', 'new'],
-    sidebar,
+    [...sidebar, 'src/lib/components/workspace/__tests__/SidebarBrowserList.test.ts'],
   ),
   row(
     'WORKSPACE-22',
     'Shell expanded list terminal reuse/open',
     'sidebar',
     [...visual, 'reuse', 'loading', 'error', 'empty'],
-    sidebar,
+    [...sidebar, 'src/lib/components/workspace/__tests__/WorkspaceShellList.dev-scripts.test.ts'],
   ),
   row('WORKSPACE-26', 'Expanded-card overlay rather than reflow', 'sidebar', visual, [
     'test/sidebar-launcher-tab-geometry.spec.ts',

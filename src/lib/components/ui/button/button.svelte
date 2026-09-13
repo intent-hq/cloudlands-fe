@@ -16,6 +16,7 @@
     onclick,
     children,
     tooltip = undefined,
+    tooltipDisabled = false,
     tooltipShortcut = undefined,
     tooltipSide = 'top',
     tooltipAlign = 'center',
@@ -114,6 +115,7 @@
     side={tooltipSide}
     align={tooltipAlign}
     delayDuration={tooltipDelayDuration}
+    disabled={tooltipDisabled}
   >
     {@render content()}
   </TooltipShortcut>

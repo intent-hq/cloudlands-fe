@@ -5,6 +5,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   isContentBlock,
+  isPlanContentBlock,
   normalizeContentBlock,
   normalizeContentBlocks,
   type ContentBlock,
@@ -44,6 +45,38 @@ describe('ContentBlock Type', () => {
         input: {},
       };
       expect(isContentBlock(block)).toBe(true);
+    });
+
+    it('should identify only bounded plan snapshots', () => {
+      const block: ContentBlock = {
+        type: 'plan',
+        entries: [
+          {
+            content: 'Run focused tests',
+            priority: 'high',
+            status: 'in_progress',
+          },
+        ],
+      };
+      expect(isContentBlock(block)).toBe(true);
+      expect(isPlanContentBlock(block)).toBe(true);
+      expect(isContentBlock({ type: 'plan', entries: [] })).toBe(true);
+      expect(
+        isContentBlock({
+          type: 'plan',
+          entries: [{ content: 'Run tests', priority: 'urgent', status: 'pending' }],
+        }),
+      ).toBe(false);
+      expect(
+        isContentBlock({
+          type: 'plan',
+          entries: [{ content: 'Run tests', priority: 'high', status: 'cancelled' }],
+        }),
+      ).toBe(false);
+      expect(isContentBlock({ type: 'plan' })).toBe(false);
+      const entry = { content: 'Run tests', priority: 'high', status: 'pending' };
+      expect(isPlanContentBlock({ type: 'plan', entries: Array(256).fill(entry) })).toBe(true);
+      expect(isPlanContentBlock({ type: 'plan', entries: Array(257).fill(entry) })).toBe(false);
     });
 
     it('should reject invalid blocks', () => {
@@ -351,6 +384,28 @@ describe('Strict Intake Utilities (AUDIT-P1-5)', () => {
     expect(converted.text).toBe('hello');
   });
 
+  it('convertFromACP strips provider metadata from plan entries', () => {
+    expect(
+      convertFromACP({
+        type: 'plan',
+        id: 'plan-1',
+        entries: [
+          {
+            content: 'Run focused tests',
+            priority: 'high',
+            status: 'in_progress',
+            _meta: { source: 'provider' },
+            providerExtension: true,
+          },
+        ],
+      }),
+    ).toEqual({
+      type: 'plan',
+      id: 'plan-1',
+      entries: [{ content: 'Run focused tests', priority: 'high', status: 'in_progress' }],
+    });
+  });
+
   it('convertFromACP throws when the ACP `type` discriminator is missing', () => {
     expect(() => convertFromACP({ text: 'hello' })).toThrow(/type/);
   });
@@ -378,6 +433,27 @@ describe('Strict Intake Utilities (AUDIT-P1-5)', () => {
     const acp = convertToACP(block);
     expect(acp.type).toBe('text');
     expect(acp.text).toBe('hello');
+  });
+
+  it('convertToACP preserves only canonical plan entry fields', () => {
+    const block = {
+      type: 'plan',
+      id: 'plan-1',
+      entries: [
+        {
+          content: 'Run focused tests',
+          priority: 'high',
+          status: 'in_progress',
+          _meta: { source: 'provider' },
+        },
+      ],
+    } as unknown as ContentBlock;
+
+    expect(convertToACP(block)).toEqual({
+      type: 'plan',
+      id: 'plan-1',
+      entries: [{ content: 'Run focused tests', priority: 'high', status: 'in_progress' }],
+    });
   });
 
   it('migrateContentBlocks passes canonical PROTOCOL §7 blocks through unchanged', () => {
