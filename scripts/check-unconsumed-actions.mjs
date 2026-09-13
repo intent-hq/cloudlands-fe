@@ -108,7 +108,10 @@ function collectActions(sources, actionFactory) {
   return { actions, typeIndex };
 }
 
-export function inspectUnconsumedActions(files) {
+export function inspectUnconsumedActions(
+  files,
+  { exceptions = UNCONSUMED_ACTION_EXCEPTIONS } = {},
+) {
   const sources = loadSources(files);
   const provenance = createProvenanceResolvers(sources, {
     contextWatchers: PATTERN_CONTEXT_WATCHERS,
@@ -182,7 +185,7 @@ export function inspectUnconsumedActions(files) {
   for (const origin of origins) {
     const sites = dispatches.get(origin);
     if (!sites || handled.has(origin)) continue;
-    if (UNCONSUMED_ACTION_EXCEPTIONS.some(({ pattern }) => pattern.test(origin))) {
+    if (exceptions.some(({ pattern }) => pattern.test(origin))) {
       exceptionCount++;
       continue;
     }
@@ -191,7 +194,7 @@ export function inspectUnconsumedActions(files) {
       `${filePath}:${line}: action ${name} is dispatched but has no reducer case or explicit watcher; dispatched at ${[...sites].sort().join(', ')}`,
     );
   }
-  for (const { pattern } of UNCONSUMED_ACTION_EXCEPTIONS) {
+  for (const { pattern } of exceptions) {
     if (!origins.some((origin) => pattern.test(origin)))
       violations.push(`${SELF}: stale exception ${pattern} matches no action origin`);
   }
