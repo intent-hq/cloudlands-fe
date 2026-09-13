@@ -260,6 +260,10 @@ const heldMessage = (overrides: Partial<HeldFirstMessage> = {}): HeldFirstMessag
   ...overrides,
 });
 
+// What `stubToReferences` turns `heldMessage().imageBlocks` into — the blocks a
+// send failing after placement must hand back for the retry.
+const placedReferences = [{ type: 'image', attachmentId: 'attach-0', mimeType: 'image/png' }];
+
 const fileBlock = {
   type: 'file' as const,
   attachmentId: 'att-uuid-1',
@@ -401,26 +405,127 @@ describe('sendHeldFirstMessage', () => {
       ]);
 
       expect(retained[1]).toBe(items[1]);
-      expect(retained[0]).toEqual(items[0]);
+      expect(retained[0]).toEqual({ ...items[0], placementAttachmentId: 'att-first' });
       expect(retained[2]).toEqual({
         ...items[2],
         placementIdempotencyKey: KEY,
         placementFileName: 'image-1700000000000-2.png',
       });
       expect(retained[3]).toEqual(items[3]);
-      // The resumed send carries the identity on the same block position.
-      expect(heldImageBlocks(retained)[1]).toEqual({
-        type: 'image',
-        data: 'ZGVm',
-        mimeType: 'image/png',
-        placementIdempotencyKey: KEY,
-        placementFileName: 'image-1700000000000-2.png',
-      });
+      // The resumed send carries the identity on the same block positions:
+      // the placed image as a reference, the keyed one as the same placement.
+      expect(heldImageBlocks(retained)).toEqual([
+        { type: 'image', attachmentId: 'att-first', mimeType: 'image/png' },
+        {
+          type: 'image',
+          data: 'ZGVm',
+          mimeType: 'image/png',
+          placementIdempotencyKey: KEY,
+          placementFileName: 'image-1700000000000-2.png',
+        },
+        { type: 'image', data: 'Z2hp', mimeType: 'image/png' },
+      ]);
     });
 
     it('leaves the items untouched when the failure carried no retry blocks', () => {
       const items = [imageItem('img-1', 'YWJj')];
       expect(retainImagePlacementIdentity(items, undefined)).toBe(items);
+    });
+
+    it('resumes a partial placement failure with a reference for the image that placed, not a second placement', async () => {
+      // Attempt 1: img-1 places, img-2 fails (keyed) → the send never happens.
+      const items = [imageItem('img-1', 'YWJj'), imageItem('img-2', 'ZGVm')];
+      const attempt1 = await sendHeldFirstMessage(
+        heldMessage({ imageBlocks: heldImageBlocks(items) }),
+        [],
+        vi.fn(),
+        vi.fn(async () => {
+          throw new ImagePlacementError('image-2.png (Request timed out)', [
+            { type: 'image', attachmentId: 'att-first', mimeType: 'image/png' },
+            {
+              type: 'image',
+              data: 'ZGVm',
+              mimeType: 'image/png',
+              placementIdempotencyKey: KEY,
+              placementFileName: 'image-2.png',
+            },
+          ]);
+        }),
+      );
+      const retained = retainImagePlacementIdentity(items, attempt1.imageBlocks);
+      expect(retained[0]).toEqual({ ...items[0], placementAttachmentId: 'att-first' });
+
+      // Attempt 2: the placer sees img-1 as a reference (passed through) and
+      // img-2 as the same keyed placement — exactly one image to place.
+      const toReferences = vi.fn(async (_wsId: string, blocks: WireImageBlock[]) =>
+        blocks.map((block) => ({
+          type: 'image' as const,
+          attachmentId: 'attachmentId' in block ? block.attachmentId : 'att-second',
+          mimeType: 'image/png',
+        })),
+      );
+      const request = vi.fn().mockResolvedValue({ success: true });
+      const attempt2 = await sendHeldFirstMessage(
+        heldMessage({ imageBlocks: heldImageBlocks(retained) }),
+        [],
+        request,
+        toReferences,
+      );
+
+      expect(attempt2).toEqual({ sent: true });
+      expect(toReferences).toHaveBeenCalledWith('ws-1', [
+        { type: 'image', attachmentId: 'att-first', mimeType: 'image/png' },
+        {
+          type: 'image',
+          data: 'ZGVm',
+          mimeType: 'image/png',
+          placementIdempotencyKey: KEY,
+          placementFileName: 'image-2.png',
+        },
+      ]);
+      expect(request).toHaveBeenCalledWith(
+        'agent.sendMessage',
+        expect.objectContaining({
+          imageBlocks: [
+            { type: 'image', attachmentId: 'att-first', mimeType: 'image/png' },
+            { type: 'image', attachmentId: 'att-second', mimeType: 'image/png' },
+          ],
+        }),
+      );
+    });
+
+    it('resumes a send that failed after placement with references only — the image is never placed twice', async () => {
+      const items = [imageItem('img-1', 'YWJj')];
+      const attempt1 = await sendHeldFirstMessage(
+        heldMessage({ imageBlocks: heldImageBlocks(items) }),
+        [],
+        vi.fn().mockRejectedValue(new Error('Request timed out')),
+        stubToReferences,
+      );
+      expect(attempt1.sent).toBe(false);
+      const retained = retainImagePlacementIdentity(items, attempt1.imageBlocks);
+      expect(retained[0]).toEqual({ ...items[0], placementAttachmentId: 'attach-0' });
+
+      const toReferences = vi.fn(stubToReferences);
+      const request = vi.fn().mockResolvedValue({ success: true });
+      const attempt2 = await sendHeldFirstMessage(
+        heldMessage({ imageBlocks: heldImageBlocks(retained) }),
+        [],
+        request,
+        toReferences,
+      );
+
+      expect(attempt2).toEqual({ sent: true });
+      // No inline data reaches the placer on the retry.
+      expect(toReferences).toHaveBeenCalledWith('ws-1', [
+        { type: 'image', attachmentId: 'attach-0', mimeType: 'image/png' },
+      ]);
+      expect(request).toHaveBeenCalledWith(
+        'agent.sendMessage',
+        expect.objectContaining({
+          imageBlocks: [{ type: 'image', attachmentId: 'attach-0', mimeType: 'image/png' }],
+        }),
+      );
     });
   });
 
@@ -468,7 +573,11 @@ describe('sendHeldFirstMessage', () => {
       stubToReferences,
     );
 
-    expect(result).toEqual({ sent: false, errorDetail: 'unknown agent id: agent-1' });
+    expect(result).toEqual({
+      sent: false,
+      errorDetail: 'unknown agent id: agent-1',
+      imageBlocks: placedReferences,
+    });
   });
 
   it('surfaces the thrown error detail (structured data.detail preferred, like #1287)', async () => {
@@ -484,7 +593,11 @@ describe('sendHeldFirstMessage', () => {
       stubToReferences,
     );
 
-    expect(result).toEqual({ sent: false, errorDetail: 'agent session vanished mid-send' });
+    expect(result).toEqual({
+      sent: false,
+      errorDetail: 'agent session vanished mid-send',
+      imageBlocks: placedReferences,
+    });
   });
 
   it('returns no detail for generic transport fallbacks so callers keep localized copy', async () => {
@@ -497,7 +610,19 @@ describe('sendHeldFirstMessage', () => {
       stubToReferences,
     );
 
-    expect(result).toEqual({ sent: false, errorDetail: undefined });
+    expect(result).toEqual({ sent: false, errorDetail: undefined, imageBlocks: placedReferences });
+  });
+
+  it('omits imageBlocks from a failed send that carried no images (nothing to replay)', async () => {
+    const request = vi.fn().mockResolvedValue({ success: false, error: 'agent busy' });
+
+    const result = await sendHeldFirstMessage(
+      heldMessage({ imageBlocks: [] }),
+      [fileBlock],
+      request,
+    );
+
+    expect(result).toEqual({ sent: false, errorDetail: 'agent busy' });
   });
 
   it('resolves { sent: false } instead of throwing on a non-serializable held message', async () => {

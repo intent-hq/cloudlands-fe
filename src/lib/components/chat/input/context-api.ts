@@ -76,6 +76,11 @@ export interface ContextItem {
   // (in-memory images get a generated name), retained with the key so the
   // retry resends the identical placement the daemon can replay.
   placementFileName?: string;
+  // Attachment id an image item's placement produced during a held first
+  // send that then failed downstream, retained so the resumed send passes a
+  // reference instead of placing the image again. Client-side only: never
+  // persisted in a draft, since it is bound to the workspace of that send.
+  placementAttachmentId?: string;
 }
 
 /** True when any attachment item still blocks sending: placement in flight or failed. */
