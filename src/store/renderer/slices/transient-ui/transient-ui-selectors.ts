@@ -1,5 +1,5 @@
 import { store } from '../../store';
-import { emptyWorkspaceTransientUiState } from './transient-ui-slice';
+import { emptyWorkspaceTransientUiState, type NoteViewMode } from './transient-ui-slice';
 
 const selectTransientUiWorkspaceState = store.createSelector((state, workspaceId: string) => {
   return state.transientUi.byWorkspaceId[workspaceId] ?? emptyWorkspaceTransientUiState;
@@ -13,13 +13,18 @@ export const selectViewedFiles = store.createSelector((state, workspaceId: strin
   return selectTransientUiWorkspaceState.select(state, workspaceId).viewedFiles;
 });
 
-export const selectIsRawNoteViewEnabled = store.createSelector(
+export const selectNoteViewMode = store.createSelector(
   (state, workspaceId: string, noteId: string) => {
     return (
-      selectTransientUiWorkspaceState.select(state, workspaceId).rawNoteViewByNoteId[noteId] ===
-      true
+      selectTransientUiWorkspaceState.select(state, workspaceId).noteViewModeByNoteId[noteId] ??
+      ('editor' satisfies NoteViewMode)
     );
   },
+);
+
+export const selectIsRawNoteViewEnabled = store.createSelector(
+  (state, workspaceId: string, noteId: string) =>
+    selectNoteViewMode.select(state, workspaceId, noteId) === 'raw',
 );
 
 export const selectChatDraft = store.createSelector(

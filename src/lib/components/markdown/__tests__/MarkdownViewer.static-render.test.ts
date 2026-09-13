@@ -22,6 +22,46 @@ describe('MarkdownViewer static rendering', () => {
     expect(container.querySelector('.ProseMirror')).toBeNull();
   });
 
+  it.each([
+    ['$x^2$', false],
+    [String.raw`\(x^2\)`, false],
+    [String.raw`$$\frac{1}{2}$$`, true],
+    [String.raw`\[\sqrt{x}\]`, true],
+  ])('renders math-only read-only content for %s', async (content, displayMode) => {
+    const { container } = render(MarkdownViewer, { props: { content } });
+
+    const math = await waitFor(() => {
+      const element = container.querySelector('math');
+      expect(element).toBeTruthy();
+      return element!;
+    });
+    expect(math.closest(displayMode ? '.math-display' : '.math-inline')).toBeTruthy();
+    expect(container.querySelector('.ProseMirror')).toBeNull();
+  });
+
+  it.each([
+    ['ordinary prices', 'Costs $5 and $10'],
+    ['escaped delimiters', String.raw`Literal \$x$ and \\(y\\)`],
+    ['inline code', '`$x^2$`'],
+    ['unfinished math', String.raw`Before \(x + 1`],
+  ])('keeps %s literal', async (_case, content) => {
+    const { container } = render(MarkdownViewer, { props: { content } });
+
+    await waitFor(() => expect(container.textContent).toContain(content.replace(/`/g, '')));
+    expect(container.querySelector('math')).toBeNull();
+  });
+
+  it('renders math only after streaming content completes', async () => {
+    const content = String.raw`Answer: $x^2$`;
+    const view = render(MarkdownViewer, { props: { content, isStreaming: true } });
+
+    await waitFor(() => expect(view.container.textContent).toContain('$x^2$'));
+    expect(view.container.querySelector('math')).toBeNull();
+
+    await view.rerender({ content, isStreaming: false });
+    await waitFor(() => expect(view.container.querySelector('math')).toBeTruthy());
+  });
+
   it('renders task lists as static HTML without a ProseMirror view', async () => {
     const { container } = render(MarkdownViewer, {
       props: { content: '- [ ] open item\n- [x] done item' },

@@ -24,6 +24,8 @@ const {
   takeDeferredMarkdownConversion,
   resetDeferredMarkdownConversions,
   editorWorkspaceIds,
+  editorInstances,
+  mockUpdateNoteContent,
 } = vi.hoisted(() => {
   const mockDispatch = vi.fn();
   const mockInvoke = vi.fn();
@@ -41,6 +43,8 @@ const {
     Array<{ promise: Promise<string>; resolve: (html: string) => void }>
   >();
   const editorWorkspaceIds: string[] = [];
+  const editorInstances: any[] = [];
+  const mockUpdateNoteContent = vi.fn();
 
   const deferMarkdownConversion = (markdown: string) => {
     let resolve!: (html: string) => void;
@@ -147,6 +151,8 @@ const {
       deferredMarkdownConversions.clear();
     },
     editorWorkspaceIds,
+    editorInstances,
+    mockUpdateNoteContent,
   };
 });
 
@@ -339,7 +345,7 @@ vi.mock('$store/renderer/slices/workspace-navigation/workspace-navigation-select
 }));
 
 vi.mock('$features/notes/notes-write-service', () => ({
-  updateNoteContent: vi.fn(),
+  updateNoteContent: mockUpdateNoteContent,
   hasPendingNoteContent: vi.fn(() => false),
 }));
 
@@ -476,6 +482,7 @@ vi.mock('$lib/utils/editor-config', async () => {
         onUpdate: ({ editor }: { editor: { getHTML: () => string } }) => {
           onUpdate(editor.getHTML());
         },
+        onCreate: ({ editor }: { editor: any }) => editorInstances.push(editor),
       };
     },
   };
@@ -515,6 +522,7 @@ describe('NoteWithComments task conversion regression', () => {
     resetNotes();
     resetDeferredMarkdownConversions();
     editorWorkspaceIds.length = 0;
+    editorInstances.length = 0;
 
     vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
       callback(0);
@@ -638,6 +646,30 @@ describe('NoteWithComments task conversion regression', () => {
 
     expect(mockApplyExternalUpdateHtml).not.toHaveBeenCalled();
     expect(mockMaybeCreateCommentManagerV2).not.toHaveBeenCalled();
+  });
+
+  it('flushes exact math source before the editor unmounts for another view', async () => {
+    replaceNotes([createNote('math-note', 'Math note', 'Before')]);
+    const view = await renderInitializedNote('math-note', 'Before');
+    await waitFor(() => expect(editorInstances.at(-1)).toBeTruthy());
+    const editor = editorInstances.at(-1);
+
+    editor.commands.setContent(String.raw`<p>Draft $x^2$ and \(y\)</p>`, {
+      emitUpdate: true,
+    });
+    await tick();
+    expect(mockUpdateNoteContent).not.toHaveBeenCalled();
+
+    view.unmount();
+
+    await waitFor(() =>
+      expect(mockUpdateNoteContent).toHaveBeenCalledWith(
+        WORKSPACE_ID,
+        'math-note',
+        String.raw`Draft $x^2$ and \(y\)`,
+        { immediate: true },
+      ),
+    );
   });
 
   it('recreates the editor with a new owner when the workspace changes', async () => {
