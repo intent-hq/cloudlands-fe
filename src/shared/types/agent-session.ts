@@ -14,7 +14,7 @@
 
 import type { AgentId, WorkspaceId } from './branded-ids';
 import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
-import type { AgentMessage } from './agent-message';
+import type { AgentMessage, MessageAuthor } from './agent-message';
 import { AgentStatus } from './agent.types';
 import type { AgentMetadata } from '../types';
 
@@ -81,9 +81,17 @@ export interface QueuedMessage {
    * eventTypes, events? }` so the UI can render them as system notifications
    * instead of raw `[WORKSPACE EVENTS]` text. Agent-to-agent messages carry
    * `{ type: 'agent_message', fromAgentId, fromAgentName? }` so the UI can
-   * render sender attribution.
+   * render sender attribution. User-typed entries carry the daemon's
+   * `fromPrincipalId` principal stamp (intent-hq/intentd#1869).
    */
   messageMetadata?: Record<string, unknown>;
+  /**
+   * Serve-time projection of the principal that enqueued the entry
+   * (multiplayer w2), resolved by the daemon from the `fromPrincipalId`
+   * stamp. Optional: absent on older daemons, where the queue surface falls
+   * back to the projections the transcript already carries.
+   */
+  author?: MessageAuthor;
 }
 
 /**
