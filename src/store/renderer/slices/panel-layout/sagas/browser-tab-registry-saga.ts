@@ -585,8 +585,14 @@ function* applyRows(
     }
   }
   for (const [tabId, { tab }] of local) {
-    if (known.has(tabId) || tab.hostClientId === undefined) continue;
-    if (tab.hostClientId === ownClientId && hasReportableUrl(tab)) continue;
+    if (known.has(tabId)) continue;
+    // A refused listing is authoritative for every local browser tab: a
+    // collaborator cannot host one either, so tabs this client would
+    // otherwise keep to report later go too.
+    if (!registryForbidden) {
+      if (tab.hostClientId === undefined) continue;
+      if (tab.hostClientId === ownClientId && hasReportableUrl(tab)) continue;
+    }
     yield* effect(fence, registryTabForgotten(wsId, tabId));
     yield* effect(fence, closeTab(wsId, tabId, undefined, undefined, { destroy: true }));
   }
