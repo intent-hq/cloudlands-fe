@@ -292,6 +292,24 @@ describe('collectMessageAuthors / getQueuedMessageAuthor', () => {
     expect(getQueuedMessageAuthor(stamped, null)).toBeNull();
   });
 
+  it('treats an explicit null projection as authoritative: no transcript fallback', () => {
+    // The daemon serves `author: null` when the principal row is gone; the
+    // stamp still names a principal the transcript happens to resolve, but
+    // the daemon's answer wins over the stale transcript copy.
+    const authors = collectMessageAuthors(transcript);
+    expect(authors.get(owner.principalId)).toBe(owner);
+    expect(
+      getQueuedMessageAuthor(
+        { messageMetadata: { fromPrincipalId: owner.principalId }, author: null },
+        authors,
+      ),
+    ).toBeNull();
+    // Absent field (older daemon) keeps the fallback.
+    expect(
+      getQueuedMessageAuthor({ messageMetadata: { fromPrincipalId: owner.principalId } }, authors),
+    ).toBe(owner);
+  });
+
   it('ignores the projection on daemon-origin entries and falls back on a malformed one', () => {
     expect(
       getQueuedMessageAuthor(
