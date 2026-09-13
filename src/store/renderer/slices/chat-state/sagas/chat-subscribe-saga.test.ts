@@ -53,6 +53,12 @@ vi.mock('$features/events/daemon-events-bridge.client', async (importOriginal) =
   return { ...actual, seedStreamFromSnapshot: vi.fn() };
 });
 
+// Spy seam for the stream-lifecycle diagnostics the snapshot guards emit.
+vi.mock('$lib/utils/stream-lifecycle-telemetry', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$lib/utils/stream-lifecycle-telemetry')>()),
+  reportStreamLifecycle: vi.fn(),
+}));
+
 import * as clientModule from '$lib/client';
 import { appClient } from '$lib/client';
 import { takeEvery } from 'typed-redux-saga';
@@ -107,6 +113,7 @@ import {
   hasStandingChatSubscription,
 } from '$features/agent/utils/chat-subscription-registry';
 import { seedStreamFromSnapshot } from '$features/events/daemon-events-bridge.client';
+import { reportStreamLifecycle } from '$lib/utils/stream-lifecycle-telemetry';
 import { selectTranscriptSnapshotMeta } from '$store/renderer/slices/chat-state/chat-state-selectors';
 import { shouldShowStoppedIndicator } from '$lib/components/chat/message-display-utils';
 
@@ -1380,6 +1387,276 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
       } finally {
         stopRecorder();
       }
+    });
+  });
+
+  // A hydrated panel whose newest row is a partial assistant turn frozen
+  // mid-stream (the incident: turn 2186 stuck at block 152 with
+  // `isStreaming: true`) sitting after a fully-persisted row, so the newest
+  // fully-persisted id — the §7.1 resume anchor — is the row BEFORE it. Every
+  // reopen trigger must leave the store reflecting the daemon's newest turn,
+  // with the frozen row no longer presented as in flight.
+  describe('a (re)subscribe snapshot displaces a stale in-flight turn (§7.1)', () => {
+    const PRIOR = 'm-turn-2185';
+    const STALE = 'm-turn-2186';
+    const NEXT_USER = 'm-turn-2187-user';
+    const NEWEST = 'm-turn-2187';
+
+    function seedFrozenPartial(agentId: string): void {
+      seedSession(agentId, {
+        messages: [
+          makeMessage(PRIOR, 'turn 2185 answer'),
+          makeMessage(STALE, 'frozen at block 152', { isStreaming: true }),
+        ],
+      });
+      appStore.dispatch(transcriptHydrationStarted(agentId));
+      appStore.dispatch(transcriptHydrationSettled(agentId));
+    }
+
+    function newestInFlight(): AgentMessage {
+      return makeMessage(NEWEST, 'turn 2187 streaming', {
+        isStreaming: true,
+        timestamp: '2026-01-01T00:00:09.000Z',
+      });
+    }
+
+    function completedStale(): AgentMessage {
+      return makeMessage(STALE, 'turn 2186 complete answer');
+    }
+
+    function nextUser(): AgentMessage {
+      return makeMessage(NEXT_USER, 'and 2187?', {
+        role: 'user',
+        timestamp: '2026-01-01T00:00:08.000Z',
+      });
+    }
+
+    /** (a) `resumed: true` page: the completed row plus the later turns. */
+    function resumedCompletedPage(): ChatTranscript {
+      return {
+        ...transcript([completedStale(), nextUser(), newestInFlight()], true),
+        totalMessages: 5,
+        fromSnapshot: true,
+        resumed: true,
+      };
+    }
+
+    /**
+     * (b) `resumed: true` page trimmed to the newest window — the stale row is
+     * absent. The daemon re-mints `truncated` after the live-turn merge's
+     * slim-page-budget eviction (`rebudget_merged_page`), so a resumed page
+     * can still declare an interior gap toward the anchor.
+     */
+    function resumedTruncatedPage(): ChatTranscript {
+      return {
+        ...transcript([newestInFlight()], true),
+        truncated: true,
+        totalMessages: 5,
+        fromSnapshot: true,
+        resumed: true,
+      };
+    }
+
+    /** (c) `resumed: false`: the standard newest page, full rehydration. */
+    function fallbackFullPage(): ChatTranscript {
+      return {
+        ...transcript(
+          [makeMessage(PRIOR, 'turn 2185 answer'), completedStale(), nextUser(), newestInFlight()],
+          true,
+        ),
+        totalMessages: 5,
+        fromSnapshot: true,
+        resumed: false,
+      };
+    }
+
+    /** The standard page an internal re-registration takes (no resume). */
+    function standardWindow(messages: AgentMessage[], truncated: boolean): ChatTranscript {
+      return {
+        ...transcript(messages, true),
+        truncated,
+        totalMessages: 5,
+        fromSnapshot: true,
+      };
+    }
+
+    function expectNewestTurnLive(agentId: string): void {
+      const messages = selectAgentMessages.select(appStore.state, agentId);
+      const newest = messages.find((message) => message.id === NEWEST);
+      expect(newest?.contentBlocks?.[0]).toMatchObject({ text: 'turn 2187 streaming' });
+      // Exactly one live row: the daemon's newest turn.
+      expect(
+        messages.filter((message) => message.isStreaming === true).map((message) => message.id),
+      ).toEqual([NEWEST]);
+      const stale = messages.find((message) => message.id === STALE);
+      if (stale) {
+        expect(stale.isStreaming ?? false).toBe(false);
+        expect(stale.streamingComplete ?? true).toBe(true);
+      }
+      expect(selectAgentSession.select(appStore.state, agentId)?.isStreaming).toBe(true);
+      // The stream accumulator is seeded from the newest in-flight row, not
+      // the frozen one.
+      expect(seedStreamFromSnapshot).toHaveBeenLastCalledWith(
+        agentId,
+        expect.objectContaining({ id: NEWEST }),
+        WS,
+      );
+    }
+
+    /** Agent re-select (sidebar switch-back): the reopen carries the anchor. */
+    function switchBack(agentId: string): FakeSubscription {
+      const other = `${agentId}-other`;
+      seedSession(other);
+      appStore.dispatch(markAgentAsViewed(other));
+      appStore.dispatch(markAgentAsViewed(agentId));
+      const reopened = [...fakeSubscriptions].reverse().find((sub) => sub.agentId === agentId);
+      if (!reopened) throw new Error(`no reopened chat.subscribe recorded for ${agentId}`);
+      expect(reopened.options).toEqual({ sinceMessageId: PRIOR });
+      return reopened;
+    }
+
+    it('displaces the frozen row on a switch-back resumed: true page carrying the completed turn', () => {
+      const agentId = 'agent-stale-switchback-a';
+      seedFrozenPartial(agentId);
+      openChat(agentId);
+
+      switchBack(agentId).handler(resumedCompletedPage());
+
+      expect(selectAgentMessages.select(appStore.state, agentId).map((m) => m.id)).toEqual([
+        PRIOR,
+        STALE,
+        NEXT_USER,
+        NEWEST,
+      ]);
+      const stale = selectAgentMessages
+        .select(appStore.state, agentId)
+        .find((message) => message.id === STALE);
+      expect(stale?.contentBlocks?.[0]).toMatchObject({ text: 'turn 2186 complete answer' });
+      expectNewestTurnLive(agentId);
+    });
+
+    it('displaces the frozen row on a switch-back resumed: true page trimmed to the newest window', () => {
+      const agentId = 'agent-stale-switchback-b';
+      seedFrozenPartial(agentId);
+      openChat(agentId);
+
+      switchBack(agentId).handler(resumedTruncatedPage());
+
+      expectNewestTurnLive(agentId);
+    });
+
+    it('displaces the frozen row on a switch-back resumed: false full snapshot', () => {
+      const agentId = 'agent-stale-switchback-c';
+      seedFrozenPartial(agentId);
+      openChat(agentId);
+
+      switchBack(agentId).handler(fallbackFullPage());
+
+      expect(selectAgentMessages.select(appStore.state, agentId).map((m) => m.id)).toEqual([
+        PRIOR,
+        STALE,
+        NEXT_USER,
+        NEWEST,
+      ]);
+      expectNewestTurnLive(agentId);
+    });
+
+    // The snapshot-timeout self-heal, the gap resnapshot, and a `Lagged`
+    // recovery all re-register INSIDE LiveChatClient — the resume anchor rides
+    // only until the first snapshot lands, so their recovery snapshot is the
+    // standard newest page (no `resumed` key) delivered on the standing
+    // registration, with no teardown to normalize the frozen row first.
+    it('displaces the frozen row on a recovery snapshot whose window carries the completed turn', () => {
+      const agentId = 'agent-stale-recovery-covered';
+      seedFrozenPartial(agentId);
+      const sub = openChat(agentId);
+
+      sub.handler(standardWindow([completedStale(), nextUser(), newestInFlight()], true));
+
+      expectNewestTurnLive(agentId);
+    });
+
+    it('displaces the frozen row on a recovery snapshot whose window excludes it', () => {
+      const agentId = 'agent-stale-recovery-evicted';
+      seedFrozenPartial(agentId);
+      const sub = openChat(agentId);
+
+      // The frozen 152-block turn was evicted by the slim page budget, so the
+      // recovery page carries only the newest turn. The retained row is older
+      // history the page does not cover — but the snapshot is authoritative
+      // for liveness (§7.1 merges the in-flight turn into the page), so the
+      // retained row cannot still be streaming.
+      sub.handler(standardWindow([nextUser(), newestInFlight()], true));
+
+      expectNewestTurnLive(agentId);
+    });
+
+    it('keeps a snapshot that races a locally-started turn from settling retained rows', () => {
+      // The one exemption the session-level flag reconcile already makes: a
+      // snapshot pending since before the local send may predate the turn the
+      // renderer just started, so it is not authoritative about liveness.
+      const agentId = 'agent-stale-local-start';
+      seedFrozenPartial(agentId);
+      const sub = openChat(agentId);
+      appStore.dispatch(chatSendStarted(agentId, WS));
+
+      sub.handler(standardWindow([makeMessage(PRIOR, 'turn 2185 answer')], true));
+
+      const stale = selectAgentMessages
+        .select(appStore.state, agentId)
+        .find((message) => message.id === STALE);
+      expect(stale?.isStreaming).toBe(true);
+    });
+
+    // A dropped or held snapshot is the failure mode behind a panel stuck on a
+    // stale in-flight turn, so every guard leaves a breadcrumb instead of
+    // returning silently.
+    it('reports a stream-lifecycle diagnostic when a guard drops or holds a snapshot', () => {
+      const agentId = 'agent-stale-guard-diagnostics';
+      seedFrozenPartial(agentId);
+      const sub = openChat(agentId);
+
+      // Pre-session hold: the snapshot arrives before the session shell.
+      const preSessionAgent = 'agent-stale-guard-presession';
+      const preSessionSub = openChat(preSessionAgent);
+      preSessionSub.handler(standardWindow([newestInFlight()], false));
+      expect(reportStreamLifecycle).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          stage: 'subscription',
+          event: 'snapshot-held-pre-session',
+          pushKind: 'snapshot',
+          callbackResult: 'buffered',
+          blockCount: 1,
+        }),
+      );
+
+      // Soft-hidden deletion pending: the snapshot is dropped.
+      vi.mocked(reportStreamLifecycle).mockClear();
+      setPendingAgentDeletion({ wsId: WS, agentId, snapshot: makeSession(agentId), timer: null });
+      try {
+        sub.handler(standardWindow([newestInFlight()], false));
+      } finally {
+        removePendingAgentDeletion(agentId);
+      }
+      expect(reportStreamLifecycle).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          stage: 'subscription',
+          event: 'snapshot-dropped-deletion-pending',
+          callbackResult: 'ignored',
+        }),
+      );
+
+      // Token-dropped registration: the snapshot lands after the close.
+      vi.mocked(reportStreamLifecycle).mockClear();
+      appStore.dispatch(clearCurrentlyViewedAgent());
+      sub.handler(standardWindow([newestInFlight()], false));
+      expect(reportStreamLifecycle).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          stage: 'subscription',
+          event: 'snapshot-dropped-stale-registration',
+          callbackResult: 'ignored',
+        }),
+      );
     });
   });
 
