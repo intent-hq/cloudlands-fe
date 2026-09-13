@@ -1038,6 +1038,7 @@ describe('panelLayoutSaga', () => {
       ownerAgentId: 'agent-1',
       emulatedSize: SIZE,
       visibility: 'visible',
+      displayed: true,
       createdAt: NOW.toISOString(),
       updatedAt: NOW.toISOString(),
       hostConnected: true,

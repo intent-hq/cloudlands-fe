@@ -11,6 +11,10 @@
  *   acknowledged; changed tabs go out as `browser.upsertTab`, vanished ones as
  *   `browser.removeTab`. Single-flight per workspace with one trailing rerun,
  *   so a navigation burst costs one in-flight call plus at most one more.
+ *   The report carries the `displayed` layout fact (visible AND its panel's
+ *   active tab); the daemon keeps it process-local, so it rides every report
+ *   and snapshot, and a row that comes back without it (daemon restart) is
+ *   re-reported (intent#4835).
  *   A tab the registry has not seen yet (legacy layout, offline open) is
  *   reported the same way and then acknowledged locally — that is the
  *   localStorage → registry migration, idempotent because an acknowledged tab
@@ -119,6 +123,7 @@ import {
   selectDaemonHealth,
 } from '../../daemon-health/daemon-health-selectors';
 import { connectionStatusChanged } from '../../daemon-health/daemon-health-slice';
+import { removeScript } from '../../scripts/scripts-slice';
 import {
   selectWorkspaceItems,
   selectWorkspaceListLoadedForBackend,
@@ -297,7 +302,7 @@ function hasReportableUrl(tab: PanelTab): boolean {
   return typeof tab.browserUrl === 'string';
 }
 
-function toInput(wsId: string, { tab, visibility }: HostedTab): BrowserTabInput {
+function toInput(wsId: string, { tab, visibility, displayed }: HostedTab): BrowserTabInput {
   return {
     tabId: tab.id,
     workspaceId: wsId,
@@ -308,9 +313,15 @@ function toInput(wsId: string, { tab, visibility }: HostedTab): BrowserTabInput 
     ownerAgentName: tab.ownerAgentName ?? null,
     visibility,
     emulatedSize: tab.emulatedSize ?? null,
+    displayed,
   };
 }
 
+/**
+ * What the daemon holds for a row, in report shape. A row without
+ * `displayed` (never reported, or the daemon restarted) reads as `null`, so
+ * the next report diff sends the layout fact again.
+ */
 function rowToInput(row: BrowserTab): BrowserTabInput {
   return {
     tabId: row.tabId,
@@ -322,6 +333,7 @@ function rowToInput(row: BrowserTab): BrowserTabInput {
     ownerAgentName: row.ownerAgentName ?? null,
     visibility: row.visibility,
     emulatedSize: row.emulatedSize ?? null,
+    displayed: row.displayed ?? null,
   };
 }
 
@@ -781,13 +793,21 @@ function reportContext(action: { type: string; payload?: unknown }): string | nu
   return null;
 }
 
+/**
+ * Actions of other slices that the panel-layout reducer also handles and that
+ * can reshape a workspace's live panels — `scripts/removeScript` destroys the
+ * script's terminal tabs and hands the active slot to a sibling, which
+ * changes a browser tab's `displayed` fact without any `panelLayout/*` action.
+ */
+const CROSS_SLICE_LAYOUT_MUTATIONS: ReadonlySet<string> = new Set([removeScript.type]);
+
 function isLayoutMutation(action: unknown): action is { type: string; payload?: unknown } {
   return (
     typeof action === 'object' &&
     action !== null &&
     'type' in action &&
     typeof action.type === 'string' &&
-    action.type.startsWith('panelLayout/') &&
+    (action.type.startsWith('panelLayout/') || CROSS_SLICE_LAYOUT_MUTATIONS.has(action.type)) &&
     reportContext(action as { type: string; payload?: unknown }) !== null
   );
 }
