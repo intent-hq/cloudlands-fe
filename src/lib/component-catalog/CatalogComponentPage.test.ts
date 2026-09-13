@@ -28,3 +28,15 @@ describe('catalog component docs page', () => {
     expect(screen.getAllByText('variant').length).toBeGreaterThan(0);
   });
 });
+
+it('uses the primary compound export in installation and code snippets', async () => {
+  const entry = getCatalogEntry('dialog')!;
+  const { container } = render(CatalogComponentPage, {
+    props: { entry: entry },
+  });
+  expect(container.querySelector('.install-command')?.textContent).toBe(
+    "import { Dialog } from '$lib/components/ui/dialog';",
+  );
+  await fireEvent.click(screen.getByRole('tab', { name: 'Code' }));
+  expect(screen.getByRole('tabpanel').textContent).toContain('<Dialog />');
+});

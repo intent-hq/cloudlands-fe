@@ -2,6 +2,7 @@
   import * as Tabs from '$lib/components/ui/tabs';
   import type { UiComponentFixture } from '$lib/components/ui/component-metadata';
   import type { CatalogEntry } from './catalog';
+  import { getCatalogComponentName } from './catalog-export';
   import { getCatalogRenderer } from './catalog-renderers';
   import ChatPolishGeometryControls from './ChatPolishGeometryControls.svelte';
   import ChatPolishCatalogPreview from './renderers/ChatPolishCatalogPreview.svelte';
@@ -18,7 +19,7 @@
   const fixtures = $derived(
     entry.slug === 'chat-polish' ? entry.fixtures.slice(0, 1) : entry.fixtures,
   );
-  const componentName = $derived(entry.exports?.[0] ?? entry.name.replaceAll(' ', ''));
+  const componentName = $derived(getCatalogComponentName(entry));
   const installCommand = $derived(
     entry.publicImport ? `import { ${componentName} } from '${entry.publicImport}';` : entry.source,
   );
