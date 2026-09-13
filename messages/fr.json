@@ -2237,6 +2237,7 @@
   "chat_queuedMessages_heldForEditing_title": "Retenu pour modification",
   "chat_queuedMessages_save_tooltip": "Enregistrer",
   "chat_queuedMessages_cancel_tooltip": "Annuler",
+  "chat_queuedMessages_author_ariaLabel": "Mis en file d’attente par {name}",
   "chat_queuedMessages_failedWillRetry_label": "Échec — nouvelle tentative",
   "chat_queuedMessages_failedWillRetryPrefix_label": "(Échec — nouvelle tentative)",
   "chat_queuedMessages_sendNow_tooltip": "Envoyer maintenant (interrompt le flux en cours)",

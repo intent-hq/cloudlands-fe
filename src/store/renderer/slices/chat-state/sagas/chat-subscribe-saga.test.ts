@@ -899,6 +899,66 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
     expect(userRows[0].appMessageId).toBe(appMessageId);
   });
 
+  it('keeps the canonical author projection when the optimistic user row is replaced (§7.1 delta path)', () => {
+    // intentd#1869: the daemon lifts its serve-time `author` projection onto
+    // §7.1 user-row deltas. The optimistic row (no projection) collapses into
+    // the canonical copy, and the surviving store row is the attributed one —
+    // a live human row in a two-member chat renders its author without a
+    // resnapshot.
+    const agentId = 'agent-sub-optimistic-author';
+    seedSession(agentId);
+    const sub = openChat(agentId);
+    sub.handler(transcript([]));
+
+    const appMessageId = 'app-msg-opt-author';
+    appStore.dispatch(
+      addMessage(agentId, {
+        id: '0190cccc-optimistic-user',
+        appMessageId,
+        role: 'user',
+        timestamp: '2026-01-01T00:00:02.000Z',
+        contentBlocks: [{ type: 'text', text: 'hello from a guest' }],
+      }),
+    );
+    expect(
+      selectAgentMessages
+        .select(appStore.state, agentId)
+        .filter((m) => m.role === 'user')
+        .map((m) => m.author),
+    ).toEqual([undefined]);
+
+    const author = {
+      principalId: 'principal-guest',
+      login: 'guest',
+      displayName: 'Guest User',
+      avatarUrl: 'https://avatars.example/guest.png',
+    };
+    const canonical: AgentMessage = {
+      id: 'user-msg-bbbb1111-2222-3333-4444-555566667777',
+      appMessageId,
+      role: 'user',
+      timestamp: '2026-01-01T00:00:02.100Z',
+      metadata: { fromPrincipalId: author.principalId },
+      author,
+      contentBlocks: [
+        {
+          type: 'text',
+          id: 'user-msg-bbbb1111-2222-3333-4444-555566667777:0',
+          text: 'hello from a guest',
+        },
+      ],
+    };
+    sub.handler(transcript([canonical]));
+
+    const userRows = selectAgentMessages
+      .select(appStore.state, agentId)
+      .filter((m) => m.role === 'user');
+    expect(userRows).toHaveLength(1);
+    expect(userRows[0].id).toBe('user-msg-bbbb1111-2222-3333-4444-555566667777');
+    expect(userRows[0].metadata).toEqual({ fromPrincipalId: author.principalId });
+    expect(userRows[0].author).toEqual(author);
+  });
+
   it('keeps identical-content sends distinct when their appMessageIds differ (§7.1 delta path)', () => {
     // Two messages with the SAME text sent in quick succession are distinct
     // logical messages: each optimistic row and each canonical echo carries

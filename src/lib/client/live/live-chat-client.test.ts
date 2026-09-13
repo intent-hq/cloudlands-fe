@@ -686,6 +686,108 @@ describe('LiveChatClient.subscribe (standing §7.1 subscription)', () => {
     off();
   });
 
+  it("carries the user-row entity's author projection onto the materialized message (intentd#1869)", async () => {
+    // A user row served live carries the daemon's serve-time `author`
+    // projection lifted onto each §7.1 entity, exactly as the snapshot page
+    // carries it on the message — so a live human row and a hydrated one
+    // render the same author, and two members' rows keep distinct authors.
+    // Older daemons omit the field: the materialized message carries none.
+    type Authored = {
+      id: string;
+      author?: { principalId: string; displayName?: string | null };
+      metadata?: Record<string, unknown>;
+    };
+    const guest = {
+      principalId: 'principal-guest',
+      login: 'guest',
+      displayName: 'Guest User',
+      avatarUrl: null,
+    };
+    const owner = {
+      principalId: 'principal-owner',
+      login: 'owner',
+      displayName: 'Owner Person',
+      avatarUrl: 'https://avatars.example/owner.png',
+    };
+    mockChatSubscribe();
+    const client = new LiveChatClient();
+    const seen: Array<{ messages: unknown[] }> = [];
+    const off = client.subscribe('agent-1', (t) => seen.push(t));
+    await flush();
+    snapshotPush('sub-1', 0, {
+      ...SEEDED_SNAPSHOT,
+      messages: [
+        {
+          ...SEEDED_SNAPSHOT.messages[0],
+          metadata: { fromPrincipalId: owner.principalId },
+          author: owner,
+        },
+      ],
+    });
+    const hydrated = seen[seen.length - 1].messages[0] as Authored;
+    expect(hydrated.author).toEqual(owner);
+
+    const guestRow = {
+      agentId: 'agent-1',
+      messageId: 'user-msg-guest-1',
+      role: 'user',
+      messageSeq: 1,
+      timestamp: '2026-06-27T01:00:05.000Z',
+      streamingComplete: true,
+      metadata: { fromPrincipalId: guest.principalId },
+      author: guest,
+      block: { type: 'text', id: 'user-msg-guest-1:0', text: 'hello from a guest' },
+    };
+    deltaPush('sub-1', 1, { added: [guestRow], updated: [], removedIds: [] });
+    let last = seen[seen.length - 1];
+    let live = last.messages[1] as Authored;
+    expect(live.id).toBe('user-msg-guest-1');
+    expect(live.metadata).toEqual({ fromPrincipalId: guest.principalId });
+    expect(live.author).toEqual(guest);
+    // Snapshot-vs-delta parity: the two rows keep their own authors.
+    expect((last.messages as Authored[]).map((m) => m.author?.principalId)).toEqual([
+      owner.principalId,
+      guest.principalId,
+    ]);
+
+    // Re-delivery upserts keep the author (same authoritative entity).
+    deltaPush('sub-1', 2, { added: [], updated: [guestRow], removedIds: [] });
+    last = seen[seen.length - 1];
+    live = last.messages[1] as Authored;
+    expect(live.author).toEqual(guest);
+
+    // A later frame for the same row without the field must not clear it.
+    const { author: _dropped, ...rowWithoutAuthor } = guestRow;
+    deltaPush('sub-1', 3, { added: [], updated: [rowWithoutAuthor], removedIds: [] });
+    last = seen[seen.length - 1];
+    live = last.messages[1] as Authored;
+    expect(live.author).toEqual(guest);
+
+    // Version skew: an older daemon's entity carries no author (or a null
+    // one) — the materialized message must not invent one.
+    deltaPush('sub-1', 4, {
+      added: [
+        {
+          agentId: 'agent-1',
+          messageId: 'user-msg-legacy-2',
+          role: 'user',
+          messageSeq: 2,
+          timestamp: '2026-06-27T01:00:06.000Z',
+          streamingComplete: true,
+          author: null,
+          block: { type: 'text', id: 'user-msg-legacy-2:0', text: 'Old daemon row' },
+        },
+      ],
+      updated: [],
+      removedIds: [],
+    });
+    last = seen[seen.length - 1];
+    const legacy = last.messages[2] as Authored;
+    expect(legacy.id).toBe('user-msg-legacy-2');
+    expect(legacy.author).toBeUndefined();
+    off();
+  });
+
   it('drops a malformed array-shaped entity metadata (JSON objects only)', async () => {
     // `typeof [] === "object"` — a malformed wire payload carrying an array
     // must not propagate an invalid shape into `message.metadata`.
