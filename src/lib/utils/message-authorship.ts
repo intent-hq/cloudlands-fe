@@ -10,8 +10,10 @@
  * `fromAgentId`, or `source: 'system'` (PROTOCOL §5.5). Benign fields that
  * can appear on user messages (`model`, `userAppMessageId`, `queueInfo`) do
  * not mark a message as non-user. Absent or malformed metadata means
- * user-authored (fail open). Dependency-light on purpose: no imports.
+ * user-authored (fail open). Dependency-light on purpose: type-only imports.
  */
+
+import type { MessageAuthor, MessageRole } from '$shared/types/agent-message';
 
 /**
  * True when a metadata object marks its message as user-authored. A message
@@ -35,4 +37,37 @@ export function isUserAuthoredMetadata(metadata: unknown): boolean {
   if (typeof md.fromAgentId === 'string' && md.fromAgentId.trim() !== '') return false;
   if (md.source === 'system') return false;
   return true;
+}
+
+/**
+ * The human author of a transcript row, or null. The daemon attaches its
+ * serve-time `author` projection to every `user` row of a workspace
+ * (PROTOCOL §5.5, intent-hq/intentd#1869) — including agent-to-agent sends
+ * and automated wakes, which fall back to the workspace owner — so a row
+ * counts as human-authored only when its role is `user`, its metadata passes
+ * `isUserAuthoredMetadata`, and the projection carries a principal id.
+ * Optimistic local rows and rows from older daemons carry no `author`.
+ */
+export function getHumanMessageAuthor(
+  message: { role: MessageRole; author?: unknown; metadata?: unknown } | null | undefined,
+): MessageAuthor | null {
+  if (!message || message.role !== 'user') return null;
+  if (!isUserAuthoredMetadata(message.metadata)) return null;
+  const author = message.author;
+  if (!author || typeof author !== 'object') return null;
+  const { principalId } = author as { principalId?: unknown };
+  if (typeof principalId !== 'string' || principalId.length === 0) return null;
+  return author as MessageAuthor;
+}
+
+/**
+ * Display label for a message author: `displayName`, else `login`, else null
+ * (the principal row is gone — the caller renders its own placeholder).
+ */
+export function getMessageAuthorLabel(author: MessageAuthor): string | null {
+  if (typeof author.displayName === 'string' && author.displayName.trim() !== '') {
+    return author.displayName;
+  }
+  if (typeof author.login === 'string' && author.login.trim() !== '') return author.login;
+  return null;
 }

@@ -120,6 +120,9 @@ export const WorkspaceSchema = z.object({
   statusImageAssetId: z.string().optional(), // Agent-authored status screenshot asset id (intent-hq/monorepo#997)
   activity: z.enum(['idle', 'agent_running']).optional(), // BE-derived in-flight agent state
   attention: z.enum(['none', 'unread', 'review_required']).optional(), // BE-owned dismissible attention flag (PROTOCOL §5.1 / §9.9)
+  ownerPrincipalId: z.string().optional(), // Membership summary (PROTOCOL §5.1, intent-hq/intentd#1868)
+  myRole: z.enum(['owner', 'collaborator']).optional(),
+  memberCount: z.number().int().nonnegative().optional(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
   archived: z.boolean().optional(),
@@ -358,6 +361,14 @@ export const AgentMessageSchema = z.object({
   toolResults: z.array(z.any()).optional(),
   error: z.string().optional(),
   isStreaming: z.boolean().optional(),
+  author: z
+    .object({
+      principalId: z.string(),
+      login: z.string().nullable(),
+      displayName: z.string().nullable(),
+      avatarUrl: z.string().nullable(),
+    })
+    .optional(),
   metadata: z.record(z.any()).optional(),
 });
 

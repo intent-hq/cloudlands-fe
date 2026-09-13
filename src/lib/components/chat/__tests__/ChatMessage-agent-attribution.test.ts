@@ -16,6 +16,7 @@ import {
   SUBSCRIPTION_IN_THREAD_CARD_SPACING_CLASS,
 } from '../subscription-disclosure';
 import { USER_MESSAGE_SURFACE_CLASS } from '../user-message-surface';
+import { createMockWorkspace } from '../../../../test/factories/workspace.factory';
 
 const { dispatchMock, handleLinkMock, agentSelectorHarness } = vi.hoisted(() => {
   type Snapshot = {
@@ -779,6 +780,112 @@ describe('ChatMessage agent-to-agent sender attribution', () => {
     expect(onStickyClick).toHaveBeenCalledOnce();
     expect(screen.queryByTestId('mock-rich-input')).toBeNull();
     expect(screen.getByText('hello from another agent')).toBeTruthy();
+  });
+});
+
+describe('ChatMessage human author identity (multiplayer)', () => {
+  // PROTOCOL §5.5 serve-time `author` projection (intent-hq/intentd#1869) on
+  // a user row, plus the §5.1 membership summary (intent-hq/intentd#1868).
+  const author = {
+    principalId: 'principal-guest',
+    login: 'guest',
+    displayName: 'Guest User',
+    avatarUrl: 'https://avatars.example/guest.png',
+  };
+  const authoredMessage = (overrides: Partial<AgentMessage> = {}): AgentMessage => ({
+    ...userMessage({ fromPrincipalId: author.principalId }, 'hello from a guest'),
+    author,
+    ...overrides,
+  });
+  const multiMember = () =>
+    createMockWorkspace({ memberCount: 2, myRole: 'owner', ownerPrincipalId: 'principal-owner' });
+
+  it('renders the author avatar and display name once the workspace has two members', () => {
+    render(ChatMessage, { props: { message: authoredMessage(), workspace: multiMember() } });
+
+    const header = screen.getByTestId('user-message-author');
+    expect(header.getAttribute('data-principal-id')).toBe(author.principalId);
+    expect(header.getAttribute('aria-label')).toContain('Guest User');
+    expect(screen.getByTestId('user-message-author-name').textContent).toBe('Guest User');
+    const avatar = screen.getByTestId('user-message-author-avatar') as HTMLImageElement;
+    expect(avatar.getAttribute('src')).toBe(author.avatarUrl);
+    expect(screen.getByText('hello from a guest')).toBeTruthy();
+  });
+
+  it('omits the author identity in a single-member workspace', () => {
+    render(ChatMessage, {
+      props: { message: authoredMessage(), workspace: createMockWorkspace({ memberCount: 1 }) },
+    });
+
+    expect(screen.queryByTestId('user-message-author')).toBeNull();
+    expect(screen.getByText('hello from a guest')).toBeTruthy();
+  });
+
+  it('omits the author identity when the daemon reports no membership summary', () => {
+    render(ChatMessage, {
+      props: { message: authoredMessage(), workspace: createMockWorkspace() },
+    });
+
+    expect(screen.queryByTestId('user-message-author')).toBeNull();
+  });
+
+  it('omits the author identity on rows without a projection (optimistic / older daemon)', () => {
+    render(ChatMessage, {
+      props: { message: userMessage(undefined, 'hello from a guest'), workspace: multiMember() },
+    });
+
+    expect(screen.queryByTestId('user-message-author')).toBeNull();
+    expect(screen.getByText('hello from a guest')).toBeTruthy();
+  });
+
+  it('keeps the agent sender header, not the human author, on agent-to-agent rows', () => {
+    render(ChatMessage, {
+      props: {
+        message: authoredMessage({
+          metadata: { type: 'agent_message', fromAgentId: 'agent-1', fromAgentName: 'Builder' },
+        }),
+        workspace: multiMember(),
+      },
+    });
+
+    expect(screen.getByTestId('agent-message-attribution')).toBeTruthy();
+    expect(screen.queryByTestId('user-message-author')).toBeNull();
+  });
+
+  it('falls back to login, then to a placeholder, when profile fields are null', () => {
+    const { unmount } = render(ChatMessage, {
+      props: {
+        message: authoredMessage({ author: { ...author, displayName: null, avatarUrl: null } }),
+        workspace: multiMember(),
+      },
+    });
+
+    expect(screen.getByTestId('user-message-author-name').textContent).toBe('guest');
+    expect(screen.queryByTestId('user-message-author-avatar')).toBeNull();
+    expect(screen.getByTestId('user-message-author-avatar-fallback').textContent).toBe('g');
+    unmount();
+
+    render(ChatMessage, {
+      props: {
+        message: authoredMessage({
+          author: { principalId: 'gone', login: null, displayName: null, avatarUrl: null },
+        }),
+        workspace: multiMember(),
+      },
+    });
+
+    const header = screen.getByTestId('user-message-author');
+    expect(header.getAttribute('data-principal-id')).toBe('gone');
+    expect(screen.getByTestId('user-message-author-name').textContent).not.toBe('');
+    expect(screen.getByTestId('user-message-author-avatar-fallback').textContent).toBe('?');
+  });
+
+  it('hides the author identity in the compact sticky header', () => {
+    render(ChatMessage, {
+      props: { message: authoredMessage(), workspace: multiMember(), isSticky: true },
+    });
+
+    expect(screen.queryByTestId('user-message-author')).toBeNull();
   });
 });
 

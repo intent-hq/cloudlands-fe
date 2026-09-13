@@ -91,6 +91,7 @@ import {
 // Import consolidated AgentMessage type
 import type {
   AgentMessage,
+  MessageAuthor,
   MessageMetadata,
   MessageRole,
   ProviderMessage,
@@ -178,7 +179,15 @@ export {
   normalizeAgentMessage,
   toProviderMessage,
 };
-export type { AgentMessage, MessageMetadata, MessageRole, ProviderMessage, ToolCall, ToolResult };
+export type {
+  AgentMessage,
+  MessageAuthor,
+  MessageMetadata,
+  MessageRole,
+  ProviderMessage,
+  ToolCall,
+  ToolResult,
+};
 
 // Re-export SuggestedPrompt types and helpers
 export type { SuggestedPrompt, SuggestedPromptsEvent } from './types/suggested-prompt';
@@ -318,6 +327,12 @@ export interface Workspace {
    *  wire — omitted when false, so older daemons (which never send it) read
    *  as not waiting. */
   waiting?: boolean;
+  /** Membership summary (PROTOCOL §5.1, intent-hq/intentd#1868). `myRole` is
+   *  relative to the caller and absent for a non-member; `memberCount` counts
+   *  accepted members. All absent on older daemons. */
+  ownerPrincipalId?: string;
+  myRole?: 'owner' | 'collaborator';
+  memberCount?: number;
   createdAt: string;
   updatedAt: string;
   lastActivity?: string;
