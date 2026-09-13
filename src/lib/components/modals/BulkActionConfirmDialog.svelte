@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { Snippet } from 'svelte';
   import { Button } from '$lib/components/ui/button';
   import type { ButtonVariant } from '$lib/components/ui/button';
   import * as Dialog from '$lib/components/ui/dialog';
@@ -11,10 +12,16 @@
     description?: string;
     confirmText?: string;
     variant?: ButtonVariant;
+    initialFocus?: 'confirm' | 'cancel';
+    body?: Snippet;
     /** Streaming agents across the targeted workspaces that the action would stop. */
     activeAgentCount?: number;
     /** Active background hooks across the targeted workspaces that the action would cancel. */
     activeHookCount?: number;
+    /** Open pull requests across the targeted workspaces. */
+    openPrCount?: number;
+    /** Whether active-work preflight has resolved for the current target snapshot. */
+    preflightReady?: boolean;
     onConfirm?: () => void;
     onCancel?: () => void;
   }
@@ -25,15 +32,20 @@
     description = '',
     confirmText = m.modals_bulkActionConfirm_confirm_label(),
     variant = 'default',
+    initialFocus = 'confirm',
+    body,
     activeAgentCount = 0,
     activeHookCount = 0,
+    openPrCount = 0,
+    preflightReady = true,
     onConfirm,
     onCancel,
   }: Props = $props();
 
-  const hasActiveWork = $derived(activeAgentCount > 0 || activeHookCount > 0);
+  const hasActiveWork = $derived(activeAgentCount > 0 || activeHookCount > 0 || openPrCount > 0);
 
   let confirmButtonRef: HTMLButtonElement | null = $state(null);
+  let cancelButtonRef: HTMLButtonElement | null = $state(null);
   let confirmHasFocus = $state(false);
 
   function close() {
@@ -52,7 +64,8 @@
 
   function handleOpenAutoFocus(event: Event) {
     event.preventDefault();
-    confirmButtonRef?.focus();
+    if (!preflightReady || initialFocus === 'cancel') cancelButtonRef?.focus();
+    else confirmButtonRef?.focus();
   }
 </script>
 
@@ -62,16 +75,16 @@
     closeLabel={m.modals_bulkActionConfirm_close_ariaLabel()}
     onOpenAutoFocus={handleOpenAutoFocus}
   >
-    <div class="space-y-4 p-5 pr-12">
+    <div class="min-w-0 space-y-4 p-5 pr-12">
       <Dialog.Header class="gap-2 pr-0">
         <Dialog.Title>{title}</Dialog.Title>
         <Dialog.Description class="leading-5">{description}</Dialog.Description>
       </Dialog.Header>
 
       {#if hasActiveWork}
-        <div class="space-y-1 rounded-md border border-border bg-muted/40 p-3">
+        <div class="space-y-1">
           {#if activeAgentCount > 0}
-            <p class="text-sm font-medium text-foreground">
+            <p class="text-sm text-muted-foreground">
               {activeAgentCount === 1
                 ? m.modals_deleteWarning_agentsStopped_one({
                     count: formatInteger(activeAgentCount),
@@ -82,7 +95,7 @@
             </p>
           {/if}
           {#if activeHookCount > 0}
-            <p class="text-sm font-medium text-foreground">
+            <p class="text-sm text-muted-foreground">
               {activeHookCount === 1
                 ? m.modals_deleteWarning_hooksCancelled_one({
                     count: formatInteger(activeHookCount),
@@ -92,17 +105,28 @@
                   })}
             </p>
           {/if}
+          {#if openPrCount > 0}
+            <p class="text-sm text-muted-foreground">
+              {openPrCount === 1
+                ? m.modals_deleteWarning_openPrs_one({ count: formatInteger(openPrCount) })
+                : m.modals_deleteWarning_openPrs_many({ count: formatInteger(openPrCount) })}
+            </p>
+          {/if}
         </div>
       {/if}
+
+      {@render body?.()}
     </div>
 
     <Dialog.Footer class="mt-0 flex-row items-center justify-end border-0 px-5 pb-5 pt-0">
-      <Button variant="ghost-light" onclick={close}>
+      <Button variant="ghost-light" bind:ref={cancelButtonRef} onclick={close}>
         {m.modals_bulkActionConfirm_cancel_label()}
       </Button>
       <Button
         {variant}
         bind:ref={confirmButtonRef}
+        disabled={!preflightReady}
+        loading={!preflightReady}
         class={confirmHasFocus ? 'ring-ring/50 ring-[3px]' : undefined}
         onfocus={() => (confirmHasFocus = true)}
         onblur={() => (confirmHasFocus = false)}
