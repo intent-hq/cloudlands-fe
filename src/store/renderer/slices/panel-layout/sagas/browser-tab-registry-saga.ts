@@ -143,6 +143,7 @@ import {
   applyBrowserTabRegistryRow,
   browserTabRegistryReportRequested,
   closeTab,
+  destroyTabsByType,
   openHiddenTab,
   openTabInRightmostColumn,
   openTabInRightmostColumnRequested,
@@ -589,13 +590,18 @@ function* applyRows(
     // A refused listing is authoritative for every local browser tab: a
     // collaborator cannot host one either, so tabs this client would
     // otherwise keep to report later go too.
-    if (!registryForbidden) {
-      if (tab.hostClientId === undefined) continue;
-      if (tab.hostClientId === ownClientId && hasReportableUrl(tab)) continue;
+    if (registryForbidden) {
+      yield* effect(fence, registryTabForgotten(wsId, tabId));
+      continue;
     }
+    if (tab.hostClientId === undefined) continue;
+    if (tab.hostClientId === ownClientId && hasReportableUrl(tab)) continue;
     yield* effect(fence, registryTabForgotten(wsId, tabId));
     yield* effect(fence, closeTab(wsId, tabId, undefined, undefined, { destroy: true }));
   }
+  // Destroyed, not closed: a per-tab destroy still parks unowned tabs in
+  // recentlyClosed, and a collaborator must not be able to reopen one.
+  if (registryForbidden) yield* effect(fence, destroyTabsByType(wsId, 'browser'));
   yield* check(fence);
   const placed = new Set(
     collectBrowserTabs(yield* selectPanelLayoutWorkspace.effect(wsId)).map((h) => h.tab.id),
