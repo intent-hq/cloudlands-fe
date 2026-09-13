@@ -2301,6 +2301,7 @@
   "chat_queuedMessages_heldForEditing_title": "已暫留以供編輯",
   "chat_queuedMessages_save_tooltip": "儲存",
   "chat_queuedMessages_cancel_tooltip": "取消",
+  "chat_queuedMessages_author_ariaLabel": "由 {name} 加入佇列",
   "chat_queuedMessages_failedWillRetry_label": "失敗——將重試",
   "chat_queuedMessages_failedWillRetryPrefix_label": "（失敗——將重試）",
   "chat_queuedMessages_sendNow_tooltip": "立即傳送（中斷當前流式輸出）",
