@@ -13,6 +13,7 @@ import { backendRequest } from '$lib/client/live/backend-transport';
 import type { ContextItem, PlaceAttachmentResult } from '$lib/components/chat/input/context-api';
 import {
   extractPlacementErrorDetail,
+  mintPlacementIdempotencyKey,
   placeAttachmentViaTransport,
 } from '$lib/components/chat/input/attachment-placement';
 import {
@@ -61,12 +62,16 @@ export interface RedeemResult {
  * fail-soft per item: a failure marks that item `failed` and counts it —
  * the caller blocks the first-message send while `failedCount > 0`, keeps
  * the pills visible for retry/remove, and re-calls on retry (placed items
- * are skipped via their `attachmentId`).
+ * are skipped via their `attachmentId`). Each item's placement
+ * `idempotencyKey` (v9.13) is minted on first placement and kept on the
+ * item — failed included — so the retry replays a placement whose reply was
+ * lost instead of placing a duplicate.
  */
 export async function redeemStagedAttachments(
   workspaceId: string,
   items: ContextItem[],
   place: typeof placeAttachmentViaTransport = placeAttachmentViaTransport,
+  mintKey: typeof mintPlacementIdempotencyKey = mintPlacementIdempotencyKey,
 ): Promise<RedeemResult> {
   const out: ContextItem[] = [];
   const fileBlocks: FileBlock[] = [];
@@ -86,13 +91,17 @@ export async function redeemStagedAttachments(
       out.push({ ...item, placementStatus: 'failed' });
       continue;
     }
+    const idempotencyKey = item.placementIdempotencyKey ?? mintKey();
+    const keyedItem: ContextItem =
+      idempotencyKey !== undefined ? { ...item, placementIdempotencyKey: idempotencyKey } : item;
     try {
       const result: PlaceAttachmentResult = await place(workspaceId, item.label, {
         sourcePath: item.sourcePath,
         mimeType: item.attachmentMimeType,
+        ...(idempotencyKey !== undefined ? { idempotencyKey } : {}),
       });
       const placed: ContextItem = {
-        ...item,
+        ...keyedItem,
         placementStatus: 'placed',
         placementError: undefined,
         label: result.fileName,
@@ -109,7 +118,7 @@ export async function redeemStagedAttachments(
       // daemon's failure detail when available), blocks send.
       failedCount++;
       out.push({
-        ...item,
+        ...keyedItem,
         placementStatus: 'failed',
         placementError: extractPlacementErrorDetail(error),
       });

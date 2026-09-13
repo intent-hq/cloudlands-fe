@@ -10,6 +10,16 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 
+// The default key minter reads the daemon protocol version off the store;
+// with no version known it mints nothing (pre-9.13 behavior).
+vi.mock('$store/renderer/store', async () => {
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
+  return createAppStoreMockModule({
+    state: () => ({ daemonHealth: { hostLocality: null, transport: null, stats: null } }),
+  });
+});
+
 import type { ContextItem } from '$lib/components/chat/input/context-api';
 import {
   redeemStagedAttachments,
@@ -151,6 +161,72 @@ describe('redeemStagedAttachments', () => {
         size: 1024,
       },
     ]);
+  });
+
+  describe('idempotencyKey (v9.13)', () => {
+    const KEY = '3f2b6c1e-9d3a-4e7b-8a2c-5f1d0e9b7c64';
+
+    it('mints a key on first placement, sends it, and keeps it on the placed item', async () => {
+      const place = vi.fn().mockResolvedValue({
+        ok: true,
+        path: '.intent/attachments/notes.txt',
+        fileName: 'notes.txt',
+        size: 1024,
+        attachmentId: 'att-uuid-1',
+        mimeType: 'text/plain',
+        uploadedAt: '2026-08-12T00:00:00Z',
+      });
+      const mintKey = vi.fn(() => KEY);
+
+      const result = await redeemStagedAttachments('ws-1', [stagedItem()], place, mintKey);
+
+      expect(mintKey).toHaveBeenCalledTimes(1);
+      expect(place).toHaveBeenCalledWith('ws-1', 'notes.txt', {
+        sourcePath: '/home/user/notes.txt',
+        mimeType: 'text/plain',
+        idempotencyKey: KEY,
+      });
+      expect(result.items[0].placementIdempotencyKey).toBe(KEY);
+    });
+
+    it('keeps the minted key on a failed item so the retry reuses it instead of re-minting', async () => {
+      const place = vi.fn().mockRejectedValue(new Error('Request timed out'));
+      const mintKey = vi.fn(() => KEY);
+
+      const first = await redeemStagedAttachments('ws-1', [stagedItem()], place, mintKey);
+      expect(first.items[0].placementStatus).toBe('failed');
+      expect(first.items[0].placementIdempotencyKey).toBe(KEY);
+
+      // Retry re-calls with the items as returned: same key, no new mint.
+      const retryMint = vi.fn(() => 'another-key');
+      await redeemStagedAttachments('ws-1', first.items, place, retryMint);
+
+      expect(retryMint).not.toHaveBeenCalled();
+      expect(place).toHaveBeenLastCalledWith('ws-1', 'notes.txt', {
+        sourcePath: '/home/user/notes.txt',
+        mimeType: 'text/plain',
+        idempotencyKey: KEY,
+      });
+    });
+
+    it('sends no key and stores none against a pre-9.13 daemon (behavior unchanged)', async () => {
+      const place = vi.fn().mockResolvedValue({
+        ok: true,
+        path: '.intent/attachments/notes.txt',
+        fileName: 'notes.txt',
+        size: 1024,
+        attachmentId: 'att-uuid-1',
+        mimeType: 'text/plain',
+        uploadedAt: '2026-08-12T00:00:00Z',
+      });
+
+      const result = await redeemStagedAttachments('ws-1', [stagedItem()], place, () => undefined);
+
+      const [, , source] = place.mock.calls[0];
+      expect(source).toEqual({ sourcePath: '/home/user/notes.txt', mimeType: 'text/plain' });
+      expect('idempotencyKey' in source).toBe(false);
+      expect('placementIdempotencyKey' in result.items[0]).toBe(false);
+    });
   });
 });
 

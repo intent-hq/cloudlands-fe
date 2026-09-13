@@ -189,6 +189,7 @@
     extractPlacementErrorDetail,
     isPlacementCancellation,
     isRemoteBackend,
+    mintPlacementIdempotencyKey,
     placeAttachmentViaTransport,
   } from './attachment-placement';
   import { splitDroppedItems } from '$lib/utils/drop-split';
@@ -1094,7 +1095,9 @@
    * Placement is sourcePath-only (never base64): the item is added
    * immediately in the `placing` state, then flips to `placed` or `failed`.
    * A failed item shows a retry affordance in the pill and blocks send until
-   * retried or removed.
+   * retried or removed. The item carries one placement `idempotencyKey`
+   * (v9.13) for its whole attempt series, so a retry after a lost reply
+   * replays the committed attachment instead of placing a duplicate.
    */
   async function placeNonImageFile(file: File) {
     const fileName =
@@ -1122,6 +1125,7 @@
       attachmentSize: file.size,
       placementStatus: 'placing',
       sourcePath,
+      placementIdempotencyKey: mintPlacementIdempotencyKey(),
     };
     contextItems = [...contextItems, contextItem];
 
@@ -1156,10 +1160,14 @@
       return;
     }
 
+    // Staged items (modal/onboarding) may predate the key — mint once here
+    // and keep it on the item so every later retry reuses it.
+    const idempotencyKey = item.placementIdempotencyKey ?? mintPlacementIdempotencyKey();
     patchItem({
       placementStatus: 'placing',
       placementError: undefined,
       placementProgress: undefined,
+      placementIdempotencyKey: idempotencyKey,
     });
     const aborter = new AbortController();
     placementAborters.set(itemId, aborter);
@@ -1170,6 +1178,7 @@
         {
           sourcePath: item.sourcePath,
           mimeType: item.attachmentMimeType,
+          ...(idempotencyKey !== undefined ? { idempotencyKey } : {}),
         },
         (fraction) => patchItem({ placementProgress: fraction }),
         aborter.signal,

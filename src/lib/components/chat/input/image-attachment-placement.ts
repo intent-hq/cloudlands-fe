@@ -13,6 +13,7 @@ import {
   abortAttachmentUpload,
   beginAttachmentUpload,
   commitAttachmentUpload,
+  getAttachmentInfo,
   placeAttachment,
   sendAttachmentUploadChunk,
   type PlaceAttachmentResult,
@@ -20,6 +21,9 @@ import {
 import {
   extractPlacementErrorDetail,
   MAX_REMOTE_ATTACHMENT_BYTES,
+  mintPlacementIdempotencyKey,
+  recoverPlacementByKey,
+  shouldRecoverPlacement,
   UPLOAD_CHUNK_BYTES,
 } from './attachment-placement';
 
@@ -91,6 +95,10 @@ export interface ImagePlacementApi {
   sendAttachmentUploadChunk: typeof sendAttachmentUploadChunk;
   commitAttachmentUpload: typeof commitAttachmentUpload;
   abortAttachmentUpload: typeof abortAttachmentUpload;
+  /** Key arm of `file.getAttachmentInfo` — lost-reply recovery (v9.13). */
+  getAttachmentInfo: typeof getAttachmentInfo;
+  /** Version-gated key minting; `undefined` against pre-9.13 daemons. */
+  mintIdempotencyKey: typeof mintPlacementIdempotencyKey;
 }
 
 const defaultApi: ImagePlacementApi = {
@@ -99,6 +107,8 @@ const defaultApi: ImagePlacementApi = {
   sendAttachmentUploadChunk,
   commitAttachmentUpload,
   abortAttachmentUpload,
+  getAttachmentInfo,
+  mintIdempotencyKey: mintPlacementIdempotencyKey,
 };
 
 /**
@@ -106,19 +116,35 @@ const defaultApi: ImagePlacementApi = {
  * Single-shot `data` arm up to 25 MB decoded (stays well under the 40 MiB
  * frame cap after base64 inflation), staged chunked upload above that —
  * identical to the sourcePath-based transport placement, minus the disk
- * reads. Errors propagate to the caller.
+ * reads. With `source.idempotencyKey` (v9.13) a lost placement/commit reply
+ * is recovered through the key lookup instead of failing. Errors propagate
+ * to the caller.
  */
 export async function placeImageAttachment(
   workspaceId: string,
   fileName: string,
-  source: { data: string; mimeType?: string },
+  source: { data: string; mimeType?: string; idempotencyKey?: string },
   api: ImagePlacementApi = defaultApi,
 ): Promise<PlaceAttachmentResult> {
+  const { idempotencyKey } = source;
+  const keyed = idempotencyKey !== undefined ? { idempotencyKey } : {};
+  const recover = async (error: unknown): Promise<PlaceAttachmentResult | undefined> =>
+    shouldRecoverPlacement(error, idempotencyKey)
+      ? recoverPlacementByKey(workspaceId, idempotencyKey, api.getAttachmentInfo)
+      : undefined;
+
   if (base64DecodedBytes(source.data) <= MAX_REMOTE_ATTACHMENT_BYTES) {
-    return api.placeAttachment(workspaceId, fileName, {
-      data: source.data,
-      mimeType: source.mimeType,
-    });
+    try {
+      return await api.placeAttachment(workspaceId, fileName, {
+        data: source.data,
+        mimeType: source.mimeType,
+        ...keyed,
+      });
+    } catch (error) {
+      const recovered = await recover(error);
+      if (recovered) return recovered;
+      throw error;
+    }
   }
   const bytes = base64ToBytes(source.data);
   const sha256 = await sha256Hex(bytes);
@@ -127,17 +153,22 @@ export async function placeImageAttachment(
     fileName,
     bytes.byteLength,
     sha256,
-    source.mimeType,
+    { mimeType: source.mimeType, ...keyed },
   );
   const chunkBytes = Math.min(UPLOAD_CHUNK_BYTES, maxChunkBytes);
   const totalChunks = Math.ceil(bytes.byteLength / chunkBytes);
+  let committing = false;
   try {
     for (let seq = 0; seq < totalChunks; seq++) {
       const slice = bytes.subarray(seq * chunkBytes, (seq + 1) * chunkBytes);
       await api.sendAttachmentUploadChunk(uploadId, seq, bytesToBase64(slice));
     }
+    committing = true;
     return await api.commitAttachmentUpload(uploadId);
   } catch (error) {
+    // Only a lost commit reply can hide a placed file behind the key.
+    const recovered = committing ? await recover(error) : undefined;
+    if (recovered) return recovered;
     await api.abortAttachmentUpload(uploadId).catch(() => {
       // Best-effort: the daemon sweeps orphaned sessions on the next begin.
     });
@@ -155,7 +186,9 @@ function imageAttachmentFileName(mimeType: string | undefined, index: number): s
  * Convert inline image blocks into attachment-reference blocks by placing
  * each one (one placement request per image, chunked when large). Blocks
  * already carrying an `attachmentId` pass through untouched, so retries and
- * edit/regenerate never re-upload. FAIL-CLOSED: any placement failure
+ * edit/regenerate never re-upload. Each placement is keyed with a fresh
+ * `idempotencyKey` when the daemon supports it (v9.13), so a lost reply is
+ * recovered instead of failing the send. FAIL-CLOSED: any placement failure
  * rejects with an error naming the failed image(s) (daemon detail included
  * when available) — images are never silently dropped or partially sent.
  */
@@ -179,10 +212,15 @@ export async function toImageReferenceBlocks(
     const inline = block as InlineImageBlock;
     const fileName = imageAttachmentFileName(inline.mimeType, i);
     try {
+      const idempotencyKey = api.mintIdempotencyKey();
       const placed = await placeImageAttachment(
         workspaceId,
         fileName,
-        { data: inline.data, mimeType: inline.mimeType },
+        {
+          data: inline.data,
+          mimeType: inline.mimeType,
+          ...(idempotencyKey !== undefined ? { idempotencyKey } : {}),
+        },
         api,
       );
       out.push({
