@@ -1415,6 +1415,36 @@ describe('browserTabRegistrySaga', () => {
       expect(h.tabs()).toEqual([]);
       await stop(h);
     });
+
+    it('settles a prepopulated workspace on a -32003 refusal as applied and empty, and never re-dials for later settles (collaborator, multiplayer w3)', async () => {
+      const forbidden = Object.assign(new Error('Forbidden'), { rpcCode: -32003 });
+      mocks.listTabs.mockRejectedValue(forbidden);
+      const h = start({
+        layouts: {
+          [WS]: settledLayout([
+            browserTab({ id: 'b1', hostClientId: OTHER, browserUrl: 'http://a.test/' }),
+            browserTab({ id: 'b2', hostClientId: OWN, browserUrl: 'http://b.test/' }),
+          ]),
+        },
+      });
+      await flush();
+
+      // A mirror of another host is no longer ours to show; a tab this client
+      // hosts stays local (nothing can be reported on this connection).
+      expect(h.registry()).toMatchObject({ phase: 'applied', reported: {} });
+      expect(h.tabs().map((tab) => tab.id)).toEqual(['b2']);
+      expect(mocks.listTabs).toHaveBeenCalledTimes(1);
+      expect(mocks.upsertTab).not.toHaveBeenCalled();
+      expect(mocks.syncTabs).not.toHaveBeenCalled();
+
+      h.dispatch(setRestoreStatus(WS, 'restored'));
+      await flush();
+      expect(h.registry().phase).not.toBe('loading');
+      expect(h.registry().reported).toEqual({});
+      expect(mocks.listTabs).toHaveBeenCalledTimes(1);
+      expect(mocks.upsertTab).not.toHaveBeenCalled();
+      await stop(h);
+    });
   });
 
   describe('re-home, teardown and echo races', () => {

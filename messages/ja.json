@@ -4538,6 +4538,7 @@
   "browser_embedded_pageClosed_error": "ページが自身を閉じました。再読み込みするか、URL を入力して続行してください。",
   "browser_embedded_resolveFailed_error": "リモートデーモンのホスト上でこの URL に到達できません",
   "browser_linkOpen_loopbackAmbiguity_warning": "ループバック URL はデーモンのホストに書き換えられました",
+  "browser_linkOpen_ownerOnlyForward_error": "デーモンのホストで転送ポートを開けるのはワークスペースの所有者のみです",
   "browser_embedded_protocolNotAllowed_error": "プロトコル「{protocol}」は許可されていません。対応: {protocols}",
   "browser_embedded_selfLoad_error": "アプリ自身をアプリ内に読み込むことはできません",
   "browser_embedded_invalidUrlFormat_error": "無効な URL 形式です",

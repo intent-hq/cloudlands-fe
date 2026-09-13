@@ -2002,6 +2002,7 @@ describe('browserIpcSaga', () => {
         panelLayout: { byWorkspaceId: {} },
         tabState: { workspaceStacks: [[wsId]] },
         workspaceAgents: { byWorkspaceId: {} },
+        workspace: { workspaces: createCollection('id') },
       };
     };
     const seedStorage = (wsId: string, tabs: unknown[]) => {
@@ -2110,7 +2111,11 @@ describe('browserIpcSaga', () => {
       // workspaceStacks — staying silent times the request out as "renderer
       // did not respond" (monorepo#2789 live regression in v2.64.0).
       const { task } = startWithReducer();
-      state = { panelLayout: { byWorkspaceId: {} }, tabState: { workspaceStacks: [] } };
+      state = {
+        panelLayout: { byWorkspaceId: {} },
+        tabState: { workspaceStacks: [] },
+        workspace: { workspaces: createCollection('id') },
+      };
       seedStorage('ws-routed-1', [
         { id: 'browser-1', type: 'browser', title: 'A', browserUrl: 'http://a/', closable: true },
       ]);
@@ -2134,7 +2139,11 @@ describe('browserIpcSaga', () => {
 
     it('stays silent when the route is /workspace/new and the workspace is otherwise unhosted', async () => {
       const { actions, task } = startWithReducer();
-      state = { panelLayout: { byWorkspaceId: {} }, tabState: { workspaceStacks: [] } };
+      state = {
+        panelLayout: { byWorkspaceId: {} },
+        tabState: { workspaceStacks: [] },
+        workspace: { workspaces: createCollection('id') },
+      };
       window.history.pushState({}, '', '/workspace/new');
       try {
         await emit({ workspaceId: 'new', requestId: 'req-r2' }, 'browser:list-tabs-request');
@@ -2150,7 +2159,11 @@ describe('browserIpcSaga', () => {
 
     it('stays silent for a non-routed workspace when the window is routed to a different one', async () => {
       const { actions, task } = startWithReducer();
-      state = { panelLayout: { byWorkspaceId: {} }, tabState: { workspaceStacks: [] } };
+      state = {
+        panelLayout: { byWorkspaceId: {} },
+        tabState: { workspaceStacks: [] },
+        workspace: { workspaces: createCollection('id') },
+      };
       window.history.pushState({}, '', '/workspace/ws-routed-other');
       try {
         await emit(
