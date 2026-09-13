@@ -39,6 +39,15 @@ export interface TokenUsageTotals {
  */
 export type TokenUsageByModel = Record<string, TokenUsageTotals>;
 
+/** One sparse materialized agent × model cell (PROTOCOL §5.23). */
+export interface TokenUsageCrossFilterRow {
+  agentId: string;
+  model: string;
+  totals: TokenUsageTotals;
+  humanMessages: number;
+  agentMessages: number;
+}
+
 /**
  * `TokenUsage` (PROTOCOL §5.23): the durable per-workspace usage rollup.
  * `byAgentId` keys are `agent-{uuid}`; `lastScanAt` is the RFC-3339 timestamp
@@ -48,5 +57,10 @@ export interface TokenUsage {
   byAgentId: Record<string, TokenUsageTotals>;
   totals: TokenUsageTotals;
   byModel: TokenUsageByModel;
+  /**
+   * Presence-detected sparse cross-filter projection. Absence means a legacy
+   * snapshot and must not be interpreted as an authoritative empty matrix.
+   */
+  byAgentModel?: TokenUsageCrossFilterRow[];
   lastScanAt: string | null;
 }
