@@ -1,7 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import type { AgentMessage, MessageAuthor, MessageMetadata } from '$shared/types';
 import { findPreviousUserMessage, isAutomatedChatMessage } from '$lib/utils/previous-user-message';
-import { getHumanMessageAuthor, getMessageAuthorLabel } from '$lib/utils/message-authorship';
+import {
+  collectMessageAuthors,
+  getHumanMessageAuthor,
+  getMessageAuthorLabel,
+  getQueuedMessageAuthor,
+} from '$lib/utils/message-authorship';
 
 // PROTOCOL §5.5-shaped transcript rows: id/role/timestamp always present,
 // content carried in contentBlocks (canonical `text` field).
@@ -179,6 +184,90 @@ describe('getMessageAuthorLabel', () => {
         avatarUrl: null,
       }),
     ).toBeNull();
+  });
+});
+
+describe('collectMessageAuthors / getQueuedMessageAuthor', () => {
+  // Queue entries carry only the daemon's `messageMetadata.fromPrincipalId`
+  // stamp (intent-hq/intentd#1869); the queue surface resolves the author
+  // from the projections the transcript already carries.
+  const guest: MessageAuthor = {
+    principalId: 'principal-guest',
+    login: 'guest',
+    displayName: 'Guest User',
+    avatarUrl: null,
+  };
+  const owner: MessageAuthor = {
+    principalId: 'principal-owner',
+    login: 'owner',
+    displayName: 'Owner Person',
+    avatarUrl: 'https://avatars.example/owner.png',
+  };
+  const transcript: AgentMessage[] = [
+    { ...msg('u1', 'user', 'hi', { fromPrincipalId: owner.principalId }), author: owner },
+    msg('a1', 'assistant', 'ack'),
+    { ...msg('u2', 'user', 'hello', { fromPrincipalId: guest.principalId }), author: guest },
+    // Agent-to-agent row: the daemon still attaches an author, but it is not a
+    // human-authored row and must not seed the map.
+    {
+      ...msg('w1', 'user', 'wake', { type: 'agent_message', fromAgentId: 'agent-2' }),
+      author: { principalId: 'principal-bot', login: null, displayName: null, avatarUrl: null },
+    },
+    msg('u3', 'user', 'optimistic row without projection'),
+  ];
+
+  it('keys the transcript projections by principal id, human rows only', () => {
+    const authors = collectMessageAuthors(transcript);
+    expect([...authors.keys()].sort()).toEqual([guest.principalId, owner.principalId].sort());
+    expect(authors.get(guest.principalId)).toBe(guest);
+    expect(authors.get(owner.principalId)).toBe(owner);
+  });
+
+  it('resolves a stamped, user-authored queue entry against the map', () => {
+    const authors = collectMessageAuthors(transcript);
+    expect(
+      getQueuedMessageAuthor({ messageMetadata: { fromPrincipalId: guest.principalId } }, authors),
+    ).toBe(guest);
+    expect(
+      getQueuedMessageAuthor(
+        { messageMetadata: { fromPrincipalId: owner.principalId, queueInfo: { position: 0 } } },
+        authors,
+      ),
+    ).toBe(owner);
+  });
+
+  it('yields null for unstamped, unresolvable, daemon-origin or ungated entries', () => {
+    const authors = collectMessageAuthors(transcript);
+    expect(getQueuedMessageAuthor({}, authors)).toBeNull();
+    expect(
+      getQueuedMessageAuthor({ messageMetadata: { fromPrincipalId: '' } }, authors),
+    ).toBeNull();
+    expect(
+      getQueuedMessageAuthor({ messageMetadata: { fromPrincipalId: 'principal-new' } }, authors),
+    ).toBeNull();
+    expect(
+      getQueuedMessageAuthor(
+        {
+          messageMetadata: {
+            type: 'agent_message',
+            fromAgentId: 'agent-2',
+            fromPrincipalId: guest.principalId,
+          },
+        },
+        authors,
+      ),
+    ).toBeNull();
+    expect(
+      getQueuedMessageAuthor(
+        { messageMetadata: { source: 'system', fromPrincipalId: guest.principalId } },
+        authors,
+      ),
+    ).toBeNull();
+    // Not gated on (single-member workspace passes no map).
+    expect(
+      getQueuedMessageAuthor({ messageMetadata: { fromPrincipalId: guest.principalId } }, null),
+    ).toBeNull();
+    expect(getQueuedMessageAuthor(null, authors)).toBeNull();
   });
 });
 

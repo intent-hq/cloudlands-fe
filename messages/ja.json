@@ -2309,6 +2309,7 @@
   "chat_queuedMessages_heldForEditing_title": "編集のため保留中",
   "chat_queuedMessages_save_tooltip": "保存",
   "chat_queuedMessages_cancel_tooltip": "キャンセル",
+  "chat_queuedMessages_author_ariaLabel": "{name} がキューに追加",
   "chat_queuedMessages_failedWillRetry_label": "失敗しました — 再試行します",
   "chat_queuedMessages_failedWillRetryPrefix_label": "（失敗しました — 再試行します）",
   "chat_queuedMessages_sendNow_tooltip": "今すぐ送信（現在のストリームを中断）",

@@ -2309,6 +2309,7 @@
   "chat_queuedMessages_heldForEditing_title": "Zur Bearbeitung zurückgehalten",
   "chat_queuedMessages_save_tooltip": "Speichern",
   "chat_queuedMessages_cancel_tooltip": "Abbrechen",
+  "chat_queuedMessages_author_ariaLabel": "In Warteschlange gestellt von {name}",
   "chat_queuedMessages_failedWillRetry_label": "Fehlgeschlagen — wird erneut versucht",
   "chat_queuedMessages_failedWillRetryPrefix_label": "(Fehlgeschlagen — wird erneut versucht)",
   "chat_queuedMessages_sendNow_tooltip": "Jetzt senden (unterbricht den aktuellen Stream)",
