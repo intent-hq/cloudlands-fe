@@ -38,16 +38,6 @@ const UNCONSUMED_ACTION_EXCEPTIONS = [
       'Observed by the triggersSpecialistRefetch predicate (action.type === refetchSpecialistsRequested.type) feeding actionChannel(triggersSpecialistRefetch, ...) in src/store/renderer/slices/specialists/sagas/specialists-saga.ts',
   },
   {
-    pattern: /terminals-slice\.ts#createTerminalRequested$/,
-    rationale:
-      'Pre-existing dead dispatch: no reducer case, watcher, or predicate observes it (dispatched from CommandPalette.svelte and menu-ipc-saga.ts putForWorkspace); listed so the gate can land without src/ changes',
-  },
-  {
-    pattern: /terminals-slice\.ts#closeActiveTerminalRequested$/,
-    rationale:
-      'Pre-existing dead dispatch: no reducer case, watcher, or predicate observes it (dispatched from src/features/terminal/TerminalAdapter.ts); listed so the gate can land without src/ changes',
-  },
-  {
     pattern: /agent-session-slice\.ts#agentSessionRegenerateFromMessageRequested$/,
     rationale:
       'Pre-existing dead dispatch: no reducer case, watcher, predicate, or mutation middleware observes it (dispatched from ChatPanel.svelte handleRegenerateFromMessage); listed so the gate can land without src/ changes',
