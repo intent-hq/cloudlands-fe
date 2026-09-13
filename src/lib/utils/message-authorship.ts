@@ -53,11 +53,15 @@ export function getHumanMessageAuthor(
 ): MessageAuthor | null {
   if (!message || message.role !== 'user') return null;
   if (!isUserAuthoredMetadata(message.metadata)) return null;
-  const author = message.author;
-  if (!author || typeof author !== 'object') return null;
-  const { principalId } = author as { principalId?: unknown };
+  return asMessageAuthor(message.author);
+}
+
+/** The value as a `MessageAuthor` when it carries a principal id, else null. */
+function asMessageAuthor(value: unknown): MessageAuthor | null {
+  if (!value || typeof value !== 'object') return null;
+  const { principalId } = value as { principalId?: unknown };
   if (typeof principalId !== 'string' || principalId.length === 0) return null;
-  return author as MessageAuthor;
+  return value as MessageAuthor;
 }
 
 /**
@@ -74,9 +78,9 @@ export function getMessageAuthorLabel(author: MessageAuthor): string | null {
 
 /**
  * The `author` projections the transcript already carries, keyed by
- * `principalId` (later rows win). Queue entries carry only the daemon's
- * `messageMetadata.fromPrincipalId` stamp, so the queue surface resolves its
- * author against the transcript's projections instead of a second RPC.
+ * `principalId` (later rows win). The queue surface falls back to this map
+ * for entries from a daemon that stamps `messageMetadata.fromPrincipalId`
+ * but does not yet serve an `author` projection on queue entries.
  */
 export function collectMessageAuthors(
   messages: ReadonlyArray<{ role: MessageRole; author?: unknown; metadata?: unknown }>,
@@ -90,19 +94,35 @@ export function collectMessageAuthors(
 }
 
 /**
- * The human author of a queue entry, or null: the entry must pass
- * `isUserAuthoredMetadata`, carry a `fromPrincipalId` stamp, and that
- * principal must be resolvable from `authors` (see `collectMessageAuthors`).
- * Unstamped entries (older daemons) and unresolvable principals yield null —
- * the caller renders no attribution rather than a placeholder.
+ * The authors the queue surface may attribute against, or null when the
+ * surface is off: attribution lights up only once the workspace has more
+ * than one member (`memberCount >= 2`; absent on older daemons = off).
+ */
+export function getQueueSurfaceAuthors(
+  memberCount: number | null | undefined,
+  messages: ReadonlyArray<{ role: MessageRole; author?: unknown; metadata?: unknown }>,
+): Map<string, MessageAuthor> | null {
+  return (memberCount ?? 0) >= 2 ? collectMessageAuthors(messages) : null;
+}
+
+/**
+ * The human author of a queue entry, or null. `authors === null` means the
+ * surface is off (see `getQueueSurfaceAuthors`). Otherwise the entry must
+ * pass `isUserAuthoredMetadata`; its own `author` projection (served by the
+ * daemon next to the `fromPrincipalId` stamp) wins, and an entry without one
+ * (older daemon) resolves its stamp against `authors`. Unstamped entries and
+ * unresolvable principals yield null — the caller renders no attribution
+ * rather than a placeholder.
  */
 export function getQueuedMessageAuthor(
-  queued: { messageMetadata?: unknown } | null | undefined,
+  queued: { messageMetadata?: unknown; author?: unknown } | null | undefined,
   authors: ReadonlyMap<string, MessageAuthor> | null | undefined,
 ): MessageAuthor | null {
-  if (!queued || !authors || authors.size === 0) return null;
+  if (!queued || !authors) return null;
   const metadata = queued.messageMetadata;
   if (!isUserAuthoredMetadata(metadata)) return null;
+  const own = asMessageAuthor(queued.author);
+  if (own) return own;
   if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return null;
   const { fromPrincipalId } = metadata as { fromPrincipalId?: unknown };
   if (typeof fromPrincipalId !== 'string' || fromPrincipalId.length === 0) return null;
