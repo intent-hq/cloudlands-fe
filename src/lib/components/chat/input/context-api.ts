@@ -67,6 +67,20 @@ export interface ContextItem {
   // staging key for pre-workspace surfaces (modal/onboarding), where
   // placement is deferred until workspace.create returns.
   sourcePath?: string;
+  // Client-minted `idempotencyKey` (PROTOCOL §5.9, v9.13) shared by every
+  // placement attempt of this item, so a retry after a lost reply replays
+  // the committed attachment instead of placing a duplicate. Minted once
+  // per item when the daemon supports it; absent against older daemons.
+  placementIdempotencyKey?: string;
+  // File name requested by a keyed image placement whose attempt failed
+  // (in-memory images get a generated name), retained with the key so the
+  // retry resends the identical placement the daemon can replay.
+  placementFileName?: string;
+  // Attachment id an image item's placement produced during a held first
+  // send that then failed downstream, retained so the resumed send passes a
+  // reference instead of placing the image again. Client-side only: never
+  // persisted in a draft, since it is bound to the workspace of that send.
+  placementAttachmentId?: string;
 }
 
 /** True when any attachment item still blocks sending: placement in flight or failed. */
@@ -129,6 +143,12 @@ export interface PlaceAttachmentResult {
   mimeType?: string;
   /** ISO timestamp of the registry row. */
   uploadedAt: string;
+  /**
+   * Presence-detected (v9.13): the keyed call replayed an earlier placement
+   * bound to the same `idempotencyKey` and placed nothing. Absent on a first
+   * placement or an unkeyed call.
+   */
+  replayed?: boolean;
 }
 
 /**
@@ -137,17 +157,20 @@ export interface PlaceAttachmentResult {
  * Exactly one of `data` (base64, `data:` URL prefix tolerated) or
  * `sourcePath` (absolute host-local path the daemon copies directly) must be
  * provided; optional `mimeType` is recorded in the attachment registry.
- * Errors propagate to the caller.
+ * Optional `idempotencyKey` (v9.13) makes a same-key retry replay the bound
+ * placement instead of placing a duplicate — only send it to daemons at
+ * protocol 9.13 or later. Errors propagate to the caller.
  */
 export async function placeAttachment(
   workspaceId: string,
   fileName: string,
-  source: { data?: string; sourcePath?: string; mimeType?: string },
+  source: { data?: string; sourcePath?: string; mimeType?: string; idempotencyKey?: string },
 ): Promise<PlaceAttachmentResult> {
   logger.debug('Placing attachment', {
     workspaceId,
     fileName,
     viaSourcePath: source.sourcePath !== undefined,
+    keyed: source.idempotencyKey !== undefined,
   });
   return await backendRequest<PlaceAttachmentResult>('file.placeAttachment', {
     workspaceId,
@@ -157,6 +180,7 @@ export async function placeAttachment(
     ...(source.mimeType !== undefined && source.mimeType !== ''
       ? { mimeType: source.mimeType }
       : {}),
+    ...(source.idempotencyKey !== undefined ? { idempotencyKey: source.idempotencyKey } : {}),
   });
 }
 
@@ -165,27 +189,38 @@ export interface BeginAttachmentUploadResult {
   uploadId: string;
   /** Daemon's decoded-bytes-per-chunk cap (16 MiB). */
   maxChunkBytes: number;
+  /**
+   * Presence-detected (v9.13): a same-key begin re-answered a still-live
+   * session's `uploadId` (a lost begin reply) instead of opening a second one.
+   */
+  replayed?: boolean;
 }
 
 /**
  * Open a staged chunked attachment upload session on the daemon
  * (`file.attachmentUpload.begin`, PROTOCOL §5.9, v6.16). The daemon verifies
- * the assembled payload against `sha256` (lowercase hex) at commit. Errors
- * propagate to the caller.
+ * the assembled payload against `sha256` (lowercase hex) at commit. Optional
+ * `idempotencyKey` (v9.13) binds the committed attachment to the key so a
+ * lost commit reply is recoverable via `getAttachmentInfo`; a key already
+ * bound to a committed attachment rejects begin with -32602 ("already
+ * committed"). Errors propagate to the caller.
  */
 export async function beginAttachmentUpload(
   workspaceId: string,
   fileName: string,
   sizeBytes: number,
   sha256: string,
-  mimeType?: string,
+  options: { mimeType?: string; idempotencyKey?: string } = {},
 ): Promise<BeginAttachmentUploadResult> {
   return await backendRequest<BeginAttachmentUploadResult>('file.attachmentUpload.begin', {
     workspaceId,
     fileName,
     sizeBytes,
     sha256,
-    ...(mimeType !== undefined && mimeType !== '' ? { mimeType } : {}),
+    ...(options.mimeType !== undefined && options.mimeType !== ''
+      ? { mimeType: options.mimeType }
+      : {}),
+    ...(options.idempotencyKey !== undefined ? { idempotencyKey: options.idempotencyKey } : {}),
   });
 }
 
@@ -252,12 +287,24 @@ export interface AttachmentInfo {
 }
 
 /**
- * Look up an attachment-registry row by UUID via the daemon
- * (`file.getAttachmentInfo`, PROTOCOL §5.9, v6.12). Unknown ids reject with
- * -32602; errors propagate to the caller.
+ * `file.getAttachmentInfo` selector: the registry UUID, or (v9.13) the
+ * `{ workspaceId, idempotencyKey }` pair of a keyed placement.
  */
-export async function getAttachmentInfo(attachmentId: string): Promise<AttachmentInfo> {
-  return await backendRequest<AttachmentInfo>('file.getAttachmentInfo', { attachmentId });
+export type AttachmentInfoSelector = string | { workspaceId: string; idempotencyKey: string };
+
+/**
+ * Look up an attachment-registry row via the daemon
+ * (`file.getAttachmentInfo`, PROTOCOL §5.9, v6.12) by UUID, or (v9.13) by
+ * the `{ workspaceId, idempotencyKey }` a placement was keyed with — the
+ * lost-reply recovery arm. Unknown ids/keys reject with -32602; errors
+ * propagate to the caller.
+ */
+export async function getAttachmentInfo(selector: AttachmentInfoSelector): Promise<AttachmentInfo> {
+  const params =
+    typeof selector === 'string'
+      ? { attachmentId: selector }
+      : { workspaceId: selector.workspaceId, idempotencyKey: selector.idempotencyKey };
+  return await backendRequest<AttachmentInfo>('file.getAttachmentInfo', params);
 }
 
 /** `file:download-attachment` result: `canceled` means the user dismissed the save dialog. */

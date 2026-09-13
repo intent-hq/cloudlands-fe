@@ -219,6 +219,8 @@ vi.mock('$lib/components/chat/input/attachment-placement', () => ({
   isRemoteBackend: () => mocks.isRemote,
   placeAttachmentViaTransport: (...args: unknown[]) => mocks.placeAttachment(...args),
   extractPlacementErrorDetail: (error: unknown) => String(error),
+  // Pre-9.13 daemon: no placement idempotencyKey is minted.
+  mintPlacementIdempotencyKey: () => undefined,
 }));
 
 // staged-attachments sends the held first message through `backendRequest`

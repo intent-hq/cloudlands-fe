@@ -2,8 +2,10 @@
  * Transport-aware attachment placement (monorepo#2144): sourcePath arm on
  * the local sidecar, base64 data arm against a remote backend (≤25MB),
  * the chunked `file.attachmentUpload.*` session above that (PROTOCOL §5.9,
- * v6.16), and the daemon error-detail extraction behind the failed
- * pill/toast copy.
+ * v6.16), the daemon error-detail extraction behind the failed pill/toast
+ * copy, and idempotent placement (v9.13, intent-hq/intent#4691): the
+ * version-gated `idempotencyKey` on placeAttachment / begin and lost-reply
+ * recovery through the `file.getAttachmentInfo` key arm.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -14,6 +16,7 @@ const mockState = vi.hoisted(() => ({
   daemonHealth: {
     hostLocality: null as 'local' | 'remote' | null,
     transport: null as { mode: string } | null,
+    stats: null as { protocolVersion?: string } | null,
   },
 }));
 
@@ -37,9 +40,39 @@ import {
   isRemoteBackend,
   MAX_REMOTE_ATTACHMENT_BYTES,
   MAX_REMOTE_ATTACHMENT_TOTAL_BYTES,
-  UPLOAD_CHUNK_BYTES,
+  mintPlacementIdempotencyKey,
   placeAttachmentViaTransport,
+  recoverPlacementByKey,
+  supportsIdempotentPlacementProtocol,
+  UPLOAD_CHUNK_BYTES,
 } from './attachment-placement';
+
+/** Daemon `-32602` as the transports surface it (`rpcCode` + mapped string code). */
+function invalidParams(message: string) {
+  return Object.assign(new Error(message), {
+    code: 'INVALID_PARAMS',
+    rpcCode: -32602,
+    data: { code: 'INVALID_PARAMS' },
+  });
+}
+
+/** Transport-level failure (no `rpcCode`: the daemon's reply never arrived). */
+function transportLoss() {
+  return Object.assign(new Error('Request timed out'), { code: 'TRANSPORT_ERROR' });
+}
+
+/** PROTOCOL §5.9 `file.getAttachmentInfo` row for the placed fixture. */
+const attachmentInfoRow = {
+  attachmentId: 'att-uuid-1',
+  fileName: 'notes.txt',
+  mimeType: 'text/plain',
+  size: 1024,
+  uploadedAt: '2026-08-12T00:00:00Z',
+  path: '.intent/attachments/notes.txt',
+  exists: true,
+};
+
+const KEY = '3f2b6c1e-9d3a-4e7b-8a2c-5f1d0e9b7c64';
 
 /** 5-minute per-call bound for chunk sends and commit (see context-api.ts). */
 const UPLOAD_TRANSFER_TIMEOUT = { timeoutMs: 5 * 60 * 1000 };
@@ -68,6 +101,64 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockState.daemonHealth.hostLocality = null;
   mockState.daemonHealth.transport = null;
+  mockState.daemonHealth.stats = null;
+});
+
+describe('supportsIdempotentPlacementProtocol', () => {
+  it('accepts 9.13 and later, rejects older and unknown versions', () => {
+    expect(supportsIdempotentPlacementProtocol('9.13')).toBe(true);
+    expect(supportsIdempotentPlacementProtocol('9.14')).toBe(true);
+    expect(supportsIdempotentPlacementProtocol('10.0')).toBe(true);
+    expect(supportsIdempotentPlacementProtocol('9.12')).toBe(false);
+    expect(supportsIdempotentPlacementProtocol('9')).toBe(false);
+    expect(supportsIdempotentPlacementProtocol('8.20')).toBe(false);
+    expect(supportsIdempotentPlacementProtocol(undefined)).toBe(false);
+    expect(supportsIdempotentPlacementProtocol(null)).toBe(false);
+    expect(supportsIdempotentPlacementProtocol('')).toBe(false);
+    expect(supportsIdempotentPlacementProtocol('beta')).toBe(false);
+  });
+});
+
+describe('mintPlacementIdempotencyKey', () => {
+  it('mints a fresh UUID per call against a 9.13+ daemon', () => {
+    mockState.daemonHealth.stats = { protocolVersion: '9.13' };
+    const a = mintPlacementIdempotencyKey();
+    const b = mintPlacementIdempotencyKey();
+    expect(a).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    expect(b).not.toBe(a);
+  });
+
+  it('mints nothing before the version is known or against an older daemon', () => {
+    expect(mintPlacementIdempotencyKey()).toBeUndefined();
+    mockState.daemonHealth.stats = { protocolVersion: '9.12' };
+    expect(mintPlacementIdempotencyKey()).toBeUndefined();
+  });
+
+  it('reuses the retained key against a 9.13+ daemon, drops it against an older one', () => {
+    mockState.daemonHealth.stats = { protocolVersion: '9.13' };
+    expect(mintPlacementIdempotencyKey(KEY)).toBe(KEY);
+    mockState.daemonHealth.stats = { protocolVersion: '9.12' };
+    expect(mintPlacementIdempotencyKey(KEY)).toBeUndefined();
+  });
+});
+
+describe('recoverPlacementByKey', () => {
+  it('resolves the key arm of file.getAttachmentInfo into a replayed placement result', async () => {
+    backendRequestMock.mockResolvedValueOnce(attachmentInfoRow);
+
+    const result = await recoverPlacementByKey('ws-1', KEY);
+
+    expect(backendRequestMock).toHaveBeenCalledWith('file.getAttachmentInfo', {
+      workspaceId: 'ws-1',
+      idempotencyKey: KEY,
+    });
+    expect(result).toEqual({ ...placedResult, replayed: true });
+  });
+
+  it('resolves undefined when the key is unknown (placement never landed)', async () => {
+    backendRequestMock.mockRejectedValueOnce(invalidParams('unknown idempotency key'));
+    expect(await recoverPlacementByKey('ws-1', KEY)).toBeUndefined();
+  });
 });
 
 describe('isRemoteBackend', () => {
@@ -449,6 +540,332 @@ describe('placeAttachmentViaTransport — chunked upload (>25MB remote)', () => 
       ([channel, params]) => channel === 'file:read-chunk' && params.length !== 1,
     );
     expect(chunkReads.map(([, p]) => p.length)).toEqual([smallCap, smallCap, smallCap, smallCap]);
+  });
+});
+
+describe('placeAttachmentViaTransport — idempotencyKey (v9.13)', () => {
+  beforeEach(() => {
+    mockState.daemonHealth.stats = { protocolVersion: '9.13' };
+  });
+
+  it('threads the key onto the sourcePath arm (local sidecar)', async () => {
+    placeAttachmentMock.mockResolvedValueOnce(placedResult);
+
+    await placeAttachmentViaTransport('ws-1', 'notes.txt', {
+      sourcePath: '/home/user/notes.txt',
+      mimeType: 'text/plain',
+      idempotencyKey: KEY,
+    });
+
+    expect(placeAttachmentMock).toHaveBeenCalledWith('ws-1', 'notes.txt', {
+      sourcePath: '/home/user/notes.txt',
+      mimeType: 'text/plain',
+      idempotencyKey: KEY,
+    });
+    expect(backendRequestMock).not.toHaveBeenCalled();
+  });
+
+  it('sends no key when none was minted (older daemon — behavior unchanged)', async () => {
+    mockState.daemonHealth.stats = { protocolVersion: '9.12' };
+    placeAttachmentMock.mockResolvedValueOnce(placedResult);
+
+    await placeAttachmentViaTransport('ws-1', 'notes.txt', {
+      sourcePath: '/home/user/notes.txt',
+      mimeType: 'text/plain',
+      idempotencyKey: mintPlacementIdempotencyKey(),
+    });
+
+    const [, , source] = placeAttachmentMock.mock.calls[0];
+    expect(source).toEqual({ sourcePath: '/home/user/notes.txt', mimeType: 'text/plain' });
+    expect('idempotencyKey' in source).toBe(false);
+  });
+
+  it('drops a key retained across a reconnect to a pre-9.13 daemon (no key sent, no lookup)', async () => {
+    // The item kept its key from a 9.13 session; the daemon connected now is older.
+    mockState.daemonHealth.stats = { protocolVersion: '9.12' };
+    placeAttachmentMock.mockRejectedValueOnce(transportLoss());
+
+    await expect(
+      placeAttachmentViaTransport('ws-1', 'notes.txt', {
+        sourcePath: '/home/user/notes.txt',
+        mimeType: 'text/plain',
+        idempotencyKey: KEY,
+      }),
+    ).rejects.toThrow('Request timed out');
+
+    expect(placeAttachmentMock).toHaveBeenCalledWith('ws-1', 'notes.txt', {
+      sourcePath: '/home/user/notes.txt',
+      mimeType: 'text/plain',
+    });
+    expect(backendRequestMock).not.toHaveBeenCalled();
+  });
+
+  it('passes a replayed result through untouched', async () => {
+    placeAttachmentMock.mockResolvedValueOnce({ ...placedResult, replayed: true });
+
+    const result = await placeAttachmentViaTransport('ws-1', 'notes.txt', {
+      sourcePath: '/home/user/notes.txt',
+      idempotencyKey: KEY,
+    });
+
+    expect(result.replayed).toBe(true);
+    expect(result.attachmentId).toBe('att-uuid-1');
+  });
+
+  it('recovers a lost placeAttachment reply through the key lookup (one placement, original id)', async () => {
+    // The daemon placed the file, but the reply never reached the client.
+    placeAttachmentMock.mockRejectedValueOnce(transportLoss());
+    backendRequestMock.mockResolvedValueOnce(attachmentInfoRow);
+
+    const result = await placeAttachmentViaTransport('ws-1', 'notes.txt', {
+      sourcePath: '/home/user/notes.txt',
+      mimeType: 'text/plain',
+      idempotencyKey: KEY,
+    });
+
+    expect(placeAttachmentMock).toHaveBeenCalledTimes(1);
+    expect(backendRequestMock).toHaveBeenCalledTimes(1);
+    expect(backendRequestMock).toHaveBeenCalledWith('file.getAttachmentInfo', {
+      workspaceId: 'ws-1',
+      idempotencyKey: KEY,
+    });
+    expect(result).toEqual({ ...placedResult, replayed: true });
+  });
+
+  it('surfaces the original transport failure when the key is unknown (nothing was placed)', async () => {
+    placeAttachmentMock.mockRejectedValueOnce(transportLoss());
+    backendRequestMock.mockRejectedValueOnce(invalidParams('unknown idempotency key'));
+
+    await expect(
+      placeAttachmentViaTransport('ws-1', 'notes.txt', {
+        sourcePath: '/home/user/notes.txt',
+        idempotencyKey: KEY,
+      }),
+    ).rejects.toThrow('Request timed out');
+    expect(backendRequestMock).toHaveBeenCalledWith('file.getAttachmentInfo', {
+      workspaceId: 'ws-1',
+      idempotencyKey: KEY,
+    });
+  });
+
+  it('does not look the key up after a daemon -32602 refusal', async () => {
+    placeAttachmentMock.mockRejectedValueOnce(invalidParams('sourcePath is a directory'));
+
+    await expect(
+      placeAttachmentViaTransport('ws-1', 'notes.txt', {
+        sourcePath: '/home/user/notes.txt',
+        idempotencyKey: KEY,
+      }),
+    ).rejects.toThrow('sourcePath is a directory');
+    expect(backendRequestMock).not.toHaveBeenCalled();
+  });
+
+  it('does not look the key up on an unkeyed failure', async () => {
+    placeAttachmentMock.mockRejectedValueOnce(transportLoss());
+
+    await expect(
+      placeAttachmentViaTransport('ws-1', 'notes.txt', { sourcePath: '/home/user/notes.txt' }),
+    ).rejects.toThrow('Request timed out');
+    expect(backendRequestMock).not.toHaveBeenCalled();
+  });
+
+  it('threads the key onto the remote data arm and recovers its lost reply', async () => {
+    mockState.daemonHealth.hostLocality = 'remote';
+    invokeMock.mockImplementation(async (channel: string, params: { length?: number }) => {
+      if (channel === 'file:read-chunk' && params.length === 1) {
+        return { success: true, data: { content: 'AA==', bytesRead: 1, size: 5 } };
+      }
+      if (channel === 'file:read') return { success: true, data: { content: 'aGVsbG8=' } };
+      throw new Error(`unexpected invoke: ${channel}`);
+    });
+    placeAttachmentMock.mockRejectedValueOnce(transportLoss());
+    backendRequestMock.mockResolvedValueOnce(attachmentInfoRow);
+
+    const result = await placeAttachmentViaTransport('ws-1', 'notes.txt', {
+      sourcePath: '/home/user/notes.txt',
+      mimeType: 'text/plain',
+      idempotencyKey: KEY,
+    });
+
+    expect(placeAttachmentMock).toHaveBeenCalledWith('ws-1', 'notes.txt', {
+      data: 'aGVsbG8=',
+      mimeType: 'text/plain',
+      idempotencyKey: KEY,
+    });
+    expect(placeAttachmentMock).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ ...placedResult, replayed: true });
+  });
+});
+
+describe('placeAttachmentViaTransport — chunked upload with idempotencyKey (v9.13)', () => {
+  const CHUNK = UPLOAD_CHUNK_BYTES;
+  const FILE_SIZE = 2 * CHUNK + 1024;
+  const SHA = 'a'.repeat(64);
+  const bigRow = { ...attachmentInfoRow, fileName: 'big.bin', size: FILE_SIZE };
+
+  function mockChunkedIpc(size: number) {
+    invokeMock.mockImplementation(
+      async (channel: string, params: { offset?: number; length?: number }) => {
+        if (channel === 'file:read-chunk') {
+          if (params.length === 1) {
+            return { success: true, data: { content: 'AA==', bytesRead: 1, size } };
+          }
+          return { success: true, data: { content: 'b64', bytesRead: params.length, size } };
+        }
+        if (channel === 'file:hash') return { success: true, data: { sha256: SHA, size } };
+        throw new Error(`unexpected invoke: ${channel}`);
+      },
+    );
+  }
+
+  beforeEach(() => {
+    mockState.daemonHealth.hostLocality = 'remote';
+    mockState.daemonHealth.stats = { protocolVersion: '9.13' };
+    mockChunkedIpc(FILE_SIZE);
+  });
+
+  it('threads the key onto begin (exact wire shape)', async () => {
+    backendRequestMock.mockImplementation(async (method: string) => {
+      if (method === 'file.attachmentUpload.begin') {
+        return { uploadId: 'upload-1', maxChunkBytes: CHUNK };
+      }
+      if (method === 'file.attachmentUpload.commit') {
+        return { ...placedResult, fileName: 'big.bin', size: FILE_SIZE };
+      }
+      return { uploadId: 'upload-1' };
+    });
+
+    await placeAttachmentViaTransport('ws-1', 'big.bin', {
+      sourcePath: '/home/user/big.bin',
+      mimeType: 'application/octet-stream',
+      idempotencyKey: KEY,
+    });
+
+    expect(backendRequestMock).toHaveBeenNthCalledWith(1, 'file.attachmentUpload.begin', {
+      workspaceId: 'ws-1',
+      fileName: 'big.bin',
+      sizeBytes: FILE_SIZE,
+      sha256: SHA,
+      mimeType: 'application/octet-stream',
+      idempotencyKey: KEY,
+    });
+    const methods = backendRequestMock.mock.calls.map(([method]) => method);
+    expect(methods).not.toContain('file.getAttachmentInfo');
+  });
+
+  it('recovers through the lookup when begin says the key is already committed (lost commit reply)', async () => {
+    backendRequestMock.mockImplementation(async (method: string) => {
+      if (method === 'file.attachmentUpload.begin') {
+        throw invalidParams(
+          `idempotencyKey "${KEY}" already committed; look it up via file.getAttachmentInfo { workspaceId, idempotencyKey }`,
+        );
+      }
+      if (method === 'file.getAttachmentInfo') return bigRow;
+      throw new Error(`unexpected method: ${method}`);
+    });
+
+    const result = await placeAttachmentViaTransport('ws-1', 'big.bin', {
+      sourcePath: '/home/user/big.bin',
+      idempotencyKey: KEY,
+    });
+
+    expect(backendRequestMock).toHaveBeenCalledWith('file.getAttachmentInfo', {
+      workspaceId: 'ws-1',
+      idempotencyKey: KEY,
+    });
+    const methods = backendRequestMock.mock.calls.map(([method]) => method);
+    expect(methods).toEqual(['file.attachmentUpload.begin', 'file.getAttachmentInfo']);
+    expect(result).toEqual({
+      ...placedResult,
+      fileName: 'big.bin',
+      size: FILE_SIZE,
+      replayed: true,
+    });
+  });
+
+  it('rethrows other begin -32602 refusals without a lookup', async () => {
+    backendRequestMock.mockImplementation(async (method: string) => {
+      if (method === 'file.attachmentUpload.begin') {
+        throw invalidParams('idempotencyKey already used with a different payload');
+      }
+      throw new Error(`unexpected method: ${method}`);
+    });
+
+    await expect(
+      placeAttachmentViaTransport('ws-1', 'big.bin', {
+        sourcePath: '/home/user/big.bin',
+        idempotencyKey: KEY,
+      }),
+    ).rejects.toThrow('already used with a different payload');
+    expect(backendRequestMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('recovers a lost commit reply through the lookup without aborting the session', async () => {
+    backendRequestMock.mockImplementation(async (method: string) => {
+      if (method === 'file.attachmentUpload.begin') {
+        return { uploadId: 'upload-1', maxChunkBytes: CHUNK };
+      }
+      if (method === 'file.attachmentUpload.chunk') return { uploadId: 'upload-1' };
+      if (method === 'file.attachmentUpload.commit') throw transportLoss();
+      if (method === 'file.getAttachmentInfo') return bigRow;
+      throw new Error(`unexpected method: ${method}`);
+    });
+
+    const result = await placeAttachmentViaTransport('ws-1', 'big.bin', {
+      sourcePath: '/home/user/big.bin',
+      idempotencyKey: KEY,
+    });
+
+    const methods = backendRequestMock.mock.calls.map(([method]) => method);
+    expect(methods.filter((name) => name === 'file.attachmentUpload.commit')).toHaveLength(1);
+    expect(methods).toContain('file.getAttachmentInfo');
+    expect(methods).not.toContain('file.attachmentUpload.abort');
+    expect(result.attachmentId).toBe('att-uuid-1');
+    expect(result.replayed).toBe(true);
+  });
+
+  it('aborts and rethrows a lost commit reply when the key resolves to nothing', async () => {
+    backendRequestMock.mockImplementation(async (method: string) => {
+      if (method === 'file.attachmentUpload.begin') {
+        return { uploadId: 'upload-1', maxChunkBytes: CHUNK };
+      }
+      if (method === 'file.attachmentUpload.chunk') return { uploadId: 'upload-1' };
+      if (method === 'file.attachmentUpload.commit') throw transportLoss();
+      if (method === 'file.getAttachmentInfo') throw invalidParams('unknown idempotency key');
+      if (method === 'file.attachmentUpload.abort') return { uploadId: 'upload-1', aborted: true };
+      throw new Error(`unexpected method: ${method}`);
+    });
+
+    await expect(
+      placeAttachmentViaTransport('ws-1', 'big.bin', {
+        sourcePath: '/home/user/big.bin',
+        idempotencyKey: KEY,
+      }),
+    ).rejects.toThrow('Request timed out');
+    expect(backendRequestMock).toHaveBeenCalledWith('file.attachmentUpload.abort', {
+      uploadId: 'upload-1',
+    });
+  });
+
+  it('does not look the key up after a chunk failure (nothing committed)', async () => {
+    backendRequestMock.mockImplementation(async (method: string) => {
+      if (method === 'file.attachmentUpload.begin') {
+        return { uploadId: 'upload-1', maxChunkBytes: CHUNK };
+      }
+      if (method === 'file.attachmentUpload.chunk') throw transportLoss();
+      if (method === 'file.attachmentUpload.abort') return { uploadId: 'upload-1', aborted: true };
+      throw new Error(`unexpected method: ${method}`);
+    });
+
+    await expect(
+      placeAttachmentViaTransport('ws-1', 'big.bin', {
+        sourcePath: '/home/user/big.bin',
+        idempotencyKey: KEY,
+      }),
+    ).rejects.toThrow('Request timed out');
+    const methods = backendRequestMock.mock.calls.map(([method]) => method);
+    expect(methods).not.toContain('file.getAttachmentInfo');
+    expect(methods).toContain('file.attachmentUpload.abort');
   });
 });
 

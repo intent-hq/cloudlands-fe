@@ -111,7 +111,9 @@
   import { hasBlockingAttachments, type ContextItem } from '$lib/components/chat/input/context-api';
   import {
     hasStagedFileItems,
+    heldImageBlocks,
     redeemStagedAttachments,
+    retainImagePlacementIdentity,
     sendHeldFirstMessage,
   } from '$lib/components/workspace/initializer/staged-attachments';
   import {
@@ -1068,15 +1070,10 @@
       const snapshot = $state.snapshot(pending);
       // Rebuild imageBlocks from the CURRENT thumbnail row, not the pending
       // snapshot: the thumbnails stay editable while the failed send is
-      // resumable, so a removed image must not ride the retry.
-      const imageBlocks = $state
-        .snapshot(onboardingImageItems)
-        .filter((item) => item.imageData && item.imageMimeType)
-        .map((item) => ({
-          type: 'image' as const,
-          data: item.imageData as string,
-          mimeType: item.imageMimeType as string,
-        }));
+      // resumable, so a removed image must not ride the retry. The items
+      // carry the placement identity retained from the failed attempt, so
+      // the retry replays committed placements instead of re-placing them.
+      const imageBlocks = heldImageBlocks($state.snapshot(onboardingImageItems));
       const sendResult = await sendHeldFirstMessage(
         {
           workspaceId: snapshot.workspaceId,
@@ -1088,6 +1085,10 @@
         redemption.fileBlocks,
       );
       if (!sendResult.sent) {
+        onboardingImageItems = retainImagePlacementIdentity(
+          onboardingImageItems,
+          sendResult.imageBlocks,
+        );
         // Framed like the compact initializer: the workspace already exists,
         // Create resumes this flow — with the daemon's detail when available.
         throw new Error(
@@ -1163,14 +1164,7 @@
     // Images live in the context-item list (bound to the prompt step's
     // thumbnail row), not the editor — snapshot to plain JSON so the $state
     // Proxy tree never reaches Electron's structured clone (monorepo#2576).
-    const imageBlocks: Array<{ type: 'image'; data: string; mimeType: string }> = $state
-      .snapshot(onboardingImageItems)
-      .filter((item) => item.imageData && item.imageMimeType)
-      .map((item) => ({
-        type: 'image' as const,
-        data: item.imageData as string,
-        mimeType: item.imageMimeType as string,
-      }));
+    const imageBlocks = heldImageBlocks($state.snapshot(onboardingImageItems));
 
     isOnboardingCreating = true;
     onboardingCreationError = null;
@@ -1462,6 +1456,12 @@
         );
         if (!sendResult.sent) {
           onboardingCreationErrorCode = null;
+          // Retain the failed attempt's image placement identity on the
+          // thumbnail items so the resumed send replays, not re-places.
+          onboardingImageItems = retainImagePlacementIdentity(
+            onboardingImageItems,
+            sendResult.imageBlocks,
+          );
           // Framed like the compact initializer: the workspace already
           // exists, submit resumes — with the daemon's detail when available.
           throw new Error(

@@ -13,9 +13,11 @@ import { backendRequest } from '$lib/client/live/backend-transport';
 import type { ContextItem, PlaceAttachmentResult } from '$lib/components/chat/input/context-api';
 import {
   extractPlacementErrorDetail,
+  mintPlacementIdempotencyKey,
   placeAttachmentViaTransport,
 } from '$lib/components/chat/input/attachment-placement';
 import {
+  imageRetryBlocks,
   toImageReferenceBlocks,
   type WireImageBlock,
 } from '$lib/components/chat/input/image-attachment-placement';
@@ -61,12 +63,16 @@ export interface RedeemResult {
  * fail-soft per item: a failure marks that item `failed` and counts it —
  * the caller blocks the first-message send while `failedCount > 0`, keeps
  * the pills visible for retry/remove, and re-calls on retry (placed items
- * are skipped via their `attachmentId`).
+ * are skipped via their `attachmentId`). Each item's placement
+ * `idempotencyKey` (v9.13) is minted on first placement and kept on the
+ * item — failed included — so the retry replays a placement whose reply was
+ * lost instead of placing a duplicate.
  */
 export async function redeemStagedAttachments(
   workspaceId: string,
   items: ContextItem[],
   place: typeof placeAttachmentViaTransport = placeAttachmentViaTransport,
+  mintKey: typeof mintPlacementIdempotencyKey = mintPlacementIdempotencyKey,
 ): Promise<RedeemResult> {
   const out: ContextItem[] = [];
   const fileBlocks: FileBlock[] = [];
@@ -86,13 +92,17 @@ export async function redeemStagedAttachments(
       out.push({ ...item, placementStatus: 'failed' });
       continue;
     }
+    const idempotencyKey = item.placementIdempotencyKey ?? mintKey();
+    const keyedItem: ContextItem =
+      idempotencyKey !== undefined ? { ...item, placementIdempotencyKey: idempotencyKey } : item;
     try {
       const result: PlaceAttachmentResult = await place(workspaceId, item.label, {
         sourcePath: item.sourcePath,
         mimeType: item.attachmentMimeType,
+        ...(idempotencyKey !== undefined ? { idempotencyKey } : {}),
       });
       const placed: ContextItem = {
-        ...item,
+        ...keyedItem,
         placementStatus: 'placed',
         placementError: undefined,
         label: result.fileName,
@@ -109,7 +119,7 @@ export async function redeemStagedAttachments(
       // daemon's failure detail when available), blocks send.
       failedCount++;
       out.push({
-        ...item,
+        ...keyedItem,
         placementStatus: 'failed',
         placementError: extractPlacementErrorDetail(error),
       });
@@ -136,6 +146,78 @@ export interface SendHeldFirstMessageResult {
    * structured `data.detail` / non-generic message), when available.
    */
   errorDetail?: string;
+  /**
+   * Set when the send failed after image placement began: the blocks the
+   * resumed send must pass back in place of the originals — references for
+   * the images that did place (all of them when placement succeeded and the
+   * send itself failed), inline blocks tagged with their placement identity
+   * for the rest — so the retry replays committed placements instead of
+   * duplicating them.
+   */
+  imageBlocks?: WireImageBlock[];
+}
+
+/**
+ * Image blocks for the held first message, built from the composer's image
+ * items: a reference for an item whose placement a previous failed send
+ * already completed, else the inline block carrying whatever placement
+ * identity that send retained on it (see `retainImagePlacementIdentity`).
+ */
+export function heldImageBlocks(items: ContextItem[]): WireImageBlock[] {
+  return items
+    .filter((item) => item.imageData && item.imageMimeType)
+    .map((item) =>
+      item.placementAttachmentId !== undefined
+        ? {
+            type: 'image' as const,
+            attachmentId: item.placementAttachmentId,
+            mimeType: item.imageMimeType as string,
+          }
+        : {
+            type: 'image' as const,
+            data: item.imageData as string,
+            mimeType: item.imageMimeType as string,
+            ...(item.placementIdempotencyKey !== undefined
+              ? { placementIdempotencyKey: item.placementIdempotencyKey }
+              : {}),
+            ...(item.placementFileName !== undefined
+              ? { placementFileName: item.placementFileName }
+              : {}),
+          },
+    );
+}
+
+/**
+ * Carry a failed held-first-message send's `imageBlocks` (its retry blocks)
+ * back onto the composer's image items — positionally, over the items
+ * `heldImageBlocks` built them from — so the next `heldImageBlocks` pass
+ * resends the same placement identity: a reference block's `attachmentId`
+ * for an image that placed, the key + file name for one that did not.
+ * Returns the items unchanged when there is nothing to retain.
+ */
+export function retainImagePlacementIdentity(
+  items: ContextItem[],
+  retryBlocks: WireImageBlock[] | undefined,
+): ContextItem[] {
+  if (!retryBlocks) return items;
+  let index = 0;
+  return items.map((item) => {
+    if (!(item.imageData && item.imageMimeType)) return item;
+    const block = retryBlocks[index++];
+    if (!block) return item;
+    if ('attachmentId' in block) {
+      return { ...item, placementAttachmentId: block.attachmentId };
+    }
+    return {
+      ...item,
+      ...(block.placementIdempotencyKey !== undefined
+        ? { placementIdempotencyKey: block.placementIdempotencyKey }
+        : {}),
+      ...(block.placementFileName !== undefined
+        ? { placementFileName: block.placementFileName }
+        : {}),
+    };
+  });
 }
 
 /**
@@ -174,10 +256,15 @@ export async function sendHeldFirstMessage(
   // message stays pending and the create button resumes the flow.
   let imageBlocks: ImageBlock[] = pending.imageBlocks;
   if (imageBlocks.length > 0) {
+    const attempted = imageBlocks as WireImageBlock[];
     try {
-      imageBlocks = await toReferences(pending.workspaceId, imageBlocks as WireImageBlock[]);
+      imageBlocks = await toReferences(pending.workspaceId, attempted);
     } catch (error) {
-      return { sent: false, errorDetail: extractPlacementErrorDetail(error) };
+      return {
+        sent: false,
+        errorDetail: extractPlacementErrorDetail(error),
+        imageBlocks: imageRetryBlocks(error, attempted),
+      };
     }
   }
 
@@ -208,10 +295,29 @@ export async function sendHeldFirstMessage(
     );
     if (result?.success === false) {
       const error = typeof result.error === 'string' ? result.error.trim() : '';
-      return { sent: false, errorDetail: error.length > 0 ? error : undefined };
+      return {
+        sent: false,
+        errorDetail: error.length > 0 ? error : undefined,
+        ...placedImageBlocks(imageBlocks),
+      };
     }
     return { sent: true };
   } catch (error) {
-    return { sent: false, errorDetail: extractPlacementErrorDetail(error) };
+    return {
+      sent: false,
+      errorDetail: extractPlacementErrorDetail(error),
+      ...placedImageBlocks(imageBlocks),
+    };
   }
+}
+
+/**
+ * The placed image references a send that failed AFTER placement hands back
+ * as its retry blocks, so the resumed send passes them through instead of
+ * placing every image a second time. Nothing when the message had no images.
+ */
+function placedImageBlocks(
+  imageBlocks: ImageBlock[],
+): Pick<SendHeldFirstMessageResult, 'imageBlocks'> {
+  return imageBlocks.length > 0 ? { imageBlocks: imageBlocks as WireImageBlock[] } : {};
 }
