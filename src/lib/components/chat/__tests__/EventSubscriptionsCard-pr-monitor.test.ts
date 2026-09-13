@@ -16,9 +16,6 @@ vi.mock('../AgentSubscriptions.svelte', async () => ({
 vi.mock('../BackgroundHooksRow.svelte', async () => ({
   default: (await import('./mocks/MockHookEventSection.svelte')).default,
 }));
-vi.mock('../BrowserTabsRow.svelte', async () => ({
-  default: (await import('./mocks/MockBrowserTabsSection.svelte')).default,
-}));
 
 import {
   backendRequest,
@@ -27,6 +24,7 @@ import {
   onBackendNotification,
 } from '$lib/client/live/backend-transport';
 import { store as appStore } from '$store/renderer/store';
+import { setSubscriptionSnapshot } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-slice';
 import { prMonitorSaga } from '$store/renderer/slices/pr-monitor/sagas/pr-monitor-saga';
 import { removeWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
 import {
@@ -61,6 +59,19 @@ function monitor(agentId = AGENT, workspaceId: string = CHIEF_WORKSPACE_ID): PrM
 beforeAll(() => appStore.init());
 beforeEach(() => {
   vi.clearAllMocks();
+  // The stubbed agent section does not fetch its snapshot; settle that independent lane.
+  for (const workspaceId of [CHIEF_WORKSPACE_ID, OTHER_WORKSPACE]) {
+    for (const agentId of [AGENT, 'chief-thread-two']) {
+      appStore.dispatch(
+        setSubscriptionSnapshot(workspaceId, agentId, {
+          subscriptions: [],
+          delegationGroups: [],
+          agentStatuses: {},
+          waitingState: 'idle',
+        }),
+      );
+    }
+  }
   vi.mocked(backendRequest).mockResolvedValue({ monitors: [] });
   vi.mocked(backendSubscribe).mockImplementation(async ({ workspaceId }) => ({
     subscriptionId: `pr-sub-${workspaceId}`,
@@ -156,12 +167,13 @@ describe('Chief PR-monitor subscription ownership', () => {
   });
 
   it('keeps one live subscription while collapsed and shares it across mounted cards', async () => {
-    vi.mocked(backendRequest).mockResolvedValue({ monitors: [monitor()] });
+    const monitors = [monitor(), { ...monitor(), monitorId: 'monitor-second', prNumber: 43 }];
+    vi.mocked(backendRequest).mockResolvedValue({ monitors });
     const first = render(EventSubscriptionsCard, {
       workspaceId: CHIEF_WORKSPACE_ID,
       agentId: AGENT,
     });
-    await waitFor(() => expect(screen.getByTestId('monitored-pr-chip')).toBeTruthy());
+    await waitFor(() => expect(screen.getAllByTestId('monitored-pr-chip')).toHaveLength(2));
     const second = render(EventSubscriptionsCard, {
       workspaceId: CHIEF_WORKSPACE_ID,
       agentId: 'chief-thread-two',
@@ -172,21 +184,21 @@ describe('Chief PR-monitor subscription ownership', () => {
     await waitFor(() => expect(screen.getAllByTestId('event-subscriptions-body')).toHaveLength(1));
     expect(backendUnsubscribe).not.toHaveBeenCalled();
     const notification = vi.mocked(onBackendNotification).mock.calls[0][0];
-    notification({
-      method: 'events.event',
-      params: {
-        subscriptionId: `pr-sub-${CHIEF_WORKSPACE_ID}`,
-        event: {
-          type: 'prMonitor:cancelled',
-          workspaceId: CHIEF_WORKSPACE_ID,
-          data: { monitorId: monitor().monitorId },
+    for (const row of monitors)
+      notification({
+        method: 'events.event',
+        params: {
+          subscriptionId: `pr-sub-${CHIEF_WORKSPACE_ID}`,
+          event: {
+            type: 'prMonitor:cancelled',
+            workspaceId: CHIEF_WORKSPACE_ID,
+            data: { monitorId: row.monitorId },
+          },
         },
-      },
-    });
+      });
     await waitFor(() =>
       expect(appStore.state.prMonitor.byWorkspaceId[CHIEF_WORKSPACE_ID].monitors.ids).toEqual([]),
     );
-    await fireEvent.click(screen.getByTestId('event-subscriptions-summary'));
     await waitFor(() => {
       expect(screen.queryByTestId('pr-monitors-snapshot-status')).toBeNull();
       expect(screen.queryByTestId('monitored-pr-chip')).toBeNull();

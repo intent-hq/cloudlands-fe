@@ -6,6 +6,7 @@ import ContentFieldCatalogPreview from './renderers/ContentFieldCatalogPreview.s
 import NavigationHelpCatalogPreview from './renderers/NavigationHelpCatalogPreview.svelte';
 import OverlayCatalogPreview from './renderers/OverlayCatalogPreview.svelte';
 import SettingsCatalogPreview from './renderers/SettingsCatalogPreview.svelte';
+import SubscriptionRowsCatalogPreview from './renderers/SubscriptionRowsCatalogPreview.svelte';
 
 export const catalogRendererIds = [
   'badge',
@@ -37,6 +38,7 @@ export const catalogRendererIds = [
   'toggle',
   'toggle-group',
   'tooltip',
+  'subscription-rows',
 ] as const;
 
 export type CatalogRendererId = (typeof catalogRendererIds)[number];
@@ -85,6 +87,7 @@ export const catalogRenderers = {
   toggle: BasicCatalogPreview,
   'toggle-group': BasicCatalogPreview,
   tooltip: NavigationHelpCatalogPreview,
+  'subscription-rows': SubscriptionRowsCatalogPreview,
 } satisfies CatalogRendererRegistry;
 
 export function getCatalogRenderer(

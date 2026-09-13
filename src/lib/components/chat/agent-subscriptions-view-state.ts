@@ -2,7 +2,6 @@ const eventSubscriptionsExpandedBySubscription = new Map<string, boolean>();
 const waitingAgentsExpandedBySubscription = new Map<string, boolean>();
 const finishedAgentsExpandedBySubscription = new Map<string, boolean>();
 const expandedPrMonitorBySubscription = new Map<string, string | null>();
-const browserTabsExpandedBySubscription = new Map<string, boolean>();
 
 function disclosureKey(workspaceId: string, agentId: string): string {
   return `${workspaceId}:${agentId}`;
@@ -56,22 +55,9 @@ export function setExpandedPrMonitorId(
   expandedPrMonitorBySubscription.set(disclosureKey(workspaceId, agentId), monitorId);
 }
 
-export function getBrowserTabsExpanded(workspaceId: string, agentId: string): boolean {
-  return browserTabsExpandedBySubscription.get(disclosureKey(workspaceId, agentId)) ?? false;
-}
-
-export function setBrowserTabsExpanded(
-  workspaceId: string,
-  agentId: string,
-  expanded: boolean,
-): void {
-  browserTabsExpandedBySubscription.set(disclosureKey(workspaceId, agentId), expanded);
-}
-
 export function resetAgentSubscriptionsViewStateForTests(): void {
   eventSubscriptionsExpandedBySubscription.clear();
   waitingAgentsExpandedBySubscription.clear();
   finishedAgentsExpandedBySubscription.clear();
   expandedPrMonitorBySubscription.clear();
-  browserTabsExpandedBySubscription.clear();
 }

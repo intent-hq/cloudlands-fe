@@ -209,6 +209,12 @@ describe('MonitoredPrsRow', () => {
     expect(line?.className).toContain('min-h-9');
     expect(line?.className).toContain('gap-2');
     expect(line?.className).toContain('px-3');
+    const icon = screen.getByTestId('monitored-pr-icon').querySelector('svg');
+    expect(icon?.getAttribute('width')).toBe('14px');
+    expect(icon?.getAttribute('height')).toBe('14px');
+    expect(screen.getByTestId('monitored-pr-label').className).toContain('text-muted-foreground');
+    expect(screen.getByTestId('monitored-pr-chip').className).toContain('h-6');
+    expect(screen.getByTestId('monitored-pr-disclosure').className).toContain('h-6');
   });
 
   it('renders selector data without dispatching lifecycle actions on mount', () => {
@@ -352,7 +358,7 @@ describe('MonitoredPrsRow', () => {
     expect(card.textContent).toContain('Open, but blocked by required checks still running.');
     expect(card.textContent).toContain('1 of 4 checks are still running.');
     expect(card.textContent).toContain('0 of 1 required approvals received.');
-    expect(card.textContent).toContain('2 unresolved threads');
+    expect(card.textContent).toContain('2 unresolved threads.');
     expect(card.textContent).not.toContain('Mergeable');
     expect(card.textContent).not.toContain('REVIEW_REQUIRED');
     expect(screen.getByTestId('monitored-pr-pending').textContent).toContain(
@@ -360,7 +366,7 @@ describe('MonitoredPrsRow', () => {
     );
   });
 
-  it('inline details stack one fact per line without dot separators', async () => {
+  it('renders non-empty details as ordered plain sentences', async () => {
     monitorsState.monitors = [
       makeMonitor({
         hasPendingChanges: true,
@@ -371,19 +377,17 @@ describe('MonitoredPrsRow', () => {
     render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
 
     const card = await openDetails();
-    // Facts live in a flex-col block, one <span> per line — no inline
-    // "·" separators that wrap mid-phrase.
-    expect(card.textContent).not.toContain('·');
-    const lines = Array.from(card.querySelectorAll(':scope > span')).map(
-      (line) => line.textContent,
-    );
-    expect(lines).toEqual([
+    const lines = Array.from(card.children).map((line) => line.textContent?.trim());
+    expect(card.querySelector('dl, dt, dd, strong')).toBeNull();
+    expect(lines.slice(0, 4)).toEqual([
+      'Open, but blocked by required checks still running.',
       '1 of 4 checks are still running.',
       '0 of 1 required approvals received.',
-      '2 unresolved threads',
-      expect.stringContaining('Last change'),
-      '1 change pending emit',
+      '2 unresolved threads.',
     ]);
+    expect(lines[4]).toMatch(/^Last change at .*2026.*$/);
+    expect(lines[4]).not.toMatch(/:[0-9]{2}:[0-9]{2}/);
+    expect(lines[5]).toBe('1 change pending emit');
   });
 
   it('inline details render no pending line at all when nothing is pending', async () => {
@@ -393,6 +397,12 @@ describe('MonitoredPrsRow', () => {
     const card = await openDetails();
     expect(screen.queryByTestId('monitored-pr-pending')).toBeNull();
     expect(card.textContent).not.toContain('No changes pending');
+    expect(Array.from(card.children).map((line) => line.textContent?.trim())).toEqual([
+      'Open, but blocked by required checks still running.',
+      '1 of 4 checks are still running.',
+      '0 of 1 required approvals received.',
+      '2 unresolved threads.',
+    ]);
 
     expect(document.querySelector('[data-tooltip-trigger]')).toBeNull();
   });

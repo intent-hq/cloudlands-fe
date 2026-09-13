@@ -186,6 +186,24 @@ describe('formatCompactDuration', () => {
   });
 });
 
+describe('formatSalientDuration', () => {
+  it('shows only the largest salient unit', () => {
+    expect(en.formatSalientDuration(9 * 60_000 + 56_000)).toBe('9m');
+    expect(en.formatSalientDuration(56_000)).toBe('56s');
+    expect(en.formatSalientDuration(3_600_000 + 5 * 60_000)).toBe('1h');
+    expect(en.formatSalientDuration(2 * 86_400_000 + 3 * 3_600_000)).toBe('2d');
+  });
+
+  it('rounds sub-minute values to the nearest second', () => {
+    expect(en.formatSalientDuration(56_600)).toBe('57s');
+  });
+
+  it('clamps negatives and rejects invalid input', () => {
+    expect(en.formatSalientDuration(-5_000)).toBe('0s');
+    expect(en.formatSalientDuration(Number.NaN)).toBe('');
+  });
+});
+
 describe('absolute date/time formatting', () => {
   const date = new Date('2024-01-15T14:30:00');
 

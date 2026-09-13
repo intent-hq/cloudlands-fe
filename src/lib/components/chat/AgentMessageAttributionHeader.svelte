@@ -113,13 +113,13 @@
 </script>
 
 <div
-  class="{SUBSCRIPTION_DISCLOSURE_ROW_CLASS} gap-1! font-normal text-muted-foreground {className}"
+  class="{SUBSCRIPTION_DISCLOSURE_ROW_CLASS} {className}"
   data-testid="agent-message-disclosure-header"
 >
   {#if attribution.kind === 'chief' && attribution.sourceUrl}
     <a
       class="flex min-w-0 shrink-0 cursor-pointer items-center gap-2 rounded text-left font-[inherit] text-muted-foreground no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      style="max-width: 40%;"
+      style="max-width: calc(100% - 2.5rem);"
       href={attribution.sourceUrl}
       onclick={handleSourceClick}
       ondblclick={(event) => event.stopPropagation()}
@@ -147,7 +147,7 @@
   {:else if attribution.kind === 'chief'}
     <span
       class="flex min-w-0 shrink-0 items-center gap-2 text-left font-[inherit] text-muted-foreground"
-      style="max-width: 40%;"
+      style="max-width: calc(100% - 2.5rem);"
       data-testid="agent-message-attribution"
     >
       <span
@@ -172,7 +172,7 @@
     <button
       type="button"
       class="flex min-w-0 shrink-0 cursor-pointer items-center gap-2 rounded border-none bg-transparent p-0 text-left font-[inherit] text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      style="max-width: 40%;"
+      style="max-width: calc(100% - 2.5rem);"
       onclick={handleClick}
       ondblclick={(event) => event.stopPropagation()}
       title={m.chat_msgAttribution_openAgent_title({ name: displayName })}
@@ -213,18 +213,18 @@
       : m.chat_msgAttribution_sentMessage_after()}
     data-testid="agent-message-disclosure-toggle"
   >
-    <span class="shrink-0 whitespace-nowrap">{m.chat_msgAttribution_sentMessage_after()}</span>
-    {#if preview}
-      <span
-        class="min-w-0 flex-1 truncate whitespace-nowrap text-muted-foreground"
-        title={preview}
-        data-testid="agent-message-preview"
-      >
-        — {preview}
-      </span>
-    {:else}
-      <span class="min-w-0 flex-1"></span>
-    {/if}
+    <span class="flex min-w-0 flex-1 items-center gap-2 overflow-hidden whitespace-nowrap">
+      <span class="min-w-0 shrink truncate">{m.chat_msgAttribution_sentMessage_after()}</span>
+      {#if preview}
+        <span
+          class="min-w-0 flex-1 truncate whitespace-nowrap text-muted-foreground"
+          title={preview}
+          data-testid="agent-message-preview"
+        >
+          — {preview}
+        </span>
+      {/if}
+    </span>
     <span
       class="inline-flex h-6 w-6 shrink-0 items-center justify-center"
       data-testid="agent-message-chevron-column"

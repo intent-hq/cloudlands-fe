@@ -18,7 +18,7 @@
     faPlay,
     faLinkSlash,
     faListCheck,
-    faHourglassHalf,
+    faHourglass,
     faTriangleExclamation,
   } from '@fortawesome/free-solid-svg-icons';
   import Button from '../ui/button/button.svelte';
@@ -490,7 +490,7 @@
                 class="inline-flex items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-xs font-medium text-subtle"
                 contenteditable="false"
               >
-                <Fa icon={faHourglassHalf} size="xs" />
+                <Fa icon={faHourglass} size="xs" />
                 {m.tiptap_taskItem_waitsOn_label({ count: unmetDependsOn.length })}
               </span>
             </Tooltip>
