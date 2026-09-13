@@ -37,11 +37,6 @@ const UNCONSUMED_ACTION_EXCEPTIONS = [
     rationale:
       'Observed by the triggersSpecialistRefetch predicate (action.type === refetchSpecialistsRequested.type) feeding actionChannel(triggersSpecialistRefetch, ...) in src/store/renderer/slices/specialists/sagas/specialists-saga.ts',
   },
-  {
-    pattern: /agent-session-slice\.ts#agentSessionRegenerateFromMessageRequested$/,
-    rationale:
-      'Pre-existing dead dispatch: no reducer case, watcher, predicate, or mutation middleware observes it (dispatched from ChatPanel.svelte handleRegenerateFromMessage); listed so the gate can land without src/ changes',
-  },
 ];
 
 // Keep only the <script> blocks of a .svelte file, padded so line numbers match.

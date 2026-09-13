@@ -5203,9 +5203,15 @@
   // Handle regenerating from a specific assistant message
   function handleRegenerateFromMessage(assistantMessageId: string) {
     if (!workspace) return;
-    appStore.dispatch(
-      agentSessionRegenerateFromMessageRequested(agentId, workspace.id, assistantMessageId),
+    const action = agentSessionRegenerateFromMessageRequested(
+      agentId,
+      workspace.id,
+      assistantMessageId,
     );
+    appStore.dispatch(action);
+    // Failures are surfaced via toast by the edit-regenerate saga the
+    // regenerate saga delegates to; swallow the rejection here.
+    action.promise.catch(() => {});
   }
 
   // Handle selecting a suggested prompt - sends immediately
