@@ -4,6 +4,19 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.156.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.155.0...v2.156.0) (2026-09-13)
+
+
+### 🚀 Features
+
+* catch unconsumed actions and repair dead dispatch paths ([#2432](https://github.com/intent-hq/cloudlands-fe/issues/2432)) ([5d500f8](https://github.com/intent-hq/cloudlands-fe/commit/5d500f831735da02da9bb0f205a20729f9cb3e3d))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.54 ([#2434](https://github.com/intent-hq/cloudlands-fe/issues/2434)) ([1ba3a04](https://github.com/intent-hq/cloudlands-fe/commit/1ba3a04981ce65fc1524c36876802021e6bae04a))
+* bump intentd sidecar to v0.9.55 ([#2435](https://github.com/intent-hq/cloudlands-fe/issues/2435)) ([7ef19eb](https://github.com/intent-hq/cloudlands-fe/commit/7ef19ebc716871392ceb37afdd1914dfc97c827e))
+
 ## [2.155.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.154.0...v2.155.0) (2026-09-13)
 
 
