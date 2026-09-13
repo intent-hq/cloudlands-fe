@@ -49,18 +49,19 @@ describe('unconsumed action guard', () => {
   it('accepts puts handled through a local array takeLatest and a throttle watcher', () => {
     const result = inspectUnconsumedActions(
       [
-        slice(),
+        slice([], ["export const c = createAction('demo/c');"]),
         {
           path: SAGA,
           content: [
             SAGA_IMPORT,
-            ACTIONS_IMPORT,
+            "import { a, b, c } from '../demo-slice';",
             'const handled = [a, b];',
             'export function* demoSaga() {',
             "  yield* put(a({ id: 'x' }));",
             '  yield* put(b());',
+            '  yield* put(c());',
             '  yield* takeLatest(handled, worker);',
-            '  yield* throttle(100, b, worker);',
+            '  yield* throttle(100, c, worker);',
             '}',
           ].join('\n'),
         },
@@ -68,7 +69,7 @@ describe('unconsumed action guard', () => {
       noExceptions,
     );
     expect(result.violations).toEqual([]);
-    expect(result.dispatchedCount).toBe(2);
+    expect(result.dispatchedCount).toBe(3);
   });
 
   it('rejects a put consumed only by a predicate take, naming the declaration and dispatch', () => {
