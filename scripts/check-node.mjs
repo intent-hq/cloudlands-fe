@@ -27,21 +27,25 @@ function compareVersions(a, b) {
   return 0;
 }
 
-function satisfiesClause(version, clause) {
+function parseClause(clause) {
   const caret = /^\^(\d+\.\d+\.\d+)$/.exec(clause);
   if (caret) {
     const floor = parseVersion(caret[1]);
-    return version[0] === floor[0] && compareVersions(version, floor) >= 0;
+    return (version) => version[0] === floor[0] && compareVersions(version, floor) >= 0;
   }
   const atLeast = /^>=\s*(\d+(?:\.\d+){0,2})$/.exec(clause);
-  if (atLeast) return compareVersions(version, parseVersion(atLeast[1])) >= 0;
+  if (atLeast) {
+    const floor = parseVersion(atLeast[1]);
+    return (version) => compareVersions(version, floor) >= 0;
+  }
   throw new Error(`unsupported engines.node clause "${clause}" (expected ^X.Y.Z or >=X[.Y[.Z]])`);
 }
 
 /**
  * Pure check of a Node version against an `engines.node` range written in the
- * `^X.Y.Z || >=X` grammar. Throws on a clause outside that grammar so a typo in
- * package.json fails loudly instead of silently admitting every version.
+ * `^X.Y.Z || >=X` grammar. Every clause is parsed before any is evaluated, so a
+ * typo anywhere in package.json fails loudly instead of being masked by an
+ * earlier clause that happens to match.
  */
 export function satisfiesNodeRange(version, range) {
   const clauses = String(range)
@@ -49,8 +53,9 @@ export function satisfiesNodeRange(version, range) {
     .map((clause) => clause.trim())
     .filter(Boolean);
   if (clauses.length === 0) throw new Error('engines.node range is empty');
+  const predicates = clauses.map(parseClause);
   const parsed = parseVersion(version);
-  return clauses.some((clause) => satisfiesClause(parsed, clause));
+  return predicates.some((predicate) => predicate(parsed));
 }
 
 /** The `engines.node` range declared by the package at `root`. */

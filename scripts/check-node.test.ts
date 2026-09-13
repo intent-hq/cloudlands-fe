@@ -70,6 +70,15 @@ describe('satisfiesNodeRange', () => {
     expect(() => satisfiesNodeRange('24.15.0', '')).toThrow(/range is empty/);
     expect(() => satisfiesNodeRange('twenty-four', RANGE)).toThrow(/invalid Node version/);
   });
+
+  it('rejects a malformed later clause even when an earlier clause already matches', () => {
+    expect(() => satisfiesNodeRange('22.23.2', '^22.22.2 || ^24')).toThrow(
+      /unsupported engines.node clause "\^24"/,
+    );
+    expect(() => satisfiesNodeRange('26.1.0', '>=26 || 24.x')).toThrow(
+      /unsupported engines.node clause "24.x"/,
+    );
+  });
 });
 
 describe('readNodeRange', () => {

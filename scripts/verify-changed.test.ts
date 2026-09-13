@@ -997,6 +997,13 @@ describe('dependency freshness gate', () => {
     expect(calls).toEqual([`checkNode:${root}`]);
   });
 
+  it('runs the dependency-free Node preflight before this module resolves node_modules', () => {
+    const scripts = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8')).scripts;
+    expect(scripts['verify:changed']).toMatch(
+      /^node scripts\/check-node\.mjs && node scripts\/verify-changed\.mjs\b/,
+    );
+  });
+
   it('refuses to run a plan when the i18n bundle cannot be provisioned', async () => {
     const root = fixtureRoot({ 'src/lib/example.ts': 'export const value = 1;' });
     const reason = 'messages kept changing while compiling';
