@@ -896,6 +896,81 @@ describe('ChatMessage human author identity (multiplayer)', () => {
 
     expect(screen.queryByTestId('user-message-author')).toBeNull();
   });
+
+  it('renders two rows from distinct members with their own identities', () => {
+    const owner = {
+      principalId: 'principal-owner',
+      login: 'owner',
+      displayName: 'Owner Person',
+      avatarUrl: 'https://avatars.example/owner.png',
+    };
+    render(ChatMessage, {
+      props: {
+        message: authoredMessage({ id: 'user-msg-guest' }),
+        workspace: multiMember(),
+      },
+    });
+    render(ChatMessage, {
+      props: {
+        message: authoredMessage({
+          id: 'user-msg-owner',
+          author: owner,
+          metadata: { fromPrincipalId: owner.principalId },
+          contentBlocks: [{ type: 'text', text: 'hello from the owner' }],
+        }),
+        workspace: multiMember(),
+      },
+    });
+    // An unstamped pre-multiplayer row: the daemon resolves it to the owner
+    // (no `fromPrincipalId`, `author` = owner projection).
+    render(ChatMessage, {
+      props: {
+        message: authoredMessage({
+          id: 'user-msg-legacy',
+          author: owner,
+          metadata: undefined,
+          contentBlocks: [{ type: 'text', text: 'hello from before multiplayer' }],
+        }),
+        workspace: multiMember(),
+      },
+    });
+
+    const headers = screen.getAllByTestId('user-message-author');
+    expect(headers.map((h) => h.getAttribute('data-principal-id'))).toEqual([
+      author.principalId,
+      owner.principalId,
+      owner.principalId,
+    ]);
+    expect(screen.getAllByTestId('user-message-author-name').map((n) => n.textContent)).toEqual([
+      'Guest User',
+      'Owner Person',
+      'Owner Person',
+    ]);
+    expect(
+      screen
+        .getAllByTestId('user-message-author-avatar')
+        .map((img) => (img as HTMLImageElement).getAttribute('src')),
+    ).toEqual([author.avatarUrl, owner.avatarUrl, owner.avatarUrl]);
+  });
+
+  it('follows the live membership boundary across 1 → 2 → 1 members without remounting', async () => {
+    const { rerender } = render(ChatMessage, {
+      props: { message: authoredMessage(), workspace: createMockWorkspace({ memberCount: 1 }) },
+    });
+    expect(screen.queryByTestId('user-message-author')).toBeNull();
+
+    await rerender({ message: authoredMessage(), workspace: multiMember() });
+    expect(screen.getByTestId('user-message-author').getAttribute('data-principal-id')).toBe(
+      author.principalId,
+    );
+
+    await rerender({
+      message: authoredMessage(),
+      workspace: createMockWorkspace({ memberCount: 1 }),
+    });
+    expect(screen.queryByTestId('user-message-author')).toBeNull();
+    expect(screen.getByText('hello from a guest')).toBeTruthy();
+  });
 });
 
 describe('ChatMessage hook wake attribution', () => {

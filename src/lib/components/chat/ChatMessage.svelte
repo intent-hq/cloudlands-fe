@@ -1506,7 +1506,7 @@
               {:else}
                 <span
                   aria-hidden="true"
-                  class="flex size-4 shrink-0 items-center justify-center rounded-full bg-muted text-[9px] font-medium uppercase text-muted-foreground"
+                  class="type-caption flex size-4 shrink-0 items-center justify-center rounded-full bg-muted font-medium uppercase leading-none text-muted-foreground"
                   data-testid="user-message-author-avatar-fallback"
                   >{(humanAuthorLabel ?? '?').slice(0, 1)}</span
                 >
