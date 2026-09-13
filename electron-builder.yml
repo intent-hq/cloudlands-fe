@@ -180,12 +180,18 @@ win:
         - x64
 
 nsis:
+  # GitHub replaces spaces in uploaded asset names. The generic updater feed
+  # must already reference that exact name when electron-builder generates it.
+  artifactName: '${productName}.Setup.${version}.${ext}'
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
   deleteAppDataOnUninstall: false
   createDesktopShortcut: true
   createStartMenuShortcut: true
+
+portable:
+  artifactName: '${productName}.${version}.${ext}'
 
 linux:
   icon: src/assets/icons/icon.png
