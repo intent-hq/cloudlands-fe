@@ -53,9 +53,10 @@
     onsendnow?: (messageId: string) => void;
     ondone?: () => void;
     /**
-     * Human authors resolvable by principal id (multiplayer w2). Provided only
-     * once the workspace has more than one member; a queue entry whose
-     * `messageMetadata.fromPrincipalId` resolves here renders its author.
+     * Queue-surface attribution (multiplayer w2). `null` = off (single-member
+     * workspace). Otherwise a user-authored entry renders its own `author`
+     * projection, or — on a daemon that stamps `fromPrincipalId` only — the
+     * transcript author this map resolves it to.
      */
     authors?: ReadonlyMap<string, MessageAuthor> | null;
   }

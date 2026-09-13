@@ -6,6 +6,7 @@ import {
   getHumanMessageAuthor,
   getMessageAuthorLabel,
   getQueuedMessageAuthor,
+  getQueueSurfaceAuthors,
 } from '$lib/utils/message-authorship';
 
 // PROTOCOL §5.5-shaped transcript rows: id/role/timestamp always present,
@@ -268,6 +269,71 @@ describe('collectMessageAuthors / getQueuedMessageAuthor', () => {
       getQueuedMessageAuthor({ messageMetadata: { fromPrincipalId: guest.principalId } }, null),
     ).toBeNull();
     expect(getQueuedMessageAuthor(null, authors)).toBeNull();
+  });
+
+  it("prefers the entry's own author projection, with no transcript history", () => {
+    // The daemon serves the projection next to the stamp on the queue entry,
+    // so a member whose first message is queued before any of their transcript
+    // rows exist — or whose rows fall outside the loaded window — is attributed.
+    const stamped = {
+      messageMetadata: { fromPrincipalId: guest.principalId },
+      author: guest,
+    };
+    expect(getQueuedMessageAuthor(stamped, collectMessageAuthors([]))).toBe(guest);
+    // The projection wins over a stale transcript copy of the same principal.
+    const renamed: MessageAuthor = { ...guest, displayName: 'Guest Renamed' };
+    expect(
+      getQueuedMessageAuthor(
+        { ...stamped, author: renamed },
+        new Map([[guest.principalId, guest]]),
+      ),
+    ).toBe(renamed);
+    // The surface gate still applies (single-member workspace).
+    expect(getQueuedMessageAuthor(stamped, null)).toBeNull();
+  });
+
+  it('ignores the projection on daemon-origin entries and falls back on a malformed one', () => {
+    expect(
+      getQueuedMessageAuthor(
+        {
+          messageMetadata: { type: 'agent_message', fromAgentId: 'agent-2' },
+          author: owner,
+        },
+        collectMessageAuthors([]),
+      ),
+    ).toBeNull();
+    expect(
+      getQueuedMessageAuthor(
+        { messageMetadata: { source: 'system' }, author: owner },
+        collectMessageAuthors([]),
+      ),
+    ).toBeNull();
+    const authors = collectMessageAuthors(transcript);
+    expect(
+      getQueuedMessageAuthor(
+        { messageMetadata: { fromPrincipalId: owner.principalId }, author: { login: 'owner' } },
+        authors,
+      ),
+    ).toBe(owner);
+    expect(
+      getQueuedMessageAuthor(
+        { messageMetadata: { fromPrincipalId: owner.principalId }, author: 'owner' },
+        authors,
+      ),
+    ).toBe(owner);
+  });
+
+  it('gates the queue surface on the membership boundary', () => {
+    expect(getQueueSurfaceAuthors(undefined, transcript)).toBeNull();
+    expect(getQueueSurfaceAuthors(null, transcript)).toBeNull();
+    expect(getQueueSurfaceAuthors(1, transcript)).toBeNull();
+    const two = getQueueSurfaceAuthors(2, transcript);
+    expect(two).toBeInstanceOf(Map);
+    expect([...two!.keys()].sort()).toEqual([guest.principalId, owner.principalId].sort());
+    // On with nothing loaded yet: an empty map, not null — projections still resolve.
+    const empty = getQueueSurfaceAuthors(3, []);
+    expect(empty).toBeInstanceOf(Map);
+    expect(empty!.size).toBe(0);
   });
 });
 

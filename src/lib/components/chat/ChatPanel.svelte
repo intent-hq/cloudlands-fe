@@ -371,7 +371,7 @@
     isUserQueuedMessage,
     omitDrainedQueuedMessages,
   } from '$lib/utils/queued-message-visibility';
-  import { collectMessageAuthors } from '$lib/utils/message-authorship';
+  import { getQueueSurfaceAuthors } from '$lib/utils/message-authorship';
   import {
     findPreviousUserMessage,
     isAutomatedChatMessage,
@@ -1079,12 +1079,12 @@
     omitDrainedQueuedMessages($queuedMessages$.filter(isUserQueuedMessage), $agentMessages$),
   );
 
-  // Human authors for the queue surface (multiplayer w2): only once the
-  // workspace has more than one member, resolved from the `author`
-  // projections the transcript already carries (queue entries carry the
-  // `fromPrincipalId` stamp only).
+  // Queue-surface attribution (multiplayer w2): on only once the workspace
+  // has more than one member. Entries carry their own `author` projection;
+  // the transcript's projections are the fallback for daemons that stamp
+  // `fromPrincipalId` only.
   const queuedMessageAuthors = $derived(
-    (workspace?.memberCount ?? 0) >= 2 ? collectMessageAuthors($agentMessages$) : null,
+    getQueueSurfaceAuthors(workspace?.memberCount, $agentMessages$),
   );
 
   // Queue visibility around the wizard: hidden while the wizard is expanded,
