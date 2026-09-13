@@ -48,15 +48,8 @@ vi.mock('$lib/components/ui/toast', () => ({
   toast: { error: vi.fn(), success: vi.fn() },
 }));
 
-// The owner-chip navigation helper transitively imports selector modules
-// that register against the real store at load time.
-vi.mock('$lib/utils/workspace-navigation', () => ({
-  navigateToAgent: vi.fn(),
-}));
-
 import EmbeddedBrowser from './EmbeddedBrowser.svelte';
 import { m } from '$shared/paraglide/messages.js';
-import { navigateToAgent } from '$lib/utils/workspace-navigation';
 import { toast } from '$lib/components/ui/toast';
 import { elementPickerScript } from './element-picker-script';
 
@@ -217,51 +210,19 @@ describe('EmbeddedBrowser', () => {
     );
   });
 
-  describe('owner chip', () => {
+  describe('viewport modes', () => {
     const renderWithOwner = (extraProps: Record<string, unknown> = {}) =>
       render(EmbeddedBrowser, {
         props: {
           url: 'about:blank',
           workspaceId: 'workspace-1',
           ownerAgentId: 'agent-1',
-          ownerAgentName: 'Coordinator',
           ...extraProps,
         },
       });
 
-    it('renders the owning agent avatar with its live state', () => {
+    it('defaults owned tabs to fit without a device frame or dimensions', () => {
       const { container } = renderWithOwner();
-
-      const chip = container.querySelector('[data-browser-owner-chip="agent-1"]');
-      expect(chip).not.toBeNull();
-      expect(chip!.querySelector('[data-agent-avatar-with-state]')).not.toBeNull();
-      expect(chip!.querySelector('[data-avatar-state="idle"]')).not.toBeNull();
-    });
-
-    it('exposes the agent name for hover/assistive tech', () => {
-      const { container } = renderWithOwner();
-
-      const trigger = container.querySelector('[data-browser-owner-chip] button');
-      expect(trigger!.getAttribute('aria-label')).toContain('Coordinator');
-    });
-
-    it('navigates to the owning agent on click', async () => {
-      const { container } = renderWithOwner();
-
-      await fireEvent.click(container.querySelector('[data-browser-owner-chip] button')!);
-      expect(navigateToAgent).toHaveBeenCalledWith('agent-1');
-    });
-
-    it('is absent for unowned tabs', () => {
-      const { container } = render(EmbeddedBrowser, {
-        props: { url: 'about:blank', workspaceId: 'workspace-1' },
-      });
-
-      expect(container.querySelector('[data-browser-owner-chip]')).toBeNull();
-    });
-
-    it('shows no device frame or dimensions in fit mode', () => {
-      const { container } = renderWithOwner({ viewport: { mode: 'fit' } });
 
       expect(screen.getByTestId('browser-viewport-trigger').textContent).toContain('Fit');
       expect(container.querySelector('[data-browser-device-frame]')).toBeNull();
@@ -288,7 +249,6 @@ describe('EmbeddedBrowser', () => {
         url: 'about:blank',
         workspaceId: 'workspace-1',
         ownerAgentId: 'agent-1',
-        ownerAgentName: 'Coordinator',
       };
       const rendered = render(EmbeddedBrowser, { props: { ...props, viewport: { mode: 'fit' } } });
       const webview = rendered.container.querySelector('webview');
@@ -423,31 +383,34 @@ describe('EmbeddedBrowser', () => {
       expect(input.selectionEnd).toBe(input.value.length);
     });
 
-    it('updates the identity title and unowned favicon from webview events', async () => {
-      const { container, getByRole } = renderPage();
-      const webview = container.querySelector('webview')!;
-      expect(getByRole('button', { name: 'Edit browser address' }).textContent).toContain(
-        'example.test',
-      );
-
-      const titleEvent = new Event('page-title-updated');
-      Object.defineProperty(titleEvent, 'title', { value: 'Reference docs' });
-      webview.dispatchEvent(titleEvent);
-      const faviconEvent = new Event('page-favicon-updated');
-      Object.defineProperty(faviconEvent, 'favicons', {
-        value: ['https://example.test/favicon.ico'],
-      });
-      webview.dispatchEvent(faviconEvent);
-
-      await waitFor(() =>
+    it.each([undefined, 'agent-owner'])(
+      'updates page identity from webview events for owner %s',
+      async (ownerAgentId) => {
+        const { container, getByRole } = renderPage({ ownerAgentId });
+        const webview = container.querySelector('webview')!;
         expect(getByRole('button', { name: 'Edit browser address' }).textContent).toContain(
-          'Reference docs',
-        ),
-      );
-      expect(container.querySelector('[data-browser-page-favicon]')?.getAttribute('src')).toBe(
-        'https://example.test/favicon.ico',
-      );
-    });
+          'example.test',
+        );
+
+        const titleEvent = new Event('page-title-updated');
+        Object.defineProperty(titleEvent, 'title', { value: 'Reference docs' });
+        webview.dispatchEvent(titleEvent);
+        const faviconEvent = new Event('page-favicon-updated');
+        Object.defineProperty(faviconEvent, 'favicons', {
+          value: ['https://example.test/favicon.ico'],
+        });
+        webview.dispatchEvent(faviconEvent);
+
+        await waitFor(() =>
+          expect(getByRole('button', { name: 'Edit browser address' }).textContent).toContain(
+            'Reference docs',
+          ),
+        );
+        expect(container.querySelector('[data-browser-page-favicon]')?.getAttribute('src')).toBe(
+          'https://example.test/favicon.ico',
+        );
+      },
+    );
 
     it('exposes the page title and distinct hostname together', async () => {
       const { container, getByRole } = renderPage({ url: 'https://app.example.com/dashboard' });

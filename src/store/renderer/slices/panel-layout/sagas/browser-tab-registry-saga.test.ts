@@ -269,6 +269,62 @@ describe('browserTabRegistrySaga', () => {
       await stop(h);
     });
 
+    it.each([
+      {
+        name: 'Fit without its retained fallback size',
+        tab: browserTab({
+          browserUrl: 'http://a.test/',
+          ownerAgentId: 'agent-1',
+          emulatedSize: { width: 1280, height: 800 },
+          viewport: { mode: 'fit' },
+        }),
+        expectedSize: null,
+      },
+      {
+        name: 'legacy Fit without its retained fallback size',
+        tab: browserTab({
+          browserUrl: 'http://a.test/',
+          ownerAgentId: 'agent-1',
+          emulatedSize: { width: 1280, height: 800 },
+        }),
+        expectedSize: null,
+      },
+      {
+        name: 'an explicit preset with its exact dimensions',
+        tab: browserTab({
+          browserUrl: 'http://a.test/',
+          viewport: { mode: 'preset', presetId: 'iphone-se', width: 375, height: 667 },
+        }),
+        expectedSize: { width: 375, height: 667 },
+      },
+      {
+        name: 'an explicit custom viewport instead of stale retained dimensions',
+        tab: browserTab({
+          browserUrl: 'http://a.test/',
+          emulatedSize: { width: 1280, height: 800 },
+          viewport: { mode: 'custom', width: 390, height: 844 },
+        }),
+        expectedSize: { width: 390, height: 844 },
+      },
+    ])('reports $name', async ({ tab, expectedSize }) => {
+      const h = start({ layouts: { [WS]: settledLayout([tab]) }, health: 'down', applied: true });
+      h.setHealth('healthy', 1);
+      h.dispatch(updateTabTitle(WS, 'b1', 'Updated'));
+      await flush();
+
+      expect(mocks.upsertTab.mock.calls).toEqual([
+        [
+          WS,
+          expectedInput({
+            title: 'Updated',
+            ownerAgentId: tab.ownerAgentId ?? null,
+            emulatedSize: expectedSize,
+          }),
+        ],
+      ]);
+      await stop(h);
+    });
+
     it('coalesces a navigation burst into one report and ignores the canonical echo', async () => {
       const h = start({
         layouts: { [WS]: settledLayout([browserTab({ browserUrl: 'http://a.test/' })]) },
