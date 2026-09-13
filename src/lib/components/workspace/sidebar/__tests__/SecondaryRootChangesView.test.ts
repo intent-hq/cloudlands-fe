@@ -560,6 +560,39 @@ describe('SecondaryRootChangesView', () => {
       });
     });
 
+    it('carries git.status gitlink metadata for a nested submodule row only', async () => {
+      const status = makeStatus('main');
+      status.files = [
+        {
+          path: 'vendor/nested',
+          status: 'M',
+          staged: false,
+          mode: '160000',
+          oldSha: 'a'.repeat(40),
+          newSha: 'b'.repeat(40),
+        },
+        { path: 'src/exec.sh', status: 'M', staged: false, mode: '100755' },
+      ];
+      mocks.getStatus.mockResolvedValue({ ok: true, data: status });
+      const { getAllByTestId } = await renderView(makeEntry('main', 'root-9'));
+      const rows = await waitFor(() => {
+        const found = getAllByTestId('secondary-root-file-open');
+        expect(found).toHaveLength(2);
+        return found;
+      });
+
+      await fireEvent.click(rows[0]);
+      await fireEvent.click(rows[1]);
+
+      const [gitlinkAction, fileAction] = diffActions();
+      expect(gitlinkAction.payload[1].gitlink).toEqual({
+        mode: '160000',
+        oldSha: 'a'.repeat(40),
+        newSha: 'b'.repeat(40),
+      });
+      expect(fileAction.payload[1]).not.toHaveProperty('gitlink');
+    });
+
     it('leaves a plain Enter keydown to the native button activation', async () => {
       const { rows } = await renderRows();
 

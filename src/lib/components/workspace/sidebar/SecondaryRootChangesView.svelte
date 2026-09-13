@@ -176,6 +176,18 @@
       stage: file.staged ? ChangeStage.Staged : ChangeStage.Unstaged,
       stats: { additions: 0, deletions: 0 },
       attribution: { manual: true, timestamp: Date.now() },
+      // Submodule (gitlink) marking from git.status (mode 160000), mirroring
+      // git-status-reconciliation so a nested pin renders its pin diff instead
+      // of falling through to file reads against a directory.
+      ...(file.mode === '160000'
+        ? {
+            gitlink: {
+              mode: file.mode,
+              ...(file.oldSha !== undefined ? { oldSha: file.oldSha } : {}),
+              ...(file.newSha !== undefined ? { newSha: file.newSha } : {}),
+            },
+          }
+        : {}),
     };
     const sourcePanelId = selectFocusedPanelId.select(appStore.state, workspaceId) ?? undefined;
     appStore.dispatch(
