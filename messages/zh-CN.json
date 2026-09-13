@@ -4549,6 +4549,7 @@
   "browser_embedded_pageClosed_error": "页面已自行关闭。请重新加载或输入 URL 以继续。",
   "browser_embedded_resolveFailed_error": "无法在远程守护进程主机上访问此 URL",
   "browser_linkOpen_loopbackAmbiguity_warning": "回环 URL 已重写为守护进程主机",
+  "browser_linkOpen_ownerOnlyForward_error": "只有工作区所有者才能在守护进程主机上打开转发端口",
   "browser_embedded_protocolNotAllowed_error": "不允许使用协议“{protocol}”。支持的协议：{protocols}",
   "browser_embedded_selfLoad_error": "无法在应用内部加载应用自身",
   "browser_embedded_invalidUrlFormat_error": "URL 格式无效",

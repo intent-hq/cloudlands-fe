@@ -46,6 +46,7 @@ import {
 } from '../../workspace-agents/workspace-agents-selectors';
 import { setAgents, setInitialAgentId } from '../../workspace-agents/workspace-agents-slice';
 import {
+  selectIsWorkspaceCollaborator,
   selectWorkspaceById,
   selectWorkspaceDetailHydrated,
   selectWorkspaceListLoadedForBackend,
@@ -149,6 +150,7 @@ import {
   type PanelLayoutRestoreStatus,
   type PanelState,
   type PanelTab,
+  type PanelTabType,
   type WorkspacePanelLayout,
   type WorkspacePanelLayoutState,
 } from '../panel-layout-types';
@@ -642,6 +644,22 @@ function isSettledRestoreStatus(status: PanelLayoutRestoreStatus): boolean {
   return status === 'restored' || status === 'empty' || status === 'invalid';
 }
 
+/** Panel tab types a collaborator (multiplayer w3) is refused on by the daemon. */
+const OWNER_ONLY_TAB_TYPES: readonly PanelTabType[] = ['terminal', 'browser'];
+
+/**
+ * A persisted layout may still hold terminal / browser tabs (saved as an
+ * owner, or before the role changed). Collaborators cannot drive either, so
+ * the restore closes them before the layout settles instead of mounting
+ * panes whose every daemon call is refused.
+ */
+function* stripOwnerOnlyTabsForCollaborator(wsId: string): SagaGenerator<void> {
+  if (!(yield* selectIsWorkspaceCollaborator.effect(wsId))) return;
+  for (const tabType of OWNER_ONLY_TAB_TYPES) {
+    yield* put(closeTabsByType(wsId, tabType));
+  }
+}
+
 function* handleWorkspaceMountedRestore(
   action: ReturnType<typeof workspaceMounted> | ReturnType<typeof panelLayoutScopeMounted>,
 ): SagaGenerator<void> {
@@ -708,6 +726,7 @@ function* handleWorkspaceMountedRestore(
         yield* put(preparePanelLayoutBackendRestore(wsId));
       }
       yield* put(initializeLayout(wsId, normalized));
+      yield* call(stripOwnerOnlyTabsForCollaborator, wsId);
       repairedColumns = yield* call(reconcileRestoredPanelColumns, wsId);
       yield* put(setRestoreStatus(wsId, 'restored'));
       // Detached (spawn, not fork): re-resolving tunneled tabs goes over IPC

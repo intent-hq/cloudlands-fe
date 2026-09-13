@@ -122,6 +122,7 @@
   import {
     LAUNCHER_GRID_POSITIONS,
     normalizeSelectedTabs,
+    OWNER_ONLY_TAB_IDS,
     TAB_DEFINITIONS,
     type LauncherTabId,
     type TabId,
@@ -329,14 +330,14 @@
       ? `repeat(${itemCount - 1}, ${LAUNCHER_STEP_SIZE}px) ${LAUNCHER_VISIBLE_SIZE}px`
       : `${LAUNCHER_VISIBLE_SIZE}px`;
   }
+  // Collaborators (multiplayer w3) are refused on terminal + browser methods, so
+  // the shell dock, browser launcher, their strip tabs, and any persisted
+  // selection of those tabs are withheld up front.
+  const isCollaborator = $derived($workspace?.myRole === 'collaborator');
   const selectedTabIds = selectMultiSelectSidebarSelectedTabIds(workspaceIdStore);
-  const selectedTabs = $derived(normalizeSelectedTabs($selectedTabIds));
+  const selectedTabs = $derived(normalizeSelectedTabs($selectedTabIds, isCollaborator));
   let agentSearchQuery = $state('');
   let contextSearchQuery = $state('');
-  // Collaborators (multiplayer w3) are refused on terminal + browser methods, so
-  // the shell dock, browser launcher, and their strip tabs are withheld up front.
-  const isCollaborator = $derived($workspace?.myRole === 'collaborator');
-  const OWNER_ONLY_TAB_IDS: ReadonlySet<TabId> = new Set<TabId>(['browser', 'shell']);
   const expandedStripTabs = $derived(
     TAB_DEFINITIONS.filter(
       (definition) =>
