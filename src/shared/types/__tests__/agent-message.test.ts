@@ -127,6 +127,25 @@ describe('AgentMessage Type Consolidation', () => {
       expect(normalized.contentBlocks).toEqual([{ type: 'text', text: 'Test' }]);
     });
 
+    it('should retain the serve-time author projection on a user row (intent-hq/intentd#1869)', () => {
+      const author = {
+        principalId: 'principal-guest',
+        login: 'guest',
+        displayName: 'Guest User',
+        avatarUrl: 'https://avatars.example/guest.png',
+      };
+      const normalized = normalizeAgentMessage({
+        id: 'user-msg-1',
+        role: 'user',
+        contentBlocks: [{ type: 'text', text: 'hi' }],
+        timestamp: new Date().toISOString(),
+        author,
+        metadata: { fromPrincipalId: 'principal-guest' },
+      });
+      expect(normalized.author).toEqual(author);
+      expect(normalized.metadata?.fromPrincipalId).toBe('principal-guest');
+    });
+
     it('should throw on AgentMessage missing the canonical `id` field', () => {
       expect(() =>
         normalizeAgentMessage({
