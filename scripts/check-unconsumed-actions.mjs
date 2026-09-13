@@ -17,6 +17,9 @@ import {
 
 const SLICE_SOURCE = /^src\/store\/.+\/slices\/.+-slice\.ts$/;
 const SCRIPT_BLOCK = /<script\b[^>]*>([\s\S]*?)<\/script>/g;
+// Test-only sources never count as consumers: *.test.*, *.spec.* (incl. .ct.spec /
+// .visual.spec), and anything under __tests__/ or __mocks__/.
+const TEST_SOURCE = /(?:\.(?:test|spec)\.|(?:^|\/)__(?:tests|mocks)__\/)/;
 const ASYNC_STAGES = new Set(['success', 'failure']);
 const SELF = 'scripts/check-unconsumed-actions.mjs';
 // The ownership gate does not track takeLatestByContext; this rule does, so a
@@ -52,8 +55,24 @@ const UNCONSUMED_ACTION_EXCEPTIONS = [
       'Pre-existing dead dispatch: no reducer case, watcher, predicate, or mutation middleware observes it (dispatched from ChatPanel.svelte handleRegenerateFromMessage); listed so the gate can land without src/ changes',
   },
   {
-    pattern: /src\/store\/main\/slices\/terminal-events\/terminal-events-slice\.ts#/,
-    rationale: `Dispatched via mainDispatch from src/features/terminal/main/terminal.ipc.ts; ${NO_MAIN_STORE}`,
+    pattern:
+      /src\/store\/main\/slices\/terminal-events\/terminal-events-slice\.ts#terminalCreated$/,
+    rationale: `Dispatched via mainDispatch from src/features/terminal/main/terminal.ipc.ts (terminal creation); ${NO_MAIN_STORE}`,
+  },
+  {
+    pattern:
+      /src\/store\/main\/slices\/terminal-events\/terminal-events-slice\.ts#terminalDisposed$/,
+    rationale: `Dispatched via mainDispatch from src/features/terminal/main/terminal.ipc.ts (terminal disposal); ${NO_MAIN_STORE}`,
+  },
+  {
+    pattern:
+      /src\/store\/main\/slices\/terminal-events\/terminal-events-slice\.ts#terminalProfessionalData$/,
+    rationale: `Dispatched via mainDispatch from src/features/terminal/main/terminal.ipc.ts (professional pty data chunks); ${NO_MAIN_STORE}`,
+  },
+  {
+    pattern:
+      /src\/store\/main\/slices\/terminal-events\/terminal-events-slice\.ts#terminalProfessionalExit$/,
+    rationale: `Dispatched via mainDispatch from src/features/terminal/main/terminal.ipc.ts (professional pty exit); ${NO_MAIN_STORE}`,
   },
   {
     pattern:
@@ -62,8 +81,28 @@ const UNCONSUMED_ACTION_EXCEPTIONS = [
   },
   {
     pattern:
-      /src\/store\/main\/slices\/workspace-lifecycle-events\/workspace-lifecycle-events-slice\.ts#/,
-    rationale: `Dispatched via mainDispatch from src/features/workspace/main/workspace.service.ts; ${NO_MAIN_STORE}`,
+      /src\/store\/main\/slices\/workspace-lifecycle-events\/workspace-lifecycle-events-slice\.ts#workspaceCreated$/,
+    rationale: `Dispatched via mainDispatch from src/features/workspace/main/workspace.service.ts (createWorkspace); ${NO_MAIN_STORE}`,
+  },
+  {
+    pattern:
+      /src\/store\/main\/slices\/workspace-lifecycle-events\/workspace-lifecycle-events-slice\.ts#workspaceUpdated$/,
+    rationale: `Dispatched via mainDispatch from src/features/workspace/main/workspace.service.ts (update, rename, unarchive paths); ${NO_MAIN_STORE}`,
+  },
+  {
+    pattern:
+      /src\/store\/main\/slices\/workspace-lifecycle-events\/workspace-lifecycle-events-slice\.ts#workspaceDeleting$/,
+    rationale: `Dispatched via mainDispatch from src/features/workspace/main/workspace.service.ts (pre-delete notification); ${NO_MAIN_STORE}`,
+  },
+  {
+    pattern:
+      /src\/store\/main\/slices\/workspace-lifecycle-events\/workspace-lifecycle-events-slice\.ts#workspaceDeleted$/,
+    rationale: `Dispatched via mainDispatch from src/features/workspace/main/workspace.service.ts (post-delete notification; the renderer workspaceDeleted in daemon-events-bridge.client.ts is a different action); ${NO_MAIN_STORE}`,
+  },
+  {
+    pattern:
+      /src\/store\/main\/slices\/workspace-lifecycle-events\/workspace-lifecycle-events-slice\.ts#workspaceArchived$/,
+    rationale: `Dispatched via mainDispatch from src/features/workspace/main/workspace.service.ts (archive); ${NO_MAIN_STORE}`,
   },
 ];
 
@@ -84,7 +123,7 @@ function loadSources(files) {
   const sources = new Map();
   for (const file of files) {
     const filePath = normalize(file.path);
-    if (filePath.includes('.test.')) continue;
+    if (TEST_SOURCE.test(filePath)) continue;
     let content;
     if (filePath.endsWith('.ts')) content = file.content;
     else if (filePath.endsWith('.svelte')) content = svelteScript(file.content);
