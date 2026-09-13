@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { faEllipsis } from '@fortawesome/free-solid-svg-icons';
+  import { faEllipsis, faFolderOpen } from '@fortawesome/free-solid-svg-icons';
+  import Fa from '$lib/components/shared/icons/FaWrapper.svelte';
   import type { UiComponentFixture } from '$lib/components/ui/component-metadata';
   import * as Card from '$lib/components/ui/card';
   import { Button } from '$lib/components/ui/button';
@@ -48,6 +49,52 @@
   data-catalog-renderer-fixture={fixture.id}
 >
   {#if componentId === 'card'}
+    <div data-catalog-rendered-state="group fluid-hover">
+      <Card.Group columns={2}>
+        {#each ['Projects', 'Notes', 'Files', 'Activity'] as title}
+          <Card.Root>
+            {#snippet media()}<Fa icon={faFolderOpen} class="size-5" />{/snippet}
+            <Card.Header
+              ><Card.Title>{title}</Card.Title><Card.Description
+                >Keep related work together, with room for the details that matter.</Card.Description
+              ></Card.Header
+            >
+          </Card.Root>
+        {/each}
+      </Card.Group>
+    </div>
+    <div data-catalog-rendered-state="inline outlined">
+      <Card.Group orientation="inline" border="outlined">
+        {#each ['Recent work', 'Shared resources'] as title}
+          <Card.Root>
+            {#snippet media()}<Fa icon={faFolderOpen} class="size-5" />{/snippet}
+            <Card.Header
+              ><Card.Title>{title}</Card.Title><Card.Description
+                >A compact row for a focused collection.</Card.Description
+              ></Card.Header
+            >
+          </Card.Root>
+        {/each}
+      </Card.Group>
+    </div>
+    <div data-catalog-rendered-state="separated selected">
+      <Card.Group columns={2} border="outlined" separated>
+        <Card.Root selected
+          ><Card.Header
+            ><Card.Title>Current project</Card.Title><Card.Description
+              >Your selected workspace stays visible.</Card.Description
+            ></Card.Header
+          ></Card.Root
+        >
+        <Card.Root
+          ><Card.Header
+            ><Card.Title>Next project</Card.Title><Card.Description
+              >Pick up another thread when ready.</Card.Description
+            ></Card.Header
+          ></Card.Root
+        >
+      </Card.Group>
+    </div>
     <div data-catalog-rendered-state="default header light dark compact zoom-200 reduced-motion">
       <Card.Root aria-label="Catalog editorial card">
         <Card.Header>
@@ -232,10 +279,19 @@
     </div>
   {:else if componentId === 'input-message'}
     <div data-catalog-rendered-state="helper light dark reduced-motion">
-      <InputMessage>Helper text for the field.</InputMessage>
+      <Label for="message-helper">Project name</Label>
+      <Input id="message-helper" aria-describedby="message-helper-text" />
+      <InputMessage id="message-helper-text">Use a name your team will recognize.</InputMessage>
     </div>
     <div data-catalog-rendered-state="error">
-      <InputMessage tone="error">The field needs attention.</InputMessage>
+      <Label for="message-error">Project name</Label>
+      <Input id="message-error" aria-invalid="true" aria-describedby="message-error-text" />
+      <InputMessage id="message-error-text" tone="error">Enter a project name.</InputMessage>
+    </div>
+    <div data-catalog-rendered-state="success">
+      <Label for="message-success">Project name</Label>
+      <Input id="message-success" value="Design system" aria-describedby="message-success-text" />
+      <InputMessage id="message-success-text">This name is available.</InputMessage>
     </div>
   {:else if componentId === 'label'}
     <div

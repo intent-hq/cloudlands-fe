@@ -1527,16 +1527,18 @@
               data-pane-stack-item={tab.id}
               data-attention={attentionPaneIds.has(tab.id) ? '' : undefined}
             >
-              <span
-                class="flex size-5 shrink-0 items-center justify-center"
-                data-pane-stack-item-identity={tab.type}
-              >
-                {#if tab.type === 'agent' && tab.agentId}
-                  <AgentAvatar agentId={tab.agentId} variant="standard" />
-                {:else}
-                  {@render panelIdentity(tab, true)}
-                {/if}
-              </span>
+              {#snippet leading()}
+                <span
+                  class="flex size-4 shrink-0 items-center justify-center"
+                  data-pane-stack-item-identity={tab.type}
+                >
+                  {#if tab.type === 'agent' && tab.agentId}
+                    <AgentAvatar agentId={tab.agentId} variant="standard" />
+                  {:else}
+                    {@render panelIdentity(tab, true)}
+                  {/if}
+                </span>
+              {/snippet}
               <span class="min-w-0 flex-1 truncate">{getTabTitle(tab)}</span>
               {#if attentionPaneIds.has(tab.id)}
                 <span class="size-1.5 shrink-0 rounded-full bg-primary" aria-hidden="true"></span>
@@ -1775,12 +1777,14 @@
                         close();
                       }}
                     >
-                      <AgentAvatar
-                        agentId="blank"
-                        variant="compact"
-                        specialist={specialist.id}
-                        icon={specialist.icon}
-                      />
+                      <span class="flex size-4 shrink-0 items-center justify-center"
+                        ><AgentAvatar
+                          agentId="blank"
+                          variant="compact"
+                          specialist={specialist.id}
+                          icon={specialist.icon}
+                        /></span
+                      >
                       <span>{specialist.name}</span>
                     </Button>
                   {/each}
@@ -1793,7 +1797,9 @@
                       close();
                     }}
                   >
-                    <Fa icon={faPlus} size="xs" class="text-ghost" />
+                    <span class="flex size-4 shrink-0 items-center justify-center"
+                      ><Fa icon={faPlus} size="xs" class="text-ghost" /></span
+                    >
                     <span>{m.layout_panelTabBar_manageSpecialists_label()}</span>
                   </Button>
                 {:else if onCreateAgent}
@@ -1805,7 +1811,9 @@
                       close();
                     }}
                   >
-                    <Fa icon={faRobot} size="xs" class="text-ghost" />
+                    <span class="flex size-4 shrink-0 items-center justify-center"
+                      ><Fa icon={faRobot} size="xs" class="text-ghost" /></span
+                    >
                     <span>{m.menu_new_agent()}</span>
                   </Button>
                 {/if}
@@ -1818,7 +1826,9 @@
                       close();
                     }}
                   >
-                    <Fa icon={RESOURCE_ICON_BY_KIND.note} size="xs" class="text-ghost" />
+                    <span class="flex size-4 shrink-0 items-center justify-center"
+                      ><Fa icon={RESOURCE_ICON_BY_KIND.note} size="xs" class="text-ghost" /></span
+                    >
                     <span>{m.menu_new_note()}</span>
                   </Button>
                 {/if}
@@ -1831,7 +1841,9 @@
                       close();
                     }}
                   >
-                    <Fa icon={faTerminal} size="xs" class="text-ghost" />
+                    <span class="flex size-4 shrink-0 items-center justify-center"
+                      ><Fa icon={faTerminal} size="xs" class="text-ghost" /></span
+                    >
                     <span>{m.menu_new_terminal()}</span>
                   </Button>
                 {/if}
@@ -1844,7 +1856,9 @@
                       close();
                     }}
                   >
-                    <Fa icon={faGlobe} size="xs" class="text-ghost" />
+                    <span class="flex size-4 shrink-0 items-center justify-center"
+                      ><Fa icon={faGlobe} size="xs" class="text-ghost" /></span
+                    >
                     <span>{m.menu_new_browser()}</span>
                   </Button>
                 {/if}

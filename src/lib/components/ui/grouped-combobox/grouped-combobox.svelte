@@ -130,6 +130,7 @@
   <Button
     variant="plain"
     type="button"
+    data-list-overlay
     role="option"
     aria-selected="false"
     aria-label={m.ui_groupedCombobox_toggleGroup_ariaLabel({ group: group.label })}
@@ -154,7 +155,7 @@
     inputClass={triggerClass}
     contentClass={dropdownClass}
     ariaLabel={placeholder}
-    portal={false}
+    portal={!staticPosition}
     {staticPosition}
     {header}
     {headerAction}

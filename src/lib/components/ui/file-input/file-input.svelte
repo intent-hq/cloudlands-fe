@@ -126,14 +126,13 @@
           ? 'border-0 bg-hover hover:bg-card'
           : 'border-0 bg-transparent shadow-none',
         (disabled || busy) && 'pointer-events-none opacity-60',
-        isInvalid && 'ring-1 ring-danger/25',
       )}
     >
       <Button
         type="button"
         variant={variant === 'flat' ? 'ghost' : 'outline'}
         size={resolvedSize === 'compact' ? 'xs' : 'default'}
-        class={cn('h-full shrink-0', 'aria-invalid:border-danger aria-invalid:ring-danger/25')}
+        class="h-full shrink-0 aria-invalid:ring-0"
         {disabled}
         loading={busy}
         aria-controls={id}

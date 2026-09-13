@@ -395,7 +395,7 @@
       <div
         data-task-item-row
         data-density="compact"
-        class="my-0.5 flex h-8 w-full min-w-0 items-center gap-1.5 overflow-hidden bg-transparent text-left transition-colors"
+        class="my-0.5 flex min-h-8 w-full min-w-0 items-center gap-1.5 overflow-hidden bg-transparent text-left transition-colors"
         role="group"
         contenteditable="false"
       >
@@ -416,7 +416,7 @@
         <span
           data-task-row-content
           data-task-row-title
-          class="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap font-medium [&_p]:m-0"
+          class="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap font-normal text-[length:inherit] [&_p]:m-0"
         >
           <NodeViewContent />
         </span>
@@ -430,7 +430,7 @@
       <div
         data-task-item-row
         data-density="compact"
-        class="group/task my-0.5 flex h-8 w-full min-w-0 items-center gap-1.5 overflow-hidden bg-transparent text-left transition-colors"
+        class="group/task my-0.5 flex min-h-8 w-full min-w-0 items-center gap-1.5 overflow-hidden bg-transparent text-left transition-colors"
         contenteditable="false"
       >
         <span
@@ -449,11 +449,11 @@
         </span>
         <Button
           type="button"
-          variant="ghost"
+          variant="plain"
           data-testid="linked-task-title"
           data-task-row-content
           data-task-row-title
-          class="min-w-0 flex-1 cursor-pointer overflow-hidden text-ellipsis whitespace-nowrap border-0 bg-transparent p-0 text-left font-medium outline-none focus-visible:ring-2 focus-visible:ring-primary-ink/40 {linkedTaskNotFound
+          class="min-w-0 flex-1 cursor-pointer h-auto! overflow-hidden text-ellipsis whitespace-nowrap border-0 bg-transparent p-0 text-left font-normal text-[length:inherit] leading-[inherit] outline-none focus-visible:ring-2 focus-visible:ring-primary-ink/40 {linkedTaskNotFound
             ? 'text-muted-foreground italic'
             : ''}"
           onclick={(e) => handleOpenLinkedNote(e)}

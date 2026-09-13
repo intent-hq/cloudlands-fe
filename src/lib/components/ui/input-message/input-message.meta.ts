@@ -23,4 +23,5 @@ export const inputMessageMetadata = parseUiComponentMetadata({
   removalGate: 'Retain while helper and error semantics use fast-tier motion.',
   dynamicImports: [],
   fixtures: inputMessageFixtures,
+  useWhen: ['Explain a field or announce a validation error directly below its input.'],
 });

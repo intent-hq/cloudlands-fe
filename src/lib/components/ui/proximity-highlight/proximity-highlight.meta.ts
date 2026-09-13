@@ -10,6 +10,7 @@ export const proximityHighlightMetadata = {
   category: 'primitive',
   owner: 'design-system',
   callers: [
+    'src/lib/components/ui/card/card-group.svelte',
     'src/lib/component-catalog/renderers/ProximityHighlightCatalogPreview.svelte',
     'src/lib/components/ui/checkbox-group/checkbox-group.svelte',
     'src/lib/components/ui/radio-group/radio-group.svelte',

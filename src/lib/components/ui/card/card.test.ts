@@ -52,6 +52,12 @@ describe('Card', () => {
     expect(Object.keys(cardApi).sort()).toEqual([...cardMetadata.exports].sort());
     expect(cardFixtures.flatMap(({ states }) => states)).toEqual(
       expect.arrayContaining([
+        'group',
+        'inline',
+        'outlined',
+        'separated',
+        'selected',
+        'fluid-hover',
         'interactive',
         'flush-content',
         'pressed',

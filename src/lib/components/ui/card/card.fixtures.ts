@@ -6,6 +6,12 @@ export const cardFixtures = [
     title: 'Editorial card states',
     states: [
       'default',
+      'group',
+      'inline',
+      'outlined',
+      'separated',
+      'selected',
+      'fluid-hover',
       'header',
       'flush-content',
       'interactive',

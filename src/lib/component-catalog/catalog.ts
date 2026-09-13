@@ -35,6 +35,78 @@ const commonProps: CatalogProp[] = [
 ];
 
 const componentProps: Record<string, CatalogProp[]> = {
+  card: [
+    {
+      name: 'Group.orientation',
+      type: "'card' | 'inline'",
+      defaultValue: "'card'",
+      description: 'Stack each card vertically or place its media beside the text.',
+    },
+    {
+      name: 'Group.columns',
+      type: 'number',
+      defaultValue: '1',
+      description: 'Number of equal-width columns in the group.',
+    },
+    {
+      name: 'border',
+      type: "'none' | 'outlined'",
+      defaultValue: 'standalone: outlined; group: none',
+      description: 'Show a shared group frame or an individual card surface.',
+    },
+    {
+      name: 'Group.separated',
+      type: 'boolean',
+      defaultValue: 'false',
+      description: 'Space individual card surfaces apart.',
+    },
+    {
+      name: 'Group.divided',
+      type: 'boolean',
+      defaultValue: 'true',
+      description: 'Draw hairline dividers inside a continuous group.',
+    },
+    {
+      name: 'Group.fluidHover',
+      type: 'boolean',
+      defaultValue: 'true',
+      description: 'Move a shared highlight to the nearest card.',
+    },
+    {
+      name: 'Group.selected',
+      type: 'number',
+      defaultValue: '-1',
+      description: 'Index of a persistently highlighted card.',
+    },
+    {
+      name: 'Root.selected',
+      type: 'boolean',
+      defaultValue: 'false',
+      description: 'Keep this card highlighted.',
+    },
+    {
+      name: 'Root.media',
+      type: 'Snippet',
+      defaultValue: '—',
+      description: 'Optional leading icon or media content.',
+    },
+    ...commonProps,
+  ],
+  'input-message': [
+    {
+      name: 'tone',
+      type: "'helper' | 'error'",
+      defaultValue: "'helper'",
+      description: 'Helper text announces politely; errors use an alert and danger text.',
+    },
+    {
+      name: 'id',
+      type: 'string',
+      defaultValue: '—',
+      description: 'Connect the message to an input with aria-describedby.',
+    },
+    ...commonProps,
+  ],
   button: [
     {
       name: 'variant',
@@ -97,6 +169,45 @@ const componentProps: Record<string, CatalogProp[]> = {
   ],
 };
 
+const componentDescriptions: Record<string, string> = {
+  accordion: 'Reveal supporting sections while keeping their headings easy to scan.',
+  badge: 'Mark an item with a compact status or category.',
+  breadcrumb: 'Show the path to the current page and navigate its ancestors.',
+  checkbox: 'Turn an independent option on or off.',
+  'checkbox-group': 'Choose several related options from a labelled group.',
+  'copy-input': 'Show a value with an action to copy it to the clipboard.',
+  dialog: 'Collect a focused decision in a modal dialog.',
+  'file-input': 'Choose files and show selection, upload progress, and validation feedback.',
+  input: 'Enter a single line of text with optional validation feedback.',
+  'input-group': 'Attach labels or actions to a shared input surface.',
+  kbd: 'Display a keyboard key or shortcut beside an action.',
+  label: 'Name a form control and connect its label to the input.',
+  list: 'Arrange items with selection, icons, metadata, and row actions.',
+  menu: 'Offer related commands in a keyboard-accessible floating menu.',
+  'proximity-highlight': 'Move a shared highlight between nearby or selected items.',
+  'radio-group': 'Choose exactly one option from a related set.',
+  'scroll-area': 'Keep overflowing content accessible within a bounded viewport.',
+  select: 'Choose one value from a fixed list of options.',
+  separator: 'Separate adjacent sections with a quiet rule.',
+  sheet: 'Show supporting content in a panel attached to the viewport edge.',
+  sidebar: 'Organize primary navigation in an expandable side rail.',
+  skeleton: 'Reserve content geometry while data is loading.',
+  slider: 'Adjust a numeric value along a bounded range.',
+  switch: 'Enable or disable a setting immediately.',
+  table: 'Compare structured records across labelled columns.',
+  tabs: 'Switch between related views within one section.',
+  textarea: 'Enter multiple lines of text with field feedback.',
+  toast: 'Show brief feedback without interrupting the current task.',
+  toggle: 'Switch an individual action between pressed and unpressed states.',
+  'toggle-group': 'Choose among a group of related pressed actions.',
+  tooltip: 'Explain a control on pointer hover or keyboard focus.',
+  combobox: 'Search available options and choose a matching value.',
+  'searchable-select': 'Filter a selection list before choosing a value.',
+  'grouped-combobox': 'Search and choose options organized into collapsible groups.',
+  dropdown: 'Search or browse options in a floating selection list.',
+  'settings-page-shell': 'Lay out a settings page with consistent section spacing.',
+};
+
 function displayName(id: string): string {
   if (id === 'loading-indicator') return 'Loading indicator';
   return id
@@ -110,6 +221,7 @@ const componentEntries: CatalogEntry[] = canonicalComponentManifest.map((compone
   name: displayName(component.id),
   description:
     component.useWhen?.[0] ??
+    componentDescriptions[component.id] ??
     `Composable ${displayName(component.id).toLowerCase()} building blocks for consistent product interfaces.`,
   category: component.category,
   source: component.source,

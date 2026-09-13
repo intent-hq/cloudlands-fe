@@ -246,13 +246,18 @@
   font-size: 0.82em;
 }
 
-/* Linked-task cards are UI chrome, not prose — keep them in the UI font
-   (and slightly smaller) instead of inheriting the serif body font. */
-.note-font-serif .tiptap-editor li[data-type='taskItem'] button[contenteditable='false'],
-.note-font-serif .tiptap-editor li[data-type='taskItem'] div[role='group'] {
-  font-family: var(--font-ui);
-  font-size: 0.9375rem;
-  letter-spacing: normal;
+/* Task titles remain prose in every note font; controls keep their own sizing. */
+.tiptap-editor [data-task-item-row],
+.tiptap-editor [data-task-row-title] {
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: normal;
+  line-height: inherit;
+}
+
+.note-font-serif .tiptap-editor [data-task-item-row] {
+  font-size: 1rem;
+  line-height: 1.48;
 }
 
 .note-font-monospace .tiptap-editor {

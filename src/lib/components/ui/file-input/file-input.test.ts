@@ -90,7 +90,7 @@ describe('FileInput', () => {
     expect(getByRole('alert').className).toContain('text-danger');
   });
 
-  it('renders invalid text and control boundaries with AA semantic contrast', () => {
+  it('keeps invalid feedback in the message with AA semantic contrast', () => {
     const { container, getByRole } = render(FileInput, {
       props: {
         id: 'contrast-file',
@@ -100,8 +100,8 @@ describe('FileInput', () => {
       },
     });
     const surface = container.querySelector('[data-slot="file-input-surface"]');
-    expect(surface?.className.split(/\s+/)).toContain('ring-danger/25');
-    expect(getByRole('button').className.split(/\s+/)).toContain('aria-invalid:border-danger');
+    expect(surface?.className.split(/\s+/)).not.toContain('ring-danger/25');
+    expect(getByRole('button').getAttribute('aria-invalid')).toBe('true');
     expect(getByRole('alert').className.split(/\s+/)).toContain('text-danger');
 
     const css = readFileSync(resolve(process.cwd(), 'src/lib/styles/tokens.css'), 'utf8');

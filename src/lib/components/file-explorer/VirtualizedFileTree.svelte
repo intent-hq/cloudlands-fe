@@ -1173,12 +1173,12 @@
 
             <!-- svelte-ignore a11y_no_static_element_interactions -->
             <div
-              class="relative flex items-center transition-colors duration-150 {isIgnored
+              class="group/file-row relative isolate flex items-center [&>[data-slot=list-item-row]]:min-w-0 [&>[data-slot=list-item-row]]:flex-1 transition-colors duration-150 {isIgnored
                 ? 'text-muted-foreground'
                 : ''}"
               class:folder-drop-target={isDropTarget}
               class:inside-drop-target={isInsideDropTarget}
-              style="height: {itemHeight}px; padding-left: {depth * 16}px;"
+              style="height: {itemHeight}px; padding-inline: var(--space-1);"
               data-file-path={node.path}
               ondblclick={(e) => handleDoubleClick(node, e)}
               oncontextmenu={(e) => handleContextMenu(e, node)}
@@ -1187,7 +1187,8 @@
                 <!-- Inline edit mode - matches ListItem sm size styling exactly -->
                 <div
                   class="relative z-10 min-w-0 flex items-center gap-2.5 py-1 rounded-md text-foreground"
-                  style="margin-left: 0.5px; padding-left: 9px; padding-right: 0.5px; width: calc(100% - 0.5px);"
+                  style="margin-left: 0.5px; padding-left: {9 +
+                    depth * 16}px; padding-right: 0.5px; width: calc(100% - 0.5px);"
                 >
                   <span
                     class={`shrink-0 flex items-center justify-center ${node.type === 'directory' ? `opacity-50 ${gitColor}` : `w-4 h-4 [&>svg]:w-full [&>svg]:h-full`}`}
@@ -1219,7 +1220,9 @@
                   titleClass={`cursor-text ${gitColor}`}
                   onclick={(event) => handleItemClick(flatNode, absoluteIndex, event)}
                   size="sm"
-                  class="flex-1"
+                  indent={depth}
+                  indentSize={16}
+                  class="flex-1 bg-transparent!"
                   actions={onCreateFile
                     ? [
                         {
@@ -1247,7 +1250,9 @@
                   badgeClass={isModified ? 'text-blue-500' : undefined}
                   onclick={(event) => handleItemClick(flatNode, absoluteIndex, event)}
                   size="sm"
-                  class="flex-1"
+                  indent={depth}
+                  indentSize={16}
+                  class="flex-1 bg-transparent!"
                 >
                   {#snippet iconSnippet()}
                     <span class="w-4 h-4 [&>svg]:w-full [&>svg]:h-full">
@@ -1283,10 +1288,10 @@
               {/if}
               <span
                 aria-hidden="true"
-                class="pointer-events-none absolute z-0 rounded-(--radius-small) border transition-[inset,border-color,background-color] duration-(--motion-standard) ease-(--ease-standard) motion-reduce:transition-none {editingPath ===
+                class="pointer-events-none absolute -z-10 rounded-(--radius-small) border transition-[inset,border-color,background-color] duration-(--motion-standard) ease-(--ease-standard) motion-reduce:transition-none {editingPath ===
                 node.path
-                  ? 'inset-px border-ring/60 bg-background'
-                  : 'inset-x-1 inset-y-0.5 border-transparent bg-transparent'}"
+                  ? 'inset-x-1 inset-y-px border-ring/60 bg-background'
+                  : `inset-x-1 inset-y-0.5 border-transparent ${isSelected(node.path) ? 'bg-active' : isFocused ? 'bg-selected' : 'bg-transparent group-hover/file-row:bg-hover'}`}"
               ></span>
             </div>
           {/if}
