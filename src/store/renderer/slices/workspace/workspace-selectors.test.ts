@@ -4,9 +4,16 @@ import type { WorkspaceGitStatus } from '$features/accept-changes/types';
 import type { TaskStats } from '$shared/utils/task-stats';
 import { describe, expect, it } from 'vitest';
 import type { StoreState } from '../../types';
-import { initialState, setWorkspaceEntity, workspaceReducer } from './workspace-slice';
+import {
+  initialState,
+  replaceWorkspaceList,
+  setWorkspaceEntity,
+  setWorkspaceHasLoaded,
+  workspaceReducer,
+} from './workspace-slice';
 import { initialState as daemonHealthInitialState } from '../daemon-health/daemon-health-slice';
 import {
+  selectIsCollaboratorOnlyClient,
   selectIsWorkspaceHostLocal,
   selectWorkflowStage,
   selectWorkspaceActivePrSummary,
@@ -103,6 +110,45 @@ function mockLocalityState(hostLocality: 'local' | 'remote', workspace?: Workspa
     daemonHealth: { ...daemonHealthInitialState, hostLocality },
   } as StoreState;
 }
+
+describe('selectIsCollaboratorOnlyClient (multiplayer w3)', () => {
+  function loadedState(workspaces: Workspace[], hasLoaded = true): StoreState {
+    const listed = workspaceReducer(initialState, replaceWorkspaceList(workspaces));
+    return {
+      workspace: workspaceReducer(listed, setWorkspaceHasLoaded(hasLoaded)),
+    } as StoreState;
+  }
+
+  it('is true once the list has loaded and every workspace reports myRole collaborator', () => {
+    const state = loadedState([
+      makeWorkspace({ id: 'ws-a' as WorkspaceId, myRole: 'collaborator' }),
+      makeWorkspace({ id: 'ws-b' as WorkspaceId, myRole: 'collaborator' }),
+    ]);
+    expect(selectIsCollaboratorOnlyClient.select(state)).toBe(true);
+  });
+
+  it('is false when any workspace is owned by this principal', () => {
+    const state = loadedState([
+      makeWorkspace({ id: 'ws-a' as WorkspaceId, myRole: 'collaborator' }),
+      makeWorkspace({ id: 'ws-b' as WorkspaceId, myRole: 'owner' }),
+    ]);
+    expect(selectIsCollaboratorOnlyClient.select(state)).toBe(false);
+  });
+
+  it('is false for a pre-w3 daemon that omits myRole (owner semantics preserved)', () => {
+    const state = loadedState([makeWorkspace()]);
+    expect(selectIsCollaboratorOnlyClient.select(state)).toBe(false);
+  });
+
+  it('is false before the list has loaded and for an empty list (never gate on unsettled state)', () => {
+    expect(
+      selectIsCollaboratorOnlyClient.select(
+        loadedState([makeWorkspace({ myRole: 'collaborator' })], false),
+      ),
+    ).toBe(false);
+    expect(selectIsCollaboratorOnlyClient.select(loadedState([]))).toBe(false);
+  });
+});
 
 describe('selectIsWorkspaceHostLocal (monorepo#2171)', () => {
   it('is true for a local workspace on a local daemon', () => {

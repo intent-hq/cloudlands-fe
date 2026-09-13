@@ -87,6 +87,7 @@ import {
 } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
+import { isForbiddenErrorResponse } from '$lib/client/live/backend-transport-types';
 import type { ResolvedBrowserLink } from '$lib/utils/browser-url-resolution';
 import { createLogger } from '$lib/utils/client-logger';
 import type { BrowserTab, BrowserTabInput } from '$shared/types/browser-clients';
@@ -201,6 +202,14 @@ class FenceMoved extends Error {
 /** Connect-time sync guards: one sync per connection generation, reset on backend change. */
 let syncedBackendId: string | null = null;
 let syncedConnectionGeneration: number | null = null;
+/**
+ * The daemon refused a `browser.*` call with `-32003` on the current
+ * connection (multiplayer w3: browser tabs are owner-only). The answer is
+ * stable for the connection, so the connect-time sync stops retrying instead
+ * of burning its attempts on the same refusal; the next connection starts
+ * clean.
+ */
+let registryForbidden = false;
 /** Removals being sent, so two workspaces' reporters do not send the same one. */
 const removalsInFlight = new Set<string>();
 /**
@@ -278,9 +287,14 @@ function* wire<M extends WireMethod>(
   try {
     result = yield* call([appClient.browser, fn], ...args);
   } catch (error) {
-    logger.warn(`browser.${method} failed`, {
-      error: error instanceof Error ? error.message : error,
-    });
+    if (isForbiddenErrorResponse(error)) {
+      registryForbidden = true;
+      logger.debug(`browser.${method} is owner-only on this connection; treating as empty`);
+    } else {
+      logger.warn(`browser.${method} failed`, {
+        error: error instanceof Error ? error.message : error,
+      });
+    }
   }
   yield* check(fences);
   return result as Awaited<ReturnType<BrowserWire[M]>> | null;
@@ -1118,6 +1132,7 @@ function* syncOnConnect(): SagaGenerator<void> {
   const generation = yield* selectDaemonConnectionGeneration.effect();
   if (syncedConnectionGeneration === generation) return;
   syncedConnectionGeneration = generation;
+  registryForbidden = false;
 
   const ownClientId = yield* waitForOwnClientId();
   for (let attempt = 0; attempt < MAX_SYNC_ATTEMPTS; attempt++) {
@@ -1127,6 +1142,9 @@ function* syncOnConnect(): SagaGenerator<void> {
     }
     if (syncedBackendId !== backendId || syncedConnectionGeneration !== generation) return;
     if (yield* call(syncTabsOnce, backendId, generation, ownClientId)) return;
+    // A forbidden reply is this connection's final answer: keep the
+    // generation marked synced so nothing re-runs until the next connect.
+    if (registryForbidden) return;
   }
   if (syncedConnectionGeneration === generation) syncedConnectionGeneration = null;
 }
@@ -1141,6 +1159,7 @@ function* onConnectionStatus(
 export function* browserTabRegistrySaga(): SagaGenerator<void> {
   syncedBackendId = null;
   syncedConnectionGeneration = null;
+  registryForbidden = false;
   removalsInFlight.clear();
   seenLayouts = yield* selectPanelLayoutWorkspaces.effect();
   const reports = createChannel<string>(buffers.expanding());

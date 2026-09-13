@@ -70,6 +70,7 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => {
     selectActiveWorkspaceId: { select: () => null },
     selectWorkspaceIsEmpty: { select: () => false },
     selectIsNewWorkspaceSession: () => readable(false),
+    selectIsWorkspaceCollaborator: () => readable(false),
   };
 });
 vi.mock('$store/renderer/slices/changes/changes-selectors', () => ({

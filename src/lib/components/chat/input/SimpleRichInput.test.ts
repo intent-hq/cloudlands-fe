@@ -4,6 +4,7 @@ import {
   exerciseVisualStates,
 } from '$lib/components/__tests__/helpers/visual-state-characterization';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 import { readable } from 'svelte/store';
 
 vi.mock('$lib/components/shared/icons/FaWrapper.svelte', async () => {
@@ -208,6 +209,7 @@ const mockReduxState = vi.hoisted(
       provider: string;
       keyConfigured: Record<string, boolean>;
     };
+    workspace: { hasLoaded: boolean; workspaces: unknown };
     providerCatalog?: unknown;
     daemonHealth: { hostLocality: 'local' | 'remote' | null; transport: unknown };
   } => ({
@@ -233,6 +235,9 @@ const mockReduxState = vi.hoisted(
       provider: 'elevenlabs',
       keyConfigured: { elevenlabs: true, openai: false },
     },
+    // The mic gate also reads the caller's workspace role (multiplayer w3);
+    // an unloaded list reads as owner without consulting the collection.
+    workspace: { hasLoaded: false, workspaces: null },
   }),
 );
 const mockReduxDispatch = vi.hoisted(() => vi.fn());
@@ -1916,6 +1921,16 @@ describe('SimpleRichInput mic-button visibility (effective voice engine)', () =>
     mockReduxState.voiceSettings.keyConfigured = { elevenlabs: false, openai: false };
     render(SimpleRichInput, { props: baseProps() });
     expect(micButton()).not.toBeNull();
+  });
+
+  it('hides the mic button for a collaborator-only client even with a configured engine (multiplayer w3)', () => {
+    mockReduxState.workspace = {
+      hasLoaded: true,
+      workspaces: createCollection('id', [{ id: 'ws-1', myRole: 'collaborator' }]),
+    };
+    render(SimpleRichInput, { props: baseProps() });
+    expect(micButton()).toBeNull();
+    mockReduxState.workspace = { hasLoaded: false, workspaces: null };
   });
 });
 
