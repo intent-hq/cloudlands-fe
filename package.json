@@ -1,6 +1,6 @@
 {
   "name": "intent",
-  "version": "2.149.2",
+  "version": "2.151.2",
   "description": "Intent",
   "type": "module",
   "main": "dist/main/index.js",
@@ -120,6 +120,7 @@
     "test:api-reference": "tsx test/test-api-reference.ts",
     "agent-errors": "tsx scripts/agent-errors.ts",
     "memory-events": "tsx scripts/memory-events.ts",
+    "resolve-stack": "node scripts/resolve-stack.mjs",
     "test:error-tracking": "tsx scripts/comprehensive-test.ts",
     "ipc:debug": "tsx scripts/check-ipc-debug.ts",
     "ipc:debug:summary": "tsx scripts/check-ipc-debug.ts summary",

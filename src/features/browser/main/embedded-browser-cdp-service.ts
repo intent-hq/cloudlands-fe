@@ -8,7 +8,7 @@
  * a network port - only the main process can access the debugger.
  */
 
-import { webContents, ipcMain } from 'electron';
+import { webContents, ipcMain, type WebContents } from 'electron';
 import { Logger } from '../../../shared/logger';
 import { IPC_CHANNELS } from '../../../shared/ipc-registry';
 import {
@@ -66,6 +66,54 @@ const SCREENSHOT_CDP_TIMEOUT_MS = 5_000;
  * already burned its timeouts (intent-hq/monorepo#3366).
  */
 const SCREENSHOT_CAPTURE_PAGE_TIMEOUT_MS = 5_000;
+
+/**
+ * Per-request options for the capture ops (screenshot / evaluate /
+ * getAccessibilityTree). `deadline` is an absolute epoch-ms instant by which
+ * the enclosing request must have answered (intent-hq/intent#4835): every
+ * stage's timeout is clamped to the time remaining, so a slow mount + CDP +
+ * fallback chain reports a truthful stage error before the daemon's reverse
+ * deadline instead of overrunning into a bare "reverse request timed out".
+ */
+interface CaptureOptions {
+  deadline?: number;
+}
+
+/** Structured cause of a failed capture stage (intent-hq/intent#4835). */
+export type CaptureErrorCode = 'not-painting' | 'deadline-exhausted';
+
+/**
+ * A capture-stage failure carrying a structured `errorCode` so the action
+ * executor can surface it alongside the message. `stage` names the command
+ * or fallback that failed.
+ */
+class CaptureStageError extends Error {
+  constructor(
+    message: string,
+    readonly errorCode: CaptureErrorCode,
+    readonly stage: string,
+  ) {
+    super(message);
+    this.name = 'CaptureStageError';
+  }
+}
+
+/**
+ * Timeout for one capture stage: its own cap, clamped to the time left until
+ * `deadline` (never negative). `deadlineBound` is true when the deadline, not
+ * the cap, is the binding constraint — a timeout then means the request
+ * budget ran out, not that the stage itself is unhealthy.
+ */
+function stageBudget(
+  capMs: number,
+  deadline: number | undefined,
+): { timeoutMs: number; deadlineBound: boolean } {
+  if (deadline === undefined) return { timeoutMs: capMs, deadlineBound: false };
+  const remaining = Math.max(0, deadline - Date.now());
+  return remaining < capMs
+    ? { timeoutMs: remaining, deadlineBound: true }
+    : { timeoutMs: capMs, deadlineBound: false };
+}
 
 interface TabInfo {
   tabId: string;
@@ -181,8 +229,19 @@ class EmbeddedBrowserCdpService {
   /** Per-tab viewport mode for owned and unowned tabs. */
   private tabViewports = new Map<string, BrowserTabViewport>();
 
-  /** Tabs whose current webContents has received a device-metrics override. */
+  /**
+   * Tabs whose current webContents has received a device-metrics override.
+   * Cleared whenever that guest's CDP session detaches: Chromium drops the
+   * emulation with the session, so a stale entry would misreport the scale
+   * the tab is drawn at.
+   */
   private tabsWithDeviceMetricsOverride = new Set<string>();
+
+  /** In-flight emulation command per tab (always settles; see applyViewportEmulation). */
+  private pendingViewportEmulation = new Map<string, Promise<void>>();
+
+  /** WebContents whose debugger 'detach' event is already observed. */
+  private debuggerDetachListeners = new Set<number>();
 
   /**
    * Agents whose owned tabs were destroyed via {@link clearAgentTabs}
@@ -409,6 +468,7 @@ class EmbeddedBrowserCdpService {
           this.tabViewBounds.delete(tabId);
         }
         this.attachedDebuggers.delete(webContentsId);
+        this.debuggerDetachListeners.delete(webContentsId);
       });
     }
   }
@@ -459,6 +519,39 @@ class EmbeddedBrowserCdpService {
    */
   isTabMounted(tabId: string): boolean {
     return this.resolveTabId(tabId) !== undefined;
+  }
+
+  /**
+   * Wait (at most `timeoutMs`) for a mounted tab's guest to stop loading and
+   * report its live state: whether it is still loading and the URL it shows.
+   * Resolves immediately when the guest is not loading; resolves `undefined`
+   * when the tab is not mounted. Never rejects. Capture ops consult this so a
+   * request landing mid-navigation is answered truthfully instead of falling
+   * through to the paint timeout (intent-hq/intent#4835).
+   */
+  waitForTabLoad(
+    tabId: string,
+    timeoutMs: number,
+  ): Promise<{ loading: boolean; url: string } | undefined> {
+    const webContentsId = this.resolveTabId(tabId);
+    const wc = webContentsId === undefined ? undefined : webContents.fromId(webContentsId);
+    if (!wc || wc.isDestroyed()) return Promise.resolve(undefined);
+    const state = () =>
+      wc.isDestroyed()
+        ? { loading: false, url: '' }
+        : { loading: wc.isLoading(), url: wc.getURL() };
+    if (!wc.isLoading() || timeoutMs <= 0) return Promise.resolve(state());
+    return new Promise((resolve) => {
+      const settle = () => {
+        clearTimeout(timer);
+        wc.removeListener('did-stop-loading', settle);
+        wc.removeListener('destroyed', settle);
+        resolve(state());
+      };
+      const timer = setTimeout(settle, timeoutMs);
+      wc.once('did-stop-loading', settle);
+      wc.once('destroyed', settle);
+    });
   }
 
   /**
@@ -983,6 +1076,7 @@ class EmbeddedBrowserCdpService {
     if (wc.debugger.isAttached()) {
       // Just update our tracking - the debugger is already usable
       this.attachedDebuggers.add(webContentsId);
+      this.observeDebuggerDetach(wc, webContentsId);
       logger.info('Debugger already attached (by another service), tracking it', { webContentsId });
       return;
     }
@@ -1001,23 +1095,44 @@ class EmbeddedBrowserCdpService {
 
       this.attachedDebuggers.add(webContentsId);
       logger.info('Attached debugger', { webContentsId });
-
-      // Clean up when debugger detaches
-      wc.debugger.on('detach', (_event, reason) => {
-        logger.info('Debugger detached', { webContentsId, reason });
-        this.attachedDebuggers.delete(webContentsId);
-      });
+      this.observeDebuggerDetach(wc, webContentsId);
     } catch (error) {
       // Handle race condition: debugger might have been attached between our check and attach
       const errMsg = (error as Error).message || '';
       if (errMsg.includes('already attached')) {
         // That's fine - just track it
         this.attachedDebuggers.add(webContentsId);
+        this.observeDebuggerDetach(wc, webContentsId);
         logger.info('Debugger attached by another service (race), tracking it', { webContentsId });
         return;
       }
       logger.error('Failed to attach debugger', { webContentsId, error });
       throw error;
+    }
+  }
+
+  /** Clean up when the session ends, whoever attached it (once per webContents). */
+  private observeDebuggerDetach(wc: WebContents, webContentsId: number): void {
+    if (this.debuggerDetachListeners.has(webContentsId)) return;
+    this.debuggerDetachListeners.add(webContentsId);
+    wc.debugger.on('detach', (_event, reason) => {
+      logger.info('Debugger detached', { webContentsId, reason });
+      this.onDebuggerDetached(webContentsId);
+    });
+  }
+
+  /**
+   * Forget a guest's CDP session. Chromium disposes the session's handlers
+   * on detach, which clears any device-metrics override with it, so the
+   * tabs mapped to this webContents are no longer emulated until the next
+   * applyViewportEmulation.
+   */
+  private onDebuggerDetached(webContentsId: number): void {
+    this.attachedDebuggers.delete(webContentsId);
+    for (const [tabId, mappedWebContentsId] of this.tabRegistry) {
+      if (mappedWebContentsId === webContentsId) {
+        this.tabsWithDeviceMetricsOverride.delete(tabId);
+      }
     }
   }
 
@@ -1037,7 +1152,7 @@ class EmbeddedBrowserCdpService {
         // Ignore errors during detach
       }
     }
-    this.attachedDebuggers.delete(webContentsId);
+    this.onDebuggerDetached(webContentsId);
   }
 
   /**
@@ -1049,7 +1164,7 @@ class EmbeddedBrowserCdpService {
     const wc = webContents.fromId(webContentsId);
     if (!wc || wc.isDestroyed()) {
       // Still clear our tracking state
-      this.attachedDebuggers.delete(webContentsId);
+      this.onDebuggerDetached(webContentsId);
       return false;
     }
 
@@ -1069,7 +1184,7 @@ class EmbeddedBrowserCdpService {
     }
 
     // Clear our tracking state
-    this.attachedDebuggers.delete(webContentsId);
+    this.onDebuggerDetached(webContentsId);
 
     return didDetach;
   }
@@ -1207,33 +1322,18 @@ class EmbeddedBrowserCdpService {
   }
 
   /**
-   * Apply CDP device-metrics viewport emulation to a mounted tab. Fit follows
-   * visible bounds for owned tabs and stays native for unowned tabs;
-   * preset/custom use exact dimensions with scale-to-fit. Fire-and-forget:
-   * unmounted tabs are skipped (registerTab
-   * re-applies on mount) and CDP failures are logged, never thrown — sizing
-   * must not fail the ownership bookkeeping that triggered it.
+   * Emulated CSS size and scale-to-fit factor a tab's device-metrics override
+   * uses (docs/protocol §5.9): fit mode and tabs without reported bounds draw
+   * at scale 1; preset/custom sizes shrink to the reported bounds, never
+   * upscale. Shared by emulation and the CDP screenshot clip so both agree on
+   * the scale the tab is actually drawn at.
    */
-  private applyViewportEmulation(tabId: string): void {
+  private resolveEmulationGeometry(tabId: string): {
+    size: { width: number; height: number };
+    scale: number;
+  } {
     const ownership = this.tabOwnership.get(tabId);
-    const explicitViewport = this.tabViewports.get(tabId);
-    if (!ownership && !explicitViewport && !this.tabViewBounds.has(tabId)) return;
-    const webContentsId = this.resolveTabId(tabId);
-    if (webContentsId === undefined) return;
-    const viewport = explicitViewport ?? { mode: 'fit' as const };
-    if (viewport.mode === 'fit' && !ownership) {
-      if (!this.tabsWithDeviceMetricsOverride.has(tabId)) return;
-      void this.sendCommand(webContentsId, 'Emulation.clearDeviceMetricsOverride')
-        .then(() => this.tabsWithDeviceMetricsOverride.delete(tabId))
-        .catch((error) => {
-          logger.warn('Failed to clear viewport emulation', {
-            tabId,
-            webContentsId,
-            error: (error as Error).message,
-          });
-        });
-      return;
-    }
+    const viewport = this.tabViewports.get(tabId) ?? { mode: 'fit' as const };
     const bounds = this.tabViewBounds.get(tabId);
     const size =
       viewport.mode === 'fit'
@@ -1248,31 +1348,82 @@ class EmbeddedBrowserCdpService {
       viewport.mode === 'fit' || !bounds
         ? 1
         : Math.min(1, bounds.width / size.width, bounds.height / size.height);
-    void this.sendCommand(webContentsId, 'Emulation.setDeviceMetricsOverride', {
-      width: size.width,
-      height: size.height,
-      // 0 preserves the display's native device scale factor.
-      deviceScaleFactor: 0,
-      mobile: false,
-      scale,
-    })
-      .then(() => {
-        if (this.tabRegistry.get(tabId) !== webContentsId) return;
-        this.tabsWithDeviceMetricsOverride.add(tabId);
-        const currentViewport = this.tabViewports.get(tabId) ?? { mode: 'fit' as const };
-        if (currentViewport.mode === 'fit' && !this.tabOwnership.has(tabId)) {
-          this.applyViewportEmulation(tabId);
-        }
+    return { size, scale };
+  }
+
+  /**
+   * Apply CDP device-metrics viewport emulation to a mounted tab. Fit follows
+   * visible bounds for owned tabs and stays native for unowned tabs;
+   * preset/custom use exact dimensions with scale-to-fit. Fire-and-forget:
+   * unmounted tabs are skipped (registerTab
+   * re-applies on mount) and CDP failures are logged, never thrown — sizing
+   * must not fail the ownership bookkeeping that triggered it. The in-flight
+   * command is recorded in pendingViewportEmulation so a screenshot issued
+   * right behind it waits for the override bookkeeping to settle.
+   */
+  private applyViewportEmulation(tabId: string): void {
+    const ownership = this.tabOwnership.get(tabId);
+    const explicitViewport = this.tabViewports.get(tabId);
+    if (!ownership && !explicitViewport && !this.tabViewBounds.has(tabId)) return;
+    const webContentsId = this.resolveTabId(tabId);
+    if (webContentsId === undefined) return;
+    const viewport = explicitViewport ?? { mode: 'fit' as const };
+    if (viewport.mode === 'fit' && !ownership) {
+      if (!this.tabsWithDeviceMetricsOverride.has(tabId)) return;
+      this.trackViewportEmulation(
+        tabId,
+        this.sendCommand(webContentsId, 'Emulation.clearDeviceMetricsOverride')
+          .then(() => {
+            this.tabsWithDeviceMetricsOverride.delete(tabId);
+          })
+          .catch((error) => {
+            logger.warn('Failed to clear viewport emulation', {
+              tabId,
+              webContentsId,
+              error: (error as Error).message,
+            });
+          }),
+      );
+      return;
+    }
+    const { size, scale } = this.resolveEmulationGeometry(tabId);
+    this.trackViewportEmulation(
+      tabId,
+      this.sendCommand(webContentsId, 'Emulation.setDeviceMetricsOverride', {
+        width: size.width,
+        height: size.height,
+        // 0 preserves the display's native device scale factor.
+        deviceScaleFactor: 0,
+        mobile: false,
+        scale,
       })
-      .catch((error) => {
-        logger.warn('Failed to apply viewport emulation', {
-          tabId,
-          webContentsId,
-          ...size,
-          scale,
-          error: (error as Error).message,
-        });
-      });
+        .then(() => {
+          if (this.tabRegistry.get(tabId) !== webContentsId) return;
+          this.tabsWithDeviceMetricsOverride.add(tabId);
+          const currentViewport = this.tabViewports.get(tabId) ?? { mode: 'fit' as const };
+          if (currentViewport.mode === 'fit' && !this.tabOwnership.has(tabId)) {
+            this.applyViewportEmulation(tabId);
+          }
+        })
+        .catch((error) => {
+          logger.warn('Failed to apply viewport emulation', {
+            tabId,
+            webContentsId,
+            ...size,
+            scale,
+            error: (error as Error).message,
+          });
+        }),
+    );
+  }
+
+  private trackViewportEmulation(tabId: string, settled: Promise<void>): void {
+    this.pendingViewportEmulation.set(tabId, settled);
+    void settled.then(() => {
+      if (this.pendingViewportEmulation.get(tabId) === settled) {
+        this.pendingViewportEmulation.delete(tabId);
+      }
+    });
   }
 
   /**
@@ -1636,9 +1787,10 @@ class EmbeddedBrowserCdpService {
   }
 
   /**
-   * Get the accessibility tree for a tab
+   * Get the accessibility tree for a tab. With a `deadline`, each CDP command
+   * is bounded by the remaining request budget (#4835).
    */
-  async getAccessibilityTree(tabId?: string): Promise<string> {
+  async getAccessibilityTree(tabId?: string, options: CaptureOptions = {}): Promise<string> {
     const webContentsId = tabId ? this.resolveTabId(tabId) : this.getFirstTab()?.webContentsId;
 
     if (webContentsId === undefined) {
@@ -1650,10 +1802,18 @@ class EmbeddedBrowserCdpService {
     }
 
     // Enable accessibility domain
-    await this.sendCommand(webContentsId, 'Accessibility.enable');
+    await this.withDeadline(
+      this.sendCommand(webContentsId, 'Accessibility.enable'),
+      'Accessibility.enable',
+      options.deadline,
+    );
 
     // Get the full accessibility tree
-    const result = (await this.sendCommand(webContentsId, 'Accessibility.getFullAXTree')) as {
+    const result = (await this.withDeadline(
+      this.sendCommand(webContentsId, 'Accessibility.getFullAXTree'),
+      'Accessibility.getFullAXTree',
+      options.deadline,
+    )) as {
       nodes: Array<{
         nodeId: string;
         role?: { value: string };
@@ -1714,21 +1874,35 @@ class EmbeddedBrowserCdpService {
   }
 
   /**
-   * Race a Page-domain screenshot command against a bounded timeout. The
-   * command promise is returned as-is when it settles first; on timeout the
-   * caller falls back to webContents.capturePage() (monorepo#3154).
-   * Rejections are prefixed with the command label so the fallback's warn
-   * log always identifies which CDP command failed.
+   * Race a capture-stage promise against a bounded timeout. The promise is
+   * returned as-is when it settles first. Rejections are prefixed with the
+   * stage label so every failure names the stage (monorepo#3154); a timeout
+   * caused by the request deadline (not the stage's own cap) rejects with a
+   * `deadline-exhausted` {@link CaptureStageError} (#4835).
    */
-  private async withScreenshotCdpTimeout<T>(promise: Promise<T>, label: string): Promise<T> {
+  private async withStageTimeout<T>(
+    promise: Promise<T>,
+    label: string,
+    budget: { timeoutMs: number; deadlineBound: boolean },
+  ): Promise<T> {
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       return await Promise.race([
         promise,
         new Promise<never>((_, reject) => {
           timer = setTimeout(
-            () => reject(new Error(`${label} timed out after ${SCREENSHOT_CDP_TIMEOUT_MS}ms`)),
-            SCREENSHOT_CDP_TIMEOUT_MS,
+            () =>
+              reject(
+                budget.deadlineBound
+                  ? new CaptureStageError(
+                      // i18n-ignore (agent-facing operational diagnostic, not user-facing)
+                      `${label} timed out after ${budget.timeoutMs}ms: the request deadline was exhausted before this stage finished`,
+                      'deadline-exhausted',
+                      label,
+                    )
+                  : new Error(`${label} timed out after ${budget.timeoutMs}ms`),
+              ),
+            budget.timeoutMs,
           );
         }),
       ]);
@@ -1738,6 +1912,27 @@ class EmbeddedBrowserCdpService {
     } finally {
       clearTimeout(timer);
     }
+  }
+
+  /** Page-domain screenshot command bounded by its cap and the request deadline. */
+  private withScreenshotCdpTimeout<T>(
+    promise: Promise<T>,
+    label: string,
+    deadline?: number,
+  ): Promise<T> {
+    return this.withStageTimeout(promise, label, stageBudget(SCREENSHOT_CDP_TIMEOUT_MS, deadline));
+  }
+
+  /**
+   * Bound a non-screenshot CDP command by the request deadline only: without
+   * a deadline the command runs unbounded, as before (#4835).
+   */
+  private withDeadline<T>(promise: Promise<T>, label: string, deadline?: number): Promise<T> {
+    if (deadline === undefined) return promise;
+    return this.withStageTimeout(promise, label, {
+      timeoutMs: Math.max(0, deadline - Date.now()),
+      deadlineBound: true,
+    });
   }
 
   /**
@@ -1762,11 +1957,13 @@ class EmbeddedBrowserCdpService {
    */
   private async capturePageFallback(
     webContentsId: number,
+    deadline?: number,
   ): Promise<{ base64: string; width: number; height: number }> {
     const wc = webContents.fromId(webContentsId);
     if (!wc || wc.isDestroyed()) {
       throw new Error(`WebContents ${webContentsId} not found or destroyed`);
     }
+    const budget = stageBudget(SCREENSHOT_CAPTURE_PAGE_TIMEOUT_MS, deadline);
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       const image = await Promise.race([
@@ -1775,27 +1972,40 @@ class EmbeddedBrowserCdpService {
           timer = setTimeout(
             () =>
               reject(
-                new Error(
-                  // i18n-ignore (agent-facing protocol error, not user-facing)
-                  `capturePage timed out after ${SCREENSHOT_CAPTURE_PAGE_TIMEOUT_MS}ms: the tab is not painting. A visible tab paints only while it is on screen: its panel's active tab (listTabs reports displayed: true — otherwise use { action: "showTab", tabId } to activate it without stealing focus, or focusTab to activate and focus), with its workspace in view in the app and its panel not hidden by zoom; then capture again.`,
-                ),
+                budget.deadlineBound
+                  ? new CaptureStageError(
+                      // i18n-ignore (agent-facing protocol error, not user-facing)
+                      `capturePage timed out after ${budget.timeoutMs}ms: the request deadline was exhausted before the fallback capture finished; retry the capture`,
+                      'deadline-exhausted',
+                      'capturePage',
+                    )
+                  : new CaptureStageError(
+                      // i18n-ignore (agent-facing protocol error, not user-facing)
+                      `capturePage timed out after ${budget.timeoutMs}ms: the tab is not painting. A visible tab paints only while it is on screen: its panel's active tab (listTabs reports displayed: true — otherwise use { action: "showTab", tabId } to activate it without stealing focus, or focusTab to activate and focus), with its workspace in view in the app and its panel not hidden by zoom; then capture again.`,
+                      'not-painting',
+                      'capturePage',
+                    ),
               ),
-            SCREENSHOT_CAPTURE_PAGE_TIMEOUT_MS,
+            budget.timeoutMs,
           );
         }),
       ]);
       const size = image.getSize();
       if (image.isEmpty?.() || size.width <= 0 || size.height <= 0) {
-        throw new Error(
+        throw new CaptureStageError(
           // i18n-ignore (agent-facing operational diagnostic, not user-facing)
           `webContents.capturePage returned an empty image (${size.width}x${size.height}): the tab surface has not painted. A visible tab paints only while it is on screen: its panel's active tab (listTabs reports displayed: true — otherwise use { action: "showTab", tabId } to activate it without stealing focus, or focusTab to activate and focus), with its workspace in view in the app and its panel not hidden by zoom; then capture again.`,
+          'not-painting',
+          'capturePage',
         );
       }
       const jpeg = image.toJPEG(80);
       if (jpeg.length === 0) {
-        throw new Error(
+        throw new CaptureStageError(
           // i18n-ignore (agent-facing operational diagnostic, not user-facing)
           `webContents.capturePage encoded an empty image (${size.width}x${size.height}): the tab surface has not painted. A visible tab paints only while it is on screen: its panel's active tab (listTabs reports displayed: true — otherwise use { action: "showTab", tabId } to activate it without stealing focus, or focusTab to activate and focus), with its workspace in view in the app and its panel not hidden by zoom; then capture again.`,
+          'not-painting',
+          'capturePage',
         );
       }
       return {
@@ -1809,10 +2019,16 @@ class EmbeddedBrowserCdpService {
   }
 
   /**
-   * Take a screenshot of a tab
+   * Take a screenshot of a tab. With a `deadline`, the CDP commands and the
+   * capturePage fallback are each clamped to the remaining request budget,
+   * and a failure carries the fallback stage's structured cause (#4835).
    */
-  async screenshot(tabId?: string): Promise<{ base64: string; width: number; height: number }> {
-    const webContentsId = tabId ? this.resolveTabId(tabId) : this.getFirstTab()?.webContentsId;
+  async screenshot(
+    tabId?: string,
+    options: CaptureOptions = {},
+  ): Promise<{ base64: string; width: number; height: number }> {
+    const firstTab = tabId ? undefined : this.getFirstTab();
+    const webContentsId = tabId ? this.resolveTabId(tabId) : firstTab?.webContentsId;
 
     if (webContentsId === undefined) {
       throw new Error(
@@ -1823,7 +2039,7 @@ class EmbeddedBrowserCdpService {
     }
 
     try {
-      return await this.screenshotViaCdp(webContentsId);
+      return await this.screenshotViaCdp(webContentsId, tabId ?? firstTab?.tabId, options.deadline);
     } catch (cdpError) {
       // The Page domain can hang (or fail) on some guests while the rest of
       // the debugger session works; degrade to capturePage() instead of
@@ -1833,15 +2049,16 @@ class EmbeddedBrowserCdpService {
         error: cdpError instanceof Error ? cdpError.message : String(cdpError),
       });
       try {
-        return await this.capturePageFallback(webContentsId);
+        return await this.capturePageFallback(webContentsId, options.deadline);
       } catch (fallbackError) {
         const cdpMessage = cdpError instanceof Error ? cdpError.message : String(cdpError);
         const fallbackMessage =
           fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
-        throw new Error(
-          // i18n-ignore (agent-facing operational diagnostic, not user-facing)
-          `Screenshot capture failed: CDP stage: ${cdpMessage}; Electron fallback stage: ${fallbackMessage}`,
-        );
+        // i18n-ignore (agent-facing operational diagnostic, not user-facing)
+        const message = `Screenshot capture failed: CDP stage: ${cdpMessage}; Electron fallback stage: ${fallbackMessage}`;
+        throw fallbackError instanceof CaptureStageError
+          ? new CaptureStageError(message, fallbackError.errorCode, fallbackError.stage)
+          : new Error(message);
       }
     }
   }
@@ -1849,7 +2066,23 @@ class EmbeddedBrowserCdpService {
   /** Page-domain screenshot with per-command timeouts (see screenshot()). */
   private async screenshotViaCdp(
     webContentsId: number,
+    tabId?: string,
+    deadline?: number,
   ): Promise<{ base64: string; width: number; height: number }> {
+    // An emulation command dispatched just before this capture (registerTab,
+    // setViewport, a bounds report) already affects the guest when the
+    // capture reaches it; wait for its bookkeeping so the clip scale below
+    // matches. The promise always settles (failures are logged upstream).
+    const pendingEmulation =
+      tabId === undefined ? undefined : this.pendingViewportEmulation.get(tabId);
+    if (pendingEmulation) {
+      await this.withScreenshotCdpTimeout(
+        pendingEmulation,
+        'Emulation.setDeviceMetricsOverride',
+        deadline,
+      );
+    }
+
     // Get layout metrics to determine viewport size.
     // layoutViewport reflects the page's internal layout (may exceed visible area
     // if the page sets min-width larger than the panel).
@@ -1858,6 +2091,7 @@ class EmbeddedBrowserCdpService {
     const layoutMetrics = (await this.withScreenshotCdpTimeout(
       this.sendCommand(webContentsId, 'Page.getLayoutMetrics'),
       'Page.getLayoutMetrics',
+      deadline,
     )) as {
       layoutViewport: { clientWidth: number; clientHeight: number };
       cssVisualViewport?: {
@@ -1890,6 +2124,18 @@ class EmbeddedBrowserCdpService {
       );
     }
 
+    // Capture at the scale the tab is drawn at. Page.captureScreenshot
+    // expects an image of clip × clip.scale × display DPR pixels and resizes
+    // the view to clip × clip.scale to get it — but a <webview> guest cannot
+    // be resized that way (its child-frame view ignores SetSize), so the
+    // surface stays at the element's size and Chromium tiles it to fill the
+    // request. On a tab shrunk to fit its panel (scale < 1) a scale-1 clip
+    // therefore returned a repeated 2x2 page (intent-hq/intent#4627); a clip
+    // at the emulation's fit scale requests exactly the surface that exists.
+    const clipScale =
+      tabId !== undefined && this.tabsWithDeviceMetricsOverride.has(tabId)
+        ? this.resolveEmulationGeometry(tabId).scale
+        : 1;
     const result = (await this.withScreenshotCdpTimeout(
       this.sendCommand(webContentsId, 'Page.captureScreenshot', {
         format: 'jpeg',
@@ -1899,10 +2145,11 @@ class EmbeddedBrowserCdpService {
           y: scrollY,
           width,
           height,
-          scale: 1,
+          scale: clipScale,
         },
       }),
       'Page.captureScreenshot',
+      deadline,
     )) as { data: string };
 
     if (!result.data) {
@@ -1920,9 +2167,14 @@ class EmbeddedBrowserCdpService {
   }
 
   /**
-   * Evaluate JavaScript in a tab
+   * Evaluate JavaScript in a tab. With a `deadline`, the command is bounded
+   * by the remaining request budget (#4835).
    */
-  async evaluate(tabId: string | undefined, expression: string): Promise<unknown> {
+  async evaluate(
+    tabId: string | undefined,
+    expression: string,
+    options: CaptureOptions = {},
+  ): Promise<unknown> {
     const webContentsId = tabId ? this.resolveTabId(tabId) : this.getFirstTab()?.webContentsId;
 
     if (webContentsId === undefined) {
@@ -1933,10 +2185,14 @@ class EmbeddedBrowserCdpService {
       );
     }
 
-    const result = (await this.sendCommand(webContentsId, 'Runtime.evaluate', {
-      expression,
-      returnByValue: true,
-    })) as { result: { value: unknown } };
+    const result = (await this.withDeadline(
+      this.sendCommand(webContentsId, 'Runtime.evaluate', {
+        expression,
+        returnByValue: true,
+      }),
+      'Runtime.evaluate',
+      options.deadline,
+    )) as { result: { value: unknown } };
 
     return result.result.value;
   }

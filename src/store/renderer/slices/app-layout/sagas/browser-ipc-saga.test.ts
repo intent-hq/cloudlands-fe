@@ -35,8 +35,14 @@ vi.mock('../../../utils/safe-local-storage-saga', () => ({
 }));
 
 import { PANEL_LAYOUT_STORAGE_KEY_PREFIX } from '../../panel-layout/panel-layout-types';
-import { emptyWorkspaceState, panelLayoutReducer } from '../../panel-layout/panel-layout-slice';
+import {
+  emptyWorkspaceState,
+  panelLayoutReducer as rawPanelLayoutReducer,
+} from '../../panel-layout/panel-layout-slice';
+import { withPanelLayoutInvariants } from '../../panel-layout/panel-layout-invariants.test-helpers';
 import { browserIpcSaga } from './browser-ipc-saga';
+
+const panelLayoutReducer = withPanelLayoutInvariants(rawPanelLayoutReducer);
 
 const NOW = new Date('2026-07-31T00:00:00.000Z').getTime();
 const TAB = (url: string) => ({

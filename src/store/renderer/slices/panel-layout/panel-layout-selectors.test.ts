@@ -198,7 +198,37 @@ describe('panel layout selectors', () => {
     expect(selectWorkspaceHasBrowserTabs.select(state as any, 'legacy')).toBe(false);
     expect(selectWorkspaceHasBrowserTabs.select(state as any, 'missing')).toBe(false);
     expect(collectBrowserTabs(state.panelLayout.byWorkspaceId.hidden)).toEqual([
-      { tab: browserTab('b3'), visibility: 'hidden' },
+      { tab: browserTab('b3'), visibility: 'hidden', displayed: false },
+    ]);
+  });
+
+  it('collectBrowserTabs marks a visible tab displayed only when it is its panel active tab', () => {
+    const browserTab = (id: string) => ({
+      id,
+      type: 'browser' as const,
+      title: 'Web',
+      closable: true,
+    });
+    const layout = {
+      ...emptyWorkspaceState,
+      panels: {
+        left: { id: 'left', activeTabId: 'b1', tabs: [browserTab('b1'), browserTab('b2')] },
+        right: { id: 'right', activeTabId: null, tabs: [browserTab('b3')] },
+      },
+      hiddenTabs: createCollection('id', [browserTab('b4')]),
+    };
+
+    expect(
+      collectBrowserTabs(layout).map(({ tab, visibility, displayed }) => [
+        tab.id,
+        visibility,
+        displayed,
+      ]),
+    ).toEqual([
+      ['b1', 'visible', true],
+      ['b2', 'visible', false],
+      ['b3', 'visible', false],
+      ['b4', 'hidden', false],
     ]);
   });
 });

@@ -8,6 +8,7 @@ import type {
   LastAttemptedMessage,
   LiveStreamPhase,
   ModelUnavailableInfo,
+  QuotaExceededInfo,
   TranscriptHydrationStatus,
   TranscriptSnapshotMeta,
   StreamFailureCorrelation,
@@ -66,6 +67,16 @@ export const selectChatLastAttemptedMessage = store.createSelector(
 export const selectChatModelUnavailable = store.createSelector(
   (state, agentId: string): ModelUnavailableInfo | null =>
     getAgentChatState(state, agentId).modelUnavailable,
+);
+
+/**
+ * Select the provider usage-limit failure for this agent, if the last turn
+ * died on one (#4455). Non-null drives the "retry on another provider"
+ * banner, the quota sibling of the model-unavailable recovery banner.
+ */
+export const selectChatQuotaExceeded = store.createSelector(
+  (state, agentId: string): QuotaExceededInfo | null =>
+    getAgentChatState(state, agentId).quotaExceeded,
 );
 
 /** Select status events */

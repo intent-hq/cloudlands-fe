@@ -28,6 +28,8 @@ import {
   registrySnapshotAcknowledged,
   registryTabForgotten,
   registryTabReported,
+  registryTabResolved,
+  registryTabsUnresolved,
 } from './browser-tab-registry-slice';
 import type { BrowserTabRegistryState } from './browser-tab-registry-slice';
 
@@ -53,6 +55,8 @@ function reduce(...actions: Parameters<typeof browserTabRegistryReducer>[1][]) {
 
 const ws = (state: BrowserTabRegistryState, wsId = WS) => state.byWorkspaceId[wsId];
 const applied = () => reduce(registryLoading(WS), registryApplied(WS, 1, { b1: input('b1') }));
+const unresolved = () =>
+  browserTabRegistryReducer(applied(), registryTabsUnresolved(WS, 1, ['b1']));
 
 describe('browserTabRegistryReducer', () => {
   it('starts with no workspaces and nothing closing', () => {
@@ -61,9 +65,14 @@ describe('browserTabRegistryReducer', () => {
 
   it('starts a load in a new generation and keeps the previous report map', () => {
     const state = reduce(registryLoading(WS));
-    expect(ws(state)).toEqual({ generation: 1, phase: 'loading', reported: {} });
-    const again = browserTabRegistryReducer(applied(), registryLoading(WS));
-    expect(ws(again)).toEqual({ generation: 2, phase: 'loading', reported: { b1: input('b1') } });
+    expect(ws(state)).toEqual({ generation: 1, phase: 'loading', reported: {}, unresolved: {} });
+    const again = browserTabRegistryReducer(unresolved(), registryLoading(WS));
+    expect(ws(again)).toEqual({
+      generation: 2,
+      phase: 'loading',
+      reported: { b1: input('b1') },
+      unresolved: { b1: true },
+    });
   });
 
   it('applies rows under the current generation only', () => {
@@ -71,6 +80,7 @@ describe('browserTabRegistryReducer', () => {
       generation: 1,
       phase: 'applied',
       reported: { b1: input('b1') },
+      unresolved: {},
     });
     const stale = browserTabRegistryReducer(
       reduce(registryLoading(WS)),
@@ -100,14 +110,53 @@ describe('browserTabRegistryReducer', () => {
   });
 
   it('forgets a tab without touching the generation or phase', () => {
-    const state = browserTabRegistryReducer(applied(), registryTabForgotten(WS, 'b1'));
-    expect(ws(state)).toEqual({ generation: 1, phase: 'applied', reported: {} });
+    const state = browserTabRegistryReducer(unresolved(), registryTabForgotten(WS, 'b1'));
+    expect(ws(state)).toEqual({ generation: 1, phase: 'applied', reported: {}, unresolved: {} });
     expect(browserTabRegistryReducer(state, registryTabForgotten(WS, 'b1'))).toBe(state);
   });
 
+  it('marks tabs unresolved under the current generation until one is resolved', () => {
+    expect(ws(unresolved())).toMatchObject({ phase: 'applied', unresolved: { b1: true } });
+    const more = browserTabRegistryReducer(unresolved(), registryTabsUnresolved(WS, 1, ['b2']));
+    expect(ws(more).unresolved).toEqual({ b1: true, b2: true });
+    const untouched = applied();
+    expect(browserTabRegistryReducer(untouched, registryTabsUnresolved(WS, 0, ['b1']))).toBe(
+      untouched,
+    );
+    expect(browserTabRegistryReducer(untouched, registryTabsUnresolved(WS, 1, []))).toBe(untouched);
+    const torn = reduce(registryLoading(WS), workspaceUnmounted(WS));
+    expect(browserTabRegistryReducer(torn, registryTabsUnresolved(WS, 2, ['b1']))).toBe(torn);
+
+    const resolved = browserTabRegistryReducer(more, registryTabResolved(WS, 'b1'));
+    expect(ws(resolved)).toEqual({
+      generation: 1,
+      phase: 'applied',
+      reported: { b1: input('b1') },
+      unresolved: { b2: true },
+    });
+    expect(browserTabRegistryReducer(resolved, registryTabResolved(WS, 'b1'))).toBe(resolved);
+  });
+
+  it('keeps a tab unresolved across a reload while its row is still held', () => {
+    const reloaded = reduce(
+      registryLoading(WS),
+      registryApplied(WS, 1, { b1: input('b1'), b2: input('b2') }),
+      registryTabsUnresolved(WS, 1, ['b1', 'b2']),
+      registryLoading(WS),
+      registryApplied(WS, 2, { b1: input('b1') }),
+    );
+    expect(ws(reloaded)).toEqual({
+      generation: 2,
+      phase: 'applied',
+      reported: { b1: input('b1') },
+      unresolved: { b1: true },
+    });
+  });
+
   it('tracks a removal from pending through acknowledgement to the closed echo', () => {
-    let state = browserTabRegistryReducer(applied(), registryRemovalsPending(WS, ['b1']));
+    let state = browserTabRegistryReducer(unresolved(), registryRemovalsPending(WS, ['b1']));
     expect(ws(state).reported).toEqual({});
+    expect(ws(state).unresolved).toEqual({});
     expect(state.closing).toEqual({ b1: 'pending' });
     state = browserTabRegistryReducer(state, registryRemovalAcknowledged('b1'));
     expect(state.closing).toEqual({ b1: 'acknowledged' });
@@ -150,28 +199,33 @@ describe('browserTabRegistryReducer', () => {
   });
 
   it('tears down on delete, forgetting the reported tabs', () => {
-    const state = browserTabRegistryReducer(applied(), workspaceDeleted(WS));
-    expect(ws(state)).toEqual({ generation: 2, phase: 'unmounted', reported: {} });
+    const state = browserTabRegistryReducer(unresolved(), workspaceDeleted(WS));
+    expect(ws(state)).toEqual({ generation: 2, phase: 'unmounted', reported: {}, unresolved: {} });
   });
 
   it('tears down on unmount, forgetting the reported tabs but keeping pending removals', () => {
-    const before = browserTabRegistryReducer(applied(), registryRemovalsPending(WS, ['b2']));
+    const before = browserTabRegistryReducer(unresolved(), registryRemovalsPending(WS, ['b2']));
     const state = browserTabRegistryReducer(before, workspaceUnmounted(WS));
-    expect(ws(state)).toEqual({ generation: 2, phase: 'unmounted', reported: {} });
+    expect(ws(state)).toEqual({ generation: 2, phase: 'unmounted', reported: {}, unresolved: {} });
     expect(state.closing).toEqual({ b2: 'pending' });
   });
 
   it('tears down on a cleared layout but keeps the reported tabs and pending removals', () => {
-    const before = browserTabRegistryReducer(applied(), registryRemovalsPending(WS, ['b2']));
+    const before = browserTabRegistryReducer(unresolved(), registryRemovalsPending(WS, ['b2']));
     const state = browserTabRegistryReducer(before, clearPanelLayout(WS));
-    expect(ws(state)).toEqual({ generation: 2, phase: 'unmounted', reported: { b1: input('b1') } });
+    expect(ws(state)).toEqual({
+      generation: 2,
+      phase: 'unmounted',
+      reported: { b1: input('b1') },
+      unresolved: { b1: true },
+    });
     expect(state.closing).toEqual({ b2: 'pending' });
   });
 
   it('tears every workspace down into a new generation for a new backend', () => {
-    const before = browserTabRegistryReducer(applied(), registryRemovalsPending(WS, ['b2']));
+    const before = browserTabRegistryReducer(unresolved(), registryRemovalsPending(WS, ['b2']));
     const state = browserTabRegistryReducer(before, registryReset());
-    expect(ws(state)).toEqual({ generation: 2, phase: 'unmounted', reported: {} });
+    expect(ws(state)).toEqual({ generation: 2, phase: 'unmounted', reported: {}, unresolved: {} });
     expect(state.closing).toEqual({});
     // The counter never restarts: the next load cannot reuse a generation
     // a step started under the old backend still holds.
@@ -186,7 +240,7 @@ describe('browserTabRegistry selectors', () => {
     ({ browserTabRegistry }) as unknown as StoreState;
 
   it('falls back to an unmounted, empty record for unknown workspaces and stores', () => {
-    const fallback = { generation: 0, phase: 'unmounted', reported: {} };
+    const fallback = { generation: 0, phase: 'unmounted', reported: {}, unresolved: {} };
     expect(selectBrowserTabRegistryWorkspace.select(asStore(initialState), WS)).toEqual(fallback);
     expect(selectBrowserTabRegistryWorkspace.select({} as StoreState, WS)).toEqual(fallback);
     expect(selectBrowserTabsClosing.select({} as StoreState)).toEqual({});

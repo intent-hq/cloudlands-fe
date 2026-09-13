@@ -1,8 +1,17 @@
 import { END, eventChannel, type EventChannel } from 'redux-saga';
-import { call, fork, put, take, takeEvery, type SagaGenerator } from 'typed-redux-saga';
+import {
+  call,
+  fork,
+  put,
+  race,
+  take,
+  takeEvery,
+  takeLatest,
+  type SagaGenerator,
+} from 'typed-redux-saga';
 
 import { releaseNotesClient } from '$features/release-notes/release-notes.client';
-import type { ShowReleaseNotesPayload } from '$features/release-notes/types';
+import type { ReleaseNotesContent, ShowReleaseNotesPayload } from '$features/release-notes/types';
 import { createLogger } from '$lib/utils/client-logger';
 import {
   closeReleaseNotesModal,
@@ -27,14 +36,28 @@ function createCloseChannel(): EventChannel<CloseEvent> {
   return eventChannel((emit) => releaseNotesClient.onClose(() => emit(CLOSE_EVENT)));
 }
 
-function* fetchReleaseNotes(): SagaGenerator<void> {
+function* loadReleaseNotes(): SagaGenerator<ReleaseNotesContent | null> {
   try {
-    const notes = yield* call([releaseNotesClient, releaseNotesClient.getReleaseNotes]);
-    yield* put(notes ? showReleaseNotesSuccess(notes) : showReleaseNotesUnavailable());
+    return yield* call([releaseNotesClient, releaseNotesClient.getReleaseNotes]);
   } catch (error) {
     logger.warn('Failed to fetch release notes', error);
-    yield* put(showReleaseNotesUnavailable());
+    return null;
   }
+}
+
+/**
+ * On-demand (Help menu) fetch. The result only lands while the modal is still
+ * open: a close in the meantime — local dismissal or the cross-window close
+ * broadcast — wins the race and the late result is dropped instead of
+ * re-opening the modal.
+ */
+function* fetchReleaseNotes(): SagaGenerator<void> {
+  const { notes, closed } = yield* race({
+    notes: call(loadReleaseNotes),
+    closed: take([dismissReleaseNotes, closeReleaseNotesModal]),
+  });
+  if (closed) return;
+  yield* put(notes ? showReleaseNotesSuccess(notes) : showReleaseNotesUnavailable());
 }
 
 /**
@@ -109,5 +132,5 @@ export function* releaseNotesSaga(): SagaGenerator<void> {
   yield* fork(watchShowEvents, channel, surfaced);
   yield* fork(watchCloseEvents, closeChannel);
   yield* takeEvery(dismissReleaseNotes, notifyDismiss);
-  yield* takeEvery(showReleaseNotes, fetchReleaseNotes);
+  yield* takeLatest(showReleaseNotes, fetchReleaseNotes);
 }
