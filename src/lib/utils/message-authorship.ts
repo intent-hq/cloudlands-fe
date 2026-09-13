@@ -109,10 +109,12 @@ export function getQueueSurfaceAuthors(
  * The human author of a queue entry, or null. `authors === null` means the
  * surface is off (see `getQueueSurfaceAuthors`). Otherwise the entry must
  * pass `isUserAuthoredMetadata`; its own `author` projection (served by the
- * daemon next to the `fromPrincipalId` stamp) wins, and an entry without one
- * (older daemon) resolves its stamp against `authors`. Unstamped entries and
- * unresolvable principals yield null — the caller renders no attribution
- * rather than a placeholder.
+ * daemon next to the `fromPrincipalId` stamp) is authoritative: a valid
+ * projection is used and an explicit `null` means "no author" (the principal
+ * row is gone) with no fallback. Only an ABSENT field (older daemon) resolves
+ * the stamp against `authors`; a malformed non-null value is treated as
+ * absent. Unstamped entries and unresolvable principals yield null — the
+ * caller renders no attribution rather than a placeholder.
  */
 export function getQueuedMessageAuthor(
   queued: { messageMetadata?: unknown; author?: unknown } | null | undefined,
@@ -121,6 +123,7 @@ export function getQueuedMessageAuthor(
   if (!queued || !authors) return null;
   const metadata = queued.messageMetadata;
   if (!isUserAuthoredMetadata(metadata)) return null;
+  if (queued.author === null) return null;
   const own = asMessageAuthor(queued.author);
   if (own) return own;
   if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return null;
