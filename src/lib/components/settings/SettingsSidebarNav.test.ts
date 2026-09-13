@@ -76,6 +76,20 @@ describe('SettingsSidebarNav', () => {
     expect(onSelect).toHaveBeenCalledWith(id);
   });
 
+  it('withholds hidden categories while keeping the rest navigable (collaborator, multiplayer w3)', () => {
+    render(SettingsSidebarNav, {
+      activeTab: 'display',
+      onSelect: vi.fn(),
+      agentsNavigation: createSpecialistsNavigation(),
+      hiddenTabs: ['providers', 'connections'],
+    });
+
+    expect(screen.queryByRole('button', { name: 'Providers' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Connections' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Workspace setup' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Agent defaults' })).toBeTruthy();
+  });
+
   it('delegates specialist navigation without making the section heading clickable', async () => {
     const onSelectSpecialist = vi.fn();
     const onSelect = vi.fn();

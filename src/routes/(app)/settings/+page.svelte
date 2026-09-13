@@ -45,6 +45,7 @@
   import { Switch } from '$lib/components/ui/switch';
   import * as ToggleGroup from '$lib/components/ui/toggle-group';
   import { selectDaemonTransport } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
+  import { selectIsCollaboratorOnlyClient } from '$store/renderer/slices/workspace/workspace-selectors';
   import { selectThemePreference } from '$store/renderer/slices/theme/theme-selectors';
   import { requestThemePreferenceChange } from '$store/renderer/slices/theme/theme-slice';
   import type { ThemePreference } from '$store/renderer/slices/theme/theme-types';
@@ -100,6 +101,7 @@
   const shellTransparencyEnabled = selectShellTransparencyEnabled();
   const themePreference = selectThemePreference();
   const daemonTransport$ = selectDaemonTransport();
+  const isCollaboratorOnlyClient$ = selectIsCollaboratorOnlyClient();
 
   // UDS socket path of the connected intentd; null hides the Connection section
   // (external-ws, unknown transport, or missing target).
@@ -234,6 +236,16 @@
       window.history.replaceState({}, '', url.toString());
     }
   }
+
+  // Provider keys and GitHub/Linear/Sentry connections are administrator-owned
+  // daemon state (multiplayer w3): a collaborator-only client cannot read or
+  // change them, so those sections are withheld and their tabs redirect.
+  const hiddenTabs = $derived<readonly SettingsTab[]>(
+    $isCollaboratorOnlyClient$ ? ['providers', 'connections'] : [],
+  );
+  $effect(() => {
+    if (hiddenTabs.includes(activeTab)) setActiveTab('display');
+  });
 
   // Keep the rendered pane in sync when SvelteKit navigates within the mounted settings page.
   $effect(() => {
@@ -528,6 +540,7 @@
   {activeTab}
   onSelect={setActiveTab}
   {agentsNavigation}
+  {hiddenTabs}
   {sidebarHeader}
   {sidebarFooter}
 >
@@ -545,7 +558,7 @@
       >
         <h1 id="settings-page-title" class="sr-only">{m.settings_page_title()}</h1>
         <!-- Providers -->
-        {#if activeTab === 'providers'}
+        {#if activeTab === 'providers' && !hiddenTabs.includes('providers')}
           <div
             id="providers"
             data-highlight-id="providers"
@@ -578,7 +591,7 @@
         {/if}
 
         <!-- Connections -->
-        {#if activeTab === 'connections'}
+        {#if activeTab === 'connections' && !hiddenTabs.includes('connections')}
           <div
             id="integrations"
             data-highlight-id="integrations"

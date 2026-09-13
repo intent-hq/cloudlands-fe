@@ -87,6 +87,7 @@
   import { openTabInRightmostColumnRequested } from '$store/renderer/slices/panel-layout/panel-layout-slice';
   import { resolveTerminalShortcutWorkspaceId } from '$features/terminal/terminal-shortcut-context';
   import {
+    selectIsCollaboratorOnlyClient,
     selectWorkspaceHasLoaded,
     selectWorkspaceItems,
     selectWorkspaceLoading,
@@ -164,6 +165,8 @@
   const workspaceId = $derived(workspaceIdFromRoute(routePathname, routeWorkspaceId) ?? undefined);
   const workspaceItems = selectWorkspaceItems();
   const workspaceHasLoaded = selectWorkspaceHasLoaded();
+  // Workspace creation (repo picker) is administrator-only (multiplayer w3).
+  const isCollaboratorOnlyClient$ = selectIsCollaboratorOnlyClient();
   const backendSetupGate = selectBackendSetupGate();
   const bootGateResolved = selectBootRouteGateResolved();
   const currentWorkspaceTabId = selectCurrentWorkspaceTabId();
@@ -1061,7 +1064,7 @@
 
   <!-- Create Workspace Modal (opened from sidebar nav + button) -->
   <NewSpaceModal
-    open={$showCreateModal$}
+    open={$showCreateModal$ && !$isCollaboratorOnlyClient$}
     onClose={() => appStore.dispatch(setShowCreateModal(false))}
   />
 

@@ -297,6 +297,11 @@ export function isWorkspaceAttention(value: unknown): value is WorkspaceAttentio
   );
 }
 
+/** The caller's role in a workspace (PROTOCOL §5.1 membership summary,
+ *  multiplayer w1). `collaborator` connections are refused (-32003) on every
+ *  owner-only method, so the desktop hides those surfaces up front. */
+export type WorkspaceRole = 'owner' | 'collaborator';
+
 export interface Workspace {
   id: WorkspaceId;
   name?: string; // Added for compatibility with agent system
@@ -340,6 +345,12 @@ export interface Workspace {
    *  wire — omitted when false, so older daemons (which never send it) read
    *  as not waiting. */
   waiting?: boolean;
+  /** Membership summary (PROTOCOL §5.1, intent-hq/intentd#1868). `myRole` is
+   *  relative to the caller and absent for a non-member; `memberCount` counts
+   *  accepted members. All absent on older daemons. */
+  ownerPrincipalId?: string;
+  myRole?: WorkspaceRole;
+  memberCount?: number;
   createdAt: string;
   updatedAt: string;
   lastActivity?: string;

@@ -1398,6 +1398,23 @@ describe('browserTabRegistrySaga', () => {
       expect(mocks.syncTabs).toHaveBeenCalledTimes(1);
       await stop(h);
     });
+
+    it('stops the connect-time sync on a -32003 refusal instead of retrying (collaborator, multiplayer w3)', async () => {
+      const forbidden = Object.assign(new Error('Forbidden'), { rpcCode: -32003 });
+      mocks.listTabs.mockRejectedValue(forbidden);
+      const h = start({ layouts: { [WS]: settledLayout([]) } });
+      await flush();
+      expect(mocks.listTabs).toHaveBeenCalledTimes(1);
+      expect(mocks.syncTabs).not.toHaveBeenCalled();
+
+      await flush(SYNC_RETRY_MS);
+      await flush(SYNC_RETRY_MS);
+      // No re-dial for this connection; the layout is untouched (empty state).
+      expect(mocks.listTabs).toHaveBeenCalledTimes(1);
+      expect(mocks.syncTabs).not.toHaveBeenCalled();
+      expect(h.tabs()).toEqual([]);
+      await stop(h);
+    });
   });
 
   describe('re-home, teardown and echo races', () => {

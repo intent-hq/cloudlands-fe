@@ -11,6 +11,7 @@
  */
 
 import { Logger } from '../../../shared/logger';
+import { TunnelForbiddenError } from '../../backend/main/tunnel-manager';
 import {
   classifyLoopbackHost,
   rewriteLoopbackUrl,
@@ -279,6 +280,16 @@ export async function resolveRewrittenRemoteTarget(
         remotePort: Number(port),
         error: tunnelError instanceof Error ? tunnelError.message : String(tunnelError),
       });
+      // Owner-only refusal (multiplayer w3): a collaborator credential can
+      // never forward, so the reachability lecture below does not apply.
+      if (tunnelError instanceof TunnelForbiddenError) {
+        return {
+          rewrite,
+          tunneled: false,
+          // i18n-ignore (agent-facing protocol error, not user-facing)
+          error: `${tunnelError.message}: ${rewrite.requestedUrl} lives on the daemon machine's loopback and port ${port} cannot be forwarded for this connection.`,
+        };
+      }
     }
   }
 
