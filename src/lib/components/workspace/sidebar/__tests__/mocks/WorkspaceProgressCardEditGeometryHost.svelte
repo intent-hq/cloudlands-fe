@@ -27,6 +27,9 @@
   onDestroy(disposeStore);
 </script>
 
-<section data-testid="workspace-edit-geometry-host" class="h-96 w-96 overflow-auto bg-sidebar p-6">
+<section
+  data-testid="workspace-edit-geometry-host"
+  class="h-96 w-full max-w-96 overflow-auto bg-sidebar p-6"
+>
   <WorkspaceProgressCard {workspaceId} />
 </section>

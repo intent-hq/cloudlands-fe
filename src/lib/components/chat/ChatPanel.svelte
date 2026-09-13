@@ -218,6 +218,7 @@
     captureScrollAnchor,
     followBottom,
     followToBottom,
+    hasActiveFollowBottomMutation,
     restoreScrollAnchor,
     type FollowBottomState,
   } from '$lib/utils/smartScroll';
@@ -355,7 +356,10 @@
     shouldShowTranscriptSkeleton,
     shouldShowTranscriptUtilityStack,
   } from './chat-panel-visibility';
-  import { isUserQueuedMessage } from '$lib/utils/queued-message-visibility';
+  import {
+    isUserQueuedMessage,
+    omitDrainedQueuedMessages,
+  } from '$lib/utils/queued-message-visibility';
   import {
     findPreviousUserMessage,
     isAutomatedChatMessage,
@@ -751,8 +755,13 @@
 
   // Batch-end callback: one hydratedMessageIds rebuild per policy call, not
   // one per transitioned row (a mass transition would otherwise be O(n²)).
+  // Staged hydration waits out a followed-bottom mutation lease (the events
+  // footer disclosure motion) so a row it sweeps into the preload band does
+  // not mount mid-motion.
   const messageHydrationPolicy = createMessageHydrationPolicy([], {
     onHydrationChange: syncHydratedMessageIds,
+    isHydrationHeld: () =>
+      scrollContainer !== undefined && hasActiveFollowBottomMutation(scrollContainer),
     frameBudgetMs: CHAT_HYDRATION_FRAME_BUDGET_MS,
     maxRowsPerFrame: CHAT_HYDRATION_MAX_ROWS_PER_FRAME,
   });
@@ -979,11 +988,14 @@
     // Reading $agentIsResponding$ keeps this $derived reactive to gate flips
     // that do not change the transcript; the dismissal marker read keeps it
     // reactive to metadata-only session updates (optimistic dismiss /
-    // agent:updated); the shared helper re-reads both from store state.
+    // agent:updated); the queue read keeps it reactive to a tagged answer
+    // entering/leaving the agent's queue; the shared helper re-reads all of
+    // them from store state.
     void $agentIsResponding$;
     void $agentSession$?.metadata?.dismissedQuestionsMessageId;
     void $agentSession$?.metadata?.pendingQuestionsMessageId;
     void $pendingQuestionRecovery$;
+    void $queuedMessages$;
     return deriveWizardPendingQuestions(
       appStore.state,
       agentId,
@@ -1033,7 +1045,12 @@
   // `questions_dismissed`, `source: 'system'`, unknown types) stay hidden —
   // the list, its count, and the up-arrow edit path all use this filtered
   // view (display-only; the daemon queue and drain order are untouched).
-  const visibleQueuedMessages = $derived($queuedMessages$.filter(isUserQueuedMessage));
+  // Entries already drained into the transcript (row stamped with
+  // `queueInfo.queuedMessageId`) are omitted while the shrunk queue snapshot
+  // is still in flight, so an answer never renders twice.
+  const visibleQueuedMessages = $derived(
+    omitDrainedQueuedMessages($queuedMessages$.filter(isUserQueuedMessage), $agentMessages$),
+  );
 
   // Queue visibility around the wizard: hidden while the wizard is expanded,
   // shown while Ignore-collapsed. Derivation shared with the regression suite.
@@ -6401,6 +6418,7 @@
               <EventSubscriptionsCard
                 workspaceId={workspace.id}
                 {agentId}
+                {isActive}
                 compact={isCompactMode}
                 bind:visible={hasVisibleTranscriptUtility}
               />

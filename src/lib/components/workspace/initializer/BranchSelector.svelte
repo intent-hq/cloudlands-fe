@@ -7,6 +7,7 @@
   import Input from '$lib/components/ui/input/input.svelte';
   import { Select } from '$lib/components/ui/select';
   import { Tooltip } from '$lib/components/ui/tooltip';
+  import { toast } from '$lib/components/ui/toast';
   import { debugConfig } from '$lib/config/debug';
   import { createLogger } from '$lib/utils/client-logger';
   import { appClient } from '$lib/client';
@@ -770,6 +771,7 @@
         } else if (err.message === 'GITHUB_NO_ACCESS') {
           // User is authenticated but doesn't have access to this repo
           error = m.workspace_branchSelector_noAccess_error();
+          toast.error(error);
           // githubAuthNeeded is already set to 'no-access'
           return;
         }
@@ -809,6 +811,9 @@
       } else {
         error = m.workspace_branchSelector_fetchBranchesFailedManual_error();
       }
+
+      // Surface the failure without requiring the user to open the dropdown.
+      toast.error(error);
 
       // Never fabricate branch names on failure — the error state renders and
       // the user can still type a branch name manually.

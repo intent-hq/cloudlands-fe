@@ -362,7 +362,8 @@ function getOwnedBrowserTunnelProvider(
  * This is a secure alternative to arbitrary code execution - each action
  * is validated against a known schema before execution.
  *
- * Exported for use by MCP tools.
+ * Exported for use by MCP tools. `deadline` (epoch ms) is the caller's
+ * transport deadline minus margin; capture stages are clamped to it (#4835).
  */
 export async function executeBrowserActions(
   actions: unknown[],
@@ -370,6 +371,7 @@ export async function executeBrowserActions(
   agentId?: string,
   workspaceId?: string,
   backendContext?: BrowserExecutionBackendContext,
+  deadline?: number,
 ): Promise<ExecutionResult> {
   const resolvedBackendContext = backendContext ?? getFocusedBrowserBackendContext();
   return executeActions(
@@ -403,6 +405,7 @@ export async function executeBrowserActions(
     workspaceId,
     () => getDaemonLoopbackContext(resolvedBackendContext),
     () => getOwnedBrowserTunnelProvider(resolvedBackendContext, workspaceId),
+    deadline,
   );
 }
 
@@ -489,12 +492,13 @@ export function registerBrowserHandlers(): void {
     IPC_CHANNELS.BROWSER.REPORT_TAB_BOUNDS,
     createSafeValidatedHandler(
       ReportTabBoundsSchema,
-      async (_event, validated) => {
+      async (event, validated) => {
         if (validated.width !== undefined && validated.height !== undefined) {
+          const zoomFactor = event.sender.getZoomFactor();
           embeddedBrowserCdp.reportTabViewBounds(
             validated.tabId,
-            validated.width,
-            validated.height,
+            validated.width * zoomFactor,
+            validated.height * zoomFactor,
           );
         } else {
           embeddedBrowserCdp.clearTabViewBounds(validated.tabId);

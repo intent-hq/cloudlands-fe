@@ -58,6 +58,22 @@ export function getBatchId(metadata: unknown): string | null {
 }
 
 /**
+ * Extract the id of the queue entry a drained row came from —
+ * `metadata.queueInfo.queuedMessageId` (the `QueuedMessage.id` echoed by
+ * `agent.queueMessage` / `agent:queue:updated`), stamped on every drained
+ * user row on all drain paths. Like `getBatchId`, this skips the wait-field
+ * validation so sub-threshold entries still resolve. Returns the id only
+ * when it is a non-empty string, else `null` (rows from older daemons).
+ */
+export function getQueuedMessageId(metadata: unknown): string | null {
+  if (!metadata || typeof metadata !== 'object') return null;
+  const queueInfo = (metadata as Record<string, unknown>).queueInfo;
+  if (!queueInfo || typeof queueInfo !== 'object') return null;
+  const { queuedMessageId } = queueInfo as Record<string, unknown>;
+  return typeof queuedMessageId === 'string' && queuedMessageId.trim() ? queuedMessageId : null;
+}
+
+/**
  * The deterministic dequeue-wait note intentd appends to drained queue
  * entries: `\n\n[SYSTEM NOTE] This message was queued at <ISO> and waited
  * <duration> before delivery.` Deliberately does NOT match the #576

@@ -24,7 +24,6 @@
   import { TooltipRich } from '$lib/components/ui/tooltip';
   import CheckoutModePill from '$lib/components/workspace/CheckoutModePill.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
-  import { withToastCountdown } from '$lib/components/ui/toast';
   import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import WorkspaceActionsMenu, {
@@ -62,7 +61,10 @@
   import FlameGraph from './FlameGraph.svelte';
   import WorkspaceTokenUsage from './WorkspaceTokenUsage.svelte';
 
-  import { requestDeleteWorkspace } from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
+  import {
+    requestArchiveWorkspace,
+    requestDeleteWorkspace,
+  } from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
   import {
     loadWorkspacesRequested,
     setWorkspaceEntity,
@@ -80,10 +82,11 @@
   import { openTransferModal } from '$store/renderer/slices/workspace-transfer/workspace-transfer-slice';
   import { selectWorkspaceDrivingClient } from '$store/renderer/slices/browser-clients/browser-clients-selectors';
   import { setWorkspaceBrowserClientRequested } from '$store/renderer/slices/browser-clients/browser-clients-slice';
+  import { selectWorkspaceHasBrowserTabs } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
   import DrivingClientIndicator from '$lib/components/workspace/DrivingClientIndicator.svelte';
   import SetPrimaryClientConfirmDialog from '$lib/components/workspace/SetPrimaryClientConfirmDialog.svelte';
-  import { resolveDrivingClientView } from '$lib/components/workspace/driving-indicator';
+  import { resolveDrivingClientSwitch } from '$lib/components/workspace/driving-indicator';
 
   const readyLogger = createLogger('ReadyTasks');
 
@@ -251,35 +254,9 @@
     }
   }
 
-  async function handleArchive() {
+  function handleArchive() {
     if (!$workspace) return;
-    const { toast } = await import('svelte-sonner');
-    const workspaceTitle = $workspace.title || m.workspace_multiSelectSidebar_space_label();
-
-    const result = await workspaceClient.archive($workspace.id);
-    if (result.ok) {
-      appStore.dispatch(loadWorkspacesRequested());
-      toast.warning(
-        m.workspace_multiSelectSidebar_archivedSpace_toast({ title: workspaceTitle }),
-        withToastCountdown(
-          {
-            duration: 15000,
-            action: {
-              label: m.workspace_multiSelectSidebar_undo_label(),
-              onClick: async () => {
-                const undoResult = await workspaceClient.unarchive($workspace.id);
-                if (undoResult.ok) {
-                  appStore.dispatch(loadWorkspacesRequested());
-                }
-              },
-            },
-          },
-          { pauseOnHover: false },
-        ),
-      );
-    } else {
-      toast.error(m.workspace_multiSelectSidebar_archiveFailed_error());
-    }
+    appStore.dispatch(requestArchiveWorkspace($workspace.id));
   }
 
   async function handleUnarchive() {
@@ -447,9 +424,11 @@
   );
 
   // REV-2 driving browser client (spec Model 8): the daemon resolves it; the
-  // indicator renders only when another eligible client could take over.
+  // indicator renders only when the workspace has a browser tab and another
+  // eligible client could take over (or the pin is offline).
   const drivingClient$ = selectWorkspaceDrivingClient(workspaceIdStore);
-  const drivingClientView = $derived(resolveDrivingClientView($drivingClient$));
+  const hasBrowserTabs$ = selectWorkspaceHasBrowserTabs(workspaceIdStore);
+  const drivingClientSwitch = $derived(resolveDrivingClientSwitch($drivingClient$));
 
   // "Set Current Client as Primary": pin this workspace's browser to this
   // app; the daemon also migrates the workspace's claimed (agent-owned) tabs
@@ -461,7 +440,7 @@
 
   const setPrimaryClientAction: MenuAction | null = $derived.by(() => {
     const ownClientId = $drivingClient$.ownClientId;
-    if (!drivingClientView?.canSwitchHere || !ownClientId || !workspaceId) return null;
+    if (!drivingClientSwitch?.canSwitchHere || !ownClientId || !workspaceId) return null;
     return {
       label: m.workspace_drivingClient_setPrimary_label(),
       icon: faGlobe,
@@ -894,7 +873,10 @@
           {/snippet}
 
           {#snippet content()}
-            <div class="w-48">
+            <div
+              class="min-w-48 w-max"
+              style="max-width: min(20rem, calc(var(--bits-dropdown-menu-content-available-width, 100vw) - 0.625rem))"
+            >
               <WorkspaceActionsMenu
                 filePath={$workspace?.worktreePath ||
                   $workspace?.repositoryPath ||
@@ -1041,8 +1023,8 @@
           </TooltipRich>
         {/if}
       </div>
-      <!-- driving browser client (REV-2); renders nothing with one eligible client -->
-      <DrivingClientIndicator {...$drivingClient$} />
+      <!-- driving browser client (REV-2); renders nothing with one eligible client or no browser tabs -->
+      <DrivingClientIndicator {...$drivingClient$} hasBrowserTabs={$hasBrowserTabs$} />
     </div>
   </div>
 
@@ -1274,10 +1256,10 @@
   </div>
 </div>
 
-{#if drivingClientView}
+{#if drivingClientSwitch}
   <SetPrimaryClientConfirmDialog
     open={confirmingSetPrimaryClient}
-    currentHost={drivingClientView.hostName}
+    currentHost={drivingClientSwitch.hostName}
     onConfirm={handleConfirmSetPrimaryClient}
     onCancel={() => (confirmingSetPrimaryClient = false)}
   />

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ProviderCatalogEntry } from '$shared/provider-catalog';
-import { mapTestPromptFailure, providerSupportsTestPrompt } from './onboarding-test-prompt';
+import { mapTestPromptFailure, shouldRunOnboardingTestPrompt } from './onboarding-test-prompt';
 
 function entry(overrides: Partial<ProviderCatalogEntry> = {}): ProviderCatalogEntry {
   return {
@@ -14,15 +14,33 @@ function entry(overrides: Partial<ProviderCatalogEntry> = {}): ProviderCatalogEn
   };
 }
 
-describe('providerSupportsTestPrompt', () => {
-  it('is true only for an explicit supportsTestPrompt: true', () => {
-    expect(providerSupportsTestPrompt(entry({ supportsTestPrompt: true }))).toBe(true);
-    expect(providerSupportsTestPrompt(entry({ supportsTestPrompt: false }))).toBe(false);
+describe('shouldRunOnboardingTestPrompt', () => {
+  it('tests Claude Code only when the daemon supports test prompts', () => {
+    expect(shouldRunOnboardingTestPrompt(entry({ supportsTestPrompt: true }))).toBe(true);
+    expect(shouldRunOnboardingTestPrompt(entry({ supportsTestPrompt: false }))).toBe(false);
   });
 
   it('treats an absent flag (pre-v9.3 daemon) and a missing entry as unsupported', () => {
-    expect(providerSupportsTestPrompt(entry())).toBe(false);
-    expect(providerSupportsTestPrompt(undefined)).toBe(false);
+    expect(shouldRunOnboardingTestPrompt(entry())).toBe(false);
+    expect(shouldRunOnboardingTestPrompt(undefined)).toBe(false);
+  });
+
+  it.each([
+    'auggie',
+    'codex',
+    'cortex',
+    'opencode',
+    'pi',
+    'droid',
+    'grok',
+    'unsloth',
+    'antigravity',
+    'mock',
+    'future-provider',
+  ])('skips %s even when the provider supports test prompts', (providerId) => {
+    expect(shouldRunOnboardingTestPrompt(entry({ id: providerId, supportsTestPrompt: true }))).toBe(
+      false,
+    );
   });
 });
 
@@ -36,7 +54,7 @@ describe('mapTestPromptFailure', () => {
     expect(guidance.isAuthRequired).toBe(true);
     expect(guidance.loginCommandHint).toBe('claude auth login');
     expect(guidance.loginDocsUrl).toBe('https://docs.example');
-    expect(guidance.showClaudeDesktopNote).toBe(true);
+    expect(guidance.showClaudeLoginButton).toBe(true);
     expect(guidance.message).toContain('Claude Code');
   });
 
@@ -48,7 +66,7 @@ describe('mapTestPromptFailure', () => {
     );
     expect(guidance.loginCommandHint).toBe('codex login');
     expect(guidance.loginDocsUrl).toBeUndefined();
-    expect(guidance.showClaudeDesktopNote).toBe(false);
+    expect(guidance.showClaudeLoginButton).toBe(false);
   });
 
   it('auth-required with no catalog entry falls back to "<providerId> login"', () => {
@@ -67,7 +85,7 @@ describe('mapTestPromptFailure', () => {
       entry({ id: 'codex', displayName: 'Codex', command: 'codex' }),
       'codex',
     );
-    expect(other.showClaudeDesktopNote).toBe(false);
+    expect(other.showClaudeLoginButton).toBe(false);
   });
 
   it('non-auth reasons carry no login affordances and no refresh flag', () => {
@@ -79,7 +97,7 @@ describe('mapTestPromptFailure', () => {
       );
       expect(guidance.isAuthRequired).toBe(false);
       expect(guidance.loginCommandHint).toBeUndefined();
-      expect(guidance.showClaudeDesktopNote).toBe(false);
+      expect(guidance.showClaudeLoginButton).toBe(false);
       expect(guidance.message).not.toEqual('');
     }
   });

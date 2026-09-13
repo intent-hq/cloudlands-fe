@@ -40,6 +40,10 @@ vi.mock('../main/embedded-browser-cdp-service', () => ({
     // Default: capture targets are already mounted so the mount-on-demand
     // path (monorepo#4103) stays out of unrelated tests.
     isTabMounted: vi.fn().mockReturnValue(true),
+    // Default: the capture target's guest is settled (not loading) so the
+    // still-loading / navigated-away checks (intent#4835) stay out of
+    // unrelated tests.
+    waitForTabLoad: vi.fn().mockResolvedValue({ loading: false, url: '' }),
     screenshot: vi.fn().mockResolvedValue({ base64: '', width: 0, height: 0 }),
     getAccessibilityTree: vi.fn().mockResolvedValue(''),
     snapshot: vi.fn().mockResolvedValue(''),
@@ -1356,7 +1360,9 @@ describe('browser-action-executor', () => {
       // The capture path passes its own shorter registration budget so a
       // mount + capture fits inside intentd's 20s batch deadline.
       expect(embeddedBrowserCdp.waitForTabRegistration).toHaveBeenCalledWith('tab-hidden', 10_000);
-      expect(embeddedBrowserCdp.screenshot).toHaveBeenCalledWith('tab-hidden');
+      expect(embeddedBrowserCdp.screenshot).toHaveBeenCalledWith('tab-hidden', {
+        deadline: undefined,
+      });
       expect(result.results[0]?.warning).toContain('not currently visible');
     });
 
@@ -1521,7 +1527,241 @@ describe('browser-action-executor', () => {
 
       expect(result.success).toBe(true);
       expect(embeddedBrowserCdp.listAllTabs).not.toHaveBeenCalled();
-      expect(embeddedBrowserCdp.screenshot).toHaveBeenCalledWith('tab-1');
+      expect(embeddedBrowserCdp.screenshot).toHaveBeenCalledWith('tab-1', { deadline: undefined });
+    });
+  });
+
+  // =========================================================================
+  // Capture ops bounded by the request deadline + truthful guest state
+  // (intent-hq/intent#4835)
+  // =========================================================================
+  describe('capture request deadline and guest state (#4835)', () => {
+    const REGISTRY_URL = 'http://127.0.0.1:5199/';
+    const hiddenTabList = {
+      tabs: [
+        {
+          tabId: 'tab-hidden',
+          webContentsId: -1,
+          url: REGISTRY_URL,
+          title: 'Dev',
+          mounted: false,
+          ownerAgentId: 'agent-1',
+          hidden: true,
+        },
+      ],
+      stale: false,
+    };
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-09-12T12:00:00Z'));
+    });
+
+    afterEach(async () => {
+      vi.useRealTimers();
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.isTabMounted).mockReturnValue(true);
+      vi.mocked(embeddedBrowserCdp.listAllTabs).mockResolvedValue({ tabs: [], stale: false });
+      vi.mocked(embeddedBrowserCdp.waitForTabRegistration).mockResolvedValue(true);
+      vi.mocked(embeddedBrowserCdp.waitForTabLoad).mockResolvedValue({ loading: false, url: '' });
+      mockGetWindowIdForWorkspace.mockReturnValue(1);
+    });
+
+    async function mountOnDemand() {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.isTabMounted).mockReturnValue(false);
+      vi.mocked(embeddedBrowserCdp.listAllTabs).mockResolvedValue(hiddenTabList as any);
+      vi.mocked(embeddedBrowserCdp.waitForTabRegistration).mockResolvedValue(true);
+      return embeddedBrowserCdp;
+    }
+
+    it('threads the deadline into every capture stage and the service call', async () => {
+      const embeddedBrowserCdp = await mountOnDemand();
+      vi.mocked(embeddedBrowserCdp.screenshot).mockResolvedValue({ data: 'img' } as any);
+      const deadline = Date.now() + 18_000;
+
+      const result = await executeActions(
+        { actions: [{ action: 'screenshot', tabId: 'tab-hidden' }] },
+        undefined,
+        undefined,
+        'workspace-a',
+        undefined,
+        undefined,
+        deadline,
+      );
+
+      expect(result.success).toBe(true);
+      // Mount wait keeps its own cap when the budget is larger.
+      expect(embeddedBrowserCdp.waitForTabRegistration).toHaveBeenCalledWith('tab-hidden', 10_000);
+      expect(embeddedBrowserCdp.waitForTabLoad).toHaveBeenCalledWith('tab-hidden', 5_000);
+      expect(embeddedBrowserCdp.screenshot).toHaveBeenCalledWith('tab-hidden', { deadline });
+    });
+
+    it('slow mount: clamps the registration wait to the remaining budget and names the stage', async () => {
+      const embeddedBrowserCdp = await mountOnDemand();
+      vi.mocked(embeddedBrowserCdp.waitForTabRegistration).mockResolvedValue(false);
+      mockGetWindowIdForWorkspace.mockReturnValue(undefined);
+
+      const result = await executeActions(
+        { actions: [{ action: 'screenshot', tabId: 'tab-hidden' }] },
+        undefined,
+        undefined,
+        'workspace-a',
+        undefined,
+        undefined,
+        Date.now() + 3_000,
+      );
+
+      expect(embeddedBrowserCdp.waitForTabRegistration).toHaveBeenCalledWith('tab-hidden', 3_000);
+      expect(result.success).toBe(false);
+      expect(result.results[0]).toMatchObject({
+        action: 'screenshot',
+        success: false,
+        errorCode: 'deadline-exhausted',
+      });
+      expect(result.results[0]?.error).toContain('did not mount within the 3000ms left');
+      expect(embeddedBrowserCdp.screenshot).not.toHaveBeenCalled();
+    });
+
+    it('fails before the mount nudge when the deadline is already exhausted', async () => {
+      const embeddedBrowserCdp = await mountOnDemand();
+
+      const result = await executeActions(
+        { actions: [{ action: 'evaluate', tabId: 'tab-hidden', expression: '1' }] },
+        undefined,
+        undefined,
+        'workspace-a',
+        undefined,
+        undefined,
+        Date.now() - 1,
+      );
+
+      expect(result.results[0]).toMatchObject({
+        action: 'evaluate',
+        success: false,
+        errorCode: 'deadline-exhausted',
+      });
+      expect(embeddedBrowserCdp.listAllTabs).not.toHaveBeenCalled();
+      expect(embeddedBrowserCdp.waitForTabRegistration).not.toHaveBeenCalled();
+      expect(embeddedBrowserCdp.evaluate).not.toHaveBeenCalled();
+    });
+
+    it('loading guest: answers still-loading instead of capturing, with the settle wait clamped', async () => {
+      const embeddedBrowserCdp = await mountOnDemand();
+      vi.mocked(embeddedBrowserCdp.waitForTabLoad).mockResolvedValue({
+        loading: true,
+        url: REGISTRY_URL,
+      });
+
+      const result = await executeActions(
+        {
+          actions: [
+            { action: 'evaluate', tabId: 'tab-hidden', expression: 'document.body.innerText' },
+          ],
+        },
+        undefined,
+        undefined,
+        'workspace-a',
+        undefined,
+        undefined,
+        Date.now() + 2_000,
+      );
+
+      expect(embeddedBrowserCdp.waitForTabLoad).toHaveBeenCalledWith('tab-hidden', 2_000);
+      expect(result.success).toBe(false);
+      expect(result.results[0]).toMatchObject({
+        action: 'evaluate',
+        success: false,
+        errorCode: 'still-loading',
+      });
+      expect(result.results[0]?.error).toContain(REGISTRY_URL);
+      expect(result.results[0]?.error).toContain('still loading after waiting 2000ms');
+      expect(embeddedBrowserCdp.evaluate).not.toHaveBeenCalled();
+    });
+
+    it('checks the guest state on already-mounted tabs too (no deadline: own cap)', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.waitForTabLoad).mockResolvedValue({
+        loading: true,
+        url: 'http://localhost:3000/',
+      });
+
+      const result = await executeActions(
+        { actions: [{ action: 'getAccessibilityTree', tabId: 'tab-1' }] },
+        undefined,
+        undefined,
+        'workspace-a',
+      );
+
+      expect(embeddedBrowserCdp.waitForTabLoad).toHaveBeenCalledWith('tab-1', 5_000);
+      expect(result.results[0]?.errorCode).toBe('still-loading');
+      expect(embeddedBrowserCdp.getAccessibilityTree).not.toHaveBeenCalled();
+    });
+
+    it('navigated-away: a mounted-on-demand guest showing another origin is reported, not captured', async () => {
+      const embeddedBrowserCdp = await mountOnDemand();
+      vi.mocked(embeddedBrowserCdp.waitForTabLoad).mockResolvedValue({
+        loading: false,
+        url: 'http://127.0.0.1:5200/',
+      });
+
+      const result = await executeActions(
+        { actions: [{ action: 'screenshot', tabId: 'tab-hidden' }] },
+        undefined,
+        undefined,
+        'workspace-a',
+      );
+
+      expect(result.results[0]).toMatchObject({
+        action: 'screenshot',
+        success: false,
+        errorCode: 'navigated-away',
+      });
+      expect(result.results[0]?.error).toContain('http://127.0.0.1:5200/');
+      expect(result.results[0]?.error).toContain(REGISTRY_URL);
+      expect(embeddedBrowserCdp.screenshot).not.toHaveBeenCalled();
+    });
+
+    it('a same-origin path change (client-side routing) is not navigated-away', async () => {
+      const embeddedBrowserCdp = await mountOnDemand();
+      vi.mocked(embeddedBrowserCdp.waitForTabLoad).mockResolvedValue({
+        loading: false,
+        url: 'http://127.0.0.1:5199/workspace/abc',
+      });
+      vi.mocked(embeddedBrowserCdp.screenshot).mockResolvedValue({ data: 'img' } as any);
+
+      const result = await executeActions(
+        { actions: [{ action: 'screenshot', tabId: 'tab-hidden' }] },
+        undefined,
+        undefined,
+        'workspace-a',
+      );
+
+      expect(result.success).toBe(true);
+      expect(embeddedBrowserCdp.screenshot).toHaveBeenCalledTimes(1);
+    });
+
+    it('surfaces the service stage errorCode (not-painting / deadline-exhausted) on the action result', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      const notPainting = Object.assign(
+        new Error('Screenshot capture failed: CDP stage: x; Electron fallback stage: not painting'),
+        { errorCode: 'not-painting', stage: 'capturePage' },
+      );
+      vi.mocked(embeddedBrowserCdp.screenshot).mockRejectedValueOnce(notPainting);
+
+      const result = await executeActions(
+        { actions: [{ action: 'screenshot', tabId: 'tab-1' }] },
+        undefined,
+        undefined,
+        'workspace-a',
+      );
+
+      expect(result.results[0]).toMatchObject({
+        action: 'screenshot',
+        success: false,
+        errorCode: 'not-painting',
+        error: notPainting.message,
+      });
     });
   });
 

@@ -25,6 +25,41 @@ const transcriptInsetCases = [
   },
 ] as const;
 
+// Sample every column in one frame: separate boundingBox() round trips can
+// straddle a layout pass and skew widths and centers independently.
+const columnRects = (component: Locator) =>
+  component.evaluate((root) => {
+    const rect = (testId: string) => {
+      const box = root.querySelector(`[data-testid="${testId}"]`)!.getBoundingClientRect();
+      return { x: box.x, width: box.width };
+    };
+    return {
+      transcript: rect('chat-transcript-inner'),
+      composer: rect('chat-composer-controls-inner'),
+      composerLane: rect('chat-composer-lane'),
+      shell: rect('chat-composer-shell'),
+      promptLayer: rect('composer-prompt-layer'),
+    };
+  });
+
+// Wait until the transcript/composer geometry converges: the scrollbar gutter
+// can lag the resize by a frame and skew the transcript width and center.
+async function settleColumns(component: Locator, expectedWidthDelta: number) {
+  await expect
+    .poll(async () => {
+      const { transcript, composer, composerLane } = await columnRects(component);
+      return {
+        laneMatchesTranscript: Math.abs(transcript.width - composerLane.width) <= 1,
+        composerInset:
+          transcript.width > 0 &&
+          Math.abs(transcript.width - composer.width - expectedWidthDelta) <= 1,
+        composerCentered: Math.abs(center(transcript) - center(composer)) <= 0.5,
+      };
+    })
+    .toEqual({ laneMatchesTranscript: true, composerInset: true, composerCentered: true });
+  return columnRects(component);
+}
+
 const bottomSurfaceGeometry = (locator: Locator) =>
   locator.evaluate((node) => {
     const box = node.getBoundingClientRect();
@@ -63,7 +98,6 @@ test('caps and centers transcript, prompt, and composer at the shared 140em meas
     props: { theme: 'light', zoom: 1, width: 3000 },
   });
   const transcript = component.getByTestId('chat-transcript-inner');
-  const composer = component.getByTestId('chat-composer-controls-inner');
   const composerLane = component.getByTestId('chat-composer-lane');
   const shell = component.getByTestId('chat-composer-shell');
   const promptLayer = component.getByTestId('composer-prompt-layer');
@@ -80,26 +114,17 @@ test('caps and centers transcript, prompt, and composer at the shared 140em meas
         };
       });
       expect(sharedMeasure.maxWidth / sharedMeasure.fontSize).toBeCloseTo(140, 5);
-      await expect
-        .poll(async () => {
-          const [transcriptBox, composerLaneBox] = await Promise.all([
-            transcript.boundingBox(),
-            composerLane.boundingBox(),
-          ]);
-          return Math.abs(transcriptBox!.width - composerLaneBox!.width);
-        })
-        .toBeLessThanOrEqual(1);
-      const [transcriptBox, composerBox, composerLaneBox, shellBox, promptBox] = await Promise.all([
-        transcript.boundingBox(),
-        composer.boundingBox(),
-        composerLane.boundingBox(),
-        shell.boundingBox(),
-        promptLayer.boundingBox(),
-      ]);
-      expect(composerLaneBox!.width).toBeCloseTo(transcriptBox!.width, 1);
-      expect(composerBox!.width).toBeCloseTo(transcriptBox!.width - 48 * zoom, 1);
-      expect(Math.abs(center(transcriptBox!) - center(composerBox!))).toBeLessThanOrEqual(0.5);
-      expect(promptBox!.width).toBeCloseTo(shellBox!.width, 1);
+      const {
+        transcript: transcriptBox,
+        composer: composerBox,
+        composerLane: composerLaneBox,
+        shell: shellBox,
+        promptLayer: promptBox,
+      } = await settleColumns(component, 48 * zoom);
+      expect(composerLaneBox.width).toBeCloseTo(transcriptBox.width, 1);
+      expect(composerBox.width).toBeCloseTo(transcriptBox.width - 48 * zoom, 1);
+      expect(Math.abs(center(transcriptBox) - center(composerBox))).toBeLessThanOrEqual(0.5);
+      expect(promptBox.width).toBeCloseTo(shellBox.width, 1);
       const panel = component.locator('.panel');
       const [auroraGeometry, shellGeometry, panelContentGeometry] = await Promise.all([
         bottomSurfaceGeometry(aurora),
@@ -235,7 +260,6 @@ test('keeps the nested composer inset without a narrow scroll owner', async ({ m
     props: { theme: 'light', zoom: 1, width: 360 },
   });
   const transcript = component.getByTestId('chat-transcript-inner');
-  const composer = component.getByTestId('chat-composer-controls-inner');
   const composerLane = component.getByTestId('chat-composer-lane');
   const viewport = component.getByTestId('chat-transcript-scroll-viewport');
   const aurora = component.getByTestId('composer-aurora-host');
@@ -244,31 +268,16 @@ test('keeps the nested composer inset without a narrow scroll owner', async ({ m
   for (const theme of ['light', 'dark'] as const) {
     for (const zoom of [1, 2]) {
       await component.update({ props: { theme, zoom, width: 360 } });
-      // Wait until the transcript/composer widths converge: the scrollbar
-      // gutter can lag the resize by a frame and skew the transcript width.
-      await expect
-        .poll(async () => {
-          const [transcriptWidth, composerWidth] = await Promise.all([
-            transcript.boundingBox().then((box) => box?.width ?? 0),
-            composer.boundingBox().then((box) => box?.width ?? 0),
-          ]);
-          return transcriptWidth > 0
-            ? Math.abs(transcriptWidth - composerWidth - 32 * zoom)
-            : Infinity;
-        })
-        .toBeLessThanOrEqual(1);
-      const [transcriptBox, composerBox] = await Promise.all([
-        transcript.boundingBox(),
-        composer.boundingBox(),
-      ]);
-      expect(Math.abs(transcriptBox!.width - composerBox!.width - 32 * zoom)).toBeLessThanOrEqual(
-        1,
+      const { transcript: transcriptBox, composer: composerBox } = await settleColumns(
+        component,
+        32 * zoom,
       );
-      expect(Math.abs(center(transcriptBox!) - center(composerBox!))).toBeLessThanOrEqual(0.5);
+      expect(Math.abs(transcriptBox.width - composerBox.width - 32 * zoom)).toBeLessThanOrEqual(1);
+      expect(Math.abs(center(transcriptBox) - center(composerBox))).toBeLessThanOrEqual(0.5);
       await expect(composerLane).toHaveCSS('padding-left', '16px');
       await expect(composerLane).toHaveCSS('padding-right', '16px');
       await expect(composerLane).toHaveCSS('padding-bottom', '16px');
-      expect(transcriptBox!.width).toBeLessThanOrEqual(360 * zoom);
+      expect(transcriptBox.width).toBeLessThanOrEqual(360 * zoom);
       expect(await transcript.evaluate((node) => node.scrollWidth <= node.clientWidth + 0.5)).toBe(
         true,
       );

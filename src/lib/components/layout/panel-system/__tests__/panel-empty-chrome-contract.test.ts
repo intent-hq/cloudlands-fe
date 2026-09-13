@@ -1,3 +1,5 @@
+// @verify-changed-triggers: src/**/*.svelte, src/app.css
+
 import { readFileSync, readdirSync } from 'node:fs';
 import { extname, join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';

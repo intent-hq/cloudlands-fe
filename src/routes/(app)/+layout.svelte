@@ -7,7 +7,7 @@
 
   import {
     initializeReleaseNotes,
-    closeReleaseNotesModal,
+    dismissReleaseNotes,
   } from '$store/renderer/slices/release-notes/release-notes-slice';
   import {
     selectShowReleaseNotesModal,
@@ -1081,7 +1081,7 @@
     <ReleaseNotesModal
       open={$showReleaseNotesModal$}
       releaseNotes={$releaseNotes$}
-      onClose={() => appStore.dispatch(closeReleaseNotesModal())}
+      onClose={() => appStore.dispatch(dismissReleaseNotes())}
     />
   {/if}
 
