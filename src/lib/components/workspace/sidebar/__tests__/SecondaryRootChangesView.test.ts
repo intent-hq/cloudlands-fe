@@ -101,6 +101,14 @@ vi.mock('$store/renderer/slices/workspace-navigation/workspace-navigation-slice'
     type: 'workspaceNavigation/openWorkspaceCommitChangeset',
     payload: args,
   })),
+  openWorkspaceDiff: vi.fn((...args: unknown[]) => ({
+    type: 'workspaceNavigation/openWorkspaceDiff',
+    payload: args,
+  })),
+}));
+
+vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
+  selectFocusedPanelId: { select: vi.fn(() => 'panel-focused') },
 }));
 
 vi.mock('$lib/utils/clipboard', () => ({
@@ -438,6 +446,108 @@ describe('SecondaryRootChangesView', () => {
         '1 file changed in Workspace',
       ),
     );
+  });
+
+  describe('changed-file rows', () => {
+    function diffActions() {
+      return mocks.dispatch.mock.calls
+        .map(([action]) => action)
+        .filter((action) => action.type === 'workspaceNavigation/openWorkspaceDiff');
+    }
+
+    async function renderRows() {
+      const status = makeStatus('main');
+      status.files = [
+        { path: 'src/unstaged.ts', status: 'M', staged: false },
+        { path: 'src/staged.ts', status: 'A', staged: true },
+      ];
+      mocks.getStatus.mockResolvedValue({ ok: true, data: status });
+      const view = await renderView(makeEntry('main', 'root-9'));
+      const rows = await waitFor(() => {
+        const found = view.getAllByTestId('secondary-root-file-open');
+        expect(found).toHaveLength(2);
+        return found;
+      });
+      return { ...view, rows };
+    }
+
+    it('opens a root-scoped unstaged diff with the root-relative path and absolute file', async () => {
+      const { rows } = await renderRows();
+      expect(rows[0].tagName).toBe('BUTTON');
+
+      await fireEvent.click(rows[0]);
+
+      const [action] = diffActions();
+      expect(action.payload[0]).toBe('ws-1');
+      expect(action.payload[1]).toMatchObject({
+        id: 'root-root-9-unstaged-src/unstaged.ts',
+        file: 'packages/sub/src/unstaged.ts',
+        relativePath: 'src/unstaged.ts',
+        stage: 'unstaged',
+        status: 'modified',
+        stats: { additions: 0, deletions: 0 },
+        attribution: { manual: true },
+      });
+      expect(action.payload[2]).toEqual({
+        gitRootId: 'root-9',
+        gitRootPath: 'packages/sub',
+        filePath: 'packages/sub/src/unstaged.ts',
+        changeId: 'root-root-9-unstaged-src/unstaged.ts',
+        openInAdjacentPanel: false,
+        sourcePanelId: 'panel-focused',
+      });
+    });
+
+    it('opens a staged file as a Staged change with the porcelain status mapped', async () => {
+      const { rows } = await renderRows();
+
+      await fireEvent.click(rows[1]);
+
+      const [action] = diffActions();
+      expect(action.payload[1]).toMatchObject({
+        relativePath: 'src/staged.ts',
+        stage: 'staged',
+        status: 'added',
+      });
+      expect(action.payload[2]).toMatchObject({
+        gitRootId: 'root-9',
+        gitRootPath: 'packages/sub',
+        changeId: 'root-root-9-staged-src/staged.ts',
+      });
+    });
+
+    it('keeps the changeId stable across re-clicks so the existing tab is focused', async () => {
+      const { rows } = await renderRows();
+
+      await fireEvent.click(rows[0]);
+      await fireEvent.click(rows[0]);
+
+      const [first, second] = diffActions();
+      expect(second.payload[2].changeId).toBe(first.payload[2].changeId);
+      expect(second.payload[1].id).toBe(first.payload[1].id);
+    });
+
+    it('opens in the adjacent panel on a platform modifier click', async () => {
+      const { rows } = await renderRows();
+      const isMac = navigator.platform.toUpperCase().includes('MAC');
+
+      await fireEvent.click(rows[0], isMac ? { metaKey: true } : { ctrlKey: true });
+
+      const [action] = diffActions();
+      expect(action.payload[2]).toMatchObject({
+        openInAdjacentPanel: true,
+        sourcePanelId: 'panel-focused',
+      });
+    });
+
+    it('renders no staging or revert affordances on the read-only rows', async () => {
+      const { queryByTestId, queryAllByRole } = await renderRows();
+
+      expect(queryByTestId('stage-btn')).toBeNull();
+      expect(queryByTestId('unstage-btn')).toBeNull();
+      expect(queryByTestId('revert-btn')).toBeNull();
+      expect(queryAllByRole('button', { name: /^(un)?stage\b|^revert\b/i })).toHaveLength(0);
+    });
   });
 
   it('keeps an empty root in the no-changes state without a summary affordance', async () => {

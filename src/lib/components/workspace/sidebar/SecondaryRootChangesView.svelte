@@ -11,8 +11,10 @@
   import type { WorkspaceGitRootEntry } from '$store/renderer/slices/git-roots/git-roots-selectors';
   import {
     openWorkspaceCommitChangeset,
+    openWorkspaceDiff,
     openWorkspaceLocalChanges,
   } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
+  import { selectFocusedPanelId } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import { store as appStore } from '$store/renderer/store';
   import {
     emptySecondaryRootState,
@@ -22,7 +24,13 @@
     loadSecondaryRootCommitFiles,
     loadSecondaryRootGit,
   } from '$store/renderer/slices/git/git-slice';
-  import type { CommitInfo } from '$shared/types';
+  import {
+    ChangeStage,
+    type FileChangeStatus,
+    type TrackedChange,
+  } from '$features/file-tracking/types';
+  import type { CommitInfo, FileStatus } from '$shared/types';
+  import { isCmdClickModifier } from '$shared/utils/link-helpers';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import FileRow from '$lib/components/file-tracking/accept-changes/FileRow.svelte';
   import type { UIFileChange } from '$lib/components/file-tracking/accept-changes/types';
@@ -137,6 +145,51 @@
     appStore.dispatch(openWorkspaceLocalChanges(workspaceId, { gitRootId }));
   }
 
+  // Porcelain status char → TrackedChange status (GitFileStatus wire values)
+  function changeStatus(statusChar: string): FileChangeStatus {
+    switch (statusChar) {
+      case 'A':
+      case '?':
+        return 'added';
+      case 'D':
+        return 'deleted';
+      case 'R':
+        return 'renamed';
+      default:
+        return 'modified';
+    }
+  }
+
+  // Open a root-scoped diff tab for a working-tree file. `relativePath` stays
+  // root-relative for the gitRootId-scoped reads; `file` / `filePath` carry the
+  // root-absolute path so the tab identity cannot collide with a primary-root
+  // file at the same relative path.
+  function openFileDiff(file: FileStatus, event?: MouseEvent | KeyboardEvent) {
+    const rootPath = entry.path ?? '';
+    const filePath = rootPath ? `${rootPath}/${file.path}` : file.path;
+    const changeId = `root-${gitRootId}-${file.staged ? 'staged' : 'unstaged'}-${file.path}`;
+    const change: TrackedChange = {
+      id: changeId,
+      file: filePath,
+      relativePath: file.path,
+      status: changeStatus(file.status),
+      stage: file.staged ? ChangeStage.Staged : ChangeStage.Unstaged,
+      stats: { additions: 0, deletions: 0 },
+      attribution: { manual: true, timestamp: Date.now() },
+    };
+    const sourcePanelId = selectFocusedPanelId.select(appStore.state, workspaceId) ?? undefined;
+    appStore.dispatch(
+      openWorkspaceDiff(workspaceId, change, {
+        gitRootId,
+        gitRootPath: rootPath || undefined,
+        filePath,
+        changeId,
+        openInAdjacentPanel: event ? isCmdClickModifier({ event }) : false,
+        sourcePanelId,
+      }),
+    );
+  }
+
   // Prefer the freshly loaded status over the cached git-root list entry so
   // a refresh after a branch checkout shows the new branch immediately.
   const branchName = $derived(status?.branch || entry.branch || '');
@@ -231,16 +284,30 @@
       {#if status && status.files.length > 0}
         <ul class="flex flex-col">
           {#each status.files as file (`${file.staged}:${file.path}`)}
-            <li class="flex items-center gap-1.5 py-0.5 min-w-0 text-xs">
-              <span class="shrink-0 w-3 text-center font-mono {statusColor(file.status)}"
-                >{file.status}</span
+            <li class="min-w-0">
+              <Button
+                type="button"
+                variant="plain"
+                class="flex h-auto w-full min-w-0 cursor-pointer items-center justify-start gap-1.5 rounded !px-1 -mx-1 py-0.5 text-left text-xs font-inherit hover:bg-muted focus-visible:bg-muted"
+                title={file.path}
+                data-testid="secondary-root-file-open"
+                onclick={(event: MouseEvent) => openFileDiff(file, event)}
+                onkeydown={(event: KeyboardEvent) => {
+                  if (event.key !== 'Enter' || !isCmdClickModifier({ event })) return;
+                  event.preventDefault();
+                  openFileDiff(file, event);
+                }}
               >
-              <span class="truncate min-w-0 text-foreground" title={file.path}>{file.path}</span>
-              {#if file.staged}
-                <span class="shrink-0 px-1 py-px rounded bg-muted text-muted-foreground text-xs"
-                  >{m.workspace_fileChanges_staged_label()}</span
+                <span class="shrink-0 w-3 text-center font-mono {statusColor(file.status)}"
+                  >{file.status}</span
                 >
-              {/if}
+                <span class="truncate min-w-0 text-foreground">{file.path}</span>
+                {#if file.staged}
+                  <span class="shrink-0 px-1 py-px rounded bg-muted text-muted-foreground text-xs"
+                    >{m.workspace_fileChanges_staged_label()}</span
+                  >
+                {/if}
+              </Button>
             </li>
           {/each}
         </ul>
