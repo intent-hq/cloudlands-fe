@@ -64,7 +64,9 @@ for (const scene of stackedRows) {
       expect(pullRequestsBox).not.toBeNull();
       expect(activityBox!.width).toBeCloseTo(pullRequestsBox!.width, 0);
       expect(activityBox!.x).toBeCloseTo(pullRequestsBox!.x, 0);
-      expect(pullRequestsBox!.y).toBeGreaterThanOrEqual(activityBox!.y + activityBox!.height + 15);
+      const sectionGap = pullRequestsBox!.y - (activityBox!.y + activityBox!.height);
+      expect(sectionGap).toBeGreaterThanOrEqual(8);
+      expect(sectionGap).toBeLessThanOrEqual(10);
     } else {
       expect(pullRequestsBox).toBeNull();
     }
@@ -108,7 +110,9 @@ test('keeps the narrow stacked fixture inside the viewport without clipping', as
   expect(await pullRequests.evaluate((node) => getComputedStyle(node).borderTopWidth)).toBe('0px');
   expect(activityBox).not.toBeNull();
   expect(pullRequestsBox).not.toBeNull();
-  expect(pullRequestsBox!.y).toBeGreaterThanOrEqual(activityBox!.y + activityBox!.height + 15);
+  const sectionGap = pullRequestsBox!.y - (activityBox!.y + activityBox!.height);
+  expect(sectionGap).toBeGreaterThanOrEqual(8);
+  expect(sectionGap).toBeLessThanOrEqual(10);
   await expect(card.locator('[data-workspace-hover-card-agent-time]')).toBeVisible();
   await expect(card.locator('[data-workspace-hover-card-agent-context]')).toBeVisible();
   expect(await card.evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
@@ -131,7 +135,10 @@ test('uses the workspace row medium corner radius', async ({ mount, page }) => {
   expect(radii.card).toBe(radii.workspaceRow);
 });
 
-test('uses an even vertical rhythm across the header metadata', async ({ mount, page }) => {
+test('uses a tighter title-to-repo gap than the remaining header metadata', async ({
+  mount,
+  page,
+}) => {
   await page.setViewportSize({ width: 720, height: 640 });
   const preview = await mount(WorkspaceHoverCardPreview, {
     props: fixture('working'),
@@ -148,9 +155,8 @@ test('uses an even vertical rhythm across the header metadata', async ({ mount, 
   expect(summaryBox).not.toBeNull();
   const titleToRepo = repoBox!.y - (titleBox!.y + titleBox!.height);
   const repoToSummary = summaryBox!.y - (repoBox!.y + repoBox!.height);
-  expect(titleToRepo).toBeCloseTo(4, 0);
+  expect(titleToRepo).toBeCloseTo(2, 0);
   expect(repoToSummary).toBeCloseTo(4, 0);
-  expect(Math.abs(titleToRepo - repoToSummary)).toBeLessThanOrEqual(1);
 });
 
 test('places the status indicator after its right-aligned label', async ({ mount, page }) => {
@@ -246,7 +252,7 @@ test('uses caption typography for metadata while primary labels remain body-size
   expect(typography.primary).toEqual(Array(3).fill(typography.body));
 });
 
-test('aligns PR icons and titles with agent rows', async ({ mount, page }) => {
+test('left-aligns agent and PR icons with the header title', async ({ mount, page }) => {
   await page.setViewportSize({ width: 720, height: 640 });
   const preview = await mount(WorkspaceHoverCardPreview, {
     props: fixture('working'),
@@ -254,21 +260,20 @@ test('aligns PR icons and titles with agent rows', async ({ mount, page }) => {
   const card = preview.locator('[data-workspace-hover-card]');
   const agentRow = card.locator('[data-workspace-hover-card-agent-row]').first();
   const prRow = card.locator('[data-workspace-hover-card-pr-row]').first();
-  const [agentIcon, prIcon, agentName, prTitle] = await Promise.all([
+  const [title, agentIcon, prIcon] = await Promise.all([
+    card.locator('[data-workspace-hover-card-title]').boundingBox(),
     agentRow.locator('svg').first().boundingBox(),
     prRow.locator('svg').first().boundingBox(),
-    agentRow.locator('[data-workspace-hover-card-agent-name]').boundingBox(),
-    prRow.locator('[data-workspace-hover-card-pr-title]').boundingBox(),
   ]);
 
+  expect(title).not.toBeNull();
   expect(agentIcon).not.toBeNull();
   expect(prIcon).not.toBeNull();
-  expect(agentName).not.toBeNull();
-  expect(prTitle).not.toBeNull();
   expect(prIcon!.width).toBeCloseTo(18, 0);
   expect(prIcon!.height).toBeCloseTo(18, 0);
-  expect(prIcon!.x + prIcon!.width / 2).toBeCloseTo(agentIcon!.x + agentIcon!.width / 2, 0);
-  expect(prTitle!.x).toBeCloseTo(agentName!.x, 0);
+  expect(agentIcon!.x).toBeCloseTo(title!.x, 0);
+  expect(prIcon!.x).toBeCloseTo(title!.x, 0);
+  expect(Math.abs(prIcon!.x - agentIcon!.x)).toBeLessThanOrEqual(1);
 });
 
 test('uses accessible muted foreground for secondary metadata', async ({ mount, page }) => {
@@ -414,7 +419,9 @@ test('keeps the loading skeleton stacked at the target width', async ({ mount, p
   ]);
   expect(activityBox).not.toBeNull();
   expect(pullRequestsBox).not.toBeNull();
-  expect(pullRequestsBox!.y).toBeGreaterThanOrEqual(activityBox!.y + activityBox!.height + 15);
+  const sectionGap = pullRequestsBox!.y - (activityBox!.y + activityBox!.height);
+  expect(sectionGap).toBeGreaterThanOrEqual(8);
+  expect(sectionGap).toBeLessThanOrEqual(10);
   await expect(card.locator('[data-workspace-hover-card-title]')).toHaveCount(0);
 });
 

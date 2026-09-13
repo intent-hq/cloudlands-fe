@@ -6,7 +6,7 @@
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 171,
+          "height": 173,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -20,7 +20,7 @@
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 40,
+          "height": 44,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -28,13 +28,13 @@
           "paddingRight": 0,
           "width": 520,
           "x": 100,
-          "y": 286
+          "y": 284
         },
         "data-workspace-hover-card-activity#2": {
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 40,
+          "height": 44,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -42,13 +42,13 @@
           "paddingRight": 0,
           "width": 520,
           "x": 100,
-          "y": 560
+          "y": 558
         },
         "data-workspace-hover-card-activity#3": {
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 40,
+          "height": 44,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -56,13 +56,13 @@
           "paddingRight": 0,
           "width": 520,
           "x": 100,
-          "y": 852
+          "y": 850
         },
         "data-workspace-hover-card-activity#4": {
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 144,
+          "height": 148,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -70,13 +70,13 @@
           "paddingRight": 0,
           "width": 520,
           "x": 100,
-          "y": 1126
+          "y": 1124
         },
         "data-workspace-hover-card-activity#5": {
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 92,
+          "height": 96,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -97,7 +97,7 @@
           "paddingLeft": 0,
           "paddingRight": 0,
           "width": 333.98,
-          "x": 142,
+          "x": 134,
           "y": 308
         },
         "data-workspace-hover-card-agent-context#2": {
@@ -111,7 +111,7 @@
           "paddingLeft": 0,
           "paddingRight": 0,
           "width": 365.34,
-          "x": 142,
+          "x": 134,
           "y": 582
         },
         "data-workspace-hover-card-agent-context#3": {
@@ -125,7 +125,7 @@
           "paddingLeft": 0,
           "paddingRight": 0,
           "width": 54.97,
-          "x": 142,
+          "x": 134,
           "y": 874
         },
         "data-workspace-hover-card-agent-context#4": {
@@ -139,7 +139,7 @@
           "paddingLeft": 0,
           "paddingRight": 0,
           "width": 288.77,
-          "x": 142,
+          "x": 134,
           "y": 1148
         },
         "data-workspace-hover-card-agent-context#5": {
@@ -153,7 +153,7 @@
           "paddingLeft": 0,
           "paddingRight": 0,
           "width": 333.98,
-          "x": 142,
+          "x": 134,
           "y": 1200
         },
         "data-workspace-hover-card-agent-context#6": {
@@ -167,7 +167,7 @@
           "paddingLeft": 0,
           "paddingRight": 0,
           "width": 250.28,
-          "x": 142,
+          "x": 134,
           "y": 1252
         },
         "data-workspace-hover-card-agent-context#7": {
@@ -181,8 +181,8 @@
           "paddingLeft": 0,
           "paddingRight": 0,
           "width": 398.81,
-          "x": 142,
-          "y": 1513
+          "x": 134,
+          "y": 1515
         },
         "data-workspace-hover-card-agent-context#8": {
           "fontSize": 13,
@@ -195,8 +195,8 @@
           "paddingLeft": 0,
           "paddingRight": 0,
           "width": 288.42,
-          "x": 142,
-          "y": 1565
+          "x": 134,
+          "y": 1567
         },
         "data-workspace-hover-card-agent-detail": {
           "fontSize": 13,
@@ -208,8 +208,8 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 478,
-          "x": 142,
+          "width": 486,
+          "x": 134,
           "y": 308
         },
         "data-workspace-hover-card-agent-detail#2": {
@@ -222,8 +222,8 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 478,
-          "x": 142,
+          "width": 486,
+          "x": 134,
           "y": 582
         },
         "data-workspace-hover-card-agent-detail#3": {
@@ -236,8 +236,8 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 478,
-          "x": 142,
+          "width": 486,
+          "x": 134,
           "y": 874
         },
         "data-workspace-hover-card-agent-detail#4": {
@@ -250,8 +250,8 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 478,
-          "x": 142,
+          "width": 486,
+          "x": 134,
           "y": 1148
         },
         "data-workspace-hover-card-agent-detail#5": {
@@ -264,8 +264,8 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 478,
-          "x": 142,
+          "width": 486,
+          "x": 134,
           "y": 1200
         },
         "data-workspace-hover-card-agent-detail#6": {
@@ -278,8 +278,8 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 478,
-          "x": 142,
+          "width": 486,
+          "x": 134,
           "y": 1252
         },
         "data-workspace-hover-card-agent-detail#7": {
@@ -292,9 +292,9 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 478,
-          "x": 142,
-          "y": 1513
+          "width": 486,
+          "x": 134,
+          "y": 1515
         },
         "data-workspace-hover-card-agent-detail#8": {
           "fontSize": 13,
@@ -306,9 +306,9 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 478,
-          "x": 142,
-          "y": 1565
+          "width": 486,
+          "x": 134,
+          "y": 1567
         },
         "data-workspace-hover-card-agent-name": {
           "fontSize": 15,
@@ -320,8 +320,8 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 440.38,
-          "x": 142,
+          "width": 448.38,
+          "x": 134,
           "y": 286
         },
         "data-workspace-hover-card-agent-name#2": {
@@ -334,8 +334,8 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 440.38,
-          "x": 142,
+          "width": 448.38,
+          "x": 134,
           "y": 560
         },
         "data-workspace-hover-card-agent-name#3": {
@@ -348,8 +348,8 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 440.38,
-          "x": 142,
+          "width": 448.38,
+          "x": 134,
           "y": 852
         },
         "data-workspace-hover-card-agent-name#4": {
@@ -362,8 +362,8 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 446.38,
-          "x": 142,
+          "width": 454.38,
+          "x": 134,
           "y": 1126
         },
         "data-workspace-hover-card-agent-name#5": {
@@ -376,8 +376,8 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 446.38,
-          "x": 142,
+          "width": 454.38,
+          "x": 134,
           "y": 1178
         },
         "data-workspace-hover-card-agent-name#6": {
@@ -390,8 +390,8 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 446.38,
-          "x": 142,
+          "width": 454.38,
+          "x": 134,
           "y": 1230
         },
         "data-workspace-hover-card-agent-name#7": {
@@ -404,9 +404,9 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 446.38,
-          "x": 142,
-          "y": 1491
+          "width": 454.38,
+          "x": 134,
+          "y": 1493
         },
         "data-workspace-hover-card-agent-name#8": {
           "fontSize": 15,
@@ -418,127 +418,127 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 446.38,
-          "x": 142,
-          "y": 1543
+          "width": 454.38,
+          "x": 134,
+          "y": 1545
         },
-        "data-workspace-hover-card-agent-row": {
+        "data-workspace-hover-card-agent-row=true": {
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 40,
+          "height": 44,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
-          "paddingLeft": 0,
-          "paddingRight": 0,
-          "width": 520,
-          "x": 100,
-          "y": 286
+          "paddingLeft": 8,
+          "paddingRight": 8,
+          "width": 536,
+          "x": 92,
+          "y": 284
         },
-        "data-workspace-hover-card-agent-row#2": {
+        "data-workspace-hover-card-agent-row=true#2": {
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 40,
+          "height": 44,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
-          "paddingLeft": 0,
-          "paddingRight": 0,
-          "width": 520,
-          "x": 100,
-          "y": 560
+          "paddingLeft": 8,
+          "paddingRight": 8,
+          "width": 536,
+          "x": 92,
+          "y": 558
         },
-        "data-workspace-hover-card-agent-row#3": {
+        "data-workspace-hover-card-agent-row=true#3": {
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 40,
+          "height": 44,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
-          "paddingLeft": 0,
-          "paddingRight": 0,
-          "width": 520,
-          "x": 100,
-          "y": 852
+          "paddingLeft": 8,
+          "paddingRight": 8,
+          "width": 536,
+          "x": 92,
+          "y": 850
         },
-        "data-workspace-hover-card-agent-row#4": {
+        "data-workspace-hover-card-agent-row=true#4": {
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 40,
+          "height": 44,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
-          "paddingLeft": 0,
-          "paddingRight": 0,
-          "width": 520,
-          "x": 100,
-          "y": 1126
+          "paddingLeft": 8,
+          "paddingRight": 8,
+          "width": 536,
+          "x": 92,
+          "y": 1124
         },
-        "data-workspace-hover-card-agent-row#5": {
+        "data-workspace-hover-card-agent-row=true#5": {
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 40,
+          "height": 44,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
-          "paddingLeft": 0,
-          "paddingRight": 0,
-          "width": 520,
-          "x": 100,
-          "y": 1178
+          "paddingLeft": 8,
+          "paddingRight": 8,
+          "width": 536,
+          "x": 92,
+          "y": 1176
         },
-        "data-workspace-hover-card-agent-row#6": {
+        "data-workspace-hover-card-agent-row=true#6": {
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 40,
+          "height": 44,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
-          "paddingLeft": 0,
-          "paddingRight": 0,
-          "width": 520,
-          "x": 100,
-          "y": 1230
+          "paddingLeft": 8,
+          "paddingRight": 8,
+          "width": 536,
+          "x": 92,
+          "y": 1228
         },
-        "data-workspace-hover-card-agent-row#7": {
+        "data-workspace-hover-card-agent-row=true#7": {
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 40,
+          "height": 44,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
-          "paddingLeft": 0,
-          "paddingRight": 0,
-          "width": 520,
-          "x": 100,
+          "paddingLeft": 8,
+          "paddingRight": 8,
+          "width": 536,
+          "x": 92,
           "y": 1491
         },
-        "data-workspace-hover-card-agent-row#8": {
+        "data-workspace-hover-card-agent-row=true#8": {
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 40,
+          "height": 44,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
-          "paddingLeft": 0,
-          "paddingRight": 0,
-          "width": 520,
-          "x": 100,
+          "paddingLeft": 8,
+          "paddingRight": 8,
+          "width": 536,
+          "x": 92,
           "y": 1543
         },
         "data-workspace-hover-card-agent-time": {
           "fontSize": 13,
           "fontWeight": 500,
           "gap": 0,
-          "height": 22,
+          "height": 18,
           "lineHeight": 18,
           "marginBottom": 0,
           "marginTop": 0,
@@ -552,7 +552,7 @@
           "fontSize": 13,
           "fontWeight": 500,
           "gap": 0,
-          "height": 22,
+          "height": 18,
           "lineHeight": 18,
           "marginBottom": 0,
           "marginTop": 0,
@@ -566,7 +566,7 @@
           "fontSize": 13,
           "fontWeight": 500,
           "gap": 0,
-          "height": 22,
+          "height": 18,
           "lineHeight": 18,
           "marginBottom": 0,
           "marginTop": 0,
@@ -580,7 +580,7 @@
           "fontSize": 13,
           "fontWeight": 500,
           "gap": 0,
-          "height": 22,
+          "height": 18,
           "lineHeight": 18,
           "marginBottom": 0,
           "marginTop": 0,
@@ -594,7 +594,7 @@
           "fontSize": 13,
           "fontWeight": 500,
           "gap": 0,
-          "height": 22,
+          "height": 18,
           "lineHeight": 18,
           "marginBottom": 0,
           "marginTop": 0,
@@ -608,7 +608,7 @@
           "fontSize": 13,
           "fontWeight": 500,
           "gap": 0,
-          "height": 22,
+          "height": 18,
           "lineHeight": 18,
           "marginBottom": 0,
           "marginTop": 0,
@@ -622,7 +622,7 @@
           "fontSize": 13,
           "fontWeight": 500,
           "gap": 0,
-          "height": 22,
+          "height": 18,
           "lineHeight": 18,
           "marginBottom": 0,
           "marginTop": 0,
@@ -630,13 +630,13 @@
           "paddingRight": 0,
           "width": 21.63,
           "x": 598.38,
-          "y": 1491
+          "y": 1493
         },
         "data-workspace-hover-card-agent-time#8": {
           "fontSize": 13,
           "fontWeight": 500,
           "gap": 0,
-          "height": 22,
+          "height": 18,
           "lineHeight": 18,
           "marginBottom": 0,
           "marginTop": 0,
@@ -644,13 +644,13 @@
           "paddingRight": 0,
           "width": 21.63,
           "x": 598.38,
-          "y": 1543
+          "y": 1545
         },
         "data-workspace-hover-card-columns": {
           "fontSize": 15,
           "fontWeight": 400,
-          "gap": 16,
-          "height": 56,
+          "gap": 8,
+          "height": 60,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -658,13 +658,13 @@
           "paddingRight": 20,
           "width": 560,
           "x": 80,
-          "y": 286
+          "y": 284
         },
         "data-workspace-hover-card-columns#2": {
           "fontSize": 15,
           "fontWeight": 400,
-          "gap": 16,
-          "height": 56,
+          "gap": 8,
+          "height": 60,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -672,13 +672,13 @@
           "paddingRight": 20,
           "width": 560,
           "x": 80,
-          "y": 560
+          "y": 558
         },
         "data-workspace-hover-card-columns#3": {
           "fontSize": 15,
           "fontWeight": 400,
-          "gap": 16,
-          "height": 56,
+          "gap": 8,
+          "height": 60,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -686,13 +686,13 @@
           "paddingRight": 20,
           "width": 560,
           "x": 80,
-          "y": 852
+          "y": 850
         },
         "data-workspace-hover-card-columns#4": {
           "fontSize": 15,
           "fontWeight": 400,
-          "gap": 16,
-          "height": 160,
+          "gap": 8,
+          "height": 164,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -700,13 +700,13 @@
           "paddingRight": 20,
           "width": 560,
           "x": 80,
-          "y": 1126
+          "y": 1124
         },
         "data-workspace-hover-card-columns#5": {
           "fontSize": 15,
           "fontWeight": 400,
-          "gap": 16,
-          "height": 108,
+          "gap": 8,
+          "height": 112,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -728,7 +728,7 @@
           "paddingRight": 0,
           "width": 560,
           "x": 80,
-          "y": 269
+          "y": 267
         },
         "data-workspace-hover-card-divider#2": {
           "fontSize": 15,
@@ -742,7 +742,7 @@
           "paddingRight": 0,
           "width": 560,
           "x": 80,
-          "y": 543
+          "y": 541
         },
         "data-workspace-hover-card-divider#3": {
           "fontSize": 15,
@@ -756,7 +756,7 @@
           "paddingRight": 0,
           "width": 560,
           "x": 80,
-          "y": 835
+          "y": 833
         },
         "data-workspace-hover-card-divider#4": {
           "fontSize": 15,
@@ -770,7 +770,7 @@
           "paddingRight": 0,
           "width": 560,
           "x": 80,
-          "y": 1109
+          "y": 1107
         },
         "data-workspace-hover-card-divider#5": {
           "fontSize": 15,
@@ -790,7 +790,7 @@
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 82,
+          "height": 80,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -804,7 +804,7 @@
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 82,
+          "height": 80,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -818,7 +818,7 @@
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 82,
+          "height": 80,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -832,7 +832,7 @@
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 82,
+          "height": 80,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -846,7 +846,7 @@
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 82,
+          "height": 80,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -854,13 +854,13 @@
           "paddingRight": 20,
           "width": 560,
           "x": 80,
-          "y": 1376
+          "y": 1378
         },
         "data-workspace-hover-card-identity": {
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 66,
+          "height": 64,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -874,7 +874,7 @@
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 66,
+          "height": 64,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -888,7 +888,7 @@
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 66,
+          "height": 64,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -902,7 +902,7 @@
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 66,
+          "height": 64,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -916,7 +916,7 @@
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 66,
+          "height": 64,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -924,13 +924,13 @@
           "paddingRight": 0,
           "width": 520,
           "x": 100,
-          "y": 1392
+          "y": 1394
         },
         "data-workspace-hover-card-preview": {
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 16,
-          "height": 1586,
+          "height": 1590,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -951,7 +951,7 @@
           "paddingLeft": 0,
           "paddingRight": 0,
           "width": 18.63,
-          "x": 513.34,
+          "x": 505.34,
           "y": 582
         },
         "data-workspace-hover-card-repo": {
@@ -961,12 +961,12 @@
           "height": 18,
           "lineHeight": 18,
           "marginBottom": 0,
-          "marginTop": 4,
+          "marginTop": 2,
           "paddingLeft": 0,
           "paddingRight": 0,
           "width": 520,
           "x": 100,
-          "y": 213
+          "y": 211
         },
         "data-workspace-hover-card-repo#2": {
           "fontSize": 13,
@@ -975,12 +975,12 @@
           "height": 18,
           "lineHeight": 18,
           "marginBottom": 0,
-          "marginTop": 4,
+          "marginTop": 2,
           "paddingLeft": 0,
           "paddingRight": 0,
           "width": 520,
           "x": 100,
-          "y": 487
+          "y": 485
         },
         "data-workspace-hover-card-repo#3": {
           "fontSize": 13,
@@ -989,12 +989,12 @@
           "height": 18,
           "lineHeight": 18,
           "marginBottom": 0,
-          "marginTop": 4,
+          "marginTop": 2,
           "paddingLeft": 0,
           "paddingRight": 0,
           "width": 520,
           "x": 100,
-          "y": 779
+          "y": 777
         },
         "data-workspace-hover-card-repo#4": {
           "fontSize": 13,
@@ -1003,12 +1003,12 @@
           "height": 18,
           "lineHeight": 18,
           "marginBottom": 0,
-          "marginTop": 4,
+          "marginTop": 2,
           "paddingLeft": 0,
           "paddingRight": 0,
           "width": 520,
           "x": 100,
-          "y": 1053
+          "y": 1051
         },
         "data-workspace-hover-card-repo#5": {
           "fontSize": 13,
@@ -1017,7 +1017,7 @@
           "height": 18,
           "lineHeight": 18,
           "marginBottom": 0,
-          "marginTop": 4,
+          "marginTop": 2,
           "paddingLeft": 0,
           "paddingRight": 0,
           "width": 520,
@@ -1106,7 +1106,7 @@
           "paddingRight": 0,
           "width": 96.06,
           "x": 501.94,
-          "y": 1394
+          "y": 1396
         },
         "data-workspace-hover-card-status#2": {
           "fontSize": 13,
@@ -1162,7 +1162,7 @@
           "paddingRight": 0,
           "width": 118.06,
           "x": 501.94,
-          "y": 1394
+          "y": 1396
         },
         "data-workspace-hover-card-summary": {
           "fontSize": 13,
@@ -1176,7 +1176,7 @@
           "paddingRight": 0,
           "width": 520,
           "x": 100,
-          "y": 235
+          "y": 233
         },
         "data-workspace-hover-card-summary#2": {
           "fontSize": 13,
@@ -1190,7 +1190,7 @@
           "paddingRight": 0,
           "width": 520,
           "x": 100,
-          "y": 509
+          "y": 507
         },
         "data-workspace-hover-card-summary#3": {
           "fontSize": 13,
@@ -1204,7 +1204,7 @@
           "paddingRight": 0,
           "width": 520,
           "x": 100,
-          "y": 801
+          "y": 799
         },
         "data-workspace-hover-card-summary#4": {
           "fontSize": 13,
@@ -1218,7 +1218,7 @@
           "paddingRight": 0,
           "width": 520,
           "x": 100,
-          "y": 1075
+          "y": 1073
         },
         "data-workspace-hover-card-summary#5": {
           "fontSize": 13,
@@ -1302,13 +1302,13 @@
           "paddingRight": 0,
           "width": 211.28,
           "x": 100,
-          "y": 1392
+          "y": 1394
         },
         "data-workspace-hover-card#2": {
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 171,
+          "height": 173,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -1322,7 +1322,7 @@
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 171,
+          "height": 173,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -1336,7 +1336,7 @@
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 275,
+          "height": 277,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -1350,7 +1350,7 @@
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 223,
+          "height": 225,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -1358,11 +1358,11 @@
           "paddingRight": 0,
           "width": 560,
           "x": 80,
-          "y": 1376
+          "y": 1378
         }
       },
       "root": {
-        "height": 1636,
+        "height": 1640,
         "width": 720
       }
     }
@@ -1374,7 +1374,7 @@
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 435,
+          "height": 437,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -1388,7 +1388,7 @@
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 248,
+          "height": 252,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -1396,7 +1396,7 @@
           "paddingRight": 0,
           "width": 520,
           "x": 100,
-          "y": 284
+          "y": 282
         },
         "data-workspace-hover-card-agent-context": {
           "fontSize": 13,
@@ -1409,7 +1409,7 @@
           "paddingLeft": 0,
           "paddingRight": 0,
           "width": 50.09,
-          "x": 142,
+          "x": 134,
           "y": 306
         },
         "data-workspace-hover-card-agent-context#2": {
@@ -1423,7 +1423,7 @@
           "paddingLeft": 0,
           "paddingRight": 0,
           "width": 50.09,
-          "x": 142,
+          "x": 134,
           "y": 358
         },
         "data-workspace-hover-card-agent-context#3": {
@@ -1437,7 +1437,7 @@
           "paddingLeft": 0,
           "paddingRight": 0,
           "width": 50.09,
-          "x": 142,
+          "x": 134,
           "y": 410
         },
         "data-workspace-hover-card-agent-context#4": {
@@ -1451,7 +1451,7 @@
           "paddingLeft": 0,
           "paddingRight": 0,
           "width": 50.09,
-          "x": 142,
+          "x": 134,
           "y": 462
         },
         "data-workspace-hover-card-agent-context#5": {
@@ -1465,7 +1465,7 @@
           "paddingLeft": 0,
           "paddingRight": 0,
           "width": 50.09,
-          "x": 142,
+          "x": 134,
           "y": 514
         },
         "data-workspace-hover-card-agent-detail": {
@@ -1478,8 +1478,8 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 478,
-          "x": 142,
+          "width": 486,
+          "x": 134,
           "y": 306
         },
         "data-workspace-hover-card-agent-detail#2": {
@@ -1492,8 +1492,8 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 478,
-          "x": 142,
+          "width": 486,
+          "x": 134,
           "y": 358
         },
         "data-workspace-hover-card-agent-detail#3": {
@@ -1506,8 +1506,8 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 478,
-          "x": 142,
+          "width": 486,
+          "x": 134,
           "y": 410
         },
         "data-workspace-hover-card-agent-detail#4": {
@@ -1520,8 +1520,8 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 478,
-          "x": 142,
+          "width": 486,
+          "x": 134,
           "y": 462
         },
         "data-workspace-hover-card-agent-detail#5": {
@@ -1534,8 +1534,8 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 478,
-          "x": 142,
+          "width": 486,
+          "x": 134,
           "y": 514
         },
         "data-workspace-hover-card-agent-name": {
@@ -1548,8 +1548,8 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 442.38,
-          "x": 142,
+          "width": 450.38,
+          "x": 134,
           "y": 284
         },
         "data-workspace-hover-card-agent-name#2": {
@@ -1562,8 +1562,8 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 447.25,
-          "x": 142,
+          "width": 455.25,
+          "x": 134,
           "y": 336
         },
         "data-workspace-hover-card-agent-name#3": {
@@ -1576,8 +1576,8 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 452.25,
-          "x": 142,
+          "width": 460.25,
+          "x": 134,
           "y": 388
         },
         "data-workspace-hover-card-agent-name#4": {
@@ -1590,8 +1590,8 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 455.25,
-          "x": 142,
+          "width": 463.25,
+          "x": 134,
           "y": 440
         },
         "data-workspace-hover-card-agent-name#5": {
@@ -1604,85 +1604,85 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 440.38,
-          "x": 142,
+          "width": 448.38,
+          "x": 134,
           "y": 492
         },
-        "data-workspace-hover-card-agent-row": {
+        "data-workspace-hover-card-agent-row=true": {
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 40,
+          "height": 44,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
-          "paddingLeft": 0,
-          "paddingRight": 0,
-          "width": 520,
-          "x": 100,
-          "y": 284
+          "paddingLeft": 8,
+          "paddingRight": 8,
+          "width": 536,
+          "x": 92,
+          "y": 282
         },
-        "data-workspace-hover-card-agent-row#2": {
+        "data-workspace-hover-card-agent-row=true#2": {
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 40,
+          "height": 44,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
-          "paddingLeft": 0,
-          "paddingRight": 0,
-          "width": 520,
-          "x": 100,
-          "y": 336
+          "paddingLeft": 8,
+          "paddingRight": 8,
+          "width": 536,
+          "x": 92,
+          "y": 334
         },
-        "data-workspace-hover-card-agent-row#3": {
+        "data-workspace-hover-card-agent-row=true#3": {
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 40,
+          "height": 44,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
-          "paddingLeft": 0,
-          "paddingRight": 0,
-          "width": 520,
-          "x": 100,
-          "y": 388
+          "paddingLeft": 8,
+          "paddingRight": 8,
+          "width": 536,
+          "x": 92,
+          "y": 386
         },
-        "data-workspace-hover-card-agent-row#4": {
+        "data-workspace-hover-card-agent-row=true#4": {
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 40,
+          "height": 44,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
-          "paddingLeft": 0,
-          "paddingRight": 0,
-          "width": 520,
-          "x": 100,
-          "y": 440
+          "paddingLeft": 8,
+          "paddingRight": 8,
+          "width": 536,
+          "x": 92,
+          "y": 438
         },
-        "data-workspace-hover-card-agent-row#5": {
+        "data-workspace-hover-card-agent-row=true#5": {
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 40,
+          "height": 44,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
-          "paddingLeft": 0,
-          "paddingRight": 0,
-          "width": 520,
-          "x": 100,
-          "y": 492
+          "paddingLeft": 8,
+          "paddingRight": 8,
+          "width": 536,
+          "x": 92,
+          "y": 490
         },
         "data-workspace-hover-card-agent-time": {
           "fontSize": 13,
           "fontWeight": 500,
           "gap": 0,
-          "height": 22,
+          "height": 18,
           "lineHeight": 18,
           "marginBottom": 0,
           "marginTop": 0,
@@ -1696,7 +1696,7 @@
           "fontSize": 13,
           "fontWeight": 500,
           "gap": 0,
-          "height": 22,
+          "height": 18,
           "lineHeight": 18,
           "marginBottom": 0,
           "marginTop": 0,
@@ -1710,7 +1710,7 @@
           "fontSize": 13,
           "fontWeight": 500,
           "gap": 0,
-          "height": 22,
+          "height": 18,
           "lineHeight": 18,
           "marginBottom": 0,
           "marginTop": 0,
@@ -1724,7 +1724,7 @@
           "fontSize": 13,
           "fontWeight": 500,
           "gap": 0,
-          "height": 22,
+          "height": 18,
           "lineHeight": 18,
           "marginBottom": 0,
           "marginTop": 0,
@@ -1738,7 +1738,7 @@
           "fontSize": 13,
           "fontWeight": 500,
           "gap": 0,
-          "height": 22,
+          "height": 18,
           "lineHeight": 18,
           "marginBottom": 0,
           "marginTop": 0,
@@ -1751,8 +1751,8 @@
         "data-workspace-hover-card-columns": {
           "fontSize": 15,
           "fontWeight": 400,
-          "gap": 16,
-          "height": 302,
+          "gap": 8,
+          "height": 306,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -1760,7 +1760,7 @@
           "paddingRight": 20,
           "width": 560,
           "x": 80,
-          "y": 284
+          "y": 282
         },
         "data-workspace-hover-card-divider": {
           "fontSize": 15,
@@ -1774,13 +1774,13 @@
           "paddingRight": 0,
           "width": 560,
           "x": 80,
-          "y": 267
+          "y": 265
         },
         "data-workspace-hover-card-header": {
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 100,
+          "height": 98,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -1794,7 +1794,7 @@
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 84,
+          "height": 82,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -1808,7 +1808,7 @@
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 22,
+          "height": 30,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -1816,21 +1816,21 @@
           "paddingRight": 0,
           "width": 520,
           "x": 100,
-          "y": 548
+          "y": 542
         },
         "data-workspace-hover-card-pr-list": {
           "fontSize": 15,
           "fontWeight": 400,
-          "gap": 12,
-          "height": 22,
+          "gap": 8,
+          "height": 30,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 520,
-          "x": 100,
-          "y": 548
+          "width": 536,
+          "x": 92,
+          "y": 542
         },
         "data-workspace-hover-card-pr-number": {
           "fontSize": 13,
@@ -1844,21 +1844,21 @@
           "paddingRight": 0,
           "width": 22.63,
           "x": 597.38,
-          "y": 550
+          "y": 548
         },
-        "data-workspace-hover-card-pr-row": {
+        "data-workspace-hover-card-pr-row=true": {
           "fontSize": 15,
           "fontWeight": 400,
-          "gap": 0,
-          "height": 22,
+          "gap": 6,
+          "height": 30,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
-          "paddingLeft": 0,
-          "paddingRight": 0,
-          "width": 520,
-          "x": 100,
-          "y": 548
+          "paddingLeft": 8,
+          "paddingRight": 8,
+          "width": 536,
+          "x": 92,
+          "y": 542
         },
         "data-workspace-hover-card-pr-status": {
           "fontSize": 13,
@@ -1872,7 +1872,7 @@
           "paddingRight": 0,
           "width": 33.48,
           "x": 553.89,
-          "y": 550
+          "y": 548
         },
         "data-workspace-hover-card-pr-title": {
           "fontSize": 15,
@@ -1884,15 +1884,15 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 401.89,
-          "x": 142,
-          "y": 548
+          "width": 409.89,
+          "x": 134,
+          "y": 546
         },
         "data-workspace-hover-card-preview": {
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 16,
-          "height": 573,
+          "height": 575,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -1909,12 +1909,12 @@
           "height": 18,
           "lineHeight": 18,
           "marginBottom": 0,
-          "marginTop": 4,
+          "marginTop": 2,
           "paddingLeft": 0,
           "paddingRight": 0,
           "width": 520,
           "x": 100,
-          "y": 193
+          "y": 191
         },
         "data-workspace-hover-card-status": {
           "fontSize": 13,
@@ -1956,7 +1956,7 @@
           "paddingRight": 0,
           "width": 520,
           "x": 100,
-          "y": 215
+          "y": 213
         },
         "data-workspace-hover-card-title": {
           "fontSize": 15,
@@ -1974,7 +1974,7 @@
         }
       },
       "root": {
-        "height": 623,
+        "height": 625,
         "width": 720
       }
     }
@@ -1986,7 +1986,7 @@
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 257,
+          "height": 249,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -2013,8 +2013,8 @@
         "data-workspace-hover-card-columns": {
           "fontSize": 15,
           "fontWeight": 400,
-          "gap": 16,
-          "height": 112,
+          "gap": 8,
+          "height": 104,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -2050,13 +2050,13 @@
           "paddingRight": 0,
           "width": 520,
           "x": 100,
-          "y": 352
+          "y": 344
         },
         "data-workspace-hover-card-preview": {
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 16,
-          "height": 395,
+          "height": 387,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -2068,7 +2068,7 @@
         }
       },
       "root": {
-        "height": 445,
+        "height": 437,
         "width": 720
       }
     }
@@ -2080,7 +2080,7 @@
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 245,
+          "height": 247,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -2094,7 +2094,7 @@
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 40,
+          "height": 44,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -2102,7 +2102,7 @@
           "paddingRight": 0,
           "width": 236,
           "x": 57,
-          "y": 302
+          "y": 300
         },
         "data-workspace-hover-card-agent-context": {
           "fontSize": 13,
@@ -2115,7 +2115,7 @@
           "paddingLeft": 0,
           "paddingRight": 0,
           "width": 50.09,
-          "x": 99,
+          "x": 91,
           "y": 324
         },
         "data-workspace-hover-card-agent-detail": {
@@ -2128,8 +2128,8 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 194,
-          "x": 99,
+          "width": 202,
+          "x": 91,
           "y": 324
         },
         "data-workspace-hover-card-agent-name": {
@@ -2142,29 +2142,29 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 171.25,
-          "x": 99,
+          "width": 179.25,
+          "x": 91,
           "y": 302
         },
-        "data-workspace-hover-card-agent-row": {
+        "data-workspace-hover-card-agent-row=true": {
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 40,
+          "height": 44,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
-          "paddingLeft": 0,
-          "paddingRight": 0,
-          "width": 236,
-          "x": 57,
-          "y": 302
+          "paddingLeft": 8,
+          "paddingRight": 8,
+          "width": 252,
+          "x": 49,
+          "y": 300
         },
         "data-workspace-hover-card-agent-time": {
           "fontSize": 13,
           "fontWeight": 500,
           "gap": 0,
-          "height": 22,
+          "height": 18,
           "lineHeight": 18,
           "marginBottom": 0,
           "marginTop": 0,
@@ -2177,8 +2177,8 @@
         "data-workspace-hover-card-columns": {
           "fontSize": 15,
           "fontWeight": 400,
-          "gap": 16,
-          "height": 94,
+          "gap": 8,
+          "height": 98,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -2186,7 +2186,7 @@
           "paddingRight": 20,
           "width": 276,
           "x": 37,
-          "y": 302
+          "y": 300
         },
         "data-workspace-hover-card-divider": {
           "fontSize": 15,
@@ -2200,13 +2200,13 @@
           "paddingRight": 0,
           "width": 276,
           "x": 37,
-          "y": 285
+          "y": 283
         },
         "data-workspace-hover-card-header": {
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 118,
+          "height": 116,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -2220,7 +2220,7 @@
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 102,
+          "height": 100,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -2234,7 +2234,7 @@
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 22,
+          "height": 30,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -2242,21 +2242,21 @@
           "paddingRight": 0,
           "width": 236,
           "x": 57,
-          "y": 358
+          "y": 352
         },
         "data-workspace-hover-card-pr-list": {
           "fontSize": 15,
           "fontWeight": 400,
-          "gap": 12,
-          "height": 22,
+          "gap": 8,
+          "height": 30,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 236,
-          "x": 57,
-          "y": 358
+          "width": 252,
+          "x": 49,
+          "y": 352
         },
         "data-workspace-hover-card-pr-number": {
           "fontSize": 13,
@@ -2270,21 +2270,21 @@
           "paddingRight": 0,
           "width": 22.63,
           "x": 270.38,
-          "y": 360
+          "y": 358
         },
-        "data-workspace-hover-card-pr-row": {
+        "data-workspace-hover-card-pr-row=true": {
           "fontSize": 15,
           "fontWeight": 400,
-          "gap": 0,
-          "height": 22,
+          "gap": 6,
+          "height": 30,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
-          "paddingLeft": 0,
-          "paddingRight": 0,
-          "width": 236,
-          "x": 57,
-          "y": 358
+          "paddingLeft": 8,
+          "paddingRight": 8,
+          "width": 252,
+          "x": 49,
+          "y": 352
         },
         "data-workspace-hover-card-pr-status": {
           "fontSize": 13,
@@ -2298,7 +2298,7 @@
           "paddingRight": 0,
           "width": 33.48,
           "x": 226.89,
-          "y": 360
+          "y": 358
         },
         "data-workspace-hover-card-pr-title": {
           "fontSize": 15,
@@ -2310,15 +2310,15 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 117.89,
-          "x": 99,
-          "y": 358
+          "width": 125.89,
+          "x": 91,
+          "y": 356
         },
         "data-workspace-hover-card-preview": {
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 16,
-          "height": 383,
+          "height": 385,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -2335,12 +2335,12 @@
           "height": 18,
           "lineHeight": 18,
           "marginBottom": 0,
-          "marginTop": 4,
+          "marginTop": 2,
           "paddingLeft": 0,
           "paddingRight": 0,
           "width": 236,
           "x": 57,
-          "y": 193
+          "y": 191
         },
         "data-workspace-hover-card-status": {
           "fontSize": 13,
@@ -2382,7 +2382,7 @@
           "paddingRight": 0,
           "width": 236,
           "x": 57,
-          "y": 215
+          "y": 213
         },
         "data-workspace-hover-card-title": {
           "fontSize": 15,
@@ -2400,7 +2400,7 @@
         }
       },
       "root": {
-        "height": 433,
+        "height": 435,
         "width": 720
       }
     }
@@ -2412,7 +2412,7 @@
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 261,
+          "height": 263,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -2426,7 +2426,7 @@
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 92,
+          "height": 96,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -2434,7 +2434,7 @@
           "paddingRight": 0,
           "width": 520,
           "x": 100,
-          "y": 266
+          "y": 264
         },
         "data-workspace-hover-card-agent-context": {
           "fontSize": 13,
@@ -2447,7 +2447,7 @@
           "paddingLeft": 0,
           "paddingRight": 0,
           "width": 50.09,
-          "x": 142,
+          "x": 134,
           "y": 288
         },
         "data-workspace-hover-card-agent-context#2": {
@@ -2461,7 +2461,7 @@
           "paddingLeft": 0,
           "paddingRight": 0,
           "width": 50.09,
-          "x": 142,
+          "x": 134,
           "y": 340
         },
         "data-workspace-hover-card-agent-detail": {
@@ -2474,8 +2474,8 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 478,
-          "x": 142,
+          "width": 486,
+          "x": 134,
           "y": 288
         },
         "data-workspace-hover-card-agent-detail#2": {
@@ -2488,8 +2488,8 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 478,
-          "x": 142,
+          "width": 486,
+          "x": 134,
           "y": 340
         },
         "data-workspace-hover-card-agent-name": {
@@ -2502,8 +2502,8 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 447.25,
-          "x": 142,
+          "width": 455.25,
+          "x": 134,
           "y": 266
         },
         "data-workspace-hover-card-agent-name#2": {
@@ -2516,43 +2516,43 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 452.25,
-          "x": 142,
+          "width": 460.25,
+          "x": 134,
           "y": 318
         },
-        "data-workspace-hover-card-agent-row": {
+        "data-workspace-hover-card-agent-row=true": {
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 40,
+          "height": 44,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
-          "paddingLeft": 0,
-          "paddingRight": 0,
-          "width": 520,
-          "x": 100,
-          "y": 266
+          "paddingLeft": 8,
+          "paddingRight": 8,
+          "width": 536,
+          "x": 92,
+          "y": 264
         },
-        "data-workspace-hover-card-agent-row#2": {
+        "data-workspace-hover-card-agent-row=true#2": {
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 40,
+          "height": 44,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
-          "paddingLeft": 0,
-          "paddingRight": 0,
-          "width": 520,
-          "x": 100,
-          "y": 318
+          "paddingLeft": 8,
+          "paddingRight": 8,
+          "width": 536,
+          "x": 92,
+          "y": 316
         },
         "data-workspace-hover-card-agent-time": {
           "fontSize": 13,
           "fontWeight": 500,
           "gap": 0,
-          "height": 22,
+          "height": 18,
           "lineHeight": 18,
           "marginBottom": 0,
           "marginTop": 0,
@@ -2566,7 +2566,7 @@
           "fontSize": 13,
           "fontWeight": 500,
           "gap": 0,
-          "height": 22,
+          "height": 18,
           "lineHeight": 18,
           "marginBottom": 0,
           "marginTop": 0,
@@ -2579,8 +2579,8 @@
         "data-workspace-hover-card-columns": {
           "fontSize": 15,
           "fontWeight": 400,
-          "gap": 16,
-          "height": 146,
+          "gap": 8,
+          "height": 150,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -2588,7 +2588,7 @@
           "paddingRight": 20,
           "width": 560,
           "x": 80,
-          "y": 266
+          "y": 264
         },
         "data-workspace-hover-card-divider": {
           "fontSize": 15,
@@ -2602,13 +2602,13 @@
           "paddingRight": 0,
           "width": 560,
           "x": 80,
-          "y": 249
+          "y": 247
         },
         "data-workspace-hover-card-header": {
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 82,
+          "height": 80,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -2622,7 +2622,7 @@
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 66,
+          "height": 64,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -2636,7 +2636,7 @@
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 22,
+          "height": 30,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -2644,21 +2644,21 @@
           "paddingRight": 0,
           "width": 520,
           "x": 100,
-          "y": 374
+          "y": 368
         },
         "data-workspace-hover-card-pr-list": {
           "fontSize": 15,
           "fontWeight": 400,
-          "gap": 12,
-          "height": 22,
+          "gap": 8,
+          "height": 30,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 520,
-          "x": 100,
-          "y": 374
+          "width": 536,
+          "x": 92,
+          "y": 368
         },
         "data-workspace-hover-card-pr-number": {
           "fontSize": 13,
@@ -2672,21 +2672,21 @@
           "paddingRight": 0,
           "width": 22.63,
           "x": 597.38,
-          "y": 376
+          "y": 374
         },
-        "data-workspace-hover-card-pr-row": {
+        "data-workspace-hover-card-pr-row=true": {
           "fontSize": 15,
           "fontWeight": 400,
-          "gap": 0,
-          "height": 22,
+          "gap": 6,
+          "height": 30,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
-          "paddingLeft": 0,
-          "paddingRight": 0,
-          "width": 520,
-          "x": 100,
-          "y": 374
+          "paddingLeft": 8,
+          "paddingRight": 8,
+          "width": 536,
+          "x": 92,
+          "y": 368
         },
         "data-workspace-hover-card-pr-status": {
           "fontSize": 13,
@@ -2700,7 +2700,7 @@
           "paddingRight": 0,
           "width": 33.48,
           "x": 553.89,
-          "y": 376
+          "y": 374
         },
         "data-workspace-hover-card-pr-title": {
           "fontSize": 15,
@@ -2712,15 +2712,15 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 401.89,
-          "x": 142,
-          "y": 374
+          "width": 409.89,
+          "x": 134,
+          "y": 372
         },
         "data-workspace-hover-card-preview": {
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 16,
-          "height": 399,
+          "height": 401,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -2737,12 +2737,12 @@
           "height": 18,
           "lineHeight": 18,
           "marginBottom": 0,
-          "marginTop": 4,
+          "marginTop": 2,
           "paddingLeft": 0,
           "paddingRight": 0,
           "width": 520,
           "x": 100,
-          "y": 193
+          "y": 191
         },
         "data-workspace-hover-card-status": {
           "fontSize": 13,
@@ -2784,7 +2784,7 @@
           "paddingRight": 0,
           "width": 520,
           "x": 100,
-          "y": 215
+          "y": 213
         },
         "data-workspace-hover-card-title": {
           "fontSize": 15,
@@ -2802,7 +2802,7 @@
         }
       },
       "root": {
-        "height": 449,
+        "height": 451,
         "width": 720
       }
     }
@@ -2814,7 +2814,7 @@
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 261,
+          "height": 263,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -2828,7 +2828,7 @@
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 92,
+          "height": 96,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -2836,7 +2836,7 @@
           "paddingRight": 0,
           "width": 520,
           "x": 100,
-          "y": 266
+          "y": 264
         },
         "data-workspace-hover-card-agent-context": {
           "fontSize": 13,
@@ -2849,7 +2849,7 @@
           "paddingLeft": 0,
           "paddingRight": 0,
           "width": 50.09,
-          "x": 142,
+          "x": 134,
           "y": 288
         },
         "data-workspace-hover-card-agent-context#2": {
@@ -2863,7 +2863,7 @@
           "paddingLeft": 0,
           "paddingRight": 0,
           "width": 50.09,
-          "x": 142,
+          "x": 134,
           "y": 340
         },
         "data-workspace-hover-card-agent-detail": {
@@ -2876,8 +2876,8 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 478,
-          "x": 142,
+          "width": 486,
+          "x": 134,
           "y": 288
         },
         "data-workspace-hover-card-agent-detail#2": {
@@ -2890,8 +2890,8 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 478,
-          "x": 142,
+          "width": 486,
+          "x": 134,
           "y": 340
         },
         "data-workspace-hover-card-agent-name": {
@@ -2904,8 +2904,8 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 447.25,
-          "x": 142,
+          "width": 455.25,
+          "x": 134,
           "y": 266
         },
         "data-workspace-hover-card-agent-name#2": {
@@ -2918,43 +2918,43 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 452.25,
-          "x": 142,
+          "width": 460.25,
+          "x": 134,
           "y": 318
         },
-        "data-workspace-hover-card-agent-row": {
+        "data-workspace-hover-card-agent-row=true": {
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 40,
+          "height": 44,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
-          "paddingLeft": 0,
-          "paddingRight": 0,
-          "width": 520,
-          "x": 100,
-          "y": 266
+          "paddingLeft": 8,
+          "paddingRight": 8,
+          "width": 536,
+          "x": 92,
+          "y": 264
         },
-        "data-workspace-hover-card-agent-row#2": {
+        "data-workspace-hover-card-agent-row=true#2": {
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 40,
+          "height": 44,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
-          "paddingLeft": 0,
-          "paddingRight": 0,
-          "width": 520,
-          "x": 100,
-          "y": 318
+          "paddingLeft": 8,
+          "paddingRight": 8,
+          "width": 536,
+          "x": 92,
+          "y": 316
         },
         "data-workspace-hover-card-agent-time": {
           "fontSize": 13,
           "fontWeight": 500,
           "gap": 0,
-          "height": 22,
+          "height": 18,
           "lineHeight": 18,
           "marginBottom": 0,
           "marginTop": 0,
@@ -2968,7 +2968,7 @@
           "fontSize": 13,
           "fontWeight": 500,
           "gap": 0,
-          "height": 22,
+          "height": 18,
           "lineHeight": 18,
           "marginBottom": 0,
           "marginTop": 0,
@@ -2981,8 +2981,8 @@
         "data-workspace-hover-card-columns": {
           "fontSize": 15,
           "fontWeight": 400,
-          "gap": 16,
-          "height": 146,
+          "gap": 8,
+          "height": 150,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -2990,7 +2990,7 @@
           "paddingRight": 20,
           "width": 560,
           "x": 80,
-          "y": 266
+          "y": 264
         },
         "data-workspace-hover-card-divider": {
           "fontSize": 15,
@@ -3004,13 +3004,13 @@
           "paddingRight": 0,
           "width": 560,
           "x": 80,
-          "y": 249
+          "y": 247
         },
         "data-workspace-hover-card-header": {
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 82,
+          "height": 80,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -3024,7 +3024,7 @@
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 66,
+          "height": 64,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -3038,7 +3038,7 @@
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 22,
+          "height": 30,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -3046,21 +3046,21 @@
           "paddingRight": 0,
           "width": 520,
           "x": 100,
-          "y": 374
+          "y": 368
         },
         "data-workspace-hover-card-pr-list": {
           "fontSize": 15,
           "fontWeight": 400,
-          "gap": 12,
-          "height": 22,
+          "gap": 8,
+          "height": 30,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 520,
-          "x": 100,
-          "y": 374
+          "width": 536,
+          "x": 92,
+          "y": 368
         },
         "data-workspace-hover-card-pr-number": {
           "fontSize": 13,
@@ -3074,21 +3074,21 @@
           "paddingRight": 0,
           "width": 22.63,
           "x": 597.38,
-          "y": 376
+          "y": 374
         },
-        "data-workspace-hover-card-pr-row": {
+        "data-workspace-hover-card-pr-row=true": {
           "fontSize": 15,
           "fontWeight": 400,
-          "gap": 0,
-          "height": 22,
+          "gap": 6,
+          "height": 30,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
-          "paddingLeft": 0,
-          "paddingRight": 0,
-          "width": 520,
-          "x": 100,
-          "y": 374
+          "paddingLeft": 8,
+          "paddingRight": 8,
+          "width": 536,
+          "x": 92,
+          "y": 368
         },
         "data-workspace-hover-card-pr-status": {
           "fontSize": 13,
@@ -3102,7 +3102,7 @@
           "paddingRight": 0,
           "width": 33.48,
           "x": 553.89,
-          "y": 376
+          "y": 374
         },
         "data-workspace-hover-card-pr-title": {
           "fontSize": 15,
@@ -3114,15 +3114,15 @@
           "marginTop": 0,
           "paddingLeft": 0,
           "paddingRight": 0,
-          "width": 401.89,
-          "x": 142,
-          "y": 374
+          "width": 409.89,
+          "x": 134,
+          "y": 372
         },
         "data-workspace-hover-card-preview": {
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 16,
-          "height": 399,
+          "height": 401,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -3139,12 +3139,12 @@
           "height": 18,
           "lineHeight": 18,
           "marginBottom": 0,
-          "marginTop": 4,
+          "marginTop": 2,
           "paddingLeft": 0,
           "paddingRight": 0,
           "width": 520,
           "x": 100,
-          "y": 193
+          "y": 191
         },
         "data-workspace-hover-card-status": {
           "fontSize": 13,
@@ -3186,7 +3186,7 @@
           "paddingRight": 0,
           "width": 520,
           "x": 100,
-          "y": 215
+          "y": 213
         },
         "data-workspace-hover-card-title": {
           "fontSize": 15,
@@ -3204,7 +3204,7 @@
         }
       },
       "root": {
-        "height": 449,
+        "height": 451,
         "width": 720
       }
     }

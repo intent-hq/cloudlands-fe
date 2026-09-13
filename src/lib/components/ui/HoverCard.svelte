@@ -13,6 +13,10 @@
     anchorElement?: HTMLElement | null;
     class?: string;
     children?: Snippet;
+    onmouseenter?: (event: MouseEvent) => void;
+    onmouseleave?: (event: MouseEvent) => void;
+    onfocusin?: (event: FocusEvent) => void;
+    onfocusout?: (event: FocusEvent) => void;
   }
   let {
     id,
@@ -22,6 +26,10 @@
     anchorElement = null,
     class: className = '',
     children,
+    onmouseenter,
+    onmouseleave,
+    onfocusin,
+    onfocusout,
   }: Props = $props();
 
   const COLLISION_PADDING = 8;
@@ -229,6 +237,10 @@
     style:margin-bottom={isTop ? '4px' : undefined}
     style:translate={isTop ? '-50% 0' : undefined}
     role="tooltip"
+    {onmouseenter}
+    {onmouseleave}
+    {onfocusin}
+    {onfocusout}
   >
     {@render children?.()}
   </div>
@@ -243,6 +255,10 @@
       style={measuredStyle}
       style:max-height={maxHeight}
       role="tooltip"
+      {onmouseenter}
+      {onmouseleave}
+      {onfocusin}
+      {onfocusout}
     >
       {@render children?.()}
     </div>
