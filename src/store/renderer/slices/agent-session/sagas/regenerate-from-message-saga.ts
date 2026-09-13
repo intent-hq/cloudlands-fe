@@ -45,7 +45,16 @@ class UnreplayableBlockError extends Error {
     readonly reason: string,
     readonly detail: Record<string, unknown>,
   ) {
-    super(m.agent_editRegenerate_failed_error());
+    super(m.agent_regenerate_attachmentsUnavailable_error());
+  }
+}
+
+async function showRegenerateError(message: string): Promise<void> {
+  try {
+    const { toast } = await import('svelte-sonner');
+    toast.error(message);
+  } catch (error) {
+    logger.error('Failed to surface regenerate error', error);
   }
 }
 
@@ -188,6 +197,9 @@ function* regenerateFromMessage(action: RegenerateAction): SagaGenerator<void> {
         agentId,
         ...error.detail,
       });
+      // The edit saga never ran, so its error toast never fired; failures
+      // after the put are already surfaced by the edit saga.
+      yield* call(showRegenerateError, error.message);
     }
     const resolved =
       error instanceof Error

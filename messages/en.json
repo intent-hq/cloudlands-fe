@@ -4934,6 +4934,7 @@
   "agent_mutation_deletedAgentGeneric_message": "Deleted agent",
   "agent_mutation_undo_label": "Undo",
   "agent_editRegenerate_failed_error": "Failed to edit message",
+  "agent_regenerate_attachmentsUnavailable_error": "Couldn't regenerate: the original message's attachments could not be reloaded",
   "agent_errorBoundary_retrying_message": "Something went wrong, retrying in {seconds}s...",
   "agent_errorBoundary_generic_error": "Something went wrong. Please try again.",
   "agent_streamLifecycle_sendFailed_error": "Something went wrong. Please try again.",

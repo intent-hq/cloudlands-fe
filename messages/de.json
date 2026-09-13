@@ -4933,6 +4933,7 @@
   "agent_mutation_deletedAgentGeneric_message": "Agent gelöscht",
   "agent_mutation_undo_label": "Rückgängig",
   "agent_editRegenerate_failed_error": "Nachricht konnte nicht bearbeitet werden",
+  "agent_regenerate_attachmentsUnavailable_error": "Neu generieren nicht möglich: Die Anhänge der ursprünglichen Nachricht konnten nicht neu geladen werden",
   "agent_errorBoundary_retrying_message": "Etwas ist schiefgelaufen, neuer Versuch in {seconds} s...",
   "agent_errorBoundary_generic_error": "Etwas ist schiefgelaufen. Bitte versuchen Sie es erneut.",
   "agent_streamLifecycle_sendFailed_error": "Etwas ist schiefgelaufen. Bitte versuchen Sie es erneut.",

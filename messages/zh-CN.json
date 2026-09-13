@@ -4933,6 +4933,7 @@
   "agent_mutation_deletedAgentGeneric_message": "已删除智能体",
   "agent_mutation_undo_label": "撤销",
   "agent_editRegenerate_failed_error": "编辑消息失败",
+  "agent_regenerate_attachmentsUnavailable_error": "无法重新生成：无法重新加载原始消息的附件",
   "agent_errorBoundary_retrying_message": "出错了，{seconds} 秒后重试…",
   "agent_errorBoundary_generic_error": "出错了。请重试。",
   "agent_streamLifecycle_sendFailed_error": "出错了。请重试。",

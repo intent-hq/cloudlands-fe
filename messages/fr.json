@@ -4933,6 +4933,7 @@
   "agent_mutation_deletedAgentGeneric_message": "Agent supprimé",
   "agent_mutation_undo_label": "Annuler",
   "agent_editRegenerate_failed_error": "Impossible de modifier le message",
+  "agent_regenerate_attachmentsUnavailable_error": "Impossible de régénérer : les pièces jointes du message d'origine n'ont pas pu être rechargées",
   "agent_errorBoundary_retrying_message": "Une erreur s'est produite, nouvelle tentative dans {seconds} s...",
   "agent_errorBoundary_generic_error": "Une erreur s'est produite. Veuillez réessayer.",
   "agent_streamLifecycle_sendFailed_error": "Une erreur s'est produite. Veuillez réessayer.",

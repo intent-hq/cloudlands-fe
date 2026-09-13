@@ -4933,6 +4933,7 @@
   "agent_mutation_deletedAgentGeneric_message": "エージェントを削除しました",
   "agent_mutation_undo_label": "元に戻す",
   "agent_editRegenerate_failed_error": "メッセージを編集できませんでした",
+  "agent_regenerate_attachmentsUnavailable_error": "再生成できませんでした: 元のメッセージの添付ファイルを再読み込みできませんでした",
   "agent_errorBoundary_retrying_message": "問題が発生しました。{seconds} 秒後に再試行します...",
   "agent_errorBoundary_generic_error": "問題が発生しました。もう一度お試しください。",
   "agent_streamLifecycle_sendFailed_error": "問題が発生しました。もう一度お試しください。",

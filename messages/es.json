@@ -4933,6 +4933,7 @@
   "agent_mutation_deletedAgentGeneric_message": "Agente eliminado",
   "agent_mutation_undo_label": "Deshacer",
   "agent_editRegenerate_failed_error": "Error al editar el mensaje",
+  "agent_regenerate_attachmentsUnavailable_error": "No se pudo regenerar: no se pudieron volver a cargar los adjuntos del mensaje original",
   "agent_errorBoundary_retrying_message": "Algo salió mal, reintentando en {seconds} s...",
   "agent_errorBoundary_generic_error": "Algo salió mal. Inténtelo de nuevo.",
   "agent_streamLifecycle_sendFailed_error": "Algo salió mal. Inténtelo de nuevo.",

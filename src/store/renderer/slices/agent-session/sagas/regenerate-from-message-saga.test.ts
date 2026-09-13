@@ -1,10 +1,11 @@
 import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ getMessageBlock: vi.fn() }));
+const mocks = vi.hoisted(() => ({ getMessageBlock: vi.fn(), toastError: vi.fn() }));
 vi.mock('$lib/client', () => ({
   appClient: { agents: { getMessageBlock: mocks.getMessageBlock } },
 }));
+vi.mock('svelte-sonner', () => ({ toast: { error: mocks.toastError } }));
 
 import type { AgentMessage, AgentSession, ContentBlock } from '$shared/types';
 import { AgentStatus } from '$shared/types';
@@ -149,6 +150,7 @@ describe('regenerateFromMessageSaga', () => {
     ]);
     edits[0].success(undefined as never);
     await expect(action.promise).resolves.toBeUndefined();
+    expect(mocks.toastError).not.toHaveBeenCalled();
     task.cancel();
     await task.toPromise();
   });
@@ -190,7 +192,7 @@ describe('regenerateFromMessageSaga', () => {
     await task.toPromise();
   });
 
-  it('rejects with the edit flow failure', async () => {
+  it('rejects with the edit flow failure without toasting a second time', async () => {
     const { channel, edits, dispatched, task } = start();
     const action = agentSessionRegenerateFromMessageRequested(AGENT, WS, 'a1');
     channel.put(action);
@@ -200,6 +202,8 @@ describe('regenerateFromMessageSaga', () => {
     edits[0].failure(new Error('bad message'));
     await expect(action.promise).rejects.toThrow('bad message');
     expect(dispatched.at(-1).type).toBe(action.failure(new Error('x')).type);
+    // The delegated edit saga owns the toast for post-put failures.
+    expect(mocks.toastError).not.toHaveBeenCalled();
     task.cancel();
     await task.toPromise();
   });
@@ -279,7 +283,7 @@ describe('regenerateFromMessageSaga', () => {
       await task.toPromise();
     });
 
-    it('fails the regenerate without an edit put when getMessageBlock rejects', async () => {
+    it('fails the regenerate without an edit put when getMessageBlock rejects, and toasts', async () => {
       mocks.getMessageBlock.mockRejectedValue(new Error('block gone'));
       const { channel, edits, dispatched, task } = start(
         userMessageWith([
@@ -298,11 +302,14 @@ describe('regenerateFromMessageSaga', () => {
 
       expect(edits).toHaveLength(0);
       expect(dispatched.map((item) => item.type)).toEqual([action.failure(new Error('x')).type]);
+      await settle();
+      expect(mocks.toastError).toHaveBeenCalledTimes(1);
+      expect(mocks.toastError).toHaveBeenCalledWith(expect.any(String));
       task.cancel();
       await task.toPromise();
     });
 
-    it('fails closed on a truncated image block that carries no id', async () => {
+    it('fails closed on a truncated image block that carries no id, and toasts', async () => {
       const { channel, edits, task } = start(
         userMessageWith([
           { type: 'image', data: 'dGh1bWI=', mimeType: 'image/png', dataTruncated: true },
@@ -314,11 +321,13 @@ describe('regenerateFromMessageSaga', () => {
 
       expect(mocks.getMessageBlock).not.toHaveBeenCalled();
       expect(edits).toHaveLength(0);
+      await settle();
+      expect(mocks.toastError).toHaveBeenCalledTimes(1);
       task.cancel();
       await task.toPromise();
     });
 
-    it('fails closed when the hydrated block still has no replayable bytes', async () => {
+    it('fails closed when the hydrated block still has no replayable bytes, and toasts', async () => {
       mocks.getMessageBlock.mockResolvedValue({
         id: 'blk-thumb',
         type: 'image',
@@ -334,6 +343,8 @@ describe('regenerateFromMessageSaga', () => {
       await expect(action.promise).rejects.toBeInstanceOf(Error);
 
       expect(edits).toHaveLength(0);
+      await settle();
+      expect(mocks.toastError).toHaveBeenCalledTimes(1);
       task.cancel();
       await task.toPromise();
     });
@@ -357,7 +368,7 @@ describe('regenerateFromMessageSaga', () => {
       await task.toPromise();
     });
 
-    it('fails closed on a legacy inline file block instead of dropping it', async () => {
+    it('fails closed on a legacy inline file block instead of dropping it, and toasts', async () => {
       const { channel, edits, dispatched, task } = start(
         userMessageWith([
           { type: 'file', data: 'aGVsbG8=', fileName: 'legacy.txt', mimeType: 'text/plain' },
@@ -369,6 +380,8 @@ describe('regenerateFromMessageSaga', () => {
 
       expect(edits).toHaveLength(0);
       expect(dispatched.map((item) => item.type)).toEqual([action.failure(new Error('x')).type]);
+      await settle();
+      expect(mocks.toastError).toHaveBeenCalledTimes(1);
       task.cancel();
       await task.toPromise();
     });

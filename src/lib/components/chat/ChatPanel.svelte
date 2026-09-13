@@ -5209,8 +5209,9 @@
       assistantMessageId,
     );
     appStore.dispatch(action);
-    // Failures are surfaced via toast by the edit-regenerate saga the
-    // regenerate saga delegates to; swallow the rejection here.
+    // Failures are surfaced via toast by the regenerate saga (before it
+    // delegates) or by the edit-regenerate saga it delegates to; swallow the
+    // rejection here.
     action.promise.catch(() => {});
   }
 

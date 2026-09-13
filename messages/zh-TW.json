@@ -4933,6 +4933,7 @@
   "agent_mutation_deletedAgentGeneric_message": "已刪除智慧體",
   "agent_mutation_undo_label": "復原",
   "agent_editRegenerate_failed_error": "編輯訊息失敗",
+  "agent_regenerate_attachmentsUnavailable_error": "無法重新產生：無法重新載入原始訊息的附件",
   "agent_errorBoundary_retrying_message": "出錯了，{seconds} 秒後重試…",
   "agent_errorBoundary_generic_error": "出錯了。請重試。",
   "agent_streamLifecycle_sendFailed_error": "出錯了。請重試。",
