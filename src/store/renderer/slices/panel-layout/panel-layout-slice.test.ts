@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createCollection, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createAction } from '@augmentcode/themis/utils/store/create-action';
 import {
   panelLayoutReducer as rawPanelLayoutReducer,
   emptyWorkspaceState,
@@ -68,6 +69,7 @@ import {
   goBack,
   goForward,
   setPanelPinned,
+  PANEL_LAYOUT_HANDLED_ACTION_TYPES,
 } from './panel-layout-slice';
 import { removeTerminal } from '../terminals/terminals-slice';
 import { removeScript } from '../scripts/scripts-slice';
@@ -5872,5 +5874,23 @@ describe('withPanelLayoutInvariants (monorepo#4569)', () => {
     const state = stateWithPanel('p1', [{ id: 't1', type: 'note', title: 'A' }]);
     expect(passThrough(state, { type: 'x' })).toBe(state);
     expect(passThrough(undefined, { type: '@@INIT' })).toEqual(emptyState());
+  });
+});
+
+describe('PANEL_LAYOUT_HANDLED_ACTION_TYPES', () => {
+  it('records every registered case, cross-slice ones included (intent-hq/intent#4835)', () => {
+    expect(PANEL_LAYOUT_HANDLED_ACTION_TYPES.has(setActiveTab.type)).toBe(true);
+    expect(PANEL_LAYOUT_HANDLED_ACTION_TYPES.has(removeScript.type)).toBe(true);
+    expect(PANEL_LAYOUT_HANDLED_ACTION_TYPES.has(removeTerminal.type)).toBe(true);
+    expect(PANEL_LAYOUT_HANDLED_ACTION_TYPES.has(workspaceDeleted.type)).toBe(true);
+    expect(PANEL_LAYOUT_HANDLED_ACTION_TYPES.has(workspaceUnmounted.type)).toBe(false);
+  });
+
+  it('is fed by the reducer registration itself', () => {
+    const late = createAction<[wsId: string]>('test/lateRegistration');
+    expect(PANEL_LAYOUT_HANDLED_ACTION_TYPES.has(late.type)).toBe(false);
+    rawPanelLayoutReducer.with(late, (state) => state);
+    expect(PANEL_LAYOUT_HANDLED_ACTION_TYPES.has(late.type)).toBe(true);
+    expect(rawPanelLayoutReducer(emptyState(), late(WS))).toEqual(emptyState());
   });
 });

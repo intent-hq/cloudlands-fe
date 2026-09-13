@@ -2093,6 +2093,20 @@ function applyCanonicalDefaultPairGeometry(
 }
 
 export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialState);
+
+const handledActionTypes = new Set<string>();
+/**
+ * Every action type `panelLayoutReducer` handles — `panelLayout/*` and the
+ * cross-slice cases alike — recorded as each case is registered. The browser
+ * tab registry saga derives its layout-mutation predicate from this set, so a
+ * new registration can never be missed (intent-hq/intent#4835).
+ */
+export const PANEL_LAYOUT_HANDLED_ACTION_TYPES: ReadonlySet<string> = handledActionTypes;
+const registerCase = panelLayoutReducer.with;
+panelLayoutReducer.with = (action, handler) => {
+  handledActionTypes.add(action.type);
+  return registerCase(action, handler);
+};
 // --- Initialization ---
 panelLayoutReducer.with(initializeLayout, (state, { payload }) => {
   const { wsId, layout } = payload;

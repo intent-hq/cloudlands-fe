@@ -29,7 +29,7 @@ vi.mock('$lib/utils/browser-url-resolution', () => ({
 
 import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
 import type { BrowserTab, BrowserTabListing } from '$shared/types/browser-clients';
-import type { StoreAction } from '@augmentcode/themis/utils/store/create-action';
+import { createAction, type StoreAction } from '@augmentcode/themis/utils/store/create-action';
 import {
   browserClientsReducer,
   browserTabClosed,
@@ -201,6 +201,7 @@ function start(
       Object.values(state.panelLayout.byWorkspaceId[wsId]?.panels ?? {}).flatMap(
         (panel: any) => panel.tabs as PanelTab[],
       ),
+    layout: (wsId = WS) => state.panelLayout.byWorkspaceId[wsId],
     hidden: (wsId = WS) => getItems(state.panelLayout.byWorkspaceId[wsId].hiddenTabs) as PanelTab[],
     registry: (wsId = WS) => state.browserTabRegistry.byWorkspaceId[wsId],
     closing: () => state.browserTabRegistry.closing as Record<string, string>,
@@ -389,6 +390,64 @@ describe('browserTabRegistrySaga', () => {
 
       // A removal that leaves the layout fact alone reports nothing.
       h.dispatch(removeScript(WS, 'script-1'));
+      await flush();
+      expect(mocks.upsertTab).not.toHaveBeenCalled();
+      await stop(h);
+    });
+
+    it('re-reports displayed for any reducer case that reshapes the layout, found by state identity', async () => {
+      // Neither a `panelLayout/*` type nor one the saga names; its payload
+      // carries the workspace id in no position a payload sniff would read.
+      const activateBrowserSibling = createAction(
+        'test/activateBrowserSibling',
+        (workspaceId: string) => ({ workspaceId }),
+      );
+      rawPanelLayoutReducer.with(activateBrowserSibling, (state, { payload: { workspaceId } }) => {
+        const ws = state.byWorkspaceId[workspaceId];
+        const panel = ws?.panels.p1;
+        const sibling = panel?.tabs.find((tab) => tab.type === 'browser');
+        if (!ws || !panel || !sibling || panel.activeTabId === sibling.id) return state;
+        return {
+          ...state,
+          byWorkspaceId: {
+            ...state.byWorkspaceId,
+            [workspaceId]: {
+              ...ws,
+              panels: { ...ws.panels, p1: { ...panel, activeTabId: sibling.id } },
+            },
+          },
+        };
+      });
+      const note: PanelTab = { id: 'n1', type: 'note', title: 'Note', closable: true };
+      const h = start({
+        layouts: { [WS]: settledLayout([note, browserTab({ browserUrl: 'http://a.test/' })]) },
+        health: 'down',
+        applied: true,
+      });
+      h.setHealth('healthy', 1);
+      h.dispatch(updateTabTitle(WS, 'b1', 'Example page'));
+      await flush();
+      expect(mocks.upsertTab.mock.calls).toEqual([[WS, expectedInput({ displayed: false })]]);
+      await flush();
+      mocks.upsertTab.mockClear();
+
+      h.dispatch(activateBrowserSibling(WS));
+      await flush();
+      expect(mocks.upsertTab.mock.calls).toEqual([[WS, expectedInput({ displayed: true })]]);
+      await stop(h);
+    });
+
+    it('does not report a handled action the reducer answered with the same layout', async () => {
+      const h = start({
+        layouts: { [WS]: settledLayout([browserTab({ browserUrl: 'http://a.test/' })]) },
+        health: 'down',
+        applied: true,
+      });
+      h.setHealth('healthy', 1);
+      const layout = h.layout();
+      // `p1` already shows `b1`: the reducer returns its input state.
+      h.dispatch(setActiveTab(WS, 'b1', 'p1', 1000));
+      expect(h.layout()).toBe(layout);
       await flush();
       expect(mocks.upsertTab).not.toHaveBeenCalled();
       await stop(h);
@@ -2118,10 +2177,12 @@ describe('browserTabRegistrySaga boundary', () => {
   });
 
   it('dispatches only through effect, the two fence openers and the placement transaction', () => {
+    // `put(channel, message)` feeds a saga-local channel, not the store.
     const putSites = collect((node) =>
       ts.isCallExpression(node) &&
       ts.isIdentifier(node.expression) &&
-      node.expression.text === 'put'
+      node.expression.text === 'put' &&
+      node.arguments.length === 1
         ? `${enclosingStep(node)}:${dispatched(node)}`
         : undefined,
     );
