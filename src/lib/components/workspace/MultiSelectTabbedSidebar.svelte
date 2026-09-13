@@ -333,19 +333,24 @@
   const selectedTabs = $derived(normalizeSelectedTabs($selectedTabIds));
   let agentSearchQuery = $state('');
   let contextSearchQuery = $state('');
+  // Collaborators (multiplayer w3) are refused on terminal + browser methods, so
+  // the shell dock, browser launcher, and their strip tabs are withheld up front.
+  const isCollaborator = $derived($workspace?.myRole === 'collaborator');
+  const OWNER_ONLY_TAB_IDS: ReadonlySet<TabId> = new Set<TabId>(['browser', 'shell']);
   const expandedStripTabs = $derived(
-    TAB_DEFINITIONS.filter((definition) => definition.id !== 'overview').map(
-      ({ id, label, icon }) => ({
-        id,
-        label,
-        icon,
-        unread: id === 'agents' && $hasUnreadForegroundAgents$,
-        unreadLabel:
-          id === 'agents'
-            ? m.workspace_multiSelectSidebar_agentsTabUnread_ariaLabel({ label })
-            : undefined,
-      }),
-    ),
+    TAB_DEFINITIONS.filter(
+      (definition) =>
+        definition.id !== 'overview' && !(isCollaborator && OWNER_ONLY_TAB_IDS.has(definition.id)),
+    ).map(({ id, label, icon }) => ({
+      id,
+      label,
+      icon,
+      unread: id === 'agents' && $hasUnreadForegroundAgents$,
+      unreadLabel:
+        id === 'agents'
+          ? m.workspace_multiSelectSidebar_agentsTabUnread_ariaLabel({ label })
+          : undefined,
+    })),
   );
   let sidebarTabSwitchDirection = $state<'left' | 'right' | 'none'>('none');
   let openLauncherHoverKey = $state<string | null>(null);
@@ -1464,19 +1469,21 @@
     onclick={isLauncherOverview ? undefined : handleExpandedFooterClick}
   >
     {#if isLauncherOverview}
-      {#if !isNewWorkspaceSession}
-        <SidebarBrowserLauncher
+      {#if !isCollaborator}
+        {#if !isNewWorkspaceSession}
+          <SidebarBrowserLauncher
+            {workspaceId}
+            {panelLayoutId}
+            onExpand={() => handleTabClick('browser')}
+            expanded={selectedTabs.has('browser')}
+          />
+        {/if}
+        <WorkspaceTerminalDock
           {workspaceId}
-          {panelLayoutId}
-          onExpand={() => handleTabClick('browser')}
-          expanded={selectedTabs.has('browser')}
+          onExpand={() => handleTabClick('shell')}
+          expanded={selectedTabs.has('shell')}
         />
       {/if}
-      <WorkspaceTerminalDock
-        {workspaceId}
-        onExpand={() => handleTabClick('shell')}
-        expanded={selectedTabs.has('shell')}
-      />
     {:else}
       <SidebarExpandedTabStrip
         tabs={expandedStripTabs}

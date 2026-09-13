@@ -130,6 +130,10 @@ export const WorkspaceSchema = z.object({
   statusImageAssetId: z.string().optional(), // Agent-authored status screenshot asset id (intent-hq/monorepo#997)
   activity: z.enum(['idle', 'agent_running']).optional(), // BE-derived in-flight agent state
   attention: z.enum(['none', 'unread', 'review_required']).optional(), // BE-owned dismissible attention flag (PROTOCOL §5.1 / §9.9)
+  // Membership summary (PROTOCOL §5.1, multiplayer w1); all absent on older daemons.
+  ownerPrincipalId: z.string().optional(),
+  myRole: z.enum(['owner', 'collaborator']).optional(),
+  memberCount: z.number().int().nonnegative().optional(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
   archived: z.boolean().optional(),

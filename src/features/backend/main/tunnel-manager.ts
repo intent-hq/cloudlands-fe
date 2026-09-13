@@ -287,6 +287,22 @@ interface StreamState {
   createdAtMs: number;
 }
 
+/**
+ * The daemon refused the `/tunnel` upgrade with HTTP 403 for this credential:
+ * port forwarding is owner-only (multiplayer w3), so a collaborator principal
+ * can never open a forward on this connection. The manager latches on the
+ * first 403 and fails every later `ensureTunnel()` / `forwardPort()` fast
+ * with this error instead of re-dialing a refusal that cannot change until
+ * the client reconnects under a different credential.
+ */
+export class TunnelForbiddenError extends Error {
+  constructor() {
+    // i18n-ignore (main-process error surfaced verbatim to agents/logs, not renderer copy)
+    super('Only the workspace owner can open forwarded ports');
+    this.name = 'TunnelForbiddenError';
+  }
+}
+
 /** Read-only lifecycle state for support diagnostics and focused health checks. */
 export interface TunnelDiagnostics {
   state: 'connecting' | 'connected' | 'disconnected' | 'disposed';
@@ -435,6 +451,8 @@ export class TunnelManager {
   private tunnelGeneration = 0;
   private nextStreamId = 1;
   private disposed = false;
+  /** Latched by a 403 upgrade rejection; see {@link TunnelForbiddenError}. */
+  private forwardingForbidden = false;
 
   constructor(options: TunnelManagerOptions) {
     const positive = (value: number, name: string): number => {
@@ -477,6 +495,7 @@ export class TunnelManager {
    */
   ensureTunnel(): Promise<void> {
     if (this.disposed) return Promise.reject(new Error('TunnelManager disposed'));
+    if (this.forwardingForbidden) return Promise.reject(new TunnelForbiddenError());
     if (this.ws && this.ws.readyState === WS_OPEN) return Promise.resolve();
     if (this.connectPromise) return this.connectPromise;
     if (this.ws) {
@@ -571,6 +590,18 @@ export class TunnelManager {
           if (done || settled) return;
           done = true;
           this.connectingSockets.delete(ws);
+          if (error instanceof AuthRejectedError && error.statusCode === 403) {
+            // A 403 comes from the real daemon after a pin-verified upgrade,
+            // so it is authoritative for every candidate: stop racing, latch
+            // owner-only, and fail fast from now on.
+            this.forwardingForbidden = true;
+            settled = true;
+            clearTimeout(timer);
+            for (const socket of sockets) terminateQuietly(socket);
+            logger.warn('tunnel refused: port forwarding is owner-only for this credential');
+            reject(new TunnelForbiddenError());
+            return;
+          }
           failCandidate(error);
         });
         ws.on('close', () => {
@@ -604,6 +635,7 @@ export class TunnelManager {
    */
   forwardPort(remotePort: number): Promise<number> {
     if (this.disposed) return Promise.reject(new Error('TunnelManager disposed'));
+    if (this.forwardingForbidden) return Promise.reject(new TunnelForbiddenError());
     if (!Number.isInteger(remotePort) || remotePort < 1 || remotePort > 65535) {
       return Promise.reject(new Error(`invalid remote port: ${remotePort}`));
     }
