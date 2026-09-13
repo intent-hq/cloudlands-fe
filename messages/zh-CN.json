@@ -2129,6 +2129,8 @@
   "chat_chatMessage_attachmentDownloadFailed_error": "无法下载 {name}",
   "chat_chatMessage_attachmentMissing_error": "{name} 已不可用 — 文件已从工作区中移除",
   "chat_chatMessage_attachmentOpenFailed_error": "无法打开 {name}",
+  "chat_chatMessage_author_ariaLabel": "由 {name} 发送",
+  "chat_chatMessage_authorUnknown_label": "未知成员",
   "chat_chatMessage_openAttachment_title": "打开 {name}",
   "chat_chatMessage_edit_placeholder": "编辑你的消息…",
   "chat_chatMessage_externalLink_fallback": "外部链接",

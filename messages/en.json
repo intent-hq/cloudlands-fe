@@ -2129,6 +2129,8 @@
   "chat_chatMessage_attachmentDownloadFailed_error": "Failed to download {name}",
   "chat_chatMessage_attachmentMissing_error": "{name} is no longer available — the file was removed from the workspace",
   "chat_chatMessage_attachmentOpenFailed_error": "Failed to open {name}",
+  "chat_chatMessage_author_ariaLabel": "Sent by {name}",
+  "chat_chatMessage_authorUnknown_label": "Unknown member",
   "chat_chatMessage_openAttachment_title": "Open {name}",
   "chat_chatMessage_edit_placeholder": "Edit your message...",
   "chat_chatMessage_externalLink_fallback": "External Link",

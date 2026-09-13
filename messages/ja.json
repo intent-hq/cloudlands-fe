@@ -2129,6 +2129,8 @@
   "chat_chatMessage_attachmentDownloadFailed_error": "{name} のダウンロードに失敗しました",
   "chat_chatMessage_attachmentMissing_error": "{name} は利用できません — ファイルはワークスペースから削除されました",
   "chat_chatMessage_attachmentOpenFailed_error": "{name} を開けませんでした",
+  "chat_chatMessage_author_ariaLabel": "{name} が送信",
+  "chat_chatMessage_authorUnknown_label": "不明なメンバー",
   "chat_chatMessage_openAttachment_title": "{name} を開く",
   "chat_chatMessage_edit_placeholder": "メッセージを編集...",
   "chat_chatMessage_externalLink_fallback": "外部リンク",
