@@ -84,6 +84,7 @@ import {
   closeTabsToRight,
   consumePendingFocus,
   destroyHiddenTabsByOwnerAgent,
+  destroyTabsByType,
   destroyOwnedTabsForWorkspace,
   destroyTabsByOwnerAgent,
   emptyWorkspaceState,
@@ -650,13 +651,15 @@ const OWNER_ONLY_TAB_TYPES: readonly PanelTabType[] = ['terminal', 'browser'];
 /**
  * A persisted layout may still hold terminal / browser tabs (saved as an
  * owner, or before the role changed). Collaborators cannot drive either, so
- * the restore closes them before the layout settles instead of mounting
- * panes whose every daemon call is refused.
+ * the restore destroys them before the layout settles instead of mounting
+ * panes whose every daemon call is refused. A destroy, not a user close:
+ * nothing may linger in `hiddenTabs`, `recentlyClosed` or the undo history
+ * for `reopenClosedTab` / `restoreHiddenTab` to bring back.
  */
 function* stripOwnerOnlyTabsForCollaborator(wsId: string): SagaGenerator<void> {
   if (!(yield* selectIsWorkspaceCollaborator.effect(wsId))) return;
   for (const tabType of OWNER_ONLY_TAB_TYPES) {
-    yield* put(closeTabsByType(wsId, tabType));
+    yield* put(destroyTabsByType(wsId, tabType));
   }
 }
 
