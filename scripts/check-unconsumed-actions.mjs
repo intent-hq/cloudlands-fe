@@ -26,8 +26,6 @@ const SELF = 'scripts/check-unconsumed-actions.mjs';
 // (pattern, getContext, worker) watcher counts as an explicit consumer.
 const PATTERN_CONTEXT_WATCHERS = new Set([...CONTEXT_WATCHERS, 'takeLatestByContext']);
 const PATTERN_EFFECTS = new Set([...WILDCARD_EFFECTS, 'takeLatestByContext']);
-const NO_MAIN_STORE =
-  'main-process store bridge is neutralized (src/store/main/redux-store-bridge.ts mainDispatch is a no-op); no saga middleware or reducer observes main-store actions';
 const UNCONSUMED_ACTION_EXCEPTIONS = [
   {
     pattern: /settings-events-slice\.ts#settingsChanged$/,
@@ -53,56 +51,6 @@ const UNCONSUMED_ACTION_EXCEPTIONS = [
     pattern: /agent-session-slice\.ts#agentSessionRegenerateFromMessageRequested$/,
     rationale:
       'Pre-existing dead dispatch: no reducer case, watcher, predicate, or mutation middleware observes it (dispatched from ChatPanel.svelte handleRegenerateFromMessage); listed so the gate can land without src/ changes',
-  },
-  {
-    pattern:
-      /src\/store\/main\/slices\/terminal-events\/terminal-events-slice\.ts#terminalCreated$/,
-    rationale: `Dispatched via mainDispatch from src/features/terminal/main/terminal.ipc.ts (terminal creation); ${NO_MAIN_STORE}`,
-  },
-  {
-    pattern:
-      /src\/store\/main\/slices\/terminal-events\/terminal-events-slice\.ts#terminalDisposed$/,
-    rationale: `Dispatched via mainDispatch from src/features/terminal/main/terminal.ipc.ts (terminal disposal); ${NO_MAIN_STORE}`,
-  },
-  {
-    pattern:
-      /src\/store\/main\/slices\/terminal-events\/terminal-events-slice\.ts#terminalProfessionalData$/,
-    rationale: `Dispatched via mainDispatch from src/features/terminal/main/terminal.ipc.ts (professional pty data chunks); ${NO_MAIN_STORE}`,
-  },
-  {
-    pattern:
-      /src\/store\/main\/slices\/terminal-events\/terminal-events-slice\.ts#terminalProfessionalExit$/,
-    rationale: `Dispatched via mainDispatch from src/features/terminal/main/terminal.ipc.ts (professional pty exit); ${NO_MAIN_STORE}`,
-  },
-  {
-    pattern:
-      /src\/store\/main\/slices\/workspace-events\/workspace-events-slice\.ts#emitWorkspaceEvent$/,
-    rationale: `Dispatched via mainDispatch from src/features/events/main and src/features/log/main; ${NO_MAIN_STORE}`,
-  },
-  {
-    pattern:
-      /src\/store\/main\/slices\/workspace-lifecycle-events\/workspace-lifecycle-events-slice\.ts#workspaceCreated$/,
-    rationale: `Dispatched via mainDispatch from src/features/workspace/main/workspace.service.ts (createWorkspace); ${NO_MAIN_STORE}`,
-  },
-  {
-    pattern:
-      /src\/store\/main\/slices\/workspace-lifecycle-events\/workspace-lifecycle-events-slice\.ts#workspaceUpdated$/,
-    rationale: `Dispatched via mainDispatch from src/features/workspace/main/workspace.service.ts (update, rename, unarchive paths); ${NO_MAIN_STORE}`,
-  },
-  {
-    pattern:
-      /src\/store\/main\/slices\/workspace-lifecycle-events\/workspace-lifecycle-events-slice\.ts#workspaceDeleting$/,
-    rationale: `Dispatched via mainDispatch from src/features/workspace/main/workspace.service.ts (pre-delete notification); ${NO_MAIN_STORE}`,
-  },
-  {
-    pattern:
-      /src\/store\/main\/slices\/workspace-lifecycle-events\/workspace-lifecycle-events-slice\.ts#workspaceDeleted$/,
-    rationale: `Dispatched via mainDispatch from src/features/workspace/main/workspace.service.ts (post-delete notification; the renderer workspaceDeleted in daemon-events-bridge.client.ts is a different action); ${NO_MAIN_STORE}`,
-  },
-  {
-    pattern:
-      /src\/store\/main\/slices\/workspace-lifecycle-events\/workspace-lifecycle-events-slice\.ts#workspaceArchived$/,
-    rationale: `Dispatched via mainDispatch from src/features/workspace/main/workspace.service.ts (archive); ${NO_MAIN_STORE}`,
   },
 ];
 
