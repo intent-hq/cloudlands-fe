@@ -206,10 +206,17 @@ let syncedConnectionGeneration: number | null = null;
  * The daemon refused a `browser.*` call with `-32003` on the current
  * connection (multiplayer w3: browser tabs are owner-only). The answer is
  * stable for the connection, so the connect-time sync stops retrying instead
- * of burning its attempts on the same refusal; the next connection starts
- * clean.
+ * of burning its attempts on the same refusal, later loads answer from the
+ * latch without re-dialing, and `listTabs` reads as an authoritative empty
+ * listing so the workspace settles (`applied`, nothing reported); the next
+ * connection starts clean.
  */
 let registryForbidden = false;
+
+/** What a refused `browser.*` call reads as: no rows to apply, no reply to act on. */
+function forbiddenReply(method: WireMethod): BrowserTab[] | null {
+  return method === 'listTabs' ? [] : null;
+}
 /** Removals being sent, so two workspaces' reporters do not send the same one. */
 const removalsInFlight = new Set<string>();
 /**
@@ -282,6 +289,7 @@ function* wire<M extends WireMethod>(
   ...args: Parameters<BrowserWire[M]>
 ): SagaGenerator<Awaited<ReturnType<BrowserWire[M]>> | null> {
   yield* check(fences);
+  if (registryForbidden) return forbiddenReply(method) as Awaited<ReturnType<BrowserWire[M]>>;
   const fn = appClient.browser[method] as (...a: unknown[]) => Promise<unknown>;
   let result: unknown = null;
   try {
@@ -290,6 +298,7 @@ function* wire<M extends WireMethod>(
     if (isForbiddenErrorResponse(error)) {
       registryForbidden = true;
       logger.debug(`browser.${method} is owner-only on this connection; treating as empty`);
+      result = forbiddenReply(method);
     } else {
       logger.warn(`browser.${method} failed`, {
         error: error instanceof Error ? error.message : error,

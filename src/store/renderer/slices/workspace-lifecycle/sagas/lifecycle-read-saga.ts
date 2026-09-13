@@ -57,7 +57,12 @@ import {
   hydrateTaskAgentAssociations,
   hydrateTaskAgentAssociationsRequested,
 } from '../../task-agent-associations/task-agent-associations-slice';
-import { hydrateTerminalsRequested, loadWorkspaceTerminals } from '../../terminals/terminals-slice';
+import { selectTerminalsForWorkspace } from '../../terminals/terminals-selectors';
+import {
+  hydrateTerminalsRequested,
+  loadWorkspaceTerminals,
+  removeTerminal,
+} from '../../terminals/terminals-slice';
 import {
   fetchWorkspaceTokenUsage,
   tokenUsageFetchFailed,
@@ -595,6 +600,12 @@ function* refreshTerminals(workspaceId: string): SagaGenerator<void> {
   } catch (error) {
     if (!isForbiddenErrorResponse(error)) throw error;
     logger.debug(`Terminals are owner-only for ${workspaceId}; treating as empty`);
+    // A bare empty list preserves prior tabs (daemon-restart resilience), so
+    // any tabs still held for this workspace are dropped explicitly.
+    const stale = yield* selectTerminalsForWorkspace.effect(workspaceId);
+    for (const terminal of stale) {
+      yield* put(removeTerminal(workspaceId, terminal.id));
+    }
     result = { terminals: [] };
   }
   yield* put(

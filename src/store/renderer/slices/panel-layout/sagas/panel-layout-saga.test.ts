@@ -1320,6 +1320,45 @@ describe('panelLayoutSaga', () => {
     await cancelSaga(task);
   });
 
+  it('closes restored terminal and browser tabs for a collaborator workspace before settling (multiplayer w3)', async () => {
+    mocks.getJSON.mockReturnValue(layout);
+    const state = storeState(WS_1);
+    state.workspace = {
+      workspaces: createCollection('id', [{ id: WS_1, myRole: 'collaborator' } as never]),
+    };
+    const { dispatch, task } = startSaga(state);
+    await settle();
+
+    const actions = dispatch.mock.calls.map(([action]) => action);
+    const closes = actions.filter((action) => action.type === closeTabsByType.type);
+    expect(closes.map((action) => action.payload.tabType).sort()).toEqual(['browser', 'terminal']);
+    const initializedAt = actions.findIndex((action) => action.type === initializeLayout.type);
+    const restoredAt = actions.findIndex(
+      (action) => action.type === setRestoreStatus.type && action.payload[1] === 'restored',
+    );
+    for (const close of closes) {
+      const at = actions.indexOf(close);
+      expect(at).toBeGreaterThan(initializedAt);
+      expect(at).toBeLessThan(restoredAt);
+    }
+    await cancelSaga(task);
+  });
+
+  it('leaves an owner restore free of role-driven tab closes', async () => {
+    mocks.getJSON.mockReturnValue(layout);
+    const state = storeState(WS_1);
+    state.workspace = {
+      workspaces: createCollection('id', [{ id: WS_1, myRole: 'owner' } as never]),
+    };
+    const { dispatch, task } = startSaga(state);
+    await settle();
+
+    expect(dispatch.mock.calls.some(([action]) => action.type === closeTabsByType.type)).toBe(
+      false,
+    );
+    await cancelSaga(task);
+  });
+
   it('removes an explicit legacy unpin during restore', async () => {
     const explicitUnpin: WorkspacePanelLayout = {
       ...layout,
