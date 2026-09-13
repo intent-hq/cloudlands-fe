@@ -88,10 +88,11 @@ export interface QueuedMessage {
   /**
    * Serve-time projection of the principal that enqueued the entry
    * (multiplayer w2), resolved by the daemon from the `fromPrincipalId`
-   * stamp. Optional: absent on older daemons, where the queue surface falls
-   * back to the projections the transcript already carries.
+   * stamp. Authoritative when present: `null` means the principal row is
+   * gone (no author, no fallback). Absent on older daemons, where the queue
+   * surface falls back to the projections the transcript already carries.
    */
-  author?: MessageAuthor;
+  author?: MessageAuthor | null;
 }
 
 /**

@@ -588,6 +588,38 @@ describe('QueuedMessageList', () => {
       expect(screen.getByText('first ever message, still queued')).toBeTruthy();
     });
 
+    it('omits the author on an explicit null projection even when the transcript resolves it', () => {
+      // `author: null` is the daemon's authoritative "principal row is gone";
+      // the stamp-based transcript fallback applies only when the field is absent.
+      render(QueuedMessageList, {
+        props: {
+          messages: [
+            queued({
+              id: 'q-gone',
+              content: 'author row deleted',
+              messageMetadata: { fromPrincipalId: guest.principalId },
+              author: null,
+            }),
+            queued({
+              id: 'q-legacy',
+              content: 'older daemon, stamp only',
+              position: 1,
+              messageMetadata: { fromPrincipalId: guest.principalId },
+            }),
+          ],
+          authors,
+        },
+      });
+
+      const headers = screen.getAllByTestId('queued-message-author');
+      expect(headers).toHaveLength(1);
+      expect(headers[0].closest('[data-message-id]')?.getAttribute('data-message-id')).toBe(
+        'q-legacy',
+      );
+      expect(screen.getByText('author row deleted')).toBeTruthy();
+      expect(screen.getByText('older daemon, stamp only')).toBeTruthy();
+    });
+
     it('omits the author on daemon-origin entries even when a projection is attached', () => {
       // Agent-to-agent sends and system wakes fall back to the workspace owner
       // on the daemon side; they are not human-authored and get no attribution.
