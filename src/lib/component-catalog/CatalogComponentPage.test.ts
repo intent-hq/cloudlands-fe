@@ -9,34 +9,33 @@ import { getCatalogEntry } from './catalog';
 afterEach(cleanup);
 
 describe('catalog component docs page', () => {
-  it('switches between live preview, fixture source, and prop inspection', async () => {
-    const entry = getCatalogEntry('button');
-    expect(entry).toBeDefined();
-    const { container } = render(CatalogComponentPage, { props: { entry: entry! } });
-
-    expect(screen.getByRole('heading', { name: 'Button', level: 1 })).toBeTruthy();
-    expect(container.querySelectorAll('[data-catalog-preview="button"]')).toHaveLength(2);
-    expect(screen.getByRole('table', { name: 'Button API reference' })).toBeTruthy();
-
-    const codeTab = screen.getByRole('tab', { name: 'Code' });
-    await fireEvent.click(codeTab);
-    expect(codeTab.getAttribute('aria-selected')).toBe('true');
-    expect(screen.getAllByText(/from '\$lib\/components\/ui\/button'/).length).toBeGreaterThan(1);
-
-    await fireEvent.click(screen.getByRole('tab', { name: 'Inspect' }));
-    expect(screen.getByRole('table', { name: 'Button playground props' })).toBeTruthy();
-    expect(screen.getAllByText('variant').length).toBeGreaterThan(0);
+  it.each(['button', 'select', 'dialog'])('shows import-only guidance for %s', async (slug) => {
+    render(CatalogComponentPage, { props: { entry: getCatalogEntry(slug)! } });
+    expect(screen.getAllByRole('table')).toHaveLength(1);
+    await fireEvent.click(screen.getByRole('tab', { name: 'Import' }));
+    const name = slug[0].toUpperCase() + slug.slice(1);
+    expect(screen.getByRole('tabpanel').textContent?.trim()).toBe(
+      `import { ${name} } from '$lib/components/ui/${slug}';`,
+    );
+    expect(screen.getAllByRole('table')).toHaveLength(1);
   });
-});
 
-it('uses the primary compound export in installation and code snippets', async () => {
-  const entry = getCatalogEntry('dialog')!;
-  const { container } = render(CatalogComponentPage, {
-    props: { entry: entry },
+  it('renders authored usage verbatim', async () => {
+    const usage = '<Button onclick={() => alert("Saved")}>Save</Button>';
+    render(CatalogComponentPage, { props: { entry: { ...getCatalogEntry('button')!, usage } } });
+    await fireEvent.click(screen.getByRole('tab', { name: 'Usage' }));
+    expect(screen.getByRole('tabpanel').textContent?.trim()).toBe(usage);
+    expect(screen.queryByRole('button', { name: 'Save' })).toBeNull();
+    expect(screen.getAllByRole('table')).toHaveLength(1);
   });
-  expect(container.querySelector('.install-command')?.textContent).toBe(
-    "import { Dialog } from '$lib/components/ui/dialog';",
-  );
-  await fireEvent.click(screen.getByRole('tab', { name: 'Code' }));
-  expect(screen.getByRole('tabpanel').textContent).toContain('<Dialog />');
+
+  it.each([
+    { slug: 'select', incomplete: true },
+    { slug: 'button', incomplete: false },
+  ])('reports shared-only reference coverage for $slug', ({ slug, incomplete }) => {
+    render(CatalogComponentPage, { props: { entry: getCatalogEntry(slug)! } });
+    expect(
+      screen.queryByText('Reference incomplete: only shared props are documented') !== null,
+    ).toBe(incomplete);
+  });
 });

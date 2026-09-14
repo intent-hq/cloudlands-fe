@@ -62,6 +62,10 @@ const uiComponentMetadataSchema = z
     dontUseWhen: z.array(z.string().min(1)).optional(),
     replaces: z.array(z.string().min(1)).optional(),
     apiGuidance: uiComponentApiGuidanceSchema.optional(),
+    usage: z
+      .string()
+      .refine((value) => value.trim().length > 0)
+      .optional(),
   })
   .superRefine((record, context) => {
     if (!['deprecated-wrapper', 'deletion-candidate'].includes(record.category)) return;

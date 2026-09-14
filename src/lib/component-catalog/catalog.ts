@@ -14,6 +14,7 @@ export interface CatalogEntry {
   fixtures: UiComponentFixture[];
   publicImport?: string;
   exports?: string[];
+  usage?: string;
   props?: CatalogProp[];
 }
 
@@ -24,7 +25,7 @@ export interface CatalogProp {
   description: string;
 }
 
-const commonProps: CatalogProp[] = [
+export const commonProps: CatalogProp[] = [
   { name: 'class', type: 'string', defaultValue: '—', description: 'Additional utility classes.' },
   {
     name: 'children',
@@ -228,6 +229,7 @@ const componentEntries: CatalogEntry[] = canonicalComponentManifest.map((compone
   fixtures: component.fixtures,
   publicImport: component.publicImport,
   exports: component.exports,
+  usage: component.usage,
   props: componentProps[component.id] ?? commonProps,
 }));
 

@@ -1,7 +1,7 @@
 <script lang="ts">
   import * as Tabs from '$lib/components/ui/tabs';
   import type { UiComponentFixture } from '$lib/components/ui/component-metadata';
-  import type { CatalogEntry } from './catalog';
+  import { commonProps, type CatalogEntry } from './catalog';
   import { getCatalogComponentName } from './catalog-export';
   import { getCatalogRenderer } from './catalog-renderers';
   import ChatPolishGeometryControls from './ChatPolishGeometryControls.svelte';
@@ -22,9 +22,6 @@
   const componentName = $derived(getCatalogComponentName(entry));
   const installCommand = $derived(
     entry.publicImport ? `import { ${componentName} } from '${entry.publicImport}';` : entry.source,
-  );
-  const fixtureSource = $derived(
-    `<script lang="ts">\n  ${installCommand}\n<\/script>\n\n<${componentName} />`,
   );
   const chatPolishStyle = $derived(
     [
@@ -101,8 +98,7 @@
     <Tabs.Root bind:value={tab} class="playground">
       <Tabs.List class="playground-tabs">
         <Tabs.Trigger value="preview">Preview</Tabs.Trigger>
-        <Tabs.Trigger value="code">Code</Tabs.Trigger>
-        <Tabs.Trigger value="inspect">Inspect</Tabs.Trigger>
+        <Tabs.Trigger value="code">{entry.usage ? 'Usage' : 'Import'}</Tabs.Trigger>
       </Tabs.List>
       <Tabs.Content value="preview">
         {#if entry.slug === 'chat-polish'}
@@ -114,9 +110,8 @@
           {@render preview(fixtures[0])}
         {/if}
       </Tabs.Content>
-      <Tabs.Content value="code"><pre><code>{fixtureSource}</code></pre></Tabs.Content>
-      <Tabs.Content value="inspect"
-        >{@render propsTable(`${entry.name} playground props`)}</Tabs.Content
+      <Tabs.Content value="code"
+        ><pre><code>{entry.usage ?? installCommand}</code></pre></Tabs.Content
       >
     </Tabs.Root>
   </section>
@@ -132,7 +127,10 @@
   {/each}
 
   <section aria-labelledby="api-title">
-    <h2 id="api-title">API Reference</h2>
+    <h2 id="api-title">API</h2>
+    {#if entry.props === commonProps}
+      <p class="section-description">Reference incomplete: only shared props are documented</p>
+    {/if}
     {@render propsTable(`${entry.name} API reference`)}
   </section>
 </article>
