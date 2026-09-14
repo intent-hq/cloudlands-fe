@@ -155,7 +155,9 @@ function start(options: { windowBackendId?: string } = {}) {
     tabState: tabStateReducer(undefined, { type: '@@INIT' }),
     panelLayout: panelLayoutReducer(undefined, { type: '@@INIT' }),
   };
+  const actions: Array<{ type: string; payload?: unknown }> = [];
   const dispatch = (action: any) => {
+    actions.push(action);
     state = {
       guestSessions: guestSessionsReducer(state.guestSessions, action),
       workspace: workspaceReducer(state.workspace, action),
@@ -178,7 +180,7 @@ function start(options: { windowBackendId?: string } = {}) {
     { channel, dispatch, getState: reduxStore.getState, context: { reduxStore } },
     guestSessionsSaga,
   );
-  return { dispatch, getState: () => state, task };
+  return { dispatch, getState: () => state, task, actions };
 }
 
 async function stop(task: Task): Promise<void> {
@@ -990,6 +992,53 @@ describe('guestSessionsSaga', () => {
       expect(clearedAgentIds()).toEqual(owners);
       expect(getItems(run.getState().workspace.workspaces)).toEqual([]);
       expect(mocks.closeAndNavigate.mock.calls.map(([id]) => id).sort()).toEqual(['ws-1', 'ws-2']);
+
+      await stop(run.task);
+    });
+
+    it('a slow main never delays the renderer purge: every owner clear is in flight at once and releasing them resurrects nothing', async () => {
+      const releases: Array<() => void> = [];
+      mocks.bridgeInvoke.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            releases.push(() => resolve({}));
+          }),
+      );
+      const run = start({ windowBackendId: GUEST.id });
+      await settle();
+      run.dispatch(replaceWorkspaceList([makeWorkspace('ws-1', 2), makeWorkspace('ws-2', 3)]));
+      run.dispatch(openWorkspaceTab('ws-1'));
+      run.dispatch(openWorkspaceTab('ws-2'));
+      const owners = seedOwnedTabs(run, ['ws-1', 'ws-2']);
+
+      run.dispatch(rejection(GUEST.id));
+      await settle();
+      await settle();
+
+      // Main has answered nothing, yet the renderer teardown is complete.
+      expect(releases).toHaveLength(owners.length);
+      expect(clearedAgentIds()).toEqual(owners);
+      expect(getItems(run.getState().workspace.workspaces)).toEqual([]);
+      expect(run.getState().panelLayout.byWorkspaceId['ws-1']).toBeUndefined();
+      expect(run.getState().panelLayout.byWorkspaceId['ws-2']).toBeUndefined();
+      expect(mocks.closeAndNavigate.mock.calls.map(([id]) => id).sort()).toEqual(['ws-1', 'ws-2']);
+      expect(
+        run.actions
+          .filter((action) => action.type === workspaceDeleted.type)
+          .map((action) => (action.payload as [string, string[]])[0])
+          .sort(),
+      ).toEqual(['ws-1', 'ws-2']);
+      expect(getItems(run.getState().guestSessions.sessions)).toEqual([GUEST]);
+      expect(run.getState().connections.authRejected?.id).toBe(GUEST.id);
+
+      const purged = run.getState();
+      for (const release of releases) release();
+      await settle();
+      await settle();
+
+      expect(run.getState()).toBe(purged);
+      expect(clearedAgentIds()).toEqual(owners);
+      expect(mocks.closeAndNavigate).toHaveBeenCalledTimes(2);
 
       await stop(run.task);
     });
