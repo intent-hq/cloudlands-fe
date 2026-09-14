@@ -47,9 +47,4 @@ export const dropdownCallerLedger = [
     replacement: 'Combobox',
     reason: 'shared option model for ModelPicker',
   },
-  {
-    caller: 'src/lib/components/patterns/settings/custom-controls.ts',
-    replacement: 'Menu',
-    reason: 'settings bridge for action items and separator without value selection',
-  },
 ] as const satisfies readonly DropdownCallerLedgerEntry[];
