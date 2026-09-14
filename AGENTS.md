@@ -348,7 +348,11 @@ in `package.json`, never into a separate workflow step, so local and CI cannot d
 step in `intent-pr.yml`, and an edit to that workflow runs it locally) —
 because those scans are cross-file graph checks that per-file linting cannot see:
 cloudlands-fe#2315 passed `verify:changed` locally and failed CI in
-`lint:saga-watcher-ownership`. A change to `scripts/type-check.ts` additionally runs
+`lint:saga-watcher-ownership`. One of those gates, `lint:protocol-version-literals`, fails
+any `src/` line that pairs a protocol/daemon keyword with a version literal (`v10.1`):
+reference the method/field name or the capability, not protocol version numbers — they
+are provisional until merge and went stale in cloudlands-fe#2447; a deliberate exception
+appends `// protocol-version-ok`. A change to `scripts/type-check.ts` additionally runs
 `pnpm run type-check:validate`, since `lint:architecture` omits that wrapper and the
 per-boundary checks invoke `tsc` directly.
 
