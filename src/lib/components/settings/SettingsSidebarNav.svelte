@@ -11,6 +11,7 @@
   import RobotIcon from 'phosphor-svelte/lib/RobotIcon';
   import SlidersHorizontalIcon from 'phosphor-svelte/lib/SlidersHorizontalIcon';
   import TerminalWindowIcon from 'phosphor-svelte/lib/TerminalWindowIcon';
+  import UsersIcon from 'phosphor-svelte/lib/UsersIcon';
   import type { Snippet } from 'svelte';
   import type { SettingsTab } from '$lib/components/patterns/settings/types';
 
@@ -72,6 +73,13 @@
       icon: DevicesIcon,
       get label() {
         return m.settings_sidebar_devices_label();
+      },
+    },
+    {
+      id: 'guest-sessions',
+      icon: UsersIcon,
+      get label() {
+        return m.settings_sidebar_guestSessions_label();
       },
     },
     {
