@@ -227,6 +227,47 @@ export function runPlaywright({
   return child;
 }
 
+/** How long a signalled Playwright child gets to tear down before SIGKILL. */
+export const CHILD_SHUTDOWN_GRACE_MS = 10_000;
+
+/**
+ * Forward SIGINT/SIGTERM to the child and keep the launcher alive until the
+ * child has actually exited: the `ct-<port>` lock is released from the child's
+ * exit event, and Playwright's shutdown is asynchronous, so exiting on the
+ * signal itself would hand the lock to a contender while the old component
+ * server is still listening on the port. A repeated signal, or a child still
+ * running after `graceMs`, escalates to SIGKILL.
+ */
+export function forwardSignalsToChild({
+  child,
+  proc = process,
+  signals = ['SIGINT', 'SIGTERM'],
+  graceMs = CHILD_SHUTDOWN_GRACE_MS,
+  log = (message) => console.error(message),
+}) {
+  let forwarded = null;
+  let graceTimer = null;
+  const clear = () => {
+    if (graceTimer) clearTimeout(graceTimer);
+    for (const signal of signals) proc.off(signal, onSignal);
+  };
+  const onSignal = (signal) => {
+    if (forwarded) {
+      child.kill('SIGKILL');
+      return;
+    }
+    forwarded = signal;
+    log(`[run-ct-tests] ${signal}: waiting for playwright to shut down`);
+    child.kill(signal);
+    graceTimer = setTimeout(() => child.kill('SIGKILL'), graceMs);
+    graceTimer.unref?.();
+  };
+  for (const signal of signals) proc.on(signal, onSignal);
+  child.once('exit', clear);
+  child.once('error', clear);
+  return clear;
+}
+
 export function resolveCtAlignedPlaywrightCli() {
   // Walk the dependency tree: repo root -> ct-svelte -> ct-core -> playwright.
   // Each hop uses createRequire from the previous package's own location, so
@@ -342,12 +383,7 @@ async function main(argv) {
     process.exit(code);
   };
   const child = runPlaywright({ cliPath: cli.cliPath, args, env, exit });
-  for (const signal of ['SIGINT', 'SIGTERM']) {
-    process.once(signal, () => {
-      child.kill(signal);
-      exit(128 + os.constants.signals[signal]);
-    });
-  }
+  forwardSignalsToChild({ child });
 }
 
 const isDirectRun = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;

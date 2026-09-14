@@ -11,6 +11,7 @@ import {
   buildChildEnv,
   collectNonFontOsDeps,
   exitCodeFromChild,
+  forwardSignalsToChild,
   parseLauncherArgs,
   resolveHtmlReportOpen,
   runPlaywright,
@@ -297,6 +298,83 @@ describe('acquireCtPortLock', () => {
       }),
     ).rejects.toThrow(/ct-3306/);
     other();
+  });
+
+  it('keeps the lock from a contender until the signalled child has exited', async () => {
+    const options = { acquireLock, lockPath, log() {} };
+    const release = await acquireCtPortLock({ ...options, env: { CT_PORT: '3307' }, cwd: '/a' });
+    const child = Object.assign(new EventEmitter(), { kill: () => true });
+    const proc = new EventEmitter();
+    const exitCodes: number[] = [];
+    const exit = (code: number) => {
+      release();
+      exitCodes.push(code);
+    };
+    child.on('exit', (code, signal) => exit(exitCodeFromChild(code, signal)));
+    forwardSignalsToChild({ child, proc, log() {} });
+
+    proc.emit('SIGINT', 'SIGINT');
+    await expect(
+      acquireCtPortLock({
+        ...options,
+        env: { CT_PORT: '3307', VERIFY_CHANGED_LOCK_TIMEOUT_MS: '20' },
+        cwd: '/b',
+      }),
+    ).rejects.toThrow(/ct-3307: owner pid \d+ cwd \/a/);
+    expect(exitCodes).toEqual([]);
+
+    child.emit('exit', null, 'SIGINT');
+    expect(exitCodes).toEqual([130]);
+    const contender = await acquireCtPortLock({ ...options, env: { CT_PORT: '3307' }, cwd: '/b' });
+    expect(JSON.parse(readFileSync(path.join(lockRoot, 'ct-3307', 'owner.json'), 'utf8')).cwd).toBe(
+      '/b',
+    );
+    contender();
+  });
+});
+
+describe('forwardSignalsToChild', () => {
+  const setup = (graceMs?: number) => {
+    const kills: string[] = [];
+    const child = Object.assign(new EventEmitter(), {
+      kill: (signal: string) => {
+        kills.push(signal);
+        return true;
+      },
+    });
+    const proc = new EventEmitter();
+    forwardSignalsToChild({ child, proc, graceMs, log() {} });
+    return { kills, child, proc };
+  };
+
+  it('forwards the signal to the child instead of exiting the launcher', () => {
+    const { kills, proc } = setup();
+    proc.emit('SIGTERM', 'SIGTERM');
+    expect(kills).toEqual(['SIGTERM']);
+  });
+
+  it('escalates to SIGKILL on a repeated signal', () => {
+    const { kills, proc } = setup();
+    proc.emit('SIGINT', 'SIGINT');
+    proc.emit('SIGINT', 'SIGINT');
+    expect(kills).toEqual(['SIGINT', 'SIGKILL']);
+  });
+
+  it('escalates to SIGKILL when the child outlives the grace period', async () => {
+    const { kills, proc } = setup(10);
+    proc.emit('SIGINT', 'SIGINT');
+    await new Promise((done) => setTimeout(done, 30));
+    expect(kills).toEqual(['SIGINT', 'SIGKILL']);
+  });
+
+  it('stops listening once the child has exited', async () => {
+    const { kills, child, proc } = setup(10);
+    proc.emit('SIGINT', 'SIGINT');
+    child.emit('exit', 130, null);
+    await new Promise((done) => setTimeout(done, 30));
+    proc.emit('SIGINT', 'SIGINT');
+    expect(kills).toEqual(['SIGINT']);
+    expect(proc.listenerCount('SIGINT')).toBe(0);
   });
 });
 
