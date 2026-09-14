@@ -241,6 +241,20 @@ characterization test, measurable removal gate, dynamic imports, and catalog fix
 The audit discovers local barrels, direct component imports, legacy deep imports, callers, and
 dynamic imports from source; do not maintain a second prose inventory.
 
+### Option and list rows
+
+Choose the row family by purpose; do not impose one height on every row.
+
+| Family          | Height rule                                                                                                                                                                           | Title, icon, and action alignment                                                                                         |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Navigation rows | Compact 28px or regular 32px, using the navigation row tokens in `app.css`; use `type-caption`.                                                                                       | Keep the title, leading icon, and trailing action on the same primary line.                                               |
+| Content rows    | Content-driven and potentially multiline. `collection/ListRow` keeps 36px compact / 48px regular minimum heights, with room to grow; its title and short metadata use `type-caption`. | Keep title and inline metadata on a shared text baseline; center icon and action slots against the content block.         |
+| Setting rows    | Content-driven label/control/description tiers, using `SettingsFieldRow`; expanded form content uses `type-body`.                                                                     | Align the label and control on the primary tier, with the description below; keep icons and actions aligned to that tier. |
+
+The shared baseline rule is to align titles, icons, and actions within the primary row or tier;
+secondary copy must not introduce an independent title or action offset. Multiline content may
+grow the row instead of clipping it to a navigation height.
+
 ### Compact command menus
 
 Use `Menu.CommandItem` for conventional right-click/dropdown action rows that pair a leading icon

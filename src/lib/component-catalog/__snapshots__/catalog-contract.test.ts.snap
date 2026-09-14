@@ -158,9 +158,9 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
-                      <div class="font-medium min-w-0 text-foreground text-sm truncate">
+                      <div class="font-medium! min-w-0 text-foreground truncate type-caption">
                         "Alpha"
-                    <div class="min-w-0 mt-0.5 text-muted-foreground text-xs">
+                    <div class="min-w-0 mt-0.5 text-muted-foreground type-caption">
                       "First item"
                   <div class="flex gap-1 items-center shrink-0">
                     <input aria-label="Edit Alpha" class="aria-invalid:border-danger bg-transparent border border-border data-[state=hover]:bg-hover disabled:bg-transparent disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:opacity-60 duration-(--spring-fast) flex focus-visible:outline-none h-(--control-height-medium) hover:bg-hover min-w-0 motion-reduce:transition-none placeholder:text-muted-foreground px-3 py-1 read-only:text-muted-foreground rounded-(--radius-medium) selection:bg-primary selection:text-primary-foreground shadow-none text-foreground transition-[background-color,border-color,box-shadow,color] type-caption w-full" data-size="default" data-slot="input">
@@ -186,9 +186,9 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
-                      <div class="font-medium min-w-0 text-foreground text-sm truncate">
+                      <div class="font-medium! min-w-0 text-foreground truncate type-caption">
                         "Beta"
-                    <div class="min-w-0 mt-0.5 text-muted-foreground text-xs">
+                    <div class="min-w-0 mt-0.5 text-muted-foreground type-caption">
                       "Second item"
                   <div class="flex gap-1 items-center shrink-0">
                     <input aria-label="Edit Beta" class="aria-invalid:border-danger bg-transparent border border-border data-[state=hover]:bg-hover disabled:bg-transparent disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:opacity-60 duration-(--spring-fast) flex focus-visible:outline-none h-(--control-height-medium) hover:bg-hover min-w-0 motion-reduce:transition-none placeholder:text-muted-foreground px-3 py-1 read-only:text-muted-foreground rounded-(--radius-medium) selection:bg-primary selection:text-primary-foreground shadow-none text-foreground transition-[background-color,border-color,box-shadow,color] type-caption w-full" data-size="default" data-slot="input">
@@ -214,9 +214,9 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
-                      <div class="font-medium min-w-0 text-foreground text-sm truncate">
+                      <div class="font-medium! min-w-0 text-foreground truncate type-caption">
                         "Bravo"
-                    <div class="min-w-0 mt-0.5 text-muted-foreground text-xs">
+                    <div class="min-w-0 mt-0.5 text-muted-foreground type-caption">
                       "Third item"
                   <div class="flex gap-1 items-center shrink-0">
                     <input aria-label="Edit Bravo" class="aria-invalid:border-danger bg-transparent border border-border data-[state=hover]:bg-hover disabled:bg-transparent disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:opacity-60 duration-(--spring-fast) flex focus-visible:outline-none h-(--control-height-medium) hover:bg-hover min-w-0 motion-reduce:transition-none placeholder:text-muted-foreground px-3 py-1 read-only:text-muted-foreground rounded-(--radius-medium) selection:bg-primary selection:text-primary-foreground shadow-none text-foreground transition-[background-color,border-color,box-shadow,color] type-caption w-full" data-size="default" data-slot="input">
@@ -252,9 +252,9 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
-                      <div class="font-medium min-w-0 text-foreground text-sm truncate">
+                      <div class="font-medium! min-w-0 text-foreground truncate type-caption">
                         "Alpha"
-                    <div class="min-w-0 mt-0.5 text-muted-foreground text-xs">
+                    <div class="min-w-0 mt-0.5 text-muted-foreground type-caption">
                       "First item"
                   <div class="flex gap-1 items-center shrink-0">
                     <input aria-label="Edit Alpha" class="aria-invalid:border-danger bg-transparent border border-border data-[state=hover]:bg-hover disabled:bg-transparent disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:opacity-60 duration-(--spring-fast) flex focus-visible:outline-none h-(--control-height-medium) hover:bg-hover min-w-0 motion-reduce:transition-none placeholder:text-muted-foreground px-3 py-1 read-only:text-muted-foreground rounded-(--radius-medium) selection:bg-primary selection:text-primary-foreground shadow-none text-foreground transition-[background-color,border-color,box-shadow,color] type-caption w-full" data-size="default" data-slot="input">
@@ -280,9 +280,9 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
-                      <div class="font-medium min-w-0 text-foreground text-sm truncate">
+                      <div class="font-medium! min-w-0 text-foreground truncate type-caption">
                         "Beta"
-                    <div class="min-w-0 mt-0.5 text-muted-foreground text-xs">
+                    <div class="min-w-0 mt-0.5 text-muted-foreground type-caption">
                       "Second item"
                   <div class="flex gap-1 items-center shrink-0">
                     <input aria-label="Edit Beta" class="aria-invalid:border-danger bg-transparent border border-border data-[state=hover]:bg-hover disabled:bg-transparent disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:opacity-60 duration-(--spring-fast) flex focus-visible:outline-none h-(--control-height-medium) hover:bg-hover min-w-0 motion-reduce:transition-none placeholder:text-muted-foreground px-3 py-1 read-only:text-muted-foreground rounded-(--radius-medium) selection:bg-primary selection:text-primary-foreground shadow-none text-foreground transition-[background-color,border-color,box-shadow,color] type-caption w-full" data-size="default" data-slot="input">
@@ -308,9 +308,9 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
-                      <div class="font-medium min-w-0 text-foreground text-sm truncate">
+                      <div class="font-medium! min-w-0 text-foreground truncate type-caption">
                         "Bravo"
-                    <div class="min-w-0 mt-0.5 text-muted-foreground text-xs">
+                    <div class="min-w-0 mt-0.5 text-muted-foreground type-caption">
                       "Third item"
                   <div class="flex gap-1 items-center shrink-0">
                     <input aria-label="Edit Bravo" class="aria-invalid:border-danger bg-transparent border border-border data-[state=hover]:bg-hover disabled:bg-transparent disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:opacity-60 duration-(--spring-fast) flex focus-visible:outline-none h-(--control-height-medium) hover:bg-hover min-w-0 motion-reduce:transition-none placeholder:text-muted-foreground px-3 py-1 read-only:text-muted-foreground rounded-(--radius-medium) selection:bg-primary selection:text-primary-foreground shadow-none text-foreground transition-[background-color,border-color,box-shadow,color] type-caption w-full" data-size="default" data-slot="input">
@@ -346,9 +346,9 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
-                      <div class="font-medium min-w-0 text-foreground text-sm truncate">
+                      <div class="font-medium! min-w-0 text-foreground truncate type-caption">
                         "Alpha"
-                    <div class="min-w-0 mt-0.5 text-muted-foreground text-xs">
+                    <div class="min-w-0 mt-0.5 text-muted-foreground type-caption">
                       "First item"
                   <div class="flex gap-1 items-center shrink-0">
                     <input aria-label="Edit Alpha" class="aria-invalid:border-danger bg-transparent border border-border data-[state=hover]:bg-hover disabled:bg-transparent disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:opacity-60 duration-(--spring-fast) flex focus-visible:outline-none h-(--control-height-medium) hover:bg-hover min-w-0 motion-reduce:transition-none placeholder:text-muted-foreground px-3 py-1 read-only:text-muted-foreground rounded-(--radius-medium) selection:bg-primary selection:text-primary-foreground shadow-none text-foreground transition-[background-color,border-color,box-shadow,color] type-caption w-full" data-size="default" data-slot="input">
@@ -374,9 +374,9 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
-                      <div class="font-medium min-w-0 text-foreground text-sm truncate">
+                      <div class="font-medium! min-w-0 text-foreground truncate type-caption">
                         "Beta"
-                    <div class="min-w-0 mt-0.5 text-muted-foreground text-xs">
+                    <div class="min-w-0 mt-0.5 text-muted-foreground type-caption">
                       "Second item"
                   <div class="flex gap-1 items-center shrink-0">
                     <input aria-label="Edit Beta" class="aria-invalid:border-danger bg-transparent border border-border data-[state=hover]:bg-hover disabled:bg-transparent disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:opacity-60 duration-(--spring-fast) flex focus-visible:outline-none h-(--control-height-medium) hover:bg-hover min-w-0 motion-reduce:transition-none placeholder:text-muted-foreground px-3 py-1 read-only:text-muted-foreground rounded-(--radius-medium) selection:bg-primary selection:text-primary-foreground shadow-none text-foreground transition-[background-color,border-color,box-shadow,color] type-caption w-full" data-size="default" data-slot="input">
@@ -402,9 +402,9 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
-                      <div class="font-medium min-w-0 text-foreground text-sm truncate">
+                      <div class="font-medium! min-w-0 text-foreground truncate type-caption">
                         "Bravo"
-                    <div class="min-w-0 mt-0.5 text-muted-foreground text-xs">
+                    <div class="min-w-0 mt-0.5 text-muted-foreground type-caption">
                       "Third item"
                   <div class="flex gap-1 items-center shrink-0">
                     <input aria-label="Edit Bravo" class="aria-invalid:border-danger bg-transparent border border-border data-[state=hover]:bg-hover disabled:bg-transparent disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:opacity-60 duration-(--spring-fast) flex focus-visible:outline-none h-(--control-height-medium) hover:bg-hover min-w-0 motion-reduce:transition-none placeholder:text-muted-foreground px-3 py-1 read-only:text-muted-foreground rounded-(--radius-medium) selection:bg-primary selection:text-primary-foreground shadow-none text-foreground transition-[background-color,border-color,box-shadow,color] type-caption w-full" data-size="default" data-slot="input">
@@ -440,9 +440,9 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
-                      <div class="font-medium min-w-0 text-foreground text-sm truncate">
+                      <div class="font-medium! min-w-0 text-foreground truncate type-caption">
                         "Alpha"
-                    <div class="min-w-0 mt-0.5 text-muted-foreground text-xs">
+                    <div class="min-w-0 mt-0.5 text-muted-foreground type-caption">
                       "First item"
                   <div class="flex gap-1 items-center shrink-0">
                     <input aria-label="Edit Alpha" class="aria-invalid:border-danger bg-transparent border border-border data-[state=hover]:bg-hover disabled:bg-transparent disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:opacity-60 duration-(--spring-fast) flex focus-visible:outline-none h-(--control-height-medium) hover:bg-hover min-w-0 motion-reduce:transition-none placeholder:text-muted-foreground px-3 py-1 read-only:text-muted-foreground rounded-(--radius-medium) selection:bg-primary selection:text-primary-foreground shadow-none text-foreground transition-[background-color,border-color,box-shadow,color] type-caption w-full" data-size="default" data-slot="input">
@@ -468,9 +468,9 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
-                      <div class="font-medium min-w-0 text-foreground text-sm truncate">
+                      <div class="font-medium! min-w-0 text-foreground truncate type-caption">
                         "Beta"
-                    <div class="min-w-0 mt-0.5 text-muted-foreground text-xs">
+                    <div class="min-w-0 mt-0.5 text-muted-foreground type-caption">
                       "Second item"
                   <div class="flex gap-1 items-center shrink-0">
                     <input aria-label="Edit Beta" class="aria-invalid:border-danger bg-transparent border border-border data-[state=hover]:bg-hover disabled:bg-transparent disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:opacity-60 duration-(--spring-fast) flex focus-visible:outline-none h-(--control-height-medium) hover:bg-hover min-w-0 motion-reduce:transition-none placeholder:text-muted-foreground px-3 py-1 read-only:text-muted-foreground rounded-(--radius-medium) selection:bg-primary selection:text-primary-foreground shadow-none text-foreground transition-[background-color,border-color,box-shadow,color] type-caption w-full" data-size="default" data-slot="input">
@@ -496,9 +496,9 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
-                      <div class="font-medium min-w-0 text-foreground text-sm truncate">
+                      <div class="font-medium! min-w-0 text-foreground truncate type-caption">
                         "Bravo"
-                    <div class="min-w-0 mt-0.5 text-muted-foreground text-xs">
+                    <div class="min-w-0 mt-0.5 text-muted-foreground type-caption">
                       "Third item"
                   <div class="flex gap-1 items-center shrink-0">
                     <input aria-label="Edit Bravo" class="aria-invalid:border-danger bg-transparent border border-border data-[state=hover]:bg-hover disabled:bg-transparent disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:opacity-60 duration-(--spring-fast) flex focus-visible:outline-none h-(--control-height-medium) hover:bg-hover min-w-0 motion-reduce:transition-none placeholder:text-muted-foreground px-3 py-1 read-only:text-muted-foreground rounded-(--radius-medium) selection:bg-primary selection:text-primary-foreground shadow-none text-foreground transition-[background-color,border-color,box-shadow,color] type-caption w-full" data-size="default" data-slot="input">
@@ -534,9 +534,9 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
-                      <div class="font-medium min-w-0 text-foreground text-sm truncate">
+                      <div class="font-medium! min-w-0 text-foreground truncate type-caption">
                         "Alpha"
-                    <div class="min-w-0 mt-0.5 text-muted-foreground text-xs">
+                    <div class="min-w-0 mt-0.5 text-muted-foreground type-caption">
                       "First item"
                   <div class="flex gap-1 items-center shrink-0">
                     <input aria-label="Edit Alpha" class="aria-invalid:border-danger bg-transparent border border-border data-[state=hover]:bg-hover disabled:bg-transparent disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:opacity-60 duration-(--spring-fast) flex focus-visible:outline-none h-(--control-height-medium) hover:bg-hover min-w-0 motion-reduce:transition-none placeholder:text-muted-foreground px-3 py-1 read-only:text-muted-foreground rounded-(--radius-medium) selection:bg-primary selection:text-primary-foreground shadow-none text-foreground transition-[background-color,border-color,box-shadow,color] type-caption w-full" data-size="default" data-slot="input">
@@ -562,9 +562,9 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
-                      <div class="font-medium min-w-0 text-foreground text-sm truncate">
+                      <div class="font-medium! min-w-0 text-foreground truncate type-caption">
                         "Beta"
-                    <div class="min-w-0 mt-0.5 text-muted-foreground text-xs">
+                    <div class="min-w-0 mt-0.5 text-muted-foreground type-caption">
                       "Second item"
                   <div class="flex gap-1 items-center shrink-0">
                     <input aria-label="Edit Beta" class="aria-invalid:border-danger bg-transparent border border-border data-[state=hover]:bg-hover disabled:bg-transparent disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:opacity-60 duration-(--spring-fast) flex focus-visible:outline-none h-(--control-height-medium) hover:bg-hover min-w-0 motion-reduce:transition-none placeholder:text-muted-foreground px-3 py-1 read-only:text-muted-foreground rounded-(--radius-medium) selection:bg-primary selection:text-primary-foreground shadow-none text-foreground transition-[background-color,border-color,box-shadow,color] type-caption w-full" data-size="default" data-slot="input">
@@ -590,9 +590,9 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
-                      <div class="font-medium min-w-0 text-foreground text-sm truncate">
+                      <div class="font-medium! min-w-0 text-foreground truncate type-caption">
                         "Bravo"
-                    <div class="min-w-0 mt-0.5 text-muted-foreground text-xs">
+                    <div class="min-w-0 mt-0.5 text-muted-foreground type-caption">
                       "Third item"
                   <div class="flex gap-1 items-center shrink-0">
                     <input aria-label="Edit Bravo" class="aria-invalid:border-danger bg-transparent border border-border data-[state=hover]:bg-hover disabled:bg-transparent disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:opacity-60 duration-(--spring-fast) flex focus-visible:outline-none h-(--control-height-medium) hover:bg-hover min-w-0 motion-reduce:transition-none placeholder:text-muted-foreground px-3 py-1 read-only:text-muted-foreground rounded-(--radius-medium) selection:bg-primary selection:text-primary-foreground shadow-none text-foreground transition-[background-color,border-color,box-shadow,color] type-caption w-full" data-size="default" data-slot="input">
@@ -628,9 +628,9 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
-                      <div class="font-medium min-w-0 text-foreground text-sm truncate">
+                      <div class="font-medium! min-w-0 text-foreground truncate type-caption">
                         "Alpha"
-                    <div class="min-w-0 mt-0.5 text-muted-foreground text-xs">
+                    <div class="min-w-0 mt-0.5 text-muted-foreground type-caption">
                       "First item"
                   <div class="flex gap-1 items-center shrink-0">
                     <input aria-label="Edit Alpha" class="aria-invalid:border-danger bg-transparent border border-border data-[state=hover]:bg-hover disabled:bg-transparent disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:opacity-60 duration-(--spring-fast) flex focus-visible:outline-none h-(--control-height-medium) hover:bg-hover min-w-0 motion-reduce:transition-none placeholder:text-muted-foreground px-3 py-1 read-only:text-muted-foreground rounded-(--radius-medium) selection:bg-primary selection:text-primary-foreground shadow-none text-foreground transition-[background-color,border-color,box-shadow,color] type-caption w-full" data-size="default" data-slot="input">
@@ -656,9 +656,9 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
-                      <div class="font-medium min-w-0 text-foreground text-sm truncate">
+                      <div class="font-medium! min-w-0 text-foreground truncate type-caption">
                         "Beta"
-                    <div class="min-w-0 mt-0.5 text-muted-foreground text-xs">
+                    <div class="min-w-0 mt-0.5 text-muted-foreground type-caption">
                       "Second item"
                   <div class="flex gap-1 items-center shrink-0">
                     <input aria-label="Edit Beta" class="aria-invalid:border-danger bg-transparent border border-border data-[state=hover]:bg-hover disabled:bg-transparent disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:opacity-60 duration-(--spring-fast) flex focus-visible:outline-none h-(--control-height-medium) hover:bg-hover min-w-0 motion-reduce:transition-none placeholder:text-muted-foreground px-3 py-1 read-only:text-muted-foreground rounded-(--radius-medium) selection:bg-primary selection:text-primary-foreground shadow-none text-foreground transition-[background-color,border-color,box-shadow,color] type-caption w-full" data-size="default" data-slot="input">
@@ -684,9 +684,9 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
-                      <div class="font-medium min-w-0 text-foreground text-sm truncate">
+                      <div class="font-medium! min-w-0 text-foreground truncate type-caption">
                         "Bravo"
-                    <div class="min-w-0 mt-0.5 text-muted-foreground text-xs">
+                    <div class="min-w-0 mt-0.5 text-muted-foreground type-caption">
                       "Third item"
                   <div class="flex gap-1 items-center shrink-0">
                     <input aria-label="Edit Bravo" class="aria-invalid:border-danger bg-transparent border border-border data-[state=hover]:bg-hover disabled:bg-transparent disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:opacity-60 duration-(--spring-fast) flex focus-visible:outline-none h-(--control-height-medium) hover:bg-hover min-w-0 motion-reduce:transition-none placeholder:text-muted-foreground px-3 py-1 read-only:text-muted-foreground rounded-(--radius-medium) selection:bg-primary selection:text-primary-foreground shadow-none text-foreground transition-[background-color,border-color,box-shadow,color] type-caption w-full" data-size="default" data-slot="input">
@@ -722,9 +722,9 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
-                      <div class="font-medium min-w-0 text-foreground text-sm truncate">
+                      <div class="font-medium! min-w-0 text-foreground truncate type-caption">
                         "Alpha"
-                    <div class="min-w-0 mt-0.5 text-muted-foreground text-xs">
+                    <div class="min-w-0 mt-0.5 text-muted-foreground type-caption">
                       "First item"
                   <div class="flex gap-1 items-center shrink-0">
                     <input aria-label="Edit Alpha" class="aria-invalid:border-danger bg-transparent border border-border data-[state=hover]:bg-hover disabled:bg-transparent disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:opacity-60 duration-(--spring-fast) flex focus-visible:outline-none h-(--control-height-medium) hover:bg-hover min-w-0 motion-reduce:transition-none placeholder:text-muted-foreground px-3 py-1 read-only:text-muted-foreground rounded-(--radius-medium) selection:bg-primary selection:text-primary-foreground shadow-none text-foreground transition-[background-color,border-color,box-shadow,color] type-caption w-full" data-size="default" data-slot="input">
@@ -750,9 +750,9 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
-                      <div class="font-medium min-w-0 text-foreground text-sm truncate">
+                      <div class="font-medium! min-w-0 text-foreground truncate type-caption">
                         "Beta"
-                    <div class="min-w-0 mt-0.5 text-muted-foreground text-xs">
+                    <div class="min-w-0 mt-0.5 text-muted-foreground type-caption">
                       "Second item"
                   <div class="flex gap-1 items-center shrink-0">
                     <input aria-label="Edit Beta" class="aria-invalid:border-danger bg-transparent border border-border data-[state=hover]:bg-hover disabled:bg-transparent disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:opacity-60 duration-(--spring-fast) flex focus-visible:outline-none h-(--control-height-medium) hover:bg-hover min-w-0 motion-reduce:transition-none placeholder:text-muted-foreground px-3 py-1 read-only:text-muted-foreground rounded-(--radius-medium) selection:bg-primary selection:text-primary-foreground shadow-none text-foreground transition-[background-color,border-color,box-shadow,color] type-caption w-full" data-size="default" data-slot="input">
@@ -778,9 +778,9 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
-                      <div class="font-medium min-w-0 text-foreground text-sm truncate">
+                      <div class="font-medium! min-w-0 text-foreground truncate type-caption">
                         "Bravo"
-                    <div class="min-w-0 mt-0.5 text-muted-foreground text-xs">
+                    <div class="min-w-0 mt-0.5 text-muted-foreground type-caption">
                       "Third item"
                   <div class="flex gap-1 items-center shrink-0">
                     <input aria-label="Edit Bravo" class="aria-invalid:border-danger bg-transparent border border-border data-[state=hover]:bg-hover disabled:bg-transparent disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:opacity-60 duration-(--spring-fast) flex focus-visible:outline-none h-(--control-height-medium) hover:bg-hover min-w-0 motion-reduce:transition-none placeholder:text-muted-foreground px-3 py-1 read-only:text-muted-foreground rounded-(--radius-medium) selection:bg-primary selection:text-primary-foreground shadow-none text-foreground transition-[background-color,border-color,box-shadow,color] type-caption w-full" data-size="default" data-slot="input">
@@ -816,9 +816,9 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
-                      <div class="font-medium min-w-0 text-foreground text-sm truncate">
+                      <div class="font-medium! min-w-0 text-foreground truncate type-caption">
                         "Alpha"
-                    <div class="min-w-0 mt-0.5 text-muted-foreground text-xs">
+                    <div class="min-w-0 mt-0.5 text-muted-foreground type-caption">
                       "First item"
                   <div class="flex gap-1 items-center shrink-0">
                     <input aria-label="Edit Alpha" class="aria-invalid:border-danger bg-transparent border border-border data-[state=hover]:bg-hover disabled:bg-transparent disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:opacity-60 duration-(--spring-fast) flex focus-visible:outline-none h-(--control-height-medium) hover:bg-hover min-w-0 motion-reduce:transition-none placeholder:text-muted-foreground px-3 py-1 read-only:text-muted-foreground rounded-(--radius-medium) selection:bg-primary selection:text-primary-foreground shadow-none text-foreground transition-[background-color,border-color,box-shadow,color] type-caption w-full" data-size="default" data-slot="input">
@@ -844,9 +844,9 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
-                      <div class="font-medium min-w-0 text-foreground text-sm truncate">
+                      <div class="font-medium! min-w-0 text-foreground truncate type-caption">
                         "Beta"
-                    <div class="min-w-0 mt-0.5 text-muted-foreground text-xs">
+                    <div class="min-w-0 mt-0.5 text-muted-foreground type-caption">
                       "Second item"
                   <div class="flex gap-1 items-center shrink-0">
                     <input aria-label="Edit Beta" class="aria-invalid:border-danger bg-transparent border border-border data-[state=hover]:bg-hover disabled:bg-transparent disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:opacity-60 duration-(--spring-fast) flex focus-visible:outline-none h-(--control-height-medium) hover:bg-hover min-w-0 motion-reduce:transition-none placeholder:text-muted-foreground px-3 py-1 read-only:text-muted-foreground rounded-(--radius-medium) selection:bg-primary selection:text-primary-foreground shadow-none text-foreground transition-[background-color,border-color,box-shadow,color] type-caption w-full" data-size="default" data-slot="input">
@@ -872,9 +872,9 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
-                      <div class="font-medium min-w-0 text-foreground text-sm truncate">
+                      <div class="font-medium! min-w-0 text-foreground truncate type-caption">
                         "Bravo"
-                    <div class="min-w-0 mt-0.5 text-muted-foreground text-xs">
+                    <div class="min-w-0 mt-0.5 text-muted-foreground type-caption">
                       "Third item"
                   <div class="flex gap-1 items-center shrink-0">
                     <input aria-label="Edit Bravo" class="aria-invalid:border-danger bg-transparent border border-border data-[state=hover]:bg-hover disabled:bg-transparent disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:opacity-60 duration-(--spring-fast) flex focus-visible:outline-none h-(--control-height-medium) hover:bg-hover min-w-0 motion-reduce:transition-none placeholder:text-muted-foreground px-3 py-1 read-only:text-muted-foreground rounded-(--radius-medium) selection:bg-primary selection:text-primary-foreground shadow-none text-foreground transition-[background-color,border-color,box-shadow,color] type-caption w-full" data-size="default" data-slot="input">
@@ -914,7 +914,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                     <div class="flex gap-3 items-center min-h-12 min-w-0 mx-2 px-2 py-2.5" data-density="default" data-inset="card" data-slot="list-row">
                       <div class="flex-1 min-w-0">
                         <div class="flex gap-2 items-baseline min-w-0">
-                          <div class="font-medium min-w-0 text-foreground text-sm truncate">
+                          <div class="font-medium! min-w-0 text-foreground truncate type-caption">
                             "Active workspace"
             <section class="border-border border-t flex items-center justify-start min-h-28 px-4 py-6 text-center" data-density="compact" data-emphasis="routine" data-inset="card" data-severity="routine" data-slot="empty-state">
               <div class="flex flex-col gap-3 max-w-none text-left w-full">
@@ -948,9 +948,9 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
-                      <div class="font-medium min-w-0 text-foreground text-sm truncate">
+                      <div class="font-medium! min-w-0 text-foreground truncate type-caption">
                         "Alpha"
-                    <div class="min-w-0 mt-0.5 text-muted-foreground text-xs">
+                    <div class="min-w-0 mt-0.5 text-muted-foreground type-caption">
                       "First item"
                   <div class="flex gap-1 items-center shrink-0">
                     <input aria-label="Edit Alpha" class="aria-invalid:border-danger bg-transparent border border-border data-[state=hover]:bg-hover disabled:bg-transparent disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:opacity-60 duration-(--spring-fast) flex focus-visible:outline-none h-(--control-height-medium) hover:bg-hover min-w-0 motion-reduce:transition-none placeholder:text-muted-foreground px-3 py-1 read-only:text-muted-foreground rounded-(--radius-medium) selection:bg-primary selection:text-primary-foreground shadow-none text-foreground transition-[background-color,border-color,box-shadow,color] type-caption w-full" data-size="default" data-slot="input">
@@ -976,9 +976,9 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
-                      <div class="font-medium min-w-0 text-foreground text-sm truncate">
+                      <div class="font-medium! min-w-0 text-foreground truncate type-caption">
                         "Beta"
-                    <div class="min-w-0 mt-0.5 text-muted-foreground text-xs">
+                    <div class="min-w-0 mt-0.5 text-muted-foreground type-caption">
                       "Second item"
                   <div class="flex gap-1 items-center shrink-0">
                     <input aria-label="Edit Beta" class="aria-invalid:border-danger bg-transparent border border-border data-[state=hover]:bg-hover disabled:bg-transparent disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:opacity-60 duration-(--spring-fast) flex focus-visible:outline-none h-(--control-height-medium) hover:bg-hover min-w-0 motion-reduce:transition-none placeholder:text-muted-foreground px-3 py-1 read-only:text-muted-foreground rounded-(--radius-medium) selection:bg-primary selection:text-primary-foreground shadow-none text-foreground transition-[background-color,border-color,box-shadow,color] type-caption w-full" data-size="default" data-slot="input">
@@ -1004,9 +1004,9 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
-                      <div class="font-medium min-w-0 text-foreground text-sm truncate">
+                      <div class="font-medium! min-w-0 text-foreground truncate type-caption">
                         "Bravo"
-                    <div class="min-w-0 mt-0.5 text-muted-foreground text-xs">
+                    <div class="min-w-0 mt-0.5 text-muted-foreground type-caption">
                       "Third item"
                   <div class="flex gap-1 items-center shrink-0">
                     <input aria-label="Edit Bravo" class="aria-invalid:border-danger bg-transparent border border-border data-[state=hover]:bg-hover disabled:bg-transparent disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:opacity-60 duration-(--spring-fast) flex focus-visible:outline-none h-(--control-height-medium) hover:bg-hover min-w-0 motion-reduce:transition-none placeholder:text-muted-foreground px-3 py-1 read-only:text-muted-foreground rounded-(--radius-medium) selection:bg-primary selection:text-primary-foreground shadow-none text-foreground transition-[background-color,border-color,box-shadow,color] type-caption w-full" data-size="default" data-slot="input">
@@ -1042,9 +1042,9 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
-                      <div class="font-medium min-w-0 text-foreground text-sm truncate">
+                      <div class="font-medium! min-w-0 text-foreground truncate type-caption">
                         "Alpha"
-                    <div class="min-w-0 mt-0.5 text-muted-foreground text-xs">
+                    <div class="min-w-0 mt-0.5 text-muted-foreground type-caption">
                       "First item"
                   <div class="flex gap-1 items-center shrink-0">
                     <input aria-label="Edit Alpha" class="aria-invalid:border-danger bg-transparent border border-border data-[state=hover]:bg-hover disabled:bg-transparent disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:opacity-60 duration-(--spring-fast) flex focus-visible:outline-none h-(--control-height-medium) hover:bg-hover min-w-0 motion-reduce:transition-none placeholder:text-muted-foreground px-3 py-1 read-only:text-muted-foreground rounded-(--radius-medium) selection:bg-primary selection:text-primary-foreground shadow-none text-foreground transition-[background-color,border-color,box-shadow,color] type-caption w-full" data-size="default" data-slot="input">
@@ -1070,9 +1070,9 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
-                      <div class="font-medium min-w-0 text-foreground text-sm truncate">
+                      <div class="font-medium! min-w-0 text-foreground truncate type-caption">
                         "Beta"
-                    <div class="min-w-0 mt-0.5 text-muted-foreground text-xs">
+                    <div class="min-w-0 mt-0.5 text-muted-foreground type-caption">
                       "Second item"
                   <div class="flex gap-1 items-center shrink-0">
                     <input aria-label="Edit Beta" class="aria-invalid:border-danger bg-transparent border border-border data-[state=hover]:bg-hover disabled:bg-transparent disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:opacity-60 duration-(--spring-fast) flex focus-visible:outline-none h-(--control-height-medium) hover:bg-hover min-w-0 motion-reduce:transition-none placeholder:text-muted-foreground px-3 py-1 read-only:text-muted-foreground rounded-(--radius-medium) selection:bg-primary selection:text-primary-foreground shadow-none text-foreground transition-[background-color,border-color,box-shadow,color] type-caption w-full" data-size="default" data-slot="input">
@@ -1098,9 +1098,9 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
-                      <div class="font-medium min-w-0 text-foreground text-sm truncate">
+                      <div class="font-medium! min-w-0 text-foreground truncate type-caption">
                         "Bravo"
-                    <div class="min-w-0 mt-0.5 text-muted-foreground text-xs">
+                    <div class="min-w-0 mt-0.5 text-muted-foreground type-caption">
                       "Third item"
                   <div class="flex gap-1 items-center shrink-0">
                     <input aria-label="Edit Bravo" class="aria-invalid:border-danger bg-transparent border border-border data-[state=hover]:bg-hover disabled:bg-transparent disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:opacity-60 duration-(--spring-fast) flex focus-visible:outline-none h-(--control-height-medium) hover:bg-hover min-w-0 motion-reduce:transition-none placeholder:text-muted-foreground px-3 py-1 read-only:text-muted-foreground rounded-(--radius-medium) selection:bg-primary selection:text-primary-foreground shadow-none text-foreground transition-[background-color,border-color,box-shadow,color] type-caption w-full" data-size="default" data-slot="input">
@@ -1136,9 +1136,9 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
-                      <div class="font-medium min-w-0 text-foreground text-sm truncate">
+                      <div class="font-medium! min-w-0 text-foreground truncate type-caption">
                         "Alpha"
-                    <div class="min-w-0 mt-0.5 text-muted-foreground text-xs">
+                    <div class="min-w-0 mt-0.5 text-muted-foreground type-caption">
                       "First item"
                   <div class="flex gap-1 items-center shrink-0">
                     <input aria-label="Edit Alpha" class="aria-invalid:border-danger bg-transparent border border-border data-[state=hover]:bg-hover disabled:bg-transparent disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:opacity-60 duration-(--spring-fast) flex focus-visible:outline-none h-(--control-height-medium) hover:bg-hover min-w-0 motion-reduce:transition-none placeholder:text-muted-foreground px-3 py-1 read-only:text-muted-foreground rounded-(--radius-medium) selection:bg-primary selection:text-primary-foreground shadow-none text-foreground transition-[background-color,border-color,box-shadow,color] type-caption w-full" data-size="default" data-slot="input">
@@ -1164,9 +1164,9 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
-                      <div class="font-medium min-w-0 text-foreground text-sm truncate">
+                      <div class="font-medium! min-w-0 text-foreground truncate type-caption">
                         "Beta"
-                    <div class="min-w-0 mt-0.5 text-muted-foreground text-xs">
+                    <div class="min-w-0 mt-0.5 text-muted-foreground type-caption">
                       "Second item"
                   <div class="flex gap-1 items-center shrink-0">
                     <input aria-label="Edit Beta" class="aria-invalid:border-danger bg-transparent border border-border data-[state=hover]:bg-hover disabled:bg-transparent disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:opacity-60 duration-(--spring-fast) flex focus-visible:outline-none h-(--control-height-medium) hover:bg-hover min-w-0 motion-reduce:transition-none placeholder:text-muted-foreground px-3 py-1 read-only:text-muted-foreground rounded-(--radius-medium) selection:bg-primary selection:text-primary-foreground shadow-none text-foreground transition-[background-color,border-color,box-shadow,color] type-caption w-full" data-size="default" data-slot="input">
@@ -1192,9 +1192,9 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
-                      <div class="font-medium min-w-0 text-foreground text-sm truncate">
+                      <div class="font-medium! min-w-0 text-foreground truncate type-caption">
                         "Bravo"
-                    <div class="min-w-0 mt-0.5 text-muted-foreground text-xs">
+                    <div class="min-w-0 mt-0.5 text-muted-foreground type-caption">
                       "Third item"
                   <div class="flex gap-1 items-center shrink-0">
                     <input aria-label="Edit Bravo" class="aria-invalid:border-danger bg-transparent border border-border data-[state=hover]:bg-hover disabled:bg-transparent disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:opacity-60 duration-(--spring-fast) flex focus-visible:outline-none h-(--control-height-medium) hover:bg-hover min-w-0 motion-reduce:transition-none placeholder:text-muted-foreground px-3 py-1 read-only:text-muted-foreground rounded-(--radius-medium) selection:bg-primary selection:text-primary-foreground shadow-none text-foreground transition-[background-color,border-color,box-shadow,color] type-caption w-full" data-size="default" data-slot="input">
@@ -1230,9 +1230,9 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
-                      <div class="font-medium min-w-0 text-foreground text-sm truncate">
+                      <div class="font-medium! min-w-0 text-foreground truncate type-caption">
                         "Alpha"
-                    <div class="min-w-0 mt-0.5 text-muted-foreground text-xs">
+                    <div class="min-w-0 mt-0.5 text-muted-foreground type-caption">
                       "First item"
                   <div class="flex gap-1 items-center shrink-0">
                     <input aria-label="Edit Alpha" class="aria-invalid:border-danger bg-transparent border border-border data-[state=hover]:bg-hover disabled:bg-transparent disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:opacity-60 duration-(--spring-fast) flex focus-visible:outline-none h-(--control-height-medium) hover:bg-hover min-w-0 motion-reduce:transition-none placeholder:text-muted-foreground px-3 py-1 read-only:text-muted-foreground rounded-(--radius-medium) selection:bg-primary selection:text-primary-foreground shadow-none text-foreground transition-[background-color,border-color,box-shadow,color] type-caption w-full" data-size="default" data-slot="input">
@@ -1258,9 +1258,9 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
-                      <div class="font-medium min-w-0 text-foreground text-sm truncate">
+                      <div class="font-medium! min-w-0 text-foreground truncate type-caption">
                         "Beta"
-                    <div class="min-w-0 mt-0.5 text-muted-foreground text-xs">
+                    <div class="min-w-0 mt-0.5 text-muted-foreground type-caption">
                       "Second item"
                   <div class="flex gap-1 items-center shrink-0">
                     <input aria-label="Edit Beta" class="aria-invalid:border-danger bg-transparent border border-border data-[state=hover]:bg-hover disabled:bg-transparent disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:opacity-60 duration-(--spring-fast) flex focus-visible:outline-none h-(--control-height-medium) hover:bg-hover min-w-0 motion-reduce:transition-none placeholder:text-muted-foreground px-3 py-1 read-only:text-muted-foreground rounded-(--radius-medium) selection:bg-primary selection:text-primary-foreground shadow-none text-foreground transition-[background-color,border-color,box-shadow,color] type-caption w-full" data-size="default" data-slot="input">
@@ -1286,9 +1286,9 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
-                      <div class="font-medium min-w-0 text-foreground text-sm truncate">
+                      <div class="font-medium! min-w-0 text-foreground truncate type-caption">
                         "Bravo"
-                    <div class="min-w-0 mt-0.5 text-muted-foreground text-xs">
+                    <div class="min-w-0 mt-0.5 text-muted-foreground type-caption">
                       "Third item"
                   <div class="flex gap-1 items-center shrink-0">
                     <input aria-label="Edit Bravo" class="aria-invalid:border-danger bg-transparent border border-border data-[state=hover]:bg-hover disabled:bg-transparent disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:opacity-60 duration-(--spring-fast) flex focus-visible:outline-none h-(--control-height-medium) hover:bg-hover min-w-0 motion-reduce:transition-none placeholder:text-muted-foreground px-3 py-1 read-only:text-muted-foreground rounded-(--radius-medium) selection:bg-primary selection:text-primary-foreground shadow-none text-foreground transition-[background-color,border-color,box-shadow,color] type-caption w-full" data-size="default" data-slot="input">
@@ -1324,9 +1324,9 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
-                      <div class="font-medium min-w-0 text-foreground text-sm truncate">
+                      <div class="font-medium! min-w-0 text-foreground truncate type-caption">
                         "Alpha"
-                    <div class="min-w-0 mt-0.5 text-muted-foreground text-xs">
+                    <div class="min-w-0 mt-0.5 text-muted-foreground type-caption">
                       "First item"
                   <div class="flex gap-1 items-center shrink-0">
                     <input aria-label="Edit Alpha" class="aria-invalid:border-danger bg-transparent border border-border data-[state=hover]:bg-hover disabled:bg-transparent disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:opacity-60 duration-(--spring-fast) flex focus-visible:outline-none h-(--control-height-medium) hover:bg-hover min-w-0 motion-reduce:transition-none placeholder:text-muted-foreground px-3 py-1 read-only:text-muted-foreground rounded-(--radius-medium) selection:bg-primary selection:text-primary-foreground shadow-none text-foreground transition-[background-color,border-color,box-shadow,color] type-caption w-full" data-size="default" data-slot="input">
@@ -1352,9 +1352,9 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
-                      <div class="font-medium min-w-0 text-foreground text-sm truncate">
+                      <div class="font-medium! min-w-0 text-foreground truncate type-caption">
                         "Beta"
-                    <div class="min-w-0 mt-0.5 text-muted-foreground text-xs">
+                    <div class="min-w-0 mt-0.5 text-muted-foreground type-caption">
                       "Second item"
                   <div class="flex gap-1 items-center shrink-0">
                     <input aria-label="Edit Beta" class="aria-invalid:border-danger bg-transparent border border-border data-[state=hover]:bg-hover disabled:bg-transparent disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:opacity-60 duration-(--spring-fast) flex focus-visible:outline-none h-(--control-height-medium) hover:bg-hover min-w-0 motion-reduce:transition-none placeholder:text-muted-foreground px-3 py-1 read-only:text-muted-foreground rounded-(--radius-medium) selection:bg-primary selection:text-primary-foreground shadow-none text-foreground transition-[background-color,border-color,box-shadow,color] type-caption w-full" data-size="default" data-slot="input">
@@ -1380,9 +1380,9 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                 <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
                     <div class="flex gap-2 items-baseline min-w-0">
-                      <div class="font-medium min-w-0 text-foreground text-sm truncate">
+                      <div class="font-medium! min-w-0 text-foreground truncate type-caption">
                         "Bravo"
-                    <div class="min-w-0 mt-0.5 text-muted-foreground text-xs">
+                    <div class="min-w-0 mt-0.5 text-muted-foreground type-caption">
                       "Third item"
                   <div class="flex gap-1 items-center shrink-0">
                     <input aria-label="Edit Bravo" class="aria-invalid:border-danger bg-transparent border border-border data-[state=hover]:bg-hover disabled:bg-transparent disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:opacity-60 duration-(--spring-fast) flex focus-visible:outline-none h-(--control-height-medium) hover:bg-hover min-w-0 motion-reduce:transition-none placeholder:text-muted-foreground px-3 py-1 read-only:text-muted-foreground rounded-(--radius-medium) selection:bg-primary selection:text-primary-foreground shadow-none text-foreground transition-[background-color,border-color,box-shadow,color] type-caption w-full" data-size="default" data-slot="input">
@@ -16628,11 +16628,11 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:rows:row-fam
                         <path>
                     <div class="flex-1 min-w-0">
                       <div class="flex gap-2 items-baseline min-w-0">
-                        <div class="font-medium min-w-0 text-foreground text-sm truncate">
+                        <div class="font-medium! min-w-0 text-foreground truncate type-caption">
                           "Workspace sources"
-                        <div class="shrink-0 text-muted-foreground text-xs">
+                        <div class="shrink-0 text-muted-foreground type-caption">
                           "2 files"
-                      <div class="min-w-0 mt-0.5 text-muted-foreground text-xs">
+                      <div class="min-w-0 mt-0.5 text-muted-foreground type-caption">
                         "Leading icon and secondary text"
                     <div class="flex gap-1 items-center shrink-0">
                       <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="green" data-size="default" data-slot="badge" data-variant="solid" tokens=["--background"]>
@@ -16647,7 +16647,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:rows:row-fam
                             <path>
                     <div class="flex-1 min-w-0">
                       <div class="flex gap-2 items-baseline min-w-0">
-                        <div class="font-medium min-w-0 text-foreground text-sm truncate">
+                        <div class="font-medium! min-w-0 text-foreground truncate type-caption">
                           "Avatar row"
                     <div class="flex gap-1 items-center shrink-0">
                       <div class="duration-spring-fast ease-spring-fast flex gap-1 items-center motion-reduce:transition-none transition-opacity" data-revealed="true" data-slot="row-actions">
@@ -16678,25 +16678,25 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:rows:row-fam
                           <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                             <div class="flex-1 min-w-0">
                               <div class="flex gap-2 items-baseline min-w-0">
-                                <div class="font-medium min-w-0 text-foreground text-sm truncate">
+                                <div class="font-medium! min-w-0 text-foreground truncate type-caption">
                                   "Default row"
-                              <div class="min-w-0 mt-0.5 text-muted-foreground text-xs">
+                              <div class="min-w-0 mt-0.5 text-muted-foreground type-caption">
                                 "Supporting text"
                         <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="1" data-slot="list-view-item" role="option" tabindex="-1">
                           <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                             <div class="flex-1 min-w-0">
                               <div class="flex gap-2 items-baseline min-w-0">
-                                <div class="font-medium min-w-0 text-foreground text-sm truncate">
+                                <div class="font-medium! min-w-0 text-foreground truncate type-caption">
                                   "Selected row"
-                              <div class="min-w-0 mt-0.5 text-muted-foreground text-xs">
+                              <div class="min-w-0 mt-0.5 text-muted-foreground type-caption">
                                 "Merged selection surface"
                         <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="2" data-slot="list-view-item" role="option" tabindex="-1">
                           <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                             <div class="flex-1 min-w-0">
                               <div class="flex gap-2 items-baseline min-w-0">
-                                <div class="font-medium min-w-0 text-foreground text-sm truncate">
+                                <div class="font-medium! min-w-0 text-foreground truncate type-caption">
                                   "A deliberately long collection row title that truncates before its actions"
-                              <div class="min-w-0 mt-0.5 text-muted-foreground text-xs">
+                              <div class="min-w-0 mt-0.5 text-muted-foreground type-caption">
                                 "Secondary text remains readable."
                 <div class="row-cell svelte-<scope>" data-row-preview="list-row-loading-disabled">
                   <div aria-label="Loading" class="flex flex-col gap-(--state-list-row-gap) px-(--state-list-inline-inset)" data-density="default" data-recipe="list" data-slot="loading-state" role="status">
@@ -16706,7 +16706,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:rows:row-fam
                   <div aria-disabled="true" class="flex gap-3 items-center min-h-12 min-w-0 opacity-50 px-3 py-2.5" data-density="default" data-slot="list-row">
                     <div class="flex-1 min-w-0">
                       <div class="flex gap-2 items-baseline min-w-0">
-                        <div class="font-medium min-w-0 text-foreground text-sm truncate">
+                        <div class="font-medium! min-w-0 text-foreground truncate type-caption">
                           "Disabled row"
                     <div class="flex gap-1 items-center shrink-0">
                       <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="gray" data-size="default" data-slot="badge" data-variant="solid" tokens=["--accent"]>
@@ -16716,7 +16716,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:rows:row-fam
                   <div class="flex gap-3 items-center min-h-9 min-w-0 px-3 py-1.5" data-density="compact" data-slot="list-row">
                     <div class="flex-1 min-w-0">
                       <div class="flex gap-2 items-baseline min-w-0">
-                        <div class="font-medium min-w-0 text-foreground text-sm truncate">
+                        <div class="font-medium! min-w-0 text-foreground truncate type-caption">
                           "Compact density"
                     <div class="flex gap-1 items-center shrink-0">
                       <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1 h-5 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2 rounded-(--radius-medium) shrink-0 text-[11px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="gray" data-size="compact" data-slot="badge" data-variant="solid" tokens=["--accent"]>
@@ -16726,9 +16726,9 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:rows:row-fam
                   <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                     <div class="flex-1 min-w-0">
                       <div class="flex gap-2 items-baseline min-w-0">
-                        <div class="font-medium min-w-0 text-foreground text-sm truncate">
+                        <div class="font-medium! min-w-0 text-foreground truncate type-caption">
                           "200% zoom"
-                      <div class="min-w-0 mt-0.5 text-muted-foreground text-xs">
+                      <div class="min-w-0 mt-0.5 text-muted-foreground type-caption">
                         "Content remains contained"
               <section aria-labelledby="rows-sectioned-list" class="row-family svelte-<scope>">
                 <h3 class="family-title svelte-<scope>" id="rows-sectioned-list">
@@ -16741,16 +16741,16 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:rows:row-fam
                       <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                         <div class="flex-1 min-w-0">
                           <div class="flex gap-2 items-baseline min-w-0">
-                            <div class="font-medium min-w-0 text-foreground text-sm truncate">
+                            <div class="font-medium! min-w-0 text-foreground truncate type-caption">
                               "Default row"
-                          <div class="min-w-0 mt-0.5 text-muted-foreground text-xs">
+                          <div class="min-w-0 mt-0.5 text-muted-foreground type-caption">
                             "Supporting text"
                       <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                         <div class="flex-1 min-w-0">
                           <div class="flex gap-2 items-baseline min-w-0">
-                            <div class="font-medium min-w-0 text-foreground text-sm truncate">
+                            <div class="font-medium! min-w-0 text-foreground truncate type-caption">
                               "Selected row"
-                          <div class="min-w-0 mt-0.5 text-muted-foreground text-xs">
+                          <div class="min-w-0 mt-0.5 text-muted-foreground type-caption">
                             "Merged selection surface"
               <section aria-labelledby="rows-data-list" class="row-family svelte-<scope>">
                 <h3 class="family-title svelte-<scope>" id="rows-data-list">

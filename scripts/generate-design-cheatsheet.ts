@@ -154,7 +154,8 @@ ${buttonAliases}
 
 ## Option and list rows
 
-- **Recipe:** Menu, Select, Combobox, Radio Group, and Sidebar share a 36px default row, 8px item radius, 8px horizontal item padding, and a 4px container inset.
+- **Families:** Navigation rows use 28/32px compact/regular heights; content rows grow with their content (\`ListRow\` retains 36/48px minimums); setting rows use label/control/description tiers. See [Option and list rows](../../packages/cloudlands-fe/docs/DESIGN_SYSTEM.md#option-and-list-rows) for the height and alignment table.
+- **Alignment:** Keep titles, icons, and actions aligned within the primary row or tier; place secondary copy below. Use \`type-caption\` for compact row labels and metadata, and \`type-body\` for expanded form content.
 - **States:** option labels are 13px / 400 at rest and 500 when selected; hover and selected layers use the measured inset item bounds.
 - **End slot:** checks, indicators, and chevrons use one aligned 16px end slot inside the item padding.
 - **Popups:** option popups use semantic surface backgrounds with the overlay elevation; preserve viewport collision handling, scrolling, and focus restoration.

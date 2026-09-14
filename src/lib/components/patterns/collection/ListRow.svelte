@@ -43,11 +43,13 @@
   {#if leading}<div class="flex shrink-0 items-center justify-center">{@render leading()}</div>{/if}
   <div class="min-w-0 flex-1">
     <div class="flex min-w-0 items-baseline gap-2">
-      <div class="min-w-0 truncate text-sm font-medium text-foreground">{@render title()}</div>
-      {#if meta}<div class="shrink-0 text-xs text-muted-foreground">{@render meta()}</div>{/if}
+      <div class="min-w-0 truncate type-caption font-medium! text-foreground">
+        {@render title()}
+      </div>
+      {#if meta}<div class="shrink-0 type-caption text-muted-foreground">{@render meta()}</div>{/if}
     </div>
     {#if description}
-      <div class="mt-0.5 min-w-0 text-xs text-muted-foreground">{@render description()}</div>
+      <div class="mt-0.5 min-w-0 type-caption text-muted-foreground">{@render description()}</div>
     {/if}
   </div>
   {#if trailing}<div class="flex shrink-0 items-center gap-1">{@render trailing()}</div>{/if}
