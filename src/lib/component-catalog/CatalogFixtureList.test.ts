@@ -13,10 +13,16 @@ afterEach(() => {
   document.documentElement.className = '';
 });
 
-function renderEntry(slug: string) {
+async function renderEntry(slug: string) {
   const entry = getCatalogEntry(slug);
   expect(entry).toBeDefined();
-  return render(CatalogFixtureList, { props: { entry: entry! } });
+  const rendered = render(CatalogFixtureList, { props: { entry: entry! } });
+  // The first lazy family import also runs through Vite's test transform pipeline.
+  await waitFor(
+    () => expect(rendered.container.querySelector('[data-catalog-preview] > *')).not.toBeNull(),
+    { timeout: 10_000 },
+  );
+  return rendered;
 }
 
 describe('CatalogFixtureList real previews', () => {
@@ -37,7 +43,7 @@ describe('CatalogFixtureList real previews', () => {
   });
 
   it('mounts and operates the canonical Button renderer', async () => {
-    const { container } = renderEntry('button');
+    const { container } = await renderEntry('button');
 
     expect(container.querySelectorAll('[data-catalog-preview="button"]')).toHaveLength(2);
     await fireEvent.click(screen.getByRole('button', { name: 'Run action' }));
@@ -72,18 +78,18 @@ describe('CatalogFixtureList real previews', () => {
     );
   });
 
-  it('keeps machine-readable fixture state out of the visual preview', () => {
-    const checkboxRender = renderEntry('checkbox');
+  it('keeps machine-readable fixture state out of the visual preview', async () => {
+    const checkboxRender = await renderEntry('checkbox');
     expect(screen.getByText('Selection required').className).toContain('text-danger');
     checkboxRender.unmount();
 
-    const toggleGroupRender = renderEntry('toggle-group');
+    const toggleGroupRender = await renderEntry('toggle-group');
     expect(screen.getByLabelText('Display mode value').className).toContain('sr-only');
     toggleGroupRender.unmount();
   });
 
-  it('renders truthful Combobox open, multi-select, size, and long-list states', () => {
-    const { container } = renderEntry('combobox');
+  it('renders truthful Combobox open, multi-select, size, and long-list states', async () => {
+    const { container } = await renderEntry('combobox');
 
     const open = screen.getByRole('combobox', { name: 'Open catalog combobox' });
     expect(open.getAttribute('aria-expanded')).toBe('true');
@@ -114,8 +120,8 @@ describe('CatalogFixtureList real previews', () => {
     expect(longState?.querySelector('.overflow-y-auto')).not.toBeNull();
   });
 
-  it('renders truthful Select open, size, and long-list states', () => {
-    const { container } = renderEntry('select');
+  it('renders truthful Select open, size, and long-list states', async () => {
+    const { container } = await renderEntry('select');
 
     const open = screen.getByRole('button', { name: 'Open catalog select' });
     expect(open.getAttribute('aria-expanded')).toBe('true');
@@ -152,7 +158,7 @@ describe('CatalogFixtureList real previews', () => {
   });
 
   it('opens and dismisses the canonical Dialog preview', async () => {
-    renderEntry('dialog');
+    await renderEntry('dialog');
     const trigger = screen.getByRole('button', { name: 'Open catalog dialog' });
 
     await fireEvent.click(trigger);
@@ -161,8 +167,8 @@ describe('CatalogFixtureList real previews', () => {
     expect(screen.queryByRole('dialog', { name: 'Catalog dialog' })).toBeNull();
   });
 
-  it('keeps collapsed Sidebar navigation recognizable with icons', () => {
-    const { container } = renderEntry('sidebar');
+  it('keeps collapsed Sidebar navigation recognizable with icons', async () => {
+    const { container } = await renderEntry('sidebar');
 
     expect(screen.getByRole('button', { name: 'Catalog overview' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Unavailable catalog page' })).toBeTruthy();
@@ -170,30 +176,30 @@ describe('CatalogFixtureList real previews', () => {
   });
 
   it('mounts and operates the canonical Settings Slider and FileInput previews', async () => {
-    const sliderRender = renderEntry('slider');
+    const sliderRender = await renderEntry('slider');
     const slider = screen.getByRole('slider', { name: 'Catalog volume' });
     await fireEvent.input(slider, { target: { value: '52' } });
     expect(screen.getByLabelText('Catalog slider value').textContent).toBe('52');
     expect(screen.getByLabelText('Catalog slider value').className).toContain('sr-only');
     sliderRender.unmount();
 
-    const fileRender = renderEntry('file-input');
+    const fileRender = await renderEntry('file-input');
     const input = fileRender.container.querySelector('#catalog-theme-file') as HTMLInputElement;
     const file = new File(['{}'], 'catalog-theme.json', { type: 'application/json' });
     await fireEvent.change(input, { target: { files: [file] } });
     expect(screen.getAllByRole('status')[0].textContent).toContain('catalog-theme.json');
   });
 
-  it('mounts each canonical Settings presentation pattern', () => {
-    const page = renderEntry('settings-page-shell');
+  it('mounts each canonical Settings presentation pattern', async () => {
+    const page = await renderEntry('settings-page-shell');
     expect(screen.getAllByRole('heading', { level: 1, name: 'Application settings' }).length).toBe(
       2,
     );
     page.unmount();
-    const section = renderEntry('settings-section');
+    const section = await renderEntry('settings-section');
     expect(screen.getByRole('region', { name: 'Notifications' })).toBeTruthy();
     section.unmount();
-    renderEntry('settings-field-row');
+    await renderEntry('settings-field-row');
     expect(screen.getByLabelText('Notification volume')).toBeTruthy();
   });
 });
