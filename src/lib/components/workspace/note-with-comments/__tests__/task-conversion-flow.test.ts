@@ -1304,7 +1304,7 @@ describe('NoteWithComments task conversion regression', () => {
         WORKSPACE_ID,
         'math-note',
         String.raw`Draft $x^2$ and \(y\)`,
-        { immediate: true },
+        { immediate: true, baseContent: 'Before' },
       ),
     );
   });
