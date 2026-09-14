@@ -8011,7 +8011,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:list:edito
                         "Recent work"
                       <div class="flex gap-1 items-center">
                     <div class="flex flex-col items-stretch min-w-0 text-left" data-slot="list-section-content">
-                      <div class="grid group/list-item min-w-0 relative" data-slot="list-item-row">
+                      <div class="flex-1 grid group/list-item min-w-0 relative w-full" data-slot="list-item-row">
                         <div>
                           <button aria-labelledby="c<id>-content" class="[&_[data-slot=button-content]]:justify-start [&_[data-slot=button-content]]:min-w-0 [&_[data-slot=button-content]]:w-full [&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-selected border border-transparent col-start-1 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast duration-spring-fast ease-spring-fast ease-spring-fast flex focus-visible:-outline-offset-1 font-inherit font-normal gap-1.5 group group/button h-full isolate items-center justify-start min-h-(--control-height-medium) min-w-0 motion-reduce:transition-none px-2 py-1.5 relative rounded-(--radius-row) row-start-1 shrink-0 text-foreground text-left transition-colors type-caption w-full whitespace-nowrap" data-selected="true" data-slot="list-item" type="button">
                             <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
@@ -8023,7 +8023,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:list:edito
                               "Selected item"
                             <div class="flex-1 min-w-0 text-muted-foreground truncate type-caption">
                               "Supporting metadata"
-                      <div class="grid group/list-item min-w-0 relative" data-slot="list-item-row">
+                      <div class="flex-1 grid group/list-item min-w-0 relative w-full" data-slot="list-item-row">
                         <div>
                           <button aria-current="true" aria-labelledby="c<id>-content" class="[&_[data-slot=button-content]]:justify-start [&_[data-slot=button-content]]:min-w-0 [&_[data-slot=button-content]]:w-full [&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-active border border-transparent col-start-1 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast duration-spring-fast ease-spring-fast ease-spring-fast flex focus-visible:-outline-offset-1 font-inherit font-normal gap-1.5 group group/button h-full isolate items-center justify-start min-h-(--control-height-medium) min-w-0 motion-reduce:transition-none px-2 py-1.5 relative rounded-(--radius-row) row-start-1 shrink-0 text-foreground text-left transition-colors type-caption w-full whitespace-nowrap" data-active="true" data-slot="list-item" type="button">
                             <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
@@ -8043,7 +8043,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:list:edito
                                       <svg aria-hidden="true" data-icon="ellipsis" data-weight="bold" role="img">
                                         <rect>
                                         <path>
-                      <div class="grid group/list-item min-w-0 relative" data-slot="list-item-row">
+                      <div class="flex-1 grid group/list-item min-w-0 relative w-full" data-slot="list-item-row">
                         <div>
                           <button aria-labelledby="c<id>-content" class="[&_[data-slot=button-content]]:justify-start [&_[data-slot=button-content]]:min-w-0 [&_[data-slot=button-content]]:w-full [&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border border-transparent col-start-1 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast duration-spring-fast ease-spring-fast ease-spring-fast flex focus-visible:-outline-offset-1 font-inherit font-normal gap-1.5 group group/button h-full isolate items-center justify-start min-h-(--control-height-medium) min-w-0 motion-reduce:transition-none px-2 py-1.5 relative rounded-(--radius-row) row-start-1 shrink-0 text-foreground text-left transition-colors type-caption w-full whitespace-nowrap" data-slot="list-item" type="button">
                             <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
@@ -8067,7 +8067,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:list:edito
                           <div class="flex flex-1 gap-1 items-baseline min-w-0 text-left" id="c<id>-content">
                             <div class="leading-5 max-w-full min-w-0 shrink truncate type-caption">
                               "Loading item"
-                      <div class="grid group/list-item min-w-0 relative" data-slot="list-item-row">
+                      <div class="flex-1 grid group/list-item min-w-0 relative w-full" data-slot="list-item-row">
                         <div>
                           <button aria-labelledby="c<id>-content" class="[&_[data-slot=button-content]]:justify-start [&_[data-slot=button-content]]:min-w-0 [&_[data-slot=button-content]]:w-full [&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border border-transparent col-start-1 cursor-not-allowed disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast duration-spring-fast ease-spring-fast ease-spring-fast flex focus-visible:-outline-offset-1 font-inherit font-normal gap-1.5 group group/button h-full isolate items-center justify-start min-h-(--control-height-medium) min-w-0 motion-reduce:transition-none opacity-50 pointer-events-none px-2 py-1.5 relative rounded-(--radius-row) row-start-1 shrink-0 text-foreground text-left transition-colors type-caption w-full whitespace-nowrap" data-slot="list-item" disabled="" type="button">
                             <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
@@ -8098,7 +8098,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:list:edito
                     "No catalog items"
               <div data-catalog-rendered-state="long-content">
                 <div class="flex flex-col gap-px min-w-0 overflow-hidden p-1 text-foreground" data-slot="list-container">
-                  <div class="grid group/list-item min-w-0 relative" data-slot="list-item-row">
+                  <div class="flex-1 grid group/list-item min-w-0 relative w-full" data-slot="list-item-row">
                     <div>
                       <button aria-labelledby="c<id>-content" class="[&_[data-slot=button-content]]:justify-start [&_[data-slot=button-content]]:min-w-0 [&_[data-slot=button-content]]:w-full [&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border border-transparent col-start-1 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast duration-spring-fast ease-spring-fast ease-spring-fast flex focus-visible:-outline-offset-1 font-inherit font-normal gap-1.5 group group-hover/list-item:bg-hover group/button h-full isolate items-center justify-start min-h-(--control-height-medium) min-w-0 motion-reduce:transition-none px-2 py-1.5 relative rounded-(--radius-row) row-start-1 shrink-0 text-foreground text-left transition-colors type-caption w-full whitespace-nowrap" data-slot="list-item" type="button">
                         <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
@@ -15659,7 +15659,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:modals:produ
                                       <path>
                                     <span class="min-w-0 text-foreground truncate type-body">
                                       "Refine modal catalog"
-                                    <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="green" data-size="default" data-slot="badge" data-variant="solid" tokens=["--background"]>
+                                    <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="green" data-size="default" data-slot="badge" data-variant="solid" tokens=["--background","--color-green-500"]>
                                       <span class="[text-box:trim-both_cap_alphabetic]">
                                         "Open"
                                     <span class="shrink-0 text-muted-foreground type-caption">
@@ -15760,7 +15760,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:modals:produ
                                       <path>
                                     <span class="min-w-0 text-foreground truncate type-body">
                                       "Refine modal catalog"
-                                    <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="green" data-size="default" data-slot="badge" data-variant="solid" tokens=["--background"]>
+                                    <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="green" data-size="default" data-slot="badge" data-variant="solid" tokens=["--background","--color-green-500"]>
                                       <span class="[text-box:trim-both_cap_alphabetic]">
                                         "Open"
                                     <span class="shrink-0 text-muted-foreground type-caption">
@@ -16485,14 +16485,14 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:modals:produ
                                                               <path>
                                                         <div class="flex-1 min-w-0">
                                                           <div class="flex gap-2 items-baseline min-w-0">
-                                                            <div class="font-medium min-w-0 text-foreground text-sm truncate">
+                                                            <div class="font-medium! min-w-0 text-foreground truncate type-caption">
                                                               "Implementor"
-                                                            <div class="shrink-0 text-muted-foreground text-xs">
-                                                              <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="blue" data-size="default" data-slot="badge" data-variant="solid" tokens=["--background"]>
-                                                                <span class="rounded-full shrink-0 size-[7px]" data-slot="badge-dot">
+                                                            <div class="shrink-0 text-muted-foreground type-caption">
+                                                              <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="blue" data-size="default" data-slot="badge" data-variant="solid" tokens=["--background","--color-blue-500"]>
+                                                                <span class="rounded-full shrink-0 size-[7px]" data-slot="badge-dot" tokens=["--color-blue-500"]>
                                                                 <span class="[text-box:trim-both_cap_alphabetic]">
                                                                   "running"
-                                                          <div class="min-w-0 mt-0.5 text-muted-foreground text-xs">
+                                                          <div class="min-w-0 mt-0.5 text-muted-foreground type-caption">
                                                             "running • interrupted Sep 11, 2026, 12:00 PM"
                                             <section class="min-w-0">
                                               <div class="backdrop-blur-sm bg-background/95 font-medium px-3 py-1.5 sticky text-muted-foreground text-xs top-0 z-20">
@@ -16510,14 +16510,14 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:modals:produ
                                                               <path>
                                                         <div class="flex-1 min-w-0">
                                                           <div class="flex gap-2 items-baseline min-w-0">
-                                                            <div class="font-medium min-w-0 text-foreground text-sm truncate">
+                                                            <div class="font-medium! min-w-0 text-foreground truncate type-caption">
                                                               "Reviewer"
-                                                            <div class="shrink-0 text-muted-foreground text-xs">
-                                                              <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="blue" data-size="default" data-slot="badge" data-variant="solid" tokens=["--background"]>
-                                                                <span class="rounded-full shrink-0 size-[7px]" data-slot="badge-dot">
+                                                            <div class="shrink-0 text-muted-foreground type-caption">
+                                                              <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="blue" data-size="default" data-slot="badge" data-variant="solid" tokens=["--background","--color-blue-500"]>
+                                                                <span class="rounded-full shrink-0 size-[7px]" data-slot="badge-dot" tokens=["--color-blue-500"]>
                                                                 <span class="[text-box:trim-both_cap_alphabetic]">
                                                                   "waiting"
-                                                          <div class="min-w-0 mt-0.5 text-muted-foreground text-xs">
+                                                          <div class="min-w-0 mt-0.5 text-muted-foreground type-caption">
                                                             "waiting • interrupted Sep 11, 2026, 12:00 PM"
                                     <footer class="bg-muted/20 border-border border-t px-6 py-4 shrink-0" data-slot="screen-footer">
                                       <div class="flex gap-3 items-center justify-between" data-size="default" data-slot="form-actions">
@@ -17147,7 +17147,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:popovers:non
                               <path>
                             <span class="github-link-card-ref">
                               "acme/web-app #42"
-                            <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-4 inline-flex items-center justify-center ml-auto motion-reduce:transition-none overflow-hidden px-1.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="green" data-size="default" data-slot="badge" data-variant="solid" tokens=["--background"]>
+                            <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-4 inline-flex items-center justify-center ml-auto motion-reduce:transition-none overflow-hidden px-1.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="green" data-size="default" data-slot="badge" data-variant="solid" tokens=["--background","--color-green-500"]>
                               <span class="[text-box:trim-both_cap_alphabetic]">
                                 "Open"
                           <div class="github-link-card-title">
