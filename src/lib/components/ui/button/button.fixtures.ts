@@ -8,7 +8,6 @@ export const buttonFixtures = [
       'emphasis-ladder',
       'size-ladder',
       'guidance',
-      'default',
       'primary',
       'secondary',
       'ghost',
@@ -29,9 +28,16 @@ export const buttonFixtures = [
   {
     id: 'content-and-motion',
     title: 'Button content and motion',
-    states: ['long-label', 'light', 'dark', 'compact', 'reduced-motion', 'action-feedback'],
+    states: ['long-label', 'light', 'dark', 'reduced-motion', 'action-feedback'],
     themes: ['light', 'dark'],
     viewport: 'both',
     reducedMotion: true,
+  },
+  {
+    id: 'compatibility-aliases',
+    title: 'Compatibility aliases',
+    states: ['default', 'compact'],
+    themes: ['light', 'dark'],
+    viewport: 'both',
   },
 ] satisfies UiComponentFixture[];

@@ -1,3 +1,4 @@
+import { buttonMetadata } from '$lib/components/ui/button/button.meta';
 import type {
   UiComponentCategory,
   UiComponentFixture,
@@ -112,14 +113,14 @@ const componentProps: Record<string, CatalogProp[]> = {
     {
       name: 'variant',
       type: "'primary' | 'secondary' | 'ghost' | 'destructive' | 'outline'",
-      defaultValue: "'primary'",
+      defaultValue: "'default' (secondary)",
       description: 'Canonical emphasis; outline is the supplemental bordered treatment.',
     },
     {
       name: 'size',
       type: 'ButtonSize',
       defaultValue: 'context',
-      description: 'Control height and icon scale.',
+      description: 'Supported sizes: sm, default, lg; icon-sm, icon, icon-lg.',
     },
     {
       name: 'loading',
@@ -139,6 +140,14 @@ const componentProps: Record<string, CatalogProp[]> = {
       defaultValue: 'false',
       description: 'Prevents interaction.',
     },
+    ...(buttonMetadata.apiGuidance?.compatibilityAliases ?? []).map(
+      ({ prop, alias, replacement }) => ({
+        name: `${prop}="${alias}"`,
+        type: 'Compatibility alias',
+        defaultValue: '—',
+        description: `Deprecated — use ${prop}="${replacement}".`,
+      }),
+    ),
     ...commonProps,
   ],
   sidebar: [

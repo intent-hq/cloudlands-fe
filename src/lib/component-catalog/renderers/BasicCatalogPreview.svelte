@@ -3,7 +3,8 @@
   import Fa from 'svelte-fa';
 
   import { Badge, badgeColors, type BadgeColor } from '$lib/components/ui/badge';
-  import { Button } from '$lib/components/ui/button';
+  import { buttonMetadata } from '$lib/components/ui/button/button.meta';
+  import { Button, type ButtonSize, type ButtonVariant } from '$lib/components/ui/button';
   import { ButtonGroup } from '$lib/components/ui/button-group';
   import { Checkbox } from '$lib/components/ui/checkbox';
   import { Switch } from '$lib/components/ui/switch';
@@ -123,7 +124,7 @@
     {#if fixture.id === 'interaction-states'}
       <div
         class="grid min-w-0 gap-4"
-        data-catalog-rendered-state="emphasis-ladder size-ladder guidance default primary secondary outline ghost destructive active focus disabled loading loading-variants icon-only icon-weight action-feedback"
+        data-catalog-rendered-state="emphasis-ladder size-ladder guidance primary secondary outline ghost destructive active focus disabled loading loading-variants icon-only icon-weight action-feedback"
       >
         <div class="grid gap-1">
           <p class="type-caption font-medium">Preferred emphasis ladder</p>
@@ -158,8 +159,7 @@
             </li>
           </ol>
           <p class="type-caption text-muted-foreground">
-            Use outline for a bordered neutral control. Default, tertiary, and neumorphic are
-            compatibility aliases only.
+            Use outline when a neutral action needs a visible boundary without a filled surface.
           </p>
         </div>
         <div class="grid gap-1">
@@ -200,10 +200,33 @@
         >
         <output class="sr-only" aria-label="Button click count">{buttonClicks}</output>
       </div>
+    {:else if fixture.id === 'compatibility-aliases'}
+      <div class="grid gap-2" data-catalog-rendered-state="default compact">
+        <p class="type-caption text-muted-foreground">
+          Migration reference only; use the supported choices above for new controls.
+        </p>
+        {#each buttonMetadata.apiGuidance?.compatibilityAliases ?? [] as alias (`${alias.prop}:${alias.alias}`)}
+          <div class="flex flex-wrap items-center gap-2">
+            <Button
+              variant={alias.prop === 'variant' ? (alias.alias as ButtonVariant) : 'secondary'}
+              size={alias.prop === 'size' ? (alias.alias as ButtonSize) : 'default'}
+              iconOnly={alias.alias.startsWith('icon-') ? true : undefined}
+              aria-label={`${alias.prop} ${alias.alias}`}
+              >{#if alias.alias.startsWith('icon-')}<Fa
+                  icon={faPlus}
+                  size="xs"
+                />{:else}{alias.alias}{/if}</Button
+            >
+            <span class="type-caption text-muted-foreground"
+              >Deprecated — use {alias.prop}="{alias.replacement}".</span
+            >
+          </div>
+        {/each}
+      </div>
     {:else}
       <div
         class="grid gap-2"
-        data-catalog-rendered-state="long-label light dark compact reduced-motion action-feedback"
+        data-catalog-rendered-state="long-label light dark reduced-motion action-feedback"
       >
         <Button
           class="w-full min-w-0 max-w-full"

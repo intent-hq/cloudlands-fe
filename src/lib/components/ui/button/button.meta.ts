@@ -30,6 +30,10 @@ export const buttonMetadata = parseUiComponentMetadata({
   apiGuidance: {
     emphasis: buttonEmphasisLadder,
     sizes: buttonSizeLadder,
-    compatibilityAliases: buttonCompatibilityAliases,
+    compatibilityAliases: [
+      ...buttonCompatibilityAliases,
+      { prop: 'variant', alias: 'ghost-light', replacement: 'ghost' },
+      { prop: 'size', alias: 'compact', replacement: 'sm' },
+    ],
   },
 });
