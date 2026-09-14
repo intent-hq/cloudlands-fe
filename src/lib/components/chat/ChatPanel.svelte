@@ -5748,6 +5748,7 @@
                         <StreamingStatus
                           isStreaming={$agentSessionIsStreaming$}
                           isProcessing={$agentIsResponding$}
+                          processQueueHint={$agentSession$?.processQueueHint}
                           lastChunkTime={$chatLastChunkTime$}
                           receivedFirstChunk={$chatReceivedFirstChunk$}
                           streamingContentLength={$chatStreamingContent$?.length ?? 0}
@@ -5778,6 +5779,7 @@
                       <StreamingStatus
                         isStreaming={$agentSessionIsStreaming$}
                         isProcessing={$agentIsResponding$}
+                        processQueueHint={$agentSession$?.processQueueHint}
                         lastChunkTime={$chatLastChunkTime$}
                         receivedFirstChunk={$chatReceivedFirstChunk$}
                         streamingContentLength={$chatStreamingContent$?.length ?? 0}
@@ -5866,6 +5868,7 @@
                         <StreamingStatus
                           isStreaming={$agentSessionIsStreaming$}
                           isProcessing={$agentIsResponding$}
+                          processQueueHint={$agentSession$?.processQueueHint}
                           lastChunkTime={$chatLastChunkTime$}
                           receivedFirstChunk={$chatReceivedFirstChunk$}
                           streamingContentLength={$chatStreamingContent$?.length ?? 0}
@@ -5896,6 +5899,7 @@
                       <StreamingStatus
                         isStreaming={$agentSessionIsStreaming$}
                         isProcessing={$agentIsResponding$}
+                        processQueueHint={$agentSession$?.processQueueHint}
                         lastChunkTime={$chatLastChunkTime$}
                         receivedFirstChunk={$chatReceivedFirstChunk$}
                         streamingContentLength={$chatStreamingContent$?.length ?? 0}
@@ -5931,6 +5935,7 @@
                 <StreamingStatus
                   isStreaming={$agentSessionIsStreaming$}
                   isProcessing={$agentIsResponding$}
+                  processQueueHint={$agentSession$?.processQueueHint}
                   lastChunkTime={$chatLastChunkTime$}
                   receivedFirstChunk={$chatReceivedFirstChunk$}
                   streamingContentLength={$chatStreamingContent$?.length ?? 0}
@@ -6267,6 +6272,7 @@
                         <StreamingStatus
                           isStreaming={$agentSessionIsStreaming$}
                           isProcessing={$agentIsResponding$}
+                          processQueueHint={$agentSession$?.processQueueHint}
                           lastChunkTime={$chatLastChunkTime$}
                           receivedFirstChunk={$chatReceivedFirstChunk$}
                           streamingContentLength={$chatStreamingContent$?.length ?? 0}
@@ -6355,6 +6361,7 @@
                               <StreamingStatus
                                 isStreaming={$agentSessionIsStreaming$}
                                 isProcessing={$agentIsResponding$}
+                                processQueueHint={$agentSession$?.processQueueHint}
                                 lastChunkTime={$chatLastChunkTime$}
                                 receivedFirstChunk={$chatReceivedFirstChunk$}
                                 streamingContentLength={$chatStreamingContent$?.length ?? 0}
@@ -6437,6 +6444,7 @@
                   <StreamingStatus
                     isStreaming={$agentSessionIsStreaming$}
                     isProcessing={$agentIsResponding$}
+                    processQueueHint={$agentSession$?.processQueueHint}
                     lastChunkTime={$chatLastChunkTime$}
                     receivedFirstChunk={$chatReceivedFirstChunk$}
                     streamingContentLength={$chatStreamingContent$?.length ?? 0}

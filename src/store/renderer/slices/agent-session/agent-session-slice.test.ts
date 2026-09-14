@@ -2239,6 +2239,70 @@ describe('agent-session-slice reducer', () => {
       state = agentSessionReducer(state, clearProcessQueueHint('a1'));
       expect(state.byAgentId['a1'].processQueueHint).toBeUndefined();
     });
+
+    describe('canonical status events while queued', () => {
+      const queuedState = () => {
+        let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
+        return agentSessionReducer(state, setProcessQueueHint('a1', 3, 3, 'slots'));
+      };
+      const statusEvent = (type: string, data: Record<string, unknown>) =>
+        eventReceived('ws-1', {
+          id: 'evt-1',
+          type,
+          timestamp: '2024-01-01T00:00:00.000Z',
+          workspaceId: 'ws-1',
+          data: { agentId: 'a1', ...data },
+        } as any);
+
+      it('survives a running status tick carrying isResponding/isActive true', () => {
+        // A queued agent IS responding (its turn is open, §6.5), so an
+        // ordinary running-status event must not wipe the hint.
+        let state = queuedState();
+        state = agentSessionReducer(
+          state,
+          statusEvent('agent:status-changed', {
+            status: 'responding',
+            isActive: true,
+            isResponding: true,
+          }),
+        );
+        expect(state.byAgentId['a1'].processQueueHint).toEqual({
+          waiting: true,
+          used: 3,
+          cap: 3,
+          reason: 'slots',
+        });
+      });
+
+      it('clears when streaming starts (the process is genuinely running)', () => {
+        let state = queuedState();
+        state = agentSessionReducer(
+          state,
+          statusEvent('agent:status-changed', {
+            status: 'responding',
+            isActive: true,
+            isResponding: true,
+            isStreaming: true,
+          }),
+        );
+        expect(state.byAgentId['a1'].processQueueHint).toBeUndefined();
+      });
+
+      it('clears on the idle transition (reconnect safety net for a missed resumed event)', () => {
+        let state = queuedState();
+        state = agentSessionReducer(
+          state,
+          statusEvent('agent:status-changed', { status: 'active', isResponding: false }),
+        );
+        expect(state.byAgentId['a1'].processQueueHint).toBeUndefined();
+      });
+
+      it('clears on a terminal status', () => {
+        let state = queuedState();
+        state = agentSessionReducer(state, statusEvent('agent:failed', { error: 'boom' }));
+        expect(state.byAgentId['a1'].processQueueHint).toBeUndefined();
+      });
+    });
   });
 
   describe('processEvicted', () => {

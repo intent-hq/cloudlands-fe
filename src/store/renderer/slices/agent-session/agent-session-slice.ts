@@ -600,12 +600,17 @@ function canonicalSessionUpdates(
     updates.liveTurnOpenedAt = undefined;
   }
 
-  // Defensively clear processQueueHint when agent transitions to normal running state
-  // or terminal state. This handles reconnect cases where agent:process:resumed may
-  // not arrive, and prevents stale hints after failed/idle transitions.
+  // Clear processQueueHint only on genuine evidence the turn got past admission
+  // (streaming started), on a terminal status, or when the session goes idle
+  // (`isResponding`/`isActive` false — the reconnect safety net for a missed
+  // `agent:process:resumed`). `isResponding === true` / `isActive === true` are
+  // NOT clearing signals: an agent parked waiting for a slot (§6.5) IS
+  // responding — its turn is open — so an ordinary status tick landing while it
+  // is still queued would wipe the hint and flicker the chat warning off.
   if (
-    fields.isResponding === true ||
-    fields.isActive === true ||
+    fields.isStreaming === true ||
+    fields.isResponding === false ||
+    fields.isActive === false ||
     (typeof fields.status === 'string' && TERMINAL_STATUSES.has(fields.status))
   ) {
     updates.processQueueHint = undefined;
