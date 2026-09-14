@@ -327,7 +327,7 @@ describe('LiveIntegrationsClient.githubBranchesCached (github.branches.listCache
   });
 });
 
-describe('LiveIntegrationsClient.githubRepoConfig (github.repoConfig.get, §5.27 v2.4)', () => {
+describe('LiveIntegrationsClient.githubRepoConfig (github.repoConfig.get, §5.27)', () => {
   afterEach(() => vi.clearAllMocks());
 
   it('sends owner/repo (no ref) and surfaces the committed config', async () => {

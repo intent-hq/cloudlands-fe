@@ -6,10 +6,10 @@
  * FE reads the file bytes off its own disk and sends them over the wire
  * instead — single-shot `data` arm up to 25 MB (the 2.27.0
  * remote-attachment regression, monorepo#2144), and the staged chunked
- * upload session (`begin` → sequential `chunk`s → `commit`, v6.16) above
+ * upload session (`file.attachmentUpload.begin` → sequential `chunk`s → `commit`) above
  * that, up to the daemon's 1 GiB attachment cap.
  *
- * Idempotent placement (v9.13, intent-hq/intent#4691): callers mint one
+ * Idempotent placement (`idempotencyKey`, intent-hq/intent#4691): callers mint one
  * `idempotencyKey` per attachment and reuse it across retries. A lost reply
  * (transport failure after the daemon placed the file) is recovered here by
  * looking the key up via `file.getAttachmentInfo` before the failure is
@@ -310,7 +310,7 @@ const GENERIC_PLACEMENT_MESSAGES = new Set([
  * chunk-acknowledged fraction during a chunked upload only; `signal`
  * (optional) cancels between chunks — the staged session is aborted on the
  * daemon and the rejection satisfies `isPlacementCancellation`. With
- * `source.idempotencyKey` (v9.13; callers mint it via
+ * `source.idempotencyKey` (keyed placement; callers mint it via
  * `mintPlacementIdempotencyKey` and reuse it on retry) a lost reply is
  * recovered through `file.getAttachmentInfo` before the failure surfaces;
  * the key is checked against the daemon connected NOW, so one retained
@@ -368,7 +368,7 @@ export async function placeAttachmentViaTransport(
  * checksum and places through the `placeAttachment` path). Any failure
  * after `begin` aborts the session (best-effort — abort is idempotent and
  * the daemon sweeps orphans) and rethrows; retry re-runs the whole flow.
- * Keyed (v9.13): a begin refused because the key is "already committed"
+ * Keyed (`idempotencyKey`): a begin refused because the key is "already committed"
  * (an earlier commit whose reply was lost) and a commit whose own reply is
  * lost both resolve through the key lookup instead of failing.
  */

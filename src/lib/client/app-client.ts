@@ -539,7 +539,7 @@ export interface AgentsClient {
    */
   list(workspaceId: string, options?: { retiredOnly?: boolean }): Promise<AgentSession[]>;
   /**
-   * Same read as `list` plus response metadata: `retiredCount` (v8.2) is the
+   * Same read as `list` plus response metadata: `retiredCount` (§5.5 soft retire) is the
    * number of soft-retired sessions in the workspace, served on every
    * `agent.list` variant (defaults to 0 if the field is absent).
    */
@@ -587,7 +587,7 @@ export interface AgentsClient {
   }>;
   /**
    * One FULL content block of one persisted message, by block id
-   * (`agent.getMessageBlock`, §5.5, v7.2) — the on-demand counterpart of the
+   * (`agent.getMessageBlock`, §5.5) — the on-demand counterpart of the
    * slim conversation projection: a client holding a `*Truncated` slim block
    * fetches the complete body here. Block identity matches the served
    * conversation byte-for-byte (persisted assistant ids and serve-time
@@ -1261,8 +1261,8 @@ export interface GitDiffsOptions {
   /** When set, returns the per-file hunks for `<commitHash>^..<commitHash>`. */
   commitHash?: string;
   /**
-   * Scopes the read to a registered secondary git root (v6.15). Omitted →
-   * primary-worktree behavior, byte-identical to the pre-6.15 request.
+   * Scopes the read to a registered secondary git root (§5.6 git roots).
+   * Omitted → primary-worktree behavior, byte-identical to an unscoped request.
    */
   gitRootId?: string;
 }
@@ -1545,9 +1545,9 @@ export interface TaskUpdatePatch {
 export interface MarkAsTaskOptions {
   acceptanceCriteria?: string[] | string;
   effort?: string;
-  /** Seed/replace the task's `dependsOn` relation list (v6.8); omitted keeps existing. */
+  /** Seed/replace the task's `dependsOn` relation list (§5.4 task relations); omitted keeps existing. */
   dependsOn?: string[];
-  /** Seed/replace the task's `conflictsWith` relation list (v6.8); omitted keeps existing. */
+  /** Seed/replace the task's `conflictsWith` relation list (§5.4 task relations); omitted keeps existing. */
   conflictsWith?: string[];
 }
 
@@ -1604,8 +1604,8 @@ export interface TasksClient {
     expectedVersion?: number,
   ): Promise<MutationResult>;
   /**
-   * Replace a task note's relation lists (`task.setRelations`, PROTOCOL §5.4,
-   * v6.8). Replace semantics per list: an omitted param keeps the existing
+   * Replace a task note's relation lists (`task.setRelations`, PROTOCOL §5.4
+   * task relations). Replace semantics per list: an omitted param keeps the existing
    * list, `[]` clears it. The daemon validates ids (same-workspace task notes,
    * no self-edges) and rejects `dependsOn` cycles naming the cycle path.
    */
@@ -2008,7 +2008,7 @@ export interface VoiceClient {
    * Daemon-owned speech-to-text (`voice.transcribe`, PROTOCOL §5.41).
    * Base64-encodes the recorded audio and forwards it with the container
    * MIME type and optional context hints. Daemon-global — the optional
-   * `workspaceId` (v5.1) opts the call into workspace-vocabulary injection
+   * `workspaceId` (§5.41) opts the call into workspace-vocabulary injection
    * (tolerant server-side: a stale/unknown id is never an error).
    * THROWS on transport/daemon errors — including the descriptive
    * no-API-key `-32603` — so callers surface them explicitly.
@@ -2101,7 +2101,7 @@ export interface GitHubCachedBranchListing {
 }
 
 /**
- * Remote repo-config read (`github.repoConfig.get`, §5.27 v2.4) for a GitHub
+ * Remote repo-config read (`github.repoConfig.get`, §5.27) for a GitHub
  * repo with no local checkout: the committed `.intent/config.json` fetched
  * via the contents API. `config` is null when the file (or repo/ref) is
  * missing; a present but invalid file folds tolerantly to `{}` on the daemon.
@@ -2182,7 +2182,7 @@ export interface IntegrationsClient {
   githubBranchesCached(owner: string, repo: string): Promise<GitHubCachedBranchListing>;
   /**
    * The repo's committed `.intent/config.json` (`github.repoConfig.get`,
-   * §5.27 v2.4) for a GitHub repo without a local checkout. `ref` defaults to
+   * §5.27) for a GitHub repo without a local checkout. `ref` defaults to
    * the repo's default branch on the daemon when omitted. THROWS on
    * transport/daemon errors (e.g. unauthenticated private repo); the
    * setup-script probe folds failures to "no script" at the call site.

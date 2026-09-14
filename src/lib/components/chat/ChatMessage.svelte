@@ -272,7 +272,7 @@
   // svelte-ignore state_referenced_locally -- intentional initial snapshot; keyed component identity is fixed.
   const storeMessage$ = selectAgentMessageById(agentId ?? '', messageId ?? '');
 
-  // Lazy full-block hydration (§5.5 slim projection → v7.2
+  // Lazy full-block hydration (§5.5 slim projection →
   // agent.getMessageBlock) for user-message attached images: the slim
   // projection may serve them as write-time thumbnails (dataTruncated /
   // dataIsThumbnail), so the lightbox fetches the original on demand.

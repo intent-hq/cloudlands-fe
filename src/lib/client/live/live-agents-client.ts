@@ -82,7 +82,7 @@ function normalizeAgent(raw: Record<string, unknown>): AgentSession {
     createdAt: String(raw.createdAt ?? now),
     updatedAt: String(raw.updatedAt ?? now),
   } as AgentSession;
-  // `retiredAt` (§5.5 soft retire, v7.5) is presence-detected on the wire:
+  // `retiredAt` (§5.5 soft retire) is presence-detected on the wire:
   // set on retired rows, omitted (never null) on active ones. Pure presence
   // pass-through — assign only when a non-empty string is present; a
   // divergent shape (null, empty string) is not healed away client-side.
@@ -148,7 +148,7 @@ export class LiveAgentsClient implements AgentsClient {
   // 0-based ordinal from the OLDEST message — out-of-range clamps daemon-side,
   // and daemons predating the param reject it with -32602 (the scrollback saga
   // handles the fallback). Every read opts into the §5.5 slim projection
-  // (`projection: "slim"`, additive within v7.1): oversized tool/image block
+  // (`projection: "slim"`, additive `agent.getConversation` param): oversized tool/image block
   // bodies arrive as bounded previews with `*Truncated`/`*Bytes` flags so a
   // large transcript never produces multi-MB frames (an older daemon ignores
   // the unknown param and serves full blocks — same additive convention as
@@ -212,7 +212,7 @@ export class LiveAgentsClient implements AgentsClient {
     };
   }
 
-  // One FULL content block by id (`agent.getMessageBlock`, §5.5, v7.2) — the
+  // One FULL content block by id (`agent.getMessageBlock`, §5.5) — the
   // on-demand counterpart of the slim projection: fetches the complete body
   // of a `*Truncated` slim block. The daemon returns `{ block }`; a missing
   // or malformed envelope rejects (callers rely on a real block or an error,
@@ -236,7 +236,7 @@ export class LiveAgentsClient implements AgentsClient {
     return block;
   }
 
-  // Full user-message index (`agent.listUserMessages`, §5.5, v7.3): every
+  // Full user-message index (`agent.listUserMessages`, §5.5): every
   // user-role row as a lightweight `{ id, preview, createdAt, metadata? }`
   // item, oldest→newest, deliberately unpaged. `previewChars` only rides
   // along when supplied so the daemon default (300) applies otherwise.
@@ -679,7 +679,7 @@ export class LiveAgentsClient implements AgentsClient {
     }
   }
   async restore(agentId: string, workspaceId?: string): Promise<MutationResult> {
-    // `agent.restore` (§5.5 soft retire, v7.5) clears `retiredAt` and emits
+    // `agent.restore` (§5.5 soft retire) clears `retiredAt` and emits
     // `agent:restored`, which reconciles the list. Idempotent — restoring an
     // active agent succeeds. `workspaceId` is optional on the wire; it only
     // rides along when the caller supplied it.

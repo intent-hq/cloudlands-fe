@@ -129,7 +129,7 @@
   );
   const hasRetiredBin = $derived(displayedRetiredCount > 0);
   // Expanding the bin — or activating a search, which must cover retired
-  // agents — lazy-loads the retired rows (§5.5 v8.2). The load fires on the
+  // agents — lazy-loads the retired rows (§5.5 `retiredOnly`). The load fires on the
   // user-action TRANSITION (expand click / search activation), never
   // reactively off `loadingRetired`: a failed read leaves `retiredAgentsLoaded`
   // false, so a state-tracking effect would re-dispatch the moment the loading

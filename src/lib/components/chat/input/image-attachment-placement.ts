@@ -105,11 +105,11 @@ export interface ImagePlacementApi {
   sendAttachmentUploadChunk: typeof sendAttachmentUploadChunk;
   commitAttachmentUpload: typeof commitAttachmentUpload;
   abortAttachmentUpload: typeof abortAttachmentUpload;
-  /** Key arm of `file.getAttachmentInfo` — lost-reply recovery (v9.13). */
+  /** Key arm of `file.getAttachmentInfo` — lost-reply recovery for keyed placement. */
   getAttachmentInfo: typeof getAttachmentInfo;
   /**
    * Version-gated key resolution: reuses the retained key it is given,
-   * mints one when there is none; `undefined` against pre-9.13 daemons.
+   * mints one when there is none; `undefined` against daemons without keyed placement.
    */
   mintIdempotencyKey: typeof mintPlacementIdempotencyKey;
 }
@@ -129,7 +129,7 @@ const defaultApi: ImagePlacementApi = {
  * Single-shot `data` arm up to 25 MB decoded (stays well under the 40 MiB
  * frame cap after base64 inflation), staged chunked upload above that —
  * identical to the sourcePath-based transport placement, minus the disk
- * reads. With `source.idempotencyKey` (v9.13) a lost placement/commit reply
+ * reads. With `source.idempotencyKey` (keyed placement) a lost placement/commit reply
  * is recovered through the key lookup instead of failing. Errors propagate
  * to the caller.
  */
@@ -242,7 +242,7 @@ export function imageRetryBlocks(error: unknown, fallback: WireImageBlock[]): Wi
  * Convert inline image blocks into attachment-reference blocks by placing
  * each one (one placement request per image, chunked when large). Blocks
  * already carrying an `attachmentId` pass through untouched, so retries and
- * edit/regenerate never re-upload. Each placement is keyed (v9.13) — with
+ * edit/regenerate never re-upload. Each placement is keyed (`idempotencyKey`) — with
  * the block's retained `placementIdempotencyKey` when a previous attempt
  * tagged it, else a fresh key — so a lost reply is recovered instead of
  * failing the send and a retry replays rather than duplicates. FAIL-CLOSED:

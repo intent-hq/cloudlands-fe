@@ -1230,7 +1230,7 @@ describe('LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)',
     });
   });
 
-  it('list sends retiredOnly only when true — omitted when unset or false (§5.5, v8.2)', async () => {
+  it('list sends retiredOnly only when true — omitted when unset or false (§5.5 soft retire)', async () => {
     backend.onRequest('agent.list', () => ({ agents: [], retiredCount: 0 }));
     const client = new LiveAgentsClient();
 
@@ -1256,7 +1256,7 @@ describe('LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)',
     });
   });
 
-  it('listWithMeta surfaces retiredCount and defaults it to 0 when absent (§5.5, v8.2)', async () => {
+  it('listWithMeta surfaces retiredCount and defaults it to 0 when absent (§5.5 soft retire)', async () => {
     backend.onRequest('agent.list', () => ({
       agents: [{ id: 'agent-active', workspaceId: 'ws-1', name: 'Active', status: 'active' }],
       retiredCount: 3,
@@ -1723,7 +1723,7 @@ describe('LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)',
     expect(backend.requests.map((request) => request.params.limit)).toEqual([4, 2, 1]);
   });
 
-  // ---- §5.5 agent.getMessageBlock (v7.2 slim-hydration counterpart) ------
+  // ---- §5.5 agent.getMessageBlock (slim-projection hydration counterpart) --
 
   it('getMessageBlock forwards agentId/messageId/blockId and returns the full block', async () => {
     // PROTOCOL §5.5 `agent.getMessageBlock`: { block } — the full, unprojected body (no
@@ -1845,7 +1845,7 @@ describe('LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)',
     });
 
     it('marks an old daemon lacking the method as unsupported (no throw)', async () => {
-      // -32601 = Method not found: the daemon predates protocol v7.3. The
+      // -32601 = Method not found: the daemon lacks `agent.listUserMessages`. The
       // typed failure lets the navigator degrade to tail-only items.
       backend.onRequest('agent.listUserMessages', () => {
         throw new BackendError(

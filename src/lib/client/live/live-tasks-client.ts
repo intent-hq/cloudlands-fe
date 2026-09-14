@@ -57,7 +57,7 @@ function stringArray(field: string, value: unknown): string[] | undefined {
 }
 
 /**
- * Relation fields (v6.8, presence-detected): `dependsOn` / `conflictsWith`
+ * Task relation fields (§5.4, presence-detected): `dependsOn` / `conflictsWith`
  * plus the daemon-computed `unmetDependsOn`, all read from the source shape —
  * top-level on `task.list` rows, `metadata.task` on note-shaped entities
  * (monorepo#1979).

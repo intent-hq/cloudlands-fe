@@ -52,7 +52,7 @@
     messageId,
   }: Props = $props();
 
-  // Lazy full-block hydration (§5.5 slim projection → v7.2
+  // Lazy full-block hydration (§5.5 slim projection →
   // agent.getMessageBlock): rows served slim carry `inputTruncated` /
   // `outputTruncated`; expanding such a row dispatches a single-flight fetch
   // for each truncated block (reducer + saga dedupe re-dispatches). Once the

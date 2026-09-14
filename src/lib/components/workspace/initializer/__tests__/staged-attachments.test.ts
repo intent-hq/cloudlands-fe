@@ -171,7 +171,7 @@ describe('redeemStagedAttachments', () => {
     ]);
   });
 
-  describe('idempotencyKey (v9.13)', () => {
+  describe('idempotencyKey (keyed placement)', () => {
     it('mints a key on first placement, sends it, and keeps it on the placed item', async () => {
       const place = vi.fn().mockResolvedValue({
         ok: true,
@@ -335,7 +335,7 @@ describe('sendHeldFirstMessage', () => {
     expect(request).not.toHaveBeenCalled();
   });
 
-  describe('image placement identity across retries (v9.13)', () => {
+  describe('image placement identity across retries (keyed placement)', () => {
     const imageItem = (id: string, data: string, overrides: Partial<ContextItem> = {}) =>
       ({
         id,

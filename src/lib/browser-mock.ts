@@ -151,7 +151,7 @@ function mockBackendMethodResult(method: string, params?: Record<string, unknown
   }
   if (method === 'workspace.getContext') return { items: [] };
   if (method === 'script.list') return { scripts: [] };
-  // §5.13 v4.0 envelope: { terminals, daemonBootId } — never the bare array.
+  // §5.13 `terminal.list` envelope: { terminals, daemonBootId } — never the bare array.
   if (method === 'terminal.list') {
     return { terminals: [], daemonBootId: MOCK_DAEMON_BOOT_ID };
   }

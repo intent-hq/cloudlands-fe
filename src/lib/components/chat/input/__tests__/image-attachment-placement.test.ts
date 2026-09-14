@@ -3,7 +3,7 @@
  * small images take the single-shot data arm, oversized ones the chunked
  * upload session, failures reject with per-image detail, existing
  * reference blocks pass through without re-uploading, and keyed placement
- * (v9.13) recovers a lost reply through the `file.getAttachmentInfo` key arm.
+ * (`idempotencyKey`) recovers a lost reply through the `file.getAttachmentInfo` key arm.
  */
 import { describe, expect, it, vi } from 'vitest';
 import {
@@ -137,7 +137,7 @@ describe('placeImageAttachment', () => {
   });
 });
 
-describe('placeImageAttachment — idempotencyKey (v9.13)', () => {
+describe('placeImageAttachment — idempotencyKey (keyed placement)', () => {
   it('threads the key onto the single-shot data arm', async () => {
     const api = makeApi();
     await placeImageAttachment(

@@ -141,7 +141,7 @@ export interface PlaceAttachmentResult {
   /** ISO timestamp of the registry row. */
   uploadedAt: string;
   /**
-   * Presence-detected (v9.13): the keyed call replayed an earlier placement
+   * Presence-detected (keyed placement): the keyed call replayed an earlier placement
    * bound to the same `idempotencyKey` and placed nothing. Absent on a first
    * placement or an unkeyed call.
    */
@@ -187,7 +187,7 @@ export interface BeginAttachmentUploadResult {
   /** Daemon's decoded-bytes-per-chunk cap (16 MiB). */
   maxChunkBytes: number;
   /**
-   * Presence-detected (v9.13): a same-key begin re-answered a still-live
+   * Presence-detected (keyed begin): a same-key begin re-answered a still-live
    * session's `uploadId` (a lost begin reply) instead of opening a second one.
    */
   replayed?: boolean;
@@ -197,7 +197,7 @@ export interface BeginAttachmentUploadResult {
  * Open a staged chunked attachment upload session on the daemon
  * (`file.attachmentUpload.begin`, PROTOCOL §5.9). The daemon verifies
  * the assembled payload against `sha256` (lowercase hex) at commit. Optional
- * `idempotencyKey` (v9.13) binds the committed attachment to the key so a
+ * `idempotencyKey` binds the committed attachment to the key so a
  * lost commit reply is recoverable via `getAttachmentInfo`; a key already
  * bound to a committed attachment rejects begin with -32602 ("already
  * committed"). Errors propagate to the caller.
@@ -284,7 +284,7 @@ export interface AttachmentInfo {
 }
 
 /**
- * `file.getAttachmentInfo` selector: the registry UUID, or (v9.13) the
+ * `file.getAttachmentInfo` selector: the registry UUID, or (keyed placement) the
  * `{ workspaceId, idempotencyKey }` pair of a keyed placement.
  */
 export type AttachmentInfoSelector = string | { workspaceId: string; idempotencyKey: string };

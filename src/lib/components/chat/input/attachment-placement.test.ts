@@ -3,7 +3,7 @@
  * the local sidecar, base64 data arm against a remote backend (≤25MB),
  * the chunked `file.attachmentUpload.*` session above that (PROTOCOL §5.9),
  * the daemon error-detail extraction behind the failed pill/toast copy, and
- * idempotent placement (v9.13, intent-hq/intent#4691): the version-gated
+ * idempotent placement (`idempotencyKey`, intent-hq/intent#4691): the version-gated
  * `idempotencyKey` on placeAttachment / begin and lost-reply recovery
  * through the `file.getAttachmentInfo` key arm.
  */
@@ -543,7 +543,7 @@ describe('placeAttachmentViaTransport — chunked upload (>25MB remote)', () => 
   });
 });
 
-describe('placeAttachmentViaTransport — idempotencyKey (v9.13)', () => {
+describe('placeAttachmentViaTransport — idempotencyKey (keyed placement)', () => {
   beforeEach(() => {
     mockState.daemonHealth.stats = { protocolVersion: '9.13' };
   });
@@ -697,7 +697,7 @@ describe('placeAttachmentViaTransport — idempotencyKey (v9.13)', () => {
   });
 });
 
-describe('placeAttachmentViaTransport — chunked upload with idempotencyKey (v9.13)', () => {
+describe('placeAttachmentViaTransport — chunked upload with idempotencyKey (keyed placement)', () => {
   const CHUNK = UPLOAD_CHUNK_BYTES;
   const FILE_SIZE = 2 * CHUNK + 1024;
   const SHA = 'a'.repeat(64);
