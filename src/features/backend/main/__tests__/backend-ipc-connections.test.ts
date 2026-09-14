@@ -4289,6 +4289,46 @@ describe('guest-sessions:* IPC handlers', () => {
     );
   });
 
+  it('disposing an already-disconnected pooled guest moves the id out of openIds in every window', async () => {
+    // The real client suppresses a same-status transition on dispose, so the
+    // status forwarder alone cannot announce the eviction.
+    const { JsonRpcClient } =
+      await vi.importActual<typeof import('../json-rpc-client')>('../json-rpc-client');
+    const real = new JsonRpcClient({
+      config: { mode: 'external-uds', socketPath: '/tmp/not-dialed.sock' },
+    } as never);
+    const status = vi.fn();
+    real.on('status', status);
+    real.dispose();
+    expect(status).not.toHaveBeenCalled();
+
+    installGuest();
+    const send = installWindow();
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+    const guest = (await mod.connectBackendClient(GUEST.id)) as unknown as {
+      emit(event: string, arg: unknown): void;
+    };
+    const lastChanged = () =>
+      send.mock.calls.filter(([c]) => c === 'guest-sessions:changed').at(-1)?.[1];
+    guest.emit('status', 'disconnected');
+    await vi.waitFor(() =>
+      expect(lastChanged()).toEqual({ sessions: [GUEST], openIds: [GUEST.id], connectedIds: [] }),
+    );
+
+    // Its last window closed: the pool entry goes, and so must openIds.
+    mod.disconnectBackendClient(GUEST.id);
+    expect(mod.getBackendClientForConnection(GUEST.id)).toBeUndefined();
+    await vi.waitFor(() =>
+      expect(lastChanged()).toEqual({ sessions: [GUEST], openIds: [], connectedIds: [] }),
+    );
+    await expect(findHandler('guest-sessions:list')!({}, undefined)).resolves.toEqual({
+      sessions: [GUEST],
+      openIds: [],
+      connectedIds: [],
+    });
+  });
+
   it('a paired (owner) backend status change does not broadcast guest-sessions:changed', async () => {
     const send = installWindow();
     const { mod } = await loadModule();

@@ -4,8 +4,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   request: vi.fn<(method: string, params?: unknown) => Promise<unknown>>(),
   closeAndNavigate: vi.fn<(workspaceId: string) => Promise<void>>(async () => {}),
+  bridgeInvoke: vi.fn<(channel: string, params?: unknown) => Promise<unknown>>(async () => ({})),
 }));
 vi.mock('$lib/client/live/backend-transport', () => ({ backendRequest: mocks.request }));
+vi.mock('$lib/electron-bridge', () => ({ invoke: mocks.bridgeInvoke }));
 vi.mock('$features/workspace/navigate-away-if-viewing', () => ({
   closeWorkspaceTabAndNavigateAway: mocks.closeAndNavigate,
   navigateAwayIfViewing: vi.fn(async () => {}),
@@ -23,6 +25,11 @@ import {
   initialState as connectionsInitialState,
 } from '../../connections/connections-slice';
 import type { ConnectionsState } from '../../connections/connections-types';
+import {
+  closeTab,
+  initializeLayout,
+  panelLayoutReducer,
+} from '../../panel-layout/panel-layout-slice';
 import { openWorkspaceTab, tabStateReducer } from '../../tab-state/tab-state-slice';
 import {
   removeWorkspaceEntity,
@@ -115,6 +122,7 @@ function start(options: { windowBackendId?: string } = {}) {
     workspace: workspaceInitialState,
     connections,
     tabState: tabStateReducer(undefined, { type: '@@INIT' }),
+    panelLayout: panelLayoutReducer(undefined, { type: '@@INIT' }),
   };
   const dispatch = (action: any) => {
     state = {
@@ -122,6 +130,7 @@ function start(options: { windowBackendId?: string } = {}) {
       workspace: workspaceReducer(state.workspace, action),
       connections: connectionsReducer(state.connections, action),
       tabState: tabStateReducer(state.tabState, action),
+      panelLayout: panelLayoutReducer(state.panelLayout, action),
     };
     channel.put(action);
     for (const listener of listeners) listener();
@@ -151,6 +160,8 @@ describe('guestSessionsSaga', () => {
     callbacks = {};
     mocks.request.mockReset();
     mocks.closeAndNavigate.mockClear();
+    mocks.bridgeInvoke.mockReset();
+    mocks.bridgeInvoke.mockImplementation(async () => ({}));
     mocks.request.mockImplementation(async (method) => {
       if (method === 'workspace.members.list') return { members: [MEMBER] };
       if (method === 'workspace.members.remove') return { removed: true };
@@ -598,6 +609,114 @@ describe('guestSessionsSaga', () => {
       await settle();
       expect(getItems(run.getState().workspace.workspaces)).toEqual([]);
       expect(mocks.closeAndNavigate).toHaveBeenCalledWith('ws-1');
+
+      await stop(run.task);
+    });
+
+    /** Two host workspaces, each with a visible and a hidden agent-owned browser tab. */
+    function seedOwnedTabs(run: ReturnType<typeof start>, workspaceIds: string[]): string[] {
+      const owners: string[] = [];
+      for (const id of workspaceIds) {
+        run.dispatch(
+          initializeLayout(id, {
+            root: { type: 'panel', panelId: 'p1' },
+            panels: {
+              p1: {
+                id: 'p1',
+                activeTabId: `visible-${id}`,
+                tabs: [
+                  {
+                    id: `visible-${id}`,
+                    type: 'browser',
+                    title: 'Visible',
+                    closable: true,
+                    browserUrl: 'https://example.test/',
+                    ownerAgentId: `visible-owner-${id}`,
+                  },
+                  {
+                    id: `hidden-${id}`,
+                    type: 'browser',
+                    title: 'Hidden',
+                    closable: true,
+                    browserUrl: 'https://example.test/',
+                    ownerAgentId: `hidden-owner-${id}`,
+                  },
+                ],
+              },
+            },
+            focusedPanelId: 'p1',
+          } as never),
+        );
+        // A user-closed agent tab is kept alive offscreen (monorepo#2857).
+        run.dispatch(closeTab(id, `hidden-${id}`, 'p1', 1000));
+        owners.push(`visible-owner-${id}`, `hidden-owner-${id}`);
+      }
+      return owners.sort();
+    }
+
+    const clearedAgentIds = () =>
+      mocks.bridgeInvoke.mock.calls
+        .filter(([channel]) => channel === IPC_CHANNELS.BROWSER.CLEAR_AGENT_TABS)
+        .map(([, params]) => (params as { agentId: string }).agentId)
+        .sort();
+
+    it.each(['live', 'boot'] as const)(
+      '%s rejection clears main registrations for visible and hidden owned tabs of every host workspace',
+      async (mode) => {
+        let releaseList: () => void = () => {};
+        if (mode === 'boot') {
+          invoke.mockImplementation(async (channel: string) => {
+            if (channel === GUEST_SESSIONS.LIST)
+              return new Promise((resolve) => {
+                releaseList = () =>
+                  resolve({ sessions: [GUEST], openIds: [GUEST.id], connectedIds: [] });
+              });
+            throw new Error(`unexpected channel ${channel}`);
+          });
+        }
+        const run = start({ windowBackendId: GUEST.id });
+        await settle();
+        run.dispatch(replaceWorkspaceList([makeWorkspace('ws-1', 2), makeWorkspace('ws-2', 3)]));
+        const owners = seedOwnedTabs(run, ['ws-1', 'ws-2']);
+        expect(run.getState().panelLayout.byWorkspaceId['ws-1']).toBeDefined();
+
+        run.dispatch(rejection(GUEST.id));
+        await settle();
+        if (mode === 'boot') {
+          // Nothing is torn down before the authoritative list confirms the guest.
+          expect(clearedAgentIds()).toEqual([]);
+          releaseList();
+          await settle();
+        }
+        await settle();
+
+        expect(run.getState().panelLayout.byWorkspaceId['ws-1']).toBeUndefined();
+        expect(run.getState().panelLayout.byWorkspaceId['ws-2']).toBeUndefined();
+        expect(clearedAgentIds()).toEqual(owners);
+        expect(getItems(run.getState().guestSessions.sessions)).toEqual([GUEST]);
+
+        await stop(run.task);
+      },
+    );
+
+    it('a failing main clear does not stop the teardown of the other owners', async () => {
+      mocks.bridgeInvoke.mockImplementation(async (_channel, params) => {
+        if ((params as { agentId: string }).agentId === 'visible-owner-ws-1')
+          throw new Error('main exploded');
+        return {};
+      });
+      const run = start({ windowBackendId: GUEST.id });
+      await settle();
+      run.dispatch(replaceWorkspaceList([makeWorkspace('ws-1', 2), makeWorkspace('ws-2', 3)]));
+      const owners = seedOwnedTabs(run, ['ws-1', 'ws-2']);
+
+      run.dispatch(rejection(GUEST.id));
+      await settle();
+      await settle();
+
+      expect(clearedAgentIds()).toEqual(owners);
+      expect(getItems(run.getState().workspace.workspaces)).toEqual([]);
+      expect(mocks.closeAndNavigate.mock.calls.map(([id]) => id).sort()).toEqual(['ws-1', 'ws-2']);
 
       await stop(run.task);
     });

@@ -871,6 +871,10 @@ export function disconnectBackendClient(id: string): void {
   void cancelInflightHostExecStreamsForBackendSwitch(instance);
   app.emit(BACKEND_CLIENT_DISCONNECTED_EVENT, instance);
   instance.dispose();
+  // Eviction alone moves a guest id out of `openIds`: `dispose()` on an
+  // already-disconnected client emits no status change, so the forwarder
+  // below never pushes the fresh list on its own.
+  refreshGuestSessionsForPoolChange(id);
 }
 
 /**
@@ -2108,12 +2112,15 @@ function registerGuestSessionsHandlers(): void {
   // the id into `openIds`), connecting or dropping flips its status in the
   // nav block (same forwarder that keeps the connections list's
   // `connectedIds` fresh).
-  backendStatusForwarder.on('status', (id: string) => {
-    void guestSessionsStore
-      .findById(id)
-      .then((session) => (session ? broadcastGuestSessionsChanged() : undefined))
-      .catch(() => {});
-  });
+  backendStatusForwarder.on('status', refreshGuestSessionsForPoolChange);
+}
+
+/** Push a fresh guest list when a pooled client for a guest session id changes. */
+function refreshGuestSessionsForPoolChange(id: string): void {
+  void guestSessionsStore
+    .findById(id)
+    .then((session) => (session ? broadcastGuestSessionsChanged() : undefined))
+    .catch(() => {});
 }
 
 /**

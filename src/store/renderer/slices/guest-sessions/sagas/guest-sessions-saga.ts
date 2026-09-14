@@ -33,6 +33,7 @@ import { takeEveryFromSelector, type SelectorChannelPayload } from '@augmentcode
 
 import { closeWorkspaceTabAndNavigateAway } from '$features/workspace/navigate-away-if-viewing';
 import { backendRequest } from '$lib/client/live/backend-transport';
+import { invoke } from '$lib/electron-bridge';
 import {
   isDaemonErrorResponse,
   isForbiddenErrorResponse,
@@ -48,6 +49,7 @@ import type {
 } from '$shared/types/guest-sessions';
 import { selectCurrentConnectionId } from '../../connections/connections-selectors';
 import { authRejectedReceived } from '../../connections/connections-slice';
+import { selectAllTabs, selectHiddenTabs } from '../../panel-layout/panel-layout-selectors';
 import { destroyOwnedTabsForWorkspace } from '../../panel-layout/panel-layout-slice';
 import { selectActiveWorkspaceIds } from '../../tab-state/tab-state-selectors';
 import { selectWorkspaceItems } from '../../workspace/workspace-selectors';
@@ -439,6 +441,36 @@ function readWorkspaceAgentIds(
 }
 
 /**
+ * Owner agent ids of the agent-owned browser tabs (visible and hidden) in a
+ * workspace layout — resolved BEFORE the purge drops the layout, so main's
+ * CDP/ownership registrations can be cleared like the bridge's delete /
+ * unshare paths do (monorepo#2857).
+ */
+function* readOwnedTabAgentIds(workspaceId: string): SagaGenerator<Set<string>> {
+  const visible = yield* select(selectAllTabs.select, workspaceId);
+  const hidden = yield* select(selectHiddenTabs.select, workspaceId);
+  const ownerAgentIds = new Set<string>();
+  for (const tab of [...visible, ...hidden]) {
+    if (tab.type === 'browser' && typeof tab.ownerAgentId === 'string') {
+      ownerAgentIds.add(tab.ownerAgentId);
+    }
+  }
+  return ownerAgentIds;
+}
+
+/** Best-effort main-side cleanup; the failure log carries ids only. */
+function* clearMainTabRegistrations(workspaceId: string, agentId: string): SagaGenerator<void> {
+  try {
+    yield* call(invoke, IPC_CHANNELS.BROWSER.CLEAR_AGENT_TABS, { agentId });
+  } catch {
+    logger.warn('Failed to clear main-process registrations for rejected host workspace tabs', {
+      workspaceId,
+      agentId,
+    });
+  }
+}
+
+/**
  * The host rejected this window's guest credential at the WebSocket upgrade
  * (`connections:auth-rejected`, live or replayed on boot through the
  * connections list): the guest has no access to anything on that host any
@@ -467,8 +499,12 @@ function* tearDownOnGuestAuthRejection(
     // the upgrade is rejected).
     ...(yield* select(selectActiveWorkspaceIds.select)),
   ]);
+  const cleanups: Array<[workspaceId: string, agentId: string]> = [];
   for (const workspaceId of workspaceIds) {
     const agentIds = yield* select(readWorkspaceAgentIds, workspaceId);
+    for (const agentId of yield* readOwnedTabAgentIds(workspaceId)) {
+      cleanups.push([workspaceId, agentId]);
+    }
     yield* put(destroyOwnedTabsForWorkspace(workspaceId));
     yield* put(workspaceDeleted(workspaceId, [...agentIds]));
     try {
@@ -477,6 +513,11 @@ function* tearDownOnGuestAuthRejection(
       logger.warn(`Failed to close workspace tab ${workspaceId} after host rejected guest`, error);
     }
   }
+  // Main's tombstone/ownership/CDP cleanup for every owner captured above,
+  // after the renderer purge so a slow main never delays the teardown.
+  yield* all(
+    cleanups.map(([workspaceId, agentId]) => call(clearMainTabRegistrations, workspaceId, agentId)),
+  );
 }
 
 function* watchActions(): SagaGenerator<void> {
