@@ -19,7 +19,14 @@ vi.mock('$store/renderer/store', async () => {
     await import('$store/renderer/slices/daemon-health/daemon-health-slice');
   const { connectionsReducer, initialState: connectionsInitialState } =
     await import('$store/renderer/slices/connections/connections-slice');
-  let state = { daemonHealth: initialState, connections: connectionsInitialState };
+  const { guestSessionsReducer, initialState: guestSessionsInitialState } =
+    await import('$store/renderer/slices/guest-sessions/guest-sessions-slice');
+  const freshState = () => ({
+    daemonHealth: initialState,
+    connections: connectionsInitialState,
+    guestSessions: guestSessionsInitialState,
+  });
+  let state = freshState();
   const listeners = new Set<() => void>();
   const channel = stdChannel();
   const store = {
@@ -27,7 +34,7 @@ vi.mock('$store/renderer/store', async () => {
       return state;
     },
     init() {
-      state = { daemonHealth: initialState, connections: connectionsInitialState };
+      state = freshState();
       listeners.forEach((listener) => listener());
       return () => {};
     },
@@ -38,6 +45,7 @@ vi.mock('$store/renderer/store', async () => {
       state = {
         daemonHealth: daemonHealthReducer(state.daemonHealth, action as never),
         connections: connectionsReducer(state.connections, action as never),
+        guestSessions: guestSessionsReducer(state.guestSessions, action as never),
       };
       channel.put(action);
       listeners.forEach((listener) => listener());
@@ -85,6 +93,11 @@ import {
   openConnectionRequested,
 } from '$store/renderer/slices/connections/connections-slice';
 import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
+import {
+  guestSessionsListReceived,
+  leaveGuestSessionRequested,
+} from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
+import type { GuestSessionRecord } from '$shared/types/guest-sessions';
 
 const route = vi.hoisted(() => ({ pathname: '/' }));
 
@@ -973,6 +986,121 @@ describe('DaemonStoppedOverlay', () => {
       expect(screen.getByRole('button', { name: /indigo/i }).getAttribute('aria-pressed')).toBe(
         'true',
       );
+    });
+  });
+
+  describe('revoked-guest posture (multiplayer w4: auth rejected by a host joined as a guest)', () => {
+    const GUEST: GuestSessionRecord = {
+      id: 'guest-1',
+      label: 'studio.local',
+      host: '10.0.0.9',
+      hosts: ['10.0.0.9'],
+      port: 8443,
+      fingerprint: 'AB:CD',
+      tcAddress: null,
+      hostname: 'studio.local',
+      principalId: 'principal-1',
+      login: 'octocat',
+      tokenEncrypted: true,
+      updatedAt: 1,
+    };
+    const GUEST_CONNECTION = {
+      id: GUEST.id,
+      label: GUEST.label,
+      host: GUEST.host,
+      port: GUEST.port,
+      fingerprint: GUEST.fingerprint,
+      accent: 'indigo' as const,
+      isLocal: false,
+    };
+    const LOCAL = {
+      id: LOCAL_CONNECTION_ID,
+      label: 'This machine (local)',
+      host: null,
+      port: null,
+      fingerprint: null,
+      isLocal: true,
+    };
+    const wsTransport: BackendTransportInfo = {
+      mode: 'external-ws',
+      target: 'wss://10.0.0.9:8443/ws',
+    };
+
+    function bindWindowToGuest() {
+      dispatchAndFlush(
+        connectionsListReceived({
+          connections: [LOCAL, GUEST_CONNECTION],
+          activeId: GUEST.id,
+          windowBackendId: GUEST.id,
+        }),
+      );
+      dispatchAndFlush(guestSessionsListReceived({ sessions: [GUEST], connectedIds: [] }));
+    }
+
+    function rejectAuth() {
+      dispatchAndFlush(
+        authRejectedReceived({ id: GUEST.id, host: GUEST.host, port: GUEST.port, statusCode: 401 }),
+      );
+    }
+
+    it('replaces the re-pair state with the revoked copy and a Leave host action', async () => {
+      render(DaemonStoppedOverlay);
+      await showOverlay(wsTransport);
+      bindWindowToGuest();
+      rejectAuth();
+
+      expect(overlay()!.textContent).toContain('You no longer have access');
+      expect(overlay()!.textContent).toContain('studio.local');
+      // A guest credential cannot be re-paired: no token re-entry, no
+      // sidecar spawn, no misleading retry indicator.
+      expect(screen.queryByTestId('daemon-stopped-repair')).toBeNull();
+      expect(screen.queryByTestId('daemon-stopped-spawn-sidecar')).toBeNull();
+      expect(screen.queryByTestId('daemon-stopped-retrying')).toBeNull();
+      expect(screen.queryByTestId('daemon-stopped-known-backends')).toBeNull();
+      expect(screen.getByTestId('daemon-stopped-guest-leave')).toBeTruthy();
+    });
+
+    it('keeps the re-pair state for a rejected owner backend that is not a guest session', async () => {
+      render(DaemonStoppedOverlay);
+      await showOverlay(wsTransport);
+      dispatchAndFlush(
+        connectionsListReceived({
+          connections: [LOCAL, GUEST_CONNECTION],
+          activeId: GUEST.id,
+          windowBackendId: GUEST.id,
+        }),
+      );
+      rejectAuth();
+
+      expect(overlay()!.textContent).toContain('Authentication rejected');
+      expect(screen.getByTestId('daemon-stopped-repair')).toBeTruthy();
+      expect(screen.queryByTestId('daemon-stopped-guest-leave')).toBeNull();
+    });
+
+    it('dispatches the saga-owned leave for this session and surfaces a failure', async () => {
+      const dispatchSpy = vi.spyOn(appStore, 'dispatch');
+      render(DaemonStoppedOverlay);
+      await showOverlay(wsTransport);
+      bindWindowToGuest();
+      rejectAuth();
+      dispatchSpy.mockClear();
+
+      await fireEvent.click(screen.getByTestId('daemon-stopped-guest-leave'));
+
+      const leave = dispatchSpy.mock.calls
+        .map(([action]) => action as ReturnType<typeof leaveGuestSessionRequested>)
+        .find((action) => action.type === leaveGuestSessionRequested.type);
+      expect(leave?.payload).toEqual([GUEST.id]);
+      expect(screen.getByTestId('daemon-stopped-guest-leave').textContent).toContain('Leaving');
+
+      leave!.failure(new Error('ipc failed'));
+      await vi.waitFor(() => {
+        expect(screen.getByTestId('daemon-stopped-guest-leave-error').textContent).toContain(
+          'studio.local',
+        );
+      });
+      expect(screen.getByTestId('daemon-stopped-guest-leave').textContent).toContain('Leave host');
+      dispatchSpy.mockRestore();
     });
   });
 

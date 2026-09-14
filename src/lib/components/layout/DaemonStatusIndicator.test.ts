@@ -37,6 +37,17 @@ const DEFAULT_CONNECTIONS = {
   certWarnings: {},
 };
 
+// Default guest-sessions slice (no joined hosts), merged the same way so the
+// dropdown's guest-sessions selectors resolve for tests that never set it.
+const DEFAULT_GUEST_SESSIONS = {
+  sessions: createCollection('id'),
+  connectedIds: [],
+  hasReceivedList: true,
+  leavingIds: [],
+  hostedRosters: {},
+  removingMemberKeys: [],
+};
+
 // Mock svelte-fa
 vi.mock('svelte-fa', () => ({
   default: () => null,
@@ -64,7 +75,11 @@ vi.mock('$store/renderer/store', async () => {
   return {
     get store() {
       return createAppStoreMock({
-        state: () => ({ connections: { ...DEFAULT_CONNECTIONS }, ...mockStoreState }),
+        state: () => ({
+          connections: { ...DEFAULT_CONNECTIONS },
+          guestSessions: { ...DEFAULT_GUEST_SESSIONS },
+          ...mockStoreState,
+        }),
         dispatch: mockDispatch,
       });
     },
@@ -1773,6 +1788,109 @@ describe('DaemonStatusIndicator', () => {
       await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
       await fireEvent.click(screen.getByText('Connect another device'));
       expect(mockNavigateToSettings).toHaveBeenCalledWith({ tab: 'devices' });
+    });
+
+    describe('guest sessions block', () => {
+      const guestRecord = {
+        id: 'guest-1',
+        label: 'studio.local',
+        host: '10.0.0.9',
+        hosts: ['10.0.0.9'],
+        port: 4180,
+        fingerprint: 'CC:DD',
+        tcAddress: null,
+        hostname: 'studio.local',
+        principalId: 'p-1',
+        login: 'octocat',
+        joinedAt: '2026-09-01T00:00:00.000Z',
+      };
+
+      function withGuestSessions(connectedIds: string[]) {
+        return {
+          ...DEFAULT_GUEST_SESSIONS,
+          sessions: createCollection('id', [guestRecord]),
+          connectedIds,
+        };
+      }
+
+      it('hides the block when no host has been joined', async () => {
+        mockStoreState = { daemonHealth: { ...healthy }, connections: withConnections('local') };
+        render(DaemonStatusIndicatorPreloaded);
+        await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+        expect(screen.queryByTestId('daemon-status-guest-sessions')).toBeNull();
+      });
+
+      it('lists a joined host with its pooled connection state', async () => {
+        mockStoreState = {
+          daemonHealth: { ...healthy },
+          connections: withConnections('local'),
+          guestSessions: withGuestSessions([]),
+        };
+        render(DaemonStatusIndicatorPreloaded);
+        await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+
+        const block = screen.getByTestId('daemon-status-guest-sessions');
+        const row = within(block).getByText('studio.local').closest('[role="menuitem"]')!;
+        expect(
+          row.querySelector('[data-guest-connected]')?.getAttribute('data-guest-connected'),
+        ).toBe('false');
+      });
+
+      it('marks the row connected once main reports the pooled client live', async () => {
+        mockStoreState = {
+          daemonHealth: { ...healthy },
+          connections: withConnections('local'),
+          guestSessions: withGuestSessions(['guest-1']),
+        };
+        render(DaemonStatusIndicatorPreloaded);
+        await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+
+        const block = screen.getByTestId('daemon-status-guest-sessions');
+        const row = within(block).getByText('studio.local').closest('[role="menuitem"]')!;
+        expect(
+          row.querySelector('[data-guest-connected]')?.getAttribute('data-guest-connected'),
+        ).toBe('true');
+      });
+
+      it('opens the guest host as a window through connections/openRequested', async () => {
+        mockStoreState = {
+          daemonHealth: { ...healthy },
+          connections: withConnections('local'),
+          guestSessions: withGuestSessions(['guest-1']),
+        };
+        mockDispatch.mockImplementation(
+          (action: { type: string; success?: (r: unknown) => void }) => {
+            if (action.type === 'connections/openRequested') {
+              action.success?.({ status: 'opened', id: 'guest-1' });
+            }
+            return action;
+          },
+        );
+        render(DaemonStatusIndicatorPreloaded);
+        await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+        const block = screen.getByTestId('daemon-status-guest-sessions');
+        await fireEvent.click(
+          within(block).getByText('studio.local').closest('[role="menuitem"]')!,
+        );
+
+        await vi.waitFor(() =>
+          expect(mockDispatch).toHaveBeenCalledWith(
+            expect.objectContaining({ type: 'connections/openRequested', payload: ['guest-1'] }),
+          ),
+        );
+      });
+
+      it('routes the block CTA to the Guest Sessions settings tab', async () => {
+        mockStoreState = {
+          daemonHealth: { ...healthy },
+          connections: withConnections('local'),
+          guestSessions: withGuestSessions([]),
+        };
+        render(DaemonStatusIndicatorPreloaded);
+        await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+        await fireEvent.click(screen.getByText('Manage guest sessions'));
+        expect(mockNavigateToSettings).toHaveBeenCalledWith({ tab: 'guest-sessions' });
+      });
     });
   });
 

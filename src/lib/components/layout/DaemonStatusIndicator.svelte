@@ -88,7 +88,12 @@
   import { cn } from '$lib/utils';
   import { formatTransportLabel } from '$lib/utils/daemon-status-format';
   import Fa from 'svelte-fa';
-  import { faPlus, faCheck, faTriangleExclamation } from '@fortawesome/free-solid-svg-icons';
+  import {
+    faPlus,
+    faCheck,
+    faTriangleExclamation,
+    faUsers,
+  } from '@fortawesome/free-solid-svg-icons';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import * as Menu from '$lib/components/ui/menu';
   import Header from '$lib/components/ui/Header.svelte';
@@ -130,6 +135,10 @@
     forgetConnectionRequested,
   } from '$store/renderer/slices/connections/connections-slice';
   import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
+  import {
+    selectGuestSessions,
+    selectGuestSessionsConnectedIds,
+  } from '$store/renderer/slices/guest-sessions/guest-sessions-selectors';
   import {
     CONNECTION_ACCENT_CLASSES,
     resolveConnectionAccent,
@@ -395,6 +404,18 @@
   function openDevicesSettings() {
     dropdownOpen = false;
     void navigateToSettings({ tab: 'devices' });
+  }
+
+  // Hosts joined as a GUEST (multiplayer w4) — a separate block from the
+  // paired devices above: the only status a guest sees is whether its pooled
+  // client is live, so the row carries "connected" / "not connected" and
+  // nothing else (no health, no version, no owner-only controls).
+  const guestSessions$ = selectGuestSessions();
+  const guestConnectedIds$ = selectGuestSessionsConnectedIds();
+
+  function openGuestSessionsSettings() {
+    dropdownOpen = false;
+    void navigateToSettings({ tab: 'guest-sessions' });
   }
 
   const hasSavedRemoteConnections = $derived($connections$.some((conn) => !conn.isLocal));
@@ -941,6 +962,53 @@
             : m.layout_daemonStatus_connectAnotherDevice_action()}
         </Menu.Item>
       </div>
+
+      <!-- Guest sessions (hosts joined through an invite) — shown only once joined -->
+      {#if $guestSessions$.length > 0}
+        <div class="h-px bg-border my-1"></div>
+        <div class="px-1 pb-1" data-testid="daemon-status-guest-sessions">
+          <Header class="px-2 pt-1.5 pb-0.5" size={6}
+            >{m.layout_daemonStatus_guestSessions_header()}</Header
+          >
+          {#each $guestSessions$ as session (session.id)}
+            {@const isCurrent = session.id === $currentConnectionId$}
+            {@const connected = $guestConnectedIds$.includes(session.id)}
+            <Menu.Item
+              class="w-full cursor-pointer text-xs px-2 py-1.5"
+              onSelect={() => handleOpenConnection(session.id)}
+            >
+              <span class="text-foreground shrink-0" aria-hidden="true"><Fa icon={faUsers} /></span>
+              <span class="min-w-0 flex-1 truncate">{session.label}</span>
+              <span class="flex items-center gap-1.5 shrink-0">
+                <span
+                  class={connected ? 'text-green-600 dark:text-green-500' : 'text-subtle'}
+                  data-guest-connected={connected}
+                >
+                  {connected
+                    ? m.layout_daemonStatus_guestSession_connected_label()
+                    : m.layout_daemonStatus_guestSession_notConnected_label()}
+                </span>
+                {#if isCurrent}
+                  <span
+                    class="text-green-500"
+                    role="img"
+                    aria-label={m.layout_daemonStatus_connectionActive_label()}
+                  >
+                    <Fa icon={faCheck} />
+                  </span>
+                {/if}
+              </span>
+            </Menu.Item>
+          {/each}
+          <button
+            class="w-full text-left text-xs hover:bg-muted/50 rounded px-2 py-1.5 transition-colors cursor-pointer flex items-center gap-2"
+            onclick={openGuestSessionsSettings}
+          >
+            <span class="text-subtle"><Fa icon={faUsers} /></span>
+            {m.layout_daemonStatus_manageGuestSessions_action()}
+          </button>
+        </div>
+      {/if}
     </div>
   {/snippet}
 </DropdownMenu>
