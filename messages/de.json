@@ -6292,5 +6292,10 @@
   "workspace_share_loadFailed_error": "Freigabedetails konnten nicht geladen werden",
   "workspace_share_createFailed_error": "Einladungslink konnte nicht erstellt werden",
   "workspace_share_pinUnknown_error": "Kein GitHub-Benutzer mit dem Namen {login}",
-  "workspace_hoverCard_member_ariaLabel": "{name} – {role}"
+  "workspace_hoverCard_member_ariaLabel": "{name} – {role}",
+  "workspace_share_ownerOnly_notice": "Nur der Eigentümer des Workspace kann die Freigabe verwalten.",
+  "workspace_share_removeMember_confirm_label": "{name} aus diesem Workspace entfernen?",
+  "workspace_share_removeMember_confirmAction_ariaLabel": "Entfernen von {name} bestätigen",
+  "workspace_share_cancel_label": "Abbrechen",
+  "workspace_hoverCard_share_label": "Teilen"
 }
