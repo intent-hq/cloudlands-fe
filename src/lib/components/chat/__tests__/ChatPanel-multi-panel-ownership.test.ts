@@ -154,6 +154,9 @@ vi.mock('$store/renderer/slices/workspace-tasks/workspace-tasks-selectors', () =
   selectWorkspaceTasks: testState.selector([]),
   selectWorkspaceTasksInitialized: testState.selector(false),
 }));
+vi.mock('$store/renderer/slices/presence/presence-selectors', () => ({
+  selectAgentTypingPeople: testState.selector([]),
+}));
 vi.mock('$store/renderer/slices/multi-panel-context/multi-panel-context-selectors', () => ({
   selectCheckedPanels: testState.selector([]),
   selectPanels: testState.selector([]),

@@ -942,6 +942,15 @@ export const IPC_CHANNELS = {
     CHANGED: 'guest-sessions:changed',
   },
 
+  // Workspace presence (multiplayer w5). The daemon connection is pooled per
+  // backend in main and `presence.update` replaces the CONNECTION's whole
+  // focus set, so each window reports its own focus / typing here and main
+  // merges every window of that backend into one `presence.update`. The
+  // reply carries the connection's opaque `typingSource`.
+  PRESENCE: {
+    REPORT: 'presence:report',
+  },
+
   // Workspace transfer relay (main-process, wizard steps 3–4). The renderer
   // starts/finalizes/cancels the relay; archive bytes never cross IPC —
   // progress counters arrive on the `transfer:progress` push channel

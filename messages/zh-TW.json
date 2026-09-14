@@ -6387,5 +6387,15 @@
   "workspace_share_listenerDown_error": "邀請前請先在設定中開啟遠端存取 + Tailcat",
   "notes_presenceStack_viewers_one": "另有 1 人正在查看此筆記",
   "notes_presenceStack_viewers_many": "另有 {count} 人正在查看此筆記",
-  "notes_presenceStack_overflow_label": "+{count}"
+  "notes_presenceStack_overflow_label": "+{count}",
+  "presence_person_unknown_label": "某人",
+  "presence_avatarStack_people_one": "另有 1 人在此",
+  "presence_avatarStack_people_many": "另有 {count} 人在此",
+  "presence_avatarStack_more_label": "+{count}",
+  "presence_typing_one": "{name} 正在輸入…",
+  "presence_typing_two_label": "{first} 和 {second} 正在輸入…",
+  "presence_typing_many": "{first} 和另外 {count} 人正在輸入…",
+  "workspace_hoverCard_people_label": "成員",
+  "workspace_hoverCard_personViewing_label": "正在檢視",
+  "workspace_hoverCard_personOnline_label": "線上"
 }
