@@ -103,6 +103,7 @@ import { agentReadSaga } from './slices/workspace-agents/sagas/agent-read-saga';
 import { daemonEventsSaga } from './slices/workspace-events/sagas/daemon-events-saga';
 import { workspaceInitializerSaga } from './slices/workspace-initializer/sagas/workspace-initializer-saga';
 import { lifecycleIpcReadSaga } from './slices/workspace-lifecycle/sagas/lifecycle-ipc-read-saga';
+import { localRepoDiscoverySaga } from './slices/known-repos/sagas/local-repo-discovery-saga';
 import { lifecycleReadSaga } from './slices/workspace-lifecycle/sagas/lifecycle-read-saga';
 import { workspaceNavigationLayoutSaga } from './slices/workspace-navigation/sagas/workspace-navigation-layout-saga';
 import { workspaceNavigationTabSaga } from './slices/workspace-navigation/sagas/workspace-navigation-tab-saga';
@@ -166,6 +167,7 @@ export const sagas = [
   scriptsOperationSaga,
   lifecycleReadSaga,
   lifecycleIpcReadSaga,
+  localRepoDiscoverySaga,
   workspaceLoadSaga,
   workspaceReconnectSaga,
   modelSelectionSaga,

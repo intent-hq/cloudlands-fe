@@ -9,6 +9,12 @@
    *   - reveals Message 3
    */
   import { onMount } from 'svelte';
+  import { store as appStore } from '$store/renderer/store';
+  import {
+    discoverLocalReposRequested,
+    onboardingPickerOpened,
+    onboardingPickerClosed,
+  } from '$store/renderer/slices/known-repos/known-repos-slice';
   import { m } from '$shared/paraglide/messages.js';
   import { createLogger } from '$lib/utils/client-logger';
   import { invoke } from '$shared/generated/ipc-client';
@@ -294,8 +300,20 @@
   }
 
   // Notify parent once on mount with pre-filled persisted values (if any)
+  let pickerMounted = $state(false);
   onMount(() => {
     notifyParent();
+    appStore.dispatch(onboardingPickerOpened(false));
+    pickerMounted = true;
+    return () => appStore.dispatch(onboardingPickerClosed());
+  });
+
+  // The initial Local tab is provisional until saved preferences have resolved.
+  // Explicit Local clicks below can still request discovery before hydration.
+  $effect(() => {
+    if (pickerMounted && (didApplyPrefill || didApplyPersistedRepo) && activeTab === 'local') {
+      appStore.dispatch(discoverLocalReposRequested());
+    }
   });
 
   const tabs: { id: TabId; label: string }[] = [
@@ -349,6 +367,7 @@
         onclick={() => {
           previousTabIndex = TAB_ORDER.indexOf(activeTab);
           activeTab = tab.id;
+          if (tab.id === 'local') appStore.dispatch(discoverLocalReposRequested());
           notifyParent();
         }}
       >
