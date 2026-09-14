@@ -798,7 +798,11 @@ export class TunnelManager {
     queue.push(stream);
     this.pendingStreams.set(port, queue);
     if (!this.admissionPoll) {
-      this.admissionPoll = setInterval(() => this.drainAdmission(), this.admissionRetryMs);
+      // Poll often enough to honor retryAtMs even with a large configured backoff.
+      this.admissionPoll = setInterval(
+        () => this.drainAdmission(),
+        Math.min(100, this.admissionRetryMs),
+      );
       this.admissionPoll.unref?.();
     }
     this.drainAdmission();

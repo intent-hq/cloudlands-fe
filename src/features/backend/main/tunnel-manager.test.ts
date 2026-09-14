@@ -395,6 +395,38 @@ describe('TunnelManager', () => {
     });
   });
 
+  it('reconsiders capacity before the deadline with a large configured retry interval', async () => {
+    const echo = await startEchoServer();
+    onCleanup(() => echo.server.close());
+    const { manager, created } = makeManager({
+      admissionRetryMs: 10_000,
+      admissionTimeoutMs: 2500,
+    });
+    onCleanup(() => manager.dispose());
+    const port = await manager.forwardPort(echo.port);
+    const ws = created[0];
+    const passthrough = ws.onFrame;
+    let rejected = false;
+    ws.onFrame = (frame) => {
+      if (frame.type === 'open' && !rejected) {
+        rejected = true;
+        queueMicrotask(() =>
+          ws.deliver({
+            type: 'openErr',
+            streamId: frame.streamId,
+            message: 'too many concurrent streams (max 32)',
+          }),
+        );
+      } else passthrough?.(frame);
+    };
+    const client = await connectClient(port);
+    onCleanup(() => client.destroy());
+    const reply = collectUntil(client, 5);
+    client.write('entry');
+    expect((await reply).toString()).toBe('entry');
+    expect(ws.sent.filter((frame) => frame.type === 'open')).toHaveLength(2);
+  });
+
   it('bounds queue overflow and wait, and drops queued work when its forward closes', async () => {
     const { manager, created } = makeManager({
       daemon: false,
