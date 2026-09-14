@@ -13,16 +13,21 @@
  * reducer, so nothing needs cancelling.
  *
  * Hydration: the daemon publishes `presence:changed` only on change, so the
- * rosters of the open workspace tabs are seeded from `presence.snapshot` when
- * the backend is attached, when a tab opens, and again on reconnect (the
- * connection's presence and every event of the outage are gone). A snapshot
- * overtaken by a `presence:changed` for its workspace is dropped.
+ * rosters of the open workspace tabs are seeded from `presence.snapshot`. The
+ * attach read waits for the daemon-events firehose subscription (boot and
+ * every reconnect — the connection's presence and every event of the outage
+ * are gone): a snapshot read before the subscription is live can miss a
+ * change that lands between the read and the subscribe, with nothing to
+ * correct it until the next change. Opening a tab reads its roster at once.
+ * Reads are fenced per workspace: a pushed `presence:changed` or a backend
+ * switch supersedes every read in flight, and a read superseded by a NEWER
+ * read for the same workspace is dropped, whichever settles first.
  *
  * Identity: `principal.me` is read per backend so the roster's own row can be
  * told apart; a backend switch resets every roster first.
  */
 
-import { END, buffers, eventChannel, type EventChannel } from 'redux-saga';
+import { END, buffers, eventChannel, type EventChannel, type Task } from 'redux-saga';
 import {
   all,
   call,
@@ -43,7 +48,7 @@ import {
   type SelectorChannelPayload,
 } from '@augmentcode/themis/saga';
 
-import { backendRequest, onBackendReconnected } from '$lib/client/live/backend-transport';
+import { backendRequest } from '$lib/client/live/backend-transport';
 import { invoke } from '$lib/electron-bridge';
 import { createLogger } from '$lib/utils/client-logger';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
@@ -55,11 +60,13 @@ import {
 } from '$shared/types/presence';
 import { selectCurrentConnectionId } from '../../connections/connections-selectors';
 import { selectActiveWorkspaceIds } from '../../tab-state/tab-state-selectors';
+import { selectDaemonEventsSubscriptionGeneration } from '../../workspace-events/workspace-events-selectors';
 import {
   presenceOwnPrincipalReceived,
   presenceOwnTypingSourceReceived,
   presenceReset,
   presenceRosterReceived,
+  presenceSnapshotReceived,
   presenceTypingExpired,
   presenceTypingPulse,
   presenceTypingStopped,
@@ -88,6 +95,9 @@ async function invokeReport(params: PresenceReportParams): Promise<PresenceRepor
 
 type ObservedAction = { type: string; payload?: unknown };
 
+/** Saga-local ordinal of the latest `presence.snapshot` read issued per workspace. */
+type RosterReads = Map<string, number>;
+
 async function readOwnPrincipalId(): Promise<string | null> {
   try {
     const result = await backendRequest<{ id?: unknown }>('principal.me', {});
@@ -115,10 +125,6 @@ function supersedesSnapshot(action: ObservedAction, workspaceId: string): boolea
     Array.isArray(action.payload) &&
     (action.payload[0] as PresenceRoster | undefined)?.workspaceId === workspaceId
   );
-}
-
-function createReconnectChannel(): EventChannel<true> {
-  return eventChannel<true>((emit) => onBackendReconnected(() => emit(true)), buffers.sliding(1));
 }
 
 /** `visibilitychange` is a document event, so the window-event helper does not apply. */
@@ -228,56 +234,83 @@ function* armTypingTimers({
 }
 
 /**
- * Seed one workspace's roster. A `presence:changed` for the workspace or a
- * backend switch that lands while the read is in flight is newer than
- * whatever the read returns, so that result is dropped.
+ * Seed one workspace's roster. A pushed `presence:changed` for the workspace
+ * or a backend switch that lands while the read is in flight is newer than
+ * whatever the read returns, so that result is dropped. Two reads of the same
+ * workspace are ordered by issue: only the latest one may apply, so an older
+ * read settling later never overwrites a newer roster — and a snapshot result
+ * is never mistaken for a push that would cancel the newer read.
  */
-function* hydrateRoster(workspaceId: string): SagaGenerator<void> {
+function* hydrateRoster(reads: RosterReads, workspaceId: string): SagaGenerator<void> {
+  const ordinal = (reads.get(workspaceId) ?? 0) + 1;
+  reads.set(workspaceId, ordinal);
   const { roster } = yield* race({
     roster: call(readRosterSnapshot, workspaceId),
     superseded: take((action: ObservedAction) => supersedesSnapshot(action, workspaceId)),
   });
-  if (roster) yield* put(presenceRosterReceived(roster));
+  if (roster && reads.get(workspaceId) === ordinal) yield* put(presenceSnapshotReceived(roster));
 }
 
-function* hydrateRosters(workspaceIds: string[]): SagaGenerator<void> {
-  yield* all(workspaceIds.map((workspaceId) => call(hydrateRoster, workspaceId)));
+function* hydrateRosters(reads: RosterReads, workspaceIds: string[]): SagaGenerator<void> {
+  yield* all(workspaceIds.map((workspaceId) => call(hydrateRoster, reads, workspaceId)));
 }
 
 /** Opening a workspace tab publishes nothing daemon-side, so its roster is read. */
-function* onDisplayedWorkspacesChanged({
-  payload,
-  prevPayload,
-}: SelectorChannelPayload<string[]>): SagaGenerator<void> {
-  const known = new Set(prevPayload ?? []);
-  yield* hydrateRosters(payload.filter((workspaceId) => !known.has(workspaceId)));
+function onDisplayedWorkspacesChanged(reads: RosterReads) {
+  return function* ({ payload, prevPayload }: SelectorChannelPayload<string[]>) {
+    const known = new Set(prevPayload ?? []);
+    yield* hydrateRosters(
+      reads,
+      payload.filter((workspaceId) => !known.has(workspaceId)),
+    );
+  };
 }
 
 /** Identity first, so the seeded rosters never show this window's own row. */
-function* attachBackend(): SagaGenerator<void> {
+function* attachBackend(reads: RosterReads): SagaGenerator<void> {
   const principalId = yield* call(readOwnPrincipalId);
   yield* put(presenceOwnPrincipalReceived(principalId));
   const workspaceIds = yield* select(selectActiveWorkspaceIds.select);
-  yield* hydrateRosters(workspaceIds);
+  yield* hydrateRosters(reads, workspaceIds);
 }
 
 /**
- * The selector channel emits its first value before anything can take it and
- * a local window's backend id never changes afterwards, so the current backend
- * is attached explicitly; a later change resets the rosters and attaches the
- * new one.
+ * The one attach in flight. Boot, every resubscribe and a backend switch each
+ * replace it, so a slow earlier attach can never land its identity or rosters
+ * after a later one has.
  */
-function* watchBackend(): SagaGenerator<void> {
-  const channel = yield* createChannelFromSelector(selectCurrentConnectionId);
-  let backendId = yield* select(selectCurrentConnectionId.select);
-  let attached = backendId ? yield* fork(attachBackend) : null;
+interface Attachment {
+  reads: RosterReads;
+  task: Task | null;
+}
+
+function* restartAttach(attachment: Attachment, reportAfter: boolean): SagaGenerator<void> {
+  if (attachment.task) yield* cancel(attachment.task);
+  attachment.task = yield* fork(function* () {
+    yield* attachBackend(attachment.reads);
+    if (reportAfter) yield* sendReport();
+  });
+}
+
+/**
+ * Attach once the firehose subscription is live (`daemonEventsSaga` bumps the
+ * generation on boot and after every resubscribe) — never before, or the
+ * snapshot may predate the subscription. Main re-sends the merged
+ * `presence.update` when the pooled connection comes back, so on every
+ * generation after the first this window also reports once, learning the
+ * connection's fresh `typingSource`.
+ */
+function* watchSubscription(attachment: Attachment): SagaGenerator<void> {
+  const channel = yield* createChannelFromSelector(selectDaemonEventsSubscriptionGeneration);
+  let generation = yield* select(selectDaemonEventsSubscriptionGeneration.select);
+  if (generation > 0) yield* restartAttach(attachment, false);
   try {
     while (true) {
       const { payload } = yield* take(channel);
-      if (attached) yield* cancel(attached);
-      if (backendId) yield* put(presenceReset());
-      backendId = payload;
-      attached = backendId ? yield* fork(attachBackend) : null;
+      if (payload === generation) continue;
+      const reconnected = generation > 0;
+      generation = payload;
+      yield* restartAttach(attachment, reconnected);
     }
   } finally {
     channel.close();
@@ -285,17 +318,21 @@ function* watchBackend(): SagaGenerator<void> {
 }
 
 /**
- * Main re-sends the merged `presence.update` when the pooled connection comes
- * back; this window re-reads identity and the displayed rosters, then reports
- * once so the connection's fresh `typingSource` is learned.
+ * A local window's backend id never changes after boot; a change nonetheless
+ * drops the attach in flight, resets every roster and identity, and attaches
+ * the new backend.
  */
-function* watchReconnects(): SagaGenerator<void> {
-  const channel = createReconnectChannel();
+function* watchBackend(attachment: Attachment): SagaGenerator<void> {
+  const channel = yield* createChannelFromSelector(selectCurrentConnectionId);
+  let backendId = yield* select(selectCurrentConnectionId.select);
   try {
     while (true) {
-      yield* take(channel);
-      yield* attachBackend();
-      yield* sendReport();
+      const { payload } = yield* take(channel);
+      if (attachment.task) yield* cancel(attachment.task);
+      attachment.task = null;
+      if (backendId) yield* put(presenceReset());
+      backendId = payload;
+      if (backendId) yield* restartAttach(attachment, false);
     }
   } finally {
     channel.close();
@@ -303,14 +340,16 @@ function* watchReconnects(): SagaGenerator<void> {
 }
 
 export function* presenceSaga(): SagaGenerator<void> {
+  const reads: RosterReads = new Map();
+  const attachment: Attachment = { reads, task: null };
   const tasks = [
     yield* fork(watchVisibility),
     yield* fork(watchTypingPulses),
-    yield* fork(watchBackend),
-    yield* fork(watchReconnects),
+    yield* fork(watchSubscription, attachment),
+    yield* fork(watchBackend, attachment),
     yield* takeLatestFromSelector(selectOwnPresenceReportKey, reportOnChange),
     yield* takeEveryFromSelector(selectPresenceLiveTyping, armTypingTimers),
-    yield* takeEveryFromSelector(selectActiveWorkspaceIds, onDisplayedWorkspacesChanged),
+    yield* takeEveryFromSelector(selectActiveWorkspaceIds, onDisplayedWorkspacesChanged(reads)),
   ];
   yield* all(tasks.map((task) => join(task)));
 }
