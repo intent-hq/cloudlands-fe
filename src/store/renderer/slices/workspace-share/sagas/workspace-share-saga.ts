@@ -41,6 +41,7 @@ import { m } from '$shared/paraglide/messages.js';
 import {
   selectShareCanManage,
   selectShareCreateRequest,
+  selectShareMutationGeneration,
   selectShareTarget,
   selectWorkspaceRosterCanManage,
   selectWorkspaceRosterRemovingPrincipalId,
@@ -102,14 +103,26 @@ function coalescedByKey<A>(
   };
 }
 
+/**
+ * Both reads are issued together and the flight is held until BOTH settle:
+ * an early rejection must not release the `coalescedByKey` guard while the
+ * sibling RPC is still outstanding, or the next event would start a second
+ * concurrent read. A `-32003` on either read is preferred as the thrown error.
+ */
 async function readShareData(
   workspaceId: string,
 ): Promise<{ members: WorkspaceMember[]; invites: WorkspaceInvite[] }> {
-  const [members, invites] = await Promise.all([
+  const [members, invites] = await Promise.allSettled([
     workspaceSharingClient.listMembers(workspaceId),
     workspaceSharingClient.listInvites(workspaceId),
   ]);
-  return { members, invites };
+  if (members.status === 'rejected' || invites.status === 'rejected') {
+    const reasons = [members, invites].flatMap((outcome) =>
+      outcome.status === 'rejected' ? [outcome.reason as unknown] : [],
+    );
+    throw reasons.find(isForbiddenErrorResponse) ?? reasons[0];
+  }
+  return { members: members.value, invites: invites.value };
 }
 
 /** The open dialog's target, or `null` (withheld) when the caller may not manage it. */
@@ -142,9 +155,10 @@ function logFailure(what: string, workspaceId: string, failure: ShareFailure): v
 function* loadShareData(): SagaGenerator<void> {
   const target = yield* manageableTarget();
   if (!target) return;
+  const generation = yield* selectShareMutationGeneration.effect();
   try {
     const { members, invites } = yield* call(readShareData, target.workspaceId);
-    yield* put(shareDataLoaded({ target, members, invites }));
+    yield* put(shareDataLoaded({ target, generation, members, invites }));
   } catch (error) {
     if (!(yield* stillTargets(target))) return;
     if (isForbiddenErrorResponse(error)) {
