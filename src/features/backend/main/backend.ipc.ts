@@ -47,6 +47,7 @@ import {
 import { JsonRpcError } from './json-rpc-errors';
 import {
   buildMainClientHelloParams,
+  getOrCreateClientId,
   persistClientId,
   setLocalHostIdentity,
 } from './client-identity';
@@ -79,6 +80,7 @@ import * as guestSessionsStore from './guest-sessions-store';
 import type {
   GuestSessionsListResult,
   LeaveGuestSessionResult,
+  LeaveGuestWorkspaceResult,
 } from '../../../shared/types/guest-sessions';
 import {
   initKeychainSyncLifecycle,
@@ -132,6 +134,7 @@ import {
   ConnectionsForgetSchema,
   ConnectionsListSchema,
   GuestSessionsLeaveSchema,
+  GuestSessionsLeaveWorkspaceSchema,
   GuestSessionsListSchema,
   ConnectionsOpenSchema,
   ConnectionsRotateSecretSchema,
@@ -2086,7 +2089,102 @@ async function leaveGuestSessionLocked(id: string): Promise<LeaveGuestSessionRes
   return { id, revoked };
 }
 
-/** Register the guest sessions IPC (token-free list, leave) + the change push. */
+/**
+ * Bound on the `workspace.members.leave` round trip of a per-workspace
+ * *Leave*, including the dial when the host has no live pooled client.
+ */
+export const GUEST_LEAVE_WORKSPACE_TIMEOUT_MS = 10_000;
+
+/**
+ * A per-workspace *Leave* that did not complete on the host, reduced to a
+ * bounded code before it crosses IPC (the raw transport / daemon message may
+ * echo host material). The local record is left untouched so the user can
+ * retry.
+ */
+export class GuestWorkspaceLeaveError extends Error {
+  constructor(readonly code: string) {
+    // i18n-ignore (bounded machine code, never rendered)
+    super(`guest workspace leave failed: ${code}`);
+    this.name = 'GuestWorkspaceLeaveError';
+  }
+}
+
+/**
+ * The host's `workspace.members.leave` for a per-workspace *Leave*: on the
+ * session's pooled client when it is live, otherwise on a short-lived client
+ * dialled from the stored guest credential (a joined host that was never
+ * opened has no pooled client, and *Leave* must not pool one — that would
+ * flip the nav block to "not connected" for a host with no window).
+ */
+async function requestGuestWorkspaceLeave(id: string, workspaceId: string): Promise<boolean> {
+  const pooled = backendClients.get(id);
+  const request = async (client: JsonRpcClient) => {
+    const result = (await client.request(
+      'workspace.members.leave',
+      { workspaceId },
+      { timeoutMs: GUEST_LEAVE_WORKSPACE_TIMEOUT_MS },
+    )) as { left?: unknown } | null;
+    return result?.left === true;
+  };
+  if (pooled && pooled.getStatus() === 'connected') return request(pooled);
+  const { config } = await buildConfigForConnection(id);
+  const client = new JsonRpcClient({
+    config,
+    helloParams: async () => ({ clientId: await getOrCreateClientId() }),
+  });
+  client.on('error', () => {});
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      request(client),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error('timed out')), GUEST_LEAVE_WORKSPACE_TIMEOUT_MS);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+    client.dispose();
+  }
+}
+
+/**
+ * Per-workspace *Leave* (multiplayer w4): ask the host to drop this
+ * principal's membership (`workspace.members.leave`), then drop the workspace
+ * from the session's local record. The record is dropped when the host
+ * confirms OR answers that the membership is already gone (`-32602`: the
+ * owner removed the guest first); any other failure keeps the record and
+ * rejects with a bounded code so the user can retry. A workspace no longer
+ * in the record (another window already left it) is completion, not an
+ * error, and sends nothing. The session itself is kept even at zero
+ * workspaces — *Leave host* is the only thing that forgets it.
+ */
+async function leaveGuestWorkspaceLocked(
+  id: string,
+  workspaceId: string,
+): Promise<LeaveGuestWorkspaceResult> {
+  const session = await guestSessionsStore.findById(id);
+  if (!session?.workspaces.some((w) => w.id === workspaceId)) {
+    return { id, workspaceId, left: false };
+  }
+  let left = false;
+  try {
+    left = await requestGuestWorkspaceLeave(id, workspaceId);
+  } catch (error) {
+    if (!(error instanceof JsonRpcError && error.rpcCode === -32602)) {
+      const code = revokeFailureCode(error);
+      logger.warn('workspace.members.leave failed; keeping the local record', {
+        id,
+        workspaceId,
+        code,
+      });
+      throw new GuestWorkspaceLeaveError(code);
+    }
+  }
+  await guestSessionsStore.leaveWorkspace(id, workspaceId);
+  return { id, workspaceId, left };
+}
+
+/** Register the guest sessions IPC (token-free list, leave, leave-workspace) + the change push. */
 function registerGuestSessionsHandlers(): void {
   ipcMain.handle(
     GUEST_SESSIONS.LIST,
@@ -2102,6 +2200,15 @@ function registerGuestSessionsHandlers(): void {
       GuestSessionsLeaveSchema,
       async (_event, { id }) => enqueueConnectionOperation(() => leaveGuestSessionLocked(id)),
       GUEST_SESSIONS.LEAVE,
+    ),
+  );
+  ipcMain.handle(
+    GUEST_SESSIONS.LEAVE_WORKSPACE,
+    createValidatedHandler(
+      GuestSessionsLeaveWorkspaceSchema,
+      async (_event, { id, workspaceId }) =>
+        enqueueConnectionOperation(() => leaveGuestWorkspaceLocked(id, workspaceId)),
+      GUEST_SESSIONS.LEAVE_WORKSPACE,
     ),
   );
   guestSessionsStore.onGuestSessionsMutated(() => {

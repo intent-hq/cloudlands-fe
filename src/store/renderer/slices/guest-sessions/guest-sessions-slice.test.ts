@@ -15,10 +15,14 @@ import {
   initialState,
   leaveOperationSettled,
   leaveOperationStarted,
+  leaveWorkspaceOperationSettled,
+  leaveWorkspaceOperationStarted,
+  removeAllGuestsOperationSettled,
+  removeAllGuestsOperationStarted,
   removeMemberOperationSettled,
   removeMemberOperationStarted,
 } from './guest-sessions-slice';
-import { hostedMemberKey, type WorkspaceMember } from './guest-sessions-types';
+import { guestWorkspaceKey, hostedMemberKey, type WorkspaceMember } from './guest-sessions-types';
 
 const GUEST: GuestSessionRecord = {
   id: 'guest-1',
@@ -32,6 +36,7 @@ const GUEST: GuestSessionRecord = {
   principalId: 'principal-1',
   login: 'octocat',
   tokenEncrypted: true,
+  workspaces: [{ id: 'ws-guest', title: 'Guest project' }],
   updatedAt: 1,
 };
 
@@ -99,6 +104,30 @@ describe('guestSessionsReducer', () => {
     expect(state.leavingIds).toEqual([]);
   });
 
+  it('tracks a per-workspace leave in flight once per host + workspace', () => {
+    const key = guestWorkspaceKey(GUEST.id, 'ws-guest');
+    let state = guestSessionsReducer(
+      initialState,
+      leaveWorkspaceOperationStarted(GUEST.id, 'ws-guest'),
+    );
+    state = guestSessionsReducer(state, leaveWorkspaceOperationStarted(GUEST.id, 'ws-guest'));
+    expect(state.leavingWorkspaceKeys).toEqual([key]);
+    state = guestSessionsReducer(state, leaveWorkspaceOperationStarted(GUEST.id, 'ws-other'));
+    state = guestSessionsReducer(state, leaveWorkspaceOperationSettled(GUEST.id, 'ws-guest'));
+    expect(state.leavingWorkspaceKeys).toEqual([guestWorkspaceKey(GUEST.id, 'ws-other')]);
+    // The host-level leave marker is separate.
+    expect(state.leavingIds).toEqual([]);
+  });
+
+  it('tracks a Remove all guests sweep in flight once per workspace', () => {
+    let state = guestSessionsReducer(initialState, removeAllGuestsOperationStarted('ws-1'));
+    state = guestSessionsReducer(state, removeAllGuestsOperationStarted('ws-1'));
+    expect(state.clearingWorkspaceIds).toEqual(['ws-1']);
+    state = guestSessionsReducer(state, removeAllGuestsOperationSettled('ws-1'));
+    expect(state.clearingWorkspaceIds).toEqual([]);
+    expect(guestSessionsReducer(state, removeAllGuestsOperationSettled('ws-1'))).toBe(state);
+  });
+
   it('moves a roster through loading → loaded and keeps stale members while reloading', () => {
     let state = guestSessionsReducer(initialState, hostedRosterLoading('ws-1'));
     expect(state.hostedRosters['ws-1']).toEqual({ status: 'loading', members: [] });
@@ -122,13 +151,16 @@ describe('guestSessionsReducer', () => {
     expect(state.removingMemberKeys).toEqual([]);
   });
 
-  it('withholding a roster drops its cached rows and in-flight removal markers', () => {
+  it('withholding a roster drops its cached rows and in-flight removal / sweep markers', () => {
     let state = guestSessionsReducer(initialState, hostedRosterReceived('ws-1', [MEMBER]));
     state = guestSessionsReducer(state, removeMemberOperationStarted('ws-1', MEMBER.principalId));
     state = guestSessionsReducer(state, removeMemberOperationStarted('ws-2', MEMBER.principalId));
+    state = guestSessionsReducer(state, removeAllGuestsOperationStarted('ws-1'));
+    state = guestSessionsReducer(state, removeAllGuestsOperationStarted('ws-2'));
     state = guestSessionsReducer(state, hostedRosterWithheld('ws-1'));
     expect(state.hostedRosters['ws-1']).toEqual({ status: 'withheld', members: [] });
     expect(state.removingMemberKeys).toEqual([hostedMemberKey('ws-2', MEMBER.principalId)]);
+    expect(state.clearingWorkspaceIds).toEqual(['ws-2']);
   });
 
   it('a withheld roster is terminal: a late load, result or failure leaves it untouched until purged', () => {
@@ -152,27 +184,37 @@ describe('guestSessionsReducer', () => {
     ).toEqual({ 'ws-1': { status: 'loaded', members: [MEMBER] } });
   });
 
-  it('purges a roster and its removal markers when the workspace is deleted or its entity removed', () => {
+  it('purges a roster and its removal / sweep markers when the workspace is deleted or its entity removed', () => {
     let state = guestSessionsReducer(initialState, hostedRosterReceived('ws-1', [MEMBER]));
     state = guestSessionsReducer(state, hostedRosterReceived('ws-2', [MEMBER]));
     state = guestSessionsReducer(state, removeMemberOperationStarted('ws-1', MEMBER.principalId));
+    state = guestSessionsReducer(state, removeAllGuestsOperationStarted('ws-1'));
     state = guestSessionsReducer(state, workspaceDeleted('ws-1', []));
     expect(state.hostedRosters).toEqual({ 'ws-2': { status: 'loaded', members: [MEMBER] } });
     expect(state.removingMemberKeys).toEqual([]);
+    expect(state.clearingWorkspaceIds).toEqual([]);
 
     const unrelated = guestSessionsReducer(state, workspaceDeleted('ws-none', []));
     expect(unrelated).toBe(state);
+
+    // A sweep marker without a roster entry is purged too.
+    const markerOnly = guestSessionsReducer(state, removeAllGuestsOperationStarted('ws-3'));
+    expect(
+      guestSessionsReducer(markerOnly, workspaceDeleted('ws-3', [])).clearingWorkspaceIds,
+    ).toEqual([]);
 
     state = guestSessionsReducer(state, removeWorkspaceEntity('ws-2'));
     expect(state.hostedRosters).toEqual({});
   });
 
-  it('drops every roster when the window workspace list is reset', () => {
+  it('drops every roster and sweep marker when the window workspace list is reset', () => {
     let state = guestSessionsReducer(initialState, hostedRosterReceived('ws-1', [MEMBER]));
     state = guestSessionsReducer(state, removeMemberOperationStarted('ws-1', MEMBER.principalId));
+    state = guestSessionsReducer(state, removeAllGuestsOperationStarted('ws-1'));
     state = guestSessionsReducer(state, resetWorkspaceState());
     expect(state.hostedRosters).toEqual({});
     expect(state.removingMemberKeys).toEqual([]);
+    expect(state.clearingWorkspaceIds).toEqual([]);
     expect(guestSessionsReducer(state, resetWorkspaceState())).toBe(state);
   });
 });

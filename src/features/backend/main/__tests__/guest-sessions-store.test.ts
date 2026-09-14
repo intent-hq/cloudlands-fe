@@ -90,7 +90,69 @@ describe('guest-sessions-store', () => {
     });
     expect(typeof rec.id).toBe('string');
     expect(rec).not.toHaveProperty('token');
+    expect(rec.workspaces).toEqual([]);
     expect(JSON.stringify(await store.list())).not.toContain('guest-secret');
+  });
+
+  it('add() records the admitted workspace and a re-join merges by id, retitling in place', async () => {
+    const store = await import('../guest-sessions-store');
+    const first = await store.add({ ...sample, workspace: { id: 'ws-1', title: 'Design' } });
+    expect(first.workspaces).toEqual([{ id: 'ws-1', title: 'Design' }]);
+
+    const second = await store.add({ ...sample, workspace: { id: 'ws-2', title: 'Release' } });
+    expect(second.id).toBe(first.id);
+    expect(second.workspaces).toEqual([
+      { id: 'ws-1', title: 'Design' },
+      { id: 'ws-2', title: 'Release' },
+    ]);
+
+    const retitled = await store.add({ ...sample, workspace: { id: 'ws-1', title: 'Design v2' } });
+    expect(retitled.workspaces).toEqual([
+      { id: 'ws-1', title: 'Design v2' },
+      { id: 'ws-2', title: 'Release' },
+    ]);
+    // The list is a local detail: the keychain sync record does not carry it.
+    const [sync] = await store.listSyncRecords();
+    expect(sync).not.toHaveProperty('workspaces');
+  });
+
+  it('leaveWorkspace() drops one workspace, keeps the session at zero, persists once and notifies', async () => {
+    const store = await import('../guest-sessions-store');
+    const listener = vi.fn();
+    store.onGuestSessionsMutated(listener);
+    const rec = await store.add({ ...sample, workspace: { id: 'ws-1', title: 'Design' } });
+    await store.add({ ...sample, workspace: { id: 'ws-2', title: 'Release' } });
+    listener.mockClear();
+
+    expect(await store.leaveWorkspace(rec.id, 'ws-1')).toBe(true);
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(await store.findById(rec.id)).toMatchObject({
+      workspaces: [{ id: 'ws-2', title: 'Release' }],
+    });
+
+    expect(await store.leaveWorkspace(rec.id, 'ws-1')).toBe(false);
+    expect(await store.leaveWorkspace('missing', 'ws-2')).toBe(false);
+    expect(listener).toHaveBeenCalledTimes(1);
+
+    expect(await store.leaveWorkspace(rec.id, 'ws-2')).toBe(true);
+    const [session] = await store.list();
+    expect(session.id).toBe(rec.id);
+    expect(session.workspaces).toEqual([]);
+    expect(await store.getDecryptedToken(rec.id)).toBe('guest-secret');
+  });
+
+  it('reads rows written before the workspace list existed as having no workspaces', async () => {
+    const store = await import('../guest-sessions-store');
+    const rec = await store.add(sample);
+    await store.__drainWriteChainForTesting();
+    const file = await readFile();
+    const sessions = file.sessions as Array<Record<string, unknown>>;
+    delete sessions[0].workspaces;
+    await fs.writeFile(path.join(tmpDir, 'guest-sessions.json'), JSON.stringify(file));
+    vi.resetModules();
+    mockElectron();
+    const reloaded = await import('../guest-sessions-store');
+    expect(await reloaded.findById(rec.id)).toMatchObject({ workspaces: [] });
   });
 
   it('encrypts the token at rest and decrypts it on demand', async () => {

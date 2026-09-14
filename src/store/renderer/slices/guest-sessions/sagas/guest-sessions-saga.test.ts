@@ -43,13 +43,17 @@ import {
   guestSessionsReducer,
   initialState,
   leaveGuestSessionRequested,
+  leaveGuestWorkspaceRequested,
   loadGuestSessionsRequested,
   loadHostedRosterRequested,
+  removeAllHostedGuestsRequested,
   removeHostedMemberRequested,
 } from '../guest-sessions-slice';
 import {
   GuestSessionOperationError,
   HostedRosterOperationError,
+  guestWorkspaceKey,
+  type WorkspaceInvite,
   type WorkspaceMember,
 } from '../guest-sessions-types';
 import { guestSessionsSaga } from './guest-sessions-saga';
@@ -69,6 +73,7 @@ const GUEST: GuestSessionRecord = {
   principalId: 'principal-1',
   login: 'octocat',
   tokenEncrypted: true,
+  workspaces: [{ id: 'ws-guest', title: 'Guest project' }],
   updatedAt: 1,
 };
 
@@ -80,6 +85,32 @@ const MEMBER: WorkspaceMember = {
   role: 'collaborator',
   addedAt: '2026-09-14T00:00:00Z',
 };
+
+const OWNER: WorkspaceMember = {
+  principalId: 'principal-owner',
+  login: 'host',
+  displayName: 'Host',
+  avatarUrl: null,
+  role: 'owner',
+  addedAt: '2026-09-01T00:00:00Z',
+};
+
+const SECOND_MEMBER: WorkspaceMember = {
+  ...MEMBER,
+  principalId: 'principal-3',
+  login: 'dependabot',
+};
+
+function makeInvite(id: string, pinLogin?: string): WorkspaceInvite {
+  return {
+    id,
+    workspaceId: 'ws-1',
+    createdByPrincipalId: OWNER.principalId,
+    ...(pinLogin ? { pinLogin } : {}),
+    createdAt: '2026-09-10T00:00:00Z',
+    expiresAt: '2026-09-17T00:00:00Z',
+  };
+}
 
 function makeWorkspace(
   id: string,
@@ -248,6 +279,248 @@ describe('guestSessionsSaga', () => {
     expect(run.getState().guestSessions.leavingIds).toEqual([]);
 
     await stop(run.task);
+  });
+
+  it('per-workspace leave sends the exact guest-sessions:leave-workspace request and tracks the key', async () => {
+    invoke.mockImplementation(async (channel: string, params?: unknown) => {
+      if (channel === GUEST_SESSIONS.LIST)
+        return { sessions: [GUEST], openIds: [], connectedIds: [] };
+      if (channel === GUEST_SESSIONS.LEAVE_WORKSPACE) {
+        const { id, workspaceId } = params as { id: string; workspaceId: string };
+        return { id, workspaceId, left: true };
+      }
+      throw new Error(`unexpected channel ${channel}`);
+    });
+    const run = start();
+    await settle();
+
+    const action = leaveGuestWorkspaceRequested(GUEST.id, 'ws-guest');
+    run.dispatch(action);
+    expect(run.getState().guestSessions.leavingWorkspaceKeys).toEqual([
+      guestWorkspaceKey(GUEST.id, 'ws-guest'),
+    ]);
+    await expect(action.promise).resolves.toEqual({
+      id: GUEST.id,
+      workspaceId: 'ws-guest',
+      left: true,
+    });
+    expect(invoke).toHaveBeenCalledWith(GUEST_SESSIONS.LEAVE_WORKSPACE, {
+      id: GUEST.id,
+      workspaceId: 'ws-guest',
+    });
+    expect(invoke).not.toHaveBeenCalledWith(GUEST_SESSIONS.LEAVE, expect.anything());
+    expect(run.getState().guestSessions.leavingWorkspaceKeys).toEqual([]);
+    // The session itself is untouched: the list only moves on the main push.
+    expect(getItems(run.getState().guestSessions.sessions)).toEqual([GUEST]);
+
+    await stop(run.task);
+  });
+
+  it('per-workspace leave rejects bounded and clears the key when main throws', async () => {
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === GUEST_SESSIONS.LIST)
+        return { sessions: [GUEST], openIds: [], connectedIds: [] };
+      throw new Error('guest workspace leave failed: SENTINEL-transport');
+    });
+    const run = start();
+    await settle();
+
+    const action = leaveGuestWorkspaceRequested(GUEST.id, 'ws-guest');
+    run.dispatch(action);
+    const failure = (await action.promise.catch((e: unknown) => e)) as GuestSessionOperationError;
+    expect(failure).toBeInstanceOf(GuestSessionOperationError);
+    expect(failure.code).toBe('ipc');
+    expect(failure.message).not.toContain('SENTINEL-transport');
+    expect(run.getState().guestSessions.leavingWorkspaceKeys).toEqual([]);
+
+    await stop(run.task);
+  });
+
+  describe('remove all guests', () => {
+    function calls(method: string) {
+      return mocks.request.mock.calls.filter(([m]) => m === method).map(([, params]) => params);
+    }
+
+    it('removes every collaborator, revokes every open invite, then refetches the roster', async () => {
+      mocks.request.mockImplementation(async (method) => {
+        if (method === 'workspace.members.list') return { members: [OWNER, MEMBER, SECOND_MEMBER] };
+        if (method === 'workspace.members.remove') return { removed: true };
+        if (method === 'workspace.invite.list')
+          return { invites: [makeInvite('inv-1', 'pinned'), makeInvite('inv-2')] };
+        if (method === 'workspace.invite.revoke') return { revoked: true };
+        throw new Error(`unexpected method ${method}`);
+      });
+      const run = start();
+      await settle();
+      run.dispatch(replaceWorkspaceList([makeWorkspace('ws-1', 3)]));
+
+      const action = removeAllHostedGuestsRequested('ws-1');
+      run.dispatch(action);
+      expect(run.getState().guestSessions.clearingWorkspaceIds).toEqual(['ws-1']);
+      await expect(action.promise).resolves.toEqual({
+        removedPrincipalIds: [MEMBER.principalId, SECOND_MEMBER.principalId],
+        failedMembers: [],
+        revokedInviteIds: ['inv-1', 'inv-2'],
+        failedInvites: [],
+        invitesUnavailable: null,
+      });
+
+      expect(calls('workspace.members.remove')).toEqual([
+        { workspaceId: 'ws-1', principalId: MEMBER.principalId },
+        { workspaceId: 'ws-1', principalId: SECOND_MEMBER.principalId },
+      ]);
+      expect(calls('workspace.invite.list')).toEqual([{ workspaceId: 'ws-1' }]);
+      expect(calls('workspace.invite.revoke')).toEqual([
+        { workspaceId: 'ws-1', inviteId: 'inv-1' },
+        { workspaceId: 'ws-1', inviteId: 'inv-2' },
+      ]);
+      // The owner is never removed.
+      expect(calls('workspace.members.remove')).not.toContainEqual(
+        expect.objectContaining({ principalId: OWNER.principalId }),
+      );
+      // A fresh roster read before the sweep and one refetch after it.
+      await settle();
+      expect(calls('workspace.members.list')).toHaveLength(2);
+      expect(run.getState().guestSessions.clearingWorkspaceIds).toEqual([]);
+
+      await stop(run.task);
+    });
+
+    it('reports each failed step, continues past it, and resolves with the partial report', async () => {
+      mocks.request.mockImplementation(async (method, params) => {
+        const p = params as { principalId?: string; inviteId?: string };
+        if (method === 'workspace.members.list') return { members: [OWNER, MEMBER, SECOND_MEMBER] };
+        if (method === 'workspace.members.remove') {
+          if (p.principalId === MEMBER.principalId)
+            throw daemonError(-32602, 'Invalid params: SENTINEL-member');
+          return { removed: true };
+        }
+        if (method === 'workspace.invite.list')
+          return { invites: [makeInvite('inv-1', 'pinned'), makeInvite('inv-2')] };
+        if (method === 'workspace.invite.revoke') {
+          if (p.inviteId === 'inv-1') throw new Error('socket closed SENTINEL-invite');
+          return { revoked: true };
+        }
+        throw new Error(`unexpected method ${method}`);
+      });
+      const run = start();
+      await settle();
+      run.dispatch(replaceWorkspaceList([makeWorkspace('ws-1', 3)]));
+
+      const action = removeAllHostedGuestsRequested('ws-1');
+      run.dispatch(action);
+      const result = await action.promise;
+      expect(result).toEqual({
+        removedPrincipalIds: [SECOND_MEMBER.principalId],
+        failedMembers: [{ principalId: MEMBER.principalId, code: 'daemon' }],
+        revokedInviteIds: ['inv-2'],
+        failedInvites: [{ inviteId: 'inv-1', pinLogin: 'pinned', code: 'transport' }],
+        invitesUnavailable: null,
+      });
+      expect(JSON.stringify(result)).not.toContain('SENTINEL');
+      expect(calls('workspace.invite.revoke')).toHaveLength(2);
+      expect(run.getState().guestSessions.clearingWorkspaceIds).toEqual([]);
+
+      await stop(run.task);
+    });
+
+    it('records an unreadable invite list and revokes nothing', async () => {
+      mocks.request.mockImplementation(async (method) => {
+        if (method === 'workspace.members.list') return { members: [OWNER, MEMBER] };
+        if (method === 'workspace.members.remove') return { removed: true };
+        if (method === 'workspace.invite.list') throw new Error('timed out');
+        throw new Error(`unexpected method ${method}`);
+      });
+      const run = start();
+      await settle();
+      run.dispatch(replaceWorkspaceList([makeWorkspace('ws-1', 2)]));
+
+      const action = removeAllHostedGuestsRequested('ws-1');
+      run.dispatch(action);
+      await expect(action.promise).resolves.toEqual({
+        removedPrincipalIds: [MEMBER.principalId],
+        failedMembers: [],
+        revokedInviteIds: [],
+        failedInvites: [],
+        invitesUnavailable: 'transport',
+      });
+      expect(calls('workspace.invite.revoke')).toEqual([]);
+
+      await stop(run.task);
+    });
+
+    it('a -32003 mid-sweep withholds the roster, stops the sweep and rejects bounded', async () => {
+      mocks.request.mockImplementation(async (method) => {
+        if (method === 'workspace.members.list') return { members: [OWNER, MEMBER, SECOND_MEMBER] };
+        if (method === 'workspace.members.remove') throw daemonError(-32003, 'Forbidden SENTINEL');
+        throw new Error(`unexpected method ${method}`);
+      });
+      const run = start();
+      await settle();
+      run.dispatch(replaceWorkspaceList([makeWorkspace('ws-1', 3)]));
+
+      const action = removeAllHostedGuestsRequested('ws-1');
+      run.dispatch(action);
+      const failure = (await action.promise.catch((e: unknown) => e)) as HostedRosterOperationError;
+      expect(failure).toBeInstanceOf(HostedRosterOperationError);
+      expect(failure.code).toBe('forbidden');
+      expect(failure.message).not.toContain('SENTINEL');
+      expect(calls('workspace.members.remove')).toHaveLength(1);
+      expect(calls('workspace.invite.list')).toEqual([]);
+      expect(run.getState().guestSessions.hostedRosters['ws-1']).toEqual({
+        status: 'withheld',
+        members: [],
+      });
+      expect(run.getState().guestSessions.clearingWorkspaceIds).toEqual([]);
+
+      await stop(run.task);
+    });
+
+    it('never runs the sweep for a workspace the caller only collaborates on', async () => {
+      const run = start();
+      await settle();
+      run.dispatch(replaceWorkspaceList([makeWorkspace('ws-1', 2, 'collaborator')]));
+
+      const action = removeAllHostedGuestsRequested('ws-1');
+      run.dispatch(action);
+      const failure = (await action.promise.catch((e: unknown) => e)) as HostedRosterOperationError;
+      expect(failure.code).toBe('forbidden');
+      expect(mocks.request).not.toHaveBeenCalled();
+      expect(run.getState().guestSessions.clearingWorkspaceIds).toEqual([]);
+
+      await stop(run.task);
+    });
+
+    it('a sweep that outlives the workspace deletion is cancelled and leaves no marker', async () => {
+      let releaseRemove!: () => void;
+      mocks.request.mockImplementation(async (method) => {
+        if (method === 'workspace.members.list') return { members: [OWNER, MEMBER] };
+        if (method === 'workspace.members.remove')
+          return new Promise((resolve) => {
+            releaseRemove = () => resolve({ removed: true });
+          });
+        throw new Error(`unexpected method ${method}`);
+      });
+      const run = start();
+      await settle();
+      run.dispatch(replaceWorkspaceList([makeWorkspace('ws-1', 2)]));
+
+      const action = removeAllHostedGuestsRequested('ws-1');
+      run.dispatch(action);
+      await settle();
+      run.dispatch(workspaceDeleted('ws-1', []));
+      const failure = (await action.promise.catch((e: unknown) => e)) as HostedRosterOperationError;
+      expect(failure.code).toBe('cancelled');
+      expect(run.getState().guestSessions.clearingWorkspaceIds).toEqual([]);
+      expect(run.getState().guestSessions.hostedRosters['ws-1']).toBeUndefined();
+
+      releaseRemove();
+      await settle();
+      expect(calls('workspace.invite.list')).toEqual([]);
+      expect(run.getState().guestSessions.hostedRosters['ws-1']).toBeUndefined();
+
+      await stop(run.task);
+    });
   });
 
   it('loads a hosted roster through workspace.members.list with the exact params', async () => {
