@@ -98,7 +98,12 @@ describe('workspaceShareReducer', () => {
   it('openShareDialog retargets an already-open dialog and drops the previous rows', () => {
     const loaded = reduce(
       opened(),
-      shareDataLoaded({ target: target(opened()), members: [owner], invites: [invite] }),
+      shareDataLoaded({
+        target: target(opened()),
+        generation: 0,
+        members: [owner],
+        invites: [invite],
+      }),
       shareInviteCreateRequested({ pinLogin: '' }),
       shareInviteCreated({ target: target(opened()), request: 1, link }),
     );
@@ -118,7 +123,12 @@ describe('workspaceShareReducer', () => {
   it('closeShareDialog resets everything but keeps the session counter monotonic', () => {
     const loaded = reduce(
       opened(),
-      shareDataLoaded({ target: target(opened()), members: [owner], invites: [invite] }),
+      shareDataLoaded({
+        target: target(opened()),
+        generation: 0,
+        members: [owner],
+        invites: [invite],
+      }),
     );
     const closed = workspaceShareReducer(loaded, closeShareDialog());
     expect(closed).toEqual({ ...initialState, session: 1 });
@@ -134,7 +144,12 @@ describe('workspaceShareReducer', () => {
 
     const loaded = reduce(
       loading,
-      shareDataLoaded({ target: target(loading), members: [owner], invites: [invite] }),
+      shareDataLoaded({
+        target: target(loading),
+        generation: 0,
+        members: [owner],
+        invites: [invite],
+      }),
     );
     expect(loaded).toMatchObject({ loadStatus: 'loaded', loadError: null });
     expect(getItems(loaded.members)).toEqual([owner]);
@@ -157,6 +172,7 @@ describe('workspaceShareReducer', () => {
       shareDataRequested(),
       shareDataLoaded({
         target: { workspaceId: 'ws-stale', session: 1 },
+        generation: 0,
         members: [owner],
         invites: [],
       }),
@@ -171,7 +187,7 @@ describe('workspaceShareReducer', () => {
     const state = reduce(
       initialState,
       shareDataRequested(),
-      shareDataLoaded({ target: stale, members: [owner], invites: [] }),
+      shareDataLoaded({ target: stale, generation: 0, members: [owner], invites: [] }),
       shareInviteCreated({ target: stale, request: 0, link }),
       shareActionSettled({ target: stale, error: 'late' }),
     );
@@ -256,6 +272,7 @@ describe('workspaceShareReducer', () => {
       shareInviteCreated({ target: target(opened()), request: 1, link }),
       shareDataLoaded({
         target: target(opened()),
+        generation: 1,
         members: [owner],
         invites: [invite, { ...invite, id: 'inv-2' }],
       }),
@@ -278,9 +295,68 @@ describe('workspaceShareReducer', () => {
 
     const vanished = reduce(
       created,
-      shareDataLoaded({ target: target(created), members: [owner], invites: [invite] }),
+      shareDataLoaded({
+        target: target(created),
+        generation: created.mutationGeneration,
+        members: [owner],
+        invites: [invite],
+      }),
     );
     expect(vanished.createdLink).toBeNull();
+  });
+
+  // Regression (fe#2440 review P2, f5f4a22): the dialog permits Create while
+  // the initial read is deferred. A pre-create snapshot (empty list) settling
+  // after the create must not retire the link the trailing read still lists.
+  it('drops a snapshot taken before a mutation so the post-mutation read stays authoritative', () => {
+    const readStarted = reduce(opened(), shareDataRequested());
+    const preCreateGeneration = readStarted.mutationGeneration;
+
+    const created = reduce(
+      readStarted,
+      shareInviteCreateRequested({ pinLogin: '' }),
+      shareInviteCreated({ target: target(readStarted), request: 1, link }),
+    );
+    expect(created.mutationGeneration).not.toBe(preCreateGeneration);
+
+    const staleEmpty = reduce(
+      created,
+      shareDataLoaded({
+        target: target(created),
+        generation: preCreateGeneration,
+        members: [owner],
+        invites: [],
+      }),
+    );
+    expect(staleEmpty).toBe(created);
+    expect(staleEmpty.createdLink).toEqual(link);
+
+    const fresh = reduce(
+      staleEmpty,
+      shareDataLoaded({
+        target: target(staleEmpty),
+        generation: staleEmpty.mutationGeneration,
+        members: [owner],
+        invites: [{ ...invite, id: 'inv-2' }],
+      }),
+    );
+    expect(fresh.createdLink).toEqual(link);
+    expect(fresh.loadStatus).toBe('loaded');
+    expect(getItems(fresh.invites).map((row) => row.id)).toEqual(['inv-2']);
+
+    // A successful revoke/remove advances the generation too; a failed one does not.
+    const removeFailed = reduce(
+      fresh,
+      shareMemberRemoveRequested('p-bob'),
+      shareActionSettled({ target: target(fresh), error: 'nope' }),
+    );
+    expect(removeFailed.mutationGeneration).toBe(fresh.mutationGeneration);
+    const removed = reduce(
+      fresh,
+      shareMemberRemoveRequested('p-bob'),
+      shareActionSettled({ target: target(fresh), error: null }),
+    );
+    expect(removed.mutationGeneration).not.toBe(fresh.mutationGeneration);
   });
 
   // Regression (fe#2440 review P1): a `-32003` refusal (or a non-owner
@@ -289,7 +365,12 @@ describe('workspaceShareReducer', () => {
   it('shareAccessWithheld drops the rows and blocks further mutations', () => {
     const loaded = reduce(
       opened(),
-      shareDataLoaded({ target: target(opened()), members: [owner], invites: [invite] }),
+      shareDataLoaded({
+        target: target(opened()),
+        generation: 0,
+        members: [owner],
+        invites: [invite],
+      }),
       shareInviteCreateRequested({ pinLogin: '' }),
       shareInviteCreated({ target: target(opened()), request: 1, link }),
     );
@@ -311,7 +392,12 @@ describe('workspaceShareReducer', () => {
     expect(
       reduce(
         withheld,
-        shareDataLoaded({ target: target(withheld), members: [owner], invites: [] }),
+        shareDataLoaded({
+          target: target(withheld),
+          generation: withheld.mutationGeneration,
+          members: [owner],
+          invites: [],
+        }),
       ),
     ).toBe(withheld);
 

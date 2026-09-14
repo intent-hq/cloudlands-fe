@@ -85,6 +85,14 @@ export interface WorkspaceShareState {
   loadStatus: 'idle' | 'loading' | 'loaded' | 'error';
   loadError: string | null;
   /**
+   * Advances on every local mutation of this session (invite created, revoke /
+   * remove succeeded). A read snapshot must echo the generation it was taken
+   * under: a pre-mutation snapshot settling late is stale and dropped, so the
+   * trailing post-mutation read stays authoritative (it would otherwise
+   * retire a `createdLink` its list predates).
+   */
+  mutationGeneration: number;
+  /**
    * The daemon refused an owner-only sharing method (`-32003`) or the caller
    * is not the workspace owner: rows are dropped and the dialog renders the
    * owner-only notice instead of the controls.
@@ -110,6 +118,7 @@ export const initialState: WorkspaceShareState = {
   invites: createCollection<WorkspaceInvite, 'id'>('id'),
   loadStatus: 'idle',
   loadError: null,
+  mutationGeneration: 0,
   withheld: false,
   creating: false,
   createRequest: 0,
@@ -140,11 +149,15 @@ export const shareMembershipChanged = createAction<[payload: { workspaceId: stri
   'workspaceShare/membershipChanged',
 );
 
-/** Saga: roster + invites arrived for `target` (ignored if the dialog moved on). */
+/**
+ * Saga: roster + invites arrived for `target` (ignored if the dialog moved on
+ * or a mutation landed since the read started — see `mutationGeneration`).
+ */
 export const shareDataLoaded = createAction<
   [
     payload: {
       target: WorkspaceShareTarget;
+      generation: number;
       members: WorkspaceMember[];
       invites: WorkspaceInvite[];
     },
@@ -321,8 +334,10 @@ workspaceShareReducer.with(shareDataRequested, (state) => {
 });
 workspaceShareReducer.with(
   shareDataLoaded,
-  (state, { payload: [{ target, members, invites }] }) => {
-    if (!targets(state, target) || state.withheld) return state;
+  (state, { payload: [{ target, generation, members, invites }] }) => {
+    if (!targets(state, target) || state.withheld || state.mutationGeneration !== generation) {
+      return state;
+    }
     const invitesById = createCollection('id', invites);
     const createdLink =
       state.createdLink && getItem(invitesById, state.createdLink.inviteId)
@@ -359,7 +374,13 @@ workspaceShareReducer.with(
   shareInviteCreated,
   (state, { payload: [{ target, request, link }] }) => {
     if (!targets(state, target) || state.createRequest !== request || state.withheld) return state;
-    return { ...state, creating: false, createError: null, createdLink: link };
+    return {
+      ...state,
+      creating: false,
+      createError: null,
+      createdLink: link,
+      mutationGeneration: state.mutationGeneration + 1,
+    };
   },
 );
 workspaceShareReducer.with(
@@ -390,6 +411,7 @@ workspaceShareReducer.with(
     return {
       ...state,
       createdLink,
+      mutationGeneration: error === null ? state.mutationGeneration + 1 : state.mutationGeneration,
       revokingInviteId: null,
       removingPrincipalId: null,
       actionError: error,

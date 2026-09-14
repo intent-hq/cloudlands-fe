@@ -227,6 +227,7 @@ describe('workspaceShareSaga', () => {
         opened(),
         shareDataLoaded({
           target: { workspaceId: 'ws-1', session: 1 },
+          generation: 0,
           members: [owner],
           invites: [invite],
         }),
@@ -496,6 +497,104 @@ describe('workspaceShareSaga', () => {
     await settle();
     expect(calls('workspace.invite.list')).toHaveLength(2);
     expect(h.state().loadStatus).toBe('loaded');
+    h.task.cancel();
+  });
+
+  // Regression (fe#2440 review P2, f5f4a22): Create is permitted while the
+  // initial read is deferred. The pre-create snapshot (an empty list) settling
+  // after the create must not retire the vaulted link; the trailing read is
+  // the authoritative one and still lists the new invite.
+  it('keeps the created link when a pre-create read settles after the create', async () => {
+    let resolveInitialInvites!: () => void;
+    let inviteReads = 0;
+    mocks.request.mockImplementation((method: string) => {
+      if (method === 'workspace.members.list') return Promise.resolve({ members: [owner] });
+      if (method === 'workspace.invite.create') return Promise.resolve(createReply('inv-2'));
+      if (method === 'workspace.invite.list') {
+        inviteReads += 1;
+        if (inviteReads === 1) {
+          return new Promise((resolve) => (resolveInitialInvites = () => resolve({ invites: [] })));
+        }
+        return Promise.resolve({ invites: [{ ...invite, id: 'inv-2', pinLogin: 'dave' }] });
+      }
+      return Promise.resolve({});
+    });
+    const h = harness();
+    h.dispatch(openShareDialog({ workspaceId: 'ws-1', workspaceTitle: 'My Space' }));
+    await settle();
+    expect(h.state().loadStatus).toBe('loading');
+
+    h.dispatch(shareInviteCreateRequested({ pinLogin: 'dave' }));
+    await settle();
+    expect(h.state().createdLink).toMatchObject({ inviteId: 'inv-2' });
+    expect(calls('workspace.invite.list')).toHaveLength(1);
+
+    resolveInitialInvites();
+    await settle();
+    // The stale snapshot did not clear the link; the trailing read ran.
+    expect(h.state().createdLink).toMatchObject({ inviteId: 'inv-2' });
+    expect(calls('workspace.invite.list')).toHaveLength(2);
+    expect(h.state().loadStatus).toBe('loaded');
+    expect(getItems(h.state().invites).map((row) => row.id)).toEqual(['inv-2']);
+    expect(readInviteLink(h.state().createdLink!.linkHandle)).toBe(INVITE_URL);
+    h.task.cancel();
+  });
+
+  // Regression (fe#2440 review P2, f5f4a22): one read rejecting while its
+  // sibling is still outstanding must not release the single-flight guard —
+  // later events would otherwise start a concurrent read per event.
+  it('holds the flight until both reads settle when one of them rejects early', async () => {
+    let resolveHungInvites!: () => void;
+    let inviteReads = 0;
+    mocks.request.mockImplementation((method: string) => {
+      if (method === 'workspace.members.list') {
+        return Promise.reject(new Error('members unavailable'));
+      }
+      if (method === 'workspace.invite.list') {
+        inviteReads += 1;
+        if (inviteReads === 1) {
+          return new Promise((resolve) => (resolveHungInvites = () => resolve({ invites: [] })));
+        }
+        return Promise.resolve({ invites: [] });
+      }
+      return Promise.resolve({});
+    });
+    const h = harness();
+    h.dispatch(openShareDialog({ workspaceId: 'ws-1', workspaceTitle: 'My Space' }));
+    await settle();
+    expect(h.state().loadStatus).toBe('loading');
+
+    for (let i = 0; i < 10; i++) h.dispatch(shareMembershipChanged({ workspaceId: 'ws-1' }));
+    await settle();
+    expect(calls('workspace.invite.list')).toHaveLength(1);
+    expect(calls('workspace.members.list')).toHaveLength(1);
+
+    resolveHungInvites();
+    await settle();
+    // One trailing read for the whole burst; the failure is still reported.
+    expect(calls('workspace.invite.list')).toHaveLength(2);
+    expect(calls('workspace.members.list')).toHaveLength(2);
+    expect(h.state().loadStatus).toBe('error');
+    h.task.cancel();
+  });
+
+  it('withholds on a -32003 from one read even when the sibling read hangs then fails', async () => {
+    let rejectHungInvites!: () => void;
+    mocks.request.mockImplementation((method: string) => {
+      if (method === 'workspace.members.list') return Promise.reject(forbidden());
+      if (method === 'workspace.invite.list') {
+        return new Promise((_, reject) => (rejectHungInvites = () => reject(new Error('late'))));
+      }
+      return Promise.resolve({});
+    });
+    const h = harness();
+    h.dispatch(openShareDialog({ workspaceId: 'ws-1', workspaceTitle: 'My Space' }));
+    await settle();
+    expect(h.state().withheld).toBe(false);
+
+    rejectHungInvites();
+    await settle();
+    expect(h.state()).toMatchObject({ withheld: true, loadStatus: 'loaded', loadError: null });
     h.task.cancel();
   });
 
