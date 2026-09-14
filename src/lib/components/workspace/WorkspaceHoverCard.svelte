@@ -33,6 +33,9 @@
     type WorkspacePRPresentationRow,
   } from './sidebar/workspace-pr-presentation';
   import { formatWorkspaceHoverCardTimestamp } from './workspace-hover-card-time';
+  import type { WorkspaceMember } from '$features/workspace-sharing/types';
+  import { workspaceSharingClient } from '$features/workspace-sharing/workspace-sharing.client';
+  import { logger } from '$lib/utils/client-logger';
   import {
     getWorkspaceStatusPresentation,
     resolveWorkspaceStatusState,
@@ -310,9 +313,50 @@
   });
   let visiblePrRows = $derived(workspacePrRows.slice(0, 3));
   let hiddenPrCount = $derived(Math.max(0, workspacePrRows.length - 3));
+  // Member roster (multiplayer w4): read-only rows shown only for a shared
+  // workspace (`memberCount > 1`, PROTOCOL §5.1). Fetched once per hovered
+  // workspace through `workspace.members.list`; `memberCount` changes (member
+  // added/removed) re-key the fetch so the roster tracks the entity summary.
+  let members = $state<WorkspaceMember[]>([]);
+  let membersLoadedKey: string | null = null;
+  const membersKey = $derived(
+    workspace && (workspace.memberCount ?? 0) > 1
+      ? `${workspace.id}:${workspace.memberCount}`
+      : null,
+  );
+  $effect(() => {
+    const key = membersKey;
+    if (!key || !loadWorkspaceData) {
+      membersLoadedKey = null;
+      members = [];
+      return;
+    }
+    if (membersLoadedKey === key || !workspace) return;
+    membersLoadedKey = key;
+    const id = String(workspace.id);
+    workspaceSharingClient
+      .listMembers(id)
+      .then((rows) => {
+        if (membersLoadedKey === key) members = rows;
+      })
+      .catch((error) => {
+        logger.warn('Failed to load workspace members for hover card:', error);
+      });
+  });
+  let visibleMembers = $derived(members.slice(0, 4));
+  let hiddenMemberCount = $derived(Math.max(0, members.length - 4));
+  function memberName(member: WorkspaceMember): string {
+    return member.displayName || member.login || member.principalId;
+  }
+  function memberRoleLabel(member: WorkspaceMember): string {
+    return member.role === 'owner'
+      ? m.workspace_share_role_owner_label()
+      : m.workspace_share_role_collaborator_label();
+  }
   let hasAgentRows = $derived(allRows.length > 0);
   let hasPrRows = $derived(workspacePrRows.length > 0);
-  let hasBodyContent = $derived(hasAgentRows || hasPrRows);
+  let hasMemberRows = $derived(members.length > 0);
+  let hasBodyContent = $derived(hasAgentRows || hasPrRows || hasMemberRows);
   function getWorkspacePrLabel(pr: WorkspacePRPresentationRow): string {
     const identity = pr.repo
       ? m.workspace_card_prBadge_repoLine_tooltip({ repo: pr.repo, number: pr.number })
@@ -500,6 +544,59 @@
                 <span
                   >{m.workspace_hoverCard_moreItems_label({
                     count: formatInteger(hiddenPrCount),
+                  })}</span
+                >
+                <Fa icon={faChevronRight} size={10} />
+              </div>{/if}
+          </section>{/if}
+        {#if hasMemberRows}<section
+            class="members min-w-0"
+            aria-label={m.workspace_share_members_label()}
+            data-workspace-hover-card-members
+          >
+            <div class="grid min-w-0 gap-3" role="list" data-workspace-hover-card-member-list>
+              {#each visibleMembers as member (member.principalId)}
+                <div
+                  class="grid min-w-0 grid-cols-[2rem_minmax(0,1fr)_auto] items-center gap-x-2.5"
+                  aria-label={m.workspace_hoverCard_member_ariaLabel({
+                    name: memberName(member),
+                    role: memberRoleLabel(member),
+                  })}
+                  role="listitem"
+                  data-workspace-hover-card-member-row
+                  data-member-role={member.role}
+                >
+                  {#if member.avatarUrl}
+                    <img
+                      src={member.avatarUrl}
+                      alt=""
+                      class="h-6 w-6 shrink-0 justify-self-center rounded-full"
+                      loading="lazy"
+                    />
+                  {:else}
+                    <span
+                      class="grid h-6 w-6 shrink-0 place-items-center justify-self-center rounded-full bg-muted text-xs"
+                      aria-hidden="true">{memberName(member).slice(0, 1).toUpperCase()}</span
+                    >
+                  {/if}
+                  <span
+                    class="type-body min-w-0 truncate text-foreground"
+                    data-workspace-hover-card-member-name>{memberName(member)}</span
+                  >
+                  <span
+                    class="type-caption shrink-0 text-muted-foreground"
+                    data-workspace-hover-card-member-role>{memberRoleLabel(member)}</span
+                  >
+                </div>
+              {/each}
+            </div>
+            {#if hiddenMemberCount}<div
+                class="type-body mt-4 flex items-center justify-between text-muted-foreground"
+                data-workspace-hover-card-member-overflow
+              >
+                <span
+                  >{m.workspace_hoverCard_moreItems_label({
+                    count: formatInteger(hiddenMemberCount),
                   })}</span
                 >
                 <Fa icon={faChevronRight} size={10} />

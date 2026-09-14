@@ -75,6 +75,11 @@ vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-slice', () => 
   })),
 }));
 
+const sharingMocks = vi.hoisted(() => ({ listMembers: vi.fn() }));
+vi.mock('$features/workspace-sharing/workspace-sharing.client', () => ({
+  workspaceSharingClient: sharingMocks,
+}));
+
 const baseWorkspace = {
   id: 'ws-1',
   title: 'Hover Card Workspace',
@@ -170,6 +175,7 @@ function text(element: Element) {
 describe('WorkspaceHoverCard', () => {
   beforeEach(() => {
     mocks.dispatch.mockClear();
+    sharingMocks.listMembers.mockReset().mockResolvedValue([]);
     mocks.streamingAgentIds.length = 0;
     mocks.prMonitors.length = 0;
     for (const record of [mocks.agentSessionsByWorkspace, mocks.agentPreviewsById]) {
@@ -603,5 +609,59 @@ describe('WorkspaceHoverCard', () => {
     expect(container.querySelector('[data-workspace-hover-card-branch]')).toBeNull();
     expect(container.textContent).not.toContain('undefined');
     expect(container.textContent).not.toContain('null');
+  });
+
+  it('lists the member roster read-only for a shared workspace', async () => {
+    sharingMocks.listMembers.mockResolvedValue([
+      {
+        principalId: 'p-alice',
+        login: 'alice',
+        displayName: 'Alice',
+        avatarUrl: null,
+        role: 'owner',
+        addedAt: '2026-09-01T00:00:00Z',
+      },
+      {
+        principalId: 'p-bob',
+        login: 'bob',
+        displayName: null,
+        avatarUrl: 'https://avatars.githubusercontent.com/u/2',
+        role: 'collaborator',
+        addedAt: '2026-09-02T00:00:00Z',
+      },
+    ]);
+    const { container } = await renderHoverCard({ statusMessage: '   ', memberCount: 2 });
+
+    await waitFor(() =>
+      expect(container.querySelectorAll('[data-workspace-hover-card-member-row]')).toHaveLength(2),
+    );
+    expect(sharingMocks.listMembers).toHaveBeenCalledWith('ws-1');
+    const section = container.querySelector('[data-workspace-hover-card-members]')!;
+    expect(section.getAttribute('aria-label')).toBe('Members');
+    const rows = section.querySelectorAll('[data-workspace-hover-card-member-row]');
+    expect(rows[0]!.getAttribute('data-member-role')).toBe('owner');
+    expect(text(rows[0]!)).toBe('A Alice Owner');
+    expect(text(rows[1]!)).toBe('bob Collaborator');
+    // Read-only: no Remove / Revoke controls on the hover surface.
+    expect(section.querySelector('button')).toBeNull();
+  });
+
+  it('does not read the roster for a single-member workspace', async () => {
+    const { container } = await renderHoverCard({ statusMessage: '   ' });
+    await tick();
+
+    expect(sharingMocks.listMembers).not.toHaveBeenCalled();
+    expect(container.querySelector('[data-workspace-hover-card-members]')).toBeNull();
+  });
+
+  it('re-reads the roster when the entity memberCount changes', async () => {
+    const WorkspaceHoverCard = (await import('../WorkspaceHoverCard.svelte')).default;
+    const shared = { ...baseWorkspace, statusMessage: '   ', memberCount: 2 } as Workspace;
+    const { rerender } = render(WorkspaceHoverCard, { props: { workspace: shared } });
+    await waitFor(() => expect(sharingMocks.listMembers).toHaveBeenCalledTimes(1));
+
+    await rerender({ workspace: { ...shared, memberCount: 3 } as Workspace });
+
+    await waitFor(() => expect(sharingMocks.listMembers).toHaveBeenCalledTimes(2));
   });
 });

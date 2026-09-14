@@ -91,6 +91,7 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
           statusMessage: 'Polishing the workspace navigation experience.',
           activity: 'agent_running',
           displayStatus: 'in_progress',
+          myRole: 'owner',
         },
         {
           id: 'ws-2',
@@ -98,6 +99,7 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
           branch: 'main',
           repositoryName: 'intent',
           displayStatus: 'idle',
+          myRole: 'collaborator',
         },
         {
           id: 'ws-3',
@@ -1215,6 +1217,23 @@ describe('WorkspaceTabStrip', () => {
       (screen.getByRole('menuitem', { name: 'Close tabs to the right' }) as HTMLButtonElement)
         .disabled,
     ).toBe(true);
+  });
+
+  it('offers Share only on tabs the caller owns and opens the share dialog for that workspace', async () => {
+    render(WorkspaceTabStrip);
+
+    // Beta reports `myRole: 'collaborator'` — no owner-side Share entry.
+    await fireEvent.contextMenu(screen.getByRole('tab', { name: /Beta/ }));
+    expect(screen.queryByRole('menuitem', { name: 'Share…' })).toBeNull();
+
+    await fireEvent.mouseDown(document.body);
+    await fireEvent.contextMenu(screen.getByRole('tab', { name: /Alpha/ }));
+    await fireEvent.click(screen.getByRole('menuitem', { name: 'Share…' }));
+
+    expect(mocks.dispatch).toHaveBeenCalledWith({
+      type: 'workspaceShare/openDialog',
+      payload: [{ workspaceId: 'ws-1', workspaceTitle: 'Alpha' }],
+    });
   });
 
   it('closes other workspace tabs in order and focuses the context target', async () => {

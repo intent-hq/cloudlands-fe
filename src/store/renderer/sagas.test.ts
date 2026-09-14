@@ -46,6 +46,7 @@ describe('renderer app saga registry', () => {
       'workspaceNavigationLayoutSaga',
       'workspaceOperationsSaga',
       'workspaceTransferSaga',
+      'workspaceShareSaga',
       'workspaceImportSaga',
       'scriptsOperationSaga',
       'lifecycleReadSaga',
