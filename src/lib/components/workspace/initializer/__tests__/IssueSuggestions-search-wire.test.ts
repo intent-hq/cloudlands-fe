@@ -275,6 +275,8 @@ describe('IssueSuggestions server-side search + pagination wire contract', () =>
     const pagedCall = issueCalls.find((c) => c.options?.nextToken !== undefined);
     expect(pagedCall).toBeDefined();
     expect(pagedCall!.options!.nextToken).toBe('cursor-1');
+    // No related repos resolved: the load-more call is primary-only
+    expect(pagedCall!.options).not.toHaveProperty('repos');
 
     // Exhausted: the sentinel is gone once nextToken is null
     expect(container.querySelector('[aria-hidden="true"].h-px')).toBeNull();
@@ -613,5 +615,84 @@ describe('IssueSuggestions server-side search + pagination wire contract', () =>
     expect(rows[0]).toContain('intentd#10');
     expect(rows[1]).toContain('repo-h#4');
     expect(screen.getAllByText('+1 repo').length).toBeGreaterThan(0);
+  });
+
+  it('load-more (nextToken) requests carry the same `repos` as the first page', async () => {
+    type PagedPayload = SearchPayload & { options?: { nextToken?: string } };
+    const issueCalls: PagedPayload[] = [];
+    const prCalls: PagedPayload[] = [];
+    const related = [{ owner: 'owner-i', repo: 'sub-i' }];
+    registerMockIpcHandler('git-tracking:list-related-repos', () => ({
+      success: true,
+      data: [{ ...related[0], path: 'packages/sub-i' }],
+    }));
+    registerMockIpcHandler('git-tracking:search-github-issues', (payload) => {
+      const call = payload as PagedPayload;
+      issueCalls.push(call);
+      return call.options?.nextToken
+        ? { success: true, data: [ghIssueIn('owner-i', 'sub-i', 2)], nextToken: null }
+        : { success: true, data: [ghIssueIn('owner-i', 'repo-i', 1)], nextToken: 'issues-cursor' };
+    });
+    registerMockIpcHandler('git-tracking:search-pull-requests', (payload) => {
+      const call = payload as PagedPayload;
+      prCalls.push(call);
+      return call.options?.nextToken
+        ? { success: true, data: [ghPullIn('owner-i', 'sub-i', 20)], nextToken: null }
+        : { success: true, data: [ghPullIn('owner-i', 'repo-i', 10)], nextToken: 'prs-cursor' };
+    });
+
+    render(IssueSuggestions, {
+      props: {
+        repositoryOwner: 'owner-i',
+        repositoryName: 'repo-i',
+        initiallyExpanded: true,
+        initialSource: 'github-issues' as const,
+        hideSourceTabs: true,
+      },
+    });
+    await settle();
+    intersectLatestSentinel();
+    await settle();
+
+    const pagedIssues = issueCalls.find((c) => c.options?.nextToken !== undefined);
+    expect(pagedIssues).toEqual({
+      owner: 'owner-i',
+      repo: 'repo-i',
+      options: {
+        state: 'open',
+        per_page: 20,
+        filter: 'all',
+        repos: related,
+        nextToken: 'issues-cursor',
+      },
+    });
+
+    // Same contract on the PRs tab
+    cleanup();
+    render(IssueSuggestions, {
+      props: {
+        repositoryOwner: 'owner-i',
+        repositoryName: 'repo-i',
+        initiallyExpanded: true,
+        initialSource: 'github-prs' as const,
+        hideSourceTabs: true,
+      },
+    });
+    await settle();
+    intersectLatestSentinel();
+    await settle();
+
+    const pagedPRs = prCalls.find((c) => c.options?.nextToken !== undefined);
+    expect(pagedPRs).toEqual({
+      owner: 'owner-i',
+      repo: 'repo-i',
+      options: {
+        state: 'open',
+        per_page: 50,
+        filter: 'all',
+        repos: related,
+        nextToken: 'prs-cursor',
+      },
+    });
   });
 });

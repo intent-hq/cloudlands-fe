@@ -1110,8 +1110,14 @@
     }
   }
 
-  // Fetch and map one page of PRs for a specific filter
-  async function fetchGitHubPRsPage(filter: PRFilterType, query: string, token: string | null) {
+  // Fetch and map one page of PRs for a specific filter. `repos` defaults to
+  // the live related set; the prefetch loop passes a snapshot instead.
+  async function fetchGitHubPRsPage(
+    filter: PRFilterType,
+    query: string,
+    token: string | null,
+    repos: { repos?: GitHubRepoRef[] } = reposRequestOption(),
+  ) {
     if (!repositoryOwner || !repositoryName) {
       return { items: [] as GitHubPRLocal[], nextToken: null };
     }
@@ -1123,7 +1129,7 @@
         per_page: 50,
         filter,
         ...(query ? { query } : {}),
-        ...reposRequestOption(),
+        ...repos,
         ...(token ? { nextToken: token } : {}),
       },
     });
@@ -1171,7 +1177,12 @@
   }
 
   // Prefetch other filters in background for instant switching
-  async function prefetchOtherPRFilters(currentFilter: PRFilterType, repoKey: string) {
+  async function prefetchOtherPRFilters(currentFilter: PRFilterType) {
+    // Snapshot the repo set and its cache key together so every page fetched
+    // by this loop is stored under the key it was requested against, even if
+    // the related set resolves mid-loop.
+    const repoKey = githubRepoSetKey;
+    const repos = reposRequestOption();
     const allFilters: PRFilterType[] = [
       'all',
       'assigned',
@@ -1183,11 +1194,14 @@
 
     // Prefetch each filter with a small delay to not overwhelm the API
     for (const filter of otherFilters) {
+      // A new repo set reloads the listing and starts its own prefetch loop;
+      // stop filling the superseded key.
+      if (githubRepoSetKey !== repoKey) return;
       // Skip if already cached
       if (getCachedPRs(repoKey, filter)) continue;
 
       try {
-        const page = await fetchGitHubPRsPage(filter, '', null);
+        const page = await fetchGitHubPRsPage(filter, '', null, repos);
         setCachedPRs(repoKey, filter, page.items, page.nextToken);
         logger.debug('Prefetched GitHub PRs', { filter, count: page.items.length });
       } catch (err) {
@@ -1244,7 +1258,7 @@
               githubPRsPager.state.nextToken,
             );
             // 4. Prefetch other filters in background for instant switching
-            prefetchOtherPRFilters(filter, repoKey);
+            prefetchOtherPRFilters(filter);
           }
           logger.debug('Loaded GitHub PRs', {
             count: githubPRsPager.state.items.length,
