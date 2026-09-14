@@ -280,6 +280,7 @@ describe('daemonEventsSaga', () => {
       'app:ui-navigate',
       'app:ui-highlight',
       'app:workspace-open',
+      'presence:changed',
     ]);
   });
 

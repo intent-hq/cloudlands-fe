@@ -38,6 +38,15 @@ const mocks = vi.hoisted(() => ({
   stateListeners: new Set<(state: unknown) => void>(),
   loadedWorkspaceIds: new Set<string>(),
   tabStatuses: {} as Record<string, WorkspaceTabStatus>,
+  presencePeople: {} as Record<
+    string,
+    Array<{
+      principalId: string;
+      login: string | null;
+      displayName: string | null;
+      avatarUrl: string | null;
+    }>
+  >,
   useRealTooltip: false,
 }));
 
@@ -114,6 +123,13 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
 }));
 vi.mock('$store/renderer/slices/hud/hud-selectors', () => ({
   selectWorkspaceTabStatuses: () => readable(mocks.tabStatuses),
+}));
+vi.mock('$store/renderer/slices/presence/presence-selectors', () => ({
+  selectPresenceRosters: () => readable(mocks.presencePeople),
+  selectPresenceOwnPrincipalId: () => readable(null),
+  selectWorkspacePresencePeople: {
+    select: (_state: unknown, workspaceId: string) => mocks.presencePeople[workspaceId] ?? [],
+  },
 }));
 vi.mock('$store/renderer/slices/workspace-tasks/workspace-tasks-selectors', () => ({
   selectWorkspaceTasksByWorkspaceId: () =>
@@ -238,6 +254,7 @@ describe('WorkspaceTabStrip', () => {
     mocks.tabOrderListeners.clear();
     mocks.nextCurrentId = 'ws-2';
     mocks.tabOrder = ['ws-1', 'ws-2', 'ws-3'];
+    mocks.presencePeople = {};
     mocks.dispatch.mockImplementation((action: { type?: string; payload?: unknown[] }) => {
       if (action.type === 'tabState/openWorkspaceTab') {
         const workspaceId = String(action.payload?.[0] ?? '');
@@ -385,15 +402,57 @@ describe('WorkspaceTabStrip', () => {
 
     expect(tab.className).toContain('pl-3 pr-1');
     expect(tab.className).not.toContain('pr-8');
-    expect(cluster.className).toContain('max-w-14');
+    expect(cluster.className).toContain('max-w-16');
     expect(cluster.className).toContain('justify-end');
-    expect(cluster.className).not.toMatch(/(?:^|\s)w-14(?:\s|$)/);
+    expect(cluster.className).not.toMatch(/(?:^|\s)w-16(?:\s|$)/);
     expect(controls.className).toContain('ml-auto');
     expect(controls.lastElementChild).toBe(closeSpace);
     expect(title.className).toContain('min-w-0');
     expect(title.className).toContain('flex-1');
     expect(title.nextElementSibling).toBe(controls);
     expect(cluster.parentElement).toBe(controls);
+  });
+
+  describe('presence dots', () => {
+    const person = (index: number) => ({
+      principalId: `p-${index}`,
+      login: `user${index}`,
+      displayName: null,
+      avatarUrl: null,
+    });
+
+    it('renders no stack for a workspace nobody else is viewing', () => {
+      render(WorkspaceTabStrip);
+      const tab = screen.getByRole('tab', { name: /Alpha/ });
+      expect(tab.querySelector('[data-presence-avatar-stack]')).toBeNull();
+    });
+
+    it('shows one dot per viewer up to three, then a +N overflow chip', () => {
+      mocks.presencePeople = { 'ws-1': [1, 2].map(person), 'ws-3': [1, 2, 3, 4, 5].map(person) };
+      render(WorkspaceTabStrip);
+
+      const alphaStack = screen
+        .getByRole('tab', { name: /Alpha/ })
+        .querySelector('[data-presence-avatar-stack]')!;
+      expect(alphaStack.querySelectorAll('[data-presence-avatar]')).toHaveLength(2);
+      expect(alphaStack.querySelector('[data-presence-overflow]')).toBeNull();
+      expect(alphaStack.getAttribute('aria-label')).toBe(
+        m.presence_avatarStack_people_many({ count: '2' }),
+      );
+
+      const gammaStack = screen
+        .getByRole('tab', { name: /Gamma/ })
+        .querySelector('[data-presence-avatar-stack]')!;
+      expect(gammaStack.querySelectorAll('[data-presence-avatar]')).toHaveLength(3);
+      expect(
+        gammaStack
+          .querySelector('[data-presence-overflow]')
+          ?.getAttribute('data-presence-overflow'),
+      ).toBe('2');
+      expect(gammaStack.querySelector('[data-presence-overflow]')?.textContent?.trim()).toBe(
+        m.presence_avatarStack_more_label({ count: '2' }),
+      );
+    });
   });
 
   it.each([

@@ -6386,5 +6386,15 @@
   "workspace_share_listenerDown_error": "招待する前に、設定でリモートアクセスと Tailcat をオンにしてください",
   "notes_presenceStack_viewers_one": "他に1人がこのノートを表示しています",
   "notes_presenceStack_viewers_many": "他に{count}人がこのノートを表示しています",
-  "notes_presenceStack_overflow_label": "+{count}"
+  "notes_presenceStack_overflow_label": "+{count}",
+  "presence_person_unknown_label": "誰か",
+  "presence_avatarStack_people_one": "他に1人がここにいます",
+  "presence_avatarStack_people_many": "他に{count}人がここにいます",
+  "presence_avatarStack_more_label": "+{count}",
+  "presence_typing_one": "{name}が入力中…",
+  "presence_typing_two_label": "{first}と{second}が入力中…",
+  "presence_typing_many": "{first}と他{count}人が入力中…",
+  "workspace_hoverCard_people_label": "メンバー",
+  "workspace_hoverCard_personViewing_label": "閲覧中",
+  "workspace_hoverCard_personOnline_label": "オンライン"
 }

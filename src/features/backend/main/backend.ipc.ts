@@ -148,14 +148,18 @@ import {
   ConnectionsUnpublishSelfSchema,
   ConnectionsUpdateSchema,
   ConnectionsUpdateBackendSchema,
+  PresenceReportSchema,
 } from '../../../main/ipc-schemas';
 import { createValidatedHandler } from '../../../main/ipc-validation-middleware';
 import { getBackendIdForWebContents, getFocusedWindowBackendId } from '../../../main/window';
+import { PresenceAggregator } from './presence-aggregator';
+import type { PresenceReportResult, PresenceUpdateResult } from '$shared/types/presence';
 
 const logger = new Logger('Backend-IPC');
 const BACKEND = IPC_CHANNELS.BACKEND;
 const CONNECTIONS = IPC_CHANNELS.CONNECTIONS;
 const GUEST_SESSIONS = IPC_CHANNELS.GUEST_SESSIONS;
+const PRESENCE = IPC_CHANNELS.PRESENCE;
 
 // Last daemon build identity logged per connection from a `client.hello`
 // result (#3649): the handshake re-runs on every (re)connect, so dedupe on
@@ -2310,6 +2314,47 @@ function registerGuestSessionsHandlers(): void {
   backendStatusForwarder.on('status', refreshGuestSessionsForPoolChange);
 }
 
+/**
+ * Workspace presence (multiplayer w5): each window's `presence:report` joins
+ * its backend's merged `presence.update` (see {@link PresenceAggregator}). A
+ * window leaving (`destroyed`) drops its contribution; a backend's pooled
+ * client (re)connecting re-sends the merged state, since the daemon binds
+ * presence to the connection and forgets it on close.
+ */
+const presenceAggregator = new PresenceAggregator((backendId, params) =>
+  getBackendClientForId(backendId).request<PresenceUpdateResult>('presence.update', params),
+);
+const presenceTrackedWebContents = new Set<number>();
+
+function registerPresenceHandlers(): void {
+  ipcMain.handle(
+    PRESENCE.REPORT,
+    createValidatedHandler(
+      PresenceReportSchema,
+      async (event, params): Promise<PresenceReportResult> => {
+        const { sender } = event;
+        if (!presenceTrackedWebContents.has(sender.id)) {
+          presenceTrackedWebContents.add(sender.id);
+          sender.once('destroyed', () => {
+            presenceTrackedWebContents.delete(sender.id);
+            presenceAggregator.dropWindow(sender.id);
+          });
+        }
+        const typingSource = await presenceAggregator.report(
+          getBackendIdForWebContents(sender),
+          sender.id,
+          params,
+        );
+        return { typingSource };
+      },
+      PRESENCE.REPORT,
+    ),
+  );
+  backendStatusForwarder.on('status', (backendId: string, status: ConnectionStatus) => {
+    if (status === 'connected') presenceAggregator.reconnected(backendId);
+  });
+}
+
 /** Push a fresh guest list when a pooled client for a guest session id changes. */
 function refreshGuestSessionsForPoolChange(id: string): void {
   void guestSessionsStore
@@ -2945,6 +2990,7 @@ export function registerBackendHandlers(): void {
 
   registerConnectionsHandlers();
   registerGuestSessionsHandlers();
+  registerPresenceHandlers();
 
   // Keychain sync (T3): pref-gated (opt-out — absent reads as enabled on
   // macOS), fail-soft, fully async. When a reconcile pulls remote changes into

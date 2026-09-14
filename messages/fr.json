@@ -6386,5 +6386,15 @@
   "workspace_share_listenerDown_error": "Activez Accès à distance + Tailcat dans les Réglages avant d’inviter",
   "notes_presenceStack_viewers_one": "1 autre personne consulte cette note",
   "notes_presenceStack_viewers_many": "{count} autres personnes consultent cette note",
-  "notes_presenceStack_overflow_label": "+{count}"
+  "notes_presenceStack_overflow_label": "+{count}",
+  "presence_person_unknown_label": "Quelqu’un",
+  "presence_avatarStack_people_one": "1 autre personne ici",
+  "presence_avatarStack_people_many": "{count} autres personnes ici",
+  "presence_avatarStack_more_label": "+{count}",
+  "presence_typing_one": "{name} est en train d’écrire…",
+  "presence_typing_two_label": "{first} et {second} sont en train d’écrire…",
+  "presence_typing_many": "{first} et {count} autres sont en train d’écrire…",
+  "workspace_hoverCard_people_label": "Personnes",
+  "workspace_hoverCard_personViewing_label": "Consulte",
+  "workspace_hoverCard_personOnline_label": "En ligne"
 }
