@@ -46,7 +46,8 @@ export const uiComponentGuardrails = {
     'relative:src/lib/components/ui/tooltip/Tooltip.svelte': 2,
   },
   patternAdoption: {
-    formDialog: 10,
+    // Baseline the 11 existing dialogs; none is a branch-introduced form-dialog candidate.
+    formDialog: 11,
     listView: 31,
     screen: 9,
     settingsForm: 1,
