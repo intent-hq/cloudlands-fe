@@ -39,7 +39,33 @@ export interface GuestSessionRecord {
   updatedAt: number;
 }
 
-/** Result of the `guest-sessions:list` IPC. */
+/** Main→renderer push after any guest sessions mutation (`GuestSessionsListResult`). */
+export const GUEST_SESSIONS_CHANGED_EVENT = 'guest-sessions:changed';
+
+/**
+ * Result of the `guest-sessions:list` IPC and the `guest-sessions:changed`
+ * push. `connectedIds` are the sessions whose pooled client is currently
+ * connected (a window for that host is open and live) — the nav block shows
+ * "connected" / "not connected" from it and nothing for sessions with no
+ * pooled client at all.
+ */
 export interface GuestSessionsListResult {
   sessions: GuestSessionRecord[];
+  connectedIds: string[];
+}
+
+/** Params of the `guest-sessions:leave` IPC. */
+export interface LeaveGuestSessionParams {
+  id: string;
+}
+
+/**
+ * Result of the `guest-sessions:leave` IPC. `revoked` reports whether the
+ * best-effort `principal.revokeSelf` reached the host; the local delete and
+ * window teardown happen regardless (there is no retry queue: the credential
+ * is deleted with the session, so nothing could retry).
+ */
+export interface LeaveGuestSessionResult {
+  id: string;
+  revoked: boolean;
 }
