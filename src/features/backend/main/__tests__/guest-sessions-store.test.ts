@@ -177,6 +177,53 @@ describe('guest-sessions-store', () => {
     expect(await fs.readFile(file, 'utf8')).toBe('[1, 2, 3]');
   });
 
+  it.each([
+    ['missing registry arrays', {}],
+    ['a sessions field that is not an array', { sessions: { recoverable: true }, tombstones: [] }],
+    ['a malformed session row', { sessions: [{ id: 'recoverable' }], tombstones: [] }],
+    ['a malformed tombstone row', { sessions: [], tombstones: [{ id: 'recoverable' }] }],
+  ])(
+    'valid JSON with %s is corrupt: mutations refuse and the bytes are preserved',
+    async (_name, contents) => {
+      const file = path.join(tmpDir, 'guest-sessions.json');
+      const original = JSON.stringify(contents);
+      await fs.writeFile(file, original, 'utf8');
+      const store = await import('../guest-sessions-store');
+      await expect(store.add(sample)).rejects.toMatchObject({ code: 'guest-store-corrupt' });
+      await expect(store.forget('recoverable')).rejects.toMatchObject({
+        code: 'guest-store-corrupt',
+      });
+      expect(await fs.readFile(file, 'utf8')).toBe(original);
+      expect(await fs.readdir(tmpDir)).toEqual(['guest-sessions.json']);
+    },
+  );
+
+  it('a malformed row next to a valid one blocks every mutation but keeps the valid one readable', async () => {
+    const store = await import('../guest-sessions-store');
+    const stored = await store.add(sample);
+    const file = path.join(tmpDir, 'guest-sessions.json');
+    const parsed = JSON.parse(await fs.readFile(file, 'utf8')) as {
+      sessions: Array<{ encToken: { encrypted: unknown } }>;
+    };
+    const malformed = structuredClone(parsed.sessions[0]) as Record<string, unknown> & {
+      encToken: { encrypted: unknown };
+    };
+    malformed.id = 'other';
+    malformed.fingerprint = 'DD:EE:FF';
+    malformed.encToken.encrypted = 'true';
+    parsed.sessions.push(malformed);
+    const original = JSON.stringify(parsed);
+    await fs.writeFile(file, original, 'utf8');
+
+    expect((await store.list()).map((r) => r.id)).toEqual([stored.id]);
+    expect(await store.getDecryptedToken(stored.id)).toBe(sample.token);
+    await expect(store.add({ ...sample, fingerprint: 'DD:EE:FF' })).rejects.toMatchObject({
+      code: 'guest-store-corrupt',
+    });
+    await expect(store.forget(stored.id)).rejects.toMatchObject({ code: 'guest-store-corrupt' });
+    expect(await fs.readFile(file, 'utf8')).toBe(original);
+  });
+
   it('writes land atomically: a reader racing a write never sees a truncated registry', async () => {
     const store = await import('../guest-sessions-store');
     const record = await store.add(sample);
