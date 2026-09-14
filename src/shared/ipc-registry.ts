@@ -933,8 +933,11 @@ export const IPC_CHANNELS = {
   // `intent://invite` link, kept apart from the paired-backend registry above.
   // Token-free list + a main→renderer push when the list changes (also in
   // EVENT_CHANNELS). Redemption itself is a main-process deep-link flow.
+  // LEAVE: best-effort `principal.revokeSelf` on the host (5 s), then the
+  // local delete + window teardown regardless.
   GUEST_SESSIONS: {
     LIST: 'guest-sessions:list',
+    LEAVE: 'guest-sessions:leave',
     CHANGED: 'guest-sessions:changed',
   },
 
