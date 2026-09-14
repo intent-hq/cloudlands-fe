@@ -98,19 +98,44 @@ describe('protocol version literal scanner', () => {
     ],
     ['a bare literal ending a sentence without a keyword', '// step 10.1.'],
     ['an escaped product version', `// Harness v1.0 // ${ESCAPE_TOKEN}: product version`],
-    ['an escaped toon-format spec version', `// toon-format v0.5 // ${ESCAPE_TOKEN}`],
+    ['an escaped toon-format spec version', `// toon-format v0.5 // ${ESCAPE_TOKEN}: spec version`],
   ])('does not flag %s', (_name, line) => {
     expect(findProtocolVersionLiterals(line)).toEqual([]);
   });
 
-  it('honours the escape token anywhere on the line', () => {
-    expect(findProtocolVersionLiterals(`// protocol v10.1 baseline // ${ESCAPE_TOKEN}`)).toEqual(
-      [],
-    );
-    expect(findProtocolVersionLiterals(`// ${ESCAPE_TOKEN}: protocol v10.1`)).toEqual([]);
-    expect(
-      findProtocolVersionLiterals(`// v10.1 // ${ESCAPE_TOKEN}: Harness product version`),
-    ).toEqual([]);
+  it.each([
+    ['a trailing line comment', `// protocol v10.1 baseline // ${ESCAPE_TOKEN}: baseline`],
+    ['a leading line comment', `// ${ESCAPE_TOKEN}: protocol v10.1`],
+    ['a line comment without spacing', `// v10.1 //${ESCAPE_TOKEN}:Harness product version`],
+    [
+      'a block comment',
+      `it(/* ${ESCAPE_TOKEN}: gate threshold */ 'accepts protocol 9.13+', () => {`,
+    ],
+    [
+      'a trailing block comment',
+      `const v = 'Harness v1.0'; /* ${ESCAPE_TOKEN}: product version */`,
+    ],
+  ])('honours the escape as %s with a reason', (_name, line) => {
+    expect(findProtocolVersionLiterals(line)).toEqual([]);
+  });
+
+  it.each([
+    ['a bare token', `// toon-format v0.5 // ${ESCAPE_TOKEN}`, ['v0.5']],
+    ['a token with a colon but no reason', `// protocol v10.1 // ${ESCAPE_TOKEN}:   `, ['v10.1']],
+    ['an empty block comment reason', `// protocol v10.1 /* ${ESCAPE_TOKEN}: */`, ['v10.1']],
+    ['a token inside a string', `const s = '${ESCAPE_TOKEN}: x'; // protocol v10.1`, ['v10.1']],
+    [
+      'a reasoned token inside a string without a comment',
+      `const s = 'Harness v1.0 ${ESCAPE_TOKEN}: product version';`,
+      ['v1.0'],
+    ],
+    [
+      'the file directive on a line',
+      `// protocol v10.1 // ${FILE_ESCAPE_TOKEN}: reason`,
+      ['v10.1'],
+    ],
+  ])('still flags a line carrying %s', (_name, line, matches) => {
+    expect(findProtocolVersionLiterals(line)).toEqual(matches);
   });
 
   it('exempts a file whose first lines carry the file-level directive', () => {
@@ -121,6 +146,14 @@ describe('protocol version literal scanner', () => {
       findProtocolVersionLiteralHits([
         sourceFile('src/lib/first.ts', [directive, ...body]),
         sourceFile('src/lib/tenth.ts', [...padding(9), directive, ...body]),
+        sourceFile('src/lib/jsdoc.ts', [
+          '/**',
+          ' * Harness fixtures.',
+          ` * ${FILE_ESCAPE_TOKEN}: harness version strings are product fixtures`,
+          ' */',
+          ...body,
+        ]),
+        sourceFile('src/lib/block.ts', [`/* ${FILE_ESCAPE_TOKEN}: fixtures */`, ...body]),
       ]),
     ).toEqual([]);
     expect(
@@ -131,6 +164,17 @@ describe('protocol version literal scanner', () => {
       { path: 'src/lib/eleventh.ts', line: 13, matches: ['v1.0'], text: "'Harness v1.0'," },
       { path: 'src/lib/eleventh.ts', line: 14, matches: ['9.4'], text: "'protocol 9.4'," },
     ]);
+  });
+
+  it.each([
+    ['a bare token', `// ${FILE_ESCAPE_TOKEN}`],
+    ['a token with a colon but no reason', `// ${FILE_ESCAPE_TOKEN}:`],
+    ['an empty block comment reason', `/* ${FILE_ESCAPE_TOKEN}: */`],
+    ['a token inside a string', `const d = '${FILE_ESCAPE_TOKEN}: fixtures';`],
+  ])('does not exempt a file whose directive is %s', (_name, directive) => {
+    expect(
+      findProtocolVersionLiteralHits([sourceFile('src/lib/a.ts', [directive, "'Harness v1.0',"])]),
+    ).toEqual([{ path: 'src/lib/a.ts', line: 2, matches: ['v1.0'], text: "'Harness v1.0'," }]);
   });
 
   it('reports one hit per line with every distinct literal, path, and line number', () => {
@@ -222,7 +266,8 @@ describe('protocol version literal scanner CLI', () => {
         expect(result.output).toContain('agent.getMessageBlock');
         expect(result.output).toContain('`git.status` returning `hasUpstream`');
         expect(result.output).toContain(`// ${ESCAPE_TOKEN}: <reason>`);
-        expect(result.output).toContain('anywhere on the line');
+        expect(result.output).toContain(`/* ${ESCAPE_TOKEN}: <reason> */`);
+        expect(result.output).toContain('must be a comment with a non-empty reason');
         expect(result.output).toContain(`// ${FILE_ESCAPE_TOKEN}: <reason>`);
       },
     );
@@ -238,7 +283,7 @@ describe('protocol version literal scanner CLI', () => {
     withTree(
       {
         'src/lib/a.ts': CLEAN,
-        'src/lib/b.ts': `// protocol v10.1 baseline // ${ESCAPE_TOKEN}\n`,
+        'src/lib/b.ts': `// protocol v10.1 baseline // ${ESCAPE_TOKEN}: baseline label\n`,
         'src/lib/c.ts': '// JSON-RPC 2.0 to the daemon, ~3.5s skew, intentd 2.17.0\n',
         'src/lib/d.ts': `// toon-format v0.5 // ${ESCAPE_TOKEN}: spec version\n`,
         'src/lib/e.test.ts': `// ${FILE_ESCAPE_TOKEN}: Harness fixtures\nconst v = 'Harness v1.0';\n`,

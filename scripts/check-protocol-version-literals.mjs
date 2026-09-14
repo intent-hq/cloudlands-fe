@@ -16,9 +16,10 @@ export const SCANNED_EXTENSIONS = new Set(['.ts', '.svelte', '.js', '.mjs']);
 export const REMEDIATION_HINT = [
   'Name the protocol method or field (e.g. `agent.getMessageBlock`, or `git.status` returning `hasUpstream`)',
   'or describe the capability instead of a protocol version number.',
-  `For a deliberate exception, append \`// ${ESCAPE_TOKEN}: <reason>\` to the line (the token`,
-  'may appear anywhere on the line), or put',
+  `For a deliberate exception, add a \`// ${ESCAPE_TOKEN}: <reason>\` (or \`/* ${ESCAPE_TOKEN}: <reason> */\`)`,
+  'comment to the line, or put',
   `\`// ${FILE_ESCAPE_TOKEN}: <reason>\` in the first ${FILE_ESCAPE_LINES} lines of a fixture-heavy file.`,
+  'The escape must be a comment with a non-empty reason; a bare token, or one inside a string, does not exempt.',
 ].join('\n');
 
 const SCAN_ROOT = 'src';
@@ -46,6 +47,14 @@ const NON_VERSION_SHAPES = [
   /\bJSON-RPC\s+2\.0\b/gi,
   /(?<![\w.])~?\d{1,2}\.\d{1,2}\s?(?:ms|s|sec|seconds?|m|min|minutes?|h|hours?)\b/g,
 ];
+// An escape only counts as a comment carrying a reason: `// token: <reason>` or
+// `/* token: <reason> */` (the file directive also as a JSDoc `* token: <reason>`
+// line). The reason is at least one non-whitespace character that does not close the
+// block comment, so a bare token, `token:` alone, or the token inside a string does not
+// exempt — every exemption stays auditable.
+const escapePattern = (token, openers) => new RegExp(`(?:${openers})\\s*${token}:\\s*(?!\\*/)\\S`);
+const LINE_ESCAPE_PATTERN = escapePattern(ESCAPE_TOKEN, '//|/\\*');
+const FILE_ESCAPE_PATTERN = escapePattern(FILE_ESCAPE_TOKEN, '//|/\\*|^\\s*\\*');
 
 const normalize = (value) => value.split(path.sep).join('/').replace(/^\.\//, '');
 
@@ -53,7 +62,7 @@ const isScannedPath = (filePath) =>
   SCANNED_EXTENSIONS.has(path.posix.extname(filePath)) && !GENERATED_FILES.has(filePath);
 
 export function findProtocolVersionLiterals(text) {
-  if (text.includes(ESCAPE_TOKEN)) return [];
+  if (LINE_ESCAPE_PATTERN.test(text)) return [];
   const stripped = NON_VERSION_SHAPES.reduce(
     (line, shape) => line.replace(shape, (match) => ' '.repeat(match.length)),
     text,
@@ -66,7 +75,7 @@ export function findProtocolVersionLiterals(text) {
 }
 
 const hasFileEscape = (lines) =>
-  lines.slice(0, FILE_ESCAPE_LINES).some((line) => line.includes(FILE_ESCAPE_TOKEN));
+  lines.slice(0, FILE_ESCAPE_LINES).some((line) => FILE_ESCAPE_PATTERN.test(line));
 
 // One hit per offending line: `{ path, line, matches, text }`.
 export function findProtocolVersionLiteralHits(files) {

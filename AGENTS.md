@@ -352,9 +352,11 @@ cloudlands-fe#2315 passed `verify:changed` locally and failed CI in
 any `src/` line carrying a `v`-prefixed version literal (`v10.1`), and a bare one (`10.1`)
 when the same line mentions protocol/intentd/daemon(s): reference the method/field name,
 the `§` section, or the capability, not protocol version numbers — they are provisional
-until merge and went stale in cloudlands-fe#2447. A deliberate exception appends
-`// protocol-version-ok: <reason>` to the line, or puts
-`// protocol-version-ok-file: <reason>` in the first 10 lines of a fixture-heavy file. A
+until merge and went stale in cloudlands-fe#2447. A deliberate exception appends a
+`// protocol-version-ok: <reason>` comment to the line, or puts
+`// protocol-version-ok-file: <reason>` in the first 10 lines of a fixture-heavy file —
+only a comment with a non-empty reason exempts; a bare token or one inside a string does
+not. A
 change to `scripts/type-check.ts` additionally runs `pnpm run type-check:validate`, since
 `lint:architecture` omits that wrapper and the
 per-boundary checks invoke `tsc` directly.
