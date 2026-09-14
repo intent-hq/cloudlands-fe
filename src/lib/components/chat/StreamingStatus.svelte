@@ -294,14 +294,16 @@
     data-stream-slot-wait="true"
     data-queue-reason={queueWait.reason}
     class={cn(
-      'type-caption mt-2 flex items-center gap-2 rounded-md border border-danger/20 bg-danger/5 py-2 pl-2 pr-1 text-danger',
+      'type-caption mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md border border-danger/20 bg-danger/5 py-2 pl-2 pr-1 text-danger',
       className,
     )}
     in:fade={{ duration: 200, easing: cubicOut }}
     out:fade={{ duration: 150, easing: cubicOut }}
   >
     <Fa icon={faExclamationTriangle} class="shrink-0 text-danger/70" />
-    <span class="min-w-0 flex-1 truncate" data-testid="slot-wait-message">{queueWaitMessage}</span>
+    <span class="min-w-0 flex-1 break-words" data-testid="slot-wait-message"
+      >{queueWaitMessage}</span
+    >
     <Button
       variant="link"
       size="sm"
