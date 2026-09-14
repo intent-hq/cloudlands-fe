@@ -124,10 +124,7 @@ describe('B2 caller metadata regression', () => {
         'src/lib/components/workspace/sidebar/MergePanel.svelte',
         'src/routes/(app)/settings/+page.svelte',
       ],
-      toggle: [
-        'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte',
-        'src/lib/components/patterns/settings/custom-controls.ts',
-      ],
+      toggle: ['src/lib/component-catalog/renderers/BasicCatalogPreview.svelte'],
       'toggle-group': [
         'src/features/layout/tab-types/AgentViewSettingsDropdown.svelte',
         'src/features/layout/tab-types/NoteViewSettingsDropdown.svelte',
