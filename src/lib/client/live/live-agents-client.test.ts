@@ -1121,7 +1121,7 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
     });
   });
 
-  it('delete keeps the pre-6.7 wire shape byte-identical when undoDelayMs is 0', async () => {
+  it('delete keeps the pre-grace-window wire shape byte-identical when undoDelayMs is 0', async () => {
     backend.onRequest('agent.delete', () => ({ success: true }));
     const client = new LiveAgentsClient();
 

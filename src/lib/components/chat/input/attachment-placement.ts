@@ -113,8 +113,9 @@ function daemonSupportsIdempotentPlacement(): boolean {
  * Resolve the placement `idempotencyKey` for an attempt: `existing` (the key
  * retained on the item from an earlier attempt) when the connected daemon
  * supports keyed placement, a fresh UUID when there is none yet, and
- * `undefined` (unkeyed, pre-9.13 behavior) when it does not — a key retained
- * across a reconnect to an older daemon is dropped rather than sent.
+ * `undefined` (unkeyed placement, no `idempotencyKey`) when it does not — a
+ * key retained across a reconnect to an older daemon is dropped rather than
+ * sent.
  * Callers keep the result on the attachment item so every retry reuses it.
  */
 export function mintPlacementIdempotencyKey(existing?: string): string | undefined {

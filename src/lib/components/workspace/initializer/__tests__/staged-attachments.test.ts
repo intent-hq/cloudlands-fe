@@ -11,7 +11,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 // The default key minter reads the daemon protocol version off the store;
-// with no version known it mints nothing (pre-9.13 behavior).
+// with no version known it mints nothing (unkeyed placement, no `idempotencyKey`).
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');

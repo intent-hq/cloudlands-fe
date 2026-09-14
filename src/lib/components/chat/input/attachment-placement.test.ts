@@ -105,7 +105,7 @@ beforeEach(() => {
 });
 
 describe('supportsIdempotentPlacementProtocol', () => {
-  it('accepts 9.13 and later, rejects older and unknown versions', () => {
+  it('accepts the idempotencyKey-capable version and later, rejects older and unknown versions', () => {
     expect(supportsIdempotentPlacementProtocol('9.13')).toBe(true);
     expect(supportsIdempotentPlacementProtocol('9.14')).toBe(true);
     expect(supportsIdempotentPlacementProtocol('10.0')).toBe(true);
