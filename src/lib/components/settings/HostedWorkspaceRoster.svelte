@@ -2,7 +2,10 @@
   /**
    * Owner-side roster of one shared workspace (multiplayer w4): the accepted
    * members from `workspace.members.list`, each collaborator with a *Remove*
-   * that calls `workspace.members.remove`. The owner row never carries a
+   * that calls `workspace.members.remove`, plus a per-workspace *Remove all
+   * guests* that removes every collaborator and revokes every open invite
+   * link (`workspace.invite.list` → `workspace.invite.revoke`), reporting
+   * each step that failed. Both confirm first. The owner row never carries a
    * control (`workspace.members.remove` refuses the owner).
    */
   import { onMount } from 'svelte';
@@ -14,13 +17,16 @@
   import {
     selectHostedRoster,
     selectHostedRemovingPrincipalIds,
+    selectIsHostedWorkspaceClearing,
   } from '$store/renderer/slices/guest-sessions/guest-sessions-selectors';
   import {
     loadHostedRosterRequested,
+    removeAllHostedGuestsRequested,
     removeHostedMemberRequested,
   } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
   import {
     HostedRosterOperationError,
+    type RemoveAllHostedGuestsResult,
     type WorkspaceMember,
   } from '$store/renderer/slices/guest-sessions/guest-sessions-types';
   import { store as appStore } from '$store/renderer/store';
@@ -33,13 +39,62 @@
 
   const roster$ = selectHostedRoster(workspace.id);
   const removingIds$ = selectHostedRemovingPrincipalIds(workspace.id);
+  const clearing$ = selectIsHostedWorkspaceClearing(workspace.id);
 
   let removeTarget = $state<WorkspaceMember | null>(null);
   let removeDialogOpen = $state(false);
   let removeError = $state<string | null>(null);
 
+  let removeAllDialogOpen = $state(false);
+  let removeAllError = $state<string | null>(null);
+  let removeAllFailures = $state<string[]>([]);
+
   function memberLabel(member: WorkspaceMember): string {
     return member.displayName ?? member.login ?? member.principalId;
+  }
+
+  function removeAllFailureLines(
+    result: RemoveAllHostedGuestsResult,
+    membersBefore: WorkspaceMember[],
+  ): string[] {
+    const lines = result.failedMembers.map(({ principalId }) => {
+      const member = membersBefore.find((entry) => entry.principalId === principalId);
+      return m.settings_guestSessions_remove_error({
+        name: member ? memberLabel(member) : principalId,
+      });
+    });
+    for (const { pinLogin } of result.failedInvites) {
+      lines.push(
+        pinLogin
+          ? m.settings_guestSessions_removeAll_pinnedInviteFailed({ login: `@${pinLogin}` })
+          : m.settings_guestSessions_removeAll_inviteFailed(),
+      );
+    }
+    if (result.invitesUnavailable) {
+      lines.push(m.settings_guestSessions_removeAll_invitesUnavailable());
+    }
+    return lines;
+  }
+
+  function requestRemoveAll() {
+    removeAllError = null;
+    removeAllFailures = [];
+    removeAllDialogOpen = true;
+  }
+
+  async function removeAllGuests() {
+    if ($clearing$) return;
+    removeAllError = null;
+    removeAllFailures = [];
+    const membersBefore = $roster$.members;
+    try {
+      const action = removeAllHostedGuestsRequested(workspace.id);
+      appStore.dispatch(action);
+      const result = await action.promise;
+      removeAllFailures = removeAllFailureLines(result, membersBefore);
+    } catch {
+      removeAllError = m.settings_guestSessions_removeAll_error({ workspace: workspace.title });
+    }
   }
 
   function requestRemove(member: WorkspaceMember) {
@@ -86,7 +141,23 @@
 </script>
 
 <section class="px-6 py-5" data-testid="hosted-workspace-roster" data-workspace-id={workspace.id}>
-  <h3 class="type-body font-medium text-foreground">{workspace.title}</h3>
+  <div class="flex items-center justify-between gap-3">
+    <h3 class="min-w-0 truncate type-body font-medium text-foreground">{workspace.title}</h3>
+    {#if $roster$.status !== 'withheld'}
+      <Button
+        variant="ghost"
+        size="sm"
+        class="shrink-0"
+        disabled={$clearing$}
+        onclick={requestRemoveAll}
+        data-testid="hosted-roster-remove-all"
+      >
+        {$clearing$
+          ? m.settings_guestSessions_removingAll_label()
+          : m.settings_guestSessions_removeAll_label()}
+      </Button>
+    {/if}
+  </div>
   {#if $roster$.status === 'loading' && $roster$.members.length === 0}
     <p class="mt-2 type-body text-muted-foreground" role="status">
       {m.settings_guestSessions_roster_loading_label()}
@@ -154,6 +225,28 @@
       </Button>
     </div>
   {/if}
+  {#if removeAllError || removeAllFailures.length > 0}
+    <div
+      class="mt-3 flex items-center justify-between gap-3 rounded-md border border-danger/30 bg-danger-background/10 p-3"
+      role="alert"
+      data-testid="hosted-roster-remove-all-error"
+    >
+      <div class="min-w-0 type-body text-danger">
+        {#if removeAllError}
+          <p>{removeAllError}</p>
+        {:else}
+          <ul class="space-y-1">
+            {#each removeAllFailures as line, index (index)}
+              <li>{line}</li>
+            {/each}
+          </ul>
+        {/if}
+      </div>
+      <Button variant="ghost" disabled={$clearing$} onclick={() => removeAllGuests()}>
+        {m.settings_guestSessions_retry_label()}
+      </Button>
+    </div>
+  {/if}
 </section>
 
 <BulkActionConfirmDialog
@@ -166,4 +259,15 @@
   confirmText={m.settings_guestSessions_remove_label()}
   variant="destructive"
   onConfirm={() => removeMember()}
+/>
+
+<BulkActionConfirmDialog
+  bind:open={removeAllDialogOpen}
+  title={m.settings_guestSessions_removeAllConfirm_title()}
+  description={m.settings_guestSessions_removeAllConfirm_description({
+    workspace: workspace.title,
+  })}
+  confirmText={m.settings_guestSessions_removeAll_label()}
+  variant="destructive"
+  onConfirm={() => removeAllGuests()}
 />

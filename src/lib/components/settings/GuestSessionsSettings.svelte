@@ -3,17 +3,19 @@
    * Settings → Guest Sessions (multiplayer w4).
    *
    * Two lists: the workspaces this backend HOSTS for collaborators (owner
-   * side — roster + *Remove*, hidden from a collaborator-only client so a
-   * guest never sees owner controls) and the hosts this app JOINED as a guest
-   * (*Open*, *Leave host*: best-effort `principal.revokeSelf`, then the local
-   * delete and window teardown).
+   * side — roster + *Remove* / *Remove all guests*, hidden from a
+   * collaborator-only client so a guest never sees owner controls) and the
+   * hosts this app JOINED as a guest, each with its joined workspaces nested
+   * underneath (*Open*; per-workspace *Leave*: `workspace.members.leave` then
+   * the local drop; *Leave host*: best-effort `principal.revokeSelf`, then the
+   * local delete and window teardown). Every destructive action confirms.
    */
   import { ListView } from '$lib/components/patterns/collection';
   import { Button } from '$lib/components/patterns/settings/custom-controls';
   import BulkActionConfirmDialog from '$lib/components/modals/BulkActionConfirmDialog.svelte';
   import HostedWorkspaceRoster from './HostedWorkspaceRoster.svelte';
   import { m } from '$shared/paraglide/messages.js';
-  import type { GuestSessionRecord } from '$shared/types/guest-sessions';
+  import type { GuestSessionRecord, GuestWorkspaceRef } from '$shared/types/guest-sessions';
   import { openConnectionRequested } from '$store/renderer/slices/connections/connections-slice';
   import {
     selectGuestSessions,
@@ -22,7 +24,10 @@
     selectGuestSessionsOpenIds,
     selectHostedWorkspaces,
   } from '$store/renderer/slices/guest-sessions/guest-sessions-selectors';
-  import { leaveGuestSessionRequested } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
+  import {
+    leaveGuestSessionRequested,
+    leaveGuestWorkspaceRequested,
+  } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
   import { selectIsCollaboratorOnlyClient } from '$store/renderer/slices/workspace/workspace-selectors';
   import { store as appStore } from '$store/renderer/store';
 
@@ -78,6 +83,44 @@
       }
     } catch {
       openError = m.settings_guestSessions_open_error({ name: session.label });
+    }
+  }
+
+  interface LeaveWorkspaceTarget {
+    session: GuestSessionRecord;
+    workspace: GuestWorkspaceRef;
+  }
+
+  let leaveWorkspaceTarget = $state<LeaveWorkspaceTarget | null>(null);
+  let leaveWorkspaceDialogOpen = $state(false);
+  let leaveWorkspaceError = $state<string | null>(null);
+  let leavingWorkspaceKey = $state<string | null>(null);
+
+  function workspaceKey(target: LeaveWorkspaceTarget): string {
+    return `${target.session.id}:${target.workspace.id}`;
+  }
+
+  function requestLeaveWorkspace(session: GuestSessionRecord, workspace: GuestWorkspaceRef) {
+    leaveWorkspaceTarget = { session, workspace };
+    leaveWorkspaceError = null;
+    leaveWorkspaceDialogOpen = true;
+  }
+
+  async function leaveWorkspace(target = leaveWorkspaceTarget) {
+    if (!target || leavingWorkspaceKey) return;
+    leavingWorkspaceKey = workspaceKey(target);
+    leaveWorkspaceError = null;
+    try {
+      const action = leaveGuestWorkspaceRequested(target.session.id, target.workspace.id);
+      appStore.dispatch(action);
+      await action.promise;
+      leaveWorkspaceTarget = null;
+    } catch {
+      leaveWorkspaceError = m.settings_guestSessions_leaveWorkspace_error({
+        workspace: target.workspace.title,
+      });
+    } finally {
+      leavingWorkspaceKey = null;
     }
   }
 </script>
@@ -139,41 +182,71 @@
         {#snippet row({ item: session })}
           {@const open = $openIds$.includes(session.id)}
           {@const connected = open && $connectedIds$.includes(session.id)}
-          <div
-            class="flex items-center justify-between gap-3 px-6 py-4"
-            data-session-id={session.id}
-          >
-            <div class="min-w-0">
-              <p class="truncate type-body text-foreground">{session.label}</p>
-              <p class="truncate type-caption text-muted-foreground">
-                <!-- Status only for a host with a window (pooled client); a
-                     joined host that was never opened has no status. -->
-                {#if open}
-                  <span data-guest-connected={connected}>
-                    {connected
-                      ? m.settings_guestSessions_status_connected_label()
-                      : m.settings_guestSessions_status_notConnected_label()}
-                  </span>
-                  ·
-                {/if}
-                @{session.login}
-              </p>
+          <div class="px-6 py-4" data-session-id={session.id}>
+            <div class="flex items-center justify-between gap-3">
+              <div class="min-w-0">
+                <p class="truncate type-body text-foreground">{session.label}</p>
+                <p class="truncate type-caption text-muted-foreground">
+                  <!-- Status only for a host with a window (pooled client); a
+                       joined host that was never opened has no status. -->
+                  {#if open}
+                    <span data-guest-connected={connected}>
+                      {connected
+                        ? m.settings_guestSessions_status_connected_label()
+                        : m.settings_guestSessions_status_notConnected_label()}
+                    </span>
+                    ·
+                  {/if}
+                  @{session.login}
+                </p>
+              </div>
+              <div class="flex shrink-0 items-center gap-2">
+                <Button variant="ghost" size="sm" onclick={() => openHost(session)}>
+                  {m.settings_guestSessions_open_label()}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={leavingId === session.id}
+                  onclick={() => requestLeave(session)}
+                >
+                  {leavingId === session.id
+                    ? m.settings_guestSessions_leaving_label()
+                    : m.settings_guestSessions_leave_label()}
+                </Button>
+              </div>
             </div>
-            <div class="flex shrink-0 items-center gap-2">
-              <Button variant="ghost" size="sm" onclick={() => openHost(session)}>
-                {m.settings_guestSessions_open_label()}
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={leavingId === session.id}
-                onclick={() => requestLeave(session)}
+            {#if session.workspaces.length > 0}
+              <ul
+                class="mt-3 ml-3 border-l border-border pl-3 divide-y divide-border"
+                aria-label={m.settings_guestSessions_workspaces_ariaLabel({ name: session.label })}
+                data-testid="guest-session-workspaces"
               >
-                {leavingId === session.id
-                  ? m.settings_guestSessions_leaving_label()
-                  : m.settings_guestSessions_leave_label()}
-              </Button>
-            </div>
+                {#each session.workspaces as workspace (workspace.id)}
+                  {@const key = `${session.id}:${workspace.id}`}
+                  <li
+                    class="flex items-center justify-between gap-3 py-2"
+                    data-workspace-id={workspace.id}
+                  >
+                    <p class="min-w-0 truncate type-body text-foreground">{workspace.title}</p>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={leavingWorkspaceKey === key}
+                      onclick={() => requestLeaveWorkspace(session, workspace)}
+                    >
+                      {leavingWorkspaceKey === key
+                        ? m.settings_guestSessions_leaving_label()
+                        : m.settings_guestSessions_leaveWorkspace_label()}
+                    </Button>
+                  </li>
+                {/each}
+              </ul>
+            {:else}
+              <p class="mt-2 ml-3 type-caption text-muted-foreground">
+                {m.settings_guestSessions_workspaces_empty_label()}
+              </p>
+            {/if}
           </div>
         {/snippet}
       </ListView>
@@ -214,6 +287,23 @@
       </Button>
     </div>
   {/if}
+
+  {#if leaveWorkspaceError}
+    <div
+      class="flex items-center justify-between gap-3 rounded-md border border-danger/30 bg-danger-background/10 p-3"
+      role="alert"
+      data-testid="guest-leave-workspace-error"
+    >
+      <p class="type-body text-danger">{leaveWorkspaceError}</p>
+      <Button
+        variant="ghost"
+        disabled={!leaveWorkspaceTarget || leavingWorkspaceKey !== null}
+        onclick={() => leaveWorkspace()}
+      >
+        {m.settings_guestSessions_retry_label()}
+      </Button>
+    </div>
+  {/if}
 </div>
 
 <BulkActionConfirmDialog
@@ -225,4 +315,16 @@
   confirmText={m.settings_guestSessions_leave_label()}
   variant="destructive"
   onConfirm={() => leaveHost()}
+/>
+
+<BulkActionConfirmDialog
+  bind:open={leaveWorkspaceDialogOpen}
+  title={m.settings_guestSessions_leaveWorkspaceConfirm_title()}
+  description={m.settings_guestSessions_leaveWorkspaceConfirm_description({
+    workspace: leaveWorkspaceTarget?.workspace.title ?? '',
+    name: leaveWorkspaceTarget?.session.label ?? '',
+  })}
+  confirmText={m.settings_guestSessions_leaveWorkspace_label()}
+  variant="destructive"
+  onConfirm={() => leaveWorkspace()}
 />

@@ -18,6 +18,7 @@ export type {
   GuestSessionRecord,
   GuestSessionsListResult,
   LeaveGuestSessionResult,
+  LeaveGuestWorkspaceResult,
 } from '$shared/types/guest-sessions';
 
 /**
@@ -46,6 +47,33 @@ export interface WorkspaceMemberRemoveResult {
 }
 
 /**
+ * One open `workspace_invite` row as `workspace.invite.list` returns it
+ * (intent-hq/intentd#1872). The link secret never rides this shape.
+ */
+export interface WorkspaceInvite {
+  id: string;
+  workspaceId: string;
+  createdByPrincipalId: string;
+  pinGithubUserId?: number;
+  pinLogin?: string;
+  createdAt: string;
+  expiresAt: string;
+  redeemedAt?: string;
+  redeemedByPrincipalId?: string;
+  revokedAt?: string;
+}
+
+/** `workspace.invite.list` result: the workspace's open invites. */
+export interface WorkspaceInviteListResult {
+  invites: WorkspaceInvite[];
+}
+
+/** `workspace.invite.revoke` result. */
+export interface WorkspaceInviteRevokeResult {
+  revoked: boolean;
+}
+
+/**
  * Bounded failure codes of the roster read / *Remove* operations — the only
  * values a rejected `loadHostedRosterRequested` / `removeHostedMemberRequested`
  * promise (and any log line) carries. A raw daemon or transport message never
@@ -54,6 +82,28 @@ export interface WorkspaceMemberRemoveResult {
  * timeout failure, `cancelled` a purge that cut the operation short.
  */
 export type HostedRosterFailureCode = 'forbidden' | 'daemon' | 'transport' | 'cancelled';
+
+/**
+ * Outcome of one *Remove all guests* sweep (`removeAllHostedGuestsRequested`):
+ * every collaborator of the workspace removed (`workspace.members.remove`)
+ * and every open invite revoked (`workspace.invite.revoke`), each step
+ * reported on its own so a partial failure is never silent. The promise
+ * RESOLVES with this shape even when steps failed; it rejects only when the
+ * sweep could not run at all (ownership lost, roster unreadable, purged).
+ */
+export interface RemoveAllHostedGuestsResult {
+  removedPrincipalIds: string[];
+  failedMembers: Array<{ principalId: string; code: HostedRosterFailureCode }>;
+  revokedInviteIds: string[];
+  /** `pinLogin` names the invite for the report when the link was pinned to a GitHub login. */
+  failedInvites: Array<{
+    inviteId: string;
+    pinLogin: string | null;
+    code: HostedRosterFailureCode;
+  }>;
+  /** Set when `workspace.invite.list` itself failed: no invite was revoked. */
+  invitesUnavailable: HostedRosterFailureCode | null;
+}
 
 export class HostedRosterOperationError extends Error {
   readonly code: HostedRosterFailureCode;
@@ -115,6 +165,8 @@ export interface GuestSessionsState {
   listUnavailable: boolean;
   /** Guest session ids with a *Leave host* in flight. */
   leavingIds: string[];
+  /** `${sessionId}:${workspaceId}` keys with a per-workspace *Leave* in flight. */
+  leavingWorkspaceKeys: string[];
   /**
    * Owner-side rosters of the current window's shared workspaces, keyed by
    * workspace id — a read-through view of `workspace.members.list`, refetched
@@ -123,8 +175,14 @@ export interface GuestSessionsState {
   hostedRosters: Record<string, HostedRoster>;
   /** `${workspaceId}:${principalId}` keys with a *Remove* in flight. */
   removingMemberKeys: string[];
+  /** Hosted workspace ids with a *Remove all guests* sweep in flight. */
+  clearingWorkspaceIds: string[];
 }
 
 export function hostedMemberKey(workspaceId: string, principalId: string): string {
   return `${workspaceId}:${principalId}`;
+}
+
+export function guestWorkspaceKey(sessionId: string, workspaceId: string): string {
+  return `${sessionId}:${workspaceId}`;
 }
