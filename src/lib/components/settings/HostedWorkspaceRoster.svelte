@@ -4,9 +4,12 @@
    * members from `workspace.members.list`, each collaborator with a *Remove*
    * that calls `workspace.members.remove`, plus a per-workspace *Remove all
    * guests* that removes every collaborator and revokes every open invite
-   * link (`workspace.invite.list` → `workspace.invite.revoke`), reporting
-   * each step that failed. Both confirm first. The owner row never carries a
-   * control (`workspace.members.remove` refuses the owner).
+   * link (`workspace.invite.list` → `workspace.invite.revoke`). Both confirm
+   * first. The confirmed sweep is handed to the parent (`onRemoveAll`, with
+   * the roster as it stands) — the sweep's membership delta may unmount this
+   * row before it settles, and its per-step report must outlive the row. The
+   * owner row never carries a control (`workspace.members.remove` refuses
+   * the owner).
    */
   import { onMount } from 'svelte';
   import { ListView } from '$lib/components/patterns/collection';
@@ -21,85 +24,46 @@
   } from '$store/renderer/slices/guest-sessions/guest-sessions-selectors';
   import {
     loadHostedRosterRequested,
-    removeAllHostedGuestsRequested,
     removeHostedMemberRequested,
   } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
   import {
     HostedRosterOperationError,
-    type RemoveAllHostedGuestsResult,
     type WorkspaceMember,
   } from '$store/renderer/slices/guest-sessions/guest-sessions-types';
   import { store as appStore } from '$store/renderer/store';
 
   interface Props {
     workspace: Workspace;
+    /** A confirmed *Remove all guests*, with the roster as it was before the sweep. */
+    onRemoveAll: (membersBefore: WorkspaceMember[]) => void;
   }
 
-  let { workspace }: Props = $props();
+  let { workspace, onRemoveAll }: Props = $props();
 
   const roster$ = selectHostedRoster(workspace.id);
   const removingIds$ = selectHostedRemovingPrincipalIds(workspace.id);
   const clearing$ = selectIsHostedWorkspaceClearing(workspace.id);
 
+  /** What the *Remove* confirm dialog shows — never what a retry acts on. */
   let removeTarget = $state<WorkspaceMember | null>(null);
   let removeDialogOpen = $state(false);
+  /** The confirmed removal that failed; its retry re-runs exactly this one. */
+  let failedRemove = $state<WorkspaceMember | null>(null);
   let removeError = $state<string | null>(null);
 
   let removeAllDialogOpen = $state(false);
-  let removeAllError = $state<string | null>(null);
-  let removeAllFailures = $state<string[]>([]);
 
   function memberLabel(member: WorkspaceMember): string {
     return member.displayName ?? member.login ?? member.principalId;
   }
 
-  function removeAllFailureLines(
-    result: RemoveAllHostedGuestsResult,
-    membersBefore: WorkspaceMember[],
-  ): string[] {
-    const lines = result.failedMembers.map(({ principalId }) => {
-      const member = membersBefore.find((entry) => entry.principalId === principalId);
-      return m.settings_guestSessions_remove_error({
-        name: member ? memberLabel(member) : principalId,
-      });
-    });
-    for (const { pinLogin } of result.failedInvites) {
-      lines.push(
-        pinLogin
-          ? m.settings_guestSessions_removeAll_pinnedInviteFailed({ login: `@${pinLogin}` })
-          : m.settings_guestSessions_removeAll_inviteFailed(),
-      );
-    }
-    if (result.invitesUnavailable) {
-      lines.push(m.settings_guestSessions_removeAll_invitesUnavailable());
-    }
-    return lines;
-  }
-
-  function requestRemoveAll() {
-    removeAllError = null;
-    removeAllFailures = [];
-    removeAllDialogOpen = true;
-  }
-
-  async function removeAllGuests() {
+  function removeAllGuests() {
     if ($clearing$) return;
-    removeAllError = null;
-    removeAllFailures = [];
-    const membersBefore = $roster$.members;
-    try {
-      const action = removeAllHostedGuestsRequested(workspace.id);
-      appStore.dispatch(action);
-      const result = await action.promise;
-      removeAllFailures = removeAllFailureLines(result, membersBefore);
-    } catch {
-      removeAllError = m.settings_guestSessions_removeAll_error({ workspace: workspace.title });
-    }
+    onRemoveAll($roster$.members);
   }
 
   function requestRemove(member: WorkspaceMember) {
     removeTarget = member;
-    removeError = null;
     removeDialogOpen = true;
   }
 
@@ -116,19 +80,17 @@
     );
   }
 
-  async function removeMember(member = removeTarget) {
+  async function removeMember(member: WorkspaceMember | null) {
     if (!member) return;
+    failedRemove = null;
     removeError = null;
     try {
       const action = removeHostedMemberRequested(workspace.id, member.principalId);
       appStore.dispatch(action);
       await action.promise;
-      removeTarget = null;
     } catch (error) {
-      if (!isRetryable(error)) {
-        removeTarget = null;
-        return;
-      }
+      if (!isRetryable(error)) return;
+      failedRemove = member;
       removeError = m.settings_guestSessions_remove_error({ name: memberLabel(member) });
     }
   }
@@ -149,7 +111,7 @@
         size="sm"
         class="shrink-0"
         disabled={$clearing$}
-        onclick={requestRemoveAll}
+        onclick={() => (removeAllDialogOpen = true)}
         data-testid="hosted-roster-remove-all"
       >
         {$clearing$
@@ -218,31 +180,9 @@
       <p class="type-body text-danger">{removeError}</p>
       <Button
         variant="ghost"
-        disabled={!removeTarget || $removingIds$.includes(removeTarget.principalId)}
-        onclick={() => removeMember()}
+        disabled={!failedRemove || $removingIds$.includes(failedRemove.principalId)}
+        onclick={() => removeMember(failedRemove)}
       >
-        {m.settings_guestSessions_retry_label()}
-      </Button>
-    </div>
-  {/if}
-  {#if removeAllError || removeAllFailures.length > 0}
-    <div
-      class="mt-3 flex items-center justify-between gap-3 rounded-md border border-danger/30 bg-danger-background/10 p-3"
-      role="alert"
-      data-testid="hosted-roster-remove-all-error"
-    >
-      <div class="min-w-0 type-body text-danger">
-        {#if removeAllError}
-          <p>{removeAllError}</p>
-        {:else}
-          <ul class="space-y-1">
-            {#each removeAllFailures as line, index (index)}
-              <li>{line}</li>
-            {/each}
-          </ul>
-        {/if}
-      </div>
-      <Button variant="ghost" disabled={$clearing$} onclick={() => removeAllGuests()}>
         {m.settings_guestSessions_retry_label()}
       </Button>
     </div>
@@ -258,7 +198,7 @@
   })}
   confirmText={m.settings_guestSessions_remove_label()}
   variant="destructive"
-  onConfirm={() => removeMember()}
+  onConfirm={() => void removeMember(removeTarget)}
 />
 
 <BulkActionConfirmDialog
@@ -269,5 +209,5 @@
   })}
   confirmText={m.settings_guestSessions_removeAll_label()}
   variant="destructive"
-  onConfirm={() => removeAllGuests()}
+  onConfirm={removeAllGuests}
 />

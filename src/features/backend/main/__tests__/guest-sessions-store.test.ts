@@ -155,6 +155,110 @@ describe('guest-sessions-store', () => {
     expect(await reloaded.findById(rec.id)).toMatchObject({ workspaces: [] });
   });
 
+  describe('setWorkspaces() — hydrating the joined list from the host', () => {
+    const remoteRecord = {
+      label: 'remote',
+      host: '10.1.1.1',
+      hosts: ['10.1.1.1'],
+      port: 9000,
+      fingerprint: '11:22:33',
+      hostname: 'remote.local',
+      tcAddress: null,
+      detectHosts: false,
+      token: 'remote-secret',
+      principalId: 'prn_9',
+      login: 'octocat',
+      updatedAt: 1_700_000_000_000,
+    };
+
+    it('populates a row written before the field existed and persists it', async () => {
+      const store = await import('../guest-sessions-store');
+      const rec = await store.add(sample);
+      await store.__drainWriteChainForTesting();
+      const file = await readFile();
+      const sessions = file.sessions as Array<Record<string, unknown>>;
+      delete sessions[0].workspaces;
+      await fs.writeFile(path.join(tmpDir, 'guest-sessions.json'), JSON.stringify(file));
+      vi.resetModules();
+      mockElectron();
+      const reloaded = await import('../guest-sessions-store');
+
+      expect(await reloaded.setWorkspaces(rec.id, [{ id: 'ws-1', title: 'Design' }])).toBe(true);
+      expect(await reloaded.findById(rec.id)).toMatchObject({
+        workspaces: [{ id: 'ws-1', title: 'Design' }],
+      });
+      await reloaded.__drainWriteChainForTesting();
+      const persisted = (await readFile()).sessions as Array<Record<string, unknown>>;
+      expect(persisted[0].workspaces).toEqual([{ id: 'ws-1', title: 'Design' }]);
+    });
+
+    it('populates a row imported by keychain sync, which never carries the list', async () => {
+      const store = await import('../guest-sessions-store');
+      expect(await store.applyRemoteSyncRecord(remoteRecord)).toBe(true);
+      const [imported] = await store.list();
+      expect(imported.workspaces).toEqual([]);
+
+      expect(
+        await store.setWorkspaces(imported.id, [
+          { id: 'ws-a', title: 'Alpha' },
+          { id: 'ws-b', title: 'Beta' },
+        ]),
+      ).toBe(true);
+      expect(await store.findById(imported.id)).toMatchObject({
+        workspaces: [
+          { id: 'ws-a', title: 'Alpha' },
+          { id: 'ws-b', title: 'Beta' },
+        ],
+      });
+      // Still a local detail: the sync record does not carry it.
+      const [sync] = await store.listSyncRecords();
+      expect(sync).not.toHaveProperty('workspaces');
+    });
+
+    it('reconciles by id: drops memberships the host no longer lists, retitles, appends new ones in host order', async () => {
+      const store = await import('../guest-sessions-store');
+      const rec = await store.add({ ...sample, workspace: { id: 'ws-1', title: 'Design' } });
+      await store.add({ ...sample, workspace: { id: 'ws-2', title: 'Release' } });
+      await store.add({ ...sample, workspace: { id: 'ws-3', title: 'Docs' } });
+
+      expect(
+        await store.setWorkspaces(rec.id, [
+          { id: 'ws-9', title: 'New' },
+          { id: 'ws-3', title: 'Docs v2' },
+          { id: 'ws-1', title: 'Design' },
+          { id: 'ws-9', title: 'New (dup)' },
+        ]),
+      ).toBe(true);
+      expect((await store.findById(rec.id))?.workspaces).toEqual([
+        { id: 'ws-1', title: 'Design' },
+        { id: 'ws-3', title: 'Docs v2' },
+        { id: 'ws-9', title: 'New' },
+      ]);
+
+      expect(await store.setWorkspaces(rec.id, [])).toBe(true);
+      expect((await store.findById(rec.id))?.workspaces).toEqual([]);
+    });
+
+    it('is a no-op for an unchanged list or an unknown session, and never a syncable mutation', async () => {
+      const store = await import('../guest-sessions-store');
+      const listener = vi.fn();
+      store.onGuestSessionsMutated(listener);
+      const rec = await store.add({ ...sample, workspace: { id: 'ws-1', title: 'Design' } });
+      listener.mockClear();
+      const before = (await store.findById(rec.id))!.updatedAt;
+
+      expect(await store.setWorkspaces(rec.id, [{ id: 'ws-1', title: 'Design' }])).toBe(false);
+      expect(await store.setWorkspaces(rec.id, [{ id: 'ws-1', title: 'Renamed' }])).toBe(true);
+      expect(await store.setWorkspaces('missing', [{ id: 'ws-1', title: 'Design' }])).toBe(false);
+
+      expect(listener).not.toHaveBeenCalled();
+      const after = (await store.findById(rec.id))!;
+      expect(after.updatedAt).toBe(before);
+      expect(after.workspaces).toEqual([{ id: 'ws-1', title: 'Renamed' }]);
+      expect(await store.getDecryptedToken(rec.id)).toBe('guest-secret');
+    });
+  });
+
   it('encrypts the token at rest and decrypts it on demand', async () => {
     const store = await import('../guest-sessions-store');
     const rec = await store.add(sample);
