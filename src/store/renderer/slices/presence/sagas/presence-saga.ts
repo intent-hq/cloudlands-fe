@@ -12,6 +12,12 @@
  * pulse)` pair; a timer whose pulse has since advanced is ignored by the
  * reducer, so nothing needs cancelling.
  *
+ * Hydration: the daemon publishes `presence:changed` only on change, so the
+ * rosters of the open workspace tabs are seeded from `presence.snapshot` when
+ * the backend is attached, when a tab opens, and again on reconnect (the
+ * connection's presence and every event of the outage are gone). A snapshot
+ * overtaken by a `presence:changed` for its workspace is dropped.
+ *
  * Identity: `principal.me` is read per backend so the roster's own row can be
  * told apart; a backend switch resets every roster first.
  */
@@ -20,30 +26,40 @@ import { END, buffers, eventChannel, type EventChannel } from 'redux-saga';
 import {
   all,
   call,
+  cancel,
   delay,
   fork,
   join,
   put,
+  race,
   select,
   take,
   type SagaGenerator,
 } from 'typed-redux-saga';
 import {
+  createChannelFromSelector,
   takeEveryFromSelector,
   takeLatestFromSelector,
   type SelectorChannelPayload,
 } from '@augmentcode/themis/saga';
 
-import { backendRequest } from '$lib/client/live/backend-transport';
+import { backendRequest, onBackendReconnected } from '$lib/client/live/backend-transport';
 import { invoke } from '$lib/electron-bridge';
 import { createLogger } from '$lib/utils/client-logger';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
-import type { PresenceReportParams, PresenceReportResult } from '$shared/types/presence';
+import {
+  isPresenceRoster,
+  type PresenceReportParams,
+  type PresenceReportResult,
+  type PresenceRoster,
+} from '$shared/types/presence';
 import { selectCurrentConnectionId } from '../../connections/connections-selectors';
+import { selectActiveWorkspaceIds } from '../../tab-state/tab-state-selectors';
 import {
   presenceOwnPrincipalReceived,
   presenceOwnTypingSourceReceived,
   presenceReset,
+  presenceRosterReceived,
   presenceTypingExpired,
   presenceTypingPulse,
   presenceTypingStopped,
@@ -70,6 +86,8 @@ async function invokeReport(params: PresenceReportParams): Promise<PresenceRepor
   return invoke<PresenceReportResult>(PRESENCE.REPORT, params);
 }
 
+type ObservedAction = { type: string; payload?: unknown };
+
 async function readOwnPrincipalId(): Promise<string | null> {
   try {
     const result = await backendRequest<{ id?: unknown }>('principal.me', {});
@@ -77,6 +95,30 @@ async function readOwnPrincipalId(): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+/** `null` for a non-member / unknown workspace or an older daemon; both leave the roster empty. */
+async function readRosterSnapshot(workspaceId: string): Promise<PresenceRoster | null> {
+  try {
+    const result = await backendRequest<unknown>('presence.snapshot', { workspaceId });
+    return isPresenceRoster(result) ? result : null;
+  } catch (error) {
+    logger.debug('presence.snapshot failed', { workspaceId, error: String(error) });
+    return null;
+  }
+}
+
+function supersedesSnapshot(action: ObservedAction, workspaceId: string): boolean {
+  if (action.type === presenceReset.type) return true;
+  return (
+    action.type === presenceRosterReceived.type &&
+    Array.isArray(action.payload) &&
+    (action.payload[0] as PresenceRoster | undefined)?.workspaceId === workspaceId
+  );
+}
+
+function createReconnectChannel(): EventChannel<true> {
+  return eventChannel<true>((emit) => onBackendReconnected(() => emit(true)), buffers.sliding(1));
 }
 
 /** `visibilitychange` is a document event, so the window-event helper does not apply. */
@@ -185,23 +227,90 @@ function* armTypingTimers({
   }
 }
 
-function* onBackendChanged({
+/**
+ * Seed one workspace's roster. A `presence:changed` for the workspace or a
+ * backend switch that lands while the read is in flight is newer than
+ * whatever the read returns, so that result is dropped.
+ */
+function* hydrateRoster(workspaceId: string): SagaGenerator<void> {
+  const { roster } = yield* race({
+    roster: call(readRosterSnapshot, workspaceId),
+    superseded: take((action: ObservedAction) => supersedesSnapshot(action, workspaceId)),
+  });
+  if (roster) yield* put(presenceRosterReceived(roster));
+}
+
+function* hydrateRosters(workspaceIds: string[]): SagaGenerator<void> {
+  yield* all(workspaceIds.map((workspaceId) => call(hydrateRoster, workspaceId)));
+}
+
+/** Opening a workspace tab publishes nothing daemon-side, so its roster is read. */
+function* onDisplayedWorkspacesChanged({
   payload,
   prevPayload,
-}: SelectorChannelPayload<string | null>): SagaGenerator<void> {
-  if (prevPayload !== null && prevPayload !== undefined) yield* put(presenceReset());
-  if (!payload) return;
+}: SelectorChannelPayload<string[]>): SagaGenerator<void> {
+  const known = new Set(prevPayload ?? []);
+  yield* hydrateRosters(payload.filter((workspaceId) => !known.has(workspaceId)));
+}
+
+/** Identity first, so the seeded rosters never show this window's own row. */
+function* attachBackend(): SagaGenerator<void> {
   const principalId = yield* call(readOwnPrincipalId);
   yield* put(presenceOwnPrincipalReceived(principalId));
+  const workspaceIds = yield* select(selectActiveWorkspaceIds.select);
+  yield* hydrateRosters(workspaceIds);
+}
+
+/**
+ * The selector channel emits its first value before anything can take it and
+ * a local window's backend id never changes afterwards, so the current backend
+ * is attached explicitly; a later change resets the rosters and attaches the
+ * new one.
+ */
+function* watchBackend(): SagaGenerator<void> {
+  const channel = yield* createChannelFromSelector(selectCurrentConnectionId);
+  let backendId = yield* select(selectCurrentConnectionId.select);
+  let attached = backendId ? yield* fork(attachBackend) : null;
+  try {
+    while (true) {
+      const { payload } = yield* take(channel);
+      if (attached) yield* cancel(attached);
+      if (backendId) yield* put(presenceReset());
+      backendId = payload;
+      attached = backendId ? yield* fork(attachBackend) : null;
+    }
+  } finally {
+    channel.close();
+  }
+}
+
+/**
+ * Main re-sends the merged `presence.update` when the pooled connection comes
+ * back; this window re-reads identity and the displayed rosters, then reports
+ * once so the connection's fresh `typingSource` is learned.
+ */
+function* watchReconnects(): SagaGenerator<void> {
+  const channel = createReconnectChannel();
+  try {
+    while (true) {
+      yield* take(channel);
+      yield* attachBackend();
+      yield* sendReport();
+    }
+  } finally {
+    channel.close();
+  }
 }
 
 export function* presenceSaga(): SagaGenerator<void> {
   const tasks = [
     yield* fork(watchVisibility),
     yield* fork(watchTypingPulses),
+    yield* fork(watchBackend),
+    yield* fork(watchReconnects),
     yield* takeLatestFromSelector(selectOwnPresenceReportKey, reportOnChange),
     yield* takeEveryFromSelector(selectPresenceLiveTyping, armTypingTimers),
-    yield* takeLatestFromSelector(selectCurrentConnectionId, onBackendChanged),
+    yield* takeEveryFromSelector(selectActiveWorkspaceIds, onDisplayedWorkspacesChanged),
   ];
   yield* all(tasks.map((task) => join(task)));
 }
