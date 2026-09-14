@@ -127,32 +127,59 @@ guestSessionsReducer.with(leaveOperationSettled, (state, { payload: [id] }) => (
   leavingIds: state.leavingIds.filter((leaving) => leaving !== id),
 }));
 
-guestSessionsReducer.with(hostedRosterLoading, (state, { payload: [workspaceId] }) => ({
-  ...state,
-  hostedRosters: {
-    ...state.hostedRosters,
-    [workspaceId]: {
-      status: 'loading',
-      members: state.hostedRosters[workspaceId]?.members ?? [],
-    },
-  },
-}));
-guestSessionsReducer.with(hostedRosterReceived, (state, { payload: [workspaceId, members] }) => ({
-  ...state,
-  hostedRosters: { ...state.hostedRosters, [workspaceId]: { status: 'loaded', members } },
-}));
-guestSessionsReducer.with(hostedRosterFailed, (state, { payload: [workspaceId] }) => ({
-  ...state,
-  hostedRosters: {
-    ...state.hostedRosters,
-    [workspaceId]: { status: 'error', members: state.hostedRosters[workspaceId]?.members ?? [] },
-  },
-}));
-guestSessionsReducer.with(hostedRosterWithheld, (state, { payload: [workspaceId] }) => ({
-  ...state,
-  hostedRosters: { ...state.hostedRosters, [workspaceId]: { status: 'withheld', members: [] } },
-  removingMemberKeys: withoutWorkspaceKeys(state.removingMemberKeys, workspaceId),
-}));
+/** `withheld` is terminal: a load / result / failure landing on it is dropped. */
+function isWithheld(state: GuestSessionsState, workspaceId: string): boolean {
+  return state.hostedRosters[workspaceId]?.status === 'withheld';
+}
+
+guestSessionsReducer.with(hostedRosterLoading, (state, { payload: [workspaceId] }) =>
+  isWithheld(state, workspaceId)
+    ? state
+    : {
+        ...state,
+        hostedRosters: {
+          ...state.hostedRosters,
+          [workspaceId]: {
+            status: 'loading',
+            members: state.hostedRosters[workspaceId]?.members ?? [],
+          },
+        },
+      },
+);
+guestSessionsReducer.with(hostedRosterReceived, (state, { payload: [workspaceId, members] }) =>
+  isWithheld(state, workspaceId)
+    ? state
+    : {
+        ...state,
+        hostedRosters: { ...state.hostedRosters, [workspaceId]: { status: 'loaded', members } },
+      },
+);
+guestSessionsReducer.with(hostedRosterFailed, (state, { payload: [workspaceId] }) =>
+  isWithheld(state, workspaceId)
+    ? state
+    : {
+        ...state,
+        hostedRosters: {
+          ...state.hostedRosters,
+          [workspaceId]: {
+            status: 'error',
+            members: state.hostedRosters[workspaceId]?.members ?? [],
+          },
+        },
+      },
+);
+guestSessionsReducer.with(hostedRosterWithheld, (state, { payload: [workspaceId] }) =>
+  isWithheld(state, workspaceId)
+    ? state
+    : {
+        ...state,
+        hostedRosters: {
+          ...state.hostedRosters,
+          [workspaceId]: { status: 'withheld', members: [] },
+        },
+        removingMemberKeys: withoutWorkspaceKeys(state.removingMemberKeys, workspaceId),
+      },
+);
 
 /** Drop one workspace's roster + *Remove* markers (deleted / removed entity). */
 function purgeHostedRoster(state: GuestSessionsState, workspaceId: string): GuestSessionsState {

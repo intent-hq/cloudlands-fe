@@ -22,6 +22,7 @@ import {
   fork,
   join,
   put,
+  race,
   select,
   take,
   takeEvery,
@@ -53,6 +54,7 @@ import { selectWorkspaceItems } from '../../workspace/workspace-selectors';
 import { removeWorkspaceEntity, resetWorkspaceState } from '../../workspace/workspace-slice';
 import { workspaceDeleted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
+  GuestSessionOperationError,
   HostedRosterOperationError,
   type WorkspaceMemberRemoveResult,
   type WorkspaceMembersListResult,
@@ -76,6 +78,7 @@ import {
   selectCanManageHostedWorkspace,
   selectGuestSessionsLoaded,
   selectHostedRosterMemberCounts,
+  selectIsHostedWorkspaceListed,
   selectWindowGuestSession,
 } from '../guest-sessions-selectors';
 
@@ -87,8 +90,14 @@ function getApi(): Window['electronAPI'] | undefined {
   return typeof window !== 'undefined' ? window.electronAPI : undefined;
 }
 
-function toError(error: unknown): Error {
-  return error instanceof Error ? error : new Error(String(error));
+/**
+ * Fold a main IPC failure to its bounded code before it reaches a promise
+ * consumer (main's rejection message may echo host material).
+ */
+function toGuestSessionFailure(error: unknown): GuestSessionOperationError {
+  return error instanceof GuestSessionOperationError
+    ? error
+    : new GuestSessionOperationError('ipc');
 }
 
 function createChangedChannel(): EventChannel<GuestSessionsListResult> {
@@ -122,11 +131,11 @@ function* hydrate(action: ReturnType<typeof loadGuestSessionsRequested>): SagaGe
     yield* put(action.success(result));
     settled = true;
   } catch (error) {
-    yield* put(action.failure(toError(error)));
+    yield* put(action.failure(toGuestSessionFailure(error)));
     settled = true;
   } finally {
     if (!settled && (yield* cancelled()))
-      yield* put(action.failure(new Error('Guest sessions hydration was cancelled')));
+      yield* put(action.failure(new GuestSessionOperationError('cancelled')));
   }
 }
 
@@ -139,11 +148,11 @@ function* leave(action: ReturnType<typeof leaveGuestSessionRequested>): SagaGene
     yield* put(action.success(result));
     settled = true;
   } catch (error) {
-    yield* put(action.failure(toError(error)));
+    yield* put(action.failure(toGuestSessionFailure(error)));
     settled = true;
   } finally {
     if (!settled && (yield* cancelled()))
-      yield* put(action.failure(new Error('Leave host was cancelled')));
+      yield* put(action.failure(new GuestSessionOperationError('cancelled')));
     yield* put(leaveOperationSettled(id));
   }
 }
@@ -164,6 +173,29 @@ type RosterLoadAction = ReturnType<typeof loadHostedRosterRequested>;
 type RosterPurgeAction =
   ReturnType<typeof workspaceDeleted> | ReturnType<typeof removeWorkspaceEntity>;
 type RosterWatchAction = RosterLoadAction | RosterPurgeAction;
+
+/**
+ * The actions that purge a workspace's roster entry (the reducer drops it):
+ * the workspace left this window, or the window's whole list was reset. An
+ * owner operation in flight for that workspace is fenced on them — its late
+ * settlement must neither refetch nor re-install a `withheld` entry.
+ */
+function isRosterPurge(workspaceId: string): (action: { type: string }) => boolean {
+  return (action) =>
+    action.type === resetWorkspaceState.type ||
+    ((action.type === workspaceDeleted.type || action.type === removeWorkspaceEntity.type) &&
+      (action as RosterPurgeAction).payload[0] === workspaceId);
+}
+
+/**
+ * Withhold a workspace's roster (terminal). Only a workspace still in this
+ * window's list gets the entry: a workspace already purged has nothing to
+ * render into, and re-installing its entry would resurrect it.
+ */
+function* withholdRoster(workspaceId: string): SagaGenerator<void> {
+  if (yield* select(selectIsHostedWorkspaceListed.select, workspaceId))
+    yield* put(hostedRosterWithheld(workspaceId));
+}
 
 /**
  * Roster requests awaiting a read, per workspace: the leading request plus
@@ -187,17 +219,18 @@ function settleRosterRequests(
 /**
  * One `workspace.members.list` round trip for a workspace, settling every
  * request that shares it. Gated on the caller still managing the workspace —
- * before the RPC (a collaborator / a workspace gone from the list never sends
- * an owner RPC) AND after it (the result of a read that outlived the
- * caller's ownership is stale and withheld, never rendered). The daemon's
- * `-32003 Forbidden` is the same terminal `withheld` answer.
+ * before the RPC (a collaborator / a workspace gone from the list / a roster
+ * already withheld never sends an owner RPC) AND after it (the result of a
+ * read that outlived the caller's ownership, or that a concurrent *Remove*
+ * denial withheld meanwhile, is stale and withheld, never rendered). The
+ * daemon's `-32003 Forbidden` is the same terminal `withheld` answer.
  */
 function* readHostedRosterOnce(
   workspaceId: string,
   requests: RosterLoadAction[],
 ): SagaGenerator<void> {
   if (!(yield* select(selectCanManageHostedWorkspace.select, workspaceId))) {
-    yield* put(hostedRosterWithheld(workspaceId));
+    yield* call(withholdRoster, workspaceId);
     for (const settled of settleRosterRequests(requests, {
       failure: new HostedRosterOperationError('forbidden'),
     }))
@@ -216,16 +249,13 @@ function* readHostedRosterOnce(
       yield* put(hostedRosterReceived(workspaceId, result.members));
       outcome = { result };
     } else {
-      yield* put(hostedRosterWithheld(workspaceId));
+      yield* call(withholdRoster, workspaceId);
       outcome = { failure: new HostedRosterOperationError('forbidden') };
     }
   } catch (error) {
     const failure = toHostedRosterFailure(error);
-    yield* put(
-      failure.code === 'forbidden'
-        ? hostedRosterWithheld(workspaceId)
-        : hostedRosterFailed(workspaceId),
-    );
+    if (failure.code === 'forbidden') yield* call(withholdRoster, workspaceId);
+    else yield* put(hostedRosterFailed(workspaceId));
     outcome = { failure };
   }
   for (const settled of settleRosterRequests(requests, outcome)) yield* put(settled);
@@ -297,25 +327,39 @@ function* watchRosterLoads(): SagaGenerator<void> {
   }
 }
 
+/**
+ * One *Remove*. Gated like the read (a collaborator, a workspace gone from
+ * the list or an already withheld roster never sends the owner RPC) and
+ * fenced on the workspace's purge: a *Remove* whose workspace left this
+ * window (or whose whole list was reset) mid-flight is failed `cancelled` —
+ * its late success does not refetch, its late `-32003` does not withhold, so
+ * a purged entry is never re-installed and a same-id workspace of the next
+ * backend is never clobbered.
+ */
 function* removeHostedMember(
   action: ReturnType<typeof removeHostedMemberRequested>,
 ): SagaGenerator<void> {
   const [workspaceId, principalId] = action.payload;
   let settled = false;
-  // Owner gate: a collaborator (or a workspace gone from the list) never
-  // sends the owner-only RPC; the roster is withheld on the spot.
   if (!(yield* select(selectCanManageHostedWorkspace.select, workspaceId))) {
-    yield* put(hostedRosterWithheld(workspaceId));
+    yield* call(withholdRoster, workspaceId);
     yield* put(action.failure(new HostedRosterOperationError('forbidden')));
     return;
   }
   yield* put(removeMemberOperationStarted(workspaceId, principalId));
   try {
-    const result = yield* call(
-      backendRequest<WorkspaceMemberRemoveResult>,
-      'workspace.members.remove',
-      { workspaceId, principalId },
-    );
+    const { result } = yield* race({
+      result: call(backendRequest<WorkspaceMemberRemoveResult>, 'workspace.members.remove', {
+        workspaceId,
+        principalId,
+      }),
+      purged: take(isRosterPurge(workspaceId)),
+    });
+    if (!result) {
+      yield* put(action.failure(new HostedRosterOperationError('cancelled')));
+      settled = true;
+      return;
+    }
     // The daemon's `workspace:updated` delta bumps `memberCount`, which
     // refetches the roster; a direct refetch keeps the list right even when
     // the count is unchanged (e.g. the member was already gone).
@@ -326,7 +370,7 @@ function* removeHostedMember(
     settled = true;
   } catch (error) {
     const failure = toHostedRosterFailure(error);
-    if (failure.code === 'forbidden') yield* put(hostedRosterWithheld(workspaceId));
+    if (failure.code === 'forbidden') yield* call(withholdRoster, workspaceId);
     yield* put(action.failure(failure));
     settled = true;
   } finally {
