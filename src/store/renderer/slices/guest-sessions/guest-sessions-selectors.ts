@@ -39,11 +39,35 @@ export const selectIsGuestWindow = store.createSelector(
 );
 
 /**
- * ids of the guest sessions whose pooled client is currently connected. The
- * nav block shows "connected" / "not connected" from this.
+ * ids of the guest sessions with a pooled client (a window for that host was
+ * opened). The nav block shows a connectivity status for these only; a
+ * session outside this set has no window and shows no status.
+ */
+export const selectGuestSessionsOpenIds = store.createSelector(
+  (state) => state.guestSessions.openIds,
+);
+
+/**
+ * ids of the guest sessions whose pooled client is currently connected
+ * (subset of `openIds`). The nav block shows "connected" / "not connected"
+ * from this for open sessions.
  */
 export const selectGuestSessionsConnectedIds = store.createSelector(
   (state) => state.guestSessions.connectedIds,
+);
+
+/**
+ * Whether the caller manages a workspace's membership right now: the
+ * workspace is in this window's list and `myRole` is not `collaborator`
+ * (absent `myRole` — older daemon — reads as owner). The saga's gate before
+ * `workspace.members.list` / `workspace.members.remove`: a collaborator, or a
+ * workspace that left the list, never sends an owner RPC.
+ */
+export const selectCanManageHostedWorkspace = store.createSelector(
+  (state, workspaceId: string): boolean => {
+    const ws = getItem(state.workspace.workspaces, WorkspaceId(workspaceId));
+    return ws !== undefined && ws.myRole !== 'collaborator';
+  },
 );
 
 /**
@@ -78,15 +102,18 @@ export const selectHostedRemovingPrincipalIds = store.createSelector(
 );
 
 /**
- * `${workspaceId}:${memberCount}` for every workspace with a loaded roster —
+ * `${workspaceId}:${memberCount}` for every workspace with a tracked roster —
  * the saga's change signal to refetch a roster whose daemon-side membership
- * moved. Sorted so the array is shallow-stable across unrelated updates.
+ * moved. A `withheld` roster is terminal and excluded (no refetch), as is a
+ * workspace the caller no longer manages. Sorted so the array is
+ * shallow-stable across unrelated updates.
  */
 export const selectHostedRosterMemberCounts = store.createSelector((state): string[] => {
   const entries: string[] = [];
-  for (const workspaceId of Object.keys(state.guestSessions.hostedRosters)) {
+  for (const [workspaceId, roster] of Object.entries(state.guestSessions.hostedRosters)) {
+    if (roster.status === 'withheld') continue;
     const ws = getItem(state.workspace.workspaces, WorkspaceId(workspaceId));
-    if (!ws) continue;
+    if (!ws || ws.myRole === 'collaborator') continue;
     entries.push(`${workspaceId}:${ws.memberCount ?? 0}`);
   }
   return entries.sort();

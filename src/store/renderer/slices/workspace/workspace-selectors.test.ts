@@ -161,7 +161,7 @@ describe('selectIsCollaboratorOnlyClient (multiplayer w3)', () => {
       ),
       guestSessions: guestSessionsReducer(
         guestSessionsInitialState,
-        guestSessionsListReceived({ sessions: [GUEST_SESSION], connectedIds: [] }),
+        guestSessionsListReceived({ sessions: [GUEST_SESSION], openIds: [], connectedIds: [] }),
       ),
     };
   }

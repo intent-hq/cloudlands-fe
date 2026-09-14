@@ -718,6 +718,7 @@
   "settings_guestSessions_hosting_empty_description": "在工作区中邀请协作者即可共享。",
   "settings_guestSessions_roster_loading_label": "正在加载成员…",
   "settings_guestSessions_roster_error": "无法加载成员列表。",
+  "settings_guestSessions_roster_withheld": "你不再管理此工作区，因此不显示其成员列表。",
   "settings_guestSessions_role_owner_label": "所有者",
   "settings_guestSessions_role_collaborator_label": "协作者",
   "settings_guestSessions_remove_label": "移除",

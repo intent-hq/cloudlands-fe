@@ -718,6 +718,7 @@
   "settings_guestSessions_hosting_empty_description": "워크스페이스에서 공동 작업자를 초대하여 공유하세요.",
   "settings_guestSessions_roster_loading_label": "멤버를 불러오는 중…",
   "settings_guestSessions_roster_error": "멤버 목록을 불러올 수 없습니다.",
+  "settings_guestSessions_roster_withheld": "이 워크스페이스를 더 이상 관리하지 않으므로 멤버 목록이 표시되지 않습니다.",
   "settings_guestSessions_role_owner_label": "소유자",
   "settings_guestSessions_role_collaborator_label": "공동 작업자",
   "settings_guestSessions_remove_label": "제거",

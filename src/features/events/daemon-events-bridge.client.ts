@@ -106,9 +106,10 @@
  * dispatches `workspace-lifecycle/workspaceDeleted(wsId, agentIds)`, which
  * purges the agent-session slice, workspace-agents index, and per-agent
  * chat-state entries — preventing a recreated same-slug workspace from
- * surfacing ghost agents. It also calls `navigateAwayIfViewing` so a
- * workspace deleted by another client while on screen closes its tab and
- * routes away — this is the PRIMARY navigate-away path: the `events.event`
+ * surfacing ghost agents. It also calls `closeWorkspaceTabAndNavigateAway` so
+ * a workspace deleted by another client closes its tab (on screen or in the
+ * background) and routes away when it was on screen — this is the PRIMARY
+ * navigate-away path: the `events.event`
  * firehose fires in both live and legacy modes, whereas the workspace-list
  * snapshot diff is suppressed post-boot under live-state
  * (intent-hq/monorepo#775). `workspace:created` covers the recycled-ID case:
@@ -2583,9 +2584,10 @@ function handleWorkspaceMcpServerToggled(raw: Record<string, unknown>, workspace
  * workspace from Redux so a recreated same-slug workspace does not surface
  * ghost agents. The chat-state slice is keyed by `agentId`, so we resolve the
  * agent-id list from the agent-session workspace index *before* dispatching
- * and pass it in the payload. When the deleted workspace is the one on
- * screen (deleted by another client), also close its tab and route away —
- * this event path fires in both live and legacy modes, unlike the
+ * and pass it in the payload. Also close its tab — open on screen OR in the
+ * background (a guest's last shared workspace deleted while another tab is
+ * current must not linger in the strip) — and route away when it is the one
+ * on screen. This event path fires in both live and legacy modes, unlike the
  * workspace-list snapshot diff, which live-state suppresses post-boot
  * (intent-hq/monorepo#775; see the workspace-list saga).
  */
@@ -2608,8 +2610,8 @@ function handleWorkspaceDeletedEvent(workspaceId: string): void {
       });
     });
   }
-  navigateAwayIfViewing(workspaceId).catch((error) => {
-    logger.warn('navigateAwayIfViewing failed after workspace:deleted', error);
+  closeWorkspaceTabAndNavigateAway(workspaceId).catch((error) => {
+    logger.warn('closeWorkspaceTabAndNavigateAway failed after workspace:deleted', error);
   });
 }
 

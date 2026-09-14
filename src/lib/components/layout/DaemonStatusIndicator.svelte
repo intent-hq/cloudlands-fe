@@ -138,6 +138,7 @@
   import {
     selectGuestSessions,
     selectGuestSessionsConnectedIds,
+    selectGuestSessionsOpenIds,
   } from '$store/renderer/slices/guest-sessions/guest-sessions-selectors';
   import {
     CONNECTION_ACCENT_CLASSES,
@@ -411,6 +412,7 @@
   // client is live, so the row carries "connected" / "not connected" and
   // nothing else (no health, no version, no owner-only controls).
   const guestSessions$ = selectGuestSessions();
+  const guestOpenIds$ = selectGuestSessionsOpenIds();
   const guestConnectedIds$ = selectGuestSessionsConnectedIds();
 
   function openGuestSessionsSettings() {
@@ -972,7 +974,8 @@
           >
           {#each $guestSessions$ as session (session.id)}
             {@const isCurrent = session.id === $currentConnectionId$}
-            {@const connected = $guestConnectedIds$.includes(session.id)}
+            {@const open = $guestOpenIds$.includes(session.id)}
+            {@const connected = open && $guestConnectedIds$.includes(session.id)}
             <Menu.Item
               class="w-full cursor-pointer text-xs px-2 py-1.5"
               onSelect={() => handleOpenConnection(session.id)}
@@ -980,14 +983,18 @@
               <span class="text-foreground shrink-0" aria-hidden="true"><Fa icon={faUsers} /></span>
               <span class="min-w-0 flex-1 truncate">{session.label}</span>
               <span class="flex items-center gap-1.5 shrink-0">
-                <span
-                  class={connected ? 'text-green-600 dark:text-green-500' : 'text-subtle'}
-                  data-guest-connected={connected}
-                >
-                  {connected
-                    ? m.layout_daemonStatus_guestSession_connected_label()
-                    : m.layout_daemonStatus_guestSession_notConnected_label()}
-                </span>
+                <!-- Status only for a host with a window (pooled client); a
+                     joined host that was never opened has no status. -->
+                {#if open}
+                  <span
+                    class={connected ? 'text-green-600 dark:text-green-500' : 'text-subtle'}
+                    data-guest-connected={connected}
+                  >
+                    {connected
+                      ? m.layout_daemonStatus_guestSession_connected_label()
+                      : m.layout_daemonStatus_guestSession_notConnected_label()}
+                  </span>
+                {/if}
                 {#if isCurrent}
                   <span
                     class="text-green-500"

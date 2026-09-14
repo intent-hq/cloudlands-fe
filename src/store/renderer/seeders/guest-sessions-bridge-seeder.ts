@@ -21,7 +21,7 @@ import type {
 const { GUEST_SESSIONS } = IPC_CHANNELS;
 
 registerMockIpcHandler(GUEST_SESSIONS.LIST, async (): Promise<GuestSessionsListResult> => {
-  return { sessions: [], connectedIds: [] };
+  return { sessions: [], openIds: [], connectedIds: [] };
 });
 
 registerMockIpcHandler(GUEST_SESSIONS.LEAVE, async (arg): Promise<LeaveGuestSessionResult> => {

@@ -10,6 +10,8 @@
 import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 import { createAction, createAsyncAction } from '@augmentcode/themis/utils/store/create-action';
 import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { removeWorkspaceEntity, resetWorkspaceState } from '../workspace/workspace-slice';
+import { workspaceDeleted } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import {
   hostedMemberKey,
   type GuestSessionRecord,
@@ -27,6 +29,7 @@ import {
 
 export const initialState: GuestSessionsState = {
   sessions: createCollection<GuestSessionRecord, 'id'>('id'),
+  openIds: [],
   connectedIds: [],
   hasReceivedList: false,
   leavingIds: [],
@@ -80,6 +83,14 @@ export const hostedRosterReceived = createAction<[workspaceId: string, members: 
 export const hostedRosterFailed = createAction<[workspaceId: string]>(
   'guestSessions/hostedRosterFailed',
 );
+/**
+ * The caller no longer manages the workspace (daemon `-32003 Forbidden` on a
+ * roster read / *Remove*, or the local owner gate): terminal — cached rows and
+ * in-flight *Remove* markers are dropped, controls disappear, no refetch.
+ */
+export const hostedRosterWithheld = createAction<[workspaceId: string]>(
+  'guestSessions/hostedRosterWithheld',
+);
 
 /** Owner-side *Remove* (`workspace.members.remove`) of one collaborator. */
 export const removeHostedMemberRequested = createAsyncAction<
@@ -103,6 +114,7 @@ export const guestSessionsReducer = createReducer<GuestSessionsState>(initialSta
 guestSessionsReducer.with(guestSessionsListReceived, (state, { payload: [result] }) => ({
   ...state,
   sessions: createCollection<GuestSessionRecord, 'id'>('id', result.sessions),
+  openIds: result.openIds,
   connectedIds: result.connectedIds,
   hasReceivedList: true,
 }));
@@ -136,6 +148,47 @@ guestSessionsReducer.with(hostedRosterFailed, (state, { payload: [workspaceId] }
     [workspaceId]: { status: 'error', members: state.hostedRosters[workspaceId]?.members ?? [] },
   },
 }));
+guestSessionsReducer.with(hostedRosterWithheld, (state, { payload: [workspaceId] }) => ({
+  ...state,
+  hostedRosters: { ...state.hostedRosters, [workspaceId]: { status: 'withheld', members: [] } },
+  removingMemberKeys: withoutWorkspaceKeys(state.removingMemberKeys, workspaceId),
+}));
+
+/** Drop one workspace's roster + *Remove* markers (deleted / removed entity). */
+function purgeHostedRoster(state: GuestSessionsState, workspaceId: string): GuestSessionsState {
+  if (!(workspaceId in state.hostedRosters)) {
+    const removingMemberKeys = withoutWorkspaceKeys(state.removingMemberKeys, workspaceId);
+    return removingMemberKeys === state.removingMemberKeys
+      ? state
+      : { ...state, removingMemberKeys };
+  }
+  const { [workspaceId]: _purged, ...hostedRosters } = state.hostedRosters;
+  return {
+    ...state,
+    hostedRosters,
+    removingMemberKeys: withoutWorkspaceKeys(state.removingMemberKeys, workspaceId),
+  };
+}
+
+function withoutWorkspaceKeys(keys: string[], workspaceId: string): string[] {
+  const prefix = hostedMemberKey(workspaceId, '');
+  const next = keys.filter((key) => !key.startsWith(prefix));
+  return next.length === keys.length ? keys : next;
+}
+
+guestSessionsReducer.with(workspaceDeleted, (state, { payload: [workspaceId] }) =>
+  purgeHostedRoster(state, workspaceId),
+);
+guestSessionsReducer.with(removeWorkspaceEntity, (state, { payload: [workspaceId] }) =>
+  purgeHostedRoster(state, workspaceId),
+);
+// The window's workspace list was reset (backend change): every roster is a
+// view of the previous backend's data.
+guestSessionsReducer.with(resetWorkspaceState, (state) =>
+  Object.keys(state.hostedRosters).length === 0 && state.removingMemberKeys.length === 0
+    ? state
+    : { ...state, hostedRosters: {}, removingMemberKeys: [] },
+);
 
 guestSessionsReducer.with(
   removeMemberOperationStarted,
