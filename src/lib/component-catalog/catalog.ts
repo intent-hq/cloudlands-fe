@@ -234,6 +234,24 @@ const componentEntries: CatalogEntry[] = canonicalComponentManifest.map((compone
 export const catalogEntries: CatalogEntry[] = [
   ...componentEntries,
   {
+    slug: 'model-picker',
+    name: 'Model picker',
+    description: 'Choose a provider model from a searchable list using deterministic preview data.',
+    category: 'product',
+    source: 'src/lib/components/chat/input/ModelPicker.svelte',
+    exports: ['ModelPicker'],
+    fixtures: [
+      {
+        id: 'populated',
+        title: 'Model selection',
+        states: ['closed', 'open', 'empty'],
+        themes: ['light', 'dark'],
+        viewport: 'both',
+        reducedMotion: true,
+      },
+    ],
+  } satisfies CatalogEntry,
+  {
     slug: 'chat-polish',
     name: m.sandbox_chatPolish_title(),
     description: m.sandbox_chatPolish_description(),

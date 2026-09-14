@@ -731,10 +731,11 @@
           {/if}
           {#if isBuiltIn && hasOverrides}
             <Button
-              variant="ghost"
+              variant="plain"
+              size="sm"
               type="button"
               onclick={resetToDefault}
-              class="type-body text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1 cursor-pointer shrink-0"
+              class="h-auto type-caption text-muted-foreground hover:text-foreground gap-1"
             >
               <Fa icon={faRotateLeft} class="w-3 h-3" />
               {m.settings_aiBehavior_reset()}

@@ -27,7 +27,7 @@ import {
   setModelPickerGroupCollapsed,
 } from '$store/renderer/slices/model/model-slice';
 import { setupPreviewProviders } from '../../settings/provider-selector.preview';
-import ModelPicker from './ModelPicker.svelte';
+import ModelPickerPreview from './ModelPickerPreview.svelte';
 
 const models = [
   {
@@ -107,7 +107,7 @@ function setupModels(populated: boolean) {
   };
 }
 
-export const preview = definePreview<ComponentProps<typeof ModelPicker>>({
+export const preview = definePreview<ComponentProps<typeof ModelPickerPreview>>({
   id: 'model-picker',
   title: 'Model picker',
   defaultState: 'populated',
@@ -118,6 +118,18 @@ export const preview = definePreview<ComponentProps<typeof ModelPicker>>({
         defaultModelId: 'codex-preview-balanced',
         defaultOptionLabel: m.chat_modelPicker_providerDefault_label(),
         defaultOptionDescription: m.settings_backgroundAgent_providerDefault_description(),
+        showDefaultOption: true,
+        updateGlobalStore: false,
+        updateGlobalDefault: false,
+        showManageLink: false,
+      },
+      setup: setupModels(true),
+    },
+    open: {
+      props: {
+        initialOpen: true,
+        selectedModel: null,
+        defaultModelId: 'codex-preview-balanced',
         showDefaultOption: true,
         updateGlobalStore: false,
         updateGlobalDefault: false,
@@ -140,4 +152,4 @@ export const preview = definePreview<ComponentProps<typeof ModelPicker>>({
   },
 });
 
-export default ModelPicker;
+export default ModelPickerPreview;

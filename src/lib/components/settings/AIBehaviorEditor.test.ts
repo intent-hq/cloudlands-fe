@@ -7,7 +7,14 @@
  * opus4.7) when the active provider is unavailable — see spec "Fix:
  * Augment/Auggie leaks as default provider & model".
  */
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/svelte';
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+  isInaccessible,
+} from '@testing-library/svelte';
 import { flushSync } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -852,11 +859,22 @@ describe('AIBehaviorEditor actions', () => {
     const detailsColumn = screen.getByTestId('specialist-details-column');
     const advancedTrigger = within(detailsColumn).getByRole('button', { name: 'Advanced' });
     expect(advancedTrigger.getAttribute('aria-expanded')).toBe('false');
+    expect(isInaccessible(within(detailsColumn).getByText('Add model option'))).toBe(true);
 
     await fireEvent.click(advancedTrigger);
 
     expect(advancedTrigger.getAttribute('aria-expanded')).toBe('true');
-    expect(within(detailsColumn).getByRole('button', { name: 'Add model option' })).toBeTruthy();
+    const addOption = within(detailsColumn).getByRole('button', { name: 'Add model option' });
+    expect(isInaccessible(addOption)).toBe(false);
+
+    flushSync(() => mocks.specialists$.set([{ ...specialist }]));
+    expect(advancedTrigger.getAttribute('aria-expanded')).toBe('true');
+    expect(isInaccessible(addOption)).toBe(false);
+
+    await fireEvent.click(advancedTrigger);
+    expect(isInaccessible(addOption)).toBe(true);
+    await fireEvent.click(advancedTrigger);
+    expect(isInaccessible(addOption)).toBe(false);
   });
 
   it('resets a modified specialist', async () => {

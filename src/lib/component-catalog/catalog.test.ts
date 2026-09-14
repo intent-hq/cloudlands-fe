@@ -41,6 +41,7 @@ describe('static component catalog', () => {
     const rendererIds = [
       ...canonicalComponentManifest.map(({ id }) => id),
       'modals',
+      'model-picker',
       'popovers',
       'rows',
       'screen-states',

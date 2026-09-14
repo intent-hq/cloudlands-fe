@@ -8,9 +8,10 @@
     children,
     class: className,
   }: { label: string; children?: Snippet; class?: string } = $props();
+  let value = $state<string[]>([]);
 </script>
 
-<Accordion.Root type="multiple" class={cn('min-w-0', className)}>
+<Accordion.Root type="multiple" bind:value class={cn('min-w-0', className)}>
   <Accordion.Item value="content">
     <Accordion.Header>
       <Accordion.Trigger class="type-body font-medium data-[state=open]:font-medium">
@@ -18,7 +19,9 @@
       </Accordion.Trigger>
     </Accordion.Header>
     <Accordion.Content class="-mx-2">
-      {@render children?.()}
+      <div hidden={!value.includes('content')}>
+        {@render children?.()}
+      </div>
     </Accordion.Content>
   </Accordion.Item>
 </Accordion.Root>

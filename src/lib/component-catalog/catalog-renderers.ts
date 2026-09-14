@@ -1,3 +1,4 @@
+import ModelPickerCatalogPreview from './renderers/ModelPickerCatalogPreview.svelte';
 import type { Component } from 'svelte';
 import type { UiComponentFixture } from '$lib/components/ui/component-metadata';
 import MessageComposerCatalogPreview from './renderers/MessageComposerCatalogPreview.svelte';
@@ -44,6 +45,7 @@ const catalogRendererIds = [
   'menu',
   'message-composer',
   'modals',
+  'model-picker',
   'proximity-highlight',
   'popovers',
   'rows',
@@ -88,6 +90,7 @@ type CatalogRendererRegistry = {
 };
 
 export const catalogRenderers = {
+  'model-picker': ModelPickerCatalogPreview,
   accordion: NavigationPrimitivesCatalogPreview,
   'ask-user-questions': AskUserQuestionsCatalogPreview,
   badge: BasicCatalogPreview,
