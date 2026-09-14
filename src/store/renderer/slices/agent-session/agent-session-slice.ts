@@ -854,6 +854,7 @@ type SessionComparisonSnapshot = Pick<
   liveTurnOpen: boolean | undefined;
   liveTurnOpenedAt: string | undefined;
   tailCapPruned: boolean | undefined;
+  processQueueHintWaiting: boolean | undefined;
   harnessVersion: string | undefined;
   harnessFeaturesKey: string | undefined;
 };
@@ -921,6 +922,7 @@ function toSessionComparisonSnapshot(session: StoredAgentSession): SessionCompar
     liveTurnOpenedAt:
       typeof session.liveTurnOpenedAt === 'string' ? session.liveTurnOpenedAt : undefined,
     tailCapPruned: session.tailCapPruned === true ? true : undefined,
+    processQueueHintWaiting: session.processQueueHint?.waiting === true ? true : undefined,
     // Harness stamp (§5.5, additive): normally immutable, but a daemon
     // upgrade backfills harnessVersion on legacy rows and first activation
     // materializes harnessFeatures — those upserts must not be swallowed
@@ -1055,6 +1057,24 @@ function applySessionUpsert(
       if (!incomingClosed) {
         finalSession.liveTurnOpen = true;
         finalSession.liveTurnOpenedAt = existing.liveTurnOpenedAt;
+      }
+    }
+    // processQueueHint is FE-owned (set from agent:process:queued, never on
+    // the wire), so a snapshot refresh triggered by an unrelated agent event
+    // must not drop it while the agent is still parked — otherwise the chat
+    // slot-wait warning flickers off. Carry it forward unless the snapshot
+    // itself shows the wait is over (same signals as canonicalSessionUpdates).
+    if (
+      existing.processQueueHint?.waiting === true &&
+      !Object.prototype.hasOwnProperty.call(session, 'processQueueHint')
+    ) {
+      const waitOver =
+        session.isStreaming === true ||
+        session.isResponding === false ||
+        session.isActive === false ||
+        (typeof session.status === 'string' && TERMINAL_STATUSES.has(session.status));
+      if (!waitOver) {
+        finalSession.processQueueHint = existing.processQueueHint;
       }
     }
 

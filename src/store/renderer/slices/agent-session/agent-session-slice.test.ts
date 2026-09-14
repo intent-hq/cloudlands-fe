@@ -2303,6 +2303,86 @@ describe('agent-session-slice reducer', () => {
         expect(state.byAgentId['a1'].processQueueHint).toBeUndefined();
       });
     });
+
+    describe('session upserts while queued (FE-owned hint, never on the wire)', () => {
+      const HINT = { waiting: true, used: 3, cap: 3, reason: 'slots' as const };
+      const queuedResponding = () => {
+        const state = agentSessionReducer(
+          initialState,
+          upsertSession(
+            makeSession('a1', 'ws-1', {
+              status: 'responding' as any,
+              isActive: true,
+              isResponding: true,
+            }),
+          ),
+        );
+        return agentSessionReducer(state, setProcessQueueHint('a1', 3, 3, 'slots'));
+      };
+      // Wire snapshots never carry processQueueHint.
+      const snapshot = (overrides: Partial<AgentSession>) =>
+        makeSession('a1', 'ws-1', {
+          status: 'responding' as any,
+          isActive: true,
+          isResponding: true,
+          ...overrides,
+        });
+
+      it('survives a bulkUpsertSessions refresh that changes an unrelated field while still responding', () => {
+        let state = queuedResponding();
+        state = agentSessionReducer(state, bulkUpsertSessions([snapshot({ name: 'Renamed' })]));
+        expect(state.byAgentId['a1'].name).toBe('Renamed');
+        expect(state.byAgentId['a1'].processQueueHint).toEqual(HINT);
+      });
+
+      it('survives the reviewer sequence: hint → responding tick → refresh with name changed', () => {
+        let state = queuedResponding();
+        state = agentSessionReducer(
+          state,
+          eventReceived('ws-1', {
+            id: 'evt-1',
+            type: 'agent:status-changed',
+            timestamp: '2024-01-01T00:00:01.000Z',
+            workspaceId: 'ws-1',
+            data: { agentId: 'a1', status: 'responding', isActive: true, isResponding: true },
+          } as any),
+        );
+        expect(state.byAgentId['a1'].processQueueHint).toEqual(HINT);
+        state = agentSessionReducer(state, bulkUpsertSessions([snapshot({ name: 'Renamed' })]));
+        expect(state.byAgentId['a1'].name).toBe('Renamed');
+        expect(state.byAgentId['a1'].processQueueHint).toEqual(HINT);
+      });
+
+      it('is dropped when the snapshot shows streaming started', () => {
+        let state = queuedResponding();
+        state = agentSessionReducer(state, bulkUpsertSessions([snapshot({ isStreaming: true })]));
+        expect(state.byAgentId['a1'].processQueueHint).toBeUndefined();
+      });
+
+      it('is dropped when the snapshot shows the session went idle (isResponding false)', () => {
+        let state = queuedResponding();
+        state = agentSessionReducer(
+          state,
+          bulkUpsertSessions([snapshot({ status: 'active' as any, isResponding: false })]),
+        );
+        expect(state.byAgentId['a1'].processQueueHint).toBeUndefined();
+      });
+
+      it('is dropped when the snapshot shows isActive false', () => {
+        let state = queuedResponding();
+        state = agentSessionReducer(state, bulkUpsertSessions([snapshot({ isActive: false })]));
+        expect(state.byAgentId['a1'].processQueueHint).toBeUndefined();
+      });
+
+      it('is dropped when the snapshot carries a terminal status', () => {
+        let state = queuedResponding();
+        state = agentSessionReducer(
+          state,
+          bulkUpsertSessions([snapshot({ status: 'error' as any, stopReason: 'boom' })]),
+        );
+        expect(state.byAgentId['a1'].processQueueHint).toBeUndefined();
+      });
+    });
   });
 
   describe('processEvicted', () => {
