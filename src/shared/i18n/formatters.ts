@@ -222,12 +222,14 @@ export function createFormatters(getLocale: () => string) {
     if (!date) return '';
     const now = options?.now ?? new Date();
     const locale = getLocale();
-    const diffMinutes = Math.floor((now.getTime() - date.getTime()) / 60_000);
-    if (diffMinutes < 1) {
-      return relativeTimeFormat(locale, { numeric: 'auto' }).format(0, 'second');
-    }
+    const ageMs = now.getTime() - date.getTime();
+    const diffMinutes = Math.floor(ageMs / 60_000);
     const unitOf = (unit: string, value: number) =>
       numberFormat(locale, { style: 'unit', unit, unitDisplay: 'narrow' }).format(value);
+    if (ageMs <= 0) {
+      return relativeTimeFormat(locale, { numeric: 'auto' }).format(0, 'second');
+    }
+    if (diffMinutes < 1) return unitOf('second', Math.floor(ageMs / 1000));
     if (diffMinutes < 60) return unitOf('minute', diffMinutes);
     const diffHours = Math.floor(diffMinutes / 60);
     if (diffHours < 24) return unitOf('hour', diffHours);

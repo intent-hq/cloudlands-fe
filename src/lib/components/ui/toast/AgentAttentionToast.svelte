@@ -37,10 +37,14 @@
       {#if keySlot != null}
         <MicroKeySlotSquare slot={keySlot} />
       {/if}
-      <p class="toast-title min-w-0 break-words">
-        {title}
+      <p class="toast-title flex min-w-0 items-baseline">
+        <span class="min-w-0 truncate" {title}>{title}</span>
         {#if timestamp}
-          <RelativeTime date={timestamp} class="ml-1 text-xs font-normal text-muted-foreground" />
+          <RelativeTime
+            date={timestamp}
+            compact={true}
+            class="ml-1 shrink-0 whitespace-nowrap text-xs font-normal text-muted-foreground"
+          />
         {/if}
       </p>
     </div>
@@ -51,7 +55,7 @@
       <Button variant="primary" size="compact" class="toast-action" onclick={onSwitchTo}>
         {m.agent_attentionToast_switchTo_label()}
       </Button>
-      <Button variant="ghost" size="compact" class="toast-action" onclick={onClose}>
+      <Button variant="ghost" size="compact" class="toast-action px-1" onclick={onClose}>
         {m.agent_attentionToast_later_label()}
       </Button>
     </div>
@@ -89,7 +93,7 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 0.5rem;
+    gap: 0;
     margin-top: 0.75rem;
   }
 

@@ -10093,7 +10093,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:toast:toas
                                       <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                                         "Retry Implementor"
                                 <div>
-                                  <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.375rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1 group/button h-(--control-height-compact) inline-flex isolate items-center justify-center motion-reduce:transition-none px-3 relative rounded-(--radius-medium) shrink-0 text-foreground toast-action transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                                  <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.375rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1 group/button h-(--control-height-compact) inline-flex isolate items-center justify-center motion-reduce:transition-none px-1 relative rounded-(--radius-medium) shrink-0 text-foreground toast-action transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
                                     <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                                     <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                                       <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
@@ -10120,8 +10120,11 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:toast:toas
                                 <path>
                             <div class="flex-1 min-w-0">
                               <div class="flex gap-1.5 items-center">
-                                <p class="break-words min-w-0 svelte-<scope> toast-title">
-                                  "Implementor requests a discussion"
+                                <p class="flex items-baseline min-w-0 svelte-<scope> toast-title">
+                                  <span class="min-w-0 truncate">
+                                    "Coordinator requests a discussion"
+                                  <span class="font-normal ml-1 shrink-0 text-muted-foreground text-xs whitespace-nowrap">
+                                    "18s"
                               <p class="break-words line-clamp-3 svelte-<scope> toast-description">
                                 "Choose whether the catalog should include diagnostic details."
                               <div class="svelte-<scope> toast-actions">
@@ -10132,7 +10135,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:toast:toas
                                       <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                                         "Switch To"
                                 <div>
-                                  <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.375rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1 group/button h-(--control-height-compact) inline-flex isolate items-center justify-center motion-reduce:transition-none px-3 relative rounded-(--radius-medium) shrink-0 text-foreground toast-action transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                                  <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.375rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1 group/button h-(--control-height-compact) inline-flex isolate items-center justify-center motion-reduce:transition-none px-1 relative rounded-(--radius-medium) shrink-0 text-foreground toast-action transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
                                     <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                                     <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                                       <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
@@ -10234,7 +10237,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:toast:toas
                     "Multi-toast stack"
                   <div class="svelte-<scope> toast-static" data-surface-level="3" id="toast-catalog-region-stack" tokens=["--surface-3"]>
                     <section aria-atomic="false" aria-label="Multi-toast stack preview alt+T" aria-live="polite" aria-relevant="additions text" tabindex="-1">
-                      <ol class="group toaster" data-sonner-theme="light" data-sonner-toaster="true" data-x-position="left" data-y-position="bottom" tabindex="-1">
+                      <ol class="group toaster" data-sonner-theme="light" data-sonner-toaster="true" data-x-position="left" data-y-position="bottom" tabindex="-1" tokens=["--control-height-large"]>
                         <li aria-atomic="true" aria-live="polite" class="bg-surface-3 group group-[.toaster]:text-foreground max-w-full min-w-0 shadow-surface-3 toast w-full" data-dismissible="true" data-expanded="false" data-front="true" data-index="0" data-invert="false" data-mounted="true" data-promise="false" data-removed="false" data-rich-colors="false" data-sonner-toast="" data-styled="true" data-swipe-out="false" data-swiped="false" data-swiping="false" data-type="info" data-visible="true" data-x-position="left" data-y-position="bottom" tabindex="0">
                           <div data-icon="">
                             <span aria-hidden="true" class="svelte-<scope> toast-glyph toast-glyph-info" data-toast-glyph="info">

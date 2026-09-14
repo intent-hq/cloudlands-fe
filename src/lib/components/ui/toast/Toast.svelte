@@ -45,8 +45,11 @@
   let visibleToastCount = $state(0);
   let toastCount = $derived(staticToastCount ?? visibleToastCount);
   let showClearAll = $derived(toastCount >= 2);
-  let offset = $derived({ bottom: showClearAll ? 68 : 32, left: 32 });
-  let mobileOffset = $derived({ bottom: showClearAll ? 52 : 16, left: 16 });
+  let offset = $derived({
+    bottom: showClearAll ? 'calc(1rem + var(--control-height-large) + 0.5rem)' : 16,
+    left: 16,
+  });
+  let mobileOffset = $derived(offset);
   let regionElement: HTMLDivElement;
 
   onMount(() => {
@@ -386,8 +389,8 @@
 
   :global(.toast-clear-all) {
     position: fixed;
-    left: calc(2rem + var(--app-toast-width));
-    bottom: 2rem;
+    left: calc(1rem + min(22rem, calc(100vw - clamp(2rem, 8vw, 4rem))));
+    bottom: 1rem;
     z-index: 1000000000;
     transform: translateX(-100%);
     color: hsl(var(--muted-foreground));
@@ -411,6 +414,7 @@
     :global(.toast-clear-all) {
       left: 1rem;
       bottom: 1rem;
+      transform: none;
     }
   }
 

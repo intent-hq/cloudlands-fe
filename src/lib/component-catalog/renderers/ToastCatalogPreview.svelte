@@ -124,7 +124,8 @@
         AgentAttentionToast,
         options('agent-attention', 'toast-catalog-agent-attention', {
           componentProps: {
-            title: 'Implementor requests a discussion',
+            title: 'Coordinator requests a discussion',
+            timestamp: new Date(Date.now() - 18_000).toISOString(),
             reason: 'Choose whether the catalog should include diagnostic details.',
             kind: 'discussion',
             onSwitchTo: noOp,
@@ -253,7 +254,8 @@
         onclick={() =>
           notify.custom(AgentAttentionToast, {
             componentProps: {
-              title: 'Implementor requests a discussion',
+              title: 'Coordinator requests a discussion',
+              timestamp: new Date(Date.now() - 18_000).toISOString(),
               reason: 'Live attention toast',
               kind: 'discussion',
               onSwitchTo: noOp,
