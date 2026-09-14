@@ -1044,6 +1044,7 @@
     When it becomes false, a fresh webview is created with the new URL.
     Read src only when mounting: reflecting did-navigate/in-page back into
     Electron's src attribute issues a second navigation and reloads SPA pages.
+    Electron maintains its own live src attribute for guest recreation on reparenting.
     Explicit navigation uses loadURL; a newly mounted guest reads the latest URL.
   -->
   <webview
