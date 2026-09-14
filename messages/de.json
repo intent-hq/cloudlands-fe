@@ -722,6 +722,7 @@
   "settings_guestSessions_hosting_empty_description": "Laden Sie aus einem Arbeitsbereich eine Person ein, um ihn zu teilen.",
   "settings_guestSessions_roster_loading_label": "Mitglieder werden geladen…",
   "settings_guestSessions_roster_error": "Die Mitgliederliste konnte nicht geladen werden.",
+  "settings_guestSessions_roster_withheld": "Du verwaltest diesen Workspace nicht mehr, daher wird die Mitgliederliste nicht angezeigt.",
   "settings_guestSessions_role_owner_label": "Eigentümer",
   "settings_guestSessions_role_collaborator_label": "Mitarbeitend",
   "settings_guestSessions_remove_label": "Entfernen",

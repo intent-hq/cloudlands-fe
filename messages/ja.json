@@ -722,6 +722,7 @@
   "settings_guestSessions_hosting_empty_description": "ワークスペースから共同作業者を招待して共有します。",
   "settings_guestSessions_roster_loading_label": "メンバーを読み込み中…",
   "settings_guestSessions_roster_error": "メンバー一覧を読み込めませんでした。",
+  "settings_guestSessions_roster_withheld": "このワークスペースを管理していないため、メンバーリストは表示されません。",
   "settings_guestSessions_role_owner_label": "オーナー",
   "settings_guestSessions_role_collaborator_label": "共同作業者",
   "settings_guestSessions_remove_label": "削除",

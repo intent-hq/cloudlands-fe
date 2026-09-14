@@ -1034,7 +1034,9 @@ describe('DaemonStoppedOverlay', () => {
           windowBackendId: GUEST.id,
         }),
       );
-      dispatchAndFlush(guestSessionsListReceived({ sessions: [GUEST], connectedIds: [] }));
+      dispatchAndFlush(
+        guestSessionsListReceived({ sessions: [GUEST], openIds: [], connectedIds: [] }),
+      );
     }
 
     function rejectAuth() {

@@ -70,6 +70,14 @@
     <p class="mt-2 text-sm text-muted-foreground" role="status">
       {m.settings_guestSessions_roster_loading_label()}
     </p>
+  {:else if $roster$.status === 'withheld'}
+    <p
+      class="mt-2 text-sm text-muted-foreground"
+      role="status"
+      data-testid="hosted-roster-withheld"
+    >
+      {m.settings_guestSessions_roster_withheld()}
+    </p>
   {:else if $roster$.status === 'error' && $roster$.members.length === 0}
     <p class="mt-2 text-sm text-danger" role="alert">
       {m.settings_guestSessions_roster_error()}

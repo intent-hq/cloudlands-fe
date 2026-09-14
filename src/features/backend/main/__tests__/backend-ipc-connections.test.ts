@@ -4226,44 +4226,67 @@ describe('guest-sessions:* IPC handlers', () => {
     guestStore.getDecryptedToken.mockResolvedValue('guest-token-v1');
   }
 
-  it('guest-sessions:list reports the sessions whose pooled client is connected', async () => {
+  it('guest-sessions:list distinguishes no pooled client, open-disconnected and open-connected', async () => {
     installGuest();
     const { mod } = await loadModule();
-    const guest = (await mod.connectBackendClient(GUEST.id)) as unknown as { status: string };
     mod.registerBackendHandlers();
     const handler = findHandler('guest-sessions:list')!;
 
-    await expect(handler({}, undefined)).resolves.toEqual({ sessions: [GUEST], connectedIds: [] });
+    // No window for the host has been opened: the session exists, no status.
+    await expect(handler({}, undefined)).resolves.toEqual({
+      sessions: [GUEST],
+      openIds: [],
+      connectedIds: [],
+    });
+
+    const guest = (await mod.connectBackendClient(GUEST.id)) as unknown as { status: string };
+    await expect(handler({}, undefined)).resolves.toEqual({
+      sessions: [GUEST],
+      openIds: [GUEST.id],
+      connectedIds: [],
+    });
+
     guest.status = 'connected';
     await expect(handler({}, undefined)).resolves.toEqual({
       sessions: [GUEST],
+      openIds: [GUEST.id],
       connectedIds: [GUEST.id],
     });
   });
 
-  it('re-broadcasts guest-sessions:changed when a guest pooled client connects or drops', async () => {
+  it('re-broadcasts guest-sessions:changed when a guest pooled client appears, connects or drops', async () => {
     installGuest();
     const send = installWindow();
     const { mod } = await loadModule();
+    mod.registerBackendHandlers();
     const guest = (await mod.connectBackendClient(GUEST.id)) as unknown as {
       status: string;
       emit(event: string, arg: unknown): void;
     };
-    mod.registerBackendHandlers();
+    const lastChanged = () =>
+      send.mock.calls.filter(([c]) => c === 'guest-sessions:changed').at(-1)?.[1];
+
+    // The pooled client's first 'connecting' moves the id into openIds.
+    guest.emit('status', 'connecting');
+    await vi.waitFor(() =>
+      expect(lastChanged()).toEqual({ sessions: [GUEST], openIds: [GUEST.id], connectedIds: [] }),
+    );
 
     guest.status = 'connected';
     guest.emit('status', 'connected');
-    await vi.waitFor(() => {
-      const changed = send.mock.calls.filter(([c]) => c === 'guest-sessions:changed');
-      expect(changed.at(-1)?.[1]).toEqual({ sessions: [GUEST], connectedIds: [GUEST.id] });
-    });
+    await vi.waitFor(() =>
+      expect(lastChanged()).toEqual({
+        sessions: [GUEST],
+        openIds: [GUEST.id],
+        connectedIds: [GUEST.id],
+      }),
+    );
 
     guest.status = 'disconnected';
     guest.emit('status', 'disconnected');
-    await vi.waitFor(() => {
-      const changed = send.mock.calls.filter(([c]) => c === 'guest-sessions:changed');
-      expect(changed.at(-1)?.[1]).toEqual({ sessions: [GUEST], connectedIds: [] });
-    });
+    await vi.waitFor(() =>
+      expect(lastChanged()).toEqual({ sessions: [GUEST], openIds: [GUEST.id], connectedIds: [] }),
+    );
   });
 
   it('a paired (owner) backend status change does not broadcast guest-sessions:changed', async () => {
@@ -4303,12 +4326,17 @@ describe('guest-sessions:* IPC handlers', () => {
     expect(store.forget).not.toHaveBeenCalled();
   });
 
-  it('guest-sessions:leave still deletes locally when principal.revokeSelf fails', async () => {
+  it('guest-sessions:leave still deletes locally when principal.revokeSelf fails, logging only a bounded code', async () => {
     installGuest();
+    const sentinel = 'SENTINEL-host-detail-7f3a';
     rpc.handler = async (method) => {
-      if (method === 'principal.revokeSelf') throw new Error('host unreachable');
+      if (method === 'principal.revokeSelf') throw new Error(`host unreachable ${sentinel}`);
       return {};
     };
+    // Same module registry as the loaded backend.ipc (vi.resetModules ran in
+    // beforeEach), so the spy lands on the Logger class it actually binds.
+    const { Logger } = await import('$shared/logger');
+    const warn = vi.spyOn(Logger.prototype, 'warn');
     const { mod, closeForBackend } = await loadModule();
     const guest = (await mod.connectBackendClient(GUEST.id)) as unknown as { status: string };
     guest.status = 'connected';
@@ -4319,6 +4347,10 @@ describe('guest-sessions:* IPC handlers', () => {
     expect(rpc.calls).toContain('principal.revokeSelf');
     expect(guestStore.forget).toHaveBeenCalledWith(GUEST.id);
     expect(closeForBackend).toHaveBeenCalledWith(GUEST.id);
+    const revokeWarn = warn.mock.calls.find(([message]) => /revokeSelf/.test(String(message)));
+    expect(revokeWarn).toBeDefined();
+    expect(JSON.stringify(revokeWarn)).not.toContain(sentinel);
+    expect(revokeWarn![1]).toEqual({ id: GUEST.id, code: 'transport' });
   });
 
   it('guest-sessions:leave skips the revoke when no pooled client is connected', async () => {
@@ -4333,13 +4365,96 @@ describe('guest-sessions:* IPC handlers', () => {
     expect(closeForBackend).toHaveBeenCalledWith(GUEST.id);
   });
 
-  it('guest-sessions:leave rejects an unknown id before touching any store', async () => {
+  it('guest-sessions:leave settles an already-absent id as completion without touching any store', async () => {
     const { mod, closeForBackend } = await loadModule();
     mod.registerBackendHandlers();
     const handler = findHandler('guest-sessions:leave')!;
 
-    await expect(handler({}, { id: 'guest-unknown' })).rejects.toThrow(/unknown guest session/i);
+    await expect(handler({}, { id: 'guest-unknown' })).resolves.toEqual({
+      id: 'guest-unknown',
+      revoked: false,
+    });
+    expect(rpc.calls).not.toContain('principal.revokeSelf');
     expect(guestStore.forget).not.toHaveBeenCalled();
     expect(closeForBackend).not.toHaveBeenCalled();
+  });
+
+  /** Store double whose row disappears on forget, like the real registry. */
+  function installForgettableGuest() {
+    let present = true;
+    guestStore.list.mockImplementation(async () => (present ? [GUEST] : []));
+    guestStore.findById.mockImplementation(async (id: string) =>
+      present && id === GUEST.id ? GUEST : null,
+    );
+    guestStore.forget.mockImplementation(async (id: string) => {
+      if (id === GUEST.id) present = false;
+      return true;
+    });
+    guestStore.getDecryptedToken.mockResolvedValue('guest-token-v1');
+  }
+
+  it('a repeated guest-sessions:leave after a successful leave is idempotent', async () => {
+    installForgettableGuest();
+    const { mod, closeForBackend } = await loadModule();
+    const guest = (await mod.connectBackendClient(GUEST.id)) as unknown as { status: string };
+    guest.status = 'connected';
+    mod.registerBackendHandlers();
+    const handler = findHandler('guest-sessions:leave')!;
+
+    await expect(handler({}, { id: GUEST.id })).resolves.toEqual({ id: GUEST.id, revoked: true });
+    await expect(handler({}, { id: GUEST.id })).resolves.toEqual({ id: GUEST.id, revoked: false });
+    expect(rpc.calls.filter((m) => m === 'principal.revokeSelf')).toHaveLength(1);
+    expect(guestStore.forget).toHaveBeenCalledTimes(1);
+    expect(closeForBackend).toHaveBeenCalledTimes(1);
+  });
+
+  it('concurrent guest-sessions:leave calls for one host revoke and forget exactly once', async () => {
+    installForgettableGuest();
+    const { mod, closeForBackend } = await loadModule();
+    const guest = (await mod.connectBackendClient(GUEST.id)) as unknown as { status: string };
+    guest.status = 'connected';
+    mod.registerBackendHandlers();
+    const handler = findHandler('guest-sessions:leave')!;
+
+    const results = await Promise.all([
+      handler({}, { id: GUEST.id }),
+      handler({}, { id: GUEST.id }),
+      handler({}, { id: GUEST.id }),
+    ]);
+    expect(results).toEqual([
+      { id: GUEST.id, revoked: true },
+      { id: GUEST.id, revoked: false },
+      { id: GUEST.id, revoked: false },
+    ]);
+    expect(rpc.calls.filter((m) => m === 'principal.revokeSelf')).toHaveLength(1);
+    expect(guestStore.forget).toHaveBeenCalledTimes(1);
+    expect(closeForBackend).toHaveBeenCalledTimes(1);
+    expect(mod.getBackendClientForConnection(GUEST.id)).toBeUndefined();
+  });
+
+  it('a repeated leave tears down a pooled client the first leave left behind, but never a paired one', async () => {
+    installGuest();
+    const { mod, closeForBackend } = await loadModule();
+    await mod.connectBackendClient(GUEST.id);
+    await mod.connectBackendClient(REMOTE.id);
+    mod.registerBackendHandlers();
+    const handler = findHandler('guest-sessions:leave')!;
+    // The row is gone (forgotten by a leave whose teardown did not finish) but
+    // the pooled client survived.
+    guestStore.findById.mockResolvedValue(null);
+
+    await expect(handler({}, { id: GUEST.id })).resolves.toEqual({ id: GUEST.id, revoked: false });
+    expect(rpc.calls).not.toContain('principal.revokeSelf');
+    expect(guestStore.forget).not.toHaveBeenCalled();
+    expect(closeForBackend).toHaveBeenCalledWith(GUEST.id);
+    expect(mod.getBackendClientForConnection(GUEST.id)).toBeUndefined();
+
+    await expect(handler({}, { id: REMOTE.id })).resolves.toEqual({
+      id: REMOTE.id,
+      revoked: false,
+    });
+    expect(closeForBackend).not.toHaveBeenCalledWith(REMOTE.id);
+    expect(mod.getBackendClientForConnection(REMOTE.id)).toBeDefined();
+    expect(store.forget).not.toHaveBeenCalled();
   });
 });

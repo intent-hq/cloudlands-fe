@@ -2,12 +2,15 @@ import { describe, expect, it } from 'vitest';
 import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
 
 import type { GuestSessionRecord } from '$shared/types/guest-sessions';
+import { removeWorkspaceEntity, resetWorkspaceState } from '../workspace/workspace-slice';
+import { workspaceDeleted } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import {
   guestSessionsListReceived,
   guestSessionsReducer,
   hostedRosterFailed,
   hostedRosterLoading,
   hostedRosterReceived,
+  hostedRosterWithheld,
   initialState,
   leaveOperationSettled,
   leaveOperationStarted,
@@ -45,24 +48,31 @@ describe('guestSessionsReducer', () => {
     const state = guestSessionsReducer(undefined, { type: '@@INIT' });
     expect(getItems(state.sessions)).toEqual([]);
     expect(state.hasReceivedList).toBe(false);
+    expect(state.openIds).toEqual([]);
     expect(state.connectedIds).toEqual([]);
     expect(state.hostedRosters).toEqual({});
   });
 
-  it('replaces the list and connectivity from a list payload and marks hydration', () => {
+  it('replaces the list, pool presence and connectivity from a list payload and marks hydration', () => {
     const state = guestSessionsReducer(
       initialState,
-      guestSessionsListReceived({ sessions: [GUEST], connectedIds: [GUEST.id] }),
+      guestSessionsListReceived({
+        sessions: [GUEST],
+        openIds: [GUEST.id],
+        connectedIds: [GUEST.id],
+      }),
     );
     expect(getItems(state.sessions)).toEqual([GUEST]);
+    expect(state.openIds).toEqual([GUEST.id]);
     expect(state.connectedIds).toEqual([GUEST.id]);
     expect(state.hasReceivedList).toBe(true);
 
     const next = guestSessionsReducer(
       state,
-      guestSessionsListReceived({ sessions: [], connectedIds: [] }),
+      guestSessionsListReceived({ sessions: [], openIds: [], connectedIds: [] }),
     );
     expect(getItems(next.sessions)).toEqual([]);
+    expect(next.openIds).toEqual([]);
     expect(next.connectedIds).toEqual([]);
   });
 
@@ -95,5 +105,38 @@ describe('guestSessionsReducer', () => {
     expect(state.removingMemberKeys).toEqual([key]);
     state = guestSessionsReducer(state, removeMemberOperationSettled('ws-1', MEMBER.principalId));
     expect(state.removingMemberKeys).toEqual([]);
+  });
+
+  it('withholding a roster drops its cached rows and in-flight removal markers', () => {
+    let state = guestSessionsReducer(initialState, hostedRosterReceived('ws-1', [MEMBER]));
+    state = guestSessionsReducer(state, removeMemberOperationStarted('ws-1', MEMBER.principalId));
+    state = guestSessionsReducer(state, removeMemberOperationStarted('ws-2', MEMBER.principalId));
+    state = guestSessionsReducer(state, hostedRosterWithheld('ws-1'));
+    expect(state.hostedRosters['ws-1']).toEqual({ status: 'withheld', members: [] });
+    expect(state.removingMemberKeys).toEqual([hostedMemberKey('ws-2', MEMBER.principalId)]);
+  });
+
+  it('purges a roster and its removal markers when the workspace is deleted or its entity removed', () => {
+    let state = guestSessionsReducer(initialState, hostedRosterReceived('ws-1', [MEMBER]));
+    state = guestSessionsReducer(state, hostedRosterReceived('ws-2', [MEMBER]));
+    state = guestSessionsReducer(state, removeMemberOperationStarted('ws-1', MEMBER.principalId));
+    state = guestSessionsReducer(state, workspaceDeleted('ws-1', []));
+    expect(state.hostedRosters).toEqual({ 'ws-2': { status: 'loaded', members: [MEMBER] } });
+    expect(state.removingMemberKeys).toEqual([]);
+
+    const unrelated = guestSessionsReducer(state, workspaceDeleted('ws-none', []));
+    expect(unrelated).toBe(state);
+
+    state = guestSessionsReducer(state, removeWorkspaceEntity('ws-2'));
+    expect(state.hostedRosters).toEqual({});
+  });
+
+  it('drops every roster when the window workspace list is reset', () => {
+    let state = guestSessionsReducer(initialState, hostedRosterReceived('ws-1', [MEMBER]));
+    state = guestSessionsReducer(state, removeMemberOperationStarted('ws-1', MEMBER.principalId));
+    state = guestSessionsReducer(state, resetWorkspaceState());
+    expect(state.hostedRosters).toEqual({});
+    expect(state.removingMemberKeys).toEqual([]);
+    expect(guestSessionsReducer(state, resetWorkspaceState())).toBe(state);
   });
 });

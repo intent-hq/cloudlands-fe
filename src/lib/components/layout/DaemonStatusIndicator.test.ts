@@ -41,6 +41,7 @@ const DEFAULT_CONNECTIONS = {
 // dropdown's guest-sessions selectors resolve for tests that never set it.
 const DEFAULT_GUEST_SESSIONS = {
   sessions: createCollection('id'),
+  openIds: [],
   connectedIds: [],
   hasReceivedList: true,
   leavingIds: [],
@@ -1805,10 +1806,11 @@ describe('DaemonStatusIndicator', () => {
         joinedAt: '2026-09-01T00:00:00.000Z',
       };
 
-      function withGuestSessions(connectedIds: string[]) {
+      function withGuestSessions(connectedIds: string[], openIds: string[] = ['guest-1']) {
         return {
           ...DEFAULT_GUEST_SESSIONS,
           sessions: createCollection('id', [guestRecord]),
+          openIds,
           connectedIds,
         };
       }
@@ -1834,6 +1836,21 @@ describe('DaemonStatusIndicator', () => {
         expect(
           row.querySelector('[data-guest-connected]')?.getAttribute('data-guest-connected'),
         ).toBe('false');
+      });
+
+      it('shows no connection status for a joined host with no window open', async () => {
+        mockStoreState = {
+          daemonHealth: { ...healthy },
+          connections: withConnections('local'),
+          // A stale pooled-connection id must not be mistaken for an open window.
+          guestSessions: withGuestSessions(['guest-1'], []),
+        };
+        render(DaemonStatusIndicatorPreloaded);
+        await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+
+        const block = screen.getByTestId('daemon-status-guest-sessions');
+        const row = within(block).getByText('studio.local').closest('[role="menuitem"]')!;
+        expect(row.querySelector('[data-guest-connected]')).toBeNull();
       });
 
       it('marks the row connected once main reports the pooled client live', async () => {
