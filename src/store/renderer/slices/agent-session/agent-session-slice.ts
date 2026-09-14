@@ -1625,10 +1625,24 @@ agentSessionReducer.with(clearAllSessions, () => initialState);
 // -----------------------------------------------------------------------
 // Cross-slice: handle workspace-agents actions directly (replaces bridge saga)
 // -----------------------------------------------------------------------
+// Streaming means the process was admitted, so every reducer path that sets
+// isStreaming=true also drops the FE-owned processQueueHint. These paths
+// (setAgentStreaming, chatSendStarted via agent:stream:start,
+// chatStreamingReconciled) bypass canonicalSessionUpdates, so a missed
+// agent:process:resumed would otherwise leave the slot-wait warning up while
+// the agent streams.
+function streamingStartedFields(
+  existing: StoredAgentSession | undefined,
+): Pick<StoredAgentSession, 'processQueueHint'> | Record<string, never> {
+  return existing?.processQueueHint ? { processQueueHint: undefined } : {};
+}
 agentSessionReducer.with(setAgentStreaming, (state, { payload: [agentId, isStreaming] }) => {
   const session = getSession(state, agentId);
-  if (!session || session.isStreaming === isStreaming) return state;
-  return updateSessionFields(state, agentId, { isStreaming });
+  if (!session) return state;
+  return updateSessionFields(state, agentId, {
+    isStreaming,
+    ...(isStreaming ? streamingStartedFields(session) : {}),
+  });
 });
 agentSessionReducer.with(updateAgentDigest, (state, { payload: [, agentId, digest] }) => {
   const session = getSession(state, agentId);
@@ -1648,7 +1662,11 @@ agentSessionReducer.with(renameAgent, (state, { payload: [, agentId, name] }) =>
 agentSessionReducer.with(chatSendStarted, (state, { payload: { agentId, wsId, timestampIso } }) => {
   const existing = getSession(state, agentId);
   if (existing) {
-    return updateSessionFields(state, agentId, { isStreaming: true, isProcessing: true });
+    return updateSessionFields(state, agentId, {
+      isStreaming: true,
+      isProcessing: true,
+      ...streamingStartedFields(existing),
+    });
   }
   if (!wsId) return state;
   // Session not yet loaded (e.g. restored workspace where disk load is still in flight).
@@ -1705,7 +1723,11 @@ agentSessionReducer.with(chatReset, (state, { payload: [agentId] }) =>
   ),
 );
 agentSessionReducer.with(chatStreamingReconciled, (state, { payload: { agentId } }) =>
-  updateSessionFields(state, agentId, { isStreaming: true, isProcessing: true }),
+  updateSessionFields(state, agentId, {
+    isStreaming: true,
+    isProcessing: true,
+    ...streamingStartedFields(getSession(state, agentId)),
+  }),
 );
 agentSessionReducer.with(chatInitialized, (state, { payload: [agentId, data] }) => {
   const session = getSession(state, agentId);

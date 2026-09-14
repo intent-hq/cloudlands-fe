@@ -50,6 +50,7 @@ import {
   chatSendStarted,
   chatInitialized,
   chatReset,
+  chatStreamingReconciled,
   chatTranscriptSnapshotApplied,
   streamCompleted,
 } from '../chat-state/chat-state-slice';
@@ -2381,6 +2382,70 @@ describe('agent-session-slice reducer', () => {
           bulkUpsertSessions([snapshot({ status: 'error' as any, stopReason: 'boom' })]),
         );
         expect(state.byAgentId['a1'].processQueueHint).toBeUndefined();
+      });
+    });
+
+    // Streaming means the process was admitted. These reducer paths set
+    // isStreaming=true without going through canonicalSessionUpdates, so if
+    // agent:process:resumed is missed they must still drop the hint or the
+    // slot-wait warning stays up while the agent streams.
+    describe('streaming reducer paths clear the hint (missed agent:process:resumed)', () => {
+      const queued = () =>
+        agentSessionReducer(
+          agentSessionReducer(
+            initialState,
+            upsertSession(
+              makeSession('a1', 'ws-1', {
+                status: 'responding' as any,
+                isActive: true,
+                isResponding: true,
+                isStreaming: false,
+              }),
+            ),
+          ),
+          setProcessQueueHint('a1', 3, 3, 'slots'),
+        );
+
+      it('chatSendStarted (agent:stream:start) clears the hint on an existing session', () => {
+        let state = queued();
+        expect(state.byAgentId['a1'].processQueueHint?.waiting).toBe(true);
+        state = agentSessionReducer(state, chatSendStarted('a1', 'ws-1'));
+        expect(state.byAgentId['a1'].isStreaming).toBe(true);
+        expect(state.byAgentId['a1'].processQueueHint).toBeUndefined();
+      });
+
+      it('setAgentStreaming(true) clears the hint', () => {
+        let state = queued();
+        state = agentSessionReducer(state, setAgentStreaming('a1', true));
+        expect(state.byAgentId['a1'].isStreaming).toBe(true);
+        expect(state.byAgentId['a1'].processQueueHint).toBeUndefined();
+      });
+
+      it('setAgentStreaming(true) clears the hint even when isStreaming was already true', () => {
+        let state = agentSessionReducer(queued(), setAgentStreaming('a1', true));
+        state = agentSessionReducer(state, setProcessQueueHint('a1', 3, 3, 'slots'));
+        expect(state.byAgentId['a1'].isStreaming).toBe(true);
+        state = agentSessionReducer(state, setAgentStreaming('a1', true));
+        expect(state.byAgentId['a1'].processQueueHint).toBeUndefined();
+      });
+
+      it('setAgentStreaming(false) leaves the hint alone', () => {
+        let state = queued();
+        state = agentSessionReducer(state, setAgentStreaming('a1', false));
+        expect(state.byAgentId['a1'].processQueueHint?.waiting).toBe(true);
+      });
+
+      it('chatStreamingReconciled clears the hint', () => {
+        let state = queued();
+        state = agentSessionReducer(state, chatStreamingReconciled('a1'));
+        expect(state.byAgentId['a1'].isStreaming).toBe(true);
+        expect(state.byAgentId['a1'].processQueueHint).toBeUndefined();
+      });
+
+      it('setAgentStreaming(true) with no hint and isStreaming already true stays a no-op', () => {
+        const state = agentSessionReducer(queued(), setAgentStreaming('a1', true));
+        expect(state.byAgentId['a1'].processQueueHint).toBeUndefined();
+        expect(agentSessionReducer(state, setAgentStreaming('a1', true))).toBe(state);
       });
     });
   });
