@@ -6,8 +6,10 @@
  *
  * Roster membership is the daemon's (lease-based); carets are ephemeral on
  * top of it: a caret not refreshed within `CURSOR_TTL_MS` is dropped, and the
- * session re-publishes its own latest caret every `CURSOR_HEARTBEAT_MS` so an
- * idle peer's caret stays visible. Outgoing carets are throttled to the
+ * session re-publishes its own caret every `CURSOR_HEARTBEAT_MS` so an idle
+ * peer's caret stays visible — recomputed by the registered cursor provider
+ * (the editor binding) so a base that advanced under an idle caret is picked
+ * up, else the last published tuple. Outgoing carets are throttled to the
  * daemon's own floor (≤10/s, trailing edge kept).
  */
 import { onBackendNotification, onBackendReconnected } from '$lib/client/live/backend-transport';
@@ -16,6 +18,7 @@ import {
   publishNoteCursor,
   subscribeNotePresence,
   unsubscribeNotePresence,
+  type NotePresencePush,
   type NoteViewer,
   type NoteViewerCursor,
 } from './note-presence.client';
@@ -27,6 +30,15 @@ export const CURSOR_PUBLISH_MIN_INTERVAL_MS = 100;
 const CURSOR_SWEEP_INTERVAL_MS = 1_000;
 const RETRY_BASE_MS = 1_000;
 const RETRY_MAX_MS = 30_000;
+/**
+ * Bound for pushes that race their own subscribe reply: Electron forwards
+ * the reply and the seq-0 snapshot from one socket chunk, so the notification
+ * can be dispatched before the reply's promise callbacks set the id.
+ */
+const MAX_PRE_ACK_PUSHES = 16;
+
+/** Reports the connection's current caret, or `undefined` when there is none to publish. */
+type NoteCursorProvider = () => NoteViewerCursor | undefined;
 
 function retryDelayMs(attempt: number): number {
   return Math.min(RETRY_BASE_MS * 2 ** attempt, RETRY_MAX_MS);
@@ -47,6 +59,12 @@ export interface NotePresenceSession {
   subscribe(listener: NotePresenceListener): () => void;
   /** Publish this connection's caret (throttled; the latest always lands). */
   publishCursor(cursor: NoteViewerCursor): void;
+  /**
+   * Register the source the heartbeat consults for the current caret, so an
+   * idle caret is re-published against the current base rather than replayed
+   * from the last publish; returns a disposer.
+   */
+  provideCursor(provider: NoteCursorProvider): () => void;
   /** Drop this consumer; the lease is released when the last consumer leaves. */
   release(): void;
 }
@@ -59,10 +77,15 @@ interface SessionState {
   ownPrincipalId: string | undefined;
   subscriptionId: string | undefined;
   generation: number;
+  /** A subscribe request of the current generation awaits its reply. */
+  registering: boolean;
+  /** Pushes received while `registering`, replayed for the acked id. */
+  preAckPushes: NotePresencePush[];
   retryAttempt: number;
   retryTimer: ReturnType<typeof setTimeout> | undefined;
   viewers: Map<string, RemoteNoteViewer>;
   listeners: Set<NotePresenceListener>;
+  cursorProviders: Set<NoteCursorProvider>;
   sweepTimer: ReturnType<typeof setInterval> | undefined;
   lastCursor: NoteViewerCursor | undefined;
   pendingCursor: NoteViewerCursor | undefined;
@@ -108,6 +131,8 @@ function scheduleRegister(state: SessionState): void {
 function register(state: SessionState): void {
   clearRetry(state);
   state.generation += 1;
+  state.registering = true;
+  state.preAckPushes = [];
   const generation = state.generation;
   subscribeNotePresence(state.workspaceId, state.noteId)
     .then((id) => {
@@ -115,17 +140,25 @@ function register(state: SessionState): void {
         if (id) unsubscribeNotePresence(id);
         return;
       }
+      state.registering = false;
+      const buffered = state.preAckPushes;
+      state.preAckPushes = [];
       if (!id) {
         scheduleRegister(state);
         return;
       }
       state.subscriptionId = id;
       state.retryAttempt = 0;
+      for (const push of buffered) {
+        if (push.subscriptionId === id) applyPush(state, push);
+      }
       // The lease is fresh: the daemon has no caret for us yet.
       if (state.lastCursor) sendCursor(state, state.lastCursor);
     })
     .catch(() => {
       if (generation !== state.generation || state.disposed) return;
+      state.registering = false;
+      state.preAckPushes = [];
       scheduleRegister(state);
     });
 }
@@ -164,9 +197,13 @@ function publishCursor(state: SessionState, cursor: NoteViewerCursor): void {
 }
 
 function heartbeat(state: SessionState): void {
-  if (state.disposed || !state.subscriptionId || !state.lastCursor) return;
+  if (state.disposed || !state.subscriptionId) return;
   if (Date.now() - state.lastPublishAt < CURSOR_HEARTBEAT_MS) return;
-  sendCursor(state, state.lastCursor);
+  let cursor = state.lastCursor;
+  for (const provider of state.cursorProviders) cursor = provider() ?? cursor;
+  if (!cursor) return;
+  state.lastCursor = cursor;
+  sendCursor(state, cursor);
 }
 
 function sweepExpiredCursors(state: SessionState, now: number): void {
@@ -189,9 +226,24 @@ function toRemoteViewer(viewer: NoteViewer, now: number): RemoteNoteViewer {
   return { ...viewer, cursorSeenAt: viewer.cursor ? now : null };
 }
 
-function applyPush(state: SessionState, method: string, params: unknown): void {
+function bufferPreAckPush(state: SessionState, push: NotePresencePush): void {
+  state.preAckPushes.push(push);
+  if (state.preAckPushes.length > MAX_PRE_ACK_PUSHES) state.preAckPushes.shift();
+}
+
+function onNotification(state: SessionState, method: string, params: unknown): void {
   const push = parseNotePresencePush(method, params);
-  if (!push || push.subscriptionId !== state.subscriptionId) return;
+  if (!push) return;
+  if (push.subscriptionId === state.subscriptionId) {
+    applyPush(state, push);
+    return;
+  }
+  // Not ours yet — either a foreign channel, or our own snapshot that beat
+  // the subscribe reply: keep it until the ack tells the two apart.
+  if (state.subscriptionId === undefined && state.registering) bufferPreAckPush(state, push);
+}
+
+function applyPush(state: SessionState, push: NotePresencePush): void {
   const now = Date.now();
   if (push.kind === 'snapshot') {
     const next = new Map<string, RemoteNoteViewer>();
@@ -213,12 +265,14 @@ function applyPush(state: SessionState, method: string, params: unknown): void {
 }
 
 function start(state: SessionState): void {
-  state.offNotification = onBackendNotification((n) => applyPush(state, n.method, n.params));
+  state.offNotification = onBackendNotification((n) => onNotification(state, n.method, n.params));
   // The daemon dropped every lease on restart: re-register for a fresh
   // snapshot on a bumped generation so a pre-restart in-flight ack cannot land.
   state.offReconnect = onBackendReconnected(() => {
     if (state.disposed) return;
     state.subscriptionId = undefined;
+    state.registering = false;
+    state.preAckPushes = [];
     state.retryAttempt = 0;
     state.viewers = new Map();
     emit(state);
@@ -247,7 +301,10 @@ function dispose(state: SessionState): void {
   state.offReconnect();
   if (state.subscriptionId) unsubscribeNotePresence(state.subscriptionId);
   state.subscriptionId = undefined;
+  state.registering = false;
+  state.preAckPushes = [];
   state.listeners.clear();
+  state.cursorProviders.clear();
   sessions.delete(sessionKey(state.workspaceId, state.noteId));
 }
 
@@ -267,10 +324,13 @@ export function joinNotePresence(workspaceId: string, noteId: string): NotePrese
       ownPrincipalId: undefined,
       subscriptionId: undefined,
       generation: 0,
+      registering: false,
+      preAckPushes: [],
       retryAttempt: 0,
       retryTimer: undefined,
       viewers: new Map(),
       listeners: new Set(),
+      cursorProviders: new Set(),
       sweepTimer: undefined,
       lastCursor: undefined,
       pendingCursor: undefined,
@@ -287,6 +347,7 @@ export function joinNotePresence(workspaceId: string, noteId: string): NotePrese
   session.refs += 1;
   let released = false;
   const ownListeners = new Set<NotePresenceListener>();
+  const ownProviders = new Set<NoteCursorProvider>();
   return {
     getViewers: () => sortedViewers(session),
     subscribe(listener) {
@@ -298,11 +359,21 @@ export function joinNotePresence(workspaceId: string, noteId: string): NotePrese
       };
     },
     publishCursor: (cursor) => publishCursor(session, cursor),
+    provideCursor(provider) {
+      session.cursorProviders.add(provider);
+      ownProviders.add(provider);
+      return () => {
+        session.cursorProviders.delete(provider);
+        ownProviders.delete(provider);
+      };
+    },
     release() {
       if (released) return;
       released = true;
       for (const listener of ownListeners) session.listeners.delete(listener);
       ownListeners.clear();
+      for (const provider of ownProviders) session.cursorProviders.delete(provider);
+      ownProviders.clear();
       session.refs -= 1;
       if (session.refs <= 0) dispose(session);
     },
