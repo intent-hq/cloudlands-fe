@@ -676,7 +676,7 @@ describe('theme color contract', () => {
     expect(tokenValue(css, 'press-inset')).toBe('1px');
     expect(tokenValue(css, 'control-height-compact')).toBe('1.75rem');
     expect(tokenValue(css, 'control-height-small')).toBe('1.75rem');
-    expect(tokenValue(css, 'control-height-medium')).toBe('2.25rem');
+    expect(tokenValue(css, 'control-height-medium')).toBe('2rem');
     expect(tokenValue(css, 'control-height-large')).toBe('2.25rem');
     expect(tokenValue(css, 'radius-small')).toBe('8px');
     expect(tokenValue(css, 'radius-medium')).toBe('8px');

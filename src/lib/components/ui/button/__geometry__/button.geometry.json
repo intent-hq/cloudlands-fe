@@ -6,7 +6,7 @@
           "fontSize": 13,
           "fontWeight": 400,
           "gap": 6,
-          "height": 36,
+          "height": 32,
           "lineHeight": 18,
           "marginBottom": 0,
           "marginTop": 0,
@@ -18,7 +18,7 @@
         }
       },
       "root": {
-        "height": 86,
+        "height": 82,
         "width": 420
       }
     }
@@ -30,7 +30,7 @@
           "fontSize": 13,
           "fontWeight": 400,
           "gap": 6,
-          "height": 36,
+          "height": 32,
           "lineHeight": 18,
           "marginBottom": 0,
           "marginTop": 0,
@@ -42,7 +42,7 @@
         }
       },
       "root": {
-        "height": 86,
+        "height": 82,
         "width": 420
       }
     }
@@ -54,7 +54,7 @@
           "fontSize": 13,
           "fontWeight": 400,
           "gap": 6,
-          "height": 36,
+          "height": 32,
           "lineHeight": 18,
           "marginBottom": 0,
           "marginTop": 0,
@@ -66,7 +66,7 @@
         }
       },
       "root": {
-        "height": 86,
+        "height": 82,
         "width": 420
       }
     }
@@ -78,7 +78,7 @@
           "fontSize": 13,
           "fontWeight": 400,
           "gap": 6,
-          "height": 36,
+          "height": 32,
           "lineHeight": 18,
           "marginBottom": 0,
           "marginTop": 0,
@@ -90,7 +90,7 @@
         }
       },
       "root": {
-        "height": 86,
+        "height": 82,
         "width": 420
       }
     }
