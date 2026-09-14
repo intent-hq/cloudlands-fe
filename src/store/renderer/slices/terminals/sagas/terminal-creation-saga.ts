@@ -6,7 +6,7 @@ import { m } from '$shared/paraglide/messages.js';
 import { selectFocusedPanelId } from '../../panel-layout/panel-layout-selectors';
 import { openTab } from '../../panel-layout/panel-layout-slice';
 import {
-  createTerminalRequested,
+  createPanelTerminalRequested,
   hydrateTerminalsRequested,
   removeTerminal,
   saveTerminalMetadata,
@@ -15,9 +15,9 @@ import {
 const logger = createLogger('TerminalCreationSaga');
 
 function* createTerminalWorker(
-  action: ReturnType<typeof createTerminalRequested>,
+  action: ReturnType<typeof createPanelTerminalRequested>,
 ): SagaGenerator<void> {
-  const [workspaceId] = action.payload;
+  const [workspaceId, targetPanelId] = action.payload;
   try {
     const result: Awaited<ReturnType<typeof appClient.terminals.create>> = yield* call(
       [appClient.terminals, appClient.terminals.create],
@@ -34,7 +34,7 @@ function* createTerminalWorker(
 
     yield* put(hydrateTerminalsRequested(workspaceId));
 
-    const panelId = yield* selectFocusedPanelId.effect(workspaceId);
+    const panelId = targetPanelId ?? (yield* selectFocusedPanelId.effect(workspaceId));
     yield* put(
       openTab(
         workspaceId,
@@ -53,5 +53,5 @@ function* createTerminalWorker(
 }
 
 export function* terminalCreationSaga(): SagaGenerator<void> {
-  yield* takeEvery(createTerminalRequested, createTerminalWorker);
+  yield* takeEvery(createPanelTerminalRequested, createTerminalWorker);
 }

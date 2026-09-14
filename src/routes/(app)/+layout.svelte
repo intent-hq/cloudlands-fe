@@ -79,7 +79,7 @@
   import {
     toggleTerminalOverlay,
     openTerminalOverlay,
-    createTerminalRequested,
+    createPanelTerminalRequested,
   } from '$store/renderer/slices/terminals/terminals-slice';
   import { createNoteRequested } from '$store/renderer/slices/note-read-tracking/note-read-tracking-slice';
   import { createAgentRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
@@ -519,7 +519,8 @@
       openNewWorkspace: () => appStore.dispatch(setShowCreateModal(true)),
       onCreateAgent: (workspaceId) => appStore.dispatch(createAgentRequested(workspaceId)),
       onCreateNote: (workspaceId) => appStore.dispatch(createNoteRequested(workspaceId)),
-      onCreateTerminal: (workspaceId) => appStore.dispatch(createTerminalRequested(workspaceId)),
+      onCreateTerminal: (workspaceId) =>
+        appStore.dispatch(createPanelTerminalRequested(workspaceId)),
       ...(hasCapability('browserPanel')
         ? {
             onCreateBrowser: (workspaceId: string) =>

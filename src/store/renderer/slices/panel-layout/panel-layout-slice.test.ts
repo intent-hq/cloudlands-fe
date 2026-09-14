@@ -54,7 +54,6 @@ import {
   updateTabBrowserUrl,
   updateTabViewport,
   updateFileTabPath,
-  setTabOwnerAgent,
   clearPanelLayout,
   bootstrapNewWorkspaceLayout,
   seedContextLinkEmptyLayout,
@@ -5920,6 +5919,10 @@ describe('withPanelLayoutInvariants (monorepo#4569)', () => {
 describe('PANEL_LAYOUT_HANDLED_ACTION_TYPES', () => {
   it('records every registered case, cross-slice ones included (intent-hq/intent#4835)', () => {
     expect(PANEL_LAYOUT_HANDLED_ACTION_TYPES.has(setActiveTab.type)).toBe(true);
+    expect(PANEL_LAYOUT_HANDLED_ACTION_TYPES.has(closeFocusedPanelTab.type)).toBe(true);
+    expect(PANEL_LAYOUT_HANDLED_ACTION_TYPES.has(openTabInAdjacentOrSplit.type)).toBe(true);
+    expect(PANEL_LAYOUT_HANDLED_ACTION_TYPES.has(reopenClosedPanelColumn.type)).toBe(true);
+    expect(PANEL_LAYOUT_HANDLED_ACTION_TYPES.has(reopenClosedTab.type)).toBe(true);
     expect(PANEL_LAYOUT_HANDLED_ACTION_TYPES.has(removeScript.type)).toBe(true);
     expect(PANEL_LAYOUT_HANDLED_ACTION_TYPES.has(removeTerminal.type)).toBe(true);
     expect(PANEL_LAYOUT_HANDLED_ACTION_TYPES.has(workspaceDeleted.type)).toBe(true);
