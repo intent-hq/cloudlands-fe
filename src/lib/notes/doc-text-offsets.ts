@@ -41,6 +41,10 @@ export function docTextOffsets(doc: ProseMirrorNode): DocTextOffsets {
         offset += 1;
       }
       sawTextblock = true;
+      // An empty block contributes no characters but is still a caret
+      // target: anchor its content position so a caret on that line does not
+      // resolve into the preceding block.
+      if (node.content.size === 0) segments.push({ offset, pos: pos + 1, length: 0 });
       return true;
     }
     if (node.isText) {
