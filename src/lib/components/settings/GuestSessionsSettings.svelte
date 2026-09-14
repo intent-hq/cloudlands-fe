@@ -18,6 +18,7 @@
     selectGuestSessions,
     selectGuestSessionsConnectedIds,
     selectGuestSessionsLoaded,
+    selectGuestSessionsOpenIds,
     selectHostedWorkspaces,
   } from '$store/renderer/slices/guest-sessions/guest-sessions-selectors';
   import { leaveGuestSessionRequested } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
@@ -25,6 +26,7 @@
   import { store as appStore } from '$store/renderer/store';
 
   const sessions$ = selectGuestSessions();
+  const openIds$ = selectGuestSessionsOpenIds();
   const connectedIds$ = selectGuestSessionsConnectedIds();
   const loaded$ = selectGuestSessionsLoaded();
   const hosted$ = selectHostedWorkspaces();
@@ -112,7 +114,8 @@
     {:else if $sessions$.length > 0}
       <ul class="flex flex-col overflow-hidden rounded-xl bg-card divide-y divide-border">
         {#each $sessions$ as session (session.id)}
-          {@const connected = $connectedIds$.includes(session.id)}
+          {@const open = $openIds$.includes(session.id)}
+          {@const connected = open && $connectedIds$.includes(session.id)}
           <li
             class="flex items-center justify-between gap-3 px-6 py-4"
             data-session-id={session.id}
@@ -120,12 +123,17 @@
             <div class="min-w-0">
               <p class="truncate text-sm text-foreground">{session.label}</p>
               <p class="truncate text-xs text-muted-foreground">
-                <span data-guest-connected={connected}>
-                  {connected
-                    ? m.settings_guestSessions_status_connected_label()
-                    : m.settings_guestSessions_status_notConnected_label()}
-                </span>
-                · @{session.login}
+                <!-- Status only for a host with a window (pooled client); a
+                     joined host that was never opened has no status. -->
+                {#if open}
+                  <span data-guest-connected={connected}>
+                    {connected
+                      ? m.settings_guestSessions_status_connected_label()
+                      : m.settings_guestSessions_status_notConnected_label()}
+                  </span>
+                  ·
+                {/if}
+                @{session.login}
               </p>
             </div>
             <div class="flex shrink-0 items-center gap-2">

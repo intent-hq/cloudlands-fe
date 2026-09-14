@@ -18,7 +18,7 @@ describe('guest-sessions-bridge-seeder', () => {
   it('resolves guest-sessions:list to an empty, token-free list', async () => {
     const result = await mockInvoke(IPC_CHANNELS.GUEST_SESSIONS.LIST);
 
-    expect(result).toEqual({ sessions: [], connectedIds: [] });
+    expect(result).toEqual({ sessions: [], openIds: [], connectedIds: [] });
   });
 
   it('resolves guest-sessions:leave with the id and no host-side revoke', async () => {
