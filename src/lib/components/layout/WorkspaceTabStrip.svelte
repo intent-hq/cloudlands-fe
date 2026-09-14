@@ -1,4 +1,5 @@
 <script lang="ts">
+  /* eslint-disable max-lines */
   import { Button } from '$lib/components/ui/button';
   import { goto } from '$app/navigation';
   import { faXmark } from '@fortawesome/free-solid-svg-icons';
@@ -43,6 +44,12 @@
   import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
   import { selectWorkspaceTabStatuses } from '$store/renderer/slices/hud/hud-selectors';
   import type { WorkspaceTabStatus } from '$store/renderer/slices/hud/hud-types';
+  import PresenceAvatarStack from '$features/presence/components/PresenceAvatarStack.svelte';
+  import {
+    selectPresenceOwnPrincipalId,
+    selectPresenceRosters,
+    selectWorkspacePresencePeople,
+  } from '$store/renderer/slices/presence/presence-selectors';
   import { WorkspaceStatus } from '$shared/types';
   import { resolveEmptyWindowDestination } from '$features/workspace/utils/empty-window-destination';
   import {
@@ -337,6 +344,15 @@
     void activeStreamsVersion;
     return activeStreamsTracker.getStreamingAgentIdsForWorkspace(workspaceId);
   }
+
+  const presenceRosters$ = selectPresenceRosters();
+  const presenceOwnPrincipalId$ = selectPresenceOwnPrincipalId();
+  function getPresencePeople(workspaceId: string) {
+    void $presenceRosters$;
+    void $presenceOwnPrincipalId$;
+    return selectWorkspacePresencePeople.select(appStore.state, workspaceId);
+  }
+
   function tabAccessibleLabel(
     title: string,
     workspaceState: WorkspaceStatusPresentationState,
@@ -1034,9 +1050,14 @@
                     data-workspace-tab-controls
                   >
                     <span
-                      class="pointer-events-none flex h-4 max-w-14 shrink-0 items-center justify-end overflow-hidden"
+                      class="pointer-events-none flex h-4 max-w-16 shrink-0 items-center justify-end gap-1 overflow-hidden"
                       data-workspace-tab-status-cluster
                     >
+                      <PresenceAvatarStack
+                        people={getPresencePeople(workspaceId)}
+                        size={12}
+                        decorative
+                      />
                       <WorkspaceStatusIcon status={workspaceStatusState} size={14} decorative />
                     </span>
                     <span

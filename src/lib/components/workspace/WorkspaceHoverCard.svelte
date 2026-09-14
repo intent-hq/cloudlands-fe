@@ -27,6 +27,9 @@
   import { store as appStore } from '$store/renderer/store';
   import { selectPrMonitors } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
   import { selectWorkspaceActivePullRequest } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { selectWorkspacePresenceMembers } from '$store/renderer/slices/presence/presence-selectors';
+  import PresenceAvatarStack from '$features/presence/components/PresenceAvatarStack.svelte';
+  import { presencePersonName } from '$features/presence/components/presence-person';
   import WorkspaceStatusIcon from './WorkspaceStatusIcon.svelte';
   import { constructPrUrl } from './sidebar/sidebar-changes-utils';
   import {
@@ -74,8 +77,12 @@
   function createPrMonitorsStore() {
     return staticData ? writable([]) : selectPrMonitors(workspaceIdStore);
   }
+  function createPresenceMembersStore() {
+    return staticData ? writable([]) : selectWorkspacePresenceMembers(workspaceIdStore);
+  }
   const workspaceAgents$ = createWorkspaceAgentsStore();
   const prMonitors$ = createPrMonitorsStore();
+  const presenceMembers$ = createPresenceMembersStore();
   $effect(() => workspaceIdStore.set(workspace?.id ?? ''));
   $effect(() => {
     if (workspace && loadWorkspaceData) {
@@ -411,10 +418,18 @@
       ? m.workspace_share_role_owner_label()
       : m.workspace_share_role_collaborator_label();
   }
+  let hasMemberRows = $derived(members.length > 0);
+  let presenceRows = $derived(
+    [...$presenceMembers$]
+      .map((member) => ({ member, viewing: member.focus.length > 0 }))
+      .sort((a, b) => Number(b.viewing) - Number(a.viewing)),
+  );
+  let visiblePresenceRows = $derived(presenceRows.slice(0, 6));
+  let hiddenPresenceCount = $derived(Math.max(0, presenceRows.length - 6));
   let hasAgentRows = $derived(allRows.length > 0);
   let hasPrRows = $derived(workspacePrRows.length > 0);
-  let hasMemberRows = $derived(members.length > 0);
-  let hasBodyContent = $derived(hasAgentRows || hasPrRows || hasMemberRows);
+  let hasPresenceRows = $derived(presenceRows.length > 0);
+  let hasBodyContent = $derived(hasAgentRows || hasPrRows || hasMemberRows || hasPresenceRows);
   function getWorkspacePrLabel(pr: WorkspacePRPresentationRow): string {
     const identity = pr.repo
       ? m.workspace_card_prBadge_repoLine_tooltip({ repo: pr.repo, number: pr.number })
@@ -711,6 +726,52 @@
                 <span
                   >{m.workspace_hoverCard_moreItems_label({
                     count: formatInteger(hiddenMemberCount),
+                  })}</span
+                >
+                <Fa icon={faChevronRight} size={10} />
+              </div>{/if}
+          </section>{/if}
+        {#if hasPresenceRows}<section
+            class="people min-w-0"
+            aria-label={m.workspace_hoverCard_people_label()}
+            data-workspace-hover-card-people
+          >
+            <div class="grid min-w-0 gap-3" role="list">
+              {#each visiblePresenceRows as row (row.member.principalId)}
+                <div
+                  class="grid min-w-0 grid-cols-[2rem_minmax(0,1fr)_auto] items-center gap-x-2.5"
+                  role="listitem"
+                  aria-label={`${presencePersonName(row.member)}. ${row.viewing ? m.workspace_hoverCard_personViewing_label() : m.workspace_hoverCard_personOnline_label()}`}
+                  data-workspace-hover-card-person-row
+                  data-presence-viewing={row.viewing || undefined}
+                >
+                  <span class="grid place-items-center" aria-hidden="true"
+                    ><PresenceAvatarStack people={[row.member]} size={20} decorative /></span
+                  ><span
+                    class="type-body min-w-0 truncate text-foreground"
+                    data-workspace-hover-card-person-name>{presencePersonName(row.member)}</span
+                  ><span
+                    class="type-caption flex shrink-0 items-center gap-1.5 text-muted-foreground"
+                    data-workspace-hover-card-person-state
+                    ><span
+                      class={row.viewing
+                        ? 'size-1.5 rounded-full bg-success'
+                        : 'size-1.5 rounded-full bg-muted-foreground/50'}
+                      aria-hidden="true"
+                    ></span>{row.viewing
+                      ? m.workspace_hoverCard_personViewing_label()
+                      : m.workspace_hoverCard_personOnline_label()}</span
+                  >
+                </div>
+              {/each}
+            </div>
+            {#if hiddenPresenceCount}<div
+                class="type-body mt-4 flex items-center justify-between text-muted-foreground"
+                data-workspace-hover-card-people-overflow
+              >
+                <span
+                  >{m.workspace_hoverCard_moreItems_label({
+                    count: formatInteger(hiddenPresenceCount),
                   })}</span
                 >
                 <Fa icon={faChevronRight} size={10} />

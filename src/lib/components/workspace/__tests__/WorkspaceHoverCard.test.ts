@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PrMonitorRow } from '$features/pr-monitor/pr-monitor-service';
 import type { AgentMessage, AgentSession, ContentBlock, Workspace } from '$shared/types';
 import { PullRequestStatus, WorkspaceStatusEnum } from '$shared/types';
+import type { PresenceMember } from '$shared/types/presence';
 import { QUESTION_RESOURCE_MIME_TYPE } from '$shared/types/question-resource';
 import { warmImport } from '../../../../test/warm-import';
 
@@ -26,6 +27,7 @@ const mocks = vi.hoisted(() => {
   }
   const rosters: Record<string, RosterFixture> = {};
   const rosterListeners = new Set<() => void>();
+  const presenceMembersByWorkspace: Record<string, PresenceMember[]> = {};
   const createWorkspaceReadable =
     <T>(resolve: (workspaceId: string) => T) =>
     (workspaceIdStore: { subscribe: (run: (value: string) => void) => () => void }) => ({
@@ -55,6 +57,7 @@ const mocks = vi.hoisted(() => {
     prMonitors,
     rosters,
     emitRosters,
+    presenceMembersByWorkspace,
     createWorkspaceReadable,
   };
 });
@@ -78,6 +81,14 @@ vi.mock('$store/renderer/slices/pr-monitor/pr-monitor-selectors', () => ({
 
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceActivePullRequest: { select: vi.fn(() => null) },
+}));
+
+vi.mock('$store/renderer/slices/presence/presence-selectors', () => ({
+  selectWorkspacePresenceMembers: vi.fn(
+    mocks.createWorkspaceReadable(
+      (workspaceId: string) => mocks.presenceMembersByWorkspace[workspaceId] ?? [],
+    ),
+  ),
 }));
 
 vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', () => ({
@@ -227,7 +238,12 @@ describe('WorkspaceHoverCard', () => {
     mocks.dispatch.mockClear();
     mocks.streamingAgentIds.length = 0;
     mocks.prMonitors.length = 0;
-    for (const record of [mocks.agentSessionsByWorkspace, mocks.agentPreviewsById, mocks.rosters]) {
+    for (const record of [
+      mocks.agentSessionsByWorkspace,
+      mocks.agentPreviewsById,
+      mocks.rosters,
+      mocks.presenceMembersByWorkspace,
+    ]) {
       for (const key of Object.keys(record)) delete record[key];
     }
   });
@@ -856,5 +872,44 @@ describe('WorkspaceHoverCard', () => {
 
     await rerender({ workspace: { ...shared, memberCount: 3 } as Workspace });
     expect(dispatched('workspaceShare/rosterRequested')).toHaveLength(2);
+  });
+
+  describe('presence member rows', () => {
+    const member = (
+      principalId: string,
+      focus: PresenceMember['focus'],
+      profile: Partial<PresenceMember> = {},
+    ): PresenceMember => ({
+      principalId,
+      login: null,
+      displayName: null,
+      avatarUrl: null,
+      focus,
+      typing: [],
+      ...profile,
+    });
+
+    it('renders no people section while nobody else is online', async () => {
+      const { container } = await renderHoverCard();
+      expect(container.querySelector('[data-workspace-hover-card-people]')).toBeNull();
+    });
+
+    it('lists online members, viewers first, with their online state', async () => {
+      mocks.presenceMembersByWorkspace['ws-1'] = [
+        member('p-idle', [], { login: 'idle-login' }),
+        member('p-viewing', [{ workspaceId: 'ws-1' }], { displayName: 'Viewing Person' }),
+        member('p-anon', []),
+      ];
+      const { container } = await renderHoverCard();
+
+      const people = container.querySelector('[data-workspace-hover-card-people]')!;
+      const rows = within(people as HTMLElement).getAllByRole('listitem');
+      expect(rows).toHaveLength(3);
+      expect(rows[0].getAttribute('data-presence-viewing')).toBe('true');
+      expect(rows[0].getAttribute('aria-label')).toBe('Viewing Person. Viewing');
+      expect(rows[1].getAttribute('data-presence-viewing')).toBeNull();
+      expect(rows[1].getAttribute('aria-label')).toBe('idle-login. Online');
+      expect(rows[2].getAttribute('aria-label')).toBe('Someone. Online');
+    });
   });
 });

@@ -243,6 +243,8 @@ import {
   type PermissionRequest,
 } from '$store/renderer/slices/permission/permission-slice';
 import { tokenUsageReceived } from '$store/renderer/slices/token-usage/token-usage-slice';
+import { presenceRosterReceived } from '$store/renderer/slices/presence/presence-slice';
+import { isPresenceRoster } from '$shared/types/presence';
 import {
   workspaceCreateProgressDone,
   workspaceCreateProgressReceived,
@@ -1573,6 +1575,17 @@ function handleTokenUsageChangedEvent(event: WorkspaceEvent): void {
   const tokenUsage = data.tokenUsage;
   if (!workspaceId || !tokenUsage || typeof tokenUsage !== 'object') return;
   appStore.dispatch(tokenUsageReceived(workspaceId, tokenUsage as TokenUsage));
+}
+
+/**
+ * `presence:changed` (§5.46) carries the workspace's whole online roster —
+ * a full replacement, never a diff — so it is mirrored straight into the
+ * presence slice; a payload off the documented shape is dropped.
+ */
+function handlePresenceChangedEvent(event: WorkspaceEvent): void {
+  const data = (event as { data?: unknown }).data;
+  if (!isPresenceRoster(data)) return;
+  appStore.dispatch(presenceRosterReceived(data));
 }
 
 /**
@@ -3442,6 +3455,14 @@ export function routeDaemonEventsNotification(
     return;
   }
 
+  // `presence:changed` (§5.46) carries a self-sufficient `data.workspaceId`
+  // and is transient by contract, so it is folded into the presence slice
+  // and never recorded on the activity timeline.
+  if (type === 'presence:changed') {
+    handlePresenceChangedEvent(event);
+    return;
+  }
+
   // `git:clone:progress` / `git:clone:done` frames carrying a `data.progressId`
   // correlate to an in-flight `workspace.create` by progressId, not by
   // workspaceId (server-minted mid-create, unknown to the FE), so they route
@@ -4049,6 +4070,11 @@ export const DAEMON_EVENTS_SUBSCRIBE_TYPES = [
   'app:ui-navigate',
   'app:ui-highlight',
   'app:workspace-open',
+  // `presence:changed` (§5.46, multiplayer w5) — the transient who-is-here
+  // roster of a member workspace, a full replacement folded into the
+  // presence slice. Workspace-scoped on the daemon side, so the membership
+  // gate narrows it like any other row.
+  'presence:changed',
 ] as const;
 
 export async function refreshDaemonEventsAfterReconnect(
