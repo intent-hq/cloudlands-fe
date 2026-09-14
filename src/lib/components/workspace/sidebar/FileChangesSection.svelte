@@ -676,11 +676,13 @@
             {@const queuePos = getGroupQueuePosition(group, 'unstaged')}
             <div class="space-y-px">
               <!-- Agent header -->
-              <div class="relative group/agent-header flex items-center gap-1.5 py-0.5 -ml-1 px-1">
+              <div class="relative group/agent-header flex h-7 items-center gap-1.5 px-2">
                 <Button
                   variant="ghost"
                   type="button"
-                  class="group/row flex items-center gap-1.5 flex-1 min-w-0 text-left cursor-pointer rounded px-1 -mx-1"
+                  size="compact"
+                  wrapContent={false}
+                  class="group/row flex h-7 items-center gap-1.5 flex-1 min-w-0 text-left cursor-pointer rounded px-2 -mx-2"
                   onclick={() => toggleAgentGroup(group.agentId)}
                 >
                   {#if isLocked}
@@ -801,6 +803,7 @@
                       out:send|global={{ key: file.path }}
                     >
                       <FileRow
+                        compact
                         {file}
                         showStageAction={!isLocked}
                         showRevertAction={!isLocked}
@@ -839,6 +842,7 @@
               }}
             >
               <FileRow
+                compact
                 file={toUIFileChange(change, false)}
                 showStageAction
                 showRevertAction
@@ -903,11 +907,13 @@
             {@const queuePos = getGroupQueuePosition(group, 'staged')}
             <div class="space-y-px">
               <!-- Agent header -->
-              <div class="relative group/agent-header flex items-center gap-1.5 py-0.5 -ml-1 px-1">
+              <div class="relative group/agent-header flex h-7 items-center gap-1.5 px-2">
                 <Button
                   variant="ghost"
                   type="button"
-                  class="group/row flex items-center gap-1.5 flex-1 min-w-0 text-left cursor-pointer rounded px-1 -mx-1"
+                  size="compact"
+                  wrapContent={false}
+                  class="group/row flex h-7 items-center gap-1.5 flex-1 min-w-0 text-left cursor-pointer rounded px-2 -mx-2"
                   onclick={() => toggleAgentGroup(group.agentId)}
                 >
                   <span class="text-ui flex-1 truncate text-muted-foreground">
@@ -1017,6 +1023,7 @@
                       out:send|global={{ key: file.path }}
                     >
                       <FileRow
+                        compact
                         {file}
                         showStageAction={!isLocked}
                         locked={isLocked}
@@ -1050,6 +1057,7 @@
               out:send|global={{ key: change.relativePath }}
             >
               <FileRow
+                compact
                 file={toUIFileChange(change, true)}
                 showStageAction
                 active={isFileActive(change.relativePath, true)}

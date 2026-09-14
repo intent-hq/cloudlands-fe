@@ -21,6 +21,8 @@
 
   interface Props {
     file: UIFileChange;
+    /** Compact, unfilled rows for staged and unstaged changes. */
+    compact?: boolean;
     showStageAction?: boolean;
     showRevertAction?: boolean;
     muted?: boolean;
@@ -51,6 +53,7 @@
 
   let {
     file,
+    compact = false,
     showStageAction = false,
     showRevertAction = false,
     muted = false,
@@ -191,17 +194,22 @@
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
-  class="group/row relative flex items-center gap-1 w-full text-left rounded -mx-1 -mb-px pl-1 border {muted
-    ? 'text-muted-foreground'
-    : ''} {active || selected || focused
+  class="group/row relative flex items-center gap-1 w-full text-left rounded border {compact
+    ? 'h-7 pr-2'
+    : '-mx-1 -mb-px pl-1'} {muted ? 'text-muted-foreground' : ''} {active || selected || focused
     ? 'bg-background text-foreground border-transparent'
     : 'border-transparent'}"
   oncontextmenu={handleContextMenu}
 >
   <Button
     type="button"
+    variant={compact ? 'ghost' : 'default'}
+    size={compact ? 'compact' : undefined}
+    wrapContent={!compact}
     aria-current={activeInPanel ? 'page' : undefined}
-    class="flex-1 min-w-0 pr-2 py-0.5 flex items-center gap-1.5 rounded transition-colors cursor-pointer focus:ring-0 focus:outline-0"
+    class="flex-1 min-w-0 pr-2 py-0.5 flex items-center gap-1.5 rounded transition-colors cursor-pointer focus:ring-0 focus:outline-0 {compact
+      ? 'h-full px-2 py-0 justify-start'
+      : ''}"
     onclick={(e: MouseEvent) => {
       // If shift is pressed, handle as selection
       if (e.shiftKey && onSelectClick) {
@@ -237,9 +245,9 @@
   <!-- Action buttons container - shown on hover -->
   {#if hasActions}
     <div
-      class="absolute flex items-center right-0 top-1/2 transform -translate-y-1/2 {active ||
-      selected ||
-      focused
+      class="absolute flex items-center {compact
+        ? 'right-2'
+        : 'right-0'} top-1/2 transform -translate-y-1/2 {active || selected || focused
         ? 'bg-background'
         : 'bg-sidebar'} opacity-0 group-hover/row:opacity-100 transition-transform translate-x-1 group-hover/row:translate-x-0 pointer-events-none group-hover/row:pointer-events-auto"
     >

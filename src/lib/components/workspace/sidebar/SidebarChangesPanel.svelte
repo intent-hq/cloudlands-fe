@@ -1081,21 +1081,13 @@
         {/if}
 
         {#if !isBrowsingSecondaryRoot}
-          <div class="branch-labels w-full flex justify-between mb-1 mt-1">
-            <p class="text-subtle leading-snug text-ui">
-              {m.workspace_sidebarChanges_codeLivesIn_label()}
-            </p>
-            <p class="text-subtle leading-snug text-ui">
-              {m.workspace_sidebarChanges_mergedInto_label()}
-            </p>
-          </div>
-
           <BranchDisplay {workspaceId} {trunkBranch} {repoPath} {repoType} {canChangeTrunk} />
 
-          <div class="flex items-center mb-4 -ml-1 gap-1.25 h-7">
+          <div class="flex items-center mb-2 -ml-1 gap-1.25 h-7">
             <Button
               variant="ghost"
               type="button"
+              size="icon-compact"
               class="p-1 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground disabled:opacity-50 cursor-pointer z-10"
               onclick={handleRefreshGitStatus}
               disabled={isRefreshingGitStatus}
@@ -1110,8 +1102,10 @@
               <Button
                 variant="ghost"
                 onclick={handleOpenAllChanges}
-                class="flex flex-1 items-center border gap-2 pr-2 py-1.5 text-subtle rounded-sm transition-colors group cursor-pointer min-w-0 {isActive
-                  ? 'bg-background text-foreground border-transparent pl-2'
+                size="compact"
+                wrapContent={false}
+                class="flex flex-1 justify-start items-center border gap-2 px-2 py-0 text-subtle rounded-sm transition-colors group cursor-pointer min-w-0 {isActive
+                  ? 'bg-background text-foreground border-transparent'
                   : 'border-transparent'}
                 "
               >
@@ -1129,7 +1123,7 @@
               </Button>
             {:else}
               <div
-                class="flex flex-1 items-center gap-2 pr-2 py-1.5 text-subtle rounded-sm transition-colors group cursor-pointer min-w-0"
+                class="flex flex-1 items-center gap-2 px-2 py-0 h-7 text-subtle rounded-sm transition-colors group cursor-pointer min-w-0"
               >
                 <span class="text-ui truncate min-w-0 text-left flex-1"
                   >{m.workspace_sidebarChanges_noChangesYet_label()}</span
@@ -1254,11 +1248,5 @@
 <style>
   .sidebar-changes-container {
     container-type: inline-size;
-  }
-
-  @container (max-width: 250px) {
-    .branch-labels {
-      display: none;
-    }
   }
 </style>
