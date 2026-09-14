@@ -127,20 +127,26 @@ export class PresenceAggregator {
     return backend;
   }
 
+  /**
+   * The unsupported latch short-circuits before any promise is stored, and
+   * the cleanup runs as a `finally` continuation — never inside the async
+   * body — so `inFlight` can never keep an already-settled promise and wedge
+   * every later send (the latch is only cleared by `reconnected`).
+   */
   private flush(backendId: string): Promise<void> {
     const backend = this.backendState(backendId);
     backend.dirty = true;
     if (backend.inFlight) return backend.inFlight;
-    backend.inFlight = (async () => {
-      try {
-        while (backend.dirty && !backend.unsupported) {
-          backend.dirty = false;
-          await this.send(backendId, backend);
-        }
-      } finally {
-        backend.inFlight = null;
+    if (backend.unsupported) return Promise.resolve();
+    const drain = async () => {
+      while (backend.dirty && !backend.unsupported) {
+        backend.dirty = false;
+        await this.send(backendId, backend);
       }
-    })();
+    };
+    backend.inFlight = drain().finally(() => {
+      backend.inFlight = null;
+    });
     return backend.inFlight;
   }
 
