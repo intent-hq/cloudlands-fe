@@ -20,44 +20,38 @@ describe('File Handling in Chat Messages', () => {
       };
 
       expect(isFileBlock(fileBlock)).toBe(true);
-      expect(fileBlock.data).toBeUndefined();
     });
 
-    it('should support multiple file types', () => {
-      const fileTypes = [
-        { mimeType: 'text/plain', fileName: 'test.txt' },
-        { mimeType: 'application/json', fileName: 'data.json' },
-        { mimeType: 'text/markdown', fileName: 'readme.md' },
-        { mimeType: 'application/pdf', fileName: 'document.pdf' },
-        { mimeType: 'text/javascript', fileName: 'script.js' },
+    it('should accept any MIME type on a reference block', () => {
+      const mimeTypes = [
+        'text/plain',
+        'application/json',
+        'text/markdown',
+        'application/pdf',
+        'text/javascript',
       ];
 
-      fileTypes.forEach(({ mimeType, fileName }, index) => {
-        const block: ContentBlock = {
-          type: 'file',
-          attachmentId: `att-${index}`,
-          mimeType,
-          fileName,
-        };
-        expect(isFileBlock(block)).toBe(true);
-        expect(block.mimeType).toBe(mimeType);
-        expect(block.fileName).toBe(fileName);
+      mimeTypes.forEach((mimeType, index) => {
+        expect(
+          isFileBlock({ type: 'file', attachmentId: `att-${index}`, mimeType, fileName: 'f' }),
+        ).toBe(true);
       });
     });
 
-    it('should handle file blocks with optional fields', () => {
-      const block: ContentBlock = {
-        type: 'file',
-        attachmentId: 'att-123',
-        mimeType: 'text/plain',
-        fileName: 'test.txt',
-        size: 1024,
-        id: 'file-123',
-      };
-
-      expect(isFileBlock(block)).toBe(true);
-      expect(block.id).toBe('file-123');
-      expect(block.size).toBe(1024);
+    it('should accept optional size/id fields without requiring them', () => {
+      expect(
+        isFileBlock({
+          type: 'file',
+          attachmentId: 'att-123',
+          mimeType: 'text/plain',
+          fileName: 'test.txt',
+          size: 1024,
+          id: 'file-123',
+        }),
+      ).toBe(true);
+      expect(isFileBlock({ type: 'file', attachmentId: 'att-123', fileName: 'test.txt' })).toBe(
+        true,
+      );
     });
   });
 
@@ -117,6 +111,10 @@ describe('File Handling in Chat Messages', () => {
 
     it('should reject an empty attachmentId', () => {
       expect(isFileBlock({ type: 'file', attachmentId: '', fileName: 'test.txt' })).toBe(false);
+    });
+
+    it('should reject an empty fileName', () => {
+      expect(isFileBlock({ type: 'file', attachmentId: 'att-1', fileName: '' })).toBe(false);
     });
   });
 });

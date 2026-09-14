@@ -92,6 +92,7 @@ export function isFileBlock(
   return (
     block.type === 'file' &&
     typeof block.fileName === 'string' &&
+    block.fileName.length > 0 &&
     typeof block.attachmentId === 'string' &&
     block.attachmentId.length > 0
   );
