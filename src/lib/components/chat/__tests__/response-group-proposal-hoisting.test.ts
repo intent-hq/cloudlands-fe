@@ -4,6 +4,7 @@ import type { Proposal } from '$shared/types/proposal';
 import { createProposalResource } from '$shared/types/proposal-resource';
 import type { ContentBlockGroup } from '$lib/utils/messageParser';
 import {
+  getResponseGroupCurrentChildIndex,
   hoistProposalBlocksFromResponseGroups,
   normalizeResponseGroups,
 } from '../response-group-blocks';
@@ -52,5 +53,38 @@ describe('response group proposal hoisting', () => {
     const grouped = group([{ type: 'text', text: 'Before resource' }, resource] as ContentBlock[]);
 
     expect(hoistProposalBlocksFromResponseGroups([grouped])).toEqual([grouped]);
+  });
+
+  it('recomputes adjacent layout metadata for a later hoisted segment', () => {
+    const history = { type: 'thinking', text: 'Earlier reasoning.' } as ContentBlock;
+    const description = { type: 'text', text: 'Group description.' } as ContentBlock;
+    const value = proposal('split');
+    const proposalBlock = { type: 'proposal', proposal: value } as ContentBlock;
+    const later = { type: 'text', text: 'Later segment.' } as ContentBlock;
+    const tool = { type: 'tool_use', id: 'tool-1', name: 'view', input: {} } as ContentBlock;
+    const normalized = normalizeResponseGroups([
+      history,
+      {
+        type: 'content_group',
+        name: 'Prepping',
+        isStreaming: true,
+        children: [description, proposalBlock, later, tool],
+      },
+    ]);
+    const first = normalized[0] as ContentBlockGroup;
+    const last = normalized[2] as ContentBlockGroup;
+
+    expect(first).toMatchObject({
+      children: [description, history],
+      adjacentReasoningHistoryCount: 1,
+      hasAdjacentReasoningDescription: true,
+    });
+    expect(last).toMatchObject({
+      children: [later, tool],
+      hasAdjacentReasoningHistory: false,
+      adjacentReasoningHistoryCount: 0,
+      hasAdjacentReasoningDescription: false,
+    });
+    expect(getResponseGroupCurrentChildIndex(last)).toBe(1);
   });
 });

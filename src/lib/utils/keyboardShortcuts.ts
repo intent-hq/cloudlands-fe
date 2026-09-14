@@ -304,6 +304,10 @@ export class KeyboardShortcutManager {
       if (shortcut.ignoreRepeat && e.repeat) return;
       if (shortcut.enabled && !shortcut.enabled()) return;
 
+      if (matchesKeyboardEvent(e, 'mod+f', isMac) && isPanelFindShortcutOwned(e)) {
+        return;
+      }
+
       // Check if this shortcut should be skipped when in editable elements
       // This allows standard text editing shortcuts (like Cmd+Up/Down) to work
       if (shortcut.skipInEditableElements && isFocusInEditableElement(target)) {
@@ -360,6 +364,12 @@ export class KeyboardShortcutManager {
     this.detach();
     this.clear();
   }
+}
+
+function isPanelFindShortcutOwned(event: KeyboardEvent): boolean {
+  return event
+    .composedPath()
+    .some((node) => node instanceof Element && node.hasAttribute('data-panel-find-shortcut-owner'));
 }
 
 function matchesKeyboardEvent(event: KeyboardEvent, binding: string, isMac: boolean): boolean {

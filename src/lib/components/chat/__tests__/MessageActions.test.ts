@@ -23,7 +23,8 @@ beforeAll(() => {
     .rounded-md { border-radius: 6px; }
     .border { border-style: solid; border-width: 1px; }
     .border-border { border-color: rgb(90, 90, 90); }
-    .bg-sidebar\\/95 { background-color: rgba(30, 30, 30, 0.95); }
+    .bg-sidebar { background-color: rgb(30, 30, 30); }
+    .transition-opacity { transition: opacity 200ms; }
     .p-0 { padding: 0; }
     .absolute { position: absolute; }
     .geometry-host { box-sizing: border-box; height: 80px; position: relative; width: 240px; }
@@ -73,6 +74,8 @@ describe('MessageActions shared surface', () => {
     expect(userStyle.borderWidth).toBe('1px');
     expect(userStyle.borderRadius).toBe('6px');
     expect(userStyle.gap).toBe('2px');
+    expect(userStyle.backgroundColor).toBe('rgb(30, 30, 30)');
+    expect(userStyle.transitionProperty).not.toBe('opacity');
 
     const buttons = [
       user.container.querySelector<HTMLButtonElement>('[data-slot="button"]')!,

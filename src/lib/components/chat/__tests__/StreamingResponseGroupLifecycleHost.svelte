@@ -11,7 +11,7 @@
   let {
     phase = 'opening',
     isStreaming = true,
-  }: { phase?: 'opening' | 'live' | 'closed'; isStreaming?: boolean } = $props();
+  }: { phase?: 'opening' | 'live' | 'terminal' | 'closed'; isStreaming?: boolean } = $props();
 
   const leadingContent = [
     {
@@ -71,15 +71,20 @@
         ] as ContentBlock[])
       : phase === 'live'
         ? liveContent
-        : ([
-            ...liveContent,
-            {
-              type: 'text',
-              id: 'msg_1:9',
-              text: '</group:Prepping>Workspace inspection complete.',
-            },
-          ] as ContentBlock[]),
+        : phase === 'terminal'
+          ? ([
+              ...liveContent,
+              { type: 'text', id: 'msg_1:9', text: '</group:Prepping>' },
+            ] as ContentBlock[])
+          : ([
+              ...liveContent,
+              {
+                type: 'text',
+                id: 'msg_1:9',
+                text: '</group:Prepping>Workspace inspection complete.',
+              },
+            ] as ContentBlock[]),
   );
 </script>
 
-<StreamingMessageContent {content} {isStreaming} />
+<StreamingMessageContent {content} {isStreaming} isLastConversationMessage={isStreaming} />

@@ -55,6 +55,20 @@ describe('QueuedMessageList', () => {
     expect(tooltips.some((t) => t.startsWith('Send now'))).toBe(true);
   });
 
+  it('keeps disabled queued messages readable without entering edit mode', async () => {
+    const onedit = vi.fn();
+    render(QueuedMessageList, {
+      props: { messages: [queued({ content: 'wait here' })], disabled: true, onedit },
+    });
+
+    const content = screen.getByTestId('queued-message-content');
+    expect(content.hasAttribute('disabled')).toBe(true);
+    await fireEvent.click(content);
+    expect(screen.queryByRole('textbox')).toBeNull();
+    expect(screen.queryByTestId('queued-message-actions')).toBeNull();
+    expect(onedit).not.toHaveBeenCalled();
+  });
+
   it('reserves the three-action lane before hover and keyboard focus', () => {
     render(QueuedMessageList, {
       props: { messages: [queued({ content: 'A long queued message that stays on one line' })] },

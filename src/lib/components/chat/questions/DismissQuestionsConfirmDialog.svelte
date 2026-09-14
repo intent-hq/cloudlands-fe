@@ -16,17 +16,18 @@
 
   interface Props {
     open?: boolean;
+    busy?: boolean;
     onConfirm?: () => void;
     onCancel?: () => void;
   }
 
-  let { open = false, onConfirm, onCancel }: Props = $props();
+  let { open = false, busy = false, onConfirm, onCancel }: Props = $props();
 
   let confirmButtonRef: HTMLButtonElement | null = $state(null);
   let confirmHasFocus = $state(false);
 
   function handleOpenChange(nextOpen: boolean) {
-    if (!nextOpen) onCancel?.();
+    if (!nextOpen && !busy) onCancel?.();
   }
 
   function handleOpenAutoFocus(event: Event) {
@@ -35,10 +36,13 @@
   }
 </script>
 
-<Dialog.Root {open} onOpenChange={handleOpenChange}>
+<Dialog.Root bind:open={() => open, handleOpenChange}>
   <Dialog.Content
     class="max-w-sm gap-0 overflow-hidden p-0"
+    closeDisabled={busy}
     closeLabel={m.chat_questionWizard_dismissDialog_close_ariaLabel()}
+    escapeKeydownBehavior={busy ? 'ignore' : 'close'}
+    interactOutsideBehavior={busy ? 'ignore' : 'close'}
     onOpenAutoFocus={handleOpenAutoFocus}
   >
     <div class="p-5 pr-12">
@@ -50,8 +54,11 @@
       </Dialog.Header>
     </div>
 
-    <Dialog.Footer class="mt-0 flex-row items-center justify-end border-0 px-5 pb-5 pt-0">
-      <Button variant="ghost-light" onclick={() => onCancel?.()}>
+    <Dialog.Footer
+      class="mt-0 flex-row items-center justify-end border-0 px-5 pb-5 pt-0"
+      aria-busy={busy}
+    >
+      <Button variant="ghost-light" onclick={() => onCancel?.()} disabled={busy}>
         {m.chat_questionWizard_dismissDialog_cancel_label()}
       </Button>
       <Button
@@ -61,6 +68,7 @@
         onfocus={() => (confirmHasFocus = true)}
         onblur={() => (confirmHasFocus = false)}
         onclick={() => onConfirm?.()}
+        loading={busy}
       >
         {m.chat_questionWizard_dismissDialog_confirm_label()}
       </Button>

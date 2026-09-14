@@ -34,7 +34,7 @@ test('search reveals a completed response group and restores only search-owned s
   await expect(group).toHaveAttribute('data-chat-search-expanded', 'true');
 });
 
-test('search treats headingless reasoning as inline content and preserves titled disclosure state', async ({
+test('search reveals headingless reasoning without changing titled disclosure state', async ({
   mount,
   page,
 }) => {
@@ -44,27 +44,31 @@ test('search treats headingless reasoning as inline content and preserves titled
   });
   const inlineMessage = component.locator('[data-message-id="assistant-inline-search"]');
   const titledMessage = component.locator('[data-message-id="assistant-titled-search"]');
+  const inlineGroup = inlineMessage.getByTestId('response-group');
+  const inlineDisclosure = inlineGroup.getByTestId('response-group-disclosure');
   const titledGroup = titledMessage.getByTestId('response-group');
   const titledDisclosure = titledGroup.getByTestId('response-group-disclosure');
 
+  await expect(inlineDisclosure).toHaveAttribute('aria-expanded', 'false');
   await expect(
     inlineMessage.getByText('Inline headingless search target remains visible'),
-  ).toBeVisible();
-  await expect(inlineMessage.getByRole('button', { name: 'Reasoning' })).toHaveCount(0);
-  await expect(inlineMessage.locator('[aria-expanded][aria-label="Reasoning"]')).toHaveCount(0);
-  await expect(inlineMessage.locator('[aria-controls][aria-label="Reasoning"]')).toHaveCount(0);
-  await expect(inlineMessage.locator('[data-chat-search-disclosure-id^="group:"]')).toHaveCount(0);
+  ).toHaveCount(0);
+  await expect(inlineMessage.locator('[data-chat-search-disclosure-id^="group:"]')).toHaveCount(1);
   await expect(inlineMessage.locator('[data-operational-expanded-content]')).toHaveCount(0);
-  expect(await inlineMessage.ariaSnapshot()).not.toContain('button "Reasoning"');
   await expect(titledDisclosure).toHaveAttribute('aria-expanded', 'false');
 
-  await inlineMessage.getByText('Inline headingless search target remains visible').focus();
-  await page.keyboard.press('Meta+f');
+  await inlineDisclosure.focus();
+  await inlineDisclosure.press('Meta+f');
   const findBar = component.getByRole('search', { name: 'Find in panel' });
   const input = findBar.getByRole('textbox');
   await input.fill('Inline headingless search target');
+  await expect(inlineDisclosure).toHaveAttribute('aria-expanded', 'true');
+  await expect(
+    inlineMessage.getByText('Inline headingless search target remains visible'),
+  ).toBeVisible();
   await expect(titledDisclosure).toHaveAttribute('aria-expanded', 'false');
   await input.press('Escape');
+  await expect(inlineDisclosure).toHaveAttribute('aria-expanded', 'false');
   await expect(titledDisclosure).toHaveAttribute('aria-expanded', 'false');
 
   await page.keyboard.press('Meta+f');

@@ -87,7 +87,7 @@ for (const theme of ['light', 'dark'] as const) {
             )!;
             return response.getBoundingClientRect().top - thinking.getBoundingClientRect().bottom;
           });
-          expect(responseGap, testId).toBeCloseTo(24 * zoom, 1);
+          expect(responseGap, testId).toBeCloseTo(16 * zoom, 1);
         }
 
         const consecutiveReasoning = component.getByTestId('consecutive-reasoning-boundary');
@@ -105,7 +105,7 @@ for (const theme of ['light', 'dark'] as const) {
           )!;
           return secondRow.getBoundingClientRect().top - groups[0].getBoundingClientRect().bottom;
         });
-        expect(reasoningGroupGap).toBeCloseTo(56 * zoom, 1);
+        expect(reasoningGroupGap).toBeCloseTo(0, 1);
         const expandedBottomGap = await consecutiveReasoning.evaluate((root) => {
           const details = root.querySelector<HTMLElement>('[data-operational-expanded-content]')!;
           const body = details.querySelector<HTMLElement>('[data-reasoning-expanded-body]')!;

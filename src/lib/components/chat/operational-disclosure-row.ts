@@ -28,9 +28,6 @@ export const OPERATIONAL_GROUP_CHILD_CONTENT_CLASS = `${OPERATIONAL_ROW_GEOMETRY
 /** Nested operational rows shift right without overflowing the group. */
 export const OPERATIONAL_GROUP_CHILD_ROW_CLASS = `${OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS} operational-group-child-row ml-2 min-w-0 w-[calc(100%-0.5rem)] max-w-[calc(100%-0.5rem)]`;
 
-/** Match the existing 24px editorial seam before a new nested reasoning title. */
-export const NESTED_REASONING_SECTION_SEAM_CLASS = 'pt-6';
-
 export const OPERATIONAL_PRIMARY_CLASS = 'text-muted-foreground';
 
 export const OPERATIONAL_SECONDARY_CLASS = 'text-muted-foreground';
@@ -72,7 +69,7 @@ export function isOperationalClusterBlock(block: OperationalClusterBlock): boole
 export function getOperationalGroupContentSpacingClass<T extends OperationalClusterBlock>(
   blocks?: readonly T[],
 ): string {
-  const firstVisibleBlock = blocks?.[0];
+  const firstVisibleBlock = blocks?.find((block) => block.type !== 'tool_result');
   if (!firstVisibleBlock || isOperationalClusterBlock(firstVisibleBlock)) return '';
   return 'pt-4';
 }
@@ -90,11 +87,23 @@ export function isAdjacentOperationalClusterRow<T extends OperationalClusterBloc
   return previousIndex >= 0 && isOperationalClusterBlock(blocks[previousIndex]);
 }
 
+export function isFollowedByOperationalClusterRow<T extends OperationalClusterBlock>(
+  blocks: readonly T[],
+  index: number,
+  isVisible: (block: T) => boolean = () => true,
+): boolean {
+  const block = blocks[index];
+  if (!block || !isVisible(block) || !isOperationalClusterBlock(block)) return false;
+
+  let nextIndex = index + 1;
+  while (nextIndex < blocks.length && !isVisible(blocks[nextIndex])) nextIndex += 1;
+  return nextIndex < blocks.length && isOperationalClusterBlock(blocks[nextIndex]);
+}
+
 export function getOperationalClusterSpacingClass<T extends OperationalClusterBlock>(
   blocks: readonly T[],
   index: number,
   isVisible: (block: T) => boolean = () => true,
-  compactConsecutiveThinking = false,
 ): string {
   const block = blocks[index];
   if (!block || !isVisible(block)) return '';
@@ -104,15 +113,11 @@ export function getOperationalClusterSpacingClass<T extends OperationalClusterBl
   if (previousIndex < 0) return '';
 
   const previous = blocks[previousIndex];
-  if (previous.type === 'thinking' && block.type === 'thinking') {
-    return compactConsecutiveThinking ? '' : 'pt-14';
-  }
   const previousIsOperational = isOperationalClusterBlock(previous);
   const currentIsOperational = isOperationalClusterBlock(block);
   if (previousIsOperational && currentIsOperational) return '';
-  if (previous.type === 'thinking' && !currentIsOperational) return 'pt-6';
   if (previousIsOperational || currentIsOperational) return 'pt-4';
-  return 'pt-1';
+  return 'pt-2';
 }
 
 export const COMPACT_TOOL_TRAILING_CLASS =

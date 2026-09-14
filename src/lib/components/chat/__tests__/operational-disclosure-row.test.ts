@@ -84,22 +84,8 @@ import {
   OPERATIONAL_SECONDARY_CLASS,
   OPERATIONAL_ROW_TONE_CLASS,
   OPERATIONAL_SUMMARY_CLASS,
-  getOperationalClusterSpacingClass,
   safeOperationalDetailsTransition,
 } from '../operational-disclosure-row';
-
-describe('getOperationalClusterSpacingClass', () => {
-  const thinking = { type: 'thinking', id: 'thinking-1', text: 'Reasoning' } as ContentBlock;
-  const text = { type: 'text', text: 'Response' } as ContentBlock;
-  const tool = { type: 'tool_use', id: 'tool-1', name: 'view', input: {} } as ContentBlock;
-
-  it('adds 24px only from reasoning to following prose', () => {
-    expect(getOperationalClusterSpacingClass([thinking, text], 1)).toBe('pt-6');
-    expect(getOperationalClusterSpacingClass([text, thinking], 1)).toBe('pt-4');
-    expect(getOperationalClusterSpacingClass([tool, text], 1)).toBe('pt-4');
-    expect(getOperationalClusterSpacingClass([thinking, tool], 1)).toBe('');
-  });
-});
 
 function createToolUse(
   id: string,

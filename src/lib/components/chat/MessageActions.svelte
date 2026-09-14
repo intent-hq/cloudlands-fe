@@ -5,7 +5,6 @@
   Appears on hover for both user and assistant messages.
 -->
 <script lang="ts">
-  import { safeSlide } from '$lib/utils/animations';
   import Button from '$lib/components/ui/button/button.svelte';
   import { Tooltip, TooltipShortcut } from '$lib/components/ui/tooltip';
   import { formatFullDateTime, formatTime, type DateInput } from '$lib/i18n/format';
@@ -203,15 +202,12 @@
           size="icon-xs"
           onclick={handleCopy}
           aria-label={m.chat_messageActions_copyMessage_ariaLabel()}
+          data-copy-state={copied || copiedSessionId ? 'success' : 'idle'}
         >
           {#if copied || copiedSessionId}
-            <div in:safeSlide={{ axis: 'x', duration: 150 }}>
-              <Fa icon={faCheck} class="w-2.5! h-2.5! text-green-500" />
-            </div>
+            <Fa icon={faCheck} class="w-2.5! h-2.5! text-green-500" />
           {:else}
-            <div in:safeSlide={{ axis: 'x', duration: 150 }}>
-              <Fa icon={faCopy} class="w-2.5! h-2.5!" />
-            </div>
+            <Fa icon={faCopy} class="w-2.5! h-2.5!" />
           {/if}
         </Button>
       {/snippet}

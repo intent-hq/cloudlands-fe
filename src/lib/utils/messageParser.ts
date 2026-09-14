@@ -1316,6 +1316,8 @@ export interface ContentBlockGroup {
   isReasoningPhase?: boolean;
   sourceName?: string;
   hasAdjacentReasoningHistory?: boolean;
+  adjacentReasoningHistoryCount?: number;
+  hasAdjacentReasoningDescription?: boolean;
 }
 
 export type RenderContentBlock = ContentBlock | ContentBlockGroup;
