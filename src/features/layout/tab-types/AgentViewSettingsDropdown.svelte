@@ -30,8 +30,7 @@
     aria-label={m.settings_section_fontStyle()}
     data-menu-stacked-content="font-style"
   >
-    <Menu.Label>
-      <Fa icon={faFont} size="xs" class="w-4 opacity-70" />
+    <Menu.Label icon={faFont}>
       <span>{m.settings_section_fontStyle()}</span>
     </Menu.Label>
     <Menu.RadioGroup value={$fontStyle} onValueChange={setFontStyle}>

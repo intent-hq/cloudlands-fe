@@ -1,6 +1,8 @@
 <script lang="ts">
   import { DropdownMenu as MenuPrimitive } from 'bits-ui';
   import type { Snippet } from 'svelte';
+  import type { IconDefinition } from '$lib/icons/phosphor-icons';
+  import Fa from '$lib/components/shared/icons/FaWrapper.svelte';
   import { cn } from '$lib/utils.js';
   import type { WithoutChildrenOrChild } from '$lib/utils.js';
   import { menuItem } from './menu-recipes';
@@ -10,8 +12,12 @@
     ref = $bindable(null),
     class: className,
     children,
+    icon,
     ...restProps
-  }: WithoutChildrenOrChild<MenuPrimitive.SubTriggerProps> & { children?: Snippet } = $props();
+  }: WithoutChildrenOrChild<MenuPrimitive.SubTriggerProps> & {
+    children?: Snippet;
+    icon?: IconDefinition;
+  } = $props();
 </script>
 
 <MenuPrimitive.SubTrigger
@@ -21,7 +27,11 @@
   class={cn(menuItem(), className)}
   {...restProps}
 >
-  <span data-slot="menu-item-leading" class="size-4 shrink-0" aria-hidden="true"></span>
+  <span data-slot="menu-item-leading" class="size-4 shrink-0" aria-hidden="true">
+    {#if icon}
+      <Fa {icon} size="xs" class="size-4 text-muted-foreground opacity-70" />
+    {/if}
+  </span>
   {@render children?.()}
   <span data-slot="menu-sub-chevron" class={OPTION_LIST_END_SLOT_CLASS} aria-hidden="true">›</span>
 </MenuPrimitive.SubTrigger>

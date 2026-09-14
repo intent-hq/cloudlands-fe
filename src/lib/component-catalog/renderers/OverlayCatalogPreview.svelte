@@ -65,21 +65,24 @@
           preventScroll={false}
           interactOutsideBehavior="close"
         >
-          <Menu.Item>Run command</Menu.Item>
-          <Menu.CommandItem icon={faPaperclip} label="Attach files" shortcut="⇧⌘A" />
-          <Menu.Item disabled>Disabled command</Menu.Item>
-          <Menu.CheckboxItem bind:checked={menuChecked} closeOnSelect={false}
-            >Show panel</Menu.CheckboxItem
-          >
-          <Menu.RadioGroup bind:value={menuDensity}>
-            <Menu.RadioItem value="compact" closeOnSelect={false}>Compact</Menu.RadioItem>
-            <Menu.RadioItem value="comfortable" closeOnSelect={false}>Comfortable</Menu.RadioItem>
-          </Menu.RadioGroup>
-          <Menu.Sub
-            ><Menu.SubTrigger>More actions</Menu.SubTrigger><Menu.SubContent portal={false}
-              ><Menu.Item>Archive</Menu.Item></Menu.SubContent
-            ></Menu.Sub
-          >
+          <Menu.Group>
+            <Menu.Label icon={faPaperclip}>Commands</Menu.Label>
+            <Menu.Item>Run command</Menu.Item>
+            <Menu.CommandItem icon={faPaperclip} label="Attach files" shortcut="⇧⌘A" />
+            <Menu.Item disabled>Disabled command</Menu.Item>
+            <Menu.CheckboxItem bind:checked={menuChecked} closeOnSelect={false}
+              >Show panel</Menu.CheckboxItem
+            >
+            <Menu.RadioGroup bind:value={menuDensity}>
+              <Menu.RadioItem value="compact" closeOnSelect={false}>Compact</Menu.RadioItem>
+              <Menu.RadioItem value="comfortable" closeOnSelect={false}>Comfortable</Menu.RadioItem>
+            </Menu.RadioGroup>
+            <Menu.Sub
+              ><Menu.SubTrigger icon={faPaperclip}>More actions</Menu.SubTrigger><Menu.SubContent
+                portal={false}><Menu.Item>Archive</Menu.Item></Menu.SubContent
+              ></Menu.Sub
+            >
+          </Menu.Group>
         </Menu.Content>
       </Menu.Root>
       <Button variant="outline" size="sm" onclick={() => menuOutsideClicks++}

@@ -79,7 +79,7 @@
     <Menu.Content portal={false}>
       <Menu.Group>
         <!-- i18n-ignore (test fixture) -->
-        <Menu.Label>Commands</Menu.Label>
+        <Menu.Label icon={faPaperclip}>Commands</Menu.Label>
         <Menu.Item onSelect={() => (selected = 'apple')}>Apple</Menu.Item>
         <Menu.Item onSelect={() => (selected = 'banana')}>Banana</Menu.Item>
         <Menu.Item disabled onSelect={() => (selected = 'disabled')}>Disabled action</Menu.Item>
@@ -99,7 +99,7 @@
         <Menu.RadioItem value="comfortable" closeOnSelect={false}>Comfortable</Menu.RadioItem>
       </Menu.RadioGroup>
       <Menu.Sub>
-        <Menu.SubTrigger>More</Menu.SubTrigger>
+        <Menu.SubTrigger icon={faPaperclip}>More</Menu.SubTrigger>
         <Menu.SubContent portal={false}>
           <Menu.Item onSelect={() => (selected = 'archive')}>Archive</Menu.Item>
         </Menu.SubContent>

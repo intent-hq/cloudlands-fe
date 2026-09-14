@@ -1202,10 +1202,8 @@
       </Tooltip>
     {/snippet}
     {#snippet content({ close }: { close: () => void })}
-      <div class="type-caption px-2 pb-0.5 pt-1.5 font-medium text-muted-foreground">
-        {m.layout_panelTabBar_displaySection_label()}
-      </div>
-      <div data-panel-actions-section="display">
+      <Menu.Group data-panel-actions-section="display">
+        <Menu.Label>{m.layout_panelTabBar_displaySection_label()}</Menu.Label>
         {@render contentActions?.display?.()}
         <Menu.CommandItem
           icon={isZoomed ? faCompress : faExpand}
@@ -1237,14 +1235,12 @@
             close();
           }}
         />
-      </div>
+      </Menu.Group>
 
       <Menu.Separator />
 
-      <div class="type-caption px-2 pb-0.5 pt-1.5 font-medium text-muted-foreground">
-        {m.layout_panelTabBar_actionsSection_label()}
-      </div>
-      <div data-panel-actions-section="actions">
+      <Menu.Group data-panel-actions-section="actions">
+        <Menu.Label>{m.layout_panelTabBar_actionsSection_label()}</Menu.Label>
         {@render contentActions?.actions?.()}
         <Menu.CommandItem
           icon={faArrowLeft}
@@ -1276,7 +1272,7 @@
             close();
           }}
         />
-      </div>
+      </Menu.Group>
 
       {#if $isWorkspaceHostLocal$ || activeTab?.type === 'browser'}
         {#if activeTab}

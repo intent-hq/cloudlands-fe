@@ -62,7 +62,7 @@
 
 {#if prompts.length > 0}
   <div
-    class="mt-4 flex flex-col"
+    class="flex flex-col"
     data-testid="suggested-prompts-surface"
     in:springIn={{ tier: 'fast', y: 0, scale: 1 }}
     out:crispOut={{ tier: 'fast' }}

@@ -66,7 +66,6 @@ describe('SuggestedPrompts', () => {
     });
 
     const surface = screen.getByTestId('suggested-prompts-surface');
-    expect(surface.className).toContain('mt-4');
     expect(surface.className).not.toContain('bg-');
     expect(surface.className).not.toContain('rounded');
     expect(surface.className).not.toContain('border');

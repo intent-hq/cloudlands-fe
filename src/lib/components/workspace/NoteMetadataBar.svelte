@@ -208,7 +208,7 @@
       class="w-full max-w-[var(--content-max-width,60rem)] px-[var(--content-gutter-left)] pt-12 mb-6 flex flex-col"
     >
       <!-- Status row -->
-      <div class="grid grid-cols-[120px_1fr] items-start min-h-7 py-0.5 min-w-0">
+      <div class="grid grid-cols-[120px_1fr] items-start min-h-6 min-w-0">
         <div class="text-subtle pt-0.5">{m.workspace_noteMetadataBar_status_label()}</div>
         <div class="flex items-center min-h-6 -mt-0.5">
           <TaskStatusIndicator
@@ -221,9 +221,9 @@
       </div>
 
       <!-- Assignee row -->
-      <div class="grid grid-cols-[120px_1fr] items-start min-h-7 py-0.5 min-w-0">
+      <div class="grid grid-cols-[120px_1fr] items-start min-h-6 min-w-0">
         <div class="text-subtle pt-0.5">{m.workspace_noteMetadataBar_assignee_label()}</div>
-        <div class="flex flex-col gap-1.5 min-h-6 min-w-0 overflow-hidden">
+        <div class="flex flex-col gap-0.5 min-h-6 min-w-0 overflow-hidden">
           {#if assignedAgents.length === 0}
             <Button
               variant="ghost"
@@ -234,12 +234,12 @@
               <Fa icon={faPlay} class="text-xs" />
             </Button>
           {:else}
-            <div class="flex flex-wrap items-center gap-1.5 min-w-0">
+            <div class="flex flex-wrap items-center gap-0.5 min-w-0">
               {#each assignedAgents as agentId (agentId)}
                 <Button
                   variant="ghost"
                   onclick={(e) => handleAgentClick(e, agentId)}
-                  class="inline-flex items-center gap-1 min-w-0 py-0.5 pl-0.5 pr-2 rounded bg-muted/30 px-2 cursor-pointer"
+                  class="inline-flex items-center gap-1 h-6 min-w-0 py-0 pl-0.5 pr-2 rounded bg-transparent cursor-pointer"
                 >
                   <AgentAvatar size={22} {agentId} />
                   <span class="truncate font-medium text-subtle -mt-0.5"
@@ -268,9 +268,9 @@
 
       <!-- Relations rows (hidden when the task has no relations) -->
       {#if dependsOn.length > 0}
-        <div class="grid grid-cols-[120px_1fr] items-start min-h-7 py-0.5 min-w-0">
+        <div class="grid grid-cols-[120px_1fr] items-start min-h-6 min-w-0">
           <div class="text-subtle pt-0.5">{m.workspace_noteMetadataBar_dependsOn_label()}</div>
-          <div class="flex flex-wrap items-center gap-1.5 min-h-6 min-w-0">
+          <div class="flex flex-wrap items-center gap-0.5 min-h-6 min-w-0">
             {#each dependsOn as depId (depId)}
               <TaskRelationLink
                 {workspaceId}
@@ -282,9 +282,9 @@
         </div>
       {/if}
       {#if dependedOnBy.length > 0}
-        <div class="grid grid-cols-[120px_1fr] items-start min-h-7 py-0.5 min-w-0">
+        <div class="grid grid-cols-[120px_1fr] items-start min-h-6 min-w-0">
           <div class="text-subtle pt-0.5">{m.workspace_noteMetadataBar_dependedOnBy_label()}</div>
-          <div class="flex flex-wrap items-center gap-1.5 min-h-6 min-w-0">
+          <div class="flex flex-wrap items-center gap-0.5 min-h-6 min-w-0">
             {#each dependedOnBy as dependentId (dependentId)}
               <TaskRelationLink {workspaceId} noteId={dependentId} />
             {/each}
@@ -292,9 +292,9 @@
         </div>
       {/if}
       {#if conflictsWith.length > 0}
-        <div class="grid grid-cols-[120px_1fr] items-start min-h-7 py-0.5 min-w-0">
+        <div class="grid grid-cols-[120px_1fr] items-start min-h-6 min-w-0">
           <div class="text-subtle pt-0.5">{m.workspace_noteMetadataBar_conflictsWith_label()}</div>
-          <div class="flex flex-wrap items-center gap-1.5 min-h-6 min-w-0">
+          <div class="flex flex-wrap items-center gap-0.5 min-h-6 min-w-0">
             {#each conflictsWith as conflictId (conflictId)}
               <TaskRelationLink {workspaceId} noteId={conflictId} variant="conflict" />
             {/each}

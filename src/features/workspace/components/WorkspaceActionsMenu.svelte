@@ -624,9 +624,8 @@
 <div class="w-full overflow-hidden">
   {#if showFileActions && layout === 'submenu'}
     <Menu.Sub>
-      <Menu.SubTrigger>
-        <Fa icon={faUpRightFromSquare} size="12" class="w-4 text-muted-foreground opacity-70" />
-        <span>{m.ui_openCombo_openInApp_tooltip()}</span>
+      <Menu.SubTrigger icon={faUpRightFromSquare}>
+        <span class="min-w-0 flex-1 truncate">{m.ui_openCombo_openInApp_tooltip()}</span>
       </Menu.SubTrigger>
       <Menu.SubContent class="w-60">
         {#if canOpenExternalEditors && $isWorkspaceHostLocal$}
