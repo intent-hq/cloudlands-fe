@@ -6384,5 +6384,8 @@
   "workspace_share_removeMember_confirm_label": "要將 {name} 從此工作區移除嗎？",
   "workspace_share_removeMember_confirmAction_ariaLabel": "確認移除 {name}",
   "workspace_share_cancel_label": "取消",
-  "workspace_share_listenerDown_error": "邀請前請先在設定中開啟遠端存取 + Tailcat"
+  "workspace_share_listenerDown_error": "邀請前請先在設定中開啟遠端存取 + Tailcat",
+  "notes_presenceStack_viewers_one": "另有 1 人正在查看此筆記",
+  "notes_presenceStack_viewers_many": "另有 {count} 人正在查看此筆記",
+  "notes_presenceStack_overflow_label": "+{count}"
 }
