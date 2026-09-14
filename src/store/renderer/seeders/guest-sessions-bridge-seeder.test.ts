@@ -1,8 +1,9 @@
 /**
  * Tests for the guest sessions invoke bridge seeder: in bridge-less builds the
- * `guest-sessions:list` / `guest-sessions:leave` invokes resolve to shaped
- * results (an empty list; a leave that reports the session gone without a
- * host-side revoke) instead of rejecting with UnbridgedMockIpcChannelError.
+ * `guest-sessions:list` / `guest-sessions:leave` / `guest-sessions:leave-workspace`
+ * invokes resolve to shaped results (an empty list; a leave that reports the
+ * session or membership gone without a host round trip) instead of rejecting
+ * with UnbridgedMockIpcChannelError.
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 
@@ -25,5 +26,14 @@ describe('guest-sessions-bridge-seeder', () => {
     const result = await mockInvoke(IPC_CHANNELS.GUEST_SESSIONS.LEAVE, { id: 'guest-1' });
 
     expect(result).toEqual({ id: 'guest-1', revoked: false });
+  });
+
+  it('resolves guest-sessions:leave-workspace echoing the target with no host-side leave', async () => {
+    const result = await mockInvoke(IPC_CHANNELS.GUEST_SESSIONS.LEAVE_WORKSPACE, {
+      id: 'guest-1',
+      workspaceId: 'ws-1',
+    });
+
+    expect(result).toEqual({ id: 'guest-1', workspaceId: 'ws-1', left: false });
   });
 });

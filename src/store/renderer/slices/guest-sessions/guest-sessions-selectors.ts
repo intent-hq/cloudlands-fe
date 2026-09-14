@@ -129,6 +129,12 @@ export const selectHostedRemovingPrincipalIds = store.createSelector(
   },
 );
 
+/** Whether a *Remove all guests* sweep is in flight for one hosted workspace. */
+export const selectIsHostedWorkspaceClearing = store.createSelector(
+  (state, workspaceId: string): boolean =>
+    state.guestSessions.clearingWorkspaceIds.includes(workspaceId),
+);
+
 /**
  * `${workspaceId}:${memberCount}` for every workspace with a tracked roster —
  * the saga's change signal to refetch a roster whose daemon-side membership
