@@ -456,7 +456,7 @@ describe('Dropdown caller migration ledger', () => {
     );
     expect(dropdownCallerLedger.map(({ caller }) => caller).sort()).toEqual(inventoryCallers);
     expect([...new Set(dropdownCallerLedger.map(({ replacement }) => replacement))].sort()).toEqual(
-      ['Combobox', 'Menu', 'Select'],
+      ['Combobox', 'Select'],
     );
     expect(dropdownCallerLedger).toEqual([
       {
@@ -498,11 +498,6 @@ describe('Dropdown caller migration ledger', () => {
         caller: 'src/lib/components/chat/input/ModelPickerOptionItem.svelte',
         replacement: 'Combobox',
         reason: 'shared option model for ModelPicker',
-      },
-      {
-        caller: 'src/lib/components/patterns/settings/custom-controls.ts',
-        replacement: 'Menu',
-        reason: 'settings bridge for action items and separator without value selection',
       },
     ]);
   });
