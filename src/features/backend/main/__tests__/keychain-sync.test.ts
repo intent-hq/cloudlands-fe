@@ -29,6 +29,7 @@ vi.mock('child_process', async () => {
 import { spawn } from 'child_process';
 import {
   KEYCHAIN_PAYLOAD_VERSION,
+  KEYCHAIN_SERVICE_GUEST_SESSIONS,
   MAX_HELPER_OUTPUT_BYTES,
   TOMBSTONE_TTL_MS,
   accountKeyFor,
@@ -174,6 +175,25 @@ describe('payload schema', () => {
     const record = rec();
     const parsed = parsePayload(serializeRecord(record));
     expect(parsed).toEqual({ kind: 'record', record });
+  });
+
+  it('carries guest principal identity only when present (backends payload unchanged)', () => {
+    const owner = JSON.parse(serializeRecord(rec())) as Record<string, unknown>;
+    expect(owner).not.toHaveProperty('principalId');
+    expect(owner).not.toHaveProperty('login');
+
+    const guest = rec({ principalId: 'prn_7', login: 'octocat' });
+    const raw = JSON.parse(serializeRecord(guest)) as Record<string, unknown>;
+    expect(raw).toMatchObject({ principalId: 'prn_7', login: 'octocat' });
+    expect(parsePayload(serializeRecord(guest))).toEqual({ kind: 'record', record: guest });
+
+    const blank = { ...raw, principalId: '', login: 42 };
+    const parsed = parsePayload(JSON.stringify(blank));
+    expect(parsed.kind).toBe('record');
+    if (parsed.kind === 'record') {
+      expect(parsed.record).not.toHaveProperty('principalId');
+      expect(parsed.record).not.toHaveProperty('login');
+    }
   });
 
   it('round-trips an explicit blank accent on live records and tombstones', () => {
@@ -1288,6 +1308,41 @@ describe('createHelperKeychainClient', () => {
       ok: true,
       items: [{ account: ACCOUNT, payload: '{"v":1}', modifiedAtMs: 123 }],
     });
+  });
+
+  it('passes --service ahead of every subcommand when a service is selected', async () => {
+    respondWith(JSON.stringify({ items: [] }));
+    const client = createHelperKeychainClient({
+      platform: 'darwin',
+      helperPath: HELPER,
+      service: KEYCHAIN_SERVICE_GUEST_SESSIONS,
+    });
+    expect(await client.list()).toEqual({ ok: true, items: [] });
+    expect(vi.mocked(spawn).mock.calls[0][1]).toEqual([
+      '--service',
+      KEYCHAIN_SERVICE_GUEST_SESSIONS,
+      'list',
+    ]);
+
+    const child = respondWith(JSON.stringify({ ok: true }));
+    const payload = serializeRecord(rec({ principalId: 'prn_7', login: 'octocat' }));
+    await client.upsert(ACCOUNT, payload);
+    expect(vi.mocked(spawn).mock.calls[1][1]).toEqual([
+      '--service',
+      KEYCHAIN_SERVICE_GUEST_SESSIONS,
+      'upsert',
+      ACCOUNT,
+    ]);
+    expect(child.stdin.written).toBe(JSON.stringify({ payload }));
+
+    respondWith(JSON.stringify({ ok: true }));
+    await client.delete(ACCOUNT);
+    expect(vi.mocked(spawn).mock.calls[2][1]).toEqual([
+      '--service',
+      KEYCHAIN_SERVICE_GUEST_SESSIONS,
+      'delete',
+      ACCOUNT,
+    ]);
   });
 
   it('list: surfaces per-item group and the top-level sharedGroup when reported', async () => {
