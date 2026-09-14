@@ -306,16 +306,20 @@ describe('agentMutationSaga', () => {
   it('tombstones immediate deletion before a stale conversation read can rehydrate it', async () => {
     const agentId = 'agent-immediate-stale-read';
     const staleSession = session(agentId, { taskNoteId: 'task-stale-read' });
+    const conversationStarted = Promise.withResolvers<void>();
     let resolveConversation!: (value: unknown) => void;
     mocks.get.mockResolvedValueOnce(staleSession);
-    mocks.getConversation.mockReturnValueOnce(
-      new Promise((resolve) => {
-        resolveConversation = resolve;
-      }),
+    mocks.getConversation.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveConversation = resolve;
+          conversationStarted.resolve();
+        }),
     );
 
     const hydration = loadChatTranscript(agentId);
-    await settle();
+    // Wait for the held request itself, not the read service's number of microtasks.
+    await conversationStarted.promise;
     expect(mocks.getConversation).toHaveBeenCalledWith(agentId, 50, undefined);
 
     const { channel, task } = start({ [agentId]: staleSession });
