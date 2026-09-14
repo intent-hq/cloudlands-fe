@@ -24,7 +24,12 @@
 </script>
 
 {#if urlSettings.state}
-  <CatalogScene {slug} requestedState={urlSettings.state} requestedWidth={urlSettings.width} />
+  <CatalogScene
+    {slug}
+    requestedState={urlSettings.state}
+    requestedWidth={urlSettings.width}
+    requestedFit={urlSettings.fit}
+  />
 {:else}
   {#await legacyDetail then detail}
     {#if detail?.entry}

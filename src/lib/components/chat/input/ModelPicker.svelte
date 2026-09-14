@@ -540,6 +540,7 @@
     const providerIds = $modelFetchProviderIds$;
     clearTimeout(fetchDebounceTimer);
     fetchDebounceTimer = setTimeout(() => fetchAllProviderModels(providerIds), 50);
+    return () => clearTimeout(fetchDebounceTimer);
   });
 
   // React to the session cache being cleared (backend reconnect, RESUB-1):

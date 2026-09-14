@@ -191,4 +191,26 @@ describe('window close cleanup', () => {
     closedHandlers[0]();
     expect(electronMocks.appEmit).toHaveBeenCalledWith('window-workspace-state-changed');
   });
+
+  it('forwards native window focus state to its renderer', () => {
+    const createdHandler = electronMocks.appOn.mock.calls.find(
+      ([event]) => event === 'browser-window-created',
+    )?.[1] as ((event: unknown, window: unknown) => void) | undefined;
+    const handlers: Record<string, () => void> = {};
+    const window = {
+      id: 42,
+      isDestroyed: vi.fn(() => false),
+      webContents: { send: vi.fn() },
+      on: vi.fn((event: string, cb: () => void) => {
+        handlers[event] = cb;
+      }),
+    };
+
+    createdHandler!({}, window);
+    handlers.focus();
+    handlers.blur();
+
+    expect(window.webContents.send).toHaveBeenNthCalledWith(1, 'window:focus', true);
+    expect(window.webContents.send).toHaveBeenNthCalledWith(2, 'window:focus', false);
+  });
 });

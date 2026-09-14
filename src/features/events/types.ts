@@ -59,7 +59,7 @@ export interface CanonicalAgentStatusFields {
    */
   sessionCorrupted?: boolean;
   /**
-   * Idle-visibility for hook-owning agents (PROTOCOL §3.1, within v3.1,
+   * Idle-visibility for hook-owning agents (PROTOCOL §6.5 `agent:idle`,
    * additive): light metadata for the agent's ACTIVE (`scheduled`/`running`)
    * background hooks (§5.40) — omitted when empty (absent, never `[]`) — so
    * a parent or client can tell a hook-waiting idle agent from a stalled

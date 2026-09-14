@@ -81,7 +81,7 @@ describe('workspace-summaries-bridge-seeder', () => {
       expect(typeof result.data.updatedAt).toBe('string');
     });
 
-    it('uses totalFiles when git.status is truncated (v8.4 5000-entry cap)', async () => {
+    it('uses totalFiles when git.status is truncated (filesTruncated 5000-entry cap)', async () => {
       routeRequests({
         'git.status': {
           files: [{ path: 'a.ts', status: 'modified', staged: false }],

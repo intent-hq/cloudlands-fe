@@ -177,8 +177,19 @@ export function convertFromACP(acpBlock: any): ContentBlock {
     block.text = acpBlock.text;
   }
 
-  // Image/Audio media
-  if (acpBlock.data) {
+  // Image/Audio media. A file block is an attachment reference (PROTOCOL
+  // §5.5, 10.0): it never carries bytes, so `data` is not read off it.
+  if (acpBlock.type === 'file') {
+    if (typeof acpBlock.attachmentId === 'string') {
+      block.attachmentId = acpBlock.attachmentId;
+    }
+    if (typeof acpBlock.fileName === 'string') {
+      block.fileName = acpBlock.fileName;
+    }
+    if (typeof acpBlock.size === 'number') {
+      block.size = acpBlock.size;
+    }
+  } else if (acpBlock.data) {
     block.data = acpBlock.data;
   }
   if (acpBlock.mimeType) {
@@ -229,8 +240,18 @@ export function convertToACP(block: ContentBlock): any {
     acpBlock.applyToolCallId = normalized.applyToolCallId;
   }
 
-  // Media
-  if (normalized.data) {
+  // Media. File blocks go out as attachment references only — never bytes.
+  if (normalized.type === 'file') {
+    if (normalized.attachmentId) {
+      acpBlock.attachmentId = normalized.attachmentId;
+    }
+    if (normalized.fileName) {
+      acpBlock.fileName = normalized.fileName;
+    }
+    if (normalized.size !== undefined) {
+      acpBlock.size = normalized.size;
+    }
+  } else if (normalized.data) {
     acpBlock.data = normalized.data;
   }
   if (normalized.mimeType) {
@@ -300,13 +321,16 @@ function validateCanonicalBlock(block: Record<string, any>): ContentBlock {
       }
       break;
     case 'file':
+      // Attachment reference (PROTOCOL §5.5): `attachmentId` + `fileName`,
+      // never inline bytes.
       if (
-        typeof block.data !== 'string' ||
-        typeof block.mimeType !== 'string' ||
-        typeof block.fileName !== 'string'
+        typeof block.attachmentId !== 'string' ||
+        block.attachmentId.length === 0 ||
+        typeof block.fileName !== 'string' ||
+        block.fileName.length === 0
       ) {
         throw new Error(
-          `Invalid file block: required 'data'/'mimeType'/'fileName' fields missing. Received: ${JSON.stringify(block)}`,
+          `Invalid file block: required 'attachmentId'/'fileName' fields missing (PROTOCOL §5.5). Received: ${JSON.stringify(block)}`,
         );
       }
       break;

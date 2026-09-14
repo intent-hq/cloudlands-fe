@@ -169,8 +169,8 @@ export class PanelLayoutAdapter {
   closeTabsByAgentId(agentId: string) {
     this.dispatch(closeTabsByAgentId(this.workspaceId, agentId));
   }
-  reopenClosedTab() {
-    this.dispatch(reopenClosedTab(this.workspaceId));
+  reopenClosedTab(closedTabId?: string, targetPanelId?: string) {
+    this.dispatch(reopenClosedTab(this.workspaceId, undefined, closedTabId, targetPanelId));
   }
   setActiveTab(tabId: string, panelId?: string) {
     this.dispatch(setActiveTab(this.workspaceId, tabId, panelId));

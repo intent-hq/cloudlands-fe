@@ -352,7 +352,7 @@ export class UnifiedAgentFactory {
         }
       }
 
-      // Step 6.6: Model is daemon-resolved (single resolver, PROTOCOL §5.11).
+      // Step 6.6: Model is daemon-resolved (single resolver, PROTOCOL §5.11). // protocol-version-ok: step label
       // Pass the caller's explicit bare model id through untouched paired with
       // the provider above; when absent, omit it from `agent.create` so the
       // daemon applies its resolved default (specialist frontmatter > settings

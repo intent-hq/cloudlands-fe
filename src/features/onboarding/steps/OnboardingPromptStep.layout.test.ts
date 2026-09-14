@@ -34,6 +34,7 @@ vi.mock('$lib/components/chat/AttachmentPreview.svelte', async () => ({
 const placementMocks = vi.hoisted(() => ({ isRemote: false }));
 vi.mock('$lib/components/chat/input/attachment-placement', () => ({
   isRemoteBackend: () => placementMocks.isRemote,
+  mintPlacementIdempotencyKey: () => undefined,
 }));
 vi.mock('svelte-sonner', () => ({
   toast: { error: vi.fn(), success: vi.fn(), info: vi.fn(), warning: vi.fn() },

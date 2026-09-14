@@ -38,9 +38,7 @@ vi.mock('../../../backend/main/backend.ipc', () => ({
   onBackendReconnected: () => () => {},
 }));
 
-vi.mock('../../../../store/main/redux-store-bridge', () => ({
-  mainDispatch: vi.fn((action: unknown) => action),
-}));
+vi.mock('../../../../store/main/redux-store-bridge', () => ({}));
 
 import { WorkspaceService } from '../workspace.service';
 import { InMemoryWorkspaceRepository } from '../workspace.repository';

@@ -5,11 +5,16 @@ const mocks = vi.hoisted(() => ({
   startAllAppSagas: vi.fn<() => Array<() => void>>(() => []),
   stopRetentionFingerprint: vi.fn(),
   startRetentionFingerprint: vi.fn(),
+  stopLongTaskWatchdog: vi.fn(),
+  startLongTaskWatchdog: vi.fn(),
 }));
 
 vi.mock('./sagas', () => ({ startAllAppSagas: mocks.startAllAppSagas }));
 vi.mock('./retention-fingerprint', () => ({
   startRetentionFingerprint: mocks.startRetentionFingerprint,
+}));
+vi.mock('./long-task-watchdog', () => ({
+  startLongTaskWatchdog: mocks.startLongTaskWatchdog,
 }));
 
 import { _resetRendererStoreBridge } from './renderer-store-bridge';
@@ -33,6 +38,9 @@ describe('app Store lifecycle', () => {
     mocks.stopRetentionFingerprint.mockReset();
     mocks.startRetentionFingerprint.mockReset();
     mocks.startRetentionFingerprint.mockReturnValue(mocks.stopRetentionFingerprint);
+    mocks.stopLongTaskWatchdog.mockReset();
+    mocks.startLongTaskWatchdog.mockReset();
+    mocks.startLongTaskWatchdog.mockReturnValue(mocks.stopLongTaskWatchdog);
   });
 
   afterEach(() => _resetRendererStoreBridge());
@@ -50,6 +58,7 @@ describe('app Store lifecycle', () => {
 
     expect(order).toEqual(['store:init', 'sagas:start']);
     expect(mocks.startRetentionFingerprint).toHaveBeenCalledWith(store);
+    expect(mocks.startLongTaskWatchdog).toHaveBeenCalledWith(store);
     disposeApp();
     disposeRoot();
   });
@@ -64,6 +73,7 @@ describe('app Store lifecycle', () => {
     dispose();
 
     expect(mocks.stopRetentionFingerprint).toHaveBeenCalledOnce();
+    expect(mocks.stopLongTaskWatchdog).toHaveBeenCalledOnce();
     expect(stopOne).toHaveBeenCalledOnce();
     expect(stopTwo).toHaveBeenCalledOnce();
   });
@@ -79,11 +89,13 @@ describe('app Store lifecycle', () => {
 
     expect(stopFirst).toHaveBeenCalledOnce();
     expect(mocks.stopRetentionFingerprint).toHaveBeenCalledOnce();
+    expect(mocks.stopLongTaskWatchdog).toHaveBeenCalledOnce();
     firstDispose();
     expect(stopSecond).not.toHaveBeenCalled();
     secondDispose();
     secondDispose();
     expect(mocks.stopRetentionFingerprint).toHaveBeenCalledTimes(2);
+    expect(mocks.stopLongTaskWatchdog).toHaveBeenCalledTimes(2);
     expect(stopSecond).toHaveBeenCalledOnce();
     expect(hmrData.appSagasStop).toBeUndefined();
   });

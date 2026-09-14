@@ -1,3 +1,4 @@
+// @ui-invariant-exempt: caller-ledger assertions read only the hand-maintained menu.meta array, and vitest related already runs this suite via the direct menu.meta import
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import MenuTestHarness from './MenuTestHarness.svelte';

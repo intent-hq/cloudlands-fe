@@ -122,7 +122,7 @@ async function getActiveStreamsFromDaemon(): Promise<ActiveStream[]> {
       return lastKnownActiveStreams;
     }
     // Compatibility fallback: shipped FE versions may briefly run against a
-    // pre-PROTOCOL-4.1 sidecar that does not implement agent.listActive yet.
+    // sidecar that does not implement agent.listActive yet.
     console.warn('agent.listActive unavailable; using legacy active-streams probe', error);
     const activeStreams = await getLegacyActiveStreamsFromDaemon();
     lastKnownActiveStreams = activeStreams;

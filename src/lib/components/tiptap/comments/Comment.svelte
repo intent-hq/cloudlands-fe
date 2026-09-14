@@ -285,7 +285,12 @@
               size="icon-xs"
               aria-label={m.tiptap_comment_collapse_label()}
               tooltip={m.tiptap_comment_collapse_label()}
-              onclick={() => onClose?.()}
+              onclick={(e: MouseEvent) => {
+                // The sidebar container re-focuses a comment on any bubbled
+                // click, which would immediately undo the collapse.
+                e.stopPropagation();
+                onClose?.();
+              }}
             >
               <Fa icon={faTimes} size="xs" />
             </Button>

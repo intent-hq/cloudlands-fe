@@ -3,6 +3,10 @@ import type { TransitionConfig } from 'svelte/transition';
 import { beforeFollowBottomMutation, type FollowBottomMutation } from '$lib/utils/smartScroll';
 
 const DURATION_MS = 180;
+// Svelte's `transition.stop()` aborts the animation without a terminal tick,
+// so the transition lease also carries a lifetime bound: a full bidirectional
+// reversal plus slack, after which the follower releases it on its own.
+const TRANSITION_LEASE_OPTIONS = { maxHoldMs: DURATION_MS * 2 + 500 };
 // Svelte's runtime completes an absent transition config without creating a
 // Web Animation, although its generated component type excludes undefined.
 const NO_TRANSITION = undefined as unknown as TransitionConfig;
@@ -99,11 +103,14 @@ export function queuedMessageRowTransition(
   _params?: undefined,
   options: { direction?: 'in' | 'out' | 'both' } = {},
 ): TransitionConfig {
-  let bottomMutation: FollowBottomMutation | null = beforeFollowBottomMutation(node);
+  let bottomMutation: FollowBottomMutation | null = beforeFollowBottomMutation(
+    node,
+    TRANSITION_LEASE_OPTIONS,
+  );
   let previousT: number | null = null;
   let phase: 'intro' | 'idle' | 'outro' = options.direction === 'out' ? 'outro' : 'intro';
   const acquireBottomMutation = () => {
-    bottomMutation ??= beforeFollowBottomMutation(node);
+    bottomMutation ??= beforeFollowBottomMutation(node, TRANSITION_LEASE_OPTIONS);
   };
   const settleBottomMutation = () => {
     bottomMutation?.settle();

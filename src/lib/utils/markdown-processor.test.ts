@@ -3,6 +3,8 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Editor } from '@tiptap/core';
+import { tick } from 'svelte';
+import DOMPurify from 'dompurify';
 import { createEditorConfig } from './editor-config';
 import { processHTMLToMarkdown, processMarkdownToHTML } from './markdown-processor';
 
@@ -10,10 +12,13 @@ describe('processMarkdownForDisplay error path', () => {
   afterEach(() => {
     vi.resetModules();
     vi.doUnmock('./tiptap-task-list-extension');
+    vi.doUnmock('dompurify');
   });
 
   it('sanitizes the fallback when parsing throws', async () => {
     vi.resetModules();
+    // A re-imported sanitizer needs its own hooks, not a second set on the shared instance.
+    vi.doMock('dompurify', () => ({ default: DOMPurify(window) }));
     vi.doMock('./tiptap-task-list-extension', () => ({
       createTiptapTaskListMarked: () => ({
         parse: () => {
@@ -122,6 +127,106 @@ describe('markdown-processor inline workspace file images', () => {
 });
 
 describe('markdown-processor inline workspace file videos', () => {
+  it.each([
+    ['cross-workspace', 'workspace-asset://other-ws/demo.webm', 'ws-abc'],
+    ['unknown workspace', 'workspace-asset://ws-abc/demo.mp4', undefined],
+    ['malformed path', 'workspace-asset://ws-abc/../demo.mp4', 'ws-abc'],
+    ['malformed escape', 'workspace-asset://ws-abc/bad%zz.webm', 'ws-abc'],
+    ['invalid backend', 'workspace-asset://ws-abc/demo.webm?backend=bad%2Froute', 'ws-abc'],
+    ['unknown query', 'workspace-asset://ws-abc/demo.mp4?unknown=1', 'ws-abc'],
+  ])(
+    'never restores rejected %s saved videos through inline note save/reload',
+    async (_reason, src, workspaceId) => {
+      const html = await processMarkdownToHTML(`Recording: ![rejected](${src})`, { workspaceId });
+      const rendered = document.createElement('div');
+      rendered.innerHTML = html;
+      expect(rendered.querySelector('img[src], video[src]')).toBeNull();
+      const editor = new Editor(
+        createEditorConfig({
+          element: document.createElement('div'),
+          content: html,
+          editable: true,
+          onUpdate: () => {},
+          useMarkdown: true,
+          workspace: workspaceId ? { id: workspaceId } : undefined,
+          enableMentions: false,
+        }),
+      );
+      await tick();
+      try {
+        rendered.innerHTML = editor.getHTML();
+        expect(rendered.querySelector('img[src], video[src]')).toBeNull();
+        rendered.innerHTML = await processMarkdownToHTML(processHTMLToMarkdown(editor.getHTML()), {
+          workspaceId,
+        });
+        expect(rendered.querySelector('img[src], video[src]')).toBeNull();
+      } finally {
+        editor.destroy();
+      }
+    },
+  );
+
+  it('keeps rejected saved-video code examples inert and unchanged', async () => {
+    const example = '![rejected](workspace-asset://other-ws/demo.webm?backend=bad%2Froute)';
+    const element = document.createElement('div');
+    element.innerHTML = await processMarkdownToHTML(`\`\`\`markdown\n${example}\n\`\`\``, {
+      workspaceId: 'ws-abc',
+    });
+    expect(element.querySelector('pre code')?.textContent?.trim()).toBe(example);
+    expect(element.querySelector('img[src], video[src]')).toBeNull();
+  });
+
+  it.each(['webm', 'mp4'])(
+    'round-trips a saved %s asset through the note editor',
+    async (extension) => {
+      const src = `workspace-asset://ws-abc/mfr7-1234abcd.${extension}?backend=remote-1&v=render-1`;
+      const markdown = `![saved demo](${src})`;
+      const html = await processMarkdownToHTML(markdown, { workspaceId: 'ws-abc' });
+      const element = document.createElement('div');
+      const editor = new Editor(
+        createEditorConfig({
+          element,
+          content: html,
+          editable: true,
+          onUpdate: () => {},
+          useMarkdown: true,
+          workspace: { id: 'ws-abc' },
+          enableMentions: false,
+        }),
+      );
+      await tick();
+      try {
+        expect(editor.getJSON().content?.some((node) => node.type === 'video')).toBe(true);
+        expect(editor.getHTML()).not.toContain('workspace-file://');
+        expect(processHTMLToMarkdown(editor.getHTML())).toBe(markdown);
+        const reloaded = document.createElement('div');
+        reloaded.innerHTML = await processMarkdownToHTML(processHTMLToMarkdown(editor.getHTML()), {
+          workspaceId: 'ws-abc',
+        });
+        expect(reloaded.querySelector('video')?.getAttribute('src')).toBe(src);
+        expect(reloaded.querySelector('img')).toBeNull();
+      } finally {
+        await tick();
+        editor.destroy();
+      }
+    },
+  );
+
+  it.each([
+    'workspace-asset://other-ws/demo.webm',
+    'workspace-asset://ws-abc/../demo.webm',
+    'workspace-asset://ws-abc/demo.svg',
+    'workspace-asset://ws-abc/demo.mov',
+    'workspace-asset://ws-abc/demo.webm?unexpected=1',
+    'https://example.com/demo.webm',
+    'javascript:alert(1)',
+  ])('does not allow raw video with an unsafe source %s', async (src) => {
+    const html = await processMarkdownToHTML(`<video src="${src}" controls></video>`, {
+      workspaceId: 'ws-abc',
+    });
+    expect(html).not.toContain('<video');
+  });
+
   it('renders allowlisted video markdown as a playable workspace video', async () => {
     const html = await processMarkdownToHTML('![demo](intent://local/file/out/demo.mp4)', {
       workspaceId: 'ws-abc',

@@ -43,8 +43,9 @@
   import { splitDroppedItems } from '$lib/utils/drop-split';
   import { isRemoteBackend } from '$lib/components/chat/input/attachment-placement';
   import { shouldTreatAsNewRepo } from '$features/onboarding/utils/treat-as-new-repo';
+  import { DEFAULT_NEW_WORKSPACE_SPECIALIST_ID } from '$lib/constants/specialists';
 
-  const COORDINATOR_SPECIALIST_ID = 'spec-writer';
+  const INITIAL_AGENT_SPECIALIST_ID = DEFAULT_NEW_WORKSPACE_SPECIALIST_ID;
 
   const logger = createLogger('OnboardingPromptStep');
   const defaultProviderId$ = selectEffectiveDefaultProviderId();
@@ -83,8 +84,8 @@
      */
     hideSetupScriptControl?: boolean;
 
-    // Model picker (initial Coordinator agent)
-    /** User-picked model — undefined means use the Coordinator's auto-resolved default. */
+    // Model picker (initial Developer agent)
+    /** User-picked model — undefined means use the Developer's auto-resolved default. */
     selectedModel?: string | undefined;
     /** Whether the user explicitly overrode the model (vs the resolved default). */
     modelWasOverridden?: boolean;
@@ -205,7 +206,7 @@
     return null;
   });
 
-  // Daemon-resolved default-model preview for the Coordinator (PROTOCOL
+  // Daemon-resolved default-model preview for the Developer (PROTOCOL
   // §5.11): `specialist.list` with the onboarding provider context returns
   // additive `resolvedModel` fields computed by the same resolver a no-model
   // create uses, so the picker displays exactly what the daemon would pin.
@@ -244,10 +245,10 @@
     })();
   });
 
-  const coordinatorDefaultModel = $derived.by(() => {
+  const initialAgentDefaultModel = $derived.by(() => {
     const providerView = resolvedModelsByProvider[onboardingProvider];
-    if (providerView) return providerView[COORDINATOR_SPECIALIST_ID];
-    return $specialists$.find((s) => s.id === COORDINATOR_SPECIALIST_ID)?.resolvedModel;
+    if (providerView) return providerView[INITIAL_AGENT_SPECIALIST_ID];
+    return $specialists$.find((s) => s.id === INITIAL_AGENT_SPECIALIST_ID)?.resolvedModel;
   });
 
   // Expose the RichTextarea ref so the parent can call methods on it
@@ -260,7 +261,7 @@
    * default commit (monorepo#3044): the daemon resolvedModel preview when the
    * user never overrode it (undefined ⇒ "Provider default"), plus the provider
    * context it was resolved under so the caller can detect a mismatch with the
-   * create's resolved provider. Unlike the displayed `coordinatorDefaultModel`,
+   * create's resolved provider. Unlike the displayed `initialAgentDefaultModel`,
    * this never uses the `$specialists$` fallback — that view was resolved in
    * the daemon-default-provider context, so certifying it for
    * `onboardingProvider` could persist another provider's model when the user
@@ -271,7 +272,7 @@
     provider: string;
   } {
     return {
-      model: resolvedModelsByProvider[onboardingProvider]?.[COORDINATOR_SPECIALIST_ID],
+      model: resolvedModelsByProvider[onboardingProvider]?.[INITIAL_AGENT_SPECIALIST_ID],
       provider: onboardingProvider,
     };
   }
@@ -854,7 +855,7 @@
         />
       {/if}
 
-      <!-- Model picker (initial Coordinator agent) -->
+      <!-- Model picker (initial Developer agent) -->
       <div
         class="onboarding-metadata-row flex min-h-8 min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-sm"
         in:fly={{ y: 10, duration: 200, easing: cubicOut }}
@@ -862,14 +863,14 @@
         <span class="shrink-0 text-muted-foreground"
           >{m.onboarding_promptStep_usingModel_before()}</span
         >
-        {#key coordinatorDefaultModel}
+        {#key initialAgentDefaultModel}
           <ModelPicker
             selectedModel={modelWasOverridden ? selectedModel : undefined}
             {onModelChange}
             variant="ghost"
             size="xs"
             triggerClass="max-w-full pl-1 pr-1.5 font-medium bg-card/50 py-1.25 rounded-md border border-border text-sm"
-            defaultModelId={coordinatorDefaultModel}
+            defaultModelId={initialAgentDefaultModel}
             defaultModelLabel={m.chat_modelPicker_providerDefault_label()}
             fallbackToCatalogDefault
             fallbackProviderId={onboardingProvider}

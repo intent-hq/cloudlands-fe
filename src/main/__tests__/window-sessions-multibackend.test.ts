@@ -14,13 +14,13 @@ import * as fs from 'fs';
 import fsAsync from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockGetPath = vi.fn();
 const mockGetDisplayMatching = vi.fn();
 
 /** A live BrowserWindow test double: constructable + destroyable + URL-bearing. */
-const { FakeBrowserWindow } = vi.hoisted(() => {
+const { FakeBrowserWindow, mockRegisterWindowTitleListener } = vi.hoisted(() => {
   class FakeBrowserWindow {
     static instances: FakeBrowserWindow[] = [];
     static focused: FakeBrowserWindow | null = null;
@@ -97,7 +97,7 @@ const { FakeBrowserWindow } = vi.hoisted(() => {
       this.handlers.get(event)?.(...args);
     }
   }
-  return { FakeBrowserWindow };
+  return { FakeBrowserWindow, mockRegisterWindowTitleListener: vi.fn() };
 });
 
 vi.mock('electron', () => ({
@@ -125,6 +125,7 @@ vi.mock('../../features/deeplink/deep-link-handler', () => ({
 
 vi.mock('../utils/resolve-app-title', () => ({
   resolveAppTitle: () => 'Intent',
+  registerWindowTitleListener: mockRegisterWindowTitleListener,
 }));
 
 import { _resetHudWindowRefForTests, isTrackedHudWindow } from '../hud-window';
@@ -179,8 +180,13 @@ describe('multi-backend window sessions', () => {
     mockGetDisplayMatching.mockReturnValue({ workArea: { x: 0, y: 0, width: 1920, height: 1080 } });
     FakeBrowserWindow.instances = [];
     FakeBrowserWindow.focused = null;
+    mockRegisterWindowTitleListener.mockClear();
     _resetWindowSessionsCacheForTests();
     _resetHudWindowRefForTests();
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
   describe('per-backend save/restore', () => {
@@ -651,6 +657,22 @@ describe('multi-backend window sessions', () => {
   });
 
   describe('restoreWindowsForBackend', () => {
+    it('registers the title listener for every fresh and restored window', () => {
+      createWindow();
+      const bounds = { x: 100, y: 100, width: 1024, height: 768 };
+      fs.writeFileSync(
+        getWindowSessionsPath(),
+        JSON.stringify({ 'remote-a': [{ route: '/hud', bounds }] }),
+        'utf-8',
+      );
+
+      restoreWindowsForBackend('remote-a');
+
+      expect(mockRegisterWindowTitleListener.mock.calls.map(([window]) => window)).toEqual(
+        FakeBrowserWindow.getAllWindows(),
+      );
+    });
+
     it('stamps restored windows with their saved backend bucket', () => {
       const bounds = { x: 100, y: 100, width: 1024, height: 768 };
       fs.writeFileSync(

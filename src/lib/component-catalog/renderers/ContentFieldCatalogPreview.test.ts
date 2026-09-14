@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+// @ui-invariant
 import { cleanup, render } from '@testing-library/svelte';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';

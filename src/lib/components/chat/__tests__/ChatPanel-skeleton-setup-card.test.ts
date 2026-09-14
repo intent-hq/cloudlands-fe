@@ -7,6 +7,12 @@
  * rows — no WorkspaceSetupCard. The pure-predicate tests in
  * chat-panel-visibility.test.ts cannot catch the card being reintroduced
  * inside the skeleton branch, so this suite renders ChatPanel itself.
+ *
+ * ChatPanel must be imported statically: a dynamic `import()` inside a test
+ * body charges the Vite transform of ChatPanel's whole module graph to that
+ * test's `testTimeout`, which times out under multi-worker load
+ * (intent-hq/intent#3082). A static import pays the same cost during file
+ * collection, where no per-test timeout applies.
  */
 import { cleanup, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -97,6 +103,7 @@ vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', () => ({
   selectChatLastChunkTime: testState.selector(null),
   selectChatLiveStreamPhase: testState.selector(null),
   selectChatModelUnavailable: testState.selector(null),
+  selectChatQuotaExceeded: testState.selector(null),
   selectChatReceivedFirstChunk: testState.selector(false),
   selectChatStatusEvents: testState.selector([]),
   selectChatStreamingStartTime: testState.selector(null),
@@ -149,7 +156,10 @@ vi.mock('$store/renderer/slices/specialists/specialists-selectors', () => ({
 vi.mock('$store/renderer/slices/provider-catalog/provider-catalog-selectors', () => ({
   selectEffectiveDefaultProviderId: testState.selector(''),
   selectProviderCatalogLoaded: testState.selector(false),
+  selectProviderCatalogEntries: testState.selector([] as unknown[]),
   selectProviderAuthFailureGuidance: { select: () => null },
+  selectProviderDisplayName: { select: (_state: unknown, id: string) => id },
+  selectNormalizedProviderId: { select: (_state: unknown, id: string) => id },
 }));
 
 vi.mock('../input/SimpleRichInput.svelte', async () => ({
@@ -226,6 +236,8 @@ vi.mock('$features/onboarding/messages/WorkspaceSetupCard.svelte', async () => (
   default: (await import('./mocks/MockWorkspaceSetupCard.svelte')).default,
 }));
 
+import ChatPanel from '../ChatPanel.svelte';
+
 // Workspace with a repository name so ChatPanel reconstructs onboardingContext
 // on mount (no initial prompt is persisted — the reopened-workspace shape).
 const workspace = {
@@ -237,7 +249,6 @@ const workspace = {
 };
 
 async function renderInitialWorkspaceChatPanel() {
-  const ChatPanel = (await import('../ChatPanel.svelte')).default;
   render(ChatPanel, {
     props: { workspace, agentId: 'agent-1', isActive: true, isInitialWorkspaceAgent: true },
   });

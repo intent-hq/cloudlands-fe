@@ -536,6 +536,7 @@ function* listBrowserTabs(data: BrowserListTabsRequestPayload | null): SagaGener
   const toReplyTab = (tab: PanelTab, hidden: boolean) => ({
     tabId: tab.id,
     url: tab.browserUrl || '',
+    ...(tab.browserRequestedUrl === undefined ? {} : { requestedUrl: tab.browserRequestedUrl }),
     title: tab.title || m.layout_panelLayout_browser_fallback(),
     closable: tab.closable !== false,
     // Persisted owner so main's ownership registry can rehydrate after a

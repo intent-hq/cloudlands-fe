@@ -90,6 +90,15 @@ vi.mock('@pierre/diffs', () => {
 });
 
 beforeEach(() => {
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+  vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(800);
   workerPoolState.acquireDiffWorkerPool.mockClear();
   workerPoolState.releaseDiffWorkerPool.mockClear();
   vi.spyOn(HTMLElement.prototype, 'getClientRects').mockReturnValue([
@@ -109,6 +118,7 @@ afterEach(() => {
   cleanup();
   vi.useRealTimers();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 // Pre-warm the component module graph so the cold dynamic import is not

@@ -8,10 +8,13 @@
 
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/svelte';
+import { warmImport } from '../../../test/warm-import';
 
 vi.mock('svelte-fa', () => ({
   default: () => null,
 }));
+
+warmImport(() => import('./CertMismatchModal.svelte'));
 
 const event = {
   id: 'r1',

@@ -31,12 +31,16 @@ describe('resize transition', () => {
 
   it('measures and animates the width for a real intro on the x axis', () => {
     const node = createNode(320);
+    const easing = (progress: number) => progress;
 
-    const config = resize(node, { axis: 'x', duration: 180 });
+    const config = resize(node, { axis: 'x', duration: 180, easing, fade: true, clip: false });
 
     expect(node.getBoundingClientRect).toHaveBeenCalledTimes(1);
     expect(config.duration).toBe(180);
+    expect(config.easing).toBe(easing);
     expect(config.css?.(0.5, 0.5)).toContain('width: 160px');
+    expect(config.css?.(0.5, 0.5)).toContain('opacity: 0.5');
+    expect(config.css?.(0.5, 0.5)).not.toContain('overflow: hidden');
     expect(config.css?.(1, 0)).toContain('width: 320px');
   });
 

@@ -46,7 +46,10 @@ vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-sele
   selectWorkspaceInitializerHydrated: () => mocks.readable(true),
   selectCompactWorkspaceInitializerFormState: () => mocks.readable(null),
   selectWorkspaceInitializerLastSelectedRepo: () => mocks.readable(null),
-  selectWorkspaceInitializerLastSubmittedAgent: () => mocks.readable(null),
+  // A remembered orchestration choice: the modal opens in team mode so the
+  // team card's picker is live from the start.
+  selectWorkspaceInitializerLastSubmittedAgent: () =>
+    mocks.readable({ selectedSpecialist: 'spec-writer', isTeamMode: true }),
   selectWorkspaceInitializerRecentRepos: () => mocks.readable([]),
   selectWorkspaceInitializerPendingGitHubPrefill: () => mocks.readable(null),
 }));

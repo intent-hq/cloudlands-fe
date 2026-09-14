@@ -47,7 +47,7 @@
     virtualizer?: import('@pierre/diffs').Virtualizer;
     /**
      * Secondary git root scoping the content fetches (multi git root
-     * tracking, v6.15). Forwarded to `TrackedChangeDiffViewer` together with
+     * tracking, §5.6). Forwarded to `TrackedChangeDiffViewer` together with
      * `gitRootPath`; absent → primary-root behavior.
      */
     gitRootId?: string;

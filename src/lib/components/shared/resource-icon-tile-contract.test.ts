@@ -1,3 +1,12 @@
+// @verify-changed-triggers: ./ResourceIconTile.svelte, ./resource-icon.ts,
+//   ../workspace/MultiSelectTabbedSidebar.svelte, ../workspace/SidebarBrowserLauncher.svelte,
+//   ../workspace/WorkspaceTerminalDock.svelte, ../workspace/SidebarExpandedTabStrip.svelte,
+//   ../workspace/multi-select-sidebar-transitions.css, ../workspace/multi-select-sidebar-tabs.ts,
+//   ../workspace/sidebar/NotesPanel.svelte, ../workspace/sidebar/ContextItemRow.svelte,
+//   ../layout/panel-system/PanelTabBar.svelte, ../layout/panel-system/PanelEmptyState.svelte,
+//   ../chat/ChatMessageNavigator.svelte, ../chat/ScrollToBottomButton.svelte,
+//   ../chat/chat-icon-size.ts, ../../../features/layout/tab-types/register-all.ts
+
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 

@@ -45,12 +45,20 @@
 
 <div class="my-2 min-w-0 max-w-2xl" data-chat-video>
   {#if frameUnavailable}
-    <MediaUnavailable
-      {name}
-      reason={workspaceFile ? 'missing' : 'load-failed'}
-      path={workspaceFile?.path}
-      workspaceId={workspaceFile?.workspaceId}
-    />
+    <div class="flex items-center gap-2">
+      <MediaUnavailable
+        {name}
+        reason="load-failed"
+        path={workspaceFile?.path}
+        workspaceId={workspaceFile?.workspaceId}
+      />
+      <VideoActionsMenu
+        {videoUrl}
+        videoName={name}
+        sourceKind={source.kind}
+        mimeType={source.mimeType}
+      />
+    </div>
   {:else}
     <div
       class="group relative aspect-video w-full max-h-40 max-w-2xl"

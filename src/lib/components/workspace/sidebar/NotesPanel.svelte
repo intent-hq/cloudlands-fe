@@ -28,6 +28,7 @@
   import {
     type AvatarState,
     getAvatarStateForSession,
+    isSessionRunning,
   } from '$features/agent/components/agent-avatar/avatar-state';
   import { selectAgentSessionsByIds } from '$store/renderer/slices/agent-session/agent-session-selectors';
 
@@ -372,10 +373,12 @@
       const agent = agentSessionsById.get(agentId);
       if (!agent) continue;
 
-      // Shared precedence: a live turn with an unresolved tool is still running,
-      // so tool-executing agents stay visible here instead of dropping out.
+      // Shared running test: a live turn with an unresolved tool is still running,
+      // so tool-executing agents stay visible here instead of dropping out. The
+      // avatar state itself may outrank `running` (e.g. `question`), so it is
+      // not used as the visibility gate.
+      if (!isSessionRunning(agent)) continue;
       const state = getAvatarStateForSession(agent);
-      if (state !== 'running') continue;
 
       // Get specialist from agent metadata
       const specialistId = agent.metadata?.specialist || agent.agentMetadata?.specialist;
@@ -475,7 +478,7 @@
             ondblclick={(e) => handleDoubleClick(note, e)}
             oncontextmenu={(e) => handleContextMenu(e, note)}
             class={cn(
-              'relative w-full transition-all duration-150 flex items-center group/note min-w-0',
+              'note-row relative w-full transition-[opacity,border-color,border-top-width] duration-150 flex items-center group/note min-w-0',
               isDragging && 'opacity-50',
               isDragOver && 'border-t-2 border-accent',
             )}
@@ -782,5 +785,15 @@
 <style>
   input.inline-edit-input::selection {
     background: hsl(var(--ring) / 0.3);
+  }
+
+  /* Off-screen rows skip style/layout/paint; the intrinsic size matches the 36px
+     ListItem row so scrollHeight stays stable before a row is first rendered. The
+     clip margin keeps the focus ring, unread dot and inline-edit outline
+     (-inset-x-2) visible outside the row box under paint containment. */
+  .note-row {
+    content-visibility: auto;
+    contain-intrinsic-block-size: auto 36px;
+    overflow-clip-margin: 8px;
   }
 </style>

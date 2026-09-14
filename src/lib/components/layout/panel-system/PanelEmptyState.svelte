@@ -96,6 +96,12 @@
     return filtered.slice(0, 5);
   });
 
+  // A browser tab's title is canonical registry data; none yet shows the label.
+  function getTabTitle(tab: PanelTab): string {
+    if (tab.type === 'browser') return tab.title || m.layout_panelLayout_browser_fallback();
+    return tab.title;
+  }
+
   // Get icon for tab type
   function getTabIcon(type: PanelTab['type']) {
     switch (type) {
@@ -127,8 +133,12 @@
     return m.layout_panelEmptyState_daysAgo_label({ days: Math.floor(diff / 86400000) });
   }
 
-  function handleReopenItem() {
+  function handleReopenLatest() {
     layoutManager?.reopenClosedTab();
+  }
+
+  function handleReopenItem(closedTabId: string) {
+    layoutManager?.reopenClosedTab(closedTabId, panelId);
   }
 
   function handleCreateAgent() {
@@ -206,7 +216,7 @@
     {
       key: $reopenTabShortcut$,
       label: m.layout_panelEmptyState_reopenClosed_label(),
-      action: handleReopenItem,
+      action: handleReopenLatest,
     },
     {
       key: $toggleSidebarShortcut$,
@@ -262,17 +272,18 @@
         </div>
         {#each recentItems as item (item.tab.id + '-' + item.closedAt)}
           {@const resourceKind = getResourceIconKind(item.tab.type)}
+          {@const tabTitle = getTabTitle(item.tab)}
           <button
             class="recent-item type-caption flex w-full cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-left text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none motion-reduce:transition-none"
-            onclick={handleReopenItem}
-            title={m.layout_panelEmptyState_reopen_tooltip({ title: item.tab.title })}
+            onclick={() => handleReopenItem(item.tab.id)}
+            title={m.layout_panelEmptyState_reopen_tooltip({ title: tabTitle })}
           >
             {#if resourceKind}
               <ResourceIconTile kind={resourceKind} />
             {:else}
               <Fa icon={getTabIcon(item.tab.type)} class="size-3 shrink-0 opacity-70" />
             {/if}
-            <span class="flex-1 truncate">{item.tab.title}</span>
+            <span class="flex-1 truncate">{tabTitle}</span>
             <span class="shrink-0 opacity-70">{formatTime(item.closedAt)}</span>
           </button>
         {/each}

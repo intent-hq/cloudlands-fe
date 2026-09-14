@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test';
 import { resolve } from 'node:path';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { createServer, type ViteDevServer } from 'vite';
+import { viteHarnessCacheDir } from './vite-harness-cache.mjs';
 
 let server: ViteDevServer;
 let baseUrl = '';
@@ -12,7 +13,9 @@ test.beforeAll(async () => {
   server = await createServer({
     configFile: false,
     root: process.cwd(),
-    cacheDir: process.env.PANEL_COLUMNS_VITE_CACHE_DIR,
+    cacheDir: viteHarnessCacheDir('panel-open-mode', {
+      override: process.env.PANEL_COLUMNS_VITE_CACHE_DIR,
+    }),
     plugins: [svelte({ configFile: resolve('svelte.config.js') })],
     resolve: {
       alias: [

@@ -10,6 +10,7 @@
 import type { ChildProcess } from 'node:child_process';
 import crypto from 'node:crypto';
 import { EventEmitter } from 'node:events';
+import fs from 'node:fs';
 import https from 'node:https';
 import { createRequire } from 'node:module';
 import net, { type AddressInfo } from 'node:net';
@@ -41,6 +42,7 @@ import type { HostCertMismatch, RaceConnectInfo } from './backend-connection';
 import { resolveSocketPath } from './intentd-sidecar';
 import { isWindowsPipePath, toLocalEndpoint, windowsPipeName } from './intentd-pipe-name';
 import { JsonRpcClient } from './json-rpc-client';
+import { createTunneledSocket, TUNNEL_CONNECT_TIMEOUT_MS } from './tailcat-tunnel';
 
 // `ws` is aliased to a browser stub in `vitest.config.ts`; use createRequire to
 // load the real Node implementation (same pattern as `ssh-manager.ts`).
@@ -1502,6 +1504,86 @@ describe('tunnelRaceAttempt (tailcat tunnel candidate)', () => {
     expect(attempt!.via).toBe('tunnel');
     expect(typeof attempt!.create).toBe('function');
   });
+});
+
+describe('tunnel candidate connect bound in the wss race', () => {
+  // During a remote daemon update the direct host refuses fast while the
+  // tailcat forwarder accepts the loopback connect and the inner handshake
+  // stalls; without a per-candidate bound the race sits in `connecting` until
+  // RACE_TIMEOUT_MS (10 s), which is the whole updating window.
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllEnvs();
+  });
+
+  it('settles at TUNNEL_CONNECT_TIMEOUT_MS when the direct host refuses and the tunnel hangs', async () => {
+    vi.useFakeTimers();
+    const refused = new FakeCandidate();
+    const hangingInner = new FakeCandidate();
+    const tunnel = createTunneledSocket({
+      tcAddress: 'tc.example.ts.net',
+      remotePort: 5181,
+      binaryPath: '/fake/tailcat',
+      spawn: () => new EventEmitter() as unknown as ChildProcess,
+      createInner: () => hangingInner,
+    });
+    const facade = raceDuplexSockets([
+      { host: '10.0.0.9', create: () => refused },
+      { host: TUNNEL_RACE_HOST, via: 'tunnel', create: () => tunnel },
+    ]);
+    const failed = new Promise<Error>((res) => facade.once('error', (e: Error) => res(e)));
+    refused.emit(
+      'error',
+      Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' }),
+    );
+
+    await vi.advanceTimersByTimeAsync(TUNNEL_CONNECT_TIMEOUT_MS - 1);
+    expect(facade.destroyed).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    const error = await failed;
+    expect(error.message).toMatch(/did not connect within/);
+    expect(error.message).not.toMatch(/race timed out/);
+    expect(tunnel.destroyed).toBe(true);
+  });
+
+  it.skipIf(process.platform === 'win32')(
+    'createBackendSocket: a black-holed tailcat child errors at the tunnel bound, not the race timeout',
+    async () => {
+      // A real spawn through tunnelRaceAttempt: the "tailcat" binary is a
+      // script that accepts the pipe and never answers, so the pinned wss
+      // handshake through the forwarder can never complete.
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tailcat-hang-'));
+      const script = path.join(tmpDir, 'tailcat');
+      fs.writeFileSync(script, '#!/bin/sh\nexec sleep 30\n', { mode: 0o755 });
+      vi.stubEnv('TAILCAT_BIN', script);
+      // A port nothing listens on: the direct candidate refuses immediately.
+      const probe = net.createServer().listen(0, '127.0.0.1');
+      await new Promise<void>((res) => probe.once('listening', res));
+      const refusedPort = (probe.address() as AddressInfo).port;
+      await new Promise<void>((res) => probe.close(() => res()));
+
+      vi.useFakeTimers();
+      const socket = createBackendSocket({
+        transport: 'wss',
+        host: '127.0.0.1',
+        port: refusedPort,
+        token: 'c'.repeat(64),
+        fingerprint: 'AA:BB',
+        tcAddress: 'tc.example.ts.net',
+      });
+      try {
+        const failed = new Promise<Error>((res) => socket.once('error', (e: Error) => res(e)));
+        await vi.advanceTimersByTimeAsync(TUNNEL_CONNECT_TIMEOUT_MS);
+        const error = await failed;
+        expect(error.message).not.toMatch(/race timed out/);
+        expect(socket.destroyed).toBe(true);
+      } finally {
+        socket.destroy();
+        vi.useRealTimers();
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+      }
+    },
+  );
 });
 
 describe('captureFingerprint through the tailcat tunnel (tc-address host)', () => {

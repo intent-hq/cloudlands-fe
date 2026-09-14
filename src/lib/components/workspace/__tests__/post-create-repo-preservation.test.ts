@@ -62,9 +62,16 @@ vi.mock('$store/renderer/slices/provider-settings/provider-settings-selectors', 
 }));
 
 vi.mock('$store/renderer/slices/specialists/specialists-selectors', () => ({
-  selectSpecialists: Object.assign(() => mocks.readable(() => []), {
-    select: vi.fn(() => []),
-  }),
+  selectSpecialists: Object.assign(
+    () =>
+      mocks.readable(() => [
+        { id: 'spec-writer', name: 'Coordinator', description: '', role: 'orchestrator' },
+        { id: 'developer', name: 'Developer', description: '' },
+      ]),
+    {
+      select: vi.fn(() => []),
+    },
+  ),
   selectCustomSpecialistsLoaded: () => mocks.readable(() => true),
   selectFileSpecialistsLoaded: () => mocks.readable(() => true),
   selectEffectiveBehaviorPrompt: { select: vi.fn(() => undefined) },
@@ -268,9 +275,9 @@ describe('post-create repo-field preservation', () => {
       isValidPath: true,
       scope: '',
     });
-    // Agent prefs — always preserved
-    expect(formState.selectedSpecialist).toBe('spec-writer');
-    expect(formState.isTeamMode).toBe(true);
+    // Agent prefs — always preserved (first-launch default: single Developer)
+    expect(formState.selectedSpecialist).toBe('developer');
+    expect(formState.isTeamMode).toBe(false);
     // No scope selected → no scopeRepoPath
     expect(formState.scopeRepoPath).toBeUndefined();
   });

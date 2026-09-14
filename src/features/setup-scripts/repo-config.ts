@@ -123,7 +123,7 @@ export async function fetchRepoConfigSetupScript(repoPath: string): Promise<stri
 
 /**
  * Read the committed setup script for a GitHub repo with no local checkout
- * (`github.repoConfig.get`, PROTOCOL §5.27 v2.4, via the AppClient
+ * (`github.repoConfig.get`, PROTOCOL §5.27, via the AppClient
  * integrations domain). `ref` is forwarded when provided; the daemon defaults
  * to the repo's default branch. Resolves null for any failure (missing file,
  * unauthenticated private repo, transport error) — callers fall back to

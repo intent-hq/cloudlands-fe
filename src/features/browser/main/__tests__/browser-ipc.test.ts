@@ -191,15 +191,26 @@ describe('browser:report-tab-bounds IPC', () => {
 
   afterEach(() => vi.restoreAllMocks());
 
-  it('routes a full payload to reportTabViewBounds', async () => {
-    const { embeddedBrowserCdp } = await import('../embedded-browser-cdp-service');
-    const handler = registerAndGetHandler(IPC_CHANNELS.BROWSER.REPORT_TAB_BOUNDS);
+  it.each([
+    { zoomFactor: 1, width: 640, height: 400 },
+    { zoomFactor: 0.8, width: 512, height: 320 },
+    { zoomFactor: 1.25, width: 800, height: 500 },
+  ])(
+    'converts CSS bounds to native bounds at zoom $zoomFactor',
+    async ({ zoomFactor, width, height }) => {
+      const { embeddedBrowserCdp } = await import('../embedded-browser-cdp-service');
+      const handler = registerAndGetHandler(IPC_CHANNELS.BROWSER.REPORT_TAB_BOUNDS);
 
-    await handler({}, { tabId: 'tab-1', width: 640, height: 400 });
+      const result = await handler(
+        { sender: { getZoomFactor: () => zoomFactor } },
+        { tabId: 'tab-1', width: 640, height: 400 },
+      );
 
-    expect(embeddedBrowserCdp.reportTabViewBounds).toHaveBeenCalledWith('tab-1', 640, 400);
-    expect(embeddedBrowserCdp.clearTabViewBounds).not.toHaveBeenCalled();
-  });
+      expect(result).toEqual({ success: true });
+      expect(embeddedBrowserCdp.reportTabViewBounds).toHaveBeenCalledWith('tab-1', width, height);
+      expect(embeddedBrowserCdp.clearTabViewBounds).not.toHaveBeenCalled();
+    },
+  );
 
   it('treats a tabId-only payload as an explicit bounds clear', async () => {
     const { embeddedBrowserCdp } = await import('../embedded-browser-cdp-service');

@@ -30,9 +30,19 @@ function withoutSpecialist(metadata: Record<string, unknown>): Record<string, un
   return next;
 }
 
+export interface BuildCreateWorkspaceRequestOptions {
+  /**
+   * Resolves the initial agent's display name from the specialist the request
+   * carries (`undefined` = General). Consulted only when the proposal payload
+   * does not carry an explicit `initialAgent.name`.
+   */
+  resolveAgentName: (specialistId: string | undefined) => string;
+}
+
 export function buildCreateWorkspaceRequestFromProposal(
   proposal: WorkspaceCreateProposal,
   editedFields: Record<string, unknown> | undefined,
+  options: BuildCreateWorkspaceRequestOptions,
 ): CreateWorkspaceRequest {
   const params = (proposal.payload.params ?? {}) as Partial<CreateWorkspaceRequest>;
   const siblingScoped = proposal.preview.workspaceCreate?.mode === 'sibling';
@@ -86,7 +96,7 @@ export function buildCreateWorkspaceRequestFromProposal(
     scope: stringOverride(siblingScoped ? undefined : editedFields?.scope, params.scope),
     initialAgent: {
       ...initialAgentFields,
-      name: initialAgent?.name ?? 'Coordinator',
+      name: initialAgent?.name ?? options.resolveAgentName(specialist),
       prompt: stringOverride(editedFields?.initialPrompt, initialAgent?.prompt),
       specialist,
       agentType: initialAgent?.agentType ?? createAgentTypeId('workspace'),

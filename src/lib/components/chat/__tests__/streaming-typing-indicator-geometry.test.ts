@@ -118,12 +118,16 @@ describe('StreamingTypingIndicator geometry matches operational rows', () => {
       props: { visible: true, message: 'Thinking' },
     });
     animationRecords[0].finish();
+    const arms = Array.from(view.container.querySelectorAll<SVGSVGElement>('[data-mark-arm-box]'));
+    expect(arms).toHaveLength(5);
+    expect(arms.every((arm) => arm.style.transform !== '')).toBe(true);
     expect(animationRecords.filter(({ options }) => options.iterations === Infinity)).toHaveLength(
-      5,
+      0,
     );
 
     view.unmount();
     expect(animationRecords.every(({ cancel }) => cancel.mock.calls.length > 0)).toBe(true);
+    expect(arms.every((arm) => arm.style.transform === '')).toBe(true);
 
     const reactivated = render(StreamingTypingIndicator, {
       props: { visible: true, message: 'Thinking' },

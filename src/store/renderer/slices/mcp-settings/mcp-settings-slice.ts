@@ -156,6 +156,9 @@ export const importFromJsonCompleted = createAction<[count: number]>(
 /** Trigger: retry/restart a stopped or errored server */
 export const restartServer = createAction<[name: string]>('mcpSettings/restartServer');
 
+/** Trigger: run interactive OAuth for a saved hosted server */
+export const authenticateServer = createAction<[name: string]>('mcpSettings/authenticateServer');
+
 /** Trigger: replace the whole server set from the advanced JSON editor */
 export const saveAdvancedJson = createAction<[jsonString: string]>('mcpSettings/saveAdvancedJson');
 

@@ -636,7 +636,10 @@
       {/snippet}
 
       {#snippet content()}
-        <div class="w-48">
+        <div
+          class="min-w-48 w-max"
+          style="max-width: min(20rem, calc(var(--bits-dropdown-menu-content-available-width, 100vw) - 0.625rem))"
+        >
           <WorkspaceActionsMenu
             filePath={workspace?.worktreePath || workspace?.repositoryPath || workspace?.path || ''}
             workspaceId={workspace?.id || workspaceId}

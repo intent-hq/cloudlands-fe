@@ -18,6 +18,7 @@ import {
   updateItem,
   type Collection,
 } from '@augmentcode/themis/utils/collections/collection-utils';
+import type { BrowserTab } from '$shared/types/browser-clients';
 import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
 import { removeScript } from '../scripts/scripts-slice';
 import { removeTerminal } from '../terminals/terminals-slice';
@@ -148,10 +149,41 @@ export const emptyWorkspaceState: WorkspacePanelLayoutState = {
   savedCanvasWidthSourceBeforeExpand: undefined,
   deferSpecTab: false,
   newWorkspaceLifecycle: null,
+  emptiedByUserClose: false,
 };
 
-const { getWorkspaceState, setWorkspaceState, clearWorkspaceState } =
-  createWorkspaceScopedHelpers(emptyWorkspaceState);
+const {
+  getWorkspaceState,
+  setWorkspaceState: setWorkspaceStateUnchecked,
+  clearWorkspaceState,
+} = createWorkspaceScopedHelpers(emptyWorkspaceState);
+
+function hasAnyWorkspaceTab(ws: WorkspacePanelLayoutState): boolean {
+  return (
+    Object.values(ws.panels).some((panel) => panel.tabs.length > 0) ||
+    (ws.hiddenTabs?.ids.length ?? 0) > 0
+  );
+}
+
+/**
+ * `emptiedByUserClose` only means anything while the layout is still tabless:
+ * any transition that leaves a visible or hidden tab behind clears it here, so
+ * no tab-adding reducer has to remember to.
+ */
+function setWorkspaceState<S extends { byWorkspaceId: Record<string, WorkspacePanelLayoutState> }>(
+  state: S,
+  wsId: string,
+  ws: WorkspacePanelLayoutState,
+): S {
+  const next =
+    ws.emptiedByUserClose && hasAnyWorkspaceTab(ws) ? { ...ws, emptiedByUserClose: false } : ws;
+  return setWorkspaceStateUnchecked(state, wsId, next);
+}
+
+/** Flag a layout the user just emptied with an explicit close (see emptiedByUserClose). */
+function markEmptiedByUserClose(ws: WorkspacePanelLayoutState): WorkspacePanelLayoutState {
+  return hasAnyWorkspaceTab(ws) ? ws : { ...ws, emptiedByUserClose: true };
+}
 
 // ============================================================================
 // Actions
@@ -180,6 +212,12 @@ export const preparePanelLayoutBackendRestore = createAction(
   'panelLayout/preparePanelLayoutBackendRestore',
   (wsId: string) => [wsId] as const,
 );
+
+/**
+ * A backend switch ends the session every `emptiedByUserClose` belonged to:
+ * the incoming backend's tabless layouts were not emptied by this user.
+ */
+export const resetEmptiedByUserClose = createAction<[]>('panelLayout/resetEmptiedByUserClose');
 
 export const bootstrapNewWorkspaceLayout = createAction(
   'panelLayout/bootstrapNewWorkspaceLayout',
@@ -441,10 +479,11 @@ export const closeFocusedPanelTab = createAction(
 
 export const reopenClosedTab = createAction(
   'panelLayout/reopenClosedTab',
-  (wsId: string, timestamp?: number, closedTabId?: string) => ({
+  (wsId: string, timestamp?: number, closedTabId?: string, targetPanelId?: string) => ({
     wsId,
     newTabId: generateTabId(),
     closedTabId,
+    targetPanelId,
     timestamp: timestamp ?? Date.now(),
   }),
 );
@@ -1756,6 +1795,37 @@ export const setTabOwnerAgent = createAction<
 >('panelLayout/setTabOwnerAgent');
 
 /**
+ * The daemon tab registry acknowledged this client as the tab's host
+ * (REV-2 §5.45): record `hostClientId` so the tab persists geometry only from
+ * now on. Every other field stays as the host reported it.
+ */
+export const acknowledgeBrowserTabHost = createAction<
+  [wsId: string, tabId: string, hostClientId: string]
+>('panelLayout/acknowledgeBrowserTabHost');
+
+/**
+ * Apply a canonical registry row to an existing browser tab (REV-2 §5.45):
+ * a tab restored from geometry-only persistence, a mirror following its
+ * remote host, or a tab the daemon re-homed (`changes.hostClientId`). The
+ * row's host-reported fields replace the local ones; a cleared optional
+ * field is dropped (a cleared title shows the browser fallback, a cleared
+ * emulation resets the viewport it drove). Tabs the registry does not know
+ * are left untouched.
+ */
+export const applyBrowserTabRegistryRow = createAction<
+  [wsId: string, tabId: string, row: BrowserTab]
+>('panelLayout/applyBrowserTabRegistryRow');
+
+/**
+ * Ask the registry saga to diff the workspace's hosted browser tabs against
+ * the daemon now (REV-2 §5.45). No reducer: the saga's single-flight reporter
+ * is the only consumer.
+ */
+export const browserTabRegistryReportRequested = createAction<[wsId: string]>(
+  'panelLayout/browserTabRegistryReportRequested',
+);
+
+/**
  * Destroy ALL browser tabs owned by an agent — visible and hidden alike
  * (monorepo#2857). Dispatched when the agent's deletion commits
  * (`agent:deleted`): owned tabs never outlive their owner, and there is no
@@ -1766,6 +1836,26 @@ export const destroyTabsByOwnerAgent = createAction(
   (wsId: string, agentId: string, timestamp?: number) => ({
     wsId,
     agentId,
+    timestamp: timestamp ?? Date.now(),
+  }),
+);
+
+/**
+ * Destroy only the HIDDEN browser tabs owned by an agent in a workspace
+ * (intent#4762): the conversation footer's "Close hidden tabs" bulk action.
+ * Visible owned tabs and other agents' hidden tabs are untouched. Routed
+ * through the same destroy semantics as `destroyTabsByOwnerAgent` (removed
+ * from `hiddenTabs`, purged from layout history, never in recentlyClosed).
+ * Only tabs hosted by `ownClientId` (or not yet homed by the registry) are
+ * destroyed: a mirror of a tab hosted elsewhere is closed on its host and
+ * leaves with the `browser:tab-closed` echo, never by a local destroy.
+ */
+export const destroyHiddenTabsByOwnerAgent = createAction(
+  'panelLayout/destroyHiddenTabsByOwnerAgent',
+  (wsId: string, agentId: string, ownClientId: string | null = null, timestamp?: number) => ({
+    wsId,
+    agentId,
+    ownClientId,
     timestamp: timestamp ?? Date.now(),
   }),
 );
@@ -2003,6 +2093,20 @@ function applyCanonicalDefaultPairGeometry(
 }
 
 export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialState);
+
+const handledActionTypes = new Set<string>();
+/**
+ * Every action type `panelLayoutReducer` handles — `panelLayout/*` and the
+ * cross-slice cases alike — recorded as each case is registered. The browser
+ * tab registry saga derives its layout-mutation predicate from this set, so a
+ * new registration can never be missed (intent-hq/intent#4835).
+ */
+export const PANEL_LAYOUT_HANDLED_ACTION_TYPES: ReadonlySet<string> = handledActionTypes;
+const registerCase = panelLayoutReducer.with;
+panelLayoutReducer.with = (action, handler) => {
+  handledActionTypes.add(action.type);
+  return registerCase(action, handler);
+};
 // --- Initialization ---
 panelLayoutReducer.with(initializeLayout, (state, { payload }) => {
   const { wsId, layout } = payload;
@@ -2025,11 +2129,22 @@ panelLayoutReducer.with(initializeLayout, (state, { payload }) => {
     newWorkspaceLifecycle: layout.newWorkspaceLifecycle ?? null,
     pendingFocusTabId: null,
     pendingPanelReveal: null,
+    // A remount re-restores the same session's layout: keep the user's close
+    // (setWorkspaceState drops it as soon as the restored layout has a tab).
+    emptiedByUserClose: ws.emptiedByUserClose,
   });
 });
 panelLayoutReducer.with(preparePanelLayoutBackendRestore, (state, { payload: [wsId] }) => {
   const ws = getWorkspaceState(state, wsId);
   return setWorkspaceState(state, wsId, { ...ws, columnCountInitialized: false });
+});
+panelLayoutReducer.with(resetEmptiedByUserClose, (state) => {
+  let result = state;
+  for (const [wsId, ws] of Object.entries(state.byWorkspaceId)) {
+    if (!ws.emptiedByUserClose) continue;
+    result = setWorkspaceState(result, wsId, { ...ws, emptiedByUserClose: false });
+  }
+  return result;
 });
 panelLayoutReducer.with(bootstrapNewWorkspaceLayout, (state, { payload }) => {
   const {
@@ -2128,6 +2243,11 @@ panelLayoutReducer.with(setRestoreStatus, (state, { payload: [wsId, restoreStatu
   return setWorkspaceState(state, wsId, {
     ...ws,
     restoreStatus,
+    // The resetLayout a missing/invalid restore dispatches is saga-owned, not
+    // a user close; 'pending'/'restored' keep whatever this session recorded.
+    ...(restoreStatus === 'empty' || restoreStatus === 'invalid'
+      ? { emptiedByUserClose: false }
+      : {}),
     ...(restoreStatus === 'pending' ? { pendingFocusTabId: null, pendingPanelReveal: null } : {}),
   });
 });
@@ -2440,7 +2560,8 @@ panelLayoutReducer.with(closeTab, (state, { payload }) => {
     ws = closePanelHelper(ws, targetPanelId);
   }
 
-  return setWorkspaceState(state, wsId, ws);
+  // A destroy is agent/registry-driven teardown, not a user emptying the layout.
+  return setWorkspaceState(state, wsId, destroy ? ws : markEmptiedByUserClose(ws));
 });
 // --- Close Active Tab ---
 panelLayoutReducer.with(closeActiveTab, (state, { payload }) => {
@@ -2560,7 +2681,11 @@ panelLayoutReducer.with(closeTabsByAgentId, (state, { payload }) => {
   for (const { tabId, panelId } of tabsToClose) {
     result = selfDispatch(result, closeTab(wsId, tabId, panelId, timestamp));
   }
-  return result;
+  // Deleted-agent cleanup is automated, not the user emptying the layout.
+  return setWorkspaceState(result, wsId, {
+    ...getWorkspaceState(result, wsId),
+    emptiedByUserClose: ws.emptiedByUserClose,
+  });
 });
 // --- Destroy Tabs By Owner Agent (monorepo#2857) ---
 panelLayoutReducer.with(destroyTabsByOwnerAgent, (state, { payload }) => {
@@ -2594,6 +2719,27 @@ panelLayoutReducer.with(destroyTabsByOwnerAgent, (state, { payload }) => {
     result = selfDispatch(result, closeTab(wsId, tabId, panelId, timestamp, true));
   }
   return result;
+});
+// --- Destroy Hidden Tabs By Owner Agent (intent#4762) ---
+panelLayoutReducer.with(destroyHiddenTabsByOwnerAgent, (state, { payload }) => {
+  const { wsId, agentId, ownClientId } = payload;
+  const ws = getWorkspaceState(state, wsId);
+  const hiddenOwned = getItems(ws.hiddenTabs).filter(
+    (tab) =>
+      tab.type === 'browser' &&
+      tab.ownerAgentId === agentId &&
+      (tab.hostClientId === undefined || tab.hostClientId === ownClientId),
+  );
+  if (hiddenOwned.length === 0) return state;
+  let hiddenTabs = ws.hiddenTabs;
+  for (const tab of hiddenOwned) {
+    hiddenTabs = removeItem(hiddenTabs, tab.id);
+  }
+  let next: WorkspacePanelLayoutState = { ...ws, hiddenTabs };
+  for (const tab of hiddenOwned) {
+    next = purgeTabFromLayoutHistory(next, tab.id);
+  }
+  return setWorkspaceState(state, wsId, next);
 });
 // --- Destroy Owned Tabs For Workspace (monorepo#2857) ---
 panelLayoutReducer.with(destroyOwnedTabsForWorkspace, (state, { payload }) => {
@@ -2888,7 +3034,7 @@ panelLayoutReducer.with(reopenClosedPanelColumn, (state, { payload }) => {
 });
 // --- Reopen Closed Tab ---
 panelLayoutReducer.with(reopenClosedTab, (state, { payload }) => {
-  const { wsId, newTabId, closedTabId, timestamp } = payload;
+  const { wsId, newTabId, closedTabId, targetPanelId: requestedPanelId, timestamp } = payload;
   let ws = getWorkspaceState(state, wsId);
   if (ws.recentlyClosed.length === 0) return state;
 
@@ -2902,7 +3048,12 @@ panelLayoutReducer.with(reopenClosedTab, (state, { payload }) => {
   ws = saveToHistory(ws, timestamp);
   const closed = ws.recentlyClosed[closedIndex];
   const rest = ws.recentlyClosed.filter((_, index) => index !== closedIndex);
-  const targetPanelId = ws.panels[closed.panelId] ? closed.panelId : ws.focusedPanelId;
+  const targetPanelId =
+    requestedPanelId && ws.panels[requestedPanelId]
+      ? requestedPanelId
+      : ws.panels[closed.panelId]
+        ? closed.panelId
+        : ws.focusedPanelId;
   if (!targetPanelId || !ws.panels[targetPanelId]) return state;
 
   const panel = ws.panels[targetPanelId];
@@ -2923,6 +3074,7 @@ panelLayoutReducer.with(reopenClosedTab, (state, { payload }) => {
         ...panel,
         tabs: [...panel.tabs, newTab],
         activeTabId: newTabId,
+        pristine: false,
       },
     },
     focusedPanelId: targetPanelId,
@@ -3184,6 +3336,78 @@ panelLayoutReducer.with(
     return state;
   },
 );
+/**
+ * Replace one browser tab wherever it lives (a panel or hiddenTabs) with
+ * `patch(tab)`; the state is returned unchanged when the tab is absent or the
+ * patch yields the same object.
+ */
+function patchBrowserTab(
+  state: PanelLayoutSliceState,
+  wsId: string,
+  tabId: string,
+  patch: (tab: PanelTab) => PanelTab,
+): PanelLayoutSliceState {
+  const ws = getWorkspaceState(state, wsId);
+  for (const [pId, panel] of Object.entries(ws.panels)) {
+    const tabIdx = panel.tabs.findIndex((t) => t.id === tabId && t.type === 'browser');
+    if (tabIdx < 0) continue;
+    const next = patch(panel.tabs[tabIdx]);
+    if (next === panel.tabs[tabIdx]) return state;
+    return setWorkspaceState(state, wsId, {
+      ...ws,
+      panels: {
+        ...ws.panels,
+        [pId]: { ...panel, tabs: panel.tabs.map((t, i) => (i === tabIdx ? next : t)) },
+      },
+    });
+  }
+  const hiddenTab = getItem(ws.hiddenTabs, tabId);
+  if (!hiddenTab || hiddenTab.type !== 'browser') return state;
+  const next = patch(hiddenTab);
+  if (next === hiddenTab) return state;
+  return setWorkspaceState(state, wsId, {
+    ...ws,
+    hiddenTabs: replaceItem(ws.hiddenTabs, tabId, next),
+  });
+}
+
+// --- Browser tab registry (REV-2 §5.45) ---
+panelLayoutReducer.with(
+  acknowledgeBrowserTabHost,
+  (state, { payload: [wsId, tabId, hostClientId] }) =>
+    patchBrowserTab(state, wsId, tabId, (tab) =>
+      tab.hostClientId === hostClientId ? tab : { ...tab, hostClientId },
+    ),
+);
+panelLayoutReducer.with(applyBrowserTabRegistryRow, (state, { payload: [wsId, tabId, row] }) =>
+  patchBrowserTab(state, wsId, tabId, (tab) => {
+    const {
+      browserRequestedUrl: _requested,
+      ownerAgentId: _owner,
+      ownerAgentName: _ownerName,
+      emulatedSize: _size,
+      ...rest
+    } = tab;
+    // A viewport derived from a now-cleared emulation is stale too; a local
+    // (geometry) viewport of a never-emulated tab is kept.
+    const viewport = row.emulatedSize
+      ? { mode: 'custom' as const, ...row.emulatedSize }
+      : tab.emulatedSize
+        ? { mode: 'fit' as const }
+        : tab.viewport;
+    return {
+      ...rest,
+      hostClientId: row.hostClientId,
+      browserUrl: row.url,
+      title: row.title ?? '',
+      ...(row.requestedUrl === undefined ? {} : { browserRequestedUrl: row.requestedUrl }),
+      ...(row.ownerAgentId === undefined ? {} : { ownerAgentId: row.ownerAgentId }),
+      ...(row.ownerAgentName === undefined ? {} : { ownerAgentName: row.ownerAgentName }),
+      ...(row.emulatedSize === undefined ? {} : { emulatedSize: row.emulatedSize }),
+      ...(viewport === undefined ? {} : { viewport }),
+    };
+  }),
+);
 // --- Update Browser Tab Viewport ---
 panelLayoutReducer.with(updateTabViewport, (state, { payload: [wsId, tabId, viewport] }) => {
   const ws = getWorkspaceState(state, wsId);
@@ -3357,7 +3581,7 @@ panelLayoutReducer.with(closeAllTabs, (state, { payload }) => {
   if (keptTabs.length === 0 && Object.keys(ws.panels).length > 1) {
     ws = closePanelHelper(ws, targetPanelId);
   }
-  return setWorkspaceState(state, wsId, ws);
+  return setWorkspaceState(state, wsId, markEmptiedByUserClose(ws));
 });
 // --- Close All Others Everywhere ---
 panelLayoutReducer.with(closeAllOthersEverywhere, (state, { payload }) => {
@@ -3496,7 +3720,7 @@ panelLayoutReducer.with(closePanel, (state, { payload }) => {
       .filter((tab) => tab.closable !== false && !isHideOnCloseTab(tab))
       .map((tab) => tab.id),
   );
-  return setWorkspaceState(state, wsId, updatedWs);
+  return setWorkspaceState(state, wsId, markEmptiedByUserClose(updatedWs));
 });
 panelLayoutReducer.with(reconcilePanelColumnCount, (state, { payload }) => {
   const { wsId, count, newPanelIds, timestamp, recordHistory, availableCanvasWidth } = payload;
@@ -3728,6 +3952,7 @@ panelLayoutReducer.with(resetLayout, (state, { payload }) => {
     savedCanvasWidthSourceBeforeExpand: undefined,
     deferSpecTab: false,
     newWorkspaceLifecycle: null,
+    emptiedByUserClose: true,
   });
 });
 // --- Go Back ---

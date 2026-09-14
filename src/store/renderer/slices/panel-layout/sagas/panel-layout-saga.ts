@@ -12,7 +12,7 @@ import {
   type SagaGenerator,
 } from 'typed-redux-saga';
 import { buffers, channel, type Channel } from 'redux-saga';
-import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItem, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
 import { deepEqual } from 'fast-equals';
 
 import { clearPanelLayoutAdapter } from '$features/layout/panel-layout-adapter';
@@ -56,7 +56,7 @@ import {
   applyNoteUpdated,
   loadWorkspaceNotesSucceeded,
 } from '../../workspace-notes/workspace-notes-slice';
-import { resolveBrowserLinkUrl } from '$lib/utils/browser-url-resolution';
+import { resolveBrowserLinkUrl, type ResolvedBrowserLink } from '$lib/utils/browser-url-resolution';
 import {
   collectRehydratableBrowserTabs,
   type RehydratableBrowserTab,
@@ -64,12 +64,15 @@ import {
 import { selectPanelLayoutWorkspace } from '../panel-layout-selectors';
 import { migratePanelLayoutForWorkspace } from '../panel-layout-migration';
 import {
+  acknowledgeBrowserTabHost,
   activateVisibleTab,
+  applyBrowserTabRegistryRow,
   clearPanelLayout,
   bootstrapNewWorkspaceLayout,
   closeActiveTab,
   closeAllOthersEverywhere,
   closeAllTabs,
+  closeFocusedPanelTab,
   closeOtherTabs,
   closePanel,
   closeTab,
@@ -77,6 +80,7 @@ import {
   closeTabsByType,
   closeTabsToRight,
   consumePendingFocus,
+  destroyHiddenTabsByOwnerAgent,
   destroyOwnedTabsForWorkspace,
   destroyTabsByOwnerAgent,
   emptyWorkspaceState,
@@ -104,6 +108,7 @@ import {
   panelLayoutScopeMounted,
   panelLayoutScopeUnmounted,
   preparePanelLayoutBackendRestore,
+  resetEmptiedByUserClose,
   reconcileStaleAgentTabs,
   reconcilePanelColumnCount,
   setPanelColumnCount,
@@ -139,6 +144,9 @@ import {
   PANEL_LAYOUT_STORAGE_KEY_PREFIX,
   PANEL_LAYOUT_PERSISTENCE_VERSION,
   type PanelLayoutNode,
+  type PanelLayoutRestoreStatus,
+  type PanelState,
+  type PanelTab,
   type WorkspacePanelLayout,
   type WorkspacePanelLayoutState,
 } from '../panel-layout-types';
@@ -154,9 +162,11 @@ const PERSIST_ACTIONS = [
   openTabInRightmostColumn,
   closeTab,
   closeActiveTab,
+  closeFocusedPanelTab,
   closeTabsByType,
   closeTabsByAgentId,
   destroyTabsByOwnerAgent,
+  destroyHiddenTabsByOwnerAgent,
   destroyOwnedTabsForWorkspace,
   restoreHiddenTab,
   activateVisibleTab,
@@ -200,6 +210,9 @@ const PERSIST_ACTIONS = [
   consumePendingFocus,
   reconcilePanelColumnCount,
   setPanelColumnCount,
+  // Registry acknowledgement / row application changes which fields persist.
+  acknowledgeBrowserTabHost,
+  applyBrowserTabRegistryRow,
 ];
 
 const HISTORY_ACTIONS = [
@@ -212,6 +225,10 @@ const HISTORY_ACTIONS = [
   closeTabsToRight,
   closeAllTabs,
   closeAllOthersEverywhere,
+  // Destroying hidden owned tabs purges them from every history snapshot
+  // (monorepo#2857); the purged history must reach disk or a reload restores
+  // the pre-destroy history and goBack resurrects the tabs.
+  destroyHiddenTabsByOwnerAgent,
   splitPanel,
   closePanel,
   movePanel,
@@ -229,11 +246,20 @@ const HISTORY_ACTIONS = [
 const restoredWorkspaceIds = new Set<string>();
 // Workspaces whose layout has been restored under the current backend
 // namespace this session. Unlike restoredWorkspaceIds (mount-lifecycle dedup,
-// cleared on unmount so a remount re-restores), this set survives unmounts: a
-// parked column's post-restore state stays authoritative, so background
-// mutations to it must keep persisting. Cleared only when the namespace's
-// provenance is void — backend switch, clearPanelLayout, saga teardown.
+// cleared on unmount), this set survives unmounts: a parked column's
+// post-restore in-memory state stays authoritative — background mutations to
+// it keep persisting, and a same-session scope remount keeps it instead of
+// re-installing the persisted copy (#4835). Cleared only when the namespace's
+// provenance is void — backend switch, clearPanelLayout, workspaceDeleted,
+// saga teardown.
 const restoredUnderBackendIds = new Set<string>();
+// Workspaces torn down by a full workspaceUnmounted (workspace tab closed)
+// since their last restore. Their guests and registry rows left with them
+// (the registry forgets what it reported), so the next mount is a reopen,
+// not an unpark: it restores from storage and settles again so the registry
+// reconciles the rows over the shell. Persistence keeps going meanwhile —
+// restoredUnderBackendIds is untouched.
+const tornDownWorkspaceIds = new Set<string>();
 // Workspaces with a mounted panel-layout scope. Backend switches re-restore
 // every mounted workspace (not just the active one): with the columns UI
 // several workspaces mount at boot, and their initial restore may have read
@@ -405,6 +431,29 @@ function hasAnyTab(layout: WorkspacePanelLayout | WorkspacePanelLayoutState): bo
   return Object.values(layout.panels).some((panel) => panel.tabs.length > 0) || hiddenCount > 0;
 }
 
+/** The user actions that may legitimately persist a layout with no tabs left. */
+const EXPLICIT_USER_CLOSE_ACTION_TYPES: ReadonlySet<string> = new Set([
+  closeTab.type,
+  closeActiveTab.type,
+  closeFocusedPanelTab.type,
+  closeAllTabs.type,
+  closeTabsByType.type,
+  closePanel.type,
+  resetLayout.type,
+]);
+
+function isExplicitUserCloseAction(action: { type?: string; payload?: unknown }): boolean {
+  if (action.type === undefined || !EXPLICIT_USER_CLOSE_ACTION_TYPES.has(action.type)) {
+    return false;
+  }
+  // A destroying closeTab is agent/registry-driven teardown (monorepo#2857),
+  // not the user emptying the layout.
+  if (action.type === closeTab.type) {
+    return (action.payload as ReturnType<typeof closeTab>['payload']).destroy !== true;
+  }
+  return true;
+}
+
 function getPersistableRoot(workspace: WorkspacePanelLayoutState): PanelLayoutNode {
   if (workspace.expandedPanelId === null || workspace.savedSizesBeforeExpand.length === 0) {
     return workspace.root;
@@ -433,9 +482,17 @@ function* reconcileEmptyRestoredLayout(wsId: string, agents?: AgentSession[]): S
   if (!restoredWorkspaceIds.has(wsId)) return;
   const layout = yield* selectPanelLayoutWorkspace.effect(wsId);
   if (layout.newWorkspaceLifecycle || hasAnyTab(layout)) return;
+  // Only an explicit user close this session (tracked by the reducers, not
+  // inferred from the stored shape) makes a tabless layout intentional.
+  if (layout.emptiedByUserClose) return;
   const availableAgents = agents ?? (yield* selectAllWorkspaceAgents.effect(wsId));
   const firstOpen = layout.restoreStatus === 'empty';
-  const agent = resolveEmptyLayoutAgent(availableAgents, wsId, firstOpen);
+  // A stored layout that came back valid but with no visible or hidden tab is
+  // a panel tree lost mid-teardown (a hang before the tabless write could be
+  // guarded), not a choice: reseed it with the same primary-agent resolver
+  // as a first open instead of rendering a blank content area.
+  const lostPanelTree = layout.restoreStatus === 'restored';
+  const agent = resolveEmptyLayoutAgent(availableAgents, wsId, firstOpen || lostPanelTree);
   if (!agent) return;
   // First open on this device of a workspace created elsewhere (iOS,
   // chief-of-staff proposal, sibling workspace): nothing was ever stored
@@ -500,11 +557,19 @@ function* reconcileEmptyRestoredLayout(wsId: string, agents?: AgentSession[]): S
  * later — after the user navigated the tab, or after a backend switch
  * replaced the layout. Each retarget therefore re-checks that the tab still
  * sits on the exact stored/requested pair the probe started from and is
- * dropped as stale otherwise.
+ * dropped as stale otherwise. That pair check cannot tell a tab restored
+ * again under a new lifecycle from the original; a caller that owns one
+ * passes `stillCurrent`, consulted after each resolution, to drop results
+ * that outlived it. `onResolved` sees every current resolution before it is
+ * applied — a failure included, as `resolveBrowserLinkUrl` reports one in
+ * its result, not by throwing — for a caller that tracks which tabs still
+ * need one.
  */
-function* rehydrateTunneledBrowserTabs(
+export function* rehydrateTunneledBrowserTabs(
   wsId: string,
   tabs: RehydratableBrowserTab[],
+  stillCurrent?: () => SagaGenerator<boolean>,
+  onResolved?: (tab: RehydratableBrowserTab, resolved: ResolvedBrowserLink) => SagaGenerator<void>,
 ): SagaGenerator<void> {
   for (const tab of tabs) {
     try {
@@ -513,11 +578,17 @@ function* rehydrateTunneledBrowserTabs(
         tab.requestedUrl,
         typeof window !== 'undefined' ? window.electronAPI?.invoke : undefined,
       );
+      // The resolution went over IPC: the caller's lifecycle may have moved on
+      // (layout torn down and rebuilt) and the tab found below be a new one.
+      if (stillCurrent && !(yield* call(stillCurrent))) return;
+      if (onResolved) yield* call(onResolved, tab, resolved);
       if (resolved.url === tab.storedUrl) continue;
       const workspace = yield* selectPanelLayoutWorkspace.effect(wsId);
-      const current = Object.values(workspace.panels)
-        .flatMap((panel) => panel.tabs)
-        .find((candidate) => candidate.id === tab.tabId);
+      const current =
+        Object.values(workspace.panels)
+          .flatMap((panel) => panel.tabs)
+          .find((candidate) => candidate.id === tab.tabId) ??
+        getItem(workspace.hiddenTabs, tab.tabId);
       if (
         !current ||
         current.browserUrl !== tab.storedUrl ||
@@ -549,6 +620,10 @@ function* reconcileRestoredPanelColumns(wsId: string): SagaGenerator<boolean> {
   return true;
 }
 
+function isSettledRestoreStatus(status: PanelLayoutRestoreStatus): boolean {
+  return status === 'restored' || status === 'empty' || status === 'invalid';
+}
+
 function* handleWorkspaceMountedRestore(
   action: ReturnType<typeof workspaceMounted> | ReturnType<typeof panelLayoutScopeMounted>,
 ): SagaGenerator<void> {
@@ -563,12 +638,31 @@ function* handleWorkspaceMountedRestore(
     // missing storage entry here would replace it with a visually empty layout.
     restoredWorkspaceIds.add(wsId);
     restoredUnderBackendIds.add(wsId);
+    tornDownWorkspaceIds.delete(wsId);
     yield* call(resolvePendingInitialAgent, wsId);
     yield* call(persistPanelLayout, action);
     yield* call(reconcileDeferredSpec, wsId);
     return;
   }
+  if (
+    restoredUnderBackendIds.has(wsId) &&
+    !tornDownWorkspaceIds.has(wsId) &&
+    isSettledRestoreStatus(current.restoreStatus)
+  ) {
+    // Same-session scope remount (retention cap, workspace switch): the
+    // in-memory layout was restored under this backend and every mutation
+    // since has been persisted from it, so storage holds nothing newer.
+    // Re-running initializeLayout would install the persisted copy — a
+    // geometry shell for registry-hosted browser tabs
+    // (stripRegistryHeldFields) — over the live tabs and re-navigate the
+    // kept-alive offscreen guest (#4835). A restart, backend switch,
+    // workspaceDeleted, clearPanelLayout or a full workspaceUnmounted voids
+    // the provenance and still restores from storage.
+    restoredWorkspaceIds.add(wsId);
+    return;
+  }
   restoredWorkspaceIds.add(wsId);
+  tornDownWorkspaceIds.delete(wsId);
   let settleInflight!: () => void;
   inflightRestores.set(
     wsId,
@@ -660,7 +754,36 @@ export function* hydrateWorkspaceLayout(wsId: string): SagaGenerator<void> {
   yield* call(handleWorkspaceMountedRestore, panelLayoutScopeMounted(wsId));
 }
 
-function* persistPanelLayout(action: { payload?: unknown }): SagaGenerator<void> {
+/**
+ * A browser tab the daemon registry hosts (REV-2 §5.45) persists geometry
+ * only: its URL, owner and emulated size are restored from `browser.listTabs`,
+ * so localStorage must stop carrying them (they would otherwise shadow the
+ * registry after a navigation elsewhere). Tabs the registry has not
+ * acknowledged keep their fields so the next reconcile can migrate them.
+ */
+function stripRegistryHeldFields(tab: PanelTab): PanelTab {
+  if (tab.type !== 'browser' || !tab.hostClientId) return tab;
+  const {
+    browserUrl: _url,
+    browserRequestedUrl: _requested,
+    ownerAgentId: _owner,
+    ownerAgentName: _ownerName,
+    emulatedSize: _size,
+    ...geometry
+  } = tab;
+  return geometry;
+}
+
+function persistablePanels(panels: Record<string, PanelState>): Record<string, PanelState> {
+  return Object.fromEntries(
+    Object.entries(panels).map(([panelId, panel]) => [
+      panelId,
+      { ...panel, tabs: panel.tabs.map(stripRegistryHeldFields) },
+    ]),
+  );
+}
+
+function* persistPanelLayout(action: { type?: string; payload?: unknown }): SagaGenerator<void> {
   try {
     const wsId = getWsId(action);
     if (!isValidWorkspaceId(wsId)) return;
@@ -669,7 +792,7 @@ function* persistPanelLayout(action: { payload?: unknown }): SagaGenerator<void>
     const layout: WorkspacePanelLayout = {
       version: PANEL_LAYOUT_PERSISTENCE_VERSION,
       root: getPersistableRoot(workspace),
-      panels: workspace.panels,
+      panels: persistablePanels(workspace.panels),
       focusedPanelId: workspace.focusedPanelId,
       columnCount: workspace.columnCount,
       canvasWidth:
@@ -682,7 +805,7 @@ function* persistPanelLayout(action: { payload?: unknown }): SagaGenerator<void>
           ? workspace.savedCanvasWidthSourceBeforeExpand
           : workspace.canvasWidthSource,
     };
-    const hiddenTabs = getItems(workspace.hiddenTabs);
+    const hiddenTabs = getItems(workspace.hiddenTabs).map(stripRegistryHeldFields);
     if (hiddenTabs.length > 0) layout.hiddenTabs = hiddenTabs;
     if (workspace.deferSpecTab) layout.deferSpecTab = true;
     if (workspace.newWorkspaceLifecycle) {
@@ -698,7 +821,14 @@ function* persistPanelLayout(action: { payload?: unknown }): SagaGenerator<void>
     // restoredUnderBackendIds (survives unmounts) rather than
     // restoredWorkspaceIds, so a parked column's post-restore mutations
     // (e.g. closeTabsByAgentId, updateTabTitle) still persist.
-    if (!restoredUnderBackendIds.has(wsId)) {
+    //
+    // After the restore, a tabless in-memory layout still never overwrites a
+    // stored layout that has visible or hidden tabs unless the action is an
+    // explicit user close: a persist fired mid-teardown (a stale-agent
+    // reconcile against a transient empty snapshot, tabs torn down before
+    // the scope unmounts) would otherwise lose the whole panel tree.
+    const tablessWrite = !hasAnyTab(workspace) && !isExplicitUserCloseAction(action);
+    if (!restoredUnderBackendIds.has(wsId) || tablessWrite) {
       const stored = yield* call(loadLayoutFromStorage, wsId);
       if (stored !== null && stored !== 'invalid' && hasAnyTab(stored)) return;
     }
@@ -823,6 +953,7 @@ function* handleWorkspaceUnmounted(
   const [wsId] = action.payload;
   restoredWorkspaceIds.delete(wsId);
   mountedWorkspaceIds.delete(wsId);
+  if (action.type === workspaceUnmounted.type) tornDownWorkspaceIds.add(wsId);
   yield* call(cancelHistoryForWorkspace, historyMailboxes, wsId);
   try {
     yield* call(clearPanelLayoutAdapter, wsId);
@@ -1006,6 +1137,9 @@ function* handleBackendSwitch(lastBackend: { id: string }): SagaGenerator<void> 
   lastBackend.id = backendId;
   restoredWorkspaceIds.clear();
   restoredUnderBackendIds.clear();
+  // User-close provenance is session-scoped: the incoming backend's tabless
+  // layouts must reseed even where the outgoing session's user emptied them.
+  yield* put(resetEmptiedByUserClose());
   // Register every re-restore as in flight up front: until a workspace's
   // turn in the loop completes, the store still holds the OUTGOING backend's
   // layout, so an on-demand hydration caller (browser IPC) must wait here
@@ -1132,6 +1266,7 @@ export function* panelLayoutSaga(options?: {
     }
     restoredWorkspaceIds.clear();
     restoredUnderBackendIds.clear();
+    tornDownWorkspaceIds.clear();
     mountedWorkspaceIds.clear();
   }
 }

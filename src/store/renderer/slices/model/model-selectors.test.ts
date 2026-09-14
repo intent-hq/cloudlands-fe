@@ -79,7 +79,7 @@ describe('selectSelectedModel', () => {
     expect(selectSelectedModel.select(state)).toBe('gpt5.4');
   });
 
-  it('replaces a stale Auggie model with the Claude Code catalog default', () => {
+  it('keeps an explicit model absent from a partial provider catalog', () => {
     const providerId = 'claude-code';
     const availableModels = createCollection<AuggieModel, 'value'>('value', [
       { value: 'claude-opus-4-1', label: 'Claude Opus 4.1' },
@@ -96,7 +96,7 @@ describe('selectSelectedModel', () => {
       { [providerId]: { available: true } },
     );
 
-    expect(selectSelectedModel.select(state)).toBe('claude-fable-5[1m]');
+    expect(selectSelectedModel.select(state)).toBe('fable-5');
   });
 
   it('keeps the persisted model when the catalog was loaded for another provider', () => {

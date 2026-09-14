@@ -1,7 +1,8 @@
 /**
  * applyReasoningEffort — the session-level reasoning-effort writer behind the
  * chat-input effort control. FAKE client/store seams only, covering both the
- * first-class protocol 5.2 wire and the legacy compound-model wire.
+ * first-class `agent.update` `reasoningEffort` wire and the legacy
+ * compound-model `agent.setModel` wire.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -125,7 +126,7 @@ describe('applyReasoningEffort', () => {
     });
   });
 
-  it('uses the protocol 5.1 compound-model wire for a legacy effort change', async () => {
+  it('uses the compound-model agent.setModel wire when the daemon lacks the reasoningEffort field', async () => {
     storeState.daemonHealth.stats.protocolVersion = '5.1';
     storeState.agentSessions.byAgentId['agent-1'] = {
       reasoningEffort: null,
@@ -169,7 +170,7 @@ describe('applyReasoningEffort', () => {
     expect(mockSetModel).toHaveBeenCalledWith('agent-1', 'gpt5.6-sol/max', 'ws-1', 'auggie');
   });
 
-  it('clears a protocol 5.1 effort by selecting the legacy base model', async () => {
+  it('clears a legacy compound-model effort by selecting the base model', async () => {
     storeState.daemonHealth.stats.protocolVersion = '5.1';
     storeState.agentSessions.byAgentId['agent-1'] = {
       reasoningEffort: 'high',

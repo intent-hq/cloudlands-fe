@@ -37,10 +37,10 @@ export function* loadModelsOnBootWorker() {
     }
     if (!providerId) return false;
 
-    const models: Awaited<ReturnType<typeof appClient.models.list>> = yield* call([
-      appClient.models,
-      appClient.models.list,
-    ]);
+    const models: Awaited<ReturnType<typeof appClient.models.list>> = yield* call(
+      [appClient.models, appClient.models.list],
+      providerId,
+    );
 
     // Provider mismatch guard: if the active provider changed while the list
     // was in flight, the reload saga owns that provider's load — drop ours.

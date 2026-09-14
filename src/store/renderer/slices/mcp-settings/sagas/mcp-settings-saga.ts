@@ -1,6 +1,8 @@
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
+import { invoke } from '$lib/electron-bridge';
 import { m } from '$shared/paraglide/messages.js';
+import { USER_MCP_CHANNELS } from '$shared/ipc/channels';
 import {
   call,
   delay,
@@ -29,6 +31,7 @@ import {
 } from '../mcp-settings-selectors';
 import {
   addServer,
+  authenticateServer,
   bulkSetServerStatus,
   clearAllErrorMessages,
   clearServerErrorMessage,
@@ -213,7 +216,7 @@ function* refreshDaemonIdsAndStatuses(): SagaGenerator<void> {
  * enabled servers carrying a daemon id, and overlay them on the status map.
  * A wire failure leaves the config-derived statuses in place — live updates
  * still arrive via `mcp.servers:status-changed`. Mirroring the events bridge,
- * a non-error status clears any stale `errorMessages` entry. Because the
+ * a status without a recovery error clears any stale `errorMessages` entry. Because the
  * fan-out is forked, the list may change while it is in flight (e.g. a
  * remove-and-re-add of the same name assigns a new daemon id), so a status is
  * only applied when the current list still maps the queried id to that name.
@@ -240,7 +243,7 @@ function* fetchDaemonStatuses(servers: McpServerConfig[]): SagaGenerator<void> {
       if (!name || mapped === null) continue;
       if (currentIdByName.get(name) !== status.serverId) continue;
       statusMap[name] = mapped;
-      if (mapped === 'error' && status.lastError) {
+      if ((mapped === 'error' || mapped === 'auth_required') && status.lastError) {
         yield* put(setServerErrorMessage(name, status.lastError));
       } else {
         yield* put(clearServerErrorMessage(name));
@@ -458,8 +461,70 @@ function* restart(name: string): SagaGenerator<void> {
   const servers: McpServerConfig[] = yield* selectMcpServers.effect();
   const server = servers.find((candidate) => candidate.name === name);
   if (!server) return;
+  if (!server.id) {
+    yield* put(setServerStatus(name, 'error'));
+    yield* put(setServerErrorMessage(name, m.mcp_management_serverNotReady_error()));
+    return;
+  }
   yield* put(clearServerErrorMessage(name));
-  yield* put(setServerStatus(name, statusFor(false)));
+  try {
+    const status: Awaited<ReturnType<typeof appClient.settings.restartMcpServer>> = yield* call(
+      [appClient.settings, appClient.settings.restartMcpServer],
+      server.id,
+    );
+    const mapped = mapDaemonMcpState(status.state);
+    if (mapped === null) throw new Error(m.mcp_management_restartFailed_error());
+    yield* put(setServerStatus(name, mapped));
+    if ((mapped === 'error' || mapped === 'auth_required') && status.lastError) {
+      yield* put(setServerErrorMessage(name, status.lastError));
+    } else {
+      yield* put(clearServerErrorMessage(name));
+    }
+  } catch (error) {
+    yield* put(setServerStatus(name, 'error'));
+    yield* put(
+      setServerErrorMessage(name, toMcpErrorMessage(error, m.mcp_management_restartFailed_error())),
+    );
+  }
+}
+
+interface McpAuthenticateIpcResponse {
+  success: boolean;
+  data?: { success: boolean; error?: string };
+  error?: string | { code: string; message: string };
+}
+
+function* authenticate(name: string): SagaGenerator<void> {
+  const servers: McpServerConfig[] = yield* selectMcpServers.effect();
+  const server = servers.find((candidate) => candidate.name === name);
+  if (!server) return;
+  if (!server.id || !server.url || server.type === 'stdio') {
+    yield* put(setServerStatus(name, 'auth_required'));
+    yield* put(setServerErrorMessage(name, m.mcp_management_oauthUnavailable_error()));
+    return;
+  }
+  yield* put(clearServerErrorMessage(name));
+  try {
+    const response: McpAuthenticateIpcResponse = yield* call(
+      invoke<McpAuthenticateIpcResponse>,
+      USER_MCP_CHANNELS.AUTHENTICATE,
+      { serverId: server.id, url: server.url },
+    );
+    if (!response.success || !response.data?.success) {
+      throw new Error(
+        toMcpErrorMessage(
+          response.data?.error ?? response.error,
+          m.mcp_management_authFailed_error(),
+        ),
+      );
+    }
+    yield* call(restart, name);
+  } catch (error) {
+    yield* put(setServerStatus(name, 'auth_required'));
+    yield* put(
+      setServerErrorMessage(name, toMcpErrorMessage(error, m.mcp_management_authFailed_error())),
+    );
+  }
 }
 
 function* saveAdvanced(json: string): SagaGenerator<void> {
@@ -576,6 +641,12 @@ function* restartServerWorker(action: ReturnType<typeof restartServer>): SagaGen
   yield* call(restart, action.payload[0]);
 }
 
+function* authenticateServerWorker(
+  action: ReturnType<typeof authenticateServer>,
+): SagaGenerator<void> {
+  yield* call(authenticate, action.payload[0]);
+}
+
 function* saveAdvancedJsonWorker(action: ReturnType<typeof saveAdvancedJson>): SagaGenerator<void> {
   yield* call(saveAdvanced, action.payload[0]);
 }
@@ -591,5 +662,6 @@ export function* mcpSettingsSaga(): SagaGenerator<void> {
   yield* takeEvery(toggleWorkspaceMcpServer, toggleWorkspaceMcpServerWorker);
   yield* takeEvery(hydrateWorkspaceMcpDisabled, hydrateWorkspaceMcpDisabledWorker);
   yield* takeEvery(restartServer, restartServerWorker);
+  yield* takeEvery(authenticateServer, authenticateServerWorker);
   yield* takeEvery(saveAdvancedJson, saveAdvancedJsonWorker);
 }

@@ -5,7 +5,7 @@
  * Daemon-owned speech-to-text: the recorded audio Blob is base64-encoded
  * (standard alphabet, padded — the daemon decodes it verbatim) and shipped
  * with its container MIME type plus optional domain-vocabulary context
- * (`prompt` / `keyterms`) and, since v5.1, an optional `workspaceId` that
+ * (`prompt` / `keyterms`) and an optional `workspaceId` (§5.41) that
  * opts the call into workspace-vocabulary injection. Errors are NOT
  * folded: the transcription flow surfaces them as toasts (no-key hint,
  * provider failure).
@@ -67,7 +67,7 @@ export class LiveVoiceClient implements VoiceClient {
       params.context = context;
     }
     // Omit `workspaceId` when absent/blank (incl. whitespace-only) — §5.41:
-    // workspaceId? is optional opt-in workspace-vocabulary injection (v5.1).
+    // workspaceId? is optional opt-in workspace-vocabulary injection.
     if (typeof workspaceId === 'string' && workspaceId.trim().length > 0) {
       params.workspaceId = workspaceId;
     }

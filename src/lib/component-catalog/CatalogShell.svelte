@@ -9,6 +9,7 @@
     readCatalogPreferences,
     writeCatalogPreferences,
     type CatalogColorTheme,
+    type CatalogPreviewFit,
     type CatalogTheme,
   } from './catalog-preferences';
   import { installPreviewBrowserApi } from './preview-discovery';
@@ -17,26 +18,61 @@
   let theme = $state<CatalogTheme>(defaultCatalogPreferences.theme);
   let colorTheme = $state<CatalogColorTheme>(defaultCatalogPreferences.colorTheme);
   let reducedMotion = $state(defaultCatalogPreferences.reducedMotion);
+  let fit = $state<CatalogPreviewFit>();
   let systemDark = $state(false);
   let hydrated = $state(false);
   let initialRootDark = false;
   let initialRootLight = false;
   let initialRootReducedMotion = false;
-  let initialRootStyle: string | null = null;
+  let initialRootComponentFit = false;
+  // Root inline properties this shell owns, keyed by property name, with the inline
+  // declaration (or null when absent) that was present before the shell first wrote it.
+  interface InlineDeclaration {
+    value: string;
+    priority: string;
+  }
+  const priorRootProperties = new Map<string, InlineDeclaration | null>();
 
   const resolvedTheme = $derived(theme === 'system' ? (systemDark ? 'dark' : 'light') : theme);
+
+  function applyRootProperties(root: HTMLElement, next: Record<string, string>) {
+    for (const property of [...priorRootProperties.keys()]) {
+      if (property in next) continue;
+      restoreRootProperty(root, property);
+    }
+    for (const [property, value] of Object.entries(next)) {
+      if (!priorRootProperties.has(property)) {
+        const priorValue = root.style.getPropertyValue(property);
+        priorRootProperties.set(
+          property,
+          priorValue
+            ? { value: priorValue, priority: root.style.getPropertyPriority(property) }
+            : null,
+        );
+      }
+      root.style.setProperty(property, value);
+    }
+  }
+
+  function restoreRootProperty(root: HTMLElement, property: string) {
+    const prior = priorRootProperties.get(property);
+    if (prior === null || prior === undefined) root.style.removeProperty(property);
+    else root.style.setProperty(property, prior.value, prior.priority);
+    priorRootProperties.delete(property);
+  }
 
   onMount(() => {
     const root = document.documentElement;
     initialRootDark = root.classList.contains('dark');
     initialRootLight = root.classList.contains('light');
     initialRootReducedMotion = root.classList.contains('catalog-reduced-motion');
-    initialRootStyle = root.getAttribute('style');
+    initialRootComponentFit = root.classList.contains('catalog-component-fit');
     const saved = readCatalogPreferences(localStorage);
     const urlSettings = parseCatalogUrlSettings(new URLSearchParams(window.location.search));
     theme = urlSettings.theme ?? saved.theme;
     colorTheme = saved.colorTheme;
     reducedMotion = urlSettings.reducedMotion ?? saved.reducedMotion;
+    fit = urlSettings.fit;
     const removePreviewBrowserApi = installPreviewBrowserApi(window);
 
     const media = window.matchMedia('(prefers-color-scheme: dark)');
@@ -50,8 +86,8 @@
       root.classList.toggle('dark', initialRootDark);
       root.classList.toggle('light', initialRootLight);
       root.classList.toggle('catalog-reduced-motion', initialRootReducedMotion);
-      if (initialRootStyle === null) root.removeAttribute('style');
-      else root.setAttribute('style', initialRootStyle);
+      root.classList.toggle('catalog-component-fit', initialRootComponentFit);
+      for (const property of [...priorRootProperties.keys()]) restoreRootProperty(root, property);
     };
   });
 
@@ -59,19 +95,16 @@
     if (!hydrated) return;
     writeCatalogPreferences(localStorage, { theme, colorTheme, reducedMotion });
     const root = document.documentElement;
-    if (initialRootStyle === null) root.removeAttribute('style');
-    else root.setAttribute('style', initialRootStyle);
     const preset = themePresets.find(({ id }) => id === colorTheme);
-    if (preset) {
-      const parsedTheme = parseVSCodeTheme(preset[resolvedTheme]);
-      for (const [property, value] of Object.entries(parsedTheme.cssVariables)) {
-        root.style.setProperty(property, value);
-      }
-    }
-    root.style.colorScheme = resolvedTheme;
+    const themeProperties: Record<string, string> = preset
+      ? { ...parseVSCodeTheme(preset[resolvedTheme]).cssVariables }
+      : {};
+    themeProperties['color-scheme'] = resolvedTheme;
+    applyRootProperties(root, themeProperties);
     root.classList.toggle('dark', resolvedTheme === 'dark');
     root.classList.toggle('light', resolvedTheme === 'light');
     root.classList.toggle('catalog-reduced-motion', reducedMotion);
+    root.classList.toggle('catalog-component-fit', fit === 'component');
 
     if (activeSlug) {
       const url = new URL(window.location.href);
@@ -83,30 +116,33 @@
 </script>
 
 <div
+  class:component-fit={fit === 'component'}
   class="catalog-shell min-h-screen bg-background text-foreground"
   data-testid="catalog-shell"
   data-catalog-theme={theme}
   data-catalog-color-theme={colorTheme}
   data-catalog-motion={reducedMotion ? 'reduced' : 'full'}
 >
-  <div class="min-h-screen w-full min-w-0">
-    <header class="catalog-topbar sticky top-0 border-b border-border bg-card/95 backdrop-blur">
-      <div class="catalog-topbar-inner mx-auto max-w-[1680px] px-4 py-2 sm:px-6">
-        <div class="flex min-w-0 items-center gap-3">
-          <a class="catalog-brand" href="/sandbox" aria-label="Component catalog home">
-            <span class="brand-mark" aria-hidden="true">DS</span>
-            <span class="truncate text-sm font-medium">Design system</span>
-          </a>
-          {#if activeSlug}
-            <a
-              class="rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              href="/sandbox">View all</a
-            >
-          {/if}
+  <div class="catalog-shell-content min-h-screen w-full min-w-0">
+    {#if fit !== 'component'}
+      <header class="catalog-topbar sticky top-0 border-b border-border bg-card/95 backdrop-blur">
+        <div class="catalog-topbar-inner mx-auto max-w-[1680px] px-4 py-2 sm:px-6">
+          <div class="flex min-w-0 items-center gap-3">
+            <a class="catalog-brand" href="/sandbox" aria-label="Component catalog home">
+              <span class="brand-mark" aria-hidden="true">DS</span>
+              <span class="truncate text-sm font-medium">Design system</span>
+            </a>
+            {#if activeSlug}
+              <a
+                class="rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                href="/sandbox">View all</a
+              >
+            {/if}
+          </div>
+          <CatalogControls bind:theme bind:colorTheme {resolvedTheme} bind:reducedMotion />
         </div>
-        <CatalogControls bind:theme bind:colorTheme {resolvedTheme} bind:reducedMotion />
-      </div>
-    </header>
+      </header>
+    {/if}
     <main class="min-w-0 overflow-x-clip">{@render children?.()}</main>
   </div>
 </div>
@@ -117,6 +153,26 @@
     --catalog-row-gap: calc(var(--control-height-small) / 2);
     font-family: var(--font-ui);
     overflow-x: clip;
+  }
+
+  .catalog-shell.component-fit,
+  .component-fit .catalog-shell-content {
+    width: max-content;
+    min-height: 0;
+  }
+
+  .component-fit main {
+    display: contents;
+  }
+
+  :global(html.catalog-component-fit),
+  :global(html.catalog-component-fit body) {
+    width: max-content;
+    min-width: 0;
+    min-height: 0;
+    margin: 0;
+    padding: 0;
+    overflow: visible;
   }
 
   .catalog-topbar {

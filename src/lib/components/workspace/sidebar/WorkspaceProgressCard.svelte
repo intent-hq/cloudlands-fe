@@ -16,6 +16,7 @@
     faCodePullRequest,
     faCheck,
     faFileLines,
+    faGlobe,
     faRightLeft,
   } from '@fortawesome/free-solid-svg-icons';
   import SidebarIcon from '$lib/components/icons/SidebarIcon.svelte';
@@ -23,7 +24,6 @@
   import { TooltipRich } from '$lib/components/ui/tooltip';
   import CheckoutModePill from '$lib/components/workspace/CheckoutModePill.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
-  import { withToastCountdown } from '$lib/components/ui/toast';
   import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import WorkspaceActionsMenu, {
@@ -61,7 +61,10 @@
   import FlameGraph from './FlameGraph.svelte';
   import WorkspaceTokenUsage from './WorkspaceTokenUsage.svelte';
 
-  import { requestDeleteWorkspace } from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
+  import {
+    requestArchiveWorkspace,
+    requestDeleteWorkspace,
+  } from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
   import {
     loadWorkspacesRequested,
     setWorkspaceEntity,
@@ -77,7 +80,13 @@
   } from '$store/renderer/slices/workspace/workspace-types';
   import { store as appStore } from '$store/renderer/store';
   import { openTransferModal } from '$store/renderer/slices/workspace-transfer/workspace-transfer-slice';
+  import { selectWorkspaceDrivingClient } from '$store/renderer/slices/browser-clients/browser-clients-selectors';
+  import { setWorkspaceBrowserClientRequested } from '$store/renderer/slices/browser-clients/browser-clients-slice';
+  import { selectWorkspaceHasBrowserTabs } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
+  import DrivingClientIndicator from '$lib/components/workspace/DrivingClientIndicator.svelte';
+  import SetPrimaryClientConfirmDialog from '$lib/components/workspace/SetPrimaryClientConfirmDialog.svelte';
+  import { resolveDrivingClientSwitch } from '$lib/components/workspace/driving-indicator';
 
   const readyLogger = createLogger('ReadyTasks');
 
@@ -245,35 +254,9 @@
     }
   }
 
-  async function handleArchive() {
+  function handleArchive() {
     if (!$workspace) return;
-    const { toast } = await import('svelte-sonner');
-    const workspaceTitle = $workspace.title || m.workspace_multiSelectSidebar_space_label();
-
-    const result = await workspaceClient.archive($workspace.id);
-    if (result.ok) {
-      appStore.dispatch(loadWorkspacesRequested());
-      toast.warning(
-        m.workspace_multiSelectSidebar_archivedSpace_toast({ title: workspaceTitle }),
-        withToastCountdown(
-          {
-            duration: 15000,
-            action: {
-              label: m.workspace_multiSelectSidebar_undo_label(),
-              onClick: async () => {
-                const undoResult = await workspaceClient.unarchive($workspace.id);
-                if (undoResult.ok) {
-                  appStore.dispatch(loadWorkspacesRequested());
-                }
-              },
-            },
-          },
-          { pauseOnHover: false },
-        ),
-      );
-    } else {
-      toast.error(m.workspace_multiSelectSidebar_archiveFailed_error());
-    }
+    appStore.dispatch(requestArchiveWorkspace($workspace.id));
   }
 
   async function handleUnarchive() {
@@ -440,9 +423,45 @@
       : null,
   );
 
+  // REV-2 driving browser client (spec Model 8): the daemon resolves it; the
+  // indicator renders only when the workspace has a browser tab and another
+  // eligible client could take over (or the pin is offline).
+  const drivingClient$ = selectWorkspaceDrivingClient(workspaceIdStore);
+  const hasBrowserTabs$ = selectWorkspaceHasBrowserTabs(workspaceIdStore);
+  const drivingClientSwitch = $derived(resolveDrivingClientSwitch($drivingClient$));
+
+  // "Set Current Client as Primary": pin this workspace's browser to this
+  // app; the daemon also migrates the workspace's claimed (agent-owned) tabs
+  // here (PROTOCOL §5.1 workspace.setBrowserClient). Offered only while
+  // another client drives (or the pin is offline); hidden when this app
+  // already drives or its own clientId is unknown. The menu action only opens
+  // the confirmation; the RPC is dispatched on confirm.
+  let confirmingSetPrimaryClient = $state(false);
+
+  const setPrimaryClientAction: MenuAction | null = $derived.by(() => {
+    const ownClientId = $drivingClient$.ownClientId;
+    if (!drivingClientSwitch?.canSwitchHere || !ownClientId || !workspaceId) return null;
+    return {
+      label: m.workspace_drivingClient_setPrimary_label(),
+      icon: faGlobe,
+      dividerBefore: true,
+      onClick: () => {
+        confirmingSetPrimaryClient = true;
+      },
+    };
+  });
+
+  function handleConfirmSetPrimaryClient() {
+    confirmingSetPrimaryClient = false;
+    const ownClientId = $drivingClient$.ownClientId;
+    if (!workspaceId || !ownClientId) return;
+    appStore.dispatch(setWorkspaceBrowserClientRequested(workspaceId, ownClientId));
+  }
+
   const additionalActions: MenuAction[] = $derived([
     sidebarToggleAction,
     sidebarSideAction,
+    ...(setPrimaryClientAction ? [setPrimaryClientAction] : []),
     ...(transferAction ? [transferAction] : []),
   ]);
 
@@ -854,7 +873,10 @@
           {/snippet}
 
           {#snippet content()}
-            <div class="w-48">
+            <div
+              class="min-w-48 w-max"
+              style="max-width: min(20rem, calc(var(--bits-dropdown-menu-content-available-width, 100vw) - 0.625rem))"
+            >
               <WorkspaceActionsMenu
                 filePath={$workspace?.worktreePath ||
                   $workspace?.repositoryPath ||
@@ -880,76 +902,11 @@
       </div>
     </div>
     <!-- repository and branch metadata -->
-    <div
-      class="type-caption mb-4 flex h-5 w-full min-w-0 items-center gap-2.5 font-normal leading-5 text-muted-foreground"
-      data-sidebar-repository-branch-metadata
-    >
-      <TooltipRich
-        side="bottom"
-        align="start"
-        sideOffset={6}
-        delayDuration={300}
-        maxWidth="16rem"
-        contentClass="border-0!"
-        contentContainerClass="p-0! space-y-0!"
-        showArrow={false}
-        interactive
-        class={`h-5 min-w-0 cursor-copy items-center overflow-hidden border-none bg-transparent p-0 text-left font-inherit text-muted-foreground outline-none hover:underline focus:outline-none focus-visible:outline-none ${$workspace?.branch ? 'shrink' : 'flex-1'}`}
-        bind:open={repoTooltipOpen}
-        onOpenChange={handleRepoTooltipOpenChange}
-        disableCloseOnTriggerClick
-        onclick={copyRepoPath}
+    <div class="mb-4 flex w-full flex-col gap-1" data-sidebar-workspace-metadata>
+      <div
+        class="type-caption flex h-5 w-full min-w-0 items-center gap-2.5 font-normal leading-5 text-muted-foreground"
+        data-sidebar-repository-branch-metadata
       >
-        {#snippet trigger()}
-          <span
-            class="block min-w-0 truncate"
-            data-sidebar-repository-control
-            data-sidebar-repository-label
-          >
-            {repositoryLabel}
-          </span>
-        {/snippet}
-        {#snippet content()}
-          <div class="w-56 p-2.5" data-sidebar-repository-hover-card>
-            <div class="flex min-w-0 items-center gap-2">
-              <p
-                class="min-w-0 flex-1 truncate text-sm font-medium text-popover-foreground"
-                title={repositoryLabel}
-              >
-                {repositoryLabel}
-              </p>
-              {#if copiedRepoPath}
-                <span class="flex shrink-0 items-center gap-1 text-xs text-success">
-                  <Fa icon={faCheck} size="xs" />
-                  {m.workspace_progressCard_copied_label()}
-                </span>
-              {/if}
-            </div>
-            {#if workspacePath}
-              <Button
-                variant="plain"
-                class="mt-1 h-auto w-full min-w-0 cursor-copy justify-start rounded-none text-xs font-normal text-muted-foreground underline decoration-dotted underline-offset-2 hover:opacity-80"
-                title={workspacePath}
-                aria-label={m.workspace_progressCard_copyPath_ariaLabel()}
-                onclick={copyRepoPath}
-                data-sidebar-repository-path-copy
-              >
-                <span class="block min-w-0 truncate">{workspacePath}</span>
-              </Button>
-            {/if}
-            {#if $workspace?.checkoutMode}
-              <div class="mt-1.5 border-t border-border pt-1.5">
-                <CheckoutModePill
-                  workspace={$workspace}
-                  presentation="repository"
-                  repositoryOpen={repoTooltipOpen}
-                />
-              </div>
-            {/if}
-          </div>
-        {/snippet}
-      </TooltipRich>
-      {#if $workspace?.branch}
         <TooltipRich
           side="bottom"
           align="start"
@@ -959,46 +916,115 @@
           contentClass="border-0!"
           contentContainerClass="p-0! space-y-0!"
           showArrow={false}
-          class="h-5 min-w-0 shrink cursor-copy items-center justify-start overflow-hidden rounded-sm border-none bg-transparent p-0 text-left font-inherit font-medium text-muted-foreground outline-none transition-colors hover:underline focus:outline-none focus-visible:outline-none"
-          bind:open={branchTooltipOpen}
-          onOpenChange={handleBranchTooltipOpenChange}
+          interactive
+          class={`h-5 min-w-0 cursor-copy items-center overflow-hidden border-none bg-transparent p-0 text-left font-inherit text-muted-foreground outline-none hover:underline focus:outline-none focus-visible:outline-none ${$workspace?.branch ? 'shrink' : 'flex-1'}`}
+          bind:open={repoTooltipOpen}
+          onOpenChange={handleRepoTooltipOpenChange}
           disableCloseOnTriggerClick
-          onclick={copyBranchName}
+          onclick={copyRepoPath}
         >
           {#snippet trigger()}
             <span
-              class="min-w-0 flex-1 truncate"
-              data-sidebar-branch-control
-              data-sidebar-branch-label
+              class="block min-w-0 truncate"
+              data-sidebar-repository-control
+              data-sidebar-repository-label
             >
-              {$workspace.branch}
+              {repositoryLabel}
             </span>
           {/snippet}
           {#snippet content()}
-            <div class="w-56 p-2.5" data-sidebar-branch-hover-card>
+            <div class="w-56 p-2.5" data-sidebar-repository-hover-card>
               <div class="flex min-w-0 items-center gap-2">
                 <p
                   class="min-w-0 flex-1 truncate text-sm font-medium text-popover-foreground"
-                  title={$workspace.branch}
+                  title={repositoryLabel}
                 >
-                  {$workspace.branch}
+                  {repositoryLabel}
                 </p>
-                {#if copiedBranchName}
+                {#if copiedRepoPath}
                   <span class="flex shrink-0 items-center gap-1 text-xs text-success">
                     <Fa icon={faCheck} size="xs" />
                     {m.workspace_progressCard_copied_label()}
                   </span>
                 {/if}
               </div>
-              {#if $workspace.baseRef}
-                <p class="mt-1 min-w-0 truncate text-xs text-muted-foreground">
-                  {m.workspace_progressCard_base_label({ ref: $workspace.baseRef })}
-                </p>
+              {#if workspacePath}
+                <Button
+                  variant="plain"
+                  class="mt-1 h-auto w-full min-w-0 cursor-copy justify-start rounded-none text-xs font-normal text-muted-foreground underline decoration-dotted underline-offset-2 hover:opacity-80"
+                  title={workspacePath}
+                  aria-label={m.workspace_progressCard_copyPath_ariaLabel()}
+                  onclick={copyRepoPath}
+                  data-sidebar-repository-path-copy
+                >
+                  <span class="block min-w-0 truncate">{workspacePath}</span>
+                </Button>
+              {/if}
+              {#if $workspace?.checkoutMode}
+                <div class="mt-1.5 border-t border-border pt-1.5">
+                  <CheckoutModePill
+                    workspace={$workspace}
+                    presentation="repository"
+                    repositoryOpen={repoTooltipOpen}
+                  />
+                </div>
               {/if}
             </div>
           {/snippet}
         </TooltipRich>
-      {/if}
+        {#if $workspace?.branch}
+          <TooltipRich
+            side="bottom"
+            align="start"
+            sideOffset={6}
+            delayDuration={300}
+            maxWidth="16rem"
+            contentClass="border-0!"
+            contentContainerClass="p-0! space-y-0!"
+            showArrow={false}
+            class="h-5 min-w-0 shrink cursor-copy items-center justify-start overflow-hidden rounded-sm border-none bg-transparent p-0 text-left font-inherit font-medium text-muted-foreground outline-none transition-colors hover:underline focus:outline-none focus-visible:outline-none"
+            bind:open={branchTooltipOpen}
+            onOpenChange={handleBranchTooltipOpenChange}
+            disableCloseOnTriggerClick
+            onclick={copyBranchName}
+          >
+            {#snippet trigger()}
+              <span
+                class="min-w-0 flex-1 truncate"
+                data-sidebar-branch-control
+                data-sidebar-branch-label
+              >
+                {$workspace.branch}
+              </span>
+            {/snippet}
+            {#snippet content()}
+              <div class="w-56 p-2.5" data-sidebar-branch-hover-card>
+                <div class="flex min-w-0 items-center gap-2">
+                  <p
+                    class="min-w-0 flex-1 truncate text-sm font-medium text-popover-foreground"
+                    title={$workspace.branch}
+                  >
+                    {$workspace.branch}
+                  </p>
+                  {#if copiedBranchName}
+                    <span class="flex shrink-0 items-center gap-1 text-xs text-success">
+                      <Fa icon={faCheck} size="xs" />
+                      {m.workspace_progressCard_copied_label()}
+                    </span>
+                  {/if}
+                </div>
+                {#if $workspace.baseRef}
+                  <p class="mt-1 min-w-0 truncate text-xs text-muted-foreground">
+                    {m.workspace_progressCard_base_label({ ref: $workspace.baseRef })}
+                  </p>
+                {/if}
+              </div>
+            {/snippet}
+          </TooltipRich>
+        {/if}
+      </div>
+      <!-- driving browser client (REV-2); renders nothing with one eligible client or no browser tabs -->
+      <DrivingClientIndicator {...$drivingClient$} hasBrowserTabs={$hasBrowserTabs$} />
     </div>
   </div>
 
@@ -1229,6 +1255,15 @@
   {/if} -->
   </div>
 </div>
+
+{#if drivingClientSwitch}
+  <SetPrimaryClientConfirmDialog
+    open={confirmingSetPrimaryClient}
+    currentHost={drivingClientSwitch.hostName}
+    onConfirm={handleConfirmSetPrimaryClient}
+    onCancel={() => (confirmingSetPrimaryClient = false)}
+  />
+{/if}
 
 <style>
   .edit-input::selection {
