@@ -74,9 +74,10 @@ describe('user-message presentation sanitization', () => {
     expect(message.contentBlocks).toHaveLength(4);
   });
 
-  // A pre-10.0 daemon persisted inline file bytes on the block; a 10.0 daemon
-  // serves that row with each such block replaced in place by
-  // `{ type: 'text', text: 'Attached file: <fileName>' }`. The FE mirrors that
+  // Older daemons persisted inline file bytes on the block; the daemon's
+  // `degrade_inline_file_blocks` pass now serves that row with each such block
+  // replaced in place by `{ type: 'text', text: 'Attached file: <fileName>' }`.
+  // The FE mirrors that
   // projection for a legacy block, in block order, and never surfaces the bytes.
   it('presents a legacy inline file block (no attachmentId) as attached-file text', () => {
     const message = user('Review the attachment');
@@ -92,7 +93,7 @@ describe('user-message presentation sanitization', () => {
     expect(presented).not.toContain('aGVsbG8=');
   });
 
-  it('keeps a legacy inline file block in its authored position, as a 10.0 daemon serves it', () => {
+  it('keeps a legacy inline file block in its authored position, as the daemon serves it', () => {
     const legacy = user('');
     legacy.contentBlocks = [
       { id: 'b1', type: 'file', data: 'aGVsbG8=', mimeType: 'text/plain', fileName: 'notes.txt' },
@@ -100,7 +101,7 @@ describe('user-message presentation sanitization', () => {
       { id: 'b3', type: 'file', data: 'aGVsbG8=', mimeType: 'text/plain', fileName: 'x.csv' },
       { type: 'text', text: ' too.' },
     ];
-    // The same row as a 10.0 daemon serves it (degrade_inline_file_blocks).
+    // The same row as the daemon serves it (degrade_inline_file_blocks).
     const served = user('');
     served.contentBlocks = [
       { id: 'b1', type: 'text', text: 'Attached file: notes.txt' },

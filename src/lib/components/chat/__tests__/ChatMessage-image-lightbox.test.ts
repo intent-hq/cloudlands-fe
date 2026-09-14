@@ -614,7 +614,7 @@ describe('ChatMessage image lightbox', () => {
       await fireEvent.click(imageButton);
       expect(screen.queryByRole('dialog', { name: /image preview/i })).toBeNull();
 
-      // The fetch settles: the full block (PROTOCOL v7.2 agent.getMessageBlock
+      // The fetch settles: the full block (the PROTOCOL `agent.getMessageBlock`
       // shape — original data, no slim flags) lands in the cache.
       mockStoreState.value = {
         chatState: {

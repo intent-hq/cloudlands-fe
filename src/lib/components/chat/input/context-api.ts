@@ -64,7 +64,7 @@ export interface ContextItem {
   // staging key for pre-workspace surfaces (modal/onboarding), where
   // placement is deferred until workspace.create returns.
   sourcePath?: string;
-  // Client-minted `idempotencyKey` (PROTOCOL §5.9, v9.13) shared by every
+  // Client-minted `idempotencyKey` (PROTOCOL §5.9) shared by every
   // placement attempt of this item, so a retry after a lost reply replays
   // the committed attachment instead of placing a duplicate. Minted once
   // per item when the daemon supports it; absent against older daemons.
@@ -125,7 +125,7 @@ export async function searchFiles(
   }
 }
 
-/** Result of `file.placeAttachment` (PROTOCOL §5.9, v6.5 + registry fields). */
+/** Result of `file.placeAttachment` (PROTOCOL §5.9, plus registry fields). */
 export interface PlaceAttachmentResult {
   ok: boolean;
   /** Workspace-relative path under `.intent/attachments/`. */
@@ -150,13 +150,13 @@ export interface PlaceAttachmentResult {
 
 /**
  * Place a chat attachment into the workspace's `.intent/attachments/`
- * directory via the daemon (`file.placeAttachment`, PROTOCOL §5.9, v6.5).
+ * directory via the daemon (`file.placeAttachment`, PROTOCOL §5.9).
  * Exactly one of `data` (base64, `data:` URL prefix tolerated) or
  * `sourcePath` (absolute host-local path the daemon copies directly) must be
  * provided; optional `mimeType` is recorded in the attachment registry.
- * Optional `idempotencyKey` (v9.13) makes a same-key retry replay the bound
- * placement instead of placing a duplicate — only send it to daemons at
- * protocol 9.13 or later. Errors propagate to the caller.
+ * Optional `idempotencyKey` makes a same-key retry replay the bound
+ * placement instead of placing a duplicate — only send it to daemons that
+ * accept keyed placement. Errors propagate to the caller.
  */
 export async function placeAttachment(
   workspaceId: string,
@@ -181,7 +181,7 @@ export async function placeAttachment(
   });
 }
 
-/** Result of `file.attachmentUpload.begin` (PROTOCOL §5.9, v6.16). */
+/** Result of `file.attachmentUpload.begin` (PROTOCOL §5.9). */
 export interface BeginAttachmentUploadResult {
   uploadId: string;
   /** Daemon's decoded-bytes-per-chunk cap (16 MiB). */
@@ -195,7 +195,7 @@ export interface BeginAttachmentUploadResult {
 
 /**
  * Open a staged chunked attachment upload session on the daemon
- * (`file.attachmentUpload.begin`, PROTOCOL §5.9, v6.16). The daemon verifies
+ * (`file.attachmentUpload.begin`, PROTOCOL §5.9). The daemon verifies
  * the assembled payload against `sha256` (lowercase hex) at commit. Optional
  * `idempotencyKey` (v9.13) binds the committed attachment to the key so a
  * lost commit reply is recoverable via `getAttachmentInfo`; a key already
@@ -232,7 +232,7 @@ const UPLOAD_TRANSFER_TIMEOUT_MS = 5 * 60 * 1000;
 
 /**
  * Stage one seq-numbered base64 slice of a chunked upload
- * (`file.attachmentUpload.chunk`, PROTOCOL §5.9, v6.16). Retrying a seq is
+ * (`file.attachmentUpload.chunk`, PROTOCOL §5.9). Retrying a seq is
  * idempotent on the daemon side.
  */
 export async function sendAttachmentUploadChunk(
@@ -249,7 +249,7 @@ export async function sendAttachmentUploadChunk(
 
 /**
  * Verify and place a completed chunked upload
- * (`file.attachmentUpload.commit`, PROTOCOL §5.9, v6.16). The result is
+ * (`file.attachmentUpload.commit`, PROTOCOL §5.9). The result is
  * byte-shape-identical to a successful `file.placeAttachment`.
  */
 export async function commitAttachmentUpload(uploadId: string): Promise<PlaceAttachmentResult> {
@@ -262,7 +262,7 @@ export async function commitAttachmentUpload(uploadId: string): Promise<PlaceAtt
 
 /**
  * Drop a staged chunked upload session and its staging directory
- * (`file.attachmentUpload.abort`, PROTOCOL §5.9, v6.16). Idempotent.
+ * (`file.attachmentUpload.abort`, PROTOCOL §5.9). Idempotent.
  */
 export async function abortAttachmentUpload(
   uploadId: string,
@@ -270,7 +270,7 @@ export async function abortAttachmentUpload(
   return await backendRequest('file.attachmentUpload.abort', { uploadId });
 }
 
-/** Result of `file.getAttachmentInfo` (PROTOCOL §5.9, v6.12). */
+/** Result of `file.getAttachmentInfo` (PROTOCOL §5.9). */
 export interface AttachmentInfo {
   attachmentId: string;
   fileName: string;
@@ -291,8 +291,8 @@ export type AttachmentInfoSelector = string | { workspaceId: string; idempotency
 
 /**
  * Look up an attachment-registry row via the daemon
- * (`file.getAttachmentInfo`, PROTOCOL §5.9, v6.12) by UUID, or (v9.13) by
- * the `{ workspaceId, idempotencyKey }` a placement was keyed with — the
+ * (`file.getAttachmentInfo`, PROTOCOL §5.9) by UUID, or by the
+ * `{ workspaceId, idempotencyKey }` a placement was keyed with — the
  * lost-reply recovery arm. Unknown ids/keys reject with -32602; errors
  * propagate to the caller.
  */

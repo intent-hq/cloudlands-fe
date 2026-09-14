@@ -39,7 +39,7 @@ export interface WorkspaceAgentState {
    */
   recentAgentCreatedEvents: Record<string, number>;
   /**
-   * Daemon-served retired-row count (§5.5 soft retire, v8.2). The default
+   * Daemon-served retired-row count (§5.5 soft retire). The default
    * hydration read excludes retired rows, so the sidebar's Retired bin renders
    * its collapsed toggle from this count and lazy-loads the rows on expand.
    */
@@ -251,7 +251,7 @@ export const hydrateAgentsRequested = createAction<[wsId: string]>(
 export const fetchRetiredAgentsRequested = createAction<[wsId: string]>(
   'workspaceAgents/fetchRetiredAgentsRequested',
 );
-/** Store the daemon-served retired-row count (`retiredCount`, §5.5 v8.2). */
+/** Store the daemon-served retired-row count (`retiredCount`, §5.5 soft retire). */
 export const setRetiredCount = createAction<[wsId: string, count: number]>(
   'workspaceAgents/setRetiredCount',
 );

@@ -310,7 +310,7 @@ export class LiveTasksClient implements TasksClient {
   }
 
   /**
-   * `task.setRelations` (PROTOCOL §5.4, v6.8): replace the task's relation
+   * `task.setRelations` (PROTOCOL §5.4): replace the task's relation
    * lists. Omitted params are NOT sent — the daemon keeps the existing list;
    * `[]` is sent and clears it.
    */

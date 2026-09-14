@@ -331,7 +331,7 @@ describe('LiveIntegrationsClient.githubRepoConfig (github.repoConfig.get, §5.27
   afterEach(() => vi.clearAllMocks());
 
   it('sends owner/repo (no ref) and surfaces the committed config', async () => {
-    // PROTOCOL §5.27 v2.4: { config: RepoConfig | null, exists: boolean }.
+    // PROTOCOL §5.27: { config: RepoConfig | null, exists: boolean }.
     mockedRequest.mockResolvedValueOnce({
       config: { setupScript: 'pnpm install', branchPrefix: 'feat' },
       exists: true,

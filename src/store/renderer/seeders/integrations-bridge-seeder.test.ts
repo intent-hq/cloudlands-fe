@@ -888,7 +888,7 @@ describe('integrations-bridge-seeder', () => {
       });
     });
 
-    it('search-github-issues forwards options.repos as the daemon `repos` param and attributes each item to its own repo (v10.1)', async () => {
+    it('search-github-issues forwards options.repos as the daemon `repos` param and attributes each item to its own repo', async () => {
       mockedRequest.mockResolvedValueOnce({
         issues: [
           {
@@ -971,7 +971,7 @@ describe('integrations-bridge-seeder', () => {
       expect(sentParams(1).repos).toBeUndefined();
     });
 
-    it('search-pull-requests forwards options.repos as the daemon `repos` param and attributes each item to its own repo (v10.1)', async () => {
+    it('search-pull-requests forwards options.repos as the daemon `repos` param and attributes each item to its own repo', async () => {
       mockedRequest.mockResolvedValueOnce({
         pulls: [
           {
@@ -1062,7 +1062,7 @@ describe('integrations-bridge-seeder', () => {
     });
   });
 
-  describe('git-tracking:list-related-repos → daemon github.relatedRepos.list (§5.27, v10.1)', () => {
+  describe('git-tracking:list-related-repos → daemon github.relatedRepos.list (§5.27)', () => {
     it('forwards { owner, repo } and returns the wire repos verbatim in the success envelope', async () => {
       mockedRequest.mockResolvedValueOnce({
         repos: [

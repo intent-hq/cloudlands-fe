@@ -92,7 +92,7 @@ export function isRemoteBackend(): boolean {
 /**
  * True when the daemon accepts `idempotencyKey` on `file.placeAttachment` /
  * `file.attachmentUpload.begin` and the key arm of `file.getAttachmentInfo`
- * (PROTOCOL §5.9, v9.13). Older daemons reject unknown params, so the key
+ * (PROTOCOL §5.9). Older daemons reject unknown params, so the key
  * is never sent to them.
  */
 export function supportsIdempotentPlacementProtocol(protocolVersion?: string | null): boolean {
@@ -131,7 +131,7 @@ function isInvalidParamsError(error: unknown): boolean {
 
 /**
  * `file.attachmentUpload.begin` refusing a key already bound to a committed
- * attachment (PROTOCOL §5.9, v9.13) — the earlier commit's reply was lost;
+ * attachment (PROTOCOL §5.9) — the earlier commit's reply was lost;
  * the attachment is recovered through the lookup arm.
  */
 export function isAlreadyCommittedError(error: unknown): boolean {
@@ -158,7 +158,7 @@ function attachmentInfoToPlacementResult(info: AttachmentInfo): PlaceAttachmentR
 /**
  * Lost-reply recovery: resolve the attachment a placement `idempotencyKey`
  * is bound to (`file.getAttachmentInfo { workspaceId, idempotencyKey }`,
- * PROTOCOL §5.9, v9.13). Resolves `undefined` when the key is unknown (the
+ * PROTOCOL §5.9). Resolves `undefined` when the key is unknown (the
  * placement never landed — the original failure stands) or the lookup
  * itself fails.
  */
@@ -314,9 +314,9 @@ const GENERIC_PLACEMENT_MESSAGES = new Set([
  * `mintPlacementIdempotencyKey` and reuse it on retry) a lost reply is
  * recovered through `file.getAttachmentInfo` before the failure surfaces;
  * the key is checked against the daemon connected NOW, so one retained
- * across a reconnect to a pre-9.13 daemon is dropped, not sent. Errors
- * propagate — use `extractPlacementErrorDetail` to surface the daemon's
- * reason.
+ * across a reconnect to a daemon without keyed placement is dropped, not
+ * sent. Errors propagate — use `extractPlacementErrorDetail` to surface the
+ * daemon's reason.
  */
 export async function placeAttachmentViaTransport(
   workspaceId: string,

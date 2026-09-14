@@ -1726,7 +1726,7 @@ describe('LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)',
   // ---- §5.5 agent.getMessageBlock (v7.2 slim-hydration counterpart) ------
 
   it('getMessageBlock forwards agentId/messageId/blockId and returns the full block', async () => {
-    // PROTOCOL §5.5 v7.2: { block } — the full, unprojected body (no
+    // PROTOCOL §5.5 `agent.getMessageBlock`: { block } — the full, unprojected body (no
     // *Truncated/*Bytes flags on the returned block).
     backend.onRequest('agent.getMessageBlock', () => ({
       block: {
@@ -1782,7 +1782,7 @@ describe('LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)',
   });
 
   describe('listUserMessages', () => {
-    // PROTOCOL §5.5 (v7.3): `agent.listUserMessages` returns every user-role
+    // PROTOCOL §5.5: `agent.listUserMessages` returns every user-role
     // message as lightweight index items, oldest→newest, unpaged —
     // `{ agentId, items: [{ id, preview, createdAt, metadata? }], total }`.
     it('forwards agent.listUserMessages with agentId only and returns the typed index', async () => {

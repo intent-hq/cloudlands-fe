@@ -207,7 +207,8 @@ describe('ChatMessage edit-and-regenerate confirm gate', () => {
   });
 
   it('confirm from a message with a legacy inline file block sends only text + reference blocks, with no data key', async () => {
-    // Persisted by a pre-10.0 daemon: a file block carrying inline bytes and no
+    // Persisted before the daemon's `degrade_inline_file_blocks` pass existed:
+    // a file block carrying inline bytes and no
     // attachmentId. It is text now — the edit forwards the attachment
     // reference only, and no `data` key may appear anywhere in the payload.
     const message: AgentMessage = {

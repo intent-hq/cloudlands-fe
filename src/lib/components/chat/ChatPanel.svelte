@@ -543,7 +543,7 @@
   const dividerSession$ = selectDividerSession(agentIdStore);
   const isDelegatedBackgroundTaskAgent = $derived(isDelegatedBackgroundTaskSession($agentSession$));
 
-  // Retired sessions (PROTOCOL v7.5+, retiredAt set) are read-only: the transcript
+  // Retired sessions (PROTOCOL §5.5 soft retire, retiredAt set) are read-only: the transcript
   // stays viewable but the composer is replaced with a restore affordance.
   const isRetiredSession = $derived(!!$agentSession$?.retiredAt);
 

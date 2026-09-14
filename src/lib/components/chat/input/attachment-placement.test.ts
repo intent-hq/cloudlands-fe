@@ -1,11 +1,11 @@
 /**
  * Transport-aware attachment placement (monorepo#2144): sourcePath arm on
  * the local sidecar, base64 data arm against a remote backend (≤25MB),
- * the chunked `file.attachmentUpload.*` session above that (PROTOCOL §5.9,
- * v6.16), the daemon error-detail extraction behind the failed pill/toast
- * copy, and idempotent placement (v9.13, intent-hq/intent#4691): the
- * version-gated `idempotencyKey` on placeAttachment / begin and lost-reply
- * recovery through the `file.getAttachmentInfo` key arm.
+ * the chunked `file.attachmentUpload.*` session above that (PROTOCOL §5.9),
+ * the daemon error-detail extraction behind the failed pill/toast copy, and
+ * idempotent placement (v9.13, intent-hq/intent#4691): the version-gated
+ * `idempotencyKey` on placeAttachment / begin and lost-reply recovery
+ * through the `file.getAttachmentInfo` key arm.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -120,7 +120,7 @@ describe('supportsIdempotentPlacementProtocol', () => {
 });
 
 describe('mintPlacementIdempotencyKey', () => {
-  it('mints a fresh UUID per call against a 9.13+ daemon', () => {
+  it('mints a fresh UUID per call against a daemon with keyed placement', () => {
     mockState.daemonHealth.stats = { protocolVersion: '9.13' };
     const a = mintPlacementIdempotencyKey();
     const b = mintPlacementIdempotencyKey();
@@ -134,7 +134,7 @@ describe('mintPlacementIdempotencyKey', () => {
     expect(mintPlacementIdempotencyKey()).toBeUndefined();
   });
 
-  it('reuses the retained key against a 9.13+ daemon, drops it against an older one', () => {
+  it('reuses the retained key against a daemon with keyed placement, drops it against one without', () => {
     mockState.daemonHealth.stats = { protocolVersion: '9.13' };
     expect(mintPlacementIdempotencyKey(KEY)).toBe(KEY);
     mockState.daemonHealth.stats = { protocolVersion: '9.12' };
@@ -306,7 +306,7 @@ describe('placeAttachmentViaTransport — chunked upload (>25MB remote)', () => 
       mimeType: 'application/octet-stream',
     });
 
-    // Exact wire shapes per PROTOCOL §5.9 (v6.16).
+    // Exact wire shapes per PROTOCOL §5.9.
     expect(backendRequestMock).toHaveBeenNthCalledWith(1, 'file.attachmentUpload.begin', {
       workspaceId: 'ws-1',
       fileName: 'big.bin',
@@ -580,8 +580,8 @@ describe('placeAttachmentViaTransport — idempotencyKey (v9.13)', () => {
     expect('idempotencyKey' in source).toBe(false);
   });
 
-  it('drops a key retained across a reconnect to a pre-9.13 daemon (no key sent, no lookup)', async () => {
-    // The item kept its key from a 9.13 session; the daemon connected now is older.
+  it('drops a key retained across a reconnect to a daemon without keyed placement (no key sent, no lookup)', async () => {
+    // The item kept its key from a keyed-placement session; the daemon connected now lacks it.
     mockState.daemonHealth.stats = { protocolVersion: '9.12' };
     placeAttachmentMock.mockRejectedValueOnce(transportLoss());
 

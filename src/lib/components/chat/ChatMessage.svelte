@@ -994,7 +994,7 @@
 
   // Extract attachment-reference file blocks from contentBlocks (attachmentId,
   // no bytes; PROTOCOL §5.5). A file block without an attachmentId is served
-  // as text by the daemon (protocol 10.0) and never renders as a chip.
+  // as text by the daemon (`degrade_inline_file_blocks`) and never renders as a chip.
   const fileBlocks = $derived.by(() => {
     if (!message?.contentBlocks || !Array.isArray(message.contentBlocks)) {
       return [];

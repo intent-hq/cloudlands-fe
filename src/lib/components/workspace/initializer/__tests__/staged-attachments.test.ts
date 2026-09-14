@@ -215,7 +215,7 @@ describe('redeemStagedAttachments', () => {
       });
     });
 
-    it('sends no key and stores none against a pre-9.13 daemon (behavior unchanged)', async () => {
+    it('sends no key and stores none against a daemon without keyed placement (behavior unchanged)', async () => {
       const place = vi.fn().mockResolvedValue({
         ok: true,
         path: '.intent/attachments/notes.txt',

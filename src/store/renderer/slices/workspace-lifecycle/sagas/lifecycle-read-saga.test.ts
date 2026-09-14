@@ -1704,7 +1704,7 @@ describe('lifecycleReadSaga', () => {
   });
 
   // The two tests below stub the seam (appClient.agents.listWithMeta), not the
-  // wire. On an 8.2+ daemon the default read excludes retired rows, but the saga
+  // wire. The daemon's default read excludes retired rows, but the saga
   // must stay agnostic to row provenance: retired rows re-enter state via the
   // retiredOnly read (lazy retired bin), and the auto-select guard has to hold
   // no matter how a retired row reached the snapshot.

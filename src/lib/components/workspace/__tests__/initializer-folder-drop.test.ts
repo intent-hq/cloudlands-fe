@@ -219,7 +219,7 @@ vi.mock('$lib/components/chat/input/attachment-placement', () => ({
   isRemoteBackend: () => mocks.isRemote,
   placeAttachmentViaTransport: (...args: unknown[]) => mocks.placeAttachment(...args),
   extractPlacementErrorDetail: (error: unknown) => String(error),
-  // Pre-9.13 daemon: no placement idempotencyKey is minted.
+  // Daemon without keyed placement: no placement idempotencyKey is minted.
   mintPlacementIdempotencyKey: () => undefined,
 }));
 

@@ -639,7 +639,7 @@ describe('TaskItemNodeView - Data Attributes', () => {
   });
 });
 
-describe('TaskItemNodeView - Daemon-provided unmetDependsOn (v6.8, monorepo#1979)', () => {
+describe('TaskItemNodeView - Daemon-provided unmetDependsOn (monorepo#1979)', () => {
   const WS_ID = 'ws-1';
   const TASK_ID = 'task-note-1';
 

@@ -35,7 +35,7 @@
     runningAgentIds?: string[];
     loading?: boolean;
     searchQuery?: string;
-    /** Daemon-served retired-row count (§5.5 v8.2) — renders the collapsed bin before rows load. */
+    /** Daemon-served retired-row count (§5.5 soft retire) — renders the collapsed bin before rows load. */
     retiredCount?: number;
     /** True once the lazy retired-only read has hydrated the retired rows. */
     retiredAgentsLoaded?: boolean;

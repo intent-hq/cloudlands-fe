@@ -166,7 +166,7 @@ export interface TranscriptSnapshotMeta {
 export type LiveStreamPhase = 'connecting' | 'awaiting-snapshot' | 'live' | 'resyncing' | 'delayed';
 
 /**
- * One lazily hydrated content block (PROTOCOL §5.5 slim projection + v7.2
+ * One lazily hydrated content block (PROTOCOL §5.5 slim projection +
  * `agent.getMessageBlock`): the FULL body fetched on demand when the user
  * expands a truncated tool row or views a truncated image. Keyed in
  * `ChatAgentState.hydratedBlocks` by `{messageId}|{blockId}`. `seq` is a

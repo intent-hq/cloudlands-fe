@@ -415,7 +415,7 @@ describe('provider-status-bridge-seeder', () => {
       expect(response.data?.providers.codex).toEqual({ available: true, authenticated: false });
     });
 
-    it('attaches the identity line only to the provider that sent one (protocol 9.4)', async () => {
+    it('attaches the identity line only to the provider that sent one (verdict `identity` field)', async () => {
       routeDaemon({
         'host.checkAuggie': { available: false },
         'host.toolAvailability': {
@@ -449,7 +449,8 @@ describe('provider-status-bridge-seeder', () => {
         authenticated: true,
         authDetails: 'dev@example.com',
       });
-      // No identity on the wire (pre-9.4 daemon or non-identity provider) →
+      // No identity on the wire (a daemon without the verdict `identity`
+      // field, or a non-identity provider) →
       // exactly the pre-identity shape.
       expect(response.data?.providers.codex).toStrictEqual({
         available: true,
@@ -881,7 +882,7 @@ describe('provider-status-bridge-seeder', () => {
       });
     });
 
-    it('pipes the protocol-9.4 identity object into authDetails on the single recheck', async () => {
+    it('pipes the verdict `identity` object into authDetails on the single recheck', async () => {
       routeDaemon({
         'host.findBinary': (params) => {
           const { name } = params as { name: string };

@@ -485,7 +485,7 @@ export interface HudCardAgent {
    * events.
    */
   line: string | null;
-  /** Delegating agent's id (`parentAgentId`, PROTOCOL §5.1 v2.9); null on roots. */
+  /** Delegating agent's id (`parentAgentId`, PROTOCOL §5.1); null on roots. */
   parentAgentId: string | null;
   /** Delegation-tree depth (0 for roots; wire flat order when no parentage). */
   depth: number;
@@ -724,7 +724,7 @@ function siblingOrderComparator(
 
 /**
  * Depth-first delegation-tree order over the summary agents: each parent
- * followed by its children (`parentAgentId`, PROTOCOL §5.1 v2.9), with roots
+ * followed by its children (`parentAgentId`, PROTOCOL §5.1), with roots
  * and every sibling group ordered by `compare` — a child never moves above
  * its parent. Agents with no / unknown / self parent are roots (flat
  * fallback when parentage is absent); parent cycles degrade to flat roots

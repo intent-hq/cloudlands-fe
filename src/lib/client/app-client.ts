@@ -239,8 +239,8 @@ export interface ResolveInterruptedResult {
 }
 
 /**
- * One lightweight user-message index item (`agent.listUserMessages`, §5.5,
- * v7.3). `preview` is the daemon-extracted plain text of the message,
+ * One lightweight user-message index item (`agent.listUserMessages`, §5.5).
+ * `preview` is the daemon-extracted plain text of the message,
  * server-truncated (default 300 chars); `metadata` is the persisted
  * `messageMetadata` passed through verbatim when present (omitted when
  * absent, never null) so callers can keep filtering automated rows.
@@ -355,7 +355,7 @@ export interface WorkspaceDiskUsageResult {
 /**
  * `workspace.delete` outcome (§5.1). When the request carried
  * `undoDelayMs > 0` the daemon registers an in-memory pending deletion
- * (protocol 6.7+ delete grace window) and returns
+ * (the daemon-owned delete grace window) and returns
  * `{ success: true, scheduled: true, deleteAt }` — `deleteAt` is the ISO
  * commit deadline. An immediate delete (no `undoDelayMs`) keeps the plain
  * `{ success: true }` shape, so both fields are additive and optional.
@@ -401,8 +401,8 @@ export interface WorkspacesClient {
   update(request: UpdateWorkspaceRequest): Promise<WorkspaceUpdateResult>;
   /**
    * Delete a workspace (`workspace.delete`, §5.1). Optional
-   * `options.undoDelayMs > 0` requests the daemon-owned delete grace window
-   * (protocol 6.7+): the daemon schedules the commit at `now + undoDelayMs`
+   * `options.undoDelayMs > 0` requests the daemon-owned delete grace window:
+   * the daemon schedules the commit at `now + undoDelayMs`
    * and returns `{ success: true, scheduled: true, deleteAt }`; the FE cancels
    * it via `cancelDelete`. Omitted/0 keeps the immediate-delete behavior.
    */
@@ -508,7 +508,7 @@ export interface FileBlock {
 
 /**
  * `agent.delete` outcome (§5.5). When the request carried `undoDelayMs > 0`
- * the daemon registers an in-memory pending deletion (protocol 6.7+ delete
+ * the daemon registers an in-memory pending deletion (the daemon-owned delete
  * grace window) and returns `{ success: true, scheduled: true, deleteAt }` —
  * `deleteAt` is the ISO commit deadline. An immediate delete (no
  * `undoDelayMs`) keeps the plain `{ success: true }` shape, so both fields
@@ -532,8 +532,8 @@ export interface AgentCancelDeleteResult extends MutationResult {
 export interface AgentsClient {
   /**
    * Agents of one workspace (`agent.list`, §5.5). Soft-retired sessions
-   * (`retiredAt` set, v7.5) are excluded from the default read daemon-side;
-   * `options.retiredOnly: true` (v8.2) serves ONLY retired rows, each
+   * (`retiredAt` set) are excluded from the default read daemon-side;
+   * `options.retiredOnly: true` serves ONLY retired rows, each
    * carrying the presence-detected `retiredAt` ISO timestamp. The flag only
    * rides the wire when supplied so the default read carries no flags.
    */
@@ -599,7 +599,7 @@ export interface AgentsClient {
   getMessageBlock(agentId: string, messageId: string, blockId: string): Promise<ContentBlock>;
   /**
    * The full user-message index of one agent (`agent.listUserMessages`,
-   * §5.5, v7.3): every **user-role** message as a lightweight
+   * §5.5): every **user-role** message as a lightweight
    * `{ id, preview, createdAt, metadata? }` item, oldest→newest, deliberately
    * unpaged (the navigator filter needs the whole set client-side).
    * `previewChars` bounds the preview length (daemon default 300,
@@ -830,7 +830,7 @@ export interface AgentsClient {
    * the reactive `subscribe` refetch reconciles the list. `workspaceId` is
    * optional per the contract; the daemon resolves the workspace itself.
    * Optional `options.undoDelayMs > 0` requests the daemon-owned delete grace
-   * window (protocol 6.7+): the daemon schedules the commit at
+   * window: the daemon schedules the commit at
    * `now + undoDelayMs` and returns `{ success: true, scheduled: true,
    * deleteAt }`; the FE cancels it via `cancelDelete`. Omitted/0 keeps the
    * immediate-delete behavior. Scheduling does NOT stop the agent — the
@@ -848,8 +848,8 @@ export interface AgentsClient {
    */
   cancelDelete(agentId: string, workspaceId?: string): Promise<AgentCancelDeleteResult>;
   /**
-   * Un-retire a soft-retired session (`agent.restore`, §5.5 soft retire,
-   * v7.5). Clears `retiredAt` and emits `agent:restored`, which reconciles
+   * Un-retire a soft-retired session (`agent.restore`, §5.5 soft retire).
+   * Clears `retiredAt` and emits `agent:restored`, which reconciles
    * the list. Idempotent — restoring an already-active agent succeeds.
    */
   restore(agentId: string, workspaceId?: string): Promise<MutationResult>;
@@ -1552,7 +1552,7 @@ export interface MarkAsTaskOptions {
 }
 
 /**
- * Per-list replace params for `task.setRelations` (PROTOCOL §5.4, v6.8):
+ * Per-list replace params for `task.setRelations` (PROTOCOL §5.4):
  * an omitted list keeps the existing one, `[]` clears it.
  */
 export interface SetRelationsParams {
@@ -1897,7 +1897,7 @@ export interface ModelsClient {
 }
 
 /**
- * Provider registry domain (`providers.catalog`, PROTOCOL §5.38, v2.6).
+ * Provider registry domain (`providers.catalog`, PROTOCOL §5.38).
  * Daemon-global: no `workspaceId`. Returns the full static provider registry
  * (gated-off rows included, in registry order).
  * THROWS on transport/daemon failure so the seeder can decide the fallback
@@ -1997,7 +1997,7 @@ export interface VoiceTranscribeResult {
   durationMs: number | null;
 }
 
-/** `voice.getWorkspaceVocabulary` result (PROTOCOL §5.41, v5.1). */
+/** `voice.getWorkspaceVocabulary` result (PROTOCOL §5.41). */
 export interface VoiceWorkspaceVocabularyResult {
   /** The auto-derived workspace terms only (user `voice.vocabulary` not merged in). */
   terms: string[];
@@ -2021,7 +2021,7 @@ export interface VoiceClient {
   ): Promise<VoiceTranscribeResult>;
   /**
    * A workspace's auto-derived vocabulary (`voice.getWorkspaceVocabulary`,
-   * PROTOCOL §5.41, v5.1) — derived terms only, for client-side (OS-engine)
+   * PROTOCOL §5.41) — derived terms only, for client-side (OS-engine)
    * transcription biasing and Settings previews. `workspaceId` is required;
    * an unknown id is the standard not-found `-32602`.
    */

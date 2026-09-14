@@ -117,7 +117,7 @@ const CODEX_ACP_BINARY = 'codex-acp';
  * undefined and an RPC failure folds to an empty map (every provider reads
  * as unknown, no indicator — honest degradation). Each verdict also carries
  * the rendered identity line (`authDetails`) when the daemon sent one
- * (protocol 9.4, intent-hq/intentd#1685).
+ * (the verdict `identity` field, intent-hq/intentd#1685).
  */
 async function getAuthVerdicts(
   options: ProviderAuthStatusParams = {},
