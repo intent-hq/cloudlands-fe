@@ -13,7 +13,6 @@
   import { selectWorkspaceScriptEntries } from '$store/renderer/slices/scripts/scripts-selectors';
   import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { store as appStore } from '$store/renderer/store';
-  import { m } from '$shared/paraglide/messages.js';
   import SidebarBrowserGroup from './SidebarBrowserGroup.svelte';
   import { groupBrowserTabsByOwner } from './sidebar-browser-groups';
 
@@ -37,10 +36,6 @@
   // Tabs grouped by owner agent, with hidden (user-closed) owned tabs
   // listed in their owner's group; "Unclaimed" renders last (monorepo#2857).
   const groups = $derived(groupBrowserTabsByOwner(browserTabs, $hiddenTabs$, $agents$));
-  // Derived from groups so the count matches what actually renders (the
-  // grouping skips malformed hidden entries).
-  const tabCount = $derived(groups.reduce((sum, group) => sum + group.entries.length, 0));
-
   function openBrowserTab(tabId: string, panelId: string) {
     const manager = getPanelLayoutManager(panelLayoutId);
     manager.setActiveTab(tabId, panelId);
@@ -84,22 +79,15 @@
   {#if browserTarget}
     <Button
       variant="plain"
-      class="flex h-auto w-full cursor-pointer items-start justify-start gap-2 rounded-md px-2 py-2 text-left hover:bg-muted focus-visible:bg-muted"
+      class="flex h-7 w-full cursor-pointer items-center justify-start gap-2 rounded-md px-2 py-0 text-left hover:bg-muted focus-visible:bg-muted"
       onclick={openRunningTarget}
+      title={browserTarget.url}
       data-browser-running-url={browserTarget.url}
     >
-      <span class="mt-1.5 size-1.5 shrink-0 rounded-full bg-success" aria-hidden="true"></span>
+      <span class="size-2 shrink-0 rounded-full bg-success" aria-hidden="true"></span>
       <span class="min-w-0 flex-1">
         <span class="block truncate text-sm font-medium text-foreground">{browserTarget.name}</span>
-        <span class="block truncate text-xs text-muted-foreground" title={browserTarget.url}
-          >{browserTarget.url}</span
-        >
       </span>
     </Button>
-  {/if}
-  {#if tabCount === 0 && !browserTarget}
-    <p class="px-2 py-3 text-sm text-muted-foreground" data-sidebar-browser-empty>
-      {m.browser_embedded_noUrl_description()}
-    </p>
   {/if}
 </div>

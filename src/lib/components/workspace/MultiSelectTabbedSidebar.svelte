@@ -1014,7 +1014,7 @@
                           />
                         </span>
                       </h6>
-                      {#if tabId !== 'agents' && tabId !== 'shell'}
+                      {#if tabId !== 'agents' && tabId !== 'shell' && tabId !== 'browser'}
                         <p
                           class="text-ui text-subtle mt-0.5 leading-snug transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none"
                         >
