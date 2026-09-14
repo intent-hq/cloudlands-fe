@@ -75,10 +75,25 @@ Pattern-first routing for product UI. Open the catalog URL in \`pnpm run dev:ui\
 - **Overlay recipe:** \`.overlay-surface\` uses the 8px medium radius and two-layer \`--elevation-overlay\`; its boundary is 0px in light themes and a 1px semantic border in dark themes.
 - **States:** use \`bg-hover\`, \`bg-active\`, \`bg-selected\`, and \`bg-danger-background\` rather than physical colors.
 
-## Settings typography
+## Typography
 
-- **Roles:** \`type-body\` for labels, descriptions and controls; \`type-caption\` for short metadata; \`type-title\` for headings. Use \`SettingsFieldRow\` for label-and-control rows.
+- **Roles:** \`type-caption\` for compact controls, navigation and short metadata; \`type-body\` for messages, documents, explanatory copy and expanded form content; \`type-title\` / \`type-display\` for section / page headings. Use \`SettingsFieldRow\` for label-and-control rows.
+- **Emphasis:** Use medium weight on the same role instead of inventing another size. Label, body-strong and display-large are compatibility aliases, not additional styles.
+- **Style:** Use sentence case; avoid uppercase section labels, tracking changes, and bold as decoration. Do not change typography on hover by default; reserve motion for state and spatial relationships.
 - **Zero rule:** Never use raw \`text-xs\`, \`text-sm\`, \`text-base\` or \`text-lg\` in settings components, routes or patterns. Pair \`font-medium!\` with a \`type-*\` role on the same element; \`intent/no-raw-typography\` enforces this.
+
+| Use | Value (size / line height) | Weight |
+| --- | --- | --- |
+| Compact controls, navigation, short metadata (\`type-caption\`) | 13px / 18px | 400; 500 for selection or label emphasis |
+| Messages, documents, explanatory copy, expanded form content (\`type-body\`) | 15px / 22px | 400; 500 for emphasis |
+| Section title (\`type-title\`) | 17px / 24px | 500 |
+| Page title (\`type-display\`) | 22px / 28px | 500 |
+| Code (\`type-code\`) | 13px / 20px | 400; monospace only where content is code |
+
+Badge is a narrow microtext exception: \`badge.variants.ts\` retains \`text-[12px]\` for default
+and \`text-[11px]\` for compact badges, both medium weight, to preserve the existing dense status
+chip proportions. These are not new general typography roles; do not copy them into controls or
+navigation. \`scripts/design-token-allowlist.json\` caps this file at those two arbitrary utilities.
 
 ## Motion
 

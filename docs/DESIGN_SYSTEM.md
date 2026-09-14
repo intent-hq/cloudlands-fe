@@ -125,7 +125,7 @@ Import shared transitions from `$lib/motion`; inspect the live motion examples i
 
 - Never transform labels to all capitals; use sentence case without extra letter spacing. `intent/no-uppercase` rejects Tailwind `uppercase` classes and CSS `text-transform: uppercase` in renderer components and stylesheets. Preserve meaningful acronyms and initials.
 
-- Never use raw `text-xs`, `text-sm`, `text-base`, or `text-lg` in settings surfaces; use `type-body` for labels, descriptions and controls, `type-caption` for short metadata, and `type-title` for headings. Pair `font-medium!` with a `type-*` role on the same element. `intent/no-raw-typography` enforces this in settings components, routes and patterns.
+- Never use raw `text-xs`, `text-sm`, `text-base`, or `text-lg` in settings surfaces; use `type-caption` for compact controls, navigation and short metadata, `type-body` for messages, documents, explanatory copy and expanded form content, and `type-title` / `type-display` for section / page headings. Pair `font-medium!` with a `type-*` role on the same element. `intent/no-raw-typography` enforces this in settings components, routes and patterns.
 
 - Never add raw `<button>`, `<input>`, `<select>`, or `<textarea>` controls; use their UI primitives.
 - Never hand-roll a menu or listbox row; apply the shared `menuItem()` recipe.
@@ -170,11 +170,26 @@ the effective background.
 - Typography: use only five visual roles: `.type-caption`, `.type-body`, `.type-title`,
   `.type-display`, and `.type-code`. Use medium weight on the same role for emphasis instead of
   inventing another size. Label, body-strong, and display-large tokens are compatibility aliases,
-  not additional styles. Body is the default for messages, controls, and suggested actions; caption
-  is reserved for short metadata. The bundled Inter variable Latin weight face keeps the existing
-  Inter/system fallback stack. Components may transition `font-weight` or
-  `font-variation-settings` from 500 to 600 with the fast spring tier; component adoption owns those
-  transitions. Preserve the separate JetBrains Mono/system monospace boundary.
+  not additional styles. Caption is the compact-UI role for controls, navigation and short metadata;
+  body is the reading role for messages, documents, explanatory copy and expanded form content.
+  Use sentence case; avoid uppercase section labels, tracking changes, and bold as decoration.
+  Do not change typography on hover by default; reserve motion for state and spatial relationships.
+  The bundled Inter variable Latin weight face keeps the existing Inter/system fallback stack.
+  Preserve the separate JetBrains Mono/system monospace boundary.
+
+| Use                                                                        | Value (size / line height) | Weight                                    |
+| -------------------------------------------------------------------------- | -------------------------- | ----------------------------------------- |
+| Compact controls, navigation, short metadata (`type-caption`)              | 13px / 18px                | 400; 500 for selection or label emphasis  |
+| Messages, documents, explanatory copy, expanded form content (`type-body`) | 15px / 22px                | 400; 500 for emphasis                     |
+| Section title (`type-title`)                                               | 17px / 24px                | 500                                       |
+| Page title (`type-display`)                                                | 22px / 28px                | 500                                       |
+| Code (`type-code`)                                                         | 13px / 20px                | 400; monospace only where content is code |
+
+Badge is a narrow microtext exception: `badge.variants.ts` retains `text-[12px]` for default
+and `text-[11px]` for compact badges, both medium weight, to preserve the existing dense status
+chip proportions. These are not new general typography roles; do not copy them into controls or
+navigation. `scripts/design-token-allowlist.json` caps this file at those two arbitrary utilities.
+
 - Spacing: `--space-{1..7}` follows a 4/8/12/16/24/32/48px rhythm. Use
   `--content-measure-{reading,form,wide}` for editorial copy, settings, and broad workspaces.
 - Controls: compact/small/medium/large resolve to 28/28/32/36px. Compact is a density alias, not a

@@ -22,6 +22,7 @@
       "palette": 0,
       "arbitrary": 24
     },
+    "src/lib/components/ui/badge/badge.variants.ts": { "palette": 0, "arbitrary": 2 },
     "src/lib/components/ui/badge/badge.svelte": { "palette": 0, "arbitrary": 1 },
     "src/lib/components/ui/badge/index.ts": { "palette": 0, "arbitrary": 1 },
     "src/lib/components/ui/button/button.svelte": { "palette": 0, "arbitrary": 7 },
