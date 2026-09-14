@@ -10,13 +10,18 @@
 // which must be authorized by an embedded Developer ID provisioning profile,
 // and profiles can only be embedded in bundles (see scripts/sign-sidecar.js).
 //
-// Usage: intent-keychain-helper list
-//        intent-keychain-helper upsert <account>   ({"payload": "..."} on stdin)
-//        intent-keychain-helper delete <account> [access-group]
+// Usage: intent-keychain-helper [--service <name>] list
+//        intent-keychain-helper [--service <name>] upsert <account>   ({"payload": "..."} on stdin)
+//        intent-keychain-helper [--service <name>] delete <account> [access-group]
 //
-// Accounts are backend identity keys (not secret); payloads/secrets travel
-// over stdin/stdout only — NEVER argv (access groups are entitlement strings,
-// not secret). Prints a single JSON object to stdout:
+// `--service` selects the keychain service the subcommand operates on and
+// defaults to the paired-backends registry (`com.cloudlands.intent.backends`,
+// the only service the iOS companion reads). Guest sessions redeemed from an
+// invite live under `com.cloudlands.intent.guest-sessions`; every service is
+// reconciled on its own, so tombstones written under one never affect the
+// other. Accounts are backend identity keys (not secret); payloads/secrets
+// travel over stdin/stdout only — NEVER argv (access groups and service names
+// are identifiers, not secret). Prints a single JSON object to stdout:
 //   list:    {"items": [{"account": "...", "payload": "...", "modifiedAtMs": 123,
 //             "group": "..."}], "sharedGroup": "..."}
 //            ("group" per item and top-level "sharedGroup" appear only when
@@ -35,7 +40,17 @@
 import Foundation
 import Security
 
-let service = "com.cloudlands.intent.backends"
+let defaultService = "com.cloudlands.intent.backends"
+
+/// Split a leading `--service <name>` off the argument list; the remainder
+/// is the subcommand and its arguments. Nil `service` = the default service.
+func parseServiceOption(_ arguments: [String]) -> (service: String?, rest: [String])? {
+    guard arguments.first == "--service" else { return (nil, arguments) }
+    guard arguments.count >= 2, !arguments[1].isEmpty else { return nil }
+    return (arguments[1], Array(arguments.dropFirst(2)))
+}
+
+var service = defaultService
 
 // Cross-app shared keychain access group (suffix; the full group is
 // TEAMID-prefixed, e.g. "ABCDE12345.dev.intentapp.backends"). Resolved at
@@ -199,9 +214,16 @@ func runDelete(account: String, group: String?) -> Never {
     emit(["ok": true], exitCode: 0)
 }
 
-let arguments = Array(CommandLine.arguments.dropFirst())
+let usage = "usage: intent-keychain-helper [--service <name>] <list | upsert <account> | delete <account> [access-group]>"
+guard let parsed = parseServiceOption(Array(CommandLine.arguments.dropFirst())) else {
+    fail("bad-arguments", usage)
+}
+if let selected = parsed.service {
+    service = selected
+}
+let arguments = parsed.rest
 guard let command = arguments.first else {
-    fail("bad-arguments", "usage: intent-keychain-helper <list | upsert <account> | delete <account> [access-group]>")
+    fail("bad-arguments", usage)
 }
 switch command {
 case "list":
