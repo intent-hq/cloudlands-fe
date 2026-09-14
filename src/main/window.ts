@@ -8,6 +8,7 @@ import { registerWindowTitleListener, resolveAppTitle } from './utils/resolve-ap
 import { DeepLinkHandler } from '../features/deeplink/deep-link-handler';
 import { scrubToken } from '../features/deeplink/utils/scrub-token';
 import { findIntentUrl } from '../features/deeplink/utils/find-intent-url';
+import { isInviteUri } from '../shared/utils/invite-uri';
 import { isPairingUri } from '../shared/utils/pairing-uri';
 import { getMainWindow, setMainWindow } from './state';
 import { LOCAL_CONNECTION_ID } from '../shared/types/connections';
@@ -955,6 +956,12 @@ export async function createWindowForDeepLink(
   if (isPairingUri(deepLinkUrl)) {
     const { handlePairDeepLink } = await import('../features/deeplink/main/pair-deep-link');
     await handlePairDeepLink(deepLinkUrl);
+    return;
+  }
+  // Invite links: same posture (the invite secret never reaches the renderer).
+  if (isInviteUri(deepLinkUrl)) {
+    const { handleInviteDeepLink } = await import('../features/deeplink/main/invite-deep-link');
+    await handleInviteDeepLink(deepLinkUrl);
     return;
   }
 

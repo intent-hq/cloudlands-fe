@@ -376,9 +376,14 @@ import { workspaceService } from '../features/workspace/main/workspace.service';
 
 import { registerDeepLinkHandlers } from '../features/deeplink/main/deeplink.ipc';
 import { DeepLinkHandler } from '../features/deeplink/deep-link-handler';
+import {
+  handleInviteDeepLink,
+  routeInviteLinkFromOs,
+} from '../features/deeplink/main/invite-deep-link';
 import { handlePairDeepLink, routePairLinkFromOs } from '../features/deeplink/main/pair-deep-link';
 import { scrubToken } from '../features/deeplink/utils/scrub-token';
 import { findIntentUrl } from '../features/deeplink/utils/find-intent-url';
+import { isInviteUri } from '../shared/utils/invite-uri';
 import { isPairingUri } from '../shared/utils/pairing-uri';
 import { registerChatExportHandlers } from '../features/export/main/export.ipc';
 import { registerDebugExportHandlers } from '../features/debug-export/main/debug-export.ipc';
@@ -2067,6 +2072,11 @@ app.on('open-url', async (event: Electron.Event, url: string) => {
     await routePairLinkFromOs(url, (pending) => deepLinkHandler.handleDeepLink(pending, null));
     return;
   }
+  // Invite links follow the same main-process-only route as pair links.
+  if (isInviteUri(url)) {
+    await routeInviteLinkFromOs(url, (pending) => deepLinkHandler.handleDeepLink(pending, null));
+    return;
+  }
 
   // With a live main window, route the deep link now (settings/create go to
   // that window; other types open a new one — the creator itself awaits the
@@ -2114,6 +2124,8 @@ if (!gotTheLock) {
         // Pair links go straight to the main-process handler — the first
         // instance is already running, so no parking or window is needed.
         await handlePairDeepLink(deepLinkUrl);
+      } else if (isInviteUri(deepLinkUrl)) {
+        await handleInviteDeepLink(deepLinkUrl);
       } else {
         // Route only when a main window exists to receive/anchor the link;
         // any new window the creator opens awaits the renderer-window gate.

@@ -1095,6 +1095,9 @@ export const VoiceTranscribeLocalSchema = z.object({
 
 export const ConnectionsListSchema = EmptySchema;
 
+/** `guest-sessions:list`: no params; the result never carries a token. */
+export const GuestSessionsListSchema = EmptySchema;
+
 export const ConnectionsCaptureFingerprintSchema = z.object({
   host: z.string().min(1, 'Host is required'),
   port: z.number().int().positive('Port must be a positive integer'),
