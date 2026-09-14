@@ -144,6 +144,36 @@ ${buttonAliases}
 - \`tooltip/TooltipRich.svelte\` uses \`Button\` for its optional close action; the tooltip owns content and positioning, not a distinct button contract.
 - \`badge/badge.svelte\` uses \`Button\` for its remove action; the badge owns status presentation, not a distinct button contract.
 
+## Badge status guidance
+
+Use a Badge for a short status attached to an item. Name the state in text; colour
+reinforces meaning and must never be the only cue. Use either \`variant="solid"\`
+or \`variant="dot"\` with the same mapping:
+
+| Meaning | Colour prop | Example |
+| --- | --- | --- |
+| Neutral | \`gray\` | Draft |
+| Information | \`blue\` | In progress |
+| Success | \`green\` | Complete |
+| Warning | \`amber\` | Needs attention |
+| Danger | \`red\` | Failed |
+
+Use plain text for ordinary metadata, Button for a primary action, InputMessage
+for field validation, and an alert when the message needs an explanation.
+A Badge should not turn every piece of metadata into a competing visual marker.
+
+### Categorical colours
+
+The 17 named colours are for categorisation only, such as distinguishing named
+project labels. Keep the category visible in text and its colour assignment
+consistent. Do not use this palette to invent more status meanings.
+
+### Compatibility
+
+Legacy \`default\`, \`secondary\`, \`outline\`, \`destructive\`, \`success\`, and \`info\`
+variants remain supported for existing callers. New code uses \`solid\` or \`dot\`
+with an explicit colour from the status mapping above.
+
 ## Button, Tabs, Toggle, and Badge recipes
 
 - **Borders:** Filled and ghost Buttons, resting Tabs, default Toggles, Toggle Groups, and Badge bodies are borderless. Use the Button \`outline\` variant or another explicit outline/input recipe when a 1px boundary is required.

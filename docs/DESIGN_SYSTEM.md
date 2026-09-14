@@ -447,3 +447,33 @@ pnpm tsc -p tsconfig.json --noEmit
 The Playwright contract test uses a real browser to verify resolved colors for explicit light/dark,
 system preference, every preset, and sparse imported high-contrast themes. On macOS it uses an
 existing system Chrome installation when the Playwright-managed Chromium binary is unavailable.
+
+## Badge status guidance
+
+Use a Badge for a short status attached to an item. Name the state in text; colour
+reinforces meaning and must never be the only cue. Use either `variant="solid"`
+or `variant="dot"` with the same mapping:
+
+| Meaning     | Colour prop | Example         |
+| ----------- | ----------- | --------------- |
+| Neutral     | `gray`      | Draft           |
+| Information | `blue`      | In progress     |
+| Success     | `green`     | Complete        |
+| Warning     | `amber`     | Needs attention |
+| Danger      | `red`       | Failed          |
+
+Use plain text for ordinary metadata, Button for a primary action, InputMessage
+for field validation, and an alert when the message needs an explanation.
+A Badge should not turn every piece of metadata into a competing visual marker.
+
+### Categorical colours
+
+The 17 named colours are for categorisation only, such as distinguishing named
+project labels. Keep the category visible in text and its colour assignment
+consistent. Do not use this palette to invent more status meanings.
+
+### Compatibility
+
+Legacy `default`, `secondary`, `outline`, `destructive`, `success`, and `info`
+variants remain supported for existing callers. New code uses `solid` or `dot`
+with an explicit colour from the status mapping above.

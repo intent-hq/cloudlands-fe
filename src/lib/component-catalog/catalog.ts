@@ -172,7 +172,8 @@ const componentProps: Record<string, CatalogProp[]> = {
 
 const componentDescriptions: Record<string, string> = {
   accordion: 'Reveal supporting sections while keeping their headings easy to scan.',
-  badge: 'Mark an item with a compact status or category.',
+  badge:
+    'Show neutral, information, success, warning, or danger status; use categorical colours only for categorisation.',
   breadcrumb: 'Show the path to the current page and navigate its ancestors.',
   checkbox: 'Turn an independent option on or off.',
   'checkbox-group': 'Choose several related options from a labelled group.',

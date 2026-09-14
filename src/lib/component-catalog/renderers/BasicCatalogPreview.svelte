@@ -45,29 +45,52 @@
   data-catalog-renderer-fixture={fixture.id}
 >
   {#if componentId === 'badge'}
-    <div
-      class="grid min-w-0 gap-4"
-      data-catalog-rendered-state="solid dot colors default outline destructive success-ring-dot info-ring-dot leading-icon removable keyboard-focus long-label light dark compact"
-    >
-      <section class="grid gap-2">
-        <h3 class="type-caption font-medium">Solid</h3>
+    {#if fixture.id === 'semantic-states'}
+      <div
+        class="grid min-w-0 gap-4"
+        data-catalog-rendered-state="neutral information success warning danger solid dot leading-icon removable keyboard-focus long-label light dark compact"
+      >
+        <p class="type-caption text-muted-foreground">
+          Use a short text label to name the state; colour reinforces its meaning.
+        </p>
         <div class="flex flex-wrap items-center gap-2">
-          <Badge>Default</Badge><Badge color="blue">Blue</Badge><Badge size="compact">Compact</Badge
-          >
-          <Badge leadingIcon={badgeIcon}>With icon</Badge>
-          <Badge removable removeLabel="Remove badge" onRemove={() => undefined}>Removable</Badge>
+          <Badge color="gray">Neutral: Draft</Badge>
+          <Badge color="blue">Information: In progress</Badge>
+          <Badge color="green">Success: Complete</Badge>
+          <Badge color="amber">Warning: Needs attention</Badge>
+          <Badge color="red">Danger: Failed</Badge>
         </div>
-      </section>
-      <section class="grid gap-2">
-        <h3 class="type-caption font-medium">Dot</h3>
-        <div class="flex flex-wrap items-center gap-2">
-          <Badge variant="dot">Default</Badge><Badge variant="dot" color="green">Ready</Badge>
-          <Badge variant="dot" color="blue" size="compact">Compact</Badge>
-          <Badge variant="dot" href="#badge-preview">Focusable badge link</Badge>
-        </div>
-      </section>
-      <section class="grid gap-2">
-        <h3 class="type-caption font-medium">Colors</h3>
+        <section class="grid gap-2">
+          <h3 class="type-caption font-medium">The same meanings with dots</h3>
+          <div class="flex flex-wrap items-center gap-2">
+            <Badge variant="dot" color="gray">Draft</Badge>
+            <Badge variant="dot" color="blue">In progress</Badge>
+            <Badge variant="dot" color="green">Complete</Badge>
+            <Badge variant="dot" color="amber">Needs attention</Badge>
+            <Badge variant="dot" color="red">Failed</Badge>
+          </div>
+        </section>
+        <section class="grid gap-2">
+          <h3 class="type-caption font-medium">Compact labels and optional actions</h3>
+          <div class="flex flex-wrap items-center gap-2">
+            <Badge size="compact">Draft</Badge>
+            <Badge leadingIcon={badgeIcon}>Draft</Badge>
+            <Badge removable removeLabel="Remove draft label" onRemove={() => undefined}
+              >Draft</Badge
+            >
+            <Badge variant="dot" href="#badge-preview">View draft</Badge>
+          </div>
+        </section>
+        <Badge variant="dot" class="max-w-full truncate"
+          >A deliberately long badge label for truncation review</Badge
+        >
+      </div>
+    {:else if fixture.id === 'categorical-colours'}
+      <section class="grid min-w-0 gap-2" data-catalog-rendered-state="colors">
+        <p class="type-caption text-muted-foreground">
+          Categorisation only: use these 17 colours to distinguish named categories, never to invent
+          extra status meanings.
+        </p>
         <div class="grid grid-cols-2 gap-2 sm:grid-cols-3">
           {#each Object.keys(badgeColors) as color}
             <div class="flex flex-wrap gap-2">
@@ -77,10 +100,25 @@
           {/each}
         </div>
       </section>
-      <Badge variant="dot" class="max-w-full truncate"
-        >A deliberately long badge label for truncation review</Badge
+    {:else if fixture.id === 'compatibility'}
+      <section
+        class="grid gap-2"
+        data-catalog-rendered-state="default secondary outline destructive success-ring-dot info-ring-dot"
       >
-    </div>
+        <p class="type-caption text-muted-foreground">
+          Existing callers remain supported. For new code, use solid or dot with an explicit status
+          colour.
+        </p>
+        <div class="flex flex-wrap items-center gap-2">
+          <Badge variant="default">Default</Badge>
+          <Badge variant="secondary">Secondary</Badge>
+          <Badge variant="outline">Outline</Badge>
+          <Badge variant="destructive">Destructive</Badge>
+          <Badge variant="success" dot>Success</Badge>
+          <Badge variant="info" dot>Info</Badge>
+        </div>
+      </section>
+    {/if}
   {:else if componentId === 'button'}
     {#if fixture.id === 'interaction-states'}
       <div
