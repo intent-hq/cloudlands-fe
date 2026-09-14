@@ -180,7 +180,7 @@ describe('chatReadService (fake seam, real store)', () => {
   // Regression (monorepo#1977): a deletion scheduled by ANOTHER window/client
   // (or before an FE restart) is not in this window's local pending-delete
   // registry — the fetched row's daemon-owned `pendingDeleteAt` deadline
-  // (PROTOCOL §5.5, v6.7+) is the only signal, and the load must skip.
+  // (PROTOCOL §5.5 delete grace window) is the only signal, and the load must skip.
   it('skips hydration when the fetched session carries pendingDeleteAt', async () => {
     const agentId = 'agent-chat-wire-pending-del';
     agentsApi.get.mockResolvedValueOnce(

@@ -321,7 +321,7 @@ function validateCanonicalBlock(block: Record<string, any>): ContentBlock {
       }
       break;
     case 'file':
-      // Attachment reference (PROTOCOL §5.5, 10.0): `attachmentId` + `fileName`,
+      // Attachment reference (PROTOCOL §5.5): `attachmentId` + `fileName`,
       // never inline bytes.
       if (
         typeof block.attachmentId !== 'string' ||

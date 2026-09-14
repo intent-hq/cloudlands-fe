@@ -19,9 +19,9 @@ export interface ProviderAuthStatusParams {
 }
 
 /**
- * Additive identity metadata a logged-in probe captured (protocol 9.4,
- * intent-hq/intentd#1685). Present only when at least one field survived the
- * daemon's trimming; pre-9.4 daemons never send it.
+ * Additive identity metadata a logged-in probe captured
+ * (intent-hq/intentd#1685). Present only when at least one field survived the
+ * daemon's trimming; daemons that predate the `identity` object never send it.
  */
 export interface ProviderAuthIdentity {
   email?: string;

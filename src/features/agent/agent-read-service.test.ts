@@ -158,7 +158,7 @@ describe('agentReadService (fake seam, real store)', () => {
   // Regression (monorepo#1977): a deletion scheduled by ANOTHER window/client
   // (or before an FE restart) is not in this window's local pending-delete
   // registry — the fetched row's daemon-owned `pendingDeleteAt` deadline
-  // (PROTOCOL §5.5, v6.7+) is the only signal, and it must not be upserted.
+  // (PROTOCOL §5.5 delete grace window) is the only signal, and it must not be upserted.
   it('drops a fetched row carrying pendingDeleteAt (deletion scheduled elsewhere)', async () => {
     const agentId = 'agent-read-wire-pending-del';
     agentsApi.get.mockResolvedValueOnce(

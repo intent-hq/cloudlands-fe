@@ -310,7 +310,7 @@ describe('Type Guards', () => {
     expect(isMediaBlock({ type: 'audio', data: 'base64', mimeType: 'audio/mp3' })).toBe(true);
     expect(isMediaBlock({ type: 'image' })).toBe(false);
     expect(isMediaBlock({ type: 'file', attachmentId: 'att-1', fileName: 'a.pdf' })).toBe(true);
-    // Inline file bytes left the protocol in 10.0: not a media block.
+    // Inline file bytes are no longer a protocol file block: not a media block.
     expect(isMediaBlock({ type: 'file', data: 'base64', mimeType: 'text/plain' })).toBe(false);
   });
 
@@ -398,7 +398,7 @@ describe('Strict Intake Utilities (AUDIT-P1-5)', () => {
     expect(acp.text).toBe('hello');
   });
 
-  describe('file blocks are attachment references, never bytes (PROTOCOL §5.5, 10.0)', () => {
+  describe('file blocks are attachment references, never bytes (PROTOCOL §5.5)', () => {
     const reference = {
       type: 'file',
       attachmentId: 'att-1',

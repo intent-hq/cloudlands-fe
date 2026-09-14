@@ -9,7 +9,7 @@
  * script: local repos read the file directly (absolute paths only — `~`
  * never expands in host.exec argv, no shell); GitHub repos have no local
  * checkout, so the daemon reads it via `github.repoConfig.get`
- * (PROTOCOL §5.27 v2.4).
+ * (PROTOCOL §5.27).
  */
 import { untrack } from 'svelte';
 import { parseGitHubUrl } from '$lib/utils/workspace-validation';

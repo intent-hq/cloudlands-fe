@@ -579,7 +579,7 @@ export function setupProviderAvailabilityIPC(): void {
 
         // Auth verdicts come from the daemon (`host.providerAuthStatus`,
         // intent-hq/intentd#339). `force: true` bypasses the daemon's cache.
-        // The rendered identity line rides the same verdict (protocol 9.4).
+        // The rendered identity line rides the same verdict's `identity` object.
         const checkAuth = async (): Promise<boolean | undefined> => {
           const verdict = await getProviderAuthVerdict(providerId, { force });
           authDetails = verdict?.authDetails;

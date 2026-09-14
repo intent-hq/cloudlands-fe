@@ -251,9 +251,9 @@ export interface AgentSession {
    *  the FE agent list. */
   pendingDeleteAt?: string;
 
-  /** ISO timestamp of a soft retirement (PROTOCOL §5.5 soft retire, v7.5).
+  /** ISO timestamp of a soft retirement (PROTOCOL §5.5 soft retire, `agent.retire`).
    *  Presence-detected: served on `agent.get`/`agent.getSession` always and on
-   *  `agent.list` rows on retired-row reads (`retiredOnly: true`, v8.2 — the
+   *  `agent.list` rows on retired-row reads (`retiredOnly: true` — the
    *  FE seam's sole path to retired rows; `includeRetired` remains on the wire
    *  for other clients but is not exposed here); omitted on active rows, never
    *  `null`. A retired session is inert daemon-side (sends, queueing, watches,
@@ -364,7 +364,7 @@ export interface AgentSession {
   waitingForAgentIds?: string[];
 
   /**
-   * Idle-visibility for hook-owning agents (PROTOCOL.md §5.5, within v3.1,
+   * Idle-visibility for hook-owning agents (PROTOCOL §5.5 `AgentLite`,
    * additive): light metadata for the agent's ACTIVE (`scheduled`/`running`)
    * background hooks (§5.40), omitted when empty (absent, never `[]`) — so
    * a parent or client can tell a hook-waiting idle agent from a stalled

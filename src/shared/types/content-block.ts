@@ -96,7 +96,7 @@ export interface ContentBlock {
   input?: Record<string, unknown>;
   /** Tool call ID (legacy alias) */
   toolCallId?: string;
-  /** Slim projection (PROTOCOL §5.5, v7.1): `input` is a bounded preview of an
+  /** Slim projection (PROTOCOL §5.5 `agent.getConversation`): `input` is a bounded preview of an
    *  over-budget body — fetch the full block via `agent.getMessageBlock`. */
   inputTruncated?: boolean;
   /** Serialized byte size of the full `input` when `inputTruncated` is set. */
@@ -107,7 +107,7 @@ export interface ContentBlock {
   tool_use_id?: string;
   /** Tool result output */
   output?: any;
-  /** Slim projection (PROTOCOL §5.5, v7.1): `output` is a bounded preview of
+  /** Slim projection (PROTOCOL §5.5 `agent.getConversation`): `output` is a bounded preview of
    *  an over-budget body — fetch the full block via `agent.getMessageBlock`. */
   outputTruncated?: boolean;
   /** Serialized byte size of the full `output` when `outputTruncated` is set. */
@@ -120,7 +120,7 @@ export interface ContentBlock {
   // Media fields (for image/audio/file types)
   /** Base64-encoded media data */
   data?: string;
-  /** Slim projection (PROTOCOL §5.5, v7.1): `data` is a write-time thumbnail
+  /** Slim projection (PROTOCOL §5.5 `agent.getConversation`): `data` is a write-time thumbnail
    *  (or omitted on legacy pre-thumbnail rows) instead of the full image. */
   dataTruncated?: boolean;
   /** Present with `dataTruncated` when `data` carries the persisted thumbnail. */

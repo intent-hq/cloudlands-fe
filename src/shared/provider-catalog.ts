@@ -37,8 +37,8 @@ const ProviderCatalogEntrySchema = z
     requiresEnvVar: z.string().optional(),
     requiresFeatureCode: z.string().optional(),
     visible: z.boolean(),
-    // Always present on rows from a v9.3+ daemon; optional here so an older
-    // daemon's rows (no `host.providerTestPrompt` RPC) still validate —
+    // Always present on rows from a daemon that serves `host.providerTestPrompt`;
+    // optional here so an older daemon's rows (no such RPC) still validate —
     // consumers treat absence as unsupported.
     supportsTestPrompt: z.boolean().optional(),
   })

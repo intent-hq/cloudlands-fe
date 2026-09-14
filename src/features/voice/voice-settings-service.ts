@@ -127,7 +127,7 @@ export function isVoiceWorkspaceVocabularyMaxTerms(value: unknown): value is num
 }
 
 export interface VoiceSettingsSnapshot {
-  /** Whether the connected daemon exposes the voice settings catalog (v4.3+). */
+  /** Whether the connected daemon exposes the voice settings catalog (`voice.provider` is a known setting). */
   available: boolean;
   /** Selected provider; the daemon default (`elevenlabs`) when unset. */
   provider: VoiceProvider;
@@ -145,8 +145,9 @@ export interface VoiceSettingsSnapshot {
   language: string | null;
   /**
    * Cap on the auto-derived workspace vocabulary (0..=100, `0` = off); `null`
-   * when the daemon's catalog lacks the setting (pre-5.1 daemon — hide the
-   * field, same availability pattern as `voice.openai.model`).
+   * when the daemon's catalog lacks `voice.workspaceVocabulary.maxTerms`
+   * (pre-setting daemon — hide the field, same availability pattern as
+   * `voice.openai.model`).
    */
   workspaceVocabularyMaxTerms: number | null;
 }
@@ -173,7 +174,7 @@ function parseVocabulary(value: unknown): string[] | null {
 
 /**
  * Read the current voice settings from the daemon. A `null` provider entry
- * means the daemon predates the voice catalog (pre-4.3) — surfaced as
+ * means the daemon predates the voice catalog (no `voice.provider` setting) — surfaced as
  * `available: false` so the panel can say so instead of failing writes.
  */
 export async function loadVoiceSettings(): Promise<VoiceSettingsSnapshot> {
@@ -222,7 +223,7 @@ export async function loadVoiceSettings(): Promise<VoiceSettingsSnapshot> {
         : typeof languageEntry.value === 'string'
           ? languageEntry.value.trim().toLowerCase()
           : VOICE_LANGUAGE_AUTO,
-    // `null` entry ⇒ daemon predates the setting (pre-5.1) ⇒ hide the field.
+    // `null` entry ⇒ daemon predates `voice.workspaceVocabulary.maxTerms` ⇒ hide the field.
     // Unset/out-of-range values fold to the daemon-side default so the field
     // reflects what will actually run.
     workspaceVocabularyMaxTerms:

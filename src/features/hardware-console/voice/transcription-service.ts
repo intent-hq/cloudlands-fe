@@ -23,7 +23,7 @@
  * The request carries lightweight dynamic context (workspace title, branch,
  * visible agent names) as `context.keyterms` + `context.prompt`, gathered
  * off `appStore.state` only — no extra RPCs — plus the active workspace id
- * (`workspaceId`, §5.41 v5.1) so the daemon injects the workspace's
+ * (`workspaceId`, §5.41) so the daemon injects the workspace's
  * auto-derived vocabulary server-side; the OS-engine route fetches the same
  * terms via the cached workspace-vocabulary-service for parity.
  * The app-owned transcription saga owns action watching and cancellation;
@@ -280,8 +280,8 @@ async function transcribeWithSelectedEngine(
 }
 
 /**
- * Matches the daemon's no-API-key failure (intent-voice registry). Daemons on
- * PROTOCOL §5.41 v4.4+ carry a structured `error.data.code`
+ * Matches the daemon's no-API-key failure (intent-voice registry). Daemons
+ * whose `voice.transcribe` failure (PROTOCOL §5.41) carries a structured `error.data.code`
  * (`voice-no-api-key`, intent-hq/monorepo#1448), matched first; the
  * descriptive-message sniff is kept only as a fallback for older daemons
  * whose `error.data` is the plain string.

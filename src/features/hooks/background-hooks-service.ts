@@ -1,5 +1,5 @@
 /**
- * Background-hooks read/trigger/cancel surface (PROTOCOL §5.40, v2.10).
+ * Background-hooks read/trigger/cancel surface (PROTOCOL §5.40).
  *
  * Hooks are agent-authored (scheduling is MCP-only); the FE reads via
  * `hook.list`, triggers via `hook.runNow`, cancels via `hook.cancel`, and

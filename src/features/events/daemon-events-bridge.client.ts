@@ -2257,7 +2257,7 @@ function handlePrEvent(
 }
 
 /**
- * `changes:agent-locks` (§6.5, protocol v8.8) carries the self-sufficient
+ * `changes:agent-locks` (§6.5) carries the self-sufficient
  * daemon-computed agent-lock snapshot `{ workspaceId, autoCommitEnabled,
  * lockedAgentIds: string[], lockedFilePaths: string[] }` — which agents' files
  * must not be manually staged/reverted (agent actively working + auto-commit
@@ -2949,7 +2949,7 @@ function tombstoneClearDelayMs(deleteAt: unknown): number {
 }
 
 /**
- * `workspace:delete-scheduled` (PROTOCOL §5.1 delete grace window, v6.7) —
+ * `workspace:delete-scheduled` (PROTOCOL §5.1 delete grace window) —
  * `{ workspaceId, deleteAt }`. In the originating window the operations saga
  * already hid the row and set the tombstone, so the dispatches below are
  * idempotent no-ops there; in OTHER windows/clients this is the only signal,
@@ -2987,7 +2987,7 @@ function handleWorkspaceDeleteScheduledEvent(event: WorkspaceEvent, workspaceId:
 }
 
 /**
- * `workspace:delete-cancelled` (PROTOCOL §5.1, v6.7) — `{ workspaceId }`. Lift
+ * `workspace:delete-cancelled` (PROTOCOL §5.1 delete grace window) — `{ workspaceId }`. Lift
  * the tombstone and refetch the workspace so a window that hid the pending row
  * restores it promptly instead of waiting for the next unrelated refetch. The
  * payload carries no row, so reuse the single-flighted `workspace.get` →
@@ -3005,7 +3005,7 @@ function handleWorkspaceDeleteCancelledEvent(workspaceId: string): void {
 }
 
 /**
- * `agent:delete-scheduled` (PROTOCOL §5.5 delete grace window, v6.7) —
+ * `agent:delete-scheduled` (PROTOCOL §5.5 delete grace window) —
  * `{ agentId, workspaceId, deleteAt }`. In the originating window the agent
  * mutation saga already soft-hid the session and registered the pending entry
  * (before the RPC resolved, so before this event can arrive) — skip so the
@@ -3076,7 +3076,7 @@ function registerAgentDeleteTombstone(
 }
 
 /**
- * `agent:delete-cancelled` (PROTOCOL §5.5, v6.7) — `{ agentId, workspaceId }`.
+ * `agent:delete-cancelled` (PROTOCOL §5.5 delete grace window) — `{ agentId, workspaceId }`.
  * Restore the soft-hidden session from the registry snapshot when one exists
  * (instant, mirrors the undo saga's `restoreHiddenSession`), then refetch the
  * canonical agent list — this also covers a window that filtered the pending
@@ -3990,7 +3990,7 @@ export function routeDaemonEventsNotification(
     return;
   }
 
-  // `changes:agent-locks` (§6.5, protocol v8.8) — the daemon-computed
+  // `changes:agent-locks` (§6.5) — the daemon-computed
   // agent-lock snapshot. Self-sufficient payload, folded straight into the
   // agent-lock slice; no timeline value, so no eventReceived dispatch.
   if (type === 'changes:agent-locks') {
@@ -4246,7 +4246,7 @@ export const DAEMON_EVENTS_SUBSCRIBE_TYPES = [
   'git:*',
   'changes:git-status',
   'changes:tracked',
-  // `changes:agent-locks` (§6.5, protocol v8.8) — the daemon-computed
+  // `changes:agent-locks` (§6.5) — the daemon-computed
   // agent-lock snapshot folded into the agent-lock slice; without the
   // subscribe filter the gating in FileChangesSection never engages live.
   'changes:agent-locks',

@@ -1,6 +1,6 @@
 /**
  * `host.providerAuthStatus` contract folding (PROTOCOL §5.14): the wire
- * verdict map plus the additive protocol-9.4 `identity` object
+ * verdict map plus the additive `identity` object
  * (intent-hq/intentd#1685) rendered into `ProviderStatus.authDetails`.
  */
 import { describe, expect, it } from 'vitest';
