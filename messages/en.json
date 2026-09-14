@@ -6303,5 +6303,10 @@
   "workspace_share_loadFailed_error": "Could not load sharing details",
   "workspace_share_createFailed_error": "Could not create the invite link",
   "workspace_share_pinUnknown_error": "No GitHub user named {login}",
-  "workspace_hoverCard_member_ariaLabel": "{name} — {role}"
+  "workspace_hoverCard_member_ariaLabel": "{name} — {role}",
+  "workspace_share_ownerOnly_notice": "Only the workspace owner can manage sharing.",
+  "workspace_share_removeMember_confirm_label": "Remove {name} from this workspace?",
+  "workspace_share_removeMember_confirmAction_ariaLabel": "Confirm removing {name}",
+  "workspace_share_cancel_label": "Cancel",
+  "workspace_hoverCard_share_label": "Share"
 }

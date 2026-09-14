@@ -54,11 +54,40 @@ describe('workspaceSharingClient wire contract (fake transport)', () => {
       principalId: 'p-bob',
     });
 
-    mockedRequest.mockRejectedValueOnce(new Error('forbidden'));
+    mockedRequest.mockRejectedValueOnce(new Error('socket closed'));
     await expect(workspaceSharingClient.removeMember('ws-1', 'p-bob')).resolves.toEqual({
       success: false,
-      error: 'forbidden',
+      code: 'unknown',
     });
+  });
+
+  // Regression (fe#2440 review P1): the daemon's -32003 capability refusal is
+  // classified so callers can withhold the owner controls instead of retrying.
+  it('folds the -32003 capability refusal into the forbidden code', async () => {
+    mockedRequest.mockRejectedValueOnce(
+      new BackendError({ code: 'forbidden', message: 'not the owner', rpcCode: -32003 }),
+    );
+    await expect(workspaceSharingClient.revokeInvite('ws-1', 'inv-1')).resolves.toEqual({
+      success: false,
+      code: 'forbidden',
+      rpcCode: -32003,
+    });
+  });
+
+  // Regression (fe#2440 review P1): the failure never carries the raw message —
+  // a daemon/transport string may echo invite material into a log or trace.
+  it('never carries the raw error message or data in a failure', async () => {
+    mockedRequest.mockRejectedValueOnce(
+      new BackendError({
+        code: 'internal',
+        message: 'failed for intent://invite?t=SECRET-TOKEN',
+        rpcCode: -32603,
+        data: { detail: 'SECRET-TOKEN' },
+      }),
+    );
+    const outcome = await workspaceSharingClient.createInvite('ws-1');
+    expect(outcome).toEqual({ success: false, code: 'unknown', rpcCode: -32603 });
+    expect(JSON.stringify(outcome)).not.toContain('SECRET');
   });
 
   it('createInvite omits pinLogin when blank and trims it when supplied', async () => {
@@ -101,8 +130,8 @@ describe('workspaceSharingClient wire contract (fake transport)', () => {
       workspaceSharingClient.createInvite('ws-1', { pinLogin: 'nobody' }),
     ).resolves.toEqual({
       success: false,
-      error: 'unknown GitHub login',
       code: 'invite-pin-unknown',
+      rpcCode: -32602,
     });
   });
 

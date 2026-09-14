@@ -47,19 +47,20 @@ const openInvite: WorkspaceInvite = {
 };
 
 const createdUrl = 'intent://invite?v=1&h=example.test&p=5181&f=fp&t=tok';
+const createdLink = { inviteId: 'inv-2', linkHandle: 'invite-link-1', pinLogin: 'dave' };
+
+const baseProps = {
+  open: true,
+  workspaceId: 'ws-1',
+  workspaceTitle: 'My Space',
+  githubConnected: true,
+  canManage: true,
+  members: [owner, collaborator],
+  invites: [openInvite],
+};
 
 function renderDialog(props: Record<string, unknown> = {}) {
-  return render(ShareWorkspaceDialog, {
-    props: {
-      open: true,
-      workspaceId: 'ws-1',
-      workspaceTitle: 'My Space',
-      githubConnected: true,
-      members: [owner, collaborator],
-      invites: [openInvite],
-      ...props,
-    },
-  });
+  return render(ShareWorkspaceDialog, { props: { ...baseProps, ...props } });
 }
 
 beforeEach(() => {
@@ -72,6 +73,33 @@ beforeEach(() => {
 });
 
 afterEach(() => vi.clearAllMocks());
+
+describe('ShareWorkspaceDialog — owner gate', () => {
+  // Regression (fe#2440 review P1): a collaborator connection (or a -32003
+  // refusal) sees the owner-only notice — no rows, no controls, no link.
+  it('renders only the owner-only notice when the caller cannot manage sharing', () => {
+    const onCreateInvite = vi.fn();
+    renderDialog({
+      canManage: false,
+      onCreateInvite,
+      createdLink,
+      createdLinkUrl: createdUrl,
+      members: [owner, collaborator],
+      invites: [openInvite],
+    });
+
+    expect(screen.getByTestId('share-owner-only')).toBeTruthy();
+    expect(screen.queryByTestId('share-github-required')).toBeNull();
+    expect(screen.queryByTestId('share-member-row')).toBeNull();
+    expect(screen.queryByTestId('share-invite-row')).toBeNull();
+    expect(screen.queryByTestId('share-created-link')).toBeNull();
+    expect(screen.queryByLabelText(/Restrict to a GitHub user/)).toBeNull();
+    expect(screen.queryByRole('button', { name: /Remove/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Revoke/ })).toBeNull();
+    expect(screen.getByTestId('share-workspace-dialog').textContent).not.toContain('intent://');
+    expect(onCreateInvite).not.toHaveBeenCalled();
+  });
+});
 
 describe('ShareWorkspaceDialog — GitHub gate', () => {
   it('shows the connect-first state instead of the sharing controls when GitHub is not connected', async () => {
@@ -109,9 +137,7 @@ describe('ShareWorkspaceDialog — roster and invites', () => {
     expect(screen.getByTestId('share-members-loading')).toBeTruthy();
 
     await rerender({
-      open: true,
-      workspaceId: 'ws-1',
-      githubConnected: true,
+      ...baseProps,
       members: [],
       invites: [],
       loading: false,
@@ -134,15 +160,7 @@ describe('ShareWorkspaceDialog — create and copy', () => {
     expect(onCreateInvite).toHaveBeenCalledWith('dave');
     expect(pin.value).toBe(' dave ');
 
-    await rerender({
-      open: true,
-      workspaceId: 'ws-1',
-      githubConnected: true,
-      members: [owner, collaborator],
-      invites: [openInvite],
-      createdLink: { url: createdUrl, pinLogin: 'dave' },
-      onCreateInvite,
-    });
+    await rerender({ ...baseProps, createdLink, createdLinkUrl: createdUrl, onCreateInvite });
     await waitFor(() => expect(screen.getByTestId('share-created-link')).toBeTruthy());
     expect(screen.getByTestId('share-created-link-url').textContent).toBe(createdUrl);
     expect(screen.getByTestId('share-created-link').textContent).toContain('@dave');
@@ -151,12 +169,24 @@ describe('ShareWorkspaceDialog — create and copy', () => {
 
   it('submits an empty pin for an open invite and labels the link for anyone', async () => {
     const onCreateInvite = vi.fn();
-    renderDialog({ onCreateInvite, createdLink: { url: createdUrl } });
+    renderDialog({
+      onCreateInvite,
+      createdLink: { ...createdLink, pinLogin: undefined },
+      createdLinkUrl: createdUrl,
+    });
 
     await fireEvent.click(screen.getByRole('button', { name: /Create invite link/ }));
 
     expect(onCreateInvite).toHaveBeenCalledWith('');
     expect(screen.getByTestId('share-created-link').textContent).toContain('Anyone with the link');
+  });
+
+  // Regression (fe#2440 review P2): once the link's vault entry is gone (revoked,
+  // dialog reopened) the copy affordance disappears with it.
+  it('hides the created link block when the url can no longer be resolved', () => {
+    renderDialog({ createdLink, createdLinkUrl: null });
+    expect(screen.queryByTestId('share-created-link')).toBeNull();
+    expect(screen.queryByRole('button', { name: /Copy link/ })).toBeNull();
   });
 
   it('does not submit while a create is already in flight', async () => {
@@ -170,7 +200,7 @@ describe('ShareWorkspaceDialog — create and copy', () => {
   });
 
   it('copies the created link to the clipboard and toasts', async () => {
-    renderDialog({ createdLink: { url: createdUrl } });
+    renderDialog({ createdLink, createdLinkUrl: createdUrl });
 
     await fireEvent.click(screen.getByRole('button', { name: /Copy link/ }));
 
@@ -183,14 +213,7 @@ describe('ShareWorkspaceDialog — create and copy', () => {
     const pin = screen.getByLabelText(/Restrict to a GitHub user/) as HTMLInputElement;
     await fireEvent.input(pin, { target: { value: 'nobody' } });
 
-    await rerender({
-      open: true,
-      workspaceId: 'ws-1',
-      githubConnected: true,
-      members: [owner, collaborator],
-      invites: [openInvite],
-      createError: 'No GitHub user named @nobody',
-    });
+    await rerender({ ...baseProps, createError: 'No GitHub user named @nobody' });
 
     expect(screen.getByTestId('share-create-error').textContent).toContain('@nobody');
     expect(screen.queryByTestId('share-created-link')).toBeNull();
@@ -210,13 +233,23 @@ describe('ShareWorkspaceDialog — revoke and remove', () => {
     expect(onRevokeInvite).toHaveBeenCalledWith('inv-1');
   });
 
-  it('requests a removal for the clicked collaborator', async () => {
+  it('requests a removal only after the inline confirmation, and cancel backs out', async () => {
     const onRemoveMember = vi.fn();
     renderDialog({ onRemoveMember });
 
     await fireEvent.click(screen.getByRole('button', { name: 'Remove bob' }));
+    expect(onRemoveMember).not.toHaveBeenCalled();
+    const confirm = screen.getByTestId('share-remove-confirm');
+    expect(confirm.getAttribute('aria-label')).toContain('bob');
 
+    await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByTestId('share-remove-confirm')).toBeNull();
+    expect(onRemoveMember).not.toHaveBeenCalled();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Remove bob' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Confirm removing bob' }));
     expect(onRemoveMember).toHaveBeenCalledWith('p-bob');
+    expect(screen.queryByTestId('share-remove-confirm')).toBeNull();
   });
 
   it('disables every revoke/remove control while one mutation is in flight', async () => {

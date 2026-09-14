@@ -5,9 +5,13 @@
    * Reads the workspace-share slice (target, roster, invites, in-flight
    * mutations) + the GitHub connection flag and forwards every user intent as
    * a dispatch; the dialog stays presentational and the saga owns the RPCs.
+   *
+   * The one-time invite url is resolved here from its vault handle (the store
+   * only ever holds the handle) and handed to the dialog as a plain prop.
    */
 
   import ShareWorkspaceDialog from './ShareWorkspaceDialog.svelte';
+  import { readInviteLink } from '$features/workspace-sharing/invite-link-vault';
   import { store as appStore } from '$store/renderer/store';
   import {
     closeShareDialog,
@@ -17,6 +21,7 @@
   } from '$store/renderer/slices/workspace-share/workspace-share-slice';
   import {
     selectShareActionError,
+    selectShareCanManage,
     selectShareCreatedLink,
     selectShareCreateError,
     selectShareCreating,
@@ -37,6 +42,7 @@
   const workspaceId$ = selectShareWorkspaceId();
   const workspaceTitle$ = selectShareWorkspaceTitle();
   const githubConnected$ = selectGitHubAuthIsAuthenticated();
+  const canManage$ = selectShareCanManage();
   const members$ = selectShareMembers();
   const invites$ = selectShareInvites();
   const loading$ = selectShareLoading();
@@ -47,6 +53,7 @@
   const revokingInviteId$ = selectShareRevokingInviteId();
   const removingPrincipalId$ = selectShareRemovingPrincipalId();
   const actionError$ = selectShareActionError();
+  const createdLinkUrl = $derived($createdLink$ ? readInviteLink($createdLink$.linkHandle) : null);
 </script>
 
 <ShareWorkspaceDialog
@@ -54,6 +61,7 @@
   workspaceId={$workspaceId$}
   workspaceTitle={$workspaceTitle$}
   githubConnected={$githubConnected$}
+  canManage={$canManage$}
   members={$members$}
   invites={$invites$}
   loading={$loading$}
@@ -61,6 +69,7 @@
   creating={$creating$}
   createError={$createError$}
   createdLink={$createdLink$}
+  {createdLinkUrl}
   revokingInviteId={$revokingInviteId$}
   removingPrincipalId={$removingPrincipalId$}
   actionError={$actionError$}

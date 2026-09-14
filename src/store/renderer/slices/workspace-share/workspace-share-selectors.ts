@@ -2,13 +2,36 @@
  * Workspace Share Selectors
  */
 
-import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItem, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import type { Workspace } from '$shared/types';
 import { store } from '../../store';
+import type { WorkspaceShareTarget } from './workspace-share-slice';
 
 export const selectShareDialogOpen = store.createSelector((state) => state.workspaceShare.open);
 
 export const selectShareWorkspaceId = store.createSelector(
   (state) => state.workspaceShare.workspaceId,
+);
+
+/** The open dialog's `{ workspaceId, session }` identity; `null` while closed. */
+export const selectShareTarget = store.createSelector<[], WorkspaceShareTarget | null>((state) => {
+  const { open, workspaceId, session } = state.workspaceShare;
+  return open && workspaceId ? { workspaceId, session } : null;
+});
+
+/**
+ * True when the connected principal owns the dialog's workspace
+ * (`workspace.myRole === 'owner'`, PROTOCOL §5.1) and the daemon has not
+ * refused an owner-only sharing method. Gates every mutating control and RPC.
+ */
+export const selectShareCanManage = store.createSelector((state) => {
+  const { open, workspaceId, withheld } = state.workspaceShare;
+  if (!open || !workspaceId || withheld) return false;
+  return getItem(state.workspace.workspaces, workspaceId as Workspace['id'])?.myRole === 'owner';
+});
+
+export const selectShareCreateRequest = store.createSelector(
+  (state) => state.workspaceShare.createRequest,
 );
 
 export const selectShareWorkspaceTitle = store.createSelector(
