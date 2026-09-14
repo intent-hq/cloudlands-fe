@@ -14245,7 +14245,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:modals:produ
                     <div class="bg-muted/40 min-h-96 overflow-hidden py-4 relative rounded-md svelte-<scope>">
                       <div id="c<id>-workspace-warning-dialogs-portal">
                       <div class="absolute bg-black/40 dark:bg-black/80 inset-0 motion-reduce:animate-none motion-reduce:transition-none z-[var(--layer-modal)]" data-dialog-overlay="" data-slot="dialog-overlay" data-state="open" data-static-position="true" id="bits-<id>">
-                      <div aria-describedby="bits-<id>" aria-labelledby="bits-<id>" aria-modal="true" class="bg-surface-3 dialog-editorial-content grid max-w-100 motion-reduce:animate-none motion-reduce:transition-none mx-auto outline-none overflow-y-auto overlay-surface overscroll-contain p-6 relative shadow-surface-3 text-popover-foreground w-[calc(100%-2rem)] z-[var(--layer-modal)]" data-dialog-content="" data-overlay-surface="true" data-slot="dialog-content" data-state="open" data-static-position="true" data-surface-level="3" id="bits-<id>" role="dialog" tabindex="-1">
+                      <div aria-describedby="bits-<id>" aria-labelledby="bits-<id>" aria-modal="true" class="[&_[data-slot=form]]:min-w-0 bg-surface-3 dialog-editorial-content grid max-w-100 motion-reduce:animate-none motion-reduce:transition-none mx-auto outline-none overflow-y-auto overlay-surface overscroll-contain p-6 relative shadow-surface-3 text-popover-foreground w-[calc(100%-2rem)] z-[var(--layer-modal)]" data-dialog-content="" data-overlay-surface="true" data-slot="dialog-content" data-state="open" data-static-position="true" data-surface-level="3" id="bits-<id>" role="dialog" tabindex="-1">
                         <form class="gap-4 grid" data-slot="form">
                           <fieldset class="contents">
                             <div class="flex flex-col gap-1.5 mb-4 min-w-0 pr-8" data-slot="dialog-header">
@@ -14253,7 +14253,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:modals:produ
                                 "Stop active work and archive workspace?"
                               <div class="break-words text-muted-foreground type-caption" data-dialog-description="" data-slot="dialog-description" data-state="open" id="bits-<id>">
                                 "This action will stop running work before archiving the workspace."
-                            <div class="space-y-4">
+                            <div class="min-w-0 pr-8 space-y-4">
                               <div class="bg-muted/40 border border-border p-3 rounded-md">
                                 <p class="font-medium text-foreground type-body">
                                   "1 active agent will be stopped"
@@ -14936,7 +14936,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:modals:produ
                     <div class="bg-muted/40 min-h-96 overflow-hidden py-4 relative rounded-md svelte-<scope>">
                       <div id="c<id>-delete-warning-dialog-portal">
                       <div class="absolute bg-black/40 dark:bg-black/80 inset-0 motion-reduce:animate-none motion-reduce:transition-none z-[var(--layer-modal)]" data-dialog-overlay="" data-slot="dialog-overlay" data-state="open" data-static-position="true" id="bits-<id>">
-                      <div aria-describedby="bits-<id>" aria-labelledby="bits-<id>" aria-modal="true" class="bg-surface-3 dialog-editorial-content grid max-w-100 motion-reduce:animate-none motion-reduce:transition-none mx-auto outline-none overflow-y-auto overlay-surface overscroll-contain p-6 relative shadow-surface-3 text-popover-foreground w-[calc(100%-2rem)] z-[var(--layer-modal)]" data-dialog-content="" data-overlay-surface="true" data-slot="dialog-content" data-state="open" data-static-position="true" data-surface-level="3" id="bits-<id>" role="dialog" tabindex="-1">
+                      <div aria-describedby="bits-<id>" aria-labelledby="bits-<id>" aria-modal="true" class="[&_[data-slot=form]]:min-w-0 bg-surface-3 dialog-editorial-content grid max-w-100 motion-reduce:animate-none motion-reduce:transition-none mx-auto outline-none overflow-y-auto overlay-surface overscroll-contain p-6 relative shadow-surface-3 text-popover-foreground w-[calc(100%-2rem)] z-[var(--layer-modal)]" data-dialog-content="" data-overlay-surface="true" data-slot="dialog-content" data-state="open" data-static-position="true" data-surface-level="3" id="bits-<id>" role="dialog" tabindex="-1">
                         <form class="gap-4 grid" data-slot="form">
                           <fieldset class="contents">
                             <div class="flex flex-col gap-1.5 mb-4 min-w-0 pr-8" data-slot="dialog-header">
@@ -14944,7 +14944,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:modals:produ
                                 "Stop active work and delete workspace?"
                               <div class="break-words text-muted-foreground type-caption" data-dialog-description="" data-slot="dialog-description" data-state="open" id="bits-<id>">
                                 "This action will stop running work before permanently deleting the workspace."
-                            <div class="space-y-4">
+                            <div class="min-w-0 pr-8 space-y-4">
                               <div class="bg-muted/40 border border-border p-3 rounded-md">
                                 <p class="font-medium text-foreground type-body">
                                   "2 active agents will be stopped"
@@ -14997,7 +14997,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:modals:produ
                                 <p class="mt-3 text-muted-foreground type-caption">
                                   "Local changes that have not been pushed will be lost"
                                 <ul class="max-h-28 mt-2 overflow-auto pr-1 space-y-1">
-                                  <li class="flex gap-2 items-center text-muted-foreground type-caption">
+                                  <li class="flex gap-2 items-center min-w-0 text-muted-foreground type-caption">
                                     <span class="min-w-0 truncate">
                                       "refine-modals"
                                     <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="gray" data-size="default" data-slot="badge" data-variant="solid" tokens=["--accent"]>
@@ -15037,7 +15037,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:modals:produ
                     <div class="bg-muted/40 min-h-96 overflow-hidden py-4 relative rounded-md svelte-<scope>">
                       <div id="c<id>-archive-warning-dialog-portal">
                       <div class="absolute bg-black/40 dark:bg-black/80 inset-0 motion-reduce:animate-none motion-reduce:transition-none z-[var(--layer-modal)]" data-dialog-overlay="" data-slot="dialog-overlay" data-state="open" data-static-position="true" id="bits-<id>">
-                      <div aria-describedby="bits-<id>" aria-labelledby="bits-<id>" aria-modal="true" class="bg-surface-3 dialog-editorial-content grid max-w-100 motion-reduce:animate-none motion-reduce:transition-none mx-auto outline-none overflow-y-auto overlay-surface overscroll-contain p-6 relative shadow-surface-3 text-popover-foreground w-[calc(100%-2rem)] z-[var(--layer-modal)]" data-dialog-content="" data-overlay-surface="true" data-slot="dialog-content" data-state="open" data-static-position="true" data-surface-level="3" id="bits-<id>" role="dialog" tabindex="-1">
+                      <div aria-describedby="bits-<id>" aria-labelledby="bits-<id>" aria-modal="true" class="[&_[data-slot=form]]:min-w-0 bg-surface-3 dialog-editorial-content grid max-w-100 motion-reduce:animate-none motion-reduce:transition-none mx-auto outline-none overflow-y-auto overlay-surface overscroll-contain p-6 relative shadow-surface-3 text-popover-foreground w-[calc(100%-2rem)] z-[var(--layer-modal)]" data-dialog-content="" data-overlay-surface="true" data-slot="dialog-content" data-state="open" data-static-position="true" data-surface-level="3" id="bits-<id>" role="dialog" tabindex="-1">
                         <form class="gap-4 grid" data-slot="form">
                           <fieldset class="contents">
                             <div class="flex flex-col gap-1.5 mb-4 min-w-0 pr-8" data-slot="dialog-header">
@@ -15045,7 +15045,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:modals:produ
                                 "Stop active work and archive workspace?"
                               <div class="break-words text-muted-foreground type-caption" data-dialog-description="" data-slot="dialog-description" data-state="open" id="bits-<id>">
                                 "This action will stop running work before archiving the workspace."
-                            <div class="space-y-4">
+                            <div class="min-w-0 pr-8 space-y-4">
                               <div class="bg-muted/40 border border-border p-3 rounded-md">
                                 <p class="font-medium text-foreground type-body">
                                   "2 active agents will be stopped"
@@ -15098,7 +15098,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:modals:produ
                                 <p class="mt-3 text-muted-foreground type-caption">
                                   "Local changes remain on disk but have not been pushed"
                                 <ul class="max-h-28 mt-2 overflow-auto pr-1 space-y-1">
-                                  <li class="flex gap-2 items-center text-muted-foreground type-caption">
+                                  <li class="flex gap-2 items-center min-w-0 text-muted-foreground type-caption">
                                     <span class="min-w-0 truncate">
                                       "refine-modals"
                                     <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="gray" data-size="default" data-slot="badge" data-variant="solid" tokens=["--accent"]>

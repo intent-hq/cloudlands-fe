@@ -95,6 +95,7 @@
 </script>
 
 <DestructiveConfirm
+  class="[&_[data-slot=form]]:min-w-0"
   bind:open
   static={staticPosition}
   title={isArchive ? m.modals_archiveWarning_title() : m.modals_deleteWarning_title()}
@@ -112,7 +113,7 @@
   onCancel={close}
 >
   {#snippet details()}
-    <div class="space-y-4">
+    <div class="min-w-0 space-y-4 pr-8">
       {#if agents.length > 0 || hookNames.length > 0 || openPrs.length > 0 || hasLocalChanges}
         <div class="rounded-md border border-border bg-muted/40 p-3">
           {#if agents.length > 0}
@@ -235,7 +236,7 @@
             </p>
             <ul class="mt-2 max-h-28 space-y-1 overflow-auto pr-1">
               {#each localChangeRoots as root (root.gitRootId ?? root.path)}
-                <li class="type-caption flex items-center gap-2 text-muted-foreground">
+                <li class="type-caption flex min-w-0 items-center gap-2 text-muted-foreground">
                   <span class="min-w-0 truncate">{rootLabel(root)}</span>
                   {#if root.unpushedCount > 0}
                     <Badge variant="secondary" class="shrink-0">

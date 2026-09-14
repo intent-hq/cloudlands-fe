@@ -1,0 +1,257 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+import ts from 'typescript';
+import {
+  CONTEXT_WATCHERS,
+  WILDCARD_EFFECTS,
+  createProvenanceResolvers,
+  effectBindingsFor,
+  effectForExpression,
+  lineFor,
+  localArray,
+  normalize,
+  visit,
+  watcherPattern,
+} from './check-saga-watcher-ownership.mjs';
+
+const SLICE_SOURCE = /^src\/store\/.+\/slices\/.+-slice\.ts$/;
+const SCRIPT_BLOCK = /<script\b[^>]*>([\s\S]*?)<\/script>/g;
+// Test-only sources never count as consumers: *.test.*, *.spec.* (incl. .ct.spec /
+// .visual.spec), and anything under __tests__/ or __mocks__/.
+const TEST_SOURCE = /(?:\.(?:test|spec)\.|(?:^|\/)__(?:tests|mocks)__\/)/;
+const ASYNC_STAGES = new Set(['success', 'failure']);
+const SELF = 'scripts/check-unconsumed-actions.mjs';
+// The ownership gate does not track takeLatestByContext; this rule does, so a
+// (pattern, getContext, worker) watcher counts as an explicit consumer.
+const PATTERN_CONTEXT_WATCHERS = new Set([...CONTEXT_WATCHERS, 'takeLatestByContext']);
+const PATTERN_EFFECTS = new Set([...WILDCARD_EFFECTS, 'takeLatestByContext']);
+// Exceptions are anchored per action (`<slice file>#<action name>$`), never per
+// file, so a new dispatch in the same slice is not silently exempted. Each entry
+// names the non-syntactic consumer that observes the action (today: a predicate
+// comparing `action.type` inside an `actionChannel` filter, which the scanner
+// cannot attribute). An entry whose pattern matches no action origin at all
+// fails the gate as stale, so exceptions cannot outlive the action they cover.
+//
+// Analysis bounds — the gate is syntactic:
+// - Actions: top-level `const x = createAction(...)` / `createAsyncAction(...)`
+//   declarations in slice files (plus the derived `.success` / `.failure`
+//   stages), resolved through the same provenance resolvers as the
+//   watcher-ownership gate.
+// - Dispatches: any call of a resolved creator (`creator(...)`,
+//   `creator.success(...)`), wherever it appears.
+// - Consumers: `reducer.with(pattern, ...)` and the recognized watcher effects
+//   (`take*`, `actionChannel`, `takeLatestByContext`, ...) whose pattern is a
+//   creator, a local creator array, a `creator.type` access, or the literal
+//   type string.
+// Not covered: creators reached through aliases or re-exports the resolvers
+// do not follow, hand-built plain action objects (`{ type: 'x/y' }`), and
+// watcher wrappers such as `fork(takeLeading, pattern, worker)` — those
+// dispatch or consume without the shapes above and are neither flagged nor
+// credited.
+const UNCONSUMED_ACTION_EXCEPTIONS = [
+  {
+    pattern: /settings-events-slice\.ts#settingsChanged$/,
+    rationale:
+      'Observed by the touchesModelResolutionSettings predicate (action.type === settingsChanged.type) feeding actionChannel(triggersSpecialistRefetch, ...) in src/store/renderer/slices/specialists/sagas/specialists-saga.ts',
+  },
+  {
+    pattern: /specialists-slice\.ts#refetchSpecialistsRequested$/,
+    rationale:
+      'Observed by the triggersSpecialistRefetch predicate (action.type === refetchSpecialistsRequested.type) feeding actionChannel(triggersSpecialistRefetch, ...) in src/store/renderer/slices/specialists/sagas/specialists-saga.ts',
+  },
+];
+
+// Keep only the <script> blocks of a .svelte file, padded so line numbers match.
+function svelteScript(content) {
+  let script = '';
+  let emittedLines = 0;
+  for (const match of content.matchAll(SCRIPT_BLOCK)) {
+    const start = match.index + match[0].length - '</script>'.length - match[1].length;
+    const precedingLines = content.slice(0, start).split('\n').length - 1;
+    script += '\n'.repeat(precedingLines - emittedLines) + match[1];
+    emittedLines = precedingLines + match[1].split('\n').length - 1;
+  }
+  return script;
+}
+
+function loadSources(files) {
+  const sources = new Map();
+  for (const file of files) {
+    const filePath = normalize(file.path);
+    if (TEST_SOURCE.test(filePath)) continue;
+    let content;
+    if (filePath.endsWith('.ts')) content = file.content;
+    else if (filePath.endsWith('.svelte')) content = svelteScript(file.content);
+    else continue;
+    sources.set(
+      filePath,
+      ts.createSourceFile(filePath, content, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS),
+    );
+  }
+  return sources;
+}
+
+function collectActions(sources, actionFactory) {
+  const actions = new Map();
+  const typeIndex = new Map();
+  const register = (origin, action) => {
+    actions.set(origin, action);
+    for (const type of action.types) typeIndex.set(type, origin);
+  };
+  for (const [filePath, source] of sources) {
+    if (!SLICE_SOURCE.test(filePath) || source.parseDiagnostics.length > 0) continue;
+    for (const statement of source.statements) {
+      if (!ts.isVariableStatement(statement)) continue;
+      for (const declaration of statement.declarationList.declarations) {
+        const initializer = declaration.initializer;
+        if (!ts.isIdentifier(declaration.name) || !initializer || !ts.isCallExpression(initializer))
+          continue;
+        const factory = actionFactory.resolveExpression(filePath, initializer.expression);
+        if (!factory) continue;
+        const name = declaration.name.text;
+        const origin = `${filePath}#${name}`;
+        const line = lineFor(source, declaration);
+        const types = initializer.arguments.filter(ts.isStringLiteralLike).map((arg) => arg.text);
+        register(origin, { filePath, line, name, types });
+        if (factory.name !== 'createAsyncAction') continue;
+        // Themis derives the stage types from the second (stages) type argument.
+        const stages = types[1];
+        for (const stage of ASYNC_STAGES) {
+          register(`${origin}.${stage}`, {
+            filePath,
+            line,
+            name: `${name}.${stage}`,
+            types: stages ? [`${stages}_${stage.toUpperCase()}`] : [],
+          });
+        }
+      }
+    }
+  }
+  return { actions, typeIndex };
+}
+
+export function inspectUnconsumedActions(
+  files,
+  { exceptions = UNCONSUMED_ACTION_EXCEPTIONS } = {},
+) {
+  const sources = loadSources(files);
+  const provenance = createProvenanceResolvers(sources, {
+    contextWatchers: PATTERN_CONTEXT_WATCHERS,
+  });
+  const { actions, typeIndex } = collectActions(sources, provenance.actionFactory);
+  const dispatches = new Map();
+  const handled = new Set();
+
+  const resolveCreator = (filePath, expression) => {
+    const direct = provenance.actions.resolveExpression(filePath, expression)?.origin;
+    if (direct && actions.has(direct)) return direct;
+    if (!ts.isPropertyAccessExpression(expression) || !ASYNC_STAGES.has(expression.name.text))
+      return undefined;
+    const base = resolveCreator(filePath, expression.expression);
+    const stage = base && `${base}.${expression.name.text}`;
+    return stage && actions.has(stage) ? stage : undefined;
+  };
+  const resolvePattern = (filePath, expression) => {
+    if (ts.isStringLiteralLike(expression)) return typeIndex.get(expression.text);
+    if (ts.isPropertyAccessExpression(expression) && expression.name.text === 'type') {
+      const base = resolveCreator(filePath, expression.expression);
+      if (base) return base;
+    }
+    return resolveCreator(filePath, expression);
+  };
+
+  for (const [filePath, source] of sources) {
+    if (source.parseDiagnostics.length > 0) continue;
+    const { effectNames, effectNamespaces } = effectBindingsFor(
+      source,
+      filePath,
+      provenance.effects,
+    );
+    visit(source, (node) => {
+      if (!ts.isCallExpression(node)) return;
+      const dispatched = resolveCreator(filePath, node.expression);
+      if (dispatched) {
+        const sites = dispatches.get(dispatched) ?? new Set();
+        sites.add(`${filePath}:${lineFor(source, node)}`);
+        dispatches.set(dispatched, sites);
+      }
+      const callee = node.expression;
+      if (
+        ts.isPropertyAccessExpression(callee) &&
+        callee.name.text === 'with' &&
+        node.arguments[0]
+      ) {
+        const origin = resolvePattern(filePath, node.arguments[0]);
+        if (origin) handled.add(origin);
+      }
+      const effect = effectForExpression(callee, effectNames, effectNamespaces);
+      if (!effect || !PATTERN_EFFECTS.has(effect)) return;
+      const pattern = watcherPattern(effect, node);
+      if (!pattern) return;
+      const candidates = localArray(source, pattern);
+      for (const candidate of candidates.length > 0 ? candidates : [pattern]) {
+        const origin = resolvePattern(filePath, candidate);
+        if (origin) handled.add(origin);
+      }
+    });
+  }
+
+  const violations = [];
+  let exceptionCount = 0;
+  const origins = [...actions.keys()].sort(
+    (left, right) =>
+      actions.get(left).filePath.localeCompare(actions.get(right).filePath) ||
+      actions.get(left).line - actions.get(right).line ||
+      left.localeCompare(right),
+  );
+  for (const origin of origins) {
+    const sites = dispatches.get(origin);
+    if (!sites || handled.has(origin)) continue;
+    if (exceptions.some(({ pattern }) => pattern.test(origin))) {
+      exceptionCount++;
+      continue;
+    }
+    const { filePath, line, name } = actions.get(origin);
+    violations.push(
+      `${filePath}:${line}: action ${name} is dispatched but has no reducer case or explicit watcher; dispatched at ${[...sites].sort().join(', ')}`,
+    );
+  }
+  for (const { pattern } of exceptions) {
+    if (!origins.some((origin) => pattern.test(origin)))
+      violations.push(`${SELF}: stale exception ${pattern} matches no action origin`);
+  }
+  return {
+    violations,
+    actionCount: actions.size,
+    dispatchedCount: dispatches.size,
+    exceptionCount,
+  };
+}
+
+function collectFiles(directory) {
+  const files = [];
+  for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+    const absolute = path.join(directory, entry.name);
+    if (entry.isDirectory()) files.push(...collectFiles(absolute));
+    else if (entry.name.endsWith('.ts') || entry.name.endsWith('.svelte'))
+      files.push({
+        path: normalize(path.relative(process.cwd(), absolute)),
+        content: fs.readFileSync(absolute, 'utf8'),
+      });
+  }
+  return files;
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const result = inspectUnconsumedActions(collectFiles(path.resolve('src')));
+  if (result.violations.length) {
+    console.error(
+      ['Unconsumed action violations:', ...result.violations.map((item) => `- ${item}`)].join('\n'),
+    );
+    process.exit(1);
+  }
+  console.log(
+    `Unconsumed action check valid: ${result.actionCount} actions, ${result.dispatchedCount} dispatched, ${result.exceptionCount} exceptions.`,
+  );
+}

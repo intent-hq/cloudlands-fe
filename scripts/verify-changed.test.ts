@@ -195,6 +195,7 @@ describe('verification planning', () => {
       'prettier',
       'eslint',
       'architecture',
+      'knip',
       'vitest-related',
       'vitest-ui-invariants',
       'tsc-renderer',
@@ -292,6 +293,25 @@ describe('verification planning', () => {
     );
     expect(plan.fallbackReasons).toEqual([]);
     expect(plan.checks.map((check) => check.id)).not.toContain('architecture');
+  });
+
+  it('runs knip repo-wide for code and knip-config changes but not for docs', () => {
+    const root = fixtureRoot({
+      'src/lib/example.ts': 'export const value = 1;',
+      'docs/guide.md': '# Guide',
+      'knip.jsonc': '{}',
+    });
+    const ids = (files: string[]) =>
+      createVerificationPlan(files, { root, ctTests: [] }).checks.map((check) => check.id);
+
+    const knip = createVerificationPlan(['src/lib/example.ts'], { root, ctTests: [] }).checks.find(
+      (check) => check.id === 'knip',
+    );
+    expect(knip?.args).toEqual(['run', 'lint:dead-code']);
+    expect(knip?.lockKind).toBeNull();
+
+    expect(ids(['docs/guide.md'])).not.toContain('knip');
+    expect(ids(['knip.jsonc'])).toEqual(['knip']);
   });
 
   it('runs the repo-wide UI invariant suites for renderer source changes', () => {
@@ -563,6 +583,23 @@ describe('verification planning', () => {
     expect(ids).not.toContain('vitest-ui-invariants');
   });
 
+  it('provisions the gitignored main build config before the main type check only', () => {
+    const root = fixtureRoot({ 'src/main/index.ts': '', 'src/lib/utils.ts': '' });
+    const mainPlan = createVerificationPlan(['src/main/index.ts'], { root, ctTests: [] });
+    const ids = mainPlan.checks.map((check) => check.id);
+    expect(ids.indexOf('generate-build-config')).toBeGreaterThanOrEqual(0);
+    expect(ids.indexOf('generate-build-config')).toBeLessThan(ids.indexOf('tsc-main'));
+    expect(mainPlan.checks.find((check) => check.id === 'generate-build-config')?.args).toEqual([
+      'run',
+      'generate:build-config',
+      '--',
+      '--if-missing',
+    ]);
+
+    const rendererPlan = createVerificationPlan(['src/lib/utils.ts'], { root, ctTests: [] });
+    expect(rendererPlan.checks.map((check) => check.id)).not.toContain('generate-build-config');
+  });
+
   it('checks all process boundaries for shared source', () => {
     const root = fixtureRoot({ 'src/shared/protocol.ts': '' });
     const plan = createVerificationPlan(['src/shared/protocol.ts'], { root, ctTests: [] });
@@ -598,6 +635,8 @@ describe('verification planning', () => {
     expect(plan.checks.find((check) => check.id === 'generate-build-config')?.args).toEqual([
       'run',
       'generate:build-config',
+      '--',
+      '--if-missing',
     ]);
   });
 
@@ -916,15 +955,29 @@ describe('empty change set guard', () => {
 });
 
 describe('dependency freshness gate', () => {
-  function cliOptions(depsResult: { ok: boolean; reason: string | null }) {
+  type StepResult = { ok: boolean; reason: string | null };
+  const PASSING = { ok: true, reason: null };
+  function cliOptions(
+    depsResult: StepResult,
+    i18nResult: StepResult = PASSING,
+    nodeResult: StepResult = PASSING,
+  ) {
     const calls: string[] = [];
     return {
       calls,
       options: {
         log() {},
+        checkNode({ root }: { root: string }) {
+          calls.push(`checkNode:${root}`);
+          return nodeResult;
+        },
         checkDeps() {
           calls.push('checkDeps');
           return depsResult;
+        },
+        async ensureI18n(root: string) {
+          calls.push(`ensureI18n:${root}`);
+          return i18nResult;
         },
         async runPlan() {
           calls.push('runPlan');
@@ -933,16 +986,44 @@ describe('dependency freshness gate', () => {
     };
   }
 
-  it('checks the install before running a plan and refuses a stale install', async () => {
+  it('checks Node, then the install, then the i18n bundle, before running a plan', async () => {
     const root = fixtureRoot({ 'src/lib/example.ts': 'export const value = 1;' });
     const reason = 'node_modules is out of sync';
     const stale = cliOptions({ ok: false, reason });
     await expect(runCli(['src/lib/example.ts'], root, stale.options)).rejects.toThrow(reason);
-    expect(stale.calls).toEqual(['checkDeps']);
+    expect(stale.calls).toEqual([`checkNode:${root}`, 'checkDeps']);
 
     const fresh = cliOptions({ ok: true, reason: null });
     await runCli(['src/lib/example.ts'], root, fresh.options);
-    expect(fresh.calls).toEqual(['checkDeps', 'runPlan']);
+    expect(fresh.calls).toEqual([
+      `checkNode:${root}`,
+      'checkDeps',
+      `ensureI18n:${root}`,
+      'runPlan',
+    ]);
+  });
+
+  it('refuses before touching node_modules when the running Node is unsupported', async () => {
+    const root = fixtureRoot({ 'src/lib/example.ts': 'export const value = 1;' });
+    const reason = 'Unsupported Node v20.19.0 — cloudlands-fe requires Node >=22';
+    const { calls, options } = cliOptions(PASSING, PASSING, { ok: false, reason });
+    await expect(runCli(['src/lib/example.ts'], root, options)).rejects.toThrow(reason);
+    expect(calls).toEqual([`checkNode:${root}`]);
+  });
+
+  it('runs the dependency-free Node preflight before this module resolves node_modules', () => {
+    const scripts = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8')).scripts;
+    expect(scripts['verify:changed']).toMatch(
+      /^node scripts\/check-node\.mjs && node scripts\/verify-changed\.mjs\b/,
+    );
+  });
+
+  it('refuses to run a plan when the i18n bundle cannot be provisioned', async () => {
+    const root = fixtureRoot({ 'src/lib/example.ts': 'export const value = 1;' });
+    const reason = 'messages kept changing while compiling';
+    const { calls, options } = cliOptions({ ok: true, reason: null }, { ok: false, reason });
+    await expect(runCli(['src/lib/example.ts'], root, options)).rejects.toThrow(reason);
+    expect(calls).toEqual([`checkNode:${root}`, 'checkDeps', `ensureI18n:${root}`]);
   });
 
   it('skips the install check for dry runs', async () => {
@@ -955,6 +1036,7 @@ describe('dependency freshness gate', () => {
   it('refuses with the remediation when the installed lockfile copy is unreadable', async () => {
     const root = fixtureRoot({
       'src/lib/example.ts': 'export const value = 1;',
+      'package.json': JSON.stringify({ engines: { node: `>=${process.versions.node}` } }),
       'pnpm-lock.yaml': "lockfileVersion: '9.0'\n",
     });
     mkdirSync(join(root, 'node_modules', '.pnpm', 'lock.yaml'), { recursive: true });

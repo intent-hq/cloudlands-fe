@@ -423,6 +423,21 @@ jobs:
           cache: ${{ needs.route.outputs.linux_burst == 'true' && 'pnpm' || '' }}
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+      # Cold-checkout gate: runs the agent-facing `lint` gate BEFORE any
+      # generate:* step, on exactly the tree a fresh clone (or an interrupted
+      # compile) has — no src/shared/paraglide, no src/preload/index.ts, no
+      # src/main/build-config.generated.ts. Every gate that needs generated
+      # output must self-provision it (hash-gated, idempotent) instead of
+      # failing on an unrelated-looking error such as knip's "Unresolved
+      # imports (779)" for $shared/paraglide (intent-hq/cloudlands-fe#2368
+      # review thread). This is the only `pnpm run lint` step in the job: the
+      # ESLint / knip file set is identical before and after generation (ESLint
+      # ignores the generated paths via .gitignore + eslint.config.js, knip via
+      # gitignore + its `project` excludes; the i18n checks read only
+      # messages/*.json and ENFORCED_DIRS), so a post-generation rerun would
+      # add wall time without coverage.
+      - name: Cold-checkout gates
+        run: pnpm run lint
       - name: Generate build config
         run: pnpm run generate:build-config
       - name: Generate IPC channels
@@ -437,10 +452,6 @@ jobs:
         run: pnpm run type-check
       - name: Type check (preload)
         run: pnpm exec tsc --noEmit -p tsconfig.preload.json
-      - name: ESLint
-        run: pnpm run lint
-      - name: Dead code (knip)
-        run: pnpm run lint:dead-code
       - name: Accessibility lint
         run: bash scripts/check-accessibility.sh
       # Architecture gates are added to `lint:architecture` in package.json (run

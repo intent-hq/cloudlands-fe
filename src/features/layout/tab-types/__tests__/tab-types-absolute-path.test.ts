@@ -410,6 +410,37 @@ describe('tab-type absolute path joins (intent-hq/monorepo#1567)', () => {
       expect(screen.queryByTestId('unstage-hunk')).toBeNull();
     });
 
+    it('keeps the supplied secondary-root change over a primary store match with the same trailing path', async () => {
+      // The primary store only knows the primary root; its suffix match on
+      // `src/root.ts` must not replace the root-scoped change for the tab.
+      mockReduxState.ftChanges = [
+        { ...makeTrackedChange('src/root.ts', 'staged'), file: '/repo/src/root.ts' },
+      ];
+      render(MockTabTypeHeaderHarness, {
+        props: {
+          component: DiffTabType,
+          tab: {
+            id: 'tab-diff-root',
+            type: 'diff',
+            title: 'root.ts',
+            closable: true,
+            diffPath: '/repo/packages/sub/src/root.ts',
+            data: {
+              gitRootId: 'root-9',
+              gitRootPath: '/repo/packages/sub',
+              change: {
+                ...makeTrackedChange('src/root.ts', 'unstaged'),
+                file: '/repo/packages/sub/src/root.ts',
+              },
+            },
+          },
+          workspaceId: 'ws-1',
+        },
+      });
+      const viewer = await screen.findByTestId('tracked-change-diff-viewer');
+      expect(viewer.getAttribute('data-file')).toBe('/repo/packages/sub/src/root.ts');
+    });
+
     it('still joins relative paths under the workspace root', async () => {
       renderDiff('src/x.ts');
       const openButton = await findOpenComboButton();

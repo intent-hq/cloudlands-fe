@@ -88,9 +88,12 @@
     return false;
   }
 
+  // The file-tracking store only covers the primary root; its suffix matching
+  // would pick a primary change with the same trailing path for a
+  // secondary-root diff, so root-scoped tabs skip the store lookups entirely.
   // Find only active (staged/unstaged) changes
   function findActiveChangeByPath(path: string | null): TrackedChange | null {
-    if (!path) return null;
+    if (!path || gitRootId) return null;
     return (
       $ftChanges$.find(
         (c) => matchesPath(c, path) && (c.stage === 'staged' || c.stage === 'unstaged'),
@@ -100,7 +103,7 @@
 
   // Find the most-recent committed-stage entry in the store that carries a commitHash
   function findCommittedChangeByPath(path: string | null): TrackedChange | null {
-    if (!path) return null;
+    if (!path || gitRootId) return null;
     let latest: TrackedChange | null = null;
     let latestTs = -Infinity;
     for (const c of $ftChanges$) {
@@ -128,7 +131,7 @@
   // whose files[] includes this path. Lets TrackedChangeDiffViewer's committed-by-hash branch
   // render HASH^..HASH for files with only committed changes on the current branch.
   function synthesiseCommittedChangeFromCommits(path: string | null): TrackedChange | null {
-    if (!path) return null;
+    if (!path || gitRootId) return null;
     for (const commit of $ftCommits$) {
       if (!commit?.hash) continue;
       if (!commit.files?.some((f) => f?.path && commitFileMatchesPath(f.path, path))) continue;

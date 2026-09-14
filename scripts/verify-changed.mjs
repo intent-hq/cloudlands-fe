@@ -15,7 +15,7 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { escape as escapeGlob, globSync } from 'glob';
-import { checkDepsFresh } from './check-deps-fresh.mjs';
+import { checkDepsFresh, checkNodeSupport, ensureI18nFresh } from './check-deps-fresh.mjs';
 import { pnpmInvocation } from './pnpm-launcher.mjs';
 import {
   listDeclaredSuites,
@@ -401,6 +401,13 @@ export function createVerificationPlan(files, options = {}) {
   );
   let architecture = files.some(isArchitectureSource);
   const typeCheckWrapper = files.includes('scripts/type-check.ts');
+  const deadCode = files.some(
+    (file) =>
+      CODE_EXTENSIONS.has(extname(file)) ||
+      file === 'knip.jsonc' ||
+      file === 'package.json' ||
+      /^tsconfig[^/]*\.json$/.test(file),
+  );
   const boundaries = new Set();
   let svelteCheck = false;
   let fullUnit = false;
@@ -421,6 +428,7 @@ export function createVerificationPlan(files, options = {}) {
     const known =
       CODE_EXTENSIONS.has(extname(file)) ||
       isKnownNonCode(file) ||
+      file === 'knip.jsonc' ||
       /^(?:scripts|tests\/integration)\//.test(file) ||
       /^(?:eslint|playwright|postcss|prettier|svelte|tailwind|tsconfig|vite|vitest)[^/]*\./.test(
         file,
@@ -463,6 +471,8 @@ export function createVerificationPlan(files, options = {}) {
         'type-check:validate',
       ]),
     );
+  if (deadCode)
+    checks.push(command('knip', 'Dead code (knip, repo-wide)', ['run', 'lint:dead-code']));
   if (fullUnit)
     checks.push(
       command(
@@ -584,9 +594,12 @@ export function createVerificationPlan(files, options = {}) {
   }
   if (boundaries.has('main')) {
     checks.push(
-      command('generate-build-config', 'Generate build config', ['run', 'generate:build-config']),
-    );
-    checks.push(
+      command('generate-build-config', 'Generate main build config (if missing)', [
+        'run',
+        'generate:build-config',
+        '--',
+        '--if-missing',
+      ]),
       command('tsc-main', 'TypeScript (main)', [
         'exec',
         'tsc',
@@ -780,7 +793,9 @@ export async function runVerificationPlan(plan, root, options = {}) {
 
 export async function runCli(argv = process.argv.slice(2), root = REPO_ROOT, options = {}) {
   const log = options.log ?? console.log;
+  const checkNode = options.checkNode ?? checkNodeSupport;
   const checkDeps = options.checkDeps ?? checkDepsFresh;
+  const ensureI18n = options.ensureI18n ?? ensureI18nFresh;
   const runPlan = options.runPlan ?? runVerificationPlan;
   const args = parseArgs(argv);
   if (args.help) {
@@ -801,8 +816,12 @@ export async function runCli(argv = process.argv.slice(2), root = REPO_ROOT, opt
   printPlan(plan, args.dryRun, log);
   if (args.dryRun || plan.checks.length === 0) return 0;
 
+  const node = checkNode({ root });
+  if (!node.ok) throw new Error(node.reason);
   const deps = checkDeps(root);
   if (!deps.ok) throw new Error(deps.reason);
+  const i18n = await ensureI18n(root);
+  if (!i18n.ok) throw new Error(i18n.reason);
   await runPlan(plan, root);
   return 0;
 }

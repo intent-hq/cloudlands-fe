@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createCollection, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createAction } from '@augmentcode/themis/utils/store/create-action';
 import {
-  panelLayoutReducer,
+  panelLayoutReducer as rawPanelLayoutReducer,
   emptyWorkspaceState,
   initializeLayout,
   setRestoreStatus,
@@ -24,6 +25,7 @@ import {
   closeActiveTab,
   closeFocusedPanelTab,
   closePanel,
+  destroyHiddenTabsByOwnerAgent,
   destroyOwnedTabsForWorkspace,
   destroyTabsByOwnerAgent,
   openHiddenTab,
@@ -67,6 +69,7 @@ import {
   goBack,
   goForward,
   setPanelPinned,
+  PANEL_LAYOUT_HANDLED_ACTION_TYPES,
 } from './panel-layout-slice';
 import { removeTerminal } from '../terminals/terminals-slice';
 import { removeScript } from '../scripts/scripts-slice';
@@ -80,6 +83,7 @@ import type {
   WorkspacePanelLayoutState,
 } from './panel-layout-types';
 import { getPanelOrder } from './panel-layout-tabless';
+import { withPanelLayoutInvariants } from './panel-layout-invariants.test-helpers';
 import type { ContextLink } from '../../../../shared/types';
 import {
   DEFAULT_BROWSER_PANEL_WIDTH,
@@ -90,6 +94,9 @@ import {
 } from '../../../../shared/panel-layout-sizing';
 
 const WS = 'test-ws';
+
+/** Every reducer call below is invariant-checked (monorepo#4569). */
+const panelLayoutReducer = withPanelLayoutInvariants(rawPanelLayoutReducer);
 
 function emptyState(): PanelLayoutSliceState {
   return { byWorkspaceId: {} };
@@ -4260,6 +4267,77 @@ describe('panelLayoutReducer', () => {
       expect(afterOther.byWorkspaceId[WS].panels.p1.tabs.map((t) => t.id)).toEqual(['t2']);
     });
 
+    // Footer "Close hidden tabs" (intent#4762): scoped to the agent's hidden
+    // owned tabs — visible owned tabs and other agents' hidden tabs survive.
+    it('destroyHiddenTabsByOwnerAgent removes only that agent hidden tabs, keeping visible and other-agent tabs', () => {
+      const state = stateWithPanel('p1', [
+        ownedTab,
+        { ...ownedTab, id: 'owned-visible', title: 'Still open' },
+        {
+          id: 'other',
+          type: 'browser',
+          title: 'Other',
+          browserUrl: 'http://o/',
+          ownerAgentId: 'agent-2',
+        },
+        { id: 't2', type: 'note', title: 'A' },
+      ]);
+      const hiddenOwn = panelLayoutReducer(state, closeTab(WS, 'owned', 'p1', 1000));
+      const withHidden = panelLayoutReducer(hiddenOwn, closeTab(WS, 'other', 'p1', 1001));
+      expect(getItems(withHidden.byWorkspaceId[WS].hiddenTabs).map((t) => t.id)).toEqual([
+        'owned',
+        'other',
+      ]);
+
+      const result = panelLayoutReducer(
+        withHidden,
+        destroyHiddenTabsByOwnerAgent(WS, 'agent-1', null, 1002),
+      );
+      const ws = result.byWorkspaceId[WS];
+      expect(getItems(ws.hiddenTabs).map((t) => t.id)).toEqual(['other']);
+      expect(ws.panels.p1.tabs.map((t) => t.id)).toEqual(['owned-visible', 't2']);
+      expect(ws.recentlyClosed).toHaveLength(0);
+    });
+
+    it('destroyHiddenTabsByOwnerAgent is a no-op when the agent has no hidden tabs', () => {
+      const state = stateWithPanel('p1', [ownedTab, { id: 't2', type: 'note', title: 'A' }]);
+      expect(
+        panelLayoutReducer(state, destroyHiddenTabsByOwnerAgent(WS, 'agent-1', null, 1000)),
+      ).toBe(state);
+    });
+
+    // A hidden mirror (registry row homed on another client, REV-2 §5.45)
+    // is closed on its host, not destroyed locally: the bulk destroy keeps
+    // it so the daemon's `browser:tab-closed` echo is what removes it.
+    it('destroyHiddenTabsByOwnerAgent keeps hidden mirrors hosted by another client', () => {
+      const state = stateWithPanel('p1', [
+        { ...ownedTab, hostClientId: 'cli-me' },
+        { ...ownedTab, id: 'unhomed', title: 'Unhomed' },
+        { ...ownedTab, id: 'mirror', title: 'Mirror', hostClientId: 'cli-other' },
+        { id: 't2', type: 'note', title: 'A' },
+      ] as any);
+      let hidden = state;
+      for (const id of ['owned', 'unhomed', 'mirror']) {
+        hidden = panelLayoutReducer(hidden, closeTab(WS, id, 'p1', 1000));
+      }
+      expect(getItems(hidden.byWorkspaceId[WS].hiddenTabs)).toHaveLength(3);
+
+      const ws = panelLayoutReducer(
+        hidden,
+        destroyHiddenTabsByOwnerAgent(WS, 'agent-1', 'cli-me', 1001),
+      ).byWorkspaceId[WS];
+      expect(getItems(ws.hiddenTabs).map((t) => t.id)).toEqual(['mirror']);
+      expect(ws.recentlyClosed).toHaveLength(0);
+
+      // With no own client identity yet, only tabs the registry never homed
+      // count as local.
+      const unknown = panelLayoutReducer(
+        hidden,
+        destroyHiddenTabsByOwnerAgent(WS, 'agent-1', null, 1001),
+      ).byWorkspaceId[WS];
+      expect(getItems(unknown.hiddenTabs).map((t) => t.id)).toEqual(['owned', 'mirror']);
+    });
+
     it('destroyOwnedTabsForWorkspace removes all owned tabs (visible + hidden) but keeps unowned', () => {
       const state = stateWithPanel('p1', [
         ownedTab,
@@ -4634,6 +4712,23 @@ describe('panelLayoutReducer', () => {
       const back = panelLayoutReducer(destroyed, goBack(WS, 1002)).byWorkspaceId[WS];
       expect(back.panels.p1.tabs.map((t) => t.id)).toEqual(['t2']);
       expect(getItems(back.hiddenTabs)).toHaveLength(0);
+    });
+
+    it('destroyHiddenTabsByOwnerAgent purges the closed hidden tabs from layout history', () => {
+      const state = stateWithPanel('p1', [ownedTab, { id: 't2', type: 'note', title: 'A' }]);
+      const hidden = panelLayoutReducer(state, closeTab(WS, 'owned', 'p1', 1000));
+      const destroyed = panelLayoutReducer(
+        hidden,
+        destroyHiddenTabsByOwnerAgent(WS, 'agent-1', null, 1001),
+      );
+      for (const snapshot of destroyed.byWorkspaceId[WS].layoutHistory) {
+        expect(snapshot.panels.p1.tabs.map((t) => t.id)).not.toContain('owned');
+      }
+
+      const back = panelLayoutReducer(destroyed, goBack(WS, 1002)).byWorkspaceId[WS];
+      expect(back.panels.p1.tabs.map((t) => t.id)).toEqual(['t2']);
+      expect(getItems(back.hiddenTabs)).toHaveLength(0);
+      expect(back.recentlyClosed).toHaveLength(0);
     });
 
     // Regression (monorepo#2857 review): restoring a snapshot that predates
@@ -5735,5 +5830,67 @@ describe('panelLayoutReducer', () => {
         state,
       );
     });
+  });
+});
+
+describe('withPanelLayoutInvariants (monorepo#4569)', () => {
+  const passThrough = withPanelLayoutInvariants(
+    (state: PanelLayoutSliceState | undefined) => state ?? emptyState(),
+  );
+
+  it('fails a reducer call whose result leaves a populated panel flagged pristine', () => {
+    const state = stateWithPanel('p1', [{ id: 't1', type: 'note', title: 'A' }]);
+    state.byWorkspaceId[WS].panels.p1.pristine = true;
+    expect(() => passThrough(state, { type: 'panelLayout/someAction' })).toThrow(
+      /after action "panelLayout\/someAction"[\s\S]*panel "p1": holds 1 tab\(s\) but pristine === true/,
+    );
+  });
+
+  it('fails when activeTabId does not match the tab list', () => {
+    const dangling = stateWithPanel('p1', [{ id: 't1', type: 'note', title: 'A' }]);
+    dangling.byWorkspaceId[WS].panels.p1.activeTabId = 'gone';
+    expect(() => passThrough(dangling, { type: 'x' })).toThrow(/activeTabId "gone" is not one of/);
+
+    const emptyWithActive = stateWithPanel('p1');
+    emptyWithActive.byWorkspaceId[WS].panels.p1.activeTabId = 't1';
+    expect(() => passThrough(emptyWithActive, { type: 'x' })).toThrow(
+      /has no tabs but activeTabId/,
+    );
+
+    const populatedWithoutActive = stateWithPanel('p1', [{ id: 't1', type: 'note', title: 'A' }]);
+    populatedWithoutActive.byWorkspaceId[WS].panels.p1.activeTabId = null;
+    expect(() => passThrough(populatedWithoutActive, { type: 'x' })).toThrow(
+      /but activeTabId is null/,
+    );
+  });
+
+  it('fails when focusedPanelId names a missing panel', () => {
+    const state = stateWithPanel('p1');
+    state.byWorkspaceId[WS].focusedPanelId = 'p9';
+    expect(() => passThrough(state, { type: 'x' })).toThrow(/focusedPanelId "p9" names no panel/);
+  });
+
+  it('returns the reducer result unchanged when every invariant holds', () => {
+    const state = stateWithPanel('p1', [{ id: 't1', type: 'note', title: 'A' }]);
+    expect(passThrough(state, { type: 'x' })).toBe(state);
+    expect(passThrough(undefined, { type: '@@INIT' })).toEqual(emptyState());
+  });
+});
+
+describe('PANEL_LAYOUT_HANDLED_ACTION_TYPES', () => {
+  it('records every registered case, cross-slice ones included (intent-hq/intent#4835)', () => {
+    expect(PANEL_LAYOUT_HANDLED_ACTION_TYPES.has(setActiveTab.type)).toBe(true);
+    expect(PANEL_LAYOUT_HANDLED_ACTION_TYPES.has(removeScript.type)).toBe(true);
+    expect(PANEL_LAYOUT_HANDLED_ACTION_TYPES.has(removeTerminal.type)).toBe(true);
+    expect(PANEL_LAYOUT_HANDLED_ACTION_TYPES.has(workspaceDeleted.type)).toBe(true);
+    expect(PANEL_LAYOUT_HANDLED_ACTION_TYPES.has(workspaceUnmounted.type)).toBe(false);
+  });
+
+  it('is fed by the reducer registration itself', () => {
+    const late = createAction<[wsId: string]>('test/lateRegistration');
+    expect(PANEL_LAYOUT_HANDLED_ACTION_TYPES.has(late.type)).toBe(false);
+    rawPanelLayoutReducer.with(late, (state) => state);
+    expect(PANEL_LAYOUT_HANDLED_ACTION_TYPES.has(late.type)).toBe(true);
+    expect(rawPanelLayoutReducer(emptyState(), late(WS))).toEqual(emptyState());
   });
 });

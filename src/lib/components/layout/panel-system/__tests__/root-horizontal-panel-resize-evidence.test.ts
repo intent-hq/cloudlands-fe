@@ -389,6 +389,13 @@ describe('root horizontal resize release evidence', () => {
     expectWidths(persistedWidths);
     secondRestore.unmount();
 
+    // A same-session scope remount keeps the live in-memory layout (#4835), so
+    // a legacy stored shape is only migrated on a real restart: stop the saga
+    // and the store before mounting against the legacy fixture.
+    sagaChannel!.put(panelLayoutScopeUnmounted(WORKSPACE_ID));
+    await settleSaga();
+    await stopSaga();
+    storeContext?.dispose();
     storage.set(
       STORAGE_KEY,
       JSON.stringify({
@@ -398,7 +405,8 @@ describe('root horizontal resize release evidence', () => {
         canvasWidth: 1600,
       }),
     );
-    sagaChannel!.put(panelLayoutScopeUnmounted(WORKSPACE_ID));
+    storeContext = initAppStore(appStore);
+    startProductionSaga();
     await settleSaga();
     sagaChannel!.put(panelLayoutScopeMounted(WORKSPACE_ID));
     await settleSaga();

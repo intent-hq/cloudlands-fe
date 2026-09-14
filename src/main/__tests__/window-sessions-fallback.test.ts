@@ -17,7 +17,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockGetAllWindows = vi.fn();
 const mockGetPath = vi.fn();
@@ -90,6 +90,10 @@ describe('saveWindowSessions — empty getAllWindows() fallback', () => {
     mockGetPath.mockReturnValue(tmpDir);
     mockGetAllWindows.mockReset();
     _resetWindowSessionsCacheForTests();
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
   it('persists the last-known snapshot when getAllWindows() returns empty', async () => {

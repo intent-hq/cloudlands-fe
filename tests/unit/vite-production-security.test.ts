@@ -16,6 +16,7 @@ import {
   PARAGLIDE_INPUTS_HASH_FILE,
   canReuseGeneratedParaglide,
   compileWithInputsHash,
+  ensureGeneratedParaglide,
   generateParaglide,
 } from '../../scripts/paraglide-inputs-hash.mjs';
 
@@ -212,5 +213,40 @@ describe('generated Paraglide reuse in the UI preview', () => {
     ).resolves.toBe(false);
     expect(edits).toBe(2);
     expect(canReuseGeneratedParaglide(paths)).toBe(false);
+  });
+
+  it('generate:i18n --if-stale compiles only while the outputs are missing or stale', async () => {
+    const { root, paths } = createParaglideFixtureRoot();
+    fixtures.push(root);
+    let compiles = 0;
+    const compile = async () => {
+      compiles += 1;
+    };
+
+    // No sidecar yet: the outputs cannot be trusted, so the first run compiles.
+    await expect(ensureGeneratedParaglide({ ...paths, ifStale: true, compile })).resolves.toBe(
+      true,
+    );
+    expect(compiles).toBe(1);
+    await expect(ensureGeneratedParaglide({ ...paths, ifStale: true, compile })).resolves.toBe(
+      true,
+    );
+    expect(compiles).toBe(1);
+
+    writeFileSync(join(paths.messagesDir, 'ko.json'), JSON.stringify({ hello: '안녕' }));
+    await expect(ensureGeneratedParaglide({ ...paths, ifStale: true, compile })).resolves.toBe(
+      true,
+    );
+    expect(compiles).toBe(2);
+
+    rmSync(join(paths.outdir, 'messages.js'));
+    await expect(ensureGeneratedParaglide({ ...paths, ifStale: true, compile })).resolves.toBe(
+      true,
+    );
+    expect(compiles).toBe(3);
+
+    // Without the flag, generate:i18n always compiles.
+    await expect(ensureGeneratedParaglide({ ...paths, compile })).resolves.toBe(true);
+    expect(compiles).toBe(4);
   });
 });

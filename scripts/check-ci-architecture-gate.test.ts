@@ -16,7 +16,8 @@
  *
  * The wrapper set is derived from `package.json`, not listed: every scanner
  * reachable from `lint:architecture` is an architecture gate, and every script
- * whose transitive `pnpm run` chain executes one of them is a wrapper.
+ * whose transitive `pnpm run` / `node scripts/pnpm-run.mjs` chain executes one
+ * of them is a wrapper.
  */
 
 import { readFileSync } from 'node:fs';
@@ -30,6 +31,7 @@ const GATE_SCRIPT = 'lint:architecture';
 const SINGLE_ENTRY_POINT = `pnpm run ${ENTRY_POINT_SCRIPT}`;
 const DIRECT_SCANNER = /scripts\/check-[\w-]+\.mjs/;
 const PNPM_RUN = /pnpm run ([\w:.-]+)/g;
+const PNPM_RUN_WRAPPER = /node scripts\/pnpm-run\.mjs ([\w:.][\w:.-]*)/g;
 
 type Scripts = Record<string, string>;
 
@@ -44,7 +46,10 @@ const codeLines = (workflow: string): WorkflowLine[] =>
     .map((text, index) => ({ line: index + 1, text }))
     .filter(({ text }) => !text.trim().startsWith('#'));
 
-const runTargets = (text: string): string[] => [...text.matchAll(PNPM_RUN)].map(([, name]) => name);
+const runTargets = (text: string): string[] => [
+  ...[...text.matchAll(PNPM_RUN)].map(([, name]) => name),
+  ...[...text.matchAll(PNPM_RUN_WRAPPER)].map(([, name]) => name),
+];
 
 const scriptClosure = (scripts: Scripts, root: string): Set<string> => {
   const seen = new Set<string>();
@@ -98,13 +103,14 @@ describe('CI architecture gate detector', () => {
   const steps = (...runs: string[]) =>
     runs.map((run) => `      - name: step\n        run: ${run}`).join('\n');
   const scripts: Scripts = {
-    'validate:architecture': `node scripts/check-deps-fresh.mjs && pnpm run ${GATE_SCRIPT}`,
+    'validate:architecture': `node scripts/check-deps-fresh.mjs && node scripts/pnpm-run.mjs ${GATE_SCRIPT}`,
     'lint:architecture':
-      'pnpm run lint:agent-dispatchers && node scripts/check-saga-watcher-ownership.mjs',
+      'node scripts/pnpm-run.mjs lint:agent-dispatchers && node scripts/check-saga-watcher-ownership.mjs',
     'lint:agent-dispatchers':
       'node scripts/check-workspace-event-dispatchers.mjs src/features/agent',
     'lint:dispatch-gate': 'node scripts/check-workspace-event-dispatchers.mjs',
-    'verify:agent-operability': 'pnpm run lint:dispatch-gate && pnpm run lint',
+    'verify:agent-operability':
+      'node scripts/pnpm-run.mjs lint:dispatch-gate && node scripts/pnpm-run.mjs lint -- --flag',
     lint: 'node scripts/check-deps-fresh.mjs && eslint . && pnpm run lint:i18n-strings',
     'lint:i18n-strings': 'node scripts/check-hardcoded-strings.mjs',
     'test:unit': 'node scripts/check-deps-fresh.mjs && vitest run',

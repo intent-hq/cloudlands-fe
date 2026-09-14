@@ -71,4 +71,43 @@ describe('stream lifecycle telemetry', () => {
     }
     expect(infoSpy.mock.calls.length).toBeLessThanOrEqual(MAX_STREAM_LIFECYCLE_DIAGNOSTICS);
   });
+
+  it('keeps dropped/held snapshot-guard breadcrumbs emitting after ordinary exhaustion', () => {
+    const ordinaryLimit =
+      MAX_STREAM_LIFECYCLE_DIAGNOSTICS - RESERVED_TERMINAL_STREAM_LIFECYCLE_DIAGNOSTICS;
+    for (let index = 0; index < ordinaryLimit; index += 1) {
+      reportStreamLifecycle({ stage: 'store', event: 'update-applied', blockCount: 1 });
+    }
+    expect(infoSpy).toHaveBeenCalledTimes(ordinaryLimit);
+
+    // Routine pre-ack push buffering never spends the reserve.
+    reportStreamLifecycle({
+      stage: 'subscription',
+      event: 'push',
+      pushKind: 'snapshot',
+      callbackResult: 'buffered',
+    });
+    expect(infoSpy).toHaveBeenCalledTimes(ordinaryLimit);
+
+    // The snapshot-guard family (dropped and held) stays reserve-eligible.
+    reportStreamLifecycle({
+      stage: 'subscription',
+      event: 'snapshot-dropped-stale-registration-emit',
+      pushKind: 'snapshot',
+      callbackResult: 'ignored',
+    });
+    expect(infoSpy).toHaveBeenCalledTimes(ordinaryLimit + 1);
+    expect(infoSpy).toHaveBeenLastCalledWith(
+      'agent',
+      'stream-lifecycle',
+      expect.objectContaining({ event: 'snapshot-dropped-stale-registration-emit' }),
+    );
+    reportStreamLifecycle({
+      stage: 'subscription',
+      event: 'snapshot-held-pre-session',
+      pushKind: 'snapshot',
+      callbackResult: 'buffered',
+    });
+    expect(infoSpy).toHaveBeenCalledTimes(ordinaryLimit + 2);
+  });
 });

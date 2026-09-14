@@ -59,9 +59,13 @@ function withStableGroupKeys(
  * rehydration and a seq-0 snapshot replaces it wholesale, so a row paged
  * into history can later re-enter the tail. Without this render-time guard
  * each such row renders twice (duplicate sections after repeated
- * scroll-up/scroll-down cycles).
+ * scroll-up/scroll-down cycles). Exported so the regenerate saga resolves
+ * its source against the same composed list the transcript renders.
  */
-function dropTailResidentRows(history: AgentMessage[], tail: AgentMessage[]): AgentMessage[] {
+export function dropTailResidentRows(
+  history: AgentMessage[],
+  tail: AgentMessage[],
+): AgentMessage[] {
   if (history.length === 0 || tail.length === 0) return history;
   const tailIds = new Set(tail.map((message) => message.id));
   const tailAppMessageIds = new Set(

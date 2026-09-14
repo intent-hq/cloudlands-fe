@@ -21,6 +21,7 @@
   import Fa from 'svelte-fa';
   import Input from '$lib/components/ui/input/input.svelte';
   import { Button } from '$lib/components/ui/button';
+  import GitHubAvatar from '$lib/components/ui/GitHubAvatar.svelte';
   import { cn } from '$lib/utils';
   import { menuItem } from '$lib/components/ui/menu';
   import DirectoryPickerModal from './DirectoryPickerModal.svelte';
@@ -133,10 +134,6 @@
     option?.scrollIntoView({ block: 'nearest' });
     focusedViaKeyboard = false;
   });
-
-  function getGitHubAvatarUrl(owner: string, size: number = 32): string {
-    return `https://github.com/${owner}.png?size=${size}`;
-  }
 
   async function getDirectoryStatus(path: string): Promise<DirectoryStatus | null> {
     if (typeof window === 'undefined' || !window.electronAPI) return null;
@@ -317,12 +314,11 @@
           >
             <div class="size-6 shrink-0">
               {#if repo.owner}
-                <img
-                  src={getGitHubAvatarUrl(repo.owner, 32)}
+                <GitHubAvatar
+                  identity={repo.owner}
                   alt={repo.owner}
+                  size={24}
                   class="w-6 h-6 rounded-full shrink-0"
-                  loading="lazy"
-                  onerror={(e) => ((e.currentTarget as HTMLImageElement).style.display = 'none')}
                 />
               {:else}
                 <div class="w-6 h-6 flex items-center justify-center shrink-0">

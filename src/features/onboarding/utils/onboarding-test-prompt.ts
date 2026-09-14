@@ -5,7 +5,7 @@
  *
  * The auth-required branch mirrors `selectProviderAuthFailureGuidance`
  * (provider-catalog selectors): the catalog `loginCommandHint` with the
- * `<command> login` fallback, plus the claude-code desktop-app caveat.
+ * `<command> login` fallback, plus the claude-code login button.
  */
 
 import { m } from '$shared/paraglide/messages.js';
@@ -31,8 +31,8 @@ export interface TestPromptFailureGuidance {
   loginCommandHint?: string;
   /** auth-required only: catalog docs link, when present. */
   loginDocsUrl?: string;
-  /** claude-code only: desktop-app sign-in does not carry over to the CLI. */
-  showClaudeDesktopNote: boolean;
+  /** claude-code only: launch CLI login in the terminal drawer. */
+  showClaudeLoginButton: boolean;
   /** True for auth-required — callers force an auth-status refresh. */
   isAuthRequired: boolean;
 }
@@ -48,14 +48,14 @@ export function mapTestPromptFailure(
   providerId: string,
 ): TestPromptFailureGuidance {
   const name = entry?.displayName ?? providerId;
-  const base = { showClaudeDesktopNote: false, isAuthRequired: false };
+  const base = { showClaudeLoginButton: false, isAuthRequired: false };
   switch (failure.reason) {
     case 'auth-required':
       return {
         message: m.onboarding_testPrompt_authRequired_error({ name }),
         loginCommandHint: entry?.loginCommandHint || `${entry?.command ?? providerId} login`,
         loginDocsUrl: entry?.loginDocsUrl,
-        showClaudeDesktopNote: providerId === 'claude-code',
+        showClaudeLoginButton: providerId === 'claude-code',
         isAuthRequired: true,
       };
     case 'busy':

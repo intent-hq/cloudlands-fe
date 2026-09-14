@@ -13,8 +13,7 @@ import { m } from '$shared/paraglide/messages.js';
 import { EVENTS_CHANNELS } from '../../../shared/ipc/channels';
 import type { WorkspaceEvent } from '../types';
 import { filterEventsForSubscription } from '../event-filter-engine';
-import { mainDispatch, getMainState } from '../../../store/main/redux-store-bridge';
-import { emitWorkspaceEvent as reduxEmitWorkspaceEvent } from '../../../store/main/slices/workspace-events/workspace-events-slice';
+import { getMainState } from '../../../store/main/redux-store-bridge';
 import {
   selectRecentEvents,
   selectEventsByType,
@@ -46,7 +45,7 @@ const logger = new Logger('EventsIPC');
  * Setup IPC handlers for events system
  */
 export function setupEventsIPC(): void {
-  // Emit event from renderer — always dispatch through Redux
+  // Emit event from renderer — acknowledged only; no main-process store observes it
   ipcMain.handle(
     EVENTS_CHANNELS.EMIT,
     createSafeValidatedHandler(
@@ -59,9 +58,6 @@ export function setupEventsIPC(): void {
             eventType: validated.event.type,
             eventId: validated.event.id,
           });
-
-          // Dispatch through Redux — sagas handle dedup, persistence, and broadcast
-          mainDispatch(reduxEmitWorkspaceEvent(validated.event));
 
           return { success: true };
         } catch (error) {
@@ -110,9 +106,6 @@ export function setupEventsIPC(): void {
             }
           }
 
-          // Register subscription — the renderer-subscription saga delivers
-          // new events via takeEvery(emitWorkspaceEvent), so no store.subscribe()
-          // is needed. Performance is proportional to event rate, not action rate.
           addRendererSubscription(validated.subscriptionId, {
             windowId,
             filters: validated.filters,

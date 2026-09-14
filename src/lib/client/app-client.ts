@@ -115,6 +115,13 @@ export interface MutationResult {
    */
   noteRev?: number;
   /**
+   * Authoritative post-write note content echoed by `note.setContent`
+   * (`newContent`). The daemon merges a full-content write against concurrent
+   * edits, so the persisted text can differ from what the caller sent; when
+   * present, callers MUST apply it as the local content. Additive and optional.
+   */
+  newContent?: string;
+  /**
    * Optimistic-concurrency conflict outcome (§11.4-D): present ONLY when the
    * daemon rejected the mutation with the conflict error (numeric `-32005` AND
    * `data.code === "conflict"`). Carries the authoritative server entity

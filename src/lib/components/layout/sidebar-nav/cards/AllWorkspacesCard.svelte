@@ -17,6 +17,7 @@
   } from '$lib/components/workspace/utils/workspace-grouping';
   import { onMount } from 'svelte';
   import Header from '$lib/components/ui/Header.svelte';
+  import GitHubAvatar from '$lib/components/ui/GitHubAvatar.svelte';
   import Fa from 'svelte-fa';
   import { faChevronDown } from '@fortawesome/free-solid-svg-icons';
 
@@ -43,10 +44,6 @@
   import { Button } from '$lib/components/ui/button';
 
   const REPOSITORY_WORKSPACE_LIMIT = 3;
-
-  function getGitHubAvatarUrl(owner: string, size: number = 24): string {
-    return `https://github.com/${owner}.png?size=${size}`;
-  }
 
   const workspaceItems = selectWorkspaceItems();
   const hasLoaded$ = selectWorkspaceHasLoaded();
@@ -576,12 +573,11 @@
             >
               <div class="section-header flex items-center gap-1.5 px-2 pt-2 pb-1 min-w-0">
                 {#if repositoryGroup.group.owner}
-                  <img
-                    src={getGitHubAvatarUrl(repositoryGroup.group.owner)}
+                  <GitHubAvatar
+                    identity={repositoryGroup.group.owner}
                     alt={repositoryGroup.group.owner}
+                    size={14}
                     class="size-3.5 rounded-full shrink-0"
-                    loading="lazy"
-                    onerror={(e) => ((e.currentTarget as HTMLImageElement).style.display = 'none')}
                   />
                 {/if}
                 <Header size={4} class="truncate">{repositoryGroup.group.label}</Header>
