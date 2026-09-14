@@ -14989,8 +14989,9 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:modals:produ
                                       <path>
                                     <span class="min-w-0 text-foreground truncate type-body">
                                       "Refine modal catalog"
-                                    <span class="[&_svg]:pointer-events-none [&_svg]:size-3 [a&]:active:brightness-90 [a&]:hover:brightness-95 aria-invalid:ring-2 aria-invalid:ring-danger/25 bg-success duration-spring-fast ease-spring-fast font-normal gap-1 h-5 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2 py-0.5 rounded-(--radius-medium) shrink-0 text-success-foreground transition-[background-color,color,box-shadow,filter] type-caption w-fit whitespace-nowrap" data-slot="badge">
-                                      "Open"
+                                    <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="green" data-size="default" data-slot="badge" data-variant="solid" tokens=["--background"]>
+                                      <span class="[text-box:trim-both_cap_alphabetic]">
+                                        "Open"
                                     <span class="shrink-0 text-muted-foreground type-caption">
                                       "#418"
                                 <p class="mt-3 text-muted-foreground type-caption">
@@ -14999,10 +15000,12 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:modals:produ
                                   <li class="flex gap-2 items-center text-muted-foreground type-caption">
                                     <span class="min-w-0 truncate">
                                       "refine-modals"
-                                    <span class="[&_svg]:pointer-events-none [&_svg]:size-3 [a&]:active:bg-active [a&]:hover:bg-hover aria-invalid:ring-2 aria-invalid:ring-danger/25 bg-secondary duration-spring-fast ease-spring-fast font-normal gap-1 h-5 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2 py-0.5 rounded-(--radius-medium) shrink-0 text-secondary-foreground transition-[background-color,color,box-shadow,filter] type-caption w-fit whitespace-nowrap" data-slot="badge">
-                                      "2 unpushed commits"
-                                    <span class="[&_svg]:pointer-events-none [&_svg]:size-3 [a&]:active:bg-active [a&]:hover:bg-hover aria-invalid:ring-2 aria-invalid:ring-danger/25 bg-secondary duration-spring-fast ease-spring-fast font-normal gap-1 h-5 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2 py-0.5 rounded-(--radius-medium) shrink-0 text-secondary-foreground transition-[background-color,color,box-shadow,filter] type-caption w-fit whitespace-nowrap" data-slot="badge">
-                                      "Uncommitted changes"
+                                    <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="gray" data-size="default" data-slot="badge" data-variant="solid" tokens=["--accent"]>
+                                      <span class="[text-box:trim-both_cap_alphabetic]">
+                                        "2 unpushed commits"
+                                    <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="gray" data-size="default" data-slot="badge" data-variant="solid" tokens=["--accent"]>
+                                      <span class="[text-box:trim-both_cap_alphabetic]">
+                                        "Uncommitted changes"
                               <p class="leading-5 text-sm text-subtle">
                                 "Intent will permanently remove this workspace from disk after stopping the running work. This cannot be undone."
                             <div class="flex gap-2 items-center justify-end mt-6" data-slot="dialog-footer">
@@ -15087,8 +15090,9 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:modals:produ
                                       <path>
                                     <span class="min-w-0 text-foreground truncate type-body">
                                       "Refine modal catalog"
-                                    <span class="[&_svg]:pointer-events-none [&_svg]:size-3 [a&]:active:brightness-90 [a&]:hover:brightness-95 aria-invalid:ring-2 aria-invalid:ring-danger/25 bg-success duration-spring-fast ease-spring-fast font-normal gap-1 h-5 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2 py-0.5 rounded-(--radius-medium) shrink-0 text-success-foreground transition-[background-color,color,box-shadow,filter] type-caption w-fit whitespace-nowrap" data-slot="badge">
-                                      "Open"
+                                    <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="green" data-size="default" data-slot="badge" data-variant="solid" tokens=["--background"]>
+                                      <span class="[text-box:trim-both_cap_alphabetic]">
+                                        "Open"
                                     <span class="shrink-0 text-muted-foreground type-caption">
                                       "#418"
                                 <p class="mt-3 text-muted-foreground type-caption">
@@ -15097,10 +15101,12 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:modals:produ
                                   <li class="flex gap-2 items-center text-muted-foreground type-caption">
                                     <span class="min-w-0 truncate">
                                       "refine-modals"
-                                    <span class="[&_svg]:pointer-events-none [&_svg]:size-3 [a&]:active:bg-active [a&]:hover:bg-hover aria-invalid:ring-2 aria-invalid:ring-danger/25 bg-secondary duration-spring-fast ease-spring-fast font-normal gap-1 h-5 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2 py-0.5 rounded-(--radius-medium) shrink-0 text-secondary-foreground transition-[background-color,color,box-shadow,filter] type-caption w-fit whitespace-nowrap" data-slot="badge">
-                                      "2 unpushed commits"
-                                    <span class="[&_svg]:pointer-events-none [&_svg]:size-3 [a&]:active:bg-active [a&]:hover:bg-hover aria-invalid:ring-2 aria-invalid:ring-danger/25 bg-secondary duration-spring-fast ease-spring-fast font-normal gap-1 h-5 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2 py-0.5 rounded-(--radius-medium) shrink-0 text-secondary-foreground transition-[background-color,color,box-shadow,filter] type-caption w-fit whitespace-nowrap" data-slot="badge">
-                                      "Uncommitted changes"
+                                    <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="gray" data-size="default" data-slot="badge" data-variant="solid" tokens=["--accent"]>
+                                      <span class="[text-box:trim-both_cap_alphabetic]">
+                                        "2 unpushed commits"
+                                    <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="gray" data-size="default" data-slot="badge" data-variant="solid" tokens=["--accent"]>
+                                      <span class="[text-box:trim-both_cap_alphabetic]">
+                                        "Uncommitted changes"
                               <p class="leading-5 text-sm text-subtle">
                                 "You can unarchive this workspace later, but stopped agents and cancelled hooks will not resume automatically."
                             <div class="flex gap-2 items-center justify-end mt-6" data-slot="dialog-footer">
@@ -15812,9 +15818,10 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:modals:produ
                                                             <div class="font-medium min-w-0 text-foreground text-sm truncate">
                                                               "Implementor"
                                                             <div class="shrink-0 text-muted-foreground text-xs">
-                                                              <span class="[&_svg]:pointer-events-none [&_svg]:size-3 [a&]:active:brightness-90 [a&]:hover:brightness-95 aria-invalid:ring-2 aria-invalid:ring-danger/25 bg-info duration-spring-fast ease-spring-fast font-normal gap-1 h-5 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2 py-0.5 rounded-(--radius-medium) shrink-0 text-info-foreground transition-[background-color,color,box-shadow,filter] type-caption w-fit whitespace-nowrap" data-slot="badge">
-                                                                <span class="bg-current rounded-full shrink-0 size-1.5" data-slot="badge-dot">
-                                                                "running"
+                                                              <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="blue" data-size="default" data-slot="badge" data-variant="solid" tokens=["--background"]>
+                                                                <span class="rounded-full shrink-0 size-[7px]" data-slot="badge-dot">
+                                                                <span class="[text-box:trim-both_cap_alphabetic]">
+                                                                  "running"
                                                           <div class="min-w-0 mt-0.5 text-muted-foreground text-xs">
                                                             "running • interrupted Sep 11, 2026, 12:00 PM"
                                             <section class="min-w-0">
@@ -15836,9 +15843,10 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:modals:produ
                                                             <div class="font-medium min-w-0 text-foreground text-sm truncate">
                                                               "Reviewer"
                                                             <div class="shrink-0 text-muted-foreground text-xs">
-                                                              <span class="[&_svg]:pointer-events-none [&_svg]:size-3 [a&]:active:brightness-90 [a&]:hover:brightness-95 aria-invalid:ring-2 aria-invalid:ring-danger/25 bg-info duration-spring-fast ease-spring-fast font-normal gap-1 h-5 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2 py-0.5 rounded-(--radius-medium) shrink-0 text-info-foreground transition-[background-color,color,box-shadow,filter] type-caption w-fit whitespace-nowrap" data-slot="badge">
-                                                                <span class="bg-current rounded-full shrink-0 size-1.5" data-slot="badge-dot">
-                                                                "waiting"
+                                                              <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="blue" data-size="default" data-slot="badge" data-variant="solid" tokens=["--background"]>
+                                                                <span class="rounded-full shrink-0 size-[7px]" data-slot="badge-dot">
+                                                                <span class="[text-box:trim-both_cap_alphabetic]">
+                                                                  "waiting"
                                                           <div class="min-w-0 mt-0.5 text-muted-foreground text-xs">
                                                             "waiting • interrupted Sep 11, 2026, 12:00 PM"
                                     <footer class="bg-muted/20 border-border border-t px-6 py-4 shrink-0" data-slot="screen-footer">
@@ -16469,8 +16477,9 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:popovers:non
                               <path>
                             <span class="github-link-card-ref">
                               "acme/web-app #42"
-                            <span class="[&_svg]:pointer-events-none [&_svg]:size-3 [a&]:active:brightness-90 [a&]:hover:brightness-95 aria-invalid:ring-2 aria-invalid:ring-danger/25 bg-success duration-spring-fast ease-spring-fast font-normal gap-1 h-4 inline-flex items-center justify-center ml-auto motion-reduce:transition-none overflow-hidden px-1.5 py-0.5 rounded-(--radius-medium) shrink-0 text-success-foreground transition-[background-color,color,box-shadow,filter] type-caption w-fit whitespace-nowrap" data-slot="badge">
-                              "Open"
+                            <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-4 inline-flex items-center justify-center ml-auto motion-reduce:transition-none overflow-hidden px-1.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="green" data-size="default" data-slot="badge" data-variant="solid" tokens=["--background"]>
+                              <span class="[text-box:trim-both_cap_alphabetic]">
+                                "Open"
                           <div class="github-link-card-title">
                             "Add dark mode toggle to the settings panel"
                           <div class="github-link-card-meta">
@@ -16626,14 +16635,16 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:rows:row-fam
                       <div class="min-w-0 mt-0.5 text-muted-foreground text-xs">
                         "Leading icon and secondary text"
                     <div class="flex gap-1 items-center shrink-0">
-                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 [a&]:active:brightness-90 [a&]:hover:brightness-95 aria-invalid:ring-2 aria-invalid:ring-danger/25 bg-success duration-spring-fast ease-spring-fast font-normal gap-1 h-5 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2 py-0.5 rounded-(--radius-medium) shrink-0 text-success-foreground transition-[background-color,color,box-shadow,filter] type-caption w-fit whitespace-nowrap" data-slot="badge">
-                        "Ready"
+                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="green" data-size="default" data-slot="badge" data-variant="solid" tokens=["--background"]>
+                        <span class="[text-box:trim-both_cap_alphabetic]">
+                          "Ready"
                   <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                     <div class="flex items-center justify-center shrink-0">
-                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 [a&]:active:brightness-90 [a&]:hover:brightness-95 aria-invalid:ring-2 aria-invalid:ring-danger/25 bg-primary duration-spring-fast ease-spring-fast font-normal gap-1 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden p-1 rounded-full shrink-0 size-6 text-primary-foreground transition-[background-color,color,box-shadow,filter] type-caption whitespace-nowrap" data-slot="badge">
-                        <svg aria-hidden="true" class="size-3" data-icon="robot" data-weight="bold" role="img">
-                          <rect>
-                          <path>
+                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden p-1 rounded-full shrink-0 size-6 text-[12px] text-foreground transition-[background-color,color,box-shadow] whitespace-nowrap" data-color="gray" data-size="default" data-slot="badge" data-variant="solid" tokens=["--accent"]>
+                        <span class="[text-box:trim-both_cap_alphabetic]">
+                          <svg aria-hidden="true" class="size-3" data-icon="robot" data-weight="bold" role="img">
+                            <rect>
+                            <path>
                     <div class="flex-1 min-w-0">
                       <div class="flex gap-2 items-baseline min-w-0">
                         <div class="font-medium min-w-0 text-foreground text-sm truncate">
@@ -16698,8 +16709,9 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:rows:row-fam
                         <div class="font-medium min-w-0 text-foreground text-sm truncate">
                           "Disabled row"
                     <div class="flex gap-1 items-center shrink-0">
-                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 [a&]:active:brightness-90 [a&]:hover:brightness-95 aria-invalid:ring-2 aria-invalid:ring-danger/25 bg-primary duration-spring-fast ease-spring-fast font-normal gap-1 h-5 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2 py-0.5 rounded-(--radius-medium) shrink-0 text-primary-foreground transition-[background-color,color,box-shadow,filter] type-caption w-fit whitespace-nowrap" data-slot="badge">
-                        "Loading"
+                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="gray" data-size="default" data-slot="badge" data-variant="solid" tokens=["--accent"]>
+                        <span class="[text-box:trim-both_cap_alphabetic]">
+                          "Loading"
                 <div class="row-cell svelte-<scope>" data-row-preview="list-row-compact">
                   <div class="flex gap-3 items-center min-h-9 min-w-0 px-3 py-1.5" data-density="compact" data-slot="list-row">
                     <div class="flex-1 min-w-0">
@@ -16707,8 +16719,9 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:rows:row-fam
                         <div class="font-medium min-w-0 text-foreground text-sm truncate">
                           "Compact density"
                     <div class="flex gap-1 items-center shrink-0">
-                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 [a&]:active:brightness-90 [a&]:hover:brightness-95 aria-invalid:ring-2 aria-invalid:ring-danger/25 bg-primary duration-spring-fast ease-spring-fast font-normal gap-1 h-5 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2 py-0.5 rounded-(--radius-medium) shrink-0 text-primary-foreground transition-[background-color,color,box-shadow,filter] type-caption w-fit whitespace-nowrap" data-slot="badge">
-                        "28 px target"
+                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1 h-5 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2 rounded-(--radius-medium) shrink-0 text-[11px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="gray" data-size="compact" data-slot="badge" data-variant="solid" tokens=["--accent"]>
+                        <span class="[text-box:trim-both_cap_alphabetic]">
+                          "28 px target"
                 <div class="row-cell svelte-<scope> zoom-preview" data-row-preview="list-row-zoom-200">
                   <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                     <div class="flex-1 min-w-0">
