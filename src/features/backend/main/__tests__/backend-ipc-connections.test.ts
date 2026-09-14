@@ -4386,10 +4386,14 @@ describe('guest-sessions:* IPC handlers', () => {
 
       guest.hello(hello);
       await vi.waitFor(() =>
-        expect(guestStore.setWorkspaces).toHaveBeenCalledWith(GUEST.id, [
-          { id: 'ws-guest', title: 'Guest project' },
-          { id: 'ws-new', title: 'Joined elsewhere' },
-        ]),
+        expect(guestStore.setWorkspaces).toHaveBeenCalledWith(
+          GUEST.id,
+          [
+            { id: 'ws-guest', title: 'Guest project' },
+            { id: 'ws-new', title: 'Joined elsewhere' },
+          ],
+          expect.any(Function),
+        ),
       );
       expect(rpc.params[rpc.calls.indexOf('workspace.list')]).toBeUndefined();
       await vi.waitFor(() =>
@@ -4547,7 +4551,9 @@ describe('guest-sessions:* IPC handlers', () => {
       guest.hello(hello);
       await vi.waitFor(() => expect(reads).toBe(1));
       guest.hello(hello);
-      await vi.waitFor(() => expect(guestStore.setWorkspaces).toHaveBeenCalledWith(GUEST.id, []));
+      await vi.waitFor(() =>
+        expect(guestStore.setWorkspaces).toHaveBeenCalledWith(GUEST.id, [], expect.any(Function)),
+      );
 
       release({
         workspaces: [{ id: 'ws-stale', title: 'Old membership', myRole: 'collaborator' }],
@@ -4555,9 +4561,11 @@ describe('guest-sessions:* IPC handlers', () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
       await new Promise((resolve) => setTimeout(resolve, 0));
       expect(guestStore.setWorkspaces).toHaveBeenCalledTimes(1);
-      expect(guestStore.setWorkspaces).not.toHaveBeenCalledWith(GUEST.id, [
-        { id: 'ws-stale', title: 'Old membership' },
-      ]);
+      expect(guestStore.setWorkspaces).not.toHaveBeenCalledWith(
+        GUEST.id,
+        [{ id: 'ws-stale', title: 'Old membership' }],
+        expect.any(Function),
+      );
     });
 
     it('a snapshot with no Leave in flight is still applied after an unrelated round trip', async () => {
@@ -4578,9 +4586,11 @@ describe('guest-sessions:* IPC handlers', () => {
         workspaces: [{ id: 'ws-guest', title: 'Renamed', myRole: 'collaborator', memberCount: 2 }],
       });
       await vi.waitFor(() =>
-        expect(guestStore.setWorkspaces).toHaveBeenCalledWith(GUEST.id, [
-          { id: 'ws-guest', title: 'Renamed' },
-        ]),
+        expect(guestStore.setWorkspaces).toHaveBeenCalledWith(
+          GUEST.id,
+          [{ id: 'ws-guest', title: 'Renamed' }],
+          expect.any(Function),
+        ),
       );
     });
 
@@ -4609,6 +4619,167 @@ describe('guest-sessions:* IPC handlers', () => {
       expect(JSON.stringify(hydrationWarns)).not.toContain(marker);
       expect(hydrationWarns[0][1]).toEqual({ id: GUEST.id, code: 'transport' });
       warn.mockRestore();
+    });
+
+    describe('commit-boundary fencing against the real store', () => {
+      type RealStore = typeof import('../guest-sessions-store');
+      let real: RealStore;
+      let directory: string;
+      let sessionId: string;
+      let backend: Awaited<ReturnType<typeof loadModule>>['mod'];
+      let client: HelloClient;
+      let setupElectron: Record<string, unknown>;
+      const renameSpies: Array<{ mockRestore(): void }> = [];
+
+      /** Hold the store's atomic rename so a mutation stays in flight until released. */
+      async function holdNextWrite() {
+        const fs = (await import('node:fs')).promises;
+        const originalRename = fs.rename.bind(fs);
+        let release!: () => void;
+        const pending = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        const rename = vi.spyOn(fs, 'rename').mockImplementationOnce(async (...args) => {
+          await pending;
+          return originalRename(...args);
+        });
+        renameSpies.push(rename);
+        return { rename, release };
+      }
+
+      beforeEach(async () => {
+        const fs = await import('node:fs/promises');
+        directory = await fs.mkdtemp('/tmp/guest-hydration-real-store-');
+        setupElectron = { ...(await import('electron')) };
+        vi.doMock('electron', () => ({
+          ...setupElectron,
+          safeStorage: {
+            isEncryptionAvailable: () => true,
+            encryptString: (s: string) => Buffer.from(s),
+            decryptString: (b: Buffer) => b.toString(),
+          },
+        }));
+        vi.mocked(app.getPath).mockReturnValue(directory);
+        real = await vi.importActual<RealStore>('../guest-sessions-store');
+        await real.applyRemoteSyncRecord({ ...GUEST, detectHosts: false, token: 'fixture-token' });
+        sessionId = (await real.list())[0].id;
+        guestStore.list.mockImplementation(real.list);
+        guestStore.findById.mockImplementation(real.findById);
+        guestStore.setWorkspaces.mockImplementation(real.setWorkspaces);
+        guestStore.leaveWorkspace.mockImplementation(real.leaveWorkspace);
+        guestStore.getDecryptedToken.mockImplementation(real.getDecryptedToken);
+        installWindow();
+        backend = (await loadModule()).mod;
+        backend.registerBackendHandlers();
+        client = (await backend.connectBackendClient(sessionId)) as unknown as HelloClient;
+        await real.setWorkspaces(sessionId, GUEST.workspaces);
+      });
+
+      afterEach(async () => {
+        backend.disconnectBackendClient(sessionId);
+        await real.__drainWriteChainForTesting();
+        for (const spy of renameSpies.splice(0)) spy.mockRestore();
+        for (const fn of [
+          guestStore.list,
+          guestStore.findById,
+          guestStore.setWorkspaces,
+          guestStore.leaveWorkspace,
+          guestStore.getDecryptedToken,
+        ]) {
+          fn.mockReset();
+        }
+        const fs = await import('node:fs/promises');
+        await fs.rm(directory, { recursive: true, force: true });
+        vi.doMock('electron', () => setupElectron);
+      });
+
+      it.each(['before the list answers', 'while the list answer is queued'])(
+        'a same-daemon re-join replacing the record %s fences the old hydration at the write',
+        async (timing) => {
+          const unsubscribe = real.onGuestCredentialReplaced((id) => {
+            for (const listener of guestStore.replacedListeners) listener(id);
+          });
+          let releaseList!: (value: unknown) => void;
+          const pendingList = new Promise((resolve) => {
+            releaseList = resolve;
+          });
+          rpc.handler = async (method) => (method === 'workspace.list' ? pendingList : {});
+          client.hello(hello);
+          await vi.waitFor(() => expect(rpc.calls).toContain('workspace.list'));
+
+          const write = await holdNextWrite();
+          const replacement = real.add({
+            ...GUEST,
+            token: 'replacement-token',
+            workspace: { id: 'ws-new', title: 'Fresh join' },
+          });
+          try {
+            await vi.waitFor(() => expect(write.rename).toHaveBeenCalledTimes(1));
+            if (timing === 'before the list answers') {
+              write.release();
+              await replacement;
+              expect(backend.getBackendClientForConnection(sessionId)).not.toBe(client);
+            }
+            releaseList({ workspaces: GUEST.workspaces });
+            if (timing === 'while the list answer is queued') {
+              await vi.waitFor(() =>
+                expect(guestStore.setWorkspaces).toHaveBeenCalledWith(
+                  sessionId,
+                  GUEST.workspaces,
+                  expect.any(Function),
+                ),
+              );
+            }
+            write.release();
+            await replacement;
+            await real.__drainWriteChainForTesting();
+            expect((await real.list())[0].workspaces).toEqual([
+              ...GUEST.workspaces,
+              { id: 'ws-new', title: 'Fresh join' },
+            ]);
+          } finally {
+            write.release();
+            await replacement;
+            unsubscribe();
+          }
+        },
+      );
+
+      it('a Leave during the hydration store write wins once the write chain drains', async () => {
+        const write = await holdNextWrite();
+        rpc.handler = async (method) =>
+          method === 'workspace.list'
+            ? { workspaces: [{ id: 'ws-guest', title: 'Renamed' }] }
+            : method === 'workspace.members.leave'
+              ? { left: true }
+              : {};
+        client.hello(hello);
+        try {
+          await vi.waitFor(() => expect(write.rename).toHaveBeenCalledTimes(1));
+          const leave = findHandler('guest-sessions:leave-workspace')!(
+            {},
+            { id: sessionId, workspaceId: 'ws-guest' },
+          );
+          await vi.waitFor(() => expect(guestStore.leaveWorkspace).toHaveBeenCalled());
+          write.release();
+          await expect(leave).resolves.toMatchObject({ left: true });
+          await real.__drainWriteChainForTesting();
+          expect((await real.list())[0].workspaces).toEqual([]);
+        } finally {
+          write.release();
+        }
+      });
+
+      it('an undisturbed snapshot still commits through the real store', async () => {
+        rpc.handler = async (method) =>
+          method === 'workspace.list'
+            ? { workspaces: [{ id: 'ws-guest', title: 'Renamed', myRole: 'collaborator' }] }
+            : {};
+        client.hello(hello);
+        await vi.waitFor(async () =>
+          expect((await real.list())[0].workspaces).toEqual([{ id: 'ws-guest', title: 'Renamed' }]),
+        );
+      });
     });
   });
 
