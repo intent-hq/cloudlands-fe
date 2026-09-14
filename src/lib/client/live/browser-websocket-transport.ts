@@ -221,7 +221,7 @@ const DEFAULT_CONNECT_TIMEOUT_MS = 10_000;
  * object per text frame (no newline framing — the WebSocket provides message
  * boundaries). Lifecycle mirrors the main-process `JsonRpcClient`: lazy
  * connect on first request, exponential-backoff reconnect, pending requests
- * failed fast on drop, `reconnected` fired on the 2nd+ successful connect.
+ * failed fast on drop, `reconnected` fired after a prior connection or failed dial.
  */
 export class BrowserWebSocketTransport implements BackendTransport {
   private readonly url: string;
@@ -241,8 +241,9 @@ export class BrowserWebSocketTransport implements BackendTransport {
   private connectTimer: ReturnType<typeof setTimeout> | null = null;
   private connectWaiters: Array<{ resolve: () => void; reject: (e: Error) => void }> = [];
   private readonly pending = new Map<number, PendingRequest>();
-  /** Sticky flag so `reconnected` only fires on the 2nd (or later) successful connect. */
+  /** A successful connection or failed dial requires recovery on the next connect. */
   private hasBeenConnected = false;
+  private hasConnectionFailed = false;
   private readonly notificationHandlers = new Set<(n: BackendNotification) => void>();
   private readonly reconnectedHandlers = new Set<() => void>();
   private readonly statusHandlers = new Set<(status: BrowserWsConnectionStatus) => void>();
@@ -450,8 +451,9 @@ export class BrowserWebSocketTransport implements BackendTransport {
     this.connecting = false;
     this.connected = true;
     this.currentReconnectDelay = this.reconnectDelayMs;
-    const wasReconnect = this.hasBeenConnected;
+    const wasReconnect = this.hasBeenConnected || this.hasConnectionFailed;
     this.hasBeenConnected = true;
+    this.hasConnectionFailed = false;
     this.notifyStatusChange();
     this.flushWaiters();
     // Fire AFTER waiters so queued sends and the resubscribe replay observe a
@@ -464,6 +466,7 @@ export class BrowserWebSocketTransport implements BackendTransport {
   private onConnectionFailure(error: Error): void {
     this.clearConnectTimer();
     if (this.disposed) return;
+    this.hasConnectionFailed = true;
     this.connected = false;
     this.notifyStatusChange();
     this.teardownSocket();
