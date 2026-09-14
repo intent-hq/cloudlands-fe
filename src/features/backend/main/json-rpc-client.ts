@@ -113,8 +113,8 @@ const HELLO_HANDSHAKE_TIMEOUT_MS = 5_000;
 /**
  * Events: `notification` (JsonRpcNotification), `status` (ConnectionStatus),
  * `reconnected` (void — fires when a successful connect follows an earlier
- * connected state so consumers can replay `events.subscribe` calls and
- * refresh coarse state after a daemon restart), `error` (Error),
+ * connected state or failed dial so consumers can retry startup work, replay
+ * `events.subscribe`, and refresh state after a daemon restart), `error` (Error),
  * `heartbeat` (void), `cert-warning` ({@link HostCertMismatch} — a NON-FATAL
  * per-host pin mismatch observed by the multi-host connection race (#1746);
  * informative only, never treated as a connection failure).
@@ -151,8 +151,9 @@ export class JsonRpcClient extends EventEmitter {
   private consecutiveHealthCheckFailures = 0;
   private connectWaiters: Array<{ resolve: () => void; reject: (e: Error) => void }> = [];
   private readonly pending = new Map<number, PendingRequest>();
-  /** Sticky flag so `reconnected` only fires on the 2nd (or later) successful connect. */
+  /** A successful connection or failed dial requires recovery on the next connect. */
   private hasBeenConnected = false;
+  private hasConnectionFailed = false;
   /** Consecutive reconnect attempts since the last successful connect (#1750). */
   private reconnectAttempts = 0;
   /** Handlers for daemon-initiated (reverse) requests, keyed by method name. */
@@ -212,7 +213,7 @@ export class JsonRpcClient extends EventEmitter {
   /** Begin connecting (idempotent). */
   start(): void {
     if (this.disposed) return;
-    if (this.socket || this.status === 'connecting') return;
+    if (this.socket || this.status === 'connecting' || this.reconnectTimer) return;
     this.connect();
   }
 
@@ -414,8 +415,9 @@ export class JsonRpcClient extends EventEmitter {
   private finishConnect(): void {
     this.currentReconnectDelay = this.reconnectDelayMs;
     this.reconnectAttempts = 0;
-    const wasReconnect = this.hasBeenConnected;
+    const wasReconnect = this.hasBeenConnected || this.hasConnectionFailed;
     this.hasBeenConnected = true;
+    this.hasConnectionFailed = false;
     this.setStatus('connected');
     this.flushWaiters();
     this.startHeartbeat();
@@ -431,6 +433,7 @@ export class JsonRpcClient extends EventEmitter {
 
   private onConnectionFailure(error: Error): void {
     if (this.disposed) return;
+    this.hasConnectionFailed = true;
     this.emitError(error);
     this.stopHeartbeat();
     this.teardownSocket();
