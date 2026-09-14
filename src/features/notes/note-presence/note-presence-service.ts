@@ -5,12 +5,14 @@
  * deltas. The connection's own viewer row is filtered out via `principal.me`.
  *
  * Roster membership is the daemon's (lease-based); carets are ephemeral on
- * top of it: a caret not refreshed within `CURSOR_TTL_MS` is dropped, and the
- * session re-publishes its own caret every `CURSOR_HEARTBEAT_MS` so an idle
- * peer's caret stays visible — recomputed by the registered cursor provider
- * (the editor binding) so a base that advanced under an idle caret is picked
- * up, else the last published tuple. Outgoing carets are throttled to the
- * daemon's own floor (≤10/s, trailing edge kept).
+ * top of it: a caret not refreshed within `CURSOR_TTL_MS` of receipt is
+ * dropped, and the session re-publishes its own caret `CURSOR_HEARTBEAT_MS`
+ * after its last publication so an idle peer's caret stays visible —
+ * recomputed by the registered cursor provider (the editor binding) so a base
+ * that advanced under an idle caret is picked up, else the last published
+ * tuple. Both deadlines are one-shot timers armed from the event they measure
+ * from, not periodic sweeps, so they hold regardless of timer phase. Outgoing
+ * carets are throttled to the daemon's own floor (≤10/s, trailing edge kept).
  */
 import { onBackendNotification, onBackendReconnected } from '$lib/client/live/backend-transport';
 import {
@@ -27,7 +29,6 @@ import { resolveOwnPrincipalId } from './own-principal';
 export const CURSOR_TTL_MS = 10_000;
 export const CURSOR_HEARTBEAT_MS = 5_000;
 export const CURSOR_PUBLISH_MIN_INTERVAL_MS = 100;
-const CURSOR_SWEEP_INTERVAL_MS = 1_000;
 const RETRY_BASE_MS = 1_000;
 const RETRY_MAX_MS = 30_000;
 /**
@@ -86,12 +87,14 @@ interface SessionState {
   viewers: Map<string, RemoteNoteViewer>;
   listeners: Set<NotePresenceListener>;
   cursorProviders: Set<NoteCursorProvider>;
-  sweepTimer: ReturnType<typeof setInterval> | undefined;
+  /** Fires at the earliest `cursorSeenAt + CURSOR_TTL_MS` among the viewers. */
+  expiryTimer: ReturnType<typeof setTimeout> | undefined;
   lastCursor: NoteViewerCursor | undefined;
   pendingCursor: NoteViewerCursor | undefined;
   lastPublishAt: number;
   publishTimer: ReturnType<typeof setTimeout> | undefined;
-  heartbeatTimer: ReturnType<typeof setInterval> | undefined;
+  /** Fires at `lastPublishAt + CURSOR_HEARTBEAT_MS`; re-armed by every send. */
+  heartbeatTimer: ReturnType<typeof setTimeout> | undefined;
   offNotification: () => void;
   offReconnect: () => void;
 }
@@ -168,6 +171,15 @@ function sendCursor(state: SessionState, cursor: NoteViewerCursor): void {
   void publishNoteCursor(state.workspaceId, state.noteId, cursor).catch(() => {
     // Best-effort: the next throttled publish or heartbeat carries the caret.
   });
+  clearHeartbeat(state);
+  state.heartbeatTimer = setTimeout(() => heartbeat(state), CURSOR_HEARTBEAT_MS);
+}
+
+function clearHeartbeat(state: SessionState): void {
+  if (state.heartbeatTimer !== undefined) {
+    clearTimeout(state.heartbeatTimer);
+    state.heartbeatTimer = undefined;
+  }
 }
 
 function flushPendingCursor(state: SessionState): void {
@@ -196,14 +208,45 @@ function publishCursor(state: SessionState, cursor: NoteViewerCursor): void {
   );
 }
 
+/**
+ * Due `CURSOR_HEARTBEAT_MS` after the last send. A lease that lapsed meanwhile
+ * (reconnect, failed registration) leaves the timer unarmed: the ack re-sends
+ * the caret and arms it again. A throttled publish already in flight will send
+ * and re-arm within `CURSOR_PUBLISH_MIN_INTERVAL_MS`.
+ */
 function heartbeat(state: SessionState): void {
-  if (state.disposed || !state.subscriptionId) return;
-  if (Date.now() - state.lastPublishAt < CURSOR_HEARTBEAT_MS) return;
+  state.heartbeatTimer = undefined;
+  if (state.disposed || !state.subscriptionId || state.publishTimer !== undefined) return;
   let cursor = state.lastCursor;
   for (const provider of state.cursorProviders) cursor = provider() ?? cursor;
   if (!cursor) return;
   state.lastCursor = cursor;
   sendCursor(state, cursor);
+}
+
+function clearExpiry(state: SessionState): void {
+  if (state.expiryTimer !== undefined) {
+    clearTimeout(state.expiryTimer);
+    state.expiryTimer = undefined;
+  }
+}
+
+/** Arm the expiry for the caret that lapses first; nothing to arm without carets. */
+function scheduleExpiry(state: SessionState): void {
+  clearExpiry(state);
+  let earliest = Infinity;
+  for (const viewer of state.viewers.values()) {
+    if (viewer.cursor && viewer.cursorSeenAt !== null && viewer.cursorSeenAt < earliest) {
+      earliest = viewer.cursorSeenAt;
+    }
+  }
+  if (earliest === Infinity) return;
+  const delay = Math.max(0, earliest + CURSOR_TTL_MS - Date.now());
+  state.expiryTimer = setTimeout(() => {
+    state.expiryTimer = undefined;
+    sweepExpiredCursors(state, Date.now());
+    scheduleExpiry(state);
+  }, delay);
 }
 
 function sweepExpiredCursors(state: SessionState, now: number): void {
@@ -212,7 +255,7 @@ function sweepExpiredCursors(state: SessionState, now: number): void {
     if (
       viewer.cursor &&
       viewer.cursorSeenAt !== null &&
-      now - viewer.cursorSeenAt > CURSOR_TTL_MS
+      now - viewer.cursorSeenAt >= CURSOR_TTL_MS
     ) {
       viewer.cursor = null;
       viewer.cursorSeenAt = null;
@@ -252,15 +295,20 @@ function applyPush(state: SessionState, push: NotePresencePush): void {
       next.set(viewer.principalId, toRemoteViewer(viewer, now));
     }
     state.viewers = next;
+    scheduleExpiry(state);
     emit(state);
     return;
   }
   if (push.viewer.principalId === state.ownPrincipalId) return;
   if (push.deltaKind === 'left') {
-    if (state.viewers.delete(push.viewer.principalId)) emit(state);
+    if (state.viewers.delete(push.viewer.principalId)) {
+      scheduleExpiry(state);
+      emit(state);
+    }
     return;
   }
   state.viewers.set(push.viewer.principalId, toRemoteViewer(push.viewer, now));
+  scheduleExpiry(state);
   emit(state);
 }
 
@@ -275,14 +323,10 @@ function start(state: SessionState): void {
     state.preAckPushes = [];
     state.retryAttempt = 0;
     state.viewers = new Map();
+    clearExpiry(state);
     emit(state);
     register(state);
   });
-  state.sweepTimer = setInterval(
-    () => sweepExpiredCursors(state, Date.now()),
-    CURSOR_SWEEP_INTERVAL_MS,
-  );
-  state.heartbeatTimer = setInterval(() => heartbeat(state), CURSOR_HEARTBEAT_MS);
   void resolveOwnPrincipalId().then((ownPrincipalId) => {
     if (state.disposed) return;
     state.ownPrincipalId = ownPrincipalId;
@@ -295,8 +339,8 @@ function dispose(state: SessionState): void {
   state.generation += 1;
   clearRetry(state);
   if (state.publishTimer !== undefined) clearTimeout(state.publishTimer);
-  if (state.sweepTimer !== undefined) clearInterval(state.sweepTimer);
-  if (state.heartbeatTimer !== undefined) clearInterval(state.heartbeatTimer);
+  clearExpiry(state);
+  clearHeartbeat(state);
   state.offNotification();
   state.offReconnect();
   if (state.subscriptionId) unsubscribeNotePresence(state.subscriptionId);
@@ -331,7 +375,7 @@ export function joinNotePresence(workspaceId: string, noteId: string): NotePrese
       viewers: new Map(),
       listeners: new Set(),
       cursorProviders: new Set(),
-      sweepTimer: undefined,
+      expiryTimer: undefined,
       lastCursor: undefined,
       pendingCursor: undefined,
       lastPublishAt: 0,
