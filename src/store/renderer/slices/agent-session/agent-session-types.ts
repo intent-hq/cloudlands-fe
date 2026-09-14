@@ -11,8 +11,6 @@ interface AgentSessionSendContextItem {
   file?: File;
   imageData?: string;
   imageMimeType?: string;
-  fileData?: string;
-  fileMimeType?: string;
 }
 
 interface AgentSessionContextReference {

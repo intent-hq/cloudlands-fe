@@ -3,6 +3,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render } from '@testing-library/svelte';
+import { warmImport } from '../../../test/warm-import';
 
 const mocks = vi.hoisted(() => ({
   dispatch: vi.fn(),
@@ -17,6 +18,8 @@ vi.mock('$store/renderer/store', async () => {
     dispatch: mocks.dispatch,
   });
 });
+
+warmImport(() => import('./HardwareConsoleDeviceSvg.svelte'));
 
 async function loadComponent() {
   const HardwareConsoleDeviceSvg = (await import('./HardwareConsoleDeviceSvg.svelte')).default;

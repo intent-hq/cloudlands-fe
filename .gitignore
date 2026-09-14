@@ -40,6 +40,10 @@ build/macos-icon/
 # See scripts/generate-build-config.cjs for how this works
 src/main/build-config.generated.ts
 
+# Generated preload script (from src/preload/index.template.ts + src/shared/ipc-registry.ts)
+# Regenerate with `pnpm run generate:ipc-channels` (scripts/inline-ipc-channels.ts); dev/build run it
+src/preload/index.ts
+
 # OS files
 .DS_Store
 Thumbs.db

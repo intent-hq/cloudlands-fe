@@ -15,7 +15,13 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { escape as escapeGlob, globSync } from 'glob';
-import { checkDepsFresh } from './check-deps-fresh.mjs';
+import { checkDepsFresh, checkNodeSupport, ensureI18nFresh } from './check-deps-fresh.mjs';
+import { pnpmInvocation } from './pnpm-launcher.mjs';
+import {
+  listDeclaredSuites,
+  selectDeclaredSuites,
+  TRIGGER_MARKER,
+} from './verify-changed-triggers.mjs';
 
 export const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const FRONTEND_PREFIX = 'packages/cloudlands-fe/';
@@ -66,14 +72,6 @@ const FULL_RISK_FILES = new Set([
   'vite.config.mjs',
   'vitest.config.ts',
 ]);
-const GENERATED_PRELOAD = 'src/preload/index.ts';
-const PRELOAD_DRIFT_TEST = 'scripts/inline-ipc-channels.test.ts';
-const PRELOAD_DRIFT_SOURCES = new Set([
-  GENERATED_PRELOAD,
-  'src/preload/index.template.ts',
-  'src/shared/ipc-registry.ts',
-  'scripts/inline-ipc-channels.ts',
-]);
 
 function slash(path) {
   return path.split(sep).join('/');
@@ -103,12 +101,17 @@ function assertCanonicalPathInsideRoot(path, root, displayPath) {
 }
 
 export function parseArgs(argv) {
-  const result = { dryRun: false, help: false, paths: [] };
-  for (const arg of argv) {
+  const result = { base: null, dryRun: false, help: false, paths: [] };
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
     if (arg === '--') continue;
     if (arg === '--dry-run') result.dryRun = true;
     else if (arg === '--help' || arg === '-h') result.help = true;
-    else if (arg.startsWith('-')) throw new Error(`unknown option: ${arg}`);
+    else if (arg === '--base' || arg.startsWith('--base=')) {
+      const value = arg === '--base' ? argv[(index += 1)] : arg.slice('--base='.length);
+      if (!value || value.startsWith('-')) throw new Error('missing value for option: --base');
+      result.base = value;
+    } else if (arg.startsWith('-')) throw new Error(`unknown option: ${arg}`);
     else result.paths.push(arg);
   }
   return result;
@@ -157,12 +160,34 @@ function gitNames(args, root) {
     .map((file) => slash(file));
 }
 
-export function collectChangedFiles(root = REPO_ROOT) {
+function mergeBase(ref, root) {
+  try {
+    return execFileSync('git', ['merge-base', ref, 'HEAD'], {
+      cwd: root,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }).trim();
+  } catch (error) {
+    const detail = String(error?.stderr ?? error?.message ?? error).trim();
+    throw new Error(`cannot resolve --base ${ref}: ${detail}`, { cause: error });
+  }
+}
+
+export function collectChangedFiles(root = REPO_ROOT, options = {}) {
   const files = [
     ...gitNames(['diff', '--name-only', '-z', '--diff-filter=ACMRTUXBD', 'HEAD', '--'], root),
     ...gitNames(['diff', '--cached', '--name-only', '-z', '--diff-filter=ACMRTUXBD', '--'], root),
     ...gitNames(['ls-files', '--others', '--exclude-standard', '-z'], root),
   ];
+  if (options.base) {
+    const base = mergeBase(options.base, root);
+    files.push(
+      ...gitNames(
+        ['diff', '--name-only', '-z', '--diff-filter=ACMRTUXBD', base, 'HEAD', '--'],
+        root,
+      ),
+    );
+  }
   return [...new Set(files)].sort();
 }
 
@@ -338,7 +363,7 @@ function command(id, label, args, lockKind = null) {
   return {
     id,
     label,
-    executable: process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm',
+    executable: 'pnpm',
     args,
     lockKind,
   };
@@ -346,6 +371,9 @@ function command(id, label, args, lockKind = null) {
 
 export function createVerificationPlan(files, options = {}) {
   const root = options.root ?? REPO_ROOT;
+  const declared = options.declaredSuites
+    ? { suites: options.declaredSuites, violations: [] }
+    : listDeclaredSuites(root);
   const existing = files.filter((file) => isExisting(file, root));
   const formatFiles = existing.filter((file) => FORMAT_EXTENSIONS.has(extname(file)));
   const lintFiles = existing.filter(isLintable);
@@ -368,11 +396,18 @@ export function createVerificationPlan(files, options = {}) {
       !UNIT_TEST_RE.test(file),
   );
   const uiInvariants = files.some(isRendererSource);
-  const preloadDrift =
-    files.some((file) => PRELOAD_DRIFT_SOURCES.has(file)) &&
-    !directUnit.includes(PRELOAD_DRIFT_TEST);
+  const declaredUnit = selectDeclaredSuites(declared.suites, files).filter(
+    (suite) => !directUnit.includes(suite),
+  );
   let architecture = files.some(isArchitectureSource);
   const typeCheckWrapper = files.includes('scripts/type-check.ts');
+  const deadCode = files.some(
+    (file) =>
+      CODE_EXTENSIONS.has(extname(file)) ||
+      file === 'knip.jsonc' ||
+      file === 'package.json' ||
+      /^tsconfig[^/]*\.json$/.test(file),
+  );
   const boundaries = new Set();
   let svelteCheck = false;
   let fullUnit = false;
@@ -393,6 +428,7 @@ export function createVerificationPlan(files, options = {}) {
     const known =
       CODE_EXTENSIONS.has(extname(file)) ||
       isKnownNonCode(file) ||
+      file === 'knip.jsonc' ||
       /^(?:scripts|tests\/integration)\//.test(file) ||
       /^(?:eslint|playwright|postcss|prettier|svelte|tailwind|tsconfig|vite|vitest)[^/]*\./.test(
         file,
@@ -435,6 +471,8 @@ export function createVerificationPlan(files, options = {}) {
         'type-check:validate',
       ]),
     );
+  if (deadCode)
+    checks.push(command('knip', 'Dead code (knip, repo-wide)', ['run', 'lint:dead-code']));
   if (fullUnit)
     checks.push(
       command(
@@ -482,15 +520,15 @@ export function createVerificationPlan(files, options = {}) {
         ]),
       );
     }
-    if (preloadDrift) {
+    if (declaredUnit.length) {
       checks.push(
-        command('vitest-preload-drift', 'Vitest preload drift (generated IPC channels)', [
+        command('vitest-declared', 'Vitest (suites declaring changed paths as triggers)', [
           'exec',
           'vitest',
           'run',
           '--config',
           'vitest.config.ts',
-          PRELOAD_DRIFT_TEST,
+          ...declaredUnit,
         ]),
       );
     }
@@ -556,6 +594,12 @@ export function createVerificationPlan(files, options = {}) {
   }
   if (boundaries.has('main')) {
     checks.push(
+      command('generate-build-config', 'Generate main build config (if missing)', [
+        'run',
+        'generate:build-config',
+        '--',
+        '--if-missing',
+      ]),
       command('tsc-main', 'TypeScript (main)', [
         'exec',
         'tsc',
@@ -567,6 +611,10 @@ export function createVerificationPlan(files, options = {}) {
   }
   if (boundaries.has('preload')) {
     checks.push(
+      command('generate-ipc-channels', 'Generate preload IPC channels', [
+        'run',
+        'generate:ipc-channels',
+      ]),
       command('tsc-preload', 'TypeScript (preload)', [
         'exec',
         'tsc',
@@ -576,7 +624,12 @@ export function createVerificationPlan(files, options = {}) {
       ]),
     );
   }
-  return { files, checks, fallbackReasons: [...new Set(fallbackReasons)].sort() };
+  return {
+    files,
+    checks,
+    fallbackReasons: [...new Set(fallbackReasons)].sort(),
+    triggerViolations: declared.violations.map((entry) => entry.path),
+  };
 }
 
 function processIsAlive(pid) {
@@ -668,9 +721,9 @@ export function printPlan(plan, dryRun, log = console.log) {
   if (plan.fallbackReasons.length) {
     log(`verify:changed: safe fallback for ${plan.fallbackReasons.join(', ')}`);
   }
-  if (plan.files.includes(GENERATED_PRELOAD)) {
+  if (plan.triggerViolations?.length) {
     log(
-      `verify:changed: ${GENERATED_PRELOAD} is generated from src/preload/index.template.ts; regenerate with pnpm run generate:ipc-channels`,
+      `verify:changed: warning: ${plan.triggerViolations.length} vitest suite(s) read the tree from disk without a ${TRIGGER_MARKER} header and are never selected here; see pnpm run lint:verify-changed-triggers`,
     );
   }
   log(`verify:changed: ${plan.checks.length} check(s)`);
@@ -682,10 +735,12 @@ export function printPlan(plan, dryRun, log = console.log) {
 
 async function runCheck(check, root) {
   console.log(`\n[verify:changed] ${check.label}`);
+  const launcher = pnpmInvocation(check.args);
   await new Promise((resolveRun, reject) => {
-    const child = spawn(check.executable, check.args, {
+    const child = spawn(launcher.executable, launcher.args, {
       cwd: root,
       stdio: 'inherit',
+      shell: launcher.shell,
       env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
     });
     child.on('error', reject);
@@ -738,28 +793,48 @@ export async function runVerificationPlan(plan, root, options = {}) {
 
 export async function runCli(argv = process.argv.slice(2), root = REPO_ROOT, options = {}) {
   const log = options.log ?? console.log;
+  const checkNode = options.checkNode ?? checkNodeSupport;
   const checkDeps = options.checkDeps ?? checkDepsFresh;
+  const ensureI18n = options.ensureI18n ?? ensureI18nFresh;
   const runPlan = options.runPlan ?? runVerificationPlan;
   const args = parseArgs(argv);
   if (args.help) {
-    log('Usage: pnpm run verify:changed -- [--dry-run] [paths...]');
-    return;
+    log('Usage: pnpm run verify:changed -- [--dry-run] [--base <ref>] [paths...]');
+    return 0;
   }
-  const files = args.paths.length ? expandInputPaths(args.paths, root) : collectChangedFiles(root);
+  const files = args.paths.length
+    ? expandInputPaths(args.paths, root)
+    : collectChangedFiles(root, { base: args.base });
+  if (!args.paths.length && files.length === 0) {
+    const hint = args.base
+      ? ` and no files changed relative to the merge-base with ${args.base}`
+      : "; pass --base origin/main to verify this branch's commits against main";
+    log(`verify:changed: nothing to verify — the worktree is clean${hint}`);
+    return 2;
+  }
   const plan = createVerificationPlan(files, { root });
   printPlan(plan, args.dryRun, log);
-  if (args.dryRun || plan.checks.length === 0) return;
+  if (args.dryRun || plan.checks.length === 0) return 0;
 
+  const node = checkNode({ root });
+  if (!node.ok) throw new Error(node.reason);
   const deps = checkDeps(root);
   if (!deps.ok) throw new Error(deps.reason);
+  const i18n = await ensureI18n(root);
+  if (!i18n.ok) throw new Error(i18n.reason);
   await runPlan(plan, root);
+  return 0;
 }
 
 const isDirectRun =
   process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url));
 if (isDirectRun) {
-  runCli().catch((error) => {
-    console.error(`[verify:changed] ${error instanceof Error ? error.message : error}`);
-    process.exitCode = 1;
-  });
+  runCli()
+    .then((code) => {
+      process.exitCode = code;
+    })
+    .catch((error) => {
+      console.error(`[verify:changed] ${error instanceof Error ? error.message : error}`);
+      process.exitCode = 1;
+    });
 }

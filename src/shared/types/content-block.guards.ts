@@ -81,16 +81,20 @@ export function isVideoBlock(block: ContentBlock): block is VideoContentBlock {
 }
 
 /**
- * Check if a ContentBlock is a file block — either the legacy inline-data
- * variant (`data` + `mimeType`) or an attachment-reference block carrying an
- * `attachmentId` instead of bytes.
+ * Check if a ContentBlock is an attachment-reference file block (PROTOCOL
+ * §5.5): `attachmentId` + `fileName`, never bytes. Inline file data left the
+ * protocol in 10.0; a file block without an `attachmentId` is not a file
+ * block for the renderer.
  */
-export function isFileBlock(block: ContentBlock): block is ContentBlock & { fileName: string } {
+export function isFileBlock(
+  block: ContentBlock,
+): block is ContentBlock & { attachmentId: string; fileName: string } {
   return (
     block.type === 'file' &&
     typeof block.fileName === 'string' &&
-    ((typeof block.data === 'string' && typeof block.mimeType === 'string') ||
-      typeof block.attachmentId === 'string')
+    block.fileName.length > 0 &&
+    typeof block.attachmentId === 'string' &&
+    block.attachmentId.length > 0
   );
 }
 
@@ -135,7 +139,8 @@ export function isMediaBlock(
   block: ContentBlock,
 ): block is ContentBlock & { type: 'image' | 'audio' | 'video' | 'file' } {
   return (
-    ((block.type === 'image' || block.type === 'audio' || block.type === 'file') && !!block.data) ||
+    ((block.type === 'image' || block.type === 'audio') && !!block.data) ||
+    isFileBlock(block) ||
     isVideoBlock(block)
   );
 }

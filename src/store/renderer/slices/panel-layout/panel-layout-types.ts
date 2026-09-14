@@ -297,6 +297,13 @@ export interface WorkspacePanelLayoutState {
     import('./panel-layout-width-provenance').PanelCanvasWidthSource | null;
   deferSpecTab: boolean;
   newWorkspaceLifecycle: NewWorkspacePanelLifecycle | null;
+  /**
+   * Session-only: the user deliberately emptied this layout with an explicit
+   * close (closeTab / closeAllTabs / closePanel / resetLayout). The empty
+   * restored-layout reconcile leaves such a layout blank instead of reseeding
+   * the primary agent tab; a restore clears it. Never persisted.
+   */
+  emptiedByUserClose: boolean;
 }
 
 export type PanelDragLayoutSnapshot = Pick<

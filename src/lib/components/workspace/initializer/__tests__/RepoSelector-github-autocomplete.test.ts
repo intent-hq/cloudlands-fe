@@ -416,14 +416,15 @@ describe('RepoSelector trigger avatar', () => {
     const failed = triggerAvatar(container)!;
     expect(failed.src).toContain('/octo.png');
     await fireEvent.error(failed);
-    expect(failed.style.display).toBe('none');
+    expect(triggerAvatar(container)).toBeNull();
 
     await rerender({ value: 'other/beta' });
 
     const next = triggerAvatar(container)!;
     expect(next).not.toBe(failed);
     expect(next.src).toContain('/other.png');
-    expect(next.style.display).not.toBe('none');
+    await fireEvent.load(next);
+    expect(triggerAvatar(container)).toBe(next);
   });
 
   it('renders the avatar for a restored full GitHub URL value', async () => {

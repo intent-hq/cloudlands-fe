@@ -16,7 +16,10 @@
  * its result. Only `applied` / `reporting` workspaces report tabs or take
  * part in a `browser.syncTabs` snapshot. A reported tab that leaves the
  * layout is recorded in `closing` at the mutation that removed it, so the
- * close survives an unmount or an unreachable daemon.
+ * close survives an unmount or an unreachable daemon. A hosted tab whose URL
+ * is the row's copy is `unresolved` until its tunnel re-resolution is
+ * established, so a failed resolution is retried at the next load instead of
+ * leaving the tab on a dead port.
  */
 
 import type { BrowserTabInput } from '$shared/types/browser-clients';
@@ -29,6 +32,13 @@ export type WorkspaceBrowserTabRegistryState = {
   phase: BrowserTabRegistryPhase;
   /** What the daemon holds for the tabs this client hosts, by tab id. */
   reported: Record<string, BrowserTabInput>;
+  /**
+   * Hosted tabs filled from a row whose tunnel re-resolution has not been
+   * established: their URL is the row's copy, not the guest's, so the next
+   * load re-resolves them. Cleared by an established resolution, or with the
+   * tab's report.
+   */
+  unresolved: Record<string, true>;
 };
 
 /**
@@ -49,6 +59,7 @@ export const emptyWorkspaceBrowserTabRegistryState: WorkspaceBrowserTabRegistryS
   generation: 0,
   phase: 'unmounted',
   reported: {},
+  unresolved: {},
 };
 
 export const initialState: BrowserTabRegistryState = {

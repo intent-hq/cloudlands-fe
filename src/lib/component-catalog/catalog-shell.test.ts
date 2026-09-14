@@ -1,3 +1,17 @@
+// @verify-changed-triggers: src/lib/component-catalog/**, src/hooks.client.ts, eslint.config.js,
+//   src/routes/+layout.svelte, src/routes/(app)/+layout.svelte,
+//   src/routes/sandbox/+layout.svelte, src/routes/sandbox/+page.svelte,
+//   src/routes/sandbox/[slug]/+page.svelte, src/routes/(app)/sandbox/**,
+//   src/routes/(app)/agent/[id]/+page.svelte, src/routes/(app)/settings/+page.svelte,
+//   src/routes/(app)/test-comments/+page.svelte, src/routes/(app)/test-error-boundary/+page.svelte,
+//   src/routes/(app)/test-input/+page.svelte, src/routes/(app)/test-mentions/+page.svelte,
+//   src/routes/(app)/test-mentions/compact/+page.svelte, src/routes/(app)/test-monaco/+page.svelte,
+//   src/routes/(app)/test-workspace-cards/+page.svelte,
+//   src/routes/(app)/test-workspace-hover-card/+page.svelte,
+//   src/routes/(app)/workspace/[id]/+page.svelte, src/routes/(app)/workspace/[id]/files/+page.svelte,
+//   src/routes/(app)/workspace/[id]/terminal-test/+page.svelte,
+//   src/routes/(app)/workspace/creating/+page.svelte
+
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';

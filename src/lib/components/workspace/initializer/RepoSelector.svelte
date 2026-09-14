@@ -5,6 +5,7 @@
   import GitRepoIcon from '$lib/components/icons/GitRepoIcon.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
   import Header from '$lib/components/ui/Header.svelte';
+  import GitHubAvatar from '$lib/components/ui/GitHubAvatar.svelte';
   import Input from '$lib/components/ui/input/input.svelte';
   import { Select } from '$lib/components/ui/select';
   import { debugConfig } from '$lib/config/debug';
@@ -841,11 +842,6 @@
     }
   });
 
-  // Get GitHub avatar URL for org/user
-  function getGitHubAvatarUrl(owner: string, size: number = 32): string {
-    return `https://github.com/${owner}.png?size=${size}`;
-  }
-
   // Parse GitHub URL using the URL API for robust parsing
   function parseGitHubUrl(input: string): { owner: string; repo: string } | null {
     const trimmed = input.trim();
@@ -1463,18 +1459,8 @@
           <GitRepoIcon size={12} class="text-ghost -mb-0.25 mr-1" />
         {/if}
         {#if !triggerIcon && triggerAvatarOwner}
-          <!-- Keyed by owner so a failed (hidden) image is recreated for the next owner.
-               Decorative: the adjacent label already names the owner. -->
-          {#key triggerAvatarOwner}
-            <img
-              src={getGitHubAvatarUrl(triggerAvatarOwner, 32)}
-              alt=""
-              aria-hidden="true"
-              class="w-4 h-4 rounded-full shrink-0"
-              loading="lazy"
-              onerror={(e) => ((e.currentTarget as HTMLImageElement).style.display = 'none')}
-            />
-          {/key}
+          <!-- Decorative: the adjacent label already names the owner. -->
+          <GitHubAvatar identity={triggerAvatarOwner} class="w-4 h-4 rounded-full shrink-0" />
         {/if}
         {#if !triggerIcon && (selectedValue || emptyLabel)}
           <span class="flex-1 text-left truncate">
@@ -1611,12 +1597,10 @@
                   onclick={() => handleSelectGithubSuggestion(repo)}
                   onmousemove={() => (suggestionIndex = index)}
                 >
-                  <img
-                    src={getGitHubAvatarUrl(repo.owner, 32)}
+                  <GitHubAvatar
+                    identity={repo.owner}
                     alt={repo.owner}
                     class="w-4 h-4 rounded-full shrink-0"
-                    loading="lazy"
-                    onerror={(e) => ((e.currentTarget as HTMLImageElement).style.display = 'none')}
                   />
                   <span class="text-sm text-foreground truncate">
                     <span class="text-subtle mr-1">{repo.owner} /</span>{repo.name}
@@ -1842,13 +1826,10 @@
                     onclick={() => handleSelectRepo(repo)}
                   >
                     {#if label.ownerPrefix}
-                      <img
-                        src={getGitHubAvatarUrl(label.ownerPrefix, 32)}
+                      <GitHubAvatar
+                        identity={label.ownerPrefix}
                         alt={label.ownerPrefix}
                         class="w-4 h-4 rounded-full shrink-0"
-                        loading="lazy"
-                        onerror={(e) =>
-                          ((e.currentTarget as HTMLImageElement).style.display = 'none')}
                       />
                     {:else}
                       <Fa

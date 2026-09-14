@@ -1,4 +1,4 @@
-import type { AgentMessage } from '$shared/types';
+import type { AgentMessage, ContentBlock } from '$shared/types';
 import { extractAllContent } from '$shared/types';
 import { getAgentMessageAttribution, stripAgentMessageHeader } from './agent-message-attribution';
 import { getQueueInfo } from './queue-info';
@@ -54,6 +54,30 @@ export function stripTruncatedTrailingDeliveryNote(text: string, metadata?: unkn
   return text.slice(0, match.index);
 }
 
+/**
+ * Mirror of the daemon's serve-time `degrade_inline_file_blocks` pass
+ * (PROTOCOL §5.5, 10.0). A user-row file block with no non-empty
+ * `attachmentId` is the shape a pre-10.0 daemon persisted for inline file
+ * data; a 10.0 daemon serves it, in place, as
+ * `{ type: 'text', text: 'Attached file: <fileName>' }` (`'Attached file'`
+ * when the name is missing or blank), carrying over only the block `id`, with
+ * the bytes dropped. Applied to transcripts still served by an older daemon so
+ * the projection is identical and the bytes are never read or rendered. Block
+ * order is preserved; reference file blocks and every other block pass through.
+ */
+export function degradeLegacyFileBlocks(
+  blocks: readonly ContentBlock[] | undefined,
+): ContentBlock[] {
+  return (blocks ?? []).map((block) => {
+    if (block.type !== 'file') return block;
+    if (typeof block.attachmentId === 'string' && block.attachmentId.trim()) return block;
+    const name = typeof block.fileName === 'string' ? block.fileName.trim() : '';
+    // i18n-ignore (mirrors the daemon's protocol 10.0 text projection)
+    const text = name ? `Attached file: ${name}` : 'Attached file';
+    return block.id ? { id: block.id, type: 'text', text } : { type: 'text', text };
+  });
+}
+
 /** Return immutable user-authored text for rendering and other UI surfaces. */
 export function getPresentedUserMessageText(message: AgentMessage): string {
   // Rows sent by another agent carry the daemon-stamped sender header in
@@ -64,8 +88,8 @@ export function getPresentedUserMessageText(message: AgentMessage): string {
     ? (text: string) => stripAgentMessageHeader(text, attribution)
     : (text: string) => text;
 
-  const textParts = message.contentBlocks
-    ?.filter((block) => block.type === 'text')
+  const textParts = degradeLegacyFileBlocks(message.contentBlocks)
+    .filter((block) => block.type === 'text')
     .map((block) => block.text ?? '');
   if (!textParts?.length)
     return presentLeadingHeader(

@@ -1,3 +1,5 @@
+// @verify-changed-triggers: vitest.config.ts, playwright.config.ts, test/actions-status-visual.spec.ts
+
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -6,6 +8,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   acquireVerificationLock,
+  collectChangedFiles,
   createVerificationPlan,
   expandInputPaths,
   findRelatedCtTests,
@@ -49,6 +52,38 @@ function fixtureRoot(files: Record<string, string>) {
     writeFileSync(path, content);
   }
   return root;
+}
+
+function git(root: string, ...args: string[]) {
+  return execFileSync('git', args, {
+    cwd: root,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  }).trim();
+}
+
+function commitFile(root: string, file: string, message: string) {
+  mkdirSync(join(root, file, '..'), { recursive: true });
+  writeFileSync(join(root, file), '');
+  git(root, 'add', file);
+  git(root, 'commit', '-q', '-m', message);
+}
+
+function gitRepository() {
+  const root = temporaryDirectory();
+  git(root, 'init', '-q');
+  git(root, 'symbolic-ref', 'HEAD', 'refs/heads/main');
+  git(root, 'config', 'user.name', 'verify-changed test');
+  git(root, 'config', 'user.email', 'verify-changed@example.invalid');
+  git(root, 'config', 'commit.gpgsign', 'false');
+  commitFile(root, 'src/base.ts', 'base');
+  return root;
+}
+
+function branchWithCommit(root: string, file = 'src/committed.ts') {
+  git(root, 'checkout', '-q', '-b', 'feature');
+  commitFile(root, file, 'feature');
+  return file;
 }
 
 function deferred() {
@@ -97,11 +132,38 @@ afterEach(() => {
 describe('verify-changed arguments and paths', () => {
   it('parses explicit paths and dry-run', () => {
     expect(parseArgs(['--dry-run', '--', 'src/a.ts'])).toEqual({
+      base: null,
       dryRun: true,
       help: false,
       paths: ['src/a.ts'],
     });
     expect(() => parseArgs(['--wat'])).toThrow('unknown option');
+  });
+
+  it('parses --base in both spellings and requires a value', () => {
+    expect(parseArgs(['--base', 'origin/main'])).toMatchObject({ base: 'origin/main', paths: [] });
+    expect(parseArgs(['--base=origin/main', 'src/a.ts'])).toMatchObject({
+      base: 'origin/main',
+      paths: ['src/a.ts'],
+    });
+    expect(() => parseArgs(['--base'])).toThrow('--base');
+    expect(() => parseArgs(['--base', '--dry-run'])).toThrow('--base');
+  });
+
+  it('collects committed branch files only when a base is given', () => {
+    const root = gitRepository();
+    const committed = branchWithCommit(root);
+    writeFileSync(join(root, 'src/untracked.ts'), '');
+
+    expect(collectChangedFiles(root)).toEqual(['src/untracked.ts']);
+    expect(collectChangedFiles(root, { base: 'main' })).toEqual([committed, 'src/untracked.ts']);
+
+    writeFileSync(join(root, committed), 'export const changed = 1;');
+    expect(collectChangedFiles(root)).toEqual([committed, 'src/untracked.ts']);
+    expect(collectChangedFiles(root, { base: 'main' })).toEqual([committed, 'src/untracked.ts']);
+    expect(() => collectChangedFiles(root, { base: 'no-such-ref' })).toThrow(
+      /cannot resolve --base no-such-ref/,
+    );
   });
 
   it('accepts package-prefixed paths and expands directories', () => {
@@ -133,6 +195,7 @@ describe('verification planning', () => {
       'prettier',
       'eslint',
       'architecture',
+      'knip',
       'vitest-related',
       'vitest-ui-invariants',
       'tsc-renderer',
@@ -232,6 +295,25 @@ describe('verification planning', () => {
     expect(plan.checks.map((check) => check.id)).not.toContain('architecture');
   });
 
+  it('runs knip repo-wide for code and knip-config changes but not for docs', () => {
+    const root = fixtureRoot({
+      'src/lib/example.ts': 'export const value = 1;',
+      'docs/guide.md': '# Guide',
+      'knip.jsonc': '{}',
+    });
+    const ids = (files: string[]) =>
+      createVerificationPlan(files, { root, ctTests: [] }).checks.map((check) => check.id);
+
+    const knip = createVerificationPlan(['src/lib/example.ts'], { root, ctTests: [] }).checks.find(
+      (check) => check.id === 'knip',
+    );
+    expect(knip?.args).toEqual(['run', 'lint:dead-code']);
+    expect(knip?.lockKind).toBeNull();
+
+    expect(ids(['docs/guide.md'])).not.toContain('knip');
+    expect(ids(['knip.jsonc'])).toEqual(['knip']);
+  });
+
   it('runs the repo-wide UI invariant suites for renderer source changes', () => {
     const root = fixtureRoot({
       'src/features/example/Example.svelte': '<button />',
@@ -269,53 +351,112 @@ describe('verification planning', () => {
     expect(deletedPlan.checks.map((check) => check.id)).toContain('vitest-ui-invariants');
   });
 
-  it('runs the preload drift test for IPC channel source changes', () => {
-    const triggers = [
-      'src/preload/index.ts',
-      'src/preload/index.template.ts',
-      'src/shared/ipc-registry.ts',
-      'scripts/inline-ipc-channels.ts',
+  describe('suites declaring verify:changed triggers', () => {
+    const driftTest = 'scripts/inline-ipc-channels.test.ts';
+    const catalogTest = 'src/lib/components/__tests__/catalog.test.ts';
+    const declaredSuites = [
+      { path: driftTest, triggers: ['src/preload/index.ts', 'src/shared/ipc-registry.ts'] },
+      { path: catalogTest, triggers: ['src/lib/components/**'] },
     ];
-    const root = fixtureRoot({
-      ...Object.fromEntries(triggers.map((file) => [file, ''])),
-      'src/preload/other.ts': '',
-      'src/lib/example.ts': '',
-      'scripts/inline-ipc-channels.test.ts': '',
-      'package.json': '{}',
+    const fixture = () =>
+      fixtureRoot({
+        'src/preload/index.ts': '',
+        'src/preload/other.ts': '',
+        'src/shared/ipc-registry.ts': '',
+        'src/lib/components/ui/Button.svelte': '<button />',
+        'src/lib/utils.ts': '',
+        [driftTest]: '',
+        [catalogTest]: '',
+        'package.json': '{}',
+      });
+    const declared = (root: string, files: string[]) =>
+      createVerificationPlan(files, { root, ctTests: [], declaredSuites }).checks.find(
+        (check) => check.id === 'vitest-declared',
+      );
+    const ids = (root: string, files: string[]) =>
+      createVerificationPlan(files, { root, ctTests: [], declaredSuites }).checks.map(
+        (check) => check.id,
+      );
+
+    it('selects a suite whose exact trigger path changed', () => {
+      const check = declared(fixture(), ['src/preload/index.ts']);
+      expect(check?.args).toEqual([
+        'exec',
+        'vitest',
+        'run',
+        '--config',
+        'vitest.config.ts',
+        driftTest,
+      ]);
+      expect(check?.lockKind).toBeNull();
     });
-    const ids = (files: string[]) =>
-      createVerificationPlan(files, { root, ctTests: [] }).checks.map((check) => check.id);
 
-    for (const file of triggers) {
-      expect(ids([file]), file).toContain('vitest-preload-drift');
-    }
-    const drift = createVerificationPlan(['src/shared/ipc-registry.ts'], {
-      root,
-      ctTests: [],
-    }).checks.find((check) => check.id === 'vitest-preload-drift');
-    expect(drift?.args).toEqual([
-      'exec',
-      'vitest',
-      'run',
-      '--config',
-      'vitest.config.ts',
-      'scripts/inline-ipc-channels.test.ts',
-    ]);
-    expect(drift?.lockKind).toBeNull();
+    it('selects a suite whose glob trigger matches the changed path', () => {
+      expect(declared(fixture(), ['src/lib/components/ui/Button.svelte'])?.args).toContain(
+        catalogTest,
+      );
+    });
 
-    expect(ids(['src/preload/other.ts'])).not.toContain('vitest-preload-drift');
-    expect(ids(['src/lib/example.ts'])).not.toContain('vitest-preload-drift');
+    it('skips suites whose triggers do not match', () => {
+      const root = fixture();
+      expect(ids(root, ['src/preload/other.ts'])).not.toContain('vitest-declared');
+      expect(ids(root, ['src/lib/utils.ts'])).not.toContain('vitest-declared');
+    });
 
-    const fallback = ids(['src/preload/index.ts', 'package.json']);
-    expect(fallback).toContain('vitest-full');
-    expect(fallback).not.toContain('vitest-preload-drift');
+    it('does not repeat a suite that already runs as a changed test', () => {
+      const checks = ids(fixture(), ['src/preload/index.ts', driftTest]);
+      expect(checks).toContain('vitest-direct');
+      expect(checks).not.toContain('vitest-declared');
+    });
 
-    const direct = ids(['src/preload/index.ts', 'scripts/inline-ipc-channels.test.ts']);
-    expect(direct).toContain('vitest-direct');
-    expect(direct).not.toContain('vitest-preload-drift');
+    it('is omitted under the full-suite fallback', () => {
+      const checks = ids(fixture(), ['src/preload/index.ts', 'package.json']);
+      expect(checks).toContain('vitest-full');
+      expect(checks).not.toContain('vitest-declared');
+    });
+
+    it('selects a suite for a deleted trigger path', () => {
+      const root = fixtureRoot({ [driftTest]: '' });
+      expect(declared(root, ['src/shared/ipc-registry.ts'])?.args).toContain(driftTest);
+    });
+
+    it('runs suites sharing a trigger in one sorted check', () => {
+      const shared = 'src/shared/ipc-registry.ts';
+      const suites = [
+        { path: 'src/zeta.test.ts', triggers: [shared] },
+        { path: 'scripts/alpha.test.ts', triggers: [shared] },
+      ];
+      const plan = createVerificationPlan([shared], {
+        root: fixture(),
+        ctTests: [],
+        declaredSuites: suites,
+      });
+      const checks = plan.checks.filter((check) => check.id === 'vitest-declared');
+      expect(checks).toHaveLength(1);
+      expect(checks[0].args.slice(-2)).toEqual(['scripts/alpha.test.ts', 'src/zeta.test.ts']);
+    });
+
+    it('scans the tree for markers and warns about undeclared suites without failing', () => {
+      const root = fixtureRoot({
+        'src/preload/index.ts': '',
+        'scripts/declared.test.ts': `// @verify-changed-triggers: src/preload/index.ts\nimport { it } from 'vitest';`,
+        'scripts/undeclared.test.ts': `import { readFileSync } from 'node:fs';\nreadFileSync(process.cwd() + '/package.json', 'utf8');`,
+      });
+      const plan = createVerificationPlan(['src/preload/index.ts'], { root, ctTests: [] });
+      expect(plan.checks.find((check) => check.id === 'vitest-declared')?.args).toContain(
+        'scripts/declared.test.ts',
+      );
+      expect(plan.triggerViolations).toEqual(['scripts/undeclared.test.ts']);
+
+      const lines: string[] = [];
+      printPlan(plan, true, (line: string) => lines.push(line));
+      const warnings = lines.filter((line) => line.includes('warning'));
+      expect(warnings).toHaveLength(1);
+      expect(warnings[0]).toContain('lint:verify-changed-triggers');
+    });
   });
 
-  it('prints the regeneration hint only when the generated preload is planned', () => {
+  it('never prints a regeneration hint for the untracked generated preload', () => {
     const root = fixtureRoot({
       'src/preload/index.ts': '',
       'src/preload/index.template.ts': '',
@@ -329,16 +470,64 @@ describe('verification planning', () => {
       return lines;
     };
     const hint = (lines: string[]) =>
-      lines.filter((line) => line.includes('pnpm run generate:ipc-channels'));
+      lines.filter(
+        (line) => line.includes('is generated from') || line.includes('regenerate with'),
+      );
 
-    const generated = linesFor(['src/preload/index.ts']);
-    expect(hint(generated)).toHaveLength(1);
-    expect(hint(generated)[0]).toContain('src/preload/index.ts');
-    expect(hint(generated)[0]).toContain('src/preload/index.template.ts');
-    expect(hint(linesFor(['src/shared/ipc-registry.ts', 'src/preload/index.ts']))).toHaveLength(1);
-
+    expect(hint(linesFor(['src/preload/index.ts']))).toEqual([]);
     expect(hint(linesFor(['src/preload/index.template.ts']))).toEqual([]);
-    expect(hint(linesFor(['src/shared/ipc-registry.ts']))).toEqual([]);
+    expect(hint(linesFor(['src/shared/ipc-registry.ts', 'src/preload/index.ts']))).toEqual([]);
+  });
+
+  it('generates the preload IPC channels before every preload type check', () => {
+    const root = fixtureRoot({
+      'src/preload/index.template.ts': '',
+      'src/shared/protocol.ts': '',
+      'src/lib/example.ts': '',
+      'tsconfig.preload.json': '{}',
+      'package.json': '{}',
+    });
+    const ids = (files: string[]) =>
+      createVerificationPlan(files, { root, ctTests: [] }).checks.map((check) => check.id);
+    const generate = createVerificationPlan(['tsconfig.preload.json'], {
+      root,
+      ctTests: [],
+    }).checks.find((check) => check.id === 'generate-ipc-channels');
+    expect(generate?.args).toEqual(['run', 'generate:ipc-channels']);
+    expect(generate?.lockKind).toBeNull();
+
+    for (const files of [
+      ['src/preload/index.template.ts'],
+      ['src/shared/protocol.ts'],
+      ['tsconfig.preload.json'],
+      ['package.json'],
+    ]) {
+      const plan = ids(files);
+      const generateIndex = plan.indexOf('generate-ipc-channels');
+      const tscIndex = plan.indexOf('tsc-preload');
+      expect(tscIndex, files.join()).toBeGreaterThan(-1);
+      expect(generateIndex, files.join()).toBeGreaterThan(-1);
+      expect(generateIndex, files.join()).toBeLessThan(tscIndex);
+      expect(
+        plan.filter((id) => id === 'generate-ipc-channels'),
+        files.join(),
+      ).toHaveLength(1);
+    }
+
+    expect(ids(['src/lib/example.ts'])).not.toContain('generate-ipc-channels');
+  });
+
+  it('prints every planned command as a pnpm invocation', () => {
+    const root = fixtureRoot({ 'src/lib/example.ts': '' });
+    const plan = createVerificationPlan(['src/lib/example.ts'], { root, ctTests: [] });
+    expect(plan.checks.length).toBeGreaterThan(0);
+    for (const check of plan.checks) expect(check.executable).toBe('pnpm');
+
+    const lines: string[] = [];
+    printPlan(plan, true, (line: string) => lines.push(line));
+    const commandLines = lines.filter((line) => /^ {2}- [^:]+: /.test(line));
+    expect(commandLines).toHaveLength(plan.checks.length);
+    for (const line of commandLines) expect(line).toMatch(/: pnpm (?:exec|run) /);
   });
 
   it('selects a component test that directly imports a changed Svelte component', () => {
@@ -381,10 +570,10 @@ describe('verification planning', () => {
   it('keeps main and preload type checks scoped to their boundaries', () => {
     const root = fixtureRoot({
       'src/features/system/main/status.ts': '',
-      'src/preload/index.ts': '',
+      'src/preload/index.template.ts': '',
     });
     const plan = createVerificationPlan(
-      ['src/features/system/main/status.ts', 'src/preload/index.ts'],
+      ['src/features/system/main/status.ts', 'src/preload/index.template.ts'],
       { root, ctTests: [] },
     );
     const ids = plan.checks.map((check) => check.id);
@@ -392,6 +581,23 @@ describe('verification planning', () => {
     expect(ids).toContain('tsc-preload');
     expect(ids).not.toContain('tsc-renderer');
     expect(ids).not.toContain('vitest-ui-invariants');
+  });
+
+  it('provisions the gitignored main build config before the main type check only', () => {
+    const root = fixtureRoot({ 'src/main/index.ts': '', 'src/lib/utils.ts': '' });
+    const mainPlan = createVerificationPlan(['src/main/index.ts'], { root, ctTests: [] });
+    const ids = mainPlan.checks.map((check) => check.id);
+    expect(ids.indexOf('generate-build-config')).toBeGreaterThanOrEqual(0);
+    expect(ids.indexOf('generate-build-config')).toBeLessThan(ids.indexOf('tsc-main'));
+    expect(mainPlan.checks.find((check) => check.id === 'generate-build-config')?.args).toEqual([
+      'run',
+      'generate:build-config',
+      '--',
+      '--if-missing',
+    ]);
+
+    const rendererPlan = createVerificationPlan(['src/lib/utils.ts'], { root, ctTests: [] });
+    expect(rendererPlan.checks.map((check) => check.id)).not.toContain('generate-build-config');
   });
 
   it('checks all process boundaries for shared source', () => {
@@ -410,7 +616,9 @@ describe('verification planning', () => {
       'vitest-full',
       'svelte-check',
       'tsc-renderer',
+      'generate-build-config',
       'tsc-main',
+      'generate-ipc-channels',
       'tsc-preload',
     ]);
     expect(plan.checks.find((check) => check.id === 'vitest-full')?.lockKind).toBe('vitest-full');
@@ -689,16 +897,73 @@ describe('verification planning', () => {
   });
 });
 
+describe('empty change set guard', () => {
+  function capture() {
+    const lines: string[] = [];
+    return { lines, options: { log: (line: string) => lines.push(line) } };
+  }
+
+  it('exits 2 with the --base hint when a clean worktree collects nothing', async () => {
+    const root = gitRepository();
+    for (const argv of [[], ['--dry-run']]) {
+      const { lines, options } = capture();
+      expect(await runCli(argv, root, options), argv.join(' ')).toBe(2);
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).toContain('nothing to verify');
+      expect(lines[0]).toContain('pass --base origin/main');
+    }
+  });
+
+  it('omits the hint when --base was already supplied', async () => {
+    const root = gitRepository();
+    const { lines, options } = capture();
+    expect(await runCli(['--base', 'main'], root, options)).toBe(2);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain('nothing to verify');
+    expect(lines[0]).toContain('no files changed relative to the merge-base with main');
+    expect(lines[0]).not.toContain('pass --base');
+  });
+
+  it('plans the committed files of a branch against --base', async () => {
+    const root = gitRepository();
+    const committed = branchWithCommit(root);
+    const { lines, options } = capture();
+    expect(await runCli(['--dry-run', '--base', 'main'], root, options)).toBe(0);
+    expect(lines).toContain(`  - ${committed}`);
+    expect(lines.some((line) => /verify:changed: [1-9][0-9]* check\(s\)/.test(line))).toBe(true);
+  });
+
+  it('keeps explicit-path runs on the plain exit path', async () => {
+    const root = gitRepository();
+    const { options } = capture();
+    expect(await runCli(['--dry-run', 'src/missing.ts'], root, options)).toBe(0);
+  });
+});
+
 describe('dependency freshness gate', () => {
-  function cliOptions(depsResult: { ok: boolean; reason: string | null }) {
+  type StepResult = { ok: boolean; reason: string | null };
+  const PASSING = { ok: true, reason: null };
+  function cliOptions(
+    depsResult: StepResult,
+    i18nResult: StepResult = PASSING,
+    nodeResult: StepResult = PASSING,
+  ) {
     const calls: string[] = [];
     return {
       calls,
       options: {
         log() {},
+        checkNode({ root }: { root: string }) {
+          calls.push(`checkNode:${root}`);
+          return nodeResult;
+        },
         checkDeps() {
           calls.push('checkDeps');
           return depsResult;
+        },
+        async ensureI18n(root: string) {
+          calls.push(`ensureI18n:${root}`);
+          return i18nResult;
         },
         async runPlan() {
           calls.push('runPlan');
@@ -707,16 +972,44 @@ describe('dependency freshness gate', () => {
     };
   }
 
-  it('checks the install before running a plan and refuses a stale install', async () => {
+  it('checks Node, then the install, then the i18n bundle, before running a plan', async () => {
     const root = fixtureRoot({ 'src/lib/example.ts': 'export const value = 1;' });
     const reason = 'node_modules is out of sync';
     const stale = cliOptions({ ok: false, reason });
     await expect(runCli(['src/lib/example.ts'], root, stale.options)).rejects.toThrow(reason);
-    expect(stale.calls).toEqual(['checkDeps']);
+    expect(stale.calls).toEqual([`checkNode:${root}`, 'checkDeps']);
 
     const fresh = cliOptions({ ok: true, reason: null });
     await runCli(['src/lib/example.ts'], root, fresh.options);
-    expect(fresh.calls).toEqual(['checkDeps', 'runPlan']);
+    expect(fresh.calls).toEqual([
+      `checkNode:${root}`,
+      'checkDeps',
+      `ensureI18n:${root}`,
+      'runPlan',
+    ]);
+  });
+
+  it('refuses before touching node_modules when the running Node is unsupported', async () => {
+    const root = fixtureRoot({ 'src/lib/example.ts': 'export const value = 1;' });
+    const reason = 'Unsupported Node v20.19.0 — cloudlands-fe requires Node >=22';
+    const { calls, options } = cliOptions(PASSING, PASSING, { ok: false, reason });
+    await expect(runCli(['src/lib/example.ts'], root, options)).rejects.toThrow(reason);
+    expect(calls).toEqual([`checkNode:${root}`]);
+  });
+
+  it('runs the dependency-free Node preflight before this module resolves node_modules', () => {
+    const scripts = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8')).scripts;
+    expect(scripts['verify:changed']).toMatch(
+      /^node scripts\/check-node\.mjs && node scripts\/verify-changed\.mjs\b/,
+    );
+  });
+
+  it('refuses to run a plan when the i18n bundle cannot be provisioned', async () => {
+    const root = fixtureRoot({ 'src/lib/example.ts': 'export const value = 1;' });
+    const reason = 'messages kept changing while compiling';
+    const { calls, options } = cliOptions({ ok: true, reason: null }, { ok: false, reason });
+    await expect(runCli(['src/lib/example.ts'], root, options)).rejects.toThrow(reason);
+    expect(calls).toEqual([`checkNode:${root}`, 'checkDeps', `ensureI18n:${root}`]);
   });
 
   it('skips the install check for dry runs', async () => {
@@ -729,6 +1022,7 @@ describe('dependency freshness gate', () => {
   it('refuses with the remediation when the installed lockfile copy is unreadable', async () => {
     const root = fixtureRoot({
       'src/lib/example.ts': 'export const value = 1;',
+      'package.json': JSON.stringify({ engines: { node: `>=${process.versions.node}` } }),
       'pnpm-lock.yaml': "lockfileVersion: '9.0'\n",
     });
     mkdirSync(join(root, 'node_modules', '.pnpm', 'lock.yaml'), { recursive: true });

@@ -50,6 +50,7 @@ import {
   chatSendStarted,
   chatInitialized,
   chatReset,
+  chatStreamingReconciled,
   chatTranscriptSnapshotApplied,
   streamCompleted,
 } from '../chat-state/chat-state-slice';
@@ -1020,6 +1021,68 @@ describe('agent-session-slice reducer', () => {
 
       expect(state.byAgentId['a1'].isWaitingForOtherAgents).toBe(true);
       expect(state.byAgentId['a1'].waitingForAgentIds).toEqual(['child-1']);
+    });
+
+    describe('agent:updated pending-question marker projection (§6.5)', () => {
+      const updated = (data: Record<string, unknown>) =>
+        eventReceived('ws-1', {
+          id: 'evt-updated',
+          type: 'agent:updated',
+          timestamp: '2024-01-01T00:00:00.000Z',
+          workspaceId: 'ws-1',
+          data: { agentId: 'a1', ...data },
+        } as any);
+      const seeded = () =>
+        agentSessionReducer(
+          initialState,
+          upsertSession(
+            makeSession('a1', 'ws-1', {
+              metadata: { pendingQuestionsMessageId: 'msg-q1', specialist: 'implementor' },
+            }),
+          ),
+        );
+
+      it('applies a written empty-string clear synchronously and keeps unrelated metadata', () => {
+        const next = agentSessionReducer(seeded(), updated({ pendingQuestionsMessageId: '' }));
+
+        expect(next.byAgentId['a1'].metadata).toEqual({
+          pendingQuestionsMessageId: '',
+          specialist: 'implementor',
+        });
+      });
+
+      it('applies a marker set and the dismissal marker riding alongside it', () => {
+        const cleared = agentSessionReducer(seeded(), updated({ pendingQuestionsMessageId: '' }));
+        const set = agentSessionReducer(cleared, updated({ pendingQuestionsMessageId: 'msg-q2' }));
+        expect(set.byAgentId['a1'].metadata?.pendingQuestionsMessageId).toBe('msg-q2');
+
+        const dismissed = agentSessionReducer(
+          set,
+          updated({ dismissedQuestionsMessageId: 'msg-q2', pendingQuestionsMessageId: 'msg-q2' }),
+        );
+        expect(dismissed.byAgentId['a1'].metadata).toMatchObject({
+          dismissedQuestionsMessageId: 'msg-q2',
+          pendingQuestionsMessageId: 'msg-q2',
+        });
+      });
+
+      it('leaves the marker untouched when agent:updated omits it or carries a non-string', () => {
+        const state = seeded();
+
+        expect(agentSessionReducer(state, updated({ modelId: 'other' }))).toBe(state);
+        expect(agentSessionReducer(state, updated({ pendingQuestionsMessageId: null }))).toBe(
+          state,
+        );
+        expect(agentSessionReducer(state, updated({ pendingQuestionsMessageId: 'msg-q1' }))).toBe(
+          state,
+        );
+      });
+
+      it('does not create a session for an unknown agent', () => {
+        expect(agentSessionReducer(initialState, updated({ pendingQuestionsMessageId: '' }))).toBe(
+          initialState,
+        );
+      });
     });
 
     it('folds the agent:idle isWaitingForOtherAgents flag onto the session', () => {
@@ -2176,6 +2239,214 @@ describe('agent-session-slice reducer', () => {
       state = agentSessionReducer(state, setProcessQueueHint('a1', 3, 3, 'slots'));
       state = agentSessionReducer(state, clearProcessQueueHint('a1'));
       expect(state.byAgentId['a1'].processQueueHint).toBeUndefined();
+    });
+
+    describe('canonical status events while queued', () => {
+      const queuedState = () => {
+        let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
+        return agentSessionReducer(state, setProcessQueueHint('a1', 3, 3, 'slots'));
+      };
+      const statusEvent = (type: string, data: Record<string, unknown>) =>
+        eventReceived('ws-1', {
+          id: 'evt-1',
+          type,
+          timestamp: '2024-01-01T00:00:00.000Z',
+          workspaceId: 'ws-1',
+          data: { agentId: 'a1', ...data },
+        } as any);
+
+      it('survives a running status tick carrying isResponding/isActive true', () => {
+        // A queued agent IS responding (its turn is open, §6.5), so an
+        // ordinary running-status event must not wipe the hint.
+        let state = queuedState();
+        state = agentSessionReducer(
+          state,
+          statusEvent('agent:status-changed', {
+            status: 'responding',
+            isActive: true,
+            isResponding: true,
+          }),
+        );
+        expect(state.byAgentId['a1'].processQueueHint).toEqual({
+          waiting: true,
+          used: 3,
+          cap: 3,
+          reason: 'slots',
+        });
+      });
+
+      it('clears when streaming starts (the process is genuinely running)', () => {
+        let state = queuedState();
+        state = agentSessionReducer(
+          state,
+          statusEvent('agent:status-changed', {
+            status: 'responding',
+            isActive: true,
+            isResponding: true,
+            isStreaming: true,
+          }),
+        );
+        expect(state.byAgentId['a1'].processQueueHint).toBeUndefined();
+      });
+
+      it('clears on the idle transition (reconnect safety net for a missed resumed event)', () => {
+        let state = queuedState();
+        state = agentSessionReducer(
+          state,
+          statusEvent('agent:status-changed', { status: 'active', isResponding: false }),
+        );
+        expect(state.byAgentId['a1'].processQueueHint).toBeUndefined();
+      });
+
+      it('clears on a terminal status', () => {
+        let state = queuedState();
+        state = agentSessionReducer(state, statusEvent('agent:failed', { error: 'boom' }));
+        expect(state.byAgentId['a1'].processQueueHint).toBeUndefined();
+      });
+    });
+
+    describe('session upserts while queued (FE-owned hint, never on the wire)', () => {
+      const HINT = { waiting: true, used: 3, cap: 3, reason: 'slots' as const };
+      const queuedResponding = () => {
+        const state = agentSessionReducer(
+          initialState,
+          upsertSession(
+            makeSession('a1', 'ws-1', {
+              status: 'responding' as any,
+              isActive: true,
+              isResponding: true,
+            }),
+          ),
+        );
+        return agentSessionReducer(state, setProcessQueueHint('a1', 3, 3, 'slots'));
+      };
+      // Wire snapshots never carry processQueueHint.
+      const snapshot = (overrides: Partial<AgentSession>) =>
+        makeSession('a1', 'ws-1', {
+          status: 'responding' as any,
+          isActive: true,
+          isResponding: true,
+          ...overrides,
+        });
+
+      it('survives a bulkUpsertSessions refresh that changes an unrelated field while still responding', () => {
+        let state = queuedResponding();
+        state = agentSessionReducer(state, bulkUpsertSessions([snapshot({ name: 'Renamed' })]));
+        expect(state.byAgentId['a1'].name).toBe('Renamed');
+        expect(state.byAgentId['a1'].processQueueHint).toEqual(HINT);
+      });
+
+      it('survives the reviewer sequence: hint → responding tick → refresh with name changed', () => {
+        let state = queuedResponding();
+        state = agentSessionReducer(
+          state,
+          eventReceived('ws-1', {
+            id: 'evt-1',
+            type: 'agent:status-changed',
+            timestamp: '2024-01-01T00:00:01.000Z',
+            workspaceId: 'ws-1',
+            data: { agentId: 'a1', status: 'responding', isActive: true, isResponding: true },
+          } as any),
+        );
+        expect(state.byAgentId['a1'].processQueueHint).toEqual(HINT);
+        state = agentSessionReducer(state, bulkUpsertSessions([snapshot({ name: 'Renamed' })]));
+        expect(state.byAgentId['a1'].name).toBe('Renamed');
+        expect(state.byAgentId['a1'].processQueueHint).toEqual(HINT);
+      });
+
+      it('is dropped when the snapshot shows streaming started', () => {
+        let state = queuedResponding();
+        state = agentSessionReducer(state, bulkUpsertSessions([snapshot({ isStreaming: true })]));
+        expect(state.byAgentId['a1'].processQueueHint).toBeUndefined();
+      });
+
+      it('is dropped when the snapshot shows the session went idle (isResponding false)', () => {
+        let state = queuedResponding();
+        state = agentSessionReducer(
+          state,
+          bulkUpsertSessions([snapshot({ status: 'active' as any, isResponding: false })]),
+        );
+        expect(state.byAgentId['a1'].processQueueHint).toBeUndefined();
+      });
+
+      it('is dropped when the snapshot shows isActive false', () => {
+        let state = queuedResponding();
+        state = agentSessionReducer(state, bulkUpsertSessions([snapshot({ isActive: false })]));
+        expect(state.byAgentId['a1'].processQueueHint).toBeUndefined();
+      });
+
+      it('is dropped when the snapshot carries a terminal status', () => {
+        let state = queuedResponding();
+        state = agentSessionReducer(
+          state,
+          bulkUpsertSessions([snapshot({ status: 'error' as any, stopReason: 'boom' })]),
+        );
+        expect(state.byAgentId['a1'].processQueueHint).toBeUndefined();
+      });
+    });
+
+    // Streaming means the process was admitted. These reducer paths set
+    // isStreaming=true without going through canonicalSessionUpdates, so if
+    // agent:process:resumed is missed they must still drop the hint or the
+    // slot-wait warning stays up while the agent streams.
+    describe('streaming reducer paths clear the hint (missed agent:process:resumed)', () => {
+      const queued = () =>
+        agentSessionReducer(
+          agentSessionReducer(
+            initialState,
+            upsertSession(
+              makeSession('a1', 'ws-1', {
+                status: 'responding' as any,
+                isActive: true,
+                isResponding: true,
+                isStreaming: false,
+              }),
+            ),
+          ),
+          setProcessQueueHint('a1', 3, 3, 'slots'),
+        );
+
+      it('chatSendStarted (agent:stream:start) clears the hint on an existing session', () => {
+        let state = queued();
+        expect(state.byAgentId['a1'].processQueueHint?.waiting).toBe(true);
+        state = agentSessionReducer(state, chatSendStarted('a1', 'ws-1'));
+        expect(state.byAgentId['a1'].isStreaming).toBe(true);
+        expect(state.byAgentId['a1'].processQueueHint).toBeUndefined();
+      });
+
+      it('setAgentStreaming(true) clears the hint', () => {
+        let state = queued();
+        state = agentSessionReducer(state, setAgentStreaming('a1', true));
+        expect(state.byAgentId['a1'].isStreaming).toBe(true);
+        expect(state.byAgentId['a1'].processQueueHint).toBeUndefined();
+      });
+
+      it('setAgentStreaming(true) clears the hint even when isStreaming was already true', () => {
+        let state = agentSessionReducer(queued(), setAgentStreaming('a1', true));
+        state = agentSessionReducer(state, setProcessQueueHint('a1', 3, 3, 'slots'));
+        expect(state.byAgentId['a1'].isStreaming).toBe(true);
+        state = agentSessionReducer(state, setAgentStreaming('a1', true));
+        expect(state.byAgentId['a1'].processQueueHint).toBeUndefined();
+      });
+
+      it('setAgentStreaming(false) leaves the hint alone', () => {
+        let state = queued();
+        state = agentSessionReducer(state, setAgentStreaming('a1', false));
+        expect(state.byAgentId['a1'].processQueueHint?.waiting).toBe(true);
+      });
+
+      it('chatStreamingReconciled clears the hint', () => {
+        let state = queued();
+        state = agentSessionReducer(state, chatStreamingReconciled('a1'));
+        expect(state.byAgentId['a1'].isStreaming).toBe(true);
+        expect(state.byAgentId['a1'].processQueueHint).toBeUndefined();
+      });
+
+      it('setAgentStreaming(true) with no hint and isStreaming already true stays a no-op', () => {
+        const state = agentSessionReducer(queued(), setAgentStreaming('a1', true));
+        expect(state.byAgentId['a1'].processQueueHint).toBeUndefined();
+        expect(agentSessionReducer(state, setAgentStreaming('a1', true))).toBe(state);
+      });
     });
   });
 
@@ -4316,7 +4587,7 @@ describe('computeMessageContentHash — media blocks', () => {
       role: 'user',
       timestamp: '2024-01-01T00:00:00.000Z',
       contentBlocks: [
-        { type: 'file', data: 'filedata', mimeType: 'text/plain', fileName: 'readme.txt' },
+        { type: 'file', attachmentId: 'att-1', mimeType: 'text/plain', fileName: 'readme.txt' },
       ],
     };
     expect(computeMessageContentHash(msg)).not.toBeNull();
@@ -4364,7 +4635,7 @@ describe('computeMessageContentHash — media blocks', () => {
       role: 'user',
       timestamp: '2024-01-01T00:00:00.000Z',
       contentBlocks: [
-        { type: 'file', data: 'filedata', mimeType: 'text/plain', fileName: 'readme.txt' },
+        { type: 'file', attachmentId: 'att-1', mimeType: 'text/plain', fileName: 'readme.txt' },
       ],
     };
     const b: AgentMessage = {
@@ -4372,7 +4643,7 @@ describe('computeMessageContentHash — media blocks', () => {
       role: 'user',
       timestamp: '2024-01-01T00:00:01.000Z',
       contentBlocks: [
-        { type: 'file', data: 'filedata', mimeType: 'text/plain', fileName: 'readme.txt' },
+        { type: 'file', attachmentId: 'att-1', mimeType: 'text/plain', fileName: 'readme.txt' },
       ],
     };
     expect(computeMessageContentHash(a)).toBe(computeMessageContentHash(b));
@@ -4445,13 +4716,13 @@ describe('computeMessageContentHash — media blocks', () => {
     expect(computeMessageContentHash(a)).not.toBe(computeMessageContentHash(b));
   });
 
-  it('produces different hashes for file blocks whose data differs in bytes but has the same length and name', () => {
+  it('produces different hashes for file blocks referencing different attachments with the same name', () => {
     const a: AgentMessage = {
       id: 'a1',
       role: 'user',
       timestamp: '2024-01-01T00:00:00.000Z',
       contentBlocks: [
-        { type: 'file', data: 'AAAA', mimeType: 'application/pdf', fileName: 'doc.pdf' },
+        { type: 'file', attachmentId: 'att-a', mimeType: 'application/pdf', fileName: 'doc.pdf' },
       ],
     };
     const b: AgentMessage = {
@@ -4459,7 +4730,7 @@ describe('computeMessageContentHash — media blocks', () => {
       role: 'user',
       timestamp: '2024-01-01T00:00:00.000Z',
       contentBlocks: [
-        { type: 'file', data: 'BBBB', mimeType: 'application/pdf', fileName: 'doc.pdf' },
+        { type: 'file', attachmentId: 'att-b', mimeType: 'application/pdf', fileName: 'doc.pdf' },
       ],
     };
     expect(computeMessageContentHash(a)).not.toBe(computeMessageContentHash(b));

@@ -2674,6 +2674,9 @@
       logger.error('First-message send failed after attachment placement', {
         error: sendResult.errorDetail,
       });
+      // Keep the retry blocks (placed references + keyed inline blocks) so
+      // the resumed send replays committed image placements, not duplicates.
+      if (sendResult.imageBlocks) pending.imageBlocks = sendResult.imageBlocks;
       error = sendResult.errorDetail
         ? m.workspace_compactInitializer_firstMessageSendFailedDetail_error({
             detail: sendResult.errorDetail,

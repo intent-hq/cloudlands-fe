@@ -27,10 +27,14 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
 }));
 
 import {
+  AVATAR_STATE_PRECEDENCE,
   getAvatarState,
   getAvatarStateForSession,
   getAvatarStateFromStore,
   isAgentStreamingFromStore,
+  type AgentStateInput,
+  type AvatarState,
+  type AvatarStateOptions,
 } from './avatar-state';
 
 describe('avatar-state store-backed selectors', () => {
@@ -278,5 +282,120 @@ describe('getAvatarState completed-vs-active precedence', () => {
     expect(getAvatarState({ status: AgentStatus.Waiting }, { isCompleted: true })).toBe(
       'completed',
     );
+  });
+});
+
+describe('getAvatarState ladder precedence golden', () => {
+  const PRECEDENCE_CHANGED =
+    'getAvatarState precedence changed (ladder or AVATAR_STATE_PRECEDENCE). A reorder can flip ' +
+    'every equality gate on a getAvatarState* result — re-audit the sites listed in ' +
+    'avatar-state-gate-inventory.test.ts, then update the constant and this golden together.';
+
+  type Signal = { input: AgentStateInput; options: AvatarStateOptions };
+
+  /**
+   * Minimal signal that yields each state on its own. Signals are designed to
+   * be MERGEABLE: no two set the same field, except the discussion/blocker
+   * pair which share `attentionKind`. Merging two signals therefore produces
+   * an input that genuinely carries both states' triggers.
+   */
+  const signal: Record<AvatarState, Signal | null> = {
+    completed: { input: {}, options: { isCompleted: true } },
+    failed: { input: {}, options: { isFailed: true } },
+    question: { input: {}, options: { hasQuestion: true } },
+    'needs-permission': { input: {}, options: { hasPermissionRequest: true } },
+    'attention-discussion': { input: {}, options: { attentionKind: 'discussion' } },
+    'attention-blocker': { input: {}, options: { attentionKind: 'blocker' } },
+    waiting: { input: { isWaitingForOtherAgents: true }, options: {} },
+    running: { input: { status: AgentStatus.Active }, options: {} },
+    unread: { input: {}, options: { hasUnread: true } },
+    idle: { input: {}, options: {} },
+    responding: null,
+  };
+
+  const merge = (a: Signal, b: Signal): Signal => ({
+    input: { ...a.input, ...b.input },
+    options: { ...a.options, ...b.options },
+  });
+
+  const sharedKeys = (a: Signal, b: Signal): string[] => [
+    ...Object.keys(a.input).filter((key) => key in b.input),
+    ...Object.keys(a.options).filter((key) => key in b.options),
+  ];
+
+  /** Every ordered pair `[higher, lower]` from the golden, highest first. */
+  const orderedPairs = AVATAR_STATE_PRECEDENCE.flatMap((higher, index) =>
+    AVATAR_STATE_PRECEDENCE.slice(index + 1).map((lower) => [higher, lower] as const),
+  );
+
+  /**
+   * Pairs deliberately excluded from the pairwise sweep. Each must either be
+   * physically impossible (the signals collide on a field) or carry its own
+   * dedicated assertion below.
+   */
+  const skippedPairs: ReadonlyArray<{ pair: readonly [AvatarState, AvatarState]; reason: string }> =
+    [
+      {
+        pair: ['completed', 'running'],
+        reason: 'feasible but inverted by design — covered by the live-work exception test',
+      },
+      {
+        pair: ['attention-discussion', 'attention-blocker'],
+        reason: 'share the single attentionKind field and cannot co-occur',
+      },
+    ];
+
+  const isSkipped = (higher: AvatarState, lower: AvatarState) =>
+    skippedPairs.some(({ pair }) => pair[0] === higher && pair[1] === lower);
+
+  const sweptPairs = orderedPairs.filter(([higher, lower]) => !isSkipped(higher, lower));
+
+  it('matches the inline golden, highest priority first', () => {
+    expect(AVATAR_STATE_PRECEDENCE, PRECEDENCE_CHANGED).toEqual([
+      'completed',
+      'failed',
+      'question',
+      'needs-permission',
+      'attention-discussion',
+      'attention-blocker',
+      'waiting',
+      'running',
+      'unread',
+      'idle',
+    ]);
+  });
+
+  it.each(AVATAR_STATE_PRECEDENCE)('%s is reachable from its solo signal', (state) => {
+    const solo = signal[state];
+    expect(solo, `no solo signal for ${state}`).not.toBeNull();
+    expect(getAvatarState(solo!.input, solo!.options)).toBe(state);
+  });
+
+  it('skips exactly the pairs whose signals collide, plus the documented exception', () => {
+    const colliding = orderedPairs.filter(
+      ([higher, lower]) => sharedKeys(signal[higher]!, signal[lower]!).length > 0,
+    );
+    expect(colliding).toEqual([['attention-discussion', 'attention-blocker']]);
+    expect(skippedPairs.map(({ pair }) => pair)).toEqual([
+      ['completed', 'running'],
+      ['attention-discussion', 'attention-blocker'],
+    ]);
+    expect(sweptPairs.length).toBe(orderedPairs.length - skippedPairs.length);
+  });
+
+  it.each(sweptPairs)('%s outranks %s when both signals are present', (higher, lower) => {
+    const merged = merge(signal[higher]!, signal[lower]!);
+    expect(getAvatarState(merged.input, merged.options), PRECEDENCE_CHANGED).toBe(higher);
+  });
+
+  it('running is the one state that outranks completed, and only while live', () => {
+    expect(
+      getAvatarState({ status: AgentStatus.Active, isResponding: true }, { isCompleted: true }),
+      PRECEDENCE_CHANGED,
+    ).toBe('running');
+    expect(
+      getAvatarState({ status: AgentStatus.Idle }, { isCompleted: true }),
+      PRECEDENCE_CHANGED,
+    ).toBe('completed');
   });
 });

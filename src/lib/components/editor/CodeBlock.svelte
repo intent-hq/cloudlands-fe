@@ -2,7 +2,6 @@
   import { escapeCodeHtml, getCachedHighlight, highlightAsync } from '$lib/utils/code-highlighter';
   import '$lib/styles/syntax-highlighting.css';
   import CopyButton from '$lib/components/ui/CopyButton.svelte';
-  import { selectIsDarkTheme } from '$store/renderer/slices/theme/theme-selectors';
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   type Props = {
@@ -44,7 +43,6 @@
   // Initial values only; the $effect below tracks subsequent prop changes.
   // svelte-ignore state_referenced_locally
   let highlighted = $state(getCachedHighlight(code, language) ?? escapeCodeHtml(code));
-  const isDarkTheme = selectIsDarkTheme();
 
   $effect(() => {
     // Re-highlight when code/language change (e.g. streaming appends)
@@ -75,24 +73,24 @@
   const lineNumbers = $derived(Array.from({ length: lines.length }, (_, i) => startLineNumber + i));
 </script>
 
+<!--
+  Theme is keyed on the root `.dark` class (the signal behind `bg-background` and
+  Tailwind's `dark:` variant) rather than the Redux theme flag, so the code surface,
+  its text and the token palette can never disagree (intent-hq/intent#4647).
+-->
 <div
   class="code-block-container group rounded-md overflow-hidden relative {className}"
   class:mt-3={!noMargin}
   class:mb-5={!noMargin}
-  class:dark-theme={$isDarkTheme}
-  class:light-theme={!$isDarkTheme}
   class:no-border={noBorder}
   style={maxHeight ? `max-height: ${maxHeight}px; overflow-y: auto;` : ''}
-  data-theme={$isDarkTheme ? 'dark' : 'light'}
 >
   <!-- Floating copy button (appears on hover) -->
   <div class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
     <CopyButton
       text={code}
       size="xs"
-      class={$isDarkTheme
-        ? 'bg-[#2d2d3a]/80 hover:bg-[#3d3d4a] text-gray-400 hover:text-gray-200 backdrop-blur-sm'
-        : 'bg-white/80 hover:bg-gray-100 text-gray-500 hover:text-gray-700 backdrop-blur-sm'}
+      class="bg-white/80 hover:bg-gray-100 text-gray-500 hover:text-gray-700 backdrop-blur-sm dark:bg-[#2d2d3a]/80 dark:hover:bg-[#3d3d4a] dark:text-gray-400 dark:hover:text-gray-200"
     />
   </div>
 
@@ -122,20 +120,20 @@
 
 <style>
   /* Container themes - Monaco-like appearance */
-  .dark-theme {
+  :global(.dark) .code-block-container {
     background: #1e1e1e;
     border: 1px solid #3c3c3c;
   }
 
-  .light-theme {
+  :global(:root:not(.dark)) .code-block-container {
     background: #ffffff;
     border: 1px solid #e5e7eb;
   }
 
   /* No border variant - transparent background with higher specificity to override theme */
   .no-border,
-  .no-border.light-theme,
-  .no-border.dark-theme {
+  :global(:root:not(.dark)) .code-block-container.no-border,
+  :global(.dark) .code-block-container.no-border {
     background: transparent;
     border: none;
   }
@@ -145,20 +143,20 @@
     min-width: 3rem;
   }
 
-  .dark-theme .line-numbers-gutter {
+  :global(.dark) .code-block-container .line-numbers-gutter {
     background: #1e1e1e;
     border-right: 1px solid #3c3c3c;
   }
 
-  .light-theme .line-numbers-gutter {
+  :global(:root:not(.dark)) .code-block-container .line-numbers-gutter {
     background: #f8f9fa;
     border-right: 1px solid #e5e7eb;
   }
 
   /* Higher specificity to override theme backgrounds */
   .no-border .line-numbers-gutter,
-  .no-border.light-theme .line-numbers-gutter,
-  .no-border.dark-theme .line-numbers-gutter {
+  :global(:root:not(.dark)) .code-block-container.no-border .line-numbers-gutter,
+  :global(.dark) .code-block-container.no-border .line-numbers-gutter {
     background: transparent;
     border-right: 1px solid rgba(128, 128, 128, 0.2);
   }
@@ -183,11 +181,11 @@
     background: transparent;
   }
 
-  .dark-theme .code-pre {
+  :global(.dark) .code-block-container .code-pre {
     color: #d4d4d4;
   }
 
-  .light-theme .code-pre {
+  :global(:root:not(.dark)) .code-block-container .code-pre {
     color: #1f2937;
   }
 
@@ -200,109 +198,109 @@
   }
 
   /* VS Code Dark+ syntax highlighting */
-  .dark-theme :global(.hljs-keyword),
-  .dark-theme :global(.hljs-built_in) {
+  :global(.dark) .code-block-container :global(.hljs-keyword),
+  :global(.dark) .code-block-container :global(.hljs-built_in) {
     color: #569cd6;
   }
 
-  .dark-theme :global(.hljs-tag) {
+  :global(.dark) .code-block-container :global(.hljs-tag) {
     color: #569cd6;
   }
 
-  .dark-theme :global(.hljs-string),
-  .dark-theme :global(.hljs-attr-value) {
+  :global(.dark) .code-block-container :global(.hljs-string),
+  :global(.dark) .code-block-container :global(.hljs-attr-value) {
     color: #ce9178;
   }
 
-  .dark-theme :global(.hljs-number),
-  .dark-theme :global(.hljs-literal) {
+  :global(.dark) .code-block-container :global(.hljs-number),
+  :global(.dark) .code-block-container :global(.hljs-literal) {
     color: #b5cea8;
   }
 
-  .dark-theme :global(.hljs-function),
-  .dark-theme :global(.hljs-title) {
+  :global(.dark) .code-block-container :global(.hljs-function),
+  :global(.dark) .code-block-container :global(.hljs-title) {
     color: #dcdcaa;
   }
 
-  .dark-theme :global(.hljs-class),
-  .dark-theme :global(.hljs-name) {
+  :global(.dark) .code-block-container :global(.hljs-class),
+  :global(.dark) .code-block-container :global(.hljs-name) {
     color: #4ec9b0;
   }
 
-  .dark-theme :global(.hljs-comment),
-  .dark-theme :global(.hljs-meta) {
+  :global(.dark) .code-block-container :global(.hljs-comment),
+  :global(.dark) .code-block-container :global(.hljs-meta) {
     color: #6a9955;
     font-style: italic;
   }
 
-  .dark-theme :global(.hljs-variable),
-  .dark-theme :global(.hljs-params) {
+  :global(.dark) .code-block-container :global(.hljs-variable),
+  :global(.dark) .code-block-container :global(.hljs-params) {
     color: #9cdcfe;
   }
 
-  .dark-theme :global(.hljs-attr),
-  .dark-theme :global(.hljs-attribute),
-  .dark-theme :global(.hljs-attr-name) {
+  :global(.dark) .code-block-container :global(.hljs-attr),
+  :global(.dark) .code-block-container :global(.hljs-attribute),
+  :global(.dark) .code-block-container :global(.hljs-attr-name) {
     color: #9cdcfe;
   }
 
-  .dark-theme :global(.hljs-type) {
+  :global(.dark) .code-block-container :global(.hljs-type) {
     color: #4ec9b0;
   }
 
-  .dark-theme :global(.hljs-symbol),
-  .dark-theme :global(.hljs-bullet) {
+  :global(.dark) .code-block-container :global(.hljs-symbol),
+  :global(.dark) .code-block-container :global(.hljs-bullet) {
     color: #d7ba7d;
   }
 
   /* VS Code Light+ syntax highlighting */
-  .light-theme :global(.hljs-keyword),
-  .light-theme :global(.hljs-built_in) {
+  :global(:root:not(.dark)) .code-block-container :global(.hljs-keyword),
+  :global(:root:not(.dark)) .code-block-container :global(.hljs-built_in) {
     color: #0000ff;
   }
 
-  .light-theme :global(.hljs-tag) {
+  :global(:root:not(.dark)) .code-block-container :global(.hljs-tag) {
     color: #800000;
   }
 
-  .light-theme :global(.hljs-string),
-  .light-theme :global(.hljs-attr-value) {
+  :global(:root:not(.dark)) .code-block-container :global(.hljs-string),
+  :global(:root:not(.dark)) .code-block-container :global(.hljs-attr-value) {
     color: #a31515;
   }
 
-  .light-theme :global(.hljs-number),
-  .light-theme :global(.hljs-literal) {
+  :global(:root:not(.dark)) .code-block-container :global(.hljs-number),
+  :global(:root:not(.dark)) .code-block-container :global(.hljs-literal) {
     color: #098658;
   }
 
-  .light-theme :global(.hljs-function),
-  .light-theme :global(.hljs-title) {
+  :global(:root:not(.dark)) .code-block-container :global(.hljs-function),
+  :global(:root:not(.dark)) .code-block-container :global(.hljs-title) {
     color: #795e26;
   }
 
-  .light-theme :global(.hljs-class),
-  .light-theme :global(.hljs-name) {
+  :global(:root:not(.dark)) .code-block-container :global(.hljs-class),
+  :global(:root:not(.dark)) .code-block-container :global(.hljs-name) {
     color: #267f99;
   }
 
-  .light-theme :global(.hljs-comment),
-  .light-theme :global(.hljs-meta) {
+  :global(:root:not(.dark)) .code-block-container :global(.hljs-comment),
+  :global(:root:not(.dark)) .code-block-container :global(.hljs-meta) {
     color: #008000;
     font-style: italic;
   }
 
-  .light-theme :global(.hljs-variable),
-  .light-theme :global(.hljs-params) {
+  :global(:root:not(.dark)) .code-block-container :global(.hljs-variable),
+  :global(:root:not(.dark)) .code-block-container :global(.hljs-params) {
     color: #001080;
   }
 
-  .light-theme :global(.hljs-attr),
-  .light-theme :global(.hljs-attribute),
-  .light-theme :global(.hljs-attr-name) {
+  :global(:root:not(.dark)) .code-block-container :global(.hljs-attr),
+  :global(:root:not(.dark)) .code-block-container :global(.hljs-attribute),
+  :global(:root:not(.dark)) .code-block-container :global(.hljs-attr-name) {
     color: #e50000;
   }
 
-  .light-theme :global(.hljs-type) {
+  :global(:root:not(.dark)) .code-block-container :global(.hljs-type) {
     color: #267f99;
   }
 </style>

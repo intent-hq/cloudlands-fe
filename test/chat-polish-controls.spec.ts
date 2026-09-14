@@ -129,7 +129,7 @@ test('remains usable in narrow, dark, compact, and reduced-motion modes', async 
   await openSandbox(page);
   await page.getByRole('radio', { name: 'Dark' }).click();
   await page.getByRole('switch', { name: 'Reduce motion' }).click();
-  await page.getByRole('checkbox', { name: 'Compact mode' }).click();
+  await page.getByRole('switch', { name: 'Compact mode' }).click();
   await expect(page.locator('html')).toHaveClass(/dark/);
   await expect(page.getByTestId('catalog-shell')).toHaveAttribute('data-catalog-motion', 'reduced');
   await expect(page.getByTestId('chat-polish-preview')).toHaveAttribute('data-compact', 'true');

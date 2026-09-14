@@ -478,7 +478,7 @@
             ondblclick={(e) => handleDoubleClick(note, e)}
             oncontextmenu={(e) => handleContextMenu(e, note)}
             class={cn(
-              'relative w-full transition-all duration-150 flex items-center group/note min-w-0',
+              'note-row relative w-full transition-[opacity,border-color,border-top-width] duration-150 flex items-center group/note min-w-0',
               isDragging && 'opacity-50',
               isDragOver && 'border-t-2 border-accent',
             )}
@@ -785,5 +785,15 @@
 <style>
   input.inline-edit-input::selection {
     background: hsl(var(--ring) / 0.3);
+  }
+
+  /* Off-screen rows skip style/layout/paint; the intrinsic size matches the 36px
+     ListItem row so scrollHeight stays stable before a row is first rendered. The
+     clip margin keeps the focus ring, unread dot and inline-edit outline
+     (-inset-x-2) visible outside the row box under paint containment. */
+  .note-row {
+    content-visibility: auto;
+    contain-intrinsic-block-size: auto 36px;
+    overflow-clip-margin: 8px;
   }
 </style>

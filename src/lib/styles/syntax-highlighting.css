@@ -55,52 +55,55 @@
   color: #fbbf24 !important; /* amber-400 */
 }
 
-/* ===== LIGHT MODE COLORS ===== */
-[data-theme='light'] .hljs-keyword {
+/* ===== LIGHT MODE COLORS =====
+   Keyed on the root `.dark` class — the same signal that resolves `--background`
+   and Tailwind's `dark:` variant — so token colors always match the surface the
+   code is painted on, even when component state has not caught up with the DOM. */
+:root:not(.dark) .hljs-keyword {
   color: #5b21b6 !important; /* purple-800 */
   font-weight: 500;
 }
 
-[data-theme='light'] .hljs-string {
+:root:not(.dark) .hljs-string {
   color: #047857 !important; /* green-700 */
 }
 
-[data-theme='light'] .hljs-number {
+:root:not(.dark) .hljs-number {
   color: #92400e !important; /* amber-800 */
 }
 
-[data-theme='light'] .hljs-function {
+:root:not(.dark) .hljs-function {
   color: #1e40af !important; /* blue-800 */
 }
 
-[data-theme='light'] .hljs-comment {
+:root:not(.dark) .hljs-comment {
   color: #4b5563 !important; /* gray-600 */
   font-style: italic;
 }
 
-[data-theme='light'] .hljs-variable {
+:root:not(.dark) .hljs-variable {
   color: #b91c1c !important; /* red-700 */
 }
 
-[data-theme='light'] .hljs-class,
-[data-theme='light'] .hljs-title {
+:root:not(.dark) .hljs-class,
+:root:not(.dark) .hljs-title {
   color: #92400e !important; /* amber-800 */
 }
 
-[data-theme='light'] .hljs-attr,
-[data-theme='light'] .hljs-attribute {
+:root:not(.dark) .hljs-attr,
+:root:not(.dark) .hljs-attribute {
   color: #5b21b6 !important; /* purple-800 */
 }
 
-[data-theme='light'] .hljs-built_in {
+:root:not(.dark) .hljs-built_in {
   color: #1e40af !important; /* blue-800 */
 }
 
-[data-theme='light'] .hljs-params {
+:root:not(.dark) .hljs-params {
   color: #b91c1c !important; /* red-700 */
 }
 
-[data-theme='light'] .hljs-literal {
+:root:not(.dark) .hljs-literal {
   color: #92400e !important; /* amber-800 */
 }
 
@@ -154,43 +157,43 @@
 }
 
 /* Light mode additional tokens */
-[data-theme='light'] .hljs-type {
+:root:not(.dark) .hljs-type {
   color: #1e40af !important; /* blue-800 */
 }
 
-[data-theme='light'] .hljs-name {
+:root:not(.dark) .hljs-name {
   color: #92400e !important; /* amber-800 */
 }
 
-[data-theme='light'] .hljs-tag {
+:root:not(.dark) .hljs-tag {
   color: #5b21b6 !important; /* purple-800 */
 }
 
-[data-theme='light'] .hljs-attr-name {
+:root:not(.dark) .hljs-attr-name {
   color: #5b21b6 !important; /* purple-800 */
 }
 
-[data-theme='light'] .hljs-attr-value {
+:root:not(.dark) .hljs-attr-value {
   color: #047857 !important; /* green-700 */
 }
 
-[data-theme='light'] .hljs-meta {
+:root:not(.dark) .hljs-meta {
   color: #4b5563 !important; /* gray-600 */
 }
 
-[data-theme='light'] .hljs-symbol {
+:root:not(.dark) .hljs-symbol {
   color: #92400e !important; /* amber-800 */
 }
 
-[data-theme='light'] .hljs-bullet {
+:root:not(.dark) .hljs-bullet {
   color: #92400e !important; /* amber-800 */
 }
 
-[data-theme='light'] .hljs-link {
+:root:not(.dark) .hljs-link {
   color: #1e40af !important; /* blue-800 */
 }
 
-[data-theme='light'] .hljs-section {
+:root:not(.dark) .hljs-section {
   color: #92400e !important; /* amber-800 */
 }
 
@@ -200,7 +203,7 @@
   transition: background 0.15s ease;
 }
 
-[data-theme='light'] .table-row:hover {
+:root:not(.dark) .table-row:hover {
   background: rgba(29, 78, 216, 0.08);
   transition: background 0.15s ease;
 }

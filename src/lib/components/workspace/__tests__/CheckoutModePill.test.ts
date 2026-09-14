@@ -21,6 +21,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { cleanup, render, screen, fireEvent } from '@testing-library/svelte';
 import { tick } from 'svelte';
+import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { compile as compileTailwind } from 'tailwindcss';
 import type { Workspace } from '$shared/types';
 import { warmImport } from '../../../../test/warm-import';
 import { invalidateCowIsolationSetting } from '../initializer/cow-isolation-setting';
@@ -103,9 +106,76 @@ const diskUsage = {
   ],
 };
 
-async function renderPill(props: Record<string, unknown>) {
+async function renderPill(props: Record<string, unknown>, target?: HTMLElement) {
   const CheckoutModePill = (await import('../CheckoutModePill.svelte')).default;
-  return render(CheckoutModePill, { props });
+  return render(CheckoutModePill, { props, target });
+}
+
+/**
+ * Compile the Tailwind utilities actually rendered under `root` with the real
+ * Tailwind compiler and attach them to the document so jsdom cascades them.
+ * jsdom applies stylesheets to `getComputedStyle` but performs no layout, so
+ * width assertions model the CSS box rules on top of the cascaded values.
+ */
+async function attachRenderedTailwind(root: Element): Promise<HTMLStyleElement> {
+  const candidates = new Set<string>();
+  for (const element of [root, ...root.querySelectorAll('*')]) {
+    for (const token of element.classList) candidates.add(token);
+  }
+  const require = createRequire(import.meta.url);
+  const compiler = await compileTailwind('@import "tailwindcss/theme.css"; @tailwind utilities;', {
+    base: '/',
+    loadStylesheet: async (id) => ({
+      base: '/',
+      content: readFileSync(require.resolve(id), 'utf8'),
+    }),
+  });
+  const style = document.createElement('style');
+  style.textContent = compiler.build([...candidates]);
+  document.head.appendChild(style);
+  return style;
+}
+
+const ROOT_FONT_SIZE_PX = 16;
+
+/**
+ * Resolve a cascaded sizing value to px against `containingBlockPx`. `auto`,
+ * `none` and an unset value carry no fixed size and yield `null`; the forms
+ * Tailwind emits for sizing utilities (`0px`, `100%`, `calc(4 / 5 * 100%)`,
+ * `calc(var(<theme scale>) * N)`) resolve to a number.
+ */
+function resolveSizingPx(value: string, containingBlockPx: number): number | null {
+  const trimmed = value.trim();
+  if (trimmed === '' || trimmed === 'auto' || trimmed === 'none') return null;
+  const rootStyle = getComputedStyle(document.documentElement);
+  const expression = trimmed
+    .replace(/^calc\((.*)\)$/, '$1')
+    .replace(/var\((--[\w-]+)\)/g, (_, name: string) => rootStyle.getPropertyValue(name).trim())
+    .replace(/(-?[\d.]+)rem/g, (_, n: string) => String(Number(n) * ROOT_FONT_SIZE_PX))
+    .replace(/(-?[\d.]+)%/g, (_, n: string) => String((Number(n) / 100) * containingBlockPx))
+    .replace(/(-?[\d.]+)px/g, '$1');
+  const px = expression.split('*').reduce((product, term) => {
+    const [head, ...divisors] = term.split('/').map((part) => Number(part.trim()));
+    return product * divisors.reduce((quotient, divisor) => quotient / divisor, head);
+  }, 1);
+  if (Number.isNaN(px)) throw new Error(`Unsupported CSS length: ${value}`);
+  return px;
+}
+
+/**
+ * Assert the cascaded sizing of `element` cannot make it wider than its host:
+ * `width`, `min-width` and `max-width` must each be unset/auto, a percentage
+ * of the host, or a fixed length no wider than `hostWidthPx`.
+ */
+function expectSizingWithin(element: HTMLElement, hostWidthPx: number) {
+  const style = getComputedStyle(element);
+  for (const property of ['width', 'minWidth', 'maxWidth'] as const) {
+    const px = resolveSizingPx(style[property], hostWidthPx);
+    if (px === null) continue;
+    expect(px, `${element.className}: ${property} ${style[property]}`).toBeLessThanOrEqual(
+      hostWidthPx,
+    );
+  }
 }
 
 // Pre-warm the component module graph so the cold dynamic import is not
@@ -413,6 +483,38 @@ describe('CheckoutModePill', () => {
     expect(tooltip.textContent).not.toContain('Total size');
     const loading = screen.getByRole('status', { name: 'Loading disk usage' });
     expect(loading.querySelectorAll('[data-slot="skeleton"]')).toHaveLength(3);
+  });
+
+  it('keeps the repository loading skeleton within a narrow host while the walk is in flight', async () => {
+    mocks.diskUsage.mockResolvedValue({ refreshing: true });
+    // The sidebar repository hover card is narrower than the 14rem the tooltip
+    // skeleton used to reserve; host the details in a fixed 200px box.
+    const host = document.createElement('div');
+    host.style.width = '200px';
+    document.body.appendChild(host);
+    let style: HTMLStyleElement | undefined;
+    try {
+      await renderPill(
+        {
+          presentation: 'repository',
+          repositoryOpen: true,
+          workspace: { ...baseWorkspace, checkoutMode: 'direct' } as Workspace,
+        },
+        host,
+      );
+      await flushFetch();
+
+      const loading = screen.getByRole('status', { name: 'Loading disk usage' });
+      const skeletons = loading.querySelectorAll<HTMLElement>('[data-slot="skeleton"]');
+      expect(skeletons).toHaveLength(3);
+      style = await attachRenderedTailwind(host);
+
+      expectSizingWithin(loading, 200);
+      for (const skeleton of skeletons) expectSizingWithin(skeleton, 200);
+    } finally {
+      style?.remove();
+      host.remove();
+    }
   });
 
   it('keeps polling an in-progress first walk and replaces the skeleton with data', async () => {

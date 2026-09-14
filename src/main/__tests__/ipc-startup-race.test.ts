@@ -22,6 +22,8 @@
  * 4. Asserts that NONE of the renderer-startup channels are in the secondary
  *    group. If this assertion fails, a race condition has been reintroduced.
  */
+// @verify-changed-triggers: src/main/index.ts, src/main/**/*.ipc.ts, src/features/**/*.ipc.ts,
+//   src/shared/ipc-registry.ts, src/shared/ipc/channels.ts
 
 import { describe, it, expect } from 'vitest';
 import * as fs from 'fs';

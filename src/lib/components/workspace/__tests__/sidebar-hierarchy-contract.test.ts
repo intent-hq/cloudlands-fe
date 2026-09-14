@@ -1,3 +1,11 @@
+// @verify-changed-triggers: ../MultiSelectTabbedSidebar.svelte, ../multi-select-sidebar-tabs.ts,
+//   ../multi-select-sidebar-transitions.css, ../WorkspaceAgentsList.svelte,
+//   ../WorkspaceSidebarHeader.svelte, ../TaskStatusProgress.svelte, ../SidebarBrowserLauncher.svelte,
+//   ../sidebar/WorkspaceProgressCard.svelte, ../sidebar/FlameGraph.svelte,
+//   ../sidebar/ContextPanel.svelte, ../sidebar/NotesPanel.svelte, ../sidebar/SidebarChangesPanel.svelte,
+//   ../../layout/sidebar-nav/SidebarNav.svelte, ../../layout/sidebar-nav/cards/AllWorkspacesCard.svelte,
+//   ../../layout/WindowTitleBar.svelte, ../../../../routes/(app)/+layout.svelte
+
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
@@ -211,10 +219,10 @@ describe('workspace sidebar hierarchy presentation contract', () => {
     expect(sidebar).toContain('getFixedContainingBlockOffset(node)');
     expect(sidebar).toContain('position: fixed; left: ${fixedLeft}px');
     expect(sidebar).toContain("direction === 'expand' ? cubicOut(t) : cubicIn(t)");
-    expect(sidebar).toContain('(t - 0.72) / 0.28');
     expect(sidebar).toContain('data-sidebar-expanded-content');
     expect(sidebar).toContain("window.matchMedia('(prefers-reduced-motion: reduce)').matches");
-    expect(transitions).toContain('opacity: var(--sidebar-card-content-opacity, 1)');
+    expect(sidebar).not.toContain('--sidebar-card-content-');
+    expect(transitions).not.toContain('--sidebar-card-content-');
     expect(transitions).not.toContain('grid-template-rows');
     expect(transitions).not.toContain('::view-transition');
   });

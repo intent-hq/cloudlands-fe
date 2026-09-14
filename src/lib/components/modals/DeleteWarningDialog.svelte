@@ -97,7 +97,7 @@
     closeLabel={closeAriaLabel}
     onOpenAutoFocus={handleOpenAutoFocus}
   >
-    <div class="space-y-4 p-5 pr-12">
+    <div class="min-w-0 space-y-4 p-5 pr-12">
       <Dialog.Header class="gap-2 pr-0">
         <Dialog.Title>
           {isArchive ? m.modals_archiveWarning_title() : m.modals_deleteWarning_title()}
@@ -156,7 +156,7 @@
             </p>
             <ul class="mt-2 max-h-28 space-y-1 overflow-auto pr-1">
               {#each openPrs as pr (pr.url || pr.number)}
-                <li class="flex items-center gap-2 text-sm text-subtle">
+                <li class="flex min-w-0 items-center gap-2 text-sm text-subtle">
                   {#if pr.url}
                     <a
                       href={pr.url}
@@ -194,7 +194,7 @@
             </p>
             <ul class="mt-2 max-h-28 space-y-1 overflow-auto pr-1">
               {#each localChangeRoots as root (root.gitRootId ?? root.path)}
-                <li class="flex items-center gap-2 text-sm text-subtle">
+                <li class="flex min-w-0 items-center gap-2 text-sm text-subtle">
                   <span class="min-w-0 truncate">{rootLabel(root)}</span>
                   {#if root.unpushedCount > 0}
                     <Badge variant="secondary" class="shrink-0">
@@ -226,7 +226,7 @@
       </p>
     </div>
 
-    <Dialog.Footer class="mt-0 flex-row items-center justify-end border-0 px-5 pb-5 pt-0">
+    <Dialog.Footer class="mt-0 min-w-0 flex-row items-center justify-end border-0 px-5 pb-5 pt-0">
       <Button variant="ghost-light" onclick={close}>{m.modals_deleteWarning_cancel_label()}</Button>
       <Button
         variant="destructive"

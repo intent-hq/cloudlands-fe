@@ -52,6 +52,7 @@ const mocks = vi.hoisted(() => {
     return action;
   });
   const update = vi.fn();
+  const archive = vi.fn();
   const clipboardWrite = vi.fn();
   const toastSuccess = vi.fn();
   const toastError = vi.fn();
@@ -99,6 +100,7 @@ const mocks = vi.hoisted(() => {
   return {
     dispatch,
     update,
+    archive,
     clipboardWrite,
     toastSuccess,
     toastError,
@@ -213,15 +215,21 @@ vi.mock('$store/renderer/slices/workspace-transfer/workspace-transfer-slice', ()
   })),
 }));
 
-vi.mock('$store/renderer/slices/workspace-operations/workspace-operations-slice', () => ({
-  requestDeleteWorkspace: vi.fn((id: string) => ({
-    type: 'workspaceOperations/delete',
-    payload: [id],
-  })),
-}));
+vi.mock(
+  '$store/renderer/slices/workspace-operations/workspace-operations-slice',
+  async (importOriginal) => ({
+    ...(await importOriginal<
+      typeof import('$store/renderer/slices/workspace-operations/workspace-operations-slice')
+    >()),
+    requestDeleteWorkspace: vi.fn((id: string) => ({
+      type: 'workspaceOperations/delete',
+      payload: [id],
+    })),
+  }),
+);
 
 vi.mock('$store/renderer/slices/workspace/utils/workspace.client', () => ({
-  workspaceClient: { update: mocks.update, archive: vi.fn(), unarchive: vi.fn() },
+  workspaceClient: { update: mocks.update, archive: mocks.archive, unarchive: vi.fn() },
 }));
 
 vi.mock('$features/accept-changes/accept-changes.client', () => ({
@@ -323,6 +331,7 @@ describe('WorkspaceProgressCard status message', () => {
   beforeEach(() => {
     mocks.dispatch.mockClear();
     mocks.update.mockReset();
+    mocks.archive.mockReset();
     mocks.notes.length = 0;
     mocks.taskState.initialized = true;
     mocks.taskState.loading = false;
@@ -372,6 +381,19 @@ describe('WorkspaceProgressCard status message', () => {
     expect(menuItems[dividerIndex]?.getAttribute('data-testid')).toBe('menu-divider');
     expect(transferIndex).toBe(dividerIndex + 1);
     expect(archiveIndex).toBe(transferIndex + 1);
+  });
+
+  it('routes archive through the workspace-operations saga instead of calling the RPC directly', async () => {
+    const { requestArchiveWorkspace } =
+      await import('$store/renderer/slices/workspace-operations/workspace-operations-slice');
+    const { container } = await renderProgressCard();
+    await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Archive Workspace' }));
+    await tick();
+
+    expect(mocks.dispatch).toHaveBeenCalledWith(requestArchiveWorkspace('ws-1'));
+    expect(mocks.archive).not.toHaveBeenCalled();
   });
 
   it('dispatches the transfer payload and dismisses the menu', async () => {

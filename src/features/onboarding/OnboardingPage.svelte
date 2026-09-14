@@ -64,6 +64,7 @@
   } from '$lib/components/modals/PullConflictDialog.svelte';
 
   import AgentGrid from '$features/onboarding/messages/AgentGrid.svelte';
+  import ClaudeLoginButton from '$features/onboarding/messages/ClaudeLoginButton.svelte';
 
   import OnboardingPromptStep from '$features/onboarding/steps/OnboardingPromptStep.svelte';
   import OnboardingGitHubStep from '$features/onboarding/steps/OnboardingGitHubStep.svelte';
@@ -110,7 +111,9 @@
   import { hasBlockingAttachments, type ContextItem } from '$lib/components/chat/input/context-api';
   import {
     hasStagedFileItems,
+    heldImageBlocks,
     redeemStagedAttachments,
+    retainImagePlacementIdentity,
     sendHeldFirstMessage,
   } from '$lib/components/workspace/initializer/staged-attachments';
   import {
@@ -714,7 +717,7 @@
           message: m.onboarding_testPrompt_generic_error({
             message: rawMessage.split('\n', 1)[0],
           }),
-          showClaudeDesktopNote: false,
+          showClaudeLoginButton: false,
           isAuthRequired: false,
         };
         return;
@@ -1067,15 +1070,10 @@
       const snapshot = $state.snapshot(pending);
       // Rebuild imageBlocks from the CURRENT thumbnail row, not the pending
       // snapshot: the thumbnails stay editable while the failed send is
-      // resumable, so a removed image must not ride the retry.
-      const imageBlocks = $state
-        .snapshot(onboardingImageItems)
-        .filter((item) => item.imageData && item.imageMimeType)
-        .map((item) => ({
-          type: 'image' as const,
-          data: item.imageData as string,
-          mimeType: item.imageMimeType as string,
-        }));
+      // resumable, so a removed image must not ride the retry. The items
+      // carry the placement identity retained from the failed attempt, so
+      // the retry replays committed placements instead of re-placing them.
+      const imageBlocks = heldImageBlocks($state.snapshot(onboardingImageItems));
       const sendResult = await sendHeldFirstMessage(
         {
           workspaceId: snapshot.workspaceId,
@@ -1087,6 +1085,10 @@
         redemption.fileBlocks,
       );
       if (!sendResult.sent) {
+        onboardingImageItems = retainImagePlacementIdentity(
+          onboardingImageItems,
+          sendResult.imageBlocks,
+        );
         // Framed like the compact initializer: the workspace already exists,
         // Create resumes this flow — with the daemon's detail when available.
         throw new Error(
@@ -1162,14 +1164,7 @@
     // Images live in the context-item list (bound to the prompt step's
     // thumbnail row), not the editor — snapshot to plain JSON so the $state
     // Proxy tree never reaches Electron's structured clone (monorepo#2576).
-    const imageBlocks: Array<{ type: 'image'; data: string; mimeType: string }> = $state
-      .snapshot(onboardingImageItems)
-      .filter((item) => item.imageData && item.imageMimeType)
-      .map((item) => ({
-        type: 'image' as const,
-        data: item.imageData as string,
-        mimeType: item.imageMimeType as string,
-      }));
+    const imageBlocks = heldImageBlocks($state.snapshot(onboardingImageItems));
 
     isOnboardingCreating = true;
     onboardingCreationError = null;
@@ -1461,6 +1456,12 @@
         );
         if (!sendResult.sent) {
           onboardingCreationErrorCode = null;
+          // Retain the failed attempt's image placement identity on the
+          // thumbnail items so the resumed send replays, not re-places.
+          onboardingImageItems = retainImagePlacementIdentity(
+            onboardingImageItems,
+            sendResult.imageBlocks,
+          );
           // Framed like the compact initializer: the workspace already
           // exists, submit resumes — with the daemon's detail when available.
           throw new Error(
@@ -1787,7 +1788,11 @@
                               class="mt-2 max-w-xl rounded-md border border-danger/40 bg-danger-background/5 p-3 text-sm"
                             >
                               <p>{onboardingTestPromptFailure.message}</p>
-                              {#if onboardingTestPromptFailure.loginCommandHint}
+                              {#if onboardingTestPromptFailure.showClaudeLoginButton}
+                                <div class="mt-2">
+                                  <ClaudeLoginButton />
+                                </div>
+                              {:else if onboardingTestPromptFailure.loginCommandHint}
                                 <div class="mt-2 text-xs">
                                   <span class="opacity-70"
                                     >{m.onboarding_testPrompt_runToLogIn_label()}</span
@@ -1803,11 +1808,6 @@
                                     />
                                   </div>
                                 </div>
-                              {/if}
-                              {#if onboardingTestPromptFailure.showClaudeDesktopNote}
-                                <p class="mt-2 text-xs opacity-70">
-                                  {m.onboarding_testPrompt_claudeDesktopNote_label()}
-                                </p>
                               {/if}
                               {#if onboardingTestPromptFailure.loginDocsUrl}
                                 {@const docsUrl = onboardingTestPromptFailure.loginDocsUrl}

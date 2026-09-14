@@ -1,3 +1,6 @@
+// @verify-changed-triggers: ../CompactWorkspaceInitializer.svelte,
+//   src/features/onboarding/OnboardingPage.svelte
+
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';

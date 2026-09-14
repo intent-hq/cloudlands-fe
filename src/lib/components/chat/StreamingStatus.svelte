@@ -3,6 +3,7 @@
 
   Streaming status indicator:
   - Normal: Spinner with "Thinking"
+  - Slot/memory wait: "Thinking" plus a red row explaining the admission wait
   - Error/Timeout: clear failed state with Try Again button
 -->
 <script lang="ts">
@@ -19,6 +20,8 @@
   } from '@fortawesome/free-solid-svg-icons';
   import { Button } from '$lib/components/ui/button';
   import { cn } from '$lib/utils/cn';
+  import { navigateToSettings } from '$lib/utils/workspace-navigation';
+  import type { AgentSession } from '$shared/types';
   import CopyButton from '$lib/components/ui/CopyButton.svelte';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import {
@@ -65,6 +68,21 @@
       failedModel: string;
       nextAvailableModel: string;
     } | null;
+    /**
+     * Provider usage-limit recovery (#4455): set when the daemon reported
+     * `errorCode: "quota-exceeded"` for the failed turn. `providerId` is the
+     * provider that ran out (already excluded from `quotaRetryProviders`).
+     * Retrying the same provider cannot succeed, so the banner offers the
+     * available alternatives instead of a bare "Try again".
+     */
+    quotaExceeded?: { providerId: string; displayName?: string } | null;
+    /**
+     * Alternative providers offerable for a quota retry — enabled, installed
+     * and authenticated, minus the exhausted one. Empty means no alternative
+     * is usable, so the banner falls back to the plain error surface rather
+     * than dangling an action that cannot work.
+     */
+    quotaRetryProviders?: Array<{ id: string; displayName: string }>;
     /** Transient lifecycle status events from the backend */
     statusEvents?: Array<{
       phase: string;
@@ -76,10 +94,21 @@
     streamingStartTime?: number | null;
     /** Whether a permission request is pending - if true, hide the thinking indicator */
     hasPendingPermission?: boolean;
+    /**
+     * Daemon admission hint (PROTOCOL §6.5): while `waiting` is true the turn
+     * is parked for a free agent slot or memory headroom, so the row explains
+     * the wait instead of leaving a bare "Thinking" that looks stalled.
+     */
+    processQueueHint?: AgentSession['processQueueHint'];
     /** Callback to retry the last message */
     onRetry?: () => void;
     /** Callback to retry with a specific model */
     onRetryWithModel?: (model: string) => void;
+    /**
+     * Callback to retry the failed turn on a different provider (#4455).
+     * Switches the live session to `providerId` and redrives the turn.
+     */
+    onRetryWithProvider?: (providerId: string) => void;
     /** Callback to stop streaming */
     onStop?: () => void;
     /** Callback to cancel the stalled turn and re-send the last input (monorepo#3402) */
@@ -103,12 +132,16 @@
     failedAt = null,
     authGuidance = null,
     modelUnavailable = null,
+    quotaExceeded = null,
+    quotaRetryProviders = [],
     statusEvents = [],
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     streamingStartTime = null,
     hasPendingPermission = false,
+    processQueueHint = undefined,
     onRetry,
     onRetryWithModel,
+    onRetryWithProvider,
     onStop,
     onStalledRetry,
     seed,
@@ -116,30 +149,58 @@
   }: Props = $props();
 
   // Determine current status
-  type Status = 'normal' | 'error' | 'model-unavailable';
+  type Status = 'normal' | 'error' | 'model-unavailable' | 'quota-exceeded';
 
   let status: Status = $derived.by(() => {
     if (modelUnavailable) return 'model-unavailable';
+    // Only claim the quota surface when there is somewhere to go: with no
+    // usable alternative provider the offer would be a dead end, so fall
+    // through to the ordinary error banner and its "Try again".
+    if (quotaExceeded && quotaRetryProviders.length > 0) return 'quota-exceeded';
     if (error) return 'error';
     return 'normal';
   });
+
+  /**
+   * Display name of the exhausted provider. It cannot be looked up in
+   * `quotaRetryProviders` — that list deliberately EXCLUDES the exhausted
+   * provider — so the parent supplies the catalog display name alongside the
+   * id. The raw id is the fallback so a provider the renderer has no catalog
+   * row for still names itself rather than rendering an empty code span.
+   */
+  let quotaProviderLabel = $derived(
+    quotaExceeded ? (quotaExceeded.displayName ?? quotaExceeded.providerId) : '',
+  );
 
   // Should we show at all?
   // Don't show thinking indicator when waiting for permission - the permission UI takes over.
   let visible = $derived(
     error || modelUnavailable || ((isStreaming || isProcessing) && !hasPendingPermission),
   );
+  let turnActive = $derived(
+    status === 'normal' && (isStreaming || isProcessing) && !hasPendingPermission,
+  );
+  // Slot/memory-budget wait: shown alongside "Thinking" (the turn is open, just
+  // parked). It also explains any concurrent stall, so it supersedes that row.
+  let queueWait = $derived(turnActive && processQueueHint?.waiting ? processQueueHint : null);
   // Daemon-reported mid-turn stall (monorepo#3402): only meaningful while the
   // turn is still active — turn end/failure clears statusEvents or flips
   // status away from 'normal', so the stalled row can never outlive the turn.
   let stalledEvent = $derived(
-    status === 'normal' && (isStreaming || isProcessing) && !hasPendingPermission
-      ? getActiveStalledEvent(statusEvents, lastChunkTime)
+    turnActive && !queueWait ? getActiveStalledEvent(statusEvents, lastChunkTime) : null,
+  );
+  let thinkingVisible = $derived(turnActive && !stalledEvent);
+  let queueWaitMessage = $derived(
+    queueWait
+      ? queueWait.reason === 'memory-budget'
+        ? m.chat_streamingStatus_memoryWait_label({ used: queueWait.used, cap: queueWait.cap })
+        : m.chat_streamingStatus_slotWait_label({ used: queueWait.used, cap: queueWait.cap })
       : null,
   );
-  let thinkingVisible = $derived(
-    status === 'normal' && (isStreaming || isProcessing) && !hasPendingPermission && !stalledEvent,
-  );
+
+  function openAgentBackendSettings() {
+    void navigateToSettings({ hash: 'agent-backend' });
+  }
   // Skips stalled events: an active stall has its own row, and a superseded
   // one must not leak its stale message into the returning thinking indicator.
   let latestStatusEvent = $derived(getLatestThinkingStatusEvent(statusEvents));
@@ -147,6 +208,11 @@
 
   let nowMs = $state(Date.now());
   let elapsedInterval: ReturnType<typeof setInterval> | undefined;
+  // The thinking row's elapsed text is only revealed on hover, so it is
+  // refreshed on pointerenter and ticks only while hovered; the stalled row's
+  // duration is always visible and ticks whenever it is shown.
+  let thinkingHovered = $state(false);
+  let thinkingElapsedTicking = $derived(thinkingVisible && !!latestStatusEvent && thinkingHovered);
 
   function clearElapsedInterval() {
     if (elapsedInterval === undefined) return;
@@ -155,7 +221,7 @@
   }
 
   $effect(() => {
-    if ((!thinkingVisible || !latestStatusEvent) && !stalledEvent) {
+    if (!thinkingElapsedTicking && !stalledEvent) {
       clearElapsedInterval();
       return;
     }
@@ -215,10 +281,40 @@
   message={statusMessage}
   lifecycleMessage={latestStatusEvent?.message}
   elapsed={elapsedTime}
+  onHoverChange={(hovered) => (thinkingHovered = hovered)}
   variant={markVariant}
   {seed}
   class="mt-2 {className}"
 />
+
+{#if queueWait && queueWaitMessage}
+  <div
+    role="status"
+    aria-live="polite"
+    data-stream-slot-wait="true"
+    data-queue-reason={queueWait.reason}
+    class={cn(
+      'type-caption mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md border border-danger/20 bg-danger/5 py-2 pl-2 pr-1 text-danger',
+      className,
+    )}
+    in:fade={{ duration: 200, easing: cubicOut }}
+    out:fade={{ duration: 150, easing: cubicOut }}
+  >
+    <Fa icon={faExclamationTriangle} class="shrink-0 text-danger/70" />
+    <span class="min-w-0 flex-1 break-words" data-testid="slot-wait-message"
+      >{queueWaitMessage}</span
+    >
+    <Button
+      variant="link"
+      size="sm"
+      onclick={openAgentBackendSettings}
+      class="type-caption h-7 shrink-0 px-2 text-danger underline"
+      data-testid="slot-wait-change-limit"
+    >
+      {m.chat_streamingStatus_changeLimit_label()}
+    </Button>
+  </div>
+{/if}
 
 {#if stalledEvent}
   <div
@@ -276,7 +372,7 @@
       class={cn(
         'type-caption flex flex-col gap-0 py-2 pr-1',
         status === 'error' && 'mt-2',
-        status === 'model-unavailable' &&
+        (status === 'model-unavailable' || status === 'quota-exceeded') &&
           'rounded-md border border-warning/20 bg-warning/5 pl-2 pr-3',
         className,
       )}
@@ -293,6 +389,13 @@
                 >{modelUnavailable.failedModel}</code
               >
               {m.chat_streamingStatus_modelUnavailable_after()}
+            </span>
+          {:else if status === 'quota-exceeded' && quotaExceeded}
+            <Fa icon={faExclamationTriangle} class="shrink-0 text-warning/70" />
+            <span class="text-warning" data-testid="error-quota-exceeded">
+              {m.chat_streamingStatus_quotaExceeded_before()}
+              <code class="px-1 py-0.5 bg-muted rounded text-ui">{quotaProviderLabel}</code>
+              {m.chat_streamingStatus_quotaExceeded_after()}
             </span>
           {:else if status === 'error' && errorDisplay}
             <div class="flex min-w-0 flex-1 flex-col gap-0.5">
@@ -370,7 +473,20 @@
         </div>
 
         <div class="flex items-center gap-1">
-          {#if status === 'model-unavailable' && modelUnavailable && onRetryWithModel}
+          {#if status === 'quota-exceeded' && onRetryWithProvider}
+            {#each quotaRetryProviders as alt (alt.id)}
+              <Button
+                variant="default"
+                size="sm"
+                onclick={() => onRetryWithProvider(alt.id)}
+                data-testid="retry-with-provider"
+                class="type-caption h-7 gap-1.5 px-2"
+              >
+                <Fa icon={faRotateRight} class="size-3" />
+                {m.chat_streamingStatus_retryOnProvider_label({ provider: alt.displayName })}
+              </Button>
+            {/each}
+          {:else if status === 'model-unavailable' && modelUnavailable && onRetryWithModel}
             <Button
               variant="default"
               size="sm"

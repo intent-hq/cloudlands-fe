@@ -8,6 +8,13 @@
  * remote-attachment regression, monorepo#2144), and the staged chunked
  * upload session (`begin` → sequential `chunk`s → `commit`, v6.16) above
  * that, up to the daemon's 1 GiB attachment cap.
+ *
+ * Idempotent placement (v9.13, intent-hq/intent#4691): callers mint one
+ * `idempotencyKey` per attachment and reuse it across retries. A lost reply
+ * (transport failure after the daemon placed the file) is recovered here by
+ * looking the key up via `file.getAttachmentInfo` before the failure is
+ * surfaced; a same-key retry against the daemon replays the bound placement
+ * instead of placing a collision-suffixed duplicate.
  */
 import { invoke } from '$lib/electron-bridge';
 import { m } from '$shared/paraglide/messages.js';
@@ -17,8 +24,10 @@ import {
   abortAttachmentUpload,
   beginAttachmentUpload,
   commitAttachmentUpload,
+  getAttachmentInfo,
   placeAttachment,
   sendAttachmentUploadChunk,
+  type AttachmentInfo,
   type PlaceAttachmentResult,
 } from './context-api';
 
@@ -78,6 +87,130 @@ function throwIfAborted(signal?: AbortSignal): void {
  */
 export function isRemoteBackend(): boolean {
   return !selectIsDaemonLocal.select(appStore.state);
+}
+
+/**
+ * True when the daemon accepts `idempotencyKey` on `file.placeAttachment` /
+ * `file.attachmentUpload.begin` and the key arm of `file.getAttachmentInfo`
+ * (PROTOCOL §5.9, v9.13). Older daemons reject unknown params, so the key
+ * is never sent to them.
+ */
+export function supportsIdempotentPlacementProtocol(protocolVersion?: string | null): boolean {
+  if (!protocolVersion) return false;
+  const match = protocolVersion.trim().match(/^([0-9]+)(?:\.([0-9]+))?/);
+  if (!match) return false;
+  const major = Number(match[1]);
+  const minor = Number(match[2] ?? 0);
+  return major > 9 || (major === 9 && minor >= 13);
+}
+
+/** Whether the daemon connected right now accepts keyed placement. */
+function daemonSupportsIdempotentPlacement(): boolean {
+  return supportsIdempotentPlacementProtocol(appStore.state?.daemonHealth?.stats?.protocolVersion);
+}
+
+/**
+ * Resolve the placement `idempotencyKey` for an attempt: `existing` (the key
+ * retained on the item from an earlier attempt) when the connected daemon
+ * supports keyed placement, a fresh UUID when there is none yet, and
+ * `undefined` (unkeyed, pre-9.13 behavior) when it does not — a key retained
+ * across a reconnect to an older daemon is dropped rather than sent.
+ * Callers keep the result on the attachment item so every retry reuses it.
+ */
+export function mintPlacementIdempotencyKey(existing?: string): string | undefined {
+  if (!daemonSupportsIdempotentPlacement()) return undefined;
+  return existing ?? crypto.randomUUID();
+}
+
+/** A daemon `-32602` rejection (the request was received and refused). */
+function isInvalidParamsError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const { rpcCode, code } = error as { rpcCode?: unknown; code?: unknown };
+  return rpcCode === -32602 || code === 'INVALID_PARAMS';
+}
+
+/**
+ * `file.attachmentUpload.begin` refusing a key already bound to a committed
+ * attachment (PROTOCOL §5.9, v9.13) — the earlier commit's reply was lost;
+ * the attachment is recovered through the lookup arm.
+ */
+export function isAlreadyCommittedError(error: unknown): boolean {
+  return (
+    isInvalidParamsError(error) &&
+    /already committed/i.test(String((error as { message?: unknown }).message ?? ''))
+  );
+}
+
+/** Rebuild a `placeAttachment`-shaped result from the registry row a key resolves to. */
+function attachmentInfoToPlacementResult(info: AttachmentInfo): PlaceAttachmentResult {
+  return {
+    ok: true,
+    path: info.path,
+    fileName: info.fileName,
+    size: info.size,
+    attachmentId: info.attachmentId,
+    ...(info.mimeType !== undefined ? { mimeType: info.mimeType } : {}),
+    uploadedAt: info.uploadedAt,
+    replayed: true,
+  };
+}
+
+/**
+ * Lost-reply recovery: resolve the attachment a placement `idempotencyKey`
+ * is bound to (`file.getAttachmentInfo { workspaceId, idempotencyKey }`,
+ * PROTOCOL §5.9, v9.13). Resolves `undefined` when the key is unknown (the
+ * placement never landed — the original failure stands) or the lookup
+ * itself fails.
+ */
+export async function recoverPlacementByKey(
+  workspaceId: string,
+  idempotencyKey: string,
+  lookup: typeof getAttachmentInfo = getAttachmentInfo,
+): Promise<PlaceAttachmentResult | undefined> {
+  try {
+    return attachmentInfoToPlacementResult(await lookup({ workspaceId, idempotencyKey }));
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Whether a failed placement is worth a key lookup: the request was keyed,
+ * the failure is not a daemon `-32602` refusal (nothing was placed) and not
+ * the caller's own cancellation.
+ */
+export function shouldRecoverPlacement(
+  error: unknown,
+  idempotencyKey: string | undefined,
+  signal?: AbortSignal,
+): idempotencyKey is string {
+  return (
+    idempotencyKey !== undefined &&
+    !isInvalidParamsError(error) &&
+    !isPlacementCancellation(error, signal)
+  );
+}
+
+/**
+ * Run one placement attempt; on a transport-loss class failure of a keyed
+ * attempt, recover the committed attachment through the key lookup before
+ * surfacing the failure.
+ */
+async function placeWithRecovery(
+  workspaceId: string,
+  idempotencyKey: string | undefined,
+  signal: AbortSignal | undefined,
+  attempt: () => Promise<PlaceAttachmentResult>,
+): Promise<PlaceAttachmentResult> {
+  try {
+    return await attempt();
+  } catch (error) {
+    if (shouldRecoverPlacement(error, idempotencyKey, signal)) {
+      const recovered = await recoverPlacementByKey(workspaceId, idempotencyKey);
+      if (recovered) return recovered;
+    }
+    throw error;
+  }
 }
 
 /** Main-process `file:read` response envelope (see `file.ipc.ts`). */
@@ -176,22 +309,32 @@ const GENERIC_PLACEMENT_MESSAGES = new Set([
  * paths swap in without change; `onProgress` (optional) receives the
  * chunk-acknowledged fraction during a chunked upload only; `signal`
  * (optional) cancels between chunks — the staged session is aborted on the
- * daemon and the rejection satisfies `isPlacementCancellation`. Errors
+ * daemon and the rejection satisfies `isPlacementCancellation`. With
+ * `source.idempotencyKey` (v9.13; callers mint it via
+ * `mintPlacementIdempotencyKey` and reuse it on retry) a lost reply is
+ * recovered through `file.getAttachmentInfo` before the failure surfaces;
+ * the key is checked against the daemon connected NOW, so one retained
+ * across a reconnect to a pre-9.13 daemon is dropped, not sent. Errors
  * propagate — use `extractPlacementErrorDetail` to surface the daemon's
  * reason.
  */
 export async function placeAttachmentViaTransport(
   workspaceId: string,
   fileName: string,
-  source: { sourcePath: string; mimeType?: string },
+  source: { sourcePath: string; mimeType?: string; idempotencyKey?: string },
   onProgress?: UploadProgressCallback,
   signal?: AbortSignal,
 ): Promise<PlaceAttachmentResult> {
+  const idempotencyKey = daemonSupportsIdempotentPlacement() ? source.idempotencyKey : undefined;
+  const keyed = idempotencyKey !== undefined ? { idempotencyKey } : {};
   if (!isRemoteBackend()) {
-    return placeAttachment(workspaceId, fileName, {
-      sourcePath: source.sourcePath,
-      mimeType: source.mimeType,
-    });
+    return placeWithRecovery(workspaceId, idempotencyKey, signal, () =>
+      placeAttachment(workspaceId, fileName, {
+        sourcePath: source.sourcePath,
+        mimeType: source.mimeType,
+        ...keyed,
+      }),
+    );
   }
   const size = await statFileSize(source.sourcePath);
   if (size > MAX_REMOTE_ATTACHMENT_TOTAL_BYTES) {
@@ -203,11 +346,20 @@ export async function placeAttachmentViaTransport(
     );
   }
   if (size > MAX_REMOTE_ATTACHMENT_BYTES) {
-    return placeAttachmentChunked(workspaceId, fileName, source, size, onProgress, signal);
+    return placeAttachmentChunked(
+      workspaceId,
+      fileName,
+      { ...source, idempotencyKey },
+      size,
+      onProgress,
+      signal,
+    );
   }
   const data = await readFileBase64(source.sourcePath);
   throwIfAborted(signal);
-  return placeAttachment(workspaceId, fileName, { data, mimeType: source.mimeType });
+  return placeWithRecovery(workspaceId, idempotencyKey, signal, () =>
+    placeAttachment(workspaceId, fileName, { data, mimeType: source.mimeType, ...keyed }),
+  );
 }
 
 /**
@@ -216,26 +368,43 @@ export async function placeAttachmentViaTransport(
  * checksum and places through the `placeAttachment` path). Any failure
  * after `begin` aborts the session (best-effort — abort is idempotent and
  * the daemon sweeps orphans) and rethrows; retry re-runs the whole flow.
+ * Keyed (v9.13): a begin refused because the key is "already committed"
+ * (an earlier commit whose reply was lost) and a commit whose own reply is
+ * lost both resolve through the key lookup instead of failing.
  */
 async function placeAttachmentChunked(
   workspaceId: string,
   fileName: string,
-  source: { sourcePath: string; mimeType?: string },
+  source: { sourcePath: string; mimeType?: string; idempotencyKey?: string },
   size: number,
   onProgress?: UploadProgressCallback,
   signal?: AbortSignal,
 ): Promise<PlaceAttachmentResult> {
   const sha256 = await hashFileSha256(source.sourcePath);
   throwIfAborted(signal);
-  const { uploadId, maxChunkBytes } = await beginAttachmentUpload(
-    workspaceId,
-    fileName,
-    size,
-    sha256,
-    source.mimeType,
-  );
+  let uploadId: string;
+  let maxChunkBytes: number;
+  try {
+    ({ uploadId, maxChunkBytes } = await beginAttachmentUpload(
+      workspaceId,
+      fileName,
+      size,
+      sha256,
+      {
+        mimeType: source.mimeType,
+        ...(source.idempotencyKey !== undefined ? { idempotencyKey: source.idempotencyKey } : {}),
+      },
+    ));
+  } catch (error) {
+    if (source.idempotencyKey !== undefined && isAlreadyCommittedError(error)) {
+      const recovered = await recoverPlacementByKey(workspaceId, source.idempotencyKey);
+      if (recovered) return recovered;
+    }
+    throw error;
+  }
   const chunkBytes = Math.min(UPLOAD_CHUNK_BYTES, maxChunkBytes);
   const totalChunks = Math.ceil(size / chunkBytes);
+  let committing = false;
   try {
     for (let seq = 0; seq < totalChunks; seq++) {
       throwIfAborted(signal);
@@ -248,8 +417,15 @@ async function placeAttachmentChunked(
       onProgress?.((seq + 1) / totalChunks);
     }
     throwIfAborted(signal);
+    committing = true;
     return await commitAttachmentUpload(uploadId);
   } catch (error) {
+    // Only a commit can have placed the file before its reply was lost; a
+    // failed chunk never binds the key, so no lookup is attempted for it.
+    if (committing && shouldRecoverPlacement(error, source.idempotencyKey, signal)) {
+      const recovered = await recoverPlacementByKey(workspaceId, source.idempotencyKey);
+      if (recovered) return recovered;
+    }
     await abortAttachmentUpload(uploadId).catch(() => {
       // Best-effort: the daemon sweeps orphaned sessions on the next begin.
     });

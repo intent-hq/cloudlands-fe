@@ -8,7 +8,9 @@
   import { slide } from 'svelte/transition';
   import { tick } from 'svelte';
   import { selectIsDarkTheme } from '$store/renderer/slices/theme/theme-selectors';
-  import MermaidRenderer from '$lib/components/markdown/MermaidRenderer.svelte';
+  import MermaidRenderer, {
+    type MermaidRenderState,
+  } from '$lib/components/markdown/MermaidRenderer.svelte';
   import MediaLightbox from '$lib/components/ui/MediaLightbox.svelte';
   import ZoomPanViewport from '$lib/components/ui/ZoomPanViewport.svelte';
   import { m } from '$shared/paraglide/messages.js';
@@ -20,6 +22,10 @@
 
   // Extract mermaid code from node attributes
   let savedCode = $derived<string>(node?.attrs?.code || '');
+
+  // Exposed on the wrapper so tiptap-editor.css can keep failed renders in
+  // the prose column instead of the wide diagram lane.
+  let renderState = $state<MermaidRenderState>('pending');
 
   // Decode base64 for display
   function decodeBase64(str: string): string {
@@ -185,11 +191,15 @@
   }
 </script>
 
-<NodeViewWrapper class="mermaid-block-wrapper" data-drag-handle>
+<NodeViewWrapper class="mermaid-block-wrapper" data-drag-handle data-render-state={renderState}>
   <div class="mermaid-block" class:selected class:dark-mode={$isDarkTheme}>
     <!-- Diagram -->
     <div bind:this={diagramContainerEl}>
-      <MermaidRenderer code={displayCode} showExpandButton={false} />
+      <MermaidRenderer
+        code={displayCode}
+        showExpandButton={false}
+        onRenderStateChange={(state) => (renderState = state)}
+      />
     </div>
 
     <!-- Code editor -->

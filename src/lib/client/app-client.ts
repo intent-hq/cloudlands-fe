@@ -115,6 +115,13 @@ export interface MutationResult {
    */
   noteRev?: number;
   /**
+   * Authoritative post-write note content echoed by `note.setContent`
+   * (`newContent`). The daemon merges a full-content write against concurrent
+   * edits, so the persisted text can differ from what the caller sent; when
+   * present, callers MUST apply it as the local content. Additive and optional.
+   */
+  newContent?: string;
+  /**
    * Optimistic-concurrency conflict outcome (§11.4-D): present ONLY when the
    * daemon rejected the mutation with the conflict error (numeric `-32005` AND
    * `data.code === "conflict"`). Carries the authoritative server entity
@@ -634,8 +641,9 @@ export interface AgentsClient {
   }): Promise<MutationResult>;
   /**
    * Queue a message behind the agent's in-flight turn (`agent.queueMessage`,
-   * §5.5). Optional `imageBlocks` / `fileBlocks` are only forwarded when
-   * supplied so queued attachments survive queue-on-send. The daemon returns
+   * §5.5). Optional `imageBlocks` / `fileBlocks` / `messageMetadata` are only
+   * forwarded when supplied so queued attachments and the Q&A wizard's answer
+   * tag survive queue-on-send. The daemon returns
    * `{ success, queuedMessage, turnId }`, surfaced as `queuedMessage` /
    * `turnId` on the MutationResult (the entry's turn-correlation id,
    * monorepo#1057 — falls back to `queuedMessage.turnId` when the top-level
@@ -648,6 +656,7 @@ export interface AgentsClient {
     options?: {
       imageBlocks?: ImageBlock[];
       fileBlocks?: FileBlock[];
+      messageMetadata?: Record<string, unknown>;
     },
   ): Promise<MutationResult>;
   /**

@@ -10,11 +10,15 @@ import unusedImports from 'eslint-plugin-unused-imports';
 import { svelte as themisFullConfig } from '@augmentcode/themis/eslint-plugins';
 import noProductionDynamicImportRule from './eslint-rules/no-production-dynamic-import.js';
 import noComponentAsyncDataFetchRule from './eslint-rules/no-component-async-data-fetch.js';
+import noColdSvelteImportInTestsRule from './eslint-rules/no-cold-svelte-import-in-tests.js';
+import noFlushSyncInTeardownRule from './eslint-rules/no-flushsync-in-teardown.js';
 
 const intentPlugin = {
   rules: {
     'no-component-async-data-fetch': noComponentAsyncDataFetchRule,
     'no-production-dynamic-import': noProductionDynamicImportRule,
+    'no-cold-svelte-import-in-tests': noColdSvelteImportInTestsRule,
+    'no-flushsync-in-teardown': noFlushSyncInTeardownRule,
   },
 };
 
@@ -526,6 +530,19 @@ export default [
       'intent/no-production-dynamic-import': 'error',
     },
   },
+  // A dynamic `.svelte` import inside a test body bills the component's whole
+  // cold module-graph transform to the first test's timeout, producing
+  // load-dependent timeout flakes (intent-hq/intent#1464). Warm the specifier
+  // at module scope (warmImport / static import) so test bodies hit the cache.
+  {
+    files: ['**/*.{test,spec}.{js,ts}'],
+    plugins: {
+      intent: intentPlugin,
+    },
+    rules: {
+      'intent/no-cold-svelte-import-in-tests': 'error',
+    },
+  },
   // Ban synchronous child_process calls in Electron main process code.
   // execSync/spawnSync block the main thread and can freeze the entire UI
   // if the spawned process hangs (see: hang report 2026-02-28).
@@ -657,6 +674,18 @@ export default [
     },
     rules: {
       'intent/no-component-async-data-fetch': 'error',
+    },
+  },
+  // flushSync from an $effect cleanup, onDestroy callback, or action destroy()
+  // flushes unrelated effects mid-teardown; any component mounted by that flush
+  // throws effect_in_teardown (intent-hq/intent#4550, shipped in v2.141.0).
+  {
+    files: ['**/*.svelte'],
+    plugins: {
+      intent: intentPlugin,
+    },
+    rules: {
+      'intent/no-flushsync-in-teardown': 'error',
     },
   },
   ...themisFullConfig,

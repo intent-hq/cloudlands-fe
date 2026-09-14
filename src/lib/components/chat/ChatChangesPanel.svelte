@@ -225,6 +225,7 @@
   import { onDestroy, tick, untrack } from 'svelte';
   import { Virtualizer } from '@pierre/diffs';
   import { Skeleton } from '$lib/components/ui/skeleton';
+  import GitHubAvatar from '$lib/components/ui/GitHubAvatar.svelte';
   import { PanelFindBar } from '$lib/components/ui/panel-find-bar';
   import {
     selectFoldUnchanged,
@@ -2535,13 +2536,6 @@
     return null;
   }
 
-  // Get GitHub avatar URL — try username from email, fall back to null
-  function getGitHubAvatarUrl(email?: string, size: number = 28): string | null {
-    const username = getGitHubUsername(email);
-    if (username) return `https://github.com/${username}.png?size=${size * 2}`;
-    return null;
-  }
-
   // Get author initials for avatar fallback
   function getAuthorInitials(name?: string): string {
     if (!name) return '?';
@@ -2686,6 +2680,7 @@
             <!-- Group-by-commit mode: render changes grouped under commit headers -->
             {#each commitGroups as group, i (group.hash || 'working-' + i)}
               {#if group.hash}
+                {@const groupAuthorLogin = getGitHubUsername(group.authorEmail)}
                 <!-- Commit group with sticky collapsible header -->
                 <div class="mb-2">
                   <div class="sticky top-[31.5px] z-[11] bg-background rounded-md">
@@ -2704,20 +2699,17 @@
                           class="shrink-0 w-5 h-5 rounded-full bg-muted-foreground/15 flex items-center justify-center text-ui font-medium text-subtle select-none overflow-hidden"
                           title={group.author || ''}
                         >
-                          {#if getGitHubAvatarUrl(group.authorEmail, 20)}
-                            <img
-                              src={getGitHubAvatarUrl(group.authorEmail, 20) ?? ''}
+                          {#if groupAuthorLogin}
+                            <GitHubAvatar
+                              identity={groupAuthorLogin}
                               alt={group.author || ''}
+                              size={20}
                               class="w-full h-full object-cover"
-                              loading="lazy"
-                              onerror={(e) => {
-                                (e.currentTarget as HTMLImageElement).style.display = 'none';
-                                const sibling = (e.currentTarget as HTMLImageElement)
-                                  .nextElementSibling;
-                                if (sibling) (sibling as HTMLElement).classList.remove('hidden');
-                              }}
-                            />
-                            <span class="hidden">{getAuthorInitials(group.author)}</span>
+                            >
+                              {#snippet fallback()}
+                                {getAuthorInitials(group.author)}
+                              {/snippet}
+                            </GitHubAvatar>
                           {:else}
                             {getAuthorInitials(group.author)}
                           {/if}
@@ -2783,6 +2775,7 @@
 </div>
 
 {#snippet commitDetailsSection()}
+  {@const commitAuthorLogin = getGitHubUsername(commitInfo?.authorEmail)}
   <div class="mb-3 px-1">
     <div class="flex items-start gap-2.5 py-2">
       <!-- Author avatar (GitHub image with initials fallback) -->
@@ -2790,19 +2783,17 @@
         class="shrink-0 mt-0.5 w-7 h-7 rounded-full bg-muted-foreground/15 flex items-center justify-center text-ui font-medium text-subtle select-none overflow-hidden"
         title={commitInfo?.author || ''}
       >
-        {#if getGitHubAvatarUrl(commitInfo?.authorEmail)}
-          <img
-            src={getGitHubAvatarUrl(commitInfo?.authorEmail) ?? ''}
+        {#if commitAuthorLogin}
+          <GitHubAvatar
+            identity={commitAuthorLogin}
             alt={commitInfo?.author || ''}
+            size={28}
             class="w-full h-full object-cover"
-            loading="lazy"
-            onerror={(e) => {
-              (e.currentTarget as HTMLImageElement).style.display = 'none';
-              const sibling = (e.currentTarget as HTMLImageElement).nextElementSibling;
-              if (sibling) (sibling as HTMLElement).classList.remove('hidden');
-            }}
-          />
-          <span class="hidden">{getAuthorInitials(commitInfo?.author)}</span>
+          >
+            {#snippet fallback()}
+              {getAuthorInitials(commitInfo?.author)}
+            {/snippet}
+          </GitHubAvatar>
         {:else}
           {getAuthorInitials(commitInfo?.author)}
         {/if}

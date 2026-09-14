@@ -1,3 +1,7 @@
+// @verify-changed-triggers: ./+layout.svelte, ./+page.svelte, src/shared/app-ui-targets.ts, src/main/window.ts,
+//   src/lib/components/workspace/CompactWorkspaceInitializer.svelte,
+//   src/lib/components/workspace/WorkspaceTableView.svelte, src/lib/components/workspace/TaskFlameBar.svelte
+
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';

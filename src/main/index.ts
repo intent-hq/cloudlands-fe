@@ -132,6 +132,7 @@ import { handleUncaughtException, handleUnhandledRejection } from './utils/proce
 import { isWebviewPopupWindow, setupWebviewSecurity } from './webview-security';
 import { attachAppCommandHistoryNavigation } from './app-command-navigation';
 import { attachSwipeHistoryNavigation } from './swipe-navigation';
+import { attachRendererHangMonitor } from './renderer-hang-monitor';
 import { setupHardwareConsoleMain } from '../features/hardware-console/main/hardware-console.ipc';
 import { setupConsoleOwnerTracking } from '../features/hardware-console/main/console-owner';
 import { requestHardwareConsoleLightingClear } from '../features/hardware-console/main/clear-lighting-shutdown';
@@ -640,6 +641,9 @@ app.whenReady().then(async () => {
     // macOS: forward swipe gestures (incl. Logi Options+ synthesized swipes
     // for mouse side buttons) the same way (see src/main/swipe-navigation.ts).
     attachSwipeHistoryNavigation(window);
+    // Log renderer hangs with window context + a JS stack and offer
+    // Reload / Wait (see src/main/renderer-hang-monitor.ts).
+    attachRendererHangMonitor(window);
   });
 
   // Set application menu with correct app name on macOS

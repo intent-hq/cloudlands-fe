@@ -69,11 +69,7 @@
 </script>
 
 {#snippet leading()}
-  <Fa
-    icon={faBrain}
-    size={16}
-    class="{CHAT_OPERATIONAL_ICON_CLASS} {isStreaming ? 'animate-pulse' : ''}"
-  />
+  <Fa icon={faBrain} size={16} class={CHAT_OPERATIONAL_ICON_CLASS} />
 {/snippet}
 
 {#snippet summary()}

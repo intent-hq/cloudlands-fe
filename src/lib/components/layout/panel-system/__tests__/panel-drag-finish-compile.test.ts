@@ -1,4 +1,6 @@
 /** @vitest-environment node */
+// @verify-changed-triggers: ../Panel.svelte, ../PanelTabBar.svelte
+
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';

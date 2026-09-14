@@ -17,8 +17,8 @@ const DOMAIN_CONTEXT_WATCHERS = new Set([
   'takeLatestByAgent',
   'takeLeadingByAgent',
 ]);
-const CONTEXT_WATCHERS = new Set([...GENERIC_CONTEXT_WATCHERS, ...DOMAIN_CONTEXT_WATCHERS]);
-const WATCHERS = new Set([
+export const CONTEXT_WATCHERS = new Set([...GENERIC_CONTEXT_WATCHERS, ...DOMAIN_CONTEXT_WATCHERS]);
+export const WATCHERS = new Set([
   'takeEvery',
   'takeLatest',
   'takeLeading',
@@ -26,7 +26,7 @@ const WATCHERS = new Set([
   'debounce',
   ...CONTEXT_WATCHERS,
 ]);
-const WILDCARD_EFFECTS = new Set([...WATCHERS, 'take', 'takeMaybe', 'actionChannel']);
+export const WILDCARD_EFFECTS = new Set([...WATCHERS, 'take', 'takeMaybe', 'actionChannel']);
 const EFFECTS = new Set([...WILDCARD_EFFECTS, 'fork', 'spawn', 'call', 'put', 'cancel']);
 const ACTION_FACTORIES = new Set(['createAction', 'createAsyncAction']);
 const DUPLICATE_WATCHER_EXCEPTIONS = [
@@ -56,7 +56,7 @@ const DUPLICATE_WATCHER_EXCEPTIONS = [
   },
   {
     pattern:
-      /panel-layout-slice\.ts#(?:initializeLayout|openTab|openTabInAdjacentOrSplit|openTabInRightmostColumn|closeTab|closeActiveTab|reopenClosedPanelColumn|reopenClosedTab|setActiveTab|activateVisibleTab|moveTabToPanel|moveTabToSplit|moveTabToSplitLevel|closeOtherTabs|closeTabsToRight|closeAllTabs|closeAllOthersEverywhere|splitPanel|closePanel|resetLayout|goBack|goForward)$/,
+      /panel-layout-slice\.ts#(?:initializeLayout|openTab|openTabInAdjacentOrSplit|openTabInRightmostColumn|closeTab|closeActiveTab|destroyHiddenTabsByOwnerAgent|reopenClosedPanelColumn|reopenClosedTab|setActiveTab|activateVisibleTab|moveTabToPanel|moveTabToSplit|moveTabToSplitLevel|closeOtherTabs|closeTabsToRight|closeAllTabs|closeAllOthersEverywhere|splitPanel|closePanel|resetLayout|goBack|goForward)$/,
     rationale:
       'layout persistence, delayed history, and unread boundaries intentionally observe the same actions',
   },
@@ -87,12 +87,12 @@ const DUPLICATE_WATCHER_EXCEPTIONS = [
   },
 ];
 
-const normalize = (value) => value.split(path.sep).join('/').replace(/^\.\//, '');
-const visit = (node, callback) => {
+export const normalize = (value) => value.split(path.sep).join('/').replace(/^\.\//, '');
+export const visit = (node, callback) => {
   callback(node);
   ts.forEachChild(node, (child) => visit(child, callback));
 };
-const lineFor = (source, node) =>
+export const lineFor = (source, node) =>
   source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1;
 const lineForDiagnostic = (source, diagnostic) =>
   source.getLineAndCharacterOfPosition(diagnostic.start ?? 0).line + 1;
@@ -114,7 +114,7 @@ function moduleCandidates(fromPath, specifier) {
   return [...new Set([base, extensionless, `${extensionless}.ts`, `${extensionless}/index.ts`])];
 }
 
-function importsFor(source) {
+export function importsFor(source) {
   const imports = new Map();
   for (const statement of source.statements) {
     if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier))
@@ -132,7 +132,7 @@ function importsFor(source) {
   return imports;
 }
 
-function namespaceImportsFor(source) {
+export function namespaceImportsFor(source) {
   const namespaces = new Map();
   for (const statement of source.statements) {
     if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier))
@@ -145,7 +145,7 @@ function namespaceImportsFor(source) {
   return namespaces;
 }
 
-function effectForExpression(expression, effectNames, effectNamespaces) {
+export function effectForExpression(expression, effectNames, effectNamespaces) {
   if (ts.isIdentifier(expression)) return effectNames.get(expression.text);
   if (!ts.isPropertyAccessExpression(expression) || !ts.isIdentifier(expression.expression))
     return undefined;
@@ -252,7 +252,7 @@ function createExportProvenanceResolver(sources, { externalOrigin, localDeclarat
   return { resolveExport, resolveExpression, resolveImport };
 }
 
-function createProvenanceResolvers(sources) {
+export function createProvenanceResolvers(sources, { contextWatchers = CONTEXT_WATCHERS } = {}) {
   const actionFactory = createExportProvenanceResolver(sources, {
     externalOrigin: (specifier, imported) =>
       /(?:^|\/)create-action$/.test(specifier) && ACTION_FACTORIES.has(imported)
@@ -271,15 +271,15 @@ function createProvenanceResolvers(sources) {
     externalOrigin: (specifier, imported) => {
       const native = specifier === 'typed-redux-saga' || specifier === 'redux-saga/effects';
       const contextual = /(?:^|\/)context-saga-effects$/.test(specifier);
-      if ((native && EFFECTS.has(imported)) || (contextual && CONTEXT_WATCHERS.has(imported)))
+      if ((native && EFFECTS.has(imported)) || (contextual && contextWatchers.has(imported)))
         return { origin: `${specifier}#${imported}`, name: imported };
       return undefined;
     },
   });
-  return { actions, effects };
+  return { actionFactory, actions, effects };
 }
 
-function effectBindingsFor(source, filePath, effects) {
+export function effectBindingsFor(source, filePath, effects) {
   const effectNames = new Map();
   for (const [local, binding] of importsFor(source)) {
     const provenance = effects.resolveImport(filePath, binding.specifier, binding.imported);
@@ -314,7 +314,7 @@ function isImportedReduxPattern(pattern, actions, filePath, actionProvenance) {
   });
 }
 
-function localArray(source, expression) {
+export function localArray(source, expression) {
   if (ts.isArrayLiteralExpression(expression)) return expression.elements;
   if (!ts.isIdentifier(expression)) return [];
   for (const statement of source.statements) {
@@ -456,7 +456,7 @@ function wildcardPattern(effect, call) {
   );
 }
 
-function watcherPattern(effect, call) {
+export function watcherPattern(effect, call) {
   return call.arguments[effect === 'throttle' || effect === 'debounce' ? 1 : 0];
 }
 

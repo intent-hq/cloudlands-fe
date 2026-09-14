@@ -165,6 +165,10 @@ import {
 } from '$features/agent/utils/chat-subscription-registry';
 import { seedStreamFromSnapshot } from '$features/events/daemon-events-bridge.client';
 import {
+  reportStreamLifecycle,
+  streamTurnCorrelation,
+} from '$lib/utils/stream-lifecycle-telemetry';
+import {
   hasChatInterestLease,
   onLastChatInterestLeaseReleased,
 } from '$features/agent/utils/chat-interest-leases';
@@ -396,7 +400,15 @@ function* applyTranscript(
   discardStoreOnly = false,
 ): SagaGenerator<void> {
   const session = yield* selectAgentSession.effect(agentId);
-  if (!isCurrentSubscription(coordinator, agentId, entry)) return;
+  if (!isCurrentSubscription(coordinator, agentId, entry)) {
+    // A supersede landing across the select yield above: the drop is correct,
+    // but a dropped snapshot must not vanish unlogged (see reportSnapshotGuard).
+    reportSnapshotGuard(transcript, 'snapshot-dropped-superseded-mid-apply', 'ignored');
+    return;
+  }
+  // Read before the flag reconcile below consumes the marker: a snapshot that
+  // may predate a locally-started turn is not authoritative about liveness.
+  const racesLocalStart = coordinator.locallyStartedTurns.has(agentId);
   if (session) {
     const transcriptIds = new Set<string>();
     for (const message of transcript.messages) {
@@ -410,12 +422,34 @@ function* applyTranscript(
             !(typeof message.id === 'string' && transcriptIds.has(message.id)) &&
             !(typeof message.appMessageId === 'string' && transcriptIds.has(message.appMessageId)),
         );
+    // A snapshot is the authoritative newest page with the in-flight turn
+    // MERGED INTO IT (§7.1), so a retained row the page does not cover cannot
+    // still be in flight — settle its streaming flags, exactly as the
+    // close-time teardown does (flags only; content is never touched).
+    // Otherwise a partial row evicted from the served window (the slim page
+    // budget re-mints `truncated` after the live-turn merge) keeps rendering
+    // as a live turn beside the daemon's real one, and the firehose cannot
+    // clear it while this registration is the sole writer.
+    // Trade-off of the `racesLocalStart` exemption: a snapshot pending since
+    // before a local send may predate the turn the renderer just started, so
+    // it must not settle the optimistic in-flight row — but skipping the
+    // settle also spares a frozen PRIOR-turn row, and when that snapshot is
+    // itself `isStreaming: true` the flag reconcile below consumes the
+    // marker, so the frozen row persists until some LATER snapshot arrives
+    // (which a healthy standing registration may never emit). Protecting the
+    // optimistic row matters more than closing that residual window.
+    const retained =
+      transcript.fromSnapshot === true && !racesLocalStart
+        ? storeOnly.map((message) => (claimsLiveness(message) ? settleStreaming(message) : message))
+        : storeOnly;
     const merged =
-      storeOnly.length === 0
+      retained.length === 0
         ? transcript.messages
-        : deduplicateAgentMessages([...storeOnly, ...transcript.messages]);
+        : deduplicateAgentMessages([...retained, ...transcript.messages]);
     if (isCurrentSubscription(coordinator, agentId, entry)) {
       yield* put(replaceMessages(agentId, merged));
+    } else {
+      reportSnapshotGuard(transcript, 'snapshot-dropped-superseded-mid-apply', 'ignored');
     }
   }
 
@@ -444,6 +478,16 @@ function* applyTranscript(
   }
 }
 
+/** True while a row still presents itself as mid-stream. */
+function claimsLiveness(message: AgentMessage): boolean {
+  return message.isStreaming === true || message.streamingComplete === false;
+}
+
+/** The same row with its streaming flags settled; content untouched. */
+function settleStreaming(message: AgentMessage): AgentMessage {
+  return { ...message, isStreaming: false, streamingComplete: true };
+}
+
 /**
  * Clear stale message-level streaming flags left behind when a standing
  * subscription closes mid-turn. Message content is untouched; a re-view's
@@ -453,16 +497,43 @@ function* clearStaleStreamingMessageFlags(agentId: string): SagaGenerator<void> 
   const session = yield* selectAgentSession.effect(agentId);
   const messages = session?.messages;
   if (!messages?.length) return;
-  const hasStale = messages.some(
-    (message) => message.isStreaming === true || message.streamingComplete === false,
-  );
-  if (!hasStale) return;
+  if (!messages.some(claimsLiveness)) return;
   const normalized = messages.map((message) =>
-    message.isStreaming === true || message.streamingComplete === false
-      ? { ...message, isStreaming: false, streamingComplete: true }
-      : message,
+    claimsLiveness(message) ? settleStreaming(message) : message,
   );
   yield* put(replaceMessages(agentId, normalized));
+}
+
+/**
+ * One `stream-lifecycle` breadcrumb for a snapshot a guard below drops or
+ * holds. A snapshot is the only emit that can displace a stale in-flight turn
+ * (§7.1 serves the newest page with the live turn merged in), so each guard
+ * names itself — a distinct event per structurally distinct guard — instead
+ * of returning silently: the next stuck-transcript report is then
+ * diagnosable from the log. The transcript's own liveness is implied by
+ * `pushKind: 'snapshot'` plus the `turnCorrelation`/`blockCount` presence;
+ * `storeStreamState` is deliberately omitted — its other producers report
+ * the store's actual state, which this callback cannot cheaply read.
+ * Content-free: the correlation is the hashed message id, never its text.
+ */
+function reportSnapshotGuard(
+  transcript: ChatTranscript,
+  event: string,
+  callbackResult: 'ignored' | 'buffered',
+): void {
+  if (transcript.fromSnapshot !== true) return;
+  const inFlight = transcript.messages.find(
+    (message) => message.role === 'assistant' && message.isStreaming === true,
+  );
+  reportStreamLifecycle({
+    stage: 'subscription',
+    event,
+    ...(inFlight ? { turnCorrelation: streamTurnCorrelation(inFlight.id) } : {}),
+    correlationBasis: inFlight ? 'assistant-message' : 'unjoinable',
+    pushKind: 'snapshot',
+    ...(inFlight?.contentBlocks ? { blockCount: inFlight.contentBlocks.length } : {}),
+    callbackResult,
+  });
 }
 
 function* handleSubscriptionEvent(
@@ -470,8 +541,24 @@ function* handleSubscriptionEvent(
   event: ChatSubscriptionEvent,
 ): SagaGenerator<void> {
   const entry = coordinator.subscriptions.get(event.agentId);
-  if (!entry || entry.token !== event.token) return;
-  if (!isCurrentSubscription(coordinator, event.agentId, entry)) return;
+  if (!entry || entry.token !== event.token) {
+    if (event.kind === 'transcript') {
+      // A queued event whose registration rotated before the saga drained it
+      // (vs `-emit`: a wire callback outliving its registration).
+      reportSnapshotGuard(
+        event.transcript,
+        'snapshot-dropped-stale-registration-queued',
+        'ignored',
+      );
+    }
+    return;
+  }
+  if (!isCurrentSubscription(coordinator, event.agentId, entry)) {
+    if (event.kind === 'transcript') {
+      reportSnapshotGuard(event.transcript, 'snapshot-dropped-superseded-registration', 'ignored');
+    }
+    return;
+  }
   try {
     if (event.kind === 'phase') {
       if (isCurrentSubscription(coordinator, event.agentId, entry)) {
@@ -479,8 +566,14 @@ function* handleSubscriptionEvent(
       }
       return;
     }
-    if (yield* call(isAgentDeletionPending, event.agentId)) return;
-    if (!isCurrentSubscription(coordinator, event.agentId, entry)) return;
+    if (yield* call(isAgentDeletionPending, event.agentId)) {
+      reportSnapshotGuard(event.transcript, 'snapshot-dropped-deletion-pending', 'ignored');
+      return;
+    }
+    if (!isCurrentSubscription(coordinator, event.agentId, entry)) {
+      reportSnapshotGuard(event.transcript, 'snapshot-dropped-superseded-registration', 'ignored');
+      return;
+    }
     entry.hasEmitted = true;
     entry.lastTranscript = event.transcript;
     // Pre-session seq-0 race: `initializeChatRequested` starts this saga and
@@ -496,6 +589,7 @@ function* handleSubscriptionEvent(
       if (!preSession) {
         entry.pendingSnapshot = event.transcript;
         setReplayableChatSnapshot(event.agentId, true);
+        reportSnapshotGuard(event.transcript, 'snapshot-held-pre-session', 'buffered');
         return;
       }
       entry.pendingSnapshot = undefined;
@@ -623,7 +717,19 @@ function* openSubscription(
   const pending: ChatSubscriptionEvent[] = [];
   let ready = false;
   const emit = (event: ChatSubscriptionEvent) => {
-    if (slot.desiredToken !== transition.token) return;
+    if (slot.desiredToken !== transition.token) {
+      // A superseded registration still holding the wire callback: the drop
+      // is correct, but a dropped SNAPSHOT is the one emit that could have
+      // displaced a stale in-flight turn, so it leaves a breadcrumb.
+      if (event.kind === 'transcript') {
+        reportSnapshotGuard(
+          event.transcript,
+          'snapshot-dropped-stale-registration-emit',
+          'ignored',
+        );
+      }
+      return;
+    }
     if (ready) coordinator.events.put(event);
     else pending.push(event);
   };

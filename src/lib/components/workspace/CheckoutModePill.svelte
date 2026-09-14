@@ -284,7 +284,7 @@
       </div>
     {:else if loading}
       <div
-        class="flex min-w-56 flex-col gap-2 py-1"
+        class="flex w-full flex-col gap-2 py-1 {presentation === 'pill' ? 'min-w-56' : 'min-w-0'}"
         role="status"
         aria-label={m.workspace_diskUsagePill_loading_ariaLabel()}
       >

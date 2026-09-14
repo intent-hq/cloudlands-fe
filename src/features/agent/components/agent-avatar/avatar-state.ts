@@ -95,6 +95,29 @@ function isBlockedWaitingInput(input: AgentStateInput): boolean {
 }
 
 /**
+ * Priority order of the `getAvatarState` ladder, highest priority first.
+ *
+ * This is the documented contract for the hand-written branch chain below:
+ * a change to the order there must be reflected here, and every equality gate
+ * on a `getAvatarState*` result (see `avatar-state-gate-inventory.test.ts`)
+ * must be re-audited against the new order. `completed` is the one exception
+ * to a strict linear order — it defers to `running` while a live turn is in
+ * flight. `responding` is a declared display state the ladder never returns.
+ */
+export const AVATAR_STATE_PRECEDENCE: readonly AvatarState[] = [
+  'completed',
+  'failed',
+  'question',
+  'needs-permission',
+  'attention-discussion',
+  'attention-blocker',
+  'waiting',
+  'running',
+  'unread',
+  'idle',
+];
+
+/**
  * Get the avatar state based on agent state input and options.
  * This is the core centralized logic for determining avatar display state.
  */

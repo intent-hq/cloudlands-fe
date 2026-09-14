@@ -54,7 +54,7 @@ describe('mapTestPromptFailure', () => {
     expect(guidance.isAuthRequired).toBe(true);
     expect(guidance.loginCommandHint).toBe('claude auth login');
     expect(guidance.loginDocsUrl).toBe('https://docs.example');
-    expect(guidance.showClaudeDesktopNote).toBe(true);
+    expect(guidance.showClaudeLoginButton).toBe(true);
     expect(guidance.message).toContain('Claude Code');
   });
 
@@ -66,7 +66,7 @@ describe('mapTestPromptFailure', () => {
     );
     expect(guidance.loginCommandHint).toBe('codex login');
     expect(guidance.loginDocsUrl).toBeUndefined();
-    expect(guidance.showClaudeDesktopNote).toBe(false);
+    expect(guidance.showClaudeLoginButton).toBe(false);
   });
 
   it('auth-required with no catalog entry falls back to "<providerId> login"', () => {
@@ -85,7 +85,7 @@ describe('mapTestPromptFailure', () => {
       entry({ id: 'codex', displayName: 'Codex', command: 'codex' }),
       'codex',
     );
-    expect(other.showClaudeDesktopNote).toBe(false);
+    expect(other.showClaudeLoginButton).toBe(false);
   });
 
   it('non-auth reasons carry no login affordances and no refresh flag', () => {
@@ -97,7 +97,7 @@ describe('mapTestPromptFailure', () => {
       );
       expect(guidance.isAuthRequired).toBe(false);
       expect(guidance.loginCommandHint).toBeUndefined();
-      expect(guidance.showClaudeDesktopNote).toBe(false);
+      expect(guidance.showClaudeLoginButton).toBe(false);
       expect(guidance.message).not.toEqual('');
     }
   });

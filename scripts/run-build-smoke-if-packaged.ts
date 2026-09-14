@@ -3,6 +3,7 @@
 import { existsSync } from 'fs';
 import { join } from 'path';
 import { spawn } from 'child_process';
+import { pnpmInvocation } from './pnpm-launcher.mjs';
 
 function findPackagedApp(): string | undefined {
   const envPath = process.env.PACKAGED_APP_PATH;
@@ -27,11 +28,18 @@ if (!packagedApp) {
   process.exit(1);
 }
 
-const child = spawn(
-  'pnpm',
-  ['exec', 'playwright', 'test', '--config=e2e/build-smoke.config.ts', ...process.argv.slice(2)],
-  { stdio: 'inherit', env: { ...process.env, PACKAGED_APP_PATH: packagedApp } },
-);
+const launcher = pnpmInvocation([
+  'exec',
+  'playwright',
+  'test',
+  '--config=e2e/build-smoke.config.ts',
+  ...process.argv.slice(2),
+]);
+const child = spawn(launcher.executable, launcher.args, {
+  stdio: 'inherit',
+  shell: launcher.shell,
+  env: { ...process.env, PACKAGED_APP_PATH: packagedApp },
+});
 
 child.on('close', (code) => process.exit(code ?? 1));
 child.on('error', (error) => {

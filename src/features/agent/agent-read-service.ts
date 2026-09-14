@@ -48,6 +48,42 @@ const hydrationInFlight = new Map<string, Promise<AgentSession | null>>();
 const pendingEventRerun = new Map<string, Promise<void>>();
 
 /**
+ * Monotonic read sequencing: every new `agent.get` request takes the next
+ * generation, and `notePendingQuestionMarkerProjection` records the generation
+ * current when an `agent:updated` question-marker event was applied to the
+ * store (PROTOCOL §6.5). A response whose request started at or before that
+ * generation may predate the daemon's marker write, so its marker fields must
+ * not undo the event projection; the trailing read (always a later generation)
+ * remains authoritative.
+ */
+let readGeneration = 0;
+const markerProjectionGeneration = new Map<string, number>();
+const QUESTION_MARKER_KEYS = ['pendingQuestionsMessageId', 'dismissedQuestionsMessageId'] as const;
+
+export function notePendingQuestionMarkerProjection(agentId: string): void {
+  markerProjectionGeneration.set(agentId, readGeneration);
+}
+
+function preserveProjectedQuestionMarkers(
+  agentId: string,
+  generation: number,
+  session: AgentSession | null,
+): AgentSession | null {
+  if (!session) return session;
+  const projectedAt = markerProjectionGeneration.get(agentId);
+  if (projectedAt === undefined || generation > projectedAt) return session;
+  const stored = appStore.state.agentSessions?.byAgentId[agentId]?.metadata;
+  if (!stored) return session;
+  let metadata = session.metadata;
+  for (const key of QUESTION_MARKER_KEYS) {
+    const projected = stored[key];
+    if (typeof projected !== 'string' || metadata?.[key] === projected) continue;
+    metadata = { ...metadata, [key]: projected };
+  }
+  return metadata === session.metadata ? session : { ...session, metadata };
+}
+
+/**
  * Refresh after a daemon event without losing an update behind an older read.
  * If a read is already in flight, one trailing read is scheduled after it;
  * further events during that read share the same trailing promise.
@@ -81,14 +117,21 @@ export async function refreshAgentSessionAfterEvent(agentId: string): Promise<vo
  * Shared raw `agent.get` read for callers that need the returned projection.
  * Rejections propagate so each caller can preserve its existing error policy;
  * the failed promise is always evicted and is never treated as cached data.
+ * The only reconciliation applied is the question-marker guard above: a
+ * response to a request that started before an `agent:updated` marker
+ * projection keeps the store's projected marker values.
  */
 export function readAgentSession(agentId: string): Promise<AgentSession | null> {
   const pending = inFlight.get(agentId);
   if (pending) return pending;
 
-  const run = appClient.agents.get(agentId).finally(() => {
-    if (inFlight.get(agentId) === run) inFlight.delete(agentId);
-  });
+  const generation = ++readGeneration;
+  const run = appClient.agents
+    .get(agentId)
+    .then((session) => preserveProjectedQuestionMarkers(agentId, generation, session))
+    .finally(() => {
+      if (inFlight.get(agentId) === run) inFlight.delete(agentId);
+    });
   inFlight.set(agentId, run);
   return run;
 }

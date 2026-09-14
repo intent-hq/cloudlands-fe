@@ -213,24 +213,36 @@ export const selectHiddenTabs = store.createSelector<[wsId: string], PanelTab[]>
 });
 
 export type BrowserTabVisibility = BrowserTab['visibility'];
-export type LayoutBrowserTab = { tab: PanelTab; visibility: BrowserTabVisibility };
+export type LayoutBrowserTab = {
+  tab: PanelTab;
+  visibility: BrowserTabVisibility;
+  /**
+   * Layout fact, not a paint guarantee: visible AND its panel's active tab
+   * (the same rule the local `listTabs` fallback applies). A hidden tab is
+   * never displayed.
+   */
+  displayed: boolean;
+};
 
 /**
  * Every browser tab in a workspace layout — live or mirror — with where it
  * lives: `visible` in a panel's tab bar, `hidden` in `hiddenTabs`
- * (monorepo#2857). Shared by the registry report and the sidebar's
- * driving-client gate so both see the same set.
+ * (monorepo#2857), and whether the layout displays it. Shared by the
+ * registry report and the sidebar's driving-client gate so both see the
+ * same set.
  */
 export function collectBrowserTabs(layout: WorkspacePanelLayoutState): LayoutBrowserTab[] {
   const out: LayoutBrowserTab[] = [];
   for (const panel of Object.values(layout.panels)) {
     for (const tab of panel.tabs) {
-      if (tab.type === 'browser') out.push({ tab, visibility: 'visible' });
+      if (tab.type === 'browser') {
+        out.push({ tab, visibility: 'visible', displayed: panel.activeTabId === tab.id });
+      }
     }
   }
   // Pre-#2857 persisted/test states may lack the field.
   for (const tab of getItems(layout.hiddenTabs ?? emptyWorkspaceState.hiddenTabs)) {
-    if (tab.type === 'browser') out.push({ tab, visibility: 'hidden' });
+    if (tab.type === 'browser') out.push({ tab, visibility: 'hidden', displayed: false });
   }
   return out;
 }

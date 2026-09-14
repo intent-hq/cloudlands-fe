@@ -73,6 +73,63 @@ describe('user-message presentation sanitization', () => {
     expect(getPresentedUserMessageText(message)).toBe('Review the attachment');
     expect(message.contentBlocks).toHaveLength(4);
   });
+
+  // A pre-10.0 daemon persisted inline file bytes on the block; a 10.0 daemon
+  // serves that row with each such block replaced in place by
+  // `{ type: 'text', text: 'Attached file: <fileName>' }`. The FE mirrors that
+  // projection for a legacy block, in block order, and never surfaces the bytes.
+  it('presents a legacy inline file block (no attachmentId) as attached-file text', () => {
+    const message = user('Review the attachment');
+    message.contentBlocks = [
+      { type: 'text', text: 'Review the attachment ' },
+      { type: 'file', data: 'aGVsbG8=', mimeType: 'text/plain', fileName: ' notes.txt ' },
+      { type: 'file', data: 'aGVsbG8=', mimeType: 'application/octet-stream' },
+      { type: 'text', text: WAIT_NOTE },
+    ];
+
+    const presented = getPresentedUserMessageText(message);
+    expect(presented).toBe('Review the attachment Attached file: notes.txtAttached file');
+    expect(presented).not.toContain('aGVsbG8=');
+  });
+
+  it('keeps a legacy inline file block in its authored position, as a 10.0 daemon serves it', () => {
+    const legacy = user('');
+    legacy.contentBlocks = [
+      { id: 'b1', type: 'file', data: 'aGVsbG8=', mimeType: 'text/plain', fileName: 'notes.txt' },
+      { type: 'text', text: ' is the file; ' },
+      { id: 'b3', type: 'file', data: 'aGVsbG8=', mimeType: 'text/plain', fileName: 'x.csv' },
+      { type: 'text', text: ' too.' },
+    ];
+    // The same row as a 10.0 daemon serves it (degrade_inline_file_blocks).
+    const served = user('');
+    served.contentBlocks = [
+      { id: 'b1', type: 'text', text: 'Attached file: notes.txt' },
+      { type: 'text', text: ' is the file; ' },
+      { id: 'b3', type: 'text', text: 'Attached file: x.csv' },
+      { type: 'text', text: ' too.' },
+    ];
+
+    expect(getPresentedUserMessageText(legacy)).toBe(
+      'Attached file: notes.txt is the file; Attached file: x.csv too.',
+    );
+    expect(getPresentedUserMessageText(legacy)).toBe(getPresentedUserMessageText(served));
+  });
+
+  it('presents a legacy inline file block alone as attached-file text', () => {
+    const message = user('');
+    message.contentBlocks = [
+      { type: 'file', data: 'aGVsbG8=', mimeType: 'text/plain', fileName: 'notes.txt' },
+    ];
+
+    expect(getPresentedUserMessageText(message)).toBe('Attached file: notes.txt');
+  });
+
+  it('leaves attachment-reference file blocks out of the presented text', () => {
+    const message = user('Review the attachment');
+    message.contentBlocks!.push({ type: 'file', attachmentId: 'attachment-1', fileName: 'a.txt' });
+
+    expect(getPresentedUserMessageText(message)).toBe('Review the attachment');
+  });
 });
 
 // PROTOCOL.md §5.5 A2A sender header, exactly as intentd prepends it.

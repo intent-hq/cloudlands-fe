@@ -52,6 +52,25 @@ export interface ModelUnavailableInfo {
   nextAvailableModel: string;
 }
 
+/**
+ * A turn that failed because the provider's usage/quota limit was hit, as
+ * reported by the daemon's structured `errorCode: "quota-exceeded"` on
+ * `agent:failed`. Retrying the SAME provider cannot succeed (the daemon
+ * classifies quota rejections as terminal), so the recovery affordance is a
+ * switch to a different provider — hence `providerId`, the provider that ran
+ * out, which the banner excludes from the alternatives it offers.
+ *
+ * Structured rather than string-matched on purpose: the auth-failure banner
+ * matches prose against per-provider `authErrorPatterns`, which is fragile
+ * across provider CLI wording changes. `errorCode` is the daemon's own
+ * classification, so absent field means "not a quota failure" with no
+ * guessing.
+ */
+export interface QuotaExceededInfo {
+  /** Provider whose quota was exhausted; excluded from the retry options. */
+  providerId: string;
+}
+
 interface SendMessageOptions {
   contextItems?: SerializableContextItem[];
   noteIds?: string[];
@@ -191,6 +210,14 @@ export interface ChatAgentState {
    */
   queuedRetryRecords: Record<string, QueuedRetryRecord>;
   modelUnavailable: ModelUnavailableInfo | null;
+  /**
+   * Set when the last turn failed with the daemon's `quota-exceeded` code
+   * (null otherwise). Lives beside `modelUnavailable` because it drives the
+   * same kind of recovery banner, and follows the same lifecycle: preserved
+   * across the `agent:idle` reconcile so the affordance survives, cleared on
+   * the next send.
+   */
+  quotaExceeded: QuotaExceededInfo | null;
   statusEvents: StatusEvent[];
   /** Workspace ID last recorded by the rebind tracker (mirrors WorkspaceRebindTracker). */
   trackedWorkspaceId: string | null;

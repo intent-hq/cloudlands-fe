@@ -4,11 +4,13 @@ import {
   selectAgentIsResponding,
   selectAgentMessageById,
 } from '$store/renderer/slices/agent-session/agent-session-selectors';
+import { selectAgentQueueMessages } from '$store/renderer/slices/agent-queue/agent-queue-selectors';
 import { isQuestionMessageDismissed } from '$shared/utils/question-dismissal';
 import {
   classifyPendingQuestionMarker,
   derivePendingQuestions,
   isQuestionSetAnswered,
+  isQuestionSetAnsweredInQueue,
   type PendingQuestionSet,
 } from './pending-questions';
 
@@ -16,8 +18,9 @@ import {
  * Production wizard gate. The daemon's `pendingQuestionsMessageId` metadata is
  * authoritative when present: the marked question set stays pending across
  * later automatic/user turns (the marker is written once the asking turn has
- * ended) until the daemon clears it, a tagged answer row names it, or the user
- * dismisses it. Transcript derivation remains the compatibility fallback when
+ * ended) until the daemon clears it, a tagged answer row names it (in the
+ * transcript or still sitting in the agent's queue), or the user dismisses
+ * it. Transcript derivation remains the compatibility fallback when
  * the marker is absent; only that fallback gates on the agent's OWN active
  * turn (`selectAgentIsResponding`) — NOT the broad `selectAgentIsRunning`
  * gate, which stays true while the agent merely waits on delegated agents
@@ -37,6 +40,7 @@ export function deriveWizardPendingQuestions(
   showingPendingUserMessage = false,
 ): PendingQuestionSet | null {
   const isTurnActive = selectAgentIsResponding.select(state, agentId);
+  const queuedMessages = selectAgentQueueMessages.select(state, agentId);
   const session = state.agentSessions?.byAgentId[agentId];
   const marker = classifyPendingQuestionMarker(session?.metadata?.pendingQuestionsMessageId);
   const markedMessage =
@@ -62,7 +66,9 @@ export function deriveWizardPendingQuestions(
       ? [markedMessage, ...messages]
       : messages;
   const pending = recoveredPending
-    ? showingPendingUserMessage || isQuestionSetAnswered(messages, recoveredPending.messageId)
+    ? showingPendingUserMessage ||
+      isQuestionSetAnswered(messages, recoveredPending.messageId) ||
+      isQuestionSetAnsweredInQueue(queuedMessages, recoveredPending.messageId)
       ? null
       : recoveredPending
     : derivePendingQuestions(
@@ -70,6 +76,7 @@ export function deriveWizardPendingQuestions(
         isTurnActive,
         showingPendingUserMessage,
         marker.kind === 'set' ? marker.messageId : marker.kind === 'cleared' ? '' : undefined,
+        queuedMessages,
       );
   if (!pending) return null;
   if (isQuestionMessageDismissed(session?.metadata, pending.messageId)) return null;

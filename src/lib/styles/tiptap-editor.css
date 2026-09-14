@@ -71,6 +71,18 @@
   max-width: 100%;
 }
 
+/* Failed renders have no diagram to show: keep the error card (and its
+   expanded source details) aligned with the prose column instead of the
+   wide lane. The wrapper reports the render state, see MermaidBlockNodeView. */
+.tiptap-editor.ProseMirror
+  > .node-mermaidBlock:has(> [data-node-view-wrapper][data-render-state='error']) {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  margin-left: 0;
+  margin-right: 0;
+}
+
 /* Monospace mode: code blocks don't need breakout since they're already
    styled differently (transparent bg, triple backtick fences) */
 .note-font-monospace .tiptap-editor.ProseMirror > pre {

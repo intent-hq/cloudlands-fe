@@ -6,8 +6,15 @@ import { cleanup, render, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import type { Note } from '$shared/types';
 import { ContentType, NoteVisibility } from '$shared/types';
+import {
+  flushNoteContent,
+  hasPendingNoteContent,
+  settleNoteContent,
+  updateNoteContent,
+} from '$features/notes/notes-write-service';
 
 const {
+  mockDispatch,
   mockInvoke,
   mockLogger,
   constantReadable,
@@ -15,6 +22,7 @@ const {
   notesVersionReadable,
   resetNotes,
   replaceNotes,
+  selectCurrentNote,
   getNoteById,
   mockSelectorStore,
   mockProcessMarkdownToHTML,
@@ -112,7 +120,14 @@ const {
       return readableSelector;
     },
     dispatch: mockDispatch,
-    state: {},
+    // Shaped like the real workspace-notes slice so the REAL write service
+    // (when a test un-mocks it) reads the same notes the component renders.
+    get state() {
+      const map = state.notesById;
+      return {
+        workspaceNotes: { byWorkspaceId: { 'ws-1': { notes: { map, ids: Object.keys(map) } } } },
+      };
+    },
   };
 
   return {
@@ -123,6 +138,7 @@ const {
     currentNoteReadable,
     notesVersionReadable,
     resetNotes() {
+      state.currentNoteId = 'spec';
       state.notesById = {};
       state.notesVersion = 0;
       emitCurrentNote();
@@ -133,6 +149,10 @@ const {
       state.notesVersion += 1;
       emitCurrentNote();
       emitNotesVersion();
+    },
+    selectCurrentNote(noteId: string) {
+      state.currentNoteId = noteId;
+      emitCurrentNote();
     },
     getNoteById(noteId: string) {
       return state.notesById[noteId];
@@ -224,12 +244,15 @@ vi.mock('$lib/components/tiptap/TaskMenu.svelte', async () => {
   return { default: MockSimple };
 });
 
-vi.mock('$lib/components/workspace/NoteVersionHistory.svelte', async () => {
-  const MockSimple = (
-    await import('$lib/components/workspace/sidebar/__tests__/mocks/MockSimple.svelte')
-  ).default;
-  return { default: MockSimple };
-});
+// Captures the version-history props so a test can drive `onRestore`.
+const versionHistory = vi.hoisted(() => ({
+  props: null as null | { onRestore?: (versionId: string) => unknown },
+}));
+vi.mock('$lib/components/workspace/NoteVersionHistory.svelte', () => ({
+  default: (_anchor: unknown, props: { onRestore?: (versionId: string) => unknown }) => {
+    versionHistory.props = props;
+  },
+}));
 
 vi.mock('$lib/components/workspace/NoteMetadataBar.svelte', async () => {
   const MockSimple = (
@@ -341,12 +364,18 @@ vi.mock('$store/renderer/slices/workspace-navigation/workspace-navigation-select
 vi.mock('$features/notes/notes-write-service', () => ({
   updateNoteContent: vi.fn(),
   hasPendingNoteContent: vi.fn(() => false),
+  flushNoteContent: vi.fn(async () => undefined),
+  settleNoteContent: vi.fn(async () => undefined),
 }));
 
 vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-slice', () => ({
   restoreNoteVersion: vi.fn((workspaceId: string, noteId: string, versionId: string) => ({
     type: 'workspaceNotes/restoreNoteVersion',
     payload: { workspaceId, noteId, versionId },
+  })),
+  applyLocalNoteUpdate: vi.fn((workspaceId: string, noteId: string, update: Partial<Note>) => ({
+    type: 'workspaceNotes/applyLocalNoteUpdate',
+    payload: { workspaceId, noteId, update },
   })),
   clearNewlyCreatedNoteId: vi.fn((workspaceId: string) => ({
     type: 'workspaceNotes/clearNewlyCreatedNoteId',
@@ -615,6 +644,614 @@ describe('NoteWithComments task conversion regression', () => {
     );
   });
 
+  // Regression (verifier, production component + TipTap): an agent writing
+  // twice in a row is a normal burst, and a keystroke typed between the two
+  // applies was erased by the second one — the fold was gated on a flag that a
+  // 200ms timer cleared after every apply. Input is recognised per transaction
+  // now, so the keystroke is staged, flushed and merged whenever it lands.
+  describe('keystrokes between two external applies', () => {
+    async function renderAppliedNote() {
+      replaceNotes([createNote('spec', 'Spec', 'base')]);
+      const view = await renderInitializedNote('spec', 'base');
+      const editor = (view.container.querySelector('.ProseMirror') as any).editor;
+      await waitFor(() => expect(editor.getText()).toBe('base'));
+      vi.useFakeTimers();
+      // Past the initialisation tail and the typing/save debounces.
+      await vi.advanceTimersByTimeAsync(1200);
+      return editor;
+    }
+
+    async function applyExternal(text: string, rev: number) {
+      replaceNotes([createNote('spec', 'Spec', text, { rev } as Partial<Note>)]);
+      await tick();
+    }
+
+    // Write-service model: a staged draft is pending until flushed; the flush
+    // returns the daemon's merge of the draft with the newer note.
+    function modelWriteService() {
+      let pending = false;
+      let draft = '';
+      const flushed: string[] = [];
+      vi.mocked(updateNoteContent).mockImplementation((_ws, _id, text) => {
+        pending = true;
+        draft = text;
+      });
+      vi.mocked(hasPendingNoteContent).mockImplementation(() => pending);
+      vi.mocked(flushNoteContent).mockImplementation(async () => {
+        pending = false;
+        flushed.push(draft);
+        const merged = `${draft} second`;
+        await applyExternal(merged, 7);
+        return { content: merged, rev: 7 };
+      });
+      return { flushed };
+    }
+
+    it.each([10, 25, 49, 100, 199])(
+      'keeps a keystroke typed %i ms after an apply when the next update arrives with it',
+      async (delay) => {
+        const editor = await renderAppliedNote();
+        const { flushed } = modelWriteService();
+
+        await applyExternal('agent base', 5);
+        await vi.advanceTimersByTimeAsync(150);
+        expect(editor.getText()).toBe('agent base');
+
+        await vi.advanceTimersByTimeAsync(delay);
+        editor.commands.insertContentAt(editor.state.doc.content.size - 1, ' X');
+        expect(editor.getText()).toBe('agent base X');
+        await applyExternal('agent base second', 6);
+        await vi.advanceTimersByTimeAsync(160);
+
+        expect(editor.getText()).toBe('agent base X second');
+        expect(flushed).toEqual(['agent base X']);
+      },
+    );
+
+    it('keeps a keystroke typed 100 ms after an apply when a second update arrived at +25 ms', async () => {
+      const editor = await renderAppliedNote();
+      const { flushed } = modelWriteService();
+
+      await applyExternal('agent base', 5);
+      await vi.advanceTimersByTimeAsync(150);
+      expect(editor.getText()).toBe('agent base');
+
+      await vi.advanceTimersByTimeAsync(25);
+      await applyExternal('agent base second', 6);
+      await vi.advanceTimersByTimeAsync(75);
+      editor.commands.insertContentAt(editor.state.doc.content.size - 1, ' X');
+      expect(editor.getText()).toBe('agent base X');
+      await vi.advanceTimersByTimeAsync(75 + 1100);
+
+      expect(editor.getText()).toBe('agent base X second');
+      expect(flushed).toEqual(['agent base X']);
+    });
+
+    it('folds and re-saves a keystroke when staging it queued nothing in the write-service', async () => {
+      const editor = await renderAppliedNote();
+      vi.mocked(updateNoteContent).mockImplementation(() => undefined);
+      vi.mocked(hasPendingNoteContent).mockReturnValue(false);
+
+      await applyExternal('agent base', 5);
+      await vi.advanceTimersByTimeAsync(150);
+      expect(editor.getText()).toBe('agent base');
+
+      await vi.advanceTimersByTimeAsync(25);
+      await applyExternal('agent base second', 6);
+      await vi.advanceTimersByTimeAsync(75);
+      editor.commands.insertContentAt(editor.state.doc.content.size - 1, ' X');
+      vi.mocked(updateNoteContent).mockClear();
+      await vi.advanceTimersByTimeAsync(75);
+
+      expect(editor.getText()).toBe('agent base X second');
+
+      await vi.advanceTimersByTimeAsync(1100);
+      const saved = vi.mocked(updateNoteContent).mock.calls.map((call) => call[2]);
+      expect(saved.at(-1)).toBe('agent base X second');
+    });
+  });
+
+  // Regression (verified live on a real stack): the editor loaded rev 4, the
+  // user typed continuously, an agent's note.add landed rev 5 in the store
+  // through the refetch, and only then was the draft staged for the first
+  // time. Staging claimed the store's rev 5 for text derived from rev 4, so
+  // the daemon saw no staleness, wrote the draft verbatim and the agent's
+  // block was gone from every later revision. The first staging must name
+  // the rev the editor text was derived from.
+  describe('draft base revision', () => {
+    /**
+     * Daemon model behind the mocked write-service (the service's own
+     * contract — first staging fixes the chain's base, immediate or 800 ms
+     * debounced flush — is modelled; the real service is covered in
+     * notes-write-service.test.ts). `expectedVersion === rev` writes the draft
+     * verbatim; a stale rev three-way merges it from that rev's text (results
+     * per the production `three_way_merge` oracle).
+     */
+    function modelExactWriteDaemon(content: string, rev: number) {
+      const daemon = { content, rev, history: new Map([[rev, content]]) };
+      const staleRevMerge: Record<string, string> = {
+        'base x1 x2': 'agent base x1 x2',
+      };
+      const sent: Array<{ text: string; expectedVersion?: number }> = [];
+      let pending: { text: string; baseRev?: number } | null = null;
+      let timer: ReturnType<typeof setTimeout> | null = null;
+
+      const flush = async () => {
+        if (timer) clearTimeout(timer);
+        timer = null;
+        if (!pending) return undefined;
+        const { text, baseRev } = pending;
+        pending = null;
+        sent.push({ text, expectedVersion: baseRev });
+        let merged = text;
+        if (baseRev !== daemon.rev) {
+          const staleMerge = staleRevMerge[text];
+          if (staleMerge === undefined) {
+            throw new Error(`no merge modelled for stale-rev write of ${JSON.stringify(text)}`);
+          }
+          merged = staleMerge;
+        }
+        daemon.rev += 1;
+        daemon.content = merged;
+        daemon.history.set(daemon.rev, merged);
+        await applyExternal(merged, daemon.rev);
+        return { content: merged, rev: daemon.rev };
+      };
+
+      vi.mocked(updateNoteContent).mockImplementation((_ws, _id, text, options) => {
+        pending = pending
+          ? { ...pending, text }
+          : { text, baseRev: options?.baseRev ?? getNoteById('spec')?.rev };
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(() => void flush(), options?.immediate ? 0 : 800);
+      });
+      vi.mocked(hasPendingNoteContent).mockImplementation(() => pending !== null);
+      vi.mocked(flushNoteContent).mockImplementation(flush);
+
+      const agentWrites = async (text: string) => {
+        daemon.rev += 1;
+        daemon.content = text;
+        daemon.history.set(daemon.rev, text);
+        await applyExternal(text, daemon.rev);
+      };
+      return { daemon, sent, agentWrites };
+    }
+
+    async function applyExternal(text: string, rev: number) {
+      replaceNotes([createNote('spec', 'Spec', text, { rev } as Partial<Note>)]);
+      await tick();
+    }
+
+    it('names the loaded rev, not the refetched rev, when typing is staged by an agent update', async () => {
+      replaceNotes([createNote('spec', 'Spec', 'base', { rev: 4 } as Partial<Note>)]);
+      const view = await renderInitializedNote('spec', 'base');
+      const editor = (view.container.querySelector('.ProseMirror') as any).editor;
+      await waitFor(() => expect(editor.getText()).toBe('base'));
+      vi.useFakeTimers();
+      await vi.advanceTimersByTimeAsync(1200);
+      const { daemon, sent, agentWrites } = modelExactWriteDaemon('base', 4);
+      vi.mocked(updateNoteContent).mockClear();
+
+      // Continuous typing: two keystrokes 100 ms apart, both inside the
+      // component's 1 s save debounce, so nothing has been staged yet.
+      editor.commands.insertContentAt(editor.state.doc.content.size - 1, ' x1');
+      await vi.advanceTimersByTimeAsync(100);
+      editor.commands.insertContentAt(editor.state.doc.content.size - 1, ' x2');
+      await vi.advanceTimersByTimeAsync(100);
+      expect(updateNoteContent).not.toHaveBeenCalled();
+
+      await agentWrites('agent base');
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(updateNoteContent).toHaveBeenCalledWith('ws-1', 'spec', 'base x1 x2', {
+        immediate: false,
+        baseRev: 4,
+        baseContent: 'base',
+      });
+      expect(sent).toEqual([{ text: 'base x1 x2', expectedVersion: 4 }]);
+      expect(daemon.content).toBe('agent base x1 x2');
+      expect(editor.getText()).toBe('agent base x1 x2');
+
+      // The chain settled and the editor text is the daemon's rev 6: the next
+      // keystroke names that rev and lands as an exact write.
+      editor.commands.insertContentAt(editor.state.doc.content.size - 1, ' x3');
+      await vi.advanceTimersByTimeAsync(1000 + 800 + 1);
+
+      expect(sent.at(-1)).toEqual({ text: 'agent base x1 x2 x3', expectedVersion: 6 });
+      expect(daemon.content).toBe('agent base x1 x2 x3');
+      expect(daemon.rev).toBe(7);
+      expect(editor.getText()).toBe('agent base x1 x2 x3');
+    });
+
+    // Regression (PR #2404 review): a save whose echo equals the editor text
+    // never goes through the external apply, so its rev went unrecorded; the
+    // next chain staged after an agent refetch then named the rev before the
+    // save and the daemon merge duplicated the first edit or swallowed an
+    // undo. The settled echo's rev must become the baseline's rev.
+    it.each(['typing', 'undo'])(
+      'names the settled equal echo rev when the next chain starts after an agent refetch (%s)',
+      async (mode) => {
+        replaceNotes([createNote('spec', 'Spec', 'body', { rev: 4 })]);
+        const view = await renderInitializedNote('spec', 'body');
+        const editor = (view.container.querySelector('.ProseMirror') as any).editor;
+        await waitFor(() => expect(editor.getText()).toBe('body'));
+        vi.useFakeTimers();
+        await vi.advanceTimersByTimeAsync(1200);
+
+        let pending = false;
+        vi.mocked(hasPendingNoteContent).mockImplementation(() => pending);
+        vi.mocked(updateNoteContent).mockImplementation((_ws, _id, text) => {
+          pending = true;
+          replaceNotes([createNote('spec', 'Spec', text, { rev: 4 })]);
+        });
+        vi.mocked(flushNoteContent).mockImplementation(async () => undefined);
+        vi.mocked(updateNoteContent).mockClear();
+
+        editor.commands.insertContentAt(editor.state.doc.content.size - 1, ' first');
+        await vi.advanceTimersByTimeAsync(1000);
+        expect(updateNoteContent).toHaveBeenLastCalledWith('ws-1', 'spec', 'body first', {
+          immediate: false,
+          baseRev: 4,
+          baseContent: 'body',
+        });
+
+        // The save settles with identical content at rev 5.
+        pending = false;
+        replaceNotes([createNote('spec', 'Spec', 'body first', { rev: 5 })]);
+        await tick();
+        await vi.advanceTimersByTimeAsync(3000);
+        expect(editor.getText()).toBe('body first');
+
+        vi.mocked(updateNoteContent).mockClear();
+        if (mode === 'undo') editor.commands.deleteRange({ from: 5, to: 11 });
+        else editor.commands.insertContentAt(editor.state.doc.content.size - 1, ' plus typing');
+        const expectedDraft = mode === 'undo' ? 'body' : 'body first plus typing';
+        expect(editor.getText()).toBe(expectedDraft);
+
+        // An agent refetch lands rev 6 before the draft is staged.
+        replaceNotes([createNote('spec', 'Spec', 'AGENT body first', { rev: 6 })]);
+        await tick();
+
+        expect(updateNoteContent).toHaveBeenCalledWith('ws-1', 'spec', expectedDraft, {
+          immediate: false,
+          baseRev: 5,
+          baseContent: 'body first',
+        });
+      },
+    );
+  });
+
+  // Regression (PR #2404 review): a dirty-editor flush started for note A,
+  // held across a switch to note B, resolved into the live editor — B's text
+  // was replaced by A's echo and B's baseline took A's rev. The same held for
+  // A's render still converting when the switch happened.
+  describe('external apply held across a note switch', () => {
+    async function holdFlushThenSwitchToB() {
+      let noteA = createNote('spec', 'A', 'note A', { rev: 4 });
+      const noteB = createNote('note-b', 'B', 'note B', { rev: 40 });
+      replaceNotes([noteA, noteB]);
+      const view = await renderInitializedNote('spec', 'note A');
+      const editor = (view.container.querySelector('.ProseMirror') as any).editor;
+      await waitFor(() => expect(editor.getText()).toBe('note A'));
+      vi.useFakeTimers();
+      await vi.advanceTimersByTimeAsync(1200);
+
+      let pending = false;
+      let resolveSave!: (value: { content: string; rev: number }) => void;
+      const saved = new Promise<{ content: string; rev: number }>((resolve) => {
+        resolveSave = resolve;
+      });
+      vi.mocked(hasPendingNoteContent).mockImplementation((_ws, id) => id === 'spec' && pending);
+      vi.mocked(updateNoteContent).mockImplementation((_ws, id, text) => {
+        if (id !== 'spec') return;
+        pending = true;
+        noteA = { ...noteA, content: text };
+        replaceNotes([noteA, noteB]);
+      });
+      vi.mocked(flushNoteContent).mockImplementation((_ws, id) =>
+        id === 'spec' ? saved : Promise.resolve(undefined),
+      );
+      vi.mocked(flushNoteContent).mockClear();
+
+      editor.commands.insertContentAt(editor.state.doc.content.size - 1, ' local');
+      noteA = { ...noteA, content: 'AGENT note A', rev: 5 };
+      replaceNotes([noteA, noteB]);
+      await tick();
+      expect(flushNoteContent).toHaveBeenCalledWith('ws-1', 'spec');
+
+      const switchToB = async () => {
+        await view.rerender({
+          workspace: { id: WORKSPACE_ID } as any,
+          noteId: 'note-b',
+          content: 'note B',
+          editable: true,
+        });
+        selectCurrentNote('note-b');
+        await vi.advanceTimersByTimeAsync(300);
+        expect(editor.getText()).toBe('note B');
+      };
+
+      // `syncStore: false` resolves the save without the store echo, so no
+      // safety-net re-run supersedes the apply generation under test.
+      const resolveA = async ({ syncStore = true } = {}) => {
+        pending = false;
+        noteA = { ...noteA, content: 'AGENT note A local', rev: 6 };
+        if (syncStore) replaceNotes([noteA, noteB]);
+        resolveSave({ content: noteA.content, rev: 6 });
+        await tick();
+        await vi.advanceTimersByTimeAsync(0);
+      };
+
+      return { editor, switchToB, resolveA };
+    }
+
+    it('drops the A flush result when the editor now shows B', async () => {
+      const { editor, switchToB, resolveA } = await holdFlushThenSwitchToB();
+      await switchToB();
+      mockApplyExternalUpdateHtml.mockClear();
+
+      await resolveA();
+
+      expect(editor.getText()).toBe('note B');
+      expect(mockApplyExternalUpdateHtml).not.toHaveBeenCalled();
+    });
+
+    it('drops the A render still converting when the editor now shows B', async () => {
+      const { editor, switchToB, resolveA } = await holdFlushThenSwitchToB();
+      const renderA = deferMarkdownConversion('AGENT note A local');
+      await resolveA({ syncStore: false });
+      expect(editor.getText()).toBe('note A local');
+
+      await switchToB();
+      mockApplyExternalUpdateHtml.mockClear();
+
+      renderA.resolve('<p>AGENT note A local</p>');
+      await flushConversionCompletion();
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(editor.getText()).toBe('note B');
+      expect(mockApplyExternalUpdateHtml).not.toHaveBeenCalled();
+    });
+
+    it('keeps applying the A flush result while the editor still shows A', async () => {
+      const { editor, resolveA } = await holdFlushThenSwitchToB();
+
+      await resolveA();
+
+      expect(editor.getText()).toBe('AGENT note A local');
+    });
+  });
+
+  // Regression (PR #2404 re-verification, real component + REAL write service):
+  // body@4; " first" is staged by the refetch AGENT body@5 and its save held;
+  // " plus typing" is staged by the debounce; " newest" is typed; the refetch
+  // AGENT body first LATER@8 lands; then the superseded echo AGENT body first@6
+  // arrives. Before the fix the chain's rebased drafts never reached the
+  // editor, so the next keystroke was staged from the pre-rebase text and,
+  // relative to the rebased in-flight draft, read as deleting AGENT: the third
+  // save was an exact write at rev 9 without it. The drafts are sent against
+  // the echo rev, so the daemon merges LATER in (mocked on the second echo).
+  it('keeps the agent text, the newer refetch and every keystroke through a superseded echo behind a newer refetch (real write service)', async () => {
+    const service = await vi.importActual<typeof import('$features/notes/notes-write-service')>(
+      '$features/notes/notes-write-service',
+    );
+    const { appClient } = await import('$lib/client');
+    let resolveFirst!: (v: unknown) => void;
+    let resolveSecond!: (v: unknown) => void;
+    const first = new Promise((resolve) => {
+      resolveFirst = resolve;
+    });
+    const second = new Promise((resolve) => {
+      resolveSecond = resolve;
+    });
+    const wire = vi
+      .spyOn(appClient.notes, 'setContent')
+      .mockReturnValueOnce(first as never)
+      .mockReturnValueOnce(second as never)
+      .mockImplementation(((_id: string, content: string) =>
+        Promise.resolve({ success: true, newContent: content, noteRev: 10 })) as never);
+    replaceNotes([createNote('spec', 'Spec', 'body', { rev: 4 })]);
+    const view = await renderInitializedNote('spec', 'body');
+    const editor = (view.container.querySelector('.ProseMirror') as any).editor;
+    await waitFor(() => expect(editor.getText()).toBe('body'));
+    vi.useFakeTimers();
+    await vi.advanceTimersByTimeAsync(1200);
+    vi.mocked(hasPendingNoteContent).mockImplementation(service.hasPendingNoteContent);
+    vi.mocked(updateNoteContent).mockImplementation(service.updateNoteContent);
+    vi.mocked(flushNoteContent).mockImplementation(service.flushNoteContent);
+    // Optimistic store writes from the real service land in the mock store.
+    mockDispatch.mockImplementation((action: any) => {
+      if (action.type === 'workspaceNotes/applyLocalNoteUpdate') {
+        const { noteId, update } = action.payload;
+        replaceNotes([{ ...getNoteById(noteId), ...update }]);
+      }
+      return action;
+    });
+    try {
+      editor.commands.insertContentAt(editor.state.doc.content.size - 1, ' first');
+      replaceNotes([createNote('spec', 'Spec', 'AGENT body', { rev: 5 })]);
+      await tick();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(wire).toHaveBeenCalledWith('spec', 'body first', 4, 'ws-1');
+
+      editor.commands.insertContentAt(editor.state.doc.content.size - 1, ' plus typing');
+      await vi.advanceTimersByTimeAsync(1000);
+      editor.commands.insertContentAt(editor.state.doc.content.size - 1, ' newest');
+      replaceNotes([createNote('spec', 'Spec', 'AGENT body first LATER', { rev: 8 })]);
+      resolveFirst({ success: true, newContent: 'AGENT body first', noteRev: 6 });
+      await tick();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(wire).toHaveBeenCalledTimes(2);
+      expect(wire.mock.calls[1]?.[1]).toBe('AGENT body first plus typing newest');
+      expect(wire.mock.calls[1]?.[2]).toBe(6);
+
+      editor.commands.insertContentAt(editor.state.doc.content.size - 1, ' after');
+      await vi.advanceTimersByTimeAsync(1000);
+      resolveSecond({
+        success: true,
+        newContent: 'AGENT body first plus typing newest LATER',
+        noteRev: 9,
+      });
+      await tick();
+      await vi.advanceTimersByTimeAsync(3000);
+
+      const finalText = 'AGENT body first plus typing newest after LATER';
+      expect(editor.getText()).toBe(finalText);
+      expect(wire).toHaveBeenCalledTimes(3);
+      expect(wire.mock.calls[2]).toEqual(['spec', finalText, 9, 'ws-1']);
+      expect(getNoteById('spec')).toMatchObject({ content: finalText, rev: 10 });
+    } finally {
+      resolveFirst({ success: true, newContent: 'AGENT body first', noteRev: 6 });
+      resolveSecond({
+        success: true,
+        newContent: 'AGENT body first plus typing newest LATER',
+        noteRev: 9,
+      });
+      await service.flushNoteContent('ws-1', 'spec');
+      vi.mocked(hasPendingNoteContent).mockImplementation(() => false);
+      vi.mocked(updateNoteContent).mockImplementation(() => undefined);
+      vi.mocked(flushNoteContent).mockImplementation(async () => undefined);
+      mockDispatch.mockImplementation((action: any) => action);
+      wire.mockRestore();
+    }
+  });
+
+  // Regression (PR #2404 review): a save the user's typing produced was still
+  // pending when they clicked restore. Sent after the restore RPC, the daemon
+  // merged that pre-restore draft onto the restored text, and the merged
+  // echo — not the restored version — is what the editor then showed.
+  it('saves pending typing before dispatching a version restore', async () => {
+    replaceNotes([createNote('spec', 'A', 'note A', { rev: 4 })]);
+    const view = await renderInitializedNote('spec', 'note A');
+    const editor = (view.container.querySelector('.ProseMirror') as any).editor;
+    await waitFor(() => expect(editor.getText()).toBe('note A'));
+    expect(versionHistory.props?.onRestore).toBeTypeOf('function');
+    vi.useFakeTimers();
+    await vi.advanceTimersByTimeAsync(1200);
+
+    let pending = false;
+    let resolveSettled!: () => void;
+    const settled = new Promise<void>((resolve) => {
+      resolveSettled = resolve;
+    });
+    vi.mocked(hasPendingNoteContent).mockImplementation((_ws, id) => id === 'spec' && pending);
+    vi.mocked(updateNoteContent).mockImplementation((_ws, id) => {
+      if (id === 'spec') pending = true;
+    });
+    vi.mocked(settleNoteContent).mockImplementation((_ws, id) =>
+      id === 'spec' ? settled : Promise.resolve(),
+    );
+    vi.mocked(settleNoteContent).mockClear();
+    mockDispatch.mockClear();
+    const restoreDispatched = () =>
+      mockDispatch.mock.calls.some(
+        ([action]) => action?.type === 'workspaceNotes/restoreNoteVersion',
+      );
+
+    try {
+      // A keystroke still on the component's save debounce when restore is clicked.
+      editor.commands.insertContentAt(editor.state.doc.content.size - 1, ' local');
+      const restore = versionHistory.props!.onRestore!('version-1');
+      await tick();
+
+      expect(updateNoteContent).toHaveBeenCalledWith('ws-1', 'spec', 'note A local', {
+        immediate: false,
+        baseRev: 4,
+        baseContent: 'note A',
+      });
+      expect(settleNoteContent).toHaveBeenCalledWith('ws-1', 'spec');
+      expect(restoreDispatched()).toBe(false);
+
+      pending = false;
+      resolveSettled();
+      await restore;
+
+      expect(mockDispatch).toHaveBeenCalledWith({
+        type: 'workspaceNotes/restoreNoteVersion',
+        payload: { workspaceId: 'ws-1', noteId: 'spec', versionId: 'version-1' },
+      });
+    } finally {
+      // The suite's beforeEach only clears call history; a failure before
+      // `pending` is reset would otherwise leak a stuck pending flag into
+      // later `spec` tests through the unmount-time save.
+      vi.mocked(hasPendingNoteContent).mockImplementation(() => false);
+      vi.mocked(updateNoteContent).mockImplementation(() => undefined);
+      vi.mocked(settleNoteContent).mockImplementation(async () => undefined);
+    }
+  });
+
+  // Regression (PR #2404 fresh review, real component + REAL write service):
+  // the save produced by " local" has already left the debounce and is in
+  // flight when restore is clicked. `flushNoteContent` finds nothing debounced
+  // and resolves at once, so the restore used to be dispatched while that
+  // save was unacknowledged; the daemon dispatches requests concurrently, so
+  // the restore could commit first and the stale draft merge onto it.
+  it('waits for an already in-flight save before dispatching a version restore', async () => {
+    const service = await vi.importActual<typeof import('$features/notes/notes-write-service')>(
+      '$features/notes/notes-write-service',
+    );
+    const { appClient } = await import('$lib/client');
+    let resolveSave!: (value: unknown) => void;
+    const wire = vi.spyOn(appClient.notes, 'setContent').mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveSave = resolve;
+      }) as never,
+    );
+    replaceNotes([createNote('spec', 'A', 'note A', { rev: 4 })]);
+    const view = await renderInitializedNote('spec', 'note A');
+    const editor = (view.container.querySelector('.ProseMirror') as any).editor;
+    await waitFor(() => expect(editor.getText()).toBe('note A'));
+    vi.useFakeTimers();
+    await vi.advanceTimersByTimeAsync(1200);
+    vi.mocked(hasPendingNoteContent).mockImplementation(service.hasPendingNoteContent);
+    vi.mocked(updateNoteContent).mockImplementation(service.updateNoteContent);
+    vi.mocked(flushNoteContent).mockImplementation(service.flushNoteContent);
+    vi.mocked(settleNoteContent).mockImplementation(service.settleNoteContent);
+    mockDispatch.mockImplementation((action: any) => {
+      if (action.type === 'workspaceNotes/applyLocalNoteUpdate') {
+        const { noteId, update } = action.payload;
+        replaceNotes([{ ...getNoteById(noteId), ...update }]);
+      }
+      return action;
+    });
+    const restoreDispatched = () =>
+      mockDispatch.mock.calls.some(
+        ([action]) => action?.type === 'workspaceNotes/restoreNoteVersion',
+      );
+    const saveResult = { success: true, newContent: 'note A local', noteRev: 5 };
+    try {
+      editor.commands.insertContentAt(editor.state.doc.content.size - 1, ' local');
+      await vi.advanceTimersByTimeAsync(1801);
+      expect(wire).toHaveBeenCalledWith('spec', 'note A local', 4, 'ws-1');
+      expect(service.hasPendingNoteContent('ws-1', 'spec')).toBe(true);
+      mockDispatch.mockClear();
+
+      const restore = versionHistory.props!.onRestore!('version-1');
+      await tick();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(service.hasPendingNoteContent('ws-1', 'spec')).toBe(true);
+      expect(restoreDispatched()).toBe(false);
+
+      resolveSave(saveResult);
+      await restore;
+      expect(service.hasPendingNoteContent('ws-1', 'spec')).toBe(false);
+      expect(mockDispatch).toHaveBeenCalledWith({
+        type: 'workspaceNotes/restoreNoteVersion',
+        payload: { workspaceId: 'ws-1', noteId: 'spec', versionId: 'version-1' },
+      });
+    } finally {
+      resolveSave(saveResult);
+      await vi.advanceTimersByTimeAsync(0);
+      await service.settleNoteContent('ws-1', 'spec');
+      vi.mocked(hasPendingNoteContent).mockImplementation(() => false);
+      vi.mocked(updateNoteContent).mockImplementation(() => undefined);
+      vi.mocked(flushNoteContent).mockImplementation(async () => undefined);
+      vi.mocked(settleNoteContent).mockImplementation(async () => undefined);
+      mockDispatch.mockImplementation((action: any) => action);
+      wire.mockRestore();
+    }
+  });
+
   it('does not apply a pending note conversion after unmount', async () => {
     const view = await renderInitializedNote();
     mockApplyExternalUpdateHtml.mockClear();
@@ -735,7 +1372,7 @@ describe('NoteWithComments task conversion regression', () => {
 
     // Simulate the race: the editor mounts from stale/raw content, then the
     // Redux-backed selector catches up with the already-converted note content
-    // without any note-content-update CustomEvent being delivered.
+    // through the safety-net alone.
     replaceNotes([convertedSpecNote, linkedTaskNote]);
 
     await waitFor(
