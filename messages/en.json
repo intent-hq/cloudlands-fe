@@ -6375,5 +6375,15 @@
   "workspace_share_listenerDown_error": "Turn on Remote Access + Tailcat in Settings before inviting",
   "notes_presenceStack_viewers_one": "1 other person is viewing this note",
   "notes_presenceStack_viewers_many": "{count} other people are viewing this note",
-  "notes_presenceStack_overflow_label": "+{count}"
+  "notes_presenceStack_overflow_label": "+{count}",
+  "presence_person_unknown_label": "Someone",
+  "presence_avatarStack_people_one": "1 other person here",
+  "presence_avatarStack_people_many": "{count} other people here",
+  "presence_avatarStack_more_label": "+{count}",
+  "presence_typing_one": "{name} is typing…",
+  "presence_typing_two_label": "{first} and {second} are typing…",
+  "presence_typing_many": "{first} and {count} others are typing…",
+  "workspace_hoverCard_people_label": "People",
+  "workspace_hoverCard_personViewing_label": "Viewing",
+  "workspace_hoverCard_personOnline_label": "Online"
 }

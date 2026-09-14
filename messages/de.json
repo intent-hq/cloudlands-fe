@@ -6375,5 +6375,15 @@
   "workspace_share_listenerDown_error": "Aktiviere Fernzugriff + Tailcat in den Einstellungen, bevor du einlädst",
   "notes_presenceStack_viewers_one": "1 weitere Person sieht sich diese Notiz an",
   "notes_presenceStack_viewers_many": "{count} weitere Personen sehen sich diese Notiz an",
-  "notes_presenceStack_overflow_label": "+{count}"
+  "notes_presenceStack_overflow_label": "+{count}",
+  "presence_person_unknown_label": "Jemand",
+  "presence_avatarStack_people_one": "1 weitere Person hier",
+  "presence_avatarStack_people_many": "{count} weitere Personen hier",
+  "presence_avatarStack_more_label": "+{count}",
+  "presence_typing_one": "{name} schreibt…",
+  "presence_typing_two_label": "{first} und {second} schreiben…",
+  "presence_typing_many": "{first} und {count} weitere schreiben…",
+  "workspace_hoverCard_people_label": "Personen",
+  "workspace_hoverCard_personViewing_label": "Sieht zu",
+  "workspace_hoverCard_personOnline_label": "Online"
 }

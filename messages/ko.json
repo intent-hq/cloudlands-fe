@@ -6375,5 +6375,15 @@
   "workspace_share_listenerDown_error": "초대하기 전에 설정에서 원격 액세스 + Tailcat을 켜세요",
   "notes_presenceStack_viewers_one": "다른 1명이 이 노트를 보고 있습니다",
   "notes_presenceStack_viewers_many": "다른 {count}명이 이 노트를 보고 있습니다",
-  "notes_presenceStack_overflow_label": "+{count}"
+  "notes_presenceStack_overflow_label": "+{count}",
+  "presence_person_unknown_label": "누군가",
+  "presence_avatarStack_people_one": "다른 1명이 여기 있습니다",
+  "presence_avatarStack_people_many": "다른 {count}명이 여기 있습니다",
+  "presence_avatarStack_more_label": "+{count}",
+  "presence_typing_one": "{name}님이 입력 중…",
+  "presence_typing_two_label": "{first}님과 {second}님이 입력 중…",
+  "presence_typing_many": "{first}님 외 {count}명이 입력 중…",
+  "workspace_hoverCard_people_label": "사람",
+  "workspace_hoverCard_personViewing_label": "보는 중",
+  "workspace_hoverCard_personOnline_label": "온라인"
 }
