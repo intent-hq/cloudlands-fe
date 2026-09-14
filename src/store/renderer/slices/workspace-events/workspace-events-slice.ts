@@ -24,6 +24,12 @@ export type WorkspaceEventsWorkspaceState = {
 
 export type WorkspaceEventsState = {
   byWorkspaceId: Record<string, WorkspaceEventsWorkspaceState>;
+  /**
+   * Bumped each time the daemon-events firehose subscription is live (boot
+   * and every reconnect). A snapshot read at generation N is superseded by
+   * every event delivered from then on; one read before it may miss a change.
+   */
+  subscriptionGeneration: number;
 };
 
 export const emptyWorkspaceEventsState: WorkspaceEventsWorkspaceState = {
@@ -40,6 +46,7 @@ export const emptyWorkspaceEventsState: WorkspaceEventsWorkspaceState = {
 
 export const initialState: WorkspaceEventsState = {
   byWorkspaceId: {},
+  subscriptionGeneration: 0,
 };
 
 const { getWorkspaceState, setWorkspaceState, clearWorkspaceState } =
@@ -111,12 +118,18 @@ export const olderEventsLoadFailed = createAction<[workspaceId: string, error: s
 export const setEventsLoading = createAction<[workspaceId: string, loading: boolean]>(
   'workspaceEvents/setEventsLoading',
 );
+/** The daemon-events firehose subscription was (re)established on the connection. */
+export const daemonEventsSubscribed = createAction('workspaceEvents/daemonEventsSubscribed');
 
 // ---------------------------------------------------------------------------
 // Reducer
 // ---------------------------------------------------------------------------
 
 export const workspaceEventsReducer = createReducer<WorkspaceEventsState>(initialState);
+workspaceEventsReducer.with(daemonEventsSubscribed, (state) => ({
+  ...state,
+  subscriptionGeneration: state.subscriptionGeneration + 1,
+}));
 workspaceEventsReducer.with(eventReceived, (state, { payload: [workspaceId, event] }) => {
   const safeEvent = sanitizeWorkspaceEvent(event, workspaceId);
   if (!safeEvent) return state;

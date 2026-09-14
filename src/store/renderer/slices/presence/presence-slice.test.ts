@@ -8,6 +8,7 @@ import {
   presenceReducer,
   presenceReset,
   presenceRosterReceived,
+  presenceSnapshotReceived,
   presenceTypingExpired,
   presenceTypingPulse,
   presenceTypingStopped,
@@ -50,6 +51,19 @@ describe('presence slice', () => {
     expect(getItems(state.rosters['ws-2']).map((m) => m.principalId)).toEqual(['b']);
     expect(getItem(state.rosters['ws-1'], 'a')).toBeUndefined();
     expect(getItem(state.rosters['ws-1'], 'c')?.principalId).toBe('c');
+  });
+
+  it('applies a fenced snapshot exactly like a pushed roster, typing included', () => {
+    const pushed = presenceReducer(
+      initialState,
+      presenceRosterReceived(roster([member('a', { typing: [typing('ts-1', 1)] })])),
+    );
+    const snapshotted = presenceReducer(
+      initialState,
+      presenceSnapshotReceived(roster([member('a', { typing: [typing('ts-1', 1)] })])),
+    );
+    expect(snapshotted).toEqual(pushed);
+    expect(presenceSnapshotReceived.type).not.toBe(presenceRosterReceived.type);
   });
 
   it('folds typing entries by source, keeping identity while the pulse is unchanged', () => {
