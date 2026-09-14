@@ -51,6 +51,38 @@ describe('docTextOffsets', () => {
     expect(offsets.offsetOfPos(4)).toBe(2);
   });
 
+  it('round-trips a caret in an empty middle paragraph onto that paragraph', () => {
+    const doc = makeEditor('<p>ab</p><p></p><p>cd</p>').state.doc;
+    const offsets = docTextOffsets(doc);
+    expect(offsets.text).toBe('ab\n\ncd');
+    expect(doc.resolve(5).parent.textContent).toBe('');
+    expect(offsets.offsetOfPos(5)).toBe(3);
+    expect(offsets.posOfOffset(3)).toBe(5);
+    expect(offsets.posOfOffset(offsets.offsetOfPos(5))).toBe(5);
+    // Neighbouring blocks are unaffected.
+    expect(offsets.posOfOffset(2)).toBe(3);
+    expect(offsets.posOfOffset(4)).toBe(7);
+    expect(offsets.offsetOfPos(7)).toBe(4);
+  });
+
+  it('round-trips carets in leading and trailing empty paragraphs', () => {
+    const leading = docTextOffsets(makeEditor('<p></p><p>cd</p>').state.doc);
+    expect(leading.text).toBe('\ncd');
+    expect(leading.posOfOffset(0)).toBe(1);
+    expect(leading.offsetOfPos(1)).toBe(0);
+    expect(leading.posOfOffset(1)).toBe(3);
+
+    const trailing = docTextOffsets(makeEditor('<p>ab</p><p></p>').state.doc);
+    expect(trailing.text).toBe('ab\n');
+    expect(trailing.posOfOffset(3)).toBe(5);
+    expect(trailing.offsetOfPos(5)).toBe(3);
+
+    const only = docTextOffsets(makeEditor('<p></p>').state.doc);
+    expect(only.text).toBe('');
+    expect(only.posOfOffset(0)).toBe(1);
+    expect(only.offsetOfPos(1)).toBe(0);
+  });
+
   it('clamps out-of-range inputs', () => {
     const doc = makeEditor('<p>ab</p>').state.doc;
     const offsets = docTextOffsets(doc);
