@@ -36,10 +36,15 @@ import {
   guestSessionsReducer,
   initialState,
   leaveGuestSessionRequested,
+  loadGuestSessionsRequested,
   loadHostedRosterRequested,
   removeHostedMemberRequested,
 } from '../guest-sessions-slice';
-import { HostedRosterOperationError, type WorkspaceMember } from '../guest-sessions-types';
+import {
+  GuestSessionOperationError,
+  HostedRosterOperationError,
+  type WorkspaceMember,
+} from '../guest-sessions-types';
 import { guestSessionsSaga } from './guest-sessions-saga';
 import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
 
@@ -226,7 +231,9 @@ describe('guestSessionsSaga', () => {
 
     const action = leaveGuestSessionRequested(GUEST.id);
     run.dispatch(action);
-    await expect(action.promise).rejects.toThrow('unknown guest session');
+    const failure = (await action.promise.catch((e: unknown) => e)) as GuestSessionOperationError;
+    expect(failure).toBeInstanceOf(GuestSessionOperationError);
+    expect(failure.code).toBe('ipc');
     expect(run.getState().guestSessions.leavingIds).toEqual([]);
 
     await stop(run.task);
@@ -655,6 +662,185 @@ describe('guestSessionsSaga', () => {
 
     await stop(run.task);
   });
+
+  it('a terminal denial blocks later direct Remove and read intents without an RPC', async () => {
+    const run = start();
+    await settle();
+    run.dispatch(replaceWorkspaceList([makeWorkspace('ws-1', 2)]));
+    mocks.request.mockRejectedValueOnce(daemonError(-32003, 'Forbidden'));
+    const denied = loadHostedRosterRequested('ws-1');
+    run.dispatch(denied);
+    await denied.promise.catch(() => {});
+    expect(run.getState().guestSessions.hostedRosters['ws-1']?.status).toBe('withheld');
+
+    mocks.request.mockClear();
+    const remove = removeHostedMemberRequested('ws-1', MEMBER.principalId);
+    const read = loadHostedRosterRequested('ws-1');
+    run.dispatch(remove);
+    run.dispatch(read);
+    const [removeFailure, readFailure] = (await Promise.all([
+      remove.promise.catch((e: unknown) => e),
+      read.promise.catch((e: unknown) => e),
+    ])) as HostedRosterOperationError[];
+    expect(removeFailure.code).toBe('forbidden');
+    expect(readFailure.code).toBe('forbidden');
+    expect(mocks.request).not.toHaveBeenCalled();
+    expect(run.getState().guestSessions.hostedRosters['ws-1']).toEqual({
+      status: 'withheld',
+      members: [],
+    });
+
+    await stop(run.task);
+  });
+
+  it('a read predating a denied Remove cannot restore the withheld rows', async () => {
+    let resolveRead!: (value: unknown) => void;
+    mocks.request.mockImplementation((method) =>
+      method === 'workspace.members.list'
+        ? new Promise((resolve) => {
+            resolveRead = resolve;
+          })
+        : Promise.reject(daemonError(-32003, 'Forbidden')),
+    );
+    const run = start();
+    await settle();
+    run.dispatch(replaceWorkspaceList([makeWorkspace('ws-1', 2)]));
+    const read = loadHostedRosterRequested('ws-1');
+    run.dispatch(read);
+    const remove = removeHostedMemberRequested('ws-1', MEMBER.principalId);
+    run.dispatch(remove);
+    await remove.promise.catch(() => {});
+    expect(run.getState().guestSessions.hostedRosters['ws-1']?.status).toBe('withheld');
+
+    resolveRead({ members: [MEMBER] });
+    const failure = (await read.promise.catch((e: unknown) => e)) as HostedRosterOperationError;
+    expect(failure.code).toBe('forbidden');
+    expect(run.getState().guestSessions.hostedRosters['ws-1']).toEqual({
+      status: 'withheld',
+      members: [],
+    });
+
+    await stop(run.task);
+  });
+
+  it.each(['success', 'forbidden'] as const)(
+    'a Remove settling (%s) after the workspace was deleted cannot resurrect its roster',
+    async (outcome) => {
+      let resolveRemove!: (value: unknown) => void;
+      let rejectRemove!: (error: unknown) => void;
+      mocks.request.mockImplementation((method) =>
+        method === 'workspace.members.remove'
+          ? new Promise((resolve, reject) => {
+              resolveRemove = resolve;
+              rejectRemove = reject;
+            })
+          : Promise.resolve({ members: [MEMBER] }),
+      );
+      const run = start();
+      await settle();
+      run.dispatch(replaceWorkspaceList([makeWorkspace('ws-1', 2)]));
+      const remove = removeHostedMemberRequested('ws-1', MEMBER.principalId);
+      run.dispatch(remove);
+      expect(run.getState().guestSessions.removingMemberKeys).toEqual([
+        `ws-1:${MEMBER.principalId}`,
+      ]);
+      run.dispatch(workspaceDeleted('ws-1', []));
+      expect(run.getState().guestSessions.hostedRosters['ws-1']).toBeUndefined();
+
+      // Fenced on the purge: the promise settles `cancelled` before the RPC does.
+      const failure = (await remove.promise.catch((e: unknown) => e)) as HostedRosterOperationError;
+      expect(failure.code).toBe('cancelled');
+      expect(run.getState().guestSessions.removingMemberKeys).toEqual([]);
+
+      mocks.request.mockClear();
+      if (outcome === 'success') resolveRemove({ removed: true });
+      else rejectRemove(daemonError(-32003, 'Forbidden'));
+      await settle();
+      expect(mocks.request).not.toHaveBeenCalled();
+      expect(run.getState().guestSessions.hostedRosters['ws-1']).toBeUndefined();
+
+      await stop(run.task);
+    },
+  );
+
+  it('a previous backend Remove denial cannot withhold the next backend roster of the same id', async () => {
+    let rejectRemove!: (error: unknown) => void;
+    mocks.request.mockImplementation((method) =>
+      method === 'workspace.members.remove'
+        ? new Promise((_resolve, reject) => {
+            rejectRemove = reject;
+          })
+        : Promise.resolve({ members: [MEMBER] }),
+    );
+    const run = start();
+    await settle();
+    run.dispatch(replaceWorkspaceList([makeWorkspace('ws-1', 2)]));
+    const remove = removeHostedMemberRequested('ws-1', MEMBER.principalId);
+    run.dispatch(remove);
+    run.dispatch(resetWorkspaceState());
+    const failure = (await remove.promise.catch((e: unknown) => e)) as HostedRosterOperationError;
+    expect(failure.code).toBe('cancelled');
+
+    run.dispatch(replaceWorkspaceList([makeWorkspace('ws-1', 2)]));
+    const fresh = loadHostedRosterRequested('ws-1');
+    run.dispatch(fresh);
+    await fresh.promise;
+    expect(run.getState().guestSessions.hostedRosters['ws-1']?.status).toBe('loaded');
+
+    rejectRemove(daemonError(-32003, 'Forbidden'));
+    await settle();
+    expect(run.getState().guestSessions.hostedRosters['ws-1']).toEqual({
+      status: 'loaded',
+      members: [MEMBER],
+    });
+
+    await stop(run.task);
+  });
+
+  it('a denial for a workspace already gone from the list does not install a roster entry', async () => {
+    const run = start();
+    await settle();
+    run.dispatch(replaceWorkspaceList([makeWorkspace('ws-1', 2)]));
+    run.dispatch(replaceWorkspaceList([]));
+    const read = loadHostedRosterRequested('ws-1');
+    const remove = removeHostedMemberRequested('ws-1', MEMBER.principalId);
+    run.dispatch(read);
+    run.dispatch(remove);
+    const failures = (await Promise.all([
+      read.promise.catch((e: unknown) => e),
+      remove.promise.catch((e: unknown) => e),
+    ])) as HostedRosterOperationError[];
+    expect(failures.map((f) => f.code)).toEqual(['forbidden', 'forbidden']);
+    expect(mocks.request).not.toHaveBeenCalled();
+    expect(run.getState().guestSessions.hostedRosters).toEqual({});
+
+    await stop(run.task);
+  });
+
+  it.each([
+    ['hydration', () => loadGuestSessionsRequested(), GUEST_SESSIONS.LIST],
+    ['Leave host', () => leaveGuestSessionRequested(GUEST.id), GUEST_SESSIONS.LEAVE],
+  ] as const)(
+    'bounds a raw main %s rejection before the action promise rejects',
+    async (_name, makeAction, channel) => {
+      const sentinel = 'SENTINEL-main-detail-4f1c';
+      const run = start();
+      await settle();
+      invoke.mockImplementation(async (invoked: string) => {
+        if (invoked === channel) throw new Error(`host said: ${sentinel}`);
+        return { sessions: [GUEST], openIds: [], connectedIds: [] };
+      });
+      const action = makeAction();
+      run.dispatch(action);
+      const failure = (await action.promise.catch((e: unknown) => e)) as GuestSessionOperationError;
+      expect(failure).toBeInstanceOf(GuestSessionOperationError);
+      expect(failure.code).toBe('ipc');
+      expect(JSON.stringify({ ...failure, message: failure.message })).not.toContain(sentinel);
+      expect(run.getState().guestSessions.leavingIds).toEqual([]);
+
+      await stop(run.task);
+    },
+  );
 
   it('does nothing outside Electron', async () => {
     vi.unstubAllGlobals();
