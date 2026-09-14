@@ -25,7 +25,7 @@ const paletteUtility = new RegExp(
 const hexColor = /(?:#[\da-f]{8}|#[\da-f]{6}|#[\da-f]{4}|#[\da-f]{3})(?![\da-f])/gi;
 const functionalColor = /\b(?:rgb|hsl)a?\(\s*(?!var\()[^)]*\)/gi;
 
-export const packageRoot = fs.existsSync(path.join(process.cwd(), 'eslint.config.js'))
+const packageRoot = fs.existsSync(path.join(process.cwd(), 'eslint.config.js'))
   ? process.cwd()
   : path.join(process.cwd(), 'packages/cloudlands-fe');
 

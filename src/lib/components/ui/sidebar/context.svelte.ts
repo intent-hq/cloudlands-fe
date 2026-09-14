@@ -3,7 +3,7 @@ import { getContext, setContext } from 'svelte';
 
 type Getter<T> = () => T;
 export type SidebarPeek = 'none' | 'hover' | 'click';
-export type SidebarSide = 'left' | 'right';
+type SidebarSide = 'left' | 'right';
 
 export type SidebarStateProps = {
   /**

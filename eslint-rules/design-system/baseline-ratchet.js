@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 
-export const baselinePath = 'eslint-rules/design-system/baseline.json';
+const baselinePath = 'eslint-rules/design-system/baseline.json';
 
 export function baselineFiles(entries = []) {
   if (entries.every((entry) => typeof entry === 'string')) return entries;

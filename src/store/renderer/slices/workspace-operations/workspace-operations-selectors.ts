@@ -12,10 +12,6 @@ export const selectPendingDeleteWorkspaceId = store.createSelector((state) => {
   return state.workspaceOperations.pendingDeleteWorkspaceId;
 });
 
-export const selectRunningAgentNamesForDelete = store.createSelector((state) => {
-  return state.workspaceOperations.runningAgentNamesForDelete;
-});
-
 export const selectActiveHookNamesForDelete = store.createSelector((state) => {
   return state.workspaceOperations.activeHookNamesForDelete;
 });
@@ -32,10 +28,6 @@ export const selectLocalChangesForDelete = store.createSelector((state) => {
 
 export const selectShowArchiveWarning = store.createSelector((state) => {
   return state.workspaceOperations.showArchiveWarning;
-});
-
-export const selectRunningAgentNamesForArchive = store.createSelector((state) => {
-  return state.workspaceOperations.runningAgentNamesForArchive;
 });
 
 export const selectPendingArchiveWorkspaceId = store.createSelector((state) => {

@@ -8,7 +8,7 @@ function isEnabled(item: HTMLElement): boolean {
   return !item.hasAttribute('data-disabled') && item.getAttribute('aria-disabled') !== 'true';
 }
 
-export function getMenuItems(content: HTMLElement): HTMLElement[] {
+function getMenuItems(content: HTMLElement): HTMLElement[] {
   return Array.from(content.querySelectorAll<HTMLElement>('[data-menu-item]')).filter((item) =>
     belongsToContent(item, content),
   );

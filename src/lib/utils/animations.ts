@@ -10,12 +10,6 @@ interface LegacySlideParams {
   duration?: number;
 }
 
-interface ScaleParams {
-  delay?: number;
-  duration?: number;
-  start?: number;
-}
-
 /**
  * Slide transition that degrades to a no-op when the node has no layout box.
  *
@@ -38,30 +32,8 @@ export function safeSlide(node: Element, params: LegacySlideParams = {}): Immedi
 }
 
 /**
- * Get animation duration from debug config
- */
-function getAnimationDuration(): number {
-  return debugConfig.get('animationDuration') || 300;
-}
-
-/**
  * Check if animations are enabled
  */
 export function areAnimationsEnabled(): boolean {
   return debugConfig.get('enableComponentTransitions');
-}
-
-/**
- * Scale transition with debug config
- */
-export function scaleConfig(start = 0.95, delay = 0): ScaleParams {
-  if (!areAnimationsEnabled()) {
-    return { duration: 0 };
-  }
-
-  return {
-    delay,
-    duration: getAnimationDuration(),
-    start,
-  };
 }

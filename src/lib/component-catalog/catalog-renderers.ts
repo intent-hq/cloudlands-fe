@@ -18,7 +18,7 @@ import RowsCatalogPreview from './renderers/RowsCatalogPreview.svelte';
 import FieldsCatalogPreview from './renderers/FieldsCatalogPreview.svelte';
 import ScreenStatesCatalogPreview from './renderers/ScreenStatesCatalogPreview.svelte';
 
-export const catalogRendererIds = [
+const catalogRendererIds = [
   'accordion',
   'ask-user-questions',
   'badge',

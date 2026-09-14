@@ -3,7 +3,7 @@ import { Spring } from 'svelte/motion';
 import type { Action } from 'svelte/action';
 import { spring, type SpringTierName } from './springs';
 
-export interface AnimatedHeightOptions {
+interface AnimatedHeightOptions {
   open?: boolean;
   tier?: SpringTierName;
 }

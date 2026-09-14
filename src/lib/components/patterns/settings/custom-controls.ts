@@ -5,7 +5,6 @@
 export { Button } from '$lib/components/ui/button';
 export { Checkbox } from '$lib/components/ui/checkbox';
 export { default as CopyButton } from '$lib/components/ui/CopyButton.svelte';
-export { Dropdown } from '$lib/components/ui/dropdown';
 export { default as DropdownMenu } from '$lib/components/ui/dropdown-menu.svelte';
 export { FileInput } from '$lib/components/ui/file-input';
 export { default as GrokLogo } from '$lib/components/ui/GrokLogo.svelte';
@@ -19,6 +18,5 @@ export { Skeleton } from '$lib/components/ui/skeleton';
 export { Slider } from '$lib/components/ui/slider';
 export { Switch } from '$lib/components/ui/switch';
 export { Textarea } from '$lib/components/ui/textarea';
-export { Toggle } from '$lib/components/ui/toggle';
 export * as ToggleGroup from '$lib/components/ui/toggle-group';
 export { Tooltip } from '$lib/components/ui/tooltip';

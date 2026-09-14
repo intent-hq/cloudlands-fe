@@ -25,8 +25,7 @@ export const badgeColors = {
 } as const;
 export type BadgeColor = keyof typeof badgeColors;
 /** @deprecated Use solid or dot with an explicit color. */
-export type LegacyBadgeVariant =
-  'default' | 'secondary' | 'outline' | 'destructive' | 'success' | 'info';
+type LegacyBadgeVariant = 'default' | 'secondary' | 'outline' | 'destructive' | 'success' | 'info';
 export type BadgeVariant = 'solid' | 'dot' | LegacyBadgeVariant;
 export type BadgeSize = 'default' | 'compact' | 'sm' | 'md' | 'lg';
 

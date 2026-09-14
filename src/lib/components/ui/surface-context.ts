@@ -18,7 +18,7 @@ export function setSurface(level: number): SurfaceLevel {
   return surface;
 }
 
-export const SURFACE_BG: Record<SurfaceLevel, string> = {
+const SURFACE_BG: Record<SurfaceLevel, string> = {
   1: 'bg-surface-1',
   2: 'bg-surface-2',
   3: 'bg-surface-3',
@@ -29,7 +29,7 @@ export const SURFACE_BG: Record<SurfaceLevel, string> = {
   8: 'bg-surface-8',
 };
 
-export const SURFACE_SHADOW: Record<SurfaceLevel, string> = {
+const SURFACE_SHADOW: Record<SurfaceLevel, string> = {
   1: 'shadow-surface-1',
   2: 'shadow-surface-2',
   3: 'shadow-surface-3',
@@ -49,17 +49,6 @@ export const SURFACE_VALUE: Record<SurfaceLevel, string> = {
   6: 'var(--surface-6)',
   7: 'var(--surface-7)',
   8: 'var(--surface-8)',
-};
-
-export const SURFACE_SHADOW_VALUE: Record<SurfaceLevel, string> = {
-  1: 'var(--surface-shadow-1)',
-  2: 'var(--surface-shadow-2)',
-  3: 'var(--surface-shadow-3)',
-  4: 'var(--surface-shadow-4)',
-  5: 'var(--surface-shadow-5)',
-  6: 'var(--surface-shadow-6)',
-  7: 'var(--surface-shadow-7)',
-  8: 'var(--surface-shadow-8)',
 };
 
 const SURFACE_HOVER_BG: Record<SurfaceLevel, string> = {
