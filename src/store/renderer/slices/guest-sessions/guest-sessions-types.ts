@@ -45,16 +45,43 @@ export interface WorkspaceMemberRemoveResult {
   removed: boolean;
 }
 
+/**
+ * Bounded failure codes of the roster read / *Remove* operations — the only
+ * values a rejected `loadHostedRosterRequested` / `removeHostedMemberRequested`
+ * promise (and any log line) carries. A raw daemon or transport message never
+ * rides the failure: `forbidden` is the daemon's `-32003` (or the local owner
+ * gate), `daemon` any other structured refusal, `transport` a bridge/socket/
+ * timeout failure, `cancelled` a purge that cut the operation short.
+ */
+export type HostedRosterFailureCode = 'forbidden' | 'daemon' | 'transport' | 'cancelled';
+
+export class HostedRosterOperationError extends Error {
+  readonly code: HostedRosterFailureCode;
+  constructor(code: HostedRosterFailureCode) {
+    // i18n-ignore (bounded machine code, never rendered)
+    super(code);
+    this.name = 'HostedRosterOperationError';
+    this.code = code;
+  }
+}
+
 export interface HostedRoster {
-  /** Load state of one hosted workspace's roster. */
-  status: 'loading' | 'loaded' | 'error';
+  /**
+   * Load state of one hosted workspace's roster. `withheld` is terminal: the
+   * caller no longer manages the workspace (daemon `-32003 Forbidden`, or the
+   * local owner gate) — cached rows are dropped and nothing refetches until
+   * the workspace entry is purged.
+   */
+  status: 'loading' | 'loaded' | 'error' | 'withheld';
   members: WorkspaceMember[];
 }
 
 export interface GuestSessionsState {
   /** Hosts joined as a guest, authoritative from main (`guest-sessions:list` / `:changed`). */
   sessions: Collection<GuestSessionRecord, 'id'>;
-  /** Sessions whose pooled client is currently connected. */
+  /** Sessions with a pooled client (a window for that host was opened). */
+  openIds: string[];
+  /** Sessions whose pooled client is currently connected (subset of `openIds`). */
   connectedIds: string[];
   /** Whether the authoritative list has completed its first hydration. */
   hasReceivedList: boolean;

@@ -2004,18 +2004,31 @@ async function broadcastGuestSessionsChanged(): Promise<void> {
 }
 
 /**
- * The token-free guest sessions list plus the ids whose pooled client is live
- * (the nav block's "connected" / "not connected"). Same connectivity source
- * as the connections list's `connectedIds`.
+ * The token-free guest sessions list plus the ids with a pooled client
+ * (`openIds` — a window for that host was opened) and the subset whose client
+ * is live (`connectedIds` — the nav block's "connected" / "not connected"; a
+ * session outside `openIds` shows no status). Same connectivity source as the
+ * connections list's `connectedIds`.
  */
 async function buildGuestSessionsListResult(): Promise<GuestSessionsListResult> {
   const sessions = await guestSessionsStore.list();
+  const ids = sessions.map((session) => session.id);
   return {
     sessions,
-    connectedIds: sessions
-      .map((session) => session.id)
-      .filter((id) => backendClients.get(id)?.getStatus() === 'connected'),
+    openIds: ids.filter((id) => backendClients.has(id)),
+    connectedIds: ids.filter((id) => backendClients.get(id)?.getStatus() === 'connected'),
   };
+}
+
+/**
+ * Bounded projection of a failed `principal.revokeSelf` for the main log: the
+ * daemon's numeric code when it answered, otherwise a fixed transport /
+ * timeout marker — never the raw message, which may echo host material.
+ */
+function revokeFailureCode(error: unknown): string {
+  if (error instanceof JsonRpcError) return `rpc:${error.rpcCode}`;
+  if (error instanceof Error && /timed out/i.test(error.message)) return 'timeout';
+  return 'transport';
 }
 
 /**
@@ -2036,7 +2049,16 @@ export const GUEST_REVOKE_SELF_TIMEOUT_MS = 5_000;
  */
 async function leaveGuestSessionLocked(id: string): Promise<LeaveGuestSessionResult> {
   if ((await guestSessionsStore.findById(id)) === null) {
-    throw new Error(`Unknown guest session: ${id}`);
+    // Idempotent: a repeated / concurrent leave (another window, a retry after
+    // a lost reply) finds the session already gone — that is completion, not
+    // an error. No second revoke or forget; only a pooled client this id may
+    // still hold is torn down (paired connections keep theirs).
+    if (backendClients.has(id) && !(await connectionsStore.list()).some((c) => c.id === id)) {
+      await windowHooks.ensureLocalWindowBeforeClose?.(id);
+      await windowHooks.closeForBackend?.(id);
+      disconnectBackendClient(id);
+    }
+    return { id, revoked: false };
   }
   let revoked = false;
   const client = backendClients.get(id);
@@ -2049,7 +2071,7 @@ async function leaveGuestSessionLocked(id: string): Promise<LeaveGuestSessionRes
     } catch (error) {
       logger.warn('principal.revokeSelf failed before leaving guest session (best-effort)', {
         id,
-        error: error instanceof Error ? error.message : String(error),
+        code: revokeFailureCode(error),
       });
     }
   }
@@ -2082,11 +2104,11 @@ function registerGuestSessionsHandlers(): void {
     void broadcastGuestSessionsChanged();
     keychainSyncLifecycle?.requestReconcile();
   });
-  // A guest session's pooled client connecting/dropping flips its
-  // "connected" / "not connected" in the nav block (same forwarder that keeps
-  // the connections list's `connectedIds` fresh).
-  backendStatusForwarder.on('status', (id: string, status: ConnectionStatus) => {
-    if (status === 'connecting') return;
+  // A guest session's pooled client appearing (its first 'connecting' moves
+  // the id into `openIds`), connecting or dropping flips its status in the
+  // nav block (same forwarder that keeps the connections list's
+  // `connectedIds` fresh).
+  backendStatusForwarder.on('status', (id: string) => {
     void guestSessionsStore
       .findById(id)
       .then((session) => (session ? broadcastGuestSessionsChanged() : undefined))

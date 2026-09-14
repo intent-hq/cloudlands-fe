@@ -721,6 +721,7 @@
   "settings_guestSessions_hosting_empty_description": "Invite a collaborator from a workspace to share it.",
   "settings_guestSessions_roster_loading_label": "Loading members…",
   "settings_guestSessions_roster_error": "The member list could not be loaded.",
+  "settings_guestSessions_roster_withheld": "You no longer manage this workspace, so its member list is not shown.",
   "settings_guestSessions_role_owner_label": "Owner",
   "settings_guestSessions_role_collaborator_label": "Collaborator",
   "settings_guestSessions_remove_label": "Remove",

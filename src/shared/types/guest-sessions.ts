@@ -44,13 +44,15 @@ export const GUEST_SESSIONS_CHANGED_EVENT = 'guest-sessions:changed';
 
 /**
  * Result of the `guest-sessions:list` IPC and the `guest-sessions:changed`
- * push. `connectedIds` are the sessions whose pooled client is currently
- * connected (a window for that host is open and live) — the nav block shows
- * "connected" / "not connected" from it and nothing for sessions with no
- * pooled client at all.
+ * push. `openIds` are the sessions with a pooled client (a window for that
+ * host was opened); `connectedIds` the subset whose client is currently
+ * connected. The nav block shows "connected" / "not connected" for open
+ * sessions only and no status at all for a session with no pooled client.
+ * Both are token-free projections of main's pool.
  */
 export interface GuestSessionsListResult {
   sessions: GuestSessionRecord[];
+  openIds: string[];
   connectedIds: string[];
 }
 

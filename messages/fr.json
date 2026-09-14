@@ -721,6 +721,7 @@
   "settings_guestSessions_hosting_empty_description": "Invitez un collaborateur depuis un espace de travail pour le partager.",
   "settings_guestSessions_roster_loading_label": "Chargement des membres…",
   "settings_guestSessions_roster_error": "La liste des membres n’a pas pu être chargée.",
+  "settings_guestSessions_roster_withheld": "Vous ne gérez plus cet espace de travail ; sa liste de membres n’est donc pas affichée.",
   "settings_guestSessions_role_owner_label": "Propriétaire",
   "settings_guestSessions_role_collaborator_label": "Collaborateur",
   "settings_guestSessions_remove_label": "Retirer",

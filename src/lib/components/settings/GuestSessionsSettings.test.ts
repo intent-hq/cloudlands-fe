@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   loaded: true,
   // eslint-disable-next-line themis/collection-state-shape -- test-only selector fixture, not Redux state
   sessions: [] as GuestSessionRecord[],
+  openIds: [] as string[],
   connectedIds: [] as string[],
   // eslint-disable-next-line themis/collection-state-shape -- test-only selector fixture, not Redux state
   hosted: [] as Workspace[],
@@ -39,6 +40,7 @@ vi.mock('$store/renderer/store', () => ({
 
 vi.mock('$store/renderer/slices/guest-sessions/guest-sessions-selectors', () => ({
   selectGuestSessions: () => mocks.readable(() => mocks.sessions),
+  selectGuestSessionsOpenIds: () => mocks.readable(() => mocks.openIds),
   selectGuestSessionsConnectedIds: () => mocks.readable(() => mocks.connectedIds),
   selectGuestSessionsLoaded: () => mocks.readable(() => mocks.loaded),
   selectHostedWorkspaces: () => mocks.readable(() => mocks.hosted),
@@ -113,6 +115,7 @@ describe('GuestSessionsSettings', () => {
     vi.clearAllMocks();
     mocks.loaded = true;
     mocks.sessions = [];
+    mocks.openIds = [];
     mocks.connectedIds = [];
     mocks.hosted = [];
     mocks.rosters = {};
@@ -164,6 +167,7 @@ describe('GuestSessionsSettings', () => {
 
   it('lists joined hosts with their pooled connection state', () => {
     mocks.sessions = [guest, { ...guest, id: 'guest-2', label: 'desk.local' }];
+    mocks.openIds = ['guest-1', 'guest-2'];
     mocks.connectedIds = ['guest-2'];
     render(GuestSessionsSettings);
     const joined = screen.getByTestId('guest-sessions-joined');
@@ -175,6 +179,19 @@ describe('GuestSessionsSettings', () => {
     expect(
       rows[1].querySelector('[data-guest-connected]')?.getAttribute('data-guest-connected'),
     ).toBe('true');
+  });
+
+  it('shows no connection status for a joined host that has no window open', () => {
+    mocks.sessions = [guest];
+    mocks.openIds = [];
+    // A stale pooled-connection id must not be mistaken for an open window.
+    mocks.connectedIds = ['guest-1'];
+    render(GuestSessionsSettings);
+    const joined = screen.getByTestId('guest-sessions-joined');
+    const [row] = within(joined).getAllByRole('listitem');
+    expect(row.querySelector('[data-guest-connected]')).toBeNull();
+    expect(within(row).getByRole('button', { name: 'Open' })).toBeTruthy();
+    expect(within(row).getByRole('button', { name: 'Leave host' })).toBeTruthy();
   });
 
   it('opens a joined host through connections/openRequested', async () => {
@@ -239,6 +256,16 @@ describe('GuestSessionsSettings', () => {
       mocks.rosters = { 'ws-1': { status: 'error', members: [] } };
       render(GuestSessionsSettings);
       expect(within(screen.getByTestId('hosted-workspace-roster')).getByRole('alert')).toBeTruthy();
+    });
+
+    it('renders a withheld roster with no member rows, no Remove, and no alert', () => {
+      mocks.rosters = { 'ws-1': { status: 'withheld', members: [] } };
+      render(GuestSessionsSettings);
+      const roster = screen.getByTestId('hosted-workspace-roster');
+      expect(within(roster).getByTestId('hosted-roster-withheld')).toBeTruthy();
+      expect(within(roster).queryByRole('list')).toBeNull();
+      expect(within(roster).queryByRole('button', { name: 'Remove' })).toBeNull();
+      expect(within(roster).queryByRole('alert')).toBeNull();
     });
 
     it('lists members and offers Remove only for collaborators', () => {
