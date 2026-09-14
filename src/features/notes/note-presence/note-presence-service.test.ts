@@ -24,6 +24,10 @@ vi.mock('$lib/client/live/backend-transport', () => ({
   },
 }));
 
+import { Editor } from '@tiptap/core';
+import StarterKit from '@tiptap/starter-kit';
+import { TextSelection } from '@tiptap/pm/state';
+import { bindRemoteCursors } from '$lib/components/workspace/note-with-comments/remote-cursors-binding';
 import {
   CURSOR_HEARTBEAT_MS,
   CURSOR_PUBLISH_MIN_INTERVAL_MS,
@@ -92,6 +96,42 @@ describe('note presence session', () => {
     });
     expect(seen.at(-1)?.map((v) => v.principalId)).toEqual(['principal-b']);
     expect(seen.at(-1)?.[0].cursor).toEqual({ rev: 3, anchor: 5, head: 9 });
+  });
+
+  it('retains a snapshot forwarded before the subscribe promise resolves', async () => {
+    let resolveSubscribe!: (value: unknown) => void;
+    transport.request.mockImplementation(async (method) => {
+      if (method === 'principal.me') return { id: 'principal-me' };
+      if (method === 'note.presence.subscribe') {
+        return new Promise((resolve) => {
+          resolveSubscribe = resolve;
+        });
+      }
+      return {};
+    });
+    const session = joinNotePresence('ws-1', 'note-1');
+    await settle();
+
+    // The reply and its seq-0 snapshot arrive from the same socket chunk: the
+    // notification is dispatched before the reply's promise callbacks run.
+    resolveSubscribe({ subscriptionId: SUB });
+    push({ seq: 0, kind: 'snapshot', snapshot: { viewers: [viewer('principal-b', null)] } });
+    push({ seq: 1, kind: 'delta', delta: { kind: 'joined', viewer: viewer('principal-c', null) } });
+    for (const handler of transport.notificationHandlers) {
+      handler({
+        method: 'subscription.push',
+        params: {
+          subscriptionId: 'someone-else',
+          seq: 0,
+          kind: 'snapshot',
+          snapshot: { viewers: [viewer('principal-z', null)] },
+        },
+      });
+    }
+    expect(session.getViewers()).toEqual([]);
+
+    await settle();
+    expect(session.getViewers().map((v) => v.principalId)).toEqual(['principal-b', 'principal-c']);
   });
 
   it('applies joined / updated / left deltas and ignores pushes for other subscriptions', async () => {
@@ -184,6 +224,84 @@ describe('note presence session', () => {
       anchor: 3,
       head: 4,
     });
+  });
+
+  it('heartbeats the caret a provider reports instead of the last published one', async () => {
+    const session = joinNotePresence('ws-1', 'note-1');
+    await settle();
+    session.publishCursor({ rev: 1, anchor: 11, head: 11 });
+    let current = { rev: 1, anchor: 11, head: 11 };
+    const off = session.provideCursor(() => current);
+
+    current = { rev: 2, anchor: 14, head: 14 };
+    await vi.advanceTimersByTimeAsync(CURSOR_HEARTBEAT_MS * 2);
+    expect(calls('note.presence.update').at(-1)).toEqual({
+      workspaceId: 'ws-1',
+      noteId: 'note-1',
+      rev: 2,
+      anchor: 14,
+      head: 14,
+    });
+
+    off();
+    current = { rev: 3, anchor: 0, head: 0 };
+    await vi.advanceTimersByTimeAsync(CURSOR_HEARTBEAT_MS * 2);
+    expect(calls('note.presence.update').at(-1)).toEqual({
+      workspaceId: 'ws-1',
+      noteId: 'note-1',
+      rev: 2,
+      anchor: 14,
+      head: 14,
+    });
+  });
+
+  it('heartbeat recomputes the editor caret against the acknowledged base without a keystroke', async () => {
+    const session = joinNotePresence('ws-1', 'note-1');
+    await settle();
+    const editor = new Editor({
+      element: document.createElement('div'),
+      extensions: [StarterKit],
+      content: '<p>hello world</p>',
+    });
+    let base = 'hello world';
+    let rev = 1;
+    const unbind = bindRemoteCursors({
+      editor,
+      session,
+      getBaseText: () => base,
+      getBaseRev: () => rev,
+    });
+    try {
+      editor.view.dispatch(
+        editor.state.tr.setSelection(TextSelection.create(editor.state.doc, 12)),
+      );
+      editor.view.dispatch(editor.state.tr.insertText('XYZ', 12));
+      await vi.advanceTimersByTimeAsync(32);
+      expect(calls('note.presence.update').at(-1)).toEqual({
+        workspaceId: 'ws-1',
+        noteId: 'note-1',
+        rev: 1,
+        anchor: 11,
+        head: 11,
+      });
+
+      // The save is acknowledged: the baseline advances, the editor is idle.
+      base = 'hello worldXYZ';
+      rev = 2;
+      await vi.advanceTimersByTimeAsync(CURSOR_HEARTBEAT_MS * 3);
+      const updates = calls('note.presence.update');
+      expect(updates.length).toBeGreaterThan(1);
+      expect(updates.at(-1)).toEqual({
+        workspaceId: 'ws-1',
+        noteId: 'note-1',
+        rev: 2,
+        anchor: 14,
+        head: 14,
+      });
+    } finally {
+      unbind();
+      editor.destroy();
+    }
   });
 
   it('does not publish before the lease is acked and never heartbeats without a caret', async () => {

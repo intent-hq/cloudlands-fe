@@ -24,6 +24,7 @@ import type {
   NotePresenceSession,
   RemoteNoteViewer,
 } from '$features/notes/note-presence/note-presence-service';
+import type { NoteViewerCursor } from '$features/notes/note-presence/note-presence.client';
 
 export interface RemoteCursorsBindingOptions {
   editor: Editor;
@@ -81,20 +82,33 @@ export function bindRemoteCursors(options: RemoteCursorsBindingOptions): () => v
     renderFrame = requestAnimationFrame(render);
   };
 
-  const publishSelection = () => {
-    publishFrame = undefined;
-    if (disposed || editor.isDestroyed) return;
+  /** The local selection in daemon-text coordinates at the current base. */
+  const currentCursor = (): NoteViewerCursor | undefined => {
+    if (disposed || editor.isDestroyed) return undefined;
     const rev = getBaseRev();
-    if (rev === undefined) return;
+    if (rev === undefined) return undefined;
     const offsets = docTextOffsets(editor.state.doc);
     const mapLocalToBase = createOffsetMapper(offsets.text, getBaseText());
     const { anchor, head } = editor.state.selection;
-    session.publishCursor({
+    return {
       rev,
       anchor: mapLocalToBase(offsets.offsetOfPos(anchor)),
       head: mapLocalToBase(offsets.offsetOfPos(head)),
-    });
+    };
   };
+
+  let hasPublished = false;
+  const publishSelection = () => {
+    publishFrame = undefined;
+    const cursor = currentCursor();
+    if (!cursor) return;
+    hasPublished = true;
+    session.publishCursor(cursor);
+  };
+  // The heartbeat re-samples the caret against the base current at that
+  // moment, so an acknowledged save under an idle caret corrects the
+  // published rev/offsets. A never-published editor stays caret-less.
+  const offProvider = session.provideCursor(() => (hasPublished ? currentCursor() : undefined));
   // The text diff runs once per frame at most, however many transactions a
   // burst of typing dispatches; the session throttles the wire further.
   const schedulePublish = () => {
@@ -120,6 +134,7 @@ export function bindRemoteCursors(options: RemoteCursorsBindingOptions): () => v
     disposed = true;
     if (renderFrame !== undefined) cancelAnimationFrame(renderFrame);
     if (publishFrame !== undefined) cancelAnimationFrame(publishFrame);
+    offProvider();
     offViewers();
     editor.off('selectionUpdate', schedulePublish);
     editor.off('update', schedulePublish);
