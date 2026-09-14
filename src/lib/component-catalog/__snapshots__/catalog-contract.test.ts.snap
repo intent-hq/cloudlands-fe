@@ -2571,7 +2571,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                 "Reveal condition"
-        <div class="flex h-full min-w-0" data-slot="settings-page">
+        <div class="flex h-full min-h-0 min-w-0 overflow-hidden svelte-<scope>" data-slot="settings-page">
           <aside class="bg-sidebar border-border border-r dark:border-border flex flex-col h-full shrink-0 w-60">
             <nav aria-label="Settings" class="flex flex-1 flex-col gap-0 min-h-0 overflow-y-auto px-3 py-4 w-full">
               <div>
@@ -2801,7 +2801,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                 "Reveal condition"
-        <div class="flex h-full min-w-0" data-slot="settings-page">
+        <div class="flex h-full min-h-0 min-w-0 overflow-hidden svelte-<scope>" data-slot="settings-page">
           <aside class="bg-sidebar border-border border-r dark:border-border flex flex-col h-full shrink-0 w-60">
             <nav aria-label="Settings" class="flex flex-1 flex-col gap-0 min-h-0 overflow-y-auto px-3 py-4 w-full">
               <div>
@@ -3031,7 +3031,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                 "Reveal condition"
-        <div class="flex h-full min-w-0" data-slot="settings-page">
+        <div class="flex h-full min-h-0 min-w-0 overflow-hidden svelte-<scope>" data-slot="settings-page">
           <aside class="bg-sidebar border-border border-r dark:border-border flex flex-col h-full shrink-0 w-60">
             <nav aria-label="Settings" class="flex flex-1 flex-col gap-0 min-h-0 overflow-y-auto px-3 py-4 w-full">
               <div>
@@ -3190,7 +3190,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                 "Reveal condition"
-        <div class="flex h-full min-w-0" data-slot="settings-page">
+        <div class="flex h-full min-h-0 min-w-0 overflow-hidden svelte-<scope>" data-slot="settings-page">
           <aside class="bg-sidebar border-border border-r dark:border-border flex flex-col h-full shrink-0 w-60">
             <nav aria-label="Settings" class="flex flex-1 flex-col gap-0 min-h-0 overflow-y-auto px-3 py-4 w-full">
               <div>
@@ -3420,7 +3420,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                 "Reveal condition"
-        <div class="flex h-full min-w-0" data-slot="settings-page">
+        <div class="flex h-full min-h-0 min-w-0 overflow-hidden svelte-<scope>" data-slot="settings-page">
           <aside class="bg-sidebar border-border border-r dark:border-border flex flex-col h-full shrink-0 w-60">
             <nav aria-label="Settings" class="flex flex-1 flex-col gap-0 min-h-0 overflow-y-auto px-3 py-4 w-full">
               <div>
@@ -3650,7 +3650,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                 "Reveal condition"
-        <div class="flex h-full min-w-0" data-slot="settings-page">
+        <div class="flex h-full min-h-0 min-w-0 overflow-hidden svelte-<scope>" data-slot="settings-page">
           <aside class="bg-sidebar border-border border-r dark:border-border flex flex-col h-full shrink-0 w-60">
             <nav aria-label="Settings" class="flex flex-1 flex-col gap-0 min-h-0 overflow-y-auto px-3 py-4 w-full">
               <div>
@@ -3880,7 +3880,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                 "Reveal condition"
-        <div class="flex h-full min-w-0" data-slot="settings-page">
+        <div class="flex h-full min-h-0 min-w-0 overflow-hidden svelte-<scope>" data-slot="settings-page">
           <aside class="bg-sidebar border-border border-r dark:border-border flex flex-col h-full shrink-0 w-60">
             <nav aria-label="Settings" class="flex flex-1 flex-col gap-0 min-h-0 overflow-y-auto px-3 py-4 w-full">
               <div>
