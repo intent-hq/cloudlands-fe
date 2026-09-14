@@ -140,23 +140,28 @@
     width: 100%;
     min-width: 0;
     gap: 3rem;
-    padding: 7rem 1.5rem;
+    padding: 2rem 1.5rem;
   }
   .system-page header h1 {
-    font-size: 1.75rem;
-    font-weight: 400;
-    line-height: 1;
+    font-size: var(--text-display-size);
+    font-weight: var(--text-display-weight);
+    line-height: var(--text-display-line-height);
+    letter-spacing: var(--text-display-tracking);
   }
   .system-page header p,
   section > p {
     margin-top: 0.5rem;
     color: hsl(var(--muted-foreground));
-    font-size: var(--text-caption-size);
-    line-height: 1.6;
+    font-size: var(--text-body-size);
+    font-weight: var(--text-body-weight);
+    line-height: var(--text-body-line-height);
+    letter-spacing: var(--text-body-tracking);
   }
   h2 {
-    font-size: 1rem;
-    font-weight: 400;
+    font-size: var(--text-title-size);
+    font-weight: var(--text-title-weight);
+    line-height: var(--text-title-line-height);
+    letter-spacing: var(--text-title-tracking);
   }
   .specimen-list,
   .size-ladder,
@@ -171,6 +176,8 @@
     align-items: center;
     gap: 0.75rem;
     font-size: var(--text-caption-size);
+    line-height: var(--text-caption-line-height);
+    letter-spacing: var(--text-caption-tracking);
   }
   .spring-row span,
   .spring-row code {
@@ -228,6 +235,8 @@
     border: 1px solid hsl(var(--border));
     border-radius: var(--radius-small);
     font-size: var(--text-caption-size);
+    line-height: var(--text-caption-line-height);
+    letter-spacing: var(--text-caption-tracking);
   }
   .type-scale span,
   .type-scale code {
@@ -247,6 +256,8 @@
     border: 1px solid hsl(var(--border));
     border-radius: var(--radius-medium);
     font-size: var(--text-caption-size);
+    line-height: var(--text-caption-line-height);
+    letter-spacing: var(--text-caption-tracking);
   }
   .surface-ladder code {
     color: hsl(var(--muted-foreground));
@@ -277,6 +288,8 @@
     background: hsl(var(--muted));
     padding: 0.625rem 0.75rem;
     font-size: var(--text-caption-size);
+    line-height: var(--text-caption-line-height);
+    letter-spacing: var(--text-caption-tracking);
   }
   @media (max-width: 560px) {
     .surface-ladder {

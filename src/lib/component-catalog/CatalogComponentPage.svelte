@@ -144,29 +144,32 @@
     grid-template-columns: minmax(0, 1fr);
     width: 100%;
     gap: 2rem;
-    padding: 7rem 1.5rem;
+    padding: 2rem 1.5rem;
   }
 
   h1 {
-    font-size: 1.75rem;
-    font-weight: 400;
-    line-height: 1;
-    letter-spacing: -0.025em;
+    font-size: var(--text-display-size);
+    font-weight: var(--text-display-weight);
+    line-height: var(--text-display-line-height);
+    letter-spacing: var(--text-display-tracking);
   }
 
   h2 {
     margin-bottom: 0.75rem;
-    font-size: 1rem;
-    font-weight: 400;
-    line-height: 1;
+    font-size: var(--text-title-size);
+    font-weight: var(--text-title-weight);
+    line-height: var(--text-title-line-height);
+    letter-spacing: var(--text-title-tracking);
   }
 
   .page-header p,
   .section-description {
     margin-top: 0.5rem;
     color: hsl(var(--muted-foreground));
-    font-size: var(--text-caption-size);
-    line-height: 1.5;
+    font-size: var(--text-body-size);
+    font-weight: var(--text-body-weight);
+    line-height: var(--text-body-line-height);
+    letter-spacing: var(--text-body-tracking);
   }
 
   .install-command {
@@ -233,6 +236,8 @@
     width: 100%;
     border-collapse: collapse;
     font-size: var(--text-caption-size);
+    line-height: var(--text-caption-line-height);
+    letter-spacing: var(--text-caption-tracking);
   }
 
   th,
@@ -251,11 +256,5 @@
   .chat-polish-layout {
     display: grid;
     gap: 0.75rem;
-  }
-
-  @media (max-width: 1199px) {
-    .component-page {
-      padding-block: 2rem;
-    }
   }
 </style>
