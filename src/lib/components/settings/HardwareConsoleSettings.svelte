@@ -310,7 +310,7 @@
 
 <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
   <!-- Enable toggle -->
-  <section class="px-6 py-5">
+  <section data-slot="settings-section-body" class="px-6 py-4">
     <SettingsFieldRow
       id="hardware-enabled"
       label={m.settings_hardware_enable_label()}
@@ -328,7 +328,7 @@
 
   {#if $enabled$}
     <!-- Connection status -->
-    <section class="px-6 py-4">
+    <section data-slot="settings-section-body" class="px-6 py-4">
       <div class="flex items-center justify-between gap-4">
         <div class="min-w-0">
           <p class="type-body font-medium text-foreground">
@@ -406,7 +406,7 @@
     </section>
 
     <!-- Action keys: device graphic + assignment dropdown -->
-    <section class="px-6 py-5">
+    <section data-slot="settings-section-body" class="px-6 py-4">
       <p class="type-body font-medium text-foreground">{m.settings_hardware_actionKeys_label()}</p>
       <p class="type-body text-subtle mt-1 mb-4">
         {m.settings_hardware_actionKeys_description()}
@@ -474,7 +474,7 @@
     </section>
 
     <!-- Cycle scope: which cycle actions include sub-agents -->
-    <section class="px-6 py-5">
+    <section data-slot="settings-section-body" class="px-6 py-4">
       <p class="type-body font-medium text-foreground">
         {m.settings_hardware_cycleScope_label()}
       </p>
@@ -499,7 +499,7 @@
     </section>
 
     <!-- Prompt picker limit -->
-    <section class="px-6 py-5">
+    <section data-slot="settings-section-body" class="px-6 py-4">
       <div class="flex items-center justify-between">
         <div>
           <p class="type-body font-medium text-foreground">

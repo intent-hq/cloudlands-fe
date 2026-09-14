@@ -34,7 +34,7 @@
 </script>
 
 <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-  <section class="px-6 py-5">
+  <section data-slot="settings-section-body" class="px-6 py-4">
     <SettingsFieldRow
       id="legacy-import"
       label={m.settings_legacyImport_title_label()}
@@ -65,7 +65,7 @@
     {/if}
   </section>
 
-  <section class="px-6 py-4">
+  <section data-slot="settings-section-body" class="px-6 py-4">
     <SettingsFieldRow
       id="legacy-import-overwrite"
       label={m.settings_legacyImport_overwrite_label()}

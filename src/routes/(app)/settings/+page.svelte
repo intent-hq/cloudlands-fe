@@ -211,14 +211,25 @@
   }
 
   let activeTab = $state<SettingsTab>(getInitialTab());
+  let contentScroll: HTMLDivElement;
+
+  function resetContentScroll() {
+    contentScroll?.scrollTo({ top: 0, behavior: 'instant' });
+  }
 
   // Update URL when tab changes
   function setActiveTab(tab: SettingsTab) {
+    if (tab !== activeTab) {
+      if (hashScrollTimer !== undefined) clearTimeout(hashScrollTimer);
+      hashScrollTimer = undefined;
+      resetContentScroll();
+    }
     activeTab = tab;
     // Update URL with the new tab, preserving other params
     if (typeof window !== 'undefined') {
       const url = new URL(window.location.href);
       url.searchParams.set('tab', tab);
+      url.hash = '';
       window.history.replaceState({}, '', url.toString());
     }
   }
@@ -230,7 +241,10 @@
     const nextTab = resolveTabFromUrl(tabParam, targetId);
 
     untrack(() => {
-      if (nextTab !== activeTab) activeTab = nextTab;
+      if (nextTab !== activeTab) {
+        activeTab = nextTab;
+        if (!targetId) resetContentScroll();
+      }
       handleHashNavigation();
     });
   });
@@ -544,12 +558,16 @@
   {sidebarHeader}
   {sidebarFooter}
 >
-  <div class="flex min-w-0 flex-1 flex-col">
-    <div class="min-h-0 flex-1 overflow-auto">
+  <div class="flex min-h-0 min-w-0 flex-1 flex-col">
+    <div
+      bind:this={contentScroll}
+      data-slot="settings-page-content-scroll"
+      class="min-h-0 flex-1 overflow-auto"
+    >
       <main
         class="mx-auto flex min-h-full {activeTab === 'specialists'
           ? 'max-w-6xl xl:h-full xl:min-h-0 xl:py-8'
-          : 'max-w-4xl'} flex-col pr-8 pl-6 py-12"
+          : 'max-w-4xl'} flex-col pr-8 pl-6 py-6 [&>*:last-child]:mb-0"
         aria-labelledby="settings-page-title"
       >
         <h1 id="settings-page-title" class="sr-only">{m.settings_page_title()}</h1>
@@ -559,7 +577,7 @@
             id="providers"
             data-highlight-id="providers"
             use:highlightTarget
-            class="mb-12 scroll-mt-20"
+            class="mb-6 scroll-mt-20"
           >
             <ProviderSelector />
           </div>
@@ -567,16 +585,16 @@
             id="utility-default-model"
             data-highlight-id="utility-default-model"
             use:highlightTarget
-            class="mb-12"
+            class="mb-6"
           >
             <h2 class="type-title mb-3 text-foreground">
               {m.settings_section_defaults()}
             </h2>
             <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-              <section class="px-6 py-5">
+              <section data-slot="settings-section-body" class="px-6 py-4">
                 <DefaultAgentModelSettings workspaceId={settingsWorkspaceId} />
               </section>
-              <section class="px-6 py-5">
+              <section data-slot="settings-section-body" class="px-6 py-4">
                 <h3 class="type-title mb-5 text-foreground">
                   {m.settings_section_quickActions()}
                 </h3>
@@ -598,13 +616,13 @@
               {m.settings_tab_accounts()}
             </h2>
             <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-              <section class="px-6 py-5">
+              <section data-slot="settings-section-body" class="px-6 py-4">
                 <ConnectionsSettings />
               </section>
             </div>
           </div>
 
-          <div id="mcp-servers" data-highlight-id="mcp-servers" use:highlightTarget class="mb-12">
+          <div id="mcp-servers" data-highlight-id="mcp-servers" use:highlightTarget class="mb-6">
             <h2 class="type-title mb-3 text-foreground">
               {m.settings_section_mcpServers()}
             </h2>
@@ -614,7 +632,7 @@
 
         <!-- Devices -->
         {#if activeTab === 'devices'}
-          <div id="devices" class="mb-12 scroll-mt-20">
+          <div id="devices" class="mb-6 scroll-mt-20">
             <DevicesSettings />
           </div>
 
@@ -624,7 +642,7 @@
               {m.settings_section_backendSync()}
             </h2>
             <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-              <section class="px-6 py-5">
+              <section data-slot="settings-section-body" class="px-6 py-4">
                 <BackendSyncSettings />
               </section>
             </div>
@@ -641,7 +659,7 @@
               {m.settings_section_remoteAccess()}
             </h2>
             <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-              <section class="px-6 py-5">
+              <section data-slot="settings-section-body" class="px-6 py-4">
                 <WebSocketApiSettings />
               </section>
             </div>
@@ -680,14 +698,15 @@
         <!-- Display -->
         {#if activeTab === 'display'}
           <!-- Theme -->
-          <div id="theme" data-highlight-id="appearance" use:highlightTarget class="mb-12">
+          <div id="theme" data-highlight-id="appearance" use:highlightTarget class="mb-6">
             <h2 class="type-title mb-3 text-foreground">
               {m.settings_section_appearance()}
             </h2>
             <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-              <section class="px-6 py-5">
+              <section data-slot="settings-section-body" class="px-6 py-4">
                 <SettingsFieldRow id="settings-theme-label-field" label={m.settings_theme_label()}>
                   <ToggleGroup.Root
+                    variant="outline"
                     type="single"
                     value={$themePreference}
                     onValueChange={handleThemeChange}
@@ -705,7 +724,8 @@
                 id="color-theme"
                 data-highlight-id="color-theme"
                 use:highlightTarget
-                class="px-6 py-5"
+                data-slot="settings-section-body"
+                class="px-6 py-4"
               >
                 <ColorThemeSettings bind:this={colorThemeSettingsRef} />
               </section>
@@ -713,7 +733,8 @@
                 id="chat-aurora"
                 data-highlight-id="chat-aurora"
                 use:highlightTarget
-                class="px-6 py-5"
+                data-slot="settings-section-body"
+                class="px-6 py-4"
               >
                 <SettingsFieldRow
                   id="settings-appearance-chatAurora-label-field"
@@ -734,7 +755,8 @@
                 id="translucent-window"
                 data-highlight-id="translucent-window"
                 use:highlightTarget
-                class="px-6 py-5"
+                data-slot="settings-section-body"
+                class="px-6 py-4"
               >
                 <SettingsFieldRow
                   id="settings-appearance-translucentWindow-label-field"
@@ -756,7 +778,7 @@
           </div>
 
           <!-- Font Style -->
-          <div id="font-style" data-highlight-id="font-style" use:highlightTarget class="mb-12">
+          <div id="font-style" data-highlight-id="font-style" use:highlightTarget class="mb-6">
             <h2 class="type-title mb-3 text-foreground">
               {m.settings_section_fontStyle()}
             </h2>
@@ -765,7 +787,8 @@
                 id="note-font"
                 data-highlight-id="note-font"
                 use:highlightTarget
-                class="px-6 py-5"
+                data-slot="settings-section-body"
+                class="px-6 py-4"
               >
                 <SettingsFieldRow
                   id="settings-font-notes-label-field"
@@ -778,6 +801,7 @@
                       {m.settings_font_notes_description()}
                     </span>{/snippet}
                   <ToggleGroup.Root
+                    variant="outline"
                     type="single"
                     value={$noteFontStyle}
                     onValueChange={handleNoteFontChange}
@@ -795,7 +819,8 @@
                 id="agent-chat-font"
                 data-highlight-id="agent-chat-font"
                 use:highlightTarget
-                class="px-6 py-5"
+                data-slot="settings-section-body"
+                class="px-6 py-4"
               >
                 <SettingsFieldRow
                   id="settings-font-agentChat-label-field"
@@ -808,6 +833,7 @@
                       {m.settings_font_agentChat_description()}
                     </span>{/snippet}
                   <ToggleGroup.Root
+                    variant="outline"
                     type="single"
                     value={$agentFontStyle}
                     onValueChange={handleAgentFontChange}
@@ -825,7 +851,8 @@
                 id="code-font"
                 data-highlight-id="code-font"
                 use:highlightTarget
-                class="px-6 py-5"
+                data-slot="settings-section-body"
+                class="px-6 py-4"
               >
                 <SettingsFieldRow
                   id="settings-font-code-label-field"
@@ -856,12 +883,12 @@
           </div>
 
           <!-- Language -->
-          <div id="language" data-highlight-id="language" use:highlightTarget class="mb-12">
+          <div id="language" data-highlight-id="language" use:highlightTarget class="mb-6">
             <h2 class="type-title mb-3 text-foreground">
               {m.settings_language_section_title()}
             </h2>
             <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-              <section class="px-6 py-5">
+              <section data-slot="settings-section-body" class="px-6 py-4">
                 <LanguageSettings />
               </section>
             </div>
@@ -871,12 +898,12 @@
         <!-- App Behavior -->
         {#if activeTab === 'app-behavior'}
           <!-- Updates -->
-          <div id="updates" data-highlight-id="updates" use:highlightTarget class="mb-12">
+          <div id="updates" data-highlight-id="updates" use:highlightTarget class="mb-6">
             <h2 class="type-title mb-3 text-foreground">
               {m.settings_section_updates()}
             </h2>
             <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-              <section class="px-6 py-5">
+              <section data-slot="settings-section-body" class="px-6 py-4">
                 <SettingsFieldRow
                   id="settings-updateChannel-label-field"
                   label={m.settings_updateChannel_label()}
@@ -901,25 +928,29 @@
             </div>
           </div>
 
-          <div id="open-in" data-highlight-id="open-in" use:highlightTarget class="mb-12">
+          <div id="open-in" data-highlight-id="open-in" use:highlightTarget class="mb-6">
             <h2 class="type-title mb-3 text-foreground">
               {m.settings_section_openIn()}
             </h2>
             <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-              <section class="px-6 py-5"><OpenInAppsSettings /></section>
+              <section data-slot="settings-section-body" class="px-6 py-4">
+                <OpenInAppsSettings />
+              </section>
             </div>
           </div>
           <div
             id="github-link-action"
             data-highlight-id="github-link-action"
             use:highlightTarget
-            class="mb-12"
+            class="mb-6"
           >
             <h2 class="type-title mb-3 text-foreground">
               {m.settings_githubLinks_section_title()}
             </h2>
             <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-              <section class="px-6 py-5"><GitHubLinkSettings /></section>
+              <section data-slot="settings-section-body" class="px-6 py-4">
+                <GitHubLinkSettings />
+              </section>
             </div>
           </div>
           <NotificationSettings />
@@ -931,7 +962,7 @@
             id="global-instructions"
             data-highlight-id="global-instructions"
             use:highlightTarget
-            class="mb-12 min-w-0"
+            class="mb-6 min-w-0"
           >
             <h2 class="type-title mb-3 text-foreground">
               {m.settings_section_globalInstructions()}
@@ -951,22 +982,22 @@
             id="keyboard-shortcuts"
             data-highlight-id="keyboard-shortcuts"
             use:highlightTarget
-            class="mb-12"
+            class="mb-6"
           >
             <h2 class="type-title mb-3 text-foreground">
               {m.settings_section_keyboardShortcuts()}
             </h2>
-            <div class="rounded-xl bg-card px-6 py-5">
+            <div data-slot="settings-section-body" class="rounded-xl bg-card px-6 py-4">
               <KeyboardShortcutsSettings />
             </div>
           </div>
 
-          <div id="voice" data-highlight-id="voice" use:highlightTarget class="mb-12 scroll-mt-20">
+          <div id="voice" data-highlight-id="voice" use:highlightTarget class="mb-6 scroll-mt-20">
             <h2 class="type-title mb-3 text-foreground">
               {m.settings_section_voice()}
             </h2>
             <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-              <section class="px-6 py-5">
+              <section data-slot="settings-section-body" class="px-6 py-4">
                 <VoiceSettings />
               </section>
             </div>
@@ -980,13 +1011,13 @@
             id="agent-backend"
             data-highlight-id="agent-backend"
             use:highlightTarget
-            class="mb-12"
+            class="mb-6"
           >
             <h2 class="type-title mb-3 text-foreground">
               {m.settings_section_agentBackend()}
             </h2>
             <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-              <section class="px-6 py-5">
+              <section data-slot="settings-section-body" class="px-6 py-4">
                 <AgentBackendSettings />
               </section>
             </div>
@@ -997,7 +1028,7 @@
             id="workspace-api"
             data-highlight-id="workspace-api"
             use:highlightTarget
-            class="mb-12"
+            class="mb-6"
           >
             <h2 class="type-title mb-3 text-foreground">
               {m.settings_section_workspaceApi()}
@@ -1007,12 +1038,12 @@
 
           <!-- Connection (UDS only; hidden for WS/unknown transports) -->
           {#if udsSocketPath}
-            <div id="connection" data-highlight-id="connection" use:highlightTarget class="mb-12">
+            <div id="connection" data-highlight-id="connection" use:highlightTarget class="mb-6">
               <h2 class="type-title mb-3 text-foreground">
                 {m.settings_section_connection()}
               </h2>
               <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-                <section class="px-6 py-5">
+                <section data-slot="settings-section-body" class="px-6 py-4">
                   <div class="flex items-center justify-between gap-4">
                     <div class="min-w-0">
                       <p class="type-body font-medium text-foreground">
@@ -1031,7 +1062,7 @@
 
           <!-- Hardware / Creator Micro (only when a supported device is detectable) -->
           {#if showHardwareSection}
-            <div id="hardware" data-highlight-id="hardware" use:highlightTarget class="mb-12">
+            <div id="hardware" data-highlight-id="hardware" use:highlightTarget class="mb-6">
               <h2 class="type-title mb-3 text-foreground">
                 {m.settings_section_hardware()}
               </h2>
@@ -1040,7 +1071,7 @@
           {/if}
 
           <!-- Data -->
-          <div id="data" data-highlight-id="data" use:highlightTarget class="mb-12">
+          <div id="data" data-highlight-id="data" use:highlightTarget class="mb-6">
             <h2 class="type-title mb-3 text-foreground">
               {m.settings_section_data()}
             </h2>
@@ -1048,12 +1079,12 @@
           </div>
 
           <!-- Reset -->
-          <div id="reset" data-highlight-id="general" use:highlightTarget class="mb-12">
+          <div id="reset" data-highlight-id="general" use:highlightTarget class="mb-6">
             <h2 class="type-title mb-3 text-foreground">
               {m.settings_section_reset()}
             </h2>
             <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-              <section class="px-6 py-5">
+              <section data-slot="settings-section-body" class="px-6 py-4">
                 <div class="flex items-center justify-between">
                   <div>
                     <p class="type-body font-medium text-foreground">
@@ -1073,13 +1104,13 @@
 
           <!-- Developer Section (only in dev mode; dev-only UI is not translated) -->
           {#if isDevMode}
-            <div id="developer" data-highlight-id="developer" use:highlightTarget class="mb-12">
+            <div id="developer" data-highlight-id="developer" use:highlightTarget class="mb-6">
               <h2 class="type-title mb-3 text-foreground">
                 <!-- i18n-ignore (dev-only) -->
                 Developer
               </h2>
               <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-                <section class="px-6 py-5">
+                <section data-slot="settings-section-body" class="px-6 py-4">
                   <div class="flex flex-col gap-2">
                     <!-- i18n-ignore (dev-only) -->
                     <span class="type-body font-medium">Update Toast Simulation</span>

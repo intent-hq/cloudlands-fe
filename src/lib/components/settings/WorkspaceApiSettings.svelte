@@ -412,7 +412,7 @@
   </div>
 {/snippet}
 
-<div class="rounded-xl bg-card px-4">
+<div data-slot="settings-section-body" class="rounded-xl bg-card px-6 py-4">
   <SettingsForm
     {schema}
     embedded

@@ -406,7 +406,7 @@
 
 <section class="bg-card rounded-xl divide-y divide-border overflow-hidden">
   <!-- Enable User MCP Servers Toggle -->
-  <div class="px-6">
+  <div data-slot="settings-section-body" class="px-6 py-4">
     <SettingsForm
       schema={enabledSchema}
       embedded
@@ -418,7 +418,8 @@
     <div
       in:springIn={{ tier: 'moderate', y: -4 }}
       out:crispOut={{ tier: 'moderate' }}
-      class="px-6 py-5 space-y-6"
+      data-slot="settings-section-body"
+      class="px-6 py-4 space-y-6"
     >
       <!-- Combined MCP Servers Section -->
       <section>

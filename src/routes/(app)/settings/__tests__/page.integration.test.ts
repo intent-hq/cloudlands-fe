@@ -673,7 +673,7 @@ describe('settings tab route and focus behavior', () => {
     expect(selectSelectedModel.select(appStore.state, 'codex')).toBe('shared-fixture');
   });
 
-  it('activates a clicked sidebar item while preserving params and hash', async () => {
+  it('activates a clicked sidebar item while preserving params and clearing the old hash', async () => {
     renderSettings('/settings?tab=connections&specialist=reviewer#integrations');
     const connections = screen.getByRole('button', { name: 'Connections' });
     const advanced = screen.getByRole('button', { name: 'Advanced' });
@@ -684,7 +684,23 @@ describe('settings tab route and focus behavior', () => {
     expect(advanced.getAttribute('aria-current')).toBe('page');
     expect(connections.hasAttribute('aria-current')).toBe(false);
     expect(window.location.search).toBe('?tab=advanced&specialist=reviewer');
-    expect(window.location.hash).toBe('#integrations');
+    expect(window.location.hash).toBe('');
+  });
+
+  it('resets the content scroll on tab selection and cancels a pending deep-link scroll', async () => {
+    vi.useFakeTimers();
+    renderSettings('/settings?tab=display#note-font');
+    const container = document.querySelector<HTMLElement>(
+      '[data-slot="settings-page-content-scroll"]',
+    )!;
+    const scrollTo = vi.mocked(container.scrollTo);
+    scrollTo.mockClear();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Advanced' }));
+    expect(scrollTo).toHaveBeenCalledWith({ top: 0, behavior: 'instant' });
+    await vi.advanceTimersByTimeAsync(100);
+    expect(scrollTo).toHaveBeenCalledTimes(1);
+    expect(window.location.hash).toBe('');
   });
 
   it.each([

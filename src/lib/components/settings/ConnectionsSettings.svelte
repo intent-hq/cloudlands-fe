@@ -42,7 +42,7 @@
 
 {#if isLoading}
   <!-- Skeleton loading state - shows structure with known info -->
-  <div class="divide-y divide-border">
+  <div class="divide-y divide-border [&>*:first-child]:pt-0 [&>*:last-child]:pb-0">
     {#each integrations as integration}
       <div class="grid grid-cols-[1rem_minmax(0,1fr)_auto] items-start gap-x-3 gap-y-1 py-3">
         <div class="flex size-4 items-center justify-center text-ghost">
@@ -65,7 +65,7 @@
     {/each}
   </div>
 {:else}
-  <div class="divide-y divide-border">
+  <div class="divide-y divide-border [&>*:first-child]:pt-0 [&>*:last-child]:pb-0">
     <GitHubAuthConnection />
     <LinearAuthConnection />
     <SentryAuthConnection />

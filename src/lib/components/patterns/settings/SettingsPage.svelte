@@ -42,7 +42,7 @@
   } = $props();
 </script>
 
-<div data-slot="settings-page" class="flex h-full min-w-0">
+<div data-slot="settings-page" class="flex h-full min-h-0 min-w-0 overflow-hidden">
   <aside
     class="flex h-full w-60 shrink-0 flex-col border-r border-border bg-sidebar dark:border-border"
   >
@@ -72,3 +72,36 @@
     </div>
   {/if}
 </div>
+
+<style>
+  [data-slot='settings-page'] :global([data-slot='settings-section-body']),
+  [data-slot='settings-page'] :global([data-slot='settings-section-content']) {
+    padding: calc(var(--spacing) * 4) calc(var(--spacing) * 6);
+  }
+
+  [data-slot='settings-page']
+    :global([data-slot='settings-section-body'] > [data-slot='settings-field-row']:first-child),
+  [data-slot='settings-page']
+    :global(
+      [data-slot='settings-section-body']
+        > [data-slot='settings-form']
+        > [data-slot='settings-field-row']:first-child
+    ),
+  [data-slot='settings-page']
+    :global([data-slot='settings-section-content'] > [data-slot='settings-field-row']:first-child) {
+    padding-top: 0;
+  }
+
+  [data-slot='settings-page']
+    :global([data-slot='settings-section-body'] > [data-slot='settings-field-row']:last-child),
+  [data-slot='settings-page']
+    :global(
+      [data-slot='settings-section-body']
+        > [data-slot='settings-form']
+        > [data-slot='settings-field-row']:last-child
+    ),
+  [data-slot='settings-page']
+    :global([data-slot='settings-section-content'] > [data-slot='settings-field-row']:last-child) {
+    padding-bottom: 0;
+  }
+</style>

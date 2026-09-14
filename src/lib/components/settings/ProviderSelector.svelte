@@ -462,7 +462,10 @@
 
 <div class="flex flex-col gap-6">
   {#if checkError}
-    <div class="flex items-center justify-between gap-4 rounded-xl bg-card px-6 py-4">
+    <div
+      data-slot="settings-section-body"
+      class="flex items-center justify-between gap-4 rounded-xl bg-card px-6 py-4"
+    >
       <p class="type-body text-danger">{checkError}</p>
       <Button
         variant="ghost"
@@ -540,7 +543,7 @@
                 : hasNpmOld
                   ? m.settings_providers_npmTooOld()
                   : provider.warning}
-            <div class="px-6 py-4">
+            <div data-slot="settings-section-body" class="px-6 py-4">
               <div class="flex items-start justify-between gap-4">
                 <div class="space-y-1">
                   <div class="flex items-center gap-2 h-7">
