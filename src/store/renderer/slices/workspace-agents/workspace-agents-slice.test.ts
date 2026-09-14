@@ -53,7 +53,8 @@ import {
   setWaitingForFirstMessage,
   workspaceAgentsReducer,
 } from './workspace-agents-slice';
-import { upsertSession } from '../agent-session/agent-session-slice';
+import { restoreStoredSessions, upsertSession } from '../agent-session/agent-session-slice';
+import type { StoredAgentSession } from '../agent-session/agent-session-types';
 import { selectAgentSession } from '../agent-session/agent-session-selectors';
 import { workspaceDeleted } from '../workspace-lifecycle/workspace-lifecycle-slice';
 
@@ -772,6 +773,41 @@ describe('workspace-agents selectors', () => {
 
       expect(state.byWorkspaceId[WS_1].agentIds).toEqual(['agent-1']);
       expect(state.byWorkspaceId[WS_1].foregroundAgentIds).toEqual([]);
+    });
+  });
+
+  describe('restoreStoredSessions', () => {
+    const stored = (id: string, overrides: Partial<StoredAgentSession> = {}): StoredAgentSession =>
+      ({ ...mockAgent(id, WS_1), liveTurnOpen: true, ...overrides }) as StoredAgentSession;
+
+    it('re-registers membership removed by removeAgent (soft-hide undo)', () => {
+      let state = workspaceAgentsReducer(initialState, upsertSession(mockAgent('agent-1', WS_1)));
+      state = workspaceAgentsReducer(state, removeAgent(WS_1, 'agent-1'));
+      expect(state.byWorkspaceId[WS_1].agentIds).toEqual([]);
+
+      state = workspaceAgentsReducer(state, restoreStoredSessions([stored('agent-1')]));
+
+      expect(state.byWorkspaceId[WS_1].agentIds).toEqual(['agent-1']);
+      expect(state.byWorkspaceId[WS_1].foregroundAgentIds).toEqual(['agent-1']);
+    });
+
+    it('registers every restored session and keeps background sessions out of the foreground list', () => {
+      const state = workspaceAgentsReducer(
+        initialState,
+        restoreStoredSessions([stored('agent-1'), stored('agent-2', { isBackground: true })]),
+      );
+
+      expect(state.byWorkspaceId[WS_1].agentIds).toEqual(['agent-1', 'agent-2']);
+      expect(state.byWorkspaceId[WS_1].foregroundAgentIds).toEqual(['agent-1']);
+    });
+
+    it('is a no-op for an already tracked session with unchanged membership', () => {
+      const before = workspaceAgentsReducer(
+        initialState,
+        upsertSession(mockAgent('agent-1', WS_1)),
+      );
+      const after = workspaceAgentsReducer(before, restoreStoredSessions([stored('agent-1')]));
+      expect(after).toBe(before);
     });
   });
 

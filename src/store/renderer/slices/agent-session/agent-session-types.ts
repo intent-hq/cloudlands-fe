@@ -133,6 +133,17 @@ export interface FeOwnedSessionState {
 }
 
 /**
+ * A daemon snapshot accepted by the wire upserts (`upsertSession` /
+ * `bulkUpsertSessions`). The wire never carries the FE-owned fields, so the
+ * payload forbids them: a `StoredAgentSession` (or any object carrying an
+ * FE-owned key) is a compile error at the reducer signature, which is what
+ * keeps a stored row from being re-read as an incoming snapshot and losing
+ * those fields to the carry-forward policy. Mutations of an already-stored
+ * session are local updates (`updateSession` / `restoreStoredSessions`).
+ */
+export type WireAgentSession = AgentSession & { [K in keyof FeOwnedSessionState]?: never };
+
+/**
  * Internal storage shape for a single agent session.
  *
  * Mirrors the public `AgentSession` type while keeping `messages` as the

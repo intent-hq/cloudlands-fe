@@ -13,6 +13,7 @@ import type {
   AgentSessionState,
   FeOwnedSessionState,
   StoredAgentSession,
+  WireAgentSession,
 } from './agent-session-types';
 import {
   deduplicateAgentMessages,
@@ -1245,8 +1246,14 @@ export const initialState: AgentSessionState = {
 // Actions
 // ============================================================================
 
-/** Upsert a session — normalize dates, order/prune messages to `MAX_MESSAGES_PER_AGENT`, register in workspace index */
-export const upsertSession = createAction<[session: AgentSession]>('agentSessions/upsertSession');
+/**
+ * Upsert a wire session — normalize dates, order/prune messages to
+ * `MAX_MESSAGES_PER_AGENT`, register in workspace index. The payload rejects
+ * FE-owned keys (`WireAgentSession`): a stored row is not an incoming snapshot.
+ */
+export const upsertSession = createAction<[session: WireAgentSession]>(
+  'agentSessions/upsertSession',
+);
 
 /** Remove a session by agentId (from byAgentId and agentIdsByWorkspace) */
 export const removeSession = createAction<[agentId: string]>('agentSessions/removeSession');
@@ -1473,15 +1480,24 @@ export type BulkUpsertSessionsOptions = {
   staleRuntimeFlagClearAgentIds?: string[];
 };
 
-/** Bulk upsert sessions (initial load / snapshot reconciliation / batched upsert storage) */
+/**
+ * Bulk upsert wire sessions (initial load / snapshot reconciliation / batched
+ * upsert storage). Like `upsertSession`, the payload rejects FE-owned keys.
+ */
 export const bulkUpsertSessions = createAction<
-  [sessions: AgentSession[], options?: BulkUpsertSessionsOptions]
+  [sessions: WireAgentSession[], options?: BulkUpsertSessionsOptions]
 >('agentSessions/bulkUpsertSessions');
 
 /**
- * Reinstate saved stored sessions verbatim (FE-owned fields included). Distinct
- * from the wire-snapshot upserts at the type level: only a `StoredAgentSession`
- * previously read from this slice may be restored.
+ * Reinstate saved stored sessions verbatim (FE-owned fields included), or apply
+ * a local patch to one (`[{ ...existing, ...patch }]`). Skips the wire-snapshot
+ * carry-forward policy entirely.
+ *
+ * The type boundary is enforced in the data-loss direction only: the wire
+ * upserts reject a `StoredAgentSession` (`WireAgentSession`), but this action's
+ * `StoredAgentSession[]` input is structurally satisfied by a wire `AgentSession`
+ * too — the wire→restore distinction is semantic, so only pass rows previously
+ * read from this slice.
  */
 export const restoreStoredSessions = createAction<[sessions: StoredAgentSession[]]>(
   'agentSessions/restoreStoredSessions',

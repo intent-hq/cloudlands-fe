@@ -4,7 +4,7 @@ import { createAction, createAsyncAction } from '@augmentcode/themis/utils/store
 import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
 import { omitKey } from '../../utils/utils';
-import { upsertSession } from '../agent-session/agent-session-slice';
+import { restoreStoredSessions, upsertSession } from '../agent-session/agent-session-slice';
 import { workspaceDeleted } from '../workspace-lifecycle/workspace-lifecycle-slice';
 export {
   agentStreamUpdateReceived,
@@ -571,8 +571,8 @@ workspaceAgentsReducer.with(setActiveAgentId, (state, { payload: [wsId, agentId]
   if (workspaceState.activeAgentId === agentId) return state;
   return setWorkspaceState(state, wsId, { ...workspaceState, activeAgentId: agentId });
 });
-workspaceAgentsReducer.with(upsertSession, (state, { payload: [session] }) => {
-  // Only track the agent ID — session data lives in agent-session slice
+// Only track the agent ID — session data lives in agent-session slice
+function syncSessionMembership(state: WorkspaceAgentsState, session: AgentSession) {
   const wsId = String(session.workspaceId);
   const workspaceState = getWorkspaceState(state, wsId);
   const agentId = String(session.id);
@@ -600,6 +600,18 @@ workspaceAgentsReducer.with(upsertSession, (state, { payload: [session] }) => {
     foregroundAgentIds,
     diskMessageCounts,
   });
+}
+workspaceAgentsReducer.with(upsertSession, (state, { payload: [session] }) =>
+  syncSessionMembership(state, session),
+);
+// A stored-snapshot restore (soft-hide undo / failed delete / delete-cancelled)
+// follows a `removeAgent`, so membership must be re-registered the same way.
+workspaceAgentsReducer.with(restoreStoredSessions, (state, { payload: [sessions] }) => {
+  let next = state;
+  for (const session of sessions) {
+    next = syncSessionMembership(next, session);
+  }
+  return next;
 });
 workspaceAgentsReducer.with(
   setInitialSpecWriteInProgress,

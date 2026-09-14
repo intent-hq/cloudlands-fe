@@ -57,7 +57,7 @@ import {
   restoreStoredSessions,
   upsertSession,
 } from '../agent-session-slice';
-import type { StoredAgentSession } from '../agent-session-types';
+import type { StoredAgentSession, WireAgentSession } from '../agent-session-types';
 import { selectAgentSession } from '../agent-session-selectors';
 
 const logger = createLogger('AgentMutationSaga');
@@ -118,9 +118,25 @@ function preserveMessages(fetched: AgentSession, existing?: AgentSession): Agent
     : { ...fetched, messages: existing.messages };
 }
 
-function* persistSession(session: AgentSession): SagaGenerator<void> {
+/** Store a genuine daemon snapshot (`agent.get` result) and register membership. */
+function* persistSession(session: WireAgentSession): SagaGenerator<void> {
   yield* put(bulkUpsertSessions([session]));
   yield* put(upsertSession(session));
+}
+
+/**
+ * Local patch of an already-stored session (activation bookkeeping). Not a wire
+ * upsert: pushing the stored row back through `bulkUpsertSessions` would re-run
+ * the FE-owned carry-forward policy against it and drop fields such as a
+ * waiting `processQueueHint`.
+ */
+function* patchStoredSession(
+  existing: StoredAgentSession,
+  patch: Partial<StoredAgentSession>,
+): SagaGenerator<StoredAgentSession> {
+  const patched: StoredAgentSession = { ...existing, ...patch };
+  yield* put(restoreStoredSessions([patched]));
+  return patched;
 }
 
 function* softHide(wsId: string, agentId: string): SagaGenerator<void> {
@@ -222,19 +238,16 @@ function* activateAgent(action: ReturnType<typeof activateAgentRequested>): Saga
     }
     const activationAttempts = (existing?.activationAttempts || 0) + 1;
     if (existing) {
-      yield* call(persistSession, {
-        ...existing,
+      yield* call(patchStoredSession, existing, {
         workspaceId: wsId as AgentSession['workspaceId'],
         activationState: AgentActivationState.ACTIVATING,
         activationAttempts,
       });
     }
     const fetched = yield* call(readAgentSession, agentId);
-    const source = fetched ? preserveMessages(fetched, existing) : existing;
-    if (!source) {
-      yield* put(action.success(null));
-    } else {
-      const activated: AgentSession = {
+    if (fetched) {
+      const source = preserveMessages(fetched, existing);
+      const activated: WireAgentSession = {
         ...source,
         workspaceId: wsId as AgentSession['workspaceId'],
         status: source.backendSessionId ? AgentStatus.Active : source.status,
@@ -243,12 +256,21 @@ function* activateAgent(action: ReturnType<typeof activateAgentRequested>): Saga
       };
       yield* call(persistSession, activated);
       yield* put(action.success(activated));
+    } else if (existing) {
+      const activated = yield* call(patchStoredSession, existing, {
+        workspaceId: wsId as AgentSession['workspaceId'],
+        status: existing.backendSessionId ? AgentStatus.Active : existing.status,
+        activationState: AgentActivationState.ACTIVE,
+        activationAttempts,
+      });
+      yield* put(action.success(activated));
+    } else {
+      yield* put(action.success(null));
     }
     settled = true;
   } catch (error) {
     if (existing) {
-      yield* call(persistSession, {
-        ...existing,
+      yield* call(patchStoredSession, existing, {
         workspaceId: wsId as AgentSession['workspaceId'],
         activationState: AgentActivationState.ERROR,
         lastActivationError: mutationError(error, m.agent_mutation_activateFailed_error()).message,

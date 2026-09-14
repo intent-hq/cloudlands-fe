@@ -50,6 +50,8 @@ import {
   restoreRetiredAgentRequested,
   saveAgentSessionRequested,
   undoAgentDeletionRequested,
+  initialState as workspaceAgentsInitialState,
+  workspaceAgentsReducer,
 } from '../../workspace-agents/workspace-agents-slice';
 import {
   agentProposalResolveRequested,
@@ -60,6 +62,7 @@ import {
   initialState as agentSessionInitialState,
   restoreStoredSessions,
   updateSession,
+  upsertSession,
 } from '../agent-session-slice';
 import type { FeOwnedSessionState, StoredAgentSession } from '../agent-session-types';
 import {
@@ -190,7 +193,7 @@ describe('agentMutationSaga', () => {
     expect(dispatched).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          type: bulkUpsertSessions.type,
+          type: restoreStoredSessions.type,
           payload: [
             [
               expect.objectContaining({
@@ -202,6 +205,7 @@ describe('agentMutationSaga', () => {
         }),
       ]),
     );
+    expect(dispatched.some((candidate) => candidate.type === bulkUpsertSessions.type)).toBe(false);
     await stop(task);
   });
 
@@ -503,6 +507,9 @@ describe('agentMutationSaga', () => {
     const storedSession = (): StoredAgentSession =>
       ({ ...session(), isActive: true, isResponding: true, ...FE_OWNED }) as StoredAgentSession;
 
+    const restoresOf = (dispatched: any[]) =>
+      dispatched.filter((candidate) => candidate.type === restoreStoredSessions.type);
+
     /** Apply the saga's restore dispatch to an empty slice, as the store would after softHide. */
     const reduceRestore = (dispatched: any[]) => {
       const restore = dispatched.find((candidate) => candidate.type === restoreStoredSessions.type);
@@ -552,6 +559,153 @@ describe('agentMutationSaga', () => {
         expect(restored[key], key).toEqual(FE_OWNED[key]);
       }
       await stop(task);
+    });
+
+    describe('activation bookkeeping patches the stored row instead of re-upserting it', () => {
+      /** Fold every dispatched action through the slice, seeded with the stored row. */
+      const reduceAll = (dispatched: any[]) => {
+        const seeded = agentSessionReducer(
+          agentSessionInitialState,
+          restoreStoredSessions([storedSession()]),
+        );
+        return dispatched.reduce(agentSessionReducer, seeded).byAgentId[A1];
+      };
+      const expectStoredWritesOnly = (dispatched: any[]) => {
+        expect(dispatched.some((candidate) => candidate.type === bulkUpsertSessions.type)).toBe(
+          false,
+        );
+        expect(dispatched.some((candidate) => candidate.type === upsertSession.type)).toBe(false);
+      };
+      const expectFeOwnedIntact = (row: StoredAgentSession) => {
+        for (const key of policyKeys) {
+          expect(row[key], key).toEqual(FE_OWNED[key]);
+        }
+      };
+
+      it('start + no-fetched-session fallback keep every FE-owned field', async () => {
+        const existing = { ...storedSession(), status: AgentStatus.Pending };
+        mocks.get.mockResolvedValue(null);
+        const { channel, dispatched, task } = start({ [A1]: existing });
+        const action = activateAgentRequested(WS, A1);
+        channel.put(action);
+
+        await expect(action.promise).resolves.toEqual(
+          expect.objectContaining({ id: A1, activationState: 'active', ...FE_OWNED }),
+        );
+        expectStoredWritesOnly(dispatched);
+        const [activating, activated] = restoresOf(dispatched).map((r) => r.payload[0][0]);
+        expect(activating).toEqual(
+          expect.objectContaining({ activationState: 'activating', activationAttempts: 1 }),
+        );
+        expect(activated).toEqual(
+          expect.objectContaining({ activationState: 'active', status: AgentStatus.Active }),
+        );
+        const row = reduceAll(dispatched);
+        expect(row.activationState).toBe('active');
+        expectFeOwnedIntact(row);
+        await stop(task);
+      });
+
+      it('start + error keep every FE-owned field', async () => {
+        const existing = { ...storedSession(), status: AgentStatus.Pending };
+        mocks.get.mockRejectedValue(new Error('activation failed'));
+        const { channel, dispatched, task } = start({ [A1]: existing });
+        const action = activateAgentRequested(WS, A1);
+        channel.put(action);
+
+        await expect(action.promise).rejects.toThrow('activation failed');
+        expectStoredWritesOnly(dispatched);
+        const row = reduceAll(dispatched);
+        expect(row).toEqual(
+          expect.objectContaining({
+            activationState: 'error',
+            lastActivationError: 'activation failed',
+          }),
+        );
+        expectFeOwnedIntact(row);
+        await stop(task);
+      });
+
+      it('a fetched daemon snapshot goes through the wire upsert without FE-owned keys', async () => {
+        const existing = { ...storedSession(), status: AgentStatus.Pending };
+        mocks.get.mockResolvedValue(session(A1, { messages: [] }));
+        const { channel, dispatched, task } = start({ [A1]: existing });
+        const action = activateAgentRequested(WS, A1);
+        channel.put(action);
+
+        await expect(action.promise).resolves.toEqual(
+          expect.objectContaining({ id: A1, activationState: 'active' }),
+        );
+        const [activating] = restoresOf(dispatched).map((r) => r.payload[0][0]);
+        expect(activating).toEqual(expect.objectContaining({ activationState: 'activating' }));
+        const wire = dispatched.find((candidate) => candidate.type === bulkUpsertSessions.type);
+        expect(wire.payload[0][0]).toEqual(expect.objectContaining({ activationState: 'active' }));
+        for (const key of policyKeys) {
+          expect(wire.payload[0][0], key).not.toHaveProperty(key);
+        }
+        await stop(task);
+      });
+    });
+
+    describe('workspace membership is re-registered on restore', () => {
+      const membershipAfter = (dispatched: any[]) => {
+        const seeded = workspaceAgentsReducer(
+          workspaceAgentsInitialState,
+          upsertSession(session()),
+        );
+        return dispatched.reduce(workspaceAgentsReducer, seeded).byWorkspaceId[WS];
+      };
+
+      it('through a scheduled delete that fails on the wire', async () => {
+        mocks.deleteAgent.mockResolvedValue({ success: false, error: 'delete rejected' });
+        const { channel, dispatched, task } = start({ [A1]: storedSession() });
+        const deletion = deleteAgentWithUndoRequested(WS, A1);
+        channel.put(deletion);
+
+        await expect(deletion.promise).rejects.toThrow('delete rejected');
+        const membership = membershipAfter(dispatched);
+        expect(membership.agentIds).toEqual([A1]);
+        expect(membership.foregroundAgentIds).toEqual([A1]);
+        await stop(task);
+      });
+
+      it('through undo after a scheduled delete', async () => {
+        mocks.deleteAgent.mockResolvedValue({
+          success: true,
+          scheduled: true,
+          deleteAt: '2026-08-11T00:00:15.000Z',
+        });
+        mocks.cancelDelete.mockResolvedValue({ success: true, cancelled: true });
+        const { channel, dispatched, task } = start({ [A1]: storedSession() });
+        const deletion = deleteAgentWithUndoRequested(WS, A1, 'Agent');
+        channel.put(deletion);
+        await deletion.promise;
+        await settle();
+        expect(membershipAfter(dispatched).agentIds).toEqual([]);
+
+        const undo = undoAgentDeletionRequested(WS, A1);
+        channel.put(undo);
+        await expect(undo.promise).resolves.toBe(true);
+        const membership = membershipAfter(dispatched);
+        expect(membership.agentIds).toEqual([A1]);
+        expect(membership.foregroundAgentIds).toEqual([A1]);
+        await stop(task);
+      });
+
+      it('through an immediate delete cancelled mid-flight', async () => {
+        mocks.deleteAgent.mockReturnValue(new Promise(() => {}));
+        const { channel, dispatched, task } = start({ [A1]: storedSession() });
+        const action = deleteAgentSessionRequested(WS, A1);
+        action.promise.catch(() => {});
+        channel.put(action);
+        await settle();
+        expect(membershipAfter(dispatched).agentIds).toEqual([]);
+
+        await stop(task);
+        await expect(action.promise).rejects.toThrow();
+        expect(restoresOf(dispatched)).toHaveLength(1);
+        expect(membershipAfter(dispatched).agentIds).toEqual([A1]);
+      });
     });
   });
 
