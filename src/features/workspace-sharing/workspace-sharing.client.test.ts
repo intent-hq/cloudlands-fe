@@ -152,9 +152,27 @@ describe('workspaceSharingClient wire contract (fake transport)', () => {
     });
   });
 
-  it('inviteErrorCode reads only string data.code values', () => {
+  it('inviteErrorCode reads only allowlisted string data.code values', () => {
     expect(inviteErrorCode(new Error('plain'))).toBeUndefined();
     expect(inviteErrorCode({ data: 'detail string' })).toBeUndefined();
     expect(inviteErrorCode({ data: { code: 'invite-expired' } })).toBe('invite-expired');
+    expect(inviteErrorCode({ data: { code: 'not-a-daemon-code' } })).toBeUndefined();
+  });
+
+  // Regression (fe#2440 verifier, 6138cb4 round): an arbitrary `data.code`
+  // string on a daemon rejection is not an invite code — it must never leave
+  // the client on `ShareFailure.code` (the saga logs that field).
+  it('folds an arbitrary data.code on a rejection to the bounded unknown code', async () => {
+    const marker = `leak-${Math.random().toString(36).slice(2)}`;
+    for (const run of [
+      () => workspaceSharingClient.createInvite('ws-1'),
+      () => workspaceSharingClient.revokeInvite('ws-1', 'inv-1'),
+      () => workspaceSharingClient.removeMember('ws-1', 'p-bob'),
+    ]) {
+      mockedRequest.mockRejectedValueOnce({ rpcCode: -32000, data: { code: marker } });
+      const outcome = await run();
+      expect(outcome).toEqual({ success: false, code: 'unknown', rpcCode: -32000 });
+      expect(JSON.stringify(outcome)).not.toContain(marker);
+    }
   });
 });

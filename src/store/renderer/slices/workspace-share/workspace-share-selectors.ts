@@ -5,7 +5,7 @@
 import { getItem, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
 import type { Workspace } from '$shared/types';
 import { store } from '../../store';
-import type { WorkspaceShareTarget } from './workspace-share-slice';
+import { getRosterState, type WorkspaceShareTarget } from './workspace-share-slice';
 
 export const selectShareDialogOpen = store.createSelector((state) => state.workspaceShare.open);
 
@@ -74,4 +74,44 @@ export const selectShareRemovingPrincipalId = store.createSelector(
 
 export const selectShareActionError = store.createSelector(
   (state) => state.workspaceShare.actionError,
+);
+
+/** Saga: a hover card has asked for this workspace's roster at least once. */
+export const selectWorkspaceRosterTracked = store.createSelector(
+  (state, workspaceId: string) => workspaceId in state.workspaceShare.byWorkspaceId,
+);
+
+/** Hover card: the roster of `workspaceId` in daemon order (empty until read). */
+export const selectWorkspaceRosterMembers = store.createSelector((state, workspaceId?: string) =>
+  workspaceId ? getItems(getRosterState(state.workspaceShare, workspaceId).members) : [],
+);
+
+/**
+ * Hover card: the owner may manage sharing for `workspaceId`
+ * (`workspace.myRole === 'owner'`) and the daemon has not refused an owner-only
+ * method for it. Gates the Share entry and every Remove control.
+ */
+export const selectWorkspaceRosterCanManage = store.createSelector(
+  (state, workspaceId?: string) =>
+    !!workspaceId &&
+    !getRosterState(state.workspaceShare, workspaceId).withheld &&
+    getItem(state.workspace.workspaces, workspaceId as Workspace['id'])?.myRole === 'owner',
+);
+
+/** Hover card: the daemon refused an owner-only method for `workspaceId`. */
+export const selectWorkspaceRosterWithheld = store.createSelector(
+  (state, workspaceId?: string) =>
+    !!workspaceId && getRosterState(state.workspaceShare, workspaceId).withheld,
+);
+
+/** Hover card: the collaborator whose removal is in flight, if any. */
+export const selectWorkspaceRosterRemovingPrincipalId = store.createSelector(
+  (state, workspaceId?: string) =>
+    workspaceId ? getRosterState(state.workspaceShare, workspaceId).removingPrincipalId : null,
+);
+
+/** Hover card: the localized error of the last failed removal, if any. */
+export const selectWorkspaceRosterRemoveError = store.createSelector(
+  (state, workspaceId?: string) =>
+    workspaceId ? getRosterState(state.workspaceShare, workspaceId).removeError : null,
 );
