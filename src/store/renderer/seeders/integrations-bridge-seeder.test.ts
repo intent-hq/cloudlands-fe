@@ -43,6 +43,11 @@ import { SENTRY_AUTH_CHANNELS } from '$features/sentry-auth/constants';
 
 const mockedRequest = vi.mocked(backendRequest);
 
+/** The params object of the nth `backendRequest` call. */
+function sentParams(call: number): Record<string, unknown> {
+  return mockedRequest.mock.calls[call][1] as Record<string, unknown>;
+}
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>((done) => (resolve = done));
@@ -769,6 +774,8 @@ describe('integrations-bridge-seeder', () => {
             updatedAt: '2026-01-02T00:00:00Z',
             user: WIRE_USER,
             labels: ['bug'],
+            owner: 'octocat',
+            repo: 'hello',
           },
         ],
         nextToken: 'cursor-2',
@@ -787,11 +794,12 @@ describe('integrations-bridge-seeder', () => {
         state: 'open',
         limit: 20,
       });
+      expect(sentParams(0).repos).toBeUndefined();
       expect(response).toEqual({
         success: true,
         data: [
           {
-            id: '7',
+            id: 'octocat/hello#7',
             number: 7,
             title: 'Bug in flux',
             body: 'It breaks',
@@ -868,7 +876,9 @@ describe('integrations-bridge-seeder', () => {
       });
       expect(response.success).toBe(true);
       expect(response.data[0]).toMatchObject({
-        id: '42',
+        id: 'octocat/hello#42',
+        owner: 'octocat',
+        repo: 'hello',
         state: 'draft',
         author: { login: 'octocat' },
         assignees: ['octocat'],
@@ -876,6 +886,145 @@ describe('integrations-bridge-seeder', () => {
         targetBranch: 'main',
         description: '…',
       });
+    });
+
+    it('search-github-issues forwards options.repos as the daemon `repos` param and attributes each item to its own repo (v10.1)', async () => {
+      mockedRequest.mockResolvedValueOnce({
+        issues: [
+          {
+            number: 7,
+            title: 'Parent issue',
+            state: 'open',
+            htmlUrl: 'https://github.com/intent-hq/intent/issues/7',
+            createdAt: '2026-01-01T00:00:00Z',
+            updatedAt: '2026-01-03T00:00:00Z',
+            owner: 'intent-hq',
+            repo: 'intent',
+          },
+          {
+            number: 7,
+            title: 'Submodule issue',
+            state: 'open',
+            htmlUrl: 'https://github.com/intent-hq/intentd/issues/7',
+            createdAt: '2026-01-01T00:00:00Z',
+            updatedAt: '2026-01-02T00:00:00Z',
+            owner: 'intent-hq',
+            repo: 'intentd',
+          },
+        ],
+        nextToken: 'cursor-2',
+      });
+
+      const response = await mockInvoke<{
+        success: boolean;
+        data: { id: string; owner: string; repo: string }[];
+        nextToken: string | null;
+      }>(IPC_CHANNELS.GIT_TRACKING.SEARCH_GITHUB_ISSUES, {
+        owner: 'intent-hq',
+        repo: 'intent',
+        options: {
+          filter: 'all',
+          state: 'open',
+          query: 'flux',
+          repos: [
+            { owner: 'intent-hq', repo: 'intentd' },
+            { owner: 'intent-hq', repo: 'cloudlands-fe' },
+          ],
+        },
+      });
+
+      expect(mockedRequest).toHaveBeenCalledWith('github.issues.search', {
+        owner: 'intent-hq',
+        repo: 'intent',
+        filter: 'all',
+        state: 'open',
+        query: 'flux',
+        repos: [
+          { owner: 'intent-hq', repo: 'intentd' },
+          { owner: 'intent-hq', repo: 'cloudlands-fe' },
+        ],
+      });
+      expect(response.success).toBe(true);
+      expect(response.data.map((row) => [row.id, row.owner, row.repo])).toEqual([
+        ['intent-hq/intent#7', 'intent-hq', 'intent'],
+        ['intent-hq/intentd#7', 'intent-hq', 'intentd'],
+      ]);
+      expect(new Set(response.data.map((row) => row.id)).size).toBe(2);
+      expect(response.nextToken).toBe('cursor-2');
+    });
+
+    it('search-github-issues drops malformed options.repos entries and omits an empty repos list', async () => {
+      mockedRequest.mockResolvedValueOnce({ issues: [], nextToken: null });
+      await mockInvoke(IPC_CHANNELS.GIT_TRACKING.SEARCH_GITHUB_ISSUES, {
+        owner: 'octocat',
+        repo: 'hello',
+        options: { filter: 'all', repos: [{ owner: 'acme' }, 'nope', { owner: '', repo: 'x' }] },
+      });
+      expect(sentParams(0).repos).toBeUndefined();
+
+      mockedRequest.mockResolvedValueOnce({ issues: [], nextToken: null });
+      await mockInvoke(IPC_CHANNELS.GIT_TRACKING.SEARCH_GITHUB_ISSUES, {
+        owner: 'octocat',
+        repo: 'hello',
+        options: { filter: 'all', repos: [] },
+      });
+      expect(sentParams(1).repos).toBeUndefined();
+    });
+
+    it('search-pull-requests forwards options.repos as the daemon `repos` param and attributes each item to its own repo (v10.1)', async () => {
+      mockedRequest.mockResolvedValueOnce({
+        pulls: [
+          {
+            number: 42,
+            title: 'Parent PR',
+            state: 'open',
+            htmlUrl: 'https://github.com/intent-hq/intent/pull/42',
+            merged: false,
+            draft: false,
+            owner: 'intent-hq',
+            repo: 'intent',
+          },
+          {
+            number: 42,
+            title: 'Submodule PR',
+            state: 'closed',
+            htmlUrl: 'https://github.com/intent-hq/cloudlands-fe/pull/42',
+            merged: true,
+            draft: false,
+            owner: 'intent-hq',
+            repo: 'cloudlands-fe',
+          },
+        ],
+        nextToken: 'cursor-2',
+      });
+
+      const response = await mockInvoke<{
+        success: boolean;
+        data: { id: string; owner: string; repo: string; state: string }[];
+        nextToken: string | null;
+      }>(IPC_CHANNELS.GIT_TRACKING.SEARCH_PULL_REQUESTS, {
+        owner: 'intent-hq',
+        repo: 'intent',
+        options: {
+          filter: 'all',
+          state: 'open',
+          repos: [{ owner: 'intent-hq', repo: 'cloudlands-fe' }],
+        },
+      });
+
+      expect(mockedRequest).toHaveBeenCalledWith('github.pulls.search', {
+        owner: 'intent-hq',
+        repo: 'intent',
+        filter: 'all',
+        state: 'open',
+        repos: [{ owner: 'intent-hq', repo: 'cloudlands-fe' }],
+      });
+      expect(response.success).toBe(true);
+      expect(response.data.map((row) => [row.id, row.owner, row.repo, row.state])).toEqual([
+        ['intent-hq/intent#42', 'intent-hq', 'intent', 'open'],
+        ['intent-hq/cloudlands-fe#42', 'intent-hq', 'cloudlands-fe', 'merged'],
+      ]);
+      expect(response.nextToken).toBe('cursor-2');
     });
 
     it('search-pull-requests forwards query + nextToken and returns the response nextToken (§5.27)', async () => {
@@ -908,6 +1057,59 @@ describe('integrations-bridge-seeder', () => {
           owner: 'octocat',
           repo: 'hello',
           options: {},
+        }),
+      ).toEqual({ success: false, error: 'GitHub is not configured.' });
+    });
+  });
+
+  describe('git-tracking:list-related-repos → daemon github.relatedRepos.list (§5.27, v10.1)', () => {
+    it('forwards { owner, repo } and returns the wire repos verbatim in the success envelope', async () => {
+      mockedRequest.mockResolvedValueOnce({
+        repos: [
+          { owner: 'intent-hq', repo: 'intentd', path: 'packages/intentd' },
+          { owner: 'intent-hq', repo: 'cloudlands-fe', path: 'packages/cloudlands-fe' },
+        ],
+      });
+
+      const response = await mockInvoke(IPC_CHANNELS.GIT_TRACKING.LIST_RELATED_REPOS, {
+        owner: 'intent-hq',
+        repo: 'intent',
+      });
+
+      expect(mockedRequest).toHaveBeenCalledWith('github.relatedRepos.list', {
+        owner: 'intent-hq',
+        repo: 'intent',
+      });
+      expect(response).toEqual({
+        success: true,
+        data: [
+          { owner: 'intent-hq', repo: 'intentd', path: 'packages/intentd' },
+          { owner: 'intent-hq', repo: 'cloudlands-fe', path: 'packages/cloudlands-fe' },
+        ],
+      });
+    });
+
+    it('maps the graceful no-.gitmodules { repos: [] } to an empty success list', async () => {
+      mockedRequest.mockResolvedValueOnce({ repos: [] });
+      expect(
+        await mockInvoke(IPC_CHANNELS.GIT_TRACKING.LIST_RELATED_REPOS, {
+          owner: 'octocat',
+          repo: 'hello',
+        }),
+      ).toEqual({ success: true, data: [] });
+    });
+
+    it('rejects missing owner/repo client-side and folds a daemon failure to the error envelope', async () => {
+      expect(
+        await mockInvoke(IPC_CHANNELS.GIT_TRACKING.LIST_RELATED_REPOS, { owner: 'octocat' }),
+      ).toEqual({ success: false, error: 'owner and repo are required' });
+      expect(mockedRequest).not.toHaveBeenCalled();
+
+      mockedRequest.mockRejectedValueOnce(new Error('GitHub is not configured.'));
+      expect(
+        await mockInvoke(IPC_CHANNELS.GIT_TRACKING.LIST_RELATED_REPOS, {
+          owner: 'octocat',
+          repo: 'hello',
         }),
       ).toEqual({ success: false, error: 'GitHub is not configured.' });
     });
