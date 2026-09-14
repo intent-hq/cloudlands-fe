@@ -104,25 +104,42 @@ function coalescedByKey<A>(
 }
 
 /**
- * Both reads are issued together and the flight is held until BOTH settle:
- * an early rejection must not release the `coalescedByKey` guard while the
- * sibling RPC is still outstanding, or the next event would start a second
- * concurrent read. A `-32003` on either read is preferred as the thrown error.
+ * Both reads are issued together. `result` rejects the moment either read is
+ * refused with `-32003` (a terminal denial must withhold immediately, not
+ * once the sibling RPC times out) and otherwise settles once both have;
+ * `settled` resolves only when both have, so the caller can keep the
+ * `coalescedByKey` guard held and no second concurrent read starts while a
+ * sibling RPC is still outstanding.
  */
-async function readShareData(
-  workspaceId: string,
-): Promise<{ members: WorkspaceMember[]; invites: WorkspaceInvite[] }> {
-  const [members, invites] = await Promise.allSettled([
+function readShareData(workspaceId: string): {
+  result: Promise<{ members: WorkspaceMember[]; invites: WorkspaceInvite[] }>;
+  settled: Promise<void>;
+} {
+  const reads = [
     workspaceSharingClient.listMembers(workspaceId),
     workspaceSharingClient.listInvites(workspaceId),
-  ]);
-  if (members.status === 'rejected' || invites.status === 'rejected') {
-    const reasons = [members, invites].flatMap((outcome) =>
-      outcome.status === 'rejected' ? [outcome.reason as unknown] : [],
-    );
-    throw reasons.find(isForbiddenErrorResponse) ?? reasons[0];
-  }
-  return { members: members.value, invites: invites.value };
+  ] as const;
+  const outcomes = Promise.allSettled(reads);
+  const result = new Promise<{ members: WorkspaceMember[]; invites: WorkspaceInvite[] }>(
+    (resolve, reject) => {
+      for (const read of reads) {
+        read.catch((error: unknown) => {
+          if (isForbiddenErrorResponse(error)) reject(error);
+        });
+      }
+      void outcomes.then(([members, invites]) => {
+        if (members.status === 'fulfilled' && invites.status === 'fulfilled') {
+          resolve({ members: members.value, invites: invites.value });
+          return;
+        }
+        const reasons = [members, invites].flatMap((outcome) =>
+          outcome.status === 'rejected' ? [outcome.reason as unknown] : [],
+        );
+        reject(reasons.find(isForbiddenErrorResponse) ?? reasons[0]);
+      });
+    },
+  );
+  return { result, settled: outcomes.then(() => undefined) };
 }
 
 /** The open dialog's target, or `null` (withheld) when the caller may not manage it. */
@@ -156,18 +173,22 @@ function* loadShareData(): SagaGenerator<void> {
   const target = yield* manageableTarget();
   if (!target) return;
   const generation = yield* selectShareMutationGeneration.effect();
+  const read = readShareData(target.workspaceId);
   try {
-    const { members, invites } = yield* call(readShareData, target.workspaceId);
+    const { members, invites } = yield* call(() => read.result);
     yield* put(shareDataLoaded({ target, generation, members, invites }));
   } catch (error) {
-    if (!(yield* stillTargets(target))) return;
-    if (isForbiddenErrorResponse(error)) {
-      yield* put(shareAccessWithheld({ target }));
-      return;
+    if (yield* stillTargets(target)) {
+      if (isForbiddenErrorResponse(error)) {
+        yield* put(shareAccessWithheld({ target }));
+      } else {
+        logger.warn('Loading sharing details failed', { workspaceId: target.workspaceId });
+        yield* put(shareDataFailed({ target, error: m.workspace_share_loadFailed_error() }));
+      }
     }
-    logger.warn('Loading sharing details failed', { workspaceId: target.workspaceId });
-    yield* put(shareDataFailed({ target, error: m.workspace_share_loadFailed_error() }));
   }
+  // Hold the flight until the sibling read settles too, so a burst still coalesces.
+  yield* call(() => read.settled);
 }
 
 function* createInvite(action: ReturnType<typeof shareInviteCreateRequested>): SagaGenerator<void> {

@@ -578,25 +578,62 @@ describe('workspaceShareSaga', () => {
     h.task.cancel();
   });
 
-  it('withholds on a -32003 from one read even when the sibling read hangs then fails', async () => {
-    let rejectHungInvites!: () => void;
-    mocks.request.mockImplementation((method: string) => {
-      if (method === 'workspace.members.list') return Promise.reject(forbidden());
-      if (method === 'workspace.invite.list') {
-        return new Promise((_, reject) => (rejectHungInvites = () => reject(new Error('late'))));
-      }
-      return Promise.resolve({});
-    });
-    const h = harness();
-    h.dispatch(openShareDialog({ workspaceId: 'ws-1', workspaceTitle: 'My Space' }));
-    await settle();
-    expect(h.state().withheld).toBe(false);
+  // Regression (fe#2440 review, b070c36): a -32003 on either read is terminal
+  // and withholds the moment it arrives — not once the sibling read settles —
+  // while the flight stays held until the sibling does, so a burst still
+  // coalesces and no owner mutation is issued after the refusal.
+  it.each(['workspace.members.list', 'workspace.invite.list'])(
+    'withholds immediately on a -32003 from %s while the sibling read is still pending',
+    async (refusedMethod) => {
+      replyByMethod();
+      const h = harness();
+      h.dispatch(openShareDialog({ workspaceId: 'ws-1', workspaceTitle: 'My Space' }));
+      await settle();
+      expect(getItems(h.state().invites)).toHaveLength(1);
 
-    rejectHungInvites();
-    await settle();
-    expect(h.state()).toMatchObject({ withheld: true, loadStatus: 'loaded', loadError: null });
-    h.task.cancel();
-  });
+      let settleSibling!: () => void;
+      const siblingMethod =
+        refusedMethod === 'workspace.members.list'
+          ? 'workspace.invite.list'
+          : 'workspace.members.list';
+      mocks.request.mockImplementation((method: string) => {
+        if (method === refusedMethod) return Promise.reject(forbidden());
+        if (method === siblingMethod) {
+          return new Promise((resolve) => {
+            settleSibling = () =>
+              resolve(
+                siblingMethod === 'workspace.members.list'
+                  ? { members: [owner] }
+                  : { invites: [invite] },
+              );
+          });
+        }
+        return Promise.resolve({});
+      });
+      mocks.request.mockClear();
+      h.dispatch(shareMembershipChanged({ workspaceId: 'ws-1' }));
+      await settle();
+      expect(h.state()).toMatchObject({ withheld: true, loadStatus: 'loaded', loadError: null });
+      expect(getItems(h.state().invites)).toHaveLength(0);
+
+      // Denied: nothing owner-only leaves, and the burst is held behind the pending sibling.
+      h.dispatch(shareMemberRemoveRequested('p-bob'));
+      h.dispatch(shareInviteRevokeRequested('inv-1'));
+      h.dispatch(shareInviteCreateRequested({ pinLogin: 'dave' }));
+      for (let i = 0; i < 5; i++) h.dispatch(shareMembershipChanged({ workspaceId: 'ws-1' }));
+      await settle();
+      expect(calls(refusedMethod)).toHaveLength(1);
+      expect(calls(siblingMethod)).toHaveLength(1);
+
+      settleSibling();
+      await settle();
+      expect(h.state().withheld).toBe(true);
+      expect(calls('workspace.members.remove')).toHaveLength(0);
+      expect(calls('workspace.invite.revoke')).toHaveLength(0);
+      expect(calls('workspace.invite.create')).toHaveLength(0);
+      h.task.cancel();
+    },
+  );
 
   it('reads the retargeted workspace after an in-flight read for the previous one settles', async () => {
     let resolveFirst!: () => void;
