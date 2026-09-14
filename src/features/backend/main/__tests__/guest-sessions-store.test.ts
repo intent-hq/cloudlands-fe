@@ -425,7 +425,9 @@ describe('guest-sessions-store keychain sync adapter', () => {
   it('applyRemoteSyncRecord() inserts a live record without notifying local listeners', async () => {
     const store = await import('../guest-sessions-store');
     const listener = vi.fn();
+    const replaced = vi.fn();
     store.onGuestSessionsMutated(listener);
+    store.onGuestCredentialReplaced(replaced);
     const changed = await store.applyRemoteSyncRecord({
       label: 'remote',
       host: '10.1.1.1',
@@ -442,9 +444,44 @@ describe('guest-sessions-store keychain sync adapter', () => {
     });
     expect(changed).toBe(true);
     expect(listener).not.toHaveBeenCalled();
+    expect(replaced).not.toHaveBeenCalled();
     const [rec] = await store.list();
     expect(rec).toMatchObject({ label: 'remote', hostname: 'remote.local', principalId: 'prn_9' });
     expect(await store.getDecryptedToken(rec.id)).toBe('remote-secret');
+  });
+
+  it('applyRemoteSyncRecord() replacing a live credential notifies onGuestCredentialReplaced', async () => {
+    const store = await import('../guest-sessions-store');
+    const first = await store.add(sample);
+    const replaced = vi.fn();
+    store.onGuestCredentialReplaced(replaced);
+    const [remote] = await store.listSyncRecords();
+    const changed = await store.applyRemoteSyncRecord({
+      ...remote,
+      token: 'synced-replacement',
+      updatedAt: remote.updatedAt + 1,
+    });
+    expect(changed).toBe(true);
+    expect(replaced).toHaveBeenCalledExactlyOnceWith(first.id);
+    expect(await store.getDecryptedToken(first.id)).toBe('synced-replacement');
+  });
+
+  it('applyRemoteSyncRecord() that is refused as a downgrade notifies nobody', async () => {
+    const store = await import('../guest-sessions-store');
+    const first = await store.add(sample);
+    const replaced = vi.fn();
+    store.onGuestCredentialReplaced(replaced);
+    const [remote] = await store.listSyncRecords();
+    encryptionAvailable = false;
+    expect(
+      await store.applyRemoteSyncRecord({
+        ...remote,
+        token: 'plain-replacement',
+        updatedAt: remote.updatedAt + 1,
+      }),
+    ).toBe(false);
+    expect(replaced).not.toHaveBeenCalled();
+    expect((await store.findById(first.id))?.tokenEncrypted).toBe(true);
   });
 
   it('applyRemoteSyncRecord() rejects records lacking principal identity', async () => {

@@ -5,6 +5,7 @@
  * error carries.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { shell } from 'electron';
 
 const mocks = vi.hoisted(() => ({
   logs: [] as string[],
@@ -116,6 +117,36 @@ describe('review: secret boundary', () => {
     expect(mocks.open).toHaveBeenCalledOnce();
     expect(send).not.toHaveBeenCalled();
     expect(mocks.logs.some((line) => line.includes(secret) || line.includes(token))).toBe(false);
+  });
+
+  // The WHATWG URL parser strips ASCII tab/LF/CR anywhere in its input, so
+  // these spellings all redeem as `secret=<marker>` — the log scrubber must
+  // agree with the parser about what the credential key is.
+  it.each([
+    ['LF inside the key', 'sec\nret='],
+    ['tab after the key', 'secret\t='],
+    ['tab before the value', 'secret=\t'],
+    ['CR inside the key', 'sec\rret='],
+  ])(
+    'redacts a credential key the URL parser normalizes (%s) during cold-start replay',
+    async (_name, spelling) => {
+      const variant = link.replace('&secret=', `&${spelling}`);
+      expect(parseInviteUri(variant)?.secret === secret).toBe(true);
+      await replayColdStart(variant);
+      expect(mocks.open).toHaveBeenCalledOnce();
+      expect(mocks.logs.some((line) => line.includes(secret))).toBe(false);
+    },
+  );
+
+  it('aborts before storing or opening when the OS refuses to launch the verification URL', async () => {
+    vi.mocked(shell.openExternal).mockRejectedValueOnce(new Error(`launch refused for ${token}`));
+    await handleInviteDeepLink(link);
+    expect(mocks.add).not.toHaveBeenCalled();
+    expect(mocks.open).not.toHaveBeenCalled();
+    expect(mocks.dialog.mock.calls.at(-1)?.[0]).toMatchObject({ type: 'error' });
+    const allLogs = mocks.logs.join('\n');
+    expect(allLogs).toContain('verification-launch-failed');
+    expect(allLogs).not.toContain(token);
   });
 });
 

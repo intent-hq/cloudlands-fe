@@ -5664,6 +5664,7 @@
   "deeplink_inviteError_generic": "호스트에 연결할 수 없거나 초대가 거부되었습니다.",
   "deeplink_inviteError_encryptionUnavailable": "이 컴퓨터는 현재 자격 증명을 암호화할 수 없으며, 이 호스트의 저장된 세션은 암호화되어 있습니다. OS 암호화를 사용할 수 있게 되면 다시 시도하세요.",
   "deeplink_inviteError_storeCorrupt": "저장된 게스트 세션 파일을 읽을 수 없습니다. 파일을 복구하거나 삭제한 뒤 링크를 다시 여세요.",
+  "deeplink_inviteError_launchFailed": "GitHub 로그인을 위해 브라우저를 열 수 없습니다. 링크를 다시 열어 재시도하세요.",
   "deeplink_invitePlaintext_title": "자격 증명이 암호화되지 않은 상태로 저장됨",
   "deeplink_invitePlaintext_message": "이 컴퓨터에서는 OS 암호화를 사용할 수 없어 게스트 자격 증명이 암호화되지 않은 상태로 저장되었습니다. 중요하다면 세션을 삭제하고 암호화를 사용할 수 있을 때 다시 참여하세요.",
   "rules_service_listFailed_error": "규칙을 나열하지 못했습니다",

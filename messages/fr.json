@@ -5664,6 +5664,7 @@
   "deeplink_inviteError_generic": "L’hôte est injoignable ou a refusé l’invitation.",
   "deeplink_inviteError_encryptionUnavailable": "Cet ordinateur ne peut pas chiffrer l’identifiant pour le moment, et la session enregistrée pour cet hôte est chiffrée. Réessayez lorsque le chiffrement du système sera disponible.",
   "deeplink_inviteError_storeCorrupt": "Le fichier des sessions invité enregistrées est illisible. Réparez-le ou supprimez-le, puis rouvrez le lien.",
+  "deeplink_inviteError_launchFailed": "Impossible d’ouvrir votre navigateur pour vous connecter à GitHub. Rouvrez le lien pour réessayer.",
   "deeplink_invitePlaintext_title": "Identifiant enregistré sans chiffrement",
   "deeplink_invitePlaintext_message": "Le chiffrement du système est indisponible sur cet ordinateur : l’identifiant invité a donc été enregistré en clair. Si cela compte pour vous, oubliez la session et rejoignez-la à nouveau quand le chiffrement sera disponible.",
   "rules_service_listFailed_error": "Impossible de lister les règles",

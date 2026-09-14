@@ -50,8 +50,10 @@ const WAIT_MARGIN_MS = 60_000;
  * A flow failure decided locally, identified by a bounded code so logs and
  * the failure dialog route on it without any free-form text.
  */
+type InviteFlowCode = 'invalid-verification-uri' | 'verification-launch-failed';
+
 class InviteFlowError extends Error {
-  constructor(readonly flowCode: 'invalid-verification-uri') {
+  constructor(readonly flowCode: InviteFlowCode) {
     // i18n-ignore (internal error, fixed text)
     super('invite flow refused');
     this.name = 'InviteFlowError';
@@ -122,7 +124,14 @@ export async function handleInviteDeepLink(url: string): Promise<void> {
       logger.info('User cancelled the invite device flow');
       return;
     }
-    void shell.openExternal(start.verificationUri);
+    // The launch is awaited so a refused browser hand-off aborts the flow
+    // before any credential is minted into the store; the OS error text is
+    // dropped (bounded code only) since it may echo the URL or worse.
+    try {
+      await shell.openExternal(start.verificationUri);
+    } catch {
+      throw new InviteFlowError('verification-launch-failed');
+    }
 
     const credential = await grant;
     const record = await guestSessionsStore.add({
@@ -262,6 +271,9 @@ function describeInviteFailure(error: unknown): string {
   }
   if (error instanceof guestSessionsStore.GuestStoreCorruptError) {
     return m.deeplink_inviteError_storeCorrupt();
+  }
+  if (error instanceof InviteFlowError && error.flowCode === 'verification-launch-failed') {
+    return m.deeplink_inviteError_launchFailed();
   }
   const code = error instanceof InviteRpcError ? error.inviteCode : null;
   switch (code) {

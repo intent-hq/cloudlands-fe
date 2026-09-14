@@ -5664,6 +5664,7 @@
   "deeplink_inviteError_generic": "ホストに接続できないか、招待が拒否されました。",
   "deeplink_inviteError_encryptionUnavailable": "このコンピューターは現在資格情報を暗号化できず、このホストの保存済みセッションは暗号化されています。OS の暗号化が利用可能になってから再試行してください。",
   "deeplink_inviteError_storeCorrupt": "保存済みのゲストセッションファイルを読み取れません。修復または削除してから、リンクをもう一度開いてください。",
+  "deeplink_inviteError_launchFailed": "GitHub にサインインするためのブラウザーを開けませんでした。リンクをもう一度開いて再試行してください。",
   "deeplink_invitePlaintext_title": "資格情報が暗号化されずに保存されました",
   "deeplink_invitePlaintext_message": "このコンピューターでは OS の暗号化が利用できないため、ゲストの資格情報は暗号化せずに保存されました。気になる場合は、セッションを削除し、暗号化が利用可能になってから再度参加してください。",
   "rules_service_listFailed_error": "ルールを一覧表示できませんでした",

@@ -5664,6 +5664,7 @@
   "deeplink_inviteError_generic": "The host could not be reached or refused the invite.",
   "deeplink_inviteError_encryptionUnavailable": "This computer cannot encrypt the credential right now, and the saved session for this host is encrypted. Try again once OS encryption is available.",
   "deeplink_inviteError_storeCorrupt": "The saved guest sessions file is unreadable. Fix or remove it, then open the link again.",
+  "deeplink_inviteError_launchFailed": "Your browser could not be opened to sign in with GitHub. Open the link again to retry.",
   "deeplink_invitePlaintext_title": "Credential stored without encryption",
   "deeplink_invitePlaintext_message": "OS encryption is unavailable on this computer, so the guest credential was saved unencrypted. Forget the session and join again once encryption is available if this matters to you.",
   "rules_service_listFailed_error": "Failed to list rules",

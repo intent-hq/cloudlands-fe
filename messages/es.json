@@ -5664,6 +5664,7 @@
   "deeplink_inviteError_generic": "No se pudo contactar con el host o rechazó la invitación.",
   "deeplink_inviteError_encryptionUnavailable": "Este equipo no puede cifrar la credencial ahora mismo y la sesión guardada para este host está cifrada. Inténtalo de nuevo cuando el cifrado del sistema esté disponible.",
   "deeplink_inviteError_storeCorrupt": "El archivo de sesiones de invitado guardadas no se puede leer. Repáralo o elimínalo y vuelve a abrir el enlace.",
+  "deeplink_inviteError_launchFailed": "No se pudo abrir el navegador para iniciar sesión en GitHub. Vuelve a abrir el enlace para intentarlo de nuevo.",
   "deeplink_invitePlaintext_title": "Credencial guardada sin cifrar",
   "deeplink_invitePlaintext_message": "El cifrado del sistema no está disponible en este equipo, así que la credencial de invitado se guardó sin cifrar. Si te importa, olvida la sesión y vuelve a unirte cuando el cifrado esté disponible.",
   "rules_service_listFailed_error": "Error al listar las reglas",

@@ -256,6 +256,9 @@ describe('handleInviteDeepLink', () => {
     ['a foreign host', 'https://github.com.evil.example/login/device'],
     ['a lookalike host', 'https://notgithub.com/login/device'],
     ['embedded credentials', 'https://user:pw@github.com/login/device'],
+    ['a non-default port', 'https://github.com:8443/login/device'],
+    ['a path other than the device flow', 'https://github.com/settings/tokens'],
+    ['a path that only starts like the device flow', 'https://github.com/login/device-evil'],
     ['unparseable text', 'not a url'],
   ])(
     'refuses to show or open a verification URL with %s (bounded failure, nothing stored)',
