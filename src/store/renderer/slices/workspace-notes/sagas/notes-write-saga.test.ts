@@ -6,7 +6,7 @@ vi.mock('$lib/components/patterns/notify', () => ({
 }));
 
 import { appClient } from '$lib/client';
-import { toast } from 'svelte-sonner';
+import { notify } from '$lib/components/patterns/notify';
 import { ContentType, NoteVisibility, type Note } from '$shared/types';
 import { NoteId, WorkspaceId } from '$shared/types/branded-ids';
 import {
@@ -573,8 +573,8 @@ describe('notesWriteSaga', () => {
     await settle();
 
     expect(setContent.mock.calls).toEqual([[NOTE, 'mine', 4, WS]]);
-    expect(toast.warning).not.toHaveBeenCalled();
-    expect(toast.error).toHaveBeenCalledTimes(1);
+    expect(notify.warning).not.toHaveBeenCalled();
+    expect(notify.error).toHaveBeenCalledTimes(1);
     expect(run.actions.filter((action) => action.type === applyNoteUpdated.type)).toEqual([]);
     expect(list.mock.calls).toEqual([[WS]]);
     expect(run.getState().byWorkspaceId[WS]?.notes.map[NOTE]).toEqual(canonical);
