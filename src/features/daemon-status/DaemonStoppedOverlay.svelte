@@ -428,9 +428,8 @@
 
         {#if isGuestRevoked}
           <div class="mt-4 border-t border-border pt-4">
-            <button
-              type="button"
-              class="w-full rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+            <Button
+              class="w-full"
               disabled={guestLeaving}
               onclick={handleLeaveHost}
               data-testid="daemon-stopped-guest-leave"
@@ -438,7 +437,7 @@
               {guestLeaving
                 ? m.settings_guestSessions_leaving_label()
                 : m.settings_guestSessions_leave_label()}
-            </button>
+            </Button>
             {#if guestLeaveError}
               <p
                 class="mt-2 text-sm text-danger"

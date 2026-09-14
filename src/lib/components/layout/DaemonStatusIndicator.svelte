@@ -1000,13 +1000,13 @@
               </span>
             </Menu.Item>
           {/each}
-          <button
-            class="w-full text-left text-xs hover:bg-muted/50 rounded px-2 py-1.5 transition-colors cursor-pointer flex items-center gap-2"
-            onclick={openGuestSessionsSettings}
+          <Menu.Item
+            class="w-full cursor-pointer text-xs px-2 py-1.5"
+            onSelect={openGuestSessionsSettings}
           >
-            <span class="text-subtle"><Fa icon={faUsers} /></span>
+            <span class="text-subtle" aria-hidden="true"><Fa icon={faUsers} /></span>
             {m.layout_daemonStatus_manageGuestSessions_action()}
-          </button>
+          </Menu.Item>
         </div>
       {/if}
     </div>
