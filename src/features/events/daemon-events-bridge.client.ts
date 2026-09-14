@@ -4023,11 +4023,34 @@ export async function refreshDaemonEventsAfterReconnect(
       void hydrateAgentQueue(activeAgentId);
     }
   }
+  // Sharing rows converge via live `workspace:updated` membership deltas
+  // only; an invite or member change during the missed-event window leaves
+  // the open Share dialog and any tracked hover roster stale. One
+  // invalidation per workspace holding sharing state — the share saga
+  // coalesces it into one read (and one trailing read at most).
+  for (const workspaceId of sharedWorkspaceIdsToRefresh()) {
+    appStore.dispatch(shareMembershipChanged({ workspaceId }));
+  }
   // The failure registry converges via live `agent:deleted` /
   // `agent:status-changed` events only; deletions during the missed-event
   // window leave stale entries whose toast offers Retry against a deleted
   // agent forever (monorepo#2806). Reconcile survivors against the daemon.
   await reconcileAgentFailureRegistry();
+}
+
+function sharedWorkspaceIdsToRefresh(): string[] {
+  const share = (
+    appStore.state as {
+      workspaceShare?: {
+        open?: boolean;
+        workspaceId?: string | null;
+        byWorkspaceId?: Record<string, unknown>;
+      };
+    }
+  ).workspaceShare;
+  const ids = new Set(Object.keys(share?.byWorkspaceId ?? {}));
+  if (share?.open && share.workspaceId) ids.add(share.workspaceId);
+  return [...ids];
 }
 
 /**
