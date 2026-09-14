@@ -673,10 +673,13 @@ export async function listSyncRecords(): Promise<KeychainSyncRecord[]> {
  * record upserts by daemon identity; a tombstone deletes the matching
  * session and is remembered so it keeps propagating. Records without the
  * guest principal identity are rejected — they cannot be guest sessions.
- * Returns whether the local store changed.
+ * A remote win that replaces a live session's credential fires
+ * {@link onGuestCredentialReplaced} exactly like a local re-join, so a
+ * pooled client never keeps serving the superseded credential. Returns
+ * whether the local store changed.
  */
 export async function applyRemoteSyncRecord(record: KeychainSyncRecord): Promise<boolean> {
-  return mutate(async (state) => {
+  const { changed, replacedId } = await mutate(async (state) => {
     const extras = record.hosts.filter((h) => h.trim() !== record.host.trim());
     if (record.deleted === true) {
       const existing = state.sessions.filter((s) => tombstoneMatches(s, record));
@@ -695,14 +698,14 @@ export async function applyRemoteSyncRecord(record: KeychainSyncRecord): Promise
         deletedAt: record.deletedAt ?? record.updatedAt,
       });
       await writeState(state);
-      return existing.length > 0;
+      return { changed: existing.length > 0, replacedId: null };
     }
 
     if (!record.principalId || !record.login) {
       logger.warn('ignoring remote guest record without principal identity', {
         account: accountKeyFor(record.host, record.port),
       });
-      return false;
+      return { changed: false, replacedId: null };
     }
     clearTombstone(state, record);
     const duplicates = state.sessions.filter((s) => sameDaemon(s, record));
@@ -716,10 +719,12 @@ export async function applyRemoteSyncRecord(record: KeychainSyncRecord): Promise
       logger.warn('ignoring remote guest record: would downgrade an encrypted credential', {
         account: accountKeyFor(record.host, record.port),
       });
-      return false;
+      return { changed: false, replacedId: null };
     }
+    let replacedId: string | null = null;
     if (duplicates.length > 0) {
       const survivor = duplicates[0];
+      replacedId = survivor.id;
       survivor.label = record.label;
       survivor.host = record.host;
       survivor.hosts = extras;
@@ -749,8 +754,10 @@ export async function applyRemoteSyncRecord(record: KeychainSyncRecord): Promise
       });
     }
     await writeState(state);
-    return true;
+    return { changed: true, replacedId };
   });
+  if (replacedId !== null) notifyCredentialReplaced(replacedId);
+  return changed;
 }
 
 /**

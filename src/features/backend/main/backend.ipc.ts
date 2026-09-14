@@ -294,6 +294,14 @@ function captureRemoteDaemonVersion(helloResult: unknown, connectionId: string):
 }
 const backendClients = new Map<string, JsonRpcClient>();
 const backendClientConnects = new Map<string, Promise<JsonRpcClient>>();
+/**
+ * Per-id credential generation, bumped whenever the durable credential for
+ * an id is replaced underneath the pool (guest re-join / sync replacement).
+ * A client construction that read its config under an older generation is
+ * stale before it finishes and rebuilds from the fresh record instead of
+ * landing a superseded credential in the pool.
+ */
+const backendCredentialGenerations = new Map<string, number>();
 let handlersRegistered = false;
 
 /** Main-process lifecycle signal for services caching state by pooled client. */
@@ -825,17 +833,22 @@ export function connectBackendClient(id: string, tokenOverride?: string): Promis
   const pending = backendClientConnects.get(id);
   if (pending) return pending;
 
-  const connecting = buildConfigForConnection(id, tokenOverride)
-    .then(({ config }) => {
+  const connecting = (async () => {
+    for (;;) {
+      const generation = backendCredentialGenerations.get(id) ?? 0;
+      const { config } = await buildConfigForConnection(id, tokenOverride);
       const raced = backendClients.get(id);
       if (raced) return raced;
+      // The credential was replaced while this config was being read: the
+      // config is superseded, so read it again rather than pooling it.
+      if ((backendCredentialGenerations.get(id) ?? 0) !== generation) continue;
       const instance = createAdditionalBackendClient(id, config);
       backendClients.set(id, instance);
       return instance;
-    })
-    .finally(() => {
-      backendClientConnects.delete(id);
-    });
+    }
+  })().finally(() => {
+    backendClientConnects.delete(id);
+  });
   backendClientConnects.set(id, connecting);
   return connecting;
 }
@@ -856,14 +869,50 @@ export function disconnectBackendClient(id: string): void {
   instance.dispose();
 }
 
-// A guest re-join replaces the session's credential (and possibly its
-// principal) in place under the SAME id. A pooled client built on the old
-// credential would keep serving that id as the superseded principal, so it
-// is evicted here; the open that follows the re-join rebuilds it from the
-// store (the same disconnect-then-rebuild the owner `connections:add`
-// path performs). Subscribed at module scope so it holds regardless of
-// which entry point registered the IPC handlers.
-guestSessionsStore.onGuestCredentialReplaced((id) => disconnectBackendClient(id));
+/**
+ * A guest re-join (or a keychain sync applying a newer record) replaces the
+ * session's credential — and possibly its principal — in place under the
+ * SAME id. Anything built on the old credential is invalidated at once: the
+ * generation bump makes an in-flight construction re-read the store, and a
+ * pooled client is evicted synchronously so no window keeps acting as the
+ * superseded principal. If that client was serving windows, it is rebuilt
+ * from the fresh record on the connection-operation lane and the reconnect
+ * marker is replayed exactly as the owner `connections:add` path does, so
+ * renderer consumers holding daemon `events.subscribe` leases re-subscribe
+ * against the new client. Subscribed at module scope so it holds regardless
+ * of which entry point registered the IPC handlers.
+ */
+function onGuestCredentialReplaced(id: string): void {
+  backendCredentialGenerations.set(id, (backendCredentialGenerations.get(id) ?? 0) + 1);
+  const hadLiveClient = backendClients.has(id);
+  disconnectBackendClient(id);
+  if (!hadLiveClient) return;
+  void enqueueConnectionOperation(async () => {
+    const rebuilt = await connectBackendClient(id);
+    broadcast(
+      BACKEND.STATUS,
+      {
+        status: 'connected',
+        reconnected: true,
+        transport: formatTransportInfo(
+          rebuilt.getConfig(),
+          getPinnedVersion(),
+          rebuilt.getConnectedVia(),
+        ),
+        reconnectAttempts: rebuilt.getReconnectAttempts(),
+        ...daemonUpdateMarker(id),
+      },
+      id,
+    );
+    backendReconnectForwarder.emit('reconnected', id);
+  }).catch((error: unknown) => {
+    logger.warn('Failed to rebuild guest client after credential replacement', {
+      id,
+      error: error instanceof Error ? error.name : typeof error,
+    });
+  });
+}
+guestSessionsStore.onGuestCredentialReplaced(onGuestCredentialReplaced);
 
 /** Build a pool member and route its renderer events by connection id. */
 function createAdditionalBackendClient(id: string, config: BackendConnectionConfig): JsonRpcClient {

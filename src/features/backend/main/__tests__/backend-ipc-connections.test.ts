@@ -525,6 +525,60 @@ describe('openBackendWindow connect-before-open', () => {
     for (const listener of guestStore.replacedListeners) listener('guest-unknown');
     expect(lifecycle.events).toEqual([]);
   });
+
+  it('a guest re-join during client construction lands the fresh credential, never the superseded one', async () => {
+    guestStore.findById.mockImplementation(async (id: string) => (id === GUEST.id ? GUEST : null));
+    let release!: (token: string) => void;
+    guestStore.getDecryptedToken.mockImplementationOnce(
+      () => new Promise<string>((resolve) => (release = resolve)),
+    );
+    const { mod } = await loadModule();
+
+    // Construction #1 is blocked reading the (old) credential from the store.
+    const pending = mod.connectBackendClient(GUEST.id);
+    await vi.waitFor(() => expect(guestStore.getDecryptedToken).toHaveBeenCalledOnce());
+
+    // The credential is replaced while that read is in flight, then the old
+    // read completes: its config is superseded and must not be pooled.
+    guestStore.getDecryptedToken.mockResolvedValue('guest-token-v2');
+    for (const listener of guestStore.replacedListeners) listener(GUEST.id);
+    release('guest-token-v1');
+
+    const client = await pending;
+    expect((client.getConfig() as { token?: string }).token).toBe('guest-token-v2');
+    expect(mod.getBackendClientForConnection(GUEST.id)).toBe(client);
+    expect(guestStore.getDecryptedToken).toHaveBeenCalledTimes(2);
+  });
+
+  it('a guest re-join with windows open rebuilds the client and replays the reconnect marker', async () => {
+    guestStore.findById.mockImplementation(async (id: string) => (id === GUEST.id ? GUEST : null));
+    guestStore.getDecryptedToken.mockResolvedValue('guest-token-v1');
+    const send = installWindow(GUEST.id);
+    const { mod } = await loadModule();
+    const reconnected = vi.fn();
+    mod.onAnyBackendReconnected(reconnected);
+
+    await mod.openBackendWindow(GUEST.id);
+    const stale = mod.getBackendClientForConnection(GUEST.id);
+    send.mockClear();
+
+    guestStore.getDecryptedToken.mockResolvedValue('guest-token-v2');
+    for (const listener of guestStore.replacedListeners) listener(GUEST.id);
+
+    // No further open: the live window's client is rebuilt on the fresh
+    // credential and told to re-subscribe, exactly like an owner re-pair.
+    await vi.waitFor(() => {
+      expect(send).toHaveBeenCalledWith(
+        'backend:status',
+        expect.objectContaining({ status: 'connected', reconnected: true }),
+      );
+    });
+    const fresh = mod.getBackendClientForConnection(GUEST.id);
+    expect(fresh).toBeDefined();
+    expect(fresh).not.toBe(stale);
+    expect((fresh?.getConfig() as { token?: string }).token).toBe('guest-token-v2');
+    expect(reconnected).toHaveBeenCalledWith(GUEST.id);
+  });
 });
 
 // ---------------------------------------------------------------------------
