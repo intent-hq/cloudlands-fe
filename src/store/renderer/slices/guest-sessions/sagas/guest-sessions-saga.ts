@@ -444,15 +444,29 @@ function* removeHostedMember(
 }
 
 /**
+ * The local owner gate, re-checked between the awaited steps of a sweep: a
+ * caller that became a collaborator, a workspace gone from the list, or a
+ * roster a concurrent read/remove already withheld (`-32003`) closes the
+ * gate, and no further owner RPC may leave for that workspace — the same
+ * `forbidden` a daemon denial would answer, so the sweep ends the same way.
+ */
+function* assertCanManageHostedWorkspace(workspaceId: string): SagaGenerator<void> {
+  if (!(yield* select(selectCanManageHostedWorkspace.select, workspaceId)))
+    throw new HostedRosterOperationError('forbidden');
+}
+
+/**
  * One step of a *Remove all guests* sweep: the failure code, or null on
- * success. A `forbidden` answer is thrown — the caller lost ownership, so the
- * sweep ends and the roster is withheld — everything else is recorded per
- * step and the sweep continues.
+ * success. Gated on the local owner gate first; a `forbidden` answer is
+ * thrown — the caller lost ownership, so the sweep ends and the roster is
+ * withheld — everything else is recorded per step and the sweep continues.
  */
 function* sweepStep(
+  workspaceId: string,
   method: string,
   params: Record<string, unknown>,
 ): SagaGenerator<HostedRosterFailureCode | null> {
+  yield* call(assertCanManageHostedWorkspace, workspaceId);
   try {
     yield* call(
       backendRequest<WorkspaceMemberRemoveResult | WorkspaceInviteRevokeResult>,
@@ -471,7 +485,9 @@ function* sweepStep(
  * The sweep itself: a FRESH `workspace.members.list` (never the cached
  * roster, which may lag the daemon), every collaborator removed, then
  * `workspace.invite.list` and every open invite revoked. Each step's outcome
- * is recorded on the result; only a lost ownership aborts.
+ * is recorded on the result; only a lost ownership aborts — answered by the
+ * daemon, or seen locally between two steps (see
+ * {@link assertCanManageHostedWorkspace}).
  */
 function* sweepHostedGuests(workspaceId: string): SagaGenerator<RemoveAllHostedGuestsResult> {
   const result: RemoveAllHostedGuestsResult = {
@@ -486,13 +502,14 @@ function* sweepHostedGuests(workspaceId: string): SagaGenerator<RemoveAllHostedG
   });
   for (const member of roster.members) {
     if (member.role === 'owner') continue;
-    const code = yield* sweepStep('workspace.members.remove', {
+    const code = yield* sweepStep(workspaceId, 'workspace.members.remove', {
       workspaceId,
       principalId: member.principalId,
     });
     if (code === null) result.removedPrincipalIds.push(member.principalId);
     else result.failedMembers.push({ principalId: member.principalId, code });
   }
+  yield* call(assertCanManageHostedWorkspace, workspaceId);
   let invites: WorkspaceInviteListResult;
   try {
     invites = yield* call(backendRequest<WorkspaceInviteListResult>, 'workspace.invite.list', {
@@ -505,7 +522,10 @@ function* sweepHostedGuests(workspaceId: string): SagaGenerator<RemoveAllHostedG
     return result;
   }
   for (const invite of invites.invites) {
-    const code = yield* sweepStep('workspace.invite.revoke', { workspaceId, inviteId: invite.id });
+    const code = yield* sweepStep(workspaceId, 'workspace.invite.revoke', {
+      workspaceId,
+      inviteId: invite.id,
+    });
     if (code === null) result.revokedInviteIds.push(invite.id);
     else
       result.failedInvites.push({ inviteId: invite.id, pinLogin: invite.pinLogin ?? null, code });
@@ -513,25 +533,49 @@ function* sweepHostedGuests(workspaceId: string): SagaGenerator<RemoveAllHostedG
   return result;
 }
 
+type RemoveAllAction = ReturnType<typeof removeAllHostedGuestsRequested>;
+
 /**
- * *Remove all guests*. Gated and purge-fenced exactly like a single *Remove*
- * (see {@link removeHostedMember}); the sweep runs the steps one after the
- * other so a daemon never sees a burst, and the roster is refetched once at
- * the end regardless of how many steps failed. The promise resolves with the
- * per-step report; it rejects only when the sweep could not run (ownership
- * lost — the roster is withheld —, the fresh roster read failed, or the
- * workspace was purged mid-flight).
+ * Sweeps in flight, by workspace: the requests that JOINED the leader's
+ * flight (the leader itself is not listed). Owned by the action watcher, so
+ * a restart of the saga starts with no flights.
+ */
+type SweepsInFlight = Map<string, RemoveAllAction[]>;
+
+type SweepOutcome =
+  { result: RemoveAllHostedGuestsResult } | { failure: HostedRosterOperationError };
+
+/**
+ * *Remove all guests*, single-flight per workspace: while a sweep of a
+ * workspace is in flight, a further request for the SAME workspace joins it
+ * and settles with the same outcome — a sweep already removes everything, so
+ * a second worker could only duplicate its removals/revocations and clear
+ * the shared busy marker while the first still runs. Other workspaces are
+ * independent. Gated and purge-fenced exactly like a single *Remove* (see
+ * {@link removeHostedMember}); the sweep runs the steps one after the other
+ * so a daemon never sees a burst, and the roster is refetched once at the
+ * end regardless of how many steps failed. Every joined promise resolves
+ * with the per-step report; they reject only when the sweep could not run
+ * (ownership lost — the roster is withheld —, the fresh roster read failed,
+ * or the workspace was purged mid-flight).
  */
 function* removeAllHostedGuests(
-  action: ReturnType<typeof removeAllHostedGuestsRequested>,
+  inFlight: SweepsInFlight,
+  action: RemoveAllAction,
 ): SagaGenerator<void> {
   const [workspaceId] = action.payload;
-  let settled = false;
+  const joiners = inFlight.get(workspaceId);
+  if (joiners) {
+    joiners.push(action);
+    return;
+  }
   if (!(yield* select(selectCanManageHostedWorkspace.select, workspaceId))) {
     yield* call(withholdRoster, workspaceId);
     yield* put(action.failure(new HostedRosterOperationError('forbidden')));
     return;
   }
+  inFlight.set(workspaceId, []);
+  let outcome: SweepOutcome | null = null;
   yield* put(removeAllGuestsOperationStarted(workspaceId));
   try {
     const { result } = yield* race({
@@ -539,23 +583,27 @@ function* removeAllHostedGuests(
       purged: take(isRosterPurge(workspaceId)),
     });
     if (!result) {
-      yield* put(action.failure(new HostedRosterOperationError('cancelled')));
-      settled = true;
+      outcome = { failure: new HostedRosterOperationError('cancelled') };
       return;
     }
     const refetch = loadHostedRosterRequested(workspaceId);
     refetch.promise.catch(() => {});
     yield* put(refetch);
-    yield* put(action.success(result));
-    settled = true;
+    outcome = { result };
   } catch (error) {
     const failure = toHostedRosterFailure(error);
     if (failure.code === 'forbidden') yield* call(withholdRoster, workspaceId);
-    yield* put(action.failure(failure));
-    settled = true;
+    outcome = { failure };
   } finally {
-    if (!settled && (yield* cancelled()))
-      yield* put(action.failure(new HostedRosterOperationError('cancelled')));
+    // Cancelled (saga teardown) is the only way out without an outcome.
+    outcome ??= { failure: new HostedRosterOperationError('cancelled') };
+    const joined = [action, ...(inFlight.get(workspaceId) ?? [])];
+    inFlight.delete(workspaceId);
+    for (const request of joined) {
+      yield* put(
+        'result' in outcome ? request.success(outcome.result) : request.failure(outcome.failure),
+      );
+    }
     yield* put(removeAllGuestsOperationSettled(workspaceId));
   }
 }
@@ -699,6 +747,7 @@ function* tearDownOnGuestAuthRejection(
 }
 
 function* watchActions(): SagaGenerator<void> {
+  const sweepsInFlight: SweepsInFlight = new Map();
   yield* all([
     takeLeading(loadGuestSessionsRequested, hydrate),
     // takeEvery: each leave targets one host id and main serializes the work.
@@ -706,7 +755,9 @@ function* watchActions(): SagaGenerator<void> {
     takeEvery(leaveGuestWorkspaceRequested, leaveWorkspace),
     call(watchRosterLoads),
     takeEvery(removeHostedMemberRequested, removeHostedMember),
-    takeEvery(removeAllHostedGuestsRequested, removeAllHostedGuests),
+    // takeEvery, keyed single-flight inside: a same-workspace request joins
+    // the in-flight sweep; different workspaces sweep concurrently.
+    takeEvery(removeAllHostedGuestsRequested, removeAllHostedGuests, sweepsInFlight),
     takeEvery(authRejectedReceived, tearDownOnGuestAuthRejection),
   ]);
 }

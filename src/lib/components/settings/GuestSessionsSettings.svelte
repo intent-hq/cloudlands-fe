@@ -9,12 +9,23 @@
    * underneath (*Open*; per-workspace *Leave*: `workspace.members.leave` then
    * the local drop; *Leave host*: best-effort `principal.revokeSelf`, then the
    * local delete and window teardown). Every destructive action confirms.
+   *
+   * Every failure keeps a *Retry* bound to the CONFIRMED operation that
+   * failed — never to whatever the confirm dialog last showed: opening or
+   * cancelling another dialog while an operation is pending must not retarget
+   * its retry (a cancelled confirmation sends nothing, ever). A confirmation
+   * closes its dialog at once (the in-flight state shows on the row), so a
+   * late settlement never closes a dialog opened for something else. The *Remove all
+   * guests* report lives here rather than in the roster row so a sweep whose
+   * membership delta drops the row from *Shared by me* mid-flight still
+   * reports each failed step, with its retry, until dismissed by a retry.
    */
   import { ListView } from '$lib/components/patterns/collection';
   import { Button } from '$lib/components/patterns/settings/custom-controls';
   import BulkActionConfirmDialog from '$lib/components/modals/BulkActionConfirmDialog.svelte';
   import HostedWorkspaceRoster from './HostedWorkspaceRoster.svelte';
   import { m } from '$shared/paraglide/messages.js';
+  import type { Workspace } from '$shared/types';
   import type { GuestSessionRecord, GuestWorkspaceRef } from '$shared/types/guest-sessions';
   import { openConnectionRequested } from '$store/renderer/slices/connections/connections-slice';
   import {
@@ -27,7 +38,12 @@
   import {
     leaveGuestSessionRequested,
     leaveGuestWorkspaceRequested,
+    removeAllHostedGuestsRequested,
   } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
+  import type {
+    RemoveAllHostedGuestsResult,
+    WorkspaceMember,
+  } from '$store/renderer/slices/guest-sessions/guest-sessions-types';
   import { selectIsCollaboratorOnlyClient } from '$store/renderer/slices/workspace/workspace-selectors';
   import { store as appStore } from '$store/renderer/store';
 
@@ -38,28 +54,31 @@
   const hosted$ = selectHostedWorkspaces();
   const isCollaboratorOnly$ = selectIsCollaboratorOnlyClient();
 
+  /** What the *Leave host* confirm dialog shows — never what a retry acts on. */
   let leaveTarget = $state<GuestSessionRecord | null>(null);
   let leaveDialogOpen = $state(false);
+  /** The confirmed leave that failed; its retry re-runs exactly this one. */
+  let failedLeave = $state<GuestSessionRecord | null>(null);
   let leaveError = $state<string | null>(null);
   let leavingId = $state<string | null>(null);
   let openError = $state<string | null>(null);
 
   function requestLeave(session: GuestSessionRecord) {
     leaveTarget = session;
-    leaveError = null;
     leaveDialogOpen = true;
   }
 
-  async function leaveHost(session = leaveTarget) {
+  async function leaveHost(session: GuestSessionRecord | null) {
     if (!session || leavingId) return;
     leavingId = session.id;
+    failedLeave = null;
     leaveError = null;
     try {
       const action = leaveGuestSessionRequested(session.id);
       appStore.dispatch(action);
       await action.promise;
-      leaveTarget = null;
     } catch {
+      failedLeave = session;
       leaveError = m.settings_guestSessions_leave_error({ name: session.label });
     } finally {
       leavingId = null;
@@ -91,8 +110,11 @@
     workspace: GuestWorkspaceRef;
   }
 
+  /** What the per-workspace *Leave* confirm dialog shows — never what a retry acts on. */
   let leaveWorkspaceTarget = $state<LeaveWorkspaceTarget | null>(null);
   let leaveWorkspaceDialogOpen = $state(false);
+  /** The confirmed per-workspace leave that failed; its retry re-runs exactly this one. */
+  let failedLeaveWorkspace = $state<LeaveWorkspaceTarget | null>(null);
   let leaveWorkspaceError = $state<string | null>(null);
   let leavingWorkspaceKey = $state<string | null>(null);
 
@@ -102,25 +124,97 @@
 
   function requestLeaveWorkspace(session: GuestSessionRecord, workspace: GuestWorkspaceRef) {
     leaveWorkspaceTarget = { session, workspace };
-    leaveWorkspaceError = null;
     leaveWorkspaceDialogOpen = true;
   }
 
-  async function leaveWorkspace(target = leaveWorkspaceTarget) {
+  async function leaveWorkspace(target: LeaveWorkspaceTarget | null) {
     if (!target || leavingWorkspaceKey) return;
     leavingWorkspaceKey = workspaceKey(target);
+    failedLeaveWorkspace = null;
     leaveWorkspaceError = null;
     try {
       const action = leaveGuestWorkspaceRequested(target.session.id, target.workspace.id);
       appStore.dispatch(action);
       await action.promise;
-      leaveWorkspaceTarget = null;
     } catch {
+      failedLeaveWorkspace = target;
       leaveWorkspaceError = m.settings_guestSessions_leaveWorkspace_error({
         workspace: target.workspace.title,
       });
     } finally {
       leavingWorkspaceKey = null;
+    }
+  }
+
+  /**
+   * A *Remove all guests* sweep that did not fully succeed, keyed by
+   * workspace: the workspace as confirmed (its row may be gone by now), the
+   * roster as it was before the sweep (to name a member the sweep could not
+   * remove), and one line per failed step (none when the sweep could not run
+   * at all). Kept until its retry runs, independently of *Shared by me*.
+   */
+  interface RemoveAllReport {
+    workspace: Workspace;
+    membersBefore: WorkspaceMember[];
+    failures: string[];
+  }
+
+  let removeAllReports = $state<Record<string, RemoveAllReport>>({});
+  let sweepingWorkspaceIds = $state<string[]>([]);
+
+  function memberLabel(member: WorkspaceMember): string {
+    return member.displayName ?? member.login ?? member.principalId;
+  }
+
+  function removeAllFailureLines(
+    result: RemoveAllHostedGuestsResult,
+    membersBefore: WorkspaceMember[],
+  ): string[] {
+    const lines = result.failedMembers.map(({ principalId }) => {
+      const member = membersBefore.find((entry) => entry.principalId === principalId);
+      return m.settings_guestSessions_remove_error({
+        name: member ? memberLabel(member) : principalId,
+      });
+    });
+    for (const { pinLogin } of result.failedInvites) {
+      lines.push(
+        pinLogin
+          ? m.settings_guestSessions_removeAll_pinnedInviteFailed({ login: `@${pinLogin}` })
+          : m.settings_guestSessions_removeAll_inviteFailed(),
+      );
+    }
+    if (result.invitesUnavailable) {
+      lines.push(m.settings_guestSessions_removeAll_invitesUnavailable());
+    }
+    return lines;
+  }
+
+  function dropRemoveAllReport(workspaceId: string) {
+    const { [workspaceId]: _dropped, ...rest } = removeAllReports;
+    removeAllReports = rest;
+  }
+
+  async function removeAllGuests(workspace: Workspace, membersBefore: WorkspaceMember[]) {
+    if (sweepingWorkspaceIds.includes(workspace.id)) return;
+    sweepingWorkspaceIds = [...sweepingWorkspaceIds, workspace.id];
+    dropRemoveAllReport(workspace.id);
+    let failures: string[] | null = null;
+    try {
+      const action = removeAllHostedGuestsRequested(workspace.id);
+      appStore.dispatch(action);
+      const result = await action.promise;
+      const lines = removeAllFailureLines(result, membersBefore);
+      if (lines.length > 0) failures = lines;
+    } catch {
+      failures = [];
+    } finally {
+      sweepingWorkspaceIds = sweepingWorkspaceIds.filter((id) => id !== workspace.id);
+    }
+    if (failures !== null) {
+      removeAllReports = {
+        ...removeAllReports,
+        [workspace.id]: { workspace, membersBefore, failures },
+      };
     }
   }
 </script>
@@ -143,7 +237,10 @@
       {#if $hosted$.length > 0}
         <div class="flex flex-col overflow-hidden rounded-xl bg-card divide-y divide-border">
           {#each $hosted$ as workspace (workspace.id)}
-            <HostedWorkspaceRoster {workspace} />
+            <HostedWorkspaceRoster
+              {workspace}
+              onRemoveAll={(membersBefore) => removeAllGuests(workspace, membersBefore)}
+            />
           {/each}
         </div>
       {:else}
@@ -156,6 +253,34 @@
           </p>
         </div>
       {/if}
+      {#each Object.values(removeAllReports) as report (report.workspace.id)}
+        <div
+          class="mt-3 flex items-center justify-between gap-3 rounded-md border border-danger/30 bg-danger-background/10 p-3"
+          role="alert"
+          data-testid="hosted-roster-remove-all-error"
+          data-workspace-id={report.workspace.id}
+        >
+          <div class="min-w-0 type-body text-danger">
+            <p>
+              {m.settings_guestSessions_removeAll_error({ workspace: report.workspace.title })}
+            </p>
+            {#if report.failures.length > 0}
+              <ul class="mt-1 space-y-1">
+                {#each report.failures as line, index (index)}
+                  <li>{line}</li>
+                {/each}
+              </ul>
+            {/if}
+          </div>
+          <Button
+            variant="ghost"
+            disabled={sweepingWorkspaceIds.includes(report.workspace.id)}
+            onclick={() => removeAllGuests(report.workspace, report.membersBefore)}
+          >
+            {m.settings_guestSessions_retry_label()}
+          </Button>
+        </div>
+      {/each}
     </div>
   {/if}
 
@@ -280,8 +405,8 @@
       <p class="type-body text-danger">{leaveError}</p>
       <Button
         variant="ghost"
-        disabled={!leaveTarget || leavingId !== null}
-        onclick={() => leaveHost()}
+        disabled={!failedLeave || leavingId !== null}
+        onclick={() => leaveHost(failedLeave)}
       >
         {m.settings_guestSessions_retry_label()}
       </Button>
@@ -297,8 +422,8 @@
       <p class="type-body text-danger">{leaveWorkspaceError}</p>
       <Button
         variant="ghost"
-        disabled={!leaveWorkspaceTarget || leavingWorkspaceKey !== null}
-        onclick={() => leaveWorkspace()}
+        disabled={!failedLeaveWorkspace || leavingWorkspaceKey !== null}
+        onclick={() => leaveWorkspace(failedLeaveWorkspace)}
       >
         {m.settings_guestSessions_retry_label()}
       </Button>
@@ -314,7 +439,7 @@
   })}
   confirmText={m.settings_guestSessions_leave_label()}
   variant="destructive"
-  onConfirm={() => leaveHost()}
+  onConfirm={() => void leaveHost(leaveTarget)}
 />
 
 <BulkActionConfirmDialog
@@ -326,5 +451,5 @@
   })}
   confirmText={m.settings_guestSessions_leaveWorkspace_label()}
   variant="destructive"
-  onConfirm={() => leaveWorkspace()}
+  onConfirm={() => void leaveWorkspace(leaveWorkspaceTarget)}
 />
