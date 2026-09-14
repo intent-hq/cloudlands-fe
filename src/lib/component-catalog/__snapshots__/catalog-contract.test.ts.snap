@@ -5291,7 +5291,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:badge:sema
                     <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="gray" data-size="default" data-slot="badge" data-variant="solid" tokens=["--accent"]>
                       <span class="[text-box:trim-both_cap_alphabetic]">
                         "Default"
-                    <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="blue" data-size="default" data-slot="badge" data-variant="solid" tokens=["--background"]>
+                    <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="blue" data-size="default" data-slot="badge" data-variant="solid" tokens=["--background","--color-blue-500"]>
                       <span class="[text-box:trim-both_cap_alphabetic]">
                         "Blue"
                     <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1 h-5 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2 rounded-(--radius-medium) shrink-0 text-[11px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="gray" data-size="compact" data-slot="badge" data-variant="solid" tokens=["--accent"]>
@@ -5323,11 +5323,11 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:badge:sema
                       <span class="[text-box:trim-both_cap_alphabetic]">
                         "Default"
                     <span class="[&_svg]:pointer-events-none [&_svg]:size-3 border border-border duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="green" data-size="default" data-slot="badge" data-variant="dot">
-                      <span class="rounded-full shrink-0 size-[7px]" data-slot="badge-dot">
+                      <span class="rounded-full shrink-0 size-[7px]" data-slot="badge-dot" tokens=["--color-green-500"]>
                       <span class="[text-box:trim-both_cap_alphabetic]">
                         "Ready"
                     <span class="[&_svg]:pointer-events-none [&_svg]:size-3 border border-border duration-spring-fast ease-spring-fast font-medium gap-1 h-5 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2 rounded-(--radius-medium) shrink-0 text-[11px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="blue" data-size="compact" data-slot="badge" data-variant="dot">
-                      <span class="rounded-full shrink-0 size-1.5" data-slot="badge-dot">
+                      <span class="rounded-full shrink-0 size-1.5" data-slot="badge-dot" tokens=["--color-blue-500"]>
                       <span class="[text-box:trim-both_cap_alphabetic]">
                         "Compact"
                     <a class="[&_svg]:pointer-events-none [&_svg]:size-3 border border-border duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="gray" data-size="default" data-slot="badge" data-variant="dot" href="#badge-preview">
@@ -5347,131 +5347,131 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:badge:sema
                         <span class="[text-box:trim-both_cap_alphabetic]">
                           "gray"
                     <div class="flex flex-wrap gap-2">
-                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="red" data-size="default" data-slot="badge" data-variant="solid" tokens=["--background"]>
+                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="red" data-size="default" data-slot="badge" data-variant="solid" tokens=["--background","--color-red-500"]>
                         <span class="[text-box:trim-both_cap_alphabetic]">
                           "red"
                       <span class="[&_svg]:pointer-events-none [&_svg]:size-3 border border-border duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="red" data-size="default" data-slot="badge" data-variant="dot">
-                        <span class="rounded-full shrink-0 size-[7px]" data-slot="badge-dot">
+                        <span class="rounded-full shrink-0 size-[7px]" data-slot="badge-dot" tokens=["--color-red-500"]>
                         <span class="[text-box:trim-both_cap_alphabetic]">
                           "red"
                     <div class="flex flex-wrap gap-2">
-                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="orange" data-size="default" data-slot="badge" data-variant="solid" tokens=["--background"]>
+                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="orange" data-size="default" data-slot="badge" data-variant="solid" tokens=["--background","--color-orange-500"]>
                         <span class="[text-box:trim-both_cap_alphabetic]">
                           "orange"
                       <span class="[&_svg]:pointer-events-none [&_svg]:size-3 border border-border duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="orange" data-size="default" data-slot="badge" data-variant="dot">
-                        <span class="rounded-full shrink-0 size-[7px]" data-slot="badge-dot">
+                        <span class="rounded-full shrink-0 size-[7px]" data-slot="badge-dot" tokens=["--color-orange-500"]>
                         <span class="[text-box:trim-both_cap_alphabetic]">
                           "orange"
                     <div class="flex flex-wrap gap-2">
-                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="amber" data-size="default" data-slot="badge" data-variant="solid" tokens=["--background"]>
+                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="amber" data-size="default" data-slot="badge" data-variant="solid" tokens=["--background","--color-amber-500"]>
                         <span class="[text-box:trim-both_cap_alphabetic]">
                           "amber"
                       <span class="[&_svg]:pointer-events-none [&_svg]:size-3 border border-border duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="amber" data-size="default" data-slot="badge" data-variant="dot">
-                        <span class="rounded-full shrink-0 size-[7px]" data-slot="badge-dot">
+                        <span class="rounded-full shrink-0 size-[7px]" data-slot="badge-dot" tokens=["--color-amber-500"]>
                         <span class="[text-box:trim-both_cap_alphabetic]">
                           "amber"
                     <div class="flex flex-wrap gap-2">
-                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="yellow" data-size="default" data-slot="badge" data-variant="solid" tokens=["--background"]>
+                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="yellow" data-size="default" data-slot="badge" data-variant="solid" tokens=["--background","--color-yellow-500"]>
                         <span class="[text-box:trim-both_cap_alphabetic]">
                           "yellow"
                       <span class="[&_svg]:pointer-events-none [&_svg]:size-3 border border-border duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="yellow" data-size="default" data-slot="badge" data-variant="dot">
-                        <span class="rounded-full shrink-0 size-[7px]" data-slot="badge-dot">
+                        <span class="rounded-full shrink-0 size-[7px]" data-slot="badge-dot" tokens=["--color-yellow-500"]>
                         <span class="[text-box:trim-both_cap_alphabetic]">
                           "yellow"
                     <div class="flex flex-wrap gap-2">
-                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="lime" data-size="default" data-slot="badge" data-variant="solid" tokens=["--background"]>
+                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="lime" data-size="default" data-slot="badge" data-variant="solid" tokens=["--background","--color-lime-500"]>
                         <span class="[text-box:trim-both_cap_alphabetic]">
                           "lime"
                       <span class="[&_svg]:pointer-events-none [&_svg]:size-3 border border-border duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="lime" data-size="default" data-slot="badge" data-variant="dot">
-                        <span class="rounded-full shrink-0 size-[7px]" data-slot="badge-dot">
+                        <span class="rounded-full shrink-0 size-[7px]" data-slot="badge-dot" tokens=["--color-lime-500"]>
                         <span class="[text-box:trim-both_cap_alphabetic]">
                           "lime"
                     <div class="flex flex-wrap gap-2">
-                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="green" data-size="default" data-slot="badge" data-variant="solid" tokens=["--background"]>
+                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="green" data-size="default" data-slot="badge" data-variant="solid" tokens=["--background","--color-green-500"]>
                         <span class="[text-box:trim-both_cap_alphabetic]">
                           "green"
                       <span class="[&_svg]:pointer-events-none [&_svg]:size-3 border border-border duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="green" data-size="default" data-slot="badge" data-variant="dot">
-                        <span class="rounded-full shrink-0 size-[7px]" data-slot="badge-dot">
+                        <span class="rounded-full shrink-0 size-[7px]" data-slot="badge-dot" tokens=["--color-green-500"]>
                         <span class="[text-box:trim-both_cap_alphabetic]">
                           "green"
                     <div class="flex flex-wrap gap-2">
-                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="emerald" data-size="default" data-slot="badge" data-variant="solid" tokens=["--background"]>
+                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="emerald" data-size="default" data-slot="badge" data-variant="solid" tokens=["--background","--color-emerald-500"]>
                         <span class="[text-box:trim-both_cap_alphabetic]">
                           "emerald"
                       <span class="[&_svg]:pointer-events-none [&_svg]:size-3 border border-border duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="emerald" data-size="default" data-slot="badge" data-variant="dot">
-                        <span class="rounded-full shrink-0 size-[7px]" data-slot="badge-dot">
+                        <span class="rounded-full shrink-0 size-[7px]" data-slot="badge-dot" tokens=["--color-emerald-500"]>
                         <span class="[text-box:trim-both_cap_alphabetic]">
                           "emerald"
                     <div class="flex flex-wrap gap-2">
-                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="teal" data-size="default" data-slot="badge" data-variant="solid" tokens=["--background"]>
+                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="teal" data-size="default" data-slot="badge" data-variant="solid" tokens=["--background","--color-teal-500"]>
                         <span class="[text-box:trim-both_cap_alphabetic]">
                           "teal"
                       <span class="[&_svg]:pointer-events-none [&_svg]:size-3 border border-border duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="teal" data-size="default" data-slot="badge" data-variant="dot">
-                        <span class="rounded-full shrink-0 size-[7px]" data-slot="badge-dot">
+                        <span class="rounded-full shrink-0 size-[7px]" data-slot="badge-dot" tokens=["--color-teal-500"]>
                         <span class="[text-box:trim-both_cap_alphabetic]">
                           "teal"
                     <div class="flex flex-wrap gap-2">
-                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="cyan" data-size="default" data-slot="badge" data-variant="solid" tokens=["--background"]>
+                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="cyan" data-size="default" data-slot="badge" data-variant="solid" tokens=["--background","--color-cyan-500"]>
                         <span class="[text-box:trim-both_cap_alphabetic]">
                           "cyan"
                       <span class="[&_svg]:pointer-events-none [&_svg]:size-3 border border-border duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="cyan" data-size="default" data-slot="badge" data-variant="dot">
-                        <span class="rounded-full shrink-0 size-[7px]" data-slot="badge-dot">
+                        <span class="rounded-full shrink-0 size-[7px]" data-slot="badge-dot" tokens=["--color-cyan-500"]>
                         <span class="[text-box:trim-both_cap_alphabetic]">
                           "cyan"
                     <div class="flex flex-wrap gap-2">
-                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="blue" data-size="default" data-slot="badge" data-variant="solid" tokens=["--background"]>
+                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="blue" data-size="default" data-slot="badge" data-variant="solid" tokens=["--background","--color-blue-500"]>
                         <span class="[text-box:trim-both_cap_alphabetic]">
                           "blue"
                       <span class="[&_svg]:pointer-events-none [&_svg]:size-3 border border-border duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="blue" data-size="default" data-slot="badge" data-variant="dot">
-                        <span class="rounded-full shrink-0 size-[7px]" data-slot="badge-dot">
+                        <span class="rounded-full shrink-0 size-[7px]" data-slot="badge-dot" tokens=["--color-blue-500"]>
                         <span class="[text-box:trim-both_cap_alphabetic]">
                           "blue"
                     <div class="flex flex-wrap gap-2">
-                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="indigo" data-size="default" data-slot="badge" data-variant="solid" tokens=["--background"]>
+                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="indigo" data-size="default" data-slot="badge" data-variant="solid" tokens=["--background","--color-indigo-500"]>
                         <span class="[text-box:trim-both_cap_alphabetic]">
                           "indigo"
                       <span class="[&_svg]:pointer-events-none [&_svg]:size-3 border border-border duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="indigo" data-size="default" data-slot="badge" data-variant="dot">
-                        <span class="rounded-full shrink-0 size-[7px]" data-slot="badge-dot">
+                        <span class="rounded-full shrink-0 size-[7px]" data-slot="badge-dot" tokens=["--color-indigo-500"]>
                         <span class="[text-box:trim-both_cap_alphabetic]">
                           "indigo"
                     <div class="flex flex-wrap gap-2">
-                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="violet" data-size="default" data-slot="badge" data-variant="solid" tokens=["--background"]>
+                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="violet" data-size="default" data-slot="badge" data-variant="solid" tokens=["--background","--color-violet-500"]>
                         <span class="[text-box:trim-both_cap_alphabetic]">
                           "violet"
                       <span class="[&_svg]:pointer-events-none [&_svg]:size-3 border border-border duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="violet" data-size="default" data-slot="badge" data-variant="dot">
-                        <span class="rounded-full shrink-0 size-[7px]" data-slot="badge-dot">
+                        <span class="rounded-full shrink-0 size-[7px]" data-slot="badge-dot" tokens=["--color-violet-500"]>
                         <span class="[text-box:trim-both_cap_alphabetic]">
                           "violet"
                     <div class="flex flex-wrap gap-2">
-                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="purple" data-size="default" data-slot="badge" data-variant="solid" tokens=["--background"]>
+                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="purple" data-size="default" data-slot="badge" data-variant="solid" tokens=["--background","--color-purple-500"]>
                         <span class="[text-box:trim-both_cap_alphabetic]">
                           "purple"
                       <span class="[&_svg]:pointer-events-none [&_svg]:size-3 border border-border duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="purple" data-size="default" data-slot="badge" data-variant="dot">
-                        <span class="rounded-full shrink-0 size-[7px]" data-slot="badge-dot">
+                        <span class="rounded-full shrink-0 size-[7px]" data-slot="badge-dot" tokens=["--color-purple-500"]>
                         <span class="[text-box:trim-both_cap_alphabetic]">
                           "purple"
                     <div class="flex flex-wrap gap-2">
-                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="fuchsia" data-size="default" data-slot="badge" data-variant="solid" tokens=["--background"]>
+                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="fuchsia" data-size="default" data-slot="badge" data-variant="solid" tokens=["--background","--color-fuchsia-500"]>
                         <span class="[text-box:trim-both_cap_alphabetic]">
                           "fuchsia"
                       <span class="[&_svg]:pointer-events-none [&_svg]:size-3 border border-border duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="fuchsia" data-size="default" data-slot="badge" data-variant="dot">
-                        <span class="rounded-full shrink-0 size-[7px]" data-slot="badge-dot">
+                        <span class="rounded-full shrink-0 size-[7px]" data-slot="badge-dot" tokens=["--color-fuchsia-500"]>
                         <span class="[text-box:trim-both_cap_alphabetic]">
                           "fuchsia"
                     <div class="flex flex-wrap gap-2">
-                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="pink" data-size="default" data-slot="badge" data-variant="solid" tokens=["--background"]>
+                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="pink" data-size="default" data-slot="badge" data-variant="solid" tokens=["--background","--color-pink-500"]>
                         <span class="[text-box:trim-both_cap_alphabetic]">
                           "pink"
                       <span class="[&_svg]:pointer-events-none [&_svg]:size-3 border border-border duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="pink" data-size="default" data-slot="badge" data-variant="dot">
-                        <span class="rounded-full shrink-0 size-[7px]" data-slot="badge-dot">
+                        <span class="rounded-full shrink-0 size-[7px]" data-slot="badge-dot" tokens=["--color-pink-500"]>
                         <span class="[text-box:trim-both_cap_alphabetic]">
                           "pink"
                     <div class="flex flex-wrap gap-2">
-                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="rose" data-size="default" data-slot="badge" data-variant="solid" tokens=["--background"]>
+                      <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="rose" data-size="default" data-slot="badge" data-variant="solid" tokens=["--background","--color-rose-500"]>
                         <span class="[text-box:trim-both_cap_alphabetic]">
                           "rose"
                       <span class="[&_svg]:pointer-events-none [&_svg]:size-3 border border-border duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="rose" data-size="default" data-slot="badge" data-variant="dot">
-                        <span class="rounded-full shrink-0 size-[7px]" data-slot="badge-dot">
+                        <span class="rounded-full shrink-0 size-[7px]" data-slot="badge-dot" tokens=["--color-rose-500"]>
                         <span class="[text-box:trim-both_cap_alphabetic]">
                           "rose"
                 <span class="[&_svg]:pointer-events-none [&_svg]:size-3 border border-border duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center max-w-full motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] truncate w-fit whitespace-nowrap" data-color="gray" data-size="default" data-slot="badge" data-variant="dot">
