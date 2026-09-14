@@ -429,6 +429,7 @@ export const IPC_CHANNELS = {
 
   // User MCP Settings — HTTP/SSE server auth checks.
   USER_MCP: {
+    AUTHENTICATE: 'user-mcp:authenticate', // Run interactive OAuth for a saved hosted server
     CHECK_AUTH: 'user-mcp:check-auth', // Check if URL requires auth and if we have credentials
     TEST_CONNECTION: 'user-mcp:test-connection', // Test connection to HTTP/SSE server, returns status
   },
@@ -665,6 +666,7 @@ export const IPC_CHANNELS = {
     CREATE_PULL_REQUEST: 'git-tracking:create-pull-request',
     GET_GITHUB_ISSUES: 'git-tracking:get-github-issues',
     SEARCH_GITHUB_ISSUES: 'git-tracking:search-github-issues',
+    LIST_RELATED_REPOS: 'git-tracking:list-related-repos',
     GET_REMOTE_URL: 'git-tracking:get-remote-url',
     GET_CHECK_RUNS: 'git-tracking:get-check-runs',
     GET_PR_REVIEWS: 'git-tracking:get-pr-reviews',
@@ -815,8 +817,10 @@ export const IPC_CHANNELS = {
   RELEASE_NOTES: {
     GET: 'release-notes:get',
     GET_PENDING: 'release-notes:get-pending',
-    // Event channel (main → renderer)
+    DISMISS: 'release-notes:dismiss',
+    // Event channels (main → renderer)
     SHOW: 'release-notes:show',
+    CLOSE: 'release-notes:close',
   },
 
   // Picture-in-Picture Windows
@@ -1077,8 +1081,10 @@ export const EVENT_CHANNELS = [
   'auto-update:error',
   'auto-update:show-toast',
   'auto-update:up-to-date',
-  // Release-notes modal push (startup after an update, or Help menu)
+  // Release-notes modal push (startup after an update, or Help menu) and the
+  // cross-window close broadcast after any window dismisses it
   'release-notes:show',
+  'release-notes:close',
   // Picture-in-Picture events
   'pip:opened',
   'pip:closed',

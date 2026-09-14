@@ -1,4 +1,6 @@
 import { builtinModules } from 'node:module';
+import { fileURLToPath } from 'node:url';
+import { includeIgnoreFile } from '@eslint/compat';
 import js from '@eslint/js';
 import typescript from '@typescript-eslint/eslint-plugin';
 import typescriptParser from '@typescript-eslint/parser';
@@ -8,11 +10,15 @@ import unusedImports from 'eslint-plugin-unused-imports';
 import { svelte as themisFullConfig } from '@augmentcode/themis/eslint-plugins';
 import noProductionDynamicImportRule from './eslint-rules/no-production-dynamic-import.js';
 import noComponentAsyncDataFetchRule from './eslint-rules/no-component-async-data-fetch.js';
+import noColdSvelteImportInTestsRule from './eslint-rules/no-cold-svelte-import-in-tests.js';
+import noFlushSyncInTeardownRule from './eslint-rules/no-flushsync-in-teardown.js';
 
 const intentPlugin = {
   rules: {
     'no-component-async-data-fetch': noComponentAsyncDataFetchRule,
     'no-production-dynamic-import': noProductionDynamicImportRule,
+    'no-cold-svelte-import-in-tests': noColdSvelteImportInTestsRule,
+    'no-flushsync-in-teardown': noFlushSyncInTeardownRule,
   },
 };
 
@@ -93,6 +99,24 @@ const productionModuleIgnores = [
   '**/*.generated.{js,jsx,ts,tsx,svelte}',
   '**/generated/**',
 ];
+
+// The only production files allowed to read the raw
+// `metadata.dismissedQuestionsMessageId` wire field. Every other surface must go
+// through `isQuestionMessageDismissed` / `sessionHasPendingQuestion` so the
+// dismissal comparison is never hand-rolled again (intent-hq/cloudlands-fe#2316).
+const dismissalMarkerRawReadAllowedFiles = [
+  // Canonical dismissal predicate.
+  'src/shared/utils/question-dismissal.ts',
+  // Session metadata normalisation on the wire boundary.
+  'src/store/renderer/slices/agent-session/agent-session-slice.ts',
+  // `questions_dismissed` system-row payload parsing.
+  'src/lib/components/chat/questions-dismissed-notice.ts',
+  // `void …dismissedQuestionsMessageId` Svelte reactivity touches only.
+  'src/lib/components/chat/AgentCard.svelte',
+  'src/lib/components/chat/ChatPanel.svelte',
+];
+const dismissalMarkerRawReadMessage =
+  'Do not read `dismissedQuestionsMessageId` directly. Use `isQuestionMessageDismissed` (src/shared/utils/question-dismissal.ts) or `sessionHasPendingQuestion` (src/lib/components/chat/questions/pending-questions.ts) so the dismissal comparison stays shared.';
 
 // Staged rollout: existing components with direct async data loads are baselined
 // until each flow moves to Redux actions/selectors. New Svelte components and
@@ -330,6 +354,8 @@ const rendererBrowserSafetyRestrictedImportsOptions = {
 };
 
 export default [
+  // .gitignore is the source of truth for scratch/sandbox exclusions (.dev/, .wt-*/); see vitest.config.ts.
+  includeIgnoreFile(fileURLToPath(new URL('.gitignore', import.meta.url))),
   {
     ignores: [
       '**/node_modules/**',
@@ -504,6 +530,19 @@ export default [
       'intent/no-production-dynamic-import': 'error',
     },
   },
+  // A dynamic `.svelte` import inside a test body bills the component's whole
+  // cold module-graph transform to the first test's timeout, producing
+  // load-dependent timeout flakes (intent-hq/intent#1464). Warm the specifier
+  // at module scope (warmImport / static import) so test bodies hit the cache.
+  {
+    files: ['**/*.{test,spec}.{js,ts}'],
+    plugins: {
+      intent: intentPlugin,
+    },
+    rules: {
+      'intent/no-cold-svelte-import-in-tests': 'error',
+    },
+  },
   // Ban synchronous child_process calls in Electron main process code.
   // execSync/spawnSync block the main thread and can freeze the entire UI
   // if the spawned process hangs (see: hang report 2026-02-28).
@@ -527,6 +566,33 @@ export default [
                 'Synchronous child_process calls block the Electron main thread. Use exec/spawn with util.promisify or the execAsync helper instead.',
             },
           ],
+        },
+      ],
+    },
+  },
+  // Guard raw `dismissedQuestionsMessageId` reads: the dismissal comparison lives
+  // in the shared helpers only. See dismissalMarkerRawReadAllowedFiles above.
+  {
+    files: ['src/**/*.{js,mjs,ts,tsx,svelte}'],
+    ignores: [...productionModuleIgnores, ...dismissalMarkerRawReadAllowedFiles],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: "MemberExpression[computed=false][property.name='dismissedQuestionsMessageId']",
+          message: dismissalMarkerRawReadMessage,
+        },
+        {
+          selector: "MemberExpression[computed=true][property.value='dismissedQuestionsMessageId']",
+          message: dismissalMarkerRawReadMessage,
+        },
+        {
+          selector: "ObjectPattern > Property[key.name='dismissedQuestionsMessageId']",
+          message: dismissalMarkerRawReadMessage,
+        },
+        {
+          selector: "ObjectPattern > Property[key.value='dismissedQuestionsMessageId']",
+          message: dismissalMarkerRawReadMessage,
         },
       ],
     },
@@ -608,6 +674,18 @@ export default [
     },
     rules: {
       'intent/no-component-async-data-fetch': 'error',
+    },
+  },
+  // flushSync from an $effect cleanup, onDestroy callback, or action destroy()
+  // flushes unrelated effects mid-teardown; any component mounted by that flush
+  // throws effect_in_teardown (intent-hq/intent#4550, shipped in v2.141.0).
+  {
+    files: ['**/*.svelte'],
+    plugins: {
+      intent: intentPlugin,
+    },
+    rules: {
+      'intent/no-flushsync-in-teardown': 'error',
     },
   },
   ...themisFullConfig,

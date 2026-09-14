@@ -1,6 +1,5 @@
 <script lang="ts">
   /* eslint-disable max-lines -- splitting this workspace sidebar is outside launcher-only scope */
-  import { navigateAfterWorkspaceRemoval } from '$lib/utils/workspace-navigation';
   import { isCmdClickModifier } from '$shared/utils/link-helpers';
   import type { AgentSession } from '$shared/types';
   import './multi-select-sidebar-transitions.css';
@@ -25,7 +24,6 @@
   } from '$features/agent/components/agent-avatar/avatar-state';
   import { getAgentAvatarStateLabel } from '$features/agent/components/agent-avatar/avatar-state-label';
   import { Button } from '$lib/components/ui/button';
-  import { withToastCountdown } from '$lib/components/ui/toast';
   import OpenComboButton from '$features/external-editors/components/OpenComboButton.svelte';
   import ResourceIconTile from '$lib/components/shared/ResourceIconTile.svelte';
 
@@ -46,12 +44,10 @@
     selectWorkspaceHasUnreadForegroundAgents,
   } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { selectAgentIsRunning } from '$store/renderer/slices/agent-session/agent-session-selectors';
-  import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
   import { cn } from '$lib/utils';
   import { scrollFade } from '$lib/actions/scroll-fade';
   import { scheduleLayoutRead } from '$lib/utils/layout-phases';
 
-  import { loadWorkspacesRequested } from '$store/renderer/slices/workspace/workspace-slice';
   import {
     locateItemInSidebarConsumed,
     openAgentTabRequested,
@@ -124,6 +120,7 @@
     type TabId,
   } from './multi-select-sidebar-tabs';
   import { getFixedContainingBlockOffset } from './utils/fixed-containing-block';
+  import { applyContentReveal } from './utils/sidebar-card-morph';
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
   import { formatInteger } from '$lib/i18n/format';
   import { m } from '$shared/paraglide/messages.js';
@@ -427,15 +424,16 @@
     const fixedContainingBlockOffset = getFixedContainingBlockOffset(node);
     const fixedLeft = cardRect.left - fixedContainingBlockOffset.x;
     const fixedTop = cardRect.top - fixedContainingBlockOffset.y;
+    const content = node.querySelector<HTMLElement>('[data-sidebar-expanded-content]');
 
     return {
       duration: 300,
       css: (t) => {
         const shellProgress = direction === 'expand' ? cubicOut(t) : cubicIn(t);
         const shellInverse = 1 - shellProgress;
-        const contentProgress = Math.max(0, Math.min(1, (t - 0.72) / 0.28));
-        return `position: fixed; left: ${fixedLeft}px; top: ${fixedTop}px; width: ${cardRect.width}px; height: ${cardRect.height}px; transform-origin: top left; transform: translate(${shellInverse * translateX}px, ${shellInverse * translateY}px) scale(${scaleX + shellProgress * (1 - scaleX)}, ${scaleY + shellProgress * (1 - scaleY)}); background-color: hsl(var(--sidebar)); --sidebar-card-content-opacity: ${contentProgress}; --sidebar-card-content-y: ${(1 - contentProgress) * 4}px; will-change: transform;`;
+        return `position: fixed; left: ${fixedLeft}px; top: ${fixedTop}px; width: ${cardRect.width}px; height: ${cardRect.height}px; transform-origin: top left; transform: translate(${shellInverse * translateX}px, ${shellInverse * translateY}px) scale(${scaleX + shellProgress * (1 - scaleX)}, ${scaleY + shellProgress * (1 - scaleY)}); background-color: hsl(var(--sidebar)); will-change: transform;`;
       },
+      tick: (t) => applyContentReveal(content, t),
     };
   }
 
@@ -632,39 +630,6 @@
       closable: true,
       workspaceId,
     });
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  async function handleArchiveWorkspace() {
-    if (!$workspace) return;
-    const { toast } = await import('svelte-sonner');
-    const workspaceTitle = $workspace.title || m.workspace_multiSelectSidebar_space_label();
-
-    const result = await workspaceClient.archive($workspace.id);
-    if (result.ok) {
-      appStore.dispatch(loadWorkspacesRequested());
-      toast.warning(
-        m.workspace_multiSelectSidebar_archivedSpace_toast({ title: workspaceTitle }),
-        withToastCountdown(
-          {
-            duration: 15000,
-            action: {
-              label: m.workspace_multiSelectSidebar_undo_label(),
-              onClick: async () => {
-                const undoResult = await workspaceClient.unarchive($workspace.id);
-                if (undoResult.ok) {
-                  appStore.dispatch(loadWorkspacesRequested());
-                }
-              },
-            },
-          },
-          { pauseOnHover: false },
-        ),
-      );
-      await navigateAfterWorkspaceRemoval($workspace.id);
-    } else {
-      toast.error(m.workspace_multiSelectSidebar_archiveFailed_error());
-    }
   }
 
   // File panel state

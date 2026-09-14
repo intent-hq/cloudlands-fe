@@ -10,12 +10,15 @@ import {
   openTabInAdjacentOrSplit,
   openTabInNewRootColumn,
   openTabInRightmostColumn,
-  panelLayoutReducer,
+  panelLayoutReducer as rawPanelLayoutReducer,
   restoreHiddenTab,
 } from './panel-layout-slice';
 import { PANEL_LAYOUT_PERSISTENCE_VERSION, type PanelTab } from './panel-layout-types';
+import { withPanelLayoutInvariants } from './panel-layout-invariants.test-helpers';
 
 const WS = 'workspace-1';
+
+const panelLayoutReducer = withPanelLayoutInvariants(rawPanelLayoutReducer);
 
 function note(id: string): PanelTab {
   return { id, type: 'note', title: id, noteId: id, workspaceId: WS, closable: true };

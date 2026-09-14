@@ -55,6 +55,25 @@ describe('design token audit', () => {
     }
   });
 
+  it('recognizes the Bits UI menu available size without exempting other menu properties', () => {
+    const directory = mkdtempSync(path.join(tmpdir(), 'design-token-audit-'));
+    try {
+      writeFileSync(
+        path.join(directory, 'product.svelte'),
+        '<div style="max-width: var(--bits-dropdown-menu-content-available-width); max-height: var(--bits-menu-content-available-height); transform-origin: var(--bits-dropdown-menu-content-transform-origin)" />',
+      );
+      const output = execFileSync(process.execPath, [script, 'undefined'], {
+        encoding: 'utf8',
+        env: { ...process.env, DESIGN_TOKEN_AUDIT_SOURCE_ROOT: directory },
+      });
+      expect(output).not.toContain('--bits-dropdown-menu-content-available-width');
+      expect(output).not.toContain('--bits-menu-content-available-height');
+      expect(output).toContain('--bits-dropdown-menu-content-transform-origin');
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
   it('rejects an allowlisted adapter token outside its owned files', () => {
     const directory = mkdtempSync(path.join(tmpdir(), 'design-token-audit-'));
     try {

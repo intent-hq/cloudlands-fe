@@ -4,7 +4,7 @@ import {
   captureQueuedMessageRowMotion,
   queuedMessageRowTransition,
 } from '../queued-message-row-motion';
-import { followBottom } from '$lib/utils/smartScroll';
+import { followBottom, hasActiveFollowBottomMutation } from '$lib/utils/smartScroll';
 
 interface AnimationStub {
   onfinish: (() => void) | null;
@@ -50,6 +50,8 @@ function scrollHarness(node: HTMLElement, follow: boolean) {
   let animationFrames: FrameRequestCallback[] = [];
   const observed: Element[] = [];
   const unobserved: Element[] = [];
+  let resizeCallback: ResizeObserverCallback | null = null;
+  let mutationCallback: MutationCallback | null = null;
   vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
     animationFrames.push(callback);
     return animationFrames.length;
@@ -58,6 +60,9 @@ function scrollHarness(node: HTMLElement, follow: boolean) {
   vi.stubGlobal(
     'ResizeObserver',
     class {
+      constructor(callback: ResizeObserverCallback) {
+        resizeCallback = callback;
+      }
       observe(element: Element) {
         observed.push(element);
       }
@@ -70,6 +75,9 @@ function scrollHarness(node: HTMLElement, follow: boolean) {
   vi.stubGlobal(
     'MutationObserver',
     class {
+      constructor(callback: MutationCallback) {
+        mutationCallback = callback;
+      }
       observe() {}
       disconnect() {}
     },
@@ -90,11 +98,28 @@ function scrollHarness(node: HTMLElement, follow: boolean) {
   const action = followBottom(root, { follow });
   return {
     action,
+    root,
     grow: (amount: number) => (scrollHeight += amount),
     runFrame() {
       const callbacks = animationFrames;
       animationFrames = [];
       callbacks.forEach((callback) => callback(performance.now()));
+    },
+    pendingFrames: () => animationFrames.length,
+    fireResize() {
+      resizeCallback?.([], {} as ResizeObserver);
+    },
+    deliverRemoval(removed: Node) {
+      mutationCallback?.(
+        [
+          {
+            type: 'childList',
+            addedNodes: [],
+            removedNodes: [removed],
+          } as unknown as MutationRecord,
+        ],
+        {} as MutationObserver,
+      );
     },
     scrollTop: () => scrollTop,
     observed,
@@ -230,10 +255,51 @@ describe('queued message row motion', () => {
 
     scroll.grow(13);
     transition.tick?.(0.5, 0.5);
-    expect(scroll.scrollTop()).toBe(613);
     expect(scroll.observed.filter((element) => element === harness.node)).toHaveLength(2);
+    // The re-acquired lease pins through the row's post-layout resize
+    // delivery, not a synchronous read inside the tick.
+    expect(scroll.scrollTop()).toBe(600);
+    scroll.fireResize();
+    expect(scroll.scrollTop()).toBe(613);
     transition.tick?.(0, 1);
     expect(scroll.unobserved.filter((element) => element === harness.node)).toHaveLength(2);
+    scroll.action.destroy();
+  });
+
+  it('releases an aborted outro lease once the row leaves the container', () => {
+    const harness = motionNode(28, 76);
+    const scroll = scrollHarness(harness.node, true);
+    const transition = queuedMessageRowTransition(harness.node, undefined, { direction: 'out' });
+
+    transition.tick?.(0.5, 0.5);
+    expect(hasActiveFollowBottomMutation(scroll.root)).toBe(true);
+
+    // Svelte's transition.stop() cancels the animation with no terminal tick;
+    // the destroyed effect removes the row and the root observer reports it.
+    harness.node.remove();
+    scroll.deliverRemoval(harness.node);
+
+    expect(hasActiveFollowBottomMutation(scroll.root)).toBe(false);
+    expect(scroll.unobserved).toContain(harness.node);
+    while (scroll.pendingFrames() > 0) scroll.runFrame();
+    expect(scroll.pendingFrames()).toBe(0);
+    scroll.action.destroy();
+  });
+
+  it('bounds an outro lease whose terminal tick never arrives', () => {
+    let clock = 1000;
+    vi.spyOn(performance, 'now').mockImplementation(() => clock);
+    const harness = motionNode(28, 76);
+    const scroll = scrollHarness(harness.node, true);
+    const transition = queuedMessageRowTransition(harness.node, undefined, { direction: 'out' });
+
+    transition.tick?.(0.5, 0.5);
+    clock += 180 * 2 + 499;
+    expect(hasActiveFollowBottomMutation(scroll.root)).toBe(true);
+
+    clock += 1;
+    expect(hasActiveFollowBottomMutation(scroll.root)).toBe(false);
+    expect(scroll.unobserved).toContain(harness.node);
     scroll.action.destroy();
   });
 });

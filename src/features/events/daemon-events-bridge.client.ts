@@ -171,16 +171,17 @@ import {
 } from '$store/renderer/slices/chat-state/chat-state-slice';
 import { replaceAgentQueue } from '$store/renderer/slices/agent-queue/agent-queue-slice';
 import {
-  bulkUpsertSessions,
+  pendingQuestionMarkersFromWorkspaceEvent,
   removeSession,
   renameSession,
+  restoreStoredSessions,
   setProcessQueueHint,
   clearProcessQueueHint,
   processEvicted,
   updateSession,
   updateAgentDigest,
-  upsertSession,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
+import type { StoredAgentSession } from '$store/renderer/slices/agent-session/agent-session-types';
 import { workspaceDeleted } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import {
   adjustRetiredCount,
@@ -220,6 +221,7 @@ import { applyNoteFromEvent } from '$features/notes/notes-read-service';
 import { applyCommentFromEvent } from '$features/comments/comments-read-service';
 import {
   ensureAgentSession,
+  notePendingQuestionMarkerProjection,
   refreshAgentSessionAfterEvent,
 } from '$features/agent/agent-read-service';
 import { deriveAgentHasUnread } from '$shared/utils/agent-unread';
@@ -1539,7 +1541,21 @@ function handleAgentFailedStream(event: WorkspaceEvent, workspaceId: string): vo
     if (!hasParent) {
       recordAgentFailure({ agentId, workspaceId, error });
     }
-    appStore.dispatch(chatSendFailed(agentId, error, turnId, failureCorrelation));
+    // Structured quota classification (`errorCode: "quota-exceeded"`): the
+    // daemon tells us the turn died on a provider usage limit rather than
+    // leaving the FE to regex the rendered prose the way the auth banner
+    // has to. Both fields must be present and non-empty to count — a
+    // pre-#4455 daemon sends neither, which lands as `undefined` and keeps
+    // exactly today's behavior.
+    const errorCode = data?.errorCode;
+    const quotaProviderId = data?.providerId;
+    const quotaExceeded =
+      errorCode === 'quota-exceeded' &&
+      typeof quotaProviderId === 'string' &&
+      quotaProviderId.length > 0
+        ? { providerId: quotaProviderId }
+        : undefined;
+    appStore.dispatch(chatSendFailed(agentId, error, turnId, failureCorrelation, quotaExceeded));
     reportStreamLifecycle({
       stage: 'bridge',
       event: 'agent-failed-dispatched',
@@ -1608,12 +1624,20 @@ function handleAgentRenamedEvent(event: WorkspaceEvent): void {
  * projection via `refreshAgentSessionAfterEvent` — which preserves the local
  * transcript and schedules one trailing read when another read is already in
  * flight, so rapid marker updates converge to the newest AgentLite projection.
+ * The pending-question markers are the exception (§6.5 "Pending-question
+ * `agent:updated` payloads"): the `eventReceived` reducer mirrors them onto the
+ * session synchronously, so the marker clear is applied before a later
+ * `agent:queue:updated` shrink drops the queued answer; the read service is
+ * told so a still-in-flight `agent.get` cannot undo that projection.
  */
 function handleAgentUpdatedEvent(event: WorkspaceEvent): void {
   const data = (event as { data?: Record<string, unknown> }).data;
   if (!data) return;
   const agentId = data.agentId;
   if (typeof agentId !== 'string' || agentId.length === 0) return;
+  if (pendingQuestionMarkersFromWorkspaceEvent(event) !== null) {
+    notePendingQuestionMarkerProjection(agentId);
+  }
   void refreshAgentSessionAfterEvent(agentId);
   // Cross-window InterruptedAgentsModal reconciliation (§5.35):
   // agent.resolveInterrupted emits agent:updated per resolved agent, so an
@@ -2233,7 +2257,7 @@ function handlePrEvent(
 }
 
 /**
- * `changes:agent-locks` (§6.5, protocol v8.8) carries the self-sufficient
+ * `changes:agent-locks` (§6.5) carries the self-sufficient
  * daemon-computed agent-lock snapshot `{ workspaceId, autoCommitEnabled,
  * lockedAgentIds: string[], lockedFilePaths: string[] }` — which agents' files
  * must not be manually staged/reverted (agent actively working + auto-commit
@@ -2925,7 +2949,7 @@ function tombstoneClearDelayMs(deleteAt: unknown): number {
 }
 
 /**
- * `workspace:delete-scheduled` (PROTOCOL §5.1 delete grace window, v6.7) —
+ * `workspace:delete-scheduled` (PROTOCOL §5.1 delete grace window) —
  * `{ workspaceId, deleteAt }`. In the originating window the operations saga
  * already hid the row and set the tombstone, so the dispatches below are
  * idempotent no-ops there; in OTHER windows/clients this is the only signal,
@@ -2963,7 +2987,7 @@ function handleWorkspaceDeleteScheduledEvent(event: WorkspaceEvent, workspaceId:
 }
 
 /**
- * `workspace:delete-cancelled` (PROTOCOL §5.1, v6.7) — `{ workspaceId }`. Lift
+ * `workspace:delete-cancelled` (PROTOCOL §5.1 delete grace window) — `{ workspaceId }`. Lift
  * the tombstone and refetch the workspace so a window that hid the pending row
  * restores it promptly instead of waiting for the next unrelated refetch. The
  * payload carries no row, so reuse the single-flighted `workspace.get` →
@@ -2981,7 +3005,7 @@ function handleWorkspaceDeleteCancelledEvent(workspaceId: string): void {
 }
 
 /**
- * `agent:delete-scheduled` (PROTOCOL §5.5 delete grace window, v6.7) —
+ * `agent:delete-scheduled` (PROTOCOL §5.5 delete grace window) —
  * `{ agentId, workspaceId, deleteAt }`. In the originating window the agent
  * mutation saga already soft-hid the session and registered the pending entry
  * (before the RPC resolved, so before this event can arrive) — skip so the
@@ -3033,7 +3057,7 @@ function registerAgentDeleteTombstone(
   workspaceId: string,
   agentId: string,
   clearDelayMs: number,
-  snapshot?: AgentSession,
+  snapshot?: StoredAgentSession,
 ): void {
   setPendingAgentDeletion({ wsId: workspaceId, agentId, snapshot });
   const existing = agentDeleteTombstoneTimers.get(agentId);
@@ -3052,7 +3076,7 @@ function registerAgentDeleteTombstone(
 }
 
 /**
- * `agent:delete-cancelled` (PROTOCOL §5.5, v6.7) — `{ agentId, workspaceId }`.
+ * `agent:delete-cancelled` (PROTOCOL §5.5 delete grace window) — `{ agentId, workspaceId }`.
  * Restore the soft-hidden session from the registry snapshot when one exists
  * (instant, mirrors the undo saga's `restoreHiddenSession`), then refetch the
  * canonical agent list — this also covers a window that filtered the pending
@@ -3074,8 +3098,7 @@ function handleAgentDeleteCancelledEvent(event: WorkspaceEvent, workspaceId: str
   if (pending) {
     removePendingAgentDeletion(agentId);
     if (pending.snapshot) {
-      appStore.dispatch(bulkUpsertSessions([pending.snapshot]));
-      appStore.dispatch(upsertSession(pending.snapshot));
+      appStore.dispatch(restoreStoredSessions([pending.snapshot]));
       appStore.dispatch(refreshWorkspaceSubscriptionEntriesRequested(workspaceId));
     }
   }
@@ -3313,9 +3336,10 @@ function handleClientTransitionEvent(event: WorkspaceEvent): void {
 /**
  * `browser:tab-opened` / `browser:tab-updated` / `browser:tab-closed` (REV-2)
  * are workspace-scoped and self-sufficient: `data = { tab, changes? }` carries
- * the daemon registry row for the tab, so the mirror is patched in place —
- * upsert the row on opened/updated, drop it on closed — without a
- * `browser.listTabs` refetch.
+ * the daemon registry row for the tab, so the row is forwarded as-is —
+ * `browserTabUpserted` on opened/updated, `browserTabClosed` on closed — for
+ * the panel-layout registry saga to apply, without a `browser.listTabs`
+ * refetch; the browser-clients slice only advances its `tabsRevision`.
  */
 function handleBrowserTabEvent(
   event: WorkspaceEvent,
@@ -3356,7 +3380,11 @@ function handleMcpServerStatusChangedEvent(event: WorkspaceEvent): void {
 
   appStore.dispatch(setServerStatus(match.name, mapped));
   const lastError = status.lastError;
-  if (mapped === 'error' && typeof lastError === 'string' && lastError.length > 0) {
+  if (
+    (mapped === 'error' || mapped === 'auth_required') &&
+    typeof lastError === 'string' &&
+    lastError.length > 0
+  ) {
     appStore.dispatch(setServerErrorMessage(match.name, lastError));
   } else {
     appStore.dispatch(clearServerErrorMessage(match.name));
@@ -3670,7 +3698,7 @@ export function routeDaemonEventsNotification(
     handleWorkspaceCreatedEvent(workspaceId);
     // fall through so the activity timeline records the creation.
   }
-  // Delete grace window (§5.1/§5.5, v6.7): schedule events hide the pending
+  // Delete grace window (§5.1/§5.5 `pendingDeleteAt`): schedule events hide the pending
   // row in every window (the originating one already did — idempotent), and
   // cancel events restore it promptly instead of waiting for the next
   // refetch (monorepo#1977).
@@ -3794,7 +3822,7 @@ export function routeDaemonEventsNotification(
     const data = (event as { data?: Record<string, unknown> }).data;
     if (typeof data?.agentId === 'string') {
       removeAgentFailure(data.agentId);
-      // Keep the lazy Retired bin's count (v8.2) consistent with deletion:
+      // Keep the lazy Retired bin's count (`retiredCount`) consistent with deletion:
       // a known retired row nudges the count down in lockstep with its
       // removal below; an id with no local session at all may be a retired
       // row this client never lazily loaded (deleted by another client), so
@@ -3961,7 +3989,7 @@ export function routeDaemonEventsNotification(
     return;
   }
 
-  // `changes:agent-locks` (§6.5, protocol v8.8) — the daemon-computed
+  // `changes:agent-locks` (§6.5) — the daemon-computed
   // agent-lock snapshot. Self-sufficient payload, folded straight into the
   // agent-lock slice; no timeline value, so no eventReceived dispatch.
   if (type === 'changes:agent-locks') {
@@ -4078,7 +4106,7 @@ export function routeDaemonEventsNotification(
   // metadata mutations on a live row, so the same metadata-only `agent.get`
   // refresh converges `retiredAt` on the session (transcript preserved) and
   // the sidebar moves the agent into/out of the Retired bin without a
-  // whole-list refetch. The retired-row count (v8.2 lazy Retired bin) is
+  // whole-list refetch. The retired-row count (`retiredCount`, lazy Retired bin) is
   // nudged in lockstep so the collapsed toggle stays consistent even before
   // the lazy retired-only read runs; hydration re-baselines it from the
   // daemon-served `retiredCount`.
@@ -4199,7 +4227,7 @@ export const DAEMON_EVENTS_SUBSCRIBE_TYPES = [
   'workspace:updated',
   'workspace:created',
   'workspace:deleted',
-  // Delete grace window (§5.1, v6.7): schedule/cancel events keep the hidden
+  // Delete grace window (§5.1 `pendingDeleteAt`): schedule/cancel events keep the hidden
   // pending row consistent across windows (monorepo#1977). The agent-side
   // counterparts are covered by the `agent:*` wildcard above.
   'workspace:delete-scheduled',
@@ -4217,7 +4245,7 @@ export const DAEMON_EVENTS_SUBSCRIBE_TYPES = [
   'git:*',
   'changes:git-status',
   'changes:tracked',
-  // `changes:agent-locks` (§6.5, protocol v8.8) — the daemon-computed
+  // `changes:agent-locks` (§6.5) — the daemon-computed
   // agent-lock snapshot folded into the agent-lock slice; without the
   // subscribe filter the gating in FileChangesSection never engages live.
   'changes:agent-locks',

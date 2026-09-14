@@ -25,9 +25,41 @@
   let initialRootLight = false;
   let initialRootReducedMotion = false;
   let initialRootComponentFit = false;
-  let initialRootStyle: string | null = null;
+  // Root inline properties this shell owns, keyed by property name, with the inline
+  // declaration (or null when absent) that was present before the shell first wrote it.
+  interface InlineDeclaration {
+    value: string;
+    priority: string;
+  }
+  const priorRootProperties = new Map<string, InlineDeclaration | null>();
 
   const resolvedTheme = $derived(theme === 'system' ? (systemDark ? 'dark' : 'light') : theme);
+
+  function applyRootProperties(root: HTMLElement, next: Record<string, string>) {
+    for (const property of [...priorRootProperties.keys()]) {
+      if (property in next) continue;
+      restoreRootProperty(root, property);
+    }
+    for (const [property, value] of Object.entries(next)) {
+      if (!priorRootProperties.has(property)) {
+        const priorValue = root.style.getPropertyValue(property);
+        priorRootProperties.set(
+          property,
+          priorValue
+            ? { value: priorValue, priority: root.style.getPropertyPriority(property) }
+            : null,
+        );
+      }
+      root.style.setProperty(property, value);
+    }
+  }
+
+  function restoreRootProperty(root: HTMLElement, property: string) {
+    const prior = priorRootProperties.get(property);
+    if (prior === null || prior === undefined) root.style.removeProperty(property);
+    else root.style.setProperty(property, prior.value, prior.priority);
+    priorRootProperties.delete(property);
+  }
 
   onMount(() => {
     const root = document.documentElement;
@@ -35,7 +67,6 @@
     initialRootLight = root.classList.contains('light');
     initialRootReducedMotion = root.classList.contains('catalog-reduced-motion');
     initialRootComponentFit = root.classList.contains('catalog-component-fit');
-    initialRootStyle = root.getAttribute('style');
     const saved = readCatalogPreferences(localStorage);
     const urlSettings = parseCatalogUrlSettings(new URLSearchParams(window.location.search));
     theme = urlSettings.theme ?? saved.theme;
@@ -56,8 +87,7 @@
       root.classList.toggle('light', initialRootLight);
       root.classList.toggle('catalog-reduced-motion', initialRootReducedMotion);
       root.classList.toggle('catalog-component-fit', initialRootComponentFit);
-      if (initialRootStyle === null) root.removeAttribute('style');
-      else root.setAttribute('style', initialRootStyle);
+      for (const property of [...priorRootProperties.keys()]) restoreRootProperty(root, property);
     };
   });
 
@@ -65,16 +95,12 @@
     if (!hydrated) return;
     writeCatalogPreferences(localStorage, { theme, colorTheme, reducedMotion });
     const root = document.documentElement;
-    if (initialRootStyle === null) root.removeAttribute('style');
-    else root.setAttribute('style', initialRootStyle);
     const preset = themePresets.find(({ id }) => id === colorTheme);
-    if (preset) {
-      const parsedTheme = parseVSCodeTheme(preset[resolvedTheme]);
-      for (const [property, value] of Object.entries(parsedTheme.cssVariables)) {
-        root.style.setProperty(property, value);
-      }
-    }
-    root.style.colorScheme = resolvedTheme;
+    const themeProperties: Record<string, string> = preset
+      ? { ...parseVSCodeTheme(preset[resolvedTheme]).cssVariables }
+      : {};
+    themeProperties['color-scheme'] = resolvedTheme;
+    applyRootProperties(root, themeProperties);
     root.classList.toggle('dark', resolvedTheme === 'dark');
     root.classList.toggle('light', resolvedTheme === 'light');
     root.classList.toggle('catalog-reduced-motion', reducedMotion);

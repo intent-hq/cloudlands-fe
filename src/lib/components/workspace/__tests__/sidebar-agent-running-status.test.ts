@@ -1,3 +1,5 @@
+// @verify-changed-triggers: ../MultiSelectTabbedSidebar.svelte, ../utils/sidebar-launcher-preview.ts
+
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 

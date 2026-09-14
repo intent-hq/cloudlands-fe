@@ -24,6 +24,7 @@
   import { shell } from '$lib/electron-bridge';
   import { Input } from '$lib/components/ui/input';
   import GitHubAuthBanner from '$lib/components/GitHubAuthBanner.svelte';
+  import GitHubAvatar from '$lib/components/ui/GitHubAvatar.svelte';
 
   import { initializeGitHubAuth } from '$store/renderer/slices/github-auth/github-auth-slice';
   import { selectGitHubAuthIsAuthenticated } from '$store/renderer/slices/github-auth/github-auth-selectors';
@@ -139,11 +140,6 @@
     option?.scrollIntoView({ block: 'nearest' });
     focusedViaKeyboard = false;
   });
-
-  /** GitHub avatar URL helper — matches LocalRepoTab. */
-  function getGitHubAvatarUrl(owner: string, size: number = 32): string {
-    return `https://github.com/${owner}.png?size=${size}`;
-  }
 
   /** Arrow-key navigation and Enter-to-select over the combined list. */
   function handleKeydown(e: KeyboardEvent) {
@@ -351,12 +347,11 @@
               }}
               onmousemove={() => (focusedIndex = index)}
             >
-              <img
-                src={getGitHubAvatarUrl(repo.owner, 32)}
+              <GitHubAvatar
+                identity={repo.owner}
                 alt={repo.owner}
+                size={24}
                 class="w-6 h-6 rounded-full shrink-0"
-                loading="lazy"
-                onerror={(e) => ((e.currentTarget as HTMLImageElement).style.display = 'none')}
               />
               <div class="flex-1 min-w-0">
                 <div

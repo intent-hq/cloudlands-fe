@@ -7,6 +7,8 @@ import { tick } from 'svelte';
 import type { Note, Workspace } from '$shared/types';
 import { WorkspaceStatusEnum } from '$shared/types';
 import type { LiveClient, WorkspaceBrowserClient } from '$shared/types/browser-clients';
+import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
 import type { WorkspaceProgressAction } from '$store/renderer/slices/workspace/workspace-types';
 import type { BrowserClientsState } from '$store/renderer/slices/browser-clients/browser-clients-types';
 import {
@@ -20,7 +22,11 @@ const mocks = vi.hoisted(() => {
   const storeState = {
     panelLayout: {
       byWorkspaceId: {
-        'ws-1': { columnCount: 2 },
+        'ws-1': { columnCount: 2, panels: {} } as {
+          columnCount: number;
+          panels: Record<string, unknown>;
+          hiddenTabs?: unknown;
+        },
       },
     },
     workspace: {
@@ -46,6 +52,7 @@ const mocks = vi.hoisted(() => {
     return action;
   });
   const update = vi.fn();
+  const archive = vi.fn();
   const clipboardWrite = vi.fn();
   const toastSuccess = vi.fn();
   const toastError = vi.fn();
@@ -93,6 +100,7 @@ const mocks = vi.hoisted(() => {
   return {
     dispatch,
     update,
+    archive,
     clipboardWrite,
     toastSuccess,
     toastError,
@@ -207,15 +215,21 @@ vi.mock('$store/renderer/slices/workspace-transfer/workspace-transfer-slice', ()
   })),
 }));
 
-vi.mock('$store/renderer/slices/workspace-operations/workspace-operations-slice', () => ({
-  requestDeleteWorkspace: vi.fn((id: string) => ({
-    type: 'workspaceOperations/delete',
-    payload: [id],
-  })),
-}));
+vi.mock(
+  '$store/renderer/slices/workspace-operations/workspace-operations-slice',
+  async (importOriginal) => ({
+    ...(await importOriginal<
+      typeof import('$store/renderer/slices/workspace-operations/workspace-operations-slice')
+    >()),
+    requestDeleteWorkspace: vi.fn((id: string) => ({
+      type: 'workspaceOperations/delete',
+      payload: [id],
+    })),
+  }),
+);
 
 vi.mock('$store/renderer/slices/workspace/utils/workspace.client', () => ({
-  workspaceClient: { update: mocks.update, archive: vi.fn(), unarchive: vi.fn() },
+  workspaceClient: { update: mocks.update, archive: mocks.archive, unarchive: vi.fn() },
 }));
 
 vi.mock('$features/accept-changes/accept-changes.client', () => ({
@@ -317,6 +331,7 @@ describe('WorkspaceProgressCard status message', () => {
   beforeEach(() => {
     mocks.dispatch.mockClear();
     mocks.update.mockReset();
+    mocks.archive.mockReset();
     mocks.notes.length = 0;
     mocks.taskState.initialized = true;
     mocks.taskState.loading = false;
@@ -366,6 +381,19 @@ describe('WorkspaceProgressCard status message', () => {
     expect(menuItems[dividerIndex]?.getAttribute('data-testid')).toBe('menu-divider');
     expect(transferIndex).toBe(dividerIndex + 1);
     expect(archiveIndex).toBe(transferIndex + 1);
+  });
+
+  it('routes archive through the workspace-operations saga instead of calling the RPC directly', async () => {
+    const { requestArchiveWorkspace } =
+      await import('$store/renderer/slices/workspace-operations/workspace-operations-slice');
+    const { container } = await renderProgressCard();
+    await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Archive Workspace' }));
+    await tick();
+
+    expect(mocks.dispatch).toHaveBeenCalledWith(requestArchiveWorkspace('ws-1'));
+    expect(mocks.archive).not.toHaveBeenCalled();
   });
 
   it('dispatches the transfer payload and dismisses the menu', async () => {
@@ -841,6 +869,15 @@ describe('WorkspaceProgressCard driving browser client', () => {
     } satisfies BrowserClientsState;
   }
 
+  const browserTab: PanelTab = { id: 'tab-web', type: 'browser', title: 'Web', closable: true };
+
+  /** Put `tabs` in the workspace's single panel (the indicator needs a browser tab). */
+  function seedPanelTabs(tabs: PanelTab[]): void {
+    mocks.storeState.panelLayout.byWorkspaceId['ws-1'].panels = {
+      main: { id: 'main', tabs, activeTabId: tabs[0]?.id ?? null },
+    };
+  }
+
   const drivingIndicator = (container: HTMLElement) =>
     container.querySelector<HTMLElement>('[data-sidebar-driving-client]');
 
@@ -859,6 +896,7 @@ describe('WorkspaceProgressCard driving browser client', () => {
   beforeEach(() => {
     mocks.dispatch.mockClear();
     mocks.storeState.browserClients = browserClientsInitialState;
+    seedPanelTabs([browserTab]);
   });
 
   it('shows nothing and offers no switch when this app is the only eligible client', async () => {
@@ -963,6 +1001,73 @@ describe('WorkspaceProgressCard driving browser client', () => {
     expect(drivingIndicator(container)?.dataset.sidebarDrivingClient).toBe('offline');
     await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
     expect(screen.getByRole('button', SET_PRIMARY)).toBeTruthy();
+  });
+
+  it('hides the indicator without browser tabs but keeps the switch, and shows it once a tab opens', async () => {
+    seedBrowserClients([liveClient(OWN, 'laptop'), liveClient(OTHER, 'desktop')], {
+      source: 'default',
+      resolved: { clientId: OTHER, name: 'desktop' },
+    });
+    seedPanelTabs([]);
+    const { container } = await renderDrivingCard();
+    const { store } = await import('$store/renderer/store');
+    const emitState = () => (store as unknown as { emitState: () => void }).emitState();
+
+    expect(drivingIndicator(container)).toBeNull();
+    await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
+    expect(screen.getByRole('button', SET_PRIMARY)).toBeTruthy();
+    await fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' });
+
+    // A browser tab opening in the layout (no reload) reveals the indicator …
+    seedPanelTabs([browserTab]);
+    emitState();
+    await tick();
+    expect(drivingIndicator(container)?.dataset.sidebarDrivingClient).toBe('elsewhere');
+
+    // … and closing the last one hides it again.
+    seedPanelTabs([]);
+    emitState();
+    await tick();
+    expect(drivingIndicator(container)).toBeNull();
+  });
+
+  it('counts a hidden agent-owned browser tab as a tab to drive', async () => {
+    seedBrowserClients([liveClient(OWN, 'laptop'), liveClient(OTHER, 'desktop')], {
+      source: 'default',
+      resolved: { clientId: OWN, name: 'laptop' },
+    });
+    seedPanelTabs([]);
+    mocks.storeState.panelLayout.byWorkspaceId['ws-1'].hiddenTabs = createCollection('id', [
+      { ...browserTab, ownerAgentId: 'agent-1' },
+    ]);
+    try {
+      const { container } = await renderDrivingCard();
+      expect(drivingIndicator(container)?.dataset.sidebarDrivingClient).toBe('here');
+    } finally {
+      mocks.storeState.panelLayout.byWorkspaceId['ws-1'].hiddenTabs = undefined;
+    }
+  });
+
+  it('never renders the indicator with one connected client even with browser tabs', async () => {
+    seedBrowserClients([liveClient(OWN, 'laptop')], {
+      source: 'default',
+      resolved: { clientId: OWN, name: 'laptop' },
+    });
+    const { container } = await renderDrivingCard();
+
+    expect(drivingIndicator(container)).toBeNull();
+  });
+
+  it('surfaces an offline pinned client without any browser tabs', async () => {
+    seedBrowserClients([liveClient(OWN, 'laptop')], {
+      source: 'workspace',
+      clientId: OTHER,
+      resolved: null,
+    });
+    seedPanelTabs([]);
+    const { container } = await renderDrivingCard();
+
+    expect(drivingIndicator(container)?.dataset.sidebarDrivingClient).toBe('offline');
   });
 
   it('hides the switch while this app does not yet know its own client id', async () => {

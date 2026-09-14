@@ -598,7 +598,7 @@ function showKey(workspaceId: string, ref: string, filePath: string, gitRootId?:
  * revision, index ref ':0' supported; a path missing at the ref folds to ''
  * on the daemon side). Concurrent callers for the same `(workspace, ref,
  * path, gitRootId)` share a single in-flight request; `opts.gitRootId`
- * scopes the read to a registered secondary git root (v6.15) and is omitted
+ * scopes the read to a registered secondary git root and is omitted
  * from the wire call when unset, keeping the primary-root request
  * byte-identical. Daemon/transport errors fold into
  * `{ success: false, error }`, preserving the legacy handler's envelope; the

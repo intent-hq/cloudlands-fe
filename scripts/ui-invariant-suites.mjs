@@ -1,9 +1,18 @@
 import { spawnSync } from 'node:child_process';
-import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import ts from 'typescript';
+import {
+  collectTestFiles,
+  parseSuite,
+  readHeaderLines,
+  readLeadingComments,
+  stripBom,
+  TEST_SCAN_ROOTS,
+} from './vitest-suite-files.mjs';
+
+export { collectTestFiles, readLeadingComments };
 
 // Single source of truth for `pnpm run test:ui-invariants` membership. A suite
 // joins the gate by carrying `// @ui-invariant` in its leading comments; a
@@ -13,68 +22,23 @@ import ts from 'typescript';
 // as a hand-listed package.json script and missed qualifying suites until review.
 export const UI_INVARIANT_MARKER = '@ui-invariant';
 export const UI_INVARIANT_EXEMPT_MARKER = '@ui-invariant-exempt:';
-export const UI_INVARIANT_SCAN_ROOTS = ['scripts', 'src'];
+export const UI_INVARIANT_SCAN_ROOTS = TEST_SCAN_ROOTS;
 
-// Mirrors vitest's default include; `.ct.spec` / `.visual.spec` are the
-// Playwright suites vitest.config.ts excludes.
-const TEST_FILE = /\.(?:test|spec)\.[cm]?[jt]sx?$/;
-const PLAYWRIGHT_FILE = /\.(?:ct|visual)\.spec\.[cm]?[jt]sx?$/;
-const SKIP_DIRECTORIES = new Set(['node_modules', 'dist', 'build']);
 const GATE_MARKER = new RegExp(`${UI_INVARIANT_MARKER}(?![\\w-])`);
 const INVENTORY_BUILDER = 'buildUiComponentInventory';
 const CALLERS_LEDGER = 'callers';
 const META_SPECIFIER = /\.meta(?:\.[cm]?[jt]s)?$/;
-const SCRIPT_KINDS = { '.tsx': ts.ScriptKind.TSX, '.jsx': ts.ScriptKind.JSX };
-
-const normalize = (value) => value.split(path.sep).join('/');
-
-function stripBom(content) {
-  return content.charCodeAt(0) === 0xfeff ? content.slice(1) : content;
-}
-
-function readLineEnd(source, index) {
-  const end = source.indexOf('\n', index);
-  return end === -1 ? source.length : end;
-}
-
-// Returns the bodies of the comments that precede the first token, skipping a
-// hashbang. Text after a closing `*/` on the same line is code, not header.
-export function readLeadingComments(content) {
-  const source = stripBom(content);
-  const comments = [];
-  let index = source.startsWith('#!') ? readLineEnd(source, 0) : 0;
-  while (index < source.length) {
-    if (/\s/.test(source[index])) {
-      index += 1;
-    } else if (source.startsWith('//', index)) {
-      const end = readLineEnd(source, index);
-      comments.push(source.slice(index + 2, end));
-      index = end;
-    } else if (source.startsWith('/*', index)) {
-      const close = source.indexOf('*/', index + 2);
-      const end = close === -1 ? source.length : close;
-      comments.push(source.slice(index + 2, end));
-      index = end + 2;
-    } else {
-      break;
-    }
-  }
-  return comments;
-}
 
 export function readHeaderMarker(content) {
-  for (const comment of readLeadingComments(content)) {
-    for (const rawLine of comment.split(/\r?\n/)) {
-      const line = rawLine.replace(/^\s*\*+/, '').trim();
-      const exempt = line.indexOf(UI_INVARIANT_EXEMPT_MARKER);
-      if (exempt !== -1) {
-        return {
-          kind: 'exempt',
-          reason: line.slice(exempt + UI_INVARIANT_EXEMPT_MARKER.length).trim(),
-        };
-      }
-      if (GATE_MARKER.test(line)) return { kind: 'gate' };
+  for (const line of readHeaderLines(content)) {
+    const exempt = line.indexOf(UI_INVARIANT_EXEMPT_MARKER);
+    if (exempt !== -1) {
+      return {
+        kind: 'exempt',
+        reason: line.slice(exempt + UI_INVARIANT_EXEMPT_MARKER.length).trim(),
+      };
     }
+    if (GATE_MARKER.test(line)) return { kind: 'gate' };
   }
   return { kind: null };
 }
@@ -101,13 +65,7 @@ function isMetaImport(node) {
 export function requiresUiInvariantMarker(content, filePath = 'suite.ts') {
   const source = stripBom(content);
   if (!source.includes(INVENTORY_BUILDER) && !source.includes(CALLERS_LEDGER)) return false;
-  const sourceFile = ts.createSourceFile(
-    filePath,
-    source,
-    ts.ScriptTarget.Latest,
-    false,
-    SCRIPT_KINDS[path.extname(filePath)] ?? ts.ScriptKind.TS,
-  );
+  const sourceFile = parseSuite(source, filePath);
   let referencesBuilder = false;
   let importsMeta = false;
   let readsCallers = false;
@@ -143,26 +101,6 @@ export function inspectUiInvariantSuites(files) {
     }
   }
   return { suites, exempt, violations, auditedFiles: sorted.map((file) => file.path) };
-}
-
-export function collectTestFiles(root = process.cwd()) {
-  const files = [];
-  const walk = (directory) => {
-    if (!fs.existsSync(directory)) return;
-    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
-      const absolute = path.join(directory, entry.name);
-      if (entry.isDirectory()) {
-        if (!SKIP_DIRECTORIES.has(entry.name) && !entry.name.startsWith('.')) walk(absolute);
-      } else if (TEST_FILE.test(entry.name) && !PLAYWRIGHT_FILE.test(entry.name)) {
-        files.push({
-          path: normalize(path.relative(root, absolute)),
-          content: fs.readFileSync(absolute, 'utf8'),
-        });
-      }
-    }
-  };
-  for (const scanRoot of UI_INVARIANT_SCAN_ROOTS) walk(path.join(root, scanRoot));
-  return files;
 }
 
 export function listUiInvariantSuites(root = process.cwd()) {

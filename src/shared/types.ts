@@ -348,7 +348,7 @@ export interface Workspace {
   archived?: boolean;
   archivedAt?: string;
   /** ISO deadline of an in-memory pending deletion (PROTOCOL §5.1 delete grace
-   *  window, v6.7+). Present only while a `workspace.delete { undoDelayMs > 0 }`
+   *  window). Present only while a `workspace.delete { undoDelayMs > 0 }`
    *  grace window is running; cleared by `workspace.cancelDelete` and dropped by
    *  a daemon restart (the workspace survives). Rows carrying it are hidden
    *  from the FE workspace list. */
@@ -624,7 +624,7 @@ export interface WorkspaceAgentInfo {
   isStreaming?: boolean;
   isResponding?: boolean;
   /**
-   * Delegating/spawning agent's id (PROTOCOL §5.1, v2.9 additive) — omitted
+   * Delegating/spawning agent's id (PROTOCOL §5.1 `WorkspaceAgentInfo`, additive) — omitted
    * for root agents, so clients can rebuild the delegation tree.
    */
   parentAgentId?: string;
@@ -913,7 +913,7 @@ export interface TaskMetadata {
   /**
    * Daemon-computed at read/push time (never persisted): `dependsOn` ids whose
    * task note is not `complete` (missing and cancelled deps count as unmet).
-   * Present on note-shaped read/push payloads only (PROTOCOL §5.2, v6.8,
+   * Present on note-shaped read/push payloads only (PROTOCOL §5.2,
    * monorepo#1979); omitted when empty and on mutation-response notes.
    */
   unmetDependsOn?: NoteId[];

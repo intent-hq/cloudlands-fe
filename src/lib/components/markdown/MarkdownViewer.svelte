@@ -6,6 +6,7 @@
   import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
   import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
   import ImageActionsMenu from '$lib/components/ui/ImageActionsMenu.svelte';
+  import VideoActionsMenu from '$lib/components/ui/VideoActionsMenu.svelte';
   import ChatVideoBlock from '$lib/components/chat/ChatVideoBlock.svelte';
   import { splitWorkspaceVideoMarkdown } from '$lib/utils/workspace-file-video';
   import RecursiveMarkdownViewer from './MarkdownViewer.svelte';
@@ -14,6 +15,7 @@
   import {
     createWorkspaceFileVersion,
     parseIntentFileTarget,
+    workspaceAssetVideoSource,
   } from '$lib/utils/workspace-file-image';
 
   import {
@@ -360,13 +362,27 @@
       host.className = 'media-unavailable-host';
       media.replaceWith(host);
       if (hoveredImage === media) hoveredImage = null;
-      mountedPlaceholders.set(
-        host,
-        mount(MediaUnavailable, {
-          target: host,
-          props: { name, reason, path, workspaceId: owningWorkspaceId },
-        }),
-      );
+      const fallback = mount(MediaUnavailable, {
+        target: host,
+        props: { name, reason, path, workspaceId: owningWorkspaceId },
+      });
+      mountedPlaceholders.set(host, fallback);
+      if (media instanceof HTMLVideoElement) {
+        host.classList.add('flex', 'items-center', 'gap-2');
+        const actionsHost = host.appendChild(document.createElement('span'));
+        mountedPlaceholders.set(
+          actionsHost,
+          mount(VideoActionsMenu, {
+            target: actionsHost,
+            props: {
+              videoUrl: source,
+              videoName: name,
+              sourceKind: 'workspace',
+              mimeType: workspaceAssetVideoSource(source, workspaceId)?.mimeType,
+            },
+          }),
+        );
+      }
     }
 
     function reconcile() {
@@ -393,12 +409,8 @@
     function handleMediaError(event: Event) {
       const media = event.target;
       if (!(media instanceof HTMLImageElement || media instanceof HTMLVideoElement)) return;
-      const source = media.getAttribute('src') || '';
-      const reason =
-        source.startsWith('workspace-file://') || source.startsWith('workspace-asset://')
-          ? 'missing'
-          : 'load-failed';
-      replaceMedia(media, reason);
+      // Decode and transport errors do not establish that the underlying asset is absent.
+      replaceMedia(media, 'load-failed');
     }
 
     const observer = new MutationObserver(reconcile);

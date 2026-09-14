@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import type { ViteDevServer } from 'vite';
 import { createServer } from 'vite';
+import { viteHarnessCacheDir } from './vite-harness-cache.mjs';
 
 let server: ViteDevServer;
 let baseUrl: string;
@@ -10,6 +11,7 @@ test.beforeAll(async () => {
   test.setTimeout(360_000);
   const port = Number.parseInt(process.env.CHAT_POLISH_TEST_PORT ?? '0', 10);
   server = await createServer({
+    cacheDir: viteHarnessCacheDir('chat-polish-controls'),
     server: { host: '127.0.0.1', port, strictPort: port > 0, watch: { ignored: ['**/*'] } },
   });
   await server.listen();
@@ -127,7 +129,7 @@ test('remains usable in narrow, dark, compact, and reduced-motion modes', async 
   await openSandbox(page);
   await page.getByRole('radio', { name: 'Dark' }).click();
   await page.getByRole('switch', { name: 'Reduce motion' }).click();
-  await page.getByRole('checkbox', { name: 'Compact mode' }).click();
+  await page.getByRole('switch', { name: 'Compact mode' }).click();
   await expect(page.locator('html')).toHaveClass(/dark/);
   await expect(page.getByTestId('catalog-shell')).toHaveAttribute('data-catalog-motion', 'reduced');
   await expect(page.getByTestId('chat-polish-preview')).toHaveAttribute('data-compact', 'true');

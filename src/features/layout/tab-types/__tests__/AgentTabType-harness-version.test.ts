@@ -3,6 +3,7 @@
  *
  * AgentTabType — read-only "Harness vX.Y" entry in the panel actions (⋯)
  * menu (PROTOCOL §5.5 `harnessVersion` / `harnessFeatures`; monorepo#2459).
+ * protocol-version-ok-file: "Harness v1.0" fixtures are `harnessVersion` values.
  *
  * Mirrors AgentCard-harness-version.test.ts for the tab menu: renders the
  * agentActions snippet through the real panel-header context and real Menu

@@ -2,6 +2,7 @@ import { defineConfig } from 'vitest/config';
 import path from 'path';
 import os from 'os';
 import { readFileSync } from 'fs';
+import { gitignoreDirExcludes } from './scripts/gitignore-dir-excludes.mjs';
 
 // CI-only tuning for shared self-hosted runners (intent-hq/monorepo#3082; the
 // recurrence class #3032/#2586/#1406/#1171/#545). The CI unit job runs on the
@@ -41,6 +42,9 @@ export default defineConfig(async () => {
       globals: true,
       environment: 'jsdom',
       setupFiles: ['./src/test-setup.ts'],
+      // Redirects every worker's os.tmpdir() into a private root and fails the
+      // run if a test leaves a temp entry behind (see src/test-global-setup.ts).
+      globalSetup: ['./src/test-global-setup.ts'],
       // Cap workers at 50% of logical cores. Vitest defaults to one worker per
       // core; ~20 jsdom workers oversubscribe the CPU and, when the machine is
       // under external load (builds, other agents), heavy component suites blow
@@ -61,9 +65,8 @@ export default defineConfig(async () => {
         '**/dist/**',
         '**/build/**',
         '**/.{idea,git,cache,output,temp}/**',
-        // Exclude any untracked git-worktree dirs (e.g. .wt-commit-details/) so
-        // vitest doesn't double-collect their test files alongside the primary tree.
-        '**/.wt-*/**',
+        // Scratch/sandbox excludes (worktrees, probes, .dev/, etc.) come from .gitignore.
+        ...gitignoreDirExcludes(path.join(__dirname, '.gitignore')),
         'test/**', // Exclude Playwright tests directory (package-root only; do not swallow src/test/**)
         // Required CI runs this suite separately with its Node-specific setup.
         'tests/integration/**',

@@ -22,6 +22,11 @@ vi.mock('@fortawesome/free-solid-svg-icons', () => ({
   faStop: { iconName: 'stop' },
 }));
 
+const navigateToSettings = vi.fn(() => Promise.resolve());
+vi.mock('$lib/utils/workspace-navigation', () => ({
+  navigateToSettings: (...args: unknown[]) => navigateToSettings(...args),
+}));
+
 import StreamingStatus from '../StreamingStatus.svelte';
 import {
   formatDuration,
@@ -146,10 +151,10 @@ describe('StreamingStatus rendered UI', () => {
     expect(screen.getByRole('status').getAttribute('aria-label')).toBe('Cargando');
   });
 
-  it('shows live elapsed detail only on row hover and keeps it non-live and non-focusable', async () => {
+  it('shows elapsed detail only on row hover, refreshing and ticking it only while hovered', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(10_000);
-    render(StreamingStatus, {
+    const view = render(StreamingStatus, {
       props: {
         isProcessing: true,
         statusEvents: [
@@ -174,8 +179,23 @@ describe('StreamingStatus rendered UI', () => {
     expect(elapsed.getAttribute('aria-live')).toBe('off');
     expect(elapsed.getAttribute('tabindex')).toBeNull();
 
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(screen.getByTestId('streaming-status-elapsed').textContent).toBe('2s ago');
+
+    await fireEvent.pointerEnter(row);
+    expect(screen.getByTestId('streaming-status-elapsed').textContent).toBe('5s ago');
     await vi.advanceTimersByTimeAsync(1_000);
-    expect(screen.getByTestId('streaming-status-elapsed').textContent).toBe('3s ago');
+    expect(screen.getByTestId('streaming-status-elapsed').textContent).toBe('6s ago');
+
+    await fireEvent.pointerLeave(row);
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(screen.getByTestId('streaming-status-elapsed').textContent).toBe('6s ago');
+
+    await fireEvent.pointerEnter(row);
+    expect(screen.getByTestId('streaming-status-elapsed').textContent).toBe('8s ago');
+    await view.rerender({ isProcessing: false, statusEvents: [] });
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(screen.queryByTestId('streaming-status-elapsed')).toBeNull();
   });
 
   it('renders explicit failed response copy, alert semantics, and retry action for inactive errors', async () => {
@@ -665,6 +685,115 @@ describe('StreamingStatus stalled state (monorepo#3402)', () => {
 
     expect(container.querySelector('[data-stream-stalled="true"]')).toBeTruthy();
     expect(screen.queryByTestId('stalled-cancel')).toBeNull();
+  });
+});
+
+describe('StreamingStatus slot-wait state (processQueueHint)', () => {
+  const slotWait = { waiting: true, used: 3, cap: 3, reason: 'slots' as const };
+  const memoryWait = { waiting: true, used: 2, cap: 4, reason: 'memory-budget' as const };
+
+  it('renders the slot-wait row after the thinking indicator while the turn is parked', () => {
+    const { container } = render(StreamingStatus, {
+      props: { isProcessing: true, processQueueHint: slotWait },
+    });
+
+    const row = container.querySelector('[data-stream-slot-wait="true"]') as HTMLElement;
+    expect(row).toBeTruthy();
+    expect(row.getAttribute('data-queue-reason')).toBe('slots');
+    expect(screen.getByTestId('slot-wait-message').textContent).toContain('3/3');
+    const thinking = screen.getByTestId('streaming-status-thinking');
+    expect(thinking.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('switches to memory-budget copy when the daemon reports that reason', async () => {
+    const { container, rerender } = render(StreamingStatus, {
+      props: { isProcessing: true, processQueueHint: { ...memoryWait, reason: 'slots' } },
+    });
+    const slotsCopy = screen.getByTestId('slot-wait-message').textContent;
+    expect(slotsCopy).toContain('2/4');
+
+    await rerender({ isProcessing: true, processQueueHint: memoryWait });
+
+    const row = container.querySelector('[data-stream-slot-wait="true"]') as HTMLElement;
+    expect(row.getAttribute('data-queue-reason')).toBe('memory-budget');
+    const memoryCopy = screen.getByTestId('slot-wait-message').textContent;
+    // Same used/cap, different constraint: the reason must change the copy
+    // (the numbers alone would leave a memory wait reading like a slot wait).
+    expect(memoryCopy).toContain('2/4');
+    expect(memoryCopy).not.toBe(slotsCopy);
+  });
+
+  it('opens the agent-backend settings section from the Change limit action', async () => {
+    render(StreamingStatus, { props: { isProcessing: true, processQueueHint: slotWait } });
+
+    await fireEvent.click(screen.getByTestId('slot-wait-change-limit'));
+
+    expect(navigateToSettings).toHaveBeenCalledWith({ hash: 'agent-backend' });
+  });
+
+  it('stays hidden when the hint is absent or not waiting', async () => {
+    const { container, rerender } = render(StreamingStatus, {
+      props: { isProcessing: true },
+    });
+    expect(container.querySelector('[data-stream-slot-wait="true"]')).toBeNull();
+
+    await rerender({
+      isProcessing: true,
+      processQueueHint: { waiting: false, used: 1, cap: 3, reason: 'slots' },
+    });
+    expect(container.querySelector('[data-stream-slot-wait="true"]')).toBeNull();
+  });
+
+  it('stays hidden when the turn is not active even if the hint says waiting', () => {
+    const { container } = render(StreamingStatus, {
+      props: { isProcessing: false, isStreaming: false, processQueueHint: slotWait },
+    });
+    expect(container.querySelector('[data-stream-slot-wait="true"]')).toBeNull();
+  });
+
+  it('supersedes a concurrent stalled row and keeps the thinking indicator', () => {
+    const { container } = render(StreamingStatus, {
+      props: {
+        isStreaming: true,
+        processQueueHint: slotWait,
+        statusEvents: [
+          {
+            phase: STALLED_PHASE,
+            message: 'No model activity',
+            level: 'warn',
+            timestamp: 1_000,
+          } satisfies StatusEvent,
+        ],
+      },
+    });
+
+    expect(container.querySelector('[data-stream-slot-wait="true"]')).toBeTruthy();
+    expect(container.querySelector('[data-stream-stalled="true"]')).toBeNull();
+    expect(screen.getByTestId('streaming-status-thinking')).toBeTruthy();
+  });
+
+  it('clears once the hint flips to not waiting and falls back to the stalled row if stalled', async () => {
+    const stalled: StatusEvent = {
+      phase: STALLED_PHASE,
+      message: 'No model activity',
+      level: 'warn',
+      timestamp: 1_000,
+    };
+    const { container, rerender } = render(StreamingStatus, {
+      props: { isStreaming: true, processQueueHint: slotWait, statusEvents: [stalled] },
+    });
+    expect(container.querySelector('[data-stream-slot-wait="true"]')).toBeTruthy();
+
+    await rerender({
+      isStreaming: true,
+      processQueueHint: { ...slotWait, waiting: false },
+      statusEvents: [stalled],
+    });
+
+    await waitFor(() =>
+      expect(container.querySelector('[data-stream-slot-wait="true"]')).toBeNull(),
+    );
+    expect(container.querySelector('[data-stream-stalled="true"]')).toBeTruthy();
   });
 });
 

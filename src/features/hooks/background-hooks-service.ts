@@ -1,5 +1,5 @@
 /**
- * Background-hooks read/trigger/cancel surface (PROTOCOL §5.40, v2.10).
+ * Background-hooks read/trigger/cancel surface (PROTOCOL §5.40).
  *
  * Hooks are agent-authored (scheduling is MCP-only); the FE reads via
  * `hook.list`, triggers via `hook.runNow`, cancels via `hook.cancel`, and
@@ -28,7 +28,7 @@ export interface BackgroundHook {
   runAt?: string;
   state: 'scheduled' | 'running' | 'dispatched' | 'evicted' | 'cancelled' | 'expired';
   createdAt: string;
-  /** TTL deadline (v3.1): `createdAt` + clamped `ttlMs` (≤ 24 hours).
+  /** TTL deadline: `createdAt` + clamped `ttlMs` (≤ 24 hours).
    * Absent only on pre-TTL legacy rows, which never expire. */
   expiresAt?: string;
   lastRunAt?: string;

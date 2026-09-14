@@ -7,8 +7,9 @@ import { m } from '$shared/paraglide/messages.js';
 import {
   emptyWorkspaceState,
   openTabInRightmostColumn,
-  panelLayoutReducer,
+  panelLayoutReducer as rawPanelLayoutReducer,
 } from '../../panel-layout/panel-layout-slice';
+import { withPanelLayoutInvariants } from '../../panel-layout/panel-layout-invariants.test-helpers';
 import type { PanelLayoutSliceState } from '../../panel-layout/panel-layout-types';
 import {
   openWorkspaceActivityChanges,
@@ -38,6 +39,8 @@ vi.mock('$lib/components/chat/input/context-api', () => ({
 vi.mock('svelte-sonner', () => ({
   toast: { error: mocks.toastError, success: mocks.toastSuccess },
 }));
+
+const panelLayoutReducer = withPanelLayoutInvariants(rawPanelLayoutReducer);
 
 const settle = async () => {
   await Promise.resolve();

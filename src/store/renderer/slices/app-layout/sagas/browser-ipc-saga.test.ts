@@ -35,8 +35,14 @@ vi.mock('../../../utils/safe-local-storage-saga', () => ({
 }));
 
 import { PANEL_LAYOUT_STORAGE_KEY_PREFIX } from '../../panel-layout/panel-layout-types';
-import { emptyWorkspaceState, panelLayoutReducer } from '../../panel-layout/panel-layout-slice';
+import {
+  emptyWorkspaceState,
+  panelLayoutReducer as rawPanelLayoutReducer,
+} from '../../panel-layout/panel-layout-slice';
+import { withPanelLayoutInvariants } from '../../panel-layout/panel-layout-invariants.test-helpers';
 import { browserIpcSaga } from './browser-ipc-saga';
+
+const panelLayoutReducer = withPanelLayoutInvariants(rawPanelLayoutReducer);
 
 const NOW = new Date('2026-07-31T00:00:00.000Z').getTime();
 const TAB = (url: string) => ({
@@ -1400,7 +1406,7 @@ describe('browserIpcSaga', () => {
     await task.toPromise();
   });
 
-  it('marks hidden owned tabs with hidden: true in list replies (monorepo#3045)', async () => {
+  it('lists requested URLs for visible and hidden tabs but omits them for legacy tabs', async () => {
     const task = start();
     state = {
       panelLayout: {
@@ -1413,8 +1419,15 @@ describe('browserIpcSaga', () => {
                     id: 'browser-visible',
                     type: 'browser',
                     browserUrl: 'http://a/',
+                    browserRequestedUrl: 'http://daemon.localhost:3000/',
                     title: 'A',
                     ownerAgentId: 'agent-1',
+                  },
+                  {
+                    id: 'browser-legacy',
+                    type: 'browser',
+                    browserUrl: 'http://legacy/',
+                    title: 'Legacy',
                   },
                 ],
                 activeTabId: null,
@@ -1425,6 +1438,7 @@ describe('browserIpcSaga', () => {
                 id: 'browser-hidden',
                 type: 'browser',
                 browserUrl: 'http://b/',
+                browserRequestedUrl: 'http://daemon.localhost:4000/',
                 title: 'B',
                 ownerAgentId: 'agent-1',
               },
@@ -1442,13 +1456,21 @@ describe('browserIpcSaga', () => {
         {
           tabId: 'browser-visible',
           url: 'http://a/',
+          requestedUrl: 'http://daemon.localhost:3000/',
           title: 'A',
           closable: true,
           ownerAgentId: 'agent-1',
         },
         {
+          tabId: 'browser-legacy',
+          url: 'http://legacy/',
+          title: 'Legacy',
+          closable: true,
+        },
+        {
           tabId: 'browser-hidden',
           url: 'http://b/',
+          requestedUrl: 'http://daemon.localhost:4000/',
           title: 'B',
           closable: true,
           ownerAgentId: 'agent-1',

@@ -27,11 +27,14 @@ import { selectEffectiveDefaultProviderId } from '../provider-catalog/provider-c
 // ============================================================================
 
 /**
- * Stored sessions already mirror the public `AgentSession` message-array shape.
- * Returning the stored reference preserves selector reference-equality when the
- * reducer keeps the session object unchanged.
+ * Stored sessions already mirror the public `AgentSession` message-array shape
+ * (plus the FE-owned fields, see `FeOwnedSessionState`). Returning the stored
+ * reference preserves selector reference-equality when the reducer keeps the
+ * session object unchanged.
  */
-function materializeSession(stored: StoredAgentSession | undefined): AgentSession | undefined {
+function materializeSession(
+  stored: StoredAgentSession | undefined,
+): StoredAgentSession | undefined {
   if (!stored) return undefined;
   return stored;
 }
@@ -139,9 +142,9 @@ function isActiveAgentThread(stored: StoredAgentSession): boolean {
 // Selectors
 // ============================================================================
 
-/** Select a single agent session by agentId */
+/** Select a single agent session by agentId (stored shape: wire fields + FE-owned fields) */
 export const selectAgentSession = store.createSelector(
-  (state, agentId?: string): AgentSession | undefined => {
+  (state, agentId?: string): StoredAgentSession | undefined => {
     if (!agentId) return undefined;
     return materializeSession(state.agentSessions?.byAgentId[agentId]);
   },

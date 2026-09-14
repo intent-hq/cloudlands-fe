@@ -1,6 +1,6 @@
 /**
  * `host.providerAuthStatus` contract folding (PROTOCOL §5.14): the wire
- * verdict map plus the additive protocol-9.4 `identity` object
+ * verdict map plus the additive `identity` object
  * (intent-hq/intentd#1685) rendered into `ProviderStatus.authDetails`.
  */
 import { describe, expect, it } from 'vitest';
@@ -93,7 +93,7 @@ describe('toAuthVerdictMap', () => {
       authenticated: true,
       authDetails: 'dev@example.com · Example Org',
     });
-    // Pre-9.4 daemons (no identity field) degrade silently: no key at all.
+    // Daemons without the `identity` field degrade silently: no key at all.
     expect(map['codex']).toStrictEqual({ authenticated: true });
   });
 

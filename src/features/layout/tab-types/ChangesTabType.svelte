@@ -49,7 +49,7 @@
   // Get commit data from tab
   const commitHash = $derived((tab.data?.commitHash as string) || '');
   const commitMessage = $derived((tab.data?.commitMessage as string) || '');
-  // Secondary git root scoping the changeset (multi git root tracking, v6.15).
+  // Secondary git root scoping the changeset (multi git root tracking).
   // Absent → primary-root behavior, byte-identical to before.
   const gitRootId = $derived((tab.data?.gitRootId as string) || '');
   // Root path used to absolutize the daemon's root-relative file paths: the
@@ -107,7 +107,7 @@
     // folds transport/gate errors to `null` and the daemon degrades non-repo /
     // remote / unknown-hash workspaces to an empty envelope, so this $effect
     // never throws into the renderer. `gitRootId` scopes the read to a
-    // registered secondary root (v6.15 param family).
+    // registered secondary root (`gitRootId` param family).
     appClient.git
       .commitDetails(wsId, hash, rootId ? { gitRootId: rootId } : undefined)
       .then((result) => {

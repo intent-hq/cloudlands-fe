@@ -577,7 +577,7 @@ describe('provider availability service', () => {
     expect(result.providers.grok.authenticated).toBeUndefined();
   });
 
-  it('attaches the protocol-9.4 identity line only to the provider that sent one', async () => {
+  it('attaches the host.providerAuthStatus identity line only to the provider that sent one', async () => {
     routeBackend({
       'host.providerDiscovery': {
         ...EMPTY_DISCOVERY,
@@ -607,7 +607,7 @@ describe('provider availability service', () => {
       authenticated: true,
       authDetails: 'dev@example.com · Example Org',
     });
-    // No identity on the wire → no authDetails key at all (pre-9.4 shape).
+    // No identity on the wire → no authDetails key at all (no `identity` object).
     expect(result.providers.droid.authenticated).toBe(true);
     expect(result.providers.droid).not.toHaveProperty('authDetails');
   });
@@ -756,7 +756,7 @@ describe('provider availability service', () => {
     });
   });
 
-  it('single recheck attaches the protocol-9.4 identity line and omits it without one', async () => {
+  it('single recheck attaches the host.providerAuthStatus identity line and omits it without one', async () => {
     routeBackend({
       'host.providerAuthStatus': {
         providers: [
@@ -784,7 +784,7 @@ describe('provider availability service', () => {
       data: { available: true, authenticated: true, authDetails: 'dev@example.com · Example Org' },
     });
 
-    // The same recheck against a daemon that sent no identity (pre-9.4 shape)
+    // The same recheck against a daemon that sent no `identity` object
     // yields no authDetails key at all.
     routeBackend({
       'host.providerAuthStatus': { providers: [{ id: 'claude-code', authenticated: true }] },

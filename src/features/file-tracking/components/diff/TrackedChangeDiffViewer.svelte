@@ -82,7 +82,7 @@
     virtualizer?: import('@pierre/diffs').Virtualizer;
     /**
      * Secondary git root scoping the committed-content fetches (multi git
-     * root tracking, v6.15). Absent → primary-root behavior, byte-identical.
+     * root tracking). Absent → primary-root behavior, byte-identical.
      */
     gitRootId?: string;
     /**
@@ -184,7 +184,7 @@
 
   // Get workspace info
   const workspace = $derived($workspace$);
-  // When a secondary git root scopes this diff (v6.15), its path is the base
+  // When a secondary git root scopes this diff (`gitRootId`), its path is the base
   // for absolute↔relative path resolution instead of the workspace worktree.
   const workspacePath = $derived(
     gitRootPath || workspace?.worktreePath || workspace?.repositoryPath || '',

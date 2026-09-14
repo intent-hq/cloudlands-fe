@@ -1,3 +1,5 @@
+// @verify-changed-triggers: src/routes/(app)/workspace/[id]/WorkspaceSurface.svelte
+
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';

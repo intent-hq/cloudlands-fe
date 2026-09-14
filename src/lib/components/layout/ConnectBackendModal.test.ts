@@ -8,6 +8,7 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/svelte';
+import { warmImport } from '../../../test/warm-import';
 
 const mocks = vi.hoisted(() => ({
   dispatch: vi.fn(),
@@ -50,6 +51,8 @@ vi.mock('$store/renderer/slices/connections/connections-selectors', async () => 
 vi.mock('$lib/utils/open-external', () => ({
   openExternalUrl: mocks.openExternalUrl,
 }));
+
+warmImport(() => import('./ConnectBackendModal.svelte'));
 
 async function fillDetails() {
   await fireEvent.input(screen.getByLabelText('Device name'), {

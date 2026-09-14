@@ -499,6 +499,26 @@ describe('LiveSettingsClient domain accessors map FE shapes ↔ BE paths', () =>
     ]);
   });
 
+  it('restartMcpServer sends the daemon id and returns its auth-required status', async () => {
+    mockedRequest.mockResolvedValueOnce({
+      status: {
+        serverId: 'srv-figma',
+        state: 'auth_required',
+        lastError: 'authentication required (HTTP 401)',
+      },
+    });
+    const client = new LiveSettingsClient();
+
+    await expect(client.restartMcpServer('srv-figma')).resolves.toEqual({
+      serverId: 'srv-figma',
+      state: 'auth_required',
+      lastError: 'authentication required (HTTP 401)',
+    });
+    expect(mockedRequest).toHaveBeenCalledWith('mcp.servers.restart', {
+      serverId: 'srv-figma',
+    });
+  });
+
   it('setMcpServers diffs against mcp.servers.list: creates new, deletes missing', async () => {
     mockedRequest.mockResolvedValueOnce({
       servers: [

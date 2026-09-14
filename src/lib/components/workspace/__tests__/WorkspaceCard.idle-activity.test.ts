@@ -394,7 +394,7 @@ describe('WorkspaceCard hover-intent delay', () => {
       await fireEvent.mouseEnter(row);
       expect(hoverCard()).toBeNull();
 
-      vi.advanceTimersByTime(399);
+      vi.advanceTimersByTime(799);
       await tick();
       expect(hoverCard()).toBeNull();
 
@@ -421,7 +421,7 @@ describe('WorkspaceCard hover-intent delay', () => {
 
       // Re-entering restarts the delay from zero.
       await fireEvent.mouseEnter(row);
-      vi.advanceTimersByTime(399);
+      vi.advanceTimersByTime(799);
       await tick();
       expect(hoverCard()).toBeNull();
       vi.advanceTimersByTime(1);
@@ -463,7 +463,7 @@ describe('WorkspaceCard hover-intent delay', () => {
       const secondRow = second.container.querySelector<HTMLElement>('[data-workspace-card-row]')!;
 
       await fireEvent.mouseEnter(firstRow);
-      vi.advanceTimersByTime(400);
+      vi.advanceTimersByTime(800);
       await tick();
       expect(document.querySelectorAll('[role="tooltip"]')).toHaveLength(1);
 
@@ -476,7 +476,7 @@ describe('WorkspaceCard hover-intent delay', () => {
       await fireEvent.mouseLeave(secondRow);
       vi.advanceTimersByTime(300);
       await fireEvent.mouseEnter(firstRow);
-      vi.advanceTimersByTime(399);
+      vi.advanceTimersByTime(799);
       await tick();
       expect(hoverCard()).toBeNull();
       vi.advanceTimersByTime(1);
@@ -511,7 +511,7 @@ describe('WorkspaceCard hover-intent delay', () => {
       const row = container.querySelector<HTMLElement>('[data-workspace-card-row]')!;
 
       await fireEvent.mouseEnter(row);
-      vi.advanceTimersByTime(400);
+      vi.advanceTimersByTime(800);
       await tick();
       expect(hoverCard()).toBeTruthy();
 
@@ -565,7 +565,7 @@ describe('WorkspaceCard hover-intent delay', () => {
       const row = container.querySelector<HTMLElement>('[data-workspace-card-row]')!;
 
       await fireEvent.mouseEnter(row);
-      vi.advanceTimersByTime(400);
+      vi.advanceTimersByTime(800);
       await tick();
       expect(hoverCard()).toBeTruthy();
 
@@ -590,7 +590,7 @@ describe('WorkspaceCard hover-intent delay', () => {
       await fireEvent.mouseEnter(row);
       vi.advanceTimersByTime(100);
       await fireEvent.scroll(unrelatedScroller);
-      vi.advanceTimersByTime(300);
+      vi.advanceTimersByTime(700);
       await tick();
 
       expect(hoverCard()).toBeTruthy();
@@ -608,7 +608,7 @@ describe('WorkspaceCard hover-intent delay', () => {
       const row = container.querySelector<HTMLElement>('[data-workspace-card-row]')!;
 
       await fireEvent.mouseEnter(row);
-      vi.advanceTimersByTime(400);
+      vi.advanceTimersByTime(800);
       await tick();
       expect(hoverCard()).toBeTruthy();
 
@@ -632,7 +632,7 @@ describe('WorkspaceCard hover-intent delay', () => {
       container.appendChild(target);
 
       await fireEvent.mouseEnter(row);
-      vi.advanceTimersByTime(400);
+      vi.advanceTimersByTime(800);
       await tick();
       expect(hoverCard()).toBeTruthy();
 
@@ -654,7 +654,7 @@ describe('WorkspaceCard hover-intent delay', () => {
       const trigger = container.querySelector<HTMLElement>('[data-workspace-card-trigger]')!;
 
       await fireEvent.mouseEnter(row);
-      vi.advanceTimersByTime(400);
+      vi.advanceTimersByTime(800);
       await tick();
       expect(hoverCard()).toBeTruthy();
 

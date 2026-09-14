@@ -11,7 +11,7 @@ import type { McpServerConfig, McpServerStatus, McpTool } from '$lib/components/
 export type { McpServerConfig, McpServerStatus, McpTool };
 
 /** Daemon-reported runtime state (PROTOCOL §5.22 `McpServerStatus.state`). */
-type McpDaemonServerState = 'stopped' | 'starting' | 'running' | 'error';
+type McpDaemonServerState = 'stopped' | 'starting' | 'running' | 'error' | 'auth_required';
 
 /** Daemon runtime status read via `mcp.servers.getStatus` (PROTOCOL §5.22). */
 export type McpServerRuntimeStatus = {

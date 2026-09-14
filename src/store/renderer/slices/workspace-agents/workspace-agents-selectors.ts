@@ -75,7 +75,7 @@ export const selectIsLoadingAgents = store.createSelector((state, wsId: string) 
   return getWorkspaceAgentState(state, wsId).isLoadingAgents;
 });
 
-/** Daemon-served retired-row count (§5.5 soft retire, v8.2) for the Retired bin toggle. */
+/** Daemon-served retired-row count (§5.5 soft retire) for the Retired bin toggle. */
 export const selectRetiredCount = store.createSelector((state, wsId: string) => {
   return getWorkspaceAgentState(state, wsId).retiredCount;
 });

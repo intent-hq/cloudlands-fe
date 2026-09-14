@@ -86,6 +86,7 @@ const { ensureAgentSessionSpy, refreshAgentSessionAfterEventSpy } = vi.hoisted((
 vi.mock('$features/agent/agent-read-service', () => ({
   ensureAgentSession: ensureAgentSessionSpy,
   refreshAgentSessionAfterEvent: refreshAgentSessionAfterEventSpy,
+  notePendingQuestionMarkerProjection: vi.fn(),
   createAgentReadMiddleware: () => () => (next: (a: unknown) => unknown) => (a: unknown) => next(a),
 }));
 
@@ -206,8 +207,11 @@ import { lifecycleReadSaga } from '$store/renderer/slices/workspace-lifecycle/sa
 import {
   bulkUpsertSessions,
   clearAllSessions,
+  setProcessQueueHint,
+  updateSession,
   upsertSession,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
+import type { StoredAgentSession } from '$store/renderer/slices/agent-session/agent-session-types';
 import { selectAgentIsResponding } from '$store/renderer/slices/agent-session/agent-session-selectors';
 import { selectEnabledProviderIds } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
 import {
@@ -315,9 +319,9 @@ function notificationWithSub(
   };
 }
 
-function readSession(): AgentSession | undefined {
+function readSession(): StoredAgentSession | undefined {
   const state = appStore.state as {
-    agentSessions?: { byAgentId: Record<string, AgentSession> };
+    agentSessions?: { byAgentId: Record<string, StoredAgentSession> };
   };
   return state.agentSessions?.byAgentId[AGENT];
 }
@@ -572,10 +576,15 @@ describe('daemonEventsBridge (wire contract — agent:idle clears the spinner)',
       isStreaming: true,
       isProcessing: true,
       isResponding: true,
-      liveTurnOpen: true,
-      liveTurnOpenedAt: '2026-01-01T12:00:00.000Z',
-      processQueueHint: { waiting: true, used: 3, cap: 3, reason: 'slots' },
-    } as Partial<AgentSession>);
+    });
+    // FE-owned fields never ride the wire snapshot; set them the way
+    // production does (reducer actions), not via the upsert fixture.
+    appStore.dispatch(
+      updateSession(AGENT, { liveTurnOpen: true, liveTurnOpenedAt: '2026-01-01T12:00:00.000Z' }),
+    );
+    appStore.dispatch(setProcessQueueHint(AGENT, 3, 3, 'slots'));
+    expect(readSession()?.liveTurnOpen).toBe(true);
+    expect(readSession()?.processQueueHint?.waiting).toBe(true);
     expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(true);
     await primeBridge();
     const handler = capturedHandlers[0]!;
@@ -3610,7 +3619,13 @@ describe('daemonEventsBridge (queue drain-start — agent:queue:processing → c
     const failedCalls = dispatchCalls.filter((a) => a.type === 'chatState/sendFailed');
     expect(failedCalls).toEqual([
       expect.objectContaining({
-        payload: [AGENT, 'boom', 'turn-failed-1', { turnIdCorrelation: '12c09885d6571b4e' }],
+        payload: [
+          AGENT,
+          'boom',
+          'turn-failed-1',
+          { turnIdCorrelation: '12c09885d6571b4e' },
+          undefined,
+        ],
       }),
     ]);
   });
@@ -3624,7 +3639,7 @@ describe('daemonEventsBridge (queue drain-start — agent:queue:processing → c
 
     const failedCalls = dispatchCalls.filter((a) => a.type === 'chatState/sendFailed');
     expect(failedCalls).toEqual([
-      expect.objectContaining({ payload: [AGENT, 'boom', undefined, undefined] }),
+      expect.objectContaining({ payload: [AGENT, 'boom', undefined, undefined, undefined] }),
     ]);
   });
 });
@@ -4934,6 +4949,28 @@ describe('daemonEventsBridge (wire contract — mcp.servers:status-changed §6.5
     expect(appStore.state.mcpSettings.errorMessages.github).toBe('connect ECONNREFUSED');
   });
 
+  it("auth_required → preserves the daemon's recovery message", async () => {
+    seedMcpServer('srv-figma', 'figma');
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      mcpNotification({
+        serverId: 'srv-figma',
+        status: {
+          serverId: 'srv-figma',
+          state: 'auth_required',
+          lastError: 'authenticate or check configured credentials',
+        },
+      }),
+    );
+
+    expect(readStatus('figma')).toBe('auth_required');
+    expect(appStore.state.mcpSettings.errorMessages.figma).toBe(
+      'authenticate or check configured credentials',
+    );
+  });
+
   it('starting/stopped map to configured/stopped respectively', async () => {
     seedMcpServer('srv-a', 'alpha');
     await primeBridge();
@@ -5389,7 +5426,7 @@ describe('daemonEventsBridge (session lifecycle — agent:created/renamed/update
     expect(notifyInterruptedAgentUpdatedSpy).not.toHaveBeenCalled();
   });
 });
-describe('daemonEventsBridge (agent:retired/restored/deleted → lazy Retired bin count, §5.5 v8.2)', () => {
+describe('daemonEventsBridge (agent:retired/restored/deleted → lazy Retired bin count, §5.5 retiredCount)', () => {
   beforeAll(() => {
     appStore.init();
   });
@@ -6728,6 +6765,87 @@ describe('daemonEventsBridge (delete grace window schedule/cancel events, monore
     expect(backendRequestSpy).toHaveBeenCalledWith('agent.list', {
       workspaceId: PENDING_WS,
     });
+  });
+
+  it('agent:delete-scheduled → agent:delete-cancelled round-trips every FE-owned field', async () => {
+    const { FE_OWNED_FIELD_POLICY, MAX_MESSAGES_PER_AGENT, addMessage } =
+      await import('$store/renderer/slices/agent-session/agent-session-slice');
+    const policyKeys = Object.keys(FE_OWNED_FIELD_POLICY) as Array<keyof StoredAgentSession>;
+    const OPENED_AT = '2026-01-02T00:00:00.000Z';
+    const message = (i: number): AgentMessage =>
+      ({
+        id: `msg-${i}`,
+        role: 'user',
+        contentBlocks: [{ type: 'text', text: `m${i}` }],
+        timestamp: new Date(Date.parse('2026-01-01T00:00:00.000Z') + i * 1000).toISOString(),
+      }) as AgentMessage;
+    const liveSession: AgentSession = {
+      id: PENDING_AGENT,
+      backendSessionId: 'backend-pending',
+      workspaceId: PENDING_WS,
+      name: 'Live',
+      status: AgentStatus.Active,
+      isActive: true,
+      isResponding: true,
+      messages: Array.from({ length: MAX_MESSAGES_PER_AGENT }, (_, i) => message(i)),
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    } as AgentSession;
+    appStore.dispatch(bulkUpsertSessions([liveSession]));
+    // FE-owned fields never ride the wire snapshot; seed each one through its
+    // production writer (cap overflow latch, event fold, agent:process:queued).
+    appStore.dispatch(addMessage(PENDING_AGENT, message(MAX_MESSAGES_PER_AGENT + 1)));
+    appStore.dispatch(
+      updateSession(PENDING_AGENT, { liveTurnOpen: true, liveTurnOpenedAt: OPENED_AT }),
+    );
+    appStore.dispatch(setProcessQueueHint(PENDING_AGENT, 3, 3, 'slots'));
+    const readSession = () =>
+      (appStore.state as { agentSessions: { byAgentId: Record<string, StoredAgentSession> } })
+        .agentSessions.byAgentId[PENDING_AGENT];
+    const seeded = readSession();
+    for (const key of policyKeys) expect(seeded[key], key).toBeDefined();
+    const expected = Object.fromEntries(policyKeys.map((key) => [key, seeded[key]]));
+
+    backendRequestSpy.mockImplementation((method: string) => {
+      if (method === 'agent.list') return Promise.resolve({ agents: [] });
+      return Promise.resolve({ subscriptionId: 'sub-1' });
+    });
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    handler({
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-agent-del-scheduled-roundtrip',
+          workspaceId: PENDING_WS,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'agent:delete-scheduled',
+          actor: { type: 'user', id: 'u1' },
+          data: { agentId: PENDING_AGENT, workspaceId: PENDING_WS, deleteAt: DELETE_AT },
+        },
+      },
+    });
+    expect(readSession()).toBeUndefined();
+    handler({
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-agent-del-cancelled-roundtrip',
+          workspaceId: PENDING_WS,
+          timestamp: '2026-01-02T00:00:01.000Z',
+          type: 'agent:delete-cancelled',
+          actor: { type: 'user', id: 'u1' },
+          data: { agentId: PENDING_AGENT, workspaceId: PENDING_WS },
+        },
+      },
+    });
+    await flush();
+
+    const restored = readSession();
+    expect(restored?.name).toBe('Live');
+    for (const key of policyKeys) {
+      expect(restored?.[key], key).toEqual(expected[key]);
+    }
   });
 
   it('agent:delete-cancelled without a local snapshot still refetches the canonical list', async () => {
@@ -10075,6 +10193,36 @@ describe('daemonEventsBridge (daemon-side redrive clears stale error banner — 
     expect(readChatAgent()?.error).toBeNull();
   });
 
+  it('quota-failed turn redriven remotely (error→pending→active, no stream:start) drops the quota offer with the banner (#4455)', async () => {
+    // A quota failure sets `quotaExceeded` alongside `error`. When another
+    // client's agent.retry redrives the turn, the status edge is the only
+    // clear that runs (user-message turns emit no agent:stream:start), so the
+    // provider offer must go with the error or StreamingStatus keeps showing
+    // the retry-with buttons over the live replacement turn.
+    seedSession({ status: AgentStatus.Error });
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    appStore.dispatch(
+      chatSendFailed(AGENT, 'usage limit reached', 'turn-quota-1', undefined, {
+        providerId: 'claude-code',
+      }),
+    );
+    expect(readChatAgent()?.quotaExceeded).toEqual({ providerId: 'claude-code' });
+
+    handler(
+      notification('agent:status-changed', { agentId: AGENT, status: 'pending', isActive: false }),
+    );
+    expect(readChatAgent()?.error).toBeNull();
+    expect(readChatAgent()?.quotaExceeded).toBeNull();
+
+    handler(
+      notification('agent:status-changed', { agentId: AGENT, status: 'active', isActive: true }),
+    );
+    expect(readChatAgent()?.error).toBeNull();
+    expect(readChatAgent()?.quotaExceeded).toBeNull();
+  });
+
   it('failure-toast agent.retry repro: agent:failed → error → pending → active → queue:processing clears the banner', async () => {
     // Second live repro on monorepo#1106: the failure-toast Retry is
     // FE-initiated but routes through `agent.retry`, NOT the chat-send
@@ -11889,14 +12037,20 @@ describe('daemonEventsBridge (REV-2 §5.17 — client:* / browser:tab-* / browse
     expect(backendRequestSpy.mock.calls.filter(([m]) => m === 'client.list')).toEqual([]);
   });
 
-  it('browser:tab-opened / tab-updated / tab-closed patch the workspace tab mirror in place', async () => {
-    const { selectWorkspaceBrowserTabs } =
+  it('browser:tab-opened / tab-updated / tab-closed dispatch the tab event actions and advance tabsRevision', async () => {
+    const { browserTabClosed, browserTabUpserted } =
+      await import('$store/renderer/slices/browser-clients/browser-clients-slice');
+    const { selectWorkspaceBrowserTabsRevision } =
       await import('$store/renderer/slices/browser-clients/browser-clients-selectors');
     await primeBridge();
     const handler = capturedHandlers[0]!;
+    const originalDispatch = appStore.dispatch;
+    const dispatchSpy = vi.fn(originalDispatch);
+    const dispatchGetterSpy = vi.spyOn(appStore, 'dispatch', 'get').mockReturnValue(dispatchSpy);
 
     handler(tabNotification('browser:tab-opened', { tab: TAB }));
-    expect(selectWorkspaceBrowserTabs.select(appStore.state, WS_BC)).toEqual([TAB]);
+    expect(dispatchSpy).toHaveBeenCalledWith(browserTabUpserted(WS_BC, TAB as never));
+    expect(selectWorkspaceBrowserTabsRevision.select(appStore.state, WS_BC)).toBe(1);
 
     const moved = {
       ...TAB,
@@ -11904,104 +12058,26 @@ describe('daemonEventsBridge (REV-2 §5.17 — client:* / browser:tab-* / browse
       updatedAt: '2026-09-07T00:00:02.000Z',
     };
     handler(tabNotification('browser:tab-updated', { tab: moved, changes: { url: moved.url } }));
-    expect(selectWorkspaceBrowserTabs.select(appStore.state, WS_BC)).toEqual([moved]);
+    expect(dispatchSpy).toHaveBeenCalledWith(browserTabUpserted(WS_BC, moved as never));
+    expect(selectWorkspaceBrowserTabsRevision.select(appStore.state, WS_BC)).toBe(2);
 
     handler(tabNotification('browser:tab-closed', { tab: moved }));
-    expect(selectWorkspaceBrowserTabs.select(appStore.state, WS_BC)).toEqual([]);
+    expect(dispatchSpy).toHaveBeenCalledWith(browserTabClosed(WS_BC, TAB.tabId));
+    expect(selectWorkspaceBrowserTabsRevision.select(appStore.state, WS_BC)).toBe(3);
 
     // Self-sufficient payloads: no browser.listTabs refetch is issued.
     expect(backendRequestSpy.mock.calls.filter(([m]) => m === 'browser.listTabs')).toEqual([]);
-  });
-
-  it('browser:tab-updated replaces the listed row: cleared optionals drop, presence decoration stays', async () => {
-    const { workspaceBrowserTabsReceived } =
-      await import('$store/renderer/slices/browser-clients/browser-clients-slice');
-    const { selectWorkspaceBrowserTabs } =
-      await import('$store/renderer/slices/browser-clients/browser-clients-selectors');
-    await primeBridge();
-    const handler = capturedHandlers[0]!;
-
-    const listed = {
-      ...TAB,
-      title: 'Example',
-      requestedUrl: 'https://example.com/',
-      ownerAgentId: 'agent-1',
-      ownerAgentName: 'Agent',
-      emulatedSize: { width: 1280, height: 800 },
-      hostConnected: true,
-      hostName: 'Intent Desktop',
-    };
-    appStore.dispatch(workspaceBrowserTabsReceived(WS_BC, [listed as never], 0));
-
-    // The daemon released the owner, cleared the title, requestedUrl and
-    // emulation: the event row omits them.
-    const released = {
-      ...TAB,
-      url: 'https://example.com/next',
-      updatedAt: '2026-09-07T00:00:02.000Z',
-    };
-    handler(
-      tabNotification('browser:tab-updated', { tab: released, changes: { url: released.url } }),
-    );
-
-    expect(selectWorkspaceBrowserTabs.select(appStore.state, WS_BC)).toEqual([
-      { ...released, hostConnected: true, hostName: 'Intent Desktop' },
-    ]);
-  });
-
-  it('browser:tab-updated moving a tab to another host recomputes hostConnected / hostName from client.list', async () => {
-    const { liveClientsReceived, workspaceBrowserTabsReceived } =
-      await import('$store/renderer/slices/browser-clients/browser-clients-slice');
-    const { selectWorkspaceBrowserTabs } =
-      await import('$store/renderer/slices/browser-clients/browser-clients-selectors');
-    await primeBridge();
-    const handler = capturedHandlers[0]!;
-
-    const LAPTOP_ROW = { ...DESK_ROW, clientId: 'cli-laptop', name: 'Intent Laptop' };
-    appStore.dispatch(liveClientsReceived([DESK_ROW as never, LAPTOP_ROW as never]));
-    appStore.dispatch(
-      workspaceBrowserTabsReceived(
-        WS_BC,
-        [{ ...TAB, hostConnected: true, hostName: 'Intent Desktop' } as never],
-        0,
-      ),
-    );
-
-    const onLaptop = { ...TAB, hostClientId: 'cli-laptop', updatedAt: '2026-09-07T00:00:02.000Z' };
-    handler(
-      tabNotification('browser:tab-updated', {
-        tab: onLaptop,
-        changes: { hostClientId: onLaptop.hostClientId },
-      }),
-    );
-    expect(selectWorkspaceBrowserTabs.select(appStore.state, WS_BC)).toEqual([
-      { ...onLaptop, hostConnected: true, hostName: 'Intent Laptop' },
-    ]);
-
-    const onUnknown = {
-      ...onLaptop,
-      hostClientId: 'cli-gone',
-      updatedAt: '2026-09-07T00:00:03.000Z',
-    };
-    handler(
-      tabNotification('browser:tab-updated', {
-        tab: onUnknown,
-        changes: { hostClientId: onUnknown.hostClientId },
-      }),
-    );
-    expect(selectWorkspaceBrowserTabs.select(appStore.state, WS_BC)).toEqual([
-      { ...onUnknown, hostConnected: false },
-    ]);
+    dispatchGetterSpy.mockRestore();
   });
 
   it('ignores a browser:tab-* event whose payload is not a registry row', async () => {
-    const { selectWorkspaceBrowserTabs } =
+    const { selectWorkspaceBrowserTabsRevision } =
       await import('$store/renderer/slices/browser-clients/browser-clients-selectors');
     await primeBridge();
     const handler = capturedHandlers[0]!;
 
     handler(tabNotification('browser:tab-opened', { tab: { tabId: 'tab-x' } }));
-    expect(selectWorkspaceBrowserTabs.select(appStore.state, WS_BC)).toEqual([]);
+    expect(selectWorkspaceBrowserTabsRevision.select(appStore.state, WS_BC)).toBe(0);
   });
 
   it('workspace:updated browserClientId delta merges the pin and re-reads workspace.getBrowserClient', async () => {

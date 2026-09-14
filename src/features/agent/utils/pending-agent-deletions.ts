@@ -2,7 +2,7 @@
  * Pending agent-deletion registry — soft-hidden deletions awaiting the
  * daemon-owned commit.
  *
- * Agent deletion uses the daemon delete grace window (PROTOCOL §5.5, v6.7+):
+ * Agent deletion uses the daemon delete grace window (PROTOCOL §5.5):
  * the session is hidden locally and `agent.delete { undoDelayMs }` is sent
  * immediately, so the daemon owns the 15s window and commits at the deadline
  * even if the FE quits. During that window the daemon still returns the agent
@@ -24,7 +24,7 @@
  * wire calls — just a module-level Map with simple accessors and mutators
  * over it (no side effects beyond that Map).
  */
-import type { AgentSession } from '$shared/types';
+import type { StoredAgentSession } from '$store/renderer/slices/agent-session/agent-session-types';
 
 /**
  * A soft-hidden agent deletion awaiting commit. `snapshot` is absent when the
@@ -36,7 +36,7 @@ import type { AgentSession } from '$shared/types';
 export interface PendingAgentDeletion {
   wsId: string;
   agentId: string;
-  snapshot?: AgentSession;
+  snapshot?: StoredAgentSession;
 }
 
 const pendingAgentDeletions = new Map<string, PendingAgentDeletion>();

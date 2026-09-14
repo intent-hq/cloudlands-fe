@@ -355,15 +355,71 @@ describe('openBackendWindow connect-before-open', () => {
     const result = await mod.openBackendWindow('remote-1');
     expect(result).toEqual({ id: 'remote-1' });
 
-    // Ordering: construct/start the target's client, and open its window only
-    // after the connect + authenticated probe. The local pool member (#1) is
-    // never disposed — main-process services stay on it.
+    // Ordering: construct/start the target's client, and open its window once
+    // the pooled client exists. The local pool member (#1) is never disposed —
+    // main-process services stay on it.
     const kinds = lifecycle.events.map((e) => `${e.type}#${e.seq}`);
     expect(kinds).toEqual(['construct#1', 'start#1', 'construct#2', 'start#2', 'open#0']);
 
     // The open never flips the persisted whole-app selection.
     expect(store.setActiveId).not.toHaveBeenCalled();
     expect(openOrFocus).toHaveBeenCalledWith('remote-1');
+  });
+
+  it('opens a remote window immediately while its host.status never answers (black-holed host)', async () => {
+    // A dead remote never answers any request. The open must not wait on a
+    // pre-window probe (nor its timeout): the window appears as soon as the
+    // pooled client is built and the renderer's overlay owns the feedback.
+    rpc.handler = (method) => {
+      if (method === 'host.status') return new Promise(() => {});
+      return Promise.resolve({});
+    };
+    const { mod, openOrFocus } = await loadModule();
+    mod.getBackendClient();
+
+    const open = mod.openBackendWindow('remote-1');
+    const settled = await Promise.race([
+      open,
+      new Promise<'stalled'>((r) => setTimeout(() => r('stalled'), 500)),
+    ]);
+    expect(settled).toEqual({ id: 'remote-1' });
+    expect(openOrFocus).toHaveBeenCalledWith('remote-1');
+    // The client is retained so its reconnect loop keeps retrying.
+    expect(mod.getBackendClientForConnection('remote-1')).toBeDefined();
+    expect(lifecycle.events.filter((e) => e.type === 'dispose')).toEqual([]);
+  });
+
+  it('a black-holed first remote open does not delay a second remote open', async () => {
+    const REMOTE_B = { ...REMOTE, id: 'remote-2', label: 'Other', host: '10.0.0.6' };
+    store.list.mockResolvedValue([LOCAL, REMOTE, REMOTE_B]);
+    rpc.handler = (method) => {
+      if (method === 'host.status') return new Promise(() => {});
+      return Promise.resolve({});
+    };
+    const { mod, openOrFocus } = await loadModule();
+    mod.getBackendClient();
+
+    const openA = mod.openBackendWindow('remote-1');
+    const openB = mod.openBackendWindow('remote-2');
+    const settled = await Promise.race([
+      Promise.all([openA, openB]),
+      new Promise<'stalled'>((r) => setTimeout(() => r('stalled'), 500)),
+    ]);
+    expect(settled).toEqual([{ id: 'remote-1' }, { id: 'remote-2' }]);
+    expect(openOrFocus.mock.calls.map(([id]) => id)).toEqual(['remote-1', 'remote-2']);
+  });
+
+  it('a local open still awaits the host.status probe and rejects on failure', async () => {
+    rpc.handler = async (method) => {
+      if (method === 'host.status') throw new Error('daemon not ready');
+      return {};
+    };
+    const { mod, openOrFocus } = await loadModule();
+
+    await expect(mod.openBackendWindow('local')).rejects.toThrow(/daemon not ready/);
+    expect(openOrFocus).not.toHaveBeenCalled();
+    // The always-on local member is never torn down on a failed probe.
+    expect(lifecycle.events.filter((e) => e.type === 'dispose')).toEqual([]);
   });
 
   it('rejects an unknown target BEFORE any window opens (live client untouched)', async () => {
@@ -2099,22 +2155,17 @@ describe('connections:* IPC handlers', () => {
     const remote = mod.getBackendClientForConnection('remote-1');
     expect(remote).toBeDefined();
     expect(remote).not.toBe(local);
-    // A remote open's probe is bounded (5s) so a black-holed connect cannot
-    // sit out the 30s client default before the window appears.
-    expect(remote?.request).toHaveBeenCalledWith('host.status', undefined, {
-      timeoutMs: 5_000,
-    });
     expect(mod.getBackendClient()).toBe(local);
     expect(mod.getBackendClientForConnection('local')).toBe(local);
     expect(openOrFocus).toHaveBeenCalledWith('remote-1');
     expect(store.setActiveId).not.toHaveBeenCalled();
   });
 
-  it('connections:open opens the window and retains the client when the remote probe fails', async () => {
+  it('connections:open opens the window and retains the client when the remote rejects requests', async () => {
     // An unreachable/rejecting remote must not fail the click silently: the
-    // window opens anyway, the pooled client is RETAINED (its reconnect loop
-    // keeps retrying), and the renderer's connection-lost overlay owns
-    // recovery. Local stays untouched.
+    // window opens, the pooled client is RETAINED (its reconnect loop keeps
+    // retrying), and the renderer's connection-lost overlay owns recovery.
+    // Local stays untouched.
     rpc.handler = async (method) => {
       if (method === 'host.status') throw new Error('remote unreachable');
       return {};
@@ -2137,8 +2188,8 @@ describe('connections:* IPC handlers', () => {
     expect(store.setActiveId).not.toHaveBeenCalled();
   });
 
-  it('connections:open opens the window on a probe auth/cert failure and replays the latched event', async () => {
-    // A cert-mismatch/auth-rejected probe failure also opens the window: the
+  it('connections:open opens the window on an auth/cert failure and replays the latched event', async () => {
+    // A cert-mismatch/auth-rejected remote also opens the window: the
     // transport raises the typed error on the retained client, whose latched
     // failure event is replayed to the new window via connections:list — the
     // trust modal / re-pair overlay surfaces there instead of a failed click.

@@ -13,9 +13,11 @@
   import LineChangeStats from '$lib/components/shared/LineChangeStats.svelte';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import {
+    selectAgentIsResponding,
     selectAgentSession,
     selectAgentPreview,
   } from '$store/renderer/slices/agent-session/agent-session-selectors';
+  import { selectPendingQuestionRecovery } from '$store/renderer/slices/chat-state/chat-state-selectors';
   import {
     deleteAgentWithUndoRequested,
     ensureAgentSessionLoaded,
@@ -30,8 +32,11 @@
   import { selectAgentLineStats } from '$store/renderer/slices/changes/changes-selectors';
   import AgentAvatarWithState from '$features/agent/components/agent-avatar/AgentAvatarWithState.svelte';
   import { getAvatarStateForSession } from '$features/agent/components/agent-avatar/avatar-state';
+  import { isAgentRunningState, toAgentRuntimeStateInput } from '$shared/utils/agent-runtime-state';
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { selectPendingCount } from '$store/renderer/slices/permission/permission-selectors';
+  import { selectHudAgentHasPendingQuestion } from '$store/renderer/slices/hud/hud-selectors';
+  import { deriveWizardPendingQuestions } from './questions/wizard-gate';
   import { safeSlide } from '$lib/utils/animations';
   import { findSourcePanelId } from '$lib/utils/workspace-navigation';
   import { updateSession as updateAgentSessionFields } from '$store/renderer/slices/agent-session/agent-session-slice';
@@ -149,6 +154,9 @@
   });
 
   const agentPermCount = selectPendingCount(agentIdStore);
+  const hasCapturedQuestion$ = selectHudAgentHasPendingQuestion(agentIdStore);
+  const pendingQuestionRecovery$ = selectPendingQuestionRecovery(agentIdStore);
+  const agentIsResponding$ = selectAgentIsResponding(agentIdStore);
 
   $effect(() => {
     const wsId = workspace?.id;
@@ -358,8 +366,11 @@
       });
     }
 
-    // Add stop option if agent is running
-    if (avatarState === 'running' || avatarState === 'responding') {
+    // Add stop option if agent is running. Gate on the canonical runtime
+    // state, not the display state: user-attention states (question,
+    // needs-permission, …) outrank `running` in getAvatarState, but a live
+    // turn must stay stoppable regardless of what the avatar shows.
+    if (isTurnRunning) {
       items.push({
         id: 'stop',
         label: m.chat_agentCard_menu_stop_label(),
@@ -502,10 +513,32 @@
   // fields; null when none is pending (retired on agent:updated clear).
   const attentionRequest = $derived(getAgentAttentionRequest($agent$));
 
+  // Mirrors PanelHeaderAgentAvatar / the mini dock: captured HUD question or
+  // transcript-derived pending question set.
+  const hasQuestion = $derived.by(() => {
+    if ($hasCapturedQuestion$) return true;
+    // The shared gate reads the responding flag, the marker/dismissal metadata
+    // and the out-of-tail recovery result straight from store state; touching
+    // the readables here keeps this $derived reactive to changes that do not
+    // alter the session's message array (recovery settling, gate flips).
+    void $agentIsResponding$;
+    void $agent$?.metadata?.pendingQuestionsMessageId;
+    void $agent$?.metadata?.dismissedQuestionsMessageId;
+    void $pendingQuestionRecovery$;
+    return deriveWizardPendingQuestions(appStore.state, agentId, $agent$?.messages ?? []) !== null;
+  });
+
+  // Canonical running predicate for the session, independent of the display
+  // precedence applied by getAvatarState below.
+  const isTurnRunning = $derived(
+    $agent$ ? isAgentRunningState(toAgentRuntimeStateInput($agent$)) : false,
+  );
+
   // Use the canonical session state derivation for every agent surface.
   const avatarState = $derived(
     getAvatarStateForSession($agent$, {
       hasPermissionRequest: $agentPermCount > 0,
+      hasQuestion,
       isActive: selected,
       isCompleted,
       attentionKind: attentionRequest?.kind ?? null,
@@ -560,11 +593,12 @@
 
   const updatedAt = $derived(updatedAtProp ?? $agent$?.updatedAt);
 
-  // Border color based on state - only show colored border if showStateBorder is true
-  const isRunning = $derived(avatarState === 'running' || avatarState === 'responding');
+  // Border color based on state - only show colored border if showStateBorder
+  // is true. Keyed on the display state (not isTurnRunning) so the amber/red
+  // attention shadows keep their precedence over the active glow.
   const glowClass = $derived.by(() => {
     if (!showStateBorder) return '';
-    if (isRunning) return 'agent-glow-active';
+    if (avatarState === 'running' || avatarState === 'responding') return 'agent-glow-active';
     if (avatarState === 'failed') return 'shadow shadow-red-500 shadow-sm';
     if (avatarState === 'needs-permission') return 'shadow shadow-amber-500 shadow-sm';
     if (avatarState === 'attention-discussion') return 'shadow shadow-amber-500 shadow-sm';
@@ -881,7 +915,7 @@
                 class="block w-full min-w-0 max-w-full truncate whitespace-nowrap text-sm text-subtle"
                 data-testid="agent-card-preview"
               >
-                <AgentPreviewToolLabel toolUse={$preview$.toolUse} animate={isRunning} />
+                <AgentPreviewToolLabel toolUse={$preview$.toolUse} animate={isTurnRunning} />
               </div>
             {:else if $preview$.kind === 'report'}
               <p

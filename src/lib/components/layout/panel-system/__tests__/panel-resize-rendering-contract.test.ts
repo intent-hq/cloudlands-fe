@@ -1,3 +1,6 @@
+// @verify-changed-triggers: ../Panel.svelte, ../PanelCanvasFrame.svelte, ../PanelContainer.svelte,
+//   ../PanelLayout.svelte
+
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';

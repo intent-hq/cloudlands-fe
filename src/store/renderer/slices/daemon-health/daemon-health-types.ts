@@ -72,7 +72,7 @@ export interface SystemStatusWirePayload {
 }
 
 /**
- * unsloth.status wire payload (protocol 2.5, intentd traits.rs / PROTOCOL §5.37):
+ * unsloth.status wire payload (intentd traits.rs / PROTOCOL §5.37):
  * `{ running, repoId?, port?, pid?, uptimeSecs?, phase?, cpuPercent?,
  * memoryBytes?, attachedAgentCount? }`. `running: false` means no managed
  * server is up and every per-server field is omitted. `attachedAgentCount`

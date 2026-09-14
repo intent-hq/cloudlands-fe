@@ -46,6 +46,7 @@
     updateServer,
     importFromJson,
     restartServer,
+    authenticateServer,
     saveAdvancedJson,
   } from '$store/renderer/slices/mcp-settings/mcp-settings-slice';
 
@@ -191,23 +192,8 @@
     );
   }
 
-  async function handleReauthenticate(name: string) {
-    logger.info('Reauthenticate requested for:', name);
-
-    // Find the server by name
-    const currentServers = selectMcpServersWithStatus.select(appStore.state);
-    const server = currentServers.find((s) => s.name === name);
-    if (!server) {
-      logger.warn('Server not found:', name);
-      return;
-    }
-
-    // Edit mode for manual auth configuration
-    editingServer = server;
-    toast.info(m.settings_mcpServers_configureAuthToast(), {
-      description: m.settings_mcpServers_configureAuthDescription(),
-      duration: 5000,
-    });
+  function handleReauthenticate(name: string) {
+    appStore.dispatch(authenticateServer(name));
   }
 
   // Easy MCP Install functions

@@ -37,7 +37,11 @@ describe('CatalogScene', () => {
     mocks.loadPreview.mockImplementation(async (slug: string) =>
       slug === 'button' ? loadedButton : undefined,
     );
-    mocks.waitForCaptureStability.mockResolvedValue({ imageCount: 0, reducedMotion: true });
+    mocks.waitForCaptureStability.mockResolvedValue({
+      imageCount: 0,
+      deferredImageCount: 0,
+      reducedMotion: true,
+    });
   });
 
   afterEach(() => cleanup());
@@ -189,7 +193,11 @@ describe('CatalogScene', () => {
   });
 
   it('does not publish DOM or API readiness before capture stability resolves', async () => {
-    const stability = deferred<{ imageCount: number; reducedMotion: boolean }>();
+    const stability = deferred<{
+      imageCount: number;
+      deferredImageCount: number;
+      reducedMotion: boolean;
+    }>();
     mocks.waitForCaptureStability.mockReturnValueOnce(stability.promise);
     render(CatalogScene, {
       props: { slug: 'button', requestedState: 'loading', requestedWidth: 420 },
@@ -204,7 +212,7 @@ describe('CatalogScene', () => {
       expect.objectContaining({ status: 'ready' }),
     );
 
-    stability.resolve({ imageCount: 0, reducedMotion: true });
+    stability.resolve({ imageCount: 0, deferredImageCount: 0, reducedMotion: true });
     await waitFor(() =>
       expect(screen.getByTestId('catalog-scene').dataset.previewReady).toBe('true'),
     );

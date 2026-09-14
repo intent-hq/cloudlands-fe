@@ -1,7 +1,8 @@
 # Redux Store — Agent Directives
 
 > Architecture update — the renderer uses the published Themis runtime.
-> `@augmentcode/themis@0.1.1` is the canonical Store implementation. Themis
+> The `@augmentcode/themis` version declared in `package.json` is the canonical
+> Store implementation. Themis
 > owns its saga middleware and initializes it during `Store.init()`; do not add
 > another saga middleware. `store.runSaga(sagaFn)` starts an app-owned saga and
 > returns its cancellation handler. Business side effects belong to root-owned
@@ -11,7 +12,7 @@ Use these rules when creating or editing code in `src/store/renderer/` so Redux 
 
 ## Source of Truth
 
-- The published `@augmentcode/themis@0.1.1` exports and installed Themis skills are the source of truth for the store API surface.
+- The published exports of the `@augmentcode/themis` version declared in `package.json` and installed Themis skills are the source of truth for the store API surface.
 - This file is a repository-local companion checklist for `src/store/renderer/`. Keep it concise.
 - If this file conflicts with the installed Themis runtime, follow the runtime and report the instruction drift instead of extending local guidance.
 

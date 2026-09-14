@@ -650,6 +650,7 @@ export const TerminalCreateWithCommandSchema = z.object({
    * Defaults to `false` (existing auto-run behavior).
    */
   pasteOnly: z.boolean().optional(),
+  interactive: z.boolean().optional(),
 });
 
 export const AgentContextUpdateSchema = z.object({
@@ -810,6 +811,13 @@ export const XcodeOpenSchema = z.union([
 ]);
 
 // USER_MCP_CHANNELS schemas
+export const UserMcpAuthenticateSchema = z.object({
+  serverId: z.string().min(1, 'Server ID is required'),
+  // Advisory only: the handler resolves the OAuth URL from the daemon record
+  // by `serverId` and rejects a renderer URL that disagrees with it.
+  url: z.string().url('A valid MCP server URL is required').optional(),
+});
+
 export const UserMcpCheckAuthSchema = z.object({
   url: z.string().min(1, 'URL is required'),
   name: z.string().optional(), // Server name for OAuth token lookup

@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import type { ViteDevServer } from 'vite';
 import { createServer } from 'vite';
+import { viteHarnessCacheDir } from './vite-harness-cache.mjs';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -10,6 +11,7 @@ let baseUrl: string;
 test.beforeAll(async () => {
   test.setTimeout(120_000);
   server = await createServer({
+    cacheDir: viteHarnessCacheDir('user-message-surface'),
     server: { host: '127.0.0.1', port: 0, strictPort: false, watch: { ignored: ['**/*'] } },
   });
   await server.listen();

@@ -111,6 +111,9 @@
     margin-block: var(--chat-polish-failure-notice-top-gap, 16px)
       var(--chat-polish-failure-notice-bottom-gap, 16px);
   }
+  :global(.chat-polish-preview [data-adjacent-operational-row='true']) {
+    margin-top: var(--chat-operational-row-gap, 0px);
+  }
   :global(.chat-polish-preview [data-testid='event-wakeup-card']),
   :global(.chat-polish-preview [data-testid='event-subscriptions-card']),
   :global(.chat-polish-preview [data-testid='user-message-surface']) {

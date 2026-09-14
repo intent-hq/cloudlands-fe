@@ -1,8 +1,8 @@
 /**
  * T14 — label a remote connection by its hostname on open.
  *
- * When `openBackendWindow` connects to a remote, it reuses the live client's
- * `host.status` capability probe (the same call the heartbeat issues) to read
+ * When `openBackendWindow` connects to a remote, it issues a `host.status`
+ * request on the live client (the same call the heartbeat issues) to read
  * the remote machine's hostname, persists it on the connection record, and
  * re-broadcasts the list so the menu can upgrade `host:port` to
  * `hostname (host:port)`. The capture is fire-and-forget: it must never block
@@ -311,21 +311,19 @@ describe('openBackendWindow serialization (monorepo#2221)', () => {
     const mod = await loadModule();
     mod.__setBackendWindowHooksForTesting({ openOrFocus });
 
-    // Open A: its inline `host.status` probe parks on the slow answer, so the
-    // queued open-to-B makes no progress while A's operation is in flight.
+    // Open A then B. A's slow `host.status` only parks its fire-and-forget
+    // hostname capture — neither window waits on it, and the serialized
+    // operations still open in request order.
     const openA = mod.openBackendWindow('remote-1');
     const openB = mod.openBackendWindow('remote-2');
-    await vi.waitFor(() => expect(slowAResolvers.length).toBeGreaterThanOrEqual(1));
-    expect(openOrFocus).not.toHaveBeenCalled();
-
-    slowAResolvers[0]({ hostname: 'alpha.local' });
     await expect(openA).resolves.toEqual({ id: 'remote-1' });
     await expect(openB).resolves.toEqual({ id: 'remote-2' });
     expect(openOrFocus.mock.calls.map(([id]) => id)).toEqual(['remote-1', 'remote-2']);
-    // The fire-and-forget capture issued its own (second) host.status against
-    // A's slow deferred; answer it so the label persists.
-    await vi.waitFor(() => expect(slowAResolvers.length).toBeGreaterThanOrEqual(2));
-    slowAResolvers[1]({ hostname: 'alpha.local' });
+
+    // A's capture is still pending on the slow deferred; answer it so the
+    // label persists.
+    await vi.waitFor(() => expect(slowAResolvers.length).toBeGreaterThanOrEqual(1));
+    slowAResolvers[0]({ hostname: 'alpha.local' });
 
     // Each backend's capture labels its own record.
     await vi.waitFor(() => {
@@ -427,13 +425,12 @@ describe('reconnect hello hostname refresh', () => {
 
 describe('captureRemoteHostname stale-completion guard (monorepo#2221)', () => {
   it('discards a host.status result that arrives after the client was disposed', async () => {
-    // A's inline open probe answers immediately; the fire-and-forget capture's
-    // second `host.status` stays pending until the test resolves it.
+    // The fire-and-forget capture's `host.status` stays pending until the test
+    // resolves it.
     let probeCount = 0;
     let resolveSlowCapture!: (value: unknown) => void;
     hostStatus.byHost.set('10.0.0.5', () => {
       probeCount += 1;
-      if (probeCount === 1) return Promise.resolve({});
       return new Promise((r) => (resolveSlowCapture = r));
     });
 
@@ -443,7 +440,7 @@ describe('captureRemoteHostname stale-completion guard (monorepo#2221)', () => {
     // Open A (its capture stays pending on the slow probe), then dispose A's
     // client — e.g. its last window was closed — before the probe resolves.
     await mod.openBackendWindow('remote-1');
-    await vi.waitFor(() => expect(probeCount).toBe(2));
+    await vi.waitFor(() => expect(probeCount).toBe(1));
     mod.disconnectBackendClient('remote-1');
 
     const broadcastsBeforeLateResult = send.mock.calls.filter(

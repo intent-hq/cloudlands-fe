@@ -2,11 +2,6 @@
   animation: sidebar-locate-pulse 1.5s ease-out;
 }
 
-.sidebar-expanded-content {
-  opacity: var(--sidebar-card-content-opacity, 1);
-  transform: translateY(var(--sidebar-card-content-y, 0));
-}
-
 .sidebar-expanded-card-shell {
   --sidebar-expanded-card-max-block-size: 600px;
 }
@@ -121,11 +116,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .sidebar-expanded-content {
-    opacity: 1;
-    transform: none;
-  }
-
   .sidebar-expanded-tab {
     transition: none;
   }

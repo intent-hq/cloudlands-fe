@@ -108,7 +108,7 @@ describe('context-api', () => {
     });
   });
 
-  describe('placeAttachment (file.placeAttachment, PROTOCOL §5.9, v6.5)', () => {
+  describe('placeAttachment (file.placeAttachment, PROTOCOL §5.9)', () => {
     it('sends the base64 data variant on the wire and returns the daemon result', async () => {
       mockBackendRequest.mockResolvedValueOnce({
         ok: true,

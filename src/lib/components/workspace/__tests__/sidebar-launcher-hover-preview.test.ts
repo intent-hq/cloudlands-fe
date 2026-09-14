@@ -7,6 +7,9 @@ import {
   getAgentLauncherPreview,
   getNoteLauncherPreview,
 } from '../utils/sidebar-launcher-preview';
+import { warmImport } from '../../../../test/warm-import';
+
+warmImport(() => import('../sidebar/SidebarLauncherHoverCard.svelte'));
 
 function source(relativePath: string) {
   return readFileSync(new URL(relativePath, import.meta.url), 'utf8');

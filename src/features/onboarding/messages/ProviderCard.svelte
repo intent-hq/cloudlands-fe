@@ -19,6 +19,7 @@
   import ProviderIcon from '$features/agent/components/AgentProviderIcon.svelte';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import CopyButton from '$lib/components/ui/CopyButton.svelte';
+  import ClaudeLoginButton from './ClaudeLoginButton.svelte';
   import { shell } from '$lib/electron-bridge';
   import { m } from '$shared/paraglide/messages.js';
   import { CLAUDE_CODE_NPX_MISSING_WARNING } from '$shared/constants/claude-code';
@@ -252,10 +253,14 @@
         {:else if authUnknown}
           <span>{m.providers_antigravity_authUnknown()}</span>
         {:else if needsLogin}
-          <span
-            class="border border-border rounded-sm bg-background text-foreground px-2.25 py-0.75 font-medium"
-            >{m.onboarding_providerCard_logIn_label()}</span
-          >
+          {#if provider.id === 'claude-code'}
+            <ClaudeLoginButton />
+          {:else}
+            <span
+              class="border border-border rounded-sm bg-background text-foreground px-2.25 py-0.75 font-medium"
+              >{m.onboarding_providerCard_logIn_label()}</span
+            >
+          {/if}
         {:else}
           <span
             class="border border-border rounded-sm bg-background text-foreground px-2.25 py-0.75 font-medium"
@@ -293,7 +298,7 @@
       <!-- Actionable login guidance: the catalog's login command with
            copy-to-clipboard (docs link above stays the secondary action).
            Clicks must not bubble to the card (which opens docs). -->
-      {#if needsLogin && provider.loginCommandHint}
+      {#if needsLogin && provider.id !== 'claude-code' && provider.loginCommandHint}
         <!-- svelte-ignore a11y_no_static_element_interactions, a11y_click_events_have_key_events -->
         <div
           data-testid="provider-card-login-hint"
@@ -309,14 +314,6 @@
             <CopyButton text={provider.loginCommandHint} class="hover:bg-background/60" />
           </div>
         </div>
-      {/if}
-
-      <!-- claude-code: a desktop-app sign-in does not carry over to the CLI
-           credential chain — the CLI login is still required. -->
-      {#if needsLogin && provider.id === 'claude-code'}
-        <p data-testid="provider-card-claude-desktop-note" class="mt-2 text-xs opacity-70">
-          {m.onboarding_providerCard_claudeDesktopNote_label()}
-        </p>
       {/if}
 
       <!-- npx requirement hint for shim providers when binary not installed + npx missing/old -->
