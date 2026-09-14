@@ -24,7 +24,7 @@
  * wire calls — just a module-level Map with simple accessors and mutators
  * over it (no side effects beyond that Map).
  */
-import type { AgentSession } from '$shared/types';
+import type { StoredAgentSession } from '$store/renderer/slices/agent-session/agent-session-types';
 
 /**
  * A soft-hidden agent deletion awaiting commit. `snapshot` is absent when the
@@ -36,7 +36,7 @@ import type { AgentSession } from '$shared/types';
 export interface PendingAgentDeletion {
   wsId: string;
   agentId: string;
-  snapshot?: AgentSession;
+  snapshot?: StoredAgentSession;
 }
 
 const pendingAgentDeletions = new Map<string, PendingAgentDeletion>();

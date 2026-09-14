@@ -585,6 +585,16 @@ function applyFeOwnedFieldPolicy<K extends keyof FeOwnedSessionState>(
   else target[key] = value;
 }
 
+function restoreFeOwnedField<K extends keyof FeOwnedSessionState>(
+  target: FeOwnedSessionState,
+  key: K,
+  saved: Readonly<FeOwnedSessionState>,
+): void {
+  const value = saved[key];
+  if (value === undefined) delete target[key];
+  else target[key] = value;
+}
+
 /**
  * Comparison key for the FE-owned fields, driven by the same key set as the
  * policy table so a drop-only refresh of any FE-owned field is never swallowed
@@ -1177,6 +1187,35 @@ function applySessionUpsert(
   return next;
 }
 
+/**
+ * Reinstate a previously stored session (soft-hide undo, failed delete,
+ * `agent:delete-cancelled`). Unlike a wire snapshot, the saved session already
+ * carries its FE-owned fields, so they are copied back verbatim instead of
+ * running the carry-forward policy — that policy seeds from `existing`, which
+ * a restore after `removeSession` never has.
+ */
+function applyStoredSessionRestore(
+  state: AgentSessionState,
+  session: StoredAgentSession,
+): AgentSessionState {
+  const finalSession = toStoredSession(session);
+  const agentId = String(finalSession.id);
+  const wsId = String(session.workspaceId);
+  for (const key of FE_OWNED_FIELD_KEYS) {
+    restoreFeOwnedField(finalSession, key, session);
+  }
+
+  const existing = getSession(state, agentId);
+  const alreadyIndexed = (state.agentIdsByWorkspace[wsId] ?? []).includes(agentId);
+  if (existing && alreadyIndexed && isSessionEquivalent(existing, finalSession)) {
+    return state;
+  }
+
+  let next = setSession(state, agentId, finalSession);
+  next = registerInWorkspaceIndex(next, agentId, wsId);
+  return next;
+}
+
 function removeFromWorkspaceIndex(state: AgentSessionState, agentId: string): AgentSessionState {
   const agentIdsByWorkspace = { ...state.agentIdsByWorkspace };
   for (const wsId of Object.keys(agentIdsByWorkspace)) {
@@ -1439,6 +1478,15 @@ export const bulkUpsertSessions = createAction<
   [sessions: AgentSession[], options?: BulkUpsertSessionsOptions]
 >('agentSessions/bulkUpsertSessions');
 
+/**
+ * Reinstate saved stored sessions verbatim (FE-owned fields included). Distinct
+ * from the wire-snapshot upserts at the type level: only a `StoredAgentSession`
+ * previously read from this slice may be restored.
+ */
+export const restoreStoredSessions = createAction<[sessions: StoredAgentSession[]]>(
+  'agentSessions/restoreStoredSessions',
+);
+
 /** Remove all sessions for a workspace */
 export const removeWorkspaceSessions = createAction<[wsId: string]>(
   'agentSessions/removeWorkspaceSessions',
@@ -1640,6 +1688,13 @@ agentSessionReducer.with(bulkUpsertSessions, (state, { payload: [sessions, optio
         }
       : defaultStorageOptions;
     next = applySessionUpsert(next, session, storageOptions);
+  }
+  return next;
+});
+agentSessionReducer.with(restoreStoredSessions, (state, { payload: [sessions] }) => {
+  let next = state;
+  for (const session of sessions) {
+    next = applyStoredSessionRestore(next, session);
   }
   return next;
 });

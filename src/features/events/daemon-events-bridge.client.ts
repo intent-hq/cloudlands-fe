@@ -171,17 +171,17 @@ import {
 } from '$store/renderer/slices/chat-state/chat-state-slice';
 import { replaceAgentQueue } from '$store/renderer/slices/agent-queue/agent-queue-slice';
 import {
-  bulkUpsertSessions,
   pendingQuestionMarkersFromWorkspaceEvent,
   removeSession,
   renameSession,
+  restoreStoredSessions,
   setProcessQueueHint,
   clearProcessQueueHint,
   processEvicted,
   updateSession,
   updateAgentDigest,
-  upsertSession,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
+import type { StoredAgentSession } from '$store/renderer/slices/agent-session/agent-session-types';
 import { workspaceDeleted } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import {
   adjustRetiredCount,
@@ -3057,7 +3057,7 @@ function registerAgentDeleteTombstone(
   workspaceId: string,
   agentId: string,
   clearDelayMs: number,
-  snapshot?: AgentSession,
+  snapshot?: StoredAgentSession,
 ): void {
   setPendingAgentDeletion({ wsId: workspaceId, agentId, snapshot });
   const existing = agentDeleteTombstoneTimers.get(agentId);
@@ -3098,8 +3098,7 @@ function handleAgentDeleteCancelledEvent(event: WorkspaceEvent, workspaceId: str
   if (pending) {
     removePendingAgentDeletion(agentId);
     if (pending.snapshot) {
-      appStore.dispatch(bulkUpsertSessions([pending.snapshot]));
-      appStore.dispatch(upsertSession(pending.snapshot));
+      appStore.dispatch(restoreStoredSessions([pending.snapshot]));
       appStore.dispatch(refreshWorkspaceSubscriptionEntriesRequested(workspaceId));
     }
   }

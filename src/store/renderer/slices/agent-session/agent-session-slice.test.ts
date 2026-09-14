@@ -18,6 +18,7 @@ import {
   initialState,
   upsertSession as upsertSessionAction,
   removeSession,
+  restoreStoredSessions,
   addMessage,
   removeMessage,
   updateMessage,
@@ -6913,5 +6914,51 @@ describe('FE-owned session fields survive an agent.get refetch (FE_OWNED_FIELD_P
     );
     expect(state).not.toBe(before);
     expect(state.byAgentId['a1'].processQueueHint).toBeUndefined();
+  });
+
+  describe('stored-snapshot round trip (soft-hide undo / delete-cancelled restore)', () => {
+    it('restoreStoredSessions reinstates every FE-owned field after removeSession', () => {
+      let state = seededState();
+      const snapshot = state.byAgentId['a1'];
+      state = agentSessionReducer(state, removeSession('a1'));
+      expect(state.byAgentId['a1']).toBeUndefined();
+      state = agentSessionReducer(state, restoreStoredSessions([snapshot]));
+      expect(state.agentIdsByWorkspace['ws-1']).toContain('a1');
+      for (const key of policyKeys) {
+        expect(readField(state, key), key).toEqual(EXPECTATIONS[key].seeded);
+      }
+      expect(state.byAgentId['a1'].messages).toEqual(snapshot.messages);
+    });
+
+    it('restoreStoredSessions is a no-op when the same snapshot is already stored', () => {
+      const state = seededState();
+      const snapshot = state.byAgentId['a1'];
+      expect(agentSessionReducer(state, restoreStoredSessions([snapshot]))).toBe(state);
+    });
+
+    it('restoreStoredSessions round-trips FE-owned fields left unset (no policy re-derivation)', () => {
+      const seeded = agentSessionReducer(
+        initialState,
+        upsertSession(makeSession('a1', 'ws-1', { status: 'idle' as any, isResponding: false })),
+      );
+      const snapshot = seeded.byAgentId['a1'];
+      let state = agentSessionReducer(seeded, removeSession('a1'));
+      state = agentSessionReducer(state, restoreStoredSessions([snapshot]));
+      for (const key of policyKeys) {
+        expect(readField(state, key), key).toBeUndefined();
+      }
+    });
+
+    it('a wire upsert of the same snapshot is not a restore (policy seeds from a missing existing)', () => {
+      // Documents why the restore paths must not route through bulkUpsertSessions:
+      // with no existing row the policy has nothing to carry forward.
+      let state = seededState();
+      const snapshot = state.byAgentId['a1'];
+      state = agentSessionReducer(state, removeSession('a1'));
+      state = agentSessionReducer(state, bulkUpsertSessions([snapshot]));
+      for (const key of policyKeys) {
+        expect(readField(state, key), key).toBeUndefined();
+      }
+    });
   });
 });

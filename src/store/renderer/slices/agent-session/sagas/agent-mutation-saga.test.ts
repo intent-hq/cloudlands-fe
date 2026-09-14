@@ -54,9 +54,14 @@ import {
 import {
   agentProposalResolveRequested,
   agentSessionDismissQuestionsRequested,
+  agentSessionReducer,
   bulkUpsertSessions,
+  FE_OWNED_FIELD_POLICY,
+  initialState as agentSessionInitialState,
+  restoreStoredSessions,
   updateSession,
 } from '../agent-session-slice';
+import type { FeOwnedSessionState, StoredAgentSession } from '../agent-session-types';
 import {
   agentScopedProposalKey,
   proposalResolutionReconciled,
@@ -147,8 +152,11 @@ describe('agentMutationSaga', () => {
 
     await expect(action.promise).resolves.toBeUndefined();
     expect(mocks.restore).toHaveBeenCalledWith(A1, WS);
-    const upsert = dispatched.find((candidate) => candidate.type === bulkUpsertSessions.type);
-    expect(upsert.payload[0][0]).toEqual(expect.objectContaining({ id: A1, retiredAt: undefined }));
+    const restore = dispatched.find((candidate) => candidate.type === restoreStoredSessions.type);
+    expect(restore.payload[0][0]).toEqual(
+      expect.objectContaining({ id: A1, retiredAt: undefined }),
+    );
+    expect(dispatched.some((candidate) => candidate.type === bulkUpsertSessions.type)).toBe(false);
     await stop(task);
   });
 
@@ -287,9 +295,9 @@ describe('agentMutationSaga', () => {
 
     await expect(action.promise).rejects.toThrow('delete rejected');
     expect(mocks.deleteAgent).toHaveBeenCalledWith(A1, WS);
-    expect(dispatched.filter((candidate) => candidate.type === bulkUpsertSessions.type)).toEqual([
-      bulkUpsertSessions([session()]),
-    ]);
+    expect(dispatched.filter((candidate) => candidate.type === restoreStoredSessions.type)).toEqual(
+      [restoreStoredSessions([session() as StoredAgentSession])],
+    );
     await stop(task);
   });
 
@@ -482,6 +490,69 @@ describe('agentMutationSaga', () => {
     expect(mocks.error).toHaveBeenCalledWith('delete rejected');
     expect(listPendingAgentDeletions()).toEqual([]);
     await stop(task);
+  });
+
+  describe('stored-snapshot restores round-trip FE-owned fields', () => {
+    const FE_OWNED: Required<FeOwnedSessionState> = {
+      tailCapPruned: true,
+      liveTurnOpen: true,
+      liveTurnOpenedAt: '2026-01-02T00:00:00.000Z',
+      processQueueHint: { waiting: true, used: 3, cap: 3, reason: 'slots' },
+    };
+    const policyKeys = Object.keys(FE_OWNED_FIELD_POLICY) as Array<keyof FeOwnedSessionState>;
+    const storedSession = (): StoredAgentSession =>
+      ({ ...session(), isActive: true, isResponding: true, ...FE_OWNED }) as StoredAgentSession;
+
+    /** Apply the saga's restore dispatch to an empty slice, as the store would after softHide. */
+    const reduceRestore = (dispatched: any[]) => {
+      const restore = dispatched.find((candidate) => candidate.type === restoreStoredSessions.type);
+      expect(restore).toBeDefined();
+      expect(dispatched.some((candidate) => candidate.type === bulkUpsertSessions.type)).toBe(
+        false,
+      );
+      return agentSessionReducer(agentSessionInitialState, restore).byAgentId[A1];
+    };
+
+    it('every policy key is exercised by the fixture', () => {
+      expect(Object.keys(FE_OWNED).sort()).toEqual([...policyKeys].sort());
+    });
+
+    it('undo after a scheduled delete reinstates the snapshot with every FE-owned field', async () => {
+      mocks.deleteAgent.mockResolvedValue({
+        success: true,
+        scheduled: true,
+        deleteAt: '2026-08-11T00:00:15.000Z',
+      });
+      mocks.cancelDelete.mockResolvedValue({ success: true, cancelled: true });
+      const { channel, dispatched, task } = start({ [A1]: storedSession() });
+      const deletion = deleteAgentWithUndoRequested(WS, A1, 'Agent');
+      channel.put(deletion);
+      await deletion.promise;
+      await settle();
+
+      const undo = undoAgentDeletionRequested(WS, A1);
+      channel.put(undo);
+      await expect(undo.promise).resolves.toBe(true);
+      const restored = reduceRestore(dispatched);
+      for (const key of policyKeys) {
+        expect(restored[key], key).toEqual(FE_OWNED[key]);
+      }
+      await stop(task);
+    });
+
+    it('a scheduled delete failing on the wire reinstates the snapshot with every FE-owned field', async () => {
+      mocks.deleteAgent.mockResolvedValue({ success: false, error: 'delete rejected' });
+      const { channel, dispatched, task } = start({ [A1]: storedSession() });
+      const deletion = deleteAgentWithUndoRequested(WS, A1);
+      channel.put(deletion);
+
+      await expect(deletion.promise).rejects.toThrow('delete rejected');
+      const restored = reduceRestore(dispatched);
+      for (const key of policyKeys) {
+        expect(restored[key], key).toEqual(FE_OWNED[key]);
+      }
+      await stop(task);
+    });
   });
 
   it('refetches subscription entries when immediate delete restores on daemon failure', async () => {

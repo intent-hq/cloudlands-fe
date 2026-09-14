@@ -51,7 +51,13 @@ import {
   stopAgentSessionRequested,
   undoAgentDeletionRequested,
 } from '../../workspace-agents/workspace-agents-slice';
-import { bulkUpsertSessions, removeSession, upsertSession } from '../agent-session-slice';
+import {
+  bulkUpsertSessions,
+  removeSession,
+  restoreStoredSessions,
+  upsertSession,
+} from '../agent-session-slice';
+import type { StoredAgentSession } from '../agent-session-types';
 import { selectAgentSession } from '../agent-session-selectors';
 
 const logger = createLogger('AgentMutationSaga');
@@ -124,8 +130,14 @@ function* softHide(wsId: string, agentId: string): SagaGenerator<void> {
   yield* put(pruneRecentlyClosed(wsId, { agentId }));
 }
 
-function* restoreHiddenSession(wsId: string, session: AgentSession): SagaGenerator<void> {
-  yield* call(persistSession, session);
+/**
+ * Reinstate a session captured from this slice before a soft-hide. Goes
+ * through `restoreStoredSessions`, not the wire upsert: the upsert's FE-owned
+ * carry-forward seeds from the (now removed) existing row and would strip the
+ * snapshot's FE-owned fields.
+ */
+function* restoreHiddenSession(wsId: string, session: StoredAgentSession): SagaGenerator<void> {
+  yield* put(restoreStoredSessions([session]));
   yield* put(refreshWorkspaceSubscriptionEntriesRequested(wsId));
 }
 
@@ -151,7 +163,7 @@ function* restoreRetiredAgent(
     }
     const existing = yield* selectAgentSession.effect(agentId);
     if (existing?.retiredAt) {
-      yield* call(persistSession, { ...existing, retiredAt: undefined });
+      yield* put(restoreStoredSessions([{ ...existing, retiredAt: undefined }]));
     }
     yield* put(action.success(undefined as never));
     settled = true;
