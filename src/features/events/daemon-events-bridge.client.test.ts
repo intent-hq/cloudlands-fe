@@ -10387,6 +10387,61 @@ describe('daemonEventsBridge (RESUB-1 — daemon-restart replay + coarse-state r
     expect(loadChatTranscriptSpy).not.toHaveBeenCalled();
   });
 
+  // Regression (fe#2440 verifier): invites/members changed while the
+  // connection was down never re-emit, so the open Share dialog and tracked
+  // hover rosters are invalidated on reconnect — once per workspace, and
+  // only for workspaces actually holding sharing state.
+  describe('sharing invalidation on reconnect (fe#2440)', () => {
+    // Runs first: tracked rosters outlive the dialog, so the seeded case below
+    // would otherwise leave sharing state behind for this one to find.
+    it('issues no sharing invalidation when nothing holds sharing state', async () => {
+      const { shareMembershipChanged } =
+        await import('$store/renderer/slices/workspace-share/workspace-share-slice');
+      const originalDispatch = appStore.dispatch;
+      const dispatchSpy = vi.fn(originalDispatch);
+      const dispatchGetterSpy = vi.spyOn(appStore, 'dispatch', 'get').mockReturnValue(dispatchSpy);
+      try {
+        await refreshDaemonEventsAfterReconnect(WS);
+      } finally {
+        dispatchGetterSpy.mockRestore();
+      }
+      expect(
+        dispatchSpy.mock.calls.some(
+          ([action]) => (action as { type: string }).type === shareMembershipChanged.type,
+        ),
+      ).toBe(false);
+    });
+
+    it('invalidates the open Share dialog target and each tracked hover roster once', async () => {
+      const { openShareDialog, shareMembershipChanged, shareRosterRequested, closeShareDialog } =
+        await import('$store/renderer/slices/workspace-share/workspace-share-slice');
+      appStore.dispatch(openShareDialog({ workspaceId: 'ws-share-dialog', workspaceTitle: 'D' }));
+      appStore.dispatch(shareRosterRequested({ workspaceId: 'ws-share-hover' }));
+      appStore.dispatch(shareRosterRequested({ workspaceId: 'ws-share-dialog' }));
+      const originalDispatch = appStore.dispatch;
+      const dispatchSpy = vi.fn(originalDispatch);
+      const dispatchGetterSpy = vi.spyOn(appStore, 'dispatch', 'get').mockReturnValue(dispatchSpy);
+      try {
+        await refreshDaemonEventsAfterReconnect(null);
+      } finally {
+        dispatchGetterSpy.mockRestore();
+      }
+
+      const invalidations = dispatchSpy.mock.calls
+        .map(([action]) => action as { type: string; payload: unknown })
+        .filter((action) => action.type === shareMembershipChanged.type)
+        .map((action) => action.payload);
+      expect(invalidations).toEqual(
+        expect.arrayContaining([
+          [{ workspaceId: 'ws-share-dialog' }],
+          [{ workspaceId: 'ws-share-hover' }],
+        ]),
+      );
+      expect(invalidations).toHaveLength(2);
+      appStore.dispatch(closeShareDialog());
+    });
+  });
+
   describe('failure-registry reconciliation on reconnect (#2806)', () => {
     beforeEach(() => clearAgentFailureRegistry());
     afterEach(() => clearAgentFailureRegistry());
