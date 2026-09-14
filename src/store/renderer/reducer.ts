@@ -91,6 +91,7 @@ import { proposalLifecycleReducer } from './slices/proposal-lifecycle/proposal-l
 import { prBranchLookupReducer } from './slices/pr-branch-lookup/pr-branch-lookup-slice';
 import { daemonHealthReducer } from './slices/daemon-health/daemon-health-slice';
 import { connectionsReducer } from './slices/connections/connections-slice';
+import { guestSessionsReducer } from './slices/guest-sessions/guest-sessions-slice';
 import { hostRequirementsReducer } from './slices/host-requirements/host-requirements-slice';
 import { hudReducer } from './slices/hud/hud-slice';
 import { setupPromptReducer } from './slices/setup-prompt/setup-prompt-slice';
@@ -192,6 +193,7 @@ export const reducers = {
   prBranchLookup: prBranchLookupReducer,
   daemonHealth: daemonHealthReducer,
   connections: connectionsReducer,
+  guestSessions: guestSessionsReducer,
   hostRequirements: hostRequirementsReducer,
   hud: hudReducer,
   setupPrompt: setupPromptReducer,

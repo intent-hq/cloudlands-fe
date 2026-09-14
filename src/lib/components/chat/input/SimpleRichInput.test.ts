@@ -210,6 +210,8 @@ const mockReduxState = vi.hoisted(
       keyConfigured: Record<string, boolean>;
     };
     workspace: { hasLoaded: boolean; workspaces: unknown };
+    connections: { windowBackendId: string };
+    guestSessions: { sessions: { idField: 'id'; map: Record<string, never>; ids: string[] } };
     providerCatalog?: unknown;
     daemonHealth: { hostLocality: 'local' | 'remote' | null; transport: unknown };
   } => ({
@@ -238,6 +240,10 @@ const mockReduxState = vi.hoisted(
     // The mic gate also reads the caller's workspace role (multiplayer w3);
     // an unloaded list reads as owner without consulting the collection.
     workspace: { hasLoaded: false, workspaces: null },
+    // The role gate also rules out a guest window (multiplayer w4): this
+    // window's backend is not a joined host.
+    connections: { windowBackendId: 'local' },
+    guestSessions: { sessions: { idField: 'id', map: {}, ids: [] } },
   }),
 );
 const mockReduxDispatch = vi.hoisted(() => vi.fn());

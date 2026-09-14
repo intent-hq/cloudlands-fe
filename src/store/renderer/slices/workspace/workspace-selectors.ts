@@ -16,6 +16,7 @@ import {
 import { selectGitStatus } from '../git/git-selectors';
 import { selectIsDaemonLocal } from '../daemon-health/daemon-health-selectors';
 import { selectActivePrMonitors } from '../pr-monitor/pr-monitor-selectors';
+import { selectIsGuestWindow } from '../guest-sessions/guest-sessions-selectors';
 import type {
   WorkflowStage,
   WorkspaceActivePrStatus,
@@ -176,9 +177,13 @@ export const selectIsWorkspaceCollaborator = store.createSelector<[wsId: string]
  * Gates app-wide administrator-only surfaces (workspace creation / repo
  * picker, provider + connection settings, voice dictation) that are not tied
  * to a single workspace. An empty list reads as owner: an owner with no
- * workspaces must still be able to create one.
+ * workspaces must still be able to create one — except in a window bound to
+ * a host joined as a guest (multiplayer w4), whose principal is a
+ * non-administrator by construction: it is a collaborator-only client from
+ * boot, before the list loads and with zero shared workspaces.
  */
 export const selectIsCollaboratorOnlyClient = store.createSelector((state) => {
+  if (selectIsGuestWindow.select(state)) return true;
   if (!state.workspace.hasLoaded) return false;
   const workspaces = getItems(state.workspace.workspaces);
   return workspaces.length > 0 && workspaces.every((ws) => ws.myRole === 'collaborator');
