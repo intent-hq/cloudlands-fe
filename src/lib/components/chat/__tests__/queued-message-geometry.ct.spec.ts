@@ -240,7 +240,6 @@ test('queue collapse paints intermediate heights before removing the body', asyn
   });
   const disclosure = component.getByTestId('queued-messages-disclosure');
   await expect(component.getByTestId('queued-message-row')).toHaveCount(3);
-  await page.screenshot({ path: '.dev/show/ux2-queue-open-light.png' });
   const heights = await disclosure.evaluate(async (button) => {
     const body = document.querySelector('[data-testid="queued-messages-content"]')!;
     const heights = [body.getBoundingClientRect().height];
@@ -253,5 +252,4 @@ test('queue collapse paints intermediate heights before removing the body', asyn
   });
   expect(heights.some((height) => height > 0 && height < heights[0])).toBe(true);
   await expect(component.getByTestId('queued-messages-content')).toHaveCount(0);
-  await page.screenshot({ path: '.dev/show/ux2-queue-closed-light.png' });
 });

@@ -22,6 +22,5 @@ for (const theme of ['light', 'dark'] as const) {
       getComputedStyle(node).getPropertyValue('--tw-ring-shadow'),
     );
     expect(shadow).toMatch(/0px/);
-    await page.screenshot({ path: `.dev/show/ux3-file-input-invalid-${theme}.png` });
   });
 }

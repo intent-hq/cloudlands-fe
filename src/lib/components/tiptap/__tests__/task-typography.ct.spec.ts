@@ -23,6 +23,5 @@ for (const theme of ['light', 'dark'] as const) {
       return Math.abs(row.top + row.height / 2 - checkbox.top - checkbox.height / 2);
     });
     expect(offset).toBeLessThanOrEqual(1);
-    await page.screenshot({ path: `.dev/show/ux3-task-font-${theme}.png` });
   });
 }

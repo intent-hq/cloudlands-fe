@@ -87,7 +87,6 @@ for (const theme of ['light', 'dark'] as const) {
     expect(nestedBox.x).toBeCloseTo(rootBox.x, 1);
     expect(nestedBox.width).toBeCloseTo(rootBox.width, 1);
     await expect(fill(nested)).not.toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
-    await page.screenshot({ path: `.dev/show/ux3-file-tree-${theme}.png` });
     await expectRenameDecorationInsideTree(component, '/project/src/nested.ts');
   });
 }

@@ -475,9 +475,7 @@ test('keeps the header flat and the complete selector operable at wide width', a
     .locator('[data-slot="menu-item-leading"] + span')
     .evaluateAll((nodes) => nodes.map((node) => node.getBoundingClientRect().left));
   expect(Math.max(...labelOrigins) - Math.min(...labelOrigins)).toBeLessThanOrEqual(1);
-  await page.screenshot({ path: '.dev/show/ux3-panel-menu-light.png' });
   await page.evaluate(() => document.documentElement.classList.add('dark'));
-  await page.screenshot({ path: '.dev/show/ux3-panel-menu-dark.png' });
   await page.evaluate(() => document.documentElement.classList.remove('dark'));
   await expect(above).toHaveAttribute('aria-disabled', 'true');
   await expect(below).not.toHaveAttribute('aria-disabled', 'true');

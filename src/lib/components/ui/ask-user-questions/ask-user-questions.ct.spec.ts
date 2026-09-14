@@ -29,14 +29,12 @@ for (const theme of ['light', 'dark']) {
         }),
       )
       .toBe(true);
-    await page.screenshot({ path: `.dev/show/ux2-question-focused-${theme}.png` });
   });
 }
 
 for (const size of ['default', 'compact'] as const) {
   test(`option hover keeps its text inset and card gutter at ${size} density`, async ({
     mount,
-    page,
   }) => {
     const component = await mount(AskUserQuestions, {
       props: {
@@ -70,6 +68,5 @@ for (const size of ['default', 'compact'] as const) {
     expect(geometry.right).toBeGreaterThanOrEqual(8);
     expect(geometry.paddingLeft).toBeGreaterThanOrEqual(10);
     expect(geometry.paddingRight).toBeGreaterThanOrEqual(10);
-    await page.screenshot({ path: `.dev/show/ux2-question-hover-${size}.png` });
   });
 }
