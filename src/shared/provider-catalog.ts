@@ -1,6 +1,6 @@
 /**
- * Typed contract for the daemon's `providers.catalog` RPC (PROTOCOL §5.38,
- * v2.6 — the static provider registry served over the wire, monorepo#928).
+ * Typed contract for the daemon's `providers.catalog` RPC (PROTOCOL §5.38 —
+ * the static provider registry served over the wire, monorepo#928).
  *
  * Daemon-global: no params and no `workspaceId`. The daemon owns the registry
  * (including the env-var / feature-code `visible` verdict); the FE only

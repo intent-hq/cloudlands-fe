@@ -3699,7 +3699,7 @@ export function routeDaemonEventsNotification(
     handleWorkspaceCreatedEvent(workspaceId);
     // fall through so the activity timeline records the creation.
   }
-  // Delete grace window (§5.1/§5.5, v6.7): schedule events hide the pending
+  // Delete grace window (§5.1/§5.5 `pendingDeleteAt`): schedule events hide the pending
   // row in every window (the originating one already did — idempotent), and
   // cancel events restore it promptly instead of waiting for the next
   // refetch (monorepo#1977).
@@ -3823,7 +3823,7 @@ export function routeDaemonEventsNotification(
     const data = (event as { data?: Record<string, unknown> }).data;
     if (typeof data?.agentId === 'string') {
       removeAgentFailure(data.agentId);
-      // Keep the lazy Retired bin's count (v8.2) consistent with deletion:
+      // Keep the lazy Retired bin's count (`retiredCount`) consistent with deletion:
       // a known retired row nudges the count down in lockstep with its
       // removal below; an id with no local session at all may be a retired
       // row this client never lazily loaded (deleted by another client), so
@@ -4107,7 +4107,7 @@ export function routeDaemonEventsNotification(
   // metadata mutations on a live row, so the same metadata-only `agent.get`
   // refresh converges `retiredAt` on the session (transcript preserved) and
   // the sidebar moves the agent into/out of the Retired bin without a
-  // whole-list refetch. The retired-row count (v8.2 lazy Retired bin) is
+  // whole-list refetch. The retired-row count (`retiredCount`, lazy Retired bin) is
   // nudged in lockstep so the collapsed toggle stays consistent even before
   // the lazy retired-only read runs; hydration re-baselines it from the
   // daemon-served `retiredCount`.
@@ -4228,7 +4228,7 @@ export const DAEMON_EVENTS_SUBSCRIBE_TYPES = [
   'workspace:updated',
   'workspace:created',
   'workspace:deleted',
-  // Delete grace window (§5.1, v6.7): schedule/cancel events keep the hidden
+  // Delete grace window (§5.1 `pendingDeleteAt`): schedule/cancel events keep the hidden
   // pending row consistent across windows (monorepo#1977). The agent-side
   // counterparts are covered by the `agent:*` wildcard above.
   'workspace:delete-scheduled',

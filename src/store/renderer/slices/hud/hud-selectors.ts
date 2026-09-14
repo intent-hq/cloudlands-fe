@@ -369,7 +369,7 @@ function sinceMs(item: HudAttentionItem): number {
  * from the exact inputs the ATTN counter uses — the daemon's step-0
  * `needs_attention` gating, intentd#825, mirrored per-agent for ALL signals
  * including `failed` per the spec decision: delegated (`parentAgentId`,
- * §5.1 v2.9) and background agents never raise rows) plus workspaces whose
+ * §5.1) and background agents never raise rows) plus workspaces whose
  * live `workspace:attention-changed` flag is raised (the hud slice mirrors
  * the event stream; the wire attention enum is only
  * `none | unread | review_required` (§9.9) — question/blocker/discussion
@@ -495,7 +495,7 @@ export interface HudCardAgent {
    */
   treePrefix: string;
   /**
-   * True for delegation-tree roots: no summary `parentAgentId` (§5.1 v2.9)
+   * True for delegation-tree roots: no summary `parentAgentId` (§5.1)
    * and no session `metadata.createdByAgentId` fallback (§5.5). Gates the
    * workspace-level NEEDS INPUT / BLOCKED derivation.
    */
@@ -899,7 +899,7 @@ function agentBucketOf(state: StoreState, info: WorkspaceAgentInfo): HudAgentBuc
 
 /**
  * Top-level check for the workspace-state gating: the summary's
- * `parentAgentId` (§5.1 v2.9) when present, else the tracked session's
+ * `parentAgentId` (§5.1) when present, else the tracked session's
  * `metadata.createdByAgentId` (§5.5) — no parent reference anywhere = root.
  * Unlike the tree ordering, a dangling parent still marks the agent as a
  * child (delegated agents must not flip the workspace banner even when
@@ -1205,7 +1205,7 @@ export const selectWorkspaceTabStatuses = store.createSelector(
  * or with a pending attention request / outstanding question (the daemon's
  * step-0 `needs_attention` gating, intentd#825, mirrored per-agent for ALL
  * signals — failed included, per the spec decision; delegated
- * (`parentAgentId`, §5.1 v2.9 — the parentage signal main's #573 uses to
+ * (`parentAgentId`, §5.1 — the parentage signal main's #573 uses to
  * skip toasts) and background agents never count, so a failed sub-agent is
  * the coordinator's business, not a user call to action). Each raised
  * workspace-level attention flag adds one (it renders NEEDS ATTENTION with

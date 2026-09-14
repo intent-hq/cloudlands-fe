@@ -313,7 +313,7 @@ export interface ChatAgentState {
   awaitingSwitchBackSnapshot?: boolean;
   /**
    * Lazily hydrated full content blocks, keyed `{messageId}|{blockId}`
-   * (§5.5 slim projection → v7.2 `agent.getMessageBlock`). Read-through
+   * (§5.5 slim projection → `agent.getMessageBlock`). Read-through
    * cache of daemon responses: `loading` de-dupes concurrent expand clicks
    * (single-flight per block), `loaded` renders instead of the slim preview,
    * `error` re-enables the fetch on the next expand. Bounded at

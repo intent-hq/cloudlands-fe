@@ -508,7 +508,7 @@ describe('diff-ipc-batcher (daemon wire)', () => {
     });
   });
 
-  it('dedupedShowFile forwards gitRootId exactly when set and keys the dedupe on it (v6.15)', async () => {
+  it('dedupedShowFile forwards gitRootId exactly when set and keys the dedupe on it', async () => {
     mockDaemon({ showFiles: { 'HEAD:a.ts': 'head a' } });
 
     // Same (workspace, ref, path) but different gitRootId → distinct wire

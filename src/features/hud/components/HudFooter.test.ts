@@ -63,7 +63,7 @@ function dispatchSystemStatus(payload: SystemStatusWirePayload, receivedAt: stri
   );
 }
 
-/** Summary agent entry: status plus optional parentage (§5.1 v2.9). */
+/** Summary agent entry: status plus optional parentage (§5.1 `parentAgentId`). */
 interface SummaryAgent {
   status: string;
   parentAgentId?: string;

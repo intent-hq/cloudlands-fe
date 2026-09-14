@@ -1786,7 +1786,7 @@ describe('lifecycleReadSaga', () => {
     await stop(run.task);
   });
 
-  it('lazy-loads retired rows on demand and re-baselines the count (§5.5 v8.2)', async () => {
+  it('lazy-loads retired rows on demand and re-baselines the count (§5.5 retiredOnly)', async () => {
     const retired = agent('agent-retired', { retiredAt: '2026-08-10T00:00:00.000Z' });
     mocks.agents.list.mockResolvedValue([retired]);
     const run = start();

@@ -105,7 +105,7 @@ export const VOICE_VOCABULARY_SETTING_PATH = 'voice.vocabulary';
 /**
  * Non-secret daemon settings path capping the auto-derived workspace
  * vocabulary injected into `voice.transcribe` calls carrying a `workspaceId`
- * (number, default 50, min 0, max 100 — §5.12, v5.1). `0` disables workspace
+ * (number, default 50, min 0, max 100 — §5.12). `0` disables workspace
  * vocabulary entirely (no derivation, no injection).
  */
 export const VOICE_WORKSPACE_VOCABULARY_MAX_TERMS_SETTING_PATH =

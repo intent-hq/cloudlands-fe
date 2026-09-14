@@ -352,7 +352,7 @@ function repoScopedId(owner: string, repo: string, number: number): string {
 // `number` (no separate id), so `id` is the repo-scoped `owner/repo#number`.
 // `query`/`repos`/`nextToken` forward to the daemon and the response
 // `nextToken` rides alongside `data`. Each item's `owner`/`repo` come from the
-// wire item (v10.1 multi-repo search names the hit's own repo).
+// wire item (multi-repo search names the hit's own repo).
 registerMockIpcHandler(IPC_CHANNELS.GIT_TRACKING.SEARCH_GITHUB_ISSUES, async (arg) => {
   const params = searchParams(arg);
   if (!params) return { success: false, error: 'owner and repo are required' };
@@ -424,7 +424,7 @@ registerMockIpcHandler(IPC_CHANNELS.GIT_TRACKING.SEARCH_PULL_REQUESTS, async (ar
 });
 
 // `git-tracking:list-related-repos` → daemon `github.relatedRepos.list`
-// (§5.27, v10.1): the GitHub repos the addressed repo's `.gitmodules`
+// (§5.27): the GitHub repos the addressed repo's `.gitmodules`
 // references, `{ owner, repo, path }[]` capped at 5 by the daemon. A missing
 // `.gitmodules` is `{ repos: [] }` on the wire, never an error.
 registerMockIpcHandler(IPC_CHANNELS.GIT_TRACKING.LIST_RELATED_REPOS, async (arg) => {

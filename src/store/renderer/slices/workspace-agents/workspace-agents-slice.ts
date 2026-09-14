@@ -244,7 +244,7 @@ export const hydrateAgentsRequested = createAction<[wsId: string]>(
 );
 /**
  * Saga-only trigger (no reducer entry): load the workspace's retired rows on
- * demand via the retired-only read (`retiredOnly: true`, §5.5 v8.2) when the
+ * demand via the retired-only read (`retiredOnly: true`, §5.5) when the
  * sidebar's Retired bin is expanded or an active search needs them. The
  * handler lives in `lifecycle-read-saga` and no-ops once the rows are loaded.
  */

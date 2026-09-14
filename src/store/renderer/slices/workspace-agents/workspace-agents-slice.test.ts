@@ -206,7 +206,7 @@ describe('workspaceAgentsReducer', () => {
     });
   });
 
-  it('tracks the lazy retired-bin state per workspace (§5.5 v8.2)', () => {
+  it('tracks the lazy retired-bin state per workspace (§5.5 retiredCount)', () => {
     let state = workspaceAgentsReducer(initialState, setRetiredCount(WS_1, 3));
     state = workspaceAgentsReducer(state, setIsLoadingRetiredAgents(WS_1, true));
     state = workspaceAgentsReducer(state, setRetiredAgentsLoaded(WS_1, true));

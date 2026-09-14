@@ -5418,7 +5418,7 @@ describe('daemonEventsBridge (session lifecycle — agent:created/renamed/update
     expect(notifyInterruptedAgentUpdatedSpy).not.toHaveBeenCalled();
   });
 });
-describe('daemonEventsBridge (agent:retired/restored/deleted → lazy Retired bin count, §5.5 v8.2)', () => {
+describe('daemonEventsBridge (agent:retired/restored/deleted → lazy Retired bin count, §5.5 retiredCount)', () => {
   beforeAll(() => {
     appStore.init();
   });

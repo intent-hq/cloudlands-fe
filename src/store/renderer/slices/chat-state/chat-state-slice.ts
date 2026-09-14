@@ -915,7 +915,7 @@ export const scrollbackContinuationReset = createAction<[agentId: string]>(
   'chatState/scrollbackContinuationReset',
 );
 
-// --- Lazy block hydration (§5.5 slim projection → v7.2 agent.getMessageBlock) ---
+// --- Lazy block hydration (§5.5 slim projection → agent.getMessageBlock) ---
 
 /**
  * Saga trigger + single-flight marker: the user expanded a truncated tool row

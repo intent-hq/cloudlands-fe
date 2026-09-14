@@ -745,7 +745,7 @@ describe('chatReadSaga (single-transfer hydration)', () => {
   });
 });
 
-describe('chatReadSaga lazy block hydration (§5.5 slim → v7.2 agent.getMessageBlock)', () => {
+describe('chatReadSaga lazy block hydration (§5.5 slim → agent.getMessageBlock)', () => {
   afterEach(() => vi.clearAllMocks());
 
   const MSG = 'msg-1';

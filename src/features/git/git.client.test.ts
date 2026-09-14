@@ -48,7 +48,7 @@ describe('GitClient daemon-backed wire contract (fake transport)', () => {
     expect(result).toEqual({ ok: false, error: 'daemon unavailable' });
   });
 
-  it('getStatus forwards gitRootId when supplied and omits it when empty (v6.15)', async () => {
+  it('getStatus forwards gitRootId when supplied and omits it when empty', async () => {
     mockedRequest.mockResolvedValueOnce({ branch: 'main', files: [] });
     await gitClient.getStatus(wsId, { gitRootId: 'root-1' });
     expect(mockedRequest).toHaveBeenCalledWith('git.status', {
@@ -130,7 +130,7 @@ describe('GitClient daemon-backed wire contract (fake transport)', () => {
     expect(failed).toEqual({ ok: false, error: 'boom' });
   });
 
-  it('getHistory forwards gitRootId alongside limit (v6.15)', async () => {
+  it('getHistory forwards gitRootId alongside limit', async () => {
     mockedRequest.mockResolvedValueOnce({ items: [], nextToken: null });
 
     await gitClient.getHistory(wsId, 30, { gitRootId: 'root-1' });

@@ -93,7 +93,7 @@ describe('toAuthVerdictMap', () => {
       authenticated: true,
       authDetails: 'dev@example.com · Example Org',
     });
-    // Pre-9.4 daemons (no identity field) degrade silently: no key at all.
+    // Daemons without the `identity` field degrade silently: no key at all.
     expect(map['codex']).toStrictEqual({ authenticated: true });
   });
 

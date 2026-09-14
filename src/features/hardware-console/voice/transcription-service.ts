@@ -242,7 +242,7 @@ export function mergeOsContextualStrings(
  * workspace-vocabulary-service; a failed fetch degrades to no terms), and
  * the context keyterms as contextual strings; `daemon` calls the cloud
  * `voice.transcribe` with the `workspaceId` so the daemon injects the same
- * workspace vocabulary server-side (§5.41 v5.1). `unavailable` still goes
+ * workspace vocabulary server-side (§5.41). `unavailable` still goes
  * to the daemon — the triggers gate that case up front, and the daemon's
  * no-key error toast covers any race. State is read at call time so a
  * settings change applies to the next dictation without re-wiring the
@@ -472,7 +472,8 @@ export async function handleFinishedRecording(
     : (composerAgentId ?? resolveTargetAgentId(state, routeWorkspaceId));
   const context = gatherTranscriptionContext(state, routeWorkspaceId);
   // The active workspace (chief excluded, same rule as the context) opts the
-  // call into workspace-vocabulary biasing on both engines (§5.41 v5.1).
+  // call into workspace-vocabulary biasing on both engines (§5.41
+  // `voice.transcribe` `workspaceId`).
   const workspaceId = normalizedWorkspaceId(routeWorkspaceId) ?? undefined;
 
   const hudLabel = m.hardwareConsole_voice_transcribing_label();
