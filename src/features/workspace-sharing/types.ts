@@ -54,19 +54,25 @@ export interface WorkspaceInviteCreateResult {
 
 /**
  * Machine-readable `error.data.code` values the daemon attaches to invite
- * failures (`Error::Invite(InviteErrorKind)`, intent-hq/intentd#1872).
+ * failures (`Error::Invite(InviteErrorKind)`, intent-hq/intentd#1872). The
+ * client allowlists against this tuple: any other `data.code` string is
+ * folded to `unknown` so an arbitrary daemon/transport value never rides a
+ * failure record or a log line.
  */
-export type InviteErrorCode =
-  | 'invite-not-found'
-  | 'invite-expired'
-  | 'invite-revoked'
-  | 'invite-redeemed'
-  | 'invite-pin-mismatch'
-  | 'invite-pin-unknown'
-  | 'github-identity-required'
-  | 'primary-identity-locked'
-  | 'invite-flow-denied'
-  | 'invite-flow-expired'
-  | 'invite-flow-error'
-  | 'invite-flow-not-found'
-  | 'invite-flow-busy';
+export const INVITE_ERROR_CODES = [
+  'invite-not-found',
+  'invite-expired',
+  'invite-revoked',
+  'invite-redeemed',
+  'invite-pin-mismatch',
+  'invite-pin-unknown',
+  'github-identity-required',
+  'primary-identity-locked',
+  'invite-flow-denied',
+  'invite-flow-expired',
+  'invite-flow-error',
+  'invite-flow-not-found',
+  'invite-flow-busy',
+] as const;
+
+export type InviteErrorCode = (typeof INVITE_ERROR_CODES)[number];

@@ -8,23 +8,29 @@
  */
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { isForbiddenErrorResponse } from '$lib/client/live/backend-transport-types';
-import type {
-  InviteErrorCode,
-  WorkspaceInvite,
-  WorkspaceInviteCreateResult,
-  WorkspaceMember,
+import {
+  INVITE_ERROR_CODES,
+  type InviteErrorCode,
+  type WorkspaceInvite,
+  type WorkspaceInviteCreateResult,
+  type WorkspaceMember,
 } from './types';
+
+const inviteErrorCodes: ReadonlySet<string> = new Set<string>(INVITE_ERROR_CODES);
 
 /**
  * The daemon's machine-readable invite error code (`error.data.code`) when the
- * failure is an `Error::Invite`; `undefined` for every other error.
+ * failure is an `Error::Invite`; `undefined` for every other error. Allowlisted
+ * against `INVITE_ERROR_CODES` — an arbitrary `data.code` string is not a code.
  */
 export function inviteErrorCode(error: unknown): InviteErrorCode | undefined {
   if (!error || typeof error !== 'object') return undefined;
   const data = (error as { data?: unknown }).data;
   if (!data || typeof data !== 'object') return undefined;
   const code = (data as { code?: unknown }).code;
-  return typeof code === 'string' && code.length > 0 ? (code as InviteErrorCode) : undefined;
+  return typeof code === 'string' && inviteErrorCodes.has(code)
+    ? (code as InviteErrorCode)
+    : undefined;
 }
 
 /**
