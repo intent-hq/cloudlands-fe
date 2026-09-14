@@ -856,6 +856,15 @@ export function disconnectBackendClient(id: string): void {
   instance.dispose();
 }
 
+// A guest re-join replaces the session's credential (and possibly its
+// principal) in place under the SAME id. A pooled client built on the old
+// credential would keep serving that id as the superseded principal, so it
+// is evicted here; the open that follows the re-join rebuilds it from the
+// store (the same disconnect-then-rebuild the owner `connections:add`
+// path performs). Subscribed at module scope so it holds regardless of
+// which entry point registered the IPC handlers.
+guestSessionsStore.onGuestCredentialReplaced((id) => disconnectBackendClient(id));
+
 /** Build a pool member and route its renderer events by connection id. */
 function createAdditionalBackendClient(id: string, config: BackendConnectionConfig): JsonRpcClient {
   // A fresh pool member starts with clean cert/auth/protocol-mismatch guards

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'fs/promises';
+import { promises as mutableFs } from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
@@ -103,7 +104,7 @@ describe('guest-sessions-store', () => {
     expect(await store.getDecryptedToken('nope')).toBeNull();
   });
 
-  it('falls back to plaintext with an explicit marker when safeStorage is unavailable', async () => {
+  it('falls back to flagged plaintext when safeStorage is unavailable', async () => {
     encryptionAvailable = false;
     const store = await import('../guest-sessions-store');
     const rec = await store.add(sample);
@@ -111,6 +112,132 @@ describe('guest-sessions-store', () => {
     const sessions = raw.sessions as Array<{ encToken: { encrypted: boolean; value: string } }>;
     expect(sessions[0].encToken).toEqual({ encrypted: false, value: 'guest-secret' });
     expect(await store.getDecryptedToken(rec.id)).toBe('guest-secret');
+    // The token-free record carries the flag so the fallback is never silent.
+    expect(rec.tokenEncrypted).toBe(false);
+    expect((await store.list())[0].tokenEncrypted).toBe(false);
+  });
+
+  it('reports tokenEncrypted: true for a safeStorage-encrypted credential', async () => {
+    const store = await import('../guest-sessions-store');
+    const rec = await store.add(sample);
+    expect(rec.tokenEncrypted).toBe(true);
+    expect((await store.findById(rec.id))?.tokenEncrypted).toBe(true);
+  });
+
+  it('a re-join never downgrades an encrypted credential to plaintext (fails closed)', async () => {
+    const store = await import('../guest-sessions-store');
+    const first = await store.add(sample);
+    encryptionAvailable = false;
+    await expect(store.add({ ...sample, token: 'replacement-secret' })).rejects.toMatchObject({
+      code: 'guest-encryption-unavailable',
+    });
+    const raw = await readFile();
+    const sessions = raw.sessions as Array<{ id: string; encToken: { encrypted: boolean } }>;
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0].id).toBe(first.id);
+    expect(sessions[0].encToken.encrypted).toBe(true);
+    expect(await store.getDecryptedToken(first.id)).toBe('guest-secret');
+    // A plaintext record may be refreshed with plaintext, and upgraded once
+    // encryption is back.
+    await store.forget(first.id);
+    const plain = await store.add(sample);
+    expect(plain.tokenEncrypted).toBe(false);
+    const refreshed = await store.add({ ...sample, token: 'still-plain' });
+    expect(refreshed.id).toBe(plain.id);
+    expect(refreshed.tokenEncrypted).toBe(false);
+    encryptionAvailable = true;
+    const upgraded = await store.add({ ...sample, token: 'now-encrypted' });
+    expect(upgraded.id).toBe(plain.id);
+    expect(upgraded.tokenEncrypted).toBe(true);
+    expect(await store.getDecryptedToken(plain.id)).toBe('now-encrypted');
+  });
+
+  it('a corrupt registry file is never overwritten: reads are empty, mutations fail closed', async () => {
+    const file = path.join(tmpDir, 'guest-sessions.json');
+    await fs.writeFile(file, '{"sessions": [ this is not json', 'utf8');
+    const before = await fs.readFile(file, 'utf8');
+    const store = await import('../guest-sessions-store');
+    expect(await store.list()).toEqual([]);
+    expect(await store.findById('x')).toBeNull();
+    expect(await store.getDecryptedToken('x')).toBeNull();
+    await expect(store.add(sample)).rejects.toMatchObject({ code: 'guest-store-corrupt' });
+    await expect(store.setHostname('x', 'h')).rejects.toMatchObject({
+      code: 'guest-store-corrupt',
+    });
+    await expect(store.forget('x')).rejects.toMatchObject({ code: 'guest-store-corrupt' });
+    expect(await fs.readFile(file, 'utf8')).toBe(before);
+    expect(await fs.readdir(tmpDir)).toEqual(['guest-sessions.json']);
+  });
+
+  it('a registry whose top level is not an object is corrupt too', async () => {
+    const file = path.join(tmpDir, 'guest-sessions.json');
+    await fs.writeFile(file, '[1, 2, 3]', 'utf8');
+    const store = await import('../guest-sessions-store');
+    await expect(store.add(sample)).rejects.toMatchObject({ code: 'guest-store-corrupt' });
+    expect(await fs.readFile(file, 'utf8')).toBe('[1, 2, 3]');
+  });
+
+  it('writes land atomically: a reader racing a write never sees a truncated registry', async () => {
+    const store = await import('../guest-sessions-store');
+    const record = await store.add(sample);
+    const target = path.join(tmpDir, 'guest-sessions.json');
+    const realWrite = mutableFs.writeFile;
+    let release!: () => void;
+    let entered!: () => void;
+    const blocked = new Promise<void>((resolve) => (release = resolve));
+    const started = new Promise<void>((resolve) => (entered = resolve));
+    const spy = vi.spyOn(mutableFs, 'writeFile').mockImplementationOnce(async (...args) => {
+      // Simulate the slow, partially-flushed write: the destination path
+      // handed to writeFile must never be the live registry.
+      expect(String(args[0])).not.toBe(target);
+      await realWrite(args[0], '');
+      entered();
+      await blocked;
+      return realWrite(...args);
+    });
+    const write = store.setHostname(record.id, 'changed-host');
+    try {
+      await started;
+      const midWrite = await store.findById(record.id);
+      expect(midWrite).not.toBeNull();
+      expect(midWrite?.hostname).toBeNull();
+    } finally {
+      release();
+      await write;
+      spy.mockRestore();
+    }
+    expect((await store.findById(record.id))?.hostname).toBe('changed-host');
+    // No temp file survives a completed write.
+    expect(await fs.readdir(tmpDir)).toEqual(['guest-sessions.json']);
+  });
+
+  it('a failed write leaves the registry intact and no temp file behind', async () => {
+    const store = await import('../guest-sessions-store');
+    const record = await store.add(sample);
+    const before = await fs.readFile(path.join(tmpDir, 'guest-sessions.json'), 'utf8');
+    const spy = vi.spyOn(mutableFs, 'rename').mockRejectedValueOnce(new Error('ENOSPC'));
+    try {
+      await expect(store.setHostname(record.id, 'changed-host')).rejects.toThrow('ENOSPC');
+    } finally {
+      spy.mockRestore();
+    }
+    expect(await fs.readFile(path.join(tmpDir, 'guest-sessions.json'), 'utf8')).toBe(before);
+    expect(await fs.readdir(tmpDir)).toEqual(['guest-sessions.json']);
+  });
+
+  it('notifies onGuestCredentialReplaced with the id only when a re-join replaces a session', async () => {
+    const store = await import('../guest-sessions-store');
+    const replaced: string[] = [];
+    const off = store.onGuestCredentialReplaced((id) => replaced.push(id));
+    const first = await store.add(sample);
+    expect(replaced).toEqual([]);
+    await store.setHostname(first.id, 'studio');
+    expect(replaced).toEqual([]);
+    await store.add({ ...sample, token: 'newer-secret', principalId: 'prn_8' });
+    expect(replaced).toEqual([first.id]);
+    off();
+    await store.add({ ...sample, token: 'even-newer' });
+    expect(replaced).toEqual([first.id]);
   });
 
   it('throws a coded error when the ciphertext no longer decrypts', async () => {

@@ -173,6 +173,27 @@ vi.mock('../connections-store', () => ({
   onConnectionsMutated: () => () => {},
 }));
 
+// Guest sessions store: an in-test double with the credential-replaced seam
+// captured so a re-join can be simulated against the pool.
+const guestStore = vi.hoisted(() => ({
+  findById: vi.fn(),
+  getDecryptedToken: vi.fn(),
+  replacedListeners: [] as Array<(id: string) => void>,
+}));
+vi.mock('../guest-sessions-store', () => ({
+  list: vi.fn(async () => []),
+  findById: guestStore.findById,
+  getDecryptedToken: guestStore.getDecryptedToken,
+  setHostname: vi.fn(async () => false),
+  listSyncRecords: vi.fn(async () => []),
+  applyRemoteSyncRecord: vi.fn(async () => false),
+  onGuestSessionsMutated: () => () => {},
+  onGuestCredentialReplaced: (listener: (id: string) => void) => {
+    guestStore.replacedListeners.push(listener);
+    return () => {};
+  },
+}));
+
 // Keychain-sync lifecycle: controllable double for the T4 settings IPC. The
 // registered handle is captured so tests can drive getStatus/requestReconcile
 // and the onStatusChanged broadcast seam directly.
@@ -239,6 +260,20 @@ const LOCAL = {
   port: null,
   fingerprint: null,
   isLocal: true,
+};
+const GUEST = {
+  id: 'guest-1',
+  label: 'studio.local',
+  host: '10.0.0.9',
+  hosts: ['10.0.0.9'],
+  port: 8443,
+  fingerprint: 'EE:FF:00:11',
+  tcAddress: null,
+  hostname: null,
+  principalId: 'prn_7',
+  login: 'octocat',
+  tokenEncrypted: true,
+  updatedAt: 1,
 };
 
 /** Import a fresh backend.ipc module and inject window hook spies. */
@@ -328,6 +363,9 @@ beforeEach(() => {
   store.setDaemonVersion.mockResolvedValue(false);
   store.setHosts.mockResolvedValue(undefined);
   store.getDetectHosts.mockResolvedValue(true);
+  guestStore.findById.mockResolvedValue(null);
+  guestStore.getDecryptedToken.mockResolvedValue(null);
+  guestStore.replacedListeners = [];
   keychainSync.enabled = false;
   keychainSync.status = null;
   keychainSync.initOptions = null;
@@ -449,6 +487,43 @@ describe('openBackendWindow connect-before-open', () => {
     await expect(mod.openBackendWindow('remote-1')).rejects.toThrow(/no stored token/i);
     expect(lifecycle.events).toEqual([]);
     expect(openOrFocus).not.toHaveBeenCalled();
+  });
+
+  it('a guest re-join evicts the pooled client built on the superseded credential', async () => {
+    guestStore.findById.mockImplementation(async (id: string) => (id === GUEST.id ? GUEST : null));
+    guestStore.getDecryptedToken.mockResolvedValue('guest-token-v1');
+    const { mod } = await loadModule();
+    mod.getBackendClient(); // client #1 (local)
+    lifecycle.events = [];
+
+    await mod.openBackendWindow(GUEST.id);
+    const stale = mod.getBackendClientForConnection(GUEST.id);
+    expect(stale).toBeDefined();
+    expect((stale?.getConfig() as { token?: string }).token).toBe('guest-token-v1');
+    expect(lifecycle.events.map((e) => e.type)).toEqual(['construct', 'start', 'open']);
+    const staleSeq = lifecycle.events[0].seq;
+
+    // The store replaces the credential under the same id (a second invite
+    // to the same daemon) and notifies; the stale pool member must go.
+    guestStore.getDecryptedToken.mockResolvedValue('guest-token-v2');
+    expect(guestStore.replacedListeners).toHaveLength(1);
+    for (const listener of guestStore.replacedListeners) listener(GUEST.id);
+    expect(lifecycle.events.at(-1)).toEqual({ type: 'dispose', seq: staleSeq });
+    expect(mod.getBackendClientForConnection(GUEST.id)).toBeUndefined();
+    // The local pool member is untouched.
+    expect(mod.getBackendClientForConnection('local')).toBeDefined();
+
+    // The next open rebuilds the member from the store: fresh credential.
+    await mod.openBackendWindow(GUEST.id);
+    const fresh = mod.getBackendClientForConnection(GUEST.id);
+    expect(fresh).toBeDefined();
+    expect(fresh).not.toBe(stale);
+    expect((fresh?.getConfig() as { token?: string }).token).toBe('guest-token-v2');
+
+    // A replacement for an id with no pooled client is a no-op.
+    lifecycle.events = [];
+    for (const listener of guestStore.replacedListeners) listener('guest-unknown');
+    expect(lifecycle.events).toEqual([]);
   });
 });
 
