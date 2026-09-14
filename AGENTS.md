@@ -240,8 +240,10 @@ For focused browser validation, run:
 corepack pnpm run test:ct -- src/features/agent/components/agent-avatar/__tests__/agent-avatar-waiting.ct.spec.ts
 ```
 
-The CT harness defaults to port 3100 (the `CT_PORT` env var overrides it). Stop the
-process on that port before retrying if it is occupied. The run exits with Playwright's
+The CT harness defaults to port 3100 (the `CT_PORT` env var overrides it). A run holds
+the host-wide `ct-<CT_PORT>` lock, so a second run on an occupied port waits for the
+first instead of reusing its server; set a free `CT_PORT` to run concurrently (see
+[Verification](#verification)). The run exits with Playwright's
 status as soon as the tests finish — the HTML report is written to `playwright-report/`
 but never served automatically. To browse it after the run, opt in from an interactive
 terminal with `CT_HTML_REPORT=open` (or `-- --open-report`); `node
@@ -370,7 +372,13 @@ Playwright CT uses `ct-<CT_PORT>` (default `ct-3100`) and the full Vitest fallba
 `vitest-full`. CT runs on different ports can proceed concurrently; Svelte and TypeScript
 checks do not lock. The default waits are 240 seconds for CT and 120 seconds for full
 Vitest. `VERIFY_CHANGED_LOCK_TIMEOUT_MS` overrides either wait but remains capped at
-300000 ms, and the command never stops the process that owns a lock.
+300000 ms, and the command never stops the process that owns a lock. Direct
+`pnpm run test:ct` runs hold the same `ct-<CT_PORT>` lock (`scripts/verification-lock.mjs`),
+because the CT runtime reuses any server already listening on its port — an unlocked
+second run from another worktree would test that tree's component registry and then fail
+with ECONNREFUSED when the first run exits (intent-hq/intent#4964). A second run on an
+occupied port waits, then fails naming the owner's pid and worktree; pick a free `CT_PORT`
+to run concurrently.
 
 After any structural change (moving files, changing imports, extracting modules):
 

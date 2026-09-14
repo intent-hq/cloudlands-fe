@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -7,6 +7,7 @@ import {
   CT_HTML_REPORT_ENV,
   OPEN_REPORT_FLAG,
   PRINT_OS_DEPS_FLAG,
+  acquireCtPortLock,
   buildChildEnv,
   collectNonFontOsDeps,
   exitCodeFromChild,
@@ -15,6 +16,7 @@ import {
   runPlaywright,
   usage,
 } from './run-ct-tests.mjs';
+import { HELD_LOCK_ENV, acquireVerificationLock } from './verification-lock.mjs';
 
 const baseEnv = { PATH: '/usr/bin' };
 
@@ -193,6 +195,108 @@ describe('runPlaywright', () => {
     expect(usage()).toContain(CT_HTML_REPORT_ENV);
     expect(usage()).toContain(OPEN_REPORT_FLAG);
     expect(usage()).toContain(PRINT_OS_DEPS_FLAG);
+    expect(usage()).toContain('CT_PORT');
+  });
+});
+
+describe('acquireCtPortLock', () => {
+  const lockRoot = mkdtempSync(path.join(tmpdir(), 'run-ct-tests-lock-'));
+  afterAll(() => rmSync(lockRoot, { recursive: true, force: true }));
+
+  const lockPath = (key: string) => path.join(lockRoot, key);
+  const acquireLock = (options: Record<string, unknown>) =>
+    acquireVerificationLock({ ...options, pollMs: 5 });
+  const settled = <T>(promise: Promise<T>) => {
+    let done = false;
+    const tracked = promise.then((value) => {
+      done = true;
+      return value;
+    });
+    return { tracked, isDone: () => done };
+  };
+
+  it('keys the lock on CT_PORT and records the caller as owner', async () => {
+    const cwd = '/worktree/a';
+    const release = await acquireCtPortLock({
+      env: { CT_PORT: '3300' },
+      cwd,
+      acquireLock,
+      lockPath,
+      log() {},
+    });
+    const owner = JSON.parse(readFileSync(path.join(lockRoot, 'ct-3300', 'owner.json'), 'utf8'));
+    expect(owner).toMatchObject({ pid: process.pid, cwd });
+    release();
+    expect(existsSync(path.join(lockRoot, 'ct-3300'))).toBe(false);
+  });
+
+  it('makes a second run on the same port wait until the first releases', async () => {
+    const options = { env: { CT_PORT: '3301' }, acquireLock, lockPath, log() {} };
+    const first = await acquireCtPortLock({ ...options, cwd: '/worktree/a' });
+    const second = settled(acquireCtPortLock({ ...options, cwd: '/worktree/b' }));
+    await new Promise((done) => setTimeout(done, 25));
+    expect(second.isDone()).toBe(false);
+    first();
+    const release = await second.tracked;
+    expect(JSON.parse(readFileSync(path.join(lockRoot, 'ct-3301', 'owner.json'), 'utf8')).cwd).toBe(
+      '/worktree/b',
+    );
+    release();
+  });
+
+  it('fails with the owner named when the wait runs out', async () => {
+    const options = { env: { CT_PORT: '3302' }, acquireLock, lockPath, log() {} };
+    const release = await acquireCtPortLock({ ...options, cwd: '/worktree/a' });
+    await expect(
+      acquireCtPortLock({
+        ...options,
+        env: { CT_PORT: '3302', VERIFY_CHANGED_LOCK_TIMEOUT_MS: '20' },
+        cwd: '/worktree/b',
+      }),
+    ).rejects.toThrow(new RegExp(`ct-3302: owner pid ${process.pid} cwd /worktree/a`));
+    release();
+  });
+
+  it('lets runs on different ports proceed concurrently', async () => {
+    const options = { acquireLock, lockPath, log() {} };
+    const [a, b] = await Promise.all([
+      acquireCtPortLock({ ...options, env: { CT_PORT: '3303' } }),
+      acquireCtPortLock({ ...options, env: { CT_PORT: '3304' } }),
+    ]);
+    a();
+    b();
+  });
+
+  it('skips acquisition when the parent verify:changed already holds this port', async () => {
+    const options = { acquireLock, lockPath, log() {} };
+    const parent = await acquireCtPortLock({ ...options, env: { CT_PORT: '3305' } });
+    const nested = settled(
+      acquireCtPortLock({
+        ...options,
+        env: { CT_PORT: '3305', [HELD_LOCK_ENV]: 'ct-3305' },
+      }),
+    );
+    await new Promise((done) => setTimeout(done, 10));
+    expect(nested.isDone()).toBe(true);
+    (await nested.tracked)();
+    expect(existsSync(path.join(lockRoot, 'ct-3305'))).toBe(true);
+    parent();
+  });
+
+  it('does not treat a held lock for another port as its own', async () => {
+    const options = { acquireLock, lockPath, log() {} };
+    const other = await acquireCtPortLock({ ...options, env: { CT_PORT: '3306' } });
+    await expect(
+      acquireCtPortLock({
+        ...options,
+        env: {
+          CT_PORT: '3306',
+          [HELD_LOCK_ENV]: 'ct-3100',
+          VERIFY_CHANGED_LOCK_TIMEOUT_MS: '20',
+        },
+      }),
+    ).rejects.toThrow(/ct-3306/);
+    other();
   });
 });
 
