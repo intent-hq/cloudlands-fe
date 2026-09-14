@@ -34,6 +34,10 @@ export const selectShareCreateRequest = store.createSelector(
   (state) => state.workspaceShare.createRequest,
 );
 
+export const selectShareMutationGeneration = store.createSelector(
+  (state) => state.workspaceShare.mutationGeneration,
+);
+
 export const selectShareWorkspaceTitle = store.createSelector(
   (state) => state.workspaceShare.workspaceTitle,
 );
