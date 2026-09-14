@@ -7,6 +7,11 @@
  * roster, the open invites, and every in-flight mutation ride in the store.
  * The saga performs the sharing RPCs and settles the `*Loaded` / `*Failed`
  * actions; the dialog only renders this state and dispatches intent.
+ *
+ * The workspace hover card's member roster rides here too, keyed by
+ * workspace id (`byWorkspaceId`): several cards can be live at once and a card can
+ * retarget mid-flight, so every roster settlement names its workspace and
+ * only that entry moves. The card keeps nothing but its confirmation UI local.
  */
 
 import {
@@ -17,6 +22,7 @@ import {
 import { createAction } from '@augmentcode/themis/utils/store/create-action';
 import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import type { WorkspaceInvite, WorkspaceMember } from '$features/workspace-sharing/types';
+import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
 
 /**
  * Identity of one dialog session: the target workspace plus a `session`
@@ -42,7 +48,31 @@ export interface WorkspaceShareCreatedLink {
   pinLogin?: string;
 }
 
+/** Hover-card roster of one workspace (see `WorkspaceShareState.byWorkspaceId`). */
+export interface WorkspaceRosterState {
+  /** Roster in daemon order (owner first). */
+  members: Collection<WorkspaceMember, 'principalId'>;
+  loadStatus: 'idle' | 'loading' | 'loaded' | 'error';
+  /**
+   * The daemon refused an owner-only sharing method (`-32003`) or the caller
+   * is not the owner: the card withholds Share/Remove for this workspace.
+   */
+  withheld: boolean;
+  removingPrincipalId: string | null;
+  removeError: string | null;
+}
+
+export const initialRosterState: WorkspaceRosterState = {
+  members: createCollection<WorkspaceMember, 'principalId'>('principalId'),
+  loadStatus: 'idle',
+  withheld: false,
+  removingPrincipalId: null,
+  removeError: null,
+};
+
 export interface WorkspaceShareState {
+  /** Hover-card rosters by workspace id; absent until a card asks for one. */
+  byWorkspaceId: Record<string, WorkspaceRosterState>;
   open: boolean;
   workspaceId: string | null;
   workspaceTitle: string;
@@ -71,6 +101,7 @@ export interface WorkspaceShareState {
 }
 
 export const initialState: WorkspaceShareState = {
+  byWorkspaceId: {},
   open: false,
   workspaceId: null,
   workspaceTitle: '',
@@ -163,6 +194,36 @@ export const shareActionSettled = createAction<
   [payload: { target: WorkspaceShareTarget; error: string | null; revokedInviteId?: string }]
 >('workspaceShare/actionSettled');
 
+/** Hover card: read (or re-read) the roster of `workspaceId`. */
+export const shareRosterRequested = createAction<[payload: { workspaceId: string }]>(
+  'workspaceShare/rosterRequested',
+);
+
+/** Saga: the roster of `workspaceId` arrived. */
+export const shareRosterLoaded = createAction<
+  [payload: { workspaceId: string; members: WorkspaceMember[] }]
+>('workspaceShare/rosterLoaded');
+
+/** Saga: the roster read failed; the previous rows stay. */
+export const shareRosterFailed = createAction<[payload: { workspaceId: string }]>(
+  'workspaceShare/rosterFailed',
+);
+
+/** Saga: the caller may not manage sharing for `workspaceId` (see `withheld`). */
+export const shareRosterWithheld = createAction<[payload: { workspaceId: string }]>(
+  'workspaceShare/rosterWithheld',
+);
+
+/** Hover card: remove a collaborator (after the card's own confirmation step). */
+export const shareRosterMemberRemoveRequested = createAction<
+  [payload: { workspaceId: string; principalId: string }]
+>('workspaceShare/rosterMemberRemoveRequested');
+
+/** Saga: a hover-card removal settled (`error` null on success). */
+export const shareRosterActionSettled = createAction<
+  [payload: { workspaceId: string; error: string | null }]
+>('workspaceShare/rosterActionSettled');
+
 function targets(state: WorkspaceShareState, target: WorkspaceShareTarget): boolean {
   return state.open && state.workspaceId === target.workspaceId && state.session === target.session;
 }
@@ -181,11 +242,16 @@ function withoutRows(state: WorkspaceShareState): WorkspaceShareState {
   };
 }
 
+const { getWorkspaceState: getRosterState, setWorkspaceState: setRosterState } =
+  createWorkspaceScopedHelpers(initialRosterState);
+export { getRosterState };
+
 export const workspaceShareReducer = createReducer<WorkspaceShareState>(initialState);
 workspaceShareReducer.with(
   openShareDialog,
   (state, { payload: [{ workspaceId, workspaceTitle }] }) => ({
     ...initialState,
+    byWorkspaceId: state.byWorkspaceId,
     open: true,
     workspaceId,
     workspaceTitle,
@@ -194,8 +260,61 @@ workspaceShareReducer.with(
 );
 workspaceShareReducer.with(closeShareDialog, (state) => ({
   ...initialState,
+  byWorkspaceId: state.byWorkspaceId,
   session: state.session,
 }));
+workspaceShareReducer.with(shareRosterRequested, (state, { payload: [{ workspaceId }] }) => {
+  const roster = getRosterState(state, workspaceId);
+  if (roster.withheld) return state;
+  return setRosterState(state, workspaceId, { ...roster, loadStatus: 'loading' });
+});
+workspaceShareReducer.with(shareRosterLoaded, (state, { payload: [{ workspaceId, members }] }) => {
+  const roster = getRosterState(state, workspaceId);
+  if (roster.withheld) return state;
+  return setRosterState(state, workspaceId, {
+    ...roster,
+    members: createCollection('principalId', members),
+    loadStatus: 'loaded',
+  });
+});
+workspaceShareReducer.with(shareRosterFailed, (state, { payload: [{ workspaceId }] }) => {
+  const roster = getRosterState(state, workspaceId);
+  if (roster.withheld) return state;
+  return setRosterState(state, workspaceId, { ...roster, loadStatus: 'error' });
+});
+workspaceShareReducer.with(shareRosterWithheld, (state, { payload: [{ workspaceId }] }) =>
+  setRosterState(state, workspaceId, {
+    ...getRosterState(state, workspaceId),
+    loadStatus: 'loaded',
+    withheld: true,
+    removingPrincipalId: null,
+    removeError: null,
+  }),
+);
+workspaceShareReducer.with(
+  shareRosterMemberRemoveRequested,
+  (state, { payload: [{ workspaceId, principalId }] }) => {
+    const roster = getRosterState(state, workspaceId);
+    if (roster.withheld || roster.removingPrincipalId) return state;
+    return setRosterState(state, workspaceId, {
+      ...roster,
+      removingPrincipalId: principalId,
+      removeError: null,
+    });
+  },
+);
+workspaceShareReducer.with(
+  shareRosterActionSettled,
+  (state, { payload: [{ workspaceId, error }] }) => {
+    const roster = getRosterState(state, workspaceId);
+    if (roster.withheld) return state;
+    return setRosterState(state, workspaceId, {
+      ...roster,
+      removingPrincipalId: null,
+      removeError: error,
+    });
+  },
+);
 workspaceShareReducer.with(shareDataRequested, (state) => {
   if (!state.open || state.withheld) return state;
   return { ...state, loadStatus: 'loading', loadError: null };

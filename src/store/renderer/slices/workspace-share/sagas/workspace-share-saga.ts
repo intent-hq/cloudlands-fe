@@ -4,15 +4,23 @@
  * Drives the owner-side sharing RPCs (PROTOCOL §5.1 membership) for the Share
  * dialog: reads `workspace.members.list` + `workspace.invite.list` when the
  * dialog opens, after every local mutation, and on a `workspace:updated`
- * membership delta from any client (`takeLatest` so a retarget cancels the
- * stale read); settles `workspace.invite.create` / `.revoke` /
- * `workspace.members.remove` into slice actions.
+ * membership delta from any client; settles `workspace.invite.create` /
+ * `.revoke` / `workspace.members.remove` into slice actions. The workspace
+ * hover card's roster (`workspace.members.list` per hovered workspace, plus
+ * its Remove) rides the same saga, keyed by workspace id.
  *
- * Every owner-only RPC is gated on `selectShareCanManage` BEFORE it is issued
- * (a collaborator connection never calls `workspace.invite.*` or
+ * Reads are single-flight with a trailing coalesce (per dialog, per hovered
+ * workspace): requests that arrive while a read is in flight collapse into
+ * exactly one follow-up read once it settles — a burst of N membership events
+ * costs at most 2 reads, never N+1. (`takeLatest` would cancel the generator
+ * but not the RPC already on the wire.)
+ *
+ * Every owner-only RPC is gated on the owner role BEFORE it is issued (a
+ * collaborator connection never calls `workspace.invite.*` or
  * `workspace.members.remove`), and a daemon `-32003` refusal withholds the
- * dialog the same way. Every settlement carries the `WorkspaceShareTarget` it
- * was issued for so the reducer can drop a reply that outlived its dialog.
+ * dialog / the hover controls the same way. Every dialog settlement carries
+ * the `WorkspaceShareTarget` it was issued for and every roster settlement its
+ * workspace id, so the reducer can drop a reply that outlived its surface.
  *
  * Secrets: the one-time invite url never enters an action, the store, or a
  * log line — it is parked in `invite-link-vault` and only its handle rides
@@ -34,6 +42,9 @@ import {
   selectShareCanManage,
   selectShareCreateRequest,
   selectShareTarget,
+  selectWorkspaceRosterCanManage,
+  selectWorkspaceRosterRemovingPrincipalId,
+  selectWorkspaceRosterTracked,
 } from '../workspace-share-selectors';
 import {
   closeShareDialog,
@@ -49,10 +60,47 @@ import {
   shareInviteRevokeRequested,
   shareMemberRemoveRequested,
   shareMembershipChanged,
+  shareRosterActionSettled,
+  shareRosterFailed,
+  shareRosterLoaded,
+  shareRosterMemberRemoveRequested,
+  shareRosterRequested,
+  shareRosterWithheld,
   type WorkspaceShareTarget,
 } from '../workspace-share-slice';
 
 const logger = createLogger('WorkspaceShareSaga');
+
+/**
+ * Single-flight per key with a trailing coalesce: the first request for a key
+ * runs `worker(key)`; requests for the same key that arrive mid-flight mark it
+ * dirty and return, and the running flight re-runs the worker once afterwards.
+ * Pair with `takeEvery` so every request is observed.
+ */
+function coalescedByKey<A>(
+  keyOf: (action: A) => string,
+  worker: (key: string) => SagaGenerator<void>,
+): (action: A) => SagaGenerator<void> {
+  const flights = new Map<string, { again: boolean }>();
+  return function* (action) {
+    const key = keyOf(action);
+    const flight = flights.get(key);
+    if (flight) {
+      flight.again = true;
+      return;
+    }
+    const mine = { again: true };
+    flights.set(key, mine);
+    try {
+      while (mine.again) {
+        mine.again = false;
+        yield* call(worker, key);
+      }
+    } finally {
+      flights.delete(key);
+    }
+  };
+}
 
 async function readShareData(
   workspaceId: string,
@@ -87,12 +135,8 @@ function* stillTargets(target: WorkspaceShareTarget): SagaGenerator<boolean> {
   );
 }
 
-function logFailure(what: string, target: WorkspaceShareTarget, failure: ShareFailure): void {
-  logger.warn(`${what} failed`, {
-    workspaceId: target.workspaceId,
-    code: failure.code,
-    rpcCode: failure.rpcCode,
-  });
+function logFailure(what: string, workspaceId: string, failure: ShareFailure): void {
+  logger.warn(`${what} failed`, { workspaceId, code: failure.code, rpcCode: failure.rpcCode });
 }
 
 function* loadShareData(): SagaGenerator<void> {
@@ -127,7 +171,7 @@ function* createInvite(action: ReturnType<typeof shareInviteCreateRequested>): S
       yield* put(shareAccessWithheld({ target }));
       return;
     }
-    logFailure('Creating an invite', target, outcome);
+    logFailure('Creating an invite', target.workspaceId, outcome);
     yield* put(
       shareInviteCreateFailed({
         target,
@@ -166,7 +210,7 @@ function* revokeInvite(action: ReturnType<typeof shareInviteRevokeRequested>): S
       yield* put(shareAccessWithheld({ target }));
       return;
     }
-    logFailure('Revoking an invite', target, result);
+    logFailure('Revoking an invite', target.workspaceId, result);
     yield* put(shareActionSettled({ target, error: m.workspace_share_revokeFailed_error() }));
     return;
   }
@@ -185,7 +229,7 @@ function* removeMember(action: ReturnType<typeof shareMemberRemoveRequested>): S
       yield* put(shareAccessWithheld({ target }));
       return;
     }
-    logFailure('Removing a member', target, result);
+    logFailure('Removing a member', target.workspaceId, result);
     yield* put(shareActionSettled({ target, error: m.workspace_share_removeMemberFailed_error() }));
     return;
   }
@@ -202,14 +246,64 @@ function* clearLinksOnClose(): SagaGenerator<void> {
   yield* call(clearInviteLinks);
 }
 
-/** Another client changed the roster/invites of the dialog's workspace: re-read. */
+/** Hover card: `workspace.members.list` for one workspace (Member+ may read). */
+function* loadRoster(workspaceId: string): SagaGenerator<void> {
+  try {
+    const members = yield* call(workspaceSharingClient.listMembers, workspaceId);
+    yield* put(shareRosterLoaded({ workspaceId, members }));
+  } catch (error) {
+    if (isForbiddenErrorResponse(error)) {
+      yield* put(shareRosterWithheld({ workspaceId }));
+      return;
+    }
+    logger.warn('Loading the hover-card roster failed', { workspaceId });
+    yield* put(shareRosterFailed({ workspaceId }));
+  }
+}
+
+/** Hover card: remove a collaborator; the card already confirmed the intent. */
+function* removeRosterMember(
+  action: ReturnType<typeof shareRosterMemberRemoveRequested>,
+): SagaGenerator<void> {
+  const [{ workspaceId, principalId }] = action.payload;
+  if (!(yield* selectWorkspaceRosterCanManage.effect(workspaceId))) {
+    yield* put(shareRosterWithheld({ workspaceId }));
+    return;
+  }
+  // The reducer admits one removal at a time; a request it declined is not issued.
+  if ((yield* selectWorkspaceRosterRemovingPrincipalId.effect(workspaceId)) !== principalId) return;
+  const result = yield* call(workspaceSharingClient.removeMember, workspaceId, principalId);
+  if (!result.success) {
+    if (result.code === 'forbidden') {
+      yield* put(shareRosterWithheld({ workspaceId }));
+      return;
+    }
+    logFailure('Removing a member', workspaceId, result);
+    yield* put(
+      shareRosterActionSettled({
+        workspaceId,
+        error: m.workspace_share_removeMemberFailed_error(),
+      }),
+    );
+    return;
+  }
+  yield* put(shareRosterActionSettled({ workspaceId, error: null }));
+  yield* put(shareRosterRequested({ workspaceId }));
+}
+
+/**
+ * Another client changed the roster/invites of a workspace: re-read the
+ * dialog when it targets that workspace, and the hover roster when tracked.
+ */
 function* refreshOnMembershipChange(
   action: ReturnType<typeof shareMembershipChanged>,
 ): SagaGenerator<void> {
-  const target = yield* selectShareTarget.effect();
   const [{ workspaceId }] = action.payload;
-  if (!target || target.workspaceId !== workspaceId) return;
-  yield* put(shareDataRequested());
+  const target = yield* selectShareTarget.effect();
+  if (target && target.workspaceId === workspaceId) yield* put(shareDataRequested());
+  if (yield* selectWorkspaceRosterTracked.effect(workspaceId)) {
+    yield* put(shareRosterRequested({ workspaceId }));
+  }
 }
 
 export function* workspaceShareSaga(): SagaGenerator<void> {
@@ -217,7 +311,18 @@ export function* workspaceShareSaga(): SagaGenerator<void> {
     takeEvery(openShareDialog, requestDataOnOpen),
     takeEvery(closeShareDialog, clearLinksOnClose),
     takeEvery(shareMembershipChanged, refreshOnMembershipChange),
-    takeLatest(shareDataRequested, loadShareData),
+    takeEvery(
+      shareDataRequested,
+      coalescedByKey(() => 'dialog', loadShareData),
+    ),
+    takeEvery(
+      shareRosterRequested,
+      coalescedByKey(
+        (action: ReturnType<typeof shareRosterRequested>) => action.payload[0].workspaceId,
+        loadRoster,
+      ),
+    ),
+    takeEvery(shareRosterMemberRemoveRequested, removeRosterMember),
     takeLatest(shareInviteCreateRequested, createInvite),
     takeLatest(shareInviteRevokeRequested, revokeInvite),
     takeLatest(shareMemberRemoveRequested, removeMember),

@@ -21,6 +21,7 @@ import type { WorkspaceInvite, WorkspaceMember } from '$features/workspace-shari
 import type { Workspace, WorkspaceRole } from '$shared/types';
 import {
   closeShareDialog,
+  getRosterState,
   initialState,
   openShareDialog,
   shareDataLoaded,
@@ -29,6 +30,9 @@ import {
   shareInviteRevokeRequested,
   shareMemberRemoveRequested,
   shareMembershipChanged,
+  shareRosterLoaded,
+  shareRosterMemberRemoveRequested,
+  shareRosterRequested,
   workspaceShareReducer,
   type WorkspaceShareState,
 } from '../workspace-share-slice';
@@ -461,5 +465,288 @@ describe('workspaceShareSaga', () => {
 
     expect(mocks.request).not.toHaveBeenCalled();
     h.task.cancel();
+  });
+
+  // Regression (fe#2440 verifier, 6138cb4 round): a burst of membership
+  // events while a read is on the wire must not fan out into N more reads —
+  // one leading read, one trailing read once it settles, nothing else.
+  it('coalesces a membership-event burst into one leading and one trailing read', async () => {
+    const pending: Array<() => void> = [];
+    mocks.request.mockImplementation(
+      (method: string) =>
+        new Promise((resolve) =>
+          pending.push(() =>
+            resolve(method === 'workspace.members.list' ? { members: [owner] } : { invites: [] }),
+          ),
+        ),
+    );
+    const h = harness();
+    h.dispatch(openShareDialog({ workspaceId: 'ws-1', workspaceTitle: 'My Space' }));
+    for (let i = 0; i < 10; i++) h.dispatch(shareMembershipChanged({ workspaceId: 'ws-1' }));
+    await settle();
+    expect(calls('workspace.invite.list')).toHaveLength(1);
+    expect(calls('workspace.members.list')).toHaveLength(1);
+
+    pending.splice(0).forEach((resolve) => resolve());
+    await settle();
+    expect(calls('workspace.invite.list')).toHaveLength(2);
+    expect(calls('workspace.members.list')).toHaveLength(2);
+
+    pending.splice(0).forEach((resolve) => resolve());
+    await settle();
+    expect(calls('workspace.invite.list')).toHaveLength(2);
+    expect(h.state().loadStatus).toBe('loaded');
+    h.task.cancel();
+  });
+
+  it('reads the retargeted workspace after an in-flight read for the previous one settles', async () => {
+    let resolveFirst!: () => void;
+    let reads = 0;
+    mocks.request.mockImplementation((method: string, params: { workspaceId: string }) => {
+      if (method === 'workspace.invite.list') return Promise.resolve({ invites: [] });
+      reads += 1;
+      if (reads === 1) {
+        return new Promise((resolve) => (resolveFirst = () => resolve({ members: [owner] })));
+      }
+      return Promise.resolve({ members: [{ ...owner, principalId: `p-${params.workspaceId}` }] });
+    });
+    const h = harness();
+    h.dispatch(openShareDialog({ workspaceId: 'ws-1', workspaceTitle: 'A' }));
+    await settle();
+    h.dispatch(openShareDialog({ workspaceId: 'ws-2', workspaceTitle: 'B' }));
+    await settle();
+    resolveFirst();
+    await settle();
+
+    expect(calls('workspace.members.list').map(([, params]) => params)).toEqual([
+      { workspaceId: 'ws-1' },
+      { workspaceId: 'ws-2' },
+    ]);
+    expect(h.state().workspaceId).toBe('ws-2');
+    expect(getItems(h.state().members).map((member) => member.principalId)).toEqual(['p-ws-2']);
+    h.task.cancel();
+  });
+
+  describe('hover-card roster (keyed by workspace)', () => {
+    const guest: WorkspaceMember = {
+      ...owner,
+      principalId: 'p-guest',
+      login: 'guest',
+      displayName: null,
+      role: 'collaborator',
+    };
+    const rosterOf = (h: ReturnType<typeof harness>, workspaceId: string) =>
+      getItems(getRosterState(h.state(), workspaceId).members).map((m) => m.principalId);
+
+    it('reads workspace.members.list for the requested workspace only', async () => {
+      replyByMethod({ 'workspace.members.list': { members: [owner, guest] } });
+      const h = harness();
+
+      h.dispatch(shareRosterRequested({ workspaceId: 'ws-1' }));
+      await settle();
+
+      expect(mocks.request).toHaveBeenCalledTimes(1);
+      expect(mocks.request).toHaveBeenCalledWith('workspace.members.list', { workspaceId: 'ws-1' });
+      expect(rosterOf(h, 'ws-1')).toEqual(['p-alice', 'p-guest']);
+      expect(getRosterState(h.state(), 'ws-1').loadStatus).toBe('loaded');
+      h.task.cancel();
+    });
+
+    // Regression (fe#2440 verifier, 6138cb4 round): the roster read failure
+    // is logged as a bounded line — never the raw error, which may echo
+    // whatever the daemon or transport put in its message.
+    it('logs a bounded line, not the raw error, when the roster read fails', async () => {
+      const marker = `leak-${Math.random().toString(36).slice(2)}`;
+      replyByMethod({ 'workspace.members.list': new Error(`boom ${marker} ${INVITE_URL}`) });
+      const h = harness();
+
+      h.dispatch(shareRosterRequested({ workspaceId: 'ws-1' }));
+      await settle();
+
+      expect(getRosterState(h.state(), 'ws-1').loadStatus).toBe('error');
+      const sinks = JSON.stringify([
+        h.dispatched,
+        h.state(),
+        consoleSpies.warn.mock.calls,
+        consoleSpies.error.mock.calls,
+      ]);
+      expect(sinks).not.toContain(marker);
+      expect(sinks).not.toContain(SECRET_MARKER);
+      h.task.cancel();
+    });
+
+    it('coalesces roster requests per workspace into one leading and one trailing read', async () => {
+      const pending: Array<() => void> = [];
+      mocks.request.mockImplementation(
+        () => new Promise((resolve) => pending.push(() => resolve({ members: [owner] }))),
+      );
+      const h = harness();
+      for (let i = 0; i < 10; i++) h.dispatch(shareRosterRequested({ workspaceId: 'ws-1' }));
+      h.dispatch(shareRosterRequested({ workspaceId: 'ws-2' }));
+      await settle();
+      expect(calls('workspace.members.list').map(([, params]) => params)).toEqual([
+        { workspaceId: 'ws-1' },
+        { workspaceId: 'ws-2' },
+      ]);
+
+      pending.splice(0).forEach((resolve) => resolve());
+      await settle();
+      expect(calls('workspace.members.list').map(([, params]) => params)).toEqual([
+        { workspaceId: 'ws-1' },
+        { workspaceId: 'ws-2' },
+        { workspaceId: 'ws-1' },
+      ]);
+      pending.splice(0).forEach((resolve) => resolve());
+      await settle();
+      expect(calls('workspace.members.list')).toHaveLength(3);
+      h.task.cancel();
+    });
+
+    it('removes a collaborator for the owner, then re-reads that workspace only', async () => {
+      replyByMethod({ 'workspace.members.remove': { removed: true } });
+      const seeded = [
+        shareRosterRequested({ workspaceId: 'ws-1' }),
+        shareRosterLoaded({ workspaceId: 'ws-1', members: [owner, guest] }),
+        shareRosterRequested({ workspaceId: 'ws-2' }),
+        shareRosterLoaded({ workspaceId: 'ws-2', members: [owner, guest] }),
+      ].reduce(workspaceShareReducer, initialState);
+      const h = harness(seeded);
+
+      h.dispatch(shareRosterMemberRemoveRequested({ workspaceId: 'ws-1', principalId: 'p-guest' }));
+      await settle();
+
+      expect(mocks.request).toHaveBeenCalledWith('workspace.members.remove', {
+        workspaceId: 'ws-1',
+        principalId: 'p-guest',
+      });
+      expect(calls('workspace.members.list').map(([, params]) => params)).toEqual([
+        { workspaceId: 'ws-1' },
+      ]);
+      expect(getRosterState(h.state(), 'ws-1')).toMatchObject({
+        removingPrincipalId: null,
+        removeError: null,
+      });
+      expect(rosterOf(h, 'ws-1')).toEqual(['p-alice']);
+      expect(rosterOf(h, 'ws-2')).toEqual(['p-alice', 'p-guest']);
+      h.task.cancel();
+    });
+
+    // Regression (fe#2440 verifier, 6138cb4 round): a removal started for
+    // workspace A settles under A even when the card has moved to B — B's
+    // rows are never filtered by A's outcome.
+    it('settles a delayed removal under its own workspace, leaving another workspace roster intact', async () => {
+      let resolveRemove!: () => void;
+      replyByMethod({
+        'workspace.members.remove': () =>
+          new Promise((resolve) => (resolveRemove = () => resolve({ removed: true }))),
+        'workspace.members.list': { members: [owner] },
+      });
+      const seeded = [
+        shareRosterRequested({ workspaceId: 'ws-1' }),
+        shareRosterLoaded({ workspaceId: 'ws-1', members: [owner, guest] }),
+      ].reduce(workspaceShareReducer, initialState);
+      const h = harness(seeded);
+
+      h.dispatch(shareRosterMemberRemoveRequested({ workspaceId: 'ws-1', principalId: 'p-guest' }));
+      await settle();
+      replyByMethod({
+        'workspace.members.remove': () => new Promise(() => {}),
+        'workspace.members.list': { members: [owner, guest] },
+      });
+      h.dispatch(shareRosterRequested({ workspaceId: 'ws-2' }));
+      await settle();
+      expect(rosterOf(h, 'ws-2')).toEqual(['p-alice', 'p-guest']);
+
+      replyByMethod({ 'workspace.members.list': { members: [owner] } });
+      resolveRemove();
+      await settle();
+
+      expect(rosterOf(h, 'ws-1')).toEqual(['p-alice']);
+      expect(rosterOf(h, 'ws-2')).toEqual(['p-alice', 'p-guest']);
+      expect(getRosterState(h.state(), 'ws-2').removingPrincipalId).toBeNull();
+      h.task.cancel();
+    });
+
+    it('never issues the owner-only remove from a collaborator connection', async () => {
+      replyByMethod();
+      const seeded = [
+        shareRosterRequested({ workspaceId: 'ws-1' }),
+        shareRosterLoaded({ workspaceId: 'ws-1', members: [owner, guest] }),
+      ].reduce(workspaceShareReducer, initialState);
+      const h = harness(seeded, { 'ws-1': 'collaborator' });
+
+      h.dispatch(shareRosterMemberRemoveRequested({ workspaceId: 'ws-1', principalId: 'p-guest' }));
+      await settle();
+
+      expect(calls('workspace.members.remove')).toHaveLength(0);
+      expect(getRosterState(h.state(), 'ws-1').withheld).toBe(true);
+      h.task.cancel();
+    });
+
+    // Regression (fe#2440 verifier, 6138cb4 round): a `-32003` on the hover
+    // Remove withholds the card's owner controls for that workspace.
+    it('withholds the workspace on a -32003 refusal and keeps the rows', async () => {
+      replyByMethod({ 'workspace.members.remove': forbidden() });
+      const seeded = [
+        shareRosterRequested({ workspaceId: 'ws-1' }),
+        shareRosterLoaded({ workspaceId: 'ws-1', members: [owner, guest] }),
+      ].reduce(workspaceShareReducer, initialState);
+      const h = harness(seeded);
+
+      h.dispatch(shareRosterMemberRemoveRequested({ workspaceId: 'ws-1', principalId: 'p-guest' }));
+      await settle();
+
+      expect(getRosterState(h.state(), 'ws-1')).toMatchObject({
+        withheld: true,
+        removingPrincipalId: null,
+        removeError: null,
+      });
+      expect(rosterOf(h, 'ws-1')).toEqual(['p-alice', 'p-guest']);
+      // Withheld: a later request for that workspace is not issued either.
+      h.dispatch(shareRosterMemberRemoveRequested({ workspaceId: 'ws-1', principalId: 'p-guest' }));
+      await settle();
+      expect(calls('workspace.members.remove')).toHaveLength(1);
+      h.task.cancel();
+    });
+
+    it('localizes a rejected removal without echoing the daemon error', async () => {
+      const leaky = Object.assign(new Error(`cannot remove ${INVITE_URL}`), { rpcCode: -32602 });
+      replyByMethod({ 'workspace.members.remove': leaky });
+      const seeded = [
+        shareRosterRequested({ workspaceId: 'ws-1' }),
+        shareRosterLoaded({ workspaceId: 'ws-1', members: [owner, guest] }),
+      ].reduce(workspaceShareReducer, initialState);
+      const h = harness(seeded);
+
+      h.dispatch(shareRosterMemberRemoveRequested({ workspaceId: 'ws-1', principalId: 'p-guest' }));
+      await settle();
+
+      expect(getRosterState(h.state(), 'ws-1').removeError).toEqual(expect.any(String));
+      expect(rosterOf(h, 'ws-1')).toEqual(['p-alice', 'p-guest']);
+      const sinks = JSON.stringify([h.dispatched, h.state(), consoleSpies.warn.mock.calls]);
+      expect(sinks).not.toContain(SECRET_MARKER);
+      h.task.cancel();
+    });
+
+    it('re-reads a tracked roster on a membership change for that workspace only', async () => {
+      replyByMethod({ 'workspace.members.list': { members: [owner] } });
+      const seeded = [
+        shareRosterRequested({ workspaceId: 'ws-1' }),
+        shareRosterLoaded({ workspaceId: 'ws-1', members: [owner, guest] }),
+      ].reduce(workspaceShareReducer, initialState);
+      const h = harness(seeded);
+
+      h.dispatch(shareMembershipChanged({ workspaceId: 'ws-2' }));
+      await settle();
+      expect(mocks.request).not.toHaveBeenCalled();
+
+      h.dispatch(shareMembershipChanged({ workspaceId: 'ws-1' }));
+      await settle();
+      expect(calls('workspace.members.list').map(([, params]) => params)).toEqual([
+        { workspaceId: 'ws-1' },
+      ]);
+      expect(rosterOf(h, 'ws-1')).toEqual(['p-alice']);
+      h.task.cancel();
+    });
   });
 });

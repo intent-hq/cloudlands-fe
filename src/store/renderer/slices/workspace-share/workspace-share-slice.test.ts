@@ -4,6 +4,8 @@ import { getItem, getItems } from '@augmentcode/themis/utils/collections/collect
 import type { WorkspaceInvite, WorkspaceMember } from '$features/workspace-sharing/types';
 import {
   closeShareDialog,
+  getRosterState,
+  initialRosterState,
   initialState,
   openShareDialog,
   shareAccessWithheld,
@@ -16,6 +18,12 @@ import {
   shareInviteCreateRequested,
   shareInviteRevokeRequested,
   shareMemberRemoveRequested,
+  shareRosterActionSettled,
+  shareRosterFailed,
+  shareRosterLoaded,
+  shareRosterMemberRemoveRequested,
+  shareRosterRequested,
+  shareRosterWithheld,
   workspaceShareReducer,
   type WorkspaceShareState,
   type WorkspaceShareTarget,
@@ -340,5 +348,129 @@ describe('workspaceShareReducer', () => {
       shareActionSettled({ target: target(failed), error: null }),
     );
     expect(removed).toMatchObject({ removingPrincipalId: null, actionError: null });
+  });
+
+  describe('hover-card rosters (byWorkspaceId)', () => {
+    const guest: WorkspaceMember = { ...owner, principalId: 'p-guest', role: 'collaborator' };
+    const ids = (state: WorkspaceShareState, workspaceId: string) =>
+      getItems(getRosterState(state, workspaceId).members).map((m) => m.principalId);
+
+    it('starts with no rosters and reads an untracked workspace as the empty roster', () => {
+      expect(initialState.byWorkspaceId).toEqual({});
+      expect(getRosterState(initialState, 'ws-1')).toBe(initialRosterState);
+      expect(getItems(initialRosterState.members)).toEqual([]);
+    });
+
+    it('tracks the read per workspace: requested → loaded, failed keeps the rows', () => {
+      const loading = reduce(initialState, shareRosterRequested({ workspaceId: 'ws-1' }));
+      expect(getRosterState(loading, 'ws-1').loadStatus).toBe('loading');
+      expect(getRosterState(loading, 'ws-2').loadStatus).toBe('idle');
+
+      const loaded = reduce(
+        loading,
+        shareRosterLoaded({ workspaceId: 'ws-1', members: [owner, guest] }),
+      );
+      expect(getRosterState(loaded, 'ws-1').loadStatus).toBe('loaded');
+      expect(ids(loaded, 'ws-1')).toEqual(['p-alice', 'p-guest']);
+
+      const failed = reduce(
+        loaded,
+        shareRosterRequested({ workspaceId: 'ws-1' }),
+        shareRosterFailed({ workspaceId: 'ws-1' }),
+      );
+      expect(getRosterState(failed, 'ws-1').loadStatus).toBe('error');
+      expect(ids(failed, 'ws-1')).toEqual(['p-alice', 'p-guest']);
+    });
+
+    it('keeps each workspace roster independent of the others', () => {
+      const both = reduce(
+        initialState,
+        shareRosterRequested({ workspaceId: 'ws-1' }),
+        shareRosterLoaded({ workspaceId: 'ws-1', members: [owner, guest] }),
+        shareRosterRequested({ workspaceId: 'ws-2' }),
+        shareRosterLoaded({ workspaceId: 'ws-2', members: [owner, guest] }),
+      );
+      const settled = reduce(
+        both,
+        shareRosterMemberRemoveRequested({ workspaceId: 'ws-1', principalId: 'p-guest' }),
+        shareRosterActionSettled({ workspaceId: 'ws-1', error: null }),
+        shareRosterLoaded({ workspaceId: 'ws-1', members: [owner] }),
+      );
+      expect(ids(settled, 'ws-1')).toEqual(['p-alice']);
+      expect(ids(settled, 'ws-2')).toEqual(['p-alice', 'p-guest']);
+      expect(getRosterState(settled, 'ws-2')).toBe(getRosterState(both, 'ws-2'));
+    });
+
+    it('survives the dialog opening and closing', () => {
+      const tracked = reduce(
+        initialState,
+        shareRosterRequested({ workspaceId: 'ws-1' }),
+        shareRosterLoaded({ workspaceId: 'ws-1', members: [owner, guest] }),
+        openShareDialog({ workspaceId: 'ws-1', workspaceTitle: 'My Space' }),
+        closeShareDialog(),
+      );
+      expect(ids(tracked, 'ws-1')).toEqual(['p-alice', 'p-guest']);
+    });
+
+    it('admits one removal at a time and settles with the localized error', () => {
+      const loaded = reduce(
+        initialState,
+        shareRosterRequested({ workspaceId: 'ws-1' }),
+        shareRosterLoaded({ workspaceId: 'ws-1', members: [owner, guest] }),
+      );
+      const removing = reduce(
+        loaded,
+        shareRosterMemberRemoveRequested({ workspaceId: 'ws-1', principalId: 'p-guest' }),
+      );
+      expect(getRosterState(removing, 'ws-1')).toMatchObject({
+        removingPrincipalId: 'p-guest',
+        removeError: null,
+      });
+      expect(
+        reduce(
+          removing,
+          shareRosterMemberRemoveRequested({ workspaceId: 'ws-1', principalId: 'p-other' }),
+        ),
+      ).toBe(removing);
+
+      const failed = reduce(
+        removing,
+        shareRosterActionSettled({ workspaceId: 'ws-1', error: 'Could not remove the member' }),
+      );
+      expect(getRosterState(failed, 'ws-1')).toMatchObject({
+        removingPrincipalId: null,
+        removeError: 'Could not remove the member',
+      });
+      expect(ids(failed, 'ws-1')).toEqual(['p-alice', 'p-guest']);
+    });
+
+    it('withholds a workspace: rows stay, the in-flight removal clears, later writes are ignored', () => {
+      const removing = reduce(
+        initialState,
+        shareRosterRequested({ workspaceId: 'ws-1' }),
+        shareRosterLoaded({ workspaceId: 'ws-1', members: [owner, guest] }),
+        shareRosterMemberRemoveRequested({ workspaceId: 'ws-1', principalId: 'p-guest' }),
+      );
+      const withheld = reduce(removing, shareRosterWithheld({ workspaceId: 'ws-1' }));
+      expect(getRosterState(withheld, 'ws-1')).toMatchObject({
+        withheld: true,
+        loadStatus: 'loaded',
+        removingPrincipalId: null,
+        removeError: null,
+      });
+      expect(ids(withheld, 'ws-1')).toEqual(['p-alice', 'p-guest']);
+
+      for (const action of [
+        shareRosterRequested({ workspaceId: 'ws-1' }),
+        shareRosterLoaded({ workspaceId: 'ws-1', members: [owner] }),
+        shareRosterFailed({ workspaceId: 'ws-1' }),
+        shareRosterMemberRemoveRequested({ workspaceId: 'ws-1', principalId: 'p-guest' }),
+        shareRosterActionSettled({ workspaceId: 'ws-1', error: 'x' }),
+      ]) {
+        expect(reduce(withheld, action)).toBe(withheld);
+      }
+      // Another workspace is unaffected by the refusal.
+      expect(getRosterState(withheld, 'ws-2').withheld).toBe(false);
+    });
   });
 });

@@ -12,7 +12,7 @@
   import { formatInteger } from '$lib/i18n/format';
   import type { AgentSession, PullRequestInfo, Workspace } from '$shared/types';
   import { getAgentAttentionRequest } from '$shared/utils/agent-attention';
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { writable } from 'svelte/store';
   import Fa from 'svelte-fa';
   import { faChevronRight, faUserPlus } from '@fortawesome/free-solid-svg-icons';
@@ -35,9 +35,18 @@
   } from './sidebar/workspace-pr-presentation';
   import { formatWorkspaceHoverCardTimestamp } from './workspace-hover-card-time';
   import type { WorkspaceMember } from '$features/workspace-sharing/types';
-  import { workspaceSharingClient } from '$features/workspace-sharing/workspace-sharing.client';
-  import { openShareDialog } from '$store/renderer/slices/workspace-share/workspace-share-slice';
-  import { logger } from '$lib/utils/client-logger';
+  import {
+    openShareDialog,
+    shareRosterMemberRemoveRequested,
+    shareRosterRequested,
+  } from '$store/renderer/slices/workspace-share/workspace-share-slice';
+  import {
+    selectWorkspaceRosterCanManage,
+    selectWorkspaceRosterMembers,
+    selectWorkspaceRosterRemoveError,
+    selectWorkspaceRosterRemovingPrincipalId,
+    selectWorkspaceRosterWithheld,
+  } from '$store/renderer/slices/workspace-share/workspace-share-selectors';
   import {
     getWorkspaceStatusPresentation,
     resolveWorkspaceStatusState,
@@ -316,63 +325,51 @@
   let visiblePrRows = $derived(workspacePrRows.slice(0, 3));
   let hiddenPrCount = $derived(Math.max(0, workspacePrRows.length - 3));
   // Member roster (multiplayer w4): rows shown only for a shared workspace
-  // (`memberCount > 1`, PROTOCOL §5.1). Fetched once per hovered workspace
-  // through `workspace.members.list`; `memberCount` changes (member added /
-  // removed by any client — the `workspace:updated` membership delta carries
-  // it) re-key the fetch so the roster converges on live events. Remove and
-  // the Share entry are owner-only (`myRole === 'owner'`): a collaborator
-  // connection never sees the controls and never issues the owner RPCs.
-  let members = $state<WorkspaceMember[]>([]);
-  let canManageSharing = $derived(workspace?.myRole === 'owner');
+  // (`memberCount > 1`, PROTOCOL §5.1). The roster is saga-owned state keyed
+  // by workspace id (workspace-share slice): the card asks for a read per
+  // hovered workspace — `memberCount` changes (member added / removed by any
+  // client — the `workspace:updated` membership delta carries it) re-key the
+  // request so the roster converges on live events — and reads the rows,
+  // in-flight removal, and error back through selectors. Remove and the Share
+  // entry are owner-only (`myRole === 'owner'`) and withheld once the daemon
+  // refuses an owner-only method; only the Remove confirmation step is local.
+  const rosterMembers$ = selectWorkspaceRosterMembers(workspaceIdStore);
+  const rosterCanManage$ = selectWorkspaceRosterCanManage(workspaceIdStore);
+  const rosterWithheld$ = selectWorkspaceRosterWithheld(workspaceIdStore);
+  const removingPrincipalId$ = selectWorkspaceRosterRemovingPrincipalId(workspaceIdStore);
+  const rosterRemoveError$ = selectWorkspaceRosterRemoveError(workspaceIdStore);
+  const membersKey = $derived(
+    workspace && loadWorkspaceData && (workspace.memberCount ?? 0) > 1
+      ? `${workspace.id}:${workspace.memberCount}`
+      : null,
+  );
+  let members = $derived<WorkspaceMember[]>(membersKey ? $rosterMembers$ : []);
+  let canManageSharing = $derived($rosterCanManage$);
   let confirmRemovePrincipalId = $state<string | null>(null);
-  let removingPrincipalId = $state<string | null>(null);
-  let removeError = $state<string | null>(null);
+  let removingPrincipalId = $derived($removingPrincipalId$);
+  let removeError = $derived(
+    $rosterWithheld$ ? m.workspace_share_ownerOnly_notice() : $rosterRemoveError$,
+  );
   function openShare() {
     if (!workspace || !canManageSharing) return;
     appStore.dispatch(
       openShareDialog({ workspaceId: String(workspace.id), workspaceTitle: workspace.title ?? '' }),
     );
   }
-  async function confirmRemoveMember(principalId: string) {
+  function confirmRemoveMember(principalId: string) {
     if (!workspace || !canManageSharing || removingPrincipalId) return;
     if (confirmRemovePrincipalId !== principalId) return;
     confirmRemovePrincipalId = null;
-    removingPrincipalId = principalId;
-    removeError = null;
-    const result = await workspaceSharingClient.removeMember(String(workspace.id), principalId);
-    removingPrincipalId = null;
-    if (result.success) {
-      members = members.filter((member) => member.principalId !== principalId);
-    } else {
-      removeError = m.workspace_share_removeMemberFailed_error();
-    }
+    appStore.dispatch(
+      shareRosterMemberRemoveRequested({ workspaceId: String(workspace.id), principalId }),
+    );
   }
-  let membersLoadedKey: string | null = null;
-  const membersKey = $derived(
-    workspace && (workspace.memberCount ?? 0) > 1
-      ? `${workspace.id}:${workspace.memberCount}`
-      : null,
-  );
   $effect(() => {
     const key = membersKey;
-    if (!key || !loadWorkspaceData) {
-      membersLoadedKey = null;
-      members = [];
-      confirmRemovePrincipalId = null;
-      removeError = null;
-      return;
-    }
-    if (membersLoadedKey === key || !workspace) return;
-    membersLoadedKey = key;
-    const id = String(workspace.id);
-    workspaceSharingClient
-      .listMembers(id)
-      .then((rows) => {
-        if (membersLoadedKey === key) members = rows;
-      })
-      .catch((error) => {
-        logger.warn('Failed to load workspace members for hover card:', error);
-      });
+    confirmRemovePrincipalId = null;
+    if (!key) return;
+    const workspaceId = untrack(() => String(workspace?.id ?? ''));
+    if (workspaceId) appStore.dispatch(shareRosterRequested({ workspaceId }));
   });
   let visibleMembers = $derived(members.slice(0, 4));
   let hiddenMemberCount = $derived(Math.max(0, members.length - 4));
@@ -646,7 +643,7 @@
                           variant="destructive"
                           size="sm"
                           disabled={removingPrincipalId !== null}
-                          onclick={() => void confirmRemoveMember(member.principalId)}
+                          onclick={() => confirmRemoveMember(member.principalId)}
                           aria-label={m.workspace_share_removeMember_confirmAction_ariaLabel({
                             name: memberName(member),
                           })}
