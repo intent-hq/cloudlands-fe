@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render } from '@testing-library/svelte';
+import { mount, tick, unmount } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { parseUiComponentMetadata } from '../component-metadata';
 import { invalidControlContrastCases } from '../../../../../tests/helpers/invalid-control-contrast';
@@ -11,6 +12,38 @@ import { createSwitchThumbSpring, retargetSwitchThumb } from './switch-motion.sv
 afterEach(() => cleanup());
 
 describe('Switch', () => {
+  it('forwards rest attributes and binds the underlying control ref', async () => {
+    const binding = { ref: null as HTMLButtonElement | null };
+    const target = document.createElement('div');
+    document.body.append(target);
+    const component = mount(Switch, {
+      target,
+      props: {
+        'data-testid': 'forwarded-control',
+        'aria-label': 'Forwarded control',
+        get ref() {
+          return binding.ref;
+        },
+        set ref(value) {
+          binding.ref = value;
+        },
+      },
+    });
+    try {
+      await tick();
+      const control = target.querySelector('[data-testid="forwarded-control"]');
+      expect(control).not.toBeNull();
+      expect(binding.ref).toBe(control);
+      expect(control?.getAttribute('aria-label')).toBe('Forwarded control');
+      binding.ref?.focus();
+      expect(document.activeElement).toBe(control);
+    } finally {
+      await unmount(component);
+      target.remove();
+    }
+    expect(binding.ref).toBeNull();
+  });
+
   it('uses switch semantics, binds state, and supports keyboard activation', async () => {
     const onCheckedChange = vi.fn();
     const { getByRole, getByTestId } = render(SwitchHarness, {

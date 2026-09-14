@@ -3,7 +3,7 @@
   import { Toggle as TogglePrimitive } from 'bits-ui';
   import type { Snippet } from 'svelte';
 
-  interface Props {
+  interface Props extends Omit<TogglePrimitive.RootProps, 'children' | 'child'> {
     pressed?: boolean;
     disabled?: boolean;
     size?: 'default' | 'sm' | 'lg' | 'xs';
@@ -17,6 +17,7 @@
   }
 
   let {
+    ref = $bindable(null),
     pressed = $bindable(false),
     disabled = false,
     size = 'default',
@@ -27,11 +28,13 @@
     ariaDescribedby,
     onChange,
     children,
+    ...restProps
   }: Props = $props();
 
   function handlePressedChange(nextPressed: boolean) {
     pressed = nextPressed;
     onChange?.(nextPressed);
+    restProps.onPressedChange?.(nextPressed);
   }
 
   const sizeClasses = {
@@ -43,8 +46,8 @@
 </script>
 
 <TogglePrimitive.Root
+  bind:ref
   bind:pressed
-  onPressedChange={handlePressedChange}
   aria-label={ariaLabel}
   aria-describedby={ariaDescribedby}
   {disabled}
@@ -55,6 +58,8 @@
     sizeClasses[size],
     className,
   )}
+  {...restProps}
+  onPressedChange={handlePressedChange}
 >
   {@render children?.()}
 </TogglePrimitive.Root>

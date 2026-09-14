@@ -4,7 +4,7 @@
   import { onMount, untrack } from 'svelte';
   import { createSwitchThumbSpring, retargetSwitchThumb } from './switch-motion.svelte';
 
-  interface Props {
+  interface Props extends Omit<SwitchPrimitive.RootProps, 'children' | 'child'> {
     id?: string;
     checked?: boolean;
     disabled?: boolean;
@@ -21,6 +21,7 @@
   }
 
   let {
+    ref = $bindable(null),
     id = '',
     checked = $bindable(false),
     disabled = false,
@@ -34,6 +35,7 @@
     ariaLabel,
     ariaLabelledby,
     ariaDescribedby,
+    ...restProps
   }: Props = $props();
 
   const sizes = {
@@ -97,6 +99,7 @@
 </script>
 
 <SwitchPrimitive.Root
+  bind:ref
   bind:checked
   {id}
   {name}
@@ -121,6 +124,7 @@
     width: ${width}px;
     height: ${height}px;
   `}
+  {...restProps}
 >
   <SwitchPrimitive.Thumb
     class={cn(

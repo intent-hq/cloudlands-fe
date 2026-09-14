@@ -2,7 +2,7 @@
   import { cn } from '$lib/utils';
   import { Checkbox as CheckboxPrimitive } from 'bits-ui';
 
-  interface Props {
+  interface Props extends Omit<CheckboxPrimitive.RootProps, 'children' | 'child'> {
     id?: string;
     checked?: boolean;
     indeterminate?: boolean;
@@ -22,6 +22,7 @@
   }
 
   let {
+    ref = $bindable(null),
     id = '',
     checked = $bindable(false),
     indeterminate = $bindable(false),
@@ -38,10 +39,12 @@
     ariaLabelledby,
     ariaDescribedby,
     size = 'md',
+    ...restProps
   }: Props = $props();
 
-  function stopClickPropagation(event: MouseEvent) {
+  function stopClickPropagation(event: Parameters<NonNullable<Props['onclick']>>[0]) {
     event.stopPropagation();
+    restProps.onclick?.(event);
   }
 
   const sizeClasses = {
@@ -52,6 +55,7 @@
 </script>
 
 <CheckboxPrimitive.Root
+  bind:ref
   bind:checked
   bind:indeterminate
   {id}
@@ -66,7 +70,6 @@
   aria-labelledby={ariaLabelledby}
   aria-describedby={ariaDescribedby}
   aria-invalid={invalid || undefined}
-  onclick={stopClickPropagation}
   class={cn(
     "checkbox-root border-border bg-card relative inline-flex shrink-0 cursor-pointer items-center justify-center rounded-(--radius-small) border-[1.5px] shadow-(--elevation-raised) transition-[border-color,background-color,box-shadow,opacity] duration-spring-fast ease-spring-fast after:absolute after:-inset-1.5 after:content-[''] motion-reduce:transition-none",
     'hover:border-input hover:bg-hover active:bg-active',
@@ -78,6 +81,8 @@
     sizeClasses[size],
     className,
   )}
+  {...restProps}
+  onclick={stopClickPropagation}
 >
   <svg class="checkbox-mark size-[75%]" viewBox="0 0 12 12" aria-hidden="true">
     {#if indeterminate}
