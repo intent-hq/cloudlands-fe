@@ -12,7 +12,7 @@
   import { formatInteger } from '$lib/i18n/format';
   import type { AgentSession, PullRequestInfo, Workspace } from '$shared/types';
   import { getAgentAttentionRequest } from '$shared/utils/agent-attention';
-  import { onMount, untrack } from 'svelte';
+  import { onMount, tick, untrack } from 'svelte';
   import { writable } from 'svelte/store';
   import Fa from 'svelte-fa';
   import { faChevronRight, faUserPlus } from '@fortawesome/free-solid-svg-icons';
@@ -346,6 +346,7 @@
   let members = $derived<WorkspaceMember[]>(membersKey ? $rosterMembers$ : []);
   let canManageSharing = $derived($rosterCanManage$);
   let confirmRemovePrincipalId = $state<string | null>(null);
+  let membersEl: HTMLElement | null = $state(null);
   let removingPrincipalId = $derived($removingPrincipalId$);
   let removeError = $derived(
     $rosterWithheld$ ? m.workspace_share_ownerOnly_notice() : $rosterRemoveError$,
@@ -356,6 +357,29 @@
       openShareDialog({ workspaceId: String(workspace.id), workspaceTitle: workspace.title ?? '' }),
     );
   }
+  // Swapping Remove for confirm/cancel (and back) unmounts the focused
+  // control; move focus onto its replacement so a keyboard user keeps their
+  // place and the hover surface does not read the transient blur as leaving.
+  async function focusMemberControl(principalId: string, selector: string | null) {
+    await tick();
+    const row = membersEl?.querySelector<HTMLElement>(
+      `[data-workspace-hover-card-member-row][data-principal-id="${principalId}"]`,
+    );
+    const control = selector ? row?.querySelector<HTMLElement>(selector) : null;
+    if (control) control.focus();
+    else membersEl?.focus();
+  }
+  function askRemoveMember(principalId: string) {
+    confirmRemovePrincipalId = principalId;
+    void focusMemberControl(
+      principalId,
+      '[data-workspace-hover-card-member-remove-confirm] button',
+    );
+  }
+  function cancelRemoveMember(principalId: string) {
+    confirmRemovePrincipalId = null;
+    void focusMemberControl(principalId, '[data-workspace-hover-card-member-remove]');
+  }
   function confirmRemoveMember(principalId: string) {
     if (!workspace || !canManageSharing || removingPrincipalId) return;
     if (confirmRemovePrincipalId !== principalId) return;
@@ -363,6 +387,8 @@
     appStore.dispatch(
       shareRosterMemberRemoveRequested({ workspaceId: String(workspace.id), principalId }),
     );
+    // Remove is disabled while the removal is in flight; park focus on the list.
+    void focusMemberControl(principalId, null);
   }
   $effect(() => {
     const key = membersKey;
@@ -592,8 +618,10 @@
               </div>{/if}
           </section>{/if}
         {#if hasMemberRows}<section
-            class="members min-w-0"
+            bind:this={membersEl}
+            class="members min-w-0 outline-none"
             aria-label={m.workspace_share_members_label()}
+            tabindex="-1"
             data-workspace-hover-card-members
           >
             <div class="grid min-w-0 gap-3" role="list" data-workspace-hover-card-member-list>
@@ -607,6 +635,7 @@
                   role="listitem"
                   data-workspace-hover-card-member-row
                   data-member-role={member.role}
+                  data-principal-id={member.principalId}
                 >
                   {#if member.avatarUrl}
                     <img
@@ -653,7 +682,7 @@
                         <Button
                           variant="ghost-light"
                           size="sm"
-                          onclick={() => (confirmRemovePrincipalId = null)}
+                          onclick={() => cancelRemoveMember(member.principalId)}
                         >
                           {m.workspace_share_cancel_label()}
                         </Button>
@@ -663,7 +692,7 @@
                         variant="ghost-light"
                         size="sm"
                         disabled={removingPrincipalId !== null}
-                        onclick={() => (confirmRemovePrincipalId = member.principalId)}
+                        onclick={() => askRemoveMember(member.principalId)}
                         aria-label={m.workspace_share_removeMember_ariaLabel({
                           name: memberName(member),
                         })}
