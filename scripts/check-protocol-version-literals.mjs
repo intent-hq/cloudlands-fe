@@ -14,9 +14,10 @@ export const FILE_ESCAPE_TOKEN = `${ESCAPE_TOKEN}-file`;
 export const FILE_ESCAPE_LINES = 10;
 export const SCANNED_EXTENSIONS = new Set(['.ts', '.svelte', '.js', '.mjs']);
 export const REMEDIATION_HINT = [
-  'Reference the protocol method or field name (e.g. `agent.getMessageBlock`, `capabilities.foo`)',
+  'Name the protocol method or field (e.g. `agent.getMessageBlock`, or `git.status` returning `hasUpstream`)',
   'or describe the capability instead of a protocol version number.',
-  `For a deliberate exception, append \`// ${ESCAPE_TOKEN}: <reason>\` to the line, or put`,
+  `For a deliberate exception, append \`// ${ESCAPE_TOKEN}: <reason>\` to the line (the token`,
+  'may appear anywhere on the line), or put',
   `\`// ${FILE_ESCAPE_TOKEN}: <reason>\` in the first ${FILE_ESCAPE_LINES} lines of a fixture-heavy file.`,
 ].join('\n');
 
@@ -27,7 +28,9 @@ const SKIPPED_DIRECTORIES = new Set(['node_modules', 'dist', 'build', '.git', 'p
 const GENERATED_FILES = new Set(['src/preload/index.ts']);
 
 // A `v`-prefixed literal (`v10.1`) is a hit on any line; a bare one (`10.1`) only
-// when the line also names the protocol or the daemon.
+// when the line also names the protocol or the daemon. Word-bounded on purpose:
+// camelCase identifiers (`protocolVersion = '9.13'`, `daemonHealth`) are not keywords,
+// so version-gate fixtures in tests stay legal.
 const KEYWORD_PATTERN = /\b(?:protocol|intentd|daemons?)\b/i;
 // Two segments of one or two digits, optionally `v`-prefixed. The lookarounds keep
 // three-part semver (`2.17.0`, `0.1.0`) and `§`-anchored section references out

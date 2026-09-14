@@ -91,6 +91,11 @@ describe('protocol version literal scanner', () => {
     ['a v-suffixed identifier segment', '// fields foov10.1 and x.v9.4 are identifiers'],
     ['a bare literal on a line without a keyword', '// added in 10.1 with the new field'],
     ['a bare literal next to a keyword substring', '// protocols 10.1 and subdaemon 9.4'],
+    ['a camelCase keyword identifier (version-gate fixture)', "const protocolVersion = '9.13';"],
+    [
+      'a camelCase keyword path (version-gate fixture)',
+      "storeState.daemonHealth.stats.protocolVersion = '9.13';",
+    ],
     ['a bare literal ending a sentence without a keyword', '// step 10.1.'],
     ['an escaped product version', `// Harness v1.0 // ${ESCAPE_TOKEN}: product version`],
     ['an escaped toon-format spec version', `// toon-format v0.5 // ${ESCAPE_TOKEN}`],
@@ -213,9 +218,11 @@ describe('protocol version literal scanner CLI', () => {
         expect(result.output).not.toContain('paraglide');
         expect(result.output).not.toContain('README.md');
         expect(result.output).not.toContain('scripts/outside.ts');
-        expect(result.output).toMatch(/method or field name/);
+        expect(result.output).toMatch(/protocol method or field/);
         expect(result.output).toContain('agent.getMessageBlock');
+        expect(result.output).toContain('`git.status` returning `hasUpstream`');
         expect(result.output).toContain(`// ${ESCAPE_TOKEN}: <reason>`);
+        expect(result.output).toContain('anywhere on the line');
         expect(result.output).toContain(`// ${FILE_ESCAPE_TOKEN}: <reason>`);
       },
     );
