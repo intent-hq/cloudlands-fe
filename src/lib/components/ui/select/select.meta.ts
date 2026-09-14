@@ -7,6 +7,25 @@ export const selectMetadata = parseUiComponentMetadata({
   publicImport: '$lib/components/ui/select',
   legacyImports: [],
   exports: ['Select'],
+  // Minimal composition from the select-state-matrix default fixture.
+  usage: `<script lang="ts">
+  import { Select } from '$lib/components/ui/select';
+
+  let value = $state('apple');
+  const items = [
+    { value: 'apple', label: 'Apple' },
+    { value: 'banana', label: 'Banana' },
+  ];
+</script>
+
+<Select.Root bind:value {items}>
+  <Select.Trigger aria-label="Fruit"><Select.Value placeholder="Choose fruit" /></Select.Trigger>
+  <Select.Content>
+    {#each items as item}
+      <Select.Item value={item.value} label={item.label}>{item.label}</Select.Item>
+    {/each}
+  </Select.Content>
+</Select.Root>`,
   category: 'primitive',
   owner: '007-B6',
   callers: [

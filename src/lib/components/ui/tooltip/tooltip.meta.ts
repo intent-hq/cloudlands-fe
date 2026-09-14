@@ -32,6 +32,17 @@ export const tooltipMetadata = parseUiComponentMetadata({
     'showLinkTooltip',
     'tooltipMetadata',
   ],
+  // Minimal composition from the tooltip-interaction default fixture.
+  usage: `<script lang="ts">
+  import * as Tooltip from '$lib/components/ui/tooltip';
+</script>
+
+<Tooltip.Provider>
+  <Tooltip.Root>
+    <Tooltip.Trigger>Keyboard help</Tooltip.Trigger>
+    <Tooltip.Content>Press Command K to open navigation.</Tooltip.Content>
+  </Tooltip.Root>
+</Tooltip.Provider>`,
   category: 'pattern',
   owner: '012-F2',
   callers: [

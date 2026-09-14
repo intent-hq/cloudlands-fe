@@ -7,6 +7,14 @@ export const listMetadata = parseUiComponentMetadata({
   publicImport: '$lib/components/ui/list',
   legacyImports: [],
   exports: ['ListContainer', 'ListEmpty', 'ListItem', 'ListSection', 'listMetadata'],
+  // Minimal composition from the editorial-list default fixture.
+  usage: `<script lang="ts">
+  import * as List from '$lib/components/ui/list';
+</script>
+
+<List.ListContainer>
+  <List.ListItem title="Overview" />
+</List.ListContainer>`,
   category: 'pattern',
   owner: '012-E',
   callers: [

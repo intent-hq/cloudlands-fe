@@ -25,6 +25,16 @@ export const tableMetadata = parseUiComponentMetadata({
     'TableRow',
     'tableMetadata',
   ],
+  // Minimal composition from the table-state-matrix default fixture.
+  usage: `<script lang="ts">
+  import * as Table from '$lib/components/ui/table';
+</script>
+
+<Table.Root>
+  <Table.Caption>Workspaces</Table.Caption>
+  <Table.Header><Table.Row><Table.Head>Name</Table.Head></Table.Row></Table.Header>
+  <Table.Body><Table.Row><Table.Cell>My workspace</Table.Cell></Table.Row></Table.Body>
+</Table.Root>`,
   category: 'primitive',
   owner: 'design-system',
   callers: ['src/lib/component-catalog/renderers/ContentFieldCatalogPreview.svelte'],

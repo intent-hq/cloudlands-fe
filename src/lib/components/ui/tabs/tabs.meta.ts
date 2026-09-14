@@ -7,6 +7,19 @@ export const tabsMetadata = {
   publicImport: '$lib/components/ui/tabs',
   legacyImports: [],
   exports: ['Content', 'List', 'Root', 'Tabs', 'TabsContent', 'TabsList', 'TabsTrigger', 'Trigger'],
+  // Minimal composition from the tabs-state-matrix default fixture.
+  usage: `<script lang="ts">
+  import * as Tabs from '$lib/components/ui/tabs';
+</script>
+
+<Tabs.Root value="overview">
+  <Tabs.List aria-label="Workspace tabs">
+    <Tabs.Trigger value="overview">Overview</Tabs.Trigger>
+    <Tabs.Trigger value="activity">Activity</Tabs.Trigger>
+  </Tabs.List>
+  <Tabs.Content value="overview">Overview content</Tabs.Content>
+  <Tabs.Content value="activity">Activity content</Tabs.Content>
+</Tabs.Root>`,
   category: 'primitive',
   owner: 'design-system',
   callers: [],

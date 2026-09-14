@@ -28,6 +28,20 @@ export const sheetMetadata = parseUiComponentMetadata({
     'Title',
     'Trigger',
   ],
+  // Minimal composition from the sheet-state-matrix default fixture.
+  usage: `<script lang="ts">
+  import * as Sheet from '$lib/components/ui/sheet';
+</script>
+
+<Sheet.Root>
+  <Sheet.Trigger>Open sheet</Sheet.Trigger>
+  <Sheet.Content>
+    <Sheet.Header>
+      <Sheet.Title>Workspace details</Sheet.Title>
+      <Sheet.Description>Review the workspace information.</Sheet.Description>
+    </Sheet.Header>
+  </Sheet.Content>
+</Sheet.Root>`,
   category: 'primitive',
   owner: '007-B4',
   callers: ['src/lib/components/ui/sidebar/sidebar.svelte'],

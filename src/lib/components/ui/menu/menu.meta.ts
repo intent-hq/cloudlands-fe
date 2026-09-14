@@ -35,6 +35,23 @@ export const menuMetadata = {
     'menuMetadata',
     'menuSemantics',
   ],
+  // Minimal composition from the menu-command-states default fixture.
+  usage: `<script lang="ts">
+  import * as Menu from '$lib/components/ui/menu';
+
+  let selected = $state('');
+</script>
+
+<Menu.Root>
+  <Menu.Trigger>Open menu</Menu.Trigger>
+  <Menu.Content>
+    <Menu.Group>
+      <Menu.Label>Commands</Menu.Label>
+      <Menu.Item onSelect={() => (selected = 'Run command')}>Run command</Menu.Item>
+    </Menu.Group>
+  </Menu.Content>
+</Menu.Root>
+<p role="status">{selected}</p>`,
   category: 'primitive',
   owner: '007-B5',
   callers: [

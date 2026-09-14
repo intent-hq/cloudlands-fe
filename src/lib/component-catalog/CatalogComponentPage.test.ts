@@ -10,7 +10,9 @@ afterEach(cleanup);
 
 describe('catalog component docs page', () => {
   it.each(['button', 'select', 'dialog'])('shows import-only guidance for %s', async (slug) => {
-    render(CatalogComponentPage, { props: { entry: getCatalogEntry(slug)! } });
+    render(CatalogComponentPage, {
+      props: { entry: { ...getCatalogEntry(slug)!, usage: undefined } },
+    });
     expect(screen.getAllByRole('table')).toHaveLength(1);
     await fireEvent.click(screen.getByRole('tab', { name: 'Import' }));
     const name = slug[0].toUpperCase() + slug.slice(1);
@@ -18,6 +20,13 @@ describe('catalog component docs page', () => {
       `import { ${name} } from '$lib/components/ui/${slug}';`,
     );
     expect(screen.getAllByRole('table')).toHaveLength(1);
+  });
+
+  it.each(['select', 'dialog'])('renders the authored %s composition', async (slug) => {
+    const entry = getCatalogEntry(slug)!;
+    render(CatalogComponentPage, { props: { entry } });
+    await fireEvent.click(screen.getByRole('tab', { name: 'Usage' }));
+    expect(screen.getByRole('tabpanel').textContent?.trim()).toBe(entry.usage);
   });
 
   it('renders authored usage verbatim', async () => {

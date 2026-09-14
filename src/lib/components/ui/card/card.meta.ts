@@ -27,6 +27,15 @@ export const cardMetadata = parseUiComponentMetadata({
     'Title',
     'cardMetadata',
   ],
+  // Minimal composition from the editorial-card default fixture.
+  usage: `<script lang="ts">
+  import * as Card from '$lib/components/ui/card';
+</script>
+
+<Card.Root>
+  <Card.Header><Card.Title>Workspace</Card.Title></Card.Header>
+  <Card.Content>Workspace details</Card.Content>
+</Card.Root>`,
   category: 'pattern',
   owner: '012-E',
   callers: [

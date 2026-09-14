@@ -18,6 +18,17 @@ export const accordionMetadata = {
     'Root',
     'Trigger',
   ],
+  // Minimal composition from the accordion-state-matrix default fixture.
+  usage: `<script lang="ts">
+  import * as Accordion from '$lib/components/ui/accordion';
+</script>
+
+<Accordion.Root value="details">
+  <Accordion.Item value="details">
+    <Accordion.Header><Accordion.Trigger>Details</Accordion.Trigger></Accordion.Header>
+    <Accordion.Content>Accordion details</Accordion.Content>
+  </Accordion.Item>
+</Accordion.Root>`,
   category: 'primitive',
   owner: 'design-system',
   callers: [],
