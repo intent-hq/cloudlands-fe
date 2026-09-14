@@ -481,19 +481,32 @@ describe('EmbeddedBrowser', () => {
       await waitFor(() => expect(identity.textContent?.trim()).toBe('Local report'));
     });
 
-    it('keeps the webview source current across full and in-page navigation', async () => {
-      const { container } = renderPage();
-      const webview = container.querySelector('webview')!;
-      const navigate = new Event('did-navigate');
-      Object.defineProperty(navigate, 'url', { value: 'https://next.test/docs' });
-      webview.dispatchEvent(navigate);
-      await waitFor(() => expect(webview.getAttribute('src')).toBe('https://next.test/docs'));
-
-      const inPage = new Event('did-navigate-in-page');
-      Object.defineProperty(inPage, 'url', { value: 'https://next.test/docs#api' });
-      webview.dispatchEvent(inPage);
-      await waitFor(() => expect(webview.getAttribute('src')).toBe('https://next.test/docs#api'));
-    });
+    it.each(['did-navigate', 'did-navigate-in-page'])(
+      'persists %s without issuing another guest navigation',
+      async (eventName) => {
+        const onNavigate = vi.fn();
+        const { container, getByRole, rerender } = renderPage({ onNavigate });
+        const webview = container.querySelector('webview')!;
+        const sourceWrites: MutationRecord[] = [];
+        const observer = new MutationObserver((records) => sourceWrites.push(...records));
+        observer.observe(webview, { attributes: true, attributeFilter: ['src'] });
+        const loadURL = vi.fn().mockResolvedValue(undefined);
+        Object.assign(webview, { loadURL });
+        const navigate = new Event(eventName);
+        Object.defineProperty(navigate, 'url', { value: 'https://next.test/docs' });
+        webview.dispatchEvent(navigate);
+        await waitFor(() => expect(onNavigate).toHaveBeenCalledWith('https://next.test/docs'));
+        await rerender({ url: 'https://next.test/docs' });
+        await fireEvent.click(getByRole('button', { name: 'Edit browser address' }));
+        expect((getByRole('textbox', { name: 'Browser address' }) as HTMLInputElement).value).toBe(
+          'https://next.test/docs',
+        );
+        observer.disconnect();
+        expect(sourceWrites).toHaveLength(0);
+        expect(loadURL).not.toHaveBeenCalled();
+        expect(container.querySelector('webview')).toBe(webview);
+      },
+    );
 
     it('shows the URL placeholder for a blank page and edits its full URL', async () => {
       const { getByRole } = render(EmbeddedBrowser, {
