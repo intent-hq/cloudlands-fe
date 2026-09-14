@@ -79,6 +79,7 @@ import * as connectionsStore from './connections-store';
 import * as guestSessionsStore from './guest-sessions-store';
 import type {
   GuestSessionsListResult,
+  GuestWorkspaceRef,
   LeaveGuestSessionResult,
   LeaveGuestWorkspaceResult,
 } from '../../../shared/types/guest-sessions';
@@ -1010,6 +1011,9 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
         // propagates on the next reconnect. Fire-and-forget/fail-soft like
         // the version capture; the store dedupes the unchanged common case.
         void captureRemoteHostname(id);
+        // A guest session's joined-workspace cache refreshes from the host on
+        // the same (re)connect window; a no-op for paired (owner) backends.
+        void hydrateGuestWorkspaces(id);
         // Capture whether the daemon supports self-update (system.status
         // `updateSupported`) so the renderer can gate the Update affordance.
         // Fire-and-forget/fail-soft like the captures above.
@@ -1468,6 +1472,56 @@ function extractDeviceKind(result: unknown): DetectedDeviceKind | null {
   if (!result || typeof result !== 'object') return null;
   const value = (result as { deviceKind?: unknown }).deviceKind;
   return isDetectedDeviceKind(value) ? value : null;
+}
+
+/**
+ * Pull `{ id, title }` refs out of a `workspace.list` result (PROTOCOL §5 —
+ * `{ workspaces: [{ id, title, ... }] }`); null when the payload is not that
+ * shape, so a malformed answer never overwrites the cached list.
+ */
+function extractWorkspaceRefs(result: unknown): GuestWorkspaceRef[] | null {
+  const rows = (result as { workspaces?: unknown } | null)?.workspaces;
+  if (!Array.isArray(rows)) return null;
+  const refs: GuestWorkspaceRef[] = [];
+  for (const row of rows) {
+    const { id, title } = (row ?? {}) as { id?: unknown; title?: unknown };
+    if (typeof id !== 'string' || typeof title !== 'string') return null;
+    refs.push({ id, title });
+  }
+  return refs;
+}
+
+/**
+ * Hydrate a guest session's joined-workspace list from the host once its
+ * connection is up (every (re)connect hello, like {@link captureRemoteHostname}).
+ * The local list is only a last-known cache: rows imported by keychain sync
+ * (which never carries the list) and rows written before the field existed
+ * have none, and a membership removed on the host must not linger. The
+ * guest connection's `workspace.list` is membership-filtered by the daemon,
+ * so its rows ARE the joined workspaces; the store reconciles by id. Fail-soft:
+ * an unreachable host, a refusal or a malformed answer keeps the cached list.
+ * Results arriving after the pooled client was replaced are discarded.
+ */
+async function hydrateGuestWorkspaces(id: string): Promise<void> {
+  try {
+    if ((await guestSessionsStore.findById(id)) === null) return;
+    const client = getBackendClientForId(id);
+    const result = await client.request('workspace.list');
+    if (backendClients.get(id) !== client) return;
+    const refs = extractWorkspaceRefs(result);
+    if (refs === null) {
+      logger.warn('Ignoring malformed workspace.list from guest host', { id });
+      return;
+    }
+    if (await guestSessionsStore.setWorkspaces(id, refs)) {
+      await broadcastGuestSessionsChanged();
+    }
+  } catch (error) {
+    logger.warn('Failed to hydrate guest workspaces from host', {
+      id,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
 }
 
 /**

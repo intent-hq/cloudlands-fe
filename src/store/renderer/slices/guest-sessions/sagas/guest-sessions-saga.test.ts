@@ -493,6 +493,134 @@ describe('guestSessionsSaga', () => {
       await stop(run.task);
     });
 
+    /**
+     * The local owner gate closes while a sweep step is awaited: the caller
+     * becomes a collaborator, or an independent roster read is denied and
+     * withholds the roster. The step's late answer must not send one more
+     * owner RPC — the sweep ends `forbidden`, exactly as a daemon denial.
+     */
+    describe.each([
+      {
+        change: 'the caller becomes a collaborator',
+        async close(run: ReturnType<typeof start>) {
+          run.dispatch(replaceWorkspaceList([makeWorkspace('ws-1', 2, 'collaborator')]));
+        },
+      },
+      {
+        change: 'a concurrent roster read is denied',
+        async close(run: ReturnType<typeof start>) {
+          mocks.request.mockRejectedValueOnce(daemonError(-32003, 'Forbidden'));
+          const refresh = loadHostedRosterRequested('ws-1');
+          const denied = refresh.promise.catch((e: unknown) => e);
+          run.dispatch(refresh);
+          await denied;
+          expect(run.getState().guestSessions.hostedRosters['ws-1'].status).toBe('withheld');
+        },
+      },
+    ])('gate closed mid-sweep — $change', ({ close }) => {
+      function pending<T>() {
+        let resolve!: (value: T) => void;
+        const promise = new Promise<T>((r) => (resolve = r));
+        return { promise, resolve };
+      }
+
+      it('sends no owner RPC once the initial roster read answers', async () => {
+        const read = pending<{ members: WorkspaceMember[] }>();
+        mocks.request.mockImplementation(async (method) => {
+          if (method === 'workspace.members.list') return read.promise;
+          if (method === 'workspace.members.remove') return { removed: true };
+          if (method === 'workspace.invite.list') return { invites: [makeInvite('inv-1')] };
+          if (method === 'workspace.invite.revoke') return { revoked: true };
+          throw new Error(`unexpected method ${method}`);
+        });
+        const run = start();
+        await settle();
+        run.dispatch(replaceWorkspaceList([makeWorkspace('ws-1', 2)]));
+
+        const action = removeAllHostedGuestsRequested('ws-1');
+        const settled = action.promise.catch((e: unknown) => e);
+        run.dispatch(action);
+        await settle();
+        await close(run);
+        read.resolve({ members: [OWNER, MEMBER] });
+
+        const failure = (await settled) as HostedRosterOperationError;
+        expect(failure).toBeInstanceOf(HostedRosterOperationError);
+        expect(failure.code).toBe('forbidden');
+        expect(calls('workspace.members.remove')).toEqual([]);
+        expect(calls('workspace.invite.list')).toEqual([]);
+        expect(calls('workspace.invite.revoke')).toEqual([]);
+        expect(run.getState().guestSessions.clearingWorkspaceIds).toEqual([]);
+
+        await stop(run.task);
+      });
+
+      it('sends no invite RPC once the last member removal answers', async () => {
+        const remove = pending<{ removed: boolean }>();
+        mocks.request.mockImplementation(async (method) => {
+          if (method === 'workspace.members.list') return { members: [OWNER, MEMBER] };
+          if (method === 'workspace.members.remove') return remove.promise;
+          if (method === 'workspace.invite.list') return { invites: [makeInvite('inv-1')] };
+          if (method === 'workspace.invite.revoke') return { revoked: true };
+          throw new Error(`unexpected method ${method}`);
+        });
+        const run = start();
+        await settle();
+        run.dispatch(replaceWorkspaceList([makeWorkspace('ws-1', 2)]));
+
+        const action = removeAllHostedGuestsRequested('ws-1');
+        const settled = action.promise.catch((e: unknown) => e);
+        run.dispatch(action);
+        await settle();
+        expect(calls('workspace.members.remove')).toHaveLength(1);
+        await close(run);
+        remove.resolve({ removed: true });
+
+        const failure = (await settled) as HostedRosterOperationError;
+        expect(failure.code).toBe('forbidden');
+        expect(calls('workspace.invite.list')).toEqual([]);
+        expect(calls('workspace.invite.revoke')).toEqual([]);
+        expect(run.getState().guestSessions.hostedRosters['ws-1']?.status).toBe('withheld');
+        expect(run.getState().guestSessions.clearingWorkspaceIds).toEqual([]);
+
+        await stop(run.task);
+      });
+
+      it('sends no further revoke once an invite revoke answers', async () => {
+        const revoke = pending<{ revoked: boolean }>();
+        mocks.request.mockImplementation(async (method, params) => {
+          if (method === 'workspace.members.list') return { members: [OWNER] };
+          if (method === 'workspace.invite.list')
+            return { invites: [makeInvite('inv-1'), makeInvite('inv-2')] };
+          if (method === 'workspace.invite.revoke') {
+            if ((params as { inviteId: string }).inviteId === 'inv-1') return revoke.promise;
+            return { revoked: true };
+          }
+          throw new Error(`unexpected method ${method}`);
+        });
+        const run = start();
+        await settle();
+        run.dispatch(replaceWorkspaceList([makeWorkspace('ws-1', 2)]));
+
+        const action = removeAllHostedGuestsRequested('ws-1');
+        const settled = action.promise.catch((e: unknown) => e);
+        run.dispatch(action);
+        await settle();
+        expect(calls('workspace.invite.revoke')).toEqual([
+          { workspaceId: 'ws-1', inviteId: 'inv-1' },
+        ]);
+        await close(run);
+        revoke.resolve({ revoked: true });
+
+        const failure = (await settled) as HostedRosterOperationError;
+        expect(failure.code).toBe('forbidden');
+        expect(calls('workspace.invite.revoke')).toHaveLength(1);
+        expect(run.getState().guestSessions.clearingWorkspaceIds).toEqual([]);
+
+        await stop(run.task);
+      });
+    });
+
     it('a sweep that outlives the workspace deletion is cancelled and leaves no marker', async () => {
       let releaseRemove!: () => void;
       mocks.request.mockImplementation(async (method) => {
@@ -522,6 +650,187 @@ describe('guestSessionsSaga', () => {
       expect(run.getState().guestSessions.hostedRosters['ws-1']).toBeUndefined();
 
       await stop(run.task);
+    });
+
+    /**
+     * One sweep per workspace at a time: a request dispatched while that
+     * workspace's sweep is in flight joins it — the same RPCs are never issued
+     * twice and the busy marker outlives every joined request — while another
+     * workspace's sweep runs independently.
+     */
+    describe('single-flight per workspace', () => {
+      function pending<T>() {
+        let resolve!: (value: T) => void;
+        let reject!: (error: unknown) => void;
+        const promise = new Promise<T>((res, rej) => {
+          resolve = res;
+          reject = rej;
+        });
+        return { promise, resolve, reject };
+      }
+
+      it('a duplicate request joins the in-flight sweep and resolves with the same report', async () => {
+        const read = pending<{ members: WorkspaceMember[] }>();
+        mocks.request.mockImplementation(async (method) => {
+          if (method === 'workspace.members.list') return read.promise;
+          if (method === 'workspace.members.remove') return { removed: true };
+          if (method === 'workspace.invite.list') return { invites: [makeInvite('inv-1')] };
+          if (method === 'workspace.invite.revoke') return { revoked: true };
+          throw new Error(`unexpected method ${method}`);
+        });
+        const run = start();
+        await settle();
+        run.dispatch(replaceWorkspaceList([makeWorkspace('ws-1', 2)]));
+
+        const first = removeAllHostedGuestsRequested('ws-1');
+        const second = removeAllHostedGuestsRequested('ws-1');
+        run.dispatch(first);
+        run.dispatch(second);
+        await settle();
+        expect(calls('workspace.members.list')).toHaveLength(1);
+        expect(run.getState().guestSessions.clearingWorkspaceIds).toEqual(['ws-1']);
+
+        read.resolve({ members: [OWNER, MEMBER] });
+        const report = {
+          removedPrincipalIds: [MEMBER.principalId],
+          failedMembers: [],
+          revokedInviteIds: ['inv-1'],
+          failedInvites: [],
+          invitesUnavailable: null,
+        };
+        await expect(first.promise).resolves.toEqual(report);
+        await expect(second.promise).resolves.toEqual(report);
+        expect(calls('workspace.members.remove')).toHaveLength(1);
+        expect(calls('workspace.invite.list')).toHaveLength(1);
+        expect(calls('workspace.invite.revoke')).toHaveLength(1);
+        await settle();
+        expect(run.getState().guestSessions.clearingWorkspaceIds).toEqual([]);
+        // The leader's fresh read plus the one refetch after the sweep.
+        expect(calls('workspace.members.list')).toHaveLength(2);
+
+        await stop(run.task);
+      });
+
+      it('a duplicate request joins a failing sweep and rejects with the same bounded failure', async () => {
+        const read = pending<{ members: WorkspaceMember[] }>();
+        mocks.request.mockImplementation(async (method) => {
+          if (method === 'workspace.members.list') return read.promise;
+          throw new Error(`unexpected method ${method}`);
+        });
+        const run = start();
+        await settle();
+        run.dispatch(replaceWorkspaceList([makeWorkspace('ws-1', 2)]));
+
+        const first = removeAllHostedGuestsRequested('ws-1');
+        const second = removeAllHostedGuestsRequested('ws-1');
+        const outcomes = Promise.all(
+          [first, second].map((a) => a.promise.catch((e: unknown) => e)),
+        );
+        run.dispatch(first);
+        run.dispatch(second);
+        await settle();
+        read.reject(new Error('socket closed SENTINEL'));
+
+        const failures = (await outcomes) as HostedRosterOperationError[];
+        for (const failure of failures) {
+          expect(failure).toBeInstanceOf(HostedRosterOperationError);
+          expect(failure.code).toBe('transport');
+          expect(failure.message).not.toContain('SENTINEL');
+        }
+        expect(calls('workspace.members.list')).toHaveLength(1);
+        expect(run.getState().guestSessions.clearingWorkspaceIds).toEqual([]);
+
+        await stop(run.task);
+      });
+
+      it('sweeps of different workspaces run independently', async () => {
+        const reads = new Map<string, ReturnType<typeof pending<{ members: WorkspaceMember[] }>>>();
+        mocks.request.mockImplementation(async (method, params) => {
+          const { workspaceId } = params as { workspaceId: string };
+          if (method === 'workspace.members.list') {
+            const read = pending<{ members: WorkspaceMember[] }>();
+            reads.set(workspaceId, read);
+            return read.promise;
+          }
+          if (method === 'workspace.members.remove') return { removed: true };
+          if (method === 'workspace.invite.list') return { invites: [] };
+          throw new Error(`unexpected method ${method}`);
+        });
+        const run = start();
+        await settle();
+        run.dispatch(replaceWorkspaceList([makeWorkspace('ws-1', 2), makeWorkspace('ws-2', 2)]));
+
+        const one = removeAllHostedGuestsRequested('ws-1');
+        const two = removeAllHostedGuestsRequested('ws-2');
+        run.dispatch(one);
+        run.dispatch(two);
+        await settle();
+        expect(calls('workspace.members.list')).toEqual([
+          { workspaceId: 'ws-1' },
+          { workspaceId: 'ws-2' },
+        ]);
+        expect(run.getState().guestSessions.clearingWorkspaceIds).toEqual(['ws-1', 'ws-2']);
+
+        reads.get('ws-2')!.resolve({ members: [OWNER, SECOND_MEMBER] });
+        await expect(two.promise).resolves.toMatchObject({
+          removedPrincipalIds: [SECOND_MEMBER.principalId],
+        });
+        await settle();
+        expect(run.getState().guestSessions.clearingWorkspaceIds).toEqual(['ws-1']);
+
+        reads.get('ws-1')!.resolve({ members: [OWNER, MEMBER] });
+        await expect(one.promise).resolves.toMatchObject({
+          removedPrincipalIds: [MEMBER.principalId],
+        });
+        await settle();
+        expect(run.getState().guestSessions.clearingWorkspaceIds).toEqual([]);
+
+        await stop(run.task);
+      });
+
+      it('a purge mid-sweep cancels every joined request, and the next request starts a new flight', async () => {
+        const read = pending<{ members: WorkspaceMember[] }>();
+        let reads = 0;
+        mocks.request.mockImplementation(async (method) => {
+          if (method === 'workspace.members.list') {
+            reads += 1;
+            return reads === 1 ? read.promise : { members: [OWNER] };
+          }
+          if (method === 'workspace.invite.list') return { invites: [] };
+          throw new Error(`unexpected method ${method}`);
+        });
+        const run = start();
+        await settle();
+        run.dispatch(replaceWorkspaceList([makeWorkspace('ws-1', 2)]));
+
+        const first = removeAllHostedGuestsRequested('ws-1');
+        const second = removeAllHostedGuestsRequested('ws-1');
+        const outcomes = Promise.all(
+          [first, second].map((a) => a.promise.catch((e: unknown) => e)),
+        );
+        run.dispatch(first);
+        run.dispatch(second);
+        await settle();
+        run.dispatch(workspaceDeleted('ws-1', []));
+
+        const failures = (await outcomes) as HostedRosterOperationError[];
+        expect(failures.map((f) => f.code)).toEqual(['cancelled', 'cancelled']);
+        expect(run.getState().guestSessions.clearingWorkspaceIds).toEqual([]);
+
+        // The late answer of the cancelled read issues nothing.
+        read.resolve({ members: [OWNER, MEMBER] });
+        await settle();
+        expect(calls('workspace.members.remove')).toEqual([]);
+
+        // The flight is gone: a new request for a re-listed same-id workspace sweeps afresh.
+        run.dispatch(replaceWorkspaceList([makeWorkspace('ws-1', 1)]));
+        const third = removeAllHostedGuestsRequested('ws-1');
+        run.dispatch(third);
+        await expect(third.promise).resolves.toMatchObject({ removedPrincipalIds: [] });
+        expect(calls('workspace.members.list').length).toBeGreaterThanOrEqual(2);
+
+        await stop(run.task);
+      });
     });
   });
 

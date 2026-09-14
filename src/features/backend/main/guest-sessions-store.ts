@@ -701,6 +701,50 @@ export async function leaveWorkspace(id: string, workspaceId: string): Promise<b
   return changed;
 }
 
+/**
+ * Reconcile a session's local workspace list against the host's authoritative
+ * membership-filtered `workspace.list` (read through the guest connection
+ * once it is reachable). The local list is only a last-known cache: rows
+ * written before the field existed and rows imported by keychain sync (which
+ * never carries it) start with no workspaces at all, and a membership removed
+ * on the host must not linger as a phantom row. Reconciled by id — entries
+ * the host no longer lists are dropped, kept entries keep their local (join)
+ * order and take the host's title, new memberships append in host order.
+ * Not a syncable mutation: the record's `updatedAt` is the keychain LWW
+ * clock and is left alone (a cache refresh on every reconnect must never
+ * outrank another device's genuine edit), and {@link onGuestSessionsMutated}
+ * does not fire — the caller broadcasts. Returns whether anything changed;
+ * no-op for an unknown session.
+ */
+export async function setWorkspaces(
+  id: string,
+  workspaces: readonly GuestWorkspaceRef[],
+): Promise<boolean> {
+  return mutate(async (state) => {
+    const session = state.sessions.find((s) => s.id === id);
+    if (!session) return false;
+    const byId = new Map(workspaces.map((w) => [w.id, w.title] as const));
+    const kept = (session.workspaces ?? [])
+      .filter((w) => byId.has(w.id))
+      .map((w) => ({ id: w.id, title: byId.get(w.id)! }));
+    const seen = new Set(kept.map((w) => w.id));
+    const next = [...kept];
+    for (const w of workspaces) {
+      if (seen.has(w.id)) continue;
+      seen.add(w.id);
+      next.push({ id: w.id, title: w.title });
+    }
+    const current = session.workspaces ?? [];
+    const unchanged =
+      current.length === next.length &&
+      current.every((w, i) => w.id === next[i].id && w.title === next[i].title);
+    if (unchanged && session.workspaces !== undefined) return false;
+    session.workspaces = next;
+    await writeState(state);
+    return true;
+  });
+}
+
 /** Forget a guest session, leaving a tombstone so keychain sync propagates the delete. */
 export async function forget(id: string): Promise<boolean> {
   const changed = await mutate(async (state) => {

@@ -188,6 +188,7 @@ const guestStore = vi.hoisted(() => ({
   findById: vi.fn(),
   forget: vi.fn(),
   leaveWorkspace: vi.fn(),
+  setWorkspaces: vi.fn(),
   getDecryptedToken: vi.fn(),
   setTcAddress: vi.fn(),
   setHosts: vi.fn(),
@@ -199,6 +200,7 @@ vi.mock('../guest-sessions-store', () => ({
   findById: guestStore.findById,
   forget: guestStore.forget,
   leaveWorkspace: guestStore.leaveWorkspace,
+  setWorkspaces: guestStore.setWorkspaces,
   getDecryptedToken: guestStore.getDecryptedToken,
   setHostname: vi.fn(async () => false),
   setTcAddress: guestStore.setTcAddress,
@@ -392,6 +394,7 @@ beforeEach(() => {
   guestStore.findById.mockResolvedValue(null);
   guestStore.forget.mockResolvedValue(true);
   guestStore.leaveWorkspace.mockResolvedValue(true);
+  guestStore.setWorkspaces.mockResolvedValue(false);
   guestStore.getDecryptedToken.mockResolvedValue(null);
   guestStore.setTcAddress.mockResolvedValue(false);
   guestStore.setHosts.mockResolvedValue(false);
@@ -4352,6 +4355,91 @@ describe('guest-sessions:* IPC handlers', () => {
       expect(send.mock.calls.some(([c]) => c === 'connections:changed')).toBe(true);
     });
     expect(send.mock.calls.some(([c]) => c === 'guest-sessions:changed')).toBe(false);
+  });
+
+  /**
+   * The joined-workspace list on a guest record is only a last-known cache
+   * (keychain-imported and pre-field rows have none): each (re)connect hello
+   * hydrates it from the host's membership-filtered `workspace.list`.
+   */
+  describe('joined-workspace hydration on guest connect', () => {
+    type HelloClient = { hello(result: unknown): void };
+    const hello = { server: { version: '6.8.0', buildCommit: 'abc123' } };
+
+    it('reconciles the cached list from workspace.list through the guest connection and re-broadcasts', async () => {
+      installGuest();
+      guestStore.setWorkspaces.mockResolvedValue(true);
+      rpc.handler = async (method) =>
+        method === 'workspace.list'
+          ? {
+              workspaces: [
+                { id: 'ws-guest', title: 'Guest project', myRole: 'collaborator', memberCount: 2 },
+                { id: 'ws-new', title: 'Joined elsewhere', myRole: 'collaborator', memberCount: 3 },
+              ],
+            }
+          : {};
+      const send = installWindow();
+      const { mod } = await loadModule();
+      mod.registerBackendHandlers();
+      const guest = (await mod.connectBackendClient(GUEST.id)) as unknown as HelloClient;
+      send.mockClear();
+
+      guest.hello(hello);
+      await vi.waitFor(() =>
+        expect(guestStore.setWorkspaces).toHaveBeenCalledWith(GUEST.id, [
+          { id: 'ws-guest', title: 'Guest project' },
+          { id: 'ws-new', title: 'Joined elsewhere' },
+        ]),
+      );
+      expect(rpc.params[rpc.calls.indexOf('workspace.list')]).toBeUndefined();
+      await vi.waitFor(() =>
+        expect(send.mock.calls.some(([c]) => c === 'guest-sessions:changed')).toBe(true),
+      );
+    });
+
+    it('never lists workspaces on a paired (owner) backend hello', async () => {
+      installGuest();
+      const { mod } = await loadModule();
+      mod.registerBackendHandlers();
+      const remote = (await mod.connectBackendClient('remote-1')) as unknown as HelloClient;
+      remote.hello(hello);
+      await vi.waitFor(() => expect(rpc.calls).toContain('host.status'));
+      expect(rpc.calls).not.toContain('workspace.list');
+      expect(guestStore.setWorkspaces).not.toHaveBeenCalled();
+    });
+
+    it('keeps the cached list when the host refuses or is unreachable', async () => {
+      installGuest();
+      rpc.handler = async (method) => {
+        if (method === 'workspace.list') throw new Error('socket closed');
+        return {};
+      };
+      const send = installWindow();
+      const { mod } = await loadModule();
+      mod.registerBackendHandlers();
+      const guest = (await mod.connectBackendClient(GUEST.id)) as unknown as HelloClient;
+      send.mockClear();
+
+      guest.hello(hello);
+      await vi.waitFor(() => expect(rpc.calls).toContain('workspace.list'));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(guestStore.setWorkspaces).not.toHaveBeenCalled();
+      expect(send.mock.calls.some(([c]) => c === 'guest-sessions:changed')).toBe(false);
+    });
+
+    it('keeps the cached list when workspace.list is not the documented shape', async () => {
+      installGuest();
+      rpc.handler = async (method) =>
+        method === 'workspace.list' ? { workspaces: [{ id: 'ws-guest' }] } : {};
+      const { mod } = await loadModule();
+      mod.registerBackendHandlers();
+      const guest = (await mod.connectBackendClient(GUEST.id)) as unknown as HelloClient;
+
+      guest.hello(hello);
+      await vi.waitFor(() => expect(rpc.calls).toContain('workspace.list'));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(guestStore.setWorkspaces).not.toHaveBeenCalled();
+    });
   });
 
   it('guest-sessions:leave revokes on the host (5 s bound), forgets locally, then tears the host windows down', async () => {
