@@ -2417,6 +2417,12 @@ function handleWorkspaceUpdatedEvent(event: WorkspaceEvent, workspaceId: string)
   if (typeof raw.prNumber === 'number') changes.prNumber = raw.prNumber;
   if (typeof raw.prUrl === 'string') changes.prUrl = raw.prUrl;
   if (typeof raw.lastActivity === 'string') changes.lastActivity = raw.lastActivity;
+  // Membership-changing deltas (invite redeem, member remove/leave — PROTOCOL
+  // §5.1, multiplayer w4) carry the post-change `memberCount` so the roster
+  // summary on the entity stays current without a refetch.
+  if (typeof raw.memberCount === 'number' && Number.isFinite(raw.memberCount)) {
+    changes.memberCount = raw.memberCount;
+  }
   if (typeof raw.archived === 'boolean') changes.archived = raw.archived;
   // `archivedAt` is nullable on the wire: archive sends the persisted ISO
   // timestamp, unarchive sends an explicit JSON null. Keep the key present on

@@ -8158,6 +8158,22 @@ describe('daemonEventsBridge (workspace:updated → workspace slice)', () => {
     // The wire null must drop the stale asset reference rather than retain it.
     expect(ws.statusImageAssetId).toBeUndefined();
   });
+
+  it('merges the memberCount carried by a membership-changing delta (multiplayer w4)', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // PROTOCOL §5.1: invite redeem / member remove publish `workspace:updated`
+    // with `{ members: true, memberCount }` — the non-column flags are dropped,
+    // the post-change count lands on the entity.
+    handler(updatedNotification({ members: true, addedPrincipalId: 'p-bob', memberCount: 2 }));
+
+    const ws = await readWorkspace();
+    expect(ws.memberCount).toBe(2);
+    expect(ws.branch).toBe('main');
+    expect((ws as Record<string, unknown>).members).toBeUndefined();
+  });
 });
 
 describe('daemonEventsBridge (workspace:updated → tab bar archive sync)', () => {

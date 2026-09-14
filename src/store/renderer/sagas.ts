@@ -111,6 +111,7 @@ import { workspaceNotesSaga } from './slices/workspace-notes/sagas/workspace-not
 import { workspaceOperationsSaga } from './slices/workspace-operations/sagas/workspace-operations-saga';
 import { workspaceSettingsSaga } from './slices/workspace-settings/sagas/workspace-settings-saga';
 import { workspaceTransferSaga } from './slices/workspace-transfer/sagas/workspace-transfer-saga';
+import { workspaceShareSaga } from './slices/workspace-share/sagas/workspace-share-saga';
 import { workspaceImportSaga } from './slices/workspace-import/sagas/workspace-import-saga';
 
 export type AppSaga = Parameters<Store<any, any>['runSaga']>[0];
@@ -163,6 +164,7 @@ export const sagas = [
   workspaceNavigationLayoutSaga,
   workspaceOperationsSaga,
   workspaceTransferSaga,
+  workspaceShareSaga,
   workspaceImportSaga,
   scriptsOperationSaga,
   lifecycleReadSaga,
