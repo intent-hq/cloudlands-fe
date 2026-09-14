@@ -705,14 +705,22 @@ describe('StreamingStatus slot-wait state (processQueueHint)', () => {
     expect(thinking.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it('switches to memory-budget copy when the daemon reports that reason', () => {
-    const { container } = render(StreamingStatus, {
-      props: { isProcessing: true, processQueueHint: memoryWait },
+  it('switches to memory-budget copy when the daemon reports that reason', async () => {
+    const { container, rerender } = render(StreamingStatus, {
+      props: { isProcessing: true, processQueueHint: { ...memoryWait, reason: 'slots' } },
     });
+    const slotsCopy = screen.getByTestId('slot-wait-message').textContent;
+    expect(slotsCopy).toContain('2/4');
+
+    await rerender({ isProcessing: true, processQueueHint: memoryWait });
 
     const row = container.querySelector('[data-stream-slot-wait="true"]') as HTMLElement;
     expect(row.getAttribute('data-queue-reason')).toBe('memory-budget');
-    expect(screen.getByTestId('slot-wait-message').textContent).toContain('2/4');
+    const memoryCopy = screen.getByTestId('slot-wait-message').textContent;
+    // Same used/cap, different constraint: the reason must change the copy
+    // (the numbers alone would leave a memory wait reading like a slot wait).
+    expect(memoryCopy).toContain('2/4');
+    expect(memoryCopy).not.toBe(slotsCopy);
   });
 
   it('opens the agent-backend settings section from the Change limit action', async () => {
@@ -723,13 +731,13 @@ describe('StreamingStatus slot-wait state (processQueueHint)', () => {
     expect(navigateToSettings).toHaveBeenCalledWith({ hash: 'agent-backend' });
   });
 
-  it('stays hidden when the hint is absent or not waiting', () => {
+  it('stays hidden when the hint is absent or not waiting', async () => {
     const { container, rerender } = render(StreamingStatus, {
       props: { isProcessing: true },
     });
     expect(container.querySelector('[data-stream-slot-wait="true"]')).toBeNull();
 
-    void rerender({
+    await rerender({
       isProcessing: true,
       processQueueHint: { waiting: false, used: 1, cap: 3, reason: 'slots' },
     });
