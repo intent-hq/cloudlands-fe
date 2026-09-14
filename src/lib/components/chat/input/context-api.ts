@@ -35,9 +35,6 @@ export interface ContextItem {
   // For base64 image data (e.g., from loaded messages)
   imageData?: string; // Base64 encoded image data
   imageMimeType?: string; // MIME type of the image
-  // For base64 file data (e.g., from loaded messages)
-  fileData?: string; // Base64 encoded file data
-  fileMimeType?: string; // MIME type of the file
   // For placed workspace attachments (file.placeAttachment, PROTOCOL §5.9):
   // the UUID registry key plus the metadata needed to build the
   // attachment-reference file block — no bytes are kept on the item.

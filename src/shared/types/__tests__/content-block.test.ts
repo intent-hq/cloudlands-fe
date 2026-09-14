@@ -22,6 +22,7 @@ import {
   isErrorBlock,
   isToolBlock,
   isMediaBlock,
+  isFileBlock,
 } from '../content-block.guards';
 import {
   migrateFromLegacy,
@@ -308,6 +309,22 @@ describe('Type Guards', () => {
     expect(isMediaBlock({ type: 'image', data: 'base64', mimeType: 'image/png' })).toBe(true);
     expect(isMediaBlock({ type: 'audio', data: 'base64', mimeType: 'audio/mp3' })).toBe(true);
     expect(isMediaBlock({ type: 'image' })).toBe(false);
+    expect(isMediaBlock({ type: 'file', attachmentId: 'att-1', fileName: 'a.pdf' })).toBe(true);
+    // Inline file bytes left the protocol in 10.0: not a media block.
+    expect(isMediaBlock({ type: 'file', data: 'base64', mimeType: 'text/plain' })).toBe(false);
+  });
+
+  it('isFileBlock accepts only attachment-reference file blocks', () => {
+    expect(isFileBlock({ type: 'file', attachmentId: 'att-1', fileName: 'a.pdf' })).toBe(true);
+    expect(
+      isFileBlock({ type: 'file', attachmentId: 'att-1', fileName: 'a.pdf', mimeType: 'x/y' }),
+    ).toBe(true);
+    expect(isFileBlock({ type: 'file', attachmentId: '', fileName: 'a.pdf' })).toBe(false);
+    expect(isFileBlock({ type: 'file', attachmentId: 'att-1' })).toBe(false);
+    expect(
+      isFileBlock({ type: 'file', data: 'base64', mimeType: 'text/plain', fileName: 'a.txt' }),
+    ).toBe(false);
+    expect(isFileBlock({ type: 'image', attachmentId: 'att-1', fileName: 'a.png' })).toBe(false);
   });
 });
 

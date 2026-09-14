@@ -206,6 +206,46 @@ describe('ChatMessage edit-and-regenerate confirm gate', () => {
     );
   });
 
+  it('confirm from a message with a legacy inline file block sends only text + reference blocks, with no data key', async () => {
+    // Persisted by a pre-10.0 daemon: a file block carrying inline bytes and no
+    // attachmentId. It is text now — the edit forwards the attachment
+    // reference only, and no `data` key may appear anywhere in the payload.
+    const message: AgentMessage = {
+      id: 'msg-legacy',
+      role: 'user',
+      contentBlocks: [
+        { type: 'text', text: 'original text' },
+        { type: 'file', data: 'aGVsbG8=', mimeType: 'text/plain', fileName: 'legacy.txt' },
+        { type: 'file', attachmentId: 'att-uuid-9', fileName: 'report.pdf', size: 4096 },
+      ],
+      timestamp: new Date('2026-01-01T12:00:00Z'),
+    } as AgentMessage;
+    const onEditSubmit = vi.fn();
+    render(ChatMessage, { props: { message, onEditSubmit } });
+
+    // Rendered as text, never as a chip: only the reference chip exists.
+    expect(screen.getByText(/Attached file: legacy\.txt/)).toBeTruthy();
+    expect(screen.getAllByTestId('chat-message-file-chip')).toHaveLength(1);
+
+    await fireEvent.click(screen.getByText(/original text/));
+    await waitFor(() => expect(screen.getByTestId('mock-rich-input')).toBeTruthy());
+    await fireEvent.click(screen.getByTestId('mock-input-submit'));
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy());
+    await fireEvent.click(screen.getByRole('button', { name: 'Edit & regenerate' }));
+
+    await waitFor(() => expect(onEditSubmit).toHaveBeenCalledTimes(1));
+    const [text, model, blocks] = onEditSubmit.mock.calls[0];
+    expect(text).toBe('original text\n\nAttached file: legacy.txt');
+    expect(model).toBeUndefined();
+    expect(blocks).toEqual({
+      fileBlocks: [
+        { type: 'file', attachmentId: 'att-uuid-9', fileName: 'report.pdf', size: 4096 },
+      ],
+    });
+    expect(JSON.stringify(blocks)).not.toContain('"data"');
+    expect(JSON.stringify(blocks)).not.toContain('aGVsbG8=');
+  });
+
   it('confirm passes no blocks argument for a plain text message', async () => {
     const onEditSubmit = vi.fn();
     await renderAndSave(onEditSubmit);

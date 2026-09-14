@@ -73,6 +73,39 @@ describe('user-message presentation sanitization', () => {
     expect(getPresentedUserMessageText(message)).toBe('Review the attachment');
     expect(message.contentBlocks).toHaveLength(4);
   });
+
+  // A pre-10.0 daemon persisted inline file bytes on the block; a 10.0 daemon
+  // serves that row as `Attached file: <fileName>` text. The FE mirrors that
+  // projection for a legacy block and never surfaces the bytes.
+  it('presents a legacy inline file block (no attachmentId) as attached-file text', () => {
+    const message = user('Review the attachment');
+    message.contentBlocks = [
+      { type: 'text', text: 'Review the attachment' },
+      { type: 'file', data: 'aGVsbG8=', mimeType: 'text/plain', fileName: 'notes.txt' },
+      { type: 'file', data: 'aGVsbG8=', mimeType: 'application/octet-stream' },
+      { type: 'text', text: WAIT_NOTE },
+    ];
+
+    const presented = getPresentedUserMessageText(message);
+    expect(presented).toBe('Review the attachment\n\nAttached file: notes.txt\n\nAttached file');
+    expect(presented).not.toContain('aGVsbG8=');
+  });
+
+  it('presents a legacy inline file block alone as attached-file text', () => {
+    const message = user('');
+    message.contentBlocks = [
+      { type: 'file', data: 'aGVsbG8=', mimeType: 'text/plain', fileName: 'notes.txt' },
+    ];
+
+    expect(getPresentedUserMessageText(message)).toBe('Attached file: notes.txt');
+  });
+
+  it('leaves attachment-reference file blocks out of the presented text', () => {
+    const message = user('Review the attachment');
+    message.contentBlocks!.push({ type: 'file', attachmentId: 'attachment-1', fileName: 'a.txt' });
+
+    expect(getPresentedUserMessageText(message)).toBe('Review the attachment');
+  });
 });
 
 // PROTOCOL.md §5.5 A2A sender header, exactly as intentd prepends it.

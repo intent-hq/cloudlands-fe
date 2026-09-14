@@ -4378,7 +4378,7 @@ describe('computeMessageContentHash — media blocks', () => {
       role: 'user',
       timestamp: '2024-01-01T00:00:00.000Z',
       contentBlocks: [
-        { type: 'file', data: 'filedata', mimeType: 'text/plain', fileName: 'readme.txt' },
+        { type: 'file', attachmentId: 'att-1', mimeType: 'text/plain', fileName: 'readme.txt' },
       ],
     };
     expect(computeMessageContentHash(msg)).not.toBeNull();
@@ -4426,7 +4426,7 @@ describe('computeMessageContentHash — media blocks', () => {
       role: 'user',
       timestamp: '2024-01-01T00:00:00.000Z',
       contentBlocks: [
-        { type: 'file', data: 'filedata', mimeType: 'text/plain', fileName: 'readme.txt' },
+        { type: 'file', attachmentId: 'att-1', mimeType: 'text/plain', fileName: 'readme.txt' },
       ],
     };
     const b: AgentMessage = {
@@ -4434,7 +4434,7 @@ describe('computeMessageContentHash — media blocks', () => {
       role: 'user',
       timestamp: '2024-01-01T00:00:01.000Z',
       contentBlocks: [
-        { type: 'file', data: 'filedata', mimeType: 'text/plain', fileName: 'readme.txt' },
+        { type: 'file', attachmentId: 'att-1', mimeType: 'text/plain', fileName: 'readme.txt' },
       ],
     };
     expect(computeMessageContentHash(a)).toBe(computeMessageContentHash(b));
@@ -4507,13 +4507,13 @@ describe('computeMessageContentHash — media blocks', () => {
     expect(computeMessageContentHash(a)).not.toBe(computeMessageContentHash(b));
   });
 
-  it('produces different hashes for file blocks whose data differs in bytes but has the same length and name', () => {
+  it('produces different hashes for file blocks referencing different attachments with the same name', () => {
     const a: AgentMessage = {
       id: 'a1',
       role: 'user',
       timestamp: '2024-01-01T00:00:00.000Z',
       contentBlocks: [
-        { type: 'file', data: 'AAAA', mimeType: 'application/pdf', fileName: 'doc.pdf' },
+        { type: 'file', attachmentId: 'att-a', mimeType: 'application/pdf', fileName: 'doc.pdf' },
       ],
     };
     const b: AgentMessage = {
@@ -4521,7 +4521,7 @@ describe('computeMessageContentHash — media blocks', () => {
       role: 'user',
       timestamp: '2024-01-01T00:00:00.000Z',
       contentBlocks: [
-        { type: 'file', data: 'BBBB', mimeType: 'application/pdf', fileName: 'doc.pdf' },
+        { type: 'file', attachmentId: 'att-b', mimeType: 'application/pdf', fileName: 'doc.pdf' },
       ],
     };
     expect(computeMessageContentHash(a)).not.toBe(computeMessageContentHash(b));

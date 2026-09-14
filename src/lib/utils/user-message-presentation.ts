@@ -1,4 +1,4 @@
-import type { AgentMessage } from '$shared/types';
+import type { AgentMessage, ContentBlock } from '$shared/types';
 import { extractAllContent } from '$shared/types';
 import { getAgentMessageAttribution, stripAgentMessageHeader } from './agent-message-attribution';
 import { getQueueInfo } from './queue-info';
@@ -54,8 +54,33 @@ export function stripTruncatedTrailingDeliveryNote(text: string, metadata?: unkn
   return text.slice(0, match.index);
 }
 
+/**
+ * Text projection of file blocks that carry no `attachmentId` — the shape a
+ * pre-10.0 daemon persisted for inline file data. A 10.0 daemon serves such a
+ * block as `{ type: 'text', text: 'Attached file: <fileName>' }` with the
+ * bytes dropped; this mirrors that wire projection verbatim for transcripts
+ * still served by an older daemon, so the bytes are never read or rendered.
+ * One entry per legacy block, in block order.
+ */
+export function legacyFileBlockText(blocks: readonly ContentBlock[] | undefined): string[] {
+  return (blocks ?? [])
+    .filter((block) => block.type === 'file' && !block.attachmentId)
+    .map((block) =>
+      // i18n-ignore (mirrors the daemon's protocol 10.0 text projection)
+      typeof block.fileName === 'string' && block.fileName
+        ? `Attached file: ${block.fileName}`
+        : 'Attached file',
+    );
+}
+
 /** Return immutable user-authored text for rendering and other UI surfaces. */
 export function getPresentedUserMessageText(message: AgentMessage): string {
+  const legacyFiles = legacyFileBlockText(message.contentBlocks);
+  if (legacyFiles.length === 0) return getPresentedUserText(message);
+  return [getPresentedUserText(message), ...legacyFiles].filter(Boolean).join('\n\n');
+}
+
+function getPresentedUserText(message: AgentMessage): string {
   // Rows sent by another agent carry the daemon-stamped sender header in
   // content; the attribution chip conveys the sender, so presentation copies
   // (render, preview, copy) drop the leading header line.
