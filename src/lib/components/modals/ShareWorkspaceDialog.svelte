@@ -8,10 +8,16 @@
    * their GitHub account, so a daemon without a configured login cannot mint
    * invites and the dialog shows a connect-first state instead.
    *
+   * Owner-only: `canManage` is false for a collaborator connection (or once
+   * the daemon refused an owner-only method with `-32003`), and the dialog then
+   * renders the owner-only notice instead of any control or row. Member Remove
+   * is confirmation-gated (inline confirm on the row).
+   *
    * Fully presentational: every row and in-flight flag arrives from the
    * workspace-share slice through the Redux host, and user intent (create /
    * revoke / remove) goes back as callbacks the host dispatches. Only the pin
-   * input draft and the clipboard copy live here.
+   * input draft, the pending Remove confirmation, and the clipboard copy live
+   * here; the invite url arrives as a plain prop and is never echoed.
    */
 
   import Fa from 'svelte-fa';
@@ -32,6 +38,8 @@
     workspaceTitle?: string;
     /** `github.authStatus.isConfigured` as mirrored by the github-auth slice. */
     githubConnected?: boolean;
+    /** Owner of the target workspace and not withheld by the daemon. */
+    canManage?: boolean;
     members?: WorkspaceMember[];
     invites?: WorkspaceInvite[];
     loading?: boolean;
@@ -39,6 +47,8 @@
     creating?: boolean;
     createError?: string | null;
     createdLink?: WorkspaceShareCreatedLink | null;
+    /** The one-time url behind `createdLink`, resolved by the host. */
+    createdLinkUrl?: string | null;
     revokingInviteId?: string | null;
     removingPrincipalId?: string | null;
     actionError?: string | null;
@@ -54,6 +64,7 @@
     workspaceId = null,
     workspaceTitle = '',
     githubConnected = false,
+    canManage = false,
     members = [],
     invites = [],
     loading = false,
@@ -61,6 +72,7 @@
     creating = false,
     createError = null,
     createdLink = null,
+    createdLinkUrl = null,
     revokingInviteId = null,
     removingPrincipalId = null,
     actionError = null,
@@ -74,27 +86,30 @@
   const busy = $derived(revokingInviteId !== null || removingPrincipalId !== null);
 
   let pinLogin = $state('');
+  /** Member row awaiting Remove confirmation. */
+  let confirmRemovePrincipalId = $state<string | null>(null);
 
-  // The draft pin resets when the dialog retargets and after a link is minted.
+  // Drafts reset when the dialog retargets and after a link is minted.
   $effect(() => {
     void open;
     void workspaceId;
     pinLogin = '';
+    confirmRemovePrincipalId = null;
   });
   $effect(() => {
     if (createdLink) pinLogin = '';
   });
 
   function createInvite() {
-    if (!workspaceId || creating) return;
+    if (!workspaceId || !canManage || creating) return;
     onCreateInvite?.(pinLogin.trim());
   }
 
   async function copyLink() {
-    if (!createdLink) return;
+    if (!createdLinkUrl) return;
     const { toast } = await import('svelte-sonner');
     try {
-      await navigator.clipboard.writeText(createdLink.url);
+      await navigator.clipboard.writeText(createdLinkUrl);
       toast.success(m.workspace_share_linkCopied_toast());
     } catch {
       toast.error(m.workspace_share_linkCopyFailed_error());
@@ -102,12 +117,13 @@
   }
 
   function revokeInvite(inviteId: string) {
-    if (!workspaceId || busy) return;
+    if (!workspaceId || !canManage || busy) return;
     onRevokeInvite?.(inviteId);
   }
 
-  function removeMember(principalId: string) {
-    if (!workspaceId || busy) return;
+  function confirmRemoveMember(principalId: string) {
+    if (!workspaceId || !canManage || busy || confirmRemovePrincipalId !== principalId) return;
+    confirmRemovePrincipalId = null;
     onRemoveMember?.(principalId);
   }
 
@@ -165,7 +181,11 @@
       </div>
 
       <div class="p-6 space-y-5 min-h-0 overflow-y-auto">
-        {#if !githubConnected}
+        {#if !canManage}
+          <p class="text-sm text-subtle" role="status" data-testid="share-owner-only">
+            {m.workspace_share_ownerOnly_notice()}
+          </p>
+        {:else if !githubConnected}
           <div
             class="flex flex-col items-start gap-3 rounded border border-border bg-muted/50 p-4"
             data-testid="share-github-required"
@@ -215,7 +235,7 @@
             {/if}
           </form>
 
-          {#if createdLink}
+          {#if createdLink && createdLinkUrl}
             <div
               class="space-y-2 rounded border border-border bg-muted/50 p-3"
               data-testid="share-created-link"
@@ -227,8 +247,7 @@
               <div class="flex items-center gap-2">
                 <code
                   class="min-w-0 flex-1 truncate rounded bg-background px-2 py-1 text-xs"
-                  title={createdLink.url}
-                  data-testid="share-created-link-url">{createdLink.url}</code
+                  data-testid="share-created-link-url">{createdLinkUrl}</code
                 >
                 <Button variant="secondary" size="sm" onclick={() => void copyLink()}>
                   <Fa icon={faCopy} />
@@ -321,17 +340,47 @@
                       </div>
                     </div>
                     {#if member.role !== 'owner'}
-                      <Button
-                        variant="ghost-light"
-                        size="sm"
-                        disabled={busy}
-                        onclick={() => removeMember(member.principalId)}
-                        aria-label={m.workspace_share_removeMember_ariaLabel({
-                          name: memberName(member),
-                        })}
-                      >
-                        {m.workspace_share_removeMember_label()}
-                      </Button>
+                      {#if confirmRemovePrincipalId === member.principalId}
+                        <div
+                          class="flex shrink-0 items-center gap-1"
+                          role="group"
+                          aria-label={m.workspace_share_removeMember_confirm_label({
+                            name: memberName(member),
+                          })}
+                          data-testid="share-remove-confirm"
+                        >
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            disabled={busy}
+                            onclick={() => confirmRemoveMember(member.principalId)}
+                            aria-label={m.workspace_share_removeMember_confirmAction_ariaLabel({
+                              name: memberName(member),
+                            })}
+                          >
+                            {m.workspace_share_removeMember_label()}
+                          </Button>
+                          <Button
+                            variant="ghost-light"
+                            size="sm"
+                            onclick={() => (confirmRemovePrincipalId = null)}
+                          >
+                            {m.workspace_share_cancel_label()}
+                          </Button>
+                        </div>
+                      {:else}
+                        <Button
+                          variant="ghost-light"
+                          size="sm"
+                          disabled={busy}
+                          onclick={() => (confirmRemovePrincipalId = member.principalId)}
+                          aria-label={m.workspace_share_removeMember_ariaLabel({
+                            name: memberName(member),
+                          })}
+                        >
+                          {m.workspace_share_removeMember_label()}
+                        </Button>
+                      {/if}
                     {/if}
                   </li>
                 {/each}

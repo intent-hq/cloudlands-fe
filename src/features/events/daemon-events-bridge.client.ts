@@ -268,6 +268,7 @@ import {
 } from '$store/renderer/slices/mcp-settings/mcp-settings-slice';
 import { mapDaemonMcpState } from '$store/renderer/slices/mcp-settings/mcp-settings-normalization';
 import { githubAuthChanged } from '$store/renderer/slices/github-auth/github-auth-slice';
+import { shareMembershipChanged } from '$store/renderer/slices/workspace-share/workspace-share-slice';
 import {
   browserTabClosed,
   browserTabUpserted,
@@ -2422,6 +2423,13 @@ function handleWorkspaceUpdatedEvent(event: WorkspaceEvent, workspaceId: string)
   // summary on the entity stays current without a refetch.
   if (typeof raw.memberCount === 'number' && Number.isFinite(raw.memberCount)) {
     changes.memberCount = raw.memberCount;
+  }
+  // The same deltas flag `members: true` / `invites: true` (also an invite
+  // create/revoke, which leaves `memberCount` alone): the Share dialog
+  // re-reads its roster + invites when it targets this workspace, so every
+  // client converges without a manual refresh.
+  if (raw.members === true || raw.invites === true) {
+    appStore.dispatch(shareMembershipChanged({ workspaceId }));
   }
   if (typeof raw.archived === 'boolean') changes.archived = raw.archived;
   // `archivedAt` is nullable on the wire: archive sends the persisted ISO
