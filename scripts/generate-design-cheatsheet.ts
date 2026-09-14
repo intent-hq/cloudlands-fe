@@ -69,8 +69,12 @@ Pattern-first routing for product UI. Open the catalog URL in \`pnpm run dev:ui\
 
 ## Surfaces and interaction
 
-- **Import:** \`SurfaceProvider\`, \`surfaceClasses\`, and \`surfaceHoverClasses\` from \`$lib/components/ui\`.
-- **Ladder:** \`bg-surface-1\` through \`bg-surface-8\` pair with \`shadow-surface-1\` through \`shadow-surface-8\`.
+- **Canvas:** use \`bg-background\` for the page and ordinary content; group controls with spacing first.
+- **Contained section:** use \`bg-card\` when a distinct group needs one enclosing boundary, such as a panel or card.
+- **Floating overlay:** use \`bg-popover\` for temporary content above the page, such as a menu, popover or tooltip.
+- Use one enclosing boundary per group; avoid wrapping an already contained section in another border or shadow.
+- **Compatibility helpers:** \`SurfaceProvider\`, \`surfaceClasses\`, and \`surfaceHoverClasses\` from \`$lib/components/ui\`.
+- **Internal levels (compatibility, not additional composition choices):** \`bg-surface-1\` through \`bg-surface-8\` pair with \`shadow-surface-1\` through \`shadow-surface-8\`.
 - **Overlays:** render at two levels above their substrate, capped at level 8, and provide that level to nested content.
 - **Overlay recipe:** \`.overlay-surface\` uses the 8px medium radius and two-layer \`--elevation-overlay\`; its boundary is 0px in light themes and a 1px semantic border in dark themes.
 - **States:** use \`bg-hover\`, \`bg-active\`, \`bg-selected\`, and \`bg-danger-background\` rather than physical colors.

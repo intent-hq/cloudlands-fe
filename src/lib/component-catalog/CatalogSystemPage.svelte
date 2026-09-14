@@ -71,7 +71,7 @@
     color: ['Color', 'Semantic roles keep color meaningful across themes.'],
     motion: ['Motion', 'Three spring speeds keep every interaction fast, legible, and related.'],
     sizes: ['Sizes', 'A compact control ladder keeps dense product interfaces aligned.'],
-    surfaces: ['Surfaces', 'Eight shared levels express depth without inventing component colors.'],
+    surfaces: ['Surfaces', 'Choose canvas, contained section or floating overlay for composition.'],
     scrollbars: ['Scrollbars', 'Quiet scroll affordances appear when content needs them.'],
   } as const;
 </script>
@@ -179,8 +179,31 @@
     </section>
   {:else if slug === 'surfaces'}
     <section>
-      <h2>The system</h2>
-      <p>Each overlay rises two levels above its substrate, capped at level eight.</p>
+      <h2>Three default choices</h2>
+      <ul>
+        <li>
+          <strong>Canvas:</strong> the page and ordinary content; group controls with spacing first.
+        </li>
+        <li>
+          <strong>Contained section:</strong> a distinct group that needs one enclosing boundary, such
+          as a panel or card.
+        </li>
+        <li>
+          <strong>Floating overlay:</strong> temporary content above the page, such as a menu, popover
+          or tooltip.
+        </li>
+      </ul>
+      <p>
+        Use one enclosing boundary per group. Avoid another border or shadow around an already
+        contained section.
+      </p>
+    </section>
+    <section>
+      <h2>Internal levels (compatibility)</h2>
+      <p>
+        These levels remain available for existing components, not as additional default choices.
+        Each overlay rises two levels above its substrate, capped at level eight.
+      </p>
       <div class="surface-ladder">
         {#each SURFACE_LEVELS as surface (surface.level)}
           <div class={surface.className}>
@@ -192,9 +215,9 @@
     <section>
       <h2>Elevation</h2>
       <div class="elevation-demo">
-        <div>Base content</div>
-        <div>Raised panel</div>
-        <div>Overlay</div>
+        <div>Canvas</div>
+        <div>Contained section</div>
+        <div>Floating overlay</div>
       </div>
     </section>
   {:else}

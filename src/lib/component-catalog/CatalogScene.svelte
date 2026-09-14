@@ -286,7 +286,7 @@
         class="preview-frame max-w-full overflow-auto rounded-lg border border-border bg-background p-6"
       >
         <div
-          class="preview-focus mx-auto max-w-full rounded-md border border-border bg-card p-6"
+          class="preview-focus mx-auto max-w-full p-6"
           style:width={`${width}px`}
           data-testid="catalog-scene-focus"
         >
@@ -311,7 +311,7 @@
               class="preview-frame max-w-full overflow-auto rounded-lg border border-border bg-background p-6"
             >
               <div
-                class="preview-focus mx-auto max-w-full rounded-md border border-border bg-card p-6"
+                class="preview-focus mx-auto max-w-full p-6"
                 style:width={`${width}px`}
                 data-testid="catalog-scene-focus"
               >

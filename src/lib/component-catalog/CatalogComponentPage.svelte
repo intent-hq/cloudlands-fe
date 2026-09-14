@@ -183,8 +183,6 @@
   :global(.playground) {
     display: block;
     overflow: visible;
-    border: 1px solid hsl(var(--border));
-    border-radius: var(--radius-medium);
   }
 
   :global(.playground-tabs) {
@@ -195,8 +193,7 @@
     border-bottom: 1px solid hsl(var(--border));
   }
 
-  .fixture-preview,
-  .section-preview {
+  .fixture-preview {
     width: min(100%, var(--catalog-preview-width, 100%));
     min-width: 0;
     min-height: 8rem;
@@ -213,8 +210,6 @@
   .section-preview {
     margin-top: 0.75rem;
     overflow: visible;
-    border: 1px solid hsl(var(--border));
-    border-radius: var(--radius-medium);
     padding: 0;
   }
 

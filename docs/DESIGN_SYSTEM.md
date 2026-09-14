@@ -136,13 +136,27 @@ Import shared transitions from `$lib/motion`; inspect the live motion examples i
 - Never mount `Dialog.Root` directly in a feature; use `FormDialog` or the Confirm service.
 - Never hand-compose settings row layout from primitives; use `SettingsFieldRow` for bespoke controls, or define a schema and render `SettingsForm` for a settings section.
 
+## Default surface choices
+
+Use exactly three default choices when composing a page:
+
+| Choice            | When to use                                                                          | Semantic background |
+| ----------------- | ------------------------------------------------------------------------------------ | ------------------- |
+| Canvas            | The page background and ordinary content; group related controls with spacing first. | `bg-background`     |
+| Contained section | A distinct group that needs one enclosing boundary, such as a panel or card.         | `bg-card`           |
+| Floating overlay  | Temporary content above the page, such as a menu, popover or tooltip.                | `bg-popover`        |
+
+Use one enclosing boundary per group. Do not wrap an already contained section in another
+bordered or shadowed surface just to group it. Internal surface levels 1–8 and their helpers
+remain available for compatibility; they are not additional default composition choices.
+
 ## Choose a semantic role
 
 | Intent                 | Approved token or utility                                  | Example                  | Do not use                     |
 | ---------------------- | ---------------------------------------------------------- | ------------------------ | ------------------------------ |
-| App canvas             | `--background`, `bg-background`, `text-foreground`         | Main content             | `bg-white`, `dark:bg-gray-900` |
-| Raised surface         | `--card`, `bg-card`, `text-card-foreground`                | Panel or card            | Raw neutral palette            |
-| Overlay surface        | `--popover`, `bg-popover`, `text-popover-foreground`       | Menu or tooltip          | Adapter variables              |
+| Canvas                 | `--background`, `bg-background`, `text-foreground`         | Main content             | `bg-white`, `dark:bg-gray-900` |
+| Contained section      | `--card`, `bg-card`, `text-card-foreground`                | Panel or card            | Raw neutral palette            |
+| Floating overlay       | `--popover`, `bg-popover`, `text-popover-foreground`       | Menu or tooltip          | Adapter variables              |
 | Primary action         | `--primary`, `bg-primary`, `text-primary-foreground`       | Default button           | Brand or source-theme colors   |
 | Secondary action       | `--secondary`, `bg-secondary`, `text-secondary-foreground` | Secondary button         | Raw neutral palette            |
 | Hover preview          | `--hover`, `bg-hover`                                      | Hovered or nearest row   | Hard-coded alpha colors        |
