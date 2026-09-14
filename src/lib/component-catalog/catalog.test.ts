@@ -67,6 +67,8 @@ describe('static component catalog', () => {
       'chat-polish',
       'fields',
       'modals',
+      'model-picker',
+      'popovers',
       'proposal-card',
       'rows',
       'screen-states',
@@ -82,7 +84,7 @@ describe('static component catalog', () => {
           fixtures: [{ id: 'default', title: 'Default', states: ['default'] }],
         },
       ])[0].id,
-    ).toBe('fields');
+    ).toBe('primitives');
   });
 });
 

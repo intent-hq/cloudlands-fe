@@ -1,10 +1,57 @@
 <script lang="ts">
+  import type { CatalogSystemSlug } from './catalog-navigation';
   import { Button } from '$lib/components/ui/button';
   import { ScrollArea } from '$lib/components/ui/scroll-area';
   import { surfaceClasses } from '$lib/components/ui';
 
-  let { slug }: { slug: 'motion' | 'sizes' | 'surfaces' | 'scrollbars' } = $props();
+  let { slug }: { slug: CatalogSystemSlug } = $props();
   let motionReplay = $state(0);
+  const typeRoles = [
+    [
+      'caption',
+      '13 / 18',
+      '400; 500 for selection or label emphasis',
+      'Compact UI: controls, navigation, short metadata',
+      'Supporting metadata',
+    ],
+    [
+      'body',
+      '15 / 22',
+      '400; 500 for emphasis',
+      'Reading: messages, documents, explanatory copy, expanded form content',
+      'Readable interface copy',
+    ],
+    ['title', '17 / 24', '500', 'Section title', 'Section title'],
+    ['display', '22 / 28', '500', 'Page title', 'Intent design system'],
+    [
+      'code',
+      '13 / 20',
+      '400',
+      'Code; monospace only where content is code',
+      "const size = 'compact';",
+    ],
+  ] as const;
+  const colorRoles = [
+    ['App canvas', 'background', 'foreground'],
+    ['Raised surface', 'card', 'card-foreground'],
+    ['Overlay surface', 'popover', 'popover-foreground'],
+    ['Primary action', 'primary', 'primary-foreground'],
+    ['Secondary action', 'secondary', 'secondary-foreground'],
+    ['Hover preview', 'hover'],
+    ['Pressed UI', 'active'],
+    ['Selected UI', 'selected'],
+    ['Emphasized UI', 'accent', 'accent-foreground'],
+    ['Low-emphasis UI', 'muted', 'muted-foreground'],
+    ['Danger state', 'danger', 'danger-background'],
+    ['Informational state', 'info'],
+    ['Success state', 'success'],
+    ['Warning state', 'warning'],
+    ['Decorative boundary', 'border', 'sidebar-border'],
+    ['Control boundary/focus', 'input', 'ring'],
+    ['Keyboard focus', 'focus-ring'],
+    ['Foreground overlay', 'overlay'],
+    ['Navigation chrome', 'sidebar', 'sidebar-foreground'],
+  ] as const;
   const springTiers = [
     ['fast', 'Hover, press, and focus feedback', '--spring-fast', '--spring-fast-exit'],
     ['moderate', 'Menus and compact disclosure', '--spring-moderate', '--spring-moderate-exit'],
@@ -20,6 +67,8 @@
     className: surfaceClasses(level),
   }));
   const titles = {
+    typography: ['Typography', 'Compact UI and reading content share five explicit type roles.'],
+    color: ['Color', 'Semantic roles keep color meaningful across themes.'],
     motion: ['Motion', 'Three spring speeds keep every interaction fast, legible, and related.'],
     sizes: ['Sizes', 'A compact control ladder keeps dense product interfaces aligned.'],
     surfaces: ['Surfaces', 'Eight shared levels express depth without inventing component colors.'],
@@ -77,14 +126,55 @@
         {/each}
       </div>
     </section>
+  {:else if slug === 'typography'}
     <section>
       <h2>Typography scale</h2>
-      <div class="type-scale">
-        <span class="type-display">Intent design system</span><span class="type-title"
-          >Section title</span
-        ><span class="type-body">Readable interface copy</span><span class="type-caption"
-          >Supporting metadata</span
-        ><code>const size = 'compact';</code>
+      <div class="table-scroll">
+        <table>
+          <thead
+            ><tr
+              ><th>Role</th><th>Size / line height (px)</th><th>Weight</th><th>Use</th><th
+                >Specimen</th
+              ></tr
+            ></thead
+          >
+          <tbody>
+            {#each typeRoles as role (role[0])}
+              <tr
+                ><th scope="row">{role[0]}</th><td>{role[1]}</td><td>{role[2]}</td><td>{role[3]}</td
+                ><td>
+                  {#if role[0] === 'code'}<code class="type-code">{role[4]}</code>{:else}<span
+                      class={`type-${role[0]}`}>{role[4]}</span
+                    >{/if}
+                </td></tr
+              >
+            {/each}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  {:else if slug === 'color'}
+    <section>
+      <h2>Semantic color roles</h2>
+      <p>
+        Swatches use live theme tokens. Use the matching foreground token for text on solid semantic
+        backgrounds.
+      </p>
+      <div class="color-roles">
+        {#each colorRoles as role (role[0])}
+          <div class="color-role">
+            <h3 class="type-caption font-medium!">{role[0]}</h3>
+            {#each role.slice(1) as token (token)}
+              <div class="color-token">
+                <span
+                  class="color-swatch"
+                  style={`background: ${token === 'hover' || token === 'active' ? `var(--${token})` : token === 'overlay' ? 'rgb(var(--overlay))' : `hsl(var(--${token}))`}`}
+                  aria-hidden="true"
+                ></span><code>--{token}</code>
+              </div>
+            {/each}
+          </div>
+        {/each}
       </div>
     </section>
   {:else if slug === 'surfaces'}
@@ -164,8 +254,7 @@
     letter-spacing: var(--text-title-tracking);
   }
   .specimen-list,
-  .size-ladder,
-  .type-scale {
+  .size-ladder {
     display: grid;
     gap: 0.75rem;
     margin-block: 1rem;
@@ -238,9 +327,48 @@
     line-height: var(--text-caption-line-height);
     letter-spacing: var(--text-caption-tracking);
   }
-  .type-scale span,
-  .type-scale code {
-    display: block;
+  .table-scroll {
+    overflow-x: auto;
+    margin-top: 1rem;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--text-caption-size);
+    line-height: var(--text-caption-line-height);
+  }
+  th,
+  td {
+    padding: 0.75rem;
+    text-align: left;
+    vertical-align: top;
+    border-bottom: 1px solid hsl(var(--border));
+  }
+  th {
+    font-weight: var(--text-title-weight);
+  }
+  .color-roles {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+    gap: 1.5rem;
+    margin-top: 1rem;
+  }
+  .color-role,
+  .color-token {
+    display: grid;
+    gap: 0.5rem;
+    font-size: var(--text-caption-size);
+    line-height: var(--text-caption-line-height);
+  }
+  .color-token {
+    grid-template-columns: 2rem 1fr;
+    align-items: center;
+  }
+  .color-swatch {
+    width: 2rem;
+    height: 2rem;
+    border: 1px solid hsl(var(--border));
+    border-radius: var(--radius-small);
   }
   .surface-ladder {
     display: grid;

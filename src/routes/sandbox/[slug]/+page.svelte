@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { getCatalogSystemSlug } from '$lib/component-catalog/catalog-navigation';
   import type { Component } from 'svelte';
   import { page } from '$app/state';
   import CatalogScene from '$lib/component-catalog/CatalogScene.svelte';
@@ -22,12 +23,7 @@
   const slug = $derived((page.params as { slug: string }).slug);
   const urlSettings = $derived(parseCatalogUrlSettings(page.url.searchParams));
   const legacyDetail = $derived(urlSettings.state ? undefined : loadLegacyCatalogDetail(slug));
-  const systemSlugs = ['motion', 'sizes', 'surfaces', 'scrollbars'] as const;
-  const systemSlug = $derived(
-    systemSlugs.includes(slug as (typeof systemSlugs)[number])
-      ? (slug as (typeof systemSlugs)[number])
-      : undefined,
-  );
+  const systemSlug = $derived(getCatalogSystemSlug(slug));
 </script>
 
 {#if systemSlug}

@@ -1,11 +1,12 @@
 <script lang="ts">
   import { onMount, type Snippet } from 'svelte';
   import CatalogControls from './CatalogControls.svelte';
+  import { Input } from '$lib/components/ui/input';
   import { Button } from '$lib/components/ui/button';
   import * as Sidebar from '$lib/components/ui/sidebar';
   import SizeProvider from '$lib/components/ui/SizeProvider.svelte';
   import { catalogEntries } from './catalog';
-  import { catalogShowcaseEntries, catalogSystemEntries } from './catalog-navigation';
+  import { buildCatalogNavigation } from './catalog-navigation';
   import { themePresets } from '$lib/utils/theme-presets';
   import { parseVSCodeTheme } from '$lib/utils/vscode-theme-parser';
   import {
@@ -34,6 +35,8 @@
   let density = $state<'default' | 'compact'>('default');
   let radius = $state<'rounded' | 'square'>('rounded');
   let customizeOpen = $state(false);
+  let search = $state('');
+  const navigation = $derived(buildCatalogNavigation(catalogEntries, search));
   let initialRootDark = false;
   let initialRootLight = false;
   let initialRootReducedMotion = false;
@@ -162,64 +165,47 @@
                 <span class="brand-mark" aria-hidden="true">I</span>
                 <span>Intent UI</span>
               </a>
+              <Input
+                type="search"
+                aria-label="Search catalog"
+                placeholder="Search catalog"
+                bind:value={search}
+                onkeydown={(event) => {
+                  if (event.key === 'Escape') search = '';
+                }}
+              />
             </Sidebar.Header>
             <Sidebar.Content class="catalog-sidebar-content">
-              <Sidebar.Group>
-                <Sidebar.GroupLabel>Showcase</Sidebar.GroupLabel>
-                <Sidebar.GroupContent>
-                  <Sidebar.Menu>
-                    {#each catalogShowcaseEntries as entry (entry.slug)}
-                      <Sidebar.MenuItem>
-                        <Sidebar.MenuButton
-                          isActive={entry.slug === 'introduction'
-                            ? activePath === '/sandbox'
-                            : activePath.startsWith(entry.href)}
-                        >
-                          {#snippet child({ props })}
-                            <a {...props} href={entry.href}>{entry.name}</a>
-                          {/snippet}
-                        </Sidebar.MenuButton>
-                      </Sidebar.MenuItem>
-                    {/each}
-                  </Sidebar.Menu>
-                </Sidebar.GroupContent>
-              </Sidebar.Group>
-              <Sidebar.Group>
-                <Sidebar.GroupLabel
-                  >System <span>{catalogSystemEntries.length}</span></Sidebar.GroupLabel
-                >
-                <Sidebar.GroupContent>
-                  <Sidebar.Menu>
-                    {#each catalogSystemEntries as entry (entry.slug)}
-                      <Sidebar.MenuItem>
-                        <Sidebar.MenuButton isActive={activeSlug === entry.slug}>
-                          {#snippet child({ props })}
-                            <a {...props} href={entry.href}>{entry.name}</a>
-                          {/snippet}
-                        </Sidebar.MenuButton>
-                      </Sidebar.MenuItem>
-                    {/each}
-                  </Sidebar.Menu>
-                </Sidebar.GroupContent>
-              </Sidebar.Group>
-              <Sidebar.Group>
-                <Sidebar.GroupLabel
-                  >Components <span>{catalogEntries.length}</span></Sidebar.GroupLabel
-                >
-                <Sidebar.GroupContent>
-                  <Sidebar.Menu>
-                    {#each catalogEntries as entry (entry.slug)}
-                      <Sidebar.MenuItem>
-                        <Sidebar.MenuButton isActive={activeSlug === entry.slug}>
-                          {#snippet child({ props })}
-                            <a {...props} href={`/sandbox/${entry.slug}`}>{entry.name}</a>
-                          {/snippet}
-                        </Sidebar.MenuButton>
-                      </Sidebar.MenuItem>
-                    {/each}
-                  </Sidebar.Menu>
-                </Sidebar.GroupContent>
-              </Sidebar.Group>
+              {#each navigation as group (group.id)}
+                <Sidebar.Group>
+                  <Sidebar.GroupLabel
+                    >{group.name} <span>{group.entries.length}</span></Sidebar.GroupLabel
+                  >
+                  <Sidebar.GroupContent>
+                    <Sidebar.Menu>
+                      {#each group.entries as entry (entry.slug)}
+                        <Sidebar.MenuItem>
+                          <Sidebar.MenuButton
+                            isActive={activeSlug === entry.slug ||
+                              (entry.slug === 'introduction'
+                                ? activePath === '/sandbox'
+                                : activePath === entry.href ||
+                                  activePath.startsWith(`${entry.href}/`))}
+                          >
+                            {#snippet child({ props })}
+                              <a {...props} href={entry.href}>{entry.name}</a>
+                            {/snippet}
+                          </Sidebar.MenuButton>
+                        </Sidebar.MenuItem>
+                      {/each}
+                    </Sidebar.Menu>
+                  </Sidebar.GroupContent>
+                </Sidebar.Group>
+              {:else}
+                <p class="type-caption p-2 text-muted-foreground" role="status">
+                  No catalog entries match your search.
+                </p>
+              {/each}
             </Sidebar.Content>
           </Sidebar.Root>
           <aside
