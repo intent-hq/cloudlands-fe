@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   ESCAPE_TOKEN,
+  FILE_ESCAPE_TOKEN,
   findProtocolVersionLiteralHits,
   findProtocolVersionLiterals,
 } from './check-protocol-version-literals.mjs';
@@ -53,6 +54,23 @@ describe('protocol version literal scanner', () => {
     ['a capitalised keyword', '/** Daemon-served count (§5.5 v8.2). */', ['v8.2']],
     ['a literal after a section reference', '// PROTOCOL.md §5.14 (v7.0) shape', ['v7.0']],
     ['a hyphen-joined literal', '// pre-PROTOCOL-4.1 sidecar', ['4.1']],
+    [
+      'a v-prefixed literal on a line without a keyword',
+      '// added in v10.1 with the new field',
+      ['v10.1'],
+    ],
+    ['a parenthesised v-prefixed literal without a keyword', ' * (§5.27, v10.1)', ['v10.1']],
+    [
+      'a v-prefixed literal next to a keyword substring',
+      '// protocols v10.1 and subdaemon 9.4',
+      ['v10.1'],
+    ],
+    ['a pre- range next to plural `daemons`', '// rejected by pre-9.4 daemons', ['9.4']],
+    ['a literal ending a sentence', '// protocol 10.1.', ['10.1']],
+    ['a v-prefixed literal ending a sentence', '// Added in v10.1.', ['v10.1']],
+    ['`protocol version N.N`', '// requires protocol version 10.1', ['10.1']],
+    ['`intentd N.N+`', '// intentd 10.1+ serves the block', ['10.1']],
+    ['`since protocol N.N`', '// since protocol 10.1', ['10.1']],
   ])('flags %s', (_name, line, matches) => {
     expect(findProtocolVersionLiterals(line)).toEqual(matches);
   });
@@ -62,15 +80,20 @@ describe('protocol version literal scanner', () => {
     ['a section reference on the file name', '// PROTOCOL.md §6.3 owns this shape'],
     ['a spaced section reference', '// PROTOCOL § 6.3 owns this shape'],
     ['a section range', ' * FE-only: no daemon/protocol involvement. See PROTOCOL.md §1.1–2.3'],
+    ['a section reference ending a sentence', '// see PROTOCOL §5.14.'],
     ['JSON-RPC 2.0', '// the daemon speaks JSON-RPC 2.0 over the socket'],
-    ['the toon-format spec', '// daemon output follows toon-format v0.5'],
     ['an elapsed time', '// daemon clock skew ~3.5s is tolerated'],
     ['an elapsed time with a unit word', '// intentd restarts within 2.5 seconds'],
     ['three-part semver', "// requires intentd 2.17.0 or the protocol package '0.1.0'"],
+    ['v-prefixed three-part semver without a keyword', '// pinned to v2.17.0 and v10.1.2'],
     ['a longer number', '// daemon buffer is 100.5 or protocol id 1234.5'],
     ['an identifier segment', '// daemon fields foo1.2 and x9.4 are identifiers'],
-    ['a literal on a line without a keyword', '// added in v10.1 with the new field'],
-    ['a keyword substring', '// protocols v10.1 and subdaemon 9.4'],
+    ['a v-suffixed identifier segment', '// fields foov10.1 and x.v9.4 are identifiers'],
+    ['a bare literal on a line without a keyword', '// added in 10.1 with the new field'],
+    ['a bare literal next to a keyword substring', '// protocols 10.1 and subdaemon 9.4'],
+    ['a bare literal ending a sentence without a keyword', '// step 10.1.'],
+    ['an escaped product version', `// Harness v1.0 // ${ESCAPE_TOKEN}: product version`],
+    ['an escaped toon-format spec version', `// toon-format v0.5 // ${ESCAPE_TOKEN}`],
   ])('does not flag %s', (_name, line) => {
     expect(findProtocolVersionLiterals(line)).toEqual([]);
   });
@@ -80,6 +103,29 @@ describe('protocol version literal scanner', () => {
       [],
     );
     expect(findProtocolVersionLiterals(`// ${ESCAPE_TOKEN}: protocol v10.1`)).toEqual([]);
+    expect(
+      findProtocolVersionLiterals(`// v10.1 // ${ESCAPE_TOKEN}: Harness product version`),
+    ).toEqual([]);
+  });
+
+  it('exempts a file whose first lines carry the file-level directive', () => {
+    const directive = `// ${FILE_ESCAPE_TOKEN}: Harness product-version fixtures`;
+    const body = ['const fixtures = [', "  'Harness v1.0',", "  'protocol 9.4',", '];'];
+    const padding = (count: number) => Array.from({ length: count }, (_, i) => `// line ${i + 1}`);
+    expect(
+      findProtocolVersionLiteralHits([
+        sourceFile('src/lib/first.ts', [directive, ...body]),
+        sourceFile('src/lib/tenth.ts', [...padding(9), directive, ...body]),
+      ]),
+    ).toEqual([]);
+    expect(
+      findProtocolVersionLiteralHits([
+        sourceFile('src/lib/eleventh.ts', [...padding(10), directive, ...body]),
+      ]),
+    ).toEqual([
+      { path: 'src/lib/eleventh.ts', line: 13, matches: ['v1.0'], text: "'Harness v1.0'," },
+      { path: 'src/lib/eleventh.ts', line: 14, matches: ['9.4'], text: "'protocol 9.4'," },
+    ]);
   });
 
   it('reports one hit per line with every distinct literal, path, and line number', () => {
@@ -92,6 +138,7 @@ describe('protocol version literal scanner', () => {
       sourceFile('src/features/Widget.svelte', ['<!-- protocol 9.4 identity -->']),
       sourceFile('src/main/index.js', ['// intentd v7.5 retired rows']),
       sourceFile('src/shared/util.mjs', ['// daemon 8.2+ default read']),
+      sourceFile('src/store/seeder.ts', ['// rejected by pre-9.4 daemons; see (v10.1)']),
     ];
     expect(findProtocolVersionLiteralHits(files)).toEqual([
       {
@@ -123,6 +170,12 @@ describe('protocol version literal scanner', () => {
         line: 1,
         matches: ['8.2'],
         text: '// daemon 8.2+ default read',
+      },
+      {
+        path: 'src/store/seeder.ts',
+        line: 1,
+        matches: ['9.4', 'v10.1'],
+        text: '// rejected by pre-9.4 daemons; see (v10.1)',
       },
     ]);
   });
@@ -162,7 +215,8 @@ describe('protocol version literal scanner CLI', () => {
         expect(result.output).not.toContain('scripts/outside.ts');
         expect(result.output).toMatch(/method or field name/);
         expect(result.output).toContain('agent.getMessageBlock');
-        expect(result.output).toContain(`// ${ESCAPE_TOKEN}`);
+        expect(result.output).toContain(`// ${ESCAPE_TOKEN}: <reason>`);
+        expect(result.output).toContain(`// ${FILE_ESCAPE_TOKEN}: <reason>`);
       },
     );
   });
@@ -178,12 +232,14 @@ describe('protocol version literal scanner CLI', () => {
       {
         'src/lib/a.ts': CLEAN,
         'src/lib/b.ts': `// protocol v10.1 baseline // ${ESCAPE_TOKEN}\n`,
-        'src/lib/c.ts': '// JSON-RPC 2.0 to the daemon, toon-format v0.5, ~3.5s skew\n',
+        'src/lib/c.ts': '// JSON-RPC 2.0 to the daemon, ~3.5s skew, intentd 2.17.0\n',
+        'src/lib/d.ts': `// toon-format v0.5 // ${ESCAPE_TOKEN}: spec version\n`,
+        'src/lib/e.test.ts': `// ${FILE_ESCAPE_TOKEN}: Harness fixtures\nconst v = 'Harness v1.0';\n`,
       },
       (dir) => {
         const result = runGate(dir);
         expect(result).toMatchObject({ exitCode: 0 });
-        expect(result.output).toContain('3 src/ files');
+        expect(result.output).toContain('5 src/ files');
       },
     );
   });

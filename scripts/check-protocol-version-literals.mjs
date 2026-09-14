@@ -8,11 +8,16 @@ import { pathToFileURL } from 'node:url';
 // constant centralises the version, so literals go stale silently — cloudlands-fe#2447
 // shipped five "v9.14" strings after the feature was renumbered to 10.1.
 export const ESCAPE_TOKEN = 'protocol-version-ok';
+// A file-level directive within the first FILE_ESCAPE_LINES lines exempts the whole
+// file (fixture-heavy tests carrying non-protocol product versions).
+export const FILE_ESCAPE_TOKEN = `${ESCAPE_TOKEN}-file`;
+export const FILE_ESCAPE_LINES = 10;
 export const SCANNED_EXTENSIONS = new Set(['.ts', '.svelte', '.js', '.mjs']);
 export const REMEDIATION_HINT = [
   'Reference the protocol method or field name (e.g. `agent.getMessageBlock`, `capabilities.foo`)',
   'or describe the capability instead of a protocol version number.',
-  `For a deliberate exception, append \`// ${ESCAPE_TOKEN}\` to the line.`,
+  `For a deliberate exception, append \`// ${ESCAPE_TOKEN}: <reason>\` to the line, or put`,
+  `\`// ${FILE_ESCAPE_TOKEN}: <reason>\` in the first ${FILE_ESCAPE_LINES} lines of a fixture-heavy file.`,
 ].join('\n');
 
 const SCAN_ROOT = 'src';
@@ -21,18 +26,21 @@ const SCAN_ROOT = 'src';
 const SKIPPED_DIRECTORIES = new Set(['node_modules', 'dist', 'build', '.git', 'paraglide']);
 const GENERATED_FILES = new Set(['src/preload/index.ts']);
 
-const KEYWORD_PATTERN = /\b(?:protocol|intentd|daemon)\b/i;
+// A `v`-prefixed literal (`v10.1`) is a hit on any line; a bare one (`10.1`) only
+// when the line also names the protocol or the daemon.
+const KEYWORD_PATTERN = /\b(?:protocol|intentd|daemons?)\b/i;
 // Two segments of one or two digits, optionally `v`-prefixed. The lookarounds keep
-// three-part semver (`2.17.0`, `0.1.0`) and `§`-anchored section references out;
-// a preceding word character rules out identifiers and longer numbers.
-const VERSION_LITERAL_PATTERN = /(?<![\w.§])[vV]?\d{1,2}\.\d{1,2}(?![\d.])/g;
+// three-part semver (`2.17.0`, `0.1.0`) and `§`-anchored section references out
+// while still matching a literal that ends a sentence (`protocol 10.1.`); a
+// preceding word character rules out identifiers and longer numbers.
+const VERSION_LITERAL_PATTERN = /(?<![\w.§])[vV]?\d{1,2}\.\d{1,2}(?!\d)(?!\.\d)/g;
+const V_PREFIXED_PATTERN = /^[vV]/;
 // Shapes that carry a two-segment number but never a protocol version (section
-// references and ranges, JSON-RPC 2.0, the toon-format spec, elapsed times). They
-// are blanked before the literal scan so the surrounding line is still checked.
+// references and ranges, JSON-RPC 2.0, elapsed times). They are blanked before the
+// literal scan so the surrounding line is still checked.
 const NON_VERSION_SHAPES = [
   /§\s*\d{1,2}\.\d{1,2}(?:\s*[-–—]\s*\d{1,2}\.\d{1,2})?/g,
   /\bJSON-RPC\s+2\.0\b/gi,
-  /\btoon-format\s+v?\d{1,2}\.\d{1,2}/gi,
   /(?<![\w.])~?\d{1,2}\.\d{1,2}\s?(?:ms|s|sec|seconds?|m|min|minutes?|h|hours?)\b/g,
 ];
 
@@ -42,13 +50,20 @@ const isScannedPath = (filePath) =>
   SCANNED_EXTENSIONS.has(path.posix.extname(filePath)) && !GENERATED_FILES.has(filePath);
 
 export function findProtocolVersionLiterals(text) {
-  if (text.includes(ESCAPE_TOKEN) || !KEYWORD_PATTERN.test(text)) return [];
+  if (text.includes(ESCAPE_TOKEN)) return [];
   const stripped = NON_VERSION_SHAPES.reduce(
     (line, shape) => line.replace(shape, (match) => ' '.repeat(match.length)),
     text,
   );
-  return [...new Set([...stripped.matchAll(VERSION_LITERAL_PATTERN)].map((match) => match[0]))];
+  const hasKeyword = KEYWORD_PATTERN.test(text);
+  const literals = [...stripped.matchAll(VERSION_LITERAL_PATTERN)]
+    .map((match) => match[0])
+    .filter((literal) => hasKeyword || V_PREFIXED_PATTERN.test(literal));
+  return [...new Set(literals)];
 }
+
+const hasFileEscape = (lines) =>
+  lines.slice(0, FILE_ESCAPE_LINES).some((line) => line.includes(FILE_ESCAPE_TOKEN));
 
 // One hit per offending line: `{ path, line, matches, text }`.
 export function findProtocolVersionLiteralHits(files) {
@@ -56,7 +71,9 @@ export function findProtocolVersionLiteralHits(files) {
   for (const file of files) {
     const filePath = normalize(file.path);
     if (!isScannedPath(filePath)) continue;
-    file.content.split('\n').forEach((text, index) => {
+    const lines = file.content.split('\n');
+    if (hasFileEscape(lines)) continue;
+    lines.forEach((text, index) => {
       const matches = findProtocolVersionLiterals(text);
       if (matches.length)
         hits.push({ path: filePath, line: index + 1, matches, text: text.trim() });
