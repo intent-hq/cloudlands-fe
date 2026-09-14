@@ -28,6 +28,17 @@ import {
   prMonitorsUpdated,
 } from '../pr-monitor/pr-monitor-slice';
 import type { PrMonitorRow, PrMonitorSnapshot } from '$features/pr-monitor/pr-monitor-service';
+import {
+  connectionsListReceived,
+  connectionsReducer,
+  initialState as connectionsInitialState,
+} from '../connections/connections-slice';
+import {
+  guestSessionsListReceived,
+  guestSessionsReducer,
+  initialState as guestSessionsInitialState,
+} from '../guest-sessions/guest-sessions-slice';
+import type { GuestSessionRecord } from '../guest-sessions/guest-sessions-types';
 
 const WS_ID = 'ws-1';
 
@@ -116,8 +127,59 @@ describe('selectIsCollaboratorOnlyClient (multiplayer w3)', () => {
     const listed = workspaceReducer(initialState, replaceWorkspaceList(workspaces));
     return {
       workspace: workspaceReducer(listed, setWorkspaceHasLoaded(hasLoaded)),
+      connections: connectionsInitialState,
+      guestSessions: guestSessionsInitialState,
     } as StoreState;
   }
+
+  const GUEST_SESSION: GuestSessionRecord = {
+    id: 'guest-1',
+    label: 'studio.local',
+    host: '10.0.0.5',
+    hosts: ['10.0.0.5'],
+    port: 8443,
+    fingerprint: 'AB:CD',
+    tcAddress: null,
+    hostname: 'studio.local',
+    principalId: 'prin-guest',
+    login: 'octocat',
+    tokenEncrypted: true,
+    updatedAt: 1,
+  };
+
+  /** Bind the window to `backendId`, with `GUEST_SESSION` known as a joined host. */
+  function guestAware(state: StoreState, backendId: string): StoreState {
+    return {
+      ...state,
+      connections: connectionsReducer(
+        connectionsInitialState,
+        connectionsListReceived({
+          connections: [],
+          activeId: backendId,
+          windowBackendId: backendId,
+        }),
+      ),
+      guestSessions: guestSessionsReducer(
+        guestSessionsInitialState,
+        guestSessionsListReceived({ sessions: [GUEST_SESSION], connectedIds: [] }),
+      ),
+    };
+  }
+
+  it('is true from boot in a guest window (multiplayer w4) — before the list loads and with zero shared workspaces', () => {
+    expect(
+      selectIsCollaboratorOnlyClient.select(guestAware(loadedState([], false), GUEST_SESSION.id)),
+    ).toBe(true);
+    expect(
+      selectIsCollaboratorOnlyClient.select(guestAware(loadedState([]), GUEST_SESSION.id)),
+    ).toBe(true);
+  });
+
+  it('keeps owner semantics in an owner window that merely knows a guest session', () => {
+    expect(
+      selectIsCollaboratorOnlyClient.select(guestAware(loadedState([makeWorkspace()]), 'local')),
+    ).toBe(false);
+  });
 
   it('is true once the list has loaded and every workspace reports myRole collaborator', () => {
     const state = loadedState([
