@@ -8,8 +8,12 @@
  * network WebSocket in between.
  */
 import crypto from 'node:crypto';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { EventEmitter } from 'node:events';
 import https from 'node:https';
+import http from 'node:http';
 import { createRequire } from 'node:module';
 import net from 'node:net';
 import type { AddressInfo } from 'node:net';
@@ -170,6 +174,12 @@ const WSS_CONFIG: BackendConnectionConfig = {
 /** Manager + fake-socket harness with per-test option overrides. */
 function makeManager(
   options: {
+    maxStreams?: number;
+    maxStreamsPerPort?: number;
+    maxPendingStreams?: number;
+    maxPendingStreamsPerPort?: number;
+    admissionTimeoutMs?: number;
+    admissionRetryMs?: number;
     backpressureHighWaterMark?: number;
     openTimeoutMs?: number;
     connectTimeoutMs?: number;
@@ -320,6 +330,204 @@ describe('TunnelManager', () => {
   const onCleanup = (fn: () => void | Promise<void>): void => {
     cleanups.push(fn);
   };
+
+  it('serves queued ports round-robin instead of draining a busy port first', async () => {
+    const { manager, created } = makeManager({
+      daemon: false,
+      maxStreams: 1,
+      maxStreamsPerPort: 1,
+    });
+    onCleanup(() => manager.dispose());
+    const ports = await Promise.all([10001, 10002, 10003].map((port) => manager.forwardPort(port)));
+    const ws = created[0];
+    ws.onFrame = (frame) => {
+      if (frame.type === 'open')
+        queueMicrotask(() => ws.deliver({ type: 'openOk', streamId: frame.streamId }));
+    };
+    for (const index of [2, 0, 0, 1]) {
+      const client = await connectClient(ports[index]);
+      onCleanup(() => client.destroy());
+    }
+    await waitFor(() => manager.getDiagnostics().admission.pending === 3);
+    for (let index = 0; index < 4; index++) {
+      await waitFor(() => ws.sent.filter((frame) => frame.type === 'open').length === index + 1);
+      const opens = ws.sent.filter((frame) => frame.type === 'open');
+      expect(opens[index]).toMatchObject({ port: [10003, 10001, 10002, 10001][index] });
+      ws.deliver({ type: 'close', streamId: opens[index].streamId });
+    }
+    await waitFor(() => manager.getDiagnostics().streams.length === 0);
+  });
+
+  it('retries capacity before OPEN_OK without sending or replaying application bytes', async () => {
+    const echo = await startEchoServer();
+    onCleanup(() => echo.server.close());
+    const { manager, created } = makeManager({ admissionRetryMs: 10 });
+    onCleanup(() => manager.dispose());
+    const localPort = await manager.forwardPort(echo.port);
+    const ws = created[0];
+    const passthrough = ws.onFrame;
+    let blocked = true;
+    ws.onFrame = (frame) => {
+      if (blocked && frame.type === 'open')
+        queueMicrotask(() =>
+          ws.deliver({
+            type: 'openErr',
+            streamId: frame.streamId,
+            message: 'too many concurrent streams (max 32)',
+          }),
+        );
+      else passthrough?.(frame);
+    };
+    const client = await connectClient(localPort);
+    onCleanup(() => client.destroy());
+    const received = collectUntil(client, 5);
+    client.write('entry');
+    await waitFor(() => ws.sent.filter((frame) => frame.type === 'open').length >= 2);
+    expect(ws.sent.filter((frame) => frame.type === 'data')).toHaveLength(0);
+    expect(manager.activeForwards()).toHaveLength(1);
+    blocked = false;
+    expect((await received).toString()).toBe('entry');
+    const bytes = ws.sent.flatMap((frame) => (frame.type === 'data' ? [frame.payload] : []));
+    expect(Buffer.concat(bytes).toString()).toBe('entry');
+    expect(manager.getDiagnostics().admission.lastFailure).toMatchObject({
+      remotePort: echo.port,
+      reason: 'too many concurrent streams (max 32)',
+    });
+  });
+
+  it('bounds queue overflow and wait, and drops queued work when its forward closes', async () => {
+    const { manager, created } = makeManager({
+      daemon: false,
+      maxStreams: 1,
+      maxPendingStreams: 1,
+      admissionTimeoutMs: 100,
+    });
+    onCleanup(() => manager.dispose());
+    const port = await manager.forwardPort(10001);
+    const held = await connectClient(port);
+    onCleanup(() => held.destroy());
+    await waitFor(() => created[0].sent.some((frame) => frame.type === 'open'));
+    const first = created[0].sent.find((frame) => frame.type === 'open')!;
+    created[0].deliver({ type: 'openOk', streamId: first.streamId });
+    const pending = await connectClient(port);
+    onCleanup(() => pending.destroy());
+    const pendingClosed = waitForClose(pending);
+    await waitFor(() => manager.getDiagnostics().admission.pending === 1);
+    const overflow = await connectClient(port);
+    onCleanup(() => overflow.destroy());
+    await waitFor(() => overflow.destroyed);
+    await pendingClosed;
+    expect(created[0].sent.filter((frame) => frame.type === 'open')).toHaveLength(1);
+    expect(manager.getDiagnostics().admission.lastFailure?.reason).toBe(
+      'admission deadline exceeded',
+    );
+    const cancelled = await connectClient(port);
+    onCleanup(() => cancelled.destroy());
+    await waitFor(() => manager.getDiagnostics().admission.pending === 1);
+    manager.closeForward(10001);
+    expect(manager.getDiagnostics().streams).toHaveLength(0);
+    expect(manager.getDiagnostics().admission.pending).toBe(0);
+    expect(created[0].sent.filter((frame) => frame.type === 'open')).toHaveLength(1);
+  });
+
+  it('boots seven ports while thirty-five long-lived connections remain active', async () => {
+    const { manager } = makeManager({ maxStreamsPerPort: 6, maxStreams: 42 });
+    onCleanup(() => manager.dispose());
+    const ports: number[] = [];
+    for (let index = 0; index < 7; index++) {
+      const echo = await startEchoServer();
+      onCleanup(() => echo.server.close());
+      const port = await manager.forwardPort(echo.port);
+      ports.push(port);
+      for (let held = 0; held < 5; held++) {
+        const client = await connectClient(port);
+        onCleanup(() => client.destroy());
+        const reply = collectUntil(client, 3);
+        client.write('hmr');
+        expect((await reply).toString()).toBe('hmr');
+      }
+    }
+    await Promise.all(
+      ports.flatMap((port) =>
+        [0, 1].map(async () => {
+          const client = await connectClient(port);
+          onCleanup(() => client.destroy());
+          const reply = collectUntil(client, 5);
+          client.end('ready');
+          expect((await reply).toString()).toBe('ready');
+        }),
+      ),
+    );
+    await waitFor(() => manager.getDiagnostics().streams.length === 35);
+    expect(manager.getDiagnostics().admission.pending).toBe(0);
+  });
+
+  it.skipIf(process.env.TUNNEL_BROWSER_TEST !== '1')(
+    'loads seven module pages with live event streams and occupied keep-alive slots',
+    async () => {
+      const { chromium } = await import('@playwright/test');
+      const browserTemp = mkdtempSync(join(tmpdir(), 'tunnel-browser-'));
+      onCleanup(() => rmSync(browserTemp, { recursive: true, force: true }));
+      const browser = await chromium.launch({
+        args: ['--no-sandbox'],
+        env: { ...process.env, TMPDIR: browserTemp },
+      });
+      onCleanup(() => browser.close());
+      const { manager } = makeManager({ maxStreams: 49, maxStreamsPerPort: 7 });
+      onCleanup(() => manager.dispose());
+      const ports: number[] = [];
+      for (let index = 0; index < 7; index++) {
+        const server = http.createServer((request, response) => {
+          if (request.url === '/events') {
+            response.writeHead(200, { 'Content-Type': 'text/event-stream' });
+            response.write('data: connected\n\n');
+            const timer = setInterval(() => response.write('data: tick\n\n'), 25);
+            response.on('close', () => clearInterval(timer));
+          } else if (request.url?.startsWith('/module')) {
+            response.writeHead(200, { 'Content-Type': 'text/javascript' });
+            response.end('export default 1;');
+          } else {
+            response.writeHead(200, { 'Content-Type': 'text/html' });
+            response.end(`<script type="module">
+              window.events = new EventSource('/events');
+              await new Promise(resolve => events.onmessage = resolve);
+              const modules = await Promise.all(Array.from({length: 20}, (_, i) => import('/module' + i)));
+              document.body.textContent = modules.reduce((sum, m) => sum + m.default, 0);
+              document.body.dataset.ready = 'true';
+            </script>`);
+          }
+        });
+        await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+        onCleanup(() => {
+          server.closeAllConnections();
+          server.close();
+        });
+        const port = await manager.forwardPort((server.address() as AddressInfo).port);
+        ports.push(port);
+        for (let held = 0; held < 5; held++) {
+          const socket = await connectClient(port);
+          onCleanup(() => socket.destroy());
+        }
+      }
+      await waitFor(() => manager.getDiagnostics().admission.active === 35);
+      const failures: string[] = [];
+      await Promise.all(
+        ports.map(async (port) => {
+          const page = await browser.newPage();
+          page.on('requestfailed', (request) => failures.push(request.url()));
+          await page.goto(`http://127.0.0.1:${port}`, { waitUntil: 'domcontentloaded' });
+          await page.locator('body[data-ready=true]').waitFor();
+          expect(await page.locator('body').innerText()).toBe('20');
+        }),
+      );
+      expect(failures).toEqual([]);
+      expect(manager.getDiagnostics().admission.pending).toBe(0);
+      await browser.close();
+      manager.dispose();
+      expect(manager.getDiagnostics().streams).toHaveLength(0);
+    },
+    60_000,
+  );
 
   it('forwardPort relays data both ways through the mux', async () => {
     const { server, port } = await startEchoServer();
