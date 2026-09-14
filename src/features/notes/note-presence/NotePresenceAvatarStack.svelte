@@ -60,23 +60,21 @@
   >
     {#each visible as viewer (viewer.principalId)}
       <Tooltip content={viewerName(viewer)} side="bottom">
+        <!-- The tooltip trigger is the focusable control; its name is the
+             persistent screen-reader text, the avatar itself is decorative. -->
         <span
           class="inline-flex h-5 w-5 items-center justify-center overflow-hidden rounded-full border-2 border-background text-xs font-medium leading-none text-white"
           style:background-color={remoteCursorColor(viewer.principalId)}
           data-principal-id={viewer.principalId}
+          aria-hidden="true"
         >
           {#if viewer.avatarUrl}
-            <img
-              src={viewer.avatarUrl}
-              alt=""
-              aria-hidden="true"
-              class="h-full w-full object-cover"
-              loading="lazy"
-            />
+            <img src={viewer.avatarUrl} alt="" class="h-full w-full object-cover" loading="lazy" />
           {:else}
             {viewerInitial(viewer)}
           {/if}
         </span>
+        <span class="sr-only">{viewerName(viewer)}</span>
       </Tooltip>
     {/each}
     {#if overflow > 0}
