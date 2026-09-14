@@ -57,14 +57,27 @@ export const selectGuestSessionsConnectedIds = store.createSelector(
 );
 
 /**
+ * Whether a workspace is in this window's list. A roster operation for a
+ * workspace outside the list has nothing to render into: it fails without
+ * installing (or re-installing) a roster entry.
+ */
+export const selectIsHostedWorkspaceListed = store.createSelector(
+  (state, workspaceId: string): boolean =>
+    getItem(state.workspace.workspaces, WorkspaceId(workspaceId)) !== undefined,
+);
+
+/**
  * Whether the caller manages a workspace's membership right now: the
- * workspace is in this window's list and `myRole` is not `collaborator`
- * (absent `myRole` — older daemon — reads as owner). The saga's gate before
- * `workspace.members.list` / `workspace.members.remove`: a collaborator, or a
- * workspace that left the list, never sends an owner RPC.
+ * workspace is in this window's list, `myRole` is not `collaborator` (absent
+ * `myRole` — older daemon — reads as owner) and its roster is not already
+ * terminally `withheld`. The saga's gate before AND after
+ * `workspace.members.list` / `workspace.members.remove`: a collaborator, a
+ * workspace that left the list, or a workspace the daemon already refused
+ * never sends (or applies the result of) an owner RPC.
  */
 export const selectCanManageHostedWorkspace = store.createSelector(
   (state, workspaceId: string): boolean => {
+    if (state.guestSessions.hostedRosters[workspaceId]?.status === 'withheld') return false;
     const ws = getItem(state.workspace.workspaces, WorkspaceId(workspaceId));
     return ws !== undefined && ws.myRole !== 'collaborator';
   },

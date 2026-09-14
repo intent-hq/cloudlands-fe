@@ -116,6 +116,27 @@ describe('guestSessionsReducer', () => {
     expect(state.removingMemberKeys).toEqual([hostedMemberKey('ws-2', MEMBER.principalId)]);
   });
 
+  it('a withheld roster is terminal: a late load, result or failure leaves it untouched until purged', () => {
+    const withheld = guestSessionsReducer(initialState, hostedRosterWithheld('ws-1'));
+    expect(guestSessionsReducer(withheld, hostedRosterLoading('ws-1'))).toBe(withheld);
+    expect(guestSessionsReducer(withheld, hostedRosterReceived('ws-1', [MEMBER]))).toBe(withheld);
+    expect(guestSessionsReducer(withheld, hostedRosterFailed('ws-1'))).toBe(withheld);
+    expect(guestSessionsReducer(withheld, hostedRosterWithheld('ws-1'))).toBe(withheld);
+
+    // Another workspace is unaffected.
+    const other = guestSessionsReducer(withheld, hostedRosterReceived('ws-2', [MEMBER]));
+    expect(other.hostedRosters).toEqual({
+      'ws-1': { status: 'withheld', members: [] },
+      'ws-2': { status: 'loaded', members: [MEMBER] },
+    });
+
+    // Purging ends it: the next read starts over.
+    const purged = guestSessionsReducer(withheld, workspaceDeleted('ws-1', []));
+    expect(
+      guestSessionsReducer(purged, hostedRosterReceived('ws-1', [MEMBER])).hostedRosters,
+    ).toEqual({ 'ws-1': { status: 'loaded', members: [MEMBER] } });
+  });
+
   it('purges a roster and its removal markers when the workspace is deleted or its entity removed', () => {
     let state = guestSessionsReducer(initialState, hostedRosterReceived('ws-1', [MEMBER]));
     state = guestSessionsReducer(state, hostedRosterReceived('ws-2', [MEMBER]));
