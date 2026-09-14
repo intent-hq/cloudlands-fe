@@ -1,8 +1,12 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import type { ChildProcess } from 'node:child_process';
 import crypto from 'node:crypto';
+import { EventEmitter } from 'node:events';
 import https from 'node:https';
 import { createRequire } from 'node:module';
-import type { AddressInfo } from 'node:net';
+import net, { type AddressInfo } from 'node:net';
+import { PassThrough } from 'node:stream';
+import type { TailcatSpawn } from '../tailcat-tunnel';
 
 /**
  * `/invite` redemption client (features/backend/main/invite-connection.ts)
@@ -43,7 +47,12 @@ class FakeInviteDaemon {
   decryptedBytes = 0;
   handler: (req: RpcReq) => Outcome | Promise<Outcome> = () => ({ result: null });
 
-  async start(): Promise<void> {
+  /** Server-side sockets still open (a torn-down client closes its side). */
+  openClients(): number {
+    return this.clients.filter((c) => c.readyState === c.OPEN).length;
+  }
+
+  async start(bindHost: string | undefined = '127.0.0.1'): Promise<void> {
     this.fingerprint = new crypto.X509Certificate(WSS_CERT_PEM).fingerprint256;
     this.server = https.createServer({ cert: WSS_CERT_PEM, key: WSS_KEY_PEM });
     this.server.on('secureConnection', (socket) => {
@@ -63,7 +72,7 @@ class FakeInviteDaemon {
         socket.send(JSON.stringify({ jsonrpc: '2.0', id: rpc.id, ...outcome }));
       });
     });
-    await new Promise<void>((res) => this.server.listen(0, '127.0.0.1', () => res()));
+    await new Promise<void>((res) => this.server.listen(0, bindHost, () => res()));
     this.port = (this.server.address() as AddressInfo).port;
   }
 
@@ -72,6 +81,41 @@ class FakeInviteDaemon {
     await new Promise<void>((res) => this.wss.close(() => res()));
     await new Promise<void>((res) => this.server.close(() => res()));
   }
+}
+
+/**
+ * Fake tailcat pipe client that really relays its stdio to a loopback port:
+ * the shape of `tailcat <tc-address> <port>` with the tc network replaced by
+ * a TCP hop to the fake daemon. Records kill() like the tunnel suite's fake.
+ */
+class RelayChild extends EventEmitter {
+  stdin = new PassThrough();
+  stdout = new PassThrough();
+  stderr = new PassThrough();
+  killed = false;
+  private readonly socket: net.Socket;
+  constructor(relayPort: number) {
+    super();
+    this.socket = net.connect(relayPort, '127.0.0.1');
+    this.socket.on('error', () => {});
+    this.socket.on('close', () => this.emit('exit', 0));
+    this.stdin.pipe(this.socket);
+    this.socket.pipe(this.stdout);
+  }
+  kill(): boolean {
+    this.killed = true;
+    this.socket.destroy();
+    return true;
+  }
+}
+
+function relaySpawn(relayPort: number, children: RelayChild[], args: string[][]): TailcatSpawn {
+  return (_command, spawnArgs) => {
+    const child = new RelayChild(relayPort);
+    children.push(child);
+    args.push(spawnArgs);
+    return child as unknown as ChildProcess;
+  };
 }
 
 const START = {
@@ -216,5 +260,147 @@ describe('openInviteConnection', () => {
     await expect(
       openInviteConnection({ hosts: [], port: daemon.port, fingerprint: daemon.fingerprint }),
     ).rejects.toThrow(/no host/);
+  });
+
+  it('tears down every non-winning candidate once the race settles', async () => {
+    // Dual-stack daemon so both spellings of loopback reach it and both
+    // candidates can complete a pin-verified handshake.
+    const shared = new FakeInviteDaemon();
+    await shared.start(undefined);
+    shared.handler = () => ({ result: START });
+    const { openInviteConnection } = await import('../invite-connection');
+    try {
+      const conn = await openInviteConnection(
+        { hosts: ['127.0.0.1', 'localhost'], port: shared.port, fingerprint: shared.fingerprint },
+        { timeoutMs: 5_000 },
+      );
+      try {
+        expect(['127.0.0.1', 'localhost']).toContain(conn.host);
+        await expect(conn.redeemStart('inv_1', 's3cret')).resolves.toEqual(START);
+        // The loser — connecting or already open — is destroyed, so at most
+        // the winner's socket remains open on the daemon side.
+        await vi.waitFor(() => expect(shared.openClients()).toBe(1), { timeout: 3_000 });
+      } finally {
+        conn.close();
+      }
+      await vi.waitFor(() => expect(shared.openClients()).toBe(0), { timeout: 3_000 });
+    } finally {
+      await shared.stop();
+    }
+  });
+
+  it('destroys a candidate still stuck in its handshake when the deadline hits', async () => {
+    // Accepts TCP but never answers the TLS ClientHello: the dial can only
+    // end by the overall deadline, and its socket must not outlive it.
+    const accepted: net.Socket[] = [];
+    let closedCount = 0;
+    const blackhole = net.createServer((socket) => {
+      accepted.push(socket);
+      // Drain the ClientHello so the readable side can observe the peer's
+      // FIN ('end' → auto-close); a paused socket never emits 'close'.
+      socket.resume();
+      socket.on('close', () => {
+        closedCount += 1;
+      });
+    });
+    await new Promise<void>((res) => blackhole.listen(0, '127.0.0.1', () => res()));
+    const port = (blackhole.address() as AddressInfo).port;
+    const { openInviteConnection } = await import('../invite-connection');
+    try {
+      await expect(
+        openInviteConnection(
+          { hosts: ['127.0.0.1'], port, fingerprint: daemon.fingerprint },
+          { timeoutMs: 500 },
+        ),
+      ).rejects.toThrow(/timed out/);
+      await vi.waitFor(() => expect(accepted.length).toBe(1), { timeout: 3_000 });
+      await vi.waitFor(() => expect(closedCount).toBe(1), { timeout: 3_000 });
+    } finally {
+      for (const s of accepted) s.destroy();
+      await new Promise<void>((res) => blackhole.close(() => res()));
+    }
+  });
+
+  describe('tunnel fallback', () => {
+    const previousTailcatBin = process.env.TAILCAT_BIN;
+    beforeAll(() => {
+      // Any existing file passes the binary probe; the injected spawn never
+      // executes it.
+      process.env.TAILCAT_BIN = process.execPath;
+    });
+    afterAll(() => {
+      if (previousTailcatBin === undefined) delete process.env.TAILCAT_BIN;
+      else process.env.TAILCAT_BIN = previousTailcatBin;
+    });
+
+    it('hosts=[] + tc (the daemon default) dials the tunnel with the pin enforced', async () => {
+      daemon.handler = () => ({ result: START });
+      const children: RelayChild[] = [];
+      const args: string[][] = [];
+      const { openInviteConnection } = await import('../invite-connection');
+      const conn = await openInviteConnection(
+        {
+          hosts: [],
+          port: daemon.port,
+          fingerprint: daemon.fingerprint,
+          tcAddress: ' TC-Key-ABC ',
+        },
+        { timeoutMs: 5_000, tailcatSpawn: relaySpawn(daemon.port, children, args) },
+      );
+      try {
+        expect(conn.via).toBe('tunnel');
+        expect(conn.host).toBe('TC-Key-ABC');
+        expect(args).toEqual([['tc-key-abc', String(daemon.port)]]);
+        expect(daemon.upgradeUrls).toEqual(['/invite']);
+        await expect(conn.redeemStart('inv_1', 's3cret')).resolves.toEqual(START);
+      } finally {
+        conn.close();
+      }
+      await vi.waitFor(() => expect(children.every((c) => c.killed)).toBe(true), {
+        timeout: 3_000,
+      });
+    });
+
+    it('falls back to the tunnel when every direct host fails, and closes it on failure', async () => {
+      daemon.handler = () => ({ result: START });
+      const children: RelayChild[] = [];
+      const { openInviteConnection } = await import('../invite-connection');
+      // Direct: port 1 refuses at once. The relay ignores the remote port
+      // argument and hops to the real daemon, as the tc network would.
+      const conn = await openInviteConnection(
+        { hosts: ['127.0.0.1'], port: 1, fingerprint: daemon.fingerprint, tcAddress: 'tc-key' },
+        { timeoutMs: 5_000, tailcatSpawn: relaySpawn(daemon.port, children, []) },
+      );
+      try {
+        expect(conn.via).toBe('tunnel');
+        expect(conn.host).toBe('tc-key');
+        await expect(conn.redeemStart('inv_1', 's3cret')).resolves.toEqual(START);
+      } finally {
+        conn.close();
+      }
+
+      // A foreign cert through the tunnel is a pin mismatch, and the tunnel
+      // (with its tailcat child) is torn down with the failed dial.
+      const { PinMismatchError } = await import('../backend-connection');
+      const mismatchChildren: RelayChild[] = [];
+      await expect(
+        openInviteConnection(
+          {
+            hosts: [],
+            port: daemon.port,
+            fingerprint: 'AA:'.repeat(31) + 'AA',
+            tcAddress: 'tc-key',
+          },
+          { timeoutMs: 3_000, tailcatSpawn: relaySpawn(daemon.port, mismatchChildren, []) },
+        ),
+      ).rejects.toBeInstanceOf(PinMismatchError);
+      await vi.waitFor(
+        () => {
+          expect(mismatchChildren.length).toBeGreaterThan(0);
+          expect(mismatchChildren.every((c) => c.killed)).toBe(true);
+        },
+        { timeout: 3_000 },
+      );
+    });
   });
 });

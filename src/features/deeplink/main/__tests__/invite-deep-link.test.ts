@@ -37,11 +37,18 @@ vi.mock('electron', () => ({
 }));
 
 const guestAdd = vi.fn();
-vi.mock('../../../backend/main/guest-sessions-store', () => ({
-  get add() {
-    return guestAdd;
-  },
-}));
+vi.mock('../../../backend/main/guest-sessions-store', async () => {
+  const actual = await vi.importActual<typeof import('../../../backend/main/guest-sessions-store')>(
+    '../../../backend/main/guest-sessions-store',
+  );
+  return {
+    GuestStoreCorruptError: actual.GuestStoreCorruptError,
+    GuestEncryptionUnavailableError: actual.GuestEncryptionUnavailableError,
+    get add() {
+      return guestAdd;
+    },
+  };
+});
 
 const openBackendWindow = vi.fn();
 vi.mock('../../../backend/main/backend.ipc', () => ({
@@ -92,6 +99,10 @@ vi.mock('$shared/logger', () => ({
   },
 }));
 
+import {
+  GuestEncryptionUnavailableError,
+  GuestStoreCorruptError,
+} from '../../../backend/main/guest-sessions-store';
 import { InviteRpcError } from '../../../backend/main/invite-connection';
 import { handleInviteDeepLink, routeInviteLinkFromOs } from '../invite-deep-link';
 
@@ -122,10 +133,16 @@ beforeEach(() => {
   logLines.length = 0;
   appIsReady.mockReturnValue(true);
   showMessageBox.mockResolvedValue({ response: 0 });
-  openInviteConnection.mockResolvedValue({ host: '192.168.1.10', redeemStart, redeemWait, close });
+  openInviteConnection.mockResolvedValue({
+    host: '192.168.1.10',
+    via: 'direct',
+    redeemStart,
+    redeemWait,
+    close,
+  });
   redeemStart.mockResolvedValue(START);
   redeemWait.mockResolvedValue(CREDENTIAL);
-  guestAdd.mockResolvedValue({ id: 'guest-id' });
+  guestAdd.mockResolvedValue({ id: 'guest-id', tokenEncrypted: true });
   openBackendWindow.mockResolvedValue({ id: 'guest-id' });
 });
 
@@ -137,6 +154,7 @@ describe('handleInviteDeepLink', () => {
       hosts: ['192.168.1.10'],
       port: 8443,
       fingerprint: 'AA:BB:CC',
+      tcAddress: 'ts.example:443',
     });
     expect(redeemStart).toHaveBeenCalledWith('inv-1', SECRET);
     expect(redeemWait).toHaveBeenCalledWith('flow-1', expect.any(Number));
@@ -187,7 +205,10 @@ describe('handleInviteDeepLink', () => {
     ['a pair uri', `intent://pair?v=1&host=h&port=8443&fp=AA:BB:CC&token=${TOKEN}`],
     ['missing secret', `${BASE}&inviteId=inv-1`],
     ['missing inviteId', `${BASE}&secret=${SECRET}`],
-    ['missing host', `intent://invite?v=1&port=8443&fp=AA:BB:CC&inviteId=inv-1&secret=${SECRET}`],
+    [
+      'neither host nor tunnel',
+      `intent://invite?v=1&port=8443&fp=AA:BB:CC&inviteId=inv-1&secret=${SECRET}`,
+    ],
     ['missing port', `intent://invite?v=1&host=h&fp=AA:BB:CC&inviteId=inv-1&secret=${SECRET}`],
     ['missing fingerprint', `intent://invite?v=1&host=h&port=8443&inviteId=inv-1&secret=${SECRET}`],
   ])('rejects link with %s without dialing, storing, or crashing', async (_name, url) => {
@@ -198,10 +219,108 @@ describe('handleInviteDeepLink', () => {
     expect(openBackendWindow).not.toHaveBeenCalled();
   });
 
-  it('redeem error: shows a failure dialog, stores nothing, fails soft', async () => {
-    redeemStart.mockRejectedValue(
-      new InviteRpcError(-32001, 'invite expired', { code: 'invite-expired' }),
+  it('tunnel-only envelope (hosts=[] + tc, the daemon default) dials and stores by tc address', async () => {
+    openInviteConnection.mockResolvedValue({
+      host: 'tc-key-abc',
+      via: 'tunnel',
+      redeemStart,
+      redeemWait,
+      close,
+    });
+    await handleInviteDeepLink(
+      `intent://invite?v=1&host=&port=8443&fp=AA:BB:CC&inviteId=inv-1&secret=${SECRET}&tc=tc-key-abc`,
     );
+    expect(showMessageBox.mock.calls[0][0]).toMatchObject({
+      message: expect.stringContaining('tc-key-abc:8443'),
+    });
+    expect(openInviteConnection).toHaveBeenCalledWith({
+      hosts: [],
+      port: 8443,
+      fingerprint: 'AA:BB:CC',
+      tcAddress: 'tc-key-abc',
+    });
+    expect(guestAdd).toHaveBeenCalledWith(
+      expect.objectContaining({
+        host: 'tc-key-abc',
+        hosts: [],
+        tcAddress: 'tc-key-abc',
+        token: TOKEN,
+      }),
+    );
+    expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
+  });
+
+  it.each([
+    ['a non-https scheme', 'http://github.com/login/device'],
+    ['a file URL', 'file:///tmp/evil'],
+    ['a foreign host', 'https://github.com.evil.example/login/device'],
+    ['a lookalike host', 'https://notgithub.com/login/device'],
+    ['embedded credentials', 'https://user:pw@github.com/login/device'],
+    ['unparseable text', 'not a url'],
+  ])(
+    'refuses to show or open a verification URL with %s (bounded failure, nothing stored)',
+    async (_name, verificationUri) => {
+      redeemStart.mockResolvedValue({ ...START, verificationUri });
+      await expect(handleInviteDeepLink(LINK)).resolves.toBeUndefined();
+      expect(openExternal).not.toHaveBeenCalled();
+      expect(redeemWait).not.toHaveBeenCalled();
+      expect(guestAdd).not.toHaveBeenCalled();
+      // Confirm + failure dialog only — the device-code dialog never showed
+      // the URL.
+      expect(showMessageBox).toHaveBeenCalledTimes(2);
+      expect(showMessageBox.mock.calls[1][0]).toMatchObject({ type: 'error' });
+      const allLogs = logLines.join('\n');
+      expect(allLogs).toContain('invalid-verification-uri');
+      expect(allLogs).not.toContain(verificationUri);
+      expect(close).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('accepts a GitHub subdomain verification URL', async () => {
+    redeemStart.mockResolvedValue({
+      ...START,
+      verificationUri: 'https://enterprise.github.com/login/device',
+    });
+    await handleInviteDeepLink(LINK);
+    expect(openExternal).toHaveBeenCalledWith('https://enterprise.github.com/login/device');
+    expect(guestAdd).toHaveBeenCalledTimes(1);
+  });
+
+  it('warns when the credential had to be stored in plaintext, then still opens the window', async () => {
+    guestAdd.mockResolvedValue({ id: 'guest-id', tokenEncrypted: false });
+    await handleInviteDeepLink(LINK);
+    // Confirm + device code + plaintext warning.
+    expect(showMessageBox).toHaveBeenCalledTimes(3);
+    expect(showMessageBox.mock.calls[2][0]).toMatchObject({ type: 'warning' });
+    expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
+  });
+
+  it.each([
+    ['encryption unavailable (would downgrade)', new GuestEncryptionUnavailableError()],
+    ['corrupt registry', new GuestStoreCorruptError()],
+  ])('store refusal — %s: failure dialog, bounded code logged, no window', async (_name, error) => {
+    guestAdd.mockRejectedValue(error);
+    await expect(handleInviteDeepLink(LINK)).resolves.toBeUndefined();
+    expect(openBackendWindow).not.toHaveBeenCalled();
+    expect(showMessageBox.mock.calls.at(-1)?.[0]).toMatchObject({ type: 'error' });
+    const allLogs = logLines.join('\n');
+    expect(allLogs).toContain(error.code);
+    expect(allLogs).not.toContain(TOKEN);
+  });
+
+  it('drops server-authored error text and unknown codes: only documented codes reach a log', async () => {
+    redeemStart.mockRejectedValue(
+      new InviteRpcError(-32602, { code: SECRET, detail: `secret=${SECRET} token=${TOKEN}` }),
+    );
+    await expect(handleInviteDeepLink(LINK)).resolves.toBeUndefined();
+    const allLogs = logLines.join('\n');
+    expect(allLogs).not.toContain(SECRET);
+    expect(allLogs).not.toContain(TOKEN);
+    expect(allLogs).toContain('"inviteCode":null');
+  });
+
+  it('redeem error: shows a failure dialog, stores nothing, fails soft', async () => {
+    redeemStart.mockRejectedValue(new InviteRpcError(-32001, { code: 'invite-expired' }));
     await expect(handleInviteDeepLink(LINK)).resolves.toBeUndefined();
     // Confirm + failure dialog.
     expect(showMessageBox).toHaveBeenCalledTimes(2);
@@ -213,9 +332,7 @@ describe('handleInviteDeepLink', () => {
   });
 
   it('phase-2 rejection (denied) after opening GitHub: failure dialog, nothing stored', async () => {
-    redeemWait.mockRejectedValue(
-      new InviteRpcError(-32002, 'denied', { code: 'invite-flow-denied' }),
-    );
+    redeemWait.mockRejectedValue(new InviteRpcError(-32002, { code: 'invite-flow-denied' }));
     await expect(handleInviteDeepLink(LINK)).resolves.toBeUndefined();
     expect(openExternal).toHaveBeenCalledTimes(1);
     expect(guestAdd).not.toHaveBeenCalled();
@@ -231,7 +348,8 @@ describe('handleInviteDeepLink', () => {
     const allLogs = logLines.join('\n');
     expect(allLogs).not.toContain(SECRET);
     expect(allLogs).not.toContain(TOKEN);
-    expect(allLogs).toContain('REDACTED');
+    expect(allLogs).not.toContain('persist failed');
+    expect(allLogs).toContain('Invite deep link handling failed');
   });
 
   it('drops a concurrent invite link while one is in flight (single dialog)', async () => {

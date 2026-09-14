@@ -910,14 +910,15 @@ export async function createWindow(backendId: string = LOCAL_CONNECTION_ID): Pro
       .catch((error: unknown) => logger.error('Failed to clear cache:', error as Error));
   }
 
-  // Check process.argv for intent:// URL on cold start. Pair links are
-  // excluded: they are handled fully in the main process (parked at startup,
-  // processed once the window is ready) and must never be embedded in the
-  // renderer load URL — the pairing bearer token would leak to the renderer.
+  // Check process.argv for intent:// URL on cold start. Pair and invite links
+  // are excluded: they are handled fully in the main process (parked at
+  // startup, processed once the window is ready) and must never be embedded
+  // in the renderer load URL — the credential in the URL would leak to the
+  // renderer.
   const intentUrl = findIntentUrl(process.argv);
   let loadUrl = buildLoadUrl();
 
-  if (intentUrl && !isPairingUri(intentUrl)) {
+  if (intentUrl && !isPairingUri(intentUrl) && !isInviteUri(intentUrl)) {
     const deepLinkHandler = new DeepLinkHandler();
     const action = deepLinkHandler.parseDeepLink(intentUrl);
     if (action) {

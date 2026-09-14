@@ -1757,11 +1757,13 @@ const bootFlow = app.whenReady().then(async () => {
 
     // Check for intent:// deep link in process.argv (cold start)
     const intentUrlArg = findIntentUrl(process.argv);
-    const isPairLinkArg = intentUrlArg !== undefined && isPairingUri(intentUrlArg);
+    const isPairLinkArg =
+      intentUrlArg !== undefined && (isPairingUri(intentUrlArg) || isInviteUri(intentUrlArg));
 
-    // A pair link is handled fully in the main process: park it now and let
-    // the pending-URL pass after window creation route it to the pair handler.
-    // It is never embedded in the renderer load URL — createWindow skips it.
+    // A pair or invite link is handled fully in the main process: park it now
+    // and let the pending-URL pass after window creation route it to its
+    // handler. It is never embedded in the renderer load URL — createWindow
+    // skips it.
     if (intentUrlArg !== undefined && isPairLinkArg) {
       await deepLinkHandler.handleDeepLink(intentUrlArg, null);
     }
