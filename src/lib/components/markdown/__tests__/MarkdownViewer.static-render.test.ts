@@ -62,6 +62,29 @@ describe('MarkdownViewer static rendering', () => {
     await waitFor(() => expect(view.container.querySelector('math')).toBeTruthy());
   });
 
+  it('reclassifies mounted content between plain text, math and task lists', async () => {
+    const view = render(MarkdownViewer, { props: { content: '' } });
+    expect(view.container.querySelector('math')).toBeNull();
+
+    await view.rerender({ content: '$x^2$' });
+    await waitFor(() => expect(view.container.querySelector('math')).toBeTruthy());
+
+    await view.rerender({ content: 'Costs $5 and $10' });
+    await waitFor(() => expect(view.container.textContent).toContain('Costs $5 and $10'));
+    expect(view.container.querySelector('math')).toBeNull();
+
+    await view.rerender({ content: '- [x] completed' });
+    await waitFor(() => {
+      const checkbox = view.container.querySelector<HTMLInputElement>('input[type="checkbox"]');
+      expect(checkbox?.checked).toBe(true);
+      expect(checkbox?.disabled).toBe(true);
+    });
+
+    await view.rerender({ content: 'plain end' });
+    await waitFor(() => expect(view.container.textContent).toContain('plain end'));
+    expect(view.container.querySelector('input')).toBeNull();
+  });
+
   it('renders task lists as static HTML without a ProseMirror view', async () => {
     const { container } = render(MarkdownViewer, {
       props: { content: '- [ ] open item\n- [x] done item' },
