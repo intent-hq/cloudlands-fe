@@ -74,6 +74,15 @@ export function mapOffsetThroughDiff(from: string, to: string, offset: number): 
 }
 
 /**
+ * `mapOffsetThroughDiff` with the `from → to` diff computed once, for callers
+ * mapping many offsets between the same two texts (remote cursors).
+ */
+export function createOffsetMapper(from: string, to: string): (offset: number) => number {
+  const spans = hunks(from, to);
+  return (offset) => mapOffset(spans, Math.max(0, Math.min(offset, from.length)));
+}
+
+/**
  * Replay the edits `base → ours` onto `theirs`, returning the rebased text.
  * Each `diffChars(base, ours)` op has its base offsets mapped through
  * `base → theirs`; insertions land at the mapped point (inside a span theirs
