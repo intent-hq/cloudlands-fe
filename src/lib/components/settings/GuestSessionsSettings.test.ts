@@ -30,12 +30,21 @@ const mocks = vi.hoisted(() => ({
   loadRoster: vi.fn(),
   removeMember: vi.fn(),
   removeAll: vi.fn(),
+  subscribers: new Set<() => void>(),
   readable: <T>(get: () => T) => ({
     subscribe(run: (value: T) => void) {
       run(get());
-      return () => {};
+      const notify = () => run(get());
+      mocks.subscribers.add(notify);
+      return () => {
+        mocks.subscribers.delete(notify);
+      };
     },
   }),
+  /** Re-read every mocked selector, as a store change would. */
+  publish() {
+    for (const notify of mocks.subscribers) notify();
+  },
 }));
 
 vi.mock('$store/renderer/store', () => ({
@@ -123,6 +132,25 @@ function resolvedAction(type: string, payload: unknown[], result: unknown = unde
   return { type, payload, promise: Promise.resolve(result) };
 }
 
+/** An action whose promise the test settles by hand. */
+function pendingAction(type: string, payload: unknown[]) {
+  let resolve!: (result: unknown) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<unknown>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { action: { type, payload, promise }, resolve, reject };
+}
+
+const sweepClean = {
+  removedPrincipalIds: ['p-collab'],
+  failedMembers: [],
+  revokedInviteIds: [],
+  failedInvites: [],
+  invitesUnavailable: null,
+};
+
 describe('GuestSessionsSettings', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -144,13 +172,7 @@ describe('GuestSessionsSettings', () => {
       }),
     );
     mocks.removeAll.mockImplementation((workspaceId) =>
-      resolvedAction('guestSessions/removeAllHostedGuestsRequested', [workspaceId], {
-        removedPrincipalIds: ['p-collab'],
-        failedMembers: [],
-        revokedInviteIds: [],
-        failedInvites: [],
-        invitesUnavailable: null,
-      }),
+      resolvedAction('guestSessions/removeAllHostedGuestsRequested', [workspaceId], sweepClean),
     );
     mocks.open.mockImplementation((id) =>
       resolvedAction('connections/openRequested', [id], { status: 'opened', id }),
@@ -165,7 +187,10 @@ describe('GuestSessionsSettings', () => {
     );
   });
 
-  afterEach(cleanup);
+  afterEach(() => {
+    cleanup();
+    mocks.subscribers.clear();
+  });
 
   it('shows a loading status until main has answered the first list', () => {
     mocks.loaded = false;
@@ -269,6 +294,110 @@ describe('GuestSessionsSettings', () => {
     await waitFor(() => expect(mocks.leaveWorkspace).toHaveBeenCalledTimes(2));
     expect(mocks.leaveWorkspace).toHaveBeenLastCalledWith('guest-1', 'ws-a');
     await waitFor(() => expect(screen.queryByTestId('guest-leave-workspace-error')).toBeNull());
+  });
+
+  /**
+   * A confirmed operation A is pending; the user opens the same dialog for B
+   * and CANCELS it; then A fails. The retry must re-run A — B was never
+   * confirmed, so nothing may ever leave B — and A's late settlement must not
+   * close the dialog the user is looking at.
+   */
+  describe('retry binds to the confirmed operation, never to the dialog target', () => {
+    async function confirmDialog(name: string) {
+      await fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name }));
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    }
+
+    async function cancelDialog() {
+      await fireEvent.click(
+        within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancel' }),
+      );
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    }
+
+    it('per-workspace Leave: retry leaves A again, never the cancelled B', async () => {
+      mocks.sessions = [guest];
+      const leaveA = pendingAction('guestSessions/leaveGuestWorkspaceRequested', [
+        'guest-1',
+        'ws-a',
+      ]);
+      mocks.leaveWorkspace.mockImplementationOnce(() => leaveA.action);
+      render(GuestSessionsSettings);
+      const joined = screen.getByTestId('guest-sessions-joined');
+      const rowA = joined.querySelector('[data-workspace-id="ws-a"]') as HTMLElement;
+      const rowB = joined.querySelector('[data-workspace-id="ws-b"]') as HTMLElement;
+
+      await fireEvent.click(within(rowA).getByRole('button', { name: 'Leave' }));
+      await confirmDialog('Leave');
+      expect(mocks.leaveWorkspace).toHaveBeenCalledWith('guest-1', 'ws-a');
+
+      await fireEvent.click(within(rowB).getByRole('button', { name: 'Leave' }));
+      expect(screen.getByRole('dialog').textContent).toContain('Release notes');
+      await cancelDialog();
+
+      leaveA.reject(new Error('transport'));
+      const alert = await screen.findByTestId('guest-leave-workspace-error');
+      expect(alert.textContent).toContain('Design system');
+      await fireEvent.click(within(alert).getByRole('button', { name: 'Retry' }));
+      await waitFor(() => expect(mocks.leaveWorkspace).toHaveBeenCalledTimes(2));
+      expect(mocks.leaveWorkspace.mock.calls).toEqual([
+        ['guest-1', 'ws-a'],
+        ['guest-1', 'ws-a'],
+      ]);
+      await waitFor(() => expect(screen.queryByTestId('guest-leave-workspace-error')).toBeNull());
+    });
+
+    it('per-workspace Leave: a late success of A leaves the dialog opened for B alone', async () => {
+      mocks.sessions = [guest];
+      const leaveA = pendingAction('guestSessions/leaveGuestWorkspaceRequested', [
+        'guest-1',
+        'ws-a',
+      ]);
+      mocks.leaveWorkspace.mockImplementationOnce(() => leaveA.action);
+      render(GuestSessionsSettings);
+      const joined = screen.getByTestId('guest-sessions-joined');
+      const rowA = joined.querySelector('[data-workspace-id="ws-a"]') as HTMLElement;
+      const rowB = joined.querySelector('[data-workspace-id="ws-b"]') as HTMLElement;
+
+      await fireEvent.click(within(rowA).getByRole('button', { name: 'Leave' }));
+      await confirmDialog('Leave');
+      await fireEvent.click(within(rowB).getByRole('button', { name: 'Leave' }));
+
+      leaveA.resolve({ left: true });
+      await waitFor(() =>
+        expect((within(rowA).getByRole('button') as HTMLButtonElement).disabled).toBe(false),
+      );
+      expect(screen.getByRole('dialog').textContent).toContain('Release notes');
+      await confirmDialog('Leave');
+      expect(mocks.leaveWorkspace).toHaveBeenLastCalledWith('guest-1', 'ws-b');
+    });
+
+    it('Leave host: retry leaves A again, never the cancelled B', async () => {
+      const second: GuestSessionRecord = { ...guest, id: 'guest-2', label: 'second.local' };
+      mocks.sessions = [guest, second];
+      const leaveA = pendingAction('guestSessions/leaveRequested', ['guest-1']);
+      mocks.leave.mockImplementationOnce(() => leaveA.action);
+      render(GuestSessionsSettings);
+      const joined = screen.getByTestId('guest-sessions-joined');
+      const rowA = joined.querySelector('[data-session-id="guest-1"]') as HTMLElement;
+      const rowB = joined.querySelector('[data-session-id="guest-2"]') as HTMLElement;
+
+      await fireEvent.click(within(rowA).getByRole('button', { name: 'Leave host' }));
+      await confirmDialog('Leave host');
+      expect(mocks.leave).toHaveBeenCalledWith('guest-1');
+
+      await fireEvent.click(within(rowB).getByRole('button', { name: 'Leave host' }));
+      expect(screen.getByRole('dialog').textContent).toContain('second.local');
+      await cancelDialog();
+
+      leaveA.reject(new Error('transport'));
+      const alert = await screen.findByRole('alert');
+      expect(alert.textContent).toContain('studio.local');
+      await fireEvent.click(within(alert).getByRole('button', { name: 'Retry' }));
+      await waitFor(() => expect(mocks.leave).toHaveBeenCalledTimes(2));
+      expect(mocks.leave.mock.calls).toEqual([['guest-1'], ['guest-1']]);
+      await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
+    });
   });
 
   it('shows no connection status for a joined host that has no window open', () => {
@@ -470,6 +599,47 @@ describe('GuestSessionsSettings', () => {
       await waitFor(() => expect(mocks.removeMember).toHaveBeenCalledTimes(2));
     });
 
+    it('retries the removal that failed, never a later cancelled dialog target', async () => {
+      const second: WorkspaceMember = {
+        ...collaborator,
+        principalId: 'p-other',
+        login: 'otherguest',
+      };
+      mocks.rosters = { 'ws-1': { status: 'loaded', members: [owner, collaborator, second] } };
+      const removeA = pendingAction('guestSessions/removeHostedMemberRequested', [
+        'ws-1',
+        'p-collab',
+      ]);
+      mocks.removeMember.mockImplementationOnce(() => removeA.action);
+      render(GuestSessionsSettings);
+      const roster = screen.getByTestId('hosted-workspace-roster');
+      const rowButtons = within(roster).getAllByRole('button', { name: 'Remove' });
+
+      await fireEvent.click(rowButtons[0]);
+      await fireEvent.click(
+        within(screen.getByRole('dialog')).getByRole('button', { name: 'Remove' }),
+      );
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+      expect(mocks.removeMember).toHaveBeenCalledWith('ws-1', 'p-collab');
+
+      await fireEvent.click(rowButtons[1]);
+      expect(screen.getByRole('dialog').textContent).toContain('otherguest');
+      await fireEvent.click(
+        within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancel' }),
+      );
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+
+      removeA.reject(new Error('transport'));
+      const alert = await within(roster).findByRole('alert');
+      expect(alert.textContent).toContain('guestlogin');
+      await fireEvent.click(within(alert).getByRole('button', { name: 'Retry' }));
+      await waitFor(() => expect(mocks.removeMember).toHaveBeenCalledTimes(2));
+      expect(mocks.removeMember.mock.calls).toEqual([
+        ['ws-1', 'p-collab'],
+        ['ws-1', 'p-collab'],
+      ]);
+    });
+
     it('hides Remove all guests on a withheld roster', () => {
       mocks.rosters = { 'ws-1': { status: 'withheld', members: [] } };
       render(GuestSessionsSettings);
@@ -497,7 +667,7 @@ describe('GuestSessionsSettings', () => {
       );
       expect(mocks.removeMember).not.toHaveBeenCalled();
       await waitFor(() =>
-        expect(within(roster).queryByTestId('hosted-roster-remove-all-error')).toBeNull(),
+        expect(screen.queryByTestId('hosted-roster-remove-all-error')).toBeNull(),
       );
     });
 
@@ -532,7 +702,7 @@ describe('GuestSessionsSettings', () => {
       const confirmButtons = screen.getAllByRole('button', { name: 'Remove all guests' });
       await fireEvent.click(confirmButtons[confirmButtons.length - 1]);
 
-      const report = await within(roster).findByTestId('hosted-roster-remove-all-error');
+      const report = await screen.findByTestId('hosted-roster-remove-all-error');
       const lines = within(report).getAllByRole('listitem');
       expect(lines).toHaveLength(3);
       expect(lines[0].textContent).toContain('guestlogin');
@@ -542,8 +712,73 @@ describe('GuestSessionsSettings', () => {
       await fireEvent.click(within(report).getByRole('button', { name: 'Retry' }));
       await waitFor(() => expect(mocks.removeAll).toHaveBeenCalledTimes(2));
       await waitFor(() =>
-        expect(within(roster).queryByTestId('hosted-roster-remove-all-error')).toBeNull(),
+        expect(screen.queryByTestId('hosted-roster-remove-all-error')).toBeNull(),
       );
+    });
+
+    /**
+     * The sweep's own membership delta (or a concurrent role loss) can drop the
+     * workspace from *Shared by me* before the sweep settles. The per-step
+     * report and its retry must not vanish with the row.
+     */
+    it('keeps a partial sweep report when its row leaves Shared by me mid-sweep', async () => {
+      mocks.rosters = { 'ws-1': { status: 'loaded', members: [owner, collaborator] } };
+      const sweep = pendingAction('guestSessions/removeAllHostedGuestsRequested', ['ws-1']);
+      mocks.removeAll.mockImplementationOnce(() => sweep.action);
+      render(GuestSessionsSettings);
+      const roster = screen.getByTestId('hosted-workspace-roster');
+
+      await fireEvent.click(within(roster).getByTestId('hosted-roster-remove-all'));
+      const confirmButtons = screen.getAllByRole('button', { name: 'Remove all guests' });
+      await fireEvent.click(confirmButtons[confirmButtons.length - 1]);
+      expect(mocks.removeAll).toHaveBeenCalledWith('ws-1');
+
+      mocks.hosted = [];
+      mocks.publish();
+      await waitFor(() => expect(screen.queryByTestId('hosted-workspace-roster')).toBeNull());
+
+      sweep.resolve({
+        removedPrincipalIds: [],
+        failedMembers: [{ principalId: 'p-collab', code: 'daemon' }],
+        revokedInviteIds: [],
+        failedInvites: [],
+        invitesUnavailable: null,
+      });
+      const report = await screen.findByTestId('hosted-roster-remove-all-error');
+      expect(report.getAttribute('data-workspace-id')).toBe('ws-1');
+      expect(report.textContent).toContain('Shared project');
+      expect(within(report).getAllByRole('listitem')[0].textContent).toContain('guestlogin');
+
+      await fireEvent.click(within(report).getByRole('button', { name: 'Retry' }));
+      await waitFor(() => expect(mocks.removeAll).toHaveBeenCalledTimes(2));
+      expect(mocks.removeAll).toHaveBeenLastCalledWith('ws-1');
+      await waitFor(() =>
+        expect(screen.queryByTestId('hosted-roster-remove-all-error')).toBeNull(),
+      );
+    });
+
+    it('keeps a sweep that failed outright reportable after its row is gone', async () => {
+      mocks.rosters = { 'ws-1': { status: 'loaded', members: [owner, collaborator] } };
+      const sweep = pendingAction('guestSessions/removeAllHostedGuestsRequested', ['ws-1']);
+      mocks.removeAll.mockImplementationOnce(() => sweep.action);
+      render(GuestSessionsSettings);
+      const roster = screen.getByTestId('hosted-workspace-roster');
+
+      await fireEvent.click(within(roster).getByTestId('hosted-roster-remove-all'));
+      const confirmButtons = screen.getAllByRole('button', { name: 'Remove all guests' });
+      await fireEvent.click(confirmButtons[confirmButtons.length - 1]);
+
+      mocks.hosted = [];
+      mocks.publish();
+      await waitFor(() => expect(screen.queryByTestId('hosted-workspace-roster')).toBeNull());
+
+      sweep.reject(new Error('forbidden'));
+      const report = await screen.findByTestId('hosted-roster-remove-all-error');
+      expect(report.textContent).toContain('Shared project');
+      expect(within(report).queryAllByRole('listitem')).toHaveLength(0);
+      expect(
+        (within(report).getByRole('button', { name: 'Retry' }) as HTMLButtonElement).disabled,
+      ).toBe(false);
     });
 
     it('reports that no invite was revoked when the invite list itself failed', async () => {
@@ -564,7 +799,7 @@ describe('GuestSessionsSettings', () => {
       const confirmButtons = screen.getAllByRole('button', { name: 'Remove all guests' });
       await fireEvent.click(confirmButtons[confirmButtons.length - 1]);
 
-      const report = await within(roster).findByTestId('hosted-roster-remove-all-error');
+      const report = await screen.findByTestId('hosted-roster-remove-all-error');
       expect(within(report).getAllByRole('listitem')).toHaveLength(1);
     });
 
@@ -582,7 +817,7 @@ describe('GuestSessionsSettings', () => {
       const confirmButtons = screen.getAllByRole('button', { name: 'Remove all guests' });
       await fireEvent.click(confirmButtons[confirmButtons.length - 1]);
 
-      const report = await within(roster).findByTestId('hosted-roster-remove-all-error');
+      const report = await screen.findByTestId('hosted-roster-remove-all-error');
       expect(report.textContent).toContain('Shared project');
       await fireEvent.click(within(report).getByRole('button', { name: 'Retry' }));
       await waitFor(() => expect(mocks.removeAll).toHaveBeenCalledTimes(2));
