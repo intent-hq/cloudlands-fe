@@ -256,6 +256,7 @@
   let focusWithinCard = false;
   let hoverCardCloseTimer: ReturnType<typeof setTimeout> | null = null;
   let undeferHoverCardClose: (() => void) | null = null;
+  let hoverCardFocusRelocationTimer: ReturnType<typeof setTimeout> | undefined;
 
   function clearHoverCardOpenTimer() {
     if (hoverCardOpenTimer !== null) {
@@ -284,6 +285,7 @@
 
   function closeHoverCard() {
     clearHoverCardCloseTimer();
+    clearTimeout(hoverCardFocusRelocationTimer);
     hoverCardDismissalActive = false;
     hoverCardVisible = false;
     pointerWithinCard = false;
@@ -322,18 +324,33 @@
 
   function handleHoverCardFocusIn() {
     focusWithinCard = true;
+    clearTimeout(hoverCardFocusRelocationTimer);
     clearHoverCardCloseTimer();
   }
 
+  // Focus flags describe where focus actually is: a cross-surface move clears
+  // the departing surface's flag, so a later close cannot mistake stale row
+  // focus for engagement (or suppress the pointer reopening the card).
   function handleHoverCardFocusOut(event: FocusEvent) {
-    if (
-      event.relatedTarget instanceof Node &&
-      (hoverCardEl?.contains(event.relatedTarget) || rowElement?.contains(event.relatedTarget))
-    ) {
+    const related = event.relatedTarget instanceof Node ? event.relatedTarget : null;
+    if (related && hoverCardEl?.contains(related)) return;
+    focusWithinCard = false;
+    if (related && rowElement?.contains(related)) return;
+    if (related) {
+      if (!pointerWithinRow && !pointerWithinCard) closeHoverCard();
       return;
     }
-    focusWithinCard = false;
-    if (!pointerWithinRow && !pointerWithinCard) closeHoverCard();
+    // A null relatedTarget is also what unmounting the focused control
+    // (Remove → confirm / cancel) reports; the card re-homes focus after the
+    // DOM settles, so judge that loss then. Genuine departures still close.
+    const departed = event.target;
+    clearTimeout(hoverCardFocusRelocationTimer);
+    hoverCardFocusRelocationTimer = setTimeout(() => {
+      const active = document.activeElement;
+      const inside = hoverCardEl?.contains(active) || rowElement?.contains(active);
+      if (active && active !== departed && inside) return;
+      if (!pointerWithinRow && !pointerWithinCard) closeHoverCard();
+    }, 0);
   }
 
   function suppressHoverCardFocusOpenForPointerSequence() {
@@ -460,13 +477,10 @@
   }
 
   function handleFocusOut(event: FocusEvent) {
-    if (
-      event.relatedTarget instanceof Node &&
-      (rowElement?.contains(event.relatedTarget) || hoverCardEl?.contains(event.relatedTarget))
-    ) {
-      return;
-    }
+    const related = event.relatedTarget instanceof Node ? event.relatedTarget : null;
+    if (related && rowElement?.contains(related)) return;
     focusWithinRow = false;
+    if (related && hoverCardEl?.contains(related)) return;
     if (!pointerWithinRow && !pointerWithinCard) closeHoverCard();
   }
 

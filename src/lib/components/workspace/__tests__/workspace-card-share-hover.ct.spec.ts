@@ -101,6 +101,141 @@ test('Share opens the dialog for the hovered workspace in one step', async ({ mo
   await expect(state).toHaveAttribute('data-dialog-workspace-id', 'share-hover-share');
 });
 
+// Pointer parked far from the row and card so only focus drives the surface.
+const OUTSIDE = { x: 880, y: 380 };
+
+async function openCardFromKeyboard(page: Page, component: MountResult) {
+  await page.mouse.move(OUTSIDE.x, OUTSIDE.y);
+  const trigger = component.locator('[data-workspace-card-trigger]');
+  await trigger.focus();
+  const surface = page.locator('[data-workspace-card-hover-surface]');
+  await expect(surface).toBeVisible();
+  await expect(surface.locator('[data-workspace-hover-card-member-row]')).toHaveCount(2);
+  return { trigger, surface, outside: component.locator('[data-share-hover-outside]') };
+}
+
+async function tabUntilFocused(page: Page, target: Locator) {
+  for (let step = 0; step < 12; step++) {
+    const focusedIs = await page.evaluate(() => ({
+      surface:
+        document
+          .querySelector('[data-workspace-card-hover-surface]')
+          ?.contains(document.activeElement) ?? false,
+      row:
+        document.querySelector('[data-workspace-card-row]')?.contains(document.activeElement) ??
+        false,
+    }));
+    if (!focusedIs.surface && !focusedIs.row) break;
+    if (await target.evaluate((el) => el === document.activeElement)) return;
+    await page.keyboard.press('Tab');
+  }
+  await expect(target).toBeFocused();
+}
+
+// Regression (fe#2440 reviewer, f5f4a22): Enter on Remove unmounts the focused
+// button; the browser's focusout for a removed control carries a null
+// relatedTarget and must not be read as leaving the card.
+test('keyboard: Enter on Remove keeps the card open with the confirmation focused; Enter confirms', async ({
+  mount,
+  page,
+}) => {
+  const component = await mount(WorkspaceCardShareHoverHarness, {
+    props: { scenario: 'kbd-confirm' },
+  });
+  const { surface } = await openCardFromKeyboard(page, component);
+  const state = component.locator('[data-share-hover-state]');
+
+  await tabUntilFocused(page, surface.getByRole('button', { name: 'Remove bob' }));
+  await page.keyboard.press('Enter');
+  const confirm = surface.getByRole('button', { name: 'Confirm removing bob' });
+  await expect(confirm).toBeVisible();
+  await expect(confirm).toBeFocused();
+  await expect(state).toHaveAttribute('data-removing-principal-id', '');
+
+  await page.keyboard.press('Enter');
+  await expect(state).toHaveAttribute('data-removing-principal-id', 'p-bob');
+  await expect(surface).toBeVisible();
+  await expect(surface.locator('[data-workspace-hover-card-member-remove-confirm]')).toHaveCount(0);
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          document
+            .querySelector('[data-workspace-card-hover-surface]')
+            ?.contains(document.activeElement) ?? false,
+      ),
+    )
+    .toBe(true);
+});
+
+test('keyboard: Cancel returns focus to Remove and a genuine blur still dismisses', async ({
+  mount,
+  page,
+}) => {
+  const component = await mount(WorkspaceCardShareHoverHarness, {
+    props: { scenario: 'kbd-cancel' },
+  });
+  const { trigger, surface } = await openCardFromKeyboard(page, component);
+  const state = component.locator('[data-share-hover-state]');
+  const remove = surface.getByRole('button', { name: 'Remove bob' });
+
+  await tabUntilFocused(page, remove);
+  await page.keyboard.press('Enter');
+  await tabUntilFocused(page, surface.getByRole('button', { name: 'Cancel' }));
+  await page.keyboard.press('Enter');
+  await expect(surface.locator('[data-workspace-hover-card-member-remove-confirm]')).toHaveCount(0);
+  await expect(remove).toBeFocused();
+  await expect(surface).toBeVisible();
+  await expect(state).toHaveAttribute('data-removing-principal-id', '');
+
+  await trigger.focus();
+  await expect(surface).toBeVisible();
+  await trigger.blur();
+  await expect(surface).toHaveCount(0);
+});
+
+// Regression (fe#2440 verifier, f5f4a22): focus that travelled row → card left
+// the row's focus flag set, so after a focus-driven close the pointer could no
+// longer reopen the card.
+test('focus row → Share → outside closes the card, and hovering the row reopens it', async ({
+  mount,
+  page,
+}) => {
+  const component = await mount(WorkspaceCardShareHoverHarness, {
+    props: { scenario: 'focus-reenter' },
+  });
+  const { surface, outside } = await openCardFromKeyboard(page, component);
+  const row = component.locator('[data-workspace-card-row]');
+
+  await surface.locator('[data-workspace-hover-card-share]').focus();
+  await expect(surface).toBeVisible();
+  await outside.focus();
+  await expect(surface).toHaveCount(0);
+
+  await row.hover();
+  await expect(surface).toBeVisible();
+});
+
+test('focus outside while the pointer rests in the card keeps it; leaving with the pointer then closes it', async ({
+  mount,
+  page,
+}) => {
+  const component = await mount(WorkspaceCardShareHoverHarness, {
+    props: { scenario: 'mixed-exit' },
+  });
+  const { surface, outside } = await openCardFromKeyboard(page, component);
+
+  await surface.locator('[data-workspace-hover-card-share]').focus();
+  const box = (await surface.boundingBox())!;
+  await page.mouse.move(box.x + 24, box.y + 24, { steps: 5 });
+  await outside.focus();
+  await page.waitForTimeout(300);
+  await expect(surface).toBeVisible();
+
+  await page.mouse.move(OUTSIDE.x, OUTSIDE.y, { steps: 10 });
+  await expect(surface).toHaveCount(0);
+});
+
 test('leaving both the row and the card still dismisses it', async ({ mount, page }) => {
   const component = await mount(WorkspaceCardShareHoverHarness, {
     props: { scenario: 'dismiss' },

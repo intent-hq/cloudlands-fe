@@ -83,6 +83,12 @@
   style:width="900px"
   style:height="400px"
 >
+  <!-- First in DOM order so Tab from the row still reaches the portaled card;
+       laid out top-right, away from the pointer parking spot. -->
+  <!-- i18n-ignore (test fixture) -->
+  <button type="button" class="order-last ml-auto self-start" data-share-hover-outside>
+    Elsewhere
+  </button>
   <div style:width="280px" data-share-hover-list>
     <WorkspaceCard {workspace} onClick={() => {}} />
   </div>
