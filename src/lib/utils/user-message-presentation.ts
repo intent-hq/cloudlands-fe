@@ -55,32 +55,31 @@ export function stripTruncatedTrailingDeliveryNote(text: string, metadata?: unkn
 }
 
 /**
- * Text projection of file blocks that carry no `attachmentId` — the shape a
- * pre-10.0 daemon persisted for inline file data. A 10.0 daemon serves such a
- * block as `{ type: 'text', text: 'Attached file: <fileName>' }` with the
- * bytes dropped; this mirrors that wire projection verbatim for transcripts
- * still served by an older daemon, so the bytes are never read or rendered.
- * One entry per legacy block, in block order.
+ * Mirror of the daemon's serve-time `degrade_inline_file_blocks` pass
+ * (PROTOCOL §5.5, 10.0). A user-row file block with no non-empty
+ * `attachmentId` is the shape a pre-10.0 daemon persisted for inline file
+ * data; a 10.0 daemon serves it, in place, as
+ * `{ type: 'text', text: 'Attached file: <fileName>' }` (`'Attached file'`
+ * when the name is missing or blank), carrying over only the block `id`, with
+ * the bytes dropped. Applied to transcripts still served by an older daemon so
+ * the projection is identical and the bytes are never read or rendered. Block
+ * order is preserved; reference file blocks and every other block pass through.
  */
-export function legacyFileBlockText(blocks: readonly ContentBlock[] | undefined): string[] {
-  return (blocks ?? [])
-    .filter((block) => block.type === 'file' && !block.attachmentId)
-    .map((block) =>
-      // i18n-ignore (mirrors the daemon's protocol 10.0 text projection)
-      typeof block.fileName === 'string' && block.fileName
-        ? `Attached file: ${block.fileName}`
-        : 'Attached file',
-    );
+export function degradeLegacyFileBlocks(
+  blocks: readonly ContentBlock[] | undefined,
+): ContentBlock[] {
+  return (blocks ?? []).map((block) => {
+    if (block.type !== 'file') return block;
+    if (typeof block.attachmentId === 'string' && block.attachmentId.trim()) return block;
+    const name = typeof block.fileName === 'string' ? block.fileName.trim() : '';
+    // i18n-ignore (mirrors the daemon's protocol 10.0 text projection)
+    const text = name ? `Attached file: ${name}` : 'Attached file';
+    return block.id ? { id: block.id, type: 'text', text } : { type: 'text', text };
+  });
 }
 
 /** Return immutable user-authored text for rendering and other UI surfaces. */
 export function getPresentedUserMessageText(message: AgentMessage): string {
-  const legacyFiles = legacyFileBlockText(message.contentBlocks);
-  if (legacyFiles.length === 0) return getPresentedUserText(message);
-  return [getPresentedUserText(message), ...legacyFiles].filter(Boolean).join('\n\n');
-}
-
-function getPresentedUserText(message: AgentMessage): string {
   // Rows sent by another agent carry the daemon-stamped sender header in
   // content; the attribution chip conveys the sender, so presentation copies
   // (render, preview, copy) drop the leading header line.
@@ -89,8 +88,8 @@ function getPresentedUserText(message: AgentMessage): string {
     ? (text: string) => stripAgentMessageHeader(text, attribution)
     : (text: string) => text;
 
-  const textParts = message.contentBlocks
-    ?.filter((block) => block.type === 'text')
+  const textParts = degradeLegacyFileBlocks(message.contentBlocks)
+    .filter((block) => block.type === 'text')
     .map((block) => block.text ?? '');
   if (!textParts?.length)
     return presentLeadingHeader(

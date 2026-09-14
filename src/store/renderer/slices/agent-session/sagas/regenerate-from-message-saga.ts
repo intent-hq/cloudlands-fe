@@ -3,7 +3,7 @@ import { call, cancelled, put, takeEvery, type SagaGenerator } from 'typed-redux
 import { appClient } from '$lib/client';
 import { dropTailResidentRows } from '$lib/components/chat/chat-scrollback-composition';
 import { createLogger } from '$lib/utils/client-logger';
-import { legacyFileBlockText } from '$lib/utils/user-message-presentation';
+import { degradeLegacyFileBlocks } from '$lib/utils/user-message-presentation';
 import type { AgentMessage, ContentBlock } from '$shared/types';
 import { isFileBlock } from '$shared/types/content-block.guards';
 import { m } from '$shared/paraglide/messages.js';
@@ -54,15 +54,15 @@ function findRegenerateSource(
 /**
  * Stored user text, unchanged (no presentation stripping — this is a replay,
  * not an edit). A legacy inline file block (no `attachmentId`; pre-10.0
- * daemon) is text now: it rides along as the same `Attached file: <name>`
- * projection the edit strip and a 10.0 daemon produce.
+ * daemon) is text now: it is projected in place to the same
+ * `Attached file: <name>` text a 10.0 daemon serves, so the replay text is
+ * identical whichever daemon served the row.
  */
 function storedText(blocks: ContentBlock[]): string {
-  const text = blocks
+  return degradeLegacyFileBlocks(blocks)
     .filter((block) => block.type === 'text')
     .map((block) => block.text ?? block.content ?? '')
     .join('');
-  return [text, ...legacyFileBlockText(blocks)].filter(Boolean).join('\n\n');
 }
 
 /** A fail-closed abort raised before the edit saga is delegated to (it owns later failures). */

@@ -522,7 +522,7 @@ describe('regenerateFromMessageSaga', () => {
       await settle();
 
       expect(edits).toHaveLength(1);
-      expect(edits[0].payload[3]).toBe('see attached\n\nAttached file: legacy.txt');
+      expect(edits[0].payload[3]).toBe('see attachedAttached file: legacy.txt');
       expect(edits[0].payload[4]).toEqual({
         fileBlocks: [{ type: 'file', attachmentId: 'f1', fileName: 'a.csv', size: 3 }],
       });

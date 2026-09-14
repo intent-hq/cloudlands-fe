@@ -235,7 +235,7 @@ describe('ChatMessage edit-and-regenerate confirm gate', () => {
 
     await waitFor(() => expect(onEditSubmit).toHaveBeenCalledTimes(1));
     const [text, model, blocks] = onEditSubmit.mock.calls[0];
-    expect(text).toBe('original text\n\nAttached file: legacy.txt');
+    expect(text).toBe('original textAttached file: legacy.txt');
     expect(model).toBeUndefined();
     expect(blocks).toEqual({
       fileBlocks: [

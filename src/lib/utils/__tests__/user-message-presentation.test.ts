@@ -75,20 +75,44 @@ describe('user-message presentation sanitization', () => {
   });
 
   // A pre-10.0 daemon persisted inline file bytes on the block; a 10.0 daemon
-  // serves that row as `Attached file: <fileName>` text. The FE mirrors that
-  // projection for a legacy block and never surfaces the bytes.
+  // serves that row with each such block replaced in place by
+  // `{ type: 'text', text: 'Attached file: <fileName>' }`. The FE mirrors that
+  // projection for a legacy block, in block order, and never surfaces the bytes.
   it('presents a legacy inline file block (no attachmentId) as attached-file text', () => {
     const message = user('Review the attachment');
     message.contentBlocks = [
-      { type: 'text', text: 'Review the attachment' },
-      { type: 'file', data: 'aGVsbG8=', mimeType: 'text/plain', fileName: 'notes.txt' },
+      { type: 'text', text: 'Review the attachment ' },
+      { type: 'file', data: 'aGVsbG8=', mimeType: 'text/plain', fileName: ' notes.txt ' },
       { type: 'file', data: 'aGVsbG8=', mimeType: 'application/octet-stream' },
       { type: 'text', text: WAIT_NOTE },
     ];
 
     const presented = getPresentedUserMessageText(message);
-    expect(presented).toBe('Review the attachment\n\nAttached file: notes.txt\n\nAttached file');
+    expect(presented).toBe('Review the attachment Attached file: notes.txtAttached file');
     expect(presented).not.toContain('aGVsbG8=');
+  });
+
+  it('keeps a legacy inline file block in its authored position, as a 10.0 daemon serves it', () => {
+    const legacy = user('');
+    legacy.contentBlocks = [
+      { id: 'b1', type: 'file', data: 'aGVsbG8=', mimeType: 'text/plain', fileName: 'notes.txt' },
+      { type: 'text', text: ' is the file; ' },
+      { id: 'b3', type: 'file', data: 'aGVsbG8=', mimeType: 'text/plain', fileName: 'x.csv' },
+      { type: 'text', text: ' too.' },
+    ];
+    // The same row as a 10.0 daemon serves it (degrade_inline_file_blocks).
+    const served = user('');
+    served.contentBlocks = [
+      { id: 'b1', type: 'text', text: 'Attached file: notes.txt' },
+      { type: 'text', text: ' is the file; ' },
+      { id: 'b3', type: 'text', text: 'Attached file: x.csv' },
+      { type: 'text', text: ' too.' },
+    ];
+
+    expect(getPresentedUserMessageText(legacy)).toBe(
+      'Attached file: notes.txt is the file; Attached file: x.csv too.',
+    );
+    expect(getPresentedUserMessageText(legacy)).toBe(getPresentedUserMessageText(served));
   });
 
   it('presents a legacy inline file block alone as attached-file text', () => {
