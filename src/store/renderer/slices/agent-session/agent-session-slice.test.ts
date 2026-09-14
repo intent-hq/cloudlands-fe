@@ -866,6 +866,49 @@ describe('agent-session-slice reducer', () => {
       expect(state.byAgentId['a1'].name).toBe('New Name');
     });
 
+    it('is a no-op for an absent row instead of creating one', () => {
+      const state = agentSessionReducer(
+        initialState,
+        updateSession('missing', { activationState: AgentActivationState.ERROR }),
+      );
+      expect(state).toBe(initialState);
+    });
+
+    it('patches the current row and keeps FE-owned fields it does not name', () => {
+      // Activation bookkeeping patches the row as it stands now, so fields
+      // written by a live update meanwhile (FE-owned or wire) must survive.
+      let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
+      state = agentSessionReducer(
+        state,
+        restoreStoredSessions([
+          {
+            ...state.byAgentId['a1'],
+            liveTurnOpen: true,
+            liveTurnOpenedAt: '2026-01-02T00:00:00.000Z',
+            tailCapPruned: true,
+            processQueueHint: { waiting: true, used: 1, cap: 1, reason: 'slots' },
+            isStreaming: true,
+            isProcessing: true,
+          },
+        ]),
+      );
+      state = agentSessionReducer(
+        state,
+        updateSession('a1', { activationState: AgentActivationState.ACTIVE }),
+      );
+      expect(state.byAgentId['a1']).toEqual(
+        expect.objectContaining({
+          activationState: 'active',
+          liveTurnOpen: true,
+          liveTurnOpenedAt: '2026-01-02T00:00:00.000Z',
+          tailCapPruned: true,
+          processQueueHint: { waiting: true, used: 1, cap: 1, reason: 'slots' },
+          isStreaming: true,
+          isProcessing: true,
+        }),
+      );
+    });
+
     it('handles messages in updates with normalization and logical dedup', () => {
       const msg = makeMessage('m1');
       let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));

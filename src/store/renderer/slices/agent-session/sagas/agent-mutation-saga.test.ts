@@ -60,6 +60,7 @@ import {
   bulkUpsertSessions,
   FE_OWNED_FIELD_POLICY,
   initialState as agentSessionInitialState,
+  removeSession,
   restoreStoredSessions,
   updateSession,
   upsertSession,
@@ -96,22 +97,26 @@ function session(id = A1, overrides: Partial<AgentSession> = {}): AgentSession {
   } as AgentSession;
 }
 
-function start(sessions: Record<string, AgentSession> = { [A1]: session() }) {
+/**
+ * Run the saga against a static state snapshot, or (`live`) against a store whose
+ * `agentSessions` slice is folded through the real reducer on every dispatch, so
+ * mid-request selects observe earlier writes the way the app store does.
+ */
+function start(
+  sessions: Record<string, AgentSession> = { [A1]: session() },
+  { live = false }: { live?: boolean } = {},
+) {
   const channel = stdChannel();
   const dispatched: any[] = [];
-  const task = runSaga(
-    {
-      channel,
-      getState: () => ({ agentSessions: { byAgentId: sessions } }),
-      dispatch: (action) => {
-        dispatched.push(action);
-        channel.put(action);
-        return action;
-      },
-    },
-    agentMutationSaga,
-  );
-  return { channel, dispatched, task };
+  let state = { agentSessions: { ...agentSessionInitialState, byAgentId: sessions } };
+  const dispatch = (action: any) => {
+    if (live) state = { agentSessions: agentSessionReducer(state.agentSessions, action) };
+    dispatched.push(action);
+    channel.put(action);
+    return action;
+  };
+  const task = runSaga({ channel, getState: () => state, dispatch }, agentMutationSaga);
+  return { channel, dispatched, dispatch, task, getState: () => state };
 }
 
 async function stop(task: Task): Promise<void> {
@@ -193,14 +198,13 @@ describe('agentMutationSaga', () => {
     expect(dispatched).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          type: restoreStoredSessions.type,
+          type: updateSession.type,
           payload: [
-            [
-              expect.objectContaining({
-                activationState: 'error',
-                lastActivationError: 'activation failed',
-              }),
-            ],
+            A1,
+            expect.objectContaining({
+              activationState: 'error',
+              lastActivationError: 'activation failed',
+            }),
           ],
         }),
       ]),
@@ -509,6 +513,8 @@ describe('agentMutationSaga', () => {
 
     const restoresOf = (dispatched: any[]) =>
       dispatched.filter((candidate) => candidate.type === restoreStoredSessions.type);
+    const patchesOf = (dispatched: any[]) =>
+      dispatched.filter((candidate) => candidate.type === updateSession.type);
 
     /** Apply the saga's restore dispatch to an empty slice, as the store would after softHide. */
     const reduceRestore = (dispatched: any[]) => {
@@ -585,7 +591,7 @@ describe('agentMutationSaga', () => {
       it('start + no-fetched-session fallback keep every FE-owned field', async () => {
         const existing = { ...storedSession(), status: AgentStatus.Pending };
         mocks.get.mockResolvedValue(null);
-        const { channel, dispatched, task } = start({ [A1]: existing });
+        const { channel, dispatched, task } = start({ [A1]: existing }, { live: true });
         const action = activateAgentRequested(WS, A1);
         channel.put(action);
 
@@ -593,7 +599,8 @@ describe('agentMutationSaga', () => {
           expect.objectContaining({ id: A1, activationState: 'active', ...FE_OWNED }),
         );
         expectStoredWritesOnly(dispatched);
-        const [activating, activated] = restoresOf(dispatched).map((r) => r.payload[0][0]);
+        expect(restoresOf(dispatched)).toEqual([]);
+        const [activating, activated] = patchesOf(dispatched).map((r) => r.payload[1]);
         expect(activating).toEqual(
           expect.objectContaining({ activationState: 'activating', activationAttempts: 1 }),
         );
@@ -636,7 +643,7 @@ describe('agentMutationSaga', () => {
         await expect(action.promise).resolves.toEqual(
           expect.objectContaining({ id: A1, activationState: 'active' }),
         );
-        const [activating] = restoresOf(dispatched).map((r) => r.payload[0][0]);
+        const [activating] = patchesOf(dispatched).map((r) => r.payload[1]);
         expect(activating).toEqual(expect.objectContaining({ activationState: 'activating' }));
         const wire = dispatched.find((candidate) => candidate.type === bulkUpsertSessions.type);
         expect(wire.payload[0][0]).toEqual(expect.objectContaining({ activationState: 'active' }));
@@ -644,6 +651,85 @@ describe('agentMutationSaga', () => {
           expect(wire.payload[0][0], key).not.toHaveProperty(key);
         }
         await stop(task);
+      });
+
+      describe('a live update landing while agent.get is pending survives the settle', () => {
+        // Reviewer's A/B probe on PR #2448: the pre-request row has none of the
+        // FE-owned fields; the row is replaced mid-read (as the event fold does)
+        // with all of them plus streaming/processing set. The bookkeeping write
+        // that settles the activation must patch THAT row, not re-restore the
+        // stale pre-request snapshot.
+        const LIVE = { ...FE_OWNED, isStreaming: true, isProcessing: true };
+        const pendingRead = () => {
+          let resolve!: (value: AgentSession | null) => void;
+          let reject!: (error: Error) => void;
+          mocks.get.mockReturnValue(
+            new Promise<AgentSession | null>((res, rej) => {
+              resolve = res;
+              reject = rej;
+            }),
+          );
+          return { resolve: (value: AgentSession | null) => resolve(value), reject };
+        };
+        const startWithLiveUpdate = async () => {
+          const seed = session(A1, { backendSessionId: null, status: AgentStatus.Pending });
+          const read = pendingRead();
+          const harness = start({ [A1]: seed }, { live: true });
+          const action = activateAgentRequested(WS, A1);
+          harness.channel.put(action);
+          await settle();
+          expect(mocks.get).toHaveBeenCalledWith(A1);
+          const current = harness.getState().agentSessions.byAgentId[A1];
+          expect(current.activationState).toBe('activating');
+          harness.dispatch(restoreStoredSessions([{ ...current, ...LIVE } as StoredAgentSession]));
+          return { ...harness, action, read };
+        };
+        const expectLiveIntact = (row: StoredAgentSession) => {
+          expectFeOwnedIntact(row);
+          expect(row.isStreaming).toBe(true);
+          expect(row.isProcessing).toBe(true);
+        };
+
+        it('read resolves null', async () => {
+          const { action, read, getState, task } = await startWithLiveUpdate();
+          read.resolve(null);
+
+          await expect(action.promise).resolves.toEqual(
+            expect.objectContaining({ id: A1, activationState: 'active', ...LIVE }),
+          );
+          const row = getState().agentSessions.byAgentId[A1];
+          expect(row.activationState).toBe('active');
+          expectLiveIntact(row);
+          await stop(task);
+        });
+
+        it('read rejects', async () => {
+          const { action, read, getState, task } = await startWithLiveUpdate();
+          read.reject(new Error('activation failed'));
+
+          await expect(action.promise).rejects.toThrow('activation failed');
+          const row = getState().agentSessions.byAgentId[A1];
+          expect(row).toEqual(
+            expect.objectContaining({
+              activationState: 'error',
+              lastActivationError: 'activation failed',
+            }),
+          );
+          expectLiveIntact(row);
+          await stop(task);
+        });
+
+        it('row removed mid-read settles null without resurrecting it', async () => {
+          const { action, read, getState, dispatch, dispatched, task } =
+            await startWithLiveUpdate();
+          dispatch(removeSession(A1));
+          read.resolve(null);
+
+          await expect(action.promise).resolves.toBeNull();
+          expect(getState().agentSessions.byAgentId[A1]).toBeUndefined();
+          expect(restoresOf(dispatched)).toHaveLength(1);
+          await stop(task);
+        });
       });
     });
 

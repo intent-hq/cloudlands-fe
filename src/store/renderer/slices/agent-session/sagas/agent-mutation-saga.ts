@@ -125,18 +125,21 @@ function* persistSession(session: WireAgentSession): SagaGenerator<void> {
 }
 
 /**
- * Local patch of an already-stored session (activation bookkeeping). Not a wire
- * upsert: pushing the stored row back through `bulkUpsertSessions` would re-run
- * the FE-owned carry-forward policy against it and drop fields such as a
- * waiting `processQueueHint`.
+ * Local patch of an already-stored session (activation bookkeeping), applied to
+ * the CURRENT row through `updateSession`. Not a wire upsert: pushing the stored
+ * row back through `bulkUpsertSessions` would re-run the FE-owned carry-forward
+ * policy against it and drop fields such as a waiting `processQueueHint`. Not a
+ * `restoreStoredSessions` of a spread snapshot either: a row captured before an
+ * await would replace live updates (`liveTurnOpen`, `isStreaming`, …) that landed
+ * while the read was pending. No-op when the row has since been removed; the
+ * row's workspace membership was registered when it was first upserted.
  */
 function* patchStoredSession(
-  existing: StoredAgentSession,
-  patch: Partial<StoredAgentSession>,
-): SagaGenerator<StoredAgentSession> {
-  const patched: StoredAgentSession = { ...existing, ...patch };
-  yield* put(restoreStoredSessions([patched]));
-  return patched;
+  agentId: string,
+  patch: Partial<AgentSession>,
+): SagaGenerator<StoredAgentSession | undefined> {
+  yield* put(updateSession(agentId, patch));
+  return yield* selectAgentSession.effect(agentId);
 }
 
 function* softHide(wsId: string, agentId: string): SagaGenerator<void> {
@@ -238,7 +241,7 @@ function* activateAgent(action: ReturnType<typeof activateAgentRequested>): Saga
     }
     const activationAttempts = (existing?.activationAttempts || 0) + 1;
     if (existing) {
-      yield* call(patchStoredSession, existing, {
+      yield* call(patchStoredSession, agentId, {
         workspaceId: wsId as AgentSession['workspaceId'],
         activationState: AgentActivationState.ACTIVATING,
         activationAttempts,
@@ -256,21 +259,23 @@ function* activateAgent(action: ReturnType<typeof activateAgentRequested>): Saga
       };
       yield* call(persistSession, activated);
       yield* put(action.success(activated));
-    } else if (existing) {
-      const activated = yield* call(patchStoredSession, existing, {
-        workspaceId: wsId as AgentSession['workspaceId'],
-        status: existing.backendSessionId ? AgentStatus.Active : existing.status,
-        activationState: AgentActivationState.ACTIVE,
-        activationAttempts,
-      });
-      yield* put(action.success(activated));
     } else {
-      yield* put(action.success(null));
+      // Reselect: the row may have changed (or gone) while the read was pending.
+      const current = yield* selectAgentSession.effect(agentId);
+      const activated = current
+        ? yield* call(patchStoredSession, agentId, {
+            workspaceId: wsId as AgentSession['workspaceId'],
+            status: current.backendSessionId ? AgentStatus.Active : current.status,
+            activationState: AgentActivationState.ACTIVE,
+            activationAttempts,
+          })
+        : undefined;
+      yield* put(action.success(activated ?? null));
     }
     settled = true;
   } catch (error) {
     if (existing) {
-      yield* call(patchStoredSession, existing, {
+      yield* call(patchStoredSession, agentId, {
         workspaceId: wsId as AgentSession['workspaceId'],
         activationState: AgentActivationState.ERROR,
         lastActivationError: mutationError(error, m.agent_mutation_activateFailed_error()).message,
