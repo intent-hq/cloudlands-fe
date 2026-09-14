@@ -28,7 +28,7 @@
   class={cn(
     'relative isolate inline-flex max-w-full items-center gap-0.5 select-none',
     context.variant === 'default'
-      ? 'rounded-(--radius-medium) bg-muted'
+      ? 'rounded-(--radius-medium) bg-muted/40'
       : 'max-w-full overflow-x-auto px-1',
     className,
   )}
@@ -44,7 +44,7 @@
       <ProximityHighlight
         store={context.state.hover}
         selectedIndexes={context.state.selectedIndexes}
-        selectedClass="bg-selected shadow-(--elevation-raised)"
+        selectedClass="bg-card dark:bg-surface-3 shadow-(--elevation-raised)"
         hoverClass={context.state.selectedIndexes.includes(context.state.hover.activeIndex ?? -1)
           ? 'bg-transparent'
           : 'bg-hover'}

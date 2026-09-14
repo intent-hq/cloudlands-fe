@@ -38,7 +38,7 @@
   <div
     aria-hidden="true"
     data-tabs-indicator
-    class="pointer-events-none absolute left-0 top-0 bg-selected shadow-(--elevation-raised)"
+    class="pointer-events-none absolute left-0 top-0 bg-card dark:bg-surface-3 shadow-(--elevation-raised)"
     style="border-radius: var(--radius-medium)"
     use:springRect={selectedRect}
   ></div>

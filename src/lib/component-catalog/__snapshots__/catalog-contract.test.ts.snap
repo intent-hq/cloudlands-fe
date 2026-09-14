@@ -2690,7 +2690,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                   <div class="mx-auto pb-2 px-4 settings-measure-wide sm:px-6 svelte-<scope> w-full">
                     <div class="max-w-full overflow-x-auto overscroll-x-contain">
                       <div data-orientation="horizontal" data-tabs-root="" id="bits-<id>">
-                        <div aria-label="Application settings" aria-orientation="horizontal" class="[&_[role=tab]]:whitespace-nowrap bg-muted gap-0.5 inline-flex isolate items-center max-w-none min-w-max relative rounded-(--radius-medium) select-none" data-orientation="horizontal" data-tabs-list="" id="bits-<id>" role="tablist">
+                        <div aria-label="Application settings" aria-orientation="horizontal" class="[&_[role=tab]]:whitespace-nowrap bg-muted/40 gap-0.5 inline-flex isolate items-center max-w-none min-w-max relative rounded-(--radius-medium) select-none" data-orientation="horizontal" data-tabs-list="" id="bits-<id>" role="tablist">
                           <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
                           <div class="bg-card sticky top-0 z-10">
                             <button aria-selected="false" class="bg-transparent border-0 cursor-pointer disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast gap-1.5 h-(--control-height-medium) inline-flex items-center justify-center motion-reduce:transition-none px-3 relative rounded-(--radius-medium) text-muted-foreground transition-colors type-caption z-10" data-orientation="horizontal" data-size="default" data-state="inactive" data-tabs-trigger="" data-value="general" data-variant="default" id="bits-<id>" role="tab" tabindex="0" type="button">
@@ -2920,7 +2920,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                   <div class="mx-auto pb-2 px-4 settings-measure-wide sm:px-6 svelte-<scope> w-full">
                     <div class="max-w-full overflow-x-auto overscroll-x-contain">
                       <div data-orientation="horizontal" data-tabs-root="" id="bits-<id>">
-                        <div aria-label="Application settings" aria-orientation="horizontal" class="[&_[role=tab]]:whitespace-nowrap bg-muted gap-0.5 inline-flex isolate items-center max-w-none min-w-max relative rounded-(--radius-medium) select-none" data-orientation="horizontal" data-tabs-list="" id="bits-<id>" role="tablist">
+                        <div aria-label="Application settings" aria-orientation="horizontal" class="[&_[role=tab]]:whitespace-nowrap bg-muted/40 gap-0.5 inline-flex isolate items-center max-w-none min-w-max relative rounded-(--radius-medium) select-none" data-orientation="horizontal" data-tabs-list="" id="bits-<id>" role="tablist">
                           <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
                           <div class="bg-card sticky top-0 z-10">
                             <button aria-selected="false" class="bg-transparent border-0 cursor-pointer disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast gap-1.5 h-(--control-height-medium) inline-flex items-center justify-center motion-reduce:transition-none px-3 relative rounded-(--radius-medium) text-muted-foreground transition-colors type-caption z-10" data-orientation="horizontal" data-size="default" data-state="inactive" data-tabs-trigger="" data-value="general" data-variant="default" id="bits-<id>" role="tab" tabindex="0" type="button">
@@ -3150,7 +3150,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                   <div class="mx-auto pb-2 px-4 settings-measure-wide sm:px-6 svelte-<scope> w-full">
                     <div class="max-w-full overflow-x-auto overscroll-x-contain">
                       <div data-orientation="horizontal" data-tabs-root="" id="bits-<id>">
-                        <div aria-label="Application settings" aria-orientation="horizontal" class="[&_[role=tab]]:whitespace-nowrap bg-muted gap-0.5 inline-flex isolate items-center max-w-none min-w-max relative rounded-(--radius-medium) select-none" data-orientation="horizontal" data-tabs-list="" id="bits-<id>" role="tablist">
+                        <div aria-label="Application settings" aria-orientation="horizontal" class="[&_[role=tab]]:whitespace-nowrap bg-muted/40 gap-0.5 inline-flex isolate items-center max-w-none min-w-max relative rounded-(--radius-medium) select-none" data-orientation="horizontal" data-tabs-list="" id="bits-<id>" role="tablist">
                           <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
                           <div class="bg-card sticky top-0 z-10">
                             <button aria-selected="false" class="bg-transparent border-0 cursor-pointer disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast gap-1.5 h-(--control-height-medium) inline-flex items-center justify-center motion-reduce:transition-none px-3 relative rounded-(--radius-medium) text-muted-foreground transition-colors type-caption z-10" data-orientation="horizontal" data-size="default" data-state="inactive" data-tabs-trigger="" data-value="general" data-variant="default" id="bits-<id>" role="tab" tabindex="0" type="button">
@@ -3309,7 +3309,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                   <div class="mx-auto pb-2 px-4 settings-measure-wide sm:px-6 svelte-<scope> w-full">
                     <div class="max-w-full overflow-x-auto overscroll-x-contain">
                       <div data-orientation="horizontal" data-tabs-root="" id="bits-<id>">
-                        <div aria-label="Application settings" aria-orientation="horizontal" class="[&_[role=tab]]:whitespace-nowrap bg-muted gap-0.5 inline-flex isolate items-center max-w-none min-w-max relative rounded-(--radius-medium) select-none" data-orientation="horizontal" data-tabs-list="" id="bits-<id>" role="tablist">
+                        <div aria-label="Application settings" aria-orientation="horizontal" class="[&_[role=tab]]:whitespace-nowrap bg-muted/40 gap-0.5 inline-flex isolate items-center max-w-none min-w-max relative rounded-(--radius-medium) select-none" data-orientation="horizontal" data-tabs-list="" id="bits-<id>" role="tablist">
                           <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
                           <div class="bg-card sticky top-0 z-10">
                             <button aria-selected="false" class="bg-transparent border-0 cursor-pointer disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast gap-1.5 h-(--control-height-medium) inline-flex items-center justify-center motion-reduce:transition-none px-3 relative rounded-(--radius-medium) text-muted-foreground transition-colors type-caption z-10" data-orientation="horizontal" data-size="default" data-state="inactive" data-tabs-trigger="" data-value="general" data-variant="default" id="bits-<id>" role="tab" tabindex="0" type="button">
@@ -3539,7 +3539,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                   <div class="mx-auto pb-2 px-4 settings-measure-wide sm:px-6 svelte-<scope> w-full">
                     <div class="max-w-full overflow-x-auto overscroll-x-contain">
                       <div data-orientation="horizontal" data-tabs-root="" id="bits-<id>">
-                        <div aria-label="Application settings" aria-orientation="horizontal" class="[&_[role=tab]]:whitespace-nowrap bg-muted gap-0.5 inline-flex isolate items-center max-w-none min-w-max relative rounded-(--radius-medium) select-none" data-orientation="horizontal" data-tabs-list="" id="bits-<id>" role="tablist">
+                        <div aria-label="Application settings" aria-orientation="horizontal" class="[&_[role=tab]]:whitespace-nowrap bg-muted/40 gap-0.5 inline-flex isolate items-center max-w-none min-w-max relative rounded-(--radius-medium) select-none" data-orientation="horizontal" data-tabs-list="" id="bits-<id>" role="tablist">
                           <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
                           <div class="bg-card sticky top-0 z-10">
                             <button aria-selected="false" class="bg-transparent border-0 cursor-pointer disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast gap-1.5 h-(--control-height-medium) inline-flex items-center justify-center motion-reduce:transition-none px-3 relative rounded-(--radius-medium) text-muted-foreground transition-colors type-caption z-10" data-orientation="horizontal" data-size="default" data-state="inactive" data-tabs-trigger="" data-value="general" data-variant="default" id="bits-<id>" role="tab" tabindex="0" type="button">
@@ -3769,7 +3769,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                   <div class="mx-auto pb-2 px-4 settings-measure-wide sm:px-6 svelte-<scope> w-full">
                     <div class="max-w-full overflow-x-auto overscroll-x-contain">
                       <div data-orientation="horizontal" data-tabs-root="" id="bits-<id>">
-                        <div aria-label="Application settings" aria-orientation="horizontal" class="[&_[role=tab]]:whitespace-nowrap bg-muted gap-0.5 inline-flex isolate items-center max-w-none min-w-max relative rounded-(--radius-medium) select-none" data-orientation="horizontal" data-tabs-list="" id="bits-<id>" role="tablist">
+                        <div aria-label="Application settings" aria-orientation="horizontal" class="[&_[role=tab]]:whitespace-nowrap bg-muted/40 gap-0.5 inline-flex isolate items-center max-w-none min-w-max relative rounded-(--radius-medium) select-none" data-orientation="horizontal" data-tabs-list="" id="bits-<id>" role="tablist">
                           <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
                           <div class="bg-card sticky top-0 z-10">
                             <button aria-selected="false" class="bg-transparent border-0 cursor-pointer disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast gap-1.5 h-(--control-height-medium) inline-flex items-center justify-center motion-reduce:transition-none px-3 relative rounded-(--radius-medium) text-muted-foreground transition-colors type-caption z-10" data-orientation="horizontal" data-size="default" data-state="inactive" data-tabs-trigger="" data-value="general" data-variant="default" id="bits-<id>" role="tab" tabindex="0" type="button">
@@ -3999,7 +3999,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                   <div class="mx-auto pb-2 px-4 settings-measure-wide sm:px-6 svelte-<scope> w-full">
                     <div class="max-w-full overflow-x-auto overscroll-x-contain">
                       <div data-orientation="horizontal" data-tabs-root="" id="bits-<id>">
-                        <div aria-label="Application settings" aria-orientation="horizontal" class="[&_[role=tab]]:whitespace-nowrap bg-muted gap-0.5 inline-flex isolate items-center max-w-none min-w-max relative rounded-(--radius-medium) select-none" data-orientation="horizontal" data-tabs-list="" id="bits-<id>" role="tablist">
+                        <div aria-label="Application settings" aria-orientation="horizontal" class="[&_[role=tab]]:whitespace-nowrap bg-muted/40 gap-0.5 inline-flex isolate items-center max-w-none min-w-max relative rounded-(--radius-medium) select-none" data-orientation="horizontal" data-tabs-list="" id="bits-<id>" role="tablist">
                           <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
                           <div class="bg-card sticky top-0 z-10">
                             <button aria-selected="false" class="bg-transparent border-0 cursor-pointer disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast gap-1.5 h-(--control-height-medium) inline-flex items-center justify-center motion-reduce:transition-none px-3 relative rounded-(--radius-medium) text-muted-foreground transition-colors type-caption z-10" data-orientation="horizontal" data-size="default" data-state="inactive" data-tabs-trigger="" data-value="general" data-variant="default" id="bits-<id>" role="tab" tabindex="0" type="button">
@@ -9709,8 +9709,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:tabs:tabs-
             <div data-catalog-renderer-fixture="tabs-state-matrix">
               <div data-catalog-rendered-state="default subtle selected proximity-hover keyboard-navigation disabled compact reduced-motion">
                 <div data-orientation="horizontal" data-tabs-root="" id="bits-<id>">
-                  <div aria-label="Catalog tabs" aria-orientation="horizontal" class="bg-muted gap-0.5 inline-flex isolate items-center max-w-full relative rounded-(--radius-medium) select-none" data-orientation="horizontal" data-tabs-list="" id="bits-<id>" role="tablist">
-                    <div aria-hidden="true" class="absolute bg-selected left-0 pointer-events-none shadow-(--elevation-raised) top-0" data-tabs-indicator="" tokens=["--radius-medium"]>
+                  <div aria-label="Catalog tabs" aria-orientation="horizontal" class="bg-muted/40 gap-0.5 inline-flex isolate items-center max-w-full relative rounded-(--radius-medium) select-none" data-orientation="horizontal" data-tabs-list="" id="bits-<id>" role="tablist">
+                    <div aria-hidden="true" class="absolute bg-card dark:bg-surface-3 left-0 pointer-events-none shadow-(--elevation-raised) top-0" data-tabs-indicator="" tokens=["--radius-medium"]>
                     <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
                     <button aria-controls="bits-<id>" aria-selected="true" class="bg-transparent border-0 cursor-pointer disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast gap-1.5 h-(--control-height-medium) inline-flex items-center justify-center motion-reduce:transition-none px-3 relative rounded-(--radius-medium) text-foreground transition-colors type-caption z-10" data-orientation="horizontal" data-size="default" data-state="active" data-tabs-trigger="" data-value="overview" data-variant="default" id="bits-<id>" role="tab" tabindex="0" type="button">
                       "Overview"
@@ -9725,7 +9725,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:tabs:tabs-
                 <div class="mt-4" data-orientation="horizontal" data-tabs-root="" id="bits-<id>">
                   <div aria-label="Subtle catalog tabs" aria-orientation="horizontal" class="gap-0.5 inline-flex isolate items-center max-w-full overflow-x-auto px-1 relative select-none" data-orientation="horizontal" data-tabs-list="" id="bits-<id>" role="tablist">
                     <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
-                      <div class="absolute bg-selected shadow-(--elevation-raised)" tokens=["--radius-row"]>
+                      <div class="absolute bg-card dark:bg-surface-3 shadow-(--elevation-raised)" tokens=["--radius-row"]>
                     <button aria-selected="true" class="bg-transparent border-0 cursor-pointer disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast gap-1.5 h-(--control-height-medium) inline-flex items-center justify-center motion-reduce:transition-none px-3 relative rounded-(--radius-medium) text-foreground transition-colors type-caption z-10" data-orientation="horizontal" data-size="default" data-state="active" data-tabs-trigger="" data-value="one" data-variant="subtle" id="bits-<id>" role="tab" tabindex="0" type="button">
                       "Subtle one"
                     <button aria-selected="false" class="bg-transparent border-0 cursor-pointer disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast gap-1.5 h-(--control-height-medium) inline-flex items-center justify-center motion-reduce:transition-none px-3 relative rounded-(--radius-medium) text-muted-foreground transition-colors type-caption z-10" data-orientation="horizontal" data-size="default" data-state="inactive" data-tabs-trigger="" data-value="two" data-variant="subtle" id="bits-<id>" role="tab" tabindex="-1" type="button">
@@ -16968,8 +16968,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:rows:row-fam
                   "Tab strip items"
                 <div class="row-cell svelte-<scope>" data-row-preview="panel-tab-strip">
                   <div data-orientation="horizontal" data-tabs-root="" id="bits-<id>">
-                    <div aria-label="Panel tabs" aria-orientation="horizontal" class="bg-muted gap-0.5 inline-flex isolate items-center justify-start max-w-full overflow-hidden relative rounded-(--radius-medium) select-none w-full" data-orientation="horizontal" data-tabs-list="" id="bits-<id>" role="tablist">
-                      <div aria-hidden="true" class="absolute bg-selected left-0 pointer-events-none shadow-(--elevation-raised) top-0" data-tabs-indicator="" tokens=["--radius-medium"]>
+                    <div aria-label="Panel tabs" aria-orientation="horizontal" class="bg-muted/40 gap-0.5 inline-flex isolate items-center justify-start max-w-full overflow-hidden relative rounded-(--radius-medium) select-none w-full" data-orientation="horizontal" data-tabs-list="" id="bits-<id>" role="tablist">
+                      <div aria-hidden="true" class="absolute bg-card dark:bg-surface-3 left-0 pointer-events-none shadow-(--elevation-raised) top-0" data-tabs-indicator="" tokens=["--radius-medium"]>
                       <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
                       <button aria-selected="false" class="bg-transparent border-0 cursor-pointer disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast gap-1.5 h-(--control-height-medium) inline-flex items-center justify-center motion-reduce:transition-none px-3 relative rounded-(--radius-medium) text-muted-foreground transition-colors type-caption z-10" data-orientation="horizontal" data-size="default" data-state="inactive" data-tabs-trigger="" data-value="note" data-variant="default" id="bits-<id>" role="tab" tabindex="-1" type="button">
                         "Implementation plan"
@@ -16981,8 +16981,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:rows:row-fam
                         "Browser preview"
                 <div class="row-cell svelte-<scope>" data-row-preview="workspace-tab-strip">
                   <div data-orientation="horizontal" data-tabs-root="" id="bits-<id>">
-                    <div aria-label="Workspace tabs" aria-orientation="horizontal" class="bg-muted gap-0.5 inline-flex isolate items-center justify-start max-w-full overflow-hidden relative rounded-(--radius-medium) select-none w-full" data-orientation="horizontal" data-tabs-list="" id="bits-<id>" role="tablist">
-                      <div aria-hidden="true" class="absolute bg-selected left-0 pointer-events-none shadow-(--elevation-raised) top-0" data-tabs-indicator="" tokens=["--radius-medium"]>
+                    <div aria-label="Workspace tabs" aria-orientation="horizontal" class="bg-muted/40 gap-0.5 inline-flex isolate items-center justify-start max-w-full overflow-hidden relative rounded-(--radius-medium) select-none w-full" data-orientation="horizontal" data-tabs-list="" id="bits-<id>" role="tablist">
+                      <div aria-hidden="true" class="absolute bg-card dark:bg-surface-3 left-0 pointer-events-none shadow-(--elevation-raised) top-0" data-tabs-indicator="" tokens=["--radius-medium"]>
                       <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
                       <button aria-selected="true" class="bg-transparent border-0 cursor-pointer disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast gap-1.5 h-(--control-height-medium) inline-flex items-center justify-center motion-reduce:transition-none px-3 relative rounded-(--radius-medium) text-foreground transition-colors type-caption z-10" data-orientation="horizontal" data-size="default" data-state="active" data-tabs-trigger="" data-value="active" data-variant="default" id="bits-<id>" role="tab" tabindex="0" type="button">
                         "Active workspace"
