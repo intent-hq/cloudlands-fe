@@ -34,6 +34,9 @@ const rpc = vi.hoisted(() => ({
   handler: (async () => ({})) as (method: string) => Promise<unknown>,
   calls: [] as string[],
   payloads: [] as Array<[string, unknown]>,
+  /** Per-call `params` argument, parallel to `calls`. */
+  // eslint-disable-next-line themis/collection-state-shape -- test-only RPC recorder, not Redux state
+  params: [] as unknown[],
   /** Per-call `options` argument, parallel to `calls`. */
   options: [] as Array<{ timeoutMs?: number } | undefined>,
 }));
@@ -76,6 +79,7 @@ vi.mock('../json-rpc-client', () => {
     request = vi.fn(async (method: string, params?: unknown, options?: { timeoutMs?: number }) => {
       rpc.calls.push(method);
       rpc.payloads.push([method, params]);
+      rpc.params.push(params);
       rpc.options.push(options);
       return rpc.handler(method);
     });
@@ -183,6 +187,7 @@ const guestStore = vi.hoisted(() => ({
   list: vi.fn(),
   findById: vi.fn(),
   forget: vi.fn(),
+  leaveWorkspace: vi.fn(),
   getDecryptedToken: vi.fn(),
   setTcAddress: vi.fn(),
   setHosts: vi.fn(),
@@ -193,6 +198,7 @@ vi.mock('../guest-sessions-store', () => ({
   list: guestStore.list,
   findById: guestStore.findById,
   forget: guestStore.forget,
+  leaveWorkspace: guestStore.leaveWorkspace,
   getDecryptedToken: guestStore.getDecryptedToken,
   setHostname: vi.fn(async () => false),
   setTcAddress: guestStore.setTcAddress,
@@ -289,6 +295,7 @@ const GUEST = {
   principalId: 'prn_7',
   login: 'octocat',
   tokenEncrypted: true,
+  workspaces: [{ id: 'ws-guest', title: 'Guest project' }],
   updatedAt: 1,
 };
 
@@ -370,6 +377,7 @@ beforeEach(() => {
   rpc.handler = async () => ({});
   rpc.calls = [];
   rpc.payloads = [];
+  rpc.params = [];
   rpc.options = [];
   // Sensible defaults; individual tests override.
   store.getActiveId.mockResolvedValue('local');
@@ -383,6 +391,7 @@ beforeEach(() => {
   guestStore.list.mockResolvedValue([]);
   guestStore.findById.mockResolvedValue(null);
   guestStore.forget.mockResolvedValue(true);
+  guestStore.leaveWorkspace.mockResolvedValue(true);
   guestStore.getDecryptedToken.mockResolvedValue(null);
   guestStore.setTcAddress.mockResolvedValue(false);
   guestStore.setHosts.mockResolvedValue(false);
@@ -4417,6 +4426,127 @@ describe('guest-sessions:* IPC handlers', () => {
     expect(rpc.calls).not.toContain('principal.revokeSelf');
     expect(guestStore.forget).not.toHaveBeenCalled();
     expect(closeForBackend).not.toHaveBeenCalled();
+  });
+
+  it('guest-sessions:leave-workspace asks the host over the pooled client (10 s bound) and drops the workspace locally', async () => {
+    installGuest();
+    rpc.handler = async (method) => (method === 'workspace.members.leave' ? { left: true } : {});
+    const { mod, closeForBackend } = await loadModule();
+    const guest = (await mod.connectBackendClient(GUEST.id)) as unknown as { status: string };
+    guest.status = 'connected';
+    mod.registerBackendHandlers();
+    const constructed = lifecycle.events.filter((e) => e.type === 'construct').length;
+    const handler = findHandler('guest-sessions:leave-workspace')!;
+
+    await expect(handler({}, { id: GUEST.id, workspaceId: 'ws-guest' })).resolves.toEqual({
+      id: GUEST.id,
+      workspaceId: 'ws-guest',
+      left: true,
+    });
+    const leaveIndex = rpc.calls.indexOf('workspace.members.leave');
+    expect(leaveIndex).toBeGreaterThanOrEqual(0);
+    expect(rpc.params[leaveIndex]).toEqual({ workspaceId: 'ws-guest' });
+    expect(rpc.options[leaveIndex]).toEqual({ timeoutMs: mod.GUEST_LEAVE_WORKSPACE_TIMEOUT_MS });
+    expect(mod.GUEST_LEAVE_WORKSPACE_TIMEOUT_MS).toBe(10_000);
+    expect(guestStore.leaveWorkspace).toHaveBeenCalledWith(GUEST.id, 'ws-guest');
+    // No throwaway client: the pooled one served the request.
+    expect(lifecycle.events.filter((e) => e.type === 'construct')).toHaveLength(constructed);
+    // The session and its windows stay: only *Leave host* forgets / tears down.
+    expect(guestStore.forget).not.toHaveBeenCalled();
+    expect(closeForBackend).not.toHaveBeenCalled();
+    expect(mod.getBackendClientForConnection(GUEST.id)).toBeDefined();
+  });
+
+  it('guest-sessions:leave-workspace dials a short-lived client when the host has no pooled client, and never pools it', async () => {
+    installGuest();
+    rpc.handler = async (method) => (method === 'workspace.members.leave' ? { left: true } : {});
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+    const handler = findHandler('guest-sessions:leave-workspace')!;
+
+    await expect(handler({}, { id: GUEST.id, workspaceId: 'ws-guest' })).resolves.toEqual({
+      id: GUEST.id,
+      workspaceId: 'ws-guest',
+      left: true,
+    });
+    expect(rpc.calls).toContain('workspace.members.leave');
+    const constructs = lifecycle.events.filter((e) => e.type === 'construct');
+    expect(constructs).toHaveLength(1);
+    expect(lifecycle.events).toContainEqual({ type: 'dispose', seq: constructs[0].seq });
+    expect(mod.getBackendClientForConnection(GUEST.id)).toBeUndefined();
+    expect(guestStore.leaveWorkspace).toHaveBeenCalledWith(GUEST.id, 'ws-guest');
+  });
+
+  it('guest-sessions:leave-workspace keeps the local record and rejects bounded when the host refuses', async () => {
+    installGuest();
+    const sentinel = 'SENTINEL-leave-detail-2c9e';
+    rpc.handler = async (method) => {
+      if (method === 'workspace.members.leave') throw new Error(`socket closed ${sentinel}`);
+      return {};
+    };
+    const { Logger } = await import('$shared/logger');
+    const warn = vi.spyOn(Logger.prototype, 'warn');
+    const { mod } = await loadModule();
+    const guest = (await mod.connectBackendClient(GUEST.id)) as unknown as { status: string };
+    guest.status = 'connected';
+    mod.registerBackendHandlers();
+    const handler = findHandler('guest-sessions:leave-workspace')!;
+
+    const failure = (await handler({}, { id: GUEST.id, workspaceId: 'ws-guest' }).catch(
+      (e: unknown) => e,
+    )) as Error & { code?: string };
+    expect(failure).toBeInstanceOf(mod.GuestWorkspaceLeaveError);
+    expect(failure.code).toBe('transport');
+    expect(failure.message).not.toContain(sentinel);
+    expect(guestStore.leaveWorkspace).not.toHaveBeenCalled();
+    const leaveWarn = warn.mock.calls.find(([message]) => /members\.leave/.test(String(message)));
+    expect(leaveWarn).toBeDefined();
+    expect(JSON.stringify(leaveWarn)).not.toContain(sentinel);
+    expect(leaveWarn![1]).toEqual({ id: GUEST.id, workspaceId: 'ws-guest', code: 'transport' });
+  });
+
+  it('guest-sessions:leave-workspace treats an already-gone membership (-32602) as done and drops the record', async () => {
+    installGuest();
+    const { JsonRpcError } = await import('../json-rpc-errors');
+    rpc.handler = async (method) => {
+      if (method === 'workspace.members.leave')
+        throw new JsonRpcError({ code: -32602, message: 'not a member' });
+      return {};
+    };
+    const { mod } = await loadModule();
+    const guest = (await mod.connectBackendClient(GUEST.id)) as unknown as { status: string };
+    guest.status = 'connected';
+    mod.registerBackendHandlers();
+    const handler = findHandler('guest-sessions:leave-workspace')!;
+
+    await expect(handler({}, { id: GUEST.id, workspaceId: 'ws-guest' })).resolves.toEqual({
+      id: GUEST.id,
+      workspaceId: 'ws-guest',
+      left: false,
+    });
+    expect(guestStore.leaveWorkspace).toHaveBeenCalledWith(GUEST.id, 'ws-guest');
+  });
+
+  it('guest-sessions:leave-workspace settles a workspace absent from the record as completion without an RPC', async () => {
+    installGuest();
+    const { mod } = await loadModule();
+    const guest = (await mod.connectBackendClient(GUEST.id)) as unknown as { status: string };
+    guest.status = 'connected';
+    mod.registerBackendHandlers();
+    const handler = findHandler('guest-sessions:leave-workspace')!;
+
+    await expect(handler({}, { id: GUEST.id, workspaceId: 'ws-elsewhere' })).resolves.toEqual({
+      id: GUEST.id,
+      workspaceId: 'ws-elsewhere',
+      left: false,
+    });
+    await expect(handler({}, { id: 'guest-unknown', workspaceId: 'ws-guest' })).resolves.toEqual({
+      id: 'guest-unknown',
+      workspaceId: 'ws-guest',
+      left: false,
+    });
+    expect(rpc.calls).not.toContain('workspace.members.leave');
+    expect(guestStore.leaveWorkspace).not.toHaveBeenCalled();
   });
 
   /** Store double whose row disappears on forget, like the real registry. */

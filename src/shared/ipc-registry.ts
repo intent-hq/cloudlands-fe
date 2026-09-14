@@ -938,6 +938,7 @@ export const IPC_CHANNELS = {
   GUEST_SESSIONS: {
     LIST: 'guest-sessions:list',
     LEAVE: 'guest-sessions:leave',
+    LEAVE_WORKSPACE: 'guest-sessions:leave-workspace',
     CHANGED: 'guest-sessions:changed',
   },
 

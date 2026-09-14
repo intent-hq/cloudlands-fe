@@ -1,11 +1,12 @@
 /**
  * Guest sessions IPC bridge — mock fallback for the multiplayer w4 channels.
  *
- * Bridges `guest-sessions:list` and `guest-sessions:leave` so the guest
- * sessions saga resolves in bridge-less builds (browser mock) and tests
- * instead of rejecting with UnbridgedMockIpcChannelError. The mock has no
- * guest session store (main owns the encrypted credentials), so the list is
- * always empty and a leave reports the session gone without a revoke.
+ * Bridges `guest-sessions:list`, `guest-sessions:leave` and
+ * `guest-sessions:leave-workspace` so the guest sessions saga resolves in
+ * bridge-less builds (browser mock) and tests instead of rejecting with
+ * UnbridgedMockIpcChannelError. The mock has no guest session store (main
+ * owns the encrypted credentials), so the list is always empty and a leave
+ * reports the session (or workspace membership) gone without a host round trip.
  *
  * Handlers are registered at import time (host-bridge-seeder idiom). Tests
  * override individual channels via `registerMockIpcHandler` after this runs.
@@ -16,6 +17,8 @@ import type {
   GuestSessionsListResult,
   LeaveGuestSessionParams,
   LeaveGuestSessionResult,
+  LeaveGuestWorkspaceParams,
+  LeaveGuestWorkspaceResult,
 } from '$shared/types/guest-sessions';
 
 const { GUEST_SESSIONS } = IPC_CHANNELS;
@@ -28,3 +31,11 @@ registerMockIpcHandler(GUEST_SESSIONS.LEAVE, async (arg): Promise<LeaveGuestSess
   const { id } = arg as LeaveGuestSessionParams;
   return { id, revoked: false };
 });
+
+registerMockIpcHandler(
+  GUEST_SESSIONS.LEAVE_WORKSPACE,
+  async (arg): Promise<LeaveGuestWorkspaceResult> => {
+    const { id, workspaceId } = arg as LeaveGuestWorkspaceParams;
+    return { id, workspaceId, left: false };
+  },
+);

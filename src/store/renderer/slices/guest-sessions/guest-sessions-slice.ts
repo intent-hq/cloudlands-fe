@@ -13,11 +13,14 @@ import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import { removeWorkspaceEntity, resetWorkspaceState } from '../workspace/workspace-slice';
 import { workspaceDeleted } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import {
+  guestWorkspaceKey,
   hostedMemberKey,
   type GuestSessionRecord,
   type GuestSessionsListResult,
   type GuestSessionsState,
   type LeaveGuestSessionResult,
+  type LeaveGuestWorkspaceResult,
+  type RemoveAllHostedGuestsResult,
   type WorkspaceMember,
   type WorkspaceMemberRemoveResult,
   type WorkspaceMembersListResult,
@@ -34,8 +37,10 @@ export const initialState: GuestSessionsState = {
   hasReceivedList: false,
   listUnavailable: false,
   leavingIds: [],
+  leavingWorkspaceKeys: [],
   hostedRosters: {},
   removingMemberKeys: [],
+  clearingWorkspaceIds: [],
 };
 
 // ---------------------------------------------------------------------------
@@ -71,6 +76,24 @@ export const leaveGuestSessionRequested = createAsyncAction<[id: string], LeaveG
 
 export const leaveOperationStarted = createAction<[id: string]>('guestSessions/leaveStarted');
 export const leaveOperationSettled = createAction<[id: string]>('guestSessions/leaveSettled');
+
+/**
+ * Per-workspace *Leave* on a joined host: `workspace.members.leave` on the
+ * host, then the workspace is dropped from the session's local record
+ * (main-owned `guest-sessions:leave-workspace`; the list refresh arrives via
+ * the `guest-sessions:changed` push). The session itself is kept.
+ */
+export const leaveGuestWorkspaceRequested = createAsyncAction<
+  [id: string, workspaceId: string],
+  LeaveGuestWorkspaceResult
+>('guestSessions/leaveWorkspace', 'guestSessions/leaveWorkspaceRequested');
+
+export const leaveWorkspaceOperationStarted = createAction<[id: string, workspaceId: string]>(
+  'guestSessions/leaveWorkspaceStarted',
+);
+export const leaveWorkspaceOperationSettled = createAction<[id: string, workspaceId: string]>(
+  'guestSessions/leaveWorkspaceSettled',
+);
 
 /** Saga-owned roster read (`workspace.members.list`) for one hosted workspace. */
 export const loadHostedRosterRequested = createAsyncAction<
@@ -109,6 +132,23 @@ export const removeMemberOperationSettled = createAction<
   [workspaceId: string, principalId: string]
 >('guestSessions/removeMemberSettled');
 
+/**
+ * Owner-side *Remove all guests*: every collaborator removed
+ * (`workspace.members.remove`) and every open invite revoked
+ * (`workspace.invite.list` → `workspace.invite.revoke`), reported per step.
+ */
+export const removeAllHostedGuestsRequested = createAsyncAction<
+  [workspaceId: string],
+  RemoveAllHostedGuestsResult
+>('guestSessions/removeAllHostedGuests', 'guestSessions/removeAllHostedGuestsRequested');
+
+export const removeAllGuestsOperationStarted = createAction<[workspaceId: string]>(
+  'guestSessions/removeAllGuestsStarted',
+);
+export const removeAllGuestsOperationSettled = createAction<[workspaceId: string]>(
+  'guestSessions/removeAllGuestsSettled',
+);
+
 // ---------------------------------------------------------------------------
 // Reducer
 // ---------------------------------------------------------------------------
@@ -135,6 +175,26 @@ guestSessionsReducer.with(leaveOperationSettled, (state, { payload: [id] }) => (
   ...state,
   leavingIds: state.leavingIds.filter((leaving) => leaving !== id),
 }));
+
+guestSessionsReducer.with(
+  leaveWorkspaceOperationStarted,
+  (state, { payload: [id, workspaceId] }) => {
+    const key = guestWorkspaceKey(id, workspaceId);
+    return state.leavingWorkspaceKeys.includes(key)
+      ? state
+      : { ...state, leavingWorkspaceKeys: [...state.leavingWorkspaceKeys, key] };
+  },
+);
+guestSessionsReducer.with(
+  leaveWorkspaceOperationSettled,
+  (state, { payload: [id, workspaceId] }) => {
+    const key = guestWorkspaceKey(id, workspaceId);
+    return {
+      ...state,
+      leavingWorkspaceKeys: state.leavingWorkspaceKeys.filter((k) => k !== key),
+    };
+  },
+);
 
 /** `withheld` is terminal: a load / result / failure landing on it is dropped. */
 function isWithheld(state: GuestSessionsState, workspaceId: string): boolean {
@@ -187,23 +247,26 @@ guestSessionsReducer.with(hostedRosterWithheld, (state, { payload: [workspaceId]
           [workspaceId]: { status: 'withheld', members: [] },
         },
         removingMemberKeys: withoutWorkspaceKeys(state.removingMemberKeys, workspaceId),
+        clearingWorkspaceIds: withoutId(state.clearingWorkspaceIds, workspaceId),
       },
 );
 
-/** Drop one workspace's roster + *Remove* markers (deleted / removed entity). */
+/** Drop one workspace's roster + *Remove* / sweep markers (deleted / removed entity). */
 function purgeHostedRoster(state: GuestSessionsState, workspaceId: string): GuestSessionsState {
+  const removingMemberKeys = withoutWorkspaceKeys(state.removingMemberKeys, workspaceId);
+  const clearingWorkspaceIds = withoutId(state.clearingWorkspaceIds, workspaceId);
   if (!(workspaceId in state.hostedRosters)) {
-    const removingMemberKeys = withoutWorkspaceKeys(state.removingMemberKeys, workspaceId);
-    return removingMemberKeys === state.removingMemberKeys
+    return removingMemberKeys === state.removingMemberKeys &&
+      clearingWorkspaceIds === state.clearingWorkspaceIds
       ? state
-      : { ...state, removingMemberKeys };
+      : { ...state, removingMemberKeys, clearingWorkspaceIds };
   }
   const { [workspaceId]: _purged, ...hostedRosters } = state.hostedRosters;
-  return {
-    ...state,
-    hostedRosters,
-    removingMemberKeys: withoutWorkspaceKeys(state.removingMemberKeys, workspaceId),
-  };
+  return { ...state, hostedRosters, removingMemberKeys, clearingWorkspaceIds };
+}
+
+function withoutId(ids: string[], id: string): string[] {
+  return ids.includes(id) ? ids.filter((entry) => entry !== id) : ids;
 }
 
 function withoutWorkspaceKeys(keys: string[], workspaceId: string): string[] {
@@ -221,9 +284,11 @@ guestSessionsReducer.with(removeWorkspaceEntity, (state, { payload: [workspaceId
 // The window's workspace list was reset (backend change): every roster is a
 // view of the previous backend's data.
 guestSessionsReducer.with(resetWorkspaceState, (state) =>
-  Object.keys(state.hostedRosters).length === 0 && state.removingMemberKeys.length === 0
+  Object.keys(state.hostedRosters).length === 0 &&
+  state.removingMemberKeys.length === 0 &&
+  state.clearingWorkspaceIds.length === 0
     ? state
-    : { ...state, hostedRosters: {}, removingMemberKeys: [] },
+    : { ...state, hostedRosters: {}, removingMemberKeys: [], clearingWorkspaceIds: [] },
 );
 
 guestSessionsReducer.with(
@@ -242,3 +307,13 @@ guestSessionsReducer.with(
     return { ...state, removingMemberKeys: state.removingMemberKeys.filter((k) => k !== key) };
   },
 );
+
+guestSessionsReducer.with(removeAllGuestsOperationStarted, (state, { payload: [workspaceId] }) =>
+  state.clearingWorkspaceIds.includes(workspaceId)
+    ? state
+    : { ...state, clearingWorkspaceIds: [...state.clearingWorkspaceIds, workspaceId] },
+);
+guestSessionsReducer.with(removeAllGuestsOperationSettled, (state, { payload: [workspaceId] }) => ({
+  ...state,
+  clearingWorkspaceIds: withoutId(state.clearingWorkspaceIds, workspaceId),
+}));
