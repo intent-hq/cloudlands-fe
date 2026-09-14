@@ -207,8 +207,11 @@ import { lifecycleReadSaga } from '$store/renderer/slices/workspace-lifecycle/sa
 import {
   bulkUpsertSessions,
   clearAllSessions,
+  setProcessQueueHint,
+  updateSession,
   upsertSession,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
+import type { StoredAgentSession } from '$store/renderer/slices/agent-session/agent-session-types';
 import { selectAgentIsResponding } from '$store/renderer/slices/agent-session/agent-session-selectors';
 import { selectEnabledProviderIds } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
 import {
@@ -316,9 +319,9 @@ function notificationWithSub(
   };
 }
 
-function readSession(): AgentSession | undefined {
+function readSession(): StoredAgentSession | undefined {
   const state = appStore.state as {
-    agentSessions?: { byAgentId: Record<string, AgentSession> };
+    agentSessions?: { byAgentId: Record<string, StoredAgentSession> };
   };
   return state.agentSessions?.byAgentId[AGENT];
 }
@@ -573,10 +576,15 @@ describe('daemonEventsBridge (wire contract — agent:idle clears the spinner)',
       isStreaming: true,
       isProcessing: true,
       isResponding: true,
-      liveTurnOpen: true,
-      liveTurnOpenedAt: '2026-01-01T12:00:00.000Z',
-      processQueueHint: { waiting: true, used: 3, cap: 3, reason: 'slots' },
-    } as Partial<AgentSession>);
+    });
+    // FE-owned fields never ride the wire snapshot; set them the way
+    // production does (reducer actions), not via the upsert fixture.
+    appStore.dispatch(
+      updateSession(AGENT, { liveTurnOpen: true, liveTurnOpenedAt: '2026-01-01T12:00:00.000Z' }),
+    );
+    appStore.dispatch(setProcessQueueHint(AGENT, 3, 3, 'slots'));
+    expect(readSession()?.liveTurnOpen).toBe(true);
+    expect(readSession()?.processQueueHint?.waiting).toBe(true);
     expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(true);
     await primeBridge();
     const handler = capturedHandlers[0]!;

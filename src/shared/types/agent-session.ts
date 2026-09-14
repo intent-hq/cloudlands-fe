@@ -387,21 +387,6 @@ export interface AgentSession {
     title?: string;
   }>;
 
-  /**
-   * Process queue hint (PROTOCOL §6.5 agent:process:queued/resumed).
-   * Set when the agent is queued for admission (a process slot or memory
-   * headroom), cleared when resumed or transitions to normal running state.
-   * `reason` names the constraint the spawn queued under
-   * (intent-hq/intentd#1196); an absent wire `reason` (older daemons) is
-   * normalized to `'slots'` at the events bridge.
-   */
-  processQueueHint?: {
-    waiting: boolean;
-    used: number;
-    cap: number;
-    reason: 'slots' | 'memory-budget';
-  };
-
   /** Canonical stop/finish reason from the latest terminal stream/status event */
   stopReason?: string | null;
 

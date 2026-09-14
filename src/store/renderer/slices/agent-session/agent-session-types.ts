@@ -75,14 +75,15 @@ export interface AgentSessionLaunchOptions {
 }
 
 /**
- * Internal storage shape for a single agent session.
- *
- * Mirrors the public `AgentSession` type while keeping `messages` as the
- * ordered `AgentMessage[]` consumed by UI, sagas, persistence payloads, and
- * retry/regenerate flows.
+ * FE-owned session fields: set by reducer actions / the event fold, never
+ * carried by the `agent.get` / `agent.list` wire snapshot. Because
+ * `applySessionUpsert` rebuilds the stored session from the incoming
+ * snapshot, every field declared here MUST have a carry-forward entry in
+ * `FE_OWNED_FIELD_POLICY` (agent-session-slice.ts) — the policy table is
+ * typed exhaustively over these keys, so adding a field without a policy is
+ * a compile error.
  */
-export type StoredAgentSession = Omit<AgentSession, 'messages'> & {
-  messages: AgentMessage[];
+export interface FeOwnedSessionState {
   /**
    * FE-owned sticky turn-liveness. Set by the event fold when a live running
    * transition lands (`agent:status-changed` with a running status and
@@ -115,7 +116,32 @@ export type StoredAgentSession = Omit<AgentSession, 'messages'> & {
    * a full transcript reset (chatReset / a §7.1 `resumed: false` snapshot).
    */
   tailCapPruned?: boolean;
-};
+  /**
+   * Process queue hint (PROTOCOL §6.5 agent:process:queued/resumed).
+   * Set when the agent is queued for admission (a process slot or memory
+   * headroom), cleared when resumed or transitions to normal running state.
+   * `reason` names the constraint the spawn queued under
+   * (intent-hq/intentd#1196); an absent wire `reason` (older daemons) is
+   * normalized to `'slots'` at the events bridge.
+   */
+  processQueueHint?: {
+    waiting: boolean;
+    used: number;
+    cap: number;
+    reason: 'slots' | 'memory-budget';
+  };
+}
+
+/**
+ * Internal storage shape for a single agent session.
+ *
+ * Mirrors the public `AgentSession` type while keeping `messages` as the
+ * ordered `AgentMessage[]` consumed by UI, sagas, persistence payloads, and
+ * retry/regenerate flows, plus the FE-owned fields the wire never carries.
+ */
+export type StoredAgentSession = Omit<AgentSession, 'messages' | keyof FeOwnedSessionState> & {
+  messages: AgentMessage[];
+} & FeOwnedSessionState;
 
 /**
  * Bounded, on-demand history segment for infinite scrollback.

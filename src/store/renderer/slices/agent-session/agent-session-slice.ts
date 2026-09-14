@@ -11,6 +11,7 @@ import type {
   AgentSessionLaunchOptions,
   AgentSessionSendMessageOptions,
   AgentSessionState,
+  FeOwnedSessionState,
   StoredAgentSession,
 } from './agent-session-types';
 import {
@@ -473,7 +474,7 @@ type CanonicalAgentSessionUpdates = {
   stopReasonTimestamp?: string | null;
   sessionCorrupted?: boolean;
   lastAgentResponse?: string;
-  processQueueHint?: AgentSession['processQueueHint'];
+  processQueueHint?: FeOwnedSessionState['processQueueHint'];
   isWaitingForOtherAgents?: boolean;
   waitingForAgentIds?: string[];
   waitingOnHooks?: AgentSession['waitingOnHooks'];
@@ -502,6 +503,99 @@ const TERMINAL_STATUSES: ReadonlySet<string> = new Set([
   'error',
   'deleted',
 ]);
+
+// ============================================================================
+// FE-owned field carry-forward (session upserts)
+// ============================================================================
+
+/**
+ * How one FE-owned field survives `applySessionUpsert`. The incoming wire
+ * snapshot never carries FE-owned fields, so the stored value always comes
+ * from the policy: `existing` is the stored session before the upsert (or
+ * undefined for a new session) and `incoming` the wire snapshot being applied.
+ * Returning `undefined` drops the field.
+ */
+type FeOwnedFieldPolicy<K extends keyof FeOwnedSessionState> = (
+  existing: Readonly<FeOwnedSessionState> | undefined,
+  incoming: AgentSession,
+) => FeOwnedSessionState[K] | undefined;
+
+function isTerminalWireStatus(incoming: AgentSession): boolean {
+  return typeof incoming.status === 'string' && TERMINAL_STATUSES.has(incoming.status);
+}
+
+/** Only `isActive: false` or a terminal status closes the sticky live-turn slot. */
+function incomingClosesLiveTurn(incoming: AgentSession): boolean {
+  return incoming.isActive === false || isTerminalWireStatus(incoming);
+}
+
+/**
+ * Exhaustive carry-forward table over `FeOwnedSessionState` — the mapped `-?`
+ * type makes a missing entry a compile error, so a new FE-owned field cannot
+ * be added without declaring how it survives an `agent.get` refetch
+ * (cloudlands-fe#2443 shipped without the processQueueHint block and the
+ * slot-wait warning flickered off on every refresh; intent-hq/intent#1815 was
+ * the same omission for liveTurnOpen).
+ */
+export const FE_OWNED_FIELD_POLICY: { [K in keyof FeOwnedSessionState]-?: FeOwnedFieldPolicy<K> } =
+  {
+    // Latch: an upsert must not clear it. An incoming snapshot itself
+    // overflowing the cap also latches (its overflow rows were just dropped
+    // client-side). No hole accounting here — a re-delivered snapshot must
+    // not double-count.
+    tailCapPruned: (existing, incoming) =>
+      existing?.tailCapPruned === true || (incoming.messages?.length ?? 0) > MAX_MESSAGES_PER_AGENT
+        ? true
+        : undefined,
+    // Sticky: a racy `turnInFlight: false` snapshot cannot close the slot.
+    liveTurnOpen: (existing, incoming) =>
+      existing?.liveTurnOpen === true && !incomingClosesLiveTurn(incoming) ? true : undefined,
+    // Rides with liveTurnOpen (ordering signal for the monorepo#1815 guard).
+    liveTurnOpenedAt: (existing, incoming) =>
+      existing?.liveTurnOpen === true && !incomingClosesLiveTurn(incoming)
+        ? existing.liveTurnOpenedAt
+        : undefined,
+    // Set from agent:process:queued, so a snapshot refresh triggered by an
+    // unrelated agent event must not drop it while the agent is still parked
+    // — otherwise the chat slot-wait warning flickers off. Carry it forward
+    // unless the snapshot itself shows the wait is over (same signals as
+    // canonicalSessionUpdates).
+    processQueueHint: (existing, incoming) => {
+      if (existing?.processQueueHint?.waiting !== true) return undefined;
+      const waitOver =
+        incoming.isStreaming === true ||
+        incoming.isResponding === false ||
+        incoming.isActive === false ||
+        isTerminalWireStatus(incoming);
+      return waitOver ? undefined : existing.processQueueHint;
+    },
+  };
+
+const FE_OWNED_FIELD_KEYS = Object.keys(FE_OWNED_FIELD_POLICY) as Array<keyof FeOwnedSessionState>;
+
+function applyFeOwnedFieldPolicy<K extends keyof FeOwnedSessionState>(
+  target: FeOwnedSessionState,
+  key: K,
+  existing: Readonly<FeOwnedSessionState> | undefined,
+  incoming: AgentSession,
+): void {
+  const policy = FE_OWNED_FIELD_POLICY[key] as FeOwnedFieldPolicy<K>;
+  const value = policy(existing, incoming);
+  if (value === undefined) delete target[key];
+  else target[key] = value;
+}
+
+/**
+ * Comparison key for the FE-owned fields, driven by the same key set as the
+ * policy table so a drop-only refresh of any FE-owned field is never swallowed
+ * as a no-op. `false` collapses to absent (like the wire booleans in
+ * `toSessionComparisonSnapshot`) so a false↔absent flip is not a change.
+ */
+function feOwnedFieldsComparisonKey(session: Readonly<FeOwnedSessionState>): string {
+  return JSON.stringify(
+    FE_OWNED_FIELD_KEYS.map((key) => (session[key] === false ? undefined : session[key])),
+  );
+}
 
 type CanonicalAgentStatusWithSummary = CanonicalAgentStatusFields & {
   lastResponseSummary?: unknown;
@@ -851,10 +945,7 @@ type SessionComparisonSnapshot = Pick<
   sandboxBranch: string | undefined;
   waitingForAgentIdsKey: string | undefined;
   turnInFlight: boolean | undefined;
-  liveTurnOpen: boolean | undefined;
-  liveTurnOpenedAt: string | undefined;
-  tailCapPruned: boolean | undefined;
-  processQueueHintWaiting: boolean | undefined;
+  feOwnedFieldsKey: string;
   harnessVersion: string | undefined;
   harnessFeaturesKey: string | undefined;
 };
@@ -918,11 +1009,7 @@ function toSessionComparisonSnapshot(session: StoredAgentSession): SessionCompar
       ? session.waitingForAgentIds.join(',')
       : undefined,
     turnInFlight: session.turnInFlight === true ? true : undefined,
-    liveTurnOpen: session.liveTurnOpen === true ? true : undefined,
-    liveTurnOpenedAt:
-      typeof session.liveTurnOpenedAt === 'string' ? session.liveTurnOpenedAt : undefined,
-    tailCapPruned: session.tailCapPruned === true ? true : undefined,
-    processQueueHintWaiting: session.processQueueHint?.waiting === true ? true : undefined,
+    feOwnedFieldsKey: feOwnedFieldsComparisonKey(session),
     // Harness stamp (§5.5, additive): normally immutable, but a daemon
     // upgrade backfills harnessVersion on legacy rows and first activation
     // materializes harnessFeatures — those upserts must not be swallowed
@@ -971,15 +1058,10 @@ function applySessionUpsert(
   const wsId = String(session.workspaceId);
   const existing = getSession(state, agentId);
 
-  // The latch is FE-owned: wire sessions never carry it, so an upsert must
-  // not clear it. An incoming snapshot itself overflowing the cap also
-  // latches (its overflow rows were just dropped client-side). No hole
-  // accounting here — a re-delivered snapshot must not double-count.
-  if (
-    existing?.tailCapPruned === true ||
-    (session.messages?.length ?? 0) > MAX_MESSAGES_PER_AGENT
-  ) {
-    finalSession.tailCapPruned = true;
+  // FE-owned fields never ride the wire snapshot: each one's stored value
+  // comes from its FE_OWNED_FIELD_POLICY entry, never from `session`.
+  for (const key of FE_OWNED_FIELD_KEYS) {
+    applyFeOwnedFieldPolicy(finalSession, key, existing, session);
   }
 
   if (existing) {
@@ -1049,33 +1131,6 @@ function applySessionUpsert(
       !Object.prototype.hasOwnProperty.call(session, 'lastAgentResponse')
     ) {
       finalSession.lastAgentResponse = existing.lastAgentResponse;
-    }
-    if (existing.liveTurnOpen === true && finalSession.liveTurnOpen === undefined) {
-      const incomingClosed =
-        session.isActive === false ||
-        (typeof session.status === 'string' && TERMINAL_STATUSES.has(session.status));
-      if (!incomingClosed) {
-        finalSession.liveTurnOpen = true;
-        finalSession.liveTurnOpenedAt = existing.liveTurnOpenedAt;
-      }
-    }
-    // processQueueHint is FE-owned (set from agent:process:queued, never on
-    // the wire), so a snapshot refresh triggered by an unrelated agent event
-    // must not drop it while the agent is still parked — otherwise the chat
-    // slot-wait warning flickers off. Carry it forward unless the snapshot
-    // itself shows the wait is over (same signals as canonicalSessionUpdates).
-    if (
-      existing.processQueueHint?.waiting === true &&
-      !Object.prototype.hasOwnProperty.call(session, 'processQueueHint')
-    ) {
-      const waitOver =
-        session.isStreaming === true ||
-        session.isResponding === false ||
-        session.isActive === false ||
-        (typeof session.status === 'string' && TERMINAL_STATUSES.has(session.status));
-      if (!waitOver) {
-        finalSession.processQueueHint = existing.processQueueHint;
-      }
     }
 
     // Guard (monorepo#1815): an agents.list snapshot fetched while the daemon
