@@ -619,11 +619,11 @@
   "settings_sidebar_connections_label": "Connexions",
   "settings_sidebar_devices_label": "Appareils",
   "settings_sidebar_advanced_label": "Avancé",
-  "settings_sidebar_display_label": "Affichage",
-  "settings_sidebar_appBehavior_label": "Comportement de l’application",
-  "settings_sidebar_agentBehavior_label": "Comportement de l’agent",
-  "settings_sidebar_setup_label": "Configuration",
-  "settings_sidebar_input_label": "Entrée",
+  "settings_sidebar_display_label": "Appearance",
+  "settings_sidebar_appBehavior_label": "General",
+  "settings_sidebar_agentBehavior_label": "Agent defaults",
+  "settings_sidebar_setup_label": "Workspace setup",
+  "settings_sidebar_input_label": "Input and shortcuts",
   "settings_sidebar_specialists_label": "Spécialistes",
   "settings_tab_accounts": "Comptes",
   "settings_back_back": "Retour",
@@ -6202,5 +6202,10 @@
   "workspace_drivingClient_setPrimaryDialog_cancel_label": "Annuler",
   "workspace_drivingClient_setPrimaryDialog_confirm_label": "Définir comme principal",
   "ui_richTextarea_prompt_ariaLabel": "Consigne",
-  "chat_richInput_editor_ariaLabel": "Message à envoyer"
+  "chat_richInput_editor_ariaLabel": "Message à envoyer",
+  "settings_sidebar_preferences_label": "Preferences",
+  "settings_sidebar_agents_label": "Agents",
+  "settings_sidebar_integrations_label": "Integrations",
+  "settings_sidebar_environment_label": "Environment",
+  "settings_sidebar_troubleshooting_label": "Troubleshooting"
 }

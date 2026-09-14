@@ -310,5 +310,15 @@
   "workspace_tokenUsage_agent_label": ["de", "fr"],
   "workspace_transfer_gitBranch_label": ["de"],
   "workspace_transfer_tableName_label": ["fr"],
-  "settings_section_git": "*"
+  "settings_section_git": "*",
+  "settings_sidebar_display_label": "*",
+  "settings_sidebar_appBehavior_label": "*",
+  "settings_sidebar_input_label": "*",
+  "settings_sidebar_agentBehavior_label": "*",
+  "settings_sidebar_setup_label": "*",
+  "settings_sidebar_preferences_label": "*",
+  "settings_sidebar_agents_label": "*",
+  "settings_sidebar_integrations_label": "*",
+  "settings_sidebar_environment_label": "*",
+  "settings_sidebar_troubleshooting_label": "*"
 }

@@ -619,11 +619,11 @@
   "settings_sidebar_connections_label": "接続",
   "settings_sidebar_devices_label": "デバイス",
   "settings_sidebar_advanced_label": "詳細",
-  "settings_sidebar_display_label": "表示",
-  "settings_sidebar_appBehavior_label": "アプリの動作",
-  "settings_sidebar_agentBehavior_label": "エージェントの動作",
-  "settings_sidebar_setup_label": "セットアップ",
-  "settings_sidebar_input_label": "入力",
+  "settings_sidebar_display_label": "Appearance",
+  "settings_sidebar_appBehavior_label": "General",
+  "settings_sidebar_agentBehavior_label": "Agent defaults",
+  "settings_sidebar_setup_label": "Workspace setup",
+  "settings_sidebar_input_label": "Input and shortcuts",
   "settings_sidebar_specialists_label": "スペシャリスト",
   "settings_tab_accounts": "アカウント",
   "settings_back_back": "戻る",
@@ -6202,5 +6202,10 @@
   "workspace_drivingClient_setPrimaryDialog_cancel_label": "キャンセル",
   "workspace_drivingClient_setPrimaryDialog_confirm_label": "プライマリに設定",
   "ui_richTextarea_prompt_ariaLabel": "プロンプト",
-  "chat_richInput_editor_ariaLabel": "メッセージ"
+  "chat_richInput_editor_ariaLabel": "メッセージ",
+  "settings_sidebar_preferences_label": "Preferences",
+  "settings_sidebar_agents_label": "Agents",
+  "settings_sidebar_integrations_label": "Integrations",
+  "settings_sidebar_environment_label": "Environment",
+  "settings_sidebar_troubleshooting_label": "Troubleshooting"
 }

@@ -619,11 +619,11 @@
   "settings_sidebar_connections_label": "연결",
   "settings_sidebar_devices_label": "기기",
   "settings_sidebar_advanced_label": "고급",
-  "settings_sidebar_display_label": "표시",
-  "settings_sidebar_appBehavior_label": "앱 동작",
-  "settings_sidebar_agentBehavior_label": "에이전트 동작",
-  "settings_sidebar_setup_label": "설정",
-  "settings_sidebar_input_label": "입력",
+  "settings_sidebar_display_label": "Appearance",
+  "settings_sidebar_appBehavior_label": "General",
+  "settings_sidebar_agentBehavior_label": "Agent defaults",
+  "settings_sidebar_setup_label": "Workspace setup",
+  "settings_sidebar_input_label": "Input and shortcuts",
   "settings_sidebar_specialists_label": "스페셜리스트",
   "settings_tab_accounts": "계정",
   "settings_back_back": "뒤로",
@@ -6202,5 +6202,10 @@
   "workspace_drivingClient_setPrimaryDialog_cancel_label": "취소",
   "workspace_drivingClient_setPrimaryDialog_confirm_label": "기본으로 설정",
   "ui_richTextarea_prompt_ariaLabel": "프롬프트",
-  "chat_richInput_editor_ariaLabel": "메시지"
+  "chat_richInput_editor_ariaLabel": "메시지",
+  "settings_sidebar_preferences_label": "Preferences",
+  "settings_sidebar_agents_label": "Agents",
+  "settings_sidebar_integrations_label": "Integrations",
+  "settings_sidebar_environment_label": "Environment",
+  "settings_sidebar_troubleshooting_label": "Troubleshooting"
 }
