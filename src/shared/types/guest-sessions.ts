@@ -29,6 +29,12 @@ export interface GuestSessionRecord {
   principalId: string;
   /** GitHub login the invitee proved during the device flow. */
   login: string;
+  /**
+   * Whether the stored credential is `safeStorage` ciphertext. `false` marks
+   * the flagged plaintext fallback taken when OS encryption was unavailable
+   * at join time — surfaced so the user can decide to forget and re-join.
+   */
+  tokenEncrypted: boolean;
   /** Last-writer-wins clock (ms since epoch) shared with keychain sync. */
   updatedAt: number;
 }

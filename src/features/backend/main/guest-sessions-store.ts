@@ -11,14 +11,20 @@
  * Each record carries the daemon's dial envelope (hosts, port, pinned cert
  * fingerprint, optional tc address), a display label, and the principal
  * identity the credential belongs to. The bearer token is encrypted at rest
- * with Electron's `safeStorage` when available (plaintext with an explicit
- * `encrypted: false` marker otherwise — same policy as the owner registry).
+ * with Electron's `safeStorage` when available; otherwise it is stored in
+ * plaintext with an explicit `encrypted: false` marker that the token-free
+ * record exposes as `tokenEncrypted: false` so callers can surface it. A
+ * record that already holds ciphertext is never downgraded: a re-join or a
+ * remote sync arriving while encryption is unavailable fails closed
+ * ({@link GuestEncryptionUnavailableError}) and leaves the record as is.
  *
  * Identity: one session per daemon, the cert fingerprint being canonical
  * (a re-join after an address change upserts in place) with normalized
  * `host:port` as the fingerprint-less fallback. A second invite redeemed on
  * the same daemon replaces the credential — the daemon upserts the principal
- * and mints a fresh token, so the newest one is the valid one.
+ * and mints a fresh token, so the newest one is the valid one — and
+ * {@link onGuestCredentialReplaced} tells the connection pool to drop the
+ * client built on the superseded credential.
  *
  * Keychain sync: {@link listSyncRecords} / {@link applyRemoteSyncRecord}
  * back a `LocalSyncAdapter` reconciled against the
@@ -26,8 +32,12 @@
  * the same tombstone model as the owner registry — per service, so guest
  * tombstones never touch owner records.
  *
- * Writes are serialized behind a promise chain so a mid-write reader sees
- * either the old or the new file, never a torn one.
+ * Durability: writes are serialized behind a promise chain and each one
+ * lands as a temp file renamed over the registry, so a concurrent reader
+ * sees either the old or the new file, never a truncated or torn one. A
+ * registry that fails to parse is treated as corrupt: reads report it as
+ * empty, but every mutation fails closed ({@link GuestStoreCorruptError})
+ * instead of overwriting the file the user may still recover.
  */
 
 import { promises as fs } from 'fs';
@@ -100,6 +110,28 @@ interface PersistedState {
   tombstones: StoredGuestTombstone[];
 }
 
+/** The registry file exists but cannot be read as a guest-sessions registry. */
+export class GuestStoreCorruptError extends Error {
+  readonly code = 'guest-store-corrupt';
+
+  constructor() {
+    // i18n-ignore (internal error)
+    super('Guest sessions registry is unreadable');
+    this.name = 'GuestStoreCorruptError';
+  }
+}
+
+/** Encryption is unavailable and the write would downgrade stored ciphertext to plaintext. */
+export class GuestEncryptionUnavailableError extends Error {
+  readonly code = 'guest-encryption-unavailable';
+
+  constructor() {
+    // i18n-ignore (internal error)
+    super('Guest session encryption unavailable');
+    this.name = 'GuestEncryptionUnavailableError';
+  }
+}
+
 let writeChain: Promise<void> = Promise.resolve();
 
 function filePath(): string {
@@ -138,6 +170,7 @@ function toRecord(stored: StoredGuestSession): GuestSessionRecord {
     hostname: stored.hostname ?? null,
     principalId: stored.principalId,
     login: stored.login,
+    tokenEncrypted: stored.encToken.encrypted,
     updatedAt: stored.updatedAt,
   };
 }
@@ -190,40 +223,74 @@ function isStoredGuestTombstone(value: unknown): value is StoredGuestTombstone {
   );
 }
 
-async function readState(): Promise<PersistedState> {
+/**
+ * Load the registry. A missing file is the empty registry; a file that
+ * exists but cannot be read or parsed as one is `null` (corrupt) — logged
+ * with a bounded reason only, never the file contents.
+ */
+async function loadState(): Promise<PersistedState | null> {
+  let raw: string;
   try {
-    const raw = await fs.readFile(filePath(), 'utf8');
-    const parsed = JSON.parse(raw) as unknown;
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      const obj = parsed as Record<string, unknown>;
-      return {
-        sessions: Array.isArray(obj.sessions) ? obj.sessions.filter(isStoredGuestSession) : [],
-        tombstones: Array.isArray(obj.tombstones)
-          ? obj.tombstones.filter(isStoredGuestTombstone)
-          : [],
-      };
-    }
+    raw = await fs.readFile(filePath(), 'utf8');
   } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
-    if (code !== 'ENOENT') {
-      logger.warn('Failed to read guest-sessions', {
-        error: error instanceof Error ? error.message : String(error),
-      });
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return { sessions: [], tombstones: [] };
     }
+    logger.warn('Failed to read guest-sessions', {
+      reason: 'io',
+      code: (error as NodeJS.ErrnoException).code ?? null,
+    });
+    return null;
   }
-  return { sessions: [], tombstones: [] };
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw) as unknown;
+  } catch {
+    logger.warn('Failed to read guest-sessions', { reason: 'parse' });
+    return null;
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    logger.warn('Failed to read guest-sessions', { reason: 'shape' });
+    return null;
+  }
+  const obj = parsed as Record<string, unknown>;
+  return {
+    sessions: Array.isArray(obj.sessions) ? obj.sessions.filter(isStoredGuestSession) : [],
+    tombstones: Array.isArray(obj.tombstones) ? obj.tombstones.filter(isStoredGuestTombstone) : [],
+  };
 }
 
+/** Read-only view: a corrupt registry reads as empty (mutations refuse it, see {@link mutate}). */
+async function readState(): Promise<PersistedState> {
+  return (await loadState()) ?? { sessions: [], tombstones: [] };
+}
+
+/**
+ * Persist atomically: write a sibling temp file, then rename it over the
+ * registry, so a reader racing the write never observes a truncated file.
+ */
 async function writeState(next: PersistedState): Promise<void> {
   const target = filePath();
   await fs.mkdir(path.dirname(target), { recursive: true });
-  await fs.writeFile(target, JSON.stringify(next, null, 2), 'utf8');
+  const temp = `${target}.${randomUUID()}.tmp`;
+  try {
+    await fs.writeFile(temp, JSON.stringify(next, null, 2), 'utf8');
+    await fs.rename(temp, target);
+  } catch (error) {
+    await fs.rm(temp, { force: true }).catch(() => {});
+    throw error;
+  }
 }
 
-/** Serialize a read-modify-write against the store behind the write chain. */
+/**
+ * Serialize a read-modify-write against the store behind the write chain.
+ * Refuses to run against a corrupt registry: overwriting it would destroy
+ * whatever the user could still recover from the file.
+ */
 function mutate<T>(fn: (state: PersistedState) => T | Promise<T>): Promise<T> {
   const run = writeChain.then(async () => {
-    const state = await readState();
+    const state = await loadState();
+    if (state === null) throw new GuestStoreCorruptError();
     return fn(state);
   });
   writeChain = run.then(
@@ -233,10 +300,17 @@ function mutate<T>(fn: (state: PersistedState) => T | Promise<T>): Promise<T> {
   return run;
 }
 
-function encryptToken(token: string): EncryptedToken {
+/**
+ * Encrypt a token for storage. When encryption is unavailable the token is
+ * stored in plaintext (flagged), unless `previous` holds ciphertext: a
+ * downgrade from encrypted to plaintext never happens silently — the write
+ * fails closed and the stored record is left untouched.
+ */
+function encryptToken(token: string, previous?: EncryptedToken): EncryptedToken {
   if (safeStorage.isEncryptionAvailable()) {
     return { encrypted: true, value: safeStorage.encryptString(token).toString('base64') };
   }
+  if (previous?.encrypted) throw new GuestEncryptionUnavailableError();
   return { encrypted: false, value: token };
 }
 
@@ -281,6 +355,33 @@ function notifyMutated(): void {
       listener();
     } catch (error) {
       logger.warn('guest sessions mutation listener failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+}
+
+/**
+ * Listeners notified with the session id when a re-join REPLACED an existing
+ * session's credential (and possibly its principal) in place. The connection
+ * pool drops the client built on the superseded credential so the next open
+ * dials with the fresh one — a pooled client is never left authenticating as
+ * the old principal.
+ */
+const credentialReplacedListeners = new Set<(id: string) => void>();
+
+/** Subscribe to in-place credential replacements; returns an unsubscribe function. */
+export function onGuestCredentialReplaced(listener: (id: string) => void): () => void {
+  credentialReplacedListeners.add(listener);
+  return () => credentialReplacedListeners.delete(listener);
+}
+
+function notifyCredentialReplaced(id: string): void {
+  for (const listener of credentialReplacedListeners) {
+    try {
+      listener(id);
+    } catch (error) {
+      logger.warn('guest credential replacement listener failed', {
         error: error instanceof Error ? error.message : String(error),
       });
     }
@@ -357,15 +458,18 @@ export async function findMatching(identity: {
  * Register a guest session, upserting by daemon identity: a re-join of a
  * known daemon replaces its credential, label, address, and principal
  * identity in place (the record keeps its `id`, so open windows stay
- * attached) and stamps the clock strictly past any superseded tombstone so a
- * forget written elsewhere can never re-delete the fresh join. The token is
- * encrypted before it hits disk. Returns the token-free record.
+ * attached; {@link onGuestCredentialReplaced} fires so the pooled client is
+ * rebuilt on the new credential) and stamps the clock strictly past any
+ * superseded tombstone so a forget written elsewhere can never re-delete
+ * the fresh join. The token is encrypted before it hits disk; a re-join that
+ * would downgrade stored ciphertext to plaintext fails closed
+ * ({@link GuestEncryptionUnavailableError}). Returns the token-free record.
  */
 export async function add(input: NewGuestSession): Promise<GuestSessionRecord> {
-  const encToken = encryptToken(input.token);
   const extras = dedupeHosts(input.hosts ?? []).filter((h) => h !== input.host.trim());
-  const stored = await mutate(async (state) => {
+  const { stored, replaced } = await mutate(async (state) => {
     const duplicates = state.sessions.filter((s) => sameDaemon(s, input));
+    const encToken = encryptToken(input.token, duplicates[0]?.encToken);
     const superseded = state.tombstones.find((t) => tombstoneMatches(t, input));
     const stamp = Math.max(Date.now(), (superseded?.updatedAt ?? 0) + 1);
     clearTombstone(state, input);
@@ -384,7 +488,7 @@ export async function add(input: NewGuestSession): Promise<GuestSessionRecord> {
       survivor.updatedAt = stamp;
       state.sessions = state.sessions.filter((s) => s === survivor || !duplicates.includes(s));
       await writeState(state);
-      return survivor;
+      return { stored: survivor, replaced: true };
     }
     const record: StoredGuestSession = {
       id: randomUUID(),
@@ -402,8 +506,9 @@ export async function add(input: NewGuestSession): Promise<GuestSessionRecord> {
     };
     state.sessions.push(record);
     await writeState(state);
-    return record;
+    return { stored: record, replaced: false };
   });
+  if (replaced) notifyCredentialReplaced(stored.id);
   notifyMutated();
   return toRecord(stored);
 }
@@ -570,8 +675,19 @@ export async function applyRemoteSyncRecord(record: KeychainSyncRecord): Promise
       return false;
     }
     clearTombstone(state, record);
-    const encToken = encryptToken(record.token);
     const duplicates = state.sessions.filter((s) => sameDaemon(s, record));
+    let encToken: EncryptedToken;
+    try {
+      encToken = encryptToken(record.token, duplicates[0]?.encToken);
+    } catch (error) {
+      if (!(error instanceof GuestEncryptionUnavailableError)) throw error;
+      // Fail closed: the encrypted local record stays; the remote win is not
+      // applied rather than persisted as plaintext.
+      logger.warn('ignoring remote guest record: would downgrade an encrypted credential', {
+        account: accountKeyFor(record.host, record.port),
+      });
+      return false;
+    }
     if (duplicates.length > 0) {
       const survivor = duplicates[0];
       survivor.label = record.label;
