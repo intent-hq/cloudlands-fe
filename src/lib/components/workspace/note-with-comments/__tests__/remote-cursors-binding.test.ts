@@ -15,25 +15,35 @@ import type {
   NotePresenceSession,
   RemoteNoteViewer,
 } from '$features/notes/note-presence/note-presence-service';
+import type { NoteViewerCursor } from '$features/notes/note-presence/note-presence.client';
 import { bindRemoteCursors } from '../remote-cursors-binding';
 
 const MARKDOWN = '# Title\n\nBody **bold** tail';
 
 function fakeSession() {
   const listeners = new Set<NotePresenceListener>();
+  const providers = new Set<() => NoteViewerCursor | undefined>();
   let viewers: RemoteNoteViewer[] = [];
-  const session: NotePresenceSession & { emit: (v: RemoteNoteViewer[]) => void } = {
+  const session: NotePresenceSession & {
+    emit: (v: RemoteNoteViewer[]) => void;
+    providers: Set<() => NoteViewerCursor | undefined>;
+  } = {
     getViewers: () => viewers,
     subscribe: (listener) => {
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
     publishCursor: vi.fn(),
+    provideCursor: (provider) => {
+      providers.add(provider);
+      return () => providers.delete(provider);
+    },
     release: vi.fn(),
     emit: (next) => {
       viewers = next;
       for (const listener of listeners) listener(next);
     },
+    providers,
   };
   return session;
 }
@@ -124,6 +134,44 @@ describe('bindRemoteCursors', () => {
     session.emit([peer(null)]);
     await nextFrame();
     expect(element.querySelector('.remote-cursor')).toBeNull();
+  });
+
+  it('reports the caret against the current base when the session asks, once it has published', async () => {
+    editor.destroy();
+    editor = new Editor({ element, extensions: [StarterKit], content: '<p>hello world</p>' });
+    const session = fakeSession();
+    let base = 'hello world';
+    let rev: number | undefined = 1;
+    unbind = bindRemoteCursors({
+      editor,
+      session,
+      getBaseText: () => base,
+      getBaseRev: () => rev,
+    });
+    expect(session.providers.size).toBe(1);
+    const [current] = session.providers;
+    // Nothing published yet: a never-focused editor must not gain a caret.
+    expect(current()).toBeUndefined();
+
+    editor.view.dispatch(editor.state.tr.setSelection(TextSelection.create(editor.state.doc, 12)));
+    editor.view.dispatch(editor.state.tr.insertText('XYZ', 12));
+    await nextFrame();
+    expect(vi.mocked(session.publishCursor).mock.lastCall?.[0]).toEqual({
+      rev: 1,
+      anchor: 11,
+      head: 11,
+    });
+
+    base = 'hello worldXYZ';
+    rev = 2;
+    expect(current()).toEqual({ rev: 2, anchor: 14, head: 14 });
+
+    rev = undefined;
+    expect(current()).toBeUndefined();
+
+    unbind();
+    unbind = undefined;
+    expect(session.providers.size).toBe(0);
   });
 
   it('removes the plugin and its decorations on unbind', async () => {
