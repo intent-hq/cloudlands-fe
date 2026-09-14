@@ -1492,6 +1492,27 @@ function extractWorkspaceRefs(result: unknown): GuestWorkspaceRef[] | null {
 }
 
 /**
+ * Per-session count of local membership edits (per-workspace *Leave*). A
+ * hydration snapshot requested before an edit describes a membership that no
+ * longer holds, so it must never be written over the edit — a
+ * `workspace.list` answer that predates a successful *Leave* would otherwise
+ * restore the left workspace.
+ */
+const guestMembershipEpochs = new Map<string, number>();
+
+function bumpGuestMembershipEpoch(id: string): void {
+  guestMembershipEpochs.set(id, (guestMembershipEpochs.get(id) ?? 0) + 1);
+}
+
+/**
+ * Per-session generation of the latest hydration read issued. Only that read
+ * may commit: two hello-triggered `workspace.list` calls on the same pooled
+ * client can answer out of order, and the older answer must not overwrite
+ * the newer membership.
+ */
+const guestHydrationReads = new Map<string, number>();
+
+/**
  * Hydrate a guest session's joined-workspace list from the host once its
  * connection is up (every (re)connect hello, like {@link captureRemoteHostname}).
  * The local list is only a last-known cache: rows imported by keychain sync
@@ -1500,14 +1521,26 @@ function extractWorkspaceRefs(result: unknown): GuestWorkspaceRef[] | null {
  * guest connection's `workspace.list` is membership-filtered by the daemon,
  * so its rows ARE the joined workspaces; the store reconciles by id. Fail-soft:
  * an unreachable host, a refusal or a malformed answer keeps the cached list.
- * Results arriving after the pooled client was replaced are discarded.
+ * A snapshot is discarded when the pooled client was replaced, a newer read
+ * was issued, or a local membership edit happened while it was in flight; an
+ * edit that lands during the store write itself is queued behind it by the
+ * store and wins.
  */
 async function hydrateGuestWorkspaces(id: string): Promise<void> {
   try {
     if ((await guestSessionsStore.findById(id)) === null) return;
     const client = getBackendClientForId(id);
+    const epoch = guestMembershipEpochs.get(id);
+    const read = (guestHydrationReads.get(id) ?? 0) + 1;
+    guestHydrationReads.set(id, read);
     const result = await client.request('workspace.list');
-    if (backendClients.get(id) !== client) return;
+    if (
+      backendClients.get(id) !== client ||
+      guestHydrationReads.get(id) !== read ||
+      guestMembershipEpochs.get(id) !== epoch
+    ) {
+      return;
+    }
     const refs = extractWorkspaceRefs(result);
     if (refs === null) {
       logger.warn('Ignoring malformed workspace.list from guest host', { id });
@@ -1519,7 +1552,7 @@ async function hydrateGuestWorkspaces(id: string): Promise<void> {
   } catch (error) {
     logger.warn('Failed to hydrate guest workspaces from host', {
       id,
-      error: error instanceof Error ? error.message : String(error),
+      code: revokeFailureCode(error),
     });
   }
 }
@@ -2234,6 +2267,7 @@ async function leaveGuestWorkspaceLocked(
       throw new GuestWorkspaceLeaveError(code);
     }
   }
+  bumpGuestMembershipEpoch(id);
   await guestSessionsStore.leaveWorkspace(id, workspaceId);
   return { id, workspaceId, left };
 }
