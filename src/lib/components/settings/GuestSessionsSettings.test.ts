@@ -12,8 +12,10 @@ import type {
 
 const mocks = vi.hoisted(() => ({
   loaded: true,
+  // eslint-disable-next-line themis/collection-state-shape -- test-only selector fixture, not Redux state
   sessions: [] as GuestSessionRecord[],
   connectedIds: [] as string[],
+  // eslint-disable-next-line themis/collection-state-shape -- test-only selector fixture, not Redux state
   hosted: [] as Workspace[],
   rosters: {} as Record<string, HostedRoster>,
   removingIds: {} as Record<string, string[]>,
