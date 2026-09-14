@@ -714,13 +714,19 @@ export async function leaveWorkspace(id: string, workspaceId: string): Promise<b
  * clock and is left alone (a cache refresh on every reconnect must never
  * outrank another device's genuine edit), and {@link onGuestSessionsMutated}
  * does not fire — the caller broadcasts. Returns whether anything changed;
- * no-op for an unknown session.
+ * no-op for an unknown session. `stillValid` is consulted at the commit
+ * boundary — inside the serialized mutation, after the current state has
+ * been loaded — so a snapshot whose premise was invalidated by a mutation
+ * queued ahead of it (a record replacement, a *Leave*) is dropped rather
+ * than written over that mutation's result.
  */
 export async function setWorkspaces(
   id: string,
   workspaces: readonly GuestWorkspaceRef[],
+  stillValid: () => boolean = () => true,
 ): Promise<boolean> {
   return mutate(async (state) => {
+    if (!stillValid()) return false;
     const session = state.sessions.find((s) => s.id === id);
     if (!session) return false;
     const byId = new Map(workspaces.map((w) => [w.id, w.title] as const));

@@ -1522,9 +1522,11 @@ const guestHydrationReads = new Map<string, number>();
  * so its rows ARE the joined workspaces; the store reconciles by id. Fail-soft:
  * an unreachable host, a refusal or a malformed answer keeps the cached list.
  * A snapshot is discarded when the pooled client was replaced, a newer read
- * was issued, or a local membership edit happened while it was in flight; an
- * edit that lands during the store write itself is queued behind it by the
- * store and wins.
+ * was issued, or a local membership edit happened while it was in flight.
+ * The same fences are re-checked by the store at the commit boundary, so a
+ * mutation queued ahead of the write (a same-daemon re-join replacing the
+ * record, a *Leave*) also discards it; an edit that lands during the store
+ * write itself is queued behind it by the store and wins.
  */
 async function hydrateGuestWorkspaces(id: string): Promise<void> {
   try {
@@ -1533,20 +1535,18 @@ async function hydrateGuestWorkspaces(id: string): Promise<void> {
     const epoch = guestMembershipEpochs.get(id);
     const read = (guestHydrationReads.get(id) ?? 0) + 1;
     guestHydrationReads.set(id, read);
+    const stillValid = () =>
+      backendClients.get(id) === client &&
+      guestHydrationReads.get(id) === read &&
+      guestMembershipEpochs.get(id) === epoch;
     const result = await client.request('workspace.list');
-    if (
-      backendClients.get(id) !== client ||
-      guestHydrationReads.get(id) !== read ||
-      guestMembershipEpochs.get(id) !== epoch
-    ) {
-      return;
-    }
+    if (!stillValid()) return;
     const refs = extractWorkspaceRefs(result);
     if (refs === null) {
       logger.warn('Ignoring malformed workspace.list from guest host', { id });
       return;
     }
-    if (await guestSessionsStore.setWorkspaces(id, refs)) {
+    if (await guestSessionsStore.setWorkspaces(id, refs, stillValid)) {
       await broadcastGuestSessionsChanged();
     }
   } catch (error) {
