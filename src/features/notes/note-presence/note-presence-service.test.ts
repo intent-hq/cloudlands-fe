@@ -197,6 +197,86 @@ describe('note presence session', () => {
     expect(seen.at(-1)?.[0].cursor).toBeNull();
   });
 
+  it.each([0, 250, 999])(
+    'expires a caret exactly CURSOR_TTL_MS after receipt when it arrived %i ms off the join, keeping the viewer',
+    async (phase) => {
+      const session = joinNotePresence('ws-1', 'note-1');
+      await vi.advanceTimersByTimeAsync(phase);
+      push({
+        seq: 0,
+        kind: 'snapshot',
+        snapshot: { viewers: [viewer('principal-b', { rev: 1, anchor: 2, head: 2 })] },
+      });
+
+      await vi.advanceTimersByTimeAsync(CURSOR_TTL_MS - 1);
+      expect(session.getViewers()[0].cursor).toEqual({ rev: 1, anchor: 2, head: 2 });
+
+      await vi.advanceTimersByTimeAsync(1);
+      expect(session.getViewers()).toEqual([
+        expect.objectContaining({ principalId: 'principal-b', cursor: null }),
+      ]);
+    },
+  );
+
+  it('re-arms the expiry for the next caret after one lapses', async () => {
+    const session = joinNotePresence('ws-1', 'note-1');
+    await settle();
+    push({
+      seq: 0,
+      kind: 'snapshot',
+      snapshot: { viewers: [viewer('principal-b', { rev: 1, anchor: 2, head: 2 })] },
+    });
+    await vi.advanceTimersByTimeAsync(4_000);
+    push({
+      seq: 1,
+      kind: 'delta',
+      delta: { kind: 'joined', viewer: viewer('principal-c', { rev: 1, anchor: 7, head: 7 }) },
+    });
+
+    await vi.advanceTimersByTimeAsync(CURSOR_TTL_MS - 4_000);
+    expect(session.getViewers().map((v) => v.cursor)).toEqual([
+      null,
+      { rev: 1, anchor: 7, head: 7 },
+    ]);
+
+    await vi.advanceTimersByTimeAsync(4_000);
+    expect(session.getViewers().map((v) => v.cursor)).toEqual([null, null]);
+  });
+
+  it('re-publishes no later than CURSOR_HEARTBEAT_MS after an off-phase publication', async () => {
+    const session = joinNotePresence('ws-1', 'note-1');
+    await vi.advanceTimersByTimeAsync(100);
+    session.publishCursor({ rev: 1, anchor: 11, head: 11 });
+    session.provideCursor(() => ({ rev: 2, anchor: 14, head: 14 }));
+    expect(calls('note.presence.update')).toHaveLength(1);
+
+    await vi.advanceTimersByTimeAsync(CURSOR_HEARTBEAT_MS - 1);
+    expect(calls('note.presence.update')).toHaveLength(1);
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(calls('note.presence.update')).toEqual([
+      { workspaceId: 'ws-1', noteId: 'note-1', rev: 1, anchor: 11, head: 11 },
+      { workspaceId: 'ws-1', noteId: 'note-1', rev: 2, anchor: 14, head: 14 },
+    ]);
+
+    await vi.advanceTimersByTimeAsync(CURSOR_HEARTBEAT_MS);
+    expect(calls('note.presence.update')).toHaveLength(3);
+  });
+
+  it('measures the heartbeat from the latest publication, not from the join', async () => {
+    const session = joinNotePresence('ws-1', 'note-1');
+    await settle();
+    session.publishCursor({ rev: 1, anchor: 1, head: 1 });
+    await vi.advanceTimersByTimeAsync(CURSOR_HEARTBEAT_MS - 200);
+    session.publishCursor({ rev: 1, anchor: 2, head: 2 });
+    expect(calls('note.presence.update')).toHaveLength(2);
+
+    await vi.advanceTimersByTimeAsync(CURSOR_HEARTBEAT_MS - 1);
+    expect(calls('note.presence.update')).toHaveLength(2);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(calls('note.presence.update')).toHaveLength(3);
+  });
+
   it('publishes the caret with the documented params, throttled with the latest kept, and heartbeats it', async () => {
     const session = joinNotePresence('ws-1', 'note-1');
     await settle();
