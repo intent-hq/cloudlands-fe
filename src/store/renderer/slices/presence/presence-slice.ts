@@ -30,9 +30,14 @@ export const initialState: PresenceState = {
 // Actions
 // ---------------------------------------------------------------------------
 
-/** A `presence:changed` event or `presence.snapshot` result — a full roster replacement. */
+/** A pushed `presence:changed` event — a full roster replacement, newer than any read in flight. */
 export const presenceRosterReceived =
   createAction<[roster: PresenceRoster]>('presence/rosterReceived');
+
+/** A `presence.snapshot` result the saga has fenced as current — the same full replacement. */
+export const presenceSnapshotReceived = createAction<[roster: PresenceRoster]>(
+  'presence/snapshotReceived',
+);
 
 /** The 3 s receiver-local timer of a `(source, pulse)` pair ran out. */
 export const presenceTypingExpired =
@@ -89,17 +94,27 @@ function foldLiveTyping(
   return next;
 }
 
-presenceReducer.with(presenceRosterReceived, (state, { payload: [roster] }) => ({
-  ...state,
-  rosters: {
-    ...state.rosters,
-    [roster.workspaceId]: createCollection('principalId', roster.members),
-  },
-  liveTyping: {
-    ...state.liveTyping,
-    [roster.workspaceId]: foldLiveTyping(state.liveTyping[roster.workspaceId], roster),
-  },
-}));
+function replaceRoster(state: PresenceState, roster: PresenceRoster): PresenceState {
+  return {
+    ...state,
+    rosters: {
+      ...state.rosters,
+      [roster.workspaceId]: createCollection('principalId', roster.members),
+    },
+    liveTyping: {
+      ...state.liveTyping,
+      [roster.workspaceId]: foldLiveTyping(state.liveTyping[roster.workspaceId], roster),
+    },
+  };
+}
+
+presenceReducer.with(presenceRosterReceived, (state, { payload: [roster] }) =>
+  replaceRoster(state, roster),
+);
+
+presenceReducer.with(presenceSnapshotReceived, (state, { payload: [roster] }) =>
+  replaceRoster(state, roster),
+);
 
 presenceReducer.with(presenceTypingExpired, (state, { payload: [workspaceId, source, pulse] }) => {
   const entry = state.liveTyping[workspaceId]?.[source];
