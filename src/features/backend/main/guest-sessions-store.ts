@@ -35,9 +35,11 @@
  * Durability: writes are serialized behind a promise chain and each one
  * lands as a temp file renamed over the registry, so a concurrent reader
  * sees either the old or the new file, never a truncated or torn one. A
- * registry that fails to parse is treated as corrupt: reads report it as
- * empty, but every mutation fails closed ({@link GuestStoreCorruptError})
- * instead of overwriting the file the user may still recover.
+ * registry that fails to parse, or that is not exactly the persisted shape
+ * (any row failing validation), is treated as corrupt: reads report only the
+ * rows that validate (none for an unparseable file), but every mutation fails
+ * closed ({@link GuestStoreCorruptError}) instead of overwriting the file the
+ * user may still recover.
  */
 
 import { promises as fs } from 'fs';
@@ -224,17 +226,28 @@ function isStoredGuestTombstone(value: unknown): value is StoredGuestTombstone {
 }
 
 /**
+ * The registry as loaded from disk. `intact` is false when the file is not
+ * exactly the persisted shape — wrong top-level fields or any row that fails
+ * validation — in which case `state` is the lossy view of the rows that did
+ * validate: fine for reading, never a basis for writing the file back.
+ */
+interface LoadedState {
+  state: PersistedState;
+  intact: boolean;
+}
+
+/**
  * Load the registry. A missing file is the empty registry; a file that
  * exists but cannot be read or parsed as one is `null` (corrupt) — logged
  * with a bounded reason only, never the file contents.
  */
-async function loadState(): Promise<PersistedState | null> {
+async function loadState(): Promise<LoadedState | null> {
   let raw: string;
   try {
     raw = await fs.readFile(filePath(), 'utf8');
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      return { sessions: [], tombstones: [] };
+      return { state: { sessions: [], tombstones: [] }, intact: true };
     }
     logger.warn('Failed to read guest-sessions', {
       reason: 'io',
@@ -254,15 +267,32 @@ async function loadState(): Promise<PersistedState | null> {
     return null;
   }
   const obj = parsed as Record<string, unknown>;
-  return {
-    sessions: Array.isArray(obj.sessions) ? obj.sessions.filter(isStoredGuestSession) : [],
-    tombstones: Array.isArray(obj.tombstones) ? obj.tombstones.filter(isStoredGuestTombstone) : [],
-  };
+  const rawSessions: unknown[] = Array.isArray(obj.sessions) ? obj.sessions : [];
+  const rawTombstones: unknown[] = Array.isArray(obj.tombstones) ? obj.tombstones : [];
+  const sessions = rawSessions.filter(isStoredGuestSession);
+  const tombstones = rawTombstones.filter(isStoredGuestTombstone);
+  const intact =
+    Array.isArray(obj.sessions) &&
+    Array.isArray(obj.tombstones) &&
+    sessions.length === rawSessions.length &&
+    tombstones.length === rawTombstones.length;
+  if (!intact) {
+    logger.warn('Guest-sessions registry has malformed entries; mutations disabled', {
+      reason: 'shape',
+      droppedSessions: rawSessions.length - sessions.length,
+      droppedTombstones: rawTombstones.length - tombstones.length,
+    });
+  }
+  return { state: { sessions, tombstones }, intact };
 }
 
-/** Read-only view: a corrupt registry reads as empty (mutations refuse it, see {@link mutate}). */
+/**
+ * Read-only view: a corrupt registry reads as empty and a registry with
+ * malformed rows reads as the rows that validate (mutations refuse both,
+ * see {@link mutate}).
+ */
 async function readState(): Promise<PersistedState> {
-  return (await loadState()) ?? { sessions: [], tombstones: [] };
+  return (await loadState())?.state ?? { sessions: [], tombstones: [] };
 }
 
 /**
@@ -289,9 +319,9 @@ async function writeState(next: PersistedState): Promise<void> {
  */
 function mutate<T>(fn: (state: PersistedState) => T | Promise<T>): Promise<T> {
   const run = writeChain.then(async () => {
-    const state = await loadState();
-    if (state === null) throw new GuestStoreCorruptError();
-    return fn(state);
+    const loaded = await loadState();
+    if (loaded === null || !loaded.intact) throw new GuestStoreCorruptError();
+    return fn(loaded.state);
   });
   writeChain = run.then(
     () => undefined,
