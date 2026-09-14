@@ -65,12 +65,33 @@ export class HostedRosterOperationError extends Error {
   }
 }
 
+/**
+ * Bounded failure codes of the main-owned guest session operations (list
+ * hydration, *Leave host*) — the only values a rejected
+ * `loadGuestSessionsRequested` / `leaveGuestSessionRequested` promise carries.
+ * A raw IPC rejection never rides the failure (main's message may echo host
+ * material): `ipc` is any failed invoke, `cancelled` a saga teardown that cut
+ * the operation short.
+ */
+export type GuestSessionFailureCode = 'ipc' | 'cancelled';
+
+export class GuestSessionOperationError extends Error {
+  readonly code: GuestSessionFailureCode;
+  constructor(code: GuestSessionFailureCode) {
+    // i18n-ignore (bounded machine code, never rendered)
+    super(code);
+    this.name = 'GuestSessionOperationError';
+    this.code = code;
+  }
+}
+
 export interface HostedRoster {
   /**
    * Load state of one hosted workspace's roster. `withheld` is terminal: the
    * caller no longer manages the workspace (daemon `-32003 Forbidden`, or the
-   * local owner gate) — cached rows are dropped and nothing refetches until
-   * the workspace entry is purged.
+   * local owner gate) — cached rows are dropped, no owner RPC is sent for the
+   * workspace, and a load / read / failure landing afterwards leaves the
+   * entry as is; only purging the workspace entry ends it.
    */
   status: 'loading' | 'loaded' | 'error' | 'withheld';
   members: WorkspaceMember[];
