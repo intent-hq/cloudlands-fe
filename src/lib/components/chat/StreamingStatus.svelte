@@ -21,7 +21,7 @@
   import { Button } from '$lib/components/ui/button';
   import { cn } from '$lib/utils/cn';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
-  import type { AgentSession } from '$shared/types';
+  import type { FeOwnedSessionState } from '$store/renderer/slices/agent-session/agent-session-types';
   import CopyButton from '$lib/components/ui/CopyButton.svelte';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import {
@@ -99,7 +99,7 @@
      * is parked for a free agent slot or memory headroom, so the row explains
      * the wait instead of leaving a bare "Thinking" that looks stalled.
      */
-    processQueueHint?: AgentSession['processQueueHint'];
+    processQueueHint?: FeOwnedSessionState['processQueueHint'];
     /** Callback to retry the last message */
     onRetry?: () => void;
     /** Callback to retry with a specific model */

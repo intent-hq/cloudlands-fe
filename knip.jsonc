@@ -40,6 +40,7 @@
     "cdp-mcp-server/cdp-helpers.js",
     // Compile-time type-assertion file, checked by tsc (pnpm run check), never imported
     "src/store/renderer/utils/context-saga-effects.typecheck.ts",
+    "src/store/renderer/slices/agent-session/agent-session-slice.typecheck.ts",
   ],
   "ignore": [
     // Consumed via `import * as Card/Dialog/Menu/Sheet` namespace imports whose member

@@ -105,7 +105,7 @@
     isLastConversationMessage = false,
   }: Props = $props();
 
-  // Lazy full-block hydration (§5.5 slim projection → v7.2
+  // Lazy full-block hydration (§5.5 slim projection →
   // agent.getMessageBlock): substitute cached full blocks for slim-truncated
   // ones before any downstream derivation. Init-time subscription (agentId is
   // stable per component instance); under-budget content passes through with

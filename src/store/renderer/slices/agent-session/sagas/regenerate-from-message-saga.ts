@@ -53,10 +53,10 @@ function findRegenerateSource(
 
 /**
  * Stored user text, unchanged (no presentation stripping — this is a replay,
- * not an edit). A legacy inline file block (no `attachmentId`; pre-10.0
- * daemon) is text now: it is projected in place to the same
- * `Attached file: <name>` text a 10.0 daemon serves, so the replay text is
- * identical whichever daemon served the row.
+ * not an edit). A legacy inline file block (no `attachmentId`; persisted by
+ * an older daemon) is text now: it is projected in place to the same
+ * `Attached file: <name>` text the daemon's `degrade_inline_file_blocks` pass
+ * serves, so the replay text is identical whichever daemon served the row.
  */
 function storedText(blocks: ContentBlock[]): string {
   return degradeLegacyFileBlocks(blocks)

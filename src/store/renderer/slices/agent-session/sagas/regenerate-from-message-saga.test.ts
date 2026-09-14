@@ -508,8 +508,9 @@ describe('regenerateFromMessageSaga', () => {
     });
 
     it('replays a legacy inline file block (no attachmentId) as text, with no data on the wire', async () => {
-      // Pre-10.0 daemons persisted inline file bytes; the block is text now
-      // (a 10.0 daemon serves it as `Attached file: <name>`). The regenerate
+      // Older daemons persisted inline file bytes; the block is text now (the
+      // daemon's `degrade_inline_file_blocks` pass serves it as
+      // `Attached file: <name>`). The regenerate
       // mirrors that: no file block, no bytes, no fail-closed toast.
       const { channel, edits, task } = start(
         userMessageWith([

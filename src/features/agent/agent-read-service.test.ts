@@ -39,6 +39,7 @@ import {
   bulkUpsertSessions,
   clearProcessQueueHint,
   setProcessQueueHint,
+  updateSession,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
 import {
   selectAgentMessages,
@@ -158,7 +159,7 @@ describe('agentReadService (fake seam, real store)', () => {
   // Regression (monorepo#1977): a deletion scheduled by ANOTHER window/client
   // (or before an FE restart) is not in this window's local pending-delete
   // registry — the fetched row's daemon-owned `pendingDeleteAt` deadline
-  // (PROTOCOL §5.5, v6.7+) is the only signal, and it must not be upserted.
+  // (PROTOCOL §5.5 delete grace window) is the only signal, and it must not be upserted.
   it('drops a fetched row carrying pendingDeleteAt (deletion scheduled elsewhere)', async () => {
     const agentId = 'agent-read-wire-pending-del';
     agentsApi.get.mockResolvedValueOnce(
@@ -581,6 +582,36 @@ describe('agentReadService (fake seam, real store)', () => {
       const stored = selectAgentSession.select(appStore.state, agentId);
       expect(stored?.name).toBe('stale snapshot');
       expect(stored?.processQueueHint).toBeUndefined();
+    });
+
+    it('keeps a waiting processQueueHint AND the sticky liveTurnOpen across a refetch lacking both keys', async () => {
+      // FE_OWNED_FIELD_POLICY drives the carry-forward for every FE-owned
+      // field, so the two fields that each once needed their own hand-written
+      // block (intent-hq/intent#1815, cloudlands-fe#2443) must survive together.
+      const agentId = 'agent-fe-owned-refetch';
+      appStore.dispatch(bulkUpsertSessions([queuedSession(agentId)]));
+      appStore.dispatch(setProcessQueueHint(agentId, 3, 3, 'slots'));
+      appStore.dispatch(
+        updateSession(agentId, {
+          liveTurnOpen: true,
+          liveTurnOpenedAt: '2026-01-02T00:00:00.000Z',
+        }),
+      );
+      const seeded = selectAgentSession.select(appStore.state, agentId);
+      expect(seeded?.processQueueHint).toEqual(HINT);
+      expect(seeded?.liveTurnOpen).toBe(true);
+
+      agentsApi.get.mockResolvedValueOnce({
+        ...queuedSession(agentId),
+        name: 'renamed by agent:updated',
+      } as never);
+      await refreshAgentSessionAfterEvent(agentId);
+
+      const stored = selectAgentSession.select(appStore.state, agentId);
+      expect(stored?.name).toBe('renamed by agent:updated');
+      expect(stored?.processQueueHint).toEqual(HINT);
+      expect(stored?.liveTurnOpen).toBe(true);
+      expect(stored?.liveTurnOpenedAt).toBe('2026-01-02T00:00:00.000Z');
     });
   });
 

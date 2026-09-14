@@ -1,6 +1,7 @@
 /**
  * Release-notes service tests — the startup version-diff decision matrix, the
  * pref-advances-only-after-showing semantics, and fail-soft fetching.
+ * protocol-version-ok-file: release tags are app product versions, not protocol versions.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';

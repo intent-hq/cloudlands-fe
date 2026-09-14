@@ -1,6 +1,6 @@
 /**
  * Background-hooks service wire contract + event folding (PROTOCOL §5.40 /
- * §6.5, v2.10).
+ * §6.5).
  *
  * FAKE transport only: the backend-transport seam is mocked. Asserts the
  * exact `hook.list` / `hook.runNow` / `hook.cancel` request shapes and the

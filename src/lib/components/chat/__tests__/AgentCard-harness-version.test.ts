@@ -3,6 +3,7 @@
  *
  * AgentCard — read-only "Harness vX.Y" context-menu item (PROTOCOL §5.5
  * `harnessVersion` / `harnessFeatures`; monorepo#2459).
+ * protocol-version-ok-file: harness version strings are agent-harness product fixtures, not protocol versions
  *
  * Renders the REAL component against the REAL configured store: seeds an
  * agent session (with/without `harnessVersion` / `harnessFeatures`), opens

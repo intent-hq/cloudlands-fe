@@ -839,7 +839,7 @@ export class LiveChatClient implements ChatClient {
       // older daemon ignores the unknown param and echoes nothing, so the
       // reducer stays full-text there — the snapshot echo decides the mode.
       // Also opt into the slim projection (§7.1 `projection: "slim"`, additive
-      // within v7.1): oversized tool/image block bodies in the seq-0 snapshot
+      // `chat.subscribe` param): oversized tool/image block bodies in the seq-0 snapshot
       // AND live deltas arrive as bounded previews with `*Truncated`/`*Bytes`
       // flags — fixed for the subscription's lifetime so snapshots and deltas
       // agree; an older daemon ignores the unknown param and serves full

@@ -272,7 +272,7 @@
   // svelte-ignore state_referenced_locally -- intentional initial snapshot; keyed component identity is fixed.
   const storeMessage$ = selectAgentMessageById(agentId ?? '', messageId ?? '');
 
-  // Lazy full-block hydration (§5.5 slim projection → v7.2
+  // Lazy full-block hydration (§5.5 slim projection →
   // agent.getMessageBlock) for user-message attached images: the slim
   // projection may serve them as write-time thumbnails (dataTruncated /
   // dataIsThumbnail), so the lightbox fetches the original on demand.
@@ -994,7 +994,7 @@
 
   // Extract attachment-reference file blocks from contentBlocks (attachmentId,
   // no bytes; PROTOCOL §5.5). A file block without an attachmentId is served
-  // as text by the daemon (protocol 10.0) and never renders as a chip.
+  // as text by the daemon (`degrade_inline_file_blocks`) and never renders as a chip.
   const fileBlocks = $derived.by(() => {
     if (!message?.contentBlocks || !Array.isArray(message.contentBlocks)) {
       return [];

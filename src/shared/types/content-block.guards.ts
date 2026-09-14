@@ -82,9 +82,9 @@ export function isVideoBlock(block: ContentBlock): block is VideoContentBlock {
 
 /**
  * Check if a ContentBlock is an attachment-reference file block (PROTOCOL
- * §5.5): `attachmentId` + `fileName`, never bytes. Inline file data left the
- * protocol in 10.0; a file block without an `attachmentId` is not a file
- * block for the renderer.
+ * §5.5): `attachmentId` + `fileName`, never bytes. Inline file data is no
+ * longer part of the protocol; a file block without an `attachmentId` is not a
+ * file block for the renderer.
  */
 export function isFileBlock(
   block: ContentBlock,

@@ -145,7 +145,7 @@ async function hydrateAgentSession(agentId: string): Promise<AgentSession | null
     // Re-check after the fetch: a deletion may have become pending while
     // `agent.get` was in flight; upserting now would resurrect the
     // soft-hidden session. Also drop rows carrying the daemon's
-    // delete-grace-window deadline (PROTOCOL §5.5 `pendingDeleteAt`, v6.7+)
+    // delete-grace-window deadline (PROTOCOL §5.5 `pendingDeleteAt`)
     // — a deletion scheduled by another window/client (or before an FE
     // restart) is not in this window's local registry.
     if (session && !session.pendingDeleteAt && !isAgentDeletionPending(agentId)) {

@@ -11,7 +11,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 // The default key minter reads the daemon protocol version off the store;
-// with no version known it mints nothing (pre-9.13 behavior).
+// with no version known it mints nothing (unkeyed placement, no `idempotencyKey`).
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
@@ -171,7 +171,7 @@ describe('redeemStagedAttachments', () => {
     ]);
   });
 
-  describe('idempotencyKey (v9.13)', () => {
+  describe('idempotencyKey (keyed placement)', () => {
     it('mints a key on first placement, sends it, and keeps it on the placed item', async () => {
       const place = vi.fn().mockResolvedValue({
         ok: true,
@@ -215,7 +215,7 @@ describe('redeemStagedAttachments', () => {
       });
     });
 
-    it('sends no key and stores none against a pre-9.13 daemon (behavior unchanged)', async () => {
+    it('sends no key and stores none against a daemon without keyed placement (behavior unchanged)', async () => {
       const place = vi.fn().mockResolvedValue({
         ok: true,
         path: '.intent/attachments/notes.txt',
@@ -335,7 +335,7 @@ describe('sendHeldFirstMessage', () => {
     expect(request).not.toHaveBeenCalled();
   });
 
-  describe('image placement identity across retries (v9.13)', () => {
+  describe('image placement identity across retries (keyed placement)', () => {
     const imageItem = (id: string, data: string, overrides: Partial<ContextItem> = {}) =>
       ({
         id,

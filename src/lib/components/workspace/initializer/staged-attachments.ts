@@ -64,7 +64,7 @@ export interface RedeemResult {
  * the caller blocks the first-message send while `failedCount > 0`, keeps
  * the pills visible for retry/remove, and re-calls on retry (placed items
  * are skipped via their `attachmentId`). Each item's placement
- * `idempotencyKey` (v9.13) is minted on first placement and kept on the
+ * `idempotencyKey` is minted on first placement and kept on the
  * item — failed included — so the retry replays a placement whose reply was
  * lost instead of placing a duplicate.
  */

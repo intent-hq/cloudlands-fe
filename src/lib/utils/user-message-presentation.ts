@@ -56,9 +56,9 @@ export function stripTruncatedTrailingDeliveryNote(text: string, metadata?: unkn
 
 /**
  * Mirror of the daemon's serve-time `degrade_inline_file_blocks` pass
- * (PROTOCOL §5.5, 10.0). A user-row file block with no non-empty
- * `attachmentId` is the shape a pre-10.0 daemon persisted for inline file
- * data; a 10.0 daemon serves it, in place, as
+ * (PROTOCOL §5.5). A user-row file block with no non-empty `attachmentId`
+ * is the shape older daemons persisted for inline file data; a daemon with
+ * that pass serves it, in place, as
  * `{ type: 'text', text: 'Attached file: <fileName>' }` (`'Attached file'`
  * when the name is missing or blank), carrying over only the block `id`, with
  * the bytes dropped. Applied to transcripts still served by an older daemon so
@@ -72,7 +72,7 @@ export function degradeLegacyFileBlocks(
     if (block.type !== 'file') return block;
     if (typeof block.attachmentId === 'string' && block.attachmentId.trim()) return block;
     const name = typeof block.fileName === 'string' ? block.fileName.trim() : '';
-    // i18n-ignore (mirrors the daemon's protocol 10.0 text projection)
+    // i18n-ignore (mirrors the daemon's degrade_inline_file_blocks text projection)
     const text = name ? `Attached file: ${name}` : 'Attached file';
     return block.id ? { id: block.id, type: 'text', text } : { type: 'text', text };
   });

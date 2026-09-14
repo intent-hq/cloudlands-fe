@@ -454,7 +454,7 @@ describe('ChatMessage image lightbox', () => {
     expect(screen.getByRole('button', { name: /reset zoom/i })).toBeTruthy();
   });
 
-  describe('lazy attachment hydration (§5.5 slim → v7.2 agent.getMessageBlock)', () => {
+  describe('lazy attachment hydration (§5.5 slim → agent.getMessageBlock)', () => {
     const thumbnailData = 'R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
     const fullImageData =
       'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
@@ -653,7 +653,7 @@ describe('ChatMessage image lightbox', () => {
       await fireEvent.click(imageButton);
       expect(screen.queryByRole('dialog', { name: /image preview/i })).toBeNull();
 
-      // The fetch settles: the full block (PROTOCOL v7.2 agent.getMessageBlock
+      // The fetch settles: the full block (the PROTOCOL `agent.getMessageBlock`
       // shape — original data, no slim flags) lands in the cache.
       mockStoreState.value = {
         chatState: {

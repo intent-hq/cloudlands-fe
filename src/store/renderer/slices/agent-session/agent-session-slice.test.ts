@@ -18,6 +18,7 @@ import {
   initialState,
   upsertSession as upsertSessionAction,
   removeSession,
+  restoreStoredSessions,
   addMessage,
   removeMessage,
   updateMessage,
@@ -44,7 +45,9 @@ import {
   setHistoryOldestReached,
   clearHistorySegment,
   MAX_MESSAGES_PER_AGENT,
+  FE_OWNED_FIELD_POLICY,
 } from './agent-session-slice';
+import type { FeOwnedSessionState } from './agent-session-types';
 import {
   chatSendFailed,
   chatSendStarted,
@@ -861,6 +864,49 @@ describe('agent-session-slice reducer', () => {
       let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
       state = agentSessionReducer(state, updateSession('a1', { name: 'New Name' }));
       expect(state.byAgentId['a1'].name).toBe('New Name');
+    });
+
+    it('is a no-op for an absent row instead of creating one', () => {
+      const state = agentSessionReducer(
+        initialState,
+        updateSession('missing', { activationState: AgentActivationState.ERROR }),
+      );
+      expect(state).toBe(initialState);
+    });
+
+    it('patches the current row and keeps FE-owned fields it does not name', () => {
+      // Activation bookkeeping patches the row as it stands now, so fields
+      // written by a live update meanwhile (FE-owned or wire) must survive.
+      let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
+      state = agentSessionReducer(
+        state,
+        restoreStoredSessions([
+          {
+            ...state.byAgentId['a1'],
+            liveTurnOpen: true,
+            liveTurnOpenedAt: '2026-01-02T00:00:00.000Z',
+            tailCapPruned: true,
+            processQueueHint: { waiting: true, used: 1, cap: 1, reason: 'slots' },
+            isStreaming: true,
+            isProcessing: true,
+          },
+        ]),
+      );
+      state = agentSessionReducer(
+        state,
+        updateSession('a1', { activationState: AgentActivationState.ACTIVE }),
+      );
+      expect(state.byAgentId['a1']).toEqual(
+        expect.objectContaining({
+          activationState: 'active',
+          liveTurnOpen: true,
+          liveTurnOpenedAt: '2026-01-02T00:00:00.000Z',
+          tailCapPruned: true,
+          processQueueHint: { waiting: true, used: 1, cap: 1, reason: 'slots' },
+          isStreaming: true,
+          isProcessing: true,
+        }),
+      );
     });
 
     it('handles messages in updates with normalization and logical dedup', () => {
@@ -6752,5 +6798,210 @@ describe('tailCapPruned latch (live tail growth past the client cap)', () => {
       }),
     );
     expect(afterFresh.byAgentId['a1'].tailCapPruned).toBe(false);
+  });
+});
+
+// ===========================================================================
+// FE-owned field carry-forward across session upserts (FE_OWNED_FIELD_POLICY)
+// ===========================================================================
+
+describe('FE-owned session fields survive an agent.get refetch (FE_OWNED_FIELD_POLICY)', () => {
+  const BASE_MS = Date.parse('2024-01-01T00:00:00.000Z');
+  const ts = (i: number) => new Date(BASE_MS + i * 1000).toISOString();
+  const liveMsg = (i: number) => makeUniqueMessage(`live-${i}`, 'user', ts(i));
+  const OPENED_AT = '2026-01-02T00:00:00.000Z';
+  const HINT = { waiting: true, used: 3, cap: 3, reason: 'slots' as const };
+
+  type FeOwnedKey = keyof FeOwnedSessionState;
+  type Expectation = {
+    /** Value the production writers put in the store (non-default). */
+    seeded: unknown;
+    /** Value after a running AgentLite refetch (no FE-owned keys on the wire). */
+    afterRunningRefetch: unknown;
+    /** Value after a terminal-status snapshot, per the field's policy. */
+    afterTerminalSnapshot: unknown;
+  };
+  // Typed over every FeOwnedSessionState key so a new field fails to compile
+  // here too; the runtime check below guards the reverse direction (a policy
+  // entry with no assertion).
+  const EXPECTATIONS: Record<FeOwnedKey, Expectation> = {
+    // Latch: only chatReset / a resumed:false snapshot clears it.
+    tailCapPruned: { seeded: true, afterRunningRefetch: true, afterTerminalSnapshot: true },
+    liveTurnOpen: { seeded: true, afterRunningRefetch: true, afterTerminalSnapshot: undefined },
+    liveTurnOpenedAt: {
+      seeded: OPENED_AT,
+      afterRunningRefetch: OPENED_AT,
+      afterTerminalSnapshot: undefined,
+    },
+    processQueueHint: { seeded: HINT, afterRunningRefetch: HINT, afterTerminalSnapshot: undefined },
+  };
+
+  const policyKeys = Object.keys(FE_OWNED_FIELD_POLICY) as FeOwnedKey[];
+
+  /** Every FE-owned field set to a non-default value through its production writer. */
+  const seededState = () => {
+    const tail = Array.from({ length: MAX_MESSAGES_PER_AGENT }, (_, i) => liveMsg(i));
+    let state = agentSessionReducer(
+      initialState,
+      upsertSession(
+        makeSession('a1', 'ws-1', {
+          status: 'active' as any,
+          isActive: true,
+          isResponding: true,
+          messages: tail,
+        }),
+      ),
+    );
+    // Live append past the cap latches tailCapPruned.
+    state = agentSessionReducer(state, addMessage('a1', liveMsg(MAX_MESSAGES_PER_AGENT + 1)));
+    // The event fold's running edge opens the sticky live-turn slot.
+    state = agentSessionReducer(
+      state,
+      updateSession('a1', { liveTurnOpen: true, liveTurnOpenedAt: OPENED_AT }),
+    );
+    // agent:process:queued parks the turn.
+    state = agentSessionReducer(state, setProcessQueueHint('a1', 3, 3, 'slots'));
+    return state;
+  };
+
+  /** `agent.get`-shaped AgentLite: wire fields only, transcript merged in by the caller. */
+  const agentLite = (state: AgentSessionState, overrides: Partial<AgentSession>) =>
+    makeSession('a1', 'ws-1', {
+      status: 'active' as any,
+      isActive: true,
+      isResponding: true,
+      messages: state.byAgentId['a1'].messages,
+      ...overrides,
+    });
+
+  const readField = (state: AgentSessionState, key: FeOwnedKey) =>
+    (state.byAgentId['a1'] as FeOwnedSessionState)[key];
+
+  it('every policy key has an assertion (the test cannot go stale)', () => {
+    expect(policyKeys.length).toBeGreaterThan(0);
+    for (const key of policyKeys) {
+      if (!(key in EXPECTATIONS))
+        throw new Error(`no survival expectation for FE-owned field ${key}`);
+    }
+    expect(Object.keys(EXPECTATIONS).sort()).toEqual([...policyKeys].sort());
+  });
+
+  it('seeds every FE-owned field to a non-default value', () => {
+    const state = seededState();
+    for (const key of policyKeys) {
+      expect(readField(state, key), key).toEqual(EXPECTATIONS[key].seeded);
+    }
+  });
+
+  it('a running AgentLite refetch with no FE-owned keys keeps every field', () => {
+    let state = seededState();
+    // agent:updated → refreshAgentSessionAfterEvent → agent.get → bulkUpsertSessions:
+    // an unrelated field changed, running status, isStreaming absent.
+    state = agentSessionReducer(state, bulkUpsertSessions([agentLite(state, { name: 'Renamed' })]));
+    expect(state.byAgentId['a1'].name).toBe('Renamed');
+    for (const key of policyKeys) {
+      expect(readField(state, key), key).toEqual(EXPECTATIONS[key].afterRunningRefetch);
+    }
+  });
+
+  it('a terminal-status snapshot clears each field per its policy', () => {
+    let state = seededState();
+    state = agentSessionReducer(
+      state,
+      bulkUpsertSessions([
+        agentLite(state, {
+          status: 'error' as any,
+          isActive: false,
+          isResponding: false,
+          stopReason: 'boom',
+        }),
+      ]),
+    );
+    for (const key of policyKeys) {
+      expect(readField(state, key), key).toEqual(EXPECTATIONS[key].afterTerminalSnapshot);
+    }
+  });
+
+  it('ignores FE-owned keys planted on an incoming snapshot (the policy is the only writer)', () => {
+    const state = agentSessionReducer(
+      initialState,
+      upsertSession(
+        makeSession('a1', 'ws-1', {
+          liveTurnOpen: true,
+          liveTurnOpenedAt: OPENED_AT,
+          processQueueHint: HINT,
+          tailCapPruned: true,
+        } as any),
+      ),
+    );
+    for (const key of policyKeys) {
+      expect(readField(state, key), key).toBeUndefined();
+    }
+  });
+
+  it('a refetch whose only effect is dropping an FE-owned field is not swallowed as a no-op', () => {
+    // Hint set on an idle-shaped session, then a snapshot identical to the
+    // stored wire fields: isResponding:false ends the wait, so the stored
+    // object must change even though no wire field did.
+    let state = agentSessionReducer(
+      initialState,
+      upsertSession(makeSession('a1', 'ws-1', { status: 'idle' as any, isResponding: false })),
+    );
+    state = agentSessionReducer(state, setProcessQueueHint('a1', 3, 3, 'slots'));
+    const before = state;
+    state = agentSessionReducer(
+      state,
+      bulkUpsertSessions([
+        makeSession('a1', 'ws-1', { status: 'idle' as any, isResponding: false }),
+      ]),
+    );
+    expect(state).not.toBe(before);
+    expect(state.byAgentId['a1'].processQueueHint).toBeUndefined();
+  });
+
+  describe('stored-snapshot round trip (soft-hide undo / delete-cancelled restore)', () => {
+    it('restoreStoredSessions reinstates every FE-owned field after removeSession', () => {
+      let state = seededState();
+      const snapshot = state.byAgentId['a1'];
+      state = agentSessionReducer(state, removeSession('a1'));
+      expect(state.byAgentId['a1']).toBeUndefined();
+      state = agentSessionReducer(state, restoreStoredSessions([snapshot]));
+      expect(state.agentIdsByWorkspace['ws-1']).toContain('a1');
+      for (const key of policyKeys) {
+        expect(readField(state, key), key).toEqual(EXPECTATIONS[key].seeded);
+      }
+      expect(state.byAgentId['a1'].messages).toEqual(snapshot.messages);
+    });
+
+    it('restoreStoredSessions is a no-op when the same snapshot is already stored', () => {
+      const state = seededState();
+      const snapshot = state.byAgentId['a1'];
+      expect(agentSessionReducer(state, restoreStoredSessions([snapshot]))).toBe(state);
+    });
+
+    it('restoreStoredSessions round-trips FE-owned fields left unset (no policy re-derivation)', () => {
+      const seeded = agentSessionReducer(
+        initialState,
+        upsertSession(makeSession('a1', 'ws-1', { status: 'idle' as any, isResponding: false })),
+      );
+      const snapshot = seeded.byAgentId['a1'];
+      let state = agentSessionReducer(seeded, removeSession('a1'));
+      state = agentSessionReducer(state, restoreStoredSessions([snapshot]));
+      for (const key of policyKeys) {
+        expect(readField(state, key), key).toBeUndefined();
+      }
+    });
+
+    it('a wire upsert of the same snapshot is not a restore (policy seeds from a missing existing)', () => {
+      // Documents why the restore paths must not route through bulkUpsertSessions:
+      // with no existing row the policy has nothing to carry forward.
+      let state = seededState();
+      const snapshot = state.byAgentId['a1'];
+      state = agentSessionReducer(state, removeSession('a1'));
+      state = agentSessionReducer(state, bulkUpsertSessions([snapshot]));
+      for (const key of policyKeys) {
+        expect(readField(state, key), key).toBeUndefined();
+      }
+    });
   });
 });

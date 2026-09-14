@@ -112,7 +112,11 @@ function testPlan(...checks: ReturnType<typeof testCheck>[]) {
 
 function runnerOptions(
   lockRoot: string,
-  runCheck: (check: ReturnType<typeof testCheck>) => Promise<void>,
+  runCheck: (
+    check: ReturnType<typeof testCheck>,
+    root: string,
+    context?: { heldLock?: string },
+  ) => Promise<void>,
   env: Record<string, string> = {},
 ) {
   return {
@@ -1201,6 +1205,25 @@ describe('expensive-check coordination', () => {
     expect(started).toEqual(expect.arrayContaining(['ct-3200', 'ct-3201']));
     gate.resolve();
     await Promise.all(runs);
+  });
+
+  it('tells only locked checks which lock the runner already holds', async () => {
+    const lockRoot = temporaryDirectory();
+    const heldLocks: Array<string | null> = [];
+    const options = runnerOptions(
+      lockRoot,
+      async (_check, _root, context) => {
+        heldLocks.push(context?.heldLock ?? null);
+      },
+      { CT_PORT: '3210' },
+    );
+
+    await runVerificationPlan(
+      testPlan(testCheck('ct', 'ct'), testCheck('tsc', null), testCheck('vitest', 'vitest-full')),
+      lockRoot,
+      options,
+    );
+    expect(heldLocks).toEqual(['ct-3210', null, 'vitest-full']);
   });
 
   it('allows full Vitest and CT to proceed concurrently', async () => {
