@@ -4440,6 +4440,176 @@ describe('guest-sessions:* IPC handlers', () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
       expect(guestStore.setWorkspaces).not.toHaveBeenCalled();
     });
+
+    it('a snapshot requested before a per-workspace Leave cannot restore the left workspace', async () => {
+      installGuest();
+      let cached = [...GUEST.workspaces];
+      guestStore.findById.mockImplementation(async (id: string) =>
+        id === GUEST.id ? { ...GUEST, workspaces: [...cached] } : null,
+      );
+      guestStore.list.mockImplementation(async () => [{ ...GUEST, workspaces: [...cached] }]);
+      guestStore.setWorkspaces.mockImplementation(async (_id: string, refs: typeof cached) => {
+        cached = [...refs];
+        return true;
+      });
+      guestStore.leaveWorkspace.mockImplementation(async (_id: string, workspaceId: string) => {
+        cached = cached.filter((w) => w.id !== workspaceId);
+        return true;
+      });
+      let release!: (value: unknown) => void;
+      const snapshot = new Promise((resolve) => {
+        release = resolve;
+      });
+      rpc.handler = async (method) =>
+        method === 'workspace.list'
+          ? snapshot
+          : method === 'workspace.members.leave'
+            ? { left: true }
+            : {};
+      const { mod } = await loadModule();
+      mod.registerBackendHandlers();
+      const guest = (await mod.connectBackendClient(GUEST.id)) as unknown as HelloClient & {
+        status: string;
+      };
+      guest.status = 'connected';
+      guest.hello(hello);
+      await vi.waitFor(() => expect(rpc.calls).toContain('workspace.list'));
+
+      await expect(
+        findHandler('guest-sessions:leave-workspace')!(
+          {},
+          { id: GUEST.id, workspaceId: 'ws-guest' },
+        ),
+      ).resolves.toMatchObject({ left: true });
+      expect(cached).toEqual([]);
+
+      // The pre-Leave membership answers only now: it must be discarded.
+      release({ workspaces: GUEST.workspaces });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(guestStore.setWorkspaces).not.toHaveBeenCalled();
+      expect(
+        (await findHandler('guest-sessions:list')!({}, undefined)).sessions[0].workspaces,
+      ).toEqual([]);
+    });
+
+    it('a snapshot requested before a Leave the host already applied (-32602) is discarded too', async () => {
+      installGuest();
+      let release!: (value: unknown) => void;
+      const snapshot = new Promise((resolve) => {
+        release = resolve;
+      });
+      const { JsonRpcError } = await import('../json-rpc-errors');
+      rpc.handler = async (method) => {
+        if (method === 'workspace.list') return snapshot;
+        if (method === 'workspace.members.leave') {
+          throw new JsonRpcError({ code: -32602, message: 'not a member' });
+        }
+        return {};
+      };
+      const { mod } = await loadModule();
+      mod.registerBackendHandlers();
+      const guest = (await mod.connectBackendClient(GUEST.id)) as unknown as HelloClient & {
+        status: string;
+      };
+      guest.status = 'connected';
+      guest.hello(hello);
+      await vi.waitFor(() => expect(rpc.calls).toContain('workspace.list'));
+
+      await expect(
+        findHandler('guest-sessions:leave-workspace')!(
+          {},
+          { id: GUEST.id, workspaceId: 'ws-guest' },
+        ),
+      ).resolves.toMatchObject({ left: false });
+      expect(guestStore.leaveWorkspace).toHaveBeenCalledWith(GUEST.id, 'ws-guest');
+
+      release({ workspaces: GUEST.workspaces });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(guestStore.setWorkspaces).not.toHaveBeenCalled();
+    });
+
+    it('a late first-hello snapshot cannot overwrite the newer hello snapshot on the same client', async () => {
+      installGuest();
+      guestStore.setWorkspaces.mockResolvedValue(true);
+      let release!: (value: unknown) => void;
+      const first = new Promise((resolve) => {
+        release = resolve;
+      });
+      let reads = 0;
+      rpc.handler = async (method) =>
+        method === 'workspace.list' ? (++reads === 1 ? first : { workspaces: [] }) : {};
+      const { mod } = await loadModule();
+      mod.registerBackendHandlers();
+      const guest = (await mod.connectBackendClient(GUEST.id)) as unknown as HelloClient;
+
+      guest.hello(hello);
+      await vi.waitFor(() => expect(reads).toBe(1));
+      guest.hello(hello);
+      await vi.waitFor(() => expect(guestStore.setWorkspaces).toHaveBeenCalledWith(GUEST.id, []));
+
+      release({
+        workspaces: [{ id: 'ws-stale', title: 'Old membership', myRole: 'collaborator' }],
+      });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(guestStore.setWorkspaces).toHaveBeenCalledTimes(1);
+      expect(guestStore.setWorkspaces).not.toHaveBeenCalledWith(GUEST.id, [
+        { id: 'ws-stale', title: 'Old membership' },
+      ]);
+    });
+
+    it('a snapshot with no Leave in flight is still applied after an unrelated round trip', async () => {
+      installGuest();
+      guestStore.setWorkspaces.mockResolvedValue(true);
+      let release!: (value: unknown) => void;
+      const snapshot = new Promise((resolve) => {
+        release = resolve;
+      });
+      rpc.handler = async (method) => (method === 'workspace.list' ? snapshot : {});
+      const { mod } = await loadModule();
+      mod.registerBackendHandlers();
+      const guest = (await mod.connectBackendClient(GUEST.id)) as unknown as HelloClient;
+      guest.hello(hello);
+      await vi.waitFor(() => expect(rpc.calls).toContain('workspace.list'));
+
+      release({
+        workspaces: [{ id: 'ws-guest', title: 'Renamed', myRole: 'collaborator', memberCount: 2 }],
+      });
+      await vi.waitFor(() =>
+        expect(guestStore.setWorkspaces).toHaveBeenCalledWith(GUEST.id, [
+          { id: 'ws-guest', title: 'Renamed' },
+        ]),
+      );
+    });
+
+    it('a failed hydration logs only a bounded code, never the host message', async () => {
+      installGuest();
+      const marker = 'SENTINEL-hydration-detail-9c1e';
+      rpc.handler = async (method) => {
+        if (method === 'workspace.list') throw new Error(`socket closed ${marker}`);
+        return {};
+      };
+      const { Logger } = await import('$shared/logger');
+      const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => {});
+      const { mod } = await loadModule();
+      mod.registerBackendHandlers();
+      const guest = (await mod.connectBackendClient(GUEST.id)) as unknown as HelloClient;
+      guest.hello(hello);
+
+      await vi.waitFor(() =>
+        expect(warn.mock.calls.some(([message]) => /hydrate guest/.test(String(message)))).toBe(
+          true,
+        ),
+      );
+      const hydrationWarns = warn.mock.calls.filter(([message]) =>
+        /hydrate guest/.test(String(message)),
+      );
+      expect(JSON.stringify(hydrationWarns)).not.toContain(marker);
+      expect(hydrationWarns[0][1]).toEqual({ id: GUEST.id, code: 'transport' });
+      warn.mockRestore();
+    });
   });
 
   it('guest-sessions:leave revokes on the host (5 s bound), forgets locally, then tears the host windows down', async () => {
