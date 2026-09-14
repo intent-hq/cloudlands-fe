@@ -11,13 +11,11 @@
   import { untrack } from 'svelte';
   import { slide } from '$lib/motion';
   import Button from '$lib/components/ui/button/button.svelte';
-  import Header from '$lib/components/ui/Header.svelte';
   import { formatInteger } from '$lib/i18n/format';
   import {
     filterWorkspaceAgentRows,
     getFlatWorkspaceAgentRows,
     isBackgroundAgentSession as isBackgroundAgent,
-    isCoordinatorAgentSession as isCoordinator,
     isRetiredAgentSession as isRetiredAgent,
     shouldVirtualizeWorkspaceAgentRows,
     WORKSPACE_AGENT_ROW_HEIGHT,
@@ -104,9 +102,7 @@
   const standaloneBackgroundAgents = $derived(
     topLevelAgents.filter((agent) => isBackgroundAgent(agent)),
   );
-  const hasCoordinator = $derived(topLevelForegroundAgents.some(isCoordinator));
-  // Fall back to the regular list when delegations exist (tree heights are variable)
-  // or a coordinator is present (its section headers need the regular rendering).
+  // Preserve the existing virtualization eligibility and lazy-loading behavior.
   const shouldUseVirtual = $derived(shouldVirtualizeWorkspaceAgentRows(filteredAgentRows));
   // The retired bin is always flat with uniform-height rows, so a length check suffices.
   const shouldVirtualizeRetired = $derived(
@@ -196,11 +192,13 @@
     {#if children.length > 0}
       {@const isExpanded = hasActiveSearch || expandedAgentIds.has(agent.id)}
       {@const runningChildren = children.filter((child) => isAgentRunning(child.id))}
+      <!-- Keep child indentation; align the toggle with parent padding + avatar + gap + border. -->
       <div class="mb-2" style="padding-left: 26px;">
         <Button
           variant="ghost-light"
           size="sm"
-          class="flex h-9 w-full cursor-pointer items-center gap-2 rounded-md bg-transparent px-2 text-sm font-normal text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground active:bg-transparent focus-visible:-outline-offset-2 focus-visible:outline-1 focus-visible:outline-ring focus-visible:ring-0"
+          class="flex h-7 w-full cursor-pointer items-center gap-2 rounded-md bg-transparent px-2 text-sm font-normal text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground active:bg-transparent focus-visible:-outline-offset-2 focus-visible:outline-1 focus-visible:outline-ring focus-visible:ring-0"
+          style="padding-left: calc(var(--agent-avatar-emphasized-surface-size) + 1rem + 1px - 26px);"
           onclick={(event) => {
             event.stopPropagation();
             toggleDelegation(agent.id);
@@ -291,24 +289,7 @@
   </div>
 {:else}
   <div class="flex flex-col gap-0.5">
-    {#if topLevelForegroundAgents.length > 0}
-      {#if hasCoordinator}
-        <div class="pt-1 pb-0.5">
-          <Header size={6}>{m.workspace_agentsList_coordinator_label()}</Header>
-        </div>
-      {/if}
-      {@const coordinatorAgents = topLevelForegroundAgents.filter(isCoordinator)}
-      {@const otherAgents = topLevelForegroundAgents.filter((agent) => !isCoordinator(agent))}
-      {@render agentTree(coordinatorAgents)}
-      {#if otherAgents.length > 0}
-        {#if hasCoordinator}
-          <div class="pt-2.5 pb-0.5">
-            <Header size={6}>{m.workspace_overviewTimeline_yourAgents_label()}</Header>
-          </div>
-        {/if}
-        {@render agentTree(otherAgents)}
-      {/if}
-    {/if}
+    {@render agentTree(topLevelForegroundAgents)}
   </div>
 {/if}
 

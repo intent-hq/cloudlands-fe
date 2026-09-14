@@ -159,7 +159,7 @@
 <div
   bind:this={itemElement}
   data-slot="list-item-row"
-  class="group/list-item relative grid min-w-0"
+  class="group/list-item relative grid w-full min-w-0 flex-1"
 >
   <Button
     variant="plain"
