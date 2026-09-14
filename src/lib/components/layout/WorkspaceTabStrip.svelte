@@ -1,7 +1,7 @@
 <script lang="ts">
   import { Button } from '$lib/components/ui/button';
   import { goto } from '$app/navigation';
-  import { faArrowRight, faLayerGroup, faXmark } from '@fortawesome/free-solid-svg-icons';
+  import { faXmark } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { flushSync, onMount } from 'svelte';
   import { flip } from 'svelte/animate';
@@ -43,6 +43,7 @@
   import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
   import { selectWorkspaceTabStatuses } from '$store/renderer/slices/hud/hud-selectors';
   import type { WorkspaceTabStatus } from '$store/renderer/slices/hud/hud-types';
+  import { openShareDialog } from '$store/renderer/slices/workspace-share/workspace-share-slice';
   import { WorkspaceStatus } from '$shared/types';
   import { resolveEmptyWindowDestination } from '$features/workspace/utils/empty-window-destination';
   import {
@@ -54,7 +55,7 @@
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
   import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
   import WorkspaceTabFlare from './WorkspaceTabFlare.svelte';
-  import { getWorkspaceTabBulkCloseIds } from './workspace-tab-context-actions';
+  import { buildWorkspaceTabContextMenu } from './workspace-tab-context-actions';
   import { prepareTabOutros, workspaceTabLifecycleMotion } from './workspace-tab-lifecycle-motion';
   import {
     WORKSPACE_TAB_CORNER_RADIUS_PX,
@@ -168,31 +169,16 @@
   const tabContextMenuItems = $derived.by<SidebarMenuEntry[]>(() => {
     if (!tabContextMenu) return [];
     const { workspaceId } = tabContextMenu;
-    const closeOthers = getWorkspaceTabBulkCloseIds($workspaceTabOrder$, workspaceId, 'others');
-    const closeRight = getWorkspaceTabBulkCloseIds($workspaceTabOrder$, workspaceId, 'right');
-    return [
-      {
-        id: 'close',
-        label: m.layout_panelTabBar_close_label(),
-        icon: faXmark,
-        onClick: () => closeWorkspace(workspaceId),
-      },
-      { type: 'separator' },
-      {
-        id: 'close-others',
-        label: m.layout_panelTabBar_closeAllOthers_label(),
-        icon: faLayerGroup,
-        disabled: closeOthers.length === 0,
-        onClick: () => closeWorkspaceTabs(closeOthers, workspaceId),
-      },
-      {
-        id: 'close-right',
-        label: m.layout_panelTabBar_closeTabsToRight_label(),
-        icon: faArrowRight,
-        disabled: closeRight.length === 0,
-        onClick: () => closeWorkspaceTabs(closeRight),
-      },
-    ];
+    const workspace = workspaceById.get(workspaceId);
+    return buildWorkspaceTabContextMenu({
+      order: $workspaceTabOrder$,
+      workspaceId,
+      canShare: workspace?.myRole === 'owner',
+      onShare: () =>
+        appStore.dispatch(openShareDialog({ workspaceId, workspaceTitle: workspace?.title ?? '' })),
+      onClose: () => closeWorkspace(workspaceId),
+      onCloseTabs: closeWorkspaceTabs,
+    });
   });
   const run = (sync: boolean, fn: () => void) => (sync ? flushSync(fn) : fn());
   const reportActiveTabTracking = ({ sync = true } = {}) =>
