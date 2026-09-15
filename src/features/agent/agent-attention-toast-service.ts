@@ -78,8 +78,8 @@ let toastComponentPromise: Promise<
 > | null = null;
 function getToastComponent() {
   if (!toastComponentPromise) {
-    toastComponentPromise = import('$lib/components/ui/toast').then((module) =>
-      module.loadAgentAttentionToast(),
+    toastComponentPromise = import('$lib/components/ui/toast').then(
+      (module) => module.AgentAttentionToast,
     );
   }
   return toastComponentPromise;
