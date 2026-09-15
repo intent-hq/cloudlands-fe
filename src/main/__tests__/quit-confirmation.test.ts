@@ -308,20 +308,32 @@ describe('confirmQuitWithRunningAgents — sidecar gate', () => {
 
   it('enumerates sidecar agents and disrupted tabs concurrently', async () => {
     const { deps } = makeDeps({ agents: AGENTS, mode: 'sidecar' });
-    let agentsSettled = false;
-    deps.listRespondingAgents.mockImplementation(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-      agentsSettled = true;
-      return AGENTS;
+    // Both lookups stay pending until released, so the call counts snapshotted
+    // below show which of them STARTED before either settled. The assertions
+    // run after the confirm call resolves: the production tab lookup fails
+    // open, so an expect() inside its mock would be swallowed.
+    let releaseAgents!: (agents: RespondingAgent[]) => void;
+    let releaseTabs!: (tabs: QuitBrowserTabSummary[]) => void;
+    const agentsGate = new Promise<RespondingAgent[]>((resolve) => {
+      releaseAgents = resolve;
     });
-    deps.listDisruptedBrowserTabs.mockImplementation(async () => {
-      // Started while the agent query is still in flight.
-      expect(agentsSettled).toBe(false);
-      return [];
+    const tabsGate = new Promise<QuitBrowserTabSummary[]>((resolve) => {
+      releaseTabs = resolve;
     });
+    deps.listRespondingAgents.mockImplementation(() => agentsGate);
+    deps.listDisruptedBrowserTabs.mockImplementation(() => tabsGate);
 
-    await confirmQuitWithRunningAgents(deps);
+    const confirmed = confirmQuitWithRunningAgents(deps);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const startedBeforeEitherSettled = {
+      agents: deps.listRespondingAgents.mock.calls.length,
+      tabs: deps.listDisruptedBrowserTabs.mock.calls.length,
+    };
+    releaseAgents(AGENTS);
+    releaseTabs([]);
+    await expect(confirmed).resolves.toBe(true);
 
+    expect(startedBeforeEitherSettled).toEqual({ agents: 1, tabs: 1 });
     expect(deps.buildQuitDialogOptions).toHaveBeenCalledWith(AGENTS);
   });
 });
