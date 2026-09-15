@@ -635,7 +635,16 @@ describe('WorkspaceTabStrip', () => {
       const alpha = screen.getByRole('tab', { name: /Alpha/ });
       expect(alpha.getAttribute('aria-selected')).toBe('false');
       const tooltipRoot = alpha.closest<HTMLElement>('[data-testid="workspace-tab-tooltip-root"]')!;
-      expect(tooltipRoot.getAttribute('data-tooltip-disable-hoverable-content')).toBe('true');
+      // Alpha reports `myRole: 'owner'`: its card carries Share / Remove
+      // controls, so the pointer must be able to travel into it. Beta is a
+      // collaborator's read-only preview and still closes on leave.
+      expect(tooltipRoot.getAttribute('data-tooltip-disable-hoverable-content')).toBe('false');
+      expect(
+        screen
+          .getByRole('tab', { name: /Beta/ })
+          .closest<HTMLElement>('[data-testid="workspace-tab-tooltip-root"]')!
+          .getAttribute('data-tooltip-disable-hoverable-content'),
+      ).toBe('true');
       await enterTabTooltip(tooltipRoot);
       vi.advanceTimersByTime(799);
       await tick();
