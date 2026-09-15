@@ -130,8 +130,10 @@
   // options + free text together).
   const optionsLocked = $derived(!isMulti && draft.text.length > 0);
 
-  // Motion: snappy 150ms step transitions, none under reduced motion.
-  const stepDuration = prefersReducedMotion() ? 0 : 150;
+  // Motion: snappy 150ms step transitions, none under reduced motion. Read
+  // per transition (not once at mount) so a battery/AC or OS preference flip
+  // after mount applies to the next step without a remount.
+  const stepDuration = () => (prefersReducedMotion() ? 0 : 150);
 
   // ── Draft persistence (only when `draftKey` is set) ────────────────────
   // Saves are debounced so typing does not write every keystroke; the
@@ -326,7 +328,7 @@
     </div>
 
     {#key idx}
-      <div in:fade={{ duration: stepDuration }}>
+      <div in:fade={{ duration: stepDuration() }}>
         <div class="flex flex-col gap-4 px-3 pt-3 pb-3 sm:px-4">
           <h2 class="type-title font-medium text-foreground">{current.question}</h2>
 
