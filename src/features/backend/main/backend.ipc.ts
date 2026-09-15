@@ -914,6 +914,33 @@ function onGuestCredentialReplaced(id: string): void {
 }
 guestSessionsStore.onGuestCredentialReplaced(onGuestCredentialReplaced);
 
+/**
+ * A keychain-sync tombstone deleted a live guest session: the guest was
+ * forgotten on another device. The pooled client built on the now-deleted
+ * credential is evicted synchronously (and the generation bump makes an
+ * in-flight construction re-read the store, where the record is gone), so
+ * the forgotten credential stops being usable at once rather than at the next
+ * restart. Windows served by that client are torn down on the connection lane
+ * exactly as a local owner forget does — with the local fallback created
+ * first so the window-all-closed path is never entered mid-teardown.
+ */
+function onGuestSessionRemovedBySync(id: string): void {
+  backendCredentialGenerations.set(id, (backendCredentialGenerations.get(id) ?? 0) + 1);
+  const hadLiveClient = backendClients.has(id);
+  disconnectBackendClient(id);
+  if (!hadLiveClient) return;
+  void enqueueConnectionOperation(async () => {
+    await windowHooks.ensureLocalWindowBeforeClose?.(id);
+    await windowHooks.closeForBackend?.(id);
+  }).catch((error: unknown) => {
+    logger.warn('Failed to close windows of a guest session forgotten elsewhere', {
+      id,
+      error: error instanceof Error ? error.name : typeof error,
+    });
+  });
+}
+guestSessionsStore.onGuestSessionRemovedBySync(onGuestSessionRemovedBySync);
+
 /** Build a pool member and route its renderer events by connection id. */
 function createAdditionalBackendClient(id: string, config: BackendConnectionConfig): JsonRpcClient {
   // A fresh pool member starts with clean cert/auth/protocol-mismatch guards
@@ -1558,6 +1585,20 @@ async function captureRemoteUpdateSupported(id: string): Promise<void> {
     // Drop the result when this backend's client changed mid-flight — the
     // snapshot client may have answered just before its disposal.
     if (backendClients.get(id) === client) {
+      // A guest session keeps its route metadata in the guest registry: the
+      // tunnel address and interface list learned here replace the invite-time
+      // envelope so later reconnects and keychain sync carry current routes.
+      // Guests never gate an Update affordance, so `updateSupported` is not
+      // recorded for them.
+      if ((await guestSessionsStore.findById(id)) !== null) {
+        const guestTcChanged = await guestSessionsStore.setTcAddress(id, tcAddress);
+        const guestHostsChanged =
+          ips.length > 0 &&
+          backendClients.get(id) === client &&
+          (await guestSessionsStore.setHosts(id, ips));
+        if (guestTcChanged || guestHostsChanged) await broadcastGuestSessionsChanged();
+        return;
+      }
       const changed = await connectionsStore.setUpdateSupported(id, supported);
       const tcChanged = await connectionsStore.setTcAddress(id, tcAddress);
       // Re-check after the awaited writes above: a disconnect/replacement
@@ -1713,12 +1754,21 @@ async function refreshRemoteHosts(id: string): Promise<void> {
     // concurrent disconnect/reconnect replaces the pool entry, and querying
     // the NEW client here would persist another socket's answer.
     const client = getBackendClientForId(id);
-    if (!(await connectionsStore.getDetectHosts(id))) return;
+    // A guest session has no detect-hosts opt-out: the invite envelope's
+    // list is always refreshed from the daemon's current interfaces.
+    const isGuest = (await guestSessionsStore.findById(id)) !== null;
+    if (!isGuest && !(await connectionsStore.getDetectHosts(id))) return;
     const result = await client.request('server.pairingInfo');
     const ips = extractLocalIps(result);
     // Drop the result when this backend's client changed mid-flight — the
     // snapshot client may have answered just before its disposal.
     if (backendClients.get(id) === client) {
+      if (isGuest) {
+        const hostsChanged = ips ? await guestSessionsStore.setHosts(id, ips) : false;
+        const tcChanged = await guestSessionsStore.setTcAddress(id, extractTcAddress(result));
+        if (hostsChanged || tcChanged) await broadcastGuestSessionsChanged();
+        return;
+      }
       if (ips) await connectionsStore.setHosts(id, ips);
       const tcChanged = await connectionsStore.setTcAddress(id, extractTcAddress(result));
       if (ips || tcChanged) await broadcastConnectionsChanged();

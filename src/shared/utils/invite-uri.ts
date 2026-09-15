@@ -29,9 +29,22 @@ export interface ParsedInviteUri {
 // i18n-ignore (wire constant, invite URI scheme)
 const INVITE_PREFIX = 'intent://invite';
 
+/**
+ * Characters the WHATWG `URL` parser removes from its input before parsing.
+ * The classifier strips them too, so whatever the parser would redeem as an
+ * invite (`intent://inv\nite?secret=…`) is routed as one — a mismatch would
+ * let an invite carrying its secret fall through to the generic deep-link
+ * path and its un-scrubbed logging.
+ */
+const URL_STRIPPED = /[\t\n\r]/g;
+
+function normalizeInviteText(text: string): string {
+  return text.replace(URL_STRIPPED, '').trim();
+}
+
 /** Whether the text looks like an invite URI (cheap pre-check for routing). */
 export function isInviteUri(text: string): boolean {
-  const normalized = text.trim().toLowerCase();
+  const normalized = normalizeInviteText(text).toLowerCase();
   if (!normalized.startsWith(INVITE_PREFIX)) return false;
   // The action must be exactly `invite` — reject e.g. `intent://invites?...`.
   const next = normalized.charAt(INVITE_PREFIX.length);
@@ -40,7 +53,7 @@ export function isInviteUri(text: string): boolean {
 
 /** Parse an invite URI; `null` when the text is not one. */
 export function parseInviteUri(raw: string): ParsedInviteUri | null {
-  const text = raw.trim();
+  const text = normalizeInviteText(raw);
   if (!isInviteUri(text)) return null;
   let parsed: URL;
   try {

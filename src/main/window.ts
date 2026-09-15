@@ -969,7 +969,7 @@ export async function createWindowForDeepLink(
   // Parse the deep link to extract action and params
   const action = deepLinkHandler.parseDeepLink(deepLinkUrl);
   if (!action) {
-    logger.warn('Failed to parse deep link URL:', { url: deepLinkUrl });
+    logger.warn('Failed to parse deep link URL:', { url: scrubToken(deepLinkUrl) });
     return;
   }
 

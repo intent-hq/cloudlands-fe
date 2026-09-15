@@ -173,23 +173,33 @@ vi.mock('../connections-store', () => ({
   onConnectionsMutated: () => () => {},
 }));
 
-// Guest sessions store: an in-test double with the credential-replaced seam
-// captured so a re-join can be simulated against the pool.
+// Guest sessions store: an in-test double with the credential-replaced and
+// removed-by-sync seams captured so a re-join / remote forget can be
+// simulated against the pool.
 const guestStore = vi.hoisted(() => ({
   findById: vi.fn(),
   getDecryptedToken: vi.fn(),
+  setTcAddress: vi.fn(),
+  setHosts: vi.fn(),
   replacedListeners: [] as Array<(id: string) => void>,
+  removedListeners: [] as Array<(id: string) => void>,
 }));
 vi.mock('../guest-sessions-store', () => ({
   list: vi.fn(async () => []),
   findById: guestStore.findById,
   getDecryptedToken: guestStore.getDecryptedToken,
   setHostname: vi.fn(async () => false),
+  setTcAddress: guestStore.setTcAddress,
+  setHosts: guestStore.setHosts,
   listSyncRecords: vi.fn(async () => []),
   applyRemoteSyncRecord: vi.fn(async () => false),
   onGuestSessionsMutated: () => () => {},
   onGuestCredentialReplaced: (listener: (id: string) => void) => {
     guestStore.replacedListeners.push(listener);
+    return () => {};
+  },
+  onGuestSessionRemovedBySync: (listener: (id: string) => void) => {
+    guestStore.removedListeners.push(listener);
     return () => {};
   },
 }));
@@ -365,7 +375,10 @@ beforeEach(() => {
   store.getDetectHosts.mockResolvedValue(true);
   guestStore.findById.mockResolvedValue(null);
   guestStore.getDecryptedToken.mockResolvedValue(null);
+  guestStore.setTcAddress.mockResolvedValue(false);
+  guestStore.setHosts.mockResolvedValue(false);
   guestStore.replacedListeners = [];
+  guestStore.removedListeners = [];
   keychainSync.enabled = false;
   keychainSync.status = null;
   keychainSync.initOptions = null;
@@ -578,6 +591,114 @@ describe('openBackendWindow connect-before-open', () => {
     expect(fresh).not.toBe(stale);
     expect((fresh?.getConfig() as { token?: string }).token).toBe('guest-token-v2');
     expect(reconnected).toHaveBeenCalledWith(GUEST.id);
+  });
+
+  it('a guest forgotten on another device (sync tombstone) evicts the pooled client and closes its windows', async () => {
+    guestStore.findById.mockImplementation(async (id: string) => (id === GUEST.id ? GUEST : null));
+    guestStore.getDecryptedToken.mockResolvedValue('guest-token-v1');
+    const { mod, ensureLocalWindowBeforeClose, closeForBackend } = await loadModule();
+    mod.getBackendClient(); // client #1 (local)
+    lifecycle.events = [];
+
+    await mod.openBackendWindow(GUEST.id);
+    const stale = mod.getBackendClientForConnection(GUEST.id);
+    expect(stale).toBeDefined();
+    expect(lifecycle.events.map((e) => e.type)).toEqual(['construct', 'start', 'open']);
+    const staleSeq = lifecycle.events[0].seq;
+    lifecycle.events = [];
+
+    // The keychain pull applies the tombstone: the store deletes the record
+    // and notifies. Nothing may keep serving the forgotten credential.
+    guestStore.findById.mockResolvedValue(null);
+    guestStore.getDecryptedToken.mockResolvedValue(null);
+    expect(guestStore.removedListeners).toHaveLength(1);
+    for (const listener of guestStore.removedListeners) listener(GUEST.id);
+    expect(lifecycle.events).toEqual([{ type: 'dispose', seq: staleSeq }]);
+    expect(mod.getBackendClientForConnection(GUEST.id)).toBeUndefined();
+    expect(mod.getBackendClientForConnection('local')).toBeDefined();
+
+    // Window teardown mirrors an owner forget: local fallback first, then
+    // the guest's windows.
+    await vi.waitFor(() => expect(closeForBackend).toHaveBeenCalledWith(GUEST.id));
+    expect(ensureLocalWindowBeforeClose).toHaveBeenCalledWith(GUEST.id);
+    expect(ensureLocalWindowBeforeClose.mock.invocationCallOrder[0]).toBeLessThan(
+      closeForBackend.mock.invocationCallOrder[0],
+    );
+    // No rebuild: the record is gone, so a connect for the id fails closed.
+    await expect(mod.connectBackendClient(GUEST.id)).rejects.toThrow(/unknown or incomplete/i);
+    expect(lifecycle.events.filter((e) => e.type === 'construct')).toEqual([]);
+
+    // A tombstone for an id with no pooled client touches nothing.
+    lifecycle.events = [];
+    closeForBackend.mockClear();
+    for (const listener of guestStore.removedListeners) listener('guest-unknown');
+    await Promise.resolve();
+    expect(lifecycle.events).toEqual([]);
+    expect(closeForBackend).not.toHaveBeenCalled();
+  });
+
+  it('a sync tombstone racing a guest client construction never pools the deleted credential', async () => {
+    guestStore.findById.mockImplementation(async (id: string) => (id === GUEST.id ? GUEST : null));
+    let release!: (token: string) => void;
+    guestStore.getDecryptedToken.mockImplementationOnce(
+      () => new Promise<string>((resolve) => (release = resolve)),
+    );
+    const { mod } = await loadModule();
+
+    const pending = mod.connectBackendClient(GUEST.id);
+    await vi.waitFor(() => expect(guestStore.getDecryptedToken).toHaveBeenCalledOnce());
+
+    // The record is deleted while the credential read is in flight.
+    guestStore.findById.mockResolvedValue(null);
+    for (const listener of guestStore.removedListeners) listener(GUEST.id);
+    release('guest-token-v1');
+
+    await expect(pending).rejects.toThrow(/unknown or incomplete/i);
+    expect(mod.getBackendClientForConnection(GUEST.id)).toBeUndefined();
+    expect(lifecycle.events.filter((e) => e.type === 'construct')).toEqual([]);
+  });
+
+  it('a connected guest persists the routes its daemon advertises in the guest registry', async () => {
+    guestStore.findById.mockImplementation(async (id: string) => (id === GUEST.id ? GUEST : null));
+    guestStore.getDecryptedToken.mockResolvedValue('guest-token-v1');
+    guestStore.setTcAddress.mockResolvedValue(true);
+    guestStore.setHosts.mockResolvedValue(true);
+    rpc.handler = async (method) => {
+      if (method === 'system.status') {
+        return {
+          updateSupported: true,
+          tcAddress: 'tc7f2a91.tailcat.net',
+          localIps: ['10.0.0.9', '10.0.0.42', '127.0.0.1'],
+        };
+      }
+      if (method === 'server.pairingInfo') {
+        return { localIps: ['10.0.0.9', '10.0.0.42'], tcAddress: 'tc7f2a91.tailcat.net' };
+      }
+      return {};
+    };
+    const send = installWindow(GUEST.id);
+    const { mod } = await loadModule();
+
+    await mod.openBackendWindow(GUEST.id);
+    const client = mod.getBackendClientForId(GUEST.id) as unknown as {
+      hello(result: unknown): void;
+    };
+    client.hello({ server: { version: '6.8.0' } });
+
+    await vi.waitFor(() => {
+      expect(guestStore.setTcAddress).toHaveBeenCalledWith(GUEST.id, 'tc7f2a91.tailcat.net');
+      // Loopback never becomes a dial candidate.
+      expect(guestStore.setHosts).toHaveBeenCalledWith(GUEST.id, ['10.0.0.9', '10.0.0.42']);
+    });
+    // The owner registry is never asked to persist a guest's routes (an
+    // unknown id there would silently drop them).
+    expect(store.setHosts).not.toHaveBeenCalledWith(GUEST.id, expect.anything());
+    expect(store.setTcAddress).not.toHaveBeenCalledWith(GUEST.id, expect.anything());
+    expect(store.setUpdateSupported).not.toHaveBeenCalledWith(GUEST.id, expect.anything());
+    // Renderers learn the refreshed record through the guest list push.
+    await vi.waitFor(() =>
+      expect(send).toHaveBeenCalledWith('guest-sessions:changed', expect.anything()),
+    );
   });
 });
 
