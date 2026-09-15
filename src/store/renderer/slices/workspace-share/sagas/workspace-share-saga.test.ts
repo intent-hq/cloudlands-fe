@@ -435,6 +435,49 @@ describe('workspaceShareSaga', () => {
     h.task.cancel();
   });
 
+  // Regression (fe#2440 Augment review): the reducer admits one dialog
+  // mutation at a time; a request it declined while another was in flight
+  // must never reach the daemon, and must not cancel the admitted worker.
+  it('issues no RPC for a revoke or remove the reducer declined mid-flight', async () => {
+    let releaseRevoke!: () => void;
+    replyByMethod({
+      'workspace.invite.revoke': () =>
+        new Promise((resolve) => {
+          releaseRevoke = () => resolve({ revoked: true });
+        }),
+      'workspace.members.remove': { removed: true },
+    });
+    const h = harness(opened());
+
+    h.dispatch(shareInviteRevokeRequested('inv-1'));
+    await settle();
+    expect(h.state().revokingInviteId).toBe('inv-1');
+
+    h.dispatch(shareInviteRevokeRequested('inv-2'));
+    h.dispatch(shareMemberRemoveRequested('p-bob'));
+    await settle();
+
+    expect(calls('workspace.invite.revoke')).toEqual([
+      ['workspace.invite.revoke', { workspaceId: 'ws-1', inviteId: 'inv-1' }],
+    ]);
+    expect(calls('workspace.members.remove')).toHaveLength(0);
+    expect(h.state()).toMatchObject({ revokingInviteId: 'inv-1', removingPrincipalId: null });
+
+    releaseRevoke();
+    await settle();
+
+    expect(h.state()).toMatchObject({ revokingInviteId: null, actionError: null });
+    expect(calls('workspace.invite.revoke')).toHaveLength(1);
+    expect(calls('workspace.members.remove')).toHaveLength(0);
+
+    h.dispatch(shareMemberRemoveRequested('p-bob'));
+    await settle();
+    expect(calls('workspace.members.remove')).toEqual([
+      ['workspace.members.remove', { workspaceId: 'ws-1', principalId: 'p-bob' }],
+    ]);
+    h.task.cancel();
+  });
+
   // Regression (fe#2440 review P2 / verifier #8): a `workspace:updated`
   // membership delta from another client re-reads the open dialog's rows.
   it('re-reads on a membership change for the targeted workspace only', async () => {
