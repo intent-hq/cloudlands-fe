@@ -40,7 +40,7 @@ import {
   workspaceSharingClient,
   type ShareFailure,
 } from '$features/workspace-sharing/workspace-sharing.client';
-import type { WorkspaceInviteRow, WorkspaceMember } from '$features/workspace-sharing/types';
+import type { WorkspaceInviteRow, WorkspaceMembersList } from '$features/workspace-sharing/types';
 import { isForbiddenErrorResponse } from '$lib/client/live/backend-transport-types';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
@@ -120,7 +120,7 @@ function coalescedByKey<A>(
  * sibling RPC is still outstanding.
  */
 function readShareData(workspaceId: string): {
-  result: Promise<{ members: WorkspaceMember[]; invites: WorkspaceInviteRow[] }>;
+  result: Promise<WorkspaceMembersList & { invites: WorkspaceInviteRow[] }>;
   settled: Promise<void>;
 } {
   const reads = [
@@ -128,7 +128,7 @@ function readShareData(workspaceId: string): {
     workspaceSharingClient.listInvites(workspaceId),
   ] as const;
   const outcomes = Promise.allSettled(reads);
-  const result = new Promise<{ members: WorkspaceMember[]; invites: WorkspaceInviteRow[] }>(
+  const result = new Promise<WorkspaceMembersList & { invites: WorkspaceInviteRow[] }>(
     (resolve, reject) => {
       for (const read of reads) {
         read.catch((error: unknown) => {
@@ -137,7 +137,7 @@ function readShareData(workspaceId: string): {
       }
       void outcomes.then(([members, invites]) => {
         if (members.status === 'fulfilled' && invites.status === 'fulfilled') {
-          resolve({ members: members.value, invites: invites.value });
+          resolve({ ...members.value, invites: invites.value });
           return;
         }
         const reasons = [members, invites].flatMap((outcome) =>
@@ -183,9 +183,9 @@ function* loadShareData(): SagaGenerator<void> {
   const generation = yield* selectShareMutationGeneration.effect();
   const read = readShareData(target.workspaceId);
   try {
-    const { members, invites: rows } = yield* call(() => read.result);
+    const { members, invites: rows, guestCount, guestLimit } = yield* call(() => read.result);
     const invites = yield* call(vaultInviteLinks, rows);
-    yield* put(shareDataLoaded({ target, generation, members, invites }));
+    yield* put(shareDataLoaded({ target, generation, members, invites, guestCount, guestLimit }));
   } catch (error) {
     if (yield* stillTargets(target)) {
       if (isForbiddenErrorResponse(error)) {
@@ -203,7 +203,9 @@ function* loadShareData(): SagaGenerator<void> {
 /**
  * Inline error for a failed `workspace.invite.create`: the pin failure names
  * the login; `listener-down` (Remote access off, so the daemon cannot serve
- * an invite) tells the owner what to turn on; anything else stays generic.
+ * an invite) tells the owner what to turn on; `guest-limit` (the cap was
+ * spent between the dialog's read and the create) names the cap; anything
+ * else stays generic.
  */
 function createInviteErrorMessage(code: ShareFailure['code'], requestedPin: string): string {
   switch (code) {
@@ -211,6 +213,8 @@ function createInviteErrorMessage(code: ShareFailure['code'], requestedPin: stri
       return m.workspace_share_pinUnknown_error({ login: `@${requestedPin}` });
     case 'listener-down':
       return m.workspace_share_listenerDown_error();
+    case 'guest-limit':
+      return m.workspace_share_guestLimit_error();
     default:
       return m.workspace_share_createFailed_error();
   }
@@ -311,7 +315,7 @@ function* clearLinksOnClose(): SagaGenerator<void> {
 /** Hover card: `workspace.members.list` for one workspace (Member+ may read). */
 function* loadRoster(workspaceId: string): SagaGenerator<void> {
   try {
-    const members = yield* call(workspaceSharingClient.listMembers, workspaceId);
+    const { members } = yield* call(workspaceSharingClient.listMembers, workspaceId);
     yield* put(shareRosterLoaded({ workspaceId, members }));
   } catch (error) {
     if (isForbiddenErrorResponse(error)) {

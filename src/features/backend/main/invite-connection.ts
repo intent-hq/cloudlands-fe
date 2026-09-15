@@ -13,7 +13,8 @@
  *    login, workspaceId }`.
  *
  * Refusals carry `error.data.code` (`invite-expired`, `invite-pin-mismatch`,
- * `invite-flow-denied`, …) so the flow routes on a code, never on prose.
+ * `invite-flow-denied`, `workspace-full`, …) so the flow routes on a code,
+ * never on prose.
  *
  * Trust: the link's `fp` pins the daemon's self-signed cert and every
  * candidate is dialed through {@link pinnedTlsConnect}, so the invite secret
@@ -81,8 +82,9 @@ interface InviteCredential {
 
 /**
  * The daemon's documented `error.data.code` values for `invite.redeem`
- * (intentd #1872). The closed set is the ONLY server-authored text that ever
- * leaves {@link InviteRpcError}: a code outside it maps to `null`.
+ * (intentd #1872; `workspace-full` — the guest cap is spent at join time —
+ * from intentd #1917). The closed set is the ONLY server-authored text that
+ * ever leaves {@link InviteRpcError}: a code outside it maps to `null`.
  */
 const INVITE_ERROR_CODES = [
   'invite-not-found',
@@ -96,6 +98,7 @@ const INVITE_ERROR_CODES = [
   'invite-flow-error',
   'invite-flow-expired',
   'invite-flow-not-found',
+  'workspace-full',
 ] as const;
 
 export type InviteErrorCode = (typeof INVITE_ERROR_CODES)[number];

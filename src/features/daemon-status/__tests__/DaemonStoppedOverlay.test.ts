@@ -144,6 +144,7 @@ async function showOverlay(
     sidecarStartupFailed?: boolean;
     reason?: string;
     reconnectAttempts?: number;
+    connectionLimited?: boolean;
   },
 ) {
   bootTransport = transport;
@@ -400,6 +401,28 @@ describe('DaemonStoppedOverlay', () => {
     const retrying = screen.getByTestId('daemon-stopped-retrying').textContent!;
     expect(retrying).toContain('Retrying connection');
     expect(retrying).not.toContain('attempt');
+  });
+
+  // Multiplayer guest caps (intent-hq/intentd#1917): a 503-refused connect
+  // is transient, so the retry indicator stays, but the copy names the
+  // host's connection cap instead of the generic lost-connection wording.
+  it('names the host connection cap while main retries a 503-refused connect, and reverts', async () => {
+    render(DaemonStoppedOverlay);
+    await showOverlay(externalTransport, { reconnectAttempts: 1, connectionLimited: true });
+
+    expect(screen.getByTestId('daemon-stopped-connection-limit')).toBeTruthy();
+    expect(screen.getByTestId('daemon-stopped-retrying')).toBeTruthy();
+    const limitedText = overlay()!.textContent!;
+
+    // A later failure of another kind drops the cap posture.
+    dispatchAndFlush(
+      connectionStatusChanged('disconnected', undefined, {
+        reconnectAttempts: 2,
+        connectionLimited: false,
+      }),
+    );
+    expect(screen.queryByTestId('daemon-stopped-connection-limit')).toBeNull();
+    expect(overlay()!.textContent).not.toBe(limitedText);
   });
 
   describe('passive per-host cert warnings (#1746 follow-up)', () => {

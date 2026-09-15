@@ -14,6 +14,7 @@ import {
   type WorkspaceInviteCreateResult,
   type WorkspaceInviteRow,
   type WorkspaceMember,
+  type WorkspaceMembersList,
 } from './types';
 
 const inviteErrorCodes: ReadonlySet<string> = new Set<string>(INVITE_ERROR_CODES);
@@ -89,12 +90,22 @@ function shareFailure(error: unknown): ShareFailure {
 }
 
 export const workspaceSharingClient = {
-  /** `workspace.members.list` — Member+ may read; the daemon filters non-members (-32602). */
-  async listMembers(workspaceId: string): Promise<WorkspaceMember[]> {
-    const result = await backendRequest<{ members?: WorkspaceMember[] }>('workspace.members.list', {
-      workspaceId,
-    });
-    return Array.isArray(result?.members) ? result.members : [];
+  /**
+   * `workspace.members.list` — Member+ may read; the daemon filters
+   * non-members (-32602). Returns the roster with the guest cap
+   * (`guestCount` / `guestLimit`, `null` each when the daemon omits them).
+   */
+  async listMembers(workspaceId: string): Promise<WorkspaceMembersList> {
+    const result = await backendRequest<{
+      members?: WorkspaceMember[];
+      guestCount?: unknown;
+      guestLimit?: unknown;
+    }>('workspace.members.list', { workspaceId });
+    return {
+      members: Array.isArray(result?.members) ? result.members : [],
+      guestCount: typeof result?.guestCount === 'number' ? result.guestCount : null,
+      guestLimit: typeof result?.guestLimit === 'number' ? result.guestLimit : null,
+    };
   },
 
   /** `workspace.members.remove` — owner only; the owner row itself is `-32602`. */
