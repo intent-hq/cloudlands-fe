@@ -4,6 +4,15 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.158.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.158.0...v2.158.1) (2026-09-15)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.57 ([#2476](https://github.com/intent-hq/cloudlands-fe/issues/2476)) ([6faa028](https://github.com/intent-hq/cloudlands-fe/commit/6faa02858c1db1e3da93b96d665dc5ca4d25c186))
+* record the selector baseline before emitting in Themis selector channels ([#2472](https://github.com/intent-hq/cloudlands-fe/issues/2472)) ([b08fd84](https://github.com/intent-hq/cloudlands-fe/commit/b08fd8436fd6f853b63ce3b1e68b2d3c22f7d310))
+* render an absent threads.unresolved as unknown, not zero ([#2473](https://github.com/intent-hq/cloudlands-fe/issues/2473)) ([1cdbc93](https://github.com/intent-hq/cloudlands-fe/commit/1cdbc937cf7266f37f156f2e60e07bb7dbb2690c))
+
 ## [2.158.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.157.0...v2.158.0) (2026-09-15)
 
 
