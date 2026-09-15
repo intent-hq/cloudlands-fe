@@ -346,33 +346,37 @@ interface Attachment {
   task: Task | null;
 }
 
-function* restartAttach(attachment: Attachment, reportAfter: boolean): SagaGenerator<void> {
+/**
+ * Every attach ends with one report. The selector channel behind
+ * `reportOnChange` does not replay its initial value, so a window whose focus
+ * was already settled at boot would otherwise never announce itself; after a
+ * resubscribe or a backend switch the connection is fresh (main re-sends its
+ * merged `presence.update` when the pooled connection comes back) and the
+ * report also learns the connection's current `typingSource`.
+ */
+function* restartAttach(attachment: Attachment): SagaGenerator<void> {
   if (attachment.task) yield* cancel(attachment.task);
   attachment.task = yield* fork(function* () {
     yield* attachBackend(attachment);
-    if (reportAfter) yield* sendReport();
+    yield* sendReport();
   });
 }
 
 /**
  * Attach once the firehose subscription is live (`daemonEventsSaga` bumps the
  * generation on boot and after every resubscribe) — never before, or the
- * snapshot may predate the subscription. Main re-sends the merged
- * `presence.update` when the pooled connection comes back, so on every
- * generation after the first this window also reports once, learning the
- * connection's fresh `typingSource`.
+ * snapshot may predate the subscription.
  */
 function* watchSubscription(attachment: Attachment): SagaGenerator<void> {
   const channel = yield* createChannelFromSelector(selectDaemonEventsSubscriptionGeneration);
   let generation = yield* select(selectDaemonEventsSubscriptionGeneration.select);
-  if (generation > 0) yield* restartAttach(attachment, false);
+  if (generation > 0) yield* restartAttach(attachment);
   try {
     while (true) {
       const { payload } = yield* take(channel);
       if (payload === generation) continue;
-      const reconnected = generation > 0;
       generation = payload;
-      yield* restartAttach(attachment, reconnected);
+      yield* restartAttach(attachment);
     }
   } finally {
     channel.close();
@@ -394,7 +398,7 @@ function* watchBackend(attachment: Attachment): SagaGenerator<void> {
       attachment.task = null;
       if (backendId) yield* put(presenceReset());
       backendId = payload;
-      if (backendId) yield* restartAttach(attachment, false);
+      if (backendId) yield* restartAttach(attachment);
     }
   } finally {
     channel.close();
