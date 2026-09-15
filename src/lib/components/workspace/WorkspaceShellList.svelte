@@ -5,7 +5,6 @@
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
   import { isLiveScriptStatus } from '$features/scripts/utils/script-status';
   import { Button } from '$lib/components/ui/button';
-  import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import * as Menu from '$lib/components/ui/menu';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import {
@@ -141,21 +140,28 @@
               >
             </Button>
             <div class="flex shrink-0 items-center" data-surface-actions>
-              <DropdownMenu align="end" side="bottom">
-                {#snippet trigger({ props })}
-                  <Button
-                    {...props}
-                    variant="ghost"
-                    size="icon-compact"
-                    iconOnly
-                    class="size-7"
-                    tooltip={m.workspace_shell_openIn_tooltip()}
-                    tooltipSide="left"
-                  >
-                    <Fa icon={faArrowUpRightFromSquare} class="size-3" />
-                  </Button>
-                {/snippet}
-                {#snippet content()}
+              <Menu.Root>
+                <Menu.Trigger>
+                  {#snippet child({ props })}
+                    <Button
+                      {...props}
+                      variant="ghost"
+                      size="icon-compact"
+                      iconOnly
+                      class="size-7"
+                      tooltip={m.workspace_shell_openIn_tooltip()}
+                      tooltipSide="left"
+                    >
+                      <Fa icon={faArrowUpRightFromSquare} class="size-3" />
+                    </Button>
+                  {/snippet}
+                </Menu.Trigger>
+                <Menu.Content
+                  align="end"
+                  side="bottom"
+                  preventScroll={false}
+                  aria-label={m.ui_dropdownMenu_ariaLabel()}
+                >
                   <Menu.Item
                     onclick={(event) => {
                       event.stopPropagation();
@@ -177,8 +183,8 @@
                       />{/snippet}
                     {m.workspace_shell_showInBottomBar_tooltip()}
                   </Menu.Item>
-                {/snippet}
-              </DropdownMenu>
+                </Menu.Content>
+              </Menu.Root>
             </div>
           </div>
         {:else}
@@ -251,21 +257,28 @@
               </span>
             {/if}
             <div class="flex shrink-0 items-center" data-surface-actions>
-              <DropdownMenu align="end" side="bottom">
-                {#snippet trigger({ props })}
-                  <Button
-                    {...props}
-                    variant="ghost"
-                    size="icon-compact"
-                    iconOnly
-                    class="size-7"
-                    tooltip={m.workspace_shell_openIn_tooltip()}
-                    tooltipSide="left"
-                  >
-                    <Fa icon={faArrowUpRightFromSquare} class="size-3" />
-                  </Button>
-                {/snippet}
-                {#snippet content()}
+              <Menu.Root>
+                <Menu.Trigger>
+                  {#snippet child({ props })}
+                    <Button
+                      {...props}
+                      variant="ghost"
+                      size="icon-compact"
+                      iconOnly
+                      class="size-7"
+                      tooltip={m.workspace_shell_openIn_tooltip()}
+                      tooltipSide="left"
+                    >
+                      <Fa icon={faArrowUpRightFromSquare} class="size-3" />
+                    </Button>
+                  {/snippet}
+                </Menu.Trigger>
+                <Menu.Content
+                  align="end"
+                  side="bottom"
+                  preventScroll={false}
+                  aria-label={m.ui_dropdownMenu_ariaLabel()}
+                >
                   <Menu.Item
                     onclick={(event) => {
                       event.stopPropagation();
@@ -287,8 +300,8 @@
                       />{/snippet}
                     {m.workspace_shell_showInBottomBar_tooltip()}
                   </Menu.Item>
-                {/snippet}
-              </DropdownMenu>
+                </Menu.Content>
+              </Menu.Root>
             </div>
             <div class="flex shrink-0 items-center" data-script-actions>
               {#if live}
