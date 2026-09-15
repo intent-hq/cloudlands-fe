@@ -29,6 +29,7 @@ export const initialState: DaemonHealthState = {
   polling: false,
   transport: null,
   reconnectAttempts: 0,
+  connectionLimited: false,
   hostLocality: null,
   sidecarGaveUp: false,
   sidecarGaveUpReason: null,
@@ -64,6 +65,11 @@ export interface ConnectionStatusExtras {
   reason?: string;
   /** Reconnect attempts since the last successful connect (#1750). */
   reconnectAttempts?: number;
+  /**
+   * The last connect attempt was refused with HTTP 503 by the host's guest
+   * connection cap (intent-hq/intentd#1917); main keeps retrying slowly.
+   */
+  connectionLimited?: boolean;
   /**
    * Epoch ms of the first drop main observed for this window's backend while
    * a user-requested `system.requestUpdate` is outstanding — the disconnect
@@ -248,6 +254,7 @@ daemonHealthReducer.with(
         lastUpdated: transportChanged ? null : state.lastUpdated,
         transport: transport ?? state.transport,
         reconnectAttempts: 0,
+        connectionLimited: false,
         // A reported locality belongs to the daemon/transport that produced it.
         // Drop it when switching connections so selectors immediately fall back
         // to the new transport until that daemon's next system.status response.
@@ -281,6 +288,7 @@ daemonHealthReducer.with(
         transport: transport ?? state.transport,
         hostLocality,
         reconnectAttempts: extras?.reconnectAttempts ?? state.reconnectAttempts,
+        connectionLimited: extras?.connectionLimited ?? state.connectionLimited,
         sidecarGaveUp: extras?.sidecarGaveUp ? true : state.sidecarGaveUp,
         sidecarGaveUpReason: extras?.sidecarGaveUp
           ? (extras.reason ?? null)

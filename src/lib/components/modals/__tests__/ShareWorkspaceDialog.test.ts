@@ -204,6 +204,38 @@ describe('ShareWorkspaceDialog — create and copy', () => {
     expect(onCreateInvite).not.toHaveBeenCalled();
   });
 
+  // Multiplayer guest caps (intent-hq/intentd#1917): the roster read reports
+  // guests spent vs the cap; the dialog shows the pair and refuses to mint
+  // once the cap is reached, naming the reason.
+  it('shows the guest cap and refuses to submit once it is reached', async () => {
+    const onCreateInvite = vi.fn();
+    const { rerender } = renderDialog({ onCreateInvite, guestCount: 2, guestLimit: 5 });
+
+    const counter = screen.getByTestId('share-guest-count');
+    expect(counter.dataset.guestCount).toBe('2');
+    expect(counter.dataset.guestLimit).toBe('5');
+    expect(screen.queryByTestId('share-guest-cap-reached')).toBeNull();
+    const submit = screen.getByRole('button', { name: /Create invite link/ }) as HTMLButtonElement;
+    expect(submit.disabled).toBe(false);
+
+    await rerender({ ...baseProps, onCreateInvite, guestCount: 5, guestLimit: 5 });
+    await waitFor(() => expect(screen.getByTestId('share-guest-cap-reached')).toBeTruthy());
+    const blocked = screen.getByRole('button', { name: /Create invite link/ }) as HTMLButtonElement;
+    expect(blocked.disabled).toBe(true);
+    await fireEvent.submit(blocked.closest('form')!);
+    expect(onCreateInvite).not.toHaveBeenCalled();
+  });
+
+  it('does not gate on the cap while it is unknown (daemon without the cap fields)', async () => {
+    const onCreateInvite = vi.fn();
+    renderDialog({ onCreateInvite, guestCount: null, guestLimit: null });
+
+    expect(screen.queryByTestId('share-guest-count')).toBeNull();
+    expect(screen.queryByTestId('share-guest-cap-reached')).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: /Create invite link/ }));
+    expect(onCreateInvite).toHaveBeenCalledWith('');
+  });
+
   it('copies the created link to the clipboard and toasts', async () => {
     renderDialog({ createdLink });
 

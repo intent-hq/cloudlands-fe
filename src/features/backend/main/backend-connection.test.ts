@@ -29,6 +29,7 @@ import {
   AuthRejectedError,
   candidateWssHosts,
   captureFingerprint,
+  ConnectionLimitError,
   createBackendSocket,
   defaultSocketPath,
   describeBackendConfig,
@@ -996,6 +997,24 @@ describe('WSS auth rejection (401/403 upgrade responses)', () => {
     expect(errors.length).toBeGreaterThan(0);
     expect(errors.some((e) => e instanceof AuthRejectedError)).toBe(false);
     expect(errors.some((e) => /unexpected server response: 500/i.test(e.message))).toBe(true);
+    client.dispose();
+  });
+
+  // Multiplayer guest caps (intent-hq/intentd#1917): the daemon refuses the
+  // upgrade with 503 when its guest connection cap is spent. Transient, so it
+  // is neither an auth rejection (which stops retrying) nor a generic
+  // transport error (which hides the reason).
+  it('surfaces a 503 upgrade rejection as a ConnectionLimitError and flags the client limited', async () => {
+    daemon.statusCode = 503;
+    const client = makeClient();
+    const errors: Error[] = [];
+    client.on('error', (e) => errors.push(e));
+    await expect(client.request('system.status')).rejects.toBeInstanceOf(ConnectionLimitError);
+    expect(errors.some((e) => e instanceof ConnectionLimitError)).toBe(true);
+    expect(errors.some((e) => e instanceof AuthRejectedError)).toBe(false);
+    expect(errors.some((e) => e instanceof PinMismatchError)).toBe(false);
+    expect(client.getStatus()).toBe('disconnected');
+    expect(client.isConnectionLimited()).toBe(true);
     client.dispose();
   });
 
