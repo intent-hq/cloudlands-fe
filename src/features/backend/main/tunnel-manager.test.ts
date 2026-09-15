@@ -331,6 +331,78 @@ describe('TunnelManager', () => {
     cleanups.push(fn);
   };
 
+  it('releases a reset queued client without later sending its OPEN', async () => {
+    const { manager, created } = makeManager({
+      daemon: false,
+      maxStreams: 1,
+      maxPendingStreams: 1,
+    });
+    onCleanup(() => manager.dispose());
+    const port = await manager.forwardPort(10001);
+    const active = await connectClient(port);
+    onCleanup(() => active.destroy());
+    const queued = await connectClient(port);
+    onCleanup(() => queued.destroy());
+    await waitFor(() => manager.getDiagnostics().admission.pending === 1);
+    const cancelledId = manager
+      .getDiagnostics()
+      .streams.find((s) => s.state === 'queued')!.streamId;
+    queued.resetAndDestroy();
+    await waitFor(() => manager.getDiagnostics().admission.pending === 0);
+    const replacement = await connectClient(port);
+    onCleanup(() => replacement.destroy());
+    await waitFor(() => manager.getDiagnostics().admission.pending === 1);
+    const ws = created[0];
+    const first = ws.sent.find((f) => f.type === 'open')!;
+    ws.deliver({ type: 'close', streamId: first.streamId });
+    await waitFor(() => ws.sent.filter((f) => f.type === 'open').length === 2);
+    expect(ws.sent.some((f) => f.type === 'open' && f.streamId === cancelledId)).toBe(false);
+  });
+
+  it('withholds queued bytes and FIN until OPEN_OK, preserving a half-closed request', async () => {
+    const { manager, created } = makeManager({ daemon: false, maxStreams: 1 });
+    onCleanup(() => manager.dispose());
+    const port = await manager.forwardPort(10001);
+    const active = await connectClient(port);
+    onCleanup(() => active.destroy());
+    const queued = await connectClient(port);
+    onCleanup(() => queued.destroy());
+    await waitFor(() => manager.getDiagnostics().admission.pending === 1);
+    queued.end('request');
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const ws = created[0];
+    expect(ws.sent.map((f) => f.type)).toEqual(['open']);
+    ws.deliver({ type: 'close', streamId: ws.sent[0].streamId });
+    await waitFor(() => ws.sent.filter((f) => f.type === 'open').length === 2);
+    const id = ws.sent[1].streamId;
+    expect(ws.sent.map((f) => f.type)).toEqual(['open', 'open']);
+    ws.deliver({ type: 'openOk', streamId: id });
+    await waitFor(() => ws.sent.some((f) => f.type === 'eof'));
+    expect(ws.sent.slice(2)).toEqual([
+      { type: 'data', streamId: id, payload: Buffer.from('request') },
+      { type: 'eof', streamId: id },
+    ]);
+  });
+
+  it('bounds pre-admission bytes and releases an overflowing queue slot', async () => {
+    const { manager, created } = makeManager({ daemon: false, maxStreams: 1 });
+    onCleanup(() => manager.dispose());
+    const port = await manager.forwardPort(10001);
+    const active = await connectClient(port);
+    onCleanup(() => active.destroy());
+    const queued = await connectClient(port);
+    onCleanup(() => queued.destroy());
+    await waitFor(() => manager.getDiagnostics().admission.pending === 1);
+    const closed = waitForClose(queued);
+    queued.write(Buffer.alloc(128 * 1024));
+    await closed;
+    expect(manager.getDiagnostics().admission.pending).toBe(0);
+    expect(manager.getDiagnostics().admission.lastFailure?.reason).toBe(
+      'pre-admission byte budget exceeded',
+    );
+    expect(created[0].sent.map((f) => f.type)).toEqual(['open']);
+  });
+
   it('serves queued ports round-robin instead of draining a busy port first', async () => {
     const { manager, created } = makeManager({
       daemon: false,

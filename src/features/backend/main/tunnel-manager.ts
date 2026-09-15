@@ -274,6 +274,9 @@ interface StreamState {
   forward: ForwardState;
   /** `OPEN_OK` received; data may flow. */
   opened: boolean;
+  pendingData: Buffer[];
+  pendingBytes: number;
+  localEnded: boolean;
   /** The daemon already ended this stream (`OPEN_ERR`/`CLOSE`) — send no `CLOSE` back. */
   remoteClosed: boolean;
   openTimer: NodeJS.Timeout | null;
@@ -866,6 +869,9 @@ export class TunnelManager {
       socket,
       forward,
       opened: false,
+      pendingData: [],
+      pendingBytes: 0,
+      localEnded: false,
       remoteClosed: false,
       openTimer: null,
       admissionTimer: null,
@@ -883,7 +889,8 @@ export class TunnelManager {
       activeStreams: this.streams.size,
     });
     socket.setNoDelay(true);
-    // Hold local bytes until the daemon confirms the remote connect.
+    // Read while awaiting admission so TCP resets are observed. Application
+    // bytes stay in a bounded buffer until the daemon confirms the connect.
     socket.pause();
     stream.admissionTimer = setTimeout(() => {
       if (!stream.opened) {
@@ -898,6 +905,20 @@ export class TunnelManager {
     stream.admissionTimer.unref?.();
 
     socket.on('data', (chunk: Buffer) => {
+      if (!stream.opened) {
+        if (stream.pendingBytes + chunk.length > LOCAL_READ_BUFFER_BYTES) {
+          this.recordAdmissionFailure(
+            forward.remotePort,
+            'pre-admission byte budget exceeded',
+            Date.now() - stream.createdAtMs,
+          );
+          this.endStream(stream, { sendClose: stream.admitted });
+        } else {
+          stream.pendingData.push(chunk);
+          stream.pendingBytes += chunk.length;
+        }
+        return;
+      }
       // Respect the daemon's per-frame DATA cap by splitting large reads.
       for (let offset = 0; offset < chunk.length; offset += MAX_DATA_PAYLOAD_BYTES) {
         const payload = chunk.subarray(offset, offset + MAX_DATA_PAYLOAD_BYTES);
@@ -907,8 +928,8 @@ export class TunnelManager {
     });
     socket.on('end', () => {
       // Local half-close: no more client → daemon bytes on this stream.
-      if (stream.admitted && !stream.remoteClosed) this.sendFrame({ type: 'eof', streamId });
-      else this.endStream(stream, { sendClose: false });
+      stream.localEnded = true;
+      if (stream.opened && !stream.remoteClosed) this.sendFrame({ type: 'eof', streamId });
     });
     socket.on('error', () => {
       // 'close' follows and owns the teardown.
@@ -919,6 +940,7 @@ export class TunnelManager {
     });
 
     this.queueStream(stream);
+    if (!socket.destroyed && !this.pausedForBackpressure.has(socket)) socket.resume();
   }
 
   private handleMessage(data: unknown, isBinary: boolean): void {
@@ -958,6 +980,13 @@ export class TunnelManager {
           remotePort: stream.forward.remotePort,
           openLatencyMs: Date.now() - stream.createdAtMs,
         });
+        for (const payload of stream.pendingData) {
+          this.sendFrame({ type: 'data', streamId: stream.streamId, payload });
+        }
+        stream.pendingData = [];
+        stream.pendingBytes = 0;
+        if (stream.localEnded) this.sendFrame({ type: 'eof', streamId: stream.streamId });
+        this.applyBackpressure(stream.socket);
         if (!stream.socket.destroyed && !this.pausedForBackpressure.has(stream.socket)) {
           stream.socket.resume();
         }
@@ -1063,6 +1092,8 @@ export class TunnelManager {
   private endStream(stream: StreamState, options: { sendClose: boolean }): void {
     if (!this.streams.delete(stream.streamId)) return;
     stream.forward.streams.delete(stream);
+    stream.pendingData = [];
+    stream.pendingBytes = 0;
     const queued = this.pendingStreams.get(stream.forward.remotePort);
     if (queued) {
       const remaining = queued.filter((entry) => entry !== stream);
