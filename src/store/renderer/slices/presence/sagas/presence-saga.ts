@@ -23,6 +23,13 @@
  * switch supersedes every read in flight, and a read superseded by a NEWER
  * read for the same workspace is dropped, whichever settles first.
  *
+ * Membership: the roster only lists who is online, so the accepted members
+ * of every open SHARED workspace tab (`memberCount > 1`) are read from
+ * `workspace.members.list` (Member+) — on attach, when such a tab opens and
+ * whenever the daemon's `workspace:updated` moves its `memberCount`. Reads
+ * are fenced like the snapshots (a backend switch or a newer read of the
+ * same workspace supersedes).
+ *
  * Identity: `principal.me` is read per backend so the roster's own row can be
  * told apart; a backend switch resets every roster first.
  */
@@ -59,9 +66,11 @@ import {
   type PresenceRoster,
 } from '$shared/types/presence';
 import { selectCurrentConnectionId } from '../../connections/connections-selectors';
+import type { WorkspaceMembersListResult } from '../../guest-sessions/guest-sessions-types';
 import { selectActiveWorkspaceIds } from '../../tab-state/tab-state-selectors';
 import { selectDaemonEventsSubscriptionGeneration } from '../../workspace-events/workspace-events-selectors';
 import {
+  presenceMembersReceived,
   presenceOwnPrincipalReceived,
   presenceOwnTypingSourceReceived,
   presenceReset,
@@ -76,6 +85,7 @@ import {
   selectOwnPresenceReport,
   selectOwnPresenceReportKey,
   selectPresenceLiveTyping,
+  selectPresenceMembershipKeys,
 } from '../presence-selectors';
 import { PRESENCE_TYPING_EXPIRY_MS, type LiveTypingEntry } from '../presence-types';
 
@@ -95,7 +105,7 @@ async function invokeReport(params: PresenceReportParams): Promise<PresenceRepor
 
 type ObservedAction = { type: string; payload?: unknown };
 
-/** Saga-local ordinal of the latest `presence.snapshot` read issued per workspace. */
+/** Saga-local ordinal of the latest read issued per workspace (one map per read kind). */
 type RosterReads = Map<string, number>;
 
 async function readOwnPrincipalId(): Promise<string | null> {
@@ -114,6 +124,19 @@ async function readRosterSnapshot(workspaceId: string): Promise<PresenceRoster |
     return isPresenceRoster(result) ? result : null;
   } catch (error) {
     logger.debug('presence.snapshot failed', { workspaceId, error: String(error) });
+    return null;
+  }
+}
+
+/** `null` for a non-member / unknown workspace or an older daemon; the membership stays unread. */
+async function readMembership(workspaceId: string): Promise<WorkspaceMembersListResult | null> {
+  try {
+    const result = await backendRequest<WorkspaceMembersListResult>('workspace.members.list', {
+      workspaceId,
+    });
+    return Array.isArray(result?.members) ? result : null;
+  } catch (error) {
+    logger.debug('workspace.members.list failed', { workspaceId, error: String(error) });
     return null;
   }
 }
@@ -266,12 +289,50 @@ function onDisplayedWorkspacesChanged(reads: RosterReads) {
   };
 }
 
+/**
+ * Read one shared workspace's accepted membership. Only a backend switch
+ * supersedes the read mid-flight (no push carries a membership); a read
+ * superseded by a NEWER read of the same workspace is dropped.
+ */
+function* hydrateMembership(reads: RosterReads, workspaceId: string): SagaGenerator<void> {
+  const ordinal = (reads.get(workspaceId) ?? 0) + 1;
+  reads.set(workspaceId, ordinal);
+  const { membership } = yield* race({
+    membership: call(readMembership, workspaceId),
+    superseded: take(presenceReset),
+  });
+  if (membership && reads.get(workspaceId) === ordinal)
+    yield* put(presenceMembersReceived(workspaceId, membership.members));
+}
+
+/** A membership key is `${workspaceId}:${memberCount}`; the count only makes the key change. */
+const membershipKeyWorkspaceId = (key: string): string => key.slice(0, key.lastIndexOf(':'));
+
+function* hydrateMemberships(reads: RosterReads, keys: string[]): SagaGenerator<void> {
+  yield* all(keys.map((key) => call(hydrateMembership, reads, membershipKeyWorkspaceId(key))));
+}
+
+/** A shared tab opened, or a displayed workspace's `memberCount` moved: its membership is re-read. */
+function onMembershipKeysChanged(reads: RosterReads) {
+  return function* ({ payload, prevPayload }: SelectorChannelPayload<string[]>) {
+    const known = new Set(prevPayload ?? []);
+    yield* hydrateMemberships(
+      reads,
+      payload.filter((key) => !known.has(key)),
+    );
+  };
+}
+
 /** Identity first, so the seeded rosters never show this window's own row. */
-function* attachBackend(reads: RosterReads): SagaGenerator<void> {
+function* attachBackend(attachment: Attachment): SagaGenerator<void> {
   const principalId = yield* call(readOwnPrincipalId);
   yield* put(presenceOwnPrincipalReceived(principalId));
   const workspaceIds = yield* select(selectActiveWorkspaceIds.select);
-  yield* hydrateRosters(reads, workspaceIds);
+  const membershipKeys = yield* select(selectPresenceMembershipKeys.select);
+  yield* all([
+    call(hydrateRosters, attachment.reads, workspaceIds),
+    call(hydrateMemberships, attachment.memberReads, membershipKeys),
+  ]);
 }
 
 /**
@@ -281,13 +342,14 @@ function* attachBackend(reads: RosterReads): SagaGenerator<void> {
  */
 interface Attachment {
   reads: RosterReads;
+  memberReads: RosterReads;
   task: Task | null;
 }
 
 function* restartAttach(attachment: Attachment, reportAfter: boolean): SagaGenerator<void> {
   if (attachment.task) yield* cancel(attachment.task);
   attachment.task = yield* fork(function* () {
-    yield* attachBackend(attachment.reads);
+    yield* attachBackend(attachment);
     if (reportAfter) yield* sendReport();
   });
 }
@@ -341,7 +403,8 @@ function* watchBackend(attachment: Attachment): SagaGenerator<void> {
 
 export function* presenceSaga(): SagaGenerator<void> {
   const reads: RosterReads = new Map();
-  const attachment: Attachment = { reads, task: null };
+  const memberReads: RosterReads = new Map();
+  const attachment: Attachment = { reads, memberReads, task: null };
   const tasks = [
     yield* fork(watchVisibility),
     yield* fork(watchTypingPulses),
@@ -350,6 +413,10 @@ export function* presenceSaga(): SagaGenerator<void> {
     yield* takeLatestFromSelector(selectOwnPresenceReportKey, reportOnChange),
     yield* takeEveryFromSelector(selectPresenceLiveTyping, armTypingTimers),
     yield* takeEveryFromSelector(selectActiveWorkspaceIds, onDisplayedWorkspacesChanged(reads)),
+    yield* takeEveryFromSelector(
+      selectPresenceMembershipKeys,
+      onMembershipKeysChanged(memberReads),
+    ),
   ];
   yield* all(tasks.map((task) => join(task)));
 }

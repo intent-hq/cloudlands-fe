@@ -2,14 +2,18 @@
 import RealTooltip from '$lib/components/ui/tooltip/TooltipRich.svelte';
 import RealTooltipShortcut from '$lib/components/ui/tooltip/TooltipShortcut.svelte';
 import { m } from '$shared/paraglide/messages.js';
-import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { flushSync, tick } from 'svelte';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkspaceTabStatus } from '$store/renderer/slices/hud/hud-types';
+import { removeHostedMemberRequested } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
 import { WORKSPACE_TAB_MOVED_EVENT } from '$features/workspace/utils/workspace-tab-move-event';
-import { workspaceHoverCardIntentSession } from '$lib/components/workspace/utils/workspace-hover-card-intent';
+import {
+  WORKSPACE_HOVER_CARD_OPEN_DELAY_MS,
+  workspaceHoverCardIntentSession,
+} from '$lib/components/workspace/utils/workspace-hover-card-intent';
 import {
   configuredVisualStates,
   exerciseVisualStates,
@@ -45,6 +49,10 @@ const mocks = vi.hoisted(() => ({
       login: string | null;
       displayName: string | null;
       avatarUrl: string | null;
+      owner?: boolean;
+      online?: boolean;
+      viewing?: boolean;
+      self?: boolean;
     }>
   >,
   useRealTooltip: false,
@@ -126,6 +134,7 @@ vi.mock('$store/renderer/slices/hud/hud-selectors', () => ({
 }));
 vi.mock('$store/renderer/slices/presence/presence-selectors', () => ({
   selectPresenceRosters: () => readable(mocks.presencePeople),
+  selectPresenceMembers: () => readable({}),
   selectPresenceOwnPrincipalId: () => readable(null),
   selectWorkspacePresencePeople: {
     select: (_state: unknown, workspaceId: string) => mocks.presencePeople[workspaceId] ?? [],
@@ -453,6 +462,144 @@ describe('WorkspaceTabStrip', () => {
         m.presence_avatarStack_more_label({ count: '2' }),
       );
     });
+
+    it('rings the owner blue, an online member green and an offline member grey, marking self', () => {
+      mocks.presencePeople = {
+        'ws-1': [
+          { ...person(1), owner: true, online: true, viewing: true, self: true },
+          { ...person(2), owner: false, online: true, viewing: false, self: false },
+          { ...person(3), owner: false, online: false, viewing: false, self: false },
+        ],
+      };
+      render(WorkspaceTabStrip);
+
+      const stack = screen
+        .getByRole('tab', { name: /Alpha/ })
+        .querySelector('[data-presence-avatar-stack]')!;
+      const rings = Array.from(stack.querySelectorAll<HTMLElement>('[data-presence-avatar]')).map(
+        (avatar) => [
+          avatar.getAttribute('data-presence-ring'),
+          avatar.hasAttribute('data-presence-self'),
+        ],
+      );
+      expect(rings).toEqual([
+        ['owner', true],
+        ['member', false],
+        ['offline', false],
+      ]);
+      expect(stack.getAttribute('aria-label')).toBe(
+        m.presence_avatarStack_people_many({ count: '2' }),
+      );
+    });
+
+    describe('owner-only member removal from the hover card', () => {
+      const owner = { ...person(1), owner: true, online: true, viewing: true, self: true };
+      const collaborator = {
+        ...person(2),
+        owner: false,
+        online: true,
+        viewing: false,
+        self: false,
+      };
+
+      function tooltipRootOf(name: RegExp) {
+        return screen
+          .getByRole('tab', { name })
+          .closest<HTMLElement>('[data-testid="workspace-tab-tooltip-root"]')!;
+      }
+
+      async function openHoverCard(name: RegExp) {
+        const root = tooltipRootOf(name);
+        await enterTabTooltip(root);
+        vi.advanceTimersByTime(WORKSPACE_HOVER_CARD_OPEN_DELAY_MS);
+        await tick();
+        return root;
+      }
+
+      beforeEach(() => {
+        vi.useFakeTimers();
+      });
+
+      afterEach(() => {
+        vi.useRealTimers();
+      });
+
+      it('makes only the tab whose card has a removable row hoverable, and offers Remove there', async () => {
+        mocks.presencePeople = {
+          'ws-1': [owner, collaborator],
+          'ws-3': [
+            { ...owner, self: false },
+            { ...collaborator, self: true },
+          ],
+        };
+        render(WorkspaceTabStrip, { props: { activeWorkspaceId: 'ws-2' } });
+
+        expect(tooltipRootOf(/Alpha/).getAttribute('data-tooltip-disable-hoverable-content')).toBe(
+          'false',
+        );
+        expect(tooltipRootOf(/Gamma/).getAttribute('data-tooltip-disable-hoverable-content')).toBe(
+          'true',
+        );
+
+        await openHoverCard(/Alpha/);
+        expect(
+          document.querySelector(
+            '[data-workspace-tab-hover-content="ws-1"] [data-workspace-hover-card-person-remove]',
+          ),
+        ).toBeTruthy();
+      });
+
+      it('keeps a collaborator-side tab, and an owner alone, non-hoverable with no Remove', async () => {
+        // Beta is the tab this window does not own (`myRole: 'collaborator'`);
+        // Alpha is owned here and stays hoverable for its Share entry regardless
+        // of who is present.
+        mocks.presencePeople = {
+          'ws-2': [
+            { ...owner, self: false },
+            { ...collaborator, self: true },
+          ],
+          'ws-3': [owner],
+        };
+        render(WorkspaceTabStrip, { props: { activeWorkspaceId: 'ws-1' } });
+
+        for (const name of [/Beta/, /Gamma/]) {
+          expect(tooltipRootOf(name).getAttribute('data-tooltip-disable-hoverable-content')).toBe(
+            'true',
+          );
+        }
+        await openHoverCard(/Beta/);
+        expect(document.querySelector('[data-workspace-hover-card-person-remove]')).toBeNull();
+      });
+
+      it('dispatches workspace.members.remove for the row only once the removal is confirmed', async () => {
+        mocks.presencePeople = { 'ws-1': [owner, collaborator] };
+        render(WorkspaceTabStrip, { props: { activeWorkspaceId: 'ws-2' } });
+        await openHoverCard(/Alpha/);
+
+        const removals = () =>
+          mocks.dispatch.mock.calls
+            .map(([action]) => action as { type?: string; payload?: unknown })
+            .filter((action) => action.type === removeHostedMemberRequested('', '').type);
+
+        await fireEvent.click(document.querySelector('[data-workspace-hover-card-person-remove]')!);
+        const dialog = await screen.findByRole('dialog');
+        expect(dialog.textContent).toContain(m.settings_guestSessions_removeConfirm_title());
+        expect(removals()).toEqual([]);
+
+        await fireEvent.click(
+          within(dialog).getByRole('button', { name: m.modals_bulkActionConfirm_cancel_label() }),
+        );
+        expect(removals()).toEqual([]);
+
+        await fireEvent.click(document.querySelector('[data-workspace-hover-card-person-remove]')!);
+        await fireEvent.click(
+          within(await screen.findByRole('dialog')).getByRole('button', {
+            name: m.settings_guestSessions_remove_label(),
+          }),
+        );
+        expect(removals().map((action) => action.payload)).toEqual([['ws-1', 'p-2']]);
+      });
+    });
   });
 
   it.each([
@@ -541,7 +688,9 @@ describe('WorkspaceTabStrip', () => {
     expect(source).not.toContain('in:fly');
     expect(source).not.toContain('out:fly');
     expect(source).toContain('animate:flip');
-    expect(source).toContain('<WorkspaceHoverCard {workspace} activeAgentIds={runningAgentIds} />');
+    expect(source).toMatch(
+      /<WorkspaceHoverCard\s+\{workspace\}\s+activeAgentIds=\{runningAgentIds\}[\s\S]*?\/>/,
+    );
     expect(source).not.toContain('ensureWorkspaceTasksLoaded');
     expect(source).not.toContain('data-workspace-tab-progress');
   });

@@ -3,11 +3,12 @@
  */
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
+import { m } from '$shared/paraglide/messages.js';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PrMonitorRow } from '$features/pr-monitor/pr-monitor-service';
 import type { AgentMessage, AgentSession, ContentBlock, Workspace } from '$shared/types';
 import { PullRequestStatus, WorkspaceStatusEnum } from '$shared/types';
-import type { PresenceMember } from '$shared/types/presence';
+import type { PresencePerson } from '$store/renderer/slices/presence/presence-types';
 import { QUESTION_RESOURCE_MIME_TYPE } from '$shared/types/question-resource';
 import { warmImport } from '../../../../test/warm-import';
 
@@ -27,7 +28,7 @@ const mocks = vi.hoisted(() => {
   }
   const rosters: Record<string, RosterFixture> = {};
   const rosterListeners = new Set<() => void>();
-  const presenceMembersByWorkspace: Record<string, PresenceMember[]> = {};
+  const presenceMembersByWorkspace: Record<string, PresencePerson[]> = {};
   const createWorkspaceReadable =
     <T>(resolve: (workspaceId: string) => T) =>
     (workspaceIdStore: { subscribe: (run: (value: string) => void) => () => void }) => ({
@@ -84,7 +85,7 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
 }));
 
 vi.mock('$store/renderer/slices/presence/presence-selectors', () => ({
-  selectWorkspacePresenceMembers: vi.fn(
+  selectWorkspacePresencePeople: vi.fn(
     mocks.createWorkspaceReadable(
       (workspaceId: string) => mocks.presenceMembersByWorkspace[workspaceId] ?? [],
     ),
@@ -169,6 +170,7 @@ async function renderHoverCard(
     loadAgentSessions?: boolean;
     loadWorkspaceData?: boolean;
     isLoading?: boolean;
+    onRemoveMember?: (person: PresencePerson) => void;
   } = {},
 ) {
   const WorkspaceHoverCard = (await import('../WorkspaceHoverCard.svelte')).default;
@@ -877,39 +879,123 @@ describe('WorkspaceHoverCard', () => {
   describe('presence member rows', () => {
     const member = (
       principalId: string,
-      focus: PresenceMember['focus'],
-      profile: Partial<PresenceMember> = {},
-    ): PresenceMember => ({
+      facts: Partial<Pick<PresencePerson, 'owner' | 'online' | 'viewing' | 'self'>>,
+      profile: Partial<PresencePerson> = {},
+    ): PresencePerson => ({
       principalId,
       login: null,
       displayName: null,
       avatarUrl: null,
-      focus,
-      typing: [],
+      owner: false,
+      online: false,
+      viewing: false,
+      self: false,
+      ...facts,
       ...profile,
     });
 
-    it('renders no people section while nobody else is online', async () => {
+    function peopleRows(container: HTMLElement) {
+      const people = container.querySelector('[data-workspace-hover-card-people]')!;
+      return within(people as HTMLElement).getAllByRole('listitem');
+    }
+
+    it('renders no people section for a workspace with no membership on display', async () => {
       const { container } = await renderHoverCard();
       expect(container.querySelector('[data-workspace-hover-card-people]')).toBeNull();
     });
 
-    it('lists online members, viewers first, with their online state', async () => {
+    it('lists every member — viewing, then online, then offline — with login, role and state', async () => {
       mocks.presenceMembersByWorkspace['ws-1'] = [
-        member('p-idle', [], { login: 'idle-login' }),
-        member('p-viewing', [{ workspaceId: 'ws-1' }], { displayName: 'Viewing Person' }),
-        member('p-anon', []),
+        member('p-away', {}, { login: 'away-login' }),
+        member('p-idle', { online: true }, { login: 'idle-login' }),
+        member(
+          'p-viewing',
+          { online: true, viewing: true },
+          { login: 'viewer', displayName: 'Viewing Person' },
+        ),
+        member('p-anon', { online: true }),
       ];
       const { container } = await renderHoverCard();
 
-      const people = container.querySelector('[data-workspace-hover-card-people]')!;
-      const rows = within(people as HTMLElement).getAllByRole('listitem');
-      expect(rows).toHaveLength(3);
+      const rows = peopleRows(container);
+      expect(rows.map((row) => row.getAttribute('data-presence-state'))).toEqual([
+        'viewing',
+        'online',
+        'online',
+        'offline',
+      ]);
       expect(rows[0].getAttribute('data-presence-viewing')).toBe('true');
-      expect(rows[0].getAttribute('aria-label')).toBe('Viewing Person. Viewing');
+      expect(rows[0].getAttribute('aria-label')).toBe(
+        'Viewing Person. viewer. Collaborator. Viewing',
+      );
+      expect(rows[0].querySelector('[data-workspace-hover-card-person-login]')?.textContent).toBe(
+        'viewer',
+      );
       expect(rows[1].getAttribute('data-presence-viewing')).toBeNull();
-      expect(rows[1].getAttribute('aria-label')).toBe('idle-login. Online');
-      expect(rows[2].getAttribute('aria-label')).toBe('Someone. Online');
+      expect(rows[1].getAttribute('aria-label')).toBe('idle-login. Collaborator. Online');
+      expect(rows[1].querySelector('[data-workspace-hover-card-person-login]')).toBeNull();
+      expect(rows[2].getAttribute('aria-label')).toBe('Someone. Collaborator. Online');
+      expect(rows[3].getAttribute('aria-label')).toBe('away-login. Collaborator. Offline');
+      expect(
+        rows[3].querySelector('[data-presence-avatar]')?.getAttribute('data-presence-ring'),
+      ).toBe('offline');
+    });
+
+    it('marks the owner and this window itself, ringing the owner blue and a member green', async () => {
+      mocks.presenceMembersByWorkspace['ws-1'] = [
+        member('p-owner', { owner: true, online: true, self: true }, { login: 'owner-login' }),
+        member('p-member', { online: true }, { login: 'member-login' }),
+      ];
+      const { container } = await renderHoverCard();
+
+      const [owner, collaborator] = peopleRows(container);
+      expect(owner.getAttribute('data-presence-role')).toBe('owner');
+      expect(owner.getAttribute('data-presence-self')).toBe('true');
+      expect(owner.getAttribute('aria-label')).toBe('owner-login (you). Owner. Online');
+      expect(
+        owner.querySelector('[data-presence-avatar]')?.getAttribute('data-presence-ring'),
+      ).toBe('owner');
+      expect(collaborator.getAttribute('data-presence-role')).toBe('collaborator');
+      expect(collaborator.getAttribute('data-presence-self')).toBeNull();
+      expect(
+        collaborator.querySelector('[data-presence-avatar]')?.getAttribute('data-presence-ring'),
+      ).toBe('member');
+    });
+
+    describe('Remove', () => {
+      beforeEach(() => {
+        mocks.presenceMembersByWorkspace['ws-1'] = [
+          member('p-owner', { owner: true, online: true, self: true }, { login: 'owner-login' }),
+          member('p-member', { online: true }, { login: 'member-login' }),
+          member('p-away', {}, { login: 'away-login' }),
+        ];
+      });
+
+      it('offers no Remove on a read-only host', async () => {
+        const { container } = await renderHoverCard();
+        expect(container.querySelector('[data-workspace-hover-card-person-remove]')).toBeNull();
+      });
+
+      it('offers Remove on every collaborator row but never the owner row, handing back the person', async () => {
+        const onRemoveMember = vi.fn();
+        const { container } = await renderHoverCard({}, { onRemoveMember });
+
+        const rows = peopleRows(container);
+        expect(
+          rows.map(
+            (row) =>
+              row
+                .querySelector('[data-workspace-hover-card-person-remove]')
+                ?.getAttribute('data-workspace-hover-card-person-remove') ?? null,
+          ),
+        ).toEqual([null, 'p-member', 'p-away']);
+        const remove = within(rows[2]).getByRole('button', {
+          name: m.workspace_hoverCard_personRemove_ariaLabel({ name: 'away-login' }),
+        });
+        await fireEvent.click(remove);
+        expect(onRemoveMember).toHaveBeenCalledTimes(1);
+        expect(onRemoveMember.mock.calls[0][0]).toMatchObject({ principalId: 'p-away' });
+      });
     });
   });
 });

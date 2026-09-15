@@ -27,9 +27,13 @@
   import { store as appStore } from '$store/renderer/store';
   import { selectPrMonitors } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
   import { selectWorkspaceActivePullRequest } from '$store/renderer/slices/workspace/workspace-selectors';
-  import { selectWorkspacePresenceMembers } from '$store/renderer/slices/presence/presence-selectors';
+  import { selectWorkspacePresencePeople } from '$store/renderer/slices/presence/presence-selectors';
+  import type { PresencePerson } from '$store/renderer/slices/presence/presence-types';
   import PresenceAvatarStack from '$features/presence/components/PresenceAvatarStack.svelte';
-  import { presencePersonName } from '$features/presence/components/presence-person';
+  import {
+    presencePersonLabel,
+    presencePersonName,
+  } from '$features/presence/components/presence-person';
   import WorkspaceStatusIcon from './WorkspaceStatusIcon.svelte';
   import { constructPrUrl } from './sidebar/sidebar-changes-utils';
   import {
@@ -61,6 +65,11 @@
     loadAgentSessions?: boolean;
     loadWorkspaceData?: boolean;
     staticData?: boolean;
+    /**
+     * Offered by a host whose user owns the workspace: every collaborator row
+     * gets a Remove action (never the owner's own row). Absent = read-only.
+     */
+    onRemoveMember?: (person: PresencePerson) => void;
   }
   let {
     workspace,
@@ -69,6 +78,7 @@
     loadAgentSessions = true,
     loadWorkspaceData = true,
     staticData = false,
+    onRemoveMember,
   }: Props = $props();
   const workspaceIdStore = writable('');
   function createWorkspaceAgentsStore() {
@@ -77,12 +87,12 @@
   function createPrMonitorsStore() {
     return staticData ? writable([]) : selectPrMonitors(workspaceIdStore);
   }
-  function createPresenceMembersStore() {
-    return staticData ? writable([]) : selectWorkspacePresenceMembers(workspaceIdStore);
+  function createPresencePeopleStore() {
+    return staticData ? writable([]) : selectWorkspacePresencePeople(workspaceIdStore);
   }
   const workspaceAgents$ = createWorkspaceAgentsStore();
   const prMonitors$ = createPrMonitorsStore();
-  const presenceMembers$ = createPresenceMembersStore();
+  const presencePeople$ = createPresencePeopleStore();
   $effect(() => workspaceIdStore.set(workspace?.id ?? ''));
   $effect(() => {
     if (workspace && loadWorkspaceData) {
@@ -419,10 +429,53 @@
       : m.workspace_share_role_collaborator_label();
   }
   let hasMemberRows = $derived(members.length > 0);
+  type PresenceRowState = 'viewing' | 'online' | 'offline';
+  const PRESENCE_STATE_RANK: Record<PresenceRowState, number> = {
+    viewing: 0,
+    online: 1,
+    offline: 2,
+  };
+  function presenceRowState(person: PresencePerson): PresenceRowState {
+    return person.viewing ? 'viewing' : person.online ? 'online' : 'offline';
+  }
+  function presenceStateLabel(state: PresenceRowState): string {
+    if (state === 'viewing') return m.workspace_hoverCard_personViewing_label();
+    if (state === 'online') return m.workspace_hoverCard_personOnline_label();
+    return m.workspace_hoverCard_personOffline_label();
+  }
+  function presenceRoleLabel(person: PresencePerson): string {
+    return person.owner
+      ? m.settings_guestSessions_role_owner_label()
+      : m.settings_guestSessions_role_collaborator_label();
+  }
+  /** The login when it is not already the shown name; otherwise nothing. */
+  function presenceLogin(person: PresencePerson): string | null {
+    const login = person.login?.trim();
+    return login && login !== presencePersonName(person) ? login : null;
+  }
+  function presenceRowLabel(row: PresenceRow): string {
+    return [
+      presencePersonLabel(row.person),
+      presenceLogin(row.person),
+      presenceRoleLabel(row.person),
+      presenceStateLabel(row.state),
+    ]
+      .filter(Boolean)
+      .join('. ');
+  }
+  interface PresenceRow {
+    person: PresencePerson;
+    state: PresenceRowState;
+    removable: boolean;
+  }
   let presenceRows = $derived(
-    [...$presenceMembers$]
-      .map((member) => ({ member, viewing: member.focus.length > 0 }))
-      .sort((a, b) => Number(b.viewing) - Number(a.viewing)),
+    $presencePeople$
+      .map((person): PresenceRow => ({
+        person,
+        state: presenceRowState(person),
+        removable: Boolean(onRemoveMember) && !person.owner && !person.self,
+      }))
+      .sort((a, b) => PRESENCE_STATE_RANK[a.state] - PRESENCE_STATE_RANK[b.state]),
   );
   let visiblePresenceRows = $derived(presenceRows.slice(0, 6));
   let hiddenPresenceCount = $derived(Math.max(0, presenceRows.length - 6));
@@ -737,31 +790,59 @@
             data-workspace-hover-card-people
           >
             <div class="grid min-w-0 gap-3" role="list">
-              {#each visiblePresenceRows as row (row.member.principalId)}
+              {#each visiblePresenceRows as row (row.person.principalId)}
+                {@const login = presenceLogin(row.person)}
                 <div
                   class="grid min-w-0 grid-cols-[2rem_minmax(0,1fr)_auto] items-center gap-x-2.5"
                   role="listitem"
-                  aria-label={`${presencePersonName(row.member)}. ${row.viewing ? m.workspace_hoverCard_personViewing_label() : m.workspace_hoverCard_personOnline_label()}`}
+                  aria-label={presenceRowLabel(row)}
                   data-workspace-hover-card-person-row
-                  data-presence-viewing={row.viewing || undefined}
+                  data-presence-state={row.state}
+                  data-presence-viewing={row.state === 'viewing' || undefined}
+                  data-presence-role={row.person.owner ? 'owner' : 'collaborator'}
+                  data-presence-self={row.person.self || undefined}
                 >
-                  <span class="grid place-items-center" aria-hidden="true"
-                    ><PresenceAvatarStack people={[row.member]} size={20} decorative /></span
+                  <span class="row-span-2 grid place-items-center" aria-hidden="true"
+                    ><PresenceAvatarStack people={[row.person]} size={20} decorative /></span
                   ><span
                     class="type-body min-w-0 truncate text-foreground"
-                    data-workspace-hover-card-person-name>{presencePersonName(row.member)}</span
+                    data-workspace-hover-card-person-name>{presencePersonLabel(row.person)}</span
                   ><span
                     class="type-caption flex shrink-0 items-center gap-1.5 text-muted-foreground"
                     data-workspace-hover-card-person-state
                     ><span
-                      class={row.viewing
+                      class={row.state === 'viewing'
                         ? 'size-1.5 rounded-full bg-success'
-                        : 'size-1.5 rounded-full bg-muted-foreground/50'}
+                        : row.state === 'online'
+                          ? 'size-1.5 rounded-full bg-success/50'
+                          : 'size-1.5 rounded-full bg-muted-foreground/40'}
                       aria-hidden="true"
-                    ></span>{row.viewing
-                      ? m.workspace_hoverCard_personViewing_label()
-                      : m.workspace_hoverCard_personOnline_label()}</span
+                    ></span>{presenceStateLabel(row.state)}</span
                   >
+                  <span
+                    class="type-caption flex min-w-0 items-center gap-1.5 text-muted-foreground"
+                    data-workspace-hover-card-person-detail
+                    >{#if login}<span
+                        class="min-w-0 truncate"
+                        data-workspace-hover-card-person-login>{login}</span
+                      ><span aria-hidden="true">·</span>{/if}<span
+                      class="shrink-0"
+                      data-workspace-hover-card-person-role>{presenceRoleLabel(row.person)}</span
+                    ></span
+                  >
+                  {#if row.removable}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      class="h-6 justify-self-end px-2"
+                      aria-label={m.workspace_hoverCard_personRemove_ariaLabel({
+                        name: presencePersonName(row.person),
+                      })}
+                      onclick={() => onRemoveMember?.(row.person)}
+                      data-workspace-hover-card-person-remove={row.person.principalId}
+                      >{m.settings_guestSessions_remove_label()}</Button
+                    >
+                  {/if}
                 </div>
               {/each}
             </div>

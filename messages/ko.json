@@ -6396,5 +6396,9 @@
   "presence_typing_many": "{first}님 외 {count}명이 입력 중…",
   "workspace_hoverCard_people_label": "사람",
   "workspace_hoverCard_personViewing_label": "보는 중",
-  "workspace_hoverCard_personOnline_label": "온라인"
+  "workspace_hoverCard_personOnline_label": "온라인",
+  "workspace_hoverCard_personOffline_label": "오프라인",
+  "workspace_hoverCard_personRemove_ariaLabel": "{name} 제거",
+  "presence_avatarStack_onlyYou_label": "여기에는 나만 있습니다",
+  "presence_person_you_label": "{name} (나)"
 }

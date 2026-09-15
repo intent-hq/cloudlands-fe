@@ -11,6 +11,7 @@ import { createCollection } from '@augmentcode/themis/utils/collections/collecti
 import { createAction } from '@augmentcode/themis/utils/store/create-action';
 import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import type { PresenceRoster } from '$shared/types/presence';
+import type { WorkspaceMember } from '../guest-sessions/guest-sessions-types';
 import type { LiveTypingEntry, PresenceState } from './presence-types';
 
 // ---------------------------------------------------------------------------
@@ -19,6 +20,7 @@ import type { LiveTypingEntry, PresenceState } from './presence-types';
 
 export const initialState: PresenceState = {
   rosters: {},
+  members: {},
   liveTyping: {},
   ownPrincipalId: null,
   ownTypingSource: null,
@@ -38,6 +40,11 @@ export const presenceRosterReceived =
 export const presenceSnapshotReceived = createAction<[roster: PresenceRoster]>(
   'presence/snapshotReceived',
 );
+
+/** A `workspace.members.list` result the saga has fenced as current — a full replacement. */
+export const presenceMembersReceived = createAction<
+  [workspaceId: string, members: WorkspaceMember[]]
+>('presence/membersReceived');
 
 /** The 3 s receiver-local timer of a `(source, pulse)` pair ran out. */
 export const presenceTypingExpired =
@@ -115,6 +122,11 @@ presenceReducer.with(presenceRosterReceived, (state, { payload: [roster] }) =>
 presenceReducer.with(presenceSnapshotReceived, (state, { payload: [roster] }) =>
   replaceRoster(state, roster),
 );
+
+presenceReducer.with(presenceMembersReceived, (state, { payload: [workspaceId, members] }) => ({
+  ...state,
+  members: { ...state.members, [workspaceId]: createCollection('principalId', members) },
+}));
 
 presenceReducer.with(presenceTypingExpired, (state, { payload: [workspaceId, source, pulse] }) => {
   const entry = state.liveTyping[workspaceId]?.[source];

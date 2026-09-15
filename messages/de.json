@@ -6396,5 +6396,9 @@
   "presence_typing_many": "{first} und {count} weitere schreiben…",
   "workspace_hoverCard_people_label": "Personen",
   "workspace_hoverCard_personViewing_label": "Sieht zu",
-  "workspace_hoverCard_personOnline_label": "Online"
+  "workspace_hoverCard_personOnline_label": "Online",
+  "workspace_hoverCard_personOffline_label": "Offline",
+  "workspace_hoverCard_personRemove_ariaLabel": "{name} entfernen",
+  "presence_avatarStack_onlyYou_label": "Nur Sie sind hier",
+  "presence_person_you_label": "{name} (Sie)"
 }
