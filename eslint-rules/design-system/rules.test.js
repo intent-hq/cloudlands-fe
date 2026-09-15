@@ -197,8 +197,32 @@ scriptTester.run('no-direct-toast', noDirectToast, {
 });
 
 scriptTester.run('no-native-dialogs', noNativeDialogs, {
-  valid: ['confirm({ title: "Continue?" });'],
+  valid: [
+    'import { confirm } from "$lib/components/patterns/confirm"; confirm({ title: "Continue?" });',
+    'function ask(confirm) { confirm("Continue?"); }',
+    'const alert = () => {}; alert("Local");',
+    'function prompt() {} prompt();',
+    'function ask(window, globalThis, self) { window.confirm(); globalThis.prompt(); self.alert(); }',
+    'other.confirm(); window[method]();',
+  ],
   invalid: [
+    ...[
+      'alert("x")',
+      'confirm()',
+      'prompt()',
+      'globalThis.prompt()',
+      'self.alert()',
+      'window["confirm"]()',
+      'globalThis?.alert?.()',
+    ].map((code) => ({
+      code,
+      errors: [{ messageId: 'nativeDialog' }],
+    })),
+    {
+      code: 'alert("x")',
+      languageOptions: { globals: { alert: 'readonly' } },
+      errors: [{ messageId: 'nativeDialog' }],
+    },
     {
       code: 'window.confirm("Continue?"); window.alert("Stopped"); window.prompt("Name");',
       errors: [

@@ -12,7 +12,7 @@ Start with a pattern, not a primitive. The generated
 
 ### …notify the user
 
-Import `notify` from `$lib/components/patterns/notify`; inspect [`/sandbox/notify`](../src/lib/components/patterns/notify).
+Import `notify` from `$lib/components/patterns/notify`; inspect [the notify source](../src/lib/components/patterns/notify) and preview at `/sandbox/notify`.
 
 <!-- prettier-ignore -->
 ```svelte
@@ -26,7 +26,7 @@ Import `notify` from `$lib/components/patterns/notify`; inspect [`/sandbox/notif
 ### …ask a blocking question
 
 Import `prompt` and `ConfirmHost` from `$lib/components/patterns/confirm`; inspect
-[`/sandbox/confirm`](../src/lib/components/patterns/confirm).
+[the confirm source](../src/lib/components/patterns/confirm) and preview at `/sandbox/confirm`.
 
 <!-- prettier-ignore -->
 ```svelte
@@ -40,7 +40,7 @@ Import `prompt` and `ConfirmHost` from `$lib/components/patterns/confirm`; inspe
 ### …add a setting
 
 Import `defineSettings` and `SettingsForm` from `$lib/components/patterns/settings`; inspect
-[`/sandbox/settings`](../src/lib/components/patterns/settings).
+[the settings source](../src/lib/components/patterns/settings) and preview at `/sandbox/settings`.
 
 <!-- prettier-ignore -->
 ```svelte
@@ -54,7 +54,7 @@ Import `defineSettings` and `SettingsForm` from `$lib/components/patterns/settin
 ### …list things
 
 Import `ListView` and `ListRow` from `$lib/components/patterns/collection`; inspect
-[`/sandbox/collection`](../src/lib/components/patterns/collection).
+[the collection source](../src/lib/components/patterns/collection) and preview at `/sandbox/collection`.
 
 <!-- prettier-ignore -->
 ```svelte
@@ -68,7 +68,7 @@ Import `ListView` and `ListRow` from `$lib/components/patterns/collection`; insp
 ### …build a screen or takeover
 
 Import `TakeoverScreen` from `$lib/components/patterns/screen`; inspect
-[`/sandbox/screen`](../src/lib/components/patterns/screen).
+[the screen source](../src/lib/components/patterns/screen) and preview at `/sandbox/screen`.
 
 <!-- prettier-ignore -->
 ```svelte
@@ -82,7 +82,7 @@ Import `TakeoverScreen` from `$lib/components/patterns/screen`; inspect
 ### …add row or overflow actions
 
 Import `ActionBar` and `defineActions` from `$lib/components/patterns/action-menu`; inspect
-[`/sandbox/action-menu`](../src/lib/components/patterns/action-menu).
+[the action-menu source](../src/lib/components/patterns/action-menu) and preview at `/sandbox/action-menu`.
 
 <!-- prettier-ignore -->
 ```svelte
@@ -96,7 +96,7 @@ Import `ActionBar` and `defineActions` from `$lib/components/patterns/action-men
 ### …show empty, loading, or error state
 
 Import `EmptyState`, `LoadingState`, and `ErrorState` from `$lib/components/patterns/screen`; inspect
-[`/sandbox/screen`](../src/lib/components/patterns/screen).
+[the screen source](../src/lib/components/patterns/screen) and preview at `/sandbox/screen`.
 
 <!-- prettier-ignore -->
 ```svelte

@@ -1,12 +1,29 @@
 const nativeMethods = new Set(['alert', 'confirm', 'prompt']);
 
-function nativeDialogCall(node) {
-  if (node.callee?.type !== 'MemberExpression' || node.callee.computed) return false;
+const globalObjects = new Set(['window', 'globalThis', 'self']);
+
+function isGlobalIdentifier(node, context) {
+  for (let scope = context.sourceCode.getScope(node); scope; scope = scope.upper) {
+    const variable = scope.set.get(node.name);
+    if (variable) return variable.defs.length === 0;
+  }
+  return true;
+}
+
+function nativeDialogCall(node, context) {
+  const callee = node.callee;
+  if (callee?.type === 'Identifier') {
+    return nativeMethods.has(callee.name) && isGlobalIdentifier(callee, context);
+  }
+  if (callee?.type !== 'MemberExpression') return false;
+  const method = callee.computed
+    ? callee.property?.type === 'Literal' && callee.property.value
+    : callee.property?.type === 'Identifier' && callee.property.name;
   return (
-    node.callee.object?.type === 'Identifier' &&
-    node.callee.object.name === 'window' &&
-    node.callee.property?.type === 'Identifier' &&
-    nativeMethods.has(node.callee.property.name)
+    callee.object?.type === 'Identifier' &&
+    globalObjects.has(callee.object.name) &&
+    isGlobalIdentifier(callee.object, context) &&
+    nativeMethods.has(method)
   );
 }
 
@@ -20,7 +37,7 @@ export default {
   create(context) {
     return {
       CallExpression(node) {
-        if (nativeDialogCall(node)) context.report({ node, messageId: 'nativeDialog' });
+        if (nativeDialogCall(node, context)) context.report({ node, messageId: 'nativeDialog' });
       },
     };
   },
