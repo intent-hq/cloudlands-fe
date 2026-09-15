@@ -935,6 +935,7 @@
       >
         {#if workspace}
           {@const runningAgentIds = getRunningAgentIds(workspaceId)}
+          {@const canManageSharing = workspace.myRole === 'owner'}
           {@const tabStatus = $workspaceTabStatuses$[workspaceId]}
           {@const workspaceStatusState = resolveWorkspaceStatusState(workspace)}
           {@const isArchived = workspace.status === WorkspaceStatus.Archived}
@@ -991,12 +992,16 @@
               durationMs={isDragged ? 0 : WORKSPACE_TAB_MOTION_DURATION_MS}
             />
             {#key isCurrent && pointerOpenEligibleWorkspaceHoverCardIds.has(workspaceId)}
+              <!-- The hover card offers Share and member Remove only to the
+                   workspace's owner, so the card stays hoverable (see
+                   `disableHoverableContent`) when this window owns the workspace;
+                   otherwise it is a read-only preview that closes on leave. -->
               <TooltipRich
                 side="bottom"
                 align="start"
                 delayDuration={workspaceHoverCardOpenDelay}
                 onOpenChange={(open) => handleWorkspaceHoverCardOpenChange(workspaceId, open)}
-                disableHoverableContent={true}
+                disableHoverableContent={!canManageSharing}
                 disabled={isCurrent || draggedWorkspaceId !== null}
                 showArrow={false}
                 maxWidth="none"
