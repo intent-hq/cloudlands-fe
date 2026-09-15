@@ -6397,5 +6397,9 @@
   "presence_typing_many": "{first} 和另外 {count} 人正在輸入…",
   "workspace_hoverCard_people_label": "成員",
   "workspace_hoverCard_personViewing_label": "正在檢視",
-  "workspace_hoverCard_personOnline_label": "線上"
+  "workspace_hoverCard_personOnline_label": "線上",
+  "workspace_hoverCard_personOffline_label": "離線",
+  "workspace_hoverCard_personRemove_ariaLabel": "移除 {name}",
+  "presence_avatarStack_onlyYou_label": "這裡只有你",
+  "presence_person_you_label": "{name}（你）"
 }

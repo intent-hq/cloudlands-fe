@@ -6397,5 +6397,9 @@
   "presence_typing_many": "{first}と他{count}人が入力中…",
   "workspace_hoverCard_people_label": "メンバー",
   "workspace_hoverCard_personViewing_label": "閲覧中",
-  "workspace_hoverCard_personOnline_label": "オンライン"
+  "workspace_hoverCard_personOnline_label": "オンライン",
+  "workspace_hoverCard_personOffline_label": "オフライン",
+  "workspace_hoverCard_personRemove_ariaLabel": "{name}を削除",
+  "presence_avatarStack_onlyYou_label": "ここにいるのはあなただけです",
+  "presence_person_you_label": "{name}（あなた）"
 }

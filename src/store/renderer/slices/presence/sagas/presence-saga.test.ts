@@ -13,12 +13,16 @@ vi.mock('$lib/client/live/backend-transport', () => ({
 }));
 vi.mock('$lib/electron-bridge', () => ({ invoke: mocks.invoke }));
 
+import type { Workspace } from '$shared/types';
+import { WorkspaceId } from '$shared/types/branded-ids';
 import { store } from '$store/renderer/store';
 import { connectionsListReceived } from '../../connections/connections-slice';
+import type { WorkspaceMember } from '../../guest-sessions/guest-sessions-types';
 import { openWorkspaceTab } from '../../tab-state/tab-state-slice';
+import { replaceWorkspaceList } from '../../workspace/workspace-slice';
 import { daemonEventsSubscribed } from '../../workspace-events/workspace-events-slice';
 import { presenceRosterReceived } from '../presence-slice';
-import { selectWorkspacePresencePeople } from '../presence-selectors';
+import { selectAgentPresencePeople, selectWorkspacePresencePeople } from '../presence-selectors';
 import { presenceSaga } from './presence-saga';
 
 function member(principalId: string, focus: PresenceMember['focus'] = []): PresenceMember {
@@ -82,7 +86,7 @@ describe('presenceSaga lifecycle', () => {
 
   /** Boots the saga with `ws-1` open; `subscribed` false leaves the firehose not yet live. */
   function start(subscribed = true) {
-    dispose = store.init();
+    if (!dispose) dispose = store.init();
     store.dispatch(openWorkspaceTab('ws-1'));
     cancel = store.runSaga(presenceSaga);
     if (subscribed) store.dispatch(daemonEventsSubscribed());
@@ -101,14 +105,132 @@ describe('presenceSaga lifecycle', () => {
     expect(principals('ws-1')).toEqual(['me', 'other']);
   });
 
-  it('reads the local owner principal on start without a backend change and hides self', async () => {
+  it('reads the local owner principal on start without a backend change and marks self', async () => {
     start();
     await vi.advanceTimersByTimeAsync(0);
     expect(calls('principal.me')).toEqual([{}]);
     expect(store.state.presence.ownPrincipalId).toBe('me');
-    expect(selectWorkspacePresencePeople.select(store.state, 'ws-1')).toMatchObject([
-      { principalId: 'other' },
+    expect(selectAgentPresencePeople.select(store.state, 'ws-1', 'agent-1')).toEqual([]);
+    store.dispatch(
+      presenceRosterReceived({
+        workspaceId: 'ws-1',
+        members: [member('me', [{ workspaceId: 'ws-1', agentId: 'agent-1' }])],
+      }),
+    );
+    expect(selectAgentPresencePeople.select(store.state, 'ws-1', 'agent-1')).toMatchObject([
+      { principalId: 'me', self: true },
     ]);
+  });
+
+  describe('accepted membership of the open shared tabs', () => {
+    const owner: WorkspaceMember = {
+      principalId: 'me',
+      login: 'me',
+      displayName: null,
+      avatarUrl: null,
+      role: 'owner',
+      addedAt: '2026-09-14T12:00:00Z',
+    };
+    const away: WorkspaceMember = {
+      ...owner,
+      principalId: 'away',
+      login: 'away',
+      role: 'collaborator',
+    };
+    const other: WorkspaceMember = { ...away, principalId: 'other', login: 'other' };
+
+    function listWorkspaces(...rows: Array<Pick<Workspace, 'id' | 'memberCount'>>) {
+      store.dispatch(
+        replaceWorkspaceList(
+          rows.map(
+            (row) => ({ ...row, title: String(row.id), ownerPrincipalId: 'me' }) as Workspace,
+          ),
+        ),
+      );
+    }
+
+    beforeEach(() => {
+      dispose = store.init();
+      mocks.request.mockImplementation(async (method: string, params: unknown) => {
+        const { workspaceId } = params as { workspaceId: string };
+        if (method === 'principal.me') return { id: 'me' };
+        if (method === 'presence.snapshot') return snapshotOf(workspaceId);
+        if (method === 'workspace.members.list') return { members: [owner, other, away] };
+        throw new Error(`unexpected request ${method}`);
+      });
+    });
+
+    it('reads workspace.members.list for a shared open tab on attach and never for an unshared one', async () => {
+      listWorkspaces(
+        { id: WorkspaceId('ws-1'), memberCount: 3 },
+        { id: WorkspaceId('ws-2'), memberCount: 1 },
+      );
+      store.dispatch(openWorkspaceTab('ws-2'));
+      start();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(calls('workspace.members.list')).toEqual([{ workspaceId: 'ws-1' }]);
+      expect(selectWorkspacePresencePeople.select(store.state, 'ws-1')).toMatchObject([
+        { principalId: 'me', owner: true, online: true, self: true },
+        { principalId: 'other', owner: false, online: true, self: false },
+        { principalId: 'away', owner: false, online: false, self: false },
+      ]);
+      expect(selectWorkspacePresencePeople.select(store.state, 'ws-2')).toEqual([]);
+    });
+
+    it('reads the membership when a shared tab opens and again when its memberCount moves', async () => {
+      listWorkspaces({ id: WorkspaceId('ws-1'), memberCount: 1 });
+      start();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(calls('workspace.members.list')).toEqual([]);
+
+      listWorkspaces({ id: WorkspaceId('ws-1'), memberCount: 3 });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(calls('workspace.members.list')).toEqual([{ workspaceId: 'ws-1' }]);
+
+      listWorkspaces({ id: WorkspaceId('ws-1'), memberCount: 2 });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(calls('workspace.members.list')).toEqual([
+        { workspaceId: 'ws-1' },
+        { workspaceId: 'ws-1' },
+      ]);
+    });
+
+    it('keeps the newest of two overlapping membership reads and drops one overtaken by a backend switch', async () => {
+      const wire = deferRequests();
+      listWorkspaces({ id: WorkspaceId('ws-1'), memberCount: 2 });
+      start();
+      await vi.advanceTimersByTimeAsync(0);
+      wire.settle('principal.me', 0, { id: 'me' });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(wire.count('workspace.members.list:ws-1')).toBe(1);
+
+      listWorkspaces({ id: WorkspaceId('ws-1'), memberCount: 3 });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(wire.count('workspace.members.list:ws-1')).toBe(2);
+      wire.settle('workspace.members.list:ws-1', 1, { members: [owner, other, away] });
+      await vi.advanceTimersByTimeAsync(0);
+      wire.settle('workspace.members.list:ws-1', 0, { members: [owner, other] });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(getItems(store.state.presence.members['ws-1']).map((m) => m.principalId)).toEqual([
+        'me',
+        'other',
+        'away',
+      ]);
+
+      store.dispatch(
+        connectionsListReceived({ connections: [], activeId: 'remote', windowBackendId: 'remote' }),
+      );
+      await vi.advanceTimersByTimeAsync(0);
+      expect(store.state.presence.members).toEqual({});
+      wire.settle('principal.me', 1, { id: 'me' });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(wire.count('workspace.members.list:ws-1')).toBe(3);
+      wire.settle('workspace.members.list:ws-1', 2, { members: [owner] });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(getItems(store.state.presence.members['ws-1']).map((m) => m.principalId)).toEqual([
+        'me',
+      ]);
+    });
   });
 
   it('hydrates the open workspace tabs from presence.snapshot on start and on tab open', async () => {
