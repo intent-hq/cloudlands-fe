@@ -133,6 +133,7 @@ import { isWebviewPopupWindow, setupWebviewSecurity } from './webview-security';
 import { attachAppCommandHistoryNavigation } from './app-command-navigation';
 import { attachSwipeHistoryNavigation } from './swipe-navigation';
 import { attachRendererHangMonitor } from './renderer-hang-monitor';
+import { createBootWindowsGate, handleActivate } from './app-activate';
 import { setupHardwareConsoleMain } from '../features/hardware-console/main/hardware-console.ipc';
 import { setupConsoleOwnerTracking } from '../features/hardware-console/main/console-owner';
 import { requestHardwareConsoleLightingClear } from '../features/hardware-console/main/clear-lighting-shutdown';
@@ -589,7 +590,13 @@ async function saveOpenWindowSessions(): Promise<void> {
   await saveAllWindowSessions();
 }
 
-app.whenReady().then(async () => {
+// Released once the boot flow below has created its windows (or skipped
+// creating them: second instance, boot failure). `app.on('activate')` waits on
+// it so an early activate never creates a window before the critical IPC
+// handlers exist or duplicates the boot windows (see ./app-activate.ts).
+const bootWindowsGate = createBootWindowsGate();
+
+const bootFlow = app.whenReady().then(async () => {
   startupMetrics.start('total');
   logger.info('Setting up critical IPC handlers for fast startup');
 
@@ -1772,6 +1779,7 @@ app.whenReady().then(async () => {
 
     startupMetrics.end('createWindow');
   }
+  bootWindowsGate.release();
 
   // GitHub-dependent specialist filtering is noncritical for first paint. Start
   // its daemon-backed refresh only after backend handlers and the first window
@@ -1858,6 +1866,11 @@ app.whenReady().then(async () => {
     setTimeout(() => startupMetrics.logSummary(), 2000);
   })();
 });
+
+// Boot threw before reaching the window-creation block: never leave an
+// awaiting activate handler hung. `finally` keeps the rejection observable by
+// the process-level unhandled-rejection handler, as before.
+void bootFlow.finally(() => bootWindowsGate.release());
 
 // This window-all-closed handler was duplicated and has been removed.
 // The proper handler is defined below at line 448.
@@ -2086,25 +2099,21 @@ if (!gotTheLock) {
 app.on('activate', async () => {
   if (isSecondInstance) return;
 
-  const allWindows = BrowserWindow.getAllWindows().filter(
-    (w: BrowserWindowType) => !w.isDestroyed(),
-  );
-  if (allWindows.length > 0) {
-    // Focus an existing window instead of creating a new one
-    const mainWindow = getMainWindow();
-    const targetWindow = mainWindow && !mainWindow.isDestroyed() ? mainWindow : allWindows[0];
-    if (targetWindow.isMinimized()) targetWindow.restore();
-    targetWindow.show();
-    targetWindow.focus();
-  } else {
-    // No windows at all — restore every backend's saved sessions (same
-    // multi-bucket restore as boot) or create a new one. The active backend
-    // (T21) restores first and provides the main window, so a dock-click
-    // reopen never keys everything to the hard-coded local default.
-    const backendId = await getActiveId();
-    const restored = await restoreAllBackendWindowSessions(backendId, connectBackendClient);
-    if (!restored) {
-      createWindow(backendId);
-    }
-  }
+  // Waits for the boot flow's window creation first, so a first-launch
+  // activate becomes a focus of the boot window rather than a second window
+  // racing the critical IPC registration (see ./app-activate.ts).
+  await handleActivate<BrowserWindowType>({
+    whenBootWindowsReady: () => bootWindowsGate.ready,
+    getAllWindows: () => BrowserWindow.getAllWindows(),
+    getMainWindow,
+    focusWindow: (targetWindow) => {
+      if (targetWindow.isMinimized()) targetWindow.restore();
+      targetWindow.show();
+      targetWindow.focus();
+    },
+    getActiveId,
+    restoreSessions: (backendId) =>
+      restoreAllBackendWindowSessions(backendId, connectBackendClient),
+    createWindow,
+  });
 });

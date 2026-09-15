@@ -21,6 +21,12 @@
  *    calls on startup.
  * 4. Asserts that NONE of the renderer-startup channels are in the secondary
  *    group. If this assertion fails, a race condition has been reintroduced.
+ *
+ * A second variant of the same race is sequencing rather than placement: a
+ * macOS `activate` event during boot must not create a window before the
+ * critical section has registered its handlers (e.g. `connections:list`).
+ * That path is guarded by `src/main/app-activate.ts` and
+ * `./app-activate.test.ts`.
  */
 // @verify-changed-triggers: src/main/index.ts, src/main/**/*.ipc.ts, src/features/**/*.ipc.ts,
 //   src/shared/ipc-registry.ts, src/shared/ipc/channels.ts
