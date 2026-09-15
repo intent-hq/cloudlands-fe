@@ -30,7 +30,6 @@
   data-is-active={isActive}
 >
   <button type="button" onclick={() => onNavigate?.('https://next.example/')}>Navigate</button>
-  <button type="button" onclick={() => onClose?.({ force: false })}>Close</button>
   <button type="button" onclick={() => onClose?.({ force: true })}>Close anyway</button>
   <button type="button" onclick={() => onFaviconChange?.('https://next.example/favicon.ico')}>
     Change favicon

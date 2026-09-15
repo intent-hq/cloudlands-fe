@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { m } from '$shared/paraglide/messages.js';
 import BrowserViewerTabHeader from './BrowserViewerTabHeader.svelte';
@@ -12,6 +12,12 @@ const navButtons = () => [
   screen.getByRole('button', { name: m.browser_embedded_refresh_ariaLabel() }),
   screen.getByRole('button', { name: m.browser_embedded_editAddress_ariaLabel() }),
 ];
+
+const toolbarCloseButton = () => {
+  const toolbar = document.querySelector<HTMLElement>('[data-browser-toolbar]');
+  if (!toolbar) throw new Error('browser toolbar was not rendered');
+  return within(toolbar).queryByRole('button', { name: /close/i });
+};
 
 describe('BrowserViewerTabHeader', () => {
   afterEach(cleanup);
@@ -140,6 +146,7 @@ describe('BrowserViewerTabHeader', () => {
     expect(handlers.onGoBack).toHaveBeenCalledTimes(1);
     expect(handlers.onGoForward).toHaveBeenCalledTimes(1);
     expect(handlers.onRefresh).toHaveBeenCalledTimes(1);
+    expect(toolbarCloseButton()).toBeNull();
     expect(screen.queryByRole('status')).toBeNull();
   });
 
@@ -175,6 +182,7 @@ describe('BrowserViewerTabHeader', () => {
 
     const banner = screen.getByRole('status');
     expect(banner.textContent).toContain('travel-air');
+    expect(toolbarCloseButton()).toBeNull();
     await fireEvent.click(
       screen.getByRole('button', { name: m.browser_viewer_forceClose_label() }),
     );
