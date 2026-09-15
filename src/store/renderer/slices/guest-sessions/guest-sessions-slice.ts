@@ -32,6 +32,7 @@ export const initialState: GuestSessionsState = {
   openIds: [],
   connectedIds: [],
   hasReceivedList: false,
+  listUnavailable: false,
   leavingIds: [],
   hostedRosters: {},
   removingMemberKeys: [],
@@ -48,6 +49,9 @@ export const initialState: GuestSessionsState = {
 export const guestSessionsListReceived = createAction<[result: GuestSessionsListResult]>(
   'guestSessions/listReceived',
 );
+
+/** The boot hydration delivered no list (invoke failed, or no Electron bridge). */
+export const guestSessionsListUnavailable = createAction('guestSessions/listUnavailable');
 
 /** Saga-owned list hydration (boot). */
 export const loadGuestSessionsRequested = createAsyncAction<[], GuestSessionsListResult>(
@@ -117,7 +121,12 @@ guestSessionsReducer.with(guestSessionsListReceived, (state, { payload: [result]
   openIds: result.openIds,
   connectedIds: result.connectedIds,
   hasReceivedList: true,
+  listUnavailable: false,
 }));
+
+guestSessionsReducer.with(guestSessionsListUnavailable, (state) =>
+  state.listUnavailable ? state : { ...state, listUnavailable: true },
+);
 
 guestSessionsReducer.with(leaveOperationStarted, (state, { payload: [id] }) =>
   state.leavingIds.includes(id) ? state : { ...state, leavingIds: [...state.leavingIds, id] },

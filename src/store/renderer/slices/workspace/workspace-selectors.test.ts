@@ -35,6 +35,7 @@ import {
 } from '../connections/connections-slice';
 import {
   guestSessionsListReceived,
+  guestSessionsListUnavailable,
   guestSessionsReducer,
   initialState as guestSessionsInitialState,
 } from '../guest-sessions/guest-sessions-slice';
@@ -123,12 +124,16 @@ function mockLocalityState(hostLocality: 'local' | 'remote', workspace?: Workspa
 }
 
 describe('selectIsCollaboratorOnlyClient (multiplayer w3)', () => {
+  /** Owner window whose identity has settled: no host joined, so the guest list alone decides. */
   function loadedState(workspaces: Workspace[], hasLoaded = true): StoreState {
     const listed = workspaceReducer(initialState, replaceWorkspaceList(workspaces));
     return {
       workspace: workspaceReducer(listed, setWorkspaceHasLoaded(hasLoaded)),
       connections: connectionsInitialState,
-      guestSessions: guestSessionsInitialState,
+      guestSessions: guestSessionsReducer(
+        guestSessionsInitialState,
+        guestSessionsListReceived({ sessions: [], openIds: [], connectedIds: [] }),
+      ),
     } as StoreState;
   }
 
@@ -181,6 +186,38 @@ describe('selectIsCollaboratorOnlyClient (multiplayer w3)', () => {
     ).toBe(false);
   });
 
+  it('reads as collaborator-only until the window identity settles (multiplayer w4) — even with a loaded empty list', () => {
+    const unsettled = {
+      ...loadedState([]),
+      connections: connectionsInitialState,
+      guestSessions: guestSessionsInitialState,
+    } as StoreState;
+    expect(selectIsCollaboratorOnlyClient.select(unsettled)).toBe(true);
+    // Guest list in with a joined host, but the window's backend id is still
+    // the boot-time local default: the guest window is not identifiable yet.
+    const guestListOnly = {
+      ...loadedState([]),
+      connections: connectionsInitialState,
+      guestSessions: guestSessionsReducer(
+        guestSessionsInitialState,
+        guestSessionsListReceived({ sessions: [GUEST_SESSION], openIds: [], connectedIds: [] }),
+      ),
+    } as StoreState;
+    expect(selectIsCollaboratorOnlyClient.select(guestListOnly)).toBe(true);
+    expect(selectIsCollaboratorOnlyClient.select(guestAware(loadedState([]), 'local'))).toBe(false);
+    // No list could be fetched (invoke failed / no Electron bridge): settled on
+    // what is known — owner semantics, never a permanent lockout.
+    const unavailable = {
+      ...loadedState([]),
+      connections: connectionsInitialState,
+      guestSessions: guestSessionsReducer(
+        guestSessionsInitialState,
+        guestSessionsListUnavailable(),
+      ),
+    } as StoreState;
+    expect(selectIsCollaboratorOnlyClient.select(unavailable)).toBe(false);
+  });
+
   it('is true once the list has loaded and every workspace reports myRole collaborator', () => {
     const state = loadedState([
       makeWorkspace({ id: 'ws-a' as WorkspaceId, myRole: 'collaborator' }),
@@ -202,7 +239,7 @@ describe('selectIsCollaboratorOnlyClient (multiplayer w3)', () => {
     expect(selectIsCollaboratorOnlyClient.select(state)).toBe(false);
   });
 
-  it('is false before the list has loaded and for an empty list (never gate on unsettled state)', () => {
+  it('is false before the workspace list has loaded and for an empty list in a settled owner window', () => {
     expect(
       selectIsCollaboratorOnlyClient.select(
         loadedState([makeWorkspace({ myRole: 'collaborator' })], false),

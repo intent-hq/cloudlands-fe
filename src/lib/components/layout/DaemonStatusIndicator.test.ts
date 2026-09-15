@@ -1897,6 +1897,33 @@ describe('DaemonStatusIndicator', () => {
         );
       });
 
+      it('surfaces a secret-unavailable guest open with the host label and routes to Guest Sessions settings', async () => {
+        mockStoreState = {
+          daemonHealth: { ...healthy },
+          connections: withConnections('local'),
+          guestSessions: withGuestSessions([]),
+        };
+        mockDispatch.mockImplementation(
+          (action: { type: string; success?: (r: unknown) => void }) => {
+            if (action.type === 'connections/openRequested') {
+              action.success?.({ status: 'secret-unavailable' });
+            }
+            return action;
+          },
+        );
+        render(DaemonStatusIndicatorPreloaded);
+        await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+        const block = screen.getByTestId('daemon-status-guest-sessions');
+        await fireEvent.click(
+          within(block).getByText('studio.local').closest('[role="menuitem"]')!,
+        );
+
+        await vi.waitFor(() => expect(mockToastError).toHaveBeenCalledTimes(1));
+        expect(String(mockToastError.mock.calls[0][0])).toContain('studio.local');
+        expect(mockNavigateToSettings).toHaveBeenCalledWith({ tab: 'guest-sessions' });
+        expect(mockNavigateToSettings).not.toHaveBeenCalledWith({ tab: 'devices' });
+      });
+
       it('routes the block CTA to the Guest Sessions settings tab', async () => {
         mockStoreState = {
           daemonHealth: { ...healthy },

@@ -6,6 +6,7 @@ import { removeWorkspaceEntity, resetWorkspaceState } from '../workspace/workspa
 import { workspaceDeleted } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import {
   guestSessionsListReceived,
+  guestSessionsListUnavailable,
   guestSessionsReducer,
   hostedRosterFailed,
   hostedRosterLoading,
@@ -74,6 +75,20 @@ describe('guestSessionsReducer', () => {
     expect(getItems(next.sessions)).toEqual([]);
     expect(next.openIds).toEqual([]);
     expect(next.connectedIds).toEqual([]);
+  });
+
+  it('marks the list unavailable without pretending it hydrated, until a list payload lands', () => {
+    const state = guestSessionsReducer(initialState, guestSessionsListUnavailable());
+    expect(state.listUnavailable).toBe(true);
+    expect(state.hasReceivedList).toBe(false);
+    expect(guestSessionsReducer(state, guestSessionsListUnavailable())).toBe(state);
+
+    const next = guestSessionsReducer(
+      state,
+      guestSessionsListReceived({ sessions: [GUEST], openIds: [], connectedIds: [] }),
+    );
+    expect(next.listUnavailable).toBe(false);
+    expect(next.hasReceivedList).toBe(true);
   });
 
   it('tracks a leave in flight once per id', () => {
