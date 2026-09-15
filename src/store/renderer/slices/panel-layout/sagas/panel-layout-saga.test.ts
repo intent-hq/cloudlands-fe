@@ -679,6 +679,41 @@ describe('panelLayoutSaga', () => {
     },
   );
 
+  // The application menu and the global new-browser / new-terminal shortcuts
+  // dispatch openTabInRightmostColumnRequested directly, bypassing the
+  // owner-only gates in the navigation and terminal sagas; the router is the
+  // choke point that drops those for a collaborator (multiplayer w3) while
+  // ordinary content still opens.
+  it.each([
+    ['browser', { type: 'browser', title: 'Browser', browserUrl: 'about:blank', closable: true }],
+    ['terminal', { type: 'terminal', title: 'Terminal', terminalId: 'term-1', closable: true }],
+  ] as const)('drops a collaborator %s open at the rightmost-column router', async (_type, tab) => {
+    const state: any = storeState();
+    state.workspace = {
+      workspaces: createCollection('id', [{ id: WS_1, myRole: 'collaborator' } as never]),
+    };
+    const { channel, dispatch, task } = startSaga(state);
+
+    channel.put(openTabInRightmostColumnRequested(WS_1, tab as any, { newTabId: 'blocked' }));
+    await settle();
+    expect(dispatch).not.toHaveBeenCalled();
+
+    channel.put(
+      openTabInRightmostColumnRequested(
+        WS_1,
+        { type: 'note', title: 'Plan', noteId: 'plan', closable: true },
+        { newTabId: 'tab-plan' },
+      ),
+    );
+    await settle();
+    expect(dispatch.mock.calls.map(([action]) => action.type)).toEqual([
+      'panelLayout/reconcilePanelColumnCount',
+      'panelLayout/openTabInRightmostColumn',
+    ]);
+    expect(dispatch.mock.calls[1]?.[0]).toMatchObject({ payload: { newTabId: 'tab-plan' } });
+    await cancelSaga(task);
+  });
+
   it.each([true, false])(
     'preserves the production bootstrap when coordinator=%s mounts before persistence',
     async (coordinator) => {

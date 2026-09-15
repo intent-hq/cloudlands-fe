@@ -1,3 +1,4 @@
+import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 import { runSaga, stdChannel } from 'redux-saga';
 import { fork } from 'typed-redux-saga';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -29,7 +30,7 @@ const settle = async () => {
   await Promise.resolve();
 };
 
-function startSaga() {
+function startSaga(myRole: 'owner' | 'collaborator' = 'owner') {
   const channel = stdChannel();
   const dispatched: Array<{ type: string; payload?: unknown }> = [];
   const task = runSaga(
@@ -38,6 +39,7 @@ function startSaga() {
       dispatch: (action: { type: string; payload?: unknown }) => dispatched.push(action),
       getState: () => ({
         panelLayout: { byWorkspaceId: { 'ws-1': { focusedPanelId: 'panel-1' } } },
+        workspace: { workspaces: createCollection('id', [{ id: 'ws-1', myRole }]) },
       }),
     },
     function* () {
@@ -114,6 +116,37 @@ describe('terminalCreationSaga', () => {
     expect(mocks.dispatchWindowEvent).toHaveBeenCalledExactlyOnceWith('workspace:new-terminal', {
       workspaceId: 'ws-1',
     });
+    expect(mocks.create).not.toHaveBeenCalled();
+    expect(dispatched).toEqual([]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  // The global new-terminal shortcut dispatches createPanelTerminalRequested
+  // without a role check; the saga is where a collaborator's request stops
+  // before the owner-only `terminal.create` (multiplayer w3).
+  it('drops a collaborator request before calling terminal.create', async () => {
+    mocks.create.mockResolvedValue({ success: true, id: 'term-1' });
+    const { channel, dispatched, task } = startSaga('collaborator');
+
+    channel.put(createPanelTerminalRequested('ws-1'));
+    channel.put(createPanelTerminalRequested('ws-1', 'panel-2'));
+    await settle();
+
+    expect(mocks.create).not.toHaveBeenCalled();
+    expect(dispatched).toEqual([]);
+    expect(mocks.error).not.toHaveBeenCalled();
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('drops a collaborator overlay creation request before the window event', async () => {
+    const { channel, dispatched, task } = startSaga('collaborator');
+
+    channel.put(createTerminalRequested('ws-1'));
+    await settle();
+
+    expect(mocks.dispatchWindowEvent).not.toHaveBeenCalled();
     expect(mocks.create).not.toHaveBeenCalled();
     expect(dispatched).toEqual([]);
     task.cancel();

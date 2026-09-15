@@ -323,6 +323,15 @@ function* routeTabToRightmostColumn(
   action: ReturnType<typeof openTabInRightmostColumnRequested>,
 ): SagaGenerator<void> {
   const { wsId, tab, force, allowDuplicate, newTabId, timestamp, agentDriven } = action.payload;
+  // Every "new browser" / "new terminal" entry point that does not go through
+  // its owning saga (application menu, global shortcut) lands here, so this is
+  // where a collaborator's owner-only open is dropped (multiplayer w3).
+  if (
+    OWNER_ONLY_TAB_TYPES.includes(tab.type) &&
+    (yield* selectIsWorkspaceCollaborator.effect(wsId))
+  ) {
+    return;
+  }
   yield* put(
     reconcilePanelColumnCount(wsId, yield* selectPanelColumnCount.effect(wsId), timestamp),
   );

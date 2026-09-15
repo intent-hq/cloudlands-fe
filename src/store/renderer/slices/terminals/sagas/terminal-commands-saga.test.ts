@@ -1,3 +1,4 @@
+import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 import { runSaga, stdChannel } from 'redux-saga';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -27,8 +28,9 @@ const settle = async () => {
   for (let i = 0; i < 6; i += 1) await Promise.resolve();
 };
 
-function startSaga() {
+function startSaga(myRole: 'owner' | 'collaborator' = 'owner') {
   let terminals = terminalsReducer(undefined, { type: '@@init' } as never);
+  const workspace = { workspaces: createCollection('id', [{ id: 'ws-1', myRole }]) };
   const input = stdChannel();
   const dispatched: unknown[] = [];
   const dispatch = (action: unknown) => {
@@ -38,14 +40,14 @@ function startSaga() {
     return action;
   };
   const task = runSaga(
-    { channel: input, dispatch, getState: () => ({ terminals }) },
+    { channel: input, dispatch, getState: () => ({ terminals, workspace }) },
     terminalCommandsSaga,
   );
   const send = (action: unknown) => {
     terminals = terminalsReducer(terminals, action as never);
     input.put(action as never);
   };
-  const getState = () => ({ terminals }) as never;
+  const getState = () => ({ terminals, workspace }) as never;
   return { dispatched, send, task, getState };
 }
 
@@ -65,6 +67,19 @@ describe('terminalCommandsSaga', () => {
       workspaceId: 'ws-1',
     });
     expect(dispatched).toEqual([]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('drops createTerminalRequested for a collaborator workspace (multiplayer w3)', async () => {
+    const { dispatched, send, task } = startSaga('collaborator');
+
+    send(createTerminalRequested('ws-1'));
+    await settle();
+
+    expect(mocks.dispatchWindowEvent).not.toHaveBeenCalled();
+    expect(dispatched).toEqual([]);
+    expect(task.isRunning()).toBe(true);
     task.cancel();
     await task.toPromise();
   });
