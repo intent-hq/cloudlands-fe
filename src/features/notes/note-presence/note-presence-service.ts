@@ -2,7 +2,13 @@
  * Note presence sessions: one ref-counted `note.presence.subscribe` lease per
  * (workspace, note) shared by every consumer on the page (header avatar stack,
  * editor cursors), fed by the channel's snapshot and `joined | updated | left`
- * deltas. The connection's own viewer row is filtered out via `principal.me`.
+ * deltas. The connection's own viewer row is filtered out via `principal.me`;
+ * registration waits for that identity (retried with backoff on a failed
+ * read) so the own row is never mistaken for a peer. Pushes must arrive in
+ * `seq` order from the seq-0 snapshot: a gap, or a delta before the snapshot,
+ * releases the lease and re-registers for a fresh snapshot — presence is never
+ * persisted, so that is the only recovery — keeping the current roster until
+ * the fresh snapshot replaces it.
  *
  * Roster membership is the daemon's (lease-based); carets are ephemeral on
  * top of it: a caret not refreshed within `CURSOR_TTL_MS` of receipt is
@@ -76,7 +82,13 @@ interface SessionState {
   refs: number;
   disposed: boolean;
   ownPrincipalId: string | undefined;
+  /** `principal.me` answered (possibly with no id); registration waits for it. */
+  identityKnown: boolean;
+  identityAttempt: number;
+  identityTimer: ReturnType<typeof setTimeout> | undefined;
   subscriptionId: string | undefined;
+  /** `seq` the next push on `subscriptionId` must carry; `undefined` until its snapshot. */
+  nextSeq: number | undefined;
   generation: number;
   /** A subscribe request of the current generation awaits its reply. */
   registering: boolean;
@@ -131,8 +143,53 @@ function scheduleRegister(state: SessionState): void {
   }, delay);
 }
 
+function clearIdentityRetry(state: SessionState): void {
+  if (state.identityTimer !== undefined) {
+    clearTimeout(state.identityTimer);
+    state.identityTimer = undefined;
+  }
+}
+
+/**
+ * Learn the connection's own principal, then register. A failed read is
+ * retried with backoff rather than treated as "no identity": registering
+ * without it would render the own row as a peer for the session's lifetime.
+ */
+function resolveIdentity(state: SessionState): void {
+  clearIdentityRetry(state);
+  resolveOwnPrincipalId().then(
+    (ownPrincipalId) => {
+      if (state.disposed) return;
+      state.ownPrincipalId = ownPrincipalId;
+      state.identityKnown = true;
+      state.identityAttempt = 0;
+      register(state);
+    },
+    () => {
+      if (state.disposed) return;
+      const delay = retryDelayMs(state.identityAttempt);
+      state.identityAttempt += 1;
+      state.identityTimer = setTimeout(() => {
+        state.identityTimer = undefined;
+        if (!state.disposed) resolveIdentity(state);
+      }, delay);
+    },
+  );
+}
+
+/** Drop the live lease (if any) without touching the roster. */
+function releaseLease(state: SessionState): void {
+  if (state.subscriptionId) unsubscribeNotePresence(state.subscriptionId);
+  state.subscriptionId = undefined;
+  state.nextSeq = undefined;
+  clearHeartbeat(state);
+}
+
 function register(state: SessionState): void {
   clearRetry(state);
+  // One live lease at a time: re-registering over an acked lease (sequence
+  // gap recovery) releases it first rather than orphaning it as a ghost viewer.
+  releaseLease(state);
   state.generation += 1;
   state.registering = true;
   state.preAckPushes = [];
@@ -151,10 +208,14 @@ function register(state: SessionState): void {
         return;
       }
       state.subscriptionId = id;
+      state.nextSeq = undefined;
       state.retryAttempt = 0;
       for (const push of buffered) {
+        // A gap inside the replay already re-registered; the rest is stale.
+        if (state.subscriptionId !== id) return;
         if (push.subscriptionId === id) applyPush(state, push);
       }
+      if (state.subscriptionId !== id) return;
       // The lease is fresh: the daemon has no caret for us yet.
       if (state.lastCursor) sendCursor(state, state.lastCursor);
     })
@@ -289,6 +350,7 @@ function onNotification(state: SessionState, method: string, params: unknown): v
 function applyPush(state: SessionState, push: NotePresencePush): void {
   const now = Date.now();
   if (push.kind === 'snapshot') {
+    state.nextSeq = push.seq + 1;
     const next = new Map<string, RemoteNoteViewer>();
     for (const viewer of push.viewers) {
       if (viewer.principalId === state.ownPrincipalId) continue;
@@ -299,6 +361,13 @@ function applyPush(state: SessionState, push: NotePresencePush): void {
     emit(state);
     return;
   }
+  // A delta before the snapshot or out of sequence means a push was lost:
+  // the roster can no longer be trusted, so recover a fresh snapshot.
+  if (state.nextSeq === undefined || push.seq !== state.nextSeq) {
+    register(state);
+    return;
+  }
+  state.nextSeq = push.seq + 1;
   if (push.viewer.principalId === state.ownPrincipalId) return;
   if (push.deltaKind === 'left') {
     if (state.viewers.delete(push.viewer.principalId)) {
@@ -319,32 +388,32 @@ function start(state: SessionState): void {
   state.offReconnect = onBackendReconnected(() => {
     if (state.disposed) return;
     state.subscriptionId = undefined;
+    state.nextSeq = undefined;
     state.registering = false;
     state.preAckPushes = [];
     state.retryAttempt = 0;
     state.viewers = new Map();
     clearExpiry(state);
+    clearHeartbeat(state);
     emit(state);
-    register(state);
+    // While the identity read is still pending, its callback is the one
+    // registrar: registering here too would ack two leases for one viewer.
+    if (state.identityKnown) register(state);
   });
-  void resolveOwnPrincipalId().then((ownPrincipalId) => {
-    if (state.disposed) return;
-    state.ownPrincipalId = ownPrincipalId;
-    register(state);
-  });
+  resolveIdentity(state);
 }
 
 function dispose(state: SessionState): void {
   state.disposed = true;
   state.generation += 1;
   clearRetry(state);
+  clearIdentityRetry(state);
   if (state.publishTimer !== undefined) clearTimeout(state.publishTimer);
   clearExpiry(state);
   clearHeartbeat(state);
   state.offNotification();
   state.offReconnect();
-  if (state.subscriptionId) unsubscribeNotePresence(state.subscriptionId);
-  state.subscriptionId = undefined;
+  releaseLease(state);
   state.registering = false;
   state.preAckPushes = [];
   state.listeners.clear();
@@ -366,7 +435,11 @@ export function joinNotePresence(workspaceId: string, noteId: string): NotePrese
       refs: 0,
       disposed: false,
       ownPrincipalId: undefined,
+      identityKnown: false,
+      identityAttempt: 0,
+      identityTimer: undefined,
       subscriptionId: undefined,
+      nextSeq: undefined,
       generation: 0,
       registering: false,
       preAckPushes: [],
