@@ -5,9 +5,6 @@
  * then settles (`idle`). Disabled entirely under reduced motion.
  */
 
-/** Reduced-motion watcher now lives in `$lib/utils/reduced-motion.svelte`; re-exported for HUD callers. */
-export { watchReducedMotion } from '$lib/utils/reduced-motion.svelte';
-
 export type HudSlidePhase = 'idle' | 'prep' | 'run';
 
 /** Matches the mock's release delay (40ms) and settle timeout (600ms). */

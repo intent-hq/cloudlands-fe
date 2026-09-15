@@ -204,7 +204,7 @@
     height: 12px;
     background: hsl(var(--border));
   }
-  @media (prefers-reduced-motion: reduce) {
+  @container style(--motion-reduced: 1) {
     .hud-stat-blink {
       animation: none;
     }

@@ -458,7 +458,7 @@
       outline-color: hsl(var(--primary));
     }
   }
-  @media (prefers-reduced-motion: reduce) {
+  @container style(--motion-reduced: 1) {
     .hud-anim-pulse,
     .hud-anim-blink,
     .hud-ws-card-flash,
