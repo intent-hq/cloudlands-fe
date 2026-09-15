@@ -326,31 +326,67 @@ describe('power-bridge-seeder', () => {
     });
 
     it('a change event beats a later-resolving seed for the same source', async () => {
-      installGenuineBridge({ invoke: vi.fn(async () => ({ onBattery: false })) });
+      const pendingIpcReads: Array<(value: unknown) => void> = [];
+      installGenuineBridge({
+        invoke: vi.fn(() => new Promise((resolve) => pendingIpcReads.push(resolve))),
+      });
       registerPowerBridge();
-      const pendingBatteryReads: Array<(value: unknown) => void> = [];
-      const battery = makeFakeBatteryManager(false);
-      (navigator as any).getBattery = vi.fn(
-        () => new Promise((resolve) => pendingBatteryReads.push(resolve)),
-      );
+      const battery = makeFakeBatteryManager(true);
+      (navigator as any).getBattery = vi.fn(async () => battery);
 
       const source = createBatterySource();
       const received: boolean[] = [];
       const dispose = source.subscribe((onBattery) => received.push(onBattery));
       await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(battery.listenerCount()).toBe(1);
+      expect(pendingIpcReads.length).toBeGreaterThan(0);
 
       emitMockIpcEvent(IPC_CHANNELS.POWER.BATTERY_CHANGED, { onBattery: true });
       expect(received).toEqual([true]);
       emitMockIpcEvent(IPC_CHANNELS.POWER.BATTERY_CHANGED, { onBattery: false });
       expect(received).toEqual([true, false]);
 
-      battery.charging = true;
-      for (const resolve of pendingBatteryReads.splice(0)) resolve(battery);
+      for (const resolve of pendingIpcReads.splice(0)) resolve({ onBattery: true });
       await new Promise((resolve) => setTimeout(resolve, 0));
-      expect(battery.listenerCount()).toBe(1);
       expect(received).toEqual([true, false]);
       battery.setCharging(false);
       expect(received).toEqual([true, false, true]);
+      dispose();
+    });
+
+    it('keeps the subscription baseline in step with read() when the IPC seed rejects transiently (subscribe-before-read saga order)', async () => {
+      const pendingIpcReads: Array<{
+        resolve: (value: unknown) => void;
+        reject: (reason: unknown) => void;
+      }> = [];
+      const invokeSpy = vi.fn(
+        () => new Promise((resolve, reject) => pendingIpcReads.push({ resolve, reject })),
+      );
+      installGenuineBridge({ invoke: invokeSpy });
+      registerPowerBridge();
+      const battery = makeFakeBatteryManager(true);
+      (navigator as any).getBattery = vi.fn(async () => battery);
+
+      const source = createBatterySource();
+      const received: boolean[] = [];
+      const dispose = source.subscribe((onBattery) => received.push(onBattery));
+      const initialRead = source.read();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(invokeSpy).toHaveBeenCalledTimes(1);
+
+      const [first, ...rest] = pendingIpcReads.splice(0);
+      first.reject(new Error('transient'));
+      for (const read of rest) read.resolve({ onBattery: true });
+      const initial = await initialRead;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(received).toEqual([]);
+
+      emitMockIpcEvent(IPC_CHANNELS.POWER.BATTERY_CHANGED, { onBattery: false });
+      expect(received.at(-1) ?? initial).toBe(false);
+      emitMockIpcEvent(IPC_CHANNELS.POWER.BATTERY_CHANGED, { onBattery: true });
+      expect(received.at(-1)).toBe(true);
+      emitMockIpcEvent(IPC_CHANNELS.POWER.BATTERY_CHANGED, { onBattery: false });
+      expect(received.at(-1)).toBe(false);
       dispose();
     });
 

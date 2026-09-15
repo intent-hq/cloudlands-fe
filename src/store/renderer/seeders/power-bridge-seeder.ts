@@ -179,12 +179,22 @@ async function readGuarded(source: BatterySource): Promise<boolean> {
  * its own side, and a seed that resolves after the first emission is
  * reconciled through the same emit path so the subscriber ends on the value
  * combining everything known.
+ *
+ * `read()` and `subscribe()` share one initial read per source, so the
+ * subscription's dedupe baseline is the same value `read()` hands the saga: a
+ * second, independent read that settled differently (e.g. one transient IPC
+ * rejection) would otherwise leave the baseline disagreeing with the store and
+ * swallow the next genuine transition.
  */
 function createMergedBatterySource(ipc: BatterySource, nav: BatterySource): BatterySource {
   let seedLogged = false;
+  let ipcSeed: Promise<boolean> | undefined;
+  let navigatorSeed: Promise<boolean> | undefined;
+  const seedIpc = () => (ipcSeed ??= readGuarded(ipc));
+  const seedNavigator = () => (navigatorSeed ??= readGuarded(nav));
   return {
     async read() {
-      const [fromIpc, fromNavigator] = await Promise.all([readGuarded(ipc), readGuarded(nav)]);
+      const [fromIpc, fromNavigator] = await Promise.all([seedIpc(), seedNavigator()]);
       if (!seedLogged) {
         seedLogged = true;
         logger.info(`battery seed: ipc=${fromIpc}, navigator=${fromNavigator}`);
@@ -223,12 +233,12 @@ function createMergedBatterySource(ipc: BatterySource, nav: BatterySource): Batt
         fromNavigator = onBattery;
         emit();
       });
-      readGuarded(ipc).then(
+      seedIpc().then(
         seed((value) => {
           if (!ipcSeen) fromIpc = value;
         }),
       );
-      readGuarded(nav).then(
+      seedNavigator().then(
         seed((value) => {
           if (!navigatorSeen) fromNavigator = value;
         }),
