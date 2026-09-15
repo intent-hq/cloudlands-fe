@@ -84,32 +84,42 @@ describe('sidebar launcher primary ordering', () => {
     ]);
   });
 
-  it('drops retired sessions from the stack, count, and running set until restored', () => {
-    const active = agent('active');
+  it('drops retired sessions from the stack, +N overflow, and running set until restored', () => {
+    const activeAgents = [agent('active-a'), agent('active-b'), agent('active-c')];
     const retired = agent('retired', {
       hasUnread: true,
       retiredAt: '2026-03-19T01:00:00.000Z',
     });
+    const retiredIdle = agent('retired-idle', { retiredAt: '2026-03-19T01:00:00.000Z' });
+    const limit = 2;
     const derive = (agents: AgentSession[]) =>
       deriveAgentLauncherItems(
         agents,
-        agents.length,
+        limit,
         ({ id }) => id === 'retired',
         () => ({ lastUserMessage: '', response: '' }),
       );
 
-    const retiredState = derive([active, retired]);
-    expect(retiredState.launcherAgents.map(({ agent: item }) => item.id)).toEqual(['active']);
-    expect(retiredState.totalAgents).toBe(1);
-    expect(retiredState.overflowCount).toBe(0);
+    const retiredState = derive([...activeAgents, retired, retiredIdle]);
+    expect(retiredState.launcherAgents.map(({ agent: item }) => item.id)).toEqual([
+      'active-a',
+      'active-b',
+    ]);
+    expect(retiredState.totalAgents).toBe(activeAgents.length);
+    expect(retiredState.overflowCount).toBe(activeAgents.length - limit);
     expect(retiredState.runningAgents).toEqual([]);
 
-    const restoredState = derive([active, { ...retired, retiredAt: undefined }]);
+    const restoredState = derive([
+      ...activeAgents,
+      { ...retired, retiredAt: undefined },
+      { ...retiredIdle, retiredAt: undefined },
+    ]);
     expect(restoredState.launcherAgents.map(({ agent: item }) => item.id)).toEqual([
       'retired',
-      'active',
+      'active-a',
     ]);
-    expect(restoredState.totalAgents).toBe(2);
+    expect(restoredState.totalAgents).toBe(activeAgents.length + 2);
+    expect(restoredState.overflowCount).toBe(activeAgents.length + 2 - limit);
     expect(restoredState.runningAgents.map(({ id }) => id)).toEqual(['retired']);
   });
 
