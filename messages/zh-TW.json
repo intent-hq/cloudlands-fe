@@ -6367,7 +6367,6 @@
   "workspace_share_loadFailed_error": "無法載入共享詳細資料",
   "workspace_share_createFailed_error": "無法建立邀請連結",
   "workspace_share_pinUnknown_error": "不存在名為 {login} 的 GitHub 使用者",
-  "workspace_hoverCard_member_ariaLabel": "{name}（{role}）",
   "workspace_share_ownerOnly_notice": "只有工作區擁有者可以管理共享。",
   "workspace_share_removeMember_confirm_label": "要將 {name} 從此工作區移除嗎？",
   "workspace_share_removeMember_confirmAction_ariaLabel": "確認移除 {name}",

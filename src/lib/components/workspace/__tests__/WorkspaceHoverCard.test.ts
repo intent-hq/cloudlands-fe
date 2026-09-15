@@ -18,9 +18,8 @@ const mocks = vi.hoisted(() => {
   const agentSessionsByWorkspace: Record<string, AgentSession[]> = {};
   const agentPreviewsById: Record<string, { kind: string; text?: string }> = {};
   const prMonitors: PrMonitorRow[] = [];
-  /** Store-side roster state per workspace, as the workspace-share selectors would read it. */
+  /** Store-side owner controls per workspace, as the workspace-share selectors would read them. */
   interface RosterFixture {
-    members: unknown[];
     canManage: boolean;
     withheld: boolean;
     removingPrincipalId: string | null;
@@ -116,9 +115,6 @@ vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-slice', () => 
 vi.mock('$store/renderer/slices/workspace-share/workspace-share-selectors', () => {
   const roster = (workspaceId: string) => mocks.rosters[workspaceId];
   return {
-    selectWorkspaceRosterMembers: vi.fn(
-      mocks.createWorkspaceReadable((workspaceId: string) => roster(workspaceId)?.members ?? []),
-    ),
     selectWorkspaceRosterCanManage: vi.fn(
       mocks.createWorkspaceReadable(
         (workspaceId: string) => roster(workspaceId)?.canManage ?? false,
@@ -170,7 +166,6 @@ async function renderHoverCard(
     loadAgentSessions?: boolean;
     loadWorkspaceData?: boolean;
     isLoading?: boolean;
-    onRemoveMember?: (person: PresencePerson) => void;
   } = {},
 ) {
   const WorkspaceHoverCard = (await import('../WorkspaceHoverCard.svelte')).default;
@@ -678,204 +673,6 @@ describe('WorkspaceHoverCard', () => {
     expect(container.textContent).not.toContain('null');
   });
 
-  // Member roster (multiplayer w4): the roster, in-flight removal, and error
-  // are saga-owned state keyed by workspace id; the card dispatches the read
-  // and the (confirmed) removal and renders what the selectors hand back.
-  const roster = [
-    {
-      principalId: 'p-alice',
-      login: 'alice',
-      displayName: 'Alice',
-      avatarUrl: null,
-      role: 'owner',
-      addedAt: '2026-09-01T00:00:00Z',
-    },
-    {
-      principalId: 'p-bob',
-      login: 'bob',
-      displayName: null,
-      avatarUrl: 'https://avatars.githubusercontent.com/u/2',
-      role: 'collaborator',
-      addedAt: '2026-09-02T00:00:00Z',
-    },
-  ];
-  function seedRoster(
-    workspaceId: string,
-    overrides: Partial<(typeof mocks.rosters)[string]> = {},
-  ) {
-    mocks.rosters[workspaceId] = {
-      members: roster,
-      canManage: false,
-      withheld: false,
-      removingPrincipalId: null,
-      removeError: null,
-      ...overrides,
-    };
-  }
-  function dispatched(type: string) {
-    return mocks.dispatch.mock.calls.flatMap(([action]) => {
-      const candidate = action as { type?: string; payload?: unknown };
-      return candidate.type === type ? [candidate.payload] : [];
-    });
-  }
-
-  it('asks the store for the roster of a shared workspace and lists it read-only for a collaborator', async () => {
-    seedRoster('ws-1');
-    const { container } = await renderHoverCard({
-      statusMessage: '   ',
-      memberCount: 2,
-      myRole: 'collaborator',
-    });
-
-    expect(dispatched('workspaceShare/rosterRequested')).toEqual([[{ workspaceId: 'ws-1' }]]);
-    const section = container.querySelector('[data-workspace-hover-card-members]')!;
-    expect(section.getAttribute('aria-label')).toBe('Members');
-    const rows = section.querySelectorAll('[data-workspace-hover-card-member-row]');
-    expect(rows).toHaveLength(2);
-    expect(rows[0]!.getAttribute('data-member-role')).toBe('owner');
-    expect(text(rows[0]!)).toBe('A Alice Owner');
-    expect(text(rows[1]!)).toBe('bob Collaborator');
-    // Withheld from collaborators: no Remove on the roster.
-    expect(section.querySelector('button')).toBeNull();
-  });
-
-  // Share… lives only in the workspace ⋯ menu (WorkspaceProgressCard); the
-  // card never offers it, owner or not.
-  it('does not offer a Share entry to the owner', async () => {
-    seedRoster('ws-1', { canManage: true });
-    const { container } = await renderHoverCard({ statusMessage: '   ', myRole: 'owner' });
-
-    expect(container.querySelector('[data-workspace-hover-card-share]')).toBeNull();
-    expect(dispatched('workspaceShare/openDialog')).toEqual([]);
-  });
-
-  it('dispatches a collaborator removal only after confirming, and never for the owner row', async () => {
-    seedRoster('ws-1', { canManage: true });
-    const { container } = await renderHoverCard({
-      statusMessage: '   ',
-      memberCount: 2,
-      myRole: 'owner',
-    });
-    const section = within(
-      container.querySelector<HTMLElement>('[data-workspace-hover-card-members]')!,
-    );
-    expect(section.queryByRole('button', { name: 'Remove Alice' })).toBeNull();
-
-    await fireEvent.click(section.getByRole('button', { name: 'Remove bob' }));
-    expect(dispatched('workspaceShare/rosterMemberRemoveRequested')).toEqual([]);
-    expect(
-      container.querySelector('[data-workspace-hover-card-member-remove-confirm]'),
-    ).not.toBeNull();
-
-    await fireEvent.click(section.getByRole('button', { name: 'Cancel' }));
-    expect(container.querySelector('[data-workspace-hover-card-member-remove-confirm]')).toBeNull();
-    expect(dispatched('workspaceShare/rosterMemberRemoveRequested')).toEqual([]);
-
-    await fireEvent.click(section.getByRole('button', { name: 'Remove bob' }));
-    await fireEvent.click(section.getByRole('button', { name: 'Confirm removing bob' }));
-    expect(dispatched('workspaceShare/rosterMemberRemoveRequested')).toEqual([
-      [{ workspaceId: 'ws-1', principalId: 'p-bob' }],
-    ]);
-    expect(container.querySelector('[data-workspace-hover-card-member-remove-confirm]')).toBeNull();
-
-    // While the store reports the removal in flight, Remove is disabled.
-    mocks.rosters['ws-1']!.removingPrincipalId = 'p-bob';
-    mocks.emitRosters();
-    await tick();
-    expect(section.getByRole<HTMLButtonElement>('button', { name: 'Remove bob' }).disabled).toBe(
-      true,
-    );
-  });
-
-  it('renders the localized removal error the store carries and keeps the row', async () => {
-    seedRoster('ws-1', { canManage: true, removeError: 'Could not remove the member' });
-    const { container } = await renderHoverCard({
-      statusMessage: '   ',
-      memberCount: 2,
-      myRole: 'owner',
-    });
-
-    expect(container.querySelector('[data-workspace-hover-card-member-error]')).not.toBeNull();
-    expect(container.querySelectorAll('[data-workspace-hover-card-member-row]')).toHaveLength(2);
-  });
-
-  // Regression (fe#2440 verifier, 6138cb4 round): a daemon `-32003` on an
-  // owner-only method withholds every owner control on the card, not just
-  // the row that was being removed, and says why.
-  it('withholds Remove and shows the owner-only notice once the daemon refused', async () => {
-    seedRoster('ws-1', { canManage: false, withheld: true });
-    const { container } = await renderHoverCard({
-      statusMessage: '   ',
-      memberCount: 2,
-      myRole: 'owner',
-    });
-
-    expect(container.querySelectorAll('[data-workspace-hover-card-member-row]')).toHaveLength(2);
-    expect(container.querySelectorAll('[data-workspace-hover-card-member-remove]')).toHaveLength(0);
-    const notice = container.querySelector('[data-workspace-hover-card-member-error]');
-    expect(notice).not.toBeNull();
-    expect(text(notice!)).toBe('Only the workspace owner can manage sharing.');
-  });
-
-  // Regression (fe#2440 verifier, 6138cb4 round): the roster is keyed by
-  // workspace, so retargeting the card mid-removal shows the new workspace's
-  // own rows — a settlement for the previous workspace cannot touch them.
-  it('shows the retargeted workspace roster untouched by the previous workspace removal', async () => {
-    seedRoster('ws-1', { canManage: true });
-    seedRoster('ws-2', { canManage: true });
-    const WorkspaceHoverCard = (await import('../WorkspaceHoverCard.svelte')).default;
-    const shared = {
-      ...baseWorkspace,
-      statusMessage: '   ',
-      memberCount: 2,
-      myRole: 'owner',
-    } as Workspace;
-    const { container, rerender } = render(WorkspaceHoverCard, { props: { workspace: shared } });
-    const section = within(
-      container.querySelector<HTMLElement>('[data-workspace-hover-card-members]')!,
-    );
-    await fireEvent.click(section.getByRole('button', { name: 'Remove bob' }));
-    await fireEvent.click(section.getByRole('button', { name: 'Confirm removing bob' }));
-    expect(dispatched('workspaceShare/rosterMemberRemoveRequested')).toEqual([
-      [{ workspaceId: 'ws-1', principalId: 'p-bob' }],
-    ]);
-
-    await rerender({ workspace: { ...shared, id: 'ws-2', title: 'Other' } as Workspace });
-    expect(dispatched('workspaceShare/rosterRequested')).toEqual([
-      [{ workspaceId: 'ws-1' }],
-      [{ workspaceId: 'ws-2' }],
-    ]);
-    // ws-1's removal settles (its roster now lacks bob); ws-2 is unaffected.
-    mocks.rosters['ws-1']!.members = [roster[0]!];
-    mocks.emitRosters();
-    await tick();
-    expect(container.querySelectorAll('[data-workspace-hover-card-member-row]')).toHaveLength(2);
-    expect(container.querySelector('[data-workspace-hover-card-member-remove-confirm]')).toBeNull();
-  });
-
-  it('does not ask for the roster of a single-member workspace', async () => {
-    seedRoster('ws-1');
-    const { container } = await renderHoverCard({ statusMessage: '   ' });
-    await tick();
-
-    expect(dispatched('workspaceShare/rosterRequested')).toEqual([]);
-    expect(container.querySelector('[data-workspace-hover-card-members]')).toBeNull();
-  });
-
-  it('re-requests the roster when the entity memberCount changes', async () => {
-    seedRoster('ws-1');
-    const WorkspaceHoverCard = (await import('../WorkspaceHoverCard.svelte')).default;
-    const shared = { ...baseWorkspace, statusMessage: '   ', memberCount: 2 } as Workspace;
-    const { rerender } = render(WorkspaceHoverCard, { props: { workspace: shared } });
-    expect(dispatched('workspaceShare/rosterRequested')).toHaveLength(1);
-
-    await rerender({ workspace: { ...shared, statusMessage: 'moved' } as Workspace });
-    expect(dispatched('workspaceShare/rosterRequested')).toHaveLength(1);
-
-    await rerender({ workspace: { ...shared, memberCount: 3 } as Workspace });
-    expect(dispatched('workspaceShare/rosterRequested')).toHaveLength(2);
-  });
-
   describe('presence member rows', () => {
     const member = (
       principalId: string,
@@ -962,7 +759,37 @@ describe('WorkspaceHoverCard', () => {
       ).toBe('member');
     });
 
+    // Owner controls (multiplayer w4 share slice) ride the People rows: Remove
+    // is gated by the store, the confirmed removal is
+    // dispatched to the share saga, and the in-flight principal and error are
+    // rendered back from the selectors. The card issues no roster read itself.
     describe('Remove', () => {
+      const removeTargetsOf = (rows: HTMLElement[]) =>
+        rows.map(
+          (row) =>
+            row
+              .querySelector('[data-workspace-hover-card-person-remove]')
+              ?.getAttribute('data-workspace-hover-card-person-remove') ?? null,
+        );
+      function seedRoster(
+        workspaceId: string,
+        overrides: Partial<(typeof mocks.rosters)[string]> = {},
+      ) {
+        mocks.rosters[workspaceId] = {
+          canManage: false,
+          withheld: false,
+          removingPrincipalId: null,
+          removeError: null,
+          ...overrides,
+        };
+      }
+      function dispatched(type: string) {
+        return mocks.dispatch.mock.calls.flatMap(([action]) => {
+          const candidate = action as { type?: string; payload?: unknown };
+          return candidate.type === type ? [candidate.payload] : [];
+        });
+      }
+
       beforeEach(() => {
         mocks.presenceMembersByWorkspace['ws-1'] = [
           member('p-owner', { owner: true, online: true, self: true }, { login: 'owner-login' }),
@@ -971,30 +798,140 @@ describe('WorkspaceHoverCard', () => {
         ];
       });
 
-      it('offers no Remove on a read-only host', async () => {
-        const { container } = await renderHoverCard();
+      it('lists the people read-only, without a roster read, when this window may not manage sharing', async () => {
+        seedRoster('ws-1');
+        const { container } = await renderHoverCard({ memberCount: 3, myRole: 'collaborator' });
+        await tick();
+
+        expect(peopleRows(container)).toHaveLength(3);
         expect(container.querySelector('[data-workspace-hover-card-person-remove]')).toBeNull();
+        expect(dispatched('workspaceShare/rosterRequested')).toEqual([]);
       });
 
-      it('offers Remove on every collaborator row but never the owner row, handing back the person', async () => {
-        const onRemoveMember = vi.fn();
-        const { container } = await renderHoverCard({}, { onRemoveMember });
+      // Share… lives only in the workspace ⋯ menu (WorkspaceProgressCard); the
+      // card never offers it, owner or not.
+      it('does not offer a Share entry to the owner', async () => {
+        seedRoster('ws-1', { canManage: true });
+        const { container } = await renderHoverCard({ statusMessage: '   ', myRole: 'owner' });
+
+        expect(container.querySelector('[data-workspace-hover-card-share]')).toBeNull();
+        expect(dispatched('workspaceShare/openDialog')).toEqual([]);
+      });
+
+      it('offers Remove on every collaborator row but never the owner row, and dispatches the removal only once confirmed', async () => {
+        seedRoster('ws-1', { canManage: true });
+        const { container } = await renderHoverCard({ myRole: 'owner' });
 
         const rows = peopleRows(container);
-        expect(
-          rows.map(
-            (row) =>
-              row
-                .querySelector('[data-workspace-hover-card-person-remove]')
-                ?.getAttribute('data-workspace-hover-card-person-remove') ?? null,
-          ),
-        ).toEqual([null, 'p-member', 'p-away']);
-        const remove = within(rows[2]).getByRole('button', {
-          name: m.workspace_hoverCard_personRemove_ariaLabel({ name: 'away-login' }),
+        expect(removeTargetsOf(rows)).toEqual([null, 'p-member', 'p-away']);
+        const away = within(rows[2]);
+        const removeName = m.workspace_hoverCard_personRemove_ariaLabel({ name: 'away-login' });
+        const confirmName = m.workspace_share_removeMember_confirmAction_ariaLabel({
+          name: 'away-login',
         });
-        await fireEvent.click(remove);
-        expect(onRemoveMember).toHaveBeenCalledTimes(1);
-        expect(onRemoveMember.mock.calls[0][0]).toMatchObject({ principalId: 'p-away' });
+
+        await fireEvent.click(away.getByRole('button', { name: removeName }));
+        expect(dispatched('workspaceShare/rosterMemberRemoveRequested')).toEqual([]);
+        expect(
+          rows[2].querySelector('[data-workspace-hover-card-person-remove-confirm]'),
+        ).not.toBeNull();
+        expect(removeTargetsOf(rows)).toEqual([null, 'p-member', null]);
+
+        await fireEvent.click(away.getByRole('button', { name: m.workspace_share_cancel_label() }));
+        expect(
+          rows[2].querySelector('[data-workspace-hover-card-person-remove-confirm]'),
+        ).toBeNull();
+        expect(dispatched('workspaceShare/rosterMemberRemoveRequested')).toEqual([]);
+
+        await fireEvent.click(away.getByRole('button', { name: removeName }));
+        await fireEvent.click(away.getByRole('button', { name: confirmName }));
+        expect(dispatched('workspaceShare/rosterMemberRemoveRequested')).toEqual([
+          [{ workspaceId: 'ws-1', principalId: 'p-away' }],
+        ]);
+        expect(
+          rows[2].querySelector('[data-workspace-hover-card-person-remove-confirm]'),
+        ).toBeNull();
+
+        // While the store reports the removal in flight, every Remove is disabled.
+        mocks.rosters['ws-1']!.removingPrincipalId = 'p-away';
+        mocks.emitRosters();
+        await tick();
+        expect(away.getByRole<HTMLButtonElement>('button', { name: removeName }).disabled).toBe(
+          true,
+        );
+        expect(
+          within(rows[1]).getByRole<HTMLButtonElement>('button', {
+            name: m.workspace_hoverCard_personRemove_ariaLabel({ name: 'member-login' }),
+          }).disabled,
+        ).toBe(true);
+      });
+
+      it('renders the localized removal error the store carries and keeps the rows', async () => {
+        seedRoster('ws-1', { canManage: true, removeError: 'Could not remove the member' });
+        const { container } = await renderHoverCard({ myRole: 'owner' });
+
+        const error = container.querySelector('[data-workspace-hover-card-people-error]');
+        expect(error).not.toBeNull();
+        expect(text(error!)).toBe('Could not remove the member');
+        expect(peopleRows(container)).toHaveLength(3);
+      });
+
+      // Regression (fe#2440 verifier, 6138cb4 round): a daemon `-32003` on an
+      // owner-only method withholds every owner control on the card, not just
+      // the row that was being removed, and says why.
+      it('withholds Remove and shows the owner-only notice once the daemon refused', async () => {
+        seedRoster('ws-1', { canManage: false, withheld: true });
+        const { container } = await renderHoverCard({ myRole: 'owner' });
+
+        expect(peopleRows(container)).toHaveLength(3);
+        expect(
+          container.querySelectorAll('[data-workspace-hover-card-person-remove]'),
+        ).toHaveLength(0);
+        const notice = container.querySelector('[data-workspace-hover-card-people-error]');
+        expect(notice).not.toBeNull();
+        expect(text(notice!)).toBe('Only the workspace owner can manage sharing.');
+      });
+
+      // Regression (fe#2440 verifier, 6138cb4 round): the owner controls are
+      // keyed by workspace, so retargeting the card mid-removal shows the new
+      // workspace's own rows — a settlement for the previous one cannot touch them.
+      it('shows the retargeted workspace people untouched by the previous workspace removal', async () => {
+        seedRoster('ws-1', { canManage: true });
+        seedRoster('ws-2', { canManage: true });
+        mocks.presenceMembersByWorkspace['ws-2'] = [
+          member('p-owner', { owner: true, online: true, self: true }, { login: 'owner-login' }),
+          member('p-other', { online: true }, { login: 'other-login' }),
+        ];
+        const WorkspaceHoverCard = (await import('../WorkspaceHoverCard.svelte')).default;
+        const shared = { ...baseWorkspace, myRole: 'owner' } as Workspace;
+        const { container, rerender } = render(WorkspaceHoverCard, {
+          props: { workspace: shared },
+        });
+        const away = within(peopleRows(container)[2]);
+        await fireEvent.click(
+          away.getByRole('button', {
+            name: m.workspace_hoverCard_personRemove_ariaLabel({ name: 'away-login' }),
+          }),
+        );
+        expect(
+          container.querySelector('[data-workspace-hover-card-person-remove-confirm]'),
+        ).not.toBeNull();
+
+        await rerender({ workspace: { ...shared, id: 'ws-2', title: 'Other' } as Workspace });
+        await tick();
+        // ws-1's removal settles (its people now lack away); ws-2 is unaffected.
+        mocks.presenceMembersByWorkspace['ws-1'] = mocks.presenceMembersByWorkspace['ws-1'].slice(
+          0,
+          2,
+        );
+        mocks.emitRosters();
+        await tick();
+        const rows = peopleRows(container);
+        expect(rows).toHaveLength(2);
+        expect(removeTargetsOf(rows)).toEqual([null, 'p-other']);
+        expect(
+          container.querySelector('[data-workspace-hover-card-person-remove-confirm]'),
+        ).toBeNull();
       });
 
       it('keeps every collaborator of a large roster listed and removable instead of truncating', async () => {
@@ -1005,30 +942,33 @@ describe('WorkspaceHoverCard', () => {
           member('p-owner', { owner: true, online: true, self: true }, { login: 'owner-login' }),
           ...guests,
         ];
-        const onRemoveMember = vi.fn();
-        const { container } = await renderHoverCard({}, { onRemoveMember });
+        seedRoster('ws-1', { canManage: true });
+        const { container } = await renderHoverCard({ myRole: 'owner' });
 
         const rows = peopleRows(container);
         expect(rows).toHaveLength(8);
         expect(container.querySelector('[data-workspace-hover-card-people-overflow]')).toBeNull();
-        const removeTargets = rows.map(
-          (row) =>
-            row
-              .querySelector('[data-workspace-hover-card-person-remove]')
-              ?.getAttribute('data-workspace-hover-card-person-remove') ?? null,
-        );
+        const removeTargets = removeTargetsOf(rows);
         expect(removeTargets.filter((target) => target === null)).toHaveLength(1);
         expect(rows[removeTargets.indexOf(null)].getAttribute('data-presence-role')).toBe('owner');
         expect(new Set(removeTargets.filter(Boolean))).toEqual(
           new Set(guests.map((guest) => guest.principalId)),
         );
-        const lastRemove = within(rows[rows.length - 1]).getByRole('button', {
+        const last = within(rows[rows.length - 1]);
+        const lastRemove = last.getByRole('button', {
           name: m.workspace_hoverCard_personRemove_ariaLabel({ name: 'guest-6' }),
         });
         lastRemove.focus();
         expect(document.activeElement).toBe(lastRemove);
         await fireEvent.click(lastRemove);
-        expect(onRemoveMember.mock.calls[0][0]).toMatchObject({ principalId: 'p-guest-6' });
+        await fireEvent.click(
+          last.getByRole('button', {
+            name: m.workspace_share_removeMember_confirmAction_ariaLabel({ name: 'guest-6' }),
+          }),
+        );
+        expect(dispatched('workspaceShare/rosterMemberRemoveRequested')).toEqual([
+          [{ workspaceId: 'ws-1', principalId: 'p-guest-6' }],
+        ]);
       });
     });
   });

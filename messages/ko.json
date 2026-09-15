@@ -6367,7 +6367,6 @@
   "workspace_share_loadFailed_error": "공유 정보를 불러올 수 없습니다",
   "workspace_share_createFailed_error": "초대 링크를 만들 수 없습니다",
   "workspace_share_pinUnknown_error": "{login}이라는 GitHub 사용자가 없습니다",
-  "workspace_hoverCard_member_ariaLabel": "{name} — {role}",
   "workspace_share_ownerOnly_notice": "워크스페이스 소유자만 공유를 관리할 수 있습니다.",
   "workspace_share_removeMember_confirm_label": "{name}을(를) 이 워크스페이스에서 제거할까요?",
   "workspace_share_removeMember_confirmAction_ariaLabel": "{name} 제거 확인",
