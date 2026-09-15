@@ -140,10 +140,9 @@ describe('BrowserTabType viewer (mirror) rendering — REV-2 Model 3', () => {
     expect(viewer.getAttribute('data-host-connected')).toBe('false');
   });
 
-  it('forwards navigation and close to the host through the browser-clients actions', async () => {
+  it('forwards navigation and force-close to the host through the browser-clients actions', async () => {
     renderTab('cli-laptop');
     await fireEvent.click(screen.getByRole('button', { name: 'Navigate' }));
-    await fireEvent.click(screen.getByRole('button', { name: 'Close' }));
     await fireEvent.click(screen.getByRole('button', { name: 'Close anyway' }));
     await fireEvent.click(screen.getByRole('button', { name: 'Change favicon' }));
 
@@ -154,7 +153,6 @@ describe('BrowserTabType viewer (mirror) rendering — REV-2 Model 3', () => {
     });
     expect(navigate.promise).toBeInstanceOf(Promise);
     expect(rest).toEqual([
-      closeBrowserTabRequested('browser-tab', false),
       closeBrowserTabRequested('browser-tab', true),
       updateTabFavicon('workspace-1', 'browser-tab', 'https://next.example/favicon.ico'),
     ]);

@@ -4507,8 +4507,6 @@
   "browser_embedded_devtools_ariaLabel": "開発者ツールの切り替え",
   "browser_embedded_openExternal_tooltip": "外部ブラウザーで開く",
   "browser_embedded_openExternal_ariaLabel": "外部ブラウザーで開く",
-  "browser_embedded_close_tooltip": "ブラウザーを閉じる",
-  "browser_embedded_close_ariaLabel": "ブラウザーを閉じる",
   "browser_embedded_localhostRefusedPort_error": "localhost:{port} に接続できません。サーバーが実行されていない可能性があります。",
   "browser_embedded_localhostRefused_error": "localhost に接続できません。サーバーが実行されていない可能性があります。",
   "browser_embedded_loadFailed_error": "ページを読み込めませんでした",

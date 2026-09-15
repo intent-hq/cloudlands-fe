@@ -45,7 +45,6 @@
     faRefresh,
     faLock,
     faExclamationTriangle,
-    faTimes,
   } from '@fortawesome/free-solid-svg-icons';
   import Input from '../ui/input/input.svelte';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
@@ -76,7 +75,6 @@
     /** Unique tab ID for CDP registration */
     tabId?: string;
     onNavigate?: (url: string) => void;
-    onClose?: () => void;
     onTitleChange?: (title: string) => void;
     onFaviconChange?: (faviconUrl: string) => void;
     onFocus?: () => void;
@@ -98,7 +96,6 @@
     workspaceId: _workspaceId,
     tabId,
     onNavigate,
-    onClose,
     onTitleChange,
     onFaviconChange,
     onFocus,
@@ -1201,23 +1198,6 @@
         onOpenInspector={() => openDevToolsPanel('elements')}
         onReloadWithoutCache={reloadWithoutCache}
       />
-    </div>
-
-    <!-- Actions -->
-    <div class="flex gap-0.5">
-      {#if onClose}
-        <Button
-          variant="ghost-light"
-          size="icon-xs"
-          onclick={onClose}
-          tooltip={m.browser_embedded_close_tooltip()}
-          tooltipShortcut="esc"
-          tooltipSide="bottom"
-          aria-label={m.browser_embedded_close_ariaLabel()}
-        >
-          <Fa icon={faTimes} size="xs" />
-        </Button>
-      {/if}
     </div>
   </div>
 

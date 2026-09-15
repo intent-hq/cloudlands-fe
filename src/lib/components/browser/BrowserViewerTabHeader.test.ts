@@ -11,7 +11,6 @@ const navButtons = () => [
   screen.getByRole('button', { name: m.browser_embedded_goForward_ariaLabel() }),
   screen.getByRole('button', { name: m.browser_embedded_refresh_ariaLabel() }),
   screen.getByRole('button', { name: m.browser_embedded_editAddress_ariaLabel() }),
-  screen.getByRole('button', { name: m.browser_embedded_close_ariaLabel() }),
 ];
 
 describe('BrowserViewerTabHeader', () => {
@@ -123,27 +122,24 @@ describe('BrowserViewerTabHeader', () => {
     ).toBe(true);
   });
 
-  it('routes history and refresh controls, and close as a non-forced close', async () => {
+  it('routes history and refresh controls', async () => {
     const handlers = {
       onGoBack: vi.fn(),
       onGoForward: vi.fn(),
       onRefresh: vi.fn(),
-      onClose: vi.fn(),
     };
     render(BrowserViewerTabHeader, {
       props: { url: 'https://intentapp.dev/docs', host: online, ...handlers },
     });
-    const [back, forward, refresh, , close] = navButtons();
+    const [back, forward, refresh] = navButtons();
 
     await fireEvent.click(back);
     await fireEvent.click(forward);
     await fireEvent.click(refresh);
-    await fireEvent.click(close);
 
     expect(handlers.onGoBack).toHaveBeenCalledTimes(1);
     expect(handlers.onGoForward).toHaveBeenCalledTimes(1);
     expect(handlers.onRefresh).toHaveBeenCalledTimes(1);
-    expect(handlers.onClose).toHaveBeenCalledWith({ force: false });
     expect(screen.queryByRole('status')).toBeNull();
   });
 

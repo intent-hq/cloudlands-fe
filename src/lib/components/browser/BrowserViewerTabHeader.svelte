@@ -13,7 +13,6 @@
     faLock,
     faRefresh,
     faTriangleExclamation,
-    faXmark,
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { tick } from 'svelte';
@@ -39,7 +38,7 @@
     onGoBack?: () => void;
     onGoForward?: () => void;
     onRefresh?: () => void;
-    /** Close on the host, or force-close the daemon row while it is offline. */
+    /** Force-close the daemon row while its host is offline. */
     onClose?: (options: { force: boolean }) => void;
   }
 
@@ -209,18 +208,6 @@
         </Button>
       {/if}
     </div>
-
-    <Button
-      variant="ghost-light"
-      size="icon-compact"
-      onclick={() => onClose?.({ force: false })}
-      disabled={offline}
-      tooltip={m.browser_embedded_close_tooltip()}
-      tooltipSide="bottom"
-      aria-label={m.browser_embedded_close_ariaLabel()}
-    >
-      <Fa icon={faXmark} size="xs" />
-    </Button>
   </div>
 
   {#if offline}

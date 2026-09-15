@@ -4507,8 +4507,6 @@
   "browser_embedded_devtools_ariaLabel": "Afficher/masquer les outils de développement",
   "browser_embedded_openExternal_tooltip": "Ouvrir dans le navigateur externe",
   "browser_embedded_openExternal_ariaLabel": "Ouvrir dans le navigateur externe",
-  "browser_embedded_close_tooltip": "Fermer le navigateur",
-  "browser_embedded_close_ariaLabel": "Fermer le navigateur",
   "browser_embedded_localhostRefusedPort_error": "Impossible de se connecter à localhost:{port}. Le serveur n'est peut-être pas en cours d'exécution.",
   "browser_embedded_localhostRefused_error": "Impossible de se connecter à localhost. Le serveur n'est peut-être pas en cours d'exécution.",
   "browser_embedded_loadFailed_error": "Impossible de charger la page",

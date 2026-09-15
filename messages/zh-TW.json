@@ -4507,8 +4507,6 @@
   "browser_embedded_devtools_ariaLabel": "切換開發者工具",
   "browser_embedded_openExternal_tooltip": "在外部瀏覽器中開啟",
   "browser_embedded_openExternal_ariaLabel": "在外部瀏覽器中開啟",
-  "browser_embedded_close_tooltip": "關閉瀏覽器",
-  "browser_embedded_close_ariaLabel": "關閉瀏覽器",
   "browser_embedded_localhostRefusedPort_error": "無法連線到 localhost:{port}。伺服器可能沒有在執行。",
   "browser_embedded_localhostRefused_error": "無法連線到 localhost。伺服器可能沒有在執行。",
   "browser_embedded_loadFailed_error": "載入頁面失敗",

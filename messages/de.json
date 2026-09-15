@@ -4507,8 +4507,6 @@
   "browser_embedded_devtools_ariaLabel": "Entwicklertools umschalten",
   "browser_embedded_openExternal_tooltip": "In externem Browser öffnen",
   "browser_embedded_openExternal_ariaLabel": "In externem Browser öffnen",
-  "browser_embedded_close_tooltip": "Browser schließen",
-  "browser_embedded_close_ariaLabel": "Browser schließen",
   "browser_embedded_localhostRefusedPort_error": "Verbindung mit localhost:{port} nicht möglich. Der Server läuft möglicherweise nicht.",
   "browser_embedded_localhostRefused_error": "Verbindung mit localhost nicht möglich. Der Server läuft möglicherweise nicht.",
   "browser_embedded_loadFailed_error": "Seite konnte nicht geladen werden",
