@@ -8,6 +8,10 @@
  * its report IS the connection's whole state and forwards straight to
  * `presence.update`. A daemon without presence (`-32601`) answers a `null`
  * typing source, exactly like main does, so the saga degrades the same way.
+ *
+ * Reports leave one at a time, in order: the browser transport answers
+ * concurrent requests out of order and `presence.update` replaces the whole
+ * state, so an older report must never land after a newer clear or switch.
  */
 import { registerMockIpcHandler } from '$shared/ipc-mock-router';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
@@ -29,8 +33,7 @@ function isMethodNotFoundError(error: unknown): boolean {
   return false;
 }
 
-registerMockIpcHandler(PRESENCE.REPORT, async (arg): Promise<PresenceReportResult> => {
-  const params = arg as PresenceReportParams;
+async function forwardReport(params: PresenceReportParams): Promise<PresenceReportResult> {
   try {
     const result = await backendRequest<PresenceUpdateResult>('presence.update', params);
     return { typingSource: result.typingSource };
@@ -38,4 +41,13 @@ registerMockIpcHandler(PRESENCE.REPORT, async (arg): Promise<PresenceReportResul
     if (isMethodNotFoundError(error)) return { typingSource: null };
     throw error;
   }
+}
+
+let lastReport: Promise<unknown> = Promise.resolve();
+
+registerMockIpcHandler(PRESENCE.REPORT, (arg): Promise<PresenceReportResult> => {
+  const params = arg as PresenceReportParams;
+  const result = lastReport.then(() => forwardReport(params));
+  lastReport = result.catch(() => undefined);
+  return result;
 });
