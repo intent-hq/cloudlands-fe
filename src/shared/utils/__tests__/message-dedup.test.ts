@@ -55,6 +55,34 @@ describe('message-dedup utility', () => {
     expect(merged).not.toHaveProperty('provisional');
   });
 
+  it('drops the provisional marker when a canonical row merges into a provisional row that keeps identity', () => {
+    const settledLocally = makeAssistant('msg_firehose', 'final', {
+      turnNumber: 3,
+      isStreaming: false,
+      streamingComplete: true,
+      provisional: true,
+    });
+    const canonical = makeAssistant('msg_transcript', 'final', { turnNumber: 3 });
+
+    const [merged] = deduplicateAgentMessages([settledLocally, canonical]);
+    expect(merged.id).toBe('msg_firehose');
+    expect(merged).not.toHaveProperty('provisional');
+  });
+
+  it('keeps the provisional marker when a settled provisional row merges with a streaming row', () => {
+    const streaming = makeAssistant('msg_stream', 'final', { turnNumber: 3, isStreaming: true });
+    const settledLocally = makeAssistant('msg_settled', 'final', {
+      turnNumber: 3,
+      isStreaming: false,
+      streamingComplete: true,
+      provisional: true,
+    });
+
+    const [merged] = deduplicateAgentMessages([streaming, settledLocally]);
+    expect(merged.id).toBe('msg_settled');
+    expect(merged.provisional).toBe(true);
+  });
+
   it('merges an optimistic user message into the canonical one without duplicating', () => {
     const optimistic: AgentMessage = {
       id: 'optimistic_abc',

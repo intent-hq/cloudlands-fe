@@ -91,7 +91,11 @@ export function deriveWizardPendingQuestions(
  * (placeholder, firehose-settled row, or a partial frozen when the standing
  * subscription closed mid-turn) — or one still flagged as streaming predates
  * the §7.1 delta that delivers the drained question blocks, so it cannot
- * speak for the marker and is treated as absent.
+ * speak for the marker: the indicator (`deriveAgentHasPendingQuestion`)
+ * treats it as absent and stays lit. The wizard itself
+ * (`deriveWizardPendingQuestions` → `derivePendingQuestions`) is not gated
+ * here: a provisional row that already carries question blocks still yields
+ * its set, as it did before the marker existed.
  */
 function hasTerminalQuestionContent(message: AgentMessage): boolean {
   return (

@@ -299,31 +299,45 @@ function getPreferredIdentityMessage(existing: AgentMessage, incoming: AgentMess
   return incoming;
 }
 
-/**
- * The losing side of a merge with its renderer-local `provisional` marker
- * dropped: only the winning row decides whether the merged row is still
- * unreconciled, so a settled local row never taints the canonical one it
- * merges into.
- */
 function withoutProvisional(message: AgentMessage): AgentMessage {
   if (message.provisional === undefined) return message;
   const { provisional: _provisional, ...rest } = message;
   return rest;
 }
 
+/** A settled row the renderer did not write itself: daemon-canonical. */
+function isReconciledRow(message: AgentMessage): boolean {
+  return message.provisional !== true && message.isStreaming !== true;
+}
+
+/**
+ * The renderer-local `provisional` marker never survives a merge with a
+ * daemon-canonical row, whichever side keeps identity: the losing side's
+ * marker is dropped before the spread, and when the losing side is itself a
+ * reconciled row its canonical content has arrived, so the winner's marker
+ * comes off too. Only a merge between two unreconciled rows (e.g. a settled
+ * local row absorbing a still-streaming one) stays provisional.
+ */
+function reconcileProvisional(merged: AgentMessage, losing: AgentMessage): AgentMessage {
+  return isReconciledRow(losing) ? withoutProvisional(merged) : merged;
+}
+
 function mergeLogicalMessage(existing: AgentMessage, incoming: AgentMessage): AgentMessage {
   const preferredIdentityMessage = getPreferredIdentityMessage(existing, incoming);
   const secondaryMessage = preferredIdentityMessage === existing ? incoming : existing;
-  return {
-    ...withoutProvisional(secondaryMessage),
-    ...preferredIdentityMessage,
-    id: preferredIdentityMessage.id,
-    appMessageId: getAppMessageId(incoming) ?? getAppMessageId(existing),
-    metadata:
-      existing.metadata || incoming.metadata
-        ? { ...secondaryMessage.metadata, ...preferredIdentityMessage.metadata }
-        : undefined,
-  };
+  return reconcileProvisional(
+    {
+      ...withoutProvisional(secondaryMessage),
+      ...preferredIdentityMessage,
+      id: preferredIdentityMessage.id,
+      appMessageId: getAppMessageId(incoming) ?? getAppMessageId(existing),
+      metadata:
+        existing.metadata || incoming.metadata
+          ? { ...secondaryMessage.metadata, ...preferredIdentityMessage.metadata }
+          : undefined,
+    },
+    secondaryMessage,
+  );
 }
 
 function mergeStreamingFinalizationDuplicate(
