@@ -653,7 +653,7 @@
           <Switch
             size="xs"
             checked={$autoCommitEnabled}
-            class="-mr-1 shrink-0"
+            class="shrink-0"
             ariaLabel={m.workspace_commitDrawer_autoCommit_label()}
             onCheckedChange={() => {
               if (workspaceId) {
