@@ -1907,7 +1907,7 @@
     }
   }
 
-  @media (prefers-reduced-motion: reduce) {
+  @container style(--motion-reduced: 1) {
     .editor-wrapper :global(.tiptap-editor p.is-editor-empty:first-child::before),
     .editor-wrapper :global(.tiptap-editor p.is-empty:first-child::before) {
       transition: none;

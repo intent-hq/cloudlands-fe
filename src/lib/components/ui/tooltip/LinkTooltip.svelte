@@ -204,7 +204,7 @@
     }
   }
 
-  @media (prefers-reduced-motion: reduce) {
+  @container style(--motion-reduced: 1) {
     :global(.link-tooltip) {
       animation: none;
     }

@@ -40,6 +40,7 @@
   } from '@fortawesome/free-solid-svg-icons';
   import { fade } from 'svelte/transition';
   import Button from '$lib/components/ui/button/button.svelte';
+  import { prefersReducedMotion } from '$lib/utils/reduced-motion';
   import DismissQuestionsConfirmDialog from './DismissQuestionsConfirmDialog.svelte';
   import { m } from '$shared/paraglide/messages.js';
   import {
@@ -129,12 +130,8 @@
   // options + free text together).
   const optionsLocked = $derived(!isMulti && draft.text.length > 0);
 
-  // Motion: snappy 150ms step transitions, none under prefers-reduced-motion.
-  const stepDuration =
-    typeof window !== 'undefined' &&
-    window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches
-      ? 0
-      : 150;
+  // Motion: snappy 150ms step transitions, none under reduced motion.
+  const stepDuration = prefersReducedMotion() ? 0 : 150;
 
   // ── Draft persistence (only when `draftKey` is set) ────────────────────
   // Saves are debounced so typing does not write every keystroke; the

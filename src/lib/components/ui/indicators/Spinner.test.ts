@@ -65,7 +65,7 @@ describe('Spinner', () => {
     const animationBodies = animationNames.map((animationName) => {
       const start = spinnerSource.indexOf(`@keyframes ${animationName}`);
       const nextKeyframes = spinnerSource.indexOf('\n  @keyframes ', start + 1);
-      const reducedMotion = spinnerSource.indexOf('\n  @media ', start + 1);
+      const reducedMotion = spinnerSource.indexOf('\n  @container ', start + 1);
       const end = nextKeyframes === -1 ? reducedMotion : nextKeyframes;
 
       expect(start).toBeGreaterThan(-1);
@@ -87,7 +87,7 @@ describe('Spinner', () => {
     expect(spinnerSource).toContain('animation-timing-function: step-start');
     expect(spinnerSource).toContain('transform: translateY(-90%)');
     expect(spinnerSource).not.toContain('border-radius: var(--radius-full)');
-    expect(spinnerSource).toMatch(/prefers-reduced-motion: reduce[\s\S]*animation: none/);
+    expect(spinnerSource).toMatch(/@container style\(--motion-reduced: 1\)[\s\S]*animation: none/);
     expect(spinnerSource).not.toContain('dark:');
     expect(spinnerSource).not.toContain('$features/');
   });

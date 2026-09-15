@@ -1088,7 +1088,7 @@
   }
 
   /* Reduced motion support */
-  @media (prefers-reduced-motion: reduce) {
+  @container style(--motion-reduced: 1) {
     :global(.agent-glow-active) {
       animation: none;
       box-shadow: 0 0 10px 3px rgba(16, 185, 129, 0.12);

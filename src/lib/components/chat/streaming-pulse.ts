@@ -1,5 +1,6 @@
 import type { Action } from 'svelte/action';
 import { currentFrameTime, subscribeFrameClock } from '$lib/utils/frame-clock';
+import { onReducedMotionChange, prefersReducedMotion } from '$lib/utils/reduced-motion';
 
 /**
  * Main-thread replacement for Tailwind's `animate-pulse` on streaming
@@ -9,8 +10,8 @@ import { currentFrameTime, subscribeFrameClock } from '$lib/utils/frame-clock';
  * compositor animation inside the chat panel's nested rounded clips forces
  * masked render surfaces that are re-drawn every vsync; an inline style does
  * not promote a layer, so the compositor draws only when the value changes.
- * Under `prefers-reduced-motion: reduce` the driver stays off and the icon
- * holds its normal opacity, as the stylesheet froze `animate-pulse` before.
+ * Under reduced motion (`prefersReducedMotion()`) the driver stays off and the
+ * icon holds its normal opacity, as the stylesheet froze `animate-pulse` before.
  */
 const STREAMING_PULSE_PERIOD_MS = 2_000;
 const STREAMING_PULSE_STEP = 0.05;
@@ -38,7 +39,6 @@ function streamingPulseOpacity(timeMs: number): number {
 }
 
 export const streamingPulse: Action<HTMLElement, boolean> = (node, streaming) => {
-  const media = window.matchMedia('(prefers-reduced-motion: reduce)');
   let active = streaming;
   let stop: (() => void) | undefined;
   let written: string | undefined;
@@ -53,7 +53,7 @@ export const streamingPulse: Action<HTMLElement, boolean> = (node, streaming) =>
   const reconcile = () => {
     if (active) node.dataset.streamingPulse = '';
     else delete node.dataset.streamingPulse;
-    const drive = active && !media.matches;
+    const drive = active && !prefersReducedMotion();
     if (drive && !stop) {
       write(currentFrameTime());
       stop = subscribeFrameClock(write);
@@ -65,7 +65,7 @@ export const streamingPulse: Action<HTMLElement, boolean> = (node, streaming) =>
     }
   };
 
-  media.addEventListener('change', reconcile);
+  const stopWatching = onReducedMotionChange(reconcile);
   reconcile();
   return {
     update: (streaming) => {
@@ -73,7 +73,7 @@ export const streamingPulse: Action<HTMLElement, boolean> = (node, streaming) =>
       reconcile();
     },
     destroy: () => {
-      media.removeEventListener('change', reconcile);
+      stopWatching();
       active = false;
       reconcile();
     },

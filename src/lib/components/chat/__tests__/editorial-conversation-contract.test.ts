@@ -357,7 +357,7 @@ describe('editorial conversation presentation contract', () => {
     expect(input).toContain('rounded-lg border-0 bg-sidebar shadow-none');
     expect(input).toContain('rounded-lg border border-border shadow-(--elevation-raised)');
     expect(input).not.toContain(':global(.panel:not(.focused) .rich-input-container) {');
-    expect(input).toContain('@media (prefers-reduced-motion: reduce)');
+    expect(input).toContain('@container style(--motion-reduced: 1)');
   });
 
   it('gives tool, context, and reasoning rows one shared muted shell', () => {
