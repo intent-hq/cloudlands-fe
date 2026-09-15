@@ -87,7 +87,12 @@
   import { cn } from '$lib/utils';
   import { formatTransportLabel } from '$lib/utils/daemon-status-format';
   import Fa from 'svelte-fa';
-  import { faPlus, faCheck, faTriangleExclamation } from '@fortawesome/free-solid-svg-icons';
+  import {
+    faPlus,
+    faCheck,
+    faTriangleExclamation,
+    faUsers,
+  } from '@fortawesome/free-solid-svg-icons';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import * as Menu from '$lib/components/ui/menu';
   import Header from '$lib/components/ui/Header.svelte';
@@ -129,6 +134,11 @@
     forgetConnectionRequested,
   } from '$store/renderer/slices/connections/connections-slice';
   import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
+  import {
+    selectGuestSessions,
+    selectGuestSessionsConnectedIds,
+    selectGuestSessionsOpenIds,
+  } from '$store/renderer/slices/guest-sessions/guest-sessions-selectors';
   import {
     CONNECTION_ACCENT_CLASSES,
     resolveConnectionAccent,
@@ -393,6 +403,19 @@
     void navigateToSettings({ tab: 'devices' });
   }
 
+  // Hosts joined as a GUEST (multiplayer w4) — a separate block from the
+  // paired devices above: the only status a guest sees is whether its pooled
+  // client is live, so the row carries "connected" / "not connected" and
+  // nothing else (no health, no version, no owner-only controls).
+  const guestSessions$ = selectGuestSessions();
+  const guestOpenIds$ = selectGuestSessionsOpenIds();
+  const guestConnectedIds$ = selectGuestSessionsConnectedIds();
+
+  function openGuestSessionsSettings() {
+    dropdownOpen = false;
+    void navigateToSettings({ tab: 'guest-sessions' });
+  }
+
   const hasSavedRemoteConnections = $derived($connections$.some((conn) => !conn.isLocal));
 
   function connectionDisplayLabel(id: string): string {
@@ -405,7 +428,9 @@
    * Dispatch a connection open. A `secret-unavailable` resolution (the stored
    * access token cannot be read — keychain locked or entry gone) is a failure,
    * not a success (#3783): surface it and route to Devices settings, where the
-   * token can be re-entered.
+   * token can be re-entered. A guest session's token cannot be re-entered
+   * (leave the host and rejoin from a new invite), so it routes to Guest
+   * Sessions settings instead.
    */
   async function openConnectionOrRecover(id: string) {
     try {
@@ -413,6 +438,12 @@
       appStore.dispatch(action);
       const result = await action.promise;
       if (result.status === 'secret-unavailable') {
+        const guest = $guestSessions$.find((session) => session.id === id);
+        if (guest) {
+          toast.error(m.layout_daemonStatus_guestSecretUnavailable_error({ label: guest.label }));
+          void navigateToSettings({ tab: 'guest-sessions' });
+          return;
+        }
         toast.error(
           m.layout_daemonStatus_secretUnavailable_error({ label: connectionDisplayLabel(id) }),
         );
@@ -929,6 +960,58 @@
             : m.layout_daemonStatus_connectAnotherDevice_action()}
         </button>
       </div>
+
+      <!-- Guest sessions (hosts joined through an invite) — shown only once joined -->
+      {#if $guestSessions$.length > 0}
+        <div class="h-px bg-border my-1"></div>
+        <div class="px-1 pb-1" data-testid="daemon-status-guest-sessions">
+          <Header class="px-2 pt-1.5 pb-0.5" size={6}
+            >{m.layout_daemonStatus_guestSessions_header()}</Header
+          >
+          {#each $guestSessions$ as session (session.id)}
+            {@const isCurrent = session.id === $currentConnectionId$}
+            {@const open = $guestOpenIds$.includes(session.id)}
+            {@const connected = open && $guestConnectedIds$.includes(session.id)}
+            <Menu.Item
+              class="w-full cursor-pointer text-xs px-2 py-1.5"
+              onSelect={() => handleOpenConnection(session.id)}
+            >
+              <span class="text-foreground shrink-0" aria-hidden="true"><Fa icon={faUsers} /></span>
+              <span class="min-w-0 flex-1 truncate">{session.label}</span>
+              <span class="flex items-center gap-1.5 shrink-0">
+                <!-- Status only for a host with a window (pooled client); a
+                     joined host that was never opened has no status. -->
+                {#if open}
+                  <span
+                    class={connected ? 'text-green-600 dark:text-green-500' : 'text-subtle'}
+                    data-guest-connected={connected}
+                  >
+                    {connected
+                      ? m.layout_daemonStatus_guestSession_connected_label()
+                      : m.layout_daemonStatus_guestSession_notConnected_label()}
+                  </span>
+                {/if}
+                {#if isCurrent}
+                  <span
+                    class="text-green-500"
+                    role="img"
+                    aria-label={m.layout_daemonStatus_connectionActive_label()}
+                  >
+                    <Fa icon={faCheck} />
+                  </span>
+                {/if}
+              </span>
+            </Menu.Item>
+          {/each}
+          <Menu.Item
+            class="w-full cursor-pointer text-xs px-2 py-1.5"
+            onSelect={openGuestSessionsSettings}
+          >
+            <span class="text-subtle" aria-hidden="true"><Fa icon={faUsers} /></span>
+            {m.layout_daemonStatus_manageGuestSessions_action()}
+          </Menu.Item>
+        </div>
+      {/if}
     </div>
   {/snippet}
 </DropdownMenu>

@@ -54,6 +54,8 @@
     selectCurrentConnectionCertWarnings,
   } from '$store/renderer/slices/connections/connections-selectors';
   import { openConnectionRequested } from '$store/renderer/slices/connections/connections-slice';
+  import { selectWindowGuestSession } from '$store/renderer/slices/guest-sessions/guest-sessions-selectors';
+  import { leaveGuestSessionRequested } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
   import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
   import type { ConnectionRecord } from '$shared/types/connections';
   import ConnectBackendModal from '$lib/components/layout/ConnectBackendModal.svelte';
@@ -181,6 +183,34 @@
   const isAuthRejected = $derived($authRejected$ !== null);
   let repairModalOpen = $state(false);
 
+  // Revoked-guest posture (multiplayer w4): this window is bound to a host
+  // joined as a guest and that host rejected the credential — the owner
+  // revoked the principal (or disabled the WS API). There is nothing to
+  // re-pair: a guest credential is minted by the invite flow, so the only
+  // action is *Leave host* (best-effort `principal.revokeSelf`, local delete,
+  // window teardown — main-owned). Every owner-side recovery (re-pair,
+  // spawn / open local, other backends) is withheld.
+  const guestSession$ = selectWindowGuestSession();
+  const isGuestRevoked = $derived(isAuthRejected && $guestSession$ !== null);
+  let guestLeaving = $state(false);
+  let guestLeaveError = $state<string | null>(null);
+
+  async function handleLeaveHost() {
+    const session = $guestSession$;
+    if (!session || guestLeaving) return;
+    guestLeaving = true;
+    guestLeaveError = null;
+    try {
+      const action = leaveGuestSessionRequested(session.id);
+      appStore.dispatch(action);
+      await action.promise;
+    } catch {
+      guestLeaveError = m.settings_guestSessions_leave_error({ name: session.label });
+    } finally {
+      guestLeaving = false;
+    }
+  }
+
   // The re-pair modal serves both the auth-rejected posture and the
   // secret-unavailable fail-over; the latter takes precedence while set.
   const repairTarget = $derived(secretUnavailableConnection ?? repairConnection ?? null);
@@ -278,7 +308,9 @@
         class="mx-4 w-full max-w-md rounded-xl border border-border bg-background p-6 shadow-2xl"
       >
         <h2 id="daemon-stopped-title" class="text-lg font-semibold text-foreground">
-          {#if isAuthRejected}
+          {#if isGuestRevoked}
+            {m.daemonStatus_overlay_guestRevokedTitle_label()}
+          {:else if isAuthRejected}
             {m.daemonStatus_overlay_authRejectedTitle_label()}
           {:else if isSidecarFailure}
             {$sidecarStartupFailed$
@@ -292,7 +324,9 @@
         </h2>
 
         <p id="daemon-stopped-description" class="mt-2 text-sm text-muted-foreground">
-          {#if isAuthRejected && $authRejected$}
+          {#if isGuestRevoked && $guestSession$}
+            {m.daemonStatus_overlay_guestRevoked_description({ host: $guestSession$.label })}
+          {:else if isAuthRejected && $authRejected$}
             {$authRejected$.statusCode === 403
               ? m.daemonStatus_overlay_authRejectedDisabled_description({
                   host: $authRejected$.host,
@@ -388,7 +422,29 @@
           </div>
         {/if}
 
-        {#if isAuthRejected}
+        {#if isGuestRevoked}
+          <div class="mt-4 border-t border-border pt-4">
+            <Button
+              class="w-full"
+              disabled={guestLeaving}
+              onclick={handleLeaveHost}
+              data-testid="daemon-stopped-guest-leave"
+            >
+              {guestLeaving
+                ? m.settings_guestSessions_leaving_label()
+                : m.settings_guestSessions_leave_label()}
+            </Button>
+            {#if guestLeaveError}
+              <p
+                class="mt-2 text-sm text-danger"
+                role="alert"
+                data-testid="daemon-stopped-guest-leave-error"
+              >
+                {guestLeaveError}
+              </p>
+            {/if}
+          </div>
+        {:else if isAuthRejected}
           <div class="mt-4 border-t border-border pt-4">
             <button
               type="button"
@@ -402,7 +458,9 @@
           </div>
         {/if}
 
-        {#if isSidecarFailure}
+        {#if isGuestRevoked}
+          <!-- Leave host is the only action for a revoked guest. -->
+        {:else if isSidecarFailure}
           <div class="mt-4 border-t border-border pt-4">
             <button
               type="button"
@@ -499,7 +557,7 @@
           </div>
         {/if}
 
-        {#if otherConnections.length > 0}
+        {#if otherConnections.length > 0 && !isGuestRevoked}
           <div class="mt-4 border-t border-border pt-4" data-testid="daemon-stopped-known-backends">
             <p class="text-xs text-muted-foreground">
               {m.daemonStatus_overlay_knownBackends_label()}

@@ -6026,29 +6026,82 @@ describe('daemonEventsBridge (workspace:deleted → purge agent/chat state)', ()
 
   afterEach(() => vi.clearAllMocks());
 
-  it('fires navigateAwayIfViewing for the deleted workspace (#766 live-mode navigation path)', async () => {
+  async function resetTabStrip(): Promise<void> {
+    const { loadWorkspaceTabsState } =
+      await import('$store/renderer/slices/tab-state/tab-state-slice');
+    appStore.dispatch(
+      loadWorkspaceTabsState({
+        openTabs: [],
+        currentTabId: null,
+        pinnedTabs: [],
+        unsavedTabs: [],
+        optimisticTabs: [],
+        tabOrder: [],
+      }),
+    );
+  }
+
+  function readTabStrip(): { openTabs: Record<string, boolean>; currentTabId: string | null } {
+    return (
+      appStore.state as {
+        tabState: { openTabs: Record<string, boolean>; currentTabId: string | null };
+      }
+    ).tabState;
+  }
+
+  function deletedNotification(workspaceId: string): { method: string; params?: unknown } {
+    return {
+      method: 'events.event',
+      params: {
+        event: {
+          id: `evt-workspace-deleted-${Math.random().toString(36).slice(2, 8)}`,
+          workspaceId,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'workspace:deleted',
+          actor: { type: 'user', id: 'u1' },
+          data: { workspaceId },
+        },
+      },
+    };
+  }
+
+  it('closes the deleted workspace tab while it is the current tab (#766 live-mode navigation path)', async () => {
     // Unlike the workspace-list snapshot diff (legacy-mode only — the
     // delta-subscription layer suppresses legacy refetches under live-state,
     // monorepo#775), this events.event route fires in BOTH modes, so it is the
     // path that actually covers "deleted by another client" in production.
+    await resetTabStrip();
+    const { openWorkspaceTab } = await import('$store/renderer/slices/tab-state/tab-state-slice');
+    appStore.dispatch(openWorkspaceTab(WS));
+    expect(readTabStrip().currentTabId).toBe(WS);
     await primeBridge();
-    const handler = capturedHandlers[0]!;
 
-    handler({
-      method: 'events.event',
-      params: {
-        event: {
-          id: 'evt-workspace-deleted-nav',
-          workspaceId: WS,
-          timestamp: '2026-01-02T00:00:00.000Z',
-          type: 'workspace:deleted',
-          actor: { type: 'user', id: 'u1' },
-          data: { workspaceId: WS },
-        },
-      },
-    });
+    capturedHandlers[0]!(deletedNotification(WS));
+    await flush();
 
-    expect(navigateAwayIfViewingSpy).toHaveBeenCalledWith(WS);
+    expect(readTabStrip().openTabs[WS]).toBeUndefined();
+    expect(readTabStrip().currentTabId).not.toBe(WS);
+  });
+
+  it('closes the deleted workspace tab while it sits in the background behind another tab', async () => {
+    // A guest's last shared workspace deleted by its owner while the guest is
+    // looking at another tab: the closure must not depend on the route being
+    // the deleted workspace (the on-screen-only helper would leave it open).
+    await resetTabStrip();
+    const { openWorkspaceTab } = await import('$store/renderer/slices/tab-state/tab-state-slice');
+    appStore.dispatch(openWorkspaceTab(WS));
+    appStore.dispatch(openWorkspaceTab(OTHER_WS));
+    expect(readTabStrip().currentTabId).toBe(OTHER_WS);
+    expect(readTabStrip().openTabs[WS]).toBe(true);
+    await primeBridge();
+
+    capturedHandlers[0]!(deletedNotification(WS));
+    await flush();
+
+    expect(readTabStrip().openTabs[WS]).toBeUndefined();
+    expect(readTabStrip().openTabs[OTHER_WS]).toBe(true);
+    expect(readTabStrip().currentTabId).toBe(OTHER_WS);
+    expect(navigateAwayIfViewingSpy).not.toHaveBeenCalled();
   });
 
   it('purges agent-session, workspace-agents, and chat-state for the deleted workspace', async () => {

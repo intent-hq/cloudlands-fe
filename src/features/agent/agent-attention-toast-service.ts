@@ -277,3 +277,31 @@ export async function showWorkspaceAutoUnarchiveToast(
     },
   );
 }
+
+/** Payload of {@link showWorkspaceAccessRemovedToast}. */
+export interface WorkspaceAccessRemovedNotice {
+  workspaceId: string;
+  /** Title read before the purge dropped the entity; absent → generic fallback. */
+  title: string | undefined;
+  /** Display label of the guest session's host. */
+  hostLabel: string;
+}
+
+/**
+ * Transient toast for a guest removed from a shared workspace (multiplayer
+ * w4 unshare): "You were removed from <title> on <host>". No action — the
+ * workspace is gone for this principal; the id is stable per workspace so a
+ * replayed final event updates in place instead of stacking.
+ */
+export async function showWorkspaceAccessRemovedToast(
+  notice: WorkspaceAccessRemovedNotice,
+): Promise<void> {
+  const toast = await getToast();
+  toast.info(
+    m.guestSessions_accessRemoved_toast({
+      title: notice.title || m.workspace_page_space_title(),
+      host: notice.hostLabel,
+    }),
+    { id: `workspace-access-removed:${notice.workspaceId}` },
+  );
+}

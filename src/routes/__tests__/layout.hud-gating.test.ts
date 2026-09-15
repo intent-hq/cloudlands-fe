@@ -131,6 +131,7 @@ import {
   replaceWorkspaceList,
   setWorkspaceHasLoaded,
 } from '$store/renderer/slices/workspace/workspace-slice';
+import { guestSessionsListReceived } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
 import { selectIsTerminalOverlayOpenForWorkspace } from '$store/renderer/slices/terminals/terminals-selectors';
 import { ROOT_WORKSPACE_ID, type WorkspaceId } from '$shared/types/branded-ids';
 import { WorkspaceStatus, type Workspace } from '$shared/types';
@@ -241,6 +242,9 @@ describe('+layout.svelte root terminal gating for collaborators (multiplayer w3)
   });
 
   function loadWorkspaces(role: Workspace['myRole']) {
+    // The window's guest/owner identity has settled (multiplayer w4): no host
+    // joined, so only the workspace roles decide.
+    appStore.dispatch(guestSessionsListReceived({ sessions: [], openIds: [], connectedIds: [] }));
     appStore.dispatch(replaceWorkspaceList([makeWorkspace('ws-1', role)]));
     appStore.dispatch(setWorkspaceHasLoaded(true));
   }

@@ -16,6 +16,7 @@
   } from '$lib/components/settings/AIBehaviorSidebar.svelte';
   import SettingsSidebarNav from '$lib/components/settings/SettingsSidebarNav.svelte';
   import DevicesSettings from '$lib/components/settings/DevicesSettings.svelte';
+  import GuestSessionsSettings from '$lib/components/settings/GuestSessionsSettings.svelte';
   import BackendSyncSettings from '$lib/components/settings/BackendSyncSettings.svelte';
   import VoiceSettings from '$lib/components/settings/VoiceSettings.svelte';
   import GitWorkspaceSettings from '$lib/components/settings/GitWorkspaceSettings.svelte';
@@ -116,6 +117,7 @@
     | 'providers'
     | 'connections'
     | 'devices'
+    | 'guest-sessions'
     | 'setup'
     | 'advanced'
     | 'input'
@@ -128,6 +130,7 @@
     'providers',
     'connections',
     'devices',
+    'guest-sessions',
     'setup',
     'advanced',
     'input',
@@ -154,6 +157,8 @@
     'backend-sync': 'devices',
     'websocket-api': 'devices',
     'remote-access': 'devices',
+    'guest-sessions': 'guest-sessions',
+    sharing: 'guest-sessions',
     voice: 'input',
     'keyboard-shortcuts': 'input',
     'git-workspace': 'setup',
@@ -593,6 +598,13 @@
                 <WebSocketApiSettings />
               </section>
             </div>
+          </div>
+        {/if}
+
+        <!-- Guest sessions (multiplayer w4: hosting roster + joined hosts) -->
+        {#if activeTab === 'guest-sessions'}
+          <div id="guest-sessions" class="mb-12 scroll-mt-20">
+            <GuestSessionsSettings />
           </div>
         {/if}
 

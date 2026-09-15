@@ -75,7 +75,10 @@ import { detectOrphanedSidecar } from './intentd-orphan';
 import { defaultKill, restartOrphanedSidecar } from './orphan-recovery';
 import * as connectionsStore from './connections-store';
 import * as guestSessionsStore from './guest-sessions-store';
-import type { GuestSessionsListResult } from '../../../shared/types/guest-sessions';
+import type {
+  GuestSessionsListResult,
+  LeaveGuestSessionResult,
+} from '../../../shared/types/guest-sessions';
 import {
   initKeychainSyncLifecycle,
   isKeychainSyncEnabled,
@@ -127,6 +130,7 @@ import {
   ConnectionsCaptureFingerprintSchema,
   ConnectionsForgetSchema,
   ConnectionsListSchema,
+  GuestSessionsLeaveSchema,
   GuestSessionsListSchema,
   ConnectionsOpenSchema,
   ConnectionsRotateSecretSchema,
@@ -838,6 +842,10 @@ export function disconnectBackendClient(id: string): void {
   void cancelInflightHostExecStreamsForBackendSwitch(instance);
   app.emit(BACKEND_CLIENT_DISCONNECTED_EVENT, instance);
   instance.dispose();
+  // Eviction alone moves a guest id out of `openIds`: `dispose()` on an
+  // already-disconnected client emits no status change, so the forwarder
+  // below never pushes the fresh list on its own.
+  refreshGuestSessionsForPoolChange(id);
 }
 
 /**
@@ -1950,7 +1958,7 @@ function refreshConnectionsForStatusChange(): void {
  * pull. Fail-soft per window, like {@link broadcastConnectionsChanged}.
  */
 async function broadcastGuestSessionsChanged(): Promise<void> {
-  const payload: GuestSessionsListResult = { sessions: await guestSessionsStore.list() };
+  const payload = await buildGuestSessionsListResult();
   for (const win of BrowserWindow.getAllWindows()) {
     if (win.isDestroyed()) continue;
     try {
@@ -1964,20 +1972,120 @@ async function broadcastGuestSessionsChanged(): Promise<void> {
   }
 }
 
-/** Register the guest sessions IPC (token-free list) + the change push. */
+/**
+ * The token-free guest sessions list plus the ids with a pooled client
+ * (`openIds` — a window for that host was opened) and the subset whose client
+ * is live (`connectedIds` — the nav block's "connected" / "not connected"; a
+ * session outside `openIds` shows no status). Same connectivity source as the
+ * connections list's `connectedIds`.
+ */
+async function buildGuestSessionsListResult(): Promise<GuestSessionsListResult> {
+  const sessions = await guestSessionsStore.list();
+  const ids = sessions.map((session) => session.id);
+  return {
+    sessions,
+    openIds: ids.filter((id) => backendClients.has(id)),
+    connectedIds: ids.filter((id) => backendClients.get(id)?.getStatus() === 'connected'),
+  };
+}
+
+/**
+ * Bounded projection of a failed `principal.revokeSelf` for the main log: the
+ * daemon's numeric code when it answered, otherwise a fixed transport /
+ * timeout marker — never the raw message, which may echo host material.
+ */
+function revokeFailureCode(error: unknown): string {
+  if (error instanceof JsonRpcError) return `rpc:${error.rpcCode}`;
+  if (error instanceof Error && /timed out/i.test(error.message)) return 'timeout';
+  return 'transport';
+}
+
+/**
+ * Bound on the best-effort `principal.revokeSelf` issued by *Leave host*: the
+ * credential is deleted locally right after regardless of the outcome, so a
+ * slow or unreachable host must not hold the local teardown hostage.
+ */
+export const GUEST_REVOKE_SELF_TIMEOUT_MS = 5_000;
+
+/**
+ * *Leave host* (multiplayer w4): ask the host to invalidate this device's
+ * guest credential (`principal.revokeSelf`, best-effort within
+ * {@link GUEST_REVOKE_SELF_TIMEOUT_MS} — only when the session's pooled
+ * client is live; there is no retry queue), then delete the guest session
+ * locally and close that host's windows. Mirrors {@link forgetConnectionLocked}
+ * for the window/pool teardown; a dangling principal on an unreachable host is
+ * the owner's *Remove* to clean up.
+ */
+async function leaveGuestSessionLocked(id: string): Promise<LeaveGuestSessionResult> {
+  if ((await guestSessionsStore.findById(id)) === null) {
+    // Idempotent: a repeated / concurrent leave (another window, a retry after
+    // a lost reply) finds the session already gone — that is completion, not
+    // an error. No second revoke or forget; only a pooled client this id may
+    // still hold is torn down (paired connections keep theirs).
+    if (backendClients.has(id) && !(await connectionsStore.list()).some((c) => c.id === id)) {
+      await windowHooks.ensureLocalWindowBeforeClose?.(id);
+      await windowHooks.closeForBackend?.(id);
+      disconnectBackendClient(id);
+    }
+    return { id, revoked: false };
+  }
+  let revoked = false;
+  const client = backendClients.get(id);
+  if (client && client.getStatus() === 'connected') {
+    try {
+      await client.request('principal.revokeSelf', undefined, {
+        timeoutMs: GUEST_REVOKE_SELF_TIMEOUT_MS,
+      });
+      revoked = true;
+    } catch (error) {
+      logger.warn('principal.revokeSelf failed before leaving guest session (best-effort)', {
+        id,
+        code: revokeFailureCode(error),
+      });
+    }
+  }
+  await guestSessionsStore.forget(id);
+  await windowHooks.ensureLocalWindowBeforeClose?.(id);
+  await windowHooks.closeForBackend?.(id);
+  disconnectBackendClient(id);
+  return { id, revoked };
+}
+
+/** Register the guest sessions IPC (token-free list, leave) + the change push. */
 function registerGuestSessionsHandlers(): void {
   ipcMain.handle(
     GUEST_SESSIONS.LIST,
     createValidatedHandler(
       GuestSessionsListSchema,
-      async (): Promise<GuestSessionsListResult> => ({ sessions: await guestSessionsStore.list() }),
+      async (): Promise<GuestSessionsListResult> => buildGuestSessionsListResult(),
       GUEST_SESSIONS.LIST,
+    ),
+  );
+  ipcMain.handle(
+    GUEST_SESSIONS.LEAVE,
+    createValidatedHandler(
+      GuestSessionsLeaveSchema,
+      async (_event, { id }) => enqueueConnectionOperation(() => leaveGuestSessionLocked(id)),
+      GUEST_SESSIONS.LEAVE,
     ),
   );
   guestSessionsStore.onGuestSessionsMutated(() => {
     void broadcastGuestSessionsChanged();
     keychainSyncLifecycle?.requestReconcile();
   });
+  // A guest session's pooled client appearing (its first 'connecting' moves
+  // the id into `openIds`), connecting or dropping flips its status in the
+  // nav block (same forwarder that keeps the connections list's
+  // `connectedIds` fresh).
+  backendStatusForwarder.on('status', refreshGuestSessionsForPoolChange);
+}
+
+/** Push a fresh guest list when a pooled client for a guest session id changes. */
+function refreshGuestSessionsForPoolChange(id: string): void {
+  void guestSessionsStore
+    .findById(id)
+    .then((session) => (session ? broadcastGuestSessionsChanged() : undefined))
+    .catch(() => {});
 }
 
 /**

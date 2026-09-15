@@ -106,9 +106,10 @@
  * dispatches `workspace-lifecycle/workspaceDeleted(wsId, agentIds)`, which
  * purges the agent-session slice, workspace-agents index, and per-agent
  * chat-state entries — preventing a recreated same-slug workspace from
- * surfacing ghost agents. It also calls `navigateAwayIfViewing` so a
- * workspace deleted by another client while on screen closes its tab and
- * routes away — this is the PRIMARY navigate-away path: the `events.event`
+ * surfacing ghost agents. It also calls `closeWorkspaceTabAndNavigateAway` so
+ * a workspace deleted by another client closes its tab (on screen or in the
+ * background) and routes away when it was on screen — this is the PRIMARY
+ * navigate-away path: the `events.event`
  * firehose fires in both live and legacy modes, whereas the workspace-list
  * snapshot diff is suppressed post-boot under live-state
  * (intent-hq/monorepo#775). `workspace:created` covers the recycled-ID case:
@@ -186,6 +187,7 @@ import {
   pruneRecentlyClosed,
 } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 import { selectHiddenTabs } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
+import { selectWindowGuestSession } from '$store/renderer/slices/guest-sessions/guest-sessions-selectors';
 import {
   applyTaskStatusChanged,
   loadWorkspaceTasksRequested,
@@ -231,6 +233,7 @@ import {
 } from '$features/agent/agent-failure-registry';
 import {
   showAgentAttentionToast,
+  showWorkspaceAccessRemovedToast,
   showWorkspaceAutoUnarchiveToast,
 } from '$features/agent/agent-attention-toast-service';
 import { refreshWorkspaceSubscriptionEntriesRequested } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-slice';
@@ -2362,6 +2365,7 @@ function handleWorkspaceUpdatedEvent(event: WorkspaceEvent, workspaceId: string)
   // the list has not loaded the id yet, drop the update — the sidebar's
   // hydrate on mount converges the state.
   handleWorkspaceMcpServerToggled(raw, workspaceId);
+  if (handleWorkspaceMembershipRemoved(raw, workspaceId)) return;
   const changes: Partial<Workspace> = {};
   if (typeof raw.title === 'string') changes.title = raw.title;
   if (typeof raw.statusMessage === 'string') changes.statusMessage = raw.statusMessage;
@@ -2496,6 +2500,52 @@ function handleWorkspaceUpdatedEvent(event: WorkspaceEvent, workspaceId: string)
 }
 
 /**
+ * `removedPrincipalId` on a `workspace:updated` delta (multiplayer w4 unshare):
+ * `workspace.members.remove` publishes `{ members: true, removedPrincipalId }`
+ * and the daemon's membership gate delivers it to the removed member as its
+ * FINAL event for that workspace (nothing follows — the workspace is
+ * `NotFound` for it from here on). When the removed principal is the guest
+ * session this window is bound to, tear the workspace down like a delete:
+ * purge its Redux state and agent-owned browser tabs, close its tab (open or
+ * in the background), route away when it is on screen, and say why in a
+ * toast. Every other subscriber (the owner removing someone, another member)
+ * sees a plain membership delta and falls through to the entity merge.
+ */
+function handleWorkspaceMembershipRemoved(
+  raw: Record<string, unknown>,
+  workspaceId: string,
+): boolean {
+  const removed = raw.removedPrincipalId;
+  if (typeof removed !== 'string' || !removed) return false;
+  const session = selectWindowGuestSession.select(appStore.state);
+  if (!session || session.principalId !== removed) return false;
+  const state = appStore.state as {
+    agentSessions?: { agentIdsByWorkspace: Record<string, string[]> };
+    workspace?: { workspaces: { map: Record<string, { title?: string }> } };
+  };
+  // Resolved BEFORE the purge drops the entity.
+  const title = state.workspace?.workspaces.map[workspaceId]?.title;
+  const agentIds = state.agentSessions?.agentIdsByWorkspace[workspaceId] ?? [];
+  const ownerAgentIds = collectOwnedTabAgentIds(workspaceId);
+  appStore.dispatch(destroyOwnedTabsForWorkspace(workspaceId));
+  appStore.dispatch(workspaceDeleted(workspaceId, [...agentIds]));
+  for (const agentId of ownerAgentIds) {
+    void invoke(IPC_CHANNELS.BROWSER.CLEAR_AGENT_TABS, { agentId }).catch((error: unknown) => {
+      logger.warn('Failed to clear main-process registrations for unshared workspace tabs', {
+        workspaceId,
+        agentId,
+        error,
+      });
+    });
+  }
+  closeWorkspaceTabAndNavigateAway(workspaceId).catch((error) => {
+    logger.warn('closeWorkspaceTabAndNavigateAway failed after membership removal', error);
+  });
+  void showWorkspaceAccessRemovedToast({ workspaceId, title, hostLabel: session.label });
+  return true;
+}
+
+/**
  * `mcpServerToggled` on a `workspace:updated` delta (PROTOCOL §5.22
  * per-workspace disable / §6.5): `{ serverId, workspaceDisabled }` — emitted
  * on every workspace-scoped `mcp.servers.toggle`, so other windows (and
@@ -2522,9 +2572,10 @@ function handleWorkspaceMcpServerToggled(raw: Record<string, unknown>, workspace
  * workspace from Redux so a recreated same-slug workspace does not surface
  * ghost agents. The chat-state slice is keyed by `agentId`, so we resolve the
  * agent-id list from the agent-session workspace index *before* dispatching
- * and pass it in the payload. When the deleted workspace is the one on
- * screen (deleted by another client), also close its tab and route away —
- * this event path fires in both live and legacy modes, unlike the
+ * and pass it in the payload. Also close its tab — open on screen OR in the
+ * background (a guest's last shared workspace deleted while another tab is
+ * current must not linger in the strip) — and route away when it is the one
+ * on screen. This event path fires in both live and legacy modes, unlike the
  * workspace-list snapshot diff, which live-state suppresses post-boot
  * (intent-hq/monorepo#775; see the workspace-list saga).
  */
@@ -2547,8 +2598,8 @@ function handleWorkspaceDeletedEvent(workspaceId: string): void {
       });
     });
   }
-  navigateAwayIfViewing(workspaceId).catch((error) => {
-    logger.warn('navigateAwayIfViewing failed after workspace:deleted', error);
+  closeWorkspaceTabAndNavigateAway(workspaceId).catch((error) => {
+    logger.warn('closeWorkspaceTabAndNavigateAway failed after workspace:deleted', error);
   });
 }
 
