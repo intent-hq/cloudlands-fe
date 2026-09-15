@@ -7,22 +7,33 @@ import WorkspaceProgressCardEditGeometryHost from './mocks/WorkspaceProgressCard
 const MENU_COLLISION_PADDING = 8;
 const MENU_ROW_MIN_WIDTH_PX = 192;
 
+type BoundingBox = NonNullable<Awaited<ReturnType<Locator['boundingBox']>>>;
+
+// bits-ui parks the floating wrapper at translate(0, -200%) until floating-ui
+// reports its first placement, so a visible menu can still read x=0 / y<0 for a
+// frame or two on a slow runner.
+function isPositionedOnPage(box: BoundingBox | null): box is BoundingBox {
+  return box !== null && box.x > 0 && box.y >= 0;
+}
+
 async function openWorkspaceActionsMenu(component: Locator, page: Page) {
   await component.getByRole('button', { name: 'Workspace actions' }).click();
   const menu = page.getByRole('menu');
   await expect(menu).toBeVisible();
   await expect(menu.getByRole('button').first()).toBeVisible();
+  await expect.poll(async () => isPositionedOnPage(await menu.boundingBox())).toBe(true);
   return menu;
 }
 
 // Floating positioning settles a frame after open; wait for two identical
-// consecutive reads before asserting geometry.
+// consecutive on-page reads before asserting geometry.
 async function settledBoundingBox(target: Locator) {
   let previous = JSON.stringify(await target.boundingBox());
   await expect
     .poll(async () => {
-      const current = JSON.stringify(await target.boundingBox());
-      const settled = current === previous;
+      const box = await target.boundingBox();
+      const current = JSON.stringify(box);
+      const settled = isPositionedOnPage(box) && current === previous;
       previous = current;
       return settled;
     })
