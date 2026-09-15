@@ -305,21 +305,34 @@ function withoutProvisional(message: AgentMessage): AgentMessage {
   return rest;
 }
 
-/** A settled row the renderer did not write itself: daemon-canonical. */
+/**
+ * A settled row the renderer did not write itself: daemon-canonical. Liveness
+ * is either flag, matching the anchor consumer (`isStreaming: true` or
+ * `streamingComplete: false`).
+ */
 function isReconciledRow(message: AgentMessage): boolean {
-  return message.provisional !== true && message.isStreaming !== true;
+  return (
+    message.provisional !== true &&
+    message.isStreaming !== true &&
+    message.streamingComplete !== false
+  );
 }
 
 /**
- * The renderer-local `provisional` marker never survives a merge with a
- * daemon-canonical row, whichever side keeps identity: the losing side's
- * marker is dropped before the spread, and when the losing side is itself a
- * reconciled row its canonical content has arrived, so the winner's marker
- * comes off too. Only a merge between two unreconciled rows (e.g. a settled
- * local row absorbing a still-streaming one) stays provisional.
+ * The renderer-local `provisional` marker never survives a merge whose result
+ * IS the canonical row's content, whichever side keeps identity: the losing
+ * side's marker is dropped before the spread, and when the losing side is a
+ * reconciled row whose content the merged row carries (fingerprint-equal),
+ * the winner's marker comes off too. The marker stays when the loser is
+ * still live, or when the merge kept the winner's differing (partial)
+ * content — a near-duplicate merge does not deliver the canonical blocks, so
+ * the row is still unreconciled.
  */
 function reconcileProvisional(merged: AgentMessage, losing: AgentMessage): AgentMessage {
-  return isReconciledRow(losing) ? withoutProvisional(merged) : merged;
+  if (merged.provisional !== true || !isReconciledRow(losing)) return merged;
+  return computeMessageContentHash(merged) === computeMessageContentHash(losing)
+    ? withoutProvisional(merged)
+    : merged;
 }
 
 function mergeLogicalMessage(existing: AgentMessage, incoming: AgentMessage): AgentMessage {

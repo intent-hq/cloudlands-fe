@@ -83,6 +83,39 @@ describe('message-dedup utility', () => {
     expect(merged.provisional).toBe(true);
   });
 
+  it('keeps the provisional marker when the losing row is still live via streamingComplete:false', () => {
+    const settledLocally = makeAssistant('msg_local', 'final', {
+      appMessageId: 'app_msg_live',
+      isStreaming: false,
+      streamingComplete: true,
+      provisional: true,
+    });
+    const liveAlias = makeAssistant('live-alias', 'final', {
+      appMessageId: 'app_msg_live',
+      streamingComplete: false,
+    });
+
+    const [merged] = deduplicateAgentMessages([settledLocally, liveAlias]);
+    expect(merged.id).toBe('msg_local');
+    expect(merged.provisional).toBe(true);
+  });
+
+  it('keeps the provisional marker when a near-duplicate merge retains the provisional row content', () => {
+    const partial = 'a'.repeat(220);
+    const settledLocally = makeAssistant('msg_firehose', partial, {
+      turnNumber: 3,
+      isStreaming: false,
+      streamingComplete: true,
+      provisional: true,
+    });
+    const canonical = makeAssistant('msg_transcript', `${partial} the end.`, { turnNumber: 3 });
+
+    const [merged] = deduplicateAgentMessages([settledLocally, canonical]);
+    expect(merged.id).toBe('msg_firehose');
+    expect(computeMessageContentHash(merged)).not.toBe(computeMessageContentHash(canonical));
+    expect(merged.provisional).toBe(true);
+  });
+
   it('merges an optimistic user message into the canonical one without duplicating', () => {
     const optimistic: AgentMessage = {
       id: 'optimistic_abc',
