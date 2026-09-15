@@ -76,6 +76,26 @@ describe('AskUserQuestions', () => {
     });
   });
 
+  it('disables free text and prevents wrapper focus until enabled', async () => {
+    const view = render(AskUserQuestions, {
+      props: {
+        questions: [{ id: 'name', title: 'Name the project', freeText: true }],
+        disabled: true,
+      },
+    });
+    const input = view.getByRole('textbox', { name: 'Name the project' });
+    const wrapper = view.getByRole('group', { name: 'Name the project' });
+
+    expect(input.hasAttribute('disabled')).toBe(true);
+    await fireEvent.pointerDown(wrapper);
+    expect(document.activeElement).not.toBe(input);
+
+    await view.rerender({ disabled: false });
+    expect(input.hasAttribute('disabled')).toBe(false);
+    await fireEvent.pointerDown(wrapper);
+    expect(document.activeElement).toBe(input);
+  });
+
   it('blocks invalid free text, clears the error on edit, and then submits', async () => {
     const onComplete = vi.fn();
     const view = render(AskUserQuestions, {

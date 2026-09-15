@@ -595,7 +595,7 @@
                     multiline ? 'min-h-[76px]' : compact ? 'min-h-8' : 'min-h-10',
                   )}
                   onpointerdown={(event) => {
-                    if (event.target !== otherInput) otherInput?.focus();
+                    if (!disabled && event.target !== otherInput) otherInput?.focus();
                   }}
                 >
                   <Textarea
@@ -606,6 +606,7 @@
                     aria-labelledby={titleId}
                     aria-describedby={freeTextError ? errorId : undefined}
                     aria-invalid={freeTextError ? 'true' : undefined}
+                    {disabled}
                     oninput={(event) => updateOther(event.currentTarget.value)}
                     onkeydown={(event) => {
                       if (

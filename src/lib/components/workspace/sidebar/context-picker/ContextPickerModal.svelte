@@ -68,8 +68,9 @@
 {#if isOpen}
   <div class="fixed inset-0 z-50" transition:fade={{ tier: 'moderate' }}>
     <Button
+      variant="plain"
       type="button"
-      class="absolute inset-0 bg-black/50 backdrop-blur-sm border-0 p-0"
+      class="absolute inset-0 h-full rounded-none bg-black/50 backdrop-blur-sm border-0 p-0"
       aria-label={m.workspace_contextPicker_closeModal_ariaLabel()}
       onclick={handleBackdropClick}
     ></Button>
