@@ -37,14 +37,13 @@ export interface WorkspaceShareTarget {
 }
 
 /**
- * The one-time link, by reference only: the url (which carries the invite
- * secret) is parked in `invite-link-vault` and the store keeps the opaque
- * `linkHandle`. `inviteId` ties the link to its `workspace.invite.list` row so
- * a revoke — local or daemon-side — retires it.
+ * The link the last `workspace.invite.create` of this session returned, shown
+ * in the dialog's created-link panel. `inviteId` ties it to its
+ * `workspace.invite.list` row so a revoke — local or daemon-side — retires it.
  */
 export interface WorkspaceShareCreatedLink {
   inviteId: string;
-  linkHandle: string;
+  url: string;
   pinLogin?: string;
 }
 

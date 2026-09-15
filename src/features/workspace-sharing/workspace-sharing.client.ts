@@ -110,7 +110,8 @@ export const workspaceSharingClient = {
   /**
    * `workspace.invite.create` — owner only. `pinLogin` restricts redemption to
    * one GitHub account; the daemon resolves it to a user id and echoes the
-   * canonical login on `invite.pinLogin`. The `secret` / `url` come back once.
+   * canonical login on `invite.pinLogin`. The raw `secret` comes back once;
+   * the `url` is also listed on the open invite row afterwards.
    */
   async createInvite(
     workspaceId: string,
@@ -130,7 +131,7 @@ export const workspaceSharingClient = {
     }
   },
 
-  /** `workspace.invite.list` — open (unredeemed, unrevoked, unexpired) invites; never the secret. */
+  /** `workspace.invite.list` — open (unredeemed, unrevoked, unexpired) invites with their `url`. */
   async listInvites(workspaceId: string): Promise<WorkspaceInvite[]> {
     const result = await backendRequest<{ invites?: WorkspaceInvite[] }>('workspace.invite.list', {
       workspaceId,

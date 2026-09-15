@@ -18,13 +18,18 @@ export interface WorkspaceMember {
 
 /**
  * One `workspace_invite` row as `workspace.invite.list` / `.create` return it.
- * The link secret is never on this shape: `create` returns it once, beside the
- * invite, and `list` never carries it.
+ * The raw secret is never on this shape; the ready-to-send `intent://invite`
+ * link is (`url`), so an owner can copy any open invite again.
  */
 export interface WorkspaceInvite {
   id: string;
   workspaceId: string;
   createdByPrincipalId: string;
+  /**
+   * The `intent://invite` link for this open invite; absent when the daemon
+   * cannot build the dial envelope (Remote Access listener down).
+   */
+  url?: string;
   /** GitHub user id the invite is pinned to; absent when open to anyone. */
   pinGithubUserId?: number;
   /** Canonical GitHub login of the pinned account (as resolved by the daemon). */
@@ -37,9 +42,10 @@ export interface WorkspaceInvite {
 }
 
 /**
- * `workspace.invite.create` result: the invite row plus the one-time `secret`
- * and the ready-to-send `intent://invite` link that wraps it with the daemon's
- * dial envelope. Neither the secret nor the url is ever returned again.
+ * `workspace.invite.create` result: the invite row plus the `secret` and the
+ * ready-to-send `intent://invite` link that wraps it with the daemon's dial
+ * envelope. The raw secret is returned only here; the link is also available
+ * on later `workspace.invite.list` rows as `invite.url`.
  */
 export interface WorkspaceInviteCreateResult {
   invite: WorkspaceInvite;
