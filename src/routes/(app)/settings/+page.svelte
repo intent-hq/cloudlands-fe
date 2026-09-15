@@ -1,5 +1,4 @@
 <script lang="ts">
-  /* eslint-disable max-lines */
   import { SettingsFieldRow, SettingsSection } from '$lib/components/patterns/settings';
   import { browser } from '$app/environment';
   import { page } from '$app/state';
