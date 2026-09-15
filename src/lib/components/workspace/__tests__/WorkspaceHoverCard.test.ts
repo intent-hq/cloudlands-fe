@@ -996,6 +996,40 @@ describe('WorkspaceHoverCard', () => {
         expect(onRemoveMember).toHaveBeenCalledTimes(1);
         expect(onRemoveMember.mock.calls[0][0]).toMatchObject({ principalId: 'p-away' });
       });
+
+      it('keeps every collaborator of a large roster listed and removable instead of truncating', async () => {
+        const guests = Array.from({ length: 7 }, (_, index) =>
+          member(`p-guest-${index}`, { online: true }, { login: `guest-${index}` }),
+        );
+        mocks.presenceMembersByWorkspace['ws-1'] = [
+          member('p-owner', { owner: true, online: true, self: true }, { login: 'owner-login' }),
+          ...guests,
+        ];
+        const onRemoveMember = vi.fn();
+        const { container } = await renderHoverCard({}, { onRemoveMember });
+
+        const rows = peopleRows(container);
+        expect(rows).toHaveLength(8);
+        expect(container.querySelector('[data-workspace-hover-card-people-overflow]')).toBeNull();
+        const removeTargets = rows.map(
+          (row) =>
+            row
+              .querySelector('[data-workspace-hover-card-person-remove]')
+              ?.getAttribute('data-workspace-hover-card-person-remove') ?? null,
+        );
+        expect(removeTargets.filter((target) => target === null)).toHaveLength(1);
+        expect(rows[removeTargets.indexOf(null)].getAttribute('data-presence-role')).toBe('owner');
+        expect(new Set(removeTargets.filter(Boolean))).toEqual(
+          new Set(guests.map((guest) => guest.principalId)),
+        );
+        const lastRemove = within(rows[rows.length - 1]).getByRole('button', {
+          name: m.workspace_hoverCard_personRemove_ariaLabel({ name: 'guest-6' }),
+        });
+        lastRemove.focus();
+        expect(document.activeElement).toBe(lastRemove);
+        await fireEvent.click(lastRemove);
+        expect(onRemoveMember.mock.calls[0][0]).toMatchObject({ principalId: 'p-guest-6' });
+      });
     });
   });
 });

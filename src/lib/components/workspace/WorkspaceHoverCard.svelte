@@ -477,8 +477,6 @@
       }))
       .sort((a, b) => PRESENCE_STATE_RANK[a.state] - PRESENCE_STATE_RANK[b.state]),
   );
-  let visiblePresenceRows = $derived(presenceRows.slice(0, 6));
-  let hiddenPresenceCount = $derived(Math.max(0, presenceRows.length - 6));
   let hasAgentRows = $derived(allRows.length > 0);
   let hasPrRows = $derived(workspacePrRows.length > 0);
   let hasPresenceRows = $derived(presenceRows.length > 0);
@@ -789,8 +787,12 @@
             aria-label={m.workspace_hoverCard_people_label()}
             data-workspace-hover-card-people
           >
-            <div class="grid min-w-0 gap-3" role="list">
-              {#each visiblePresenceRows as row (row.person.principalId)}
+            <div
+              class="grid max-h-64 min-w-0 gap-3 overflow-y-auto"
+              role="list"
+              data-workspace-hover-card-people-list
+            >
+              {#each presenceRows as row (row.person.principalId)}
                 {@const login = presenceLogin(row.person)}
                 <div
                   class="grid min-w-0 grid-cols-[2rem_minmax(0,1fr)_auto] items-center gap-x-2.5"
@@ -846,17 +848,6 @@
                 </div>
               {/each}
             </div>
-            {#if hiddenPresenceCount}<div
-                class="type-body mt-4 flex items-center justify-between text-muted-foreground"
-                data-workspace-hover-card-people-overflow
-              >
-                <span
-                  >{m.workspace_hoverCard_moreItems_label({
-                    count: formatInteger(hiddenPresenceCount),
-                  })}</span
-                >
-                <Fa icon={faChevronRight} size={10} />
-              </div>{/if}
           </section>{/if}
       </div>{/if}
   {/if}
