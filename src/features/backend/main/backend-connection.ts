@@ -533,6 +533,10 @@ export function raceDuplexSockets(
   let settled = false;
   let pendingCount = attempts.length;
   let lastError: Error | null = null;
+  // A typed cap refusal seen on any candidate: the client keys its slow retry
+  // cadence on this class, so it must survive later generic failures (and the
+  // race timeout) from the other candidates.
+  let limitError: ConnectionLimitError | null = null;
   const candidates: Duplex[] = [];
   const candidateHosts = new Map<Duplex, string>();
   const candidateVias = new Map<Duplex, ConnectedVia>();
@@ -610,14 +614,17 @@ export function raceDuplexSockets(
 
   // Prefer surfacing observed cert mismatches over a generic failure when the
   // race produces no winner (#1746): the aggregate carries every per-host
-  // mismatch, with expected/actual mirroring the first one.
-  const preferCertError = (fallback: Error): Error =>
-    mismatches.length > 0
-      ? new PinMismatchError(mismatches[0].expected, mismatches[0].actual, [...mismatches])
-      : fallback;
+  // mismatch, with expected/actual mirroring the first one. Failing that, a
+  // typed connection-limit refusal beats a generic failure.
+  const preferTypedError = (fallback: Error): Error => {
+    if (mismatches.length > 0) {
+      return new PinMismatchError(mismatches[0].expected, mismatches[0].actual, [...mismatches]);
+    }
+    return limitError ?? fallback;
+  };
 
   const timer = setTimeout(
-    () => failRace(preferCertError(new Error(`connection race timed out after ${timeoutMs}ms`))),
+    () => failRace(preferTypedError(new Error(`connection race timed out after ${timeoutMs}ms`))),
     timeoutMs,
   );
   timer.unref?.();
@@ -630,11 +637,12 @@ export function raceDuplexSockets(
     if (error instanceof PinMismatchError) {
       recordMismatch(host, error);
     } else {
+      if (error instanceof ConnectionLimitError) limitError ??= error;
       lastError = error;
     }
     pendingCount -= 1;
     if (pendingCount <= 0) {
-      failRace(preferCertError(lastError ?? new Error('no candidate hosts to connect')));
+      failRace(preferTypedError(lastError ?? new Error('no candidate hosts to connect')));
     }
   };
 

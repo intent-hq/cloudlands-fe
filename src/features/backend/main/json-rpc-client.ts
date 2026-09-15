@@ -229,11 +229,21 @@ export class JsonRpcClient extends EventEmitter {
     return this.connectedVia;
   }
 
-  /** Begin connecting (idempotent). */
+  /**
+   * Begin connecting (idempotent). While the connection-limit cooldown is
+   * armed this is a no-op: the scheduled slow retry is the only path that
+   * re-presents the refused upgrade, so on-demand starts (and the requests
+   * that trigger them) cannot collapse the 30 s cadence back into a loop.
+   */
   start(): void {
     if (this.disposed) return;
     if (this.socket || this.status === 'connecting' || this.reconnectTimer) return;
+    if (this.isInConnectionLimitCooldown()) return;
     this.connect();
+  }
+
+  private isInConnectionLimitCooldown(): boolean {
+    return this.connectionLimited && this.reconnectTimer !== null;
   }
 
   /** Tear down the client: close the socket, clear timers, reject pending. */
@@ -360,6 +370,9 @@ export class JsonRpcClient extends EventEmitter {
 
   private ensureConnected(): Promise<void> {
     if (this.status === 'connected') return Promise.resolve();
+    // Fail fast with the cap refusal instead of parking the request behind
+    // the slow retry (or re-dialing ahead of it).
+    if (this.isInConnectionLimitCooldown()) return Promise.reject(new ConnectionLimitError());
     this.start();
     return new Promise<void>((resolve, reject) => {
       this.connectWaiters.push({ resolve, reject });

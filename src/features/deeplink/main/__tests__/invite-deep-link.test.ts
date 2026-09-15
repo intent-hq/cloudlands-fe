@@ -336,18 +336,22 @@ describe('handleInviteDeepLink', () => {
   });
 
   // Multiplayer guest caps (intent-hq/intentd#1917): the guest cap is spent
-  // at join time, so a redeem can be refused with `workspace-full`. It is a
-  // documented code — logged and given its own sentence, not the generic one.
+  // at join time — after the GitHub verification, on the phase-2 wait — so the
+  // daemon refuses `invite.redeem` wait with `-32602` / `workspace-full`. It
+  // is a documented code — logged and given its own sentence, not the
+  // generic one.
   it('workspace-full redeem refusal: distinct failure dialog, code logged, nothing stored', async () => {
-    redeemStart.mockRejectedValue(new InviteRpcError(-32001, { code: 'workspace-full' }));
+    redeemWait.mockRejectedValue(new InviteRpcError(-32602, { code: 'workspace-full' }));
     await expect(handleInviteDeepLink(LINK)).resolves.toBeUndefined();
+    expect(redeemStart).toHaveBeenCalled();
+    expect(redeemWait).toHaveBeenCalledWith('flow-1', expect.any(Number));
     const fullDialog = showMessageBox.mock.calls.at(-1)?.[0] as { type: string; message: string };
     expect(fullDialog).toMatchObject({ type: 'error' });
     expect(guestAdd).not.toHaveBeenCalled();
     expect(openBackendWindow).not.toHaveBeenCalled();
     expect(logLines.join('\n')).toContain('workspace-full');
 
-    redeemStart.mockRejectedValue(new InviteRpcError(-32001, { code: 'some-unknown-code' }));
+    redeemWait.mockRejectedValue(new InviteRpcError(-32602, { code: 'some-unknown-code' }));
     await expect(handleInviteDeepLink(LINK)).resolves.toBeUndefined();
     const genericDialog = showMessageBox.mock.calls.at(-1)?.[0] as { message: string };
     expect(genericDialog.message).not.toBe(fullDialog.message);
