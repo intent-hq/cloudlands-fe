@@ -452,6 +452,63 @@ describe('MonitoredPrsRow', () => {
     expect(card.textContent).not.toContain('blocked by blocked by');
   });
 
+  it('reports an absent unresolved count as unreadable when thread resolution is required', async () => {
+    const base = makeMonitor().lastSnapshot!;
+    monitorsState.monitors = [
+      makeMonitor({
+        lastSnapshot: {
+          ...base,
+          mergeable: false,
+          checks: {
+            ...base.checks,
+            passed: 4,
+            failed: 0,
+            pending: 0,
+            failingRequired: 0,
+            pendingRequired: 0,
+          },
+          approvals: { decision: 'APPROVED', have: 1, needed: 1, changesRequested: 0 },
+          threads: { resolutionRequired: true },
+        },
+      }),
+    ];
+    render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
+
+    const card = await openDetails();
+    expect(card.textContent).toContain(
+      'Open, but blocked by review threads that could not be read.',
+    );
+    expect(card.textContent).toContain('Review threads could not be read.');
+    expect(card.textContent).not.toContain('0 unresolved');
+    expect(card.textContent).not.toContain('unmet merge requirements');
+  });
+
+  it('omits the threads line when the count is absent and resolution is not required', async () => {
+    const base = makeMonitor().lastSnapshot!;
+    monitorsState.monitors = [
+      makeMonitor({
+        lastSnapshot: {
+          ...base,
+          checks: {
+            ...base.checks,
+            passed: 4,
+            failed: 0,
+            pending: 0,
+            failingRequired: 0,
+            pendingRequired: 0,
+          },
+          approvals: { decision: 'APPROVED', have: 1, needed: 1, changesRequested: 0 },
+          threads: { resolutionRequired: false },
+        },
+      }),
+    ];
+    render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
+
+    const card = await openDetails();
+    expect(card.textContent).toContain('Open and ready to merge.');
+    expect(card.textContent).not.toContain('thread');
+  });
+
   it('shows queued to merge when the open snapshot is in the merge queue', async () => {
     // The default fixture carries a pending-required-checks blocker — the
     // queued status takes precedence over the blocker/unknown fallthrough.

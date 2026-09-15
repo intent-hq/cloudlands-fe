@@ -60,7 +60,7 @@ function expectClasses(element: Element, contract: string) {
 }
 
 describe('StreamingTypingIndicator geometry matches operational rows', () => {
-  it('uses the shared row geometry and a 16px five-arm currentColor mark', () => {
+  it('uses the shared row geometry and a 16px accessible mark', () => {
     const { container } = render(StreamingTypingIndicator, {
       props: { visible: true, message: 'Thinking' },
     });
@@ -77,8 +77,8 @@ describe('StreamingTypingIndicator geometry matches operational rows', () => {
     expect(mark.getAttribute('data-playing')).toBe('true');
     expect(mark.getAttribute('width')).toBe('16');
     expect(mark.getAttribute('height')).toBe('16');
-    expect(mark.getAttribute('viewBox')).toBe('0 0 256 208');
-    expect(mark.querySelectorAll('[data-mark-arm]')).toHaveLength(5);
+    expect(mark.getAttribute('role')).toBe('status');
+    expect(mark.getAttribute('aria-label')).toBeTruthy();
     expect(container.innerHTML).not.toContain('legacy-spinner');
     expect(container.innerHTML).not.toContain('--color');
   });
@@ -118,16 +118,19 @@ describe('StreamingTypingIndicator geometry matches operational rows', () => {
       props: { visible: true, message: 'Thinking' },
     });
     animationRecords[0].finish();
-    const arms = Array.from(view.container.querySelectorAll<SVGSVGElement>('[data-mark-arm-box]'));
+    const arms = Array.from(view.container.querySelectorAll<SVGPathElement>('[data-mark-arm]'));
     expect(arms).toHaveLength(5);
     expect(arms.every((arm) => arm.style.transform !== '')).toBe(true);
     expect(animationRecords.filter(({ options }) => options.iterations === Infinity)).toHaveLength(
       0,
     );
 
+    const cancelFrame = vi.spyOn(globalThis, 'cancelAnimationFrame');
     view.unmount();
+    expect(cancelFrame).toHaveBeenCalledOnce();
+    cancelFrame.mockRestore();
     expect(animationRecords.every(({ cancel }) => cancel.mock.calls.length > 0)).toBe(true);
-    expect(arms.every((arm) => arm.style.transform === '')).toBe(true);
+    expect(arms.every((arm) => !arm.isConnected)).toBe(true);
 
     const reactivated = render(StreamingTypingIndicator, {
       props: { visible: true, message: 'Thinking' },

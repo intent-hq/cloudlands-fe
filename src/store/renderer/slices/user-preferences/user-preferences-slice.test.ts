@@ -19,6 +19,7 @@ import {
   setLanguagePreference,
   setShowArchived,
   setSpellcheckEnabled,
+  setReduceMotionOnBattery,
   setShowReasoningBlocks,
   setShellTransparencyEnabled,
   setShortcutOverride,
@@ -31,6 +32,7 @@ import {
   toggleGroupByRepo,
   toggleHasCompletedProviderSetup,
   toggleChatAurora,
+  toggleReduceMotionOnBattery,
   toggleShowArchived,
   toggleShowReasoningBlocks,
   toggleShellTransparency,
@@ -59,6 +61,7 @@ import {
   selectNotificationEnabled,
   selectNotificationVolume,
   selectShowArchived,
+  selectReduceMotionOnBattery,
   selectShowReasoningBlocks,
   selectShellTransparencyEnabled,
   selectSoundEnabled,
@@ -345,9 +348,17 @@ describe('userPreferencesReducer', () => {
   });
 
   describe('appearance preference actions', () => {
-    it('defaults both preferences to enabled', () => {
+    it('defaults all appearance preferences to enabled', () => {
       expect(initialState.chatAuroraEnabled).toBe(true);
       expect(initialState.shellTransparencyEnabled).toBe(true);
+      expect(initialState.reduceMotionOnBattery).toBe(true);
+    });
+
+    it('sets and toggles reduceMotionOnBattery', () => {
+      const disabled = userPreferencesReducer(initialState, setReduceMotionOnBattery(false));
+      const enabled = userPreferencesReducer(disabled, toggleReduceMotionOnBattery());
+      expect(disabled.reduceMotionOnBattery).toBe(false);
+      expect(enabled.reduceMotionOnBattery).toBe(true);
     });
 
     it('sets and toggles chatAuroraEnabled', () => {
@@ -440,8 +451,14 @@ describe('userPreferencesReducer', () => {
           userPreferences: { ...initialState, shellTransparencyEnabled: false },
         } as any),
       ).toBe(false);
+      expect(
+        selectReduceMotionOnBattery.select({
+          userPreferences: { ...initialState, reduceMotionOnBattery: false },
+        } as any),
+      ).toBe(false);
       expect(selectChatAuroraEnabled.select({} as any)).toBe(true);
       expect(selectShellTransparencyEnabled.select({} as any)).toBe(true);
+      expect(selectReduceMotionOnBattery.select({} as any)).toBe(true);
     });
 
     it('selects font settings from userPreferences', () => {

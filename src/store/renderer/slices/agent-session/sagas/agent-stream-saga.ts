@@ -22,6 +22,27 @@ import {
   isStaleFinalizedAssistantStream,
 } from '../utils/stream-target-state';
 
+/**
+ * Applies the legacy `agent:*` firehose stream dispatches
+ * (`agentStreamUpdateReceived`) to the agent-session store.
+ *
+ * CONTRACT: the firehose is BOOKKEEPING-ONLY. Transcript rows come only from
+ * the standing `chat.subscribe` stream (PROTOCOL §7.1) and from
+ * `agents.getConversation` hydration — never from this saga.
+ *
+ * - Agent WITHOUT a standing subscription (out of view, never opened, or
+ *   still acquiring): no `addMessage` / `updateMessage` at all. Writing rows
+ *   here would leave incomplete firehose-built copies (tool blocks only, no
+ *   text, no user rows) in the session store, which the seq-0 resume anchor
+ *   (`sinceMessageId`) could then land on and skip daemon-canonical messages.
+ *   Only the session-level duties run: `streamCompleted` / `streamTimedOut`
+ *   chat-state resets on a terminal payload plus lifecycle reporting.
+ * - Agent WITH a standing subscription: the subscription owns message CONTENT,
+ *   so payload blocks are never applied; the saga only maintains streaming
+ *   flags and stamps terminal `complete` metadata (interrupted / finishReason)
+ *   on the target row — on an empty-content placeholder when the terminal
+ *   payload races ahead of the §7.1 reconcile, which then replaces it by id.
+ */
 const logger = createLogger('AgentStreamSaga');
 
 function isStreamUpdateAction(
@@ -124,16 +145,24 @@ function* reportAppliedStoreState(
 function* applyStreamPayload(payload: AgentStreamUpdatePayload): SagaGenerator<void> {
   const { agentId, eventType, assistantMessageId, assistantAppMessageId } = payload;
   if (!agentId) return;
-  // SOLE-WRITER INVARIANT (PROTOCOL §7.1): while a standing chat.subscribe
-  // registration covers the agent, the subscription owns message CONTENT —
-  // drop the firehose payload's blocks and keep only the bookkeeping writes
-  // (streaming flags, interrupted/finishReason metadata, session flag
-  // clearing). The bridge already omits blocks at dispatch time; this
-  // apply-time re-check covers dispatches buffered across a registration
-  // install (e.g. the terminal flush in the saga's finally block), so a stale
-  // accumulator set can never replace the reconciled transcript.
-  const contentBlocks = hasStandingChatSubscription(agentId) ? undefined : payload.contentBlocks;
   const isFinalize = eventType === 'complete' || eventType === 'error' || eventType === 'timeout';
+  // No standing chat.subscribe registration → no transcript row writes (see
+  // the module contract above). Session-level bookkeeping still runs so
+  // out-of-view agents' chat state resets on a terminal payload.
+  if (!hasStandingChatSubscription(agentId)) {
+    if (isFinalize) yield* call(clearSessionStreaming, agentId, eventType);
+    yield* reportAppliedStoreState(payload, 'update-ignored');
+    return;
+  }
+  // SOLE-WRITER INVARIANT (PROTOCOL §7.1): the standing subscription owns
+  // message CONTENT — the firehose payload's blocks are never applied
+  // (`resolveStreamContentBlocks` below always receives `undefined` incoming
+  // blocks); only the bookkeeping writes remain (streaming flags,
+  // interrupted/finishReason metadata, session flag clearing). The bridge
+  // already omits blocks at dispatch time; this apply-time drop covers
+  // dispatches buffered across a registration install (e.g. the terminal
+  // flush in the saga's finally block), so a stale accumulator set can never
+  // replace the reconciled transcript.
   const session: AgentSession | undefined = yield* selectAgentSession.effect(agentId);
   const existing = findStreamTargetAssistantMessage(
     session,
@@ -173,7 +202,7 @@ function* applyStreamPayload(payload: AgentStreamUpdatePayload): SagaGenerator<v
       id: assistantMessageId,
       ...(assistantAppMessageId ? { appMessageId: assistantAppMessageId } : {}),
       role: 'assistant',
-      contentBlocks: resolveStreamContentBlocks(undefined, contentBlocks, eventType) ?? [],
+      contentBlocks: resolveStreamContentBlocks(undefined, undefined, eventType) ?? [],
       timestamp: new Date(payload.timestamp ?? Date.now()).toISOString(),
       isStreaming: eventType !== 'complete',
       streamingComplete: eventType === 'complete',
@@ -185,7 +214,7 @@ function* applyStreamPayload(payload: AgentStreamUpdatePayload): SagaGenerator<v
     return;
   }
 
-  const nextBlocks = resolveStreamContentBlocks(existing.contentBlocks, contentBlocks, eventType);
+  const nextBlocks = resolveStreamContentBlocks(existing.contentBlocks, undefined, eventType);
   if (eventType === 'complete') {
     const updates: Partial<AgentMessage> = { isStreaming: false, streamingComplete: true };
     if (nextBlocks && nextBlocks !== existing.contentBlocks) updates.contentBlocks = nextBlocks;

@@ -13,6 +13,7 @@
 
   import type { PanelTab } from '$features/layout/panel-layout-adapter';
   import { cn } from '$lib/utils';
+  import { prefersReducedMotion } from '$lib/utils/reduced-motion';
   import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
   import {
     faXmark,
@@ -1060,11 +1061,8 @@
   const activeTab = $derived(tabs.find((t) => t.id === activeTabId) || tabs[0] || null);
 
   function paneStackLineMotion(_node: Element, { offset }: { offset: number }): TransitionConfig {
-    const reducedMotion =
-      typeof window !== 'undefined' &&
-      window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true;
     return {
-      duration: reducedMotion ? 0 : 160,
+      duration: prefersReducedMotion() ? 0 : 160,
       css: (t) => `opacity: ${t}; transform: translateY(${(1 - t) * offset}px);`,
     };
   }

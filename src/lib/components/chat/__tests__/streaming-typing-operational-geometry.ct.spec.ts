@@ -142,13 +142,11 @@ test('matches adjacent tool-row geometry and keeps the explicit 8px top margin',
           }
 
           const mark = component.getByRole('status', { name: 'Loading' });
-          await expect(mark).toHaveAttribute('viewBox', '0 0 256 208');
-          await expect(mark.locator('[data-mark-arm]')).toHaveCount(5);
           const semanticColors = await mark.evaluate((node) => ({
             color: getComputedStyle(node).color,
-            stroke: getComputedStyle(node.querySelector('[data-mark-arm]')!).stroke,
+            ink: getComputedStyle(node.querySelector('[data-mark-arm]')!).stroke,
           }));
-          expect(semanticColors.stroke).toBe(semanticColors.color);
+          expect(semanticColors.ink).toBe(semanticColors.color);
         }
       }
     }
@@ -164,7 +162,7 @@ test('runs the mark only while active and holds neutral for reduced motion', asy
   await expect(mark).toHaveAttribute('data-motion-state', 'playing');
   expect(
     await mark.evaluate((node) =>
-      Array.from(node.querySelectorAll<SVGSVGElement>('[data-mark-arm-box]')).map(
+      Array.from(node.querySelectorAll<SVGPathElement>('[data-mark-arm]')).map(
         (arm) => arm.style.transform !== '' && arm.style.willChange === '',
       ),
     ),

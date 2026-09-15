@@ -112,7 +112,11 @@ function testPlan(...checks: ReturnType<typeof testCheck>[]) {
 
 function runnerOptions(
   lockRoot: string,
-  runCheck: (check: ReturnType<typeof testCheck>) => Promise<void>,
+  runCheck: (
+    check: ReturnType<typeof testCheck>,
+    root: string,
+    context?: { heldLock?: string },
+  ) => Promise<void>,
   env: Record<string, string> = {},
 ) {
   return {
@@ -942,12 +946,21 @@ describe('empty change set guard', () => {
 
 describe('dependency freshness gate', () => {
   type StepResult = { ok: boolean; reason: string | null };
-  function cliOptions(depsResult: StepResult, i18nResult: StepResult = { ok: true, reason: null }) {
+  const PASSING = { ok: true, reason: null };
+  function cliOptions(
+    depsResult: StepResult,
+    i18nResult: StepResult = PASSING,
+    nodeResult: StepResult = PASSING,
+  ) {
     const calls: string[] = [];
     return {
       calls,
       options: {
         log() {},
+        checkNode({ root }: { root: string }) {
+          calls.push(`checkNode:${root}`);
+          return nodeResult;
+        },
         checkDeps() {
           calls.push('checkDeps');
           return depsResult;
@@ -963,16 +976,36 @@ describe('dependency freshness gate', () => {
     };
   }
 
-  it('checks the install, then the i18n bundle, before running a plan', async () => {
+  it('checks Node, then the install, then the i18n bundle, before running a plan', async () => {
     const root = fixtureRoot({ 'src/lib/example.ts': 'export const value = 1;' });
     const reason = 'node_modules is out of sync';
     const stale = cliOptions({ ok: false, reason });
     await expect(runCli(['src/lib/example.ts'], root, stale.options)).rejects.toThrow(reason);
-    expect(stale.calls).toEqual(['checkDeps']);
+    expect(stale.calls).toEqual([`checkNode:${root}`, 'checkDeps']);
 
     const fresh = cliOptions({ ok: true, reason: null });
     await runCli(['src/lib/example.ts'], root, fresh.options);
-    expect(fresh.calls).toEqual(['checkDeps', `ensureI18n:${root}`, 'runPlan']);
+    expect(fresh.calls).toEqual([
+      `checkNode:${root}`,
+      'checkDeps',
+      `ensureI18n:${root}`,
+      'runPlan',
+    ]);
+  });
+
+  it('refuses before touching node_modules when the running Node is unsupported', async () => {
+    const root = fixtureRoot({ 'src/lib/example.ts': 'export const value = 1;' });
+    const reason = 'Unsupported Node v20.19.0 — cloudlands-fe requires Node >=22';
+    const { calls, options } = cliOptions(PASSING, PASSING, { ok: false, reason });
+    await expect(runCli(['src/lib/example.ts'], root, options)).rejects.toThrow(reason);
+    expect(calls).toEqual([`checkNode:${root}`]);
+  });
+
+  it('runs the dependency-free Node preflight before this module resolves node_modules', () => {
+    const scripts = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8')).scripts;
+    expect(scripts['verify:changed']).toMatch(
+      /^node scripts\/check-node\.mjs && node scripts\/verify-changed\.mjs\b/,
+    );
   });
 
   it('refuses to run a plan when the i18n bundle cannot be provisioned', async () => {
@@ -980,7 +1013,7 @@ describe('dependency freshness gate', () => {
     const reason = 'messages kept changing while compiling';
     const { calls, options } = cliOptions({ ok: true, reason: null }, { ok: false, reason });
     await expect(runCli(['src/lib/example.ts'], root, options)).rejects.toThrow(reason);
-    expect(calls).toEqual(['checkDeps', `ensureI18n:${root}`]);
+    expect(calls).toEqual([`checkNode:${root}`, 'checkDeps', `ensureI18n:${root}`]);
   });
 
   it('skips the install check for dry runs', async () => {
@@ -993,6 +1026,7 @@ describe('dependency freshness gate', () => {
   it('refuses with the remediation when the installed lockfile copy is unreadable', async () => {
     const root = fixtureRoot({
       'src/lib/example.ts': 'export const value = 1;',
+      'package.json': JSON.stringify({ engines: { node: `>=${process.versions.node}` } }),
       'pnpm-lock.yaml': "lockfileVersion: '9.0'\n",
     });
     mkdirSync(join(root, 'node_modules', '.pnpm', 'lock.yaml'), { recursive: true });
@@ -1171,6 +1205,25 @@ describe('expensive-check coordination', () => {
     expect(started).toEqual(expect.arrayContaining(['ct-3200', 'ct-3201']));
     gate.resolve();
     await Promise.all(runs);
+  });
+
+  it('tells only locked checks which lock the runner already holds', async () => {
+    const lockRoot = temporaryDirectory();
+    const heldLocks: Array<string | null> = [];
+    const options = runnerOptions(
+      lockRoot,
+      async (_check, _root, context) => {
+        heldLocks.push(context?.heldLock ?? null);
+      },
+      { CT_PORT: '3210' },
+    );
+
+    await runVerificationPlan(
+      testPlan(testCheck('ct', 'ct'), testCheck('tsc', null), testCheck('vitest', 'vitest-full')),
+      lockRoot,
+      options,
+    );
+    expect(heldLocks).toEqual(['ct-3210', null, 'vitest-full']);
   });
 
   it('allows full Vitest and CT to proceed concurrently', async () => {

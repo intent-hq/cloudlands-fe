@@ -209,7 +209,7 @@
   .ov-no-motion .ov-banner-marquee {
     animation: none;
   }
-  @media (prefers-reduced-motion: reduce) {
+  @container style(--motion-reduced: 1) {
     .ov-banner,
     .ov-banner-marquee,
     .ov-anim-blink {

@@ -29,7 +29,7 @@ vi.mock('$lib/utils/browser-url-resolution', () => ({
 
 import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
 import type { BrowserTab, BrowserTabListing } from '$shared/types/browser-clients';
-import type { StoreAction } from '@augmentcode/themis/utils/store/create-action';
+import { createAction, type StoreAction } from '@augmentcode/themis/utils/store/create-action';
 import {
   browserClientsReducer,
   browserTabClosed,
@@ -201,6 +201,7 @@ function start(
       Object.values(state.panelLayout.byWorkspaceId[wsId]?.panels ?? {}).flatMap(
         (panel: any) => panel.tabs as PanelTab[],
       ),
+    layout: (wsId = WS) => state.panelLayout.byWorkspaceId[wsId],
     hidden: (wsId = WS) => getItems(state.panelLayout.byWorkspaceId[wsId].hiddenTabs) as PanelTab[],
     registry: (wsId = WS) => state.browserTabRegistry.byWorkspaceId[wsId],
     closing: () => state.browserTabRegistry.closing as Record<string, string>,
@@ -266,6 +267,62 @@ describe('browserTabRegistrySaga', () => {
 
       expect(mocks.upsertTab.mock.calls).toEqual([[WS, expectedInput()]]);
       expect(h.tabs()[0]).toMatchObject({ id: 'b1', hostClientId: OWN });
+      await stop(h);
+    });
+
+    it.each([
+      {
+        name: 'Fit without its retained fallback size',
+        tab: browserTab({
+          browserUrl: 'http://a.test/',
+          ownerAgentId: 'agent-1',
+          emulatedSize: { width: 1280, height: 800 },
+          viewport: { mode: 'fit' },
+        }),
+        expectedSize: null,
+      },
+      {
+        name: 'legacy Fit without its retained fallback size',
+        tab: browserTab({
+          browserUrl: 'http://a.test/',
+          ownerAgentId: 'agent-1',
+          emulatedSize: { width: 1280, height: 800 },
+        }),
+        expectedSize: null,
+      },
+      {
+        name: 'an explicit preset with its exact dimensions',
+        tab: browserTab({
+          browserUrl: 'http://a.test/',
+          viewport: { mode: 'preset', presetId: 'iphone-se', width: 375, height: 667 },
+        }),
+        expectedSize: { width: 375, height: 667 },
+      },
+      {
+        name: 'an explicit custom viewport instead of stale retained dimensions',
+        tab: browserTab({
+          browserUrl: 'http://a.test/',
+          emulatedSize: { width: 1280, height: 800 },
+          viewport: { mode: 'custom', width: 390, height: 844 },
+        }),
+        expectedSize: { width: 390, height: 844 },
+      },
+    ])('reports $name', async ({ tab, expectedSize }) => {
+      const h = start({ layouts: { [WS]: settledLayout([tab]) }, health: 'down', applied: true });
+      h.setHealth('healthy', 1);
+      h.dispatch(updateTabTitle(WS, 'b1', 'Updated'));
+      await flush();
+
+      expect(mocks.upsertTab.mock.calls).toEqual([
+        [
+          WS,
+          expectedInput({
+            title: 'Updated',
+            ownerAgentId: tab.ownerAgentId ?? null,
+            emulatedSize: expectedSize,
+          }),
+        ],
+      ]);
       await stop(h);
     });
 
@@ -394,6 +451,64 @@ describe('browserTabRegistrySaga', () => {
       await stop(h);
     });
 
+    it('re-reports displayed for any reducer case that reshapes the layout, found by state identity', async () => {
+      // Neither a `panelLayout/*` type nor one the saga names; its payload
+      // carries the workspace id in no position a payload sniff would read.
+      const activateBrowserSibling = createAction(
+        'test/activateBrowserSibling',
+        (workspaceId: string) => ({ workspaceId }),
+      );
+      rawPanelLayoutReducer.with(activateBrowserSibling, (state, { payload: { workspaceId } }) => {
+        const ws = state.byWorkspaceId[workspaceId];
+        const panel = ws?.panels.p1;
+        const sibling = panel?.tabs.find((tab) => tab.type === 'browser');
+        if (!ws || !panel || !sibling || panel.activeTabId === sibling.id) return state;
+        return {
+          ...state,
+          byWorkspaceId: {
+            ...state.byWorkspaceId,
+            [workspaceId]: {
+              ...ws,
+              panels: { ...ws.panels, p1: { ...panel, activeTabId: sibling.id } },
+            },
+          },
+        };
+      });
+      const note: PanelTab = { id: 'n1', type: 'note', title: 'Note', closable: true };
+      const h = start({
+        layouts: { [WS]: settledLayout([note, browserTab({ browserUrl: 'http://a.test/' })]) },
+        health: 'down',
+        applied: true,
+      });
+      h.setHealth('healthy', 1);
+      h.dispatch(updateTabTitle(WS, 'b1', 'Example page'));
+      await flush();
+      expect(mocks.upsertTab.mock.calls).toEqual([[WS, expectedInput({ displayed: false })]]);
+      await flush();
+      mocks.upsertTab.mockClear();
+
+      h.dispatch(activateBrowserSibling(WS));
+      await flush();
+      expect(mocks.upsertTab.mock.calls).toEqual([[WS, expectedInput({ displayed: true })]]);
+      await stop(h);
+    });
+
+    it('does not report a handled action the reducer answered with the same layout', async () => {
+      const h = start({
+        layouts: { [WS]: settledLayout([browserTab({ browserUrl: 'http://a.test/' })]) },
+        health: 'down',
+        applied: true,
+      });
+      h.setHealth('healthy', 1);
+      const layout = h.layout();
+      // `p1` already shows `b1`: the reducer returns its input state.
+      h.dispatch(setActiveTab(WS, 'b1', 'p1', 1000));
+      expect(h.layout()).toBe(layout);
+      await flush();
+      expect(mocks.upsertTab).not.toHaveBeenCalled();
+      await stop(h);
+    });
+
     it('re-reports displayed when the daemon row lacks it (process-local fact lost on a daemon restart)', async () => {
       const { displayed: _unreported, ...restarted } = row({ title: 'Example page' });
       mocks.listTabs.mockResolvedValue([restarted]);
@@ -411,6 +526,34 @@ describe('browserTabRegistrySaga', () => {
       await flush();
 
       expect(mocks.listTabs.mock.calls).toEqual([[WS]]);
+      expect(mocks.upsertTab.mock.calls).toEqual([[WS, expectedInput({ displayed: true })]]);
+      await stop(h);
+    });
+
+    it('reports on the explicit request after applying rows, even when applying mutated no layout', async () => {
+      const { displayed: _unreported, ...restarted } = row({ title: 'Example page' });
+      const listing = deferred<BrowserTabListing[]>();
+      mocks.listTabs.mockReturnValueOnce(listing.promise);
+      const h = start({
+        layouts: {
+          [WS]: settledLayout(
+            [browserTab({ hostClientId: OWN, browserUrl: 'http://a.test/' })],
+            'pending' as never,
+          ),
+        },
+        health: 'down',
+      });
+      h.setHealth('healthy', 1);
+      h.dispatch(setRestoreStatus(WS, 'restored'));
+      // The settle mutation's reporter runs while the registry is still loading and exits.
+      await flush();
+      expect(mocks.listTabs.mock.calls).toEqual([[WS]]);
+      expect(mocks.upsertTab).not.toHaveBeenCalled();
+
+      const layoutBefore = h.layout();
+      listing.resolve([restarted]);
+      await flush();
+      expect(h.layout()).toBe(layoutBefore);
       expect(mocks.upsertTab.mock.calls).toEqual([[WS, expectedInput({ displayed: true })]]);
       await stop(h);
     });
@@ -2118,10 +2261,12 @@ describe('browserTabRegistrySaga boundary', () => {
   });
 
   it('dispatches only through effect, the two fence openers and the placement transaction', () => {
+    // `put(channel, message)` feeds a saga-local channel, not the store.
     const putSites = collect((node) =>
       ts.isCallExpression(node) &&
       ts.isIdentifier(node.expression) &&
-      node.expression.text === 'put'
+      node.expression.text === 'put' &&
+      node.arguments.length === 1
         ? `${enclosingStep(node)}:${dispatched(node)}`
         : undefined,
     );

@@ -211,10 +211,18 @@
     return undefined;
   }
 
-  /** Unresolved-threads summary; undefined when there are none. */
+  /** Unresolved-threads summary; undefined when there are none. An absent
+   * count means resolution state was unreadable — surfaced only when the
+   * host requires thread resolution to merge. */
   function threadsSummary(monitor: PrMonitorRow): string | undefined {
     const threads = monitor.lastSnapshot?.threads;
-    if (!threads || threads.unresolved === 0) return undefined;
+    if (!threads) return undefined;
+    if (typeof threads.unresolved !== 'number') {
+      return threads.resolutionRequired
+        ? m.chat_monitoredPrs_hover_threadsUnknown_label()
+        : undefined;
+    }
+    if (threads.unresolved === 0) return undefined;
     return threads.unresolved === 1
       ? m.chat_monitoredPrs_hover_threads_one()
       : m.chat_monitoredPrs_hover_threads_many({
@@ -239,8 +247,11 @@
     if (snapshot.approvals.needed != null && snapshot.approvals.have < snapshot.approvals.needed) {
       return m.chat_monitoredPrs_blocker_approvals();
     }
-    if (snapshot.threads.resolutionRequired && snapshot.threads.unresolved > 0) {
-      return m.chat_monitoredPrs_blocker_threads();
+    if (snapshot.threads.resolutionRequired) {
+      if (typeof snapshot.threads.unresolved !== 'number') {
+        return m.chat_monitoredPrs_blocker_threadsUnknown();
+      }
+      if (snapshot.threads.unresolved > 0) return m.chat_monitoredPrs_blocker_threads();
     }
     if (snapshot.mergeable === false || snapshot.mergeBlockedReason) {
       return m.chat_monitoredPrs_blocker_requirements();

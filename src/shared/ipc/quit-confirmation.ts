@@ -3,6 +3,11 @@
  *
  * The main process (`src/main/quit-confirmation.ts`) renders the "agents are
  * still working" quit prompt in the renderer instead of a native message box.
+ * The prompt fires only when quitting disrupts something: agents on the
+ * app-spawned sidecar (stopped mid-turn when the sidecar shuts down) and/or
+ * agent-owned embedded browser tabs this app hosts. Agents on a daemon the
+ * app does not stop (remote / adopted external) keep running and are not part
+ * of the payload.
  * Channels (see `IPC_CHANNELS.QUIT_CONFIRMATION` in `../ipc-registry`):
  *
  * - `quit-confirmation:show` (main → renderer, `webContents.send`):
@@ -46,8 +51,6 @@ export interface QuitBrowserTabSummary {
 /** `quit-confirmation:show` payload (main → renderer). */
 export interface QuitConfirmationShowPayload {
   requestId: string;
-  /** Agents on a daemon the app does not stop (remote / adopted external). */
-  keepRunning: QuitAgentSummary[];
   /** Agents on the app-spawned sidecar, stopped mid-turn by quitting. */
   interrupted: QuitAgentSummary[];
   /** Agent-owned embedded browser tabs destroyed by quitting. */

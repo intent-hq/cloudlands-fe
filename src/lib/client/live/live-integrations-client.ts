@@ -173,7 +173,7 @@ export class LiveIntegrationsClient implements IntegrationsClient {
   }
 
   /**
-   * `github.repoConfig.get` (§5.27 v2.4) — the repo's committed
+   * `github.repoConfig.get` (§5.27) — the repo's committed
    * `.intent/config.json` read via the contents API, no clone. `ref` is only
    * sent when provided (daemon defaults to the repo's default branch).
    * Failures PROPAGATE; the setup-script probe folds them to "no script".

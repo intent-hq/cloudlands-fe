@@ -1,5 +1,5 @@
 /**
- * PR-monitor read/cancel/flush surface (PROTOCOL v6.1, §6.9).
+ * PR-monitor read/cancel/flush surface (PROTOCOL §5.42, §6.9).
  *
  * Monitors are agent-owned (`ws.pr.monitor` is MCP-only); the FE reads via
  * `prMonitor.list`, cancels via `prMonitor.cancel`, flushes the pending
@@ -45,7 +45,9 @@ export interface PrMonitorSnapshot {
     changesRequested: number;
   };
   threads: {
-    unresolved: number;
+    /** Absent (never `null`) when the host could not read thread resolution
+     * state — the count is unknown, not zero. */
+    unresolved?: number;
     resolutionRequired?: boolean | null;
   };
   /** Additive: present (true) when the host reports the PR queued to merge;

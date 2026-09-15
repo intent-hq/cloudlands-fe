@@ -416,7 +416,22 @@
   --theme-agent-avatar-surface-waiting: var(--theme-dark-agent-avatar-surface-waiting);
 }
 
+/* ===== Reduced motion ===== */
+/* `--motion-reduced` is the single CSS source of truth: 1 under the OS
+   preference OR the root `data-reduce-motion` attribute (battery saver), else 0.
+   Component rules query it with `@container style(--motion-reduced: 1)`; the
+   JS mirror is `$lib/utils/reduced-motion`. The global blanket below is
+   duplicated for the attribute path (wrapped in `:where()` so its specificity
+   matches the media block's) because a style query cannot reach `html` itself. */
+:root {
+  --motion-reduced: 0;
+}
+
 @media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-reduced: 1;
+  }
+
   *,
   *::before,
   *::after {
@@ -425,6 +440,22 @@
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
   }
+}
+
+:root[data-reduce-motion] {
+  --motion-reduced: 1;
+}
+
+:where(:root[data-reduce-motion]),
+:where(:root[data-reduce-motion])::before,
+:where(:root[data-reduce-motion])::after,
+:where(:root[data-reduce-motion]) *,
+:where(:root[data-reduce-motion]) *::before,
+:where(:root[data-reduce-motion]) *::after {
+  scroll-behavior: auto !important;
+  transition-duration: 0.01ms !important;
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
 }
 
 @media (forced-colors: active) {

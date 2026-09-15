@@ -6,6 +6,10 @@
   import Portal from './Portal.svelte';
   import Button from './button/button.svelte';
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
+  import {
+    onReducedMotionChange,
+    prefersReducedMotion as isReducedMotionPreferred,
+  } from '$lib/utils/reduced-motion';
 
   interface Props {
     open?: boolean;
@@ -33,10 +37,7 @@
 
   let dialogElement: HTMLDivElement | null = $state(null);
   let closeButtonElement: HTMLButtonElement | null = $state(null);
-  let prefersReducedMotion = $state(
-    typeof window !== 'undefined' &&
-      window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches === true,
-  );
+  let prefersReducedMotion = $state(isReducedMotionPreferred());
 
   function close() {
     open = false;
@@ -72,15 +73,11 @@
     }
   }
 
-  onMount(() => {
-    const mediaQuery = window.matchMedia?.('(prefers-reduced-motion: reduce)');
-    if (!mediaQuery) return;
-    const updatePreference = (event: MediaQueryListEvent) => {
-      prefersReducedMotion = event.matches;
-    };
-    mediaQuery.addEventListener?.('change', updatePreference);
-    return () => mediaQuery.removeEventListener?.('change', updatePreference);
-  });
+  onMount(() =>
+    onReducedMotionChange((reduced) => {
+      prefersReducedMotion = reduced;
+    }),
+  );
 
   $effect(() => {
     if (!open) return;

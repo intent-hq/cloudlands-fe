@@ -1712,7 +1712,7 @@ describe('chatState selectors', () => {
     });
   });
 
-  describe('lazy block hydration (§5.5 slim → v7.2 agent.getMessageBlock)', () => {
+  describe('lazy block hydration (§5.5 slim → agent.getMessageBlock)', () => {
     const MSG = 'msg-1';
     const BLOCK = 'msg-1:2';
     const entry = (state: ReturnType<typeof chatStateReducer>) =>

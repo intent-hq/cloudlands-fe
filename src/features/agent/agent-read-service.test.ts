@@ -35,7 +35,12 @@ const testStore = appStore as typeof appStore & {
 testStore.getExistingStoreContext = function () {
   return this.storeContext;
 };
-import { bulkUpsertSessions } from '$store/renderer/slices/agent-session/agent-session-slice';
+import {
+  bulkUpsertSessions,
+  clearProcessQueueHint,
+  setProcessQueueHint,
+  updateSession,
+} from '$store/renderer/slices/agent-session/agent-session-slice';
 import {
   selectAgentMessages,
   selectAgentSession,
@@ -154,7 +159,7 @@ describe('agentReadService (fake seam, real store)', () => {
   // Regression (monorepo#1977): a deletion scheduled by ANOTHER window/client
   // (or before an FE restart) is not in this window's local pending-delete
   // registry — the fetched row's daemon-owned `pendingDeleteAt` deadline
-  // (PROTOCOL §5.5, v6.7+) is the only signal, and it must not be upserted.
+  // (PROTOCOL §5.5 delete grace window) is the only signal, and it must not be upserted.
   it('drops a fetched row carrying pendingDeleteAt (deletion scheduled elsewhere)', async () => {
     const agentId = 'agent-read-wire-pending-del';
     agentsApi.get.mockResolvedValueOnce(
@@ -497,6 +502,117 @@ describe('agentReadService (fake seam, real store)', () => {
     const stored = selectAgentSession.select(appStore.state, agentId);
     expect(stored?.isStreaming).toBe(true);
     expect(stored?.isProcessing).toBe(true);
+  });
+
+  // Regression (cloudlands-fe#2443 review): `processQueueHint` is FE-owned —
+  // set from `agent:process:queued` (§6.5), never on the `agent.get` wire — so
+  // the event-driven refetch (agent:updated → refreshAgentSessionAfterEvent →
+  // agent.get → bulkUpsertSessions) used to rebuild the session without it and
+  // the chat slot-wait warning flickered off on every unrelated agent event.
+  describe('processQueueHint across the event-driven refetch', () => {
+    const HINT = { waiting: true, used: 3, cap: 3, reason: 'slots' as const };
+    const queuedSession = (agentId: string) =>
+      makeSession({
+        id: agentId,
+        status: AgentStatus.Active,
+        isActive: true,
+        isResponding: true,
+        isStreaming: false,
+      });
+
+    it('keeps the hint when the refetched snapshot still shows the agent responding', async () => {
+      const agentId = 'agent-queue-hint-refetch';
+      appStore.dispatch(bulkUpsertSessions([queuedSession(agentId)]));
+      appStore.dispatch(setProcessQueueHint(agentId, 3, 3, 'slots'));
+      expect(selectAgentSession.select(appStore.state, agentId)?.processQueueHint).toEqual(HINT);
+
+      // The agent:updated-driven `agent.get` response: an unrelated field
+      // changed (name), no processQueueHint key — the wire never carries one.
+      agentsApi.get.mockResolvedValueOnce({
+        ...queuedSession(agentId),
+        name: 'renamed by agent:updated',
+      } as never);
+      await refreshAgentSessionAfterEvent(agentId);
+
+      expect(agentsApi.get).toHaveBeenCalledWith(agentId);
+      const stored = selectAgentSession.select(appStore.state, agentId);
+      expect(stored?.name).toBe('renamed by agent:updated');
+      expect(stored?.processQueueHint).toEqual(HINT);
+    });
+
+    it('drops the hint when the refetched snapshot shows the agent streaming', async () => {
+      const agentId = 'agent-queue-hint-refetch-streaming';
+      appStore.dispatch(bulkUpsertSessions([queuedSession(agentId)]));
+      appStore.dispatch(setProcessQueueHint(agentId, 3, 3, 'slots'));
+
+      agentsApi.get.mockResolvedValueOnce({
+        ...queuedSession(agentId),
+        isStreaming: true,
+        isProcessing: true,
+      } as never);
+      await refreshAgentSessionAfterEvent(agentId);
+
+      expect(selectAgentSession.select(appStore.state, agentId)?.processQueueHint).toBeUndefined();
+    });
+
+    it('does not resurrect the hint from a stale read that lands after agent:process:resumed', async () => {
+      const agentId = 'agent-queue-hint-stale-read';
+      appStore.dispatch(bulkUpsertSessions([queuedSession(agentId)]));
+      appStore.dispatch(setProcessQueueHint(agentId, 3, 3, 'slots'));
+
+      // A refetch starts while the agent is still queued and stays in flight…
+      let resolveStale!: (session: AgentSession) => void;
+      agentsApi.get.mockImplementationOnce(
+        () =>
+          new Promise<AgentSession>((resolve) => {
+            resolveStale = resolve;
+          }) as never,
+      );
+      const stale = refreshAgentSessionAfterEvent(agentId);
+      expect(agentsApi.get).toHaveBeenCalledTimes(1);
+
+      // …the live agent:process:resumed clears the hint (bridge → reducer)…
+      appStore.dispatch(clearProcessQueueHint(agentId));
+      expect(selectAgentSession.select(appStore.state, agentId)?.processQueueHint).toBeUndefined();
+
+      // …and the stale snapshot (taken while queued, still "responding") lands.
+      resolveStale({ ...queuedSession(agentId), name: 'stale snapshot' });
+      await stale;
+
+      const stored = selectAgentSession.select(appStore.state, agentId);
+      expect(stored?.name).toBe('stale snapshot');
+      expect(stored?.processQueueHint).toBeUndefined();
+    });
+
+    it('keeps a waiting processQueueHint AND the sticky liveTurnOpen across a refetch lacking both keys', async () => {
+      // FE_OWNED_FIELD_POLICY drives the carry-forward for every FE-owned
+      // field, so the two fields that each once needed their own hand-written
+      // block (intent-hq/intent#1815, cloudlands-fe#2443) must survive together.
+      const agentId = 'agent-fe-owned-refetch';
+      appStore.dispatch(bulkUpsertSessions([queuedSession(agentId)]));
+      appStore.dispatch(setProcessQueueHint(agentId, 3, 3, 'slots'));
+      appStore.dispatch(
+        updateSession(agentId, {
+          liveTurnOpen: true,
+          liveTurnOpenedAt: '2026-01-02T00:00:00.000Z',
+        }),
+      );
+      const seeded = selectAgentSession.select(appStore.state, agentId);
+      expect(seeded?.processQueueHint).toEqual(HINT);
+      expect(seeded?.liveTurnOpen).toBe(true);
+
+      agentsApi.get.mockResolvedValueOnce({
+        ...queuedSession(agentId),
+        name: 'renamed by agent:updated',
+      } as never);
+      await refreshAgentSessionAfterEvent(agentId);
+
+      const stored = selectAgentSession.select(appStore.state, agentId);
+      expect(stored?.name).toBe('renamed by agent:updated');
+      expect(stored?.processQueueHint).toEqual(HINT);
+      expect(stored?.liveTurnOpen).toBe(true);
+      expect(stored?.liveTurnOpenedAt).toBe('2026-01-02T00:00:00.000Z');
+    });
   });
 
   // Regression: ensureAgentSession must preserve existing messages even when

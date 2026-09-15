@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { channel as createChannel, runSaga, stdChannel } from 'redux-saga';
 
 const { reportStreamLifecycleSpy } = vi.hoisted(() => ({ reportStreamLifecycleSpy: vi.fn() }));
@@ -8,7 +8,11 @@ vi.mock('$lib/utils/stream-lifecycle-telemetry', async (importOriginal) => ({
   reportStreamLifecycle: reportStreamLifecycleSpy,
 }));
 
-import type { AgentSession } from '$shared/types';
+import {
+  clearAllStandingChatSubscriptions,
+  markStandingChatSubscription,
+} from '$features/agent/utils/chat-subscription-registry';
+import type { AgentMessage, AgentSession } from '$shared/types';
 import { AgentStatus } from '$shared/types';
 import {
   agentSessionReducer,
@@ -32,22 +36,34 @@ const settle = async () => {
   await Promise.resolve();
 };
 
-function session(): AgentSession {
+function session(messages: AgentMessage[] = []): AgentSession {
   return {
     id: AGENT,
     workspaceId: WS,
     backendSessionId: AGENT,
     name: 'Agent',
     status: AgentStatus.Active,
-    messages: [],
+    messages,
     createdAt: '2026-01-01T00:00:00.000Z',
     updatedAt: '2026-01-01T00:00:00.000Z',
   } as AgentSession;
 }
 
-function harness() {
+/**
+ * Runs the saga against an in-memory store. `covered` (default) installs a
+ * standing chat.subscribe marker for the agent — the only configuration under
+ * which the saga touches transcript rows.
+ */
+function harness({
+  covered = true,
+  messages = [],
+}: { covered?: boolean; messages?: AgentMessage[] } = {}) {
+  if (covered) markStandingChatSubscription(AGENT);
   const channel = stdChannel();
-  let agentSessions = agentSessionReducer(sessionInitialState, bulkUpsertSessions([session()]));
+  let agentSessions = agentSessionReducer(
+    sessionInitialState,
+    bulkUpsertSessions([session(messages)]),
+  );
   let chatState = chatInitialState;
   const dispatch = vi.fn((action) => {
     agentSessions = agentSessionReducer(agentSessions, action);
@@ -62,12 +78,24 @@ function harness() {
     dispatch,
     task,
     messages: () => agentSessions.byAgentId[AGENT]?.messages ?? [],
+    rowWrites: () =>
+      dispatch.mock.calls
+        .map(([action]) => action)
+        .filter(
+          (action) =>
+            action.type === 'agentSessions/addMessage' ||
+            action.type === 'agentSessions/updateMessage',
+        ),
   };
 }
 
 describe('agentStreamSaga', () => {
-  it('updates rich tool blocks in place, preserves order, and finalizes interrupted streams', async () => {
+  beforeEach(() => {
+    clearAllStandingChatSubscriptions();
     reportStreamLifecycleSpy.mockClear();
+  });
+
+  it('keeps streaming flags and stamps interrupted metadata for a covered agent without applying firehose blocks', async () => {
     const run = harness();
     run.channel.put(
       agentStreamUpdateReceived({
@@ -152,17 +180,7 @@ describe('agentStreamSaga', () => {
     await settle();
 
     expect(run.messages()).toHaveLength(1);
-    expect(run.messages()[0]?.contentBlocks).toEqual([
-      { type: 'text', text: 'hello world' },
-      {
-        type: 'tool_use',
-        id: 'tool-1',
-        name: 'read',
-        input: { path: 'second' },
-        toolCallId: 'call-1',
-      },
-      { type: 'tool_result', tool_use_id: 'tool-1', output: 'done' },
-    ]);
+    expect(run.messages()[0]?.contentBlocks).toEqual([]);
     expect(run.messages()[0]).toEqual(
       expect.objectContaining({
         id: 'msg-1',
@@ -175,22 +193,159 @@ describe('agentStreamSaga', () => {
     const messageUpdates = run.dispatch.mock.calls
       .map(([action]) => action)
       .filter((action) => action.type === 'agentSessions/updateMessage');
-    expect(messageUpdates.map((action) => action.payload.slice(0, 2))).toEqual([
-      [AGENT, 'msg-1'],
-      [AGENT, 'msg-1'],
-      [AGENT, 'msg-1'],
-    ]);
+    expect(messageUpdates.map((action) => action.payload.slice(0, 2))).toEqual([[AGENT, 'msg-1']]);
     expect(reportStreamLifecycleSpy).toHaveBeenLastCalledWith(
       expect.objectContaining({
         stage: 'store',
         event: 'update-applied',
         callbackResult: 'observed',
         storeStreamState: 'idle',
-        blockCount: 3,
+        blockCount: 0,
       }),
     );
     run.task.cancel();
     await run.task.toPromise();
+  });
+
+  describe('agent without a standing chat subscription', () => {
+    const canonical: AgentMessage[] = [
+      {
+        id: 'user-1',
+        role: 'user',
+        contentBlocks: [{ type: 'text', text: 'question' }],
+        timestamp: '2026-01-01T00:00:01.000Z',
+      },
+      {
+        id: 'msg-1',
+        appMessageId: 'app-1',
+        role: 'assistant',
+        contentBlocks: [{ type: 'text', text: 'canonical answer' }],
+        timestamp: '2026-01-01T00:00:02.000Z',
+        isStreaming: true,
+        streamingComplete: false,
+      },
+    ];
+    const firehoseBlocks = [
+      {
+        type: 'tool_use' as const,
+        id: 'tool-1',
+        name: 'read',
+        input: { path: 'first' },
+        toolCallId: 'call-1',
+      },
+    ];
+
+    it.each([
+      ['content-blocks', undefined],
+      ['complete', streamCompleted(AGENT, { lastAttemptedMessage: null, modelUnavailable: null })],
+      ['error', streamCompleted(AGENT, { lastAttemptedMessage: null, modelUnavailable: null })],
+      ['timeout', streamTimedOut(AGENT)],
+    ] as const)(
+      'writes no row on %s for an existing or a new target, but still clears session streaming',
+      async (eventType, expectedAction) => {
+        const run = harness({ covered: false, messages: canonical });
+        run.channel.put(
+          agentStreamUpdateReceived({
+            agentId: AGENT,
+            workspaceId: WS,
+            handlerSessionId: AGENT,
+            source: 'sendMessage',
+            eventType,
+            assistantMessageId: 'msg-1',
+            assistantAppMessageId: 'app-1',
+            timestamp: 3,
+            contentBlocks: firehoseBlocks,
+            ...(eventType === 'error' ? { error: 'failed' } : {}),
+          }),
+        );
+        run.channel.put(
+          agentStreamUpdateReceived({
+            agentId: AGENT,
+            workspaceId: WS,
+            handlerSessionId: AGENT,
+            source: 'sendMessage',
+            eventType,
+            assistantMessageId: 'msg-2',
+            assistantAppMessageId: 'app-2',
+            timestamp: 4,
+            stopReason: eventType === 'complete' ? 'interrupted' : undefined,
+            contentBlocks: firehoseBlocks,
+            ...(eventType === 'error' ? { error: 'failed' } : {}),
+          }),
+        );
+        await settle();
+
+        expect(run.rowWrites()).toEqual([]);
+        expect(run.messages()).toEqual(canonical);
+        if (expectedAction) {
+          expect(run.dispatch).toHaveBeenCalledWith(expectedAction);
+        } else {
+          expect(run.dispatch).not.toHaveBeenCalledWith(
+            expect.objectContaining({ type: 'chatState/streamCompleted' }),
+          );
+          expect(run.dispatch).not.toHaveBeenCalledWith(
+            expect.objectContaining({ type: 'chatState/streamTimedOut' }),
+          );
+        }
+        expect(reportStreamLifecycleSpy).toHaveBeenCalledTimes(2);
+        expect(reportStreamLifecycleSpy).toHaveBeenLastCalledWith(
+          expect.objectContaining({
+            stage: 'store',
+            event: 'update-ignored',
+            callbackResult: 'ignored',
+          }),
+        );
+        run.task.cancel();
+        await run.task.toPromise();
+      },
+    );
+
+    it('writes no placeholder on started for an agent never opened in this session', async () => {
+      const run = harness({ covered: false });
+      run.channel.put(
+        agentStreamUpdateReceived({
+          agentId: AGENT,
+          workspaceId: WS,
+          handlerSessionId: AGENT,
+          source: 'sendMessage',
+          eventType: 'started',
+          assistantMessageId: 'msg-1',
+          assistantAppMessageId: 'app-1',
+          timestamp: 1,
+          contentBlocks: [{ type: 'text', text: '' }],
+        }),
+      );
+      await settle();
+
+      expect(run.rowWrites()).toEqual([]);
+      expect(run.messages()).toEqual([]);
+      run.task.cancel();
+      await run.task.toPromise();
+    });
+
+    it('drops the terminal flush buffered across cancellation without writing a row', async () => {
+      const run = harness({ covered: false, messages: canonical });
+      run.channel.put(
+        agentStreamUpdateReceived({
+          agentId: AGENT,
+          workspaceId: WS,
+          handlerSessionId: AGENT,
+          source: 'sendMessage',
+          eventType: 'complete',
+          assistantMessageId: 'msg-1',
+          assistantAppMessageId: 'app-1',
+          contentBlocks: firehoseBlocks,
+        }),
+      );
+      run.task.cancel();
+      await run.task.toPromise();
+
+      expect(run.rowWrites()).toEqual([]);
+      expect(run.messages()).toEqual(canonical);
+      expect(run.dispatch).toHaveBeenCalledWith(
+        streamCompleted(AGENT, { lastAttemptedMessage: null, modelUnavailable: null }),
+      );
+    });
   });
 
   it('stamps interruptReason + interruptedBy (PROTOCOL §7.2) on a user preemption so the live row mirrors the persisted one', async () => {
@@ -494,7 +649,7 @@ describe('agentStreamSaga', () => {
         id: `msg-${eventType}`,
         isStreaming: false,
         streamingComplete: true,
-        contentBlocks: [{ type: 'text', text: 'partial' }],
+        contentBlocks: [],
       }),
     );
     expect(run.dispatch).toHaveBeenCalledWith(expectedAction);

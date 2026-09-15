@@ -8,16 +8,24 @@
     playing = true,
     theme = 'light',
     zoom = 1,
+    reference = false,
   }: {
     variant?: IntentMarkVariant;
     size?: number;
     playing?: boolean;
     theme?: 'light' | 'dark';
     zoom?: number;
+    reference?: boolean;
   } = $props();
 </script>
 
-<main class:dark={theme === 'dark'} class="mark-host" style={`zoom:${zoom}`} data-theme={theme}>
+<main
+  class:dark={theme === 'dark'}
+  class:reference
+  class="mark-host"
+  style={`zoom:${zoom}`}
+  data-theme={theme}
+>
   <IntentMarkLoader {variant} {size} {playing} />
 </main>
 
@@ -36,5 +44,10 @@
   .mark-host.dark {
     --background: var(--theme-dark-background);
     --foreground: var(--theme-dark-foreground);
+  }
+
+  .mark-host.reference {
+    color: black;
+    background: white;
   }
 </style>

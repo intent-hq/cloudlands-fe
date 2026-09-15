@@ -15,9 +15,9 @@ const ONBOARDING_TEST_PROMPT_PROVIDERS = new Set(['claude-code']);
 
 /**
  * Whether onboarding should test an allowlisted provider. The capability
- * flag is always present on rows from a v9.3+ daemon; absence (older daemon
- * without the RPC) is treated as unsupported so onboarding never sends a
- * test the daemon cannot run.
+ * flag is always present on rows from a daemon that serves
+ * `host.providerTestPrompt`; absence (older daemon without the RPC) is treated
+ * as unsupported so onboarding never sends a test the daemon cannot run.
  */
 export function shouldRunOnboardingTestPrompt(entry: ProviderCatalogEntry | undefined): boolean {
   return entry?.supportsTestPrompt === true && ONBOARDING_TEST_PROMPT_PROVIDERS.has(entry.id);

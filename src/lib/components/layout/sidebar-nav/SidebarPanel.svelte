@@ -515,7 +515,7 @@
     transition: none;
   }
 
-  @media (prefers-reduced-motion: reduce) {
+  @container style(--motion-reduced: 1) {
     [data-panel-shell] {
       transition: none;
     }
@@ -570,7 +570,7 @@
       opacity var(--motion-standard) var(--ease-standard);
   }
 
-  @media (prefers-reduced-motion: reduce) {
+  @container style(--motion-reduced: 1) {
     .combined-panel-spaces,
     .combined-panel-divider {
       transition-duration: 0ms;

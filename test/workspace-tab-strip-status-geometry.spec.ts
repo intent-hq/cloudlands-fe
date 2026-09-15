@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { createServer, type Plugin, type ViteDevServer } from 'vite';
@@ -20,8 +21,6 @@ const virtualModules: Record<string, string> = {
   '$lib/components/ui/tooltip': `
     import Tooltip from '/src/lib/components/layout/__tests__/mocks/MockWorkspaceTooltipRich.svelte';
     export const TooltipRich = Tooltip;`,
-  '$lib/components/workspace/WorkspaceHoverCard.svelte': `
-    export { default } from '/src/lib/components/layout/__tests__/mocks/MockWorkspaceHoverCard.svelte';`,
   '$lib/components/workspace/utils/workspace-tab-status-presentation': `
     export const getWorkspaceTabStatusPresentation = (category) => ({
       icon: { iconName: category }, className: '', label: category.toUpperCase(),
@@ -56,8 +55,10 @@ const virtualModules: Record<string, string> = {
       globalThis.__workspaceTabScenario.currentId = workspaceId;
       currentSubscribers.forEach((run) => run(workspaceId));
     };
-    export const selectWorkspaceTabOrder = () =>
-      readable(() => globalThis.__workspaceTabScenario.tabOrder);`,
+    export const selectWorkspaceTabOrder = Object.assign(
+      () => readable(() => globalThis.__workspaceTabScenario.tabOrder),
+      { select: () => globalThis.__workspaceTabScenario.tabOrder },
+    );`,
   '$store/renderer/slices/workspace/workspace-selectors': `
     const readable = (read) => ({ subscribe(run) { run(read()); return () => {}; } });
     export const selectWorkspaceItems = Object.assign(
@@ -72,6 +73,7 @@ const virtualModules: Record<string, string> = {
     export const store = {
       dispatch(action) { globalThis.__workspaceTabScenario.actions.push(action); },
       get state() { return {}; },
+      getReadableState() { return { subscribe(run) { run({}); return () => {}; } }; },
     };`,
   '$shared/paraglide/messages.js': `
     export const m = {
@@ -94,18 +96,14 @@ const virtualModules: Record<string, string> = {
       workspace_statusIcon_prOpen_label: () => 'PR open',
       workspace_statusIcon_prMerged_label: () => 'PR merged',
     };`,
-  '@fortawesome/free-solid-svg-icons': `
-    export const faCircleCheck = { iconName: 'circle-check' };
-    export const faCircleQuestion = { iconName: 'circle-question' };
-    export const faClock = { iconName: 'clock' };
-    export const faCodeMerge = { iconName: 'code-merge' };
-    export const faCodePullRequest = { iconName: 'code-pull-request' };
-    export const faEllipsis = { iconName: 'ellipsis' };
-    export const faTriangleExclamation = { iconName: 'triangle-exclamation' };
-    export const faXmark = { iconName: 'xmark' };`,
 };
 
 function geometryStubs(): Plugin {
+  const componentPath = 'src/lib/components/layout/WorkspaceTabStrip.svelte';
+  const sourceRef = process.env.WORKSPACE_TAB_STRIP_REF;
+  const baselineSource = sourceRef
+    ? execFileSync('git', ['show', `${sourceRef}:${componentPath}`], { encoding: 'utf8' })
+    : null;
   const aliasRoots = new Map([
     ['$lib', resolve(process.cwd(), 'src/lib')],
     ['$store', resolve(process.cwd(), 'src/store')],
@@ -131,12 +129,28 @@ function geometryStubs(): Plugin {
     resolveId(source) {
       if (source === 'svelte-fa')
         return resolve(process.cwd(), 'src/lib/components/ui/__tests__/mocks/Fa.svelte');
+      // Let the initial scan discover icon dependencies before the browser mounts.
+      if (source === '@fortawesome/free-solid-svg-icons')
+        return resolve(process.cwd(), 'src/lib/icons/phosphor-icons.ts');
+      // Vite scans .svelte imports from disk, even when resolved to virtual JS (#4624).
+      if (
+        source === '$lib/components/workspace/WorkspaceHoverCard.svelte' ||
+        source === resolve(process.cwd(), 'src/lib/components/workspace/WorkspaceHoverCard.svelte')
+      ) {
+        return resolve(
+          process.cwd(),
+          'src/lib/components/layout/__tests__/mocks/MockWorkspaceHoverCard.svelte',
+        );
+      }
       const canonical = canonicalSource(source);
-      if (canonical) return virtualPrefix + canonical;
+      if (canonical) return virtualPrefix + canonical + '.js';
       return null;
     },
     load(id) {
-      return id.startsWith(virtualPrefix) ? virtualModules[id.slice(virtualPrefix.length)] : null;
+      if (baselineSource && id === resolve(process.cwd(), componentPath)) return baselineSource;
+      return id.startsWith(virtualPrefix)
+        ? virtualModules[id.slice(virtualPrefix.length, -3)]
+        : null;
     },
   };
 }
@@ -147,6 +161,7 @@ test.beforeAll(async () => {
     configFile: false,
     root: process.cwd(),
     cacheDir: viteHarnessCacheDir('workspace-tab-strip-status-geometry'),
+    optimizeDeps: { entries: ['src/lib/components/layout/WorkspaceTabStrip.svelte'] },
     plugins: [geometryStubs(), svelte({ configFile: resolve(process.cwd(), 'svelte.config.js') })],
     resolve: {
       alias: {
@@ -764,6 +779,12 @@ test('drag keeps one horizontal real tab and drops it at the invisible reserved 
     await dragOver(pointerX);
     const tracked = await box(active);
     const titlebarBounds = await box(titlebar);
+    const scrollerBounds = await box(strip);
+    const visibleLeft = Math.max(tracked.x, scrollerBounds.x);
+    const visibleRight = Math.min(
+      tracked.x + tracked.width,
+      scrollerBounds.x + scrollerBounds.width,
+    );
     expect(tracked.x).toBeCloseTo(origin.x + pointerX - startX, 1);
     expect(tracked.y).toBeCloseTo(origin.y - 2, 1);
     await expect(mask).toHaveAttribute('data-tracking', 'true');
@@ -774,9 +795,9 @@ test('drag keeps one horizontal real tab and drops it at the invisible reserved 
         width: Number.parseFloat((node as HTMLElement).style.width),
       })),
     ).toEqual({
-      left: expect.closeTo(tracked.x - titlebarBounds.x - 6, 1),
+      left: expect.closeTo(visibleLeft - titlebarBounds.x - 6, 1),
       transition: 'none',
-      width: expect.closeTo(tracked.width + 13, 1),
+      width: expect.closeTo(visibleRight - visibleLeft + 13, 1),
     });
   }
 
@@ -814,8 +835,9 @@ test('drag keeps one horizontal real tab and drops it at the invisible reserved 
   });
   expect(dragged.x).toBeCloseTo(origin.x + dragX - startX, 1);
   expect(dragged.y).toBeCloseTo(origin.y - 2, 1);
-  expect(leadingFlare.y + leadingFlare.height).toBeCloseTo(origin.y + origin.height, 1);
-  expect(trailingFlare.y + trailingFlare.height).toBeCloseTo(origin.y + origin.height, 1);
+  // The lifted tab's flares end on the one-pixel titlebar seam.
+  expect(leadingFlare.y + leadingFlare.height).toBeCloseTo(origin.y + origin.height - 1, 1);
+  expect(trailingFlare.y + trailingFlare.height).toBeCloseTo(origin.y + origin.height - 1, 1);
   expect(
     await page
       .locator('[data-workspace-tab-motion]')

@@ -66,6 +66,14 @@ describe('app settings schema', () => {
       defaultValue: true,
       apply: { kind: 'redux-action', action: 'userPreferences/setShellTransparencyEnabled' },
     });
+    expect(findAppSettingDefinition('appearance.reduceMotionOnBattery')).toMatchObject({
+      category: 'theme',
+      type: 'boolean',
+      source: 'local-storage',
+      storageKey: 'appearance:reduceMotionOnBattery',
+      defaultValue: true,
+      apply: { kind: 'redux-action', action: 'userPreferences/setReduceMotionOnBattery' },
+    });
   });
 
   it('exposes theme preset IDs as enum values', () => {

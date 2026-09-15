@@ -58,12 +58,12 @@ export const selectForegroundWorkspaceAgents = store.createSelector((state, wsId
   return result;
 });
 
-/** True when any foreground (top-level) agent session has unread messages. */
+/** True when any non-retired foreground (top-level) agent session has unread messages. */
 export const selectWorkspaceHasUnreadForegroundAgents = store.createSelector(
   (state, wsId: string): boolean => {
     return selectForegroundWorkspaceAgents
       .select(state, wsId)
-      .some((agent) => agent.hasUnread === true);
+      .some((agent) => !agent.retiredAt && agent.hasUnread === true);
   },
 );
 
@@ -75,7 +75,7 @@ export const selectIsLoadingAgents = store.createSelector((state, wsId: string) 
   return getWorkspaceAgentState(state, wsId).isLoadingAgents;
 });
 
-/** Daemon-served retired-row count (§5.5 soft retire, v8.2) for the Retired bin toggle. */
+/** Daemon-served retired-row count (§5.5 soft retire) for the Retired bin toggle. */
 export const selectRetiredCount = store.createSelector((state, wsId: string) => {
   return getWorkspaceAgentState(state, wsId).retiredCount;
 });

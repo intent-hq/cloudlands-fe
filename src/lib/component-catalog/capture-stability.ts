@@ -1,3 +1,5 @@
+import { prefersReducedMotion } from '$lib/utils/reduced-motion';
+
 const DEFAULT_CAPTURE_STABILITY_TIMEOUT_MS = 5_000;
 
 export interface CaptureStabilityOptions {
@@ -196,7 +198,7 @@ export async function waitForCaptureStability(
 
     const reducedMotion =
       documentRef.documentElement.classList.contains('catalog-reduced-motion') ||
-      documentRef.defaultView?.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true;
+      prefersReducedMotion();
     return { ...images, reducedMotion };
   } catch (error) {
     if (timedOut) throw new CaptureStabilityTimeoutError(timeoutMs);

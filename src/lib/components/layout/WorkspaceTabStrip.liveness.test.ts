@@ -65,6 +65,27 @@ import Harness from './__tests__/mocks/WorkspaceTabStripLivenessHarness.svelte';
 // Do not use testing-library fireEvent/render, tick or flushSync here: an outer
 // flush can rescue the stalled root and hide the regression (intent#4616).
 const settle = (ms = 60) => new Promise((resolve) => setTimeout(resolve, ms));
+// Bounded completion signal for DOM removals (intent#5005): re-query once per
+// stubbed frame on real timers until the node is gone, and name the node that
+// is still attached when the deadline passes. This never flushes either, so a
+// stalled root still fails here instead of being rescued.
+async function waitForRemoval(query: () => Element | null, timeoutMs = 2000) {
+  const deadline = Date.now() + timeoutMs;
+  for (let node = query(); node; node = query()) {
+    if (Date.now() >= deadline) {
+      const attributes = Array.from(node.attributes)
+        .filter(({ name }) => name !== 'class')
+        .map(({ name, value }) => `${name}="${value}"`)
+        .join(' ');
+      const owner = node.closest('[data-workspace-tab]')?.getAttribute('data-workspace-tab');
+      throw new Error(
+        `node still in the DOM after ${timeoutMs}ms: <${node.tagName.toLowerCase()} ${attributes}>` +
+          (owner ? ` inside [data-workspace-tab="${owner}"]` : ''),
+      );
+    }
+    await settle(16);
+  }
+}
 const click = (node: Element) =>
   node.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }));
 const tab = (id: string) =>
@@ -234,7 +255,7 @@ describe('WorkspaceTabStrip reactive-parent liveness', () => {
       expect(view.target.querySelector('[data-mask]')).not.toBeNull();
       view.bounds.length = 0;
       click(view.target.querySelector('[data-leave]')!);
-      await settle();
+      await waitForRemoval(() => view.target.querySelector('[data-mask]'));
       expect(view.bounds.at(-1)).toBeNull();
       expect(view.target.querySelector('[data-mask]')).toBeNull();
       expect(tab('b').getAttribute('aria-selected')).toBe('false');
@@ -256,13 +277,13 @@ describe('WorkspaceTabStrip reactive-parent liveness', () => {
       // not wait for a future animation frame to move the border to the survivor.
       expect(view.bounds).toContain(null);
       expect(view.bounds.at(-1)).not.toBeNull();
-      await settle();
+      await waitForRemoval(() => tab('b'));
       expect(fixture().store.state.shell.tabs).toEqual(['a']);
       expect(tab('a').getAttribute('aria-selected')).toBe('true');
       expect(tab('b')).toBeNull();
       click(close('a'));
       expect(view.bounds.at(-1)).toBeNull();
-      await settle();
+      await waitForRemoval(() => view.target.querySelector('[data-mask]'));
       expect(fixture().store.state.shell.tabs).toEqual([]);
       expect(view.target.querySelector('[data-mask]')).toBeNull();
       await expectContinuingLiveness(view);

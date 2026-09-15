@@ -1704,7 +1704,7 @@ describe('lifecycleReadSaga', () => {
   });
 
   // The two tests below stub the seam (appClient.agents.listWithMeta), not the
-  // wire. On an 8.2+ daemon the default read excludes retired rows, but the saga
+  // wire. The daemon's default read excludes retired rows, but the saga
   // must stay agnostic to row provenance: retired rows re-enter state via the
   // retiredOnly read (lazy retired bin), and the auto-select guard has to hold
   // no matter how a retired row reached the snapshot.
@@ -1786,7 +1786,7 @@ describe('lifecycleReadSaga', () => {
     await stop(run.task);
   });
 
-  it('lazy-loads retired rows on demand and re-baselines the count (§5.5 v8.2)', async () => {
+  it('lazy-loads retired rows on demand and re-baselines the count (§5.5 retiredOnly)', async () => {
     const retired = agent('agent-retired', { retiredAt: '2026-08-10T00:00:00.000Z' });
     mocks.agents.list.mockResolvedValue([retired]);
     const run = start();

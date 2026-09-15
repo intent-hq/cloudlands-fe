@@ -193,7 +193,7 @@ export const selectAwaitingSwitchBackSnapshot = store.createSelector(
 
 /**
  * Select one lazily hydrated content block entry (§5.5 slim projection →
- * v7.2 `agent.getMessageBlock`), or undefined when never requested. Keyed by
+ * `agent.getMessageBlock`), or undefined when never requested. Keyed by
  * `{messageId}|{blockId}` via `hydratedBlockKey`.
  */
 export const selectHydratedBlock = store.createSelector(

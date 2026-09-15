@@ -58,7 +58,7 @@ test('keeps concurrent panels independent and preserves lifecycle presentation',
     await expect(mark).toHaveAttribute('data-motion-state', 'playing');
     expect(
       await mark.evaluate((node) =>
-        Array.from(node.querySelectorAll<SVGSVGElement>('[data-mark-arm-box]')).map(
+        Array.from(node.querySelectorAll<SVGPathElement>('[data-mark-arm]')).map(
           (arm) => arm.style.transform !== '',
         ),
       ),

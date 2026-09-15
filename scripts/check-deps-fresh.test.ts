@@ -3,7 +3,13 @@ import { copyFileSync, mkdirSync, rmSync, statSync, writeFileSync } from 'node:f
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { INSTALL_COMMAND, checkDepsFresh, ensureI18nFresh } from './check-deps-fresh.mjs';
+import {
+  INSTALL_COMMAND,
+  checkDepsFresh,
+  checkNodeSupport,
+  ensureI18nFresh,
+} from './check-deps-fresh.mjs';
+import { REMEDIATION_HINT } from './check-node.mjs';
 import {
   PARAGLIDE_INPUTS_HASH_FILE,
   PARAGLIDE_STALE_MESSAGE,
@@ -12,7 +18,12 @@ import {
 } from './paraglide-inputs-hash.mjs';
 
 const SCRIPTS_DIR = resolve(process.cwd(), 'scripts');
-const CLI_SCRIPTS = ['check-deps-fresh.mjs', 'paraglide-inputs-hash.mjs'];
+const CLI_SCRIPTS = ['check-deps-fresh.mjs', 'check-node.mjs', 'paraglide-inputs-hash.mjs'];
+/** An engines.node range the Node running the tests satisfies. */
+const SUPPORTED_NODE = `>=${process.versions.node}`;
+/** A range no Node can satisfy, to exercise the preflight refusal. */
+const UNSUPPORTED_NODE = `>=${Number(process.versions.node.split('.')[0]) + 1}`;
+const PACKAGE_JSON = JSON.stringify({ engines: { node: SUPPORTED_NODE } });
 
 const temporaryPaths: string[] = [];
 
@@ -109,6 +120,18 @@ describe('ensureI18nFresh', () => {
   });
 });
 
+describe('checkNodeSupport re-export', () => {
+  it('reads engines.node from the given root and reports the running Node', () => {
+    const root = fixtureRoot({ 'package.json': PACKAGE_JSON });
+    expect(checkNodeSupport({ root })).toEqual({
+      ok: true,
+      version: process.versions.node,
+      range: SUPPORTED_NODE,
+      reason: null,
+    });
+  });
+});
+
 describe('check-deps-fresh CLI', () => {
   function runCli(root: string) {
     mkdirSync(join(root, 'scripts'), { recursive: true });
@@ -119,8 +142,37 @@ describe('check-deps-fresh CLI', () => {
     return { status: result.status, stdout: result.stdout, stderr: result.stderr };
   }
 
+  it('refuses an unsupported Node with one line before looking at node_modules', () => {
+    const root = fixtureRoot({
+      'package.json': JSON.stringify({ engines: { node: UNSUPPORTED_NODE } }),
+      'pnpm-lock.yaml': LOCKFILE,
+    });
+    const result = runCli(root);
+    expect(result.status).toBe(1);
+    expect(result.stdout).toBe('');
+    expect(result.stderr.trimEnd().split('\n')).toEqual([
+      `Unsupported Node v${process.versions.node} — cloudlands-fe requires Node ${UNSUPPORTED_NODE} (${REMEDIATION_HINT}).`,
+    ]);
+    expect(result.stderr).not.toContain('[deps:check]');
+    expect(result.stderr).not.toContain('[generate:i18n]');
+  });
+
+  it('exits 1 under the node:check prefix when package.json declares no engines.node', () => {
+    const root = fixtureRoot({
+      'package.json': '{}',
+      'pnpm-lock.yaml': LOCKFILE,
+      'node_modules/.pnpm/lock.yaml': LOCKFILE,
+    });
+    const result = runCli(root);
+    expect(result.status).toBe(1);
+    expect(result.stderr.trimEnd().split('\n')).toEqual([
+      '[node:check] package.json declares no engines.node range',
+    ]);
+  });
+
   it('exits 0 silently on a fresh install with a current i18n bundle', () => {
     const root = fixtureRoot({
+      'package.json': PACKAGE_JSON,
       'pnpm-lock.yaml': LOCKFILE,
       'node_modules/.pnpm/lock.yaml': LOCKFILE,
     });
@@ -133,6 +185,7 @@ describe('check-deps-fresh CLI', () => {
 
   it('reports a missing i18n bundle under the generate:i18n prefix once deps are fresh', () => {
     const root = fixtureRoot({
+      'package.json': PACKAGE_JSON,
       'pnpm-lock.yaml': LOCKFILE,
       'node_modules/.pnpm/lock.yaml': LOCKFILE,
     });
@@ -145,6 +198,7 @@ describe('check-deps-fresh CLI', () => {
 
   it('exits 1 with a single prefixed stderr line on a stale install', () => {
     const root = fixtureRoot({
+      'package.json': PACKAGE_JSON,
       'pnpm-lock.yaml': LOCKFILE.replace('a: 1.0.0', 'a: 1.0.1'),
       'node_modules/.pnpm/lock.yaml': LOCKFILE,
     });
@@ -157,7 +211,7 @@ describe('check-deps-fresh CLI', () => {
   });
 
   it('exits 1 with a single prefixed stderr line on a missing install', () => {
-    const root = fixtureRoot({ 'pnpm-lock.yaml': LOCKFILE });
+    const root = fixtureRoot({ 'package.json': PACKAGE_JSON, 'pnpm-lock.yaml': LOCKFILE });
     const result = runCli(root);
     expect(result.status).toBe(1);
     expect(result.stdout).toBe('');
@@ -167,7 +221,7 @@ describe('check-deps-fresh CLI', () => {
   });
 
   it('exits 1 with a single prefixed stderr line when the lockfile copy is unreadable', () => {
-    const root = fixtureRoot({ 'pnpm-lock.yaml': LOCKFILE });
+    const root = fixtureRoot({ 'package.json': PACKAGE_JSON, 'pnpm-lock.yaml': LOCKFILE });
     mkdirSync(join(root, 'node_modules', '.pnpm', 'lock.yaml'), { recursive: true });
     const result = runCli(root);
     expect(result.status).toBe(1);

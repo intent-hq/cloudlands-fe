@@ -3,6 +3,7 @@
   import { isCmdClickModifier } from '$shared/utils/link-helpers';
   import type { AgentSession } from '$shared/types';
   import './multi-select-sidebar-transitions.css';
+  import { prefersReducedMotion } from '$lib/utils/reduced-motion';
   import {
     selectStagedWorkingChanges,
     selectUnstagedWorkingChanges,
@@ -103,7 +104,7 @@
     selectHudAgentHasPendingQuestion,
     selectHudQuestionsByAgentId,
   } from '$store/renderer/slices/hud/hud-selectors';
-  import { deriveWizardPendingQuestions } from '$lib/components/chat/questions/wizard-gate';
+  import { deriveAgentHasPendingQuestion } from '$lib/components/chat/questions/wizard-gate';
   import {
     deriveAgentLauncherItems,
     deriveNoteLauncherItems,
@@ -232,7 +233,7 @@
     void $hudQuestionsByAgentId$;
     const hasQuestion =
       selectHudAgentHasPendingQuestion.select(appStore.state, agent.id) ||
-      deriveWizardPendingQuestions(appStore.state, agent.id, agent.messages) !== null;
+      deriveAgentHasPendingQuestion(appStore.state, agent.id, agent.messages);
     return getAvatarStateForSession(agent, { hasQuestion });
   }
 
@@ -391,7 +392,7 @@
     },
   ): TransitionConfig {
     if (cardWorkspaceId !== workspaceId) return { duration: 0 };
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return { duration: 0 };
+    if (prefersReducedMotion()) return { duration: 0 };
 
     if (sidebarTabSwitchDirection !== 'none') {
       const incomingOffset = sidebarTabSwitchDirection === 'right' ? 24 : -24;
@@ -438,7 +439,7 @@
   }
 
   function launcherGridReveal(_node: Element): TransitionConfig {
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return { duration: 0 };
+    if (prefersReducedMotion()) return { duration: 0 };
 
     return {
       delay: 210,

@@ -53,7 +53,8 @@ import {
   setWaitingForFirstMessage,
   workspaceAgentsReducer,
 } from './workspace-agents-slice';
-import { upsertSession } from '../agent-session/agent-session-slice';
+import { restoreStoredSessions, upsertSession } from '../agent-session/agent-session-slice';
+import type { StoredAgentSession } from '../agent-session/agent-session-types';
 import { selectAgentSession } from '../agent-session/agent-session-selectors';
 import { workspaceDeleted } from '../workspace-lifecycle/workspace-lifecycle-slice';
 
@@ -206,7 +207,7 @@ describe('workspaceAgentsReducer', () => {
     });
   });
 
-  it('tracks the lazy retired-bin state per workspace (§5.5 v8.2)', () => {
+  it('tracks the lazy retired-bin state per workspace (§5.5 retiredCount)', () => {
     let state = workspaceAgentsReducer(initialState, setRetiredCount(WS_1, 3));
     state = workspaceAgentsReducer(state, setIsLoadingRetiredAgents(WS_1, true));
     state = workspaceAgentsReducer(state, setRetiredAgentsLoaded(WS_1, true));
@@ -374,6 +375,25 @@ describe('workspace-agents selectors', () => {
     expect(selectWorkspaceHasUnreadForegroundAgents.select(stateFor([readForeground]), WS_1)).toBe(
       false,
     );
+  });
+
+  it('ignores retired foreground unread until the session is restored (§5.5 soft retire)', () => {
+    const stateFor = (sessions: AgentSession[]) =>
+      mockState(workspaceAgentsReducer(initialState, setAgents(WS_1, sessions)), sessions);
+    const readActive = { ...mockAgent('agent-active'), hasUnread: false };
+    const unreadRetired = {
+      ...mockAgent('agent-retired'),
+      hasUnread: true,
+      retiredAt: '2026-03-19T01:00:00.000Z',
+    };
+    const unreadRestored = { ...unreadRetired, retiredAt: undefined };
+
+    expect(
+      selectWorkspaceHasUnreadForegroundAgents.select(stateFor([readActive, unreadRetired]), WS_1),
+    ).toBe(false);
+    expect(
+      selectWorkspaceHasUnreadForegroundAgents.select(stateFor([readActive, unreadRestored]), WS_1),
+    ).toBe(true);
   });
 
   it('resolves the primary agent with the newest valid user-message timestamp', () => {
@@ -772,6 +792,41 @@ describe('workspace-agents selectors', () => {
 
       expect(state.byWorkspaceId[WS_1].agentIds).toEqual(['agent-1']);
       expect(state.byWorkspaceId[WS_1].foregroundAgentIds).toEqual([]);
+    });
+  });
+
+  describe('restoreStoredSessions', () => {
+    const stored = (id: string, overrides: Partial<StoredAgentSession> = {}): StoredAgentSession =>
+      ({ ...mockAgent(id, WS_1), liveTurnOpen: true, ...overrides }) as StoredAgentSession;
+
+    it('re-registers membership removed by removeAgent (soft-hide undo)', () => {
+      let state = workspaceAgentsReducer(initialState, upsertSession(mockAgent('agent-1', WS_1)));
+      state = workspaceAgentsReducer(state, removeAgent(WS_1, 'agent-1'));
+      expect(state.byWorkspaceId[WS_1].agentIds).toEqual([]);
+
+      state = workspaceAgentsReducer(state, restoreStoredSessions([stored('agent-1')]));
+
+      expect(state.byWorkspaceId[WS_1].agentIds).toEqual(['agent-1']);
+      expect(state.byWorkspaceId[WS_1].foregroundAgentIds).toEqual(['agent-1']);
+    });
+
+    it('registers every restored session and keeps background sessions out of the foreground list', () => {
+      const state = workspaceAgentsReducer(
+        initialState,
+        restoreStoredSessions([stored('agent-1'), stored('agent-2', { isBackground: true })]),
+      );
+
+      expect(state.byWorkspaceId[WS_1].agentIds).toEqual(['agent-1', 'agent-2']);
+      expect(state.byWorkspaceId[WS_1].foregroundAgentIds).toEqual(['agent-1']);
+    });
+
+    it('is a no-op for an already tracked session with unchanged membership', () => {
+      const before = workspaceAgentsReducer(
+        initialState,
+        upsertSession(mockAgent('agent-1', WS_1)),
+      );
+      const after = workspaceAgentsReducer(before, restoreStoredSessions([stored('agent-1')]));
+      expect(after).toBe(before);
     });
   });
 

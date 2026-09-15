@@ -44,7 +44,7 @@ test('stops the main-thread mark pose driver while the window-blurred attribute 
     root.evaluate(
       (node, duration) =>
         new Promise<number>((resolve) => {
-          const arm = node.querySelector<SVGSVGElement>('[data-mark-arm-box]')!;
+          const arm = node.querySelector<SVGPathElement>('[data-mark-arm]')!;
           let writes = 0;
           let last = arm.style.transform;
           const observer = new MutationObserver(() => {

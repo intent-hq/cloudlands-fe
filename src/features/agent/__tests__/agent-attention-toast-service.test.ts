@@ -49,8 +49,13 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceById: { select: workspaceByIdSelectMock },
 }));
 
-vi.mock('$lib/components/ui/toast/AgentAttentionToast.svelte', () => ({
-  default: 'AgentAttentionToast',
+// Mock the `$lib/components/ui/toast` barrel — the boundary the service
+// lazily imports (`getToastComponent`). Mocking only the leaf
+// `AgentAttentionToast.svelte` left the barrel's other exports (Toast,
+// ErrorToast, UpdateToast, …) compiling for real inside the first test's
+// timer, which timed out cold under `--maxWorkers=1` (intent-hq/intent#4963).
+vi.mock('$lib/components/ui/toast', () => ({
+  AgentAttentionToast: 'AgentAttentionToast',
 }));
 
 vi.mock('$lib/utils/navigation.client', () => ({

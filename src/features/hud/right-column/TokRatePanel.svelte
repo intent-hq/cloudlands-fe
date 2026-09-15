@@ -338,7 +338,7 @@
     color: hsl(var(--primary));
     font-size: 14px;
   }
-  @media (prefers-reduced-motion: reduce) {
+  @container style(--motion-reduced: 1) {
     .hud-tokrate-bar {
       transition: none;
     }

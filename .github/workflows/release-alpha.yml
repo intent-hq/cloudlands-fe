@@ -725,6 +725,7 @@ jobs:
         run: |
           echo "Collected release assets:"
           ls -lh dist-electron/
+          node scripts/validate-release-asset-names.mjs dist-electron
           MISSING=""
           for FEED in latest-mac.yml latest.yml latest-linux.yml latest-linux-arm64.yml; do
             if [ ! -f "dist-electron/$FEED" ]; then

@@ -37,7 +37,6 @@
   } from './panel-render-gate';
   import { terminalManager } from '$features/terminal/terminal-manager.svelte';
   import { terminalHistoryTracker } from '$features/terminal/terminal-history-tracker';
-  import { appClient } from '$lib/client';
   import { derived, writable } from 'svelte/store';
   import { createLogger } from '$lib/utils/client-logger';
   import { hasCapability } from '$lib/utils/platform-capabilities';
@@ -90,7 +89,7 @@
     selectPendingPanelReveal,
     selectRestoreStatus,
   } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
-  import { removeTerminal } from '$store/renderer/slices/terminals/terminals-slice';
+  import { createPanelTerminalRequested } from '$store/renderer/slices/terminals/terminals-slice';
   import { renameAgentSessionRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import {
     markPanelTouched,
@@ -933,50 +932,8 @@
     return unsubscribe;
   });
 
-  // Handler to create a new terminal via the daemon (`terminal.create`,
-  // PROTOCOL §5.13). The daemon assigns the terminalId; we surface it as
-  // `MutationResult.id` from the live client.
-  async function handleCreateTerminal(panelId?: string) {
-    try {
-      const result = await appClient.terminals.create({
-        workspaceId,
-        cols: 80,
-        rows: 24,
-      });
-
-      if (result.success && result.id) {
-        logger.info('Created new terminal', { terminalId: result.id });
-
-        // Clear any stale Redux entry for this id before saving fresh metadata.
-        // `saveTerminalMetadata` spreads the existing entry to preserve
-        // customName across remounts, but for a freshly daemon-assigned id
-        // (e.g. after a daemon restart that resets the id counter) a stale
-        // customName from a previously renamed terminal must not carry over.
-        appStore.dispatch(removeTerminal(workspaceId, result.id));
-
-        // Save terminal metadata without a hardcoded title — the reducer keeps
-        // any daemon-provided name and only falls back to 'Terminal'.
-        terminalManager.saveTerminalMetadata(result.id, workspaceId);
-
-        // Reload terminals to include the new one
-        loadTerminals(workspaceId);
-
-        // Open the new terminal as a tab in the panel layout
-        layoutManager.openTab(
-          {
-            type: 'terminal',
-            title: m.layout_panelLayout_terminal_fallback(),
-            terminalId: result.id,
-            closable: true,
-          },
-          panelId,
-        );
-      } else if (!result.success) {
-        logger.error('Failed to create terminal', { error: result.error });
-      }
-    } catch (error) {
-      logger.error('Failed to create terminal', error);
-    }
+  function handleCreateTerminal(panelId?: string) {
+    appStore.dispatch(createPanelTerminalRequested(workspaceId, panelId));
   }
 
   // Handler to open a new browser tab. The embedded browser panel needs the

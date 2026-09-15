@@ -1,0 +1,35 @@
+diff --git a/dist/utils/sagas/selector-channel-effects.js b/dist/utils/sagas/selector-channel-effects.js
+index ffed23fec556ede4180544eb989e9edc5b267dfe..10199f688291dc3b7573368e8e5482a3ffa20e88 100644
+--- a/dist/utils/sagas/selector-channel-effects.js
++++ b/dist/utils/sagas/selector-channel-effects.js
+@@ -1,7 +1,7 @@
+ import { INTERNAL_STORE_UTILITY_DOMAIN } from "../store/store-runtime-constants.js";
+ import { createCachedSelector } from "../selector-core/create-cached-selector.js";
+ import { shallowEqual } from "fast-equals";
+-import { eventChannel } from "redux-saga";
++import { buffers, eventChannel } from "redux-saga";
+ import { cancel, fork, getContext, take } from "typed-redux-saga";
+ //#region src/utils/sagas/selector-channel-effects.ts
+ /**
+@@ -56,6 +56,12 @@ function* createChannelFromSelector(selector, ...args) {
+ 	const reportRuntimeError = yield* getContext("reportRuntimeError");
+ 	if (!reduxStore) throw new Error("No Redux Store available in saga");
+ 	const selectorFunc = selector.select;
++	// Patched (pnpm patchedDependencies): the subscriber below emits the current
++	// selector value synchronously, before any saga has taken from the channel, so
++	// with the default buffers.none() that initial emission is dropped and workers
++	// only ever see later changes. A sliding(1) buffer retains the latest emission
++	// until the first take. Retire this patch once fixed upstream:
++	// https://github.com/augmentcode/themis/issues/20
+ 	return eventChannel((emitter) => {
+ 		const cachedSelector = createCachedSelector(selectorFunc, { lockUpdatesPredicate: (state) => state[INTERNAL_STORE_UTILITY_DOMAIN]?.updatesLocked === true });
+ 		let prevValue = null;
+@@ -79,7 +85,7 @@ function* createChannelFromSelector(selector, ...args) {
+ 		const unsubscribe = reduxStore.subscribe(emitCurrentValue);
+ 		emitCurrentValue();
+ 		return unsubscribe;
+-	});
++	}, buffers.sliding(1));
+ }
+ /**
+ * Internal implementation for takeEvery pattern with selector channels.

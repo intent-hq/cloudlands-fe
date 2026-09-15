@@ -200,7 +200,7 @@ describe('WorkspaceAgentsList single-line rows', () => {
     expect(onSelect).not.toHaveBeenCalled();
   });
 
-  it('renders the collapsed bin from retiredCount and lazy-loads rows on expand (§5.5 v8.2)', async () => {
+  it('renders the collapsed bin from retiredCount and lazy-loads rows on expand (§5.5 retiredOnly)', async () => {
     const active = makeAgent('active-agent', { name: 'Active agent' });
     const agents = [active];
     appStore.dispatch(bulkUpsertSessions(agents));

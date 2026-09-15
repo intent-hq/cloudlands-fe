@@ -172,7 +172,7 @@ describe('AgentAvatarWithState', () => {
     expect(source).toMatch(/transition: background-color/);
     expect(source).toContain('@media (forced-colors: active)');
     expect(source).toMatch(/forced-colors: active[\s\S]*outline: 1px solid CanvasText/);
-    expect(source).toMatch(/prefers-reduced-motion: reduce[\s\S]*transition: none/);
+    expect(source).toMatch(/@container style\(--motion-reduced: 1\)[\s\S]*transition: none/);
     for (const family of ['neutral', 'attention', 'failed', 'active', 'waiting']) {
       expect(tokenSource).toContain(`--theme-light-agent-avatar-surface-${family}:`);
       expect(tokenSource).toContain(`--theme-dark-agent-avatar-surface-${family}:`);

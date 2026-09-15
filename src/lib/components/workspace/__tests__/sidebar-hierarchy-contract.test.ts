@@ -220,7 +220,7 @@ describe('workspace sidebar hierarchy presentation contract', () => {
     expect(sidebar).toContain('position: fixed; left: ${fixedLeft}px');
     expect(sidebar).toContain("direction === 'expand' ? cubicOut(t) : cubicIn(t)");
     expect(sidebar).toContain('data-sidebar-expanded-content');
-    expect(sidebar).toContain("window.matchMedia('(prefers-reduced-motion: reduce)').matches");
+    expect(sidebar).toContain('if (prefersReducedMotion()) return { duration: 0 };');
     expect(sidebar).not.toContain('--sidebar-card-content-');
     expect(transitions).not.toContain('--sidebar-card-content-');
     expect(transitions).not.toContain('grid-template-rows');

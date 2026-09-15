@@ -2,16 +2,9 @@
  * Workspace Events Redux Slice
  *
  * Manages a capped buffer of recent workspace events per workspace.
- * This is the Redux replacement for the imperative eventBus.emitEvent() pattern.
- *
- * Deduplication is handled in a coordinating saga (not the reducer) using a
- * module-level cache in `dedup-cache.ts`. The saga watches `emitWorkspaceEvent`,
- * checks the dedup cache, and dispatches `workspaceEventAccepted` for non-duplicates.
- * Downstream sagas listen to `workspaceEventAccepted` instead of `emitWorkspaceEvent`.
  *
  * Actions:
- * - emitWorkspaceEvent: Dispatch a workspace event (dedup checked in saga)
- * - workspaceEventAccepted: Internal — event passed dedup, downstream sagas listen here
+ * - workspaceEventAccepted: Buffer an accepted (deduped) event
  * - cleanupWorkspace: Remove workspace state entirely
  */
 
@@ -38,23 +31,12 @@ export const initialState: WorkspaceEventsState = {
 // Actions
 // ============================================================================
 
-/** Emit a single workspace event into the buffer */
-export const emitWorkspaceEvent = createAction(
-  'workspaceEvents/emitWorkspaceEvent',
-  (event: WorkspaceEvent) => [event, Date.parse(event.timestamp)] as [WorkspaceEvent, number],
-);
-
 /** Remove workspace state entirely */
 export const cleanupWorkspace = createAction<[workspaceId: string]>(
   'workspaceEvents/cleanupWorkspace',
 );
 
-/**
- * Internal action dispatched by the coordinating dedup saga when an event
- * passes the dedup check. Downstream sagas (persistence, broadcast,
- * renderer-subscription, event-triggered) listen to this instead of
- * emitWorkspaceEvent, ensuring duplicates never reach them.
- */
+/** Buffer an event that has already passed deduplication. */
 export const workspaceEventAccepted = createAction(
   'workspaceEvents/workspaceEventAccepted',
   (event: WorkspaceEvent) => [event, Date.parse(event.timestamp)] as [WorkspaceEvent, number],

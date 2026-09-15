@@ -13,7 +13,11 @@ import {
   sessionPendingQuestions,
 } from '../pending-questions';
 import { buildAnswerMessageMetadata, getAnsweredQuestionsMessageId } from '../answer-message';
-import { deriveMarkedQuestionRecoveryState, deriveWizardPendingQuestions } from '../wizard-gate';
+import {
+  deriveAgentHasPendingQuestion,
+  deriveMarkedQuestionRecoveryState,
+  deriveWizardPendingQuestions,
+} from '../wizard-gate';
 import { QUESTION_RESOURCE_MIME_TYPE } from '$shared/types/question-resource';
 import type { AgentMessage, AgentSession, ContentBlock, QueuedMessage } from '$shared/types';
 import { createCollection, addItem } from '@augmentcode/themis/utils/collections/collection-utils';
@@ -1131,5 +1135,226 @@ describe('wizard gate honors the authoritative pending marker', () => {
 
     delete state.agentSessions.byAgentId[AGENT_ID];
     expect(deriveMarkedQuestionRecoveryState(state, AGENT_ID)).toBeNull();
+  });
+});
+
+// The indicator surfaces (AgentCard / PanelHeaderAgentAvatar / the sidebar)
+// call deriveAgentHasPendingQuestion. Once the firehose no longer writes rows
+// for agents without a standing chat subscription, an out-of-view agent's
+// question row never reaches the local store — the daemon marker alone must
+// light the badge.
+describe('indicator predicate stays marker-driven for out-of-view agents', () => {
+  const AGENT_ID = 'agent-coordinator';
+  const marked = assistantMessage([questionBlock()], { id: 'msg-marked' });
+
+  function recoveryState(
+    state: StoreState,
+    recovery: { messageId: string; status: string; questions?: (typeof QUESTION)[] },
+  ): StoreState {
+    state.chatState = {
+      byAgentId: { [AGENT_ID]: { pendingQuestionRecovery: recovery } },
+    } as StoreState['chatState'];
+    return state;
+  }
+
+  it('pends on the marker alone when no transcript rows are stored', () => {
+    const state = stateWith(
+      makeStoredSession({ metadata: { pendingQuestionsMessageId: 'msg-marked' } }),
+    );
+    expect(deriveWizardPendingQuestions(state, AGENT_ID, [])).toBeNull();
+    expect(deriveAgentHasPendingQuestion(state, AGENT_ID, [])).toBe(true);
+  });
+
+  it('keeps pending while the marked message is not-found / exhausted (fail-closed)', () => {
+    for (const status of ['not-found', 'error', 'loading']) {
+      const state = recoveryState(
+        stateWith(makeStoredSession({ metadata: { pendingQuestionsMessageId: 'msg-marked' } })),
+        { messageId: 'msg-marked', status },
+      );
+      expect(deriveAgentHasPendingQuestion(state, AGENT_ID, [])).toBe(true);
+    }
+  });
+
+  it('does not pend once the marker is dismissed', () => {
+    const state = stateWith(
+      makeStoredSession({
+        metadata: {
+          pendingQuestionsMessageId: 'msg-marked',
+          dismissedQuestionsMessageId: 'msg-marked',
+        },
+      }),
+    );
+    expect(deriveAgentHasPendingQuestion(state, AGENT_ID, [])).toBe(false);
+  });
+
+  it('does not pend once a tagged answer for the marker sits in the queue', () => {
+    const state = stateWith(
+      makeStoredSession({ metadata: { pendingQuestionsMessageId: 'msg-marked' } }),
+      [queuedMessage(buildAnswerMessageMetadata('msg-marked'))],
+    );
+    expect(deriveAgentHasPendingQuestion(state, AGENT_ID, [])).toBe(false);
+    const otherAnswer = stateWith(
+      makeStoredSession({ metadata: { pendingQuestionsMessageId: 'msg-marked' } }),
+      [queuedMessage(buildAnswerMessageMetadata('msg-other'))],
+    );
+    expect(deriveAgentHasPendingQuestion(otherAnswer, AGENT_ID, [])).toBe(true);
+  });
+
+  it('does not pend once a tagged answer row for the marker is in the tail', () => {
+    const state = stateWith(
+      makeStoredSession({ metadata: { pendingQuestionsMessageId: 'msg-marked' } }),
+    );
+    expect(deriveAgentHasPendingQuestion(state, AGENT_ID, [answerMessage('msg-marked')])).toBe(
+      false,
+    );
+  });
+
+  it('defers to the wizard gate when the marked message is present', () => {
+    const state = stateWith(
+      makeStoredSession({ metadata: { pendingQuestionsMessageId: 'msg-marked' } }),
+    );
+    expect(deriveAgentHasPendingQuestion(state, AGENT_ID, [marked])).toBe(true);
+    expect(
+      deriveAgentHasPendingQuestion(state, AGENT_ID, [marked, answerMessage('msg-marked')]),
+    ).toBe(false);
+    // Marked message held in the paged history segment: still the gate's call.
+    const segmented = stateWith(
+      makeStoredSession({ metadata: { pendingQuestionsMessageId: 'msg-marked' } }),
+    );
+    segmented.agentSessions = {
+      ...segmented.agentSessions,
+      historySegmentsByAgentId: { [AGENT_ID]: { messages: [marked] } },
+    } as unknown as StoreState['agentSessions'];
+    expect(deriveAgentHasPendingQuestion(segmented, AGENT_ID, [userMessage('msg-u1')])).toBe(true);
+    expect(deriveAgentHasPendingQuestion(segmented, AGENT_ID, [answerMessage('msg-marked')])).toBe(
+      false,
+    );
+  });
+
+  // The standing subscription closes mid-turn (chat went out of view while
+  // the asking turn streamed text): `closeSubscription` keeps the row's
+  // partial content and only settles its streaming flags, and the terminal
+  // question resource never lands because the firehose writes no rows for an
+  // uncovered agent. The daemon marker then names a row that IS cached
+  // locally but lacks its question content — the marker must still light
+  // the badge.
+  it('pends on the marker when the cached marked row is a frozen partial without a question resource', () => {
+    const frozenPartial = assistantMessage([{ type: 'text', text: 'Before I continue, ' }], {
+      id: 'msg-marked',
+      isStreaming: false,
+      streamingComplete: true,
+    });
+    const state = stateWith(
+      makeStoredSession({
+        messages: [userMessage('msg-u1'), frozenPartial],
+        metadata: { pendingQuestionsMessageId: 'msg-marked' },
+      }),
+    );
+    expect(
+      deriveWizardPendingQuestions(
+        state,
+        AGENT_ID,
+        state.agentSessions.byAgentId[AGENT_ID].messages,
+      ),
+    ).toBeNull();
+    expect(
+      deriveAgentHasPendingQuestion(
+        state,
+        AGENT_ID,
+        state.agentSessions.byAgentId[AGENT_ID].messages,
+      ),
+    ).toBe(true);
+    // The same row reached only through the stored session (indicator called
+    // with an empty tail) is still just a frozen partial.
+    expect(deriveAgentHasPendingQuestion(state, AGENT_ID, [])).toBe(true);
+    // An empty terminal placeholder (a covered question-only turn finalized
+    // before its §7.1 resource delta arrived) is no more authoritative.
+    const placeholder = stateWith(
+      makeStoredSession({
+        messages: [assistantMessage([], { id: 'msg-marked', streamingComplete: true })],
+        metadata: { pendingQuestionsMessageId: 'msg-marked' },
+      }),
+    );
+    expect(deriveAgentHasPendingQuestion(placeholder, AGENT_ID, [])).toBe(true);
+  });
+
+  it('keeps the dismissal / answer suppression for a frozen partial marked row', () => {
+    const frozenPartial = assistantMessage([{ type: 'text', text: 'Before I continue, ' }], {
+      id: 'msg-marked',
+    });
+    const dismissed = stateWith(
+      makeStoredSession({
+        messages: [frozenPartial],
+        metadata: {
+          pendingQuestionsMessageId: 'msg-marked',
+          dismissedQuestionsMessageId: 'msg-marked',
+        },
+      }),
+    );
+    expect(deriveAgentHasPendingQuestion(dismissed, AGENT_ID, [frozenPartial])).toBe(false);
+    const answeredInTail = stateWith(
+      makeStoredSession({ metadata: { pendingQuestionsMessageId: 'msg-marked' } }),
+    );
+    expect(
+      deriveAgentHasPendingQuestion(answeredInTail, AGENT_ID, [
+        frozenPartial,
+        answerMessage('msg-marked'),
+      ]),
+    ).toBe(false);
+    const answeredInQueue = stateWith(
+      makeStoredSession({
+        messages: [frozenPartial],
+        metadata: { pendingQuestionsMessageId: 'msg-marked' },
+      }),
+      [queuedMessage(buildAnswerMessageMetadata('msg-marked'))],
+    );
+    expect(deriveAgentHasPendingQuestion(answeredInQueue, AGENT_ID, [frozenPartial])).toBe(false);
+  });
+
+  it('pends when the marked row is present with unanswered questions and not when all are answered', () => {
+    const state = stateWith(
+      makeStoredSession({
+        messages: [marked],
+        metadata: { pendingQuestionsMessageId: 'msg-marked' },
+      }),
+    );
+    expect(deriveAgentHasPendingQuestion(state, AGENT_ID, [marked])).toBe(true);
+    expect(
+      deriveAgentHasPendingQuestion(state, AGENT_ID, [marked, answerMessage('msg-marked')]),
+    ).toBe(false);
+    const answeredInQueue = stateWith(
+      makeStoredSession({
+        messages: [marked],
+        metadata: { pendingQuestionsMessageId: 'msg-marked' },
+      }),
+      [queuedMessage(buildAnswerMessageMetadata('msg-marked'))],
+    );
+    expect(deriveAgentHasPendingQuestion(answeredInQueue, AGENT_ID, [marked])).toBe(false);
+  });
+
+  it('defers to the wizard gate when the marked set was recovered', () => {
+    const pendingRecovered = recoveryState(
+      stateWith(makeStoredSession({ metadata: { pendingQuestionsMessageId: 'msg-marked' } })),
+      { messageId: 'msg-marked', status: 'found', questions: [QUESTION] },
+    );
+    expect(deriveAgentHasPendingQuestion(pendingRecovered, AGENT_ID, [])).toBe(true);
+    const answeredRecovered = recoveryState(
+      stateWith(makeStoredSession({ metadata: { pendingQuestionsMessageId: 'msg-marked' } }), [
+        queuedMessage(buildAnswerMessageMetadata('msg-marked')),
+      ]),
+      { messageId: 'msg-marked', status: 'found', questions: [QUESTION] },
+    );
+    expect(deriveAgentHasPendingQuestion(answeredRecovered, AGENT_ID, [])).toBe(false);
+  });
+
+  it('does not pend when the marker is cleared or absent', () => {
+    const cleared = stateWith(makeStoredSession({ metadata: { pendingQuestionsMessageId: '' } }));
+    expect(deriveAgentHasPendingQuestion(cleared, AGENT_ID, [])).toBe(false);
+    expect(deriveAgentHasPendingQuestion(cleared, AGENT_ID, [marked])).toBe(false);
+    const absent = stateWith(makeStoredSession());
+    expect(deriveAgentHasPendingQuestion(absent, AGENT_ID, [])).toBe(false);
+    expect(deriveAgentHasPendingQuestion(absent, AGENT_ID, [marked])).toBe(true);
+    delete absent.agentSessions.byAgentId[AGENT_ID];
+    expect(deriveAgentHasPendingQuestion(absent, AGENT_ID, [])).toBe(false);
   });
 });

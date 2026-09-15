@@ -125,7 +125,7 @@ describe('getActiveHookNames', () => {
         makeHook('hook-3', 'dispatched'),
         makeHook('hook-4', 'evicted'),
         makeHook('hook-5', 'cancelled'),
-        // Terminal v3.1 state not yet in the BackgroundHook union
+        // Terminal hook-TTL `expired` state not yet in the BackgroundHook union
         // (pre-existing gap); inactive either way.
         makeHook('hook-6', 'expired' as BackgroundHook['state']),
       ],

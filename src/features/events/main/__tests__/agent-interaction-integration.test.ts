@@ -20,9 +20,7 @@ vi.mock('$shared/logger', () => ({
   },
 }));
 
-vi.mock('../../../../store/main/redux-store-bridge', () => ({
-  mainDispatch: vi.fn((action: unknown) => action),
-}));
+vi.mock('../../../../store/main/redux-store-bridge', () => ({}));
 
 import {
   agentSubscribe,

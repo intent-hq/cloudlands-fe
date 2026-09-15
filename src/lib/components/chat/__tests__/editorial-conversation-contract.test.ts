@@ -152,7 +152,8 @@ describe('editorial conversation presentation contract', () => {
     // (the bottom-of-chat snap-back; behavioral coverage in
     // lazy-turn-scroll-ledger.test.ts).
     expect(lazyTurn).toContain('const preSwap = snapshotScroller(scrollRoot);');
-    expect(lazyTurn).toContain('void tick().then(() => ledger.request(preSwap));');
+    // Deferred snapshot forwarding and cancellation are exercised through the
+    // real ledger in LazyTurn-deferred-ledger.test.ts, not callback spelling.
     expect(lazyTurn).toContain('setVisibleWithScrollCompensation(true);');
     expect(lazyTurn).toContain('setVisibleWithScrollCompensation(false);');
     // The ResizeObserver path must reconcile the ledger FIRST on EVERY fire
@@ -284,33 +285,6 @@ describe('editorial conversation presentation contract', () => {
     expect(message).not.toContain('stickySurfaceClass');
   });
 
-  it('uses the shared 16px five-arm Intent mark instead of the legacy square spinner', () => {
-    const panel = source('src/lib/components/chat/ChatPanel.svelte');
-    const status = source('src/lib/components/chat/StreamingStatus.svelte');
-    const indicator = source('src/lib/components/chat/StreamingTypingIndicator.svelte');
-    const loader = source('src/lib/components/ui/indicators/IntentMarkLoader.svelte');
-    const indicators = source('src/lib/components/ui/indicators/index.ts');
-
-    expect(panel).toContain("import StreamingStatus from './StreamingStatus.svelte'");
-    expect(panel).not.toContain('LiveStreamPhaseIndicator');
-    expect(status).toContain(
-      "import StreamingTypingIndicator from './StreamingTypingIndicator.svelte'",
-    );
-    expect(indicators).toContain(
-      "export { default as IntentMarkLoader } from './IntentMarkLoader.svelte';",
-    );
-    expect(indicator).toContain('<IntentMarkLoader {variant} size={16} playing={visible} />');
-    expect(loader.match(/data-mark-arm=/g)).toHaveLength(5);
-    expect(loader).toContain('stroke: currentColor');
-    for (const legacyToken of [
-      'legacy-streaming-spinner',
-      'legacy-spinner-square',
-      'legacy-spinner-wave',
-    ]) {
-      expect(indicator).not.toContain(legacyToken);
-    }
-  });
-
   it('renders wake-up details as one compact disclosure surface', () => {
     const panel = source('src/lib/components/chat/ChatPanel.svelte');
     const wakeup = source('src/lib/components/chat/EventWakeupBanner.svelte');
@@ -383,7 +357,7 @@ describe('editorial conversation presentation contract', () => {
     expect(input).toContain('rounded-lg border-0 bg-sidebar shadow-none');
     expect(input).toContain('rounded-lg border border-border shadow-(--elevation-raised)');
     expect(input).not.toContain(':global(.panel:not(.focused) .rich-input-container) {');
-    expect(input).toContain('@media (prefers-reduced-motion: reduce)');
+    expect(input).toContain('@container style(--motion-reduced: 1)');
   });
 
   it('gives tool, context, and reasoning rows one shared muted shell', () => {

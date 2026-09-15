@@ -51,7 +51,7 @@
   import EditRegenerateConfirmDialog from './EditRegenerateConfirmDialog.svelte';
   import { evictAttachmentImageUrl, resolveAttachmentImageUrl } from './attachment-image-url';
   import { onBackendReconnected } from '$lib/client/live/backend-transport';
-  import { isImageBlock } from '$shared/types/content-block.guards';
+  import { isFileBlock, isImageBlock } from '$shared/types/content-block.guards';
   import type { ContentBlock } from '$shared/types/content-block';
   import AgentMessageAttributionHeader from './AgentMessageAttributionHeader.svelte';
   import { getAgentMessageAttribution } from '$lib/utils/agent-message-attribution';
@@ -273,7 +273,7 @@
   // svelte-ignore state_referenced_locally -- intentional initial snapshot; keyed component identity is fixed.
   const storeMessage$ = selectAgentMessageById(agentId ?? '', messageId ?? '');
 
-  // Lazy full-block hydration (§5.5 slim projection → v7.2
+  // Lazy full-block hydration (§5.5 slim projection →
   // agent.getMessageBlock) for user-message attached images: the slim
   // projection may serve them as write-time thumbnails (dataTruncated /
   // dataIsThumbnail), so the lightbox fetches the original on demand.
@@ -993,19 +993,17 @@
     lightboxOpen = true;
   });
 
-  // Extract file blocks from contentBlocks — both the legacy inline-data
-  // variant (data + mimeType) and attachment-reference blocks (attachmentId,
-  // no bytes; PROTOCOL §5.5 v6.12).
+  // Extract attachment-reference file blocks from contentBlocks (attachmentId,
+  // no bytes; PROTOCOL §5.5). A file block without an attachmentId is served
+  // as text by the daemon (`degrade_inline_file_blocks`) and never renders as a chip.
   const fileBlocks = $derived.by(() => {
     if (!message?.contentBlocks || !Array.isArray(message.contentBlocks)) {
       return [];
     }
-    return message.contentBlocks.filter(
-      (block: any) => block.type === 'file' && (block.data || block.attachmentId) && block.fileName,
-    );
+    return message.contentBlocks.filter(isFileBlock);
   });
 
-  // Secondary text for a file chip: size and/or mime from the block's inline
+  // Secondary text for a file chip: size and/or mime from the block's
   // metadata; empty string when neither is present.
   function fileChipSecondaryText(block: ContentBlock): string {
     const parts: string[] = [];
@@ -1024,18 +1022,6 @@
     const wsId = getOwningWorkspaceId();
     if (!block.attachmentId || !wsId) return;
     appStore.dispatch(openWorkspaceAttachment(wsId, block.attachmentId, block.fileName ?? ''));
-  }
-
-  // Download a legacy inline-data file block via a data URL.
-  function downloadInlineFileBlock(block: ContentBlock, index: number) {
-    if (readOnly) return;
-    const dataUrl = `data:${block.mimeType || 'application/octet-stream'};base64,${block.data}`;
-    const link = document.createElement('a');
-    link.href = dataUrl;
-    link.download = block.fileName || `file-${index}`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
   }
 
   // Parse context and get clean text for user messages
@@ -1243,7 +1229,7 @@
             imageData: block.data,
             imageMimeType: block.mimeType,
           });
-        } else if (block.type === 'file' && block.attachmentId && block.fileName) {
+        } else if (isFileBlock(block)) {
           // Attachment-reference block: restore as a placed-attachment item
           // (UUID + metadata only) so the re-send builds the same reference.
           contextItemsForEdit.push({
@@ -1254,15 +1240,6 @@
             attachmentId: block.attachmentId,
             attachmentMimeType: block.mimeType,
             attachmentSize: block.size,
-          });
-        } else if (block.type === 'file' && block.data && block.fileName) {
-          contextItemsForEdit.push({
-            id: `file-${message.id}-${index}`,
-            type: 'file',
-            label: block.fileName,
-            description: block.mimeType || m.chat_shared_file_fallback(),
-            fileData: block.data,
-            fileMimeType: block.mimeType,
           });
         }
       });
@@ -1703,8 +1680,7 @@
               {/if}
 
               <!-- Attached files: attachment-reference chips open the file in a
-               tab (resolved by attachmentId); legacy inline-data chips keep
-               the data-URL download behavior. -->
+               tab (resolved by attachmentId). -->
               {#if fileBlocks.length > 0 && !isSticky}
                 <div class="flex flex-wrap gap-1.5 mt-2">
                   {#each fileBlocks as fileBlock, i (i)}
@@ -1713,16 +1689,10 @@
                       type="button"
                       data-testid="chat-message-file-chip"
                       class="type-caption flex cursor-pointer items-center gap-1.5 rounded border border-border bg-muted/50 px-2 py-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                      onclick={() => {
-                        if (fileBlock.attachmentId) {
-                          openAttachmentReference(fileBlock);
-                        } else {
-                          downloadInlineFileBlock(fileBlock, i);
-                        }
-                      }}
-                      title={fileBlock.attachmentId
-                        ? m.chat_chatMessage_openAttachment_title({ name: `${fileBlock.fileName}` })
-                        : m.chat_chatMessage_download_title({ name: `${fileBlock.fileName}` })}
+                      onclick={() => openAttachmentReference(fileBlock)}
+                      title={m.chat_chatMessage_openAttachment_title({
+                        name: `${fileBlock.fileName}`,
+                      })}
                     >
                       <Fa icon={faFile} class="w-3 h-3" />
                       <span class="truncate" style="max-width: 150px;">{fileBlock.fileName}</span>

@@ -354,6 +354,15 @@ export const IPC_CHANNELS = {
     CYCLE_FOCUS: 'window:cycle-focus',
   },
 
+  // Power (Electron powerMonitor → renderer)
+  POWER: {
+    // Renderer → main invoke: current battery state → { onBattery: boolean }
+    GET_BATTERY_STATE: 'power:get-battery-state',
+    // Main → renderer: { onBattery: boolean } on every on-battery / on-ac
+    // transition, and once to each new window after it finishes loading.
+    BATTERY_CHANGED: 'power:battery-changed',
+  },
+
   // Terminal
   TERMINAL: {
     CREATE_WITH_COMMAND: 'terminal:createWithCommand',
@@ -666,6 +675,7 @@ export const IPC_CHANNELS = {
     CREATE_PULL_REQUEST: 'git-tracking:create-pull-request',
     GET_GITHUB_ISSUES: 'git-tracking:get-github-issues',
     SEARCH_GITHUB_ISSUES: 'git-tracking:search-github-issues',
+    LIST_RELATED_REPOS: 'git-tracking:list-related-repos',
     GET_REMOTE_URL: 'git-tracking:get-remote-url',
     GET_CHECK_RUNS: 'git-tracking:get-check-runs',
     GET_PR_REVIEWS: 'git-tracking:get-pr-reviews',
@@ -1047,6 +1057,7 @@ export const EVENT_CHANNELS = [
   'window:blur',
   'window:fullscreen',
   'window:zoom-changed',
+  'power:battery-changed', // Battery ↔ AC transitions (powerMonitor) → renderer
   'navigate-to-settings', // Navigation to settings from menu
   'git:status-changed',
   'file-tracking:changes-updated',
