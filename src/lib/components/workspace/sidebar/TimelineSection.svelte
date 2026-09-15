@@ -34,7 +34,7 @@
   ></div>
 
   <div class="flex items-center justify-between mb-1">
-    <Header size={6}>
+    <Header size={6} class="shrink-0 whitespace-nowrap">
       {title}
       {#if subtitle}
         <span class="inline-block ml-0.5 font-normal text-muted-foreground">/ {subtitle}</span>

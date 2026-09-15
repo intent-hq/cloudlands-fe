@@ -636,14 +636,14 @@
   >
     {#snippet action()}
       <!-- Auto-commit toggle -->
-      <div class="-my-0.5 flex w-full min-w-0 items-center justify-between gap-2">
+      <div class="-my-0.5 ml-auto flex min-w-0 items-center justify-end gap-2">
         <Tooltip
           content={$autoCommitEnabled
             ? m.workspace_fileChanges_autoCommitOn_tooltip()
             : m.workspace_fileChanges_autoCommitOff_tooltip()}
           side="right"
           contentClass="w-[12rem]"
-          class="min-w-0 flex-1"
+          class="min-w-0 items-center justify-end gap-2"
           disableHoverableContent={false}
           disableCloseOnTriggerClick={true}
         >

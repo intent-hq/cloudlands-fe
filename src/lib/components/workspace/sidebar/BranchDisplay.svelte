@@ -171,7 +171,9 @@
   <p class="branch-label col-start-1 row-start-1 pl-4 text-subtle leading-snug text-ui">
     {m.workspace_sidebarChanges_codeLivesIn_label()}
   </p>
-  <p class="branch-label col-start-3 row-start-1 text-subtle leading-snug text-ui">
+  <p
+    class="branch-label col-start-3 row-start-1 justify-self-end text-right text-subtle leading-snug text-ui"
+  >
     {m.workspace_sidebarChanges_mergedInto_label()}
   </p>
 
@@ -243,7 +245,9 @@
   </div>
 
   <!-- Trunk branch picker -->
-  <div class="col-start-3 row-start-2 flex items-center shrink-0 min-w-0 max-w-[min(100%,_10rem)]">
+  <div
+    class="col-start-3 row-start-2 justify-self-end flex items-center justify-end shrink-0 min-w-0 max-w-[min(100%,_10rem)]"
+  >
     <Tooltip
       class="min-w-0 max-w-full"
       side="top"
