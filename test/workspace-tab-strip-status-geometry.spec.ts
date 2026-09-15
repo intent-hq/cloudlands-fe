@@ -383,7 +383,7 @@ async function expectNormalActiveShape(
   // 8b092e33 aligns the extracted stroke with the seam using a 2px SVG inset.
   expect(leadingFlareBox.y + leadingFlareBox.height).toBeCloseTo(tabBottom - 2 * zoom, 1);
   expect(trailingFlareBox.y + trailingFlareBox.height).toBeCloseTo(tabBottom - 2 * zoom, 1);
-  if (assertHeight) expect(tabBox.height).toBeCloseTo(36 * zoom, 0);
+  if (assertHeight) expect(tabBox.height).toBeCloseTo(32 * zoom, 0);
   return radii;
 }
 
