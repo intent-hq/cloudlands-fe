@@ -447,6 +447,8 @@
 }
 
 :where(:root[data-reduce-motion]),
+:where(:root[data-reduce-motion])::before,
+:where(:root[data-reduce-motion])::after,
 :where(:root[data-reduce-motion]) *,
 :where(:root[data-reduce-motion]) *::before,
 :where(:root[data-reduce-motion]) *::after {
