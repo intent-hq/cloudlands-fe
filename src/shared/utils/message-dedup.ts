@@ -319,9 +319,9 @@ function isReconciledRow(message: AgentMessage): boolean {
   );
 }
 
-/** Structural equality of the content a row carries; the fingerprint is lossy. */
+/** Structural equality of the blocks a row carries; the fingerprint is lossy. */
 function hasSameContent(a: AgentMessage, b: AgentMessage): boolean {
-  return deepEqual(a.content, b.content) && deepEqual(a.contentBlocks ?? [], b.contentBlocks ?? []);
+  return deepEqual(a.contentBlocks ?? [], b.contentBlocks ?? []);
 }
 
 /**
