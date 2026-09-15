@@ -74,7 +74,11 @@ import {
 } from '../../browser-tab-registry/browser-tab-registry-slice';
 import { connectionStatusChanged } from '../../daemon-health/daemon-health-slice';
 import { connectionsListReceived } from '../../connections/connections-slice';
-import { setWorkspaceEntity, setWorkspaceHasLoaded } from '../../workspace/workspace-slice';
+import {
+  replaceWorkspaceList,
+  setWorkspaceEntity,
+  setWorkspaceHasLoaded,
+} from '../../workspace/workspace-slice';
 import {
   workspaceMounted,
   workspaceUnmounted,
@@ -346,6 +350,15 @@ function startRestoreSaga(
           detailHydrated: options?.detailRead
             ? { ...state.workspace.detailHydrated, [workspace.id]: true }
             : state.workspace.detailHydrated,
+        },
+      };
+    }
+    if (action.type === replaceWorkspaceList.type) {
+      state = {
+        ...state,
+        workspace: {
+          ...state.workspace,
+          workspaces: createCollection('id', action.payload[0]),
         },
       };
     }
@@ -1570,6 +1583,73 @@ describe('panelLayoutSaga', () => {
       expect(getItems(ws.hiddenTabs)).toEqual([]);
       expect(ws.recentlyClosed.map((entry) => entry.tab.type)).not.toContain('terminal');
       expect(ws.recentlyClosed.map((entry) => entry.tab.type)).not.toContain('browser');
+      await cancelSaga(run.task);
+    });
+
+    // Layout restore can win the startup race against `workspace.list`: the
+    // role is unknown, so the persisted owner-only tabs mount. The record
+    // arriving afterwards — by itself or with the list load — must strip them.
+    it('strips owner-only tabs when the collaborator record arrives after the restore', async () => {
+      const run = startRestoreSaga(mixedLayout, [], emptyWorkspaceState, undefined, {
+        workspaceListLoaded: false,
+      });
+      await settle();
+      const restored = run.getState().panelLayout.byWorkspaceId[WS_1];
+      expect(restored.restoreStatus).toBe('restored');
+      expect(ownerOnlyTabs(restored)).toEqual([
+        terminalTab.id,
+        ownedBrowserTab.id,
+        plainBrowserTab.id,
+      ]);
+      expect(run.dispatch.mock.calls.map(([a]) => a.type)).not.toContain(destroyTabsByType.type);
+
+      run.dispatch(
+        setWorkspaceEntity({ id: WS_1, myRole: 'collaborator' } as unknown as Workspace),
+      );
+      await settle();
+
+      const ws = run.getState().panelLayout.byWorkspaceId[WS_1];
+      expect(ownerOnlyTabs(ws)).toEqual([]);
+      expect(Object.values(ws.panels).flatMap((p) => p.tabs.map((t) => t.id))).toEqual([tab.id]);
+      expect(getItems(ws.hiddenTabs)).toEqual([]);
+      expect(ws.recentlyClosed).toEqual([]);
+      await cancelSaga(run.task);
+    });
+
+    it('strips owner-only tabs when the workspace list loads after the restore', async () => {
+      const run = startRestoreSaga(mixedLayout, [], emptyWorkspaceState, undefined, {
+        workspaceListLoaded: false,
+      });
+      await settle();
+      expect(ownerOnlyTabs(run.getState().panelLayout.byWorkspaceId[WS_1])).toHaveLength(3);
+
+      run.dispatch(
+        replaceWorkspaceList([{ id: WS_1, myRole: 'collaborator' } as unknown as Workspace]),
+      );
+      run.dispatch(setWorkspaceHasLoaded(true));
+      await settle();
+
+      const ws = run.getState().panelLayout.byWorkspaceId[WS_1];
+      expect(ownerOnlyTabs(ws)).toEqual([]);
+      expect(Object.values(ws.panels).flatMap((p) => p.tabs.map((t) => t.id))).toEqual([tab.id]);
+      expect(getItems(ws.hiddenTabs)).toEqual([]);
+      await cancelSaga(run.task);
+    });
+
+    it('leaves an owner layout untouched when the record arrives after the restore', async () => {
+      const run = startRestoreSaga(mixedLayout, [], emptyWorkspaceState, undefined, {
+        workspaceListLoaded: false,
+      });
+      await settle();
+      const before = run.getState().panelLayout.byWorkspaceId[WS_1];
+
+      run.dispatch(setWorkspaceEntity({ id: WS_1, myRole: 'owner' } as unknown as Workspace));
+      run.dispatch(setWorkspaceHasLoaded(true));
+      await settle();
+
+      const after = run.getState().panelLayout.byWorkspaceId[WS_1];
+      expect(ownerOnlyTabs(after)).toEqual(ownerOnlyTabs(before));
+      expect(after.panels).toBe(before.panels);
       await cancelSaga(run.task);
     });
   });
