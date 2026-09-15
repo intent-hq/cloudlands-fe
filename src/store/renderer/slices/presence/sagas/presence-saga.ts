@@ -188,8 +188,13 @@ function* watchVisibility(): SagaGenerator<void> {
   }
 }
 
-/** Debounced report: every change restarts the delay; only the last one sends. */
-function* reportOnChange(): SagaGenerator<void> {
+/**
+ * Debounced report: every change restarts the delay; only the last one sends.
+ * The channel's initial emission is skipped — the boot report is owned by
+ * `restartAttach`.
+ */
+function* reportOnChange({ prevPayload }: SelectorChannelPayload<string>): SagaGenerator<void> {
+  if (prevPayload == null) return;
   yield* delay(PRESENCE_FOCUS_DEBOUNCE_MS);
   yield* sendReport();
 }
@@ -281,7 +286,8 @@ function* hydrateRosters(reads: RosterReads, workspaceIds: string[]): SagaGenera
 /** Opening a workspace tab publishes nothing daemon-side, so its roster is read. */
 function onDisplayedWorkspacesChanged(reads: RosterReads) {
   return function* ({ payload, prevPayload }: SelectorChannelPayload<string[]>) {
-    const known = new Set(prevPayload ?? []);
+    if (prevPayload == null) return;
+    const known = new Set(prevPayload);
     yield* hydrateRosters(
       reads,
       payload.filter((workspaceId) => !known.has(workspaceId)),
@@ -315,7 +321,8 @@ function* hydrateMemberships(reads: RosterReads, keys: string[]): SagaGenerator<
 /** A shared tab opened, or a displayed workspace's `memberCount` moved: its membership is re-read. */
 function onMembershipKeysChanged(reads: RosterReads) {
   return function* ({ payload, prevPayload }: SelectorChannelPayload<string[]>) {
-    const known = new Set(prevPayload ?? []);
+    if (prevPayload == null) return;
+    const known = new Set(prevPayload);
     yield* hydrateMemberships(
       reads,
       payload.filter((key) => !known.has(key)),
@@ -347,12 +354,12 @@ interface Attachment {
 }
 
 /**
- * Every attach ends with one report. The selector channel behind
- * `reportOnChange` does not replay its initial value, so a window whose focus
- * was already settled at boot would otherwise never announce itself; after a
- * resubscribe or a backend switch the connection is fresh (main re-sends its
- * merged `presence.update` when the pooled connection comes back) and the
- * report also learns the connection's current `typingSource`.
+ * Every attach ends with one report. `reportOnChange` skips the selector
+ * channel's initial emission, so a window whose focus was already settled at
+ * boot would otherwise never announce itself; after a resubscribe or a backend
+ * switch the connection is fresh (main re-sends its merged `presence.update`
+ * when the pooled connection comes back) and the report also learns the
+ * connection's current `typingSource`.
  */
 function* restartAttach(attachment: Attachment): SagaGenerator<void> {
   if (attachment.task) yield* cancel(attachment.task);
@@ -386,7 +393,8 @@ function* watchSubscription(attachment: Attachment): SagaGenerator<void> {
 /**
  * A local window's backend id never changes after boot; a change nonetheless
  * drops the attach in flight, resets every roster and identity, and attaches
- * the new backend.
+ * the new backend. The channel's initial emission carries the current id and
+ * is not a change.
  */
 function* watchBackend(attachment: Attachment): SagaGenerator<void> {
   const channel = yield* createChannelFromSelector(selectCurrentConnectionId);
@@ -394,6 +402,7 @@ function* watchBackend(attachment: Attachment): SagaGenerator<void> {
   try {
     while (true) {
       const { payload } = yield* take(channel);
+      if (payload === backendId) continue;
       if (attachment.task) yield* cancel(attachment.task);
       attachment.task = null;
       if (backendId) yield* put(presenceReset());
