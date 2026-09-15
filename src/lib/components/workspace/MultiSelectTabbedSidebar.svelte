@@ -103,7 +103,7 @@
     selectHudAgentHasPendingQuestion,
     selectHudQuestionsByAgentId,
   } from '$store/renderer/slices/hud/hud-selectors';
-  import { deriveWizardPendingQuestions } from '$lib/components/chat/questions/wizard-gate';
+  import { deriveAgentHasPendingQuestion } from '$lib/components/chat/questions/wizard-gate';
   import {
     deriveAgentLauncherItems,
     deriveNoteLauncherItems,
@@ -232,7 +232,7 @@
     void $hudQuestionsByAgentId$;
     const hasQuestion =
       selectHudAgentHasPendingQuestion.select(appStore.state, agent.id) ||
-      deriveWizardPendingQuestions(appStore.state, agent.id, agent.messages) !== null;
+      deriveAgentHasPendingQuestion(appStore.state, agent.id, agent.messages);
     return getAvatarStateForSession(agent, { hasQuestion });
   }
 

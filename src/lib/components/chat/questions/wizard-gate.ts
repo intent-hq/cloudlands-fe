@@ -83,6 +83,46 @@ export function deriveWizardPendingQuestions(
   return pending;
 }
 
+/**
+ * Indicator-only pending predicate for the agent card / panel avatar /
+ * sidebar badge. True when the wizard gate yields a set, OR when the daemon
+ * marker names a message that is not available locally (not in `messages`,
+ * not in the stored tail/history segment, no recovered question set). The
+ * marker reaches session metadata independently of the transcript, while the
+ * question row itself only lands once the chat is in view (standing
+ * `chat.subscribe`), so an out-of-view agent must light up on the marker alone.
+ * Mirrors `deriveMarkedQuestionRecoveryState`'s fail-closed stance: a
+ * `not-found` / exhausted recovery for the current marker still pends until
+ * the daemon clears or replaces the marker, a tagged answer row names it (in
+ * the tail or still queued), or the user dismisses it. The wizard itself keeps
+ * calling `deriveWizardPendingQuestions` — it needs the actual question set.
+ */
+export function deriveAgentHasPendingQuestion(
+  state: StoreState,
+  agentId: string,
+  messages: readonly AgentMessage[],
+): boolean {
+  if (deriveWizardPendingQuestions(state, agentId, messages)) return true;
+  const session = state.agentSessions?.byAgentId[agentId];
+  const marker = classifyPendingQuestionMarker(session?.metadata?.pendingQuestionsMessageId);
+  if (marker.kind !== 'set') return false;
+  const markedMessage =
+    messages.find((message) => message.id === marker.messageId) ??
+    selectAgentMessageById.select(state, agentId, marker.messageId);
+  if (markedMessage) return false;
+  const recovery = state.chatState?.byAgentId[agentId]?.pendingQuestionRecovery;
+  const hasRecoveredSet =
+    recovery?.messageId === marker.messageId &&
+    recovery.status === 'found' &&
+    !!recovery.questions &&
+    recovery.questions.length > 0;
+  if (hasRecoveredSet) return false;
+  if (isQuestionMessageDismissed(session?.metadata, marker.messageId)) return false;
+  if (isQuestionSetAnswered(messages, marker.messageId)) return false;
+  const queuedMessages = selectAgentQueueMessages.select(state, agentId);
+  return !isQuestionSetAnsweredInQueue(queuedMessages, marker.messageId);
+}
+
 export interface MarkedQuestionRecoveryState {
   messageId: string;
   shouldRequest: boolean;
