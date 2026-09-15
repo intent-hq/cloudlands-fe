@@ -474,7 +474,8 @@ describe('WorkspaceCard hover-intent delay', () => {
       expect(document.querySelectorAll('[role="tooltip"]')).toHaveLength(1);
 
       await fireEvent.mouseLeave(secondRow);
-      vi.advanceTimersByTime(300);
+      // Leave grace (the pointer may be heading into the card) + session cooldown.
+      vi.advanceTimersByTime(150 + 300);
       await fireEvent.mouseEnter(firstRow);
       vi.advanceTimersByTime(799);
       await tick();
@@ -500,6 +501,87 @@ describe('WorkspaceCard hover-intent delay', () => {
     expect(trigger.getAttribute('aria-describedby')).toContain(hoverCard()?.id);
 
     await fireEvent.focusOut(trigger, { relatedTarget: document.body });
+    await tick();
+    expect(hoverCard()).toBeNull();
+  });
+
+  // Regression (fe#2440 verifier): the card carries controls, so the pointer
+  // must be able to cross the gap from the row into the card and use them.
+  it('keeps the card open while the pointer crosses into it and closes after it leaves', async () => {
+    vi.useFakeTimers();
+    try {
+      const { container } = render(WorkspaceCard, { props: { workspace: makeWorkspace() } });
+      const row = container.querySelector<HTMLElement>('[data-workspace-card-row]')!;
+
+      await fireEvent.mouseEnter(row);
+      vi.advanceTimersByTime(800);
+      await tick();
+      const surface = document.querySelector<HTMLElement>('[data-workspace-card-hover-surface]')!;
+      expect(surface).toBeTruthy();
+
+      await fireEvent.mouseLeave(row);
+      vi.advanceTimersByTime(100);
+      await tick();
+      expect(hoverCard()).toBeTruthy();
+      await fireEvent.pointerEnter(surface);
+      vi.advanceTimersByTime(5000);
+      await tick();
+      expect(hoverCard()).toBeTruthy();
+
+      // Pressing one of the card's own controls is not an outside dismissal.
+      await fireEvent.pointerDown(surface);
+      await tick();
+      expect(hoverCard()).toBeTruthy();
+
+      await fireEvent.pointerLeave(surface);
+      vi.advanceTimersByTime(149);
+      await tick();
+      expect(hoverCard()).toBeTruthy();
+      vi.advanceTimersByTime(1);
+      await tick();
+      expect(hoverCard()).toBeNull();
+    } finally {
+      workspaceHoverCardIntentSession.reset();
+      vi.useRealTimers();
+    }
+  });
+
+  it('closes the card at once when the pointer leaves the row and does not enter the card', async () => {
+    vi.useFakeTimers();
+    try {
+      const { container } = render(WorkspaceCard, { props: { workspace: makeWorkspace() } });
+      const row = container.querySelector<HTMLElement>('[data-workspace-card-row]')!;
+
+      await fireEvent.mouseEnter(row);
+      vi.advanceTimersByTime(800);
+      await tick();
+      expect(hoverCard()).toBeTruthy();
+
+      await fireEvent.mouseLeave(row);
+      vi.advanceTimersByTime(150);
+      await tick();
+      expect(hoverCard()).toBeNull();
+    } finally {
+      workspaceHoverCardIntentSession.reset();
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps the card open while focus moves from the row into the card', async () => {
+    const { container } = render(WorkspaceCard, { props: { workspace: makeWorkspace() } });
+    const trigger = container.querySelector<HTMLElement>('[data-workspace-card-trigger]')!;
+
+    await fireEvent.focusIn(trigger);
+    await tick();
+    const surface = document.querySelector<HTMLElement>('[data-workspace-card-hover-surface]')!;
+    expect(surface).toBeTruthy();
+
+    await fireEvent.focusOut(trigger, { relatedTarget: surface });
+    await fireEvent.focusIn(surface);
+    await tick();
+    expect(hoverCard()).toBeTruthy();
+
+    await fireEvent.focusOut(surface, { relatedTarget: document.body });
     await tick();
     expect(hoverCard()).toBeNull();
   });

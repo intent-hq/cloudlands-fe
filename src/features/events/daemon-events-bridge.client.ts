@@ -268,6 +268,7 @@ import {
 } from '$store/renderer/slices/mcp-settings/mcp-settings-slice';
 import { mapDaemonMcpState } from '$store/renderer/slices/mcp-settings/mcp-settings-normalization';
 import { githubAuthChanged } from '$store/renderer/slices/github-auth/github-auth-slice';
+import { shareMembershipChanged } from '$store/renderer/slices/workspace-share/workspace-share-slice';
 import {
   browserTabClosed,
   browserTabUpserted,
@@ -2405,6 +2406,19 @@ function handleWorkspaceUpdatedEvent(event: WorkspaceEvent, workspaceId: string)
   if (typeof raw.prNumber === 'number') changes.prNumber = raw.prNumber;
   if (typeof raw.prUrl === 'string') changes.prUrl = raw.prUrl;
   if (typeof raw.lastActivity === 'string') changes.lastActivity = raw.lastActivity;
+  // Membership-changing deltas (invite redeem, member remove/leave — PROTOCOL
+  // §5.1, multiplayer w4) carry the post-change `memberCount` so the roster
+  // summary on the entity stays current without a refetch.
+  if (typeof raw.memberCount === 'number' && Number.isFinite(raw.memberCount)) {
+    changes.memberCount = raw.memberCount;
+  }
+  // The same deltas flag `members: true` / `invites: true` (also an invite
+  // create/revoke, which leaves `memberCount` alone): the Share dialog
+  // re-reads its roster + invites when it targets this workspace, so every
+  // client converges without a manual refresh.
+  if (raw.members === true || raw.invites === true) {
+    appStore.dispatch(shareMembershipChanged({ workspaceId }));
+  }
   if (typeof raw.archived === 'boolean') changes.archived = raw.archived;
   // `archivedAt` is nullable on the wire: archive sends the persisted ISO
   // timestamp, unarchive sends an explicit JSON null. Keep the key present on
@@ -3997,11 +4011,34 @@ export async function refreshDaemonEventsAfterReconnect(
       void hydrateAgentQueue(activeAgentId);
     }
   }
+  // Sharing rows converge via live `workspace:updated` membership deltas
+  // only; an invite or member change during the missed-event window leaves
+  // the open Share dialog and any tracked hover roster stale. One
+  // invalidation per workspace holding sharing state — the share saga
+  // coalesces it into one read (and one trailing read at most).
+  for (const workspaceId of sharedWorkspaceIdsToRefresh()) {
+    appStore.dispatch(shareMembershipChanged({ workspaceId }));
+  }
   // The failure registry converges via live `agent:deleted` /
   // `agent:status-changed` events only; deletions during the missed-event
   // window leave stale entries whose toast offers Retry against a deleted
   // agent forever (monorepo#2806). Reconcile survivors against the daemon.
   await reconcileAgentFailureRegistry();
+}
+
+function sharedWorkspaceIdsToRefresh(): string[] {
+  const share = (
+    appStore.state as {
+      workspaceShare?: {
+        open?: boolean;
+        workspaceId?: string | null;
+        byWorkspaceId?: Record<string, unknown>;
+      };
+    }
+  ).workspaceShare;
+  const ids = new Set(Object.keys(share?.byWorkspaceId ?? {}));
+  if (share?.open && share.workspaceId) ids.add(share.workspaceId);
+  return [...ids];
 }
 
 /**

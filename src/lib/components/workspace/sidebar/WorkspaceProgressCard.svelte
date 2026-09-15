@@ -18,6 +18,7 @@
     faFileLines,
     faGlobe,
     faRightLeft,
+    faUserPlus,
   } from '@fortawesome/free-solid-svg-icons';
   import SidebarIcon from '$lib/components/icons/SidebarIcon.svelte';
   import Tooltip from '$lib/components/ui/tooltip/Tooltip.svelte';
@@ -80,6 +81,7 @@
   } from '$store/renderer/slices/workspace/workspace-types';
   import { store as appStore } from '$store/renderer/store';
   import { openTransferModal } from '$store/renderer/slices/workspace-transfer/workspace-transfer-slice';
+  import { openShareDialog } from '$store/renderer/slices/workspace-share/workspace-share-slice';
   import { selectWorkspaceDrivingClient } from '$store/renderer/slices/browser-clients/browser-clients-selectors';
   import { setWorkspaceBrowserClientRequested } from '$store/renderer/slices/browser-clients/browser-clients-slice';
   import { selectWorkspaceHasBrowserTabs } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
@@ -404,12 +406,29 @@
     },
   });
 
+  // Owner-only (PROTOCOL §5.1 `myRole`): a missing role never offers Share.
+  const shareAction: MenuAction | null = $derived(
+    $workspace?.myRole === 'owner'
+      ? {
+          label: m.workspace_share_menu_label(),
+          icon: faUserPlus,
+          dividerBefore: true,
+          onClick: () => {
+            if (!$workspace) return;
+            appStore.dispatch(
+              openShareDialog({ workspaceId: $workspace.id, workspaceTitle: $workspace.title }),
+            );
+          },
+        }
+      : null,
+  );
+
   const transferAction: MenuAction | null = $derived(
     $workspace
       ? {
           label: m.workspace_card_transfer_label(),
           icon: faRightLeft,
-          dividerBefore: true,
+          dividerBefore: !shareAction,
           onClick: () => {
             if (!$workspace) return;
             appStore.dispatch(
@@ -462,6 +481,7 @@
     sidebarToggleAction,
     sidebarSideAction,
     ...(setPrimaryClientAction ? [setPrimaryClientAction] : []),
+    ...(shareAction ? [shareAction] : []),
     ...(transferAction ? [transferAction] : []),
   ]);
 

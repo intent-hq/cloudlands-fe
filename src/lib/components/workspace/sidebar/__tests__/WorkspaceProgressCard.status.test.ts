@@ -293,6 +293,7 @@ async function renderProgressCard(overrides: Partial<Workspace> = {}) {
     status: WorkspaceStatusEnum.Active,
     statusMessage: undefined,
     statusImageAssetId: undefined,
+    myRole: undefined,
     ...overrides,
   } as Workspace;
   const WorkspaceProgressCard = (await import('../WorkspaceProgressCard.svelte')).default;
@@ -410,6 +411,41 @@ describe('WorkspaceProgressCard status message', () => {
     expect(
       container.querySelector('[data-workspace-actions-trigger]')?.getAttribute('aria-expanded'),
     ).toBe('false');
+  });
+
+  it('offers Share to the workspace owner ahead of Transfer and opens the share dialog', async () => {
+    const { container } = await renderProgressCard({ myRole: 'owner' });
+    await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
+
+    const share = screen.getByRole('button', { name: 'Share…' });
+    const transfer = screen.getByRole('button', { name: 'Transfer/Download…' });
+    const menuItems = Array.from(share.parentElement!.children);
+    const shareIndex = menuItems.indexOf(share);
+
+    expect(share.dataset.iconName).toBe('user-plus');
+    expect(menuItems[shareIndex - 1]?.getAttribute('data-testid')).toBe('menu-divider');
+    expect(menuItems.indexOf(transfer)).toBe(shareIndex + 1);
+
+    await fireEvent.click(share);
+
+    expect(mocks.dispatch).toHaveBeenCalledWith({
+      type: 'workspaceShare/openDialog',
+      payload: [{ workspaceId: 'ws-1', workspaceTitle: 'Active Workspace' }],
+    });
+    expect(
+      container.querySelector('[data-workspace-actions-trigger]')?.getAttribute('aria-expanded'),
+    ).toBe('false');
+  });
+
+  it.each([
+    ['a collaborator', { myRole: 'collaborator' as const }],
+    ['no reported role', { myRole: undefined }],
+  ])('does not offer Share to %s', async (_label, overrides) => {
+    const { container } = await renderProgressCard(overrides);
+    await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
+
+    expect(screen.getByRole('button', { name: 'Transfer/Download…' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Share…' })).toBeNull();
   });
 
   it('omits the transfer action when workspace data becomes unavailable', async () => {

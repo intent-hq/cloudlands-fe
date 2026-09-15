@@ -75,6 +75,7 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
           statusMessage: 'Polishing the workspace navigation experience.',
           activity: 'agent_running',
           displayStatus: 'in_progress',
+          myRole: 'owner',
         },
         {
           id: 'ws-2',
@@ -82,6 +83,7 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
           branch: 'main',
           repositoryName: 'intent',
           displayStatus: 'idle',
+          myRole: 'collaborator',
         },
         {
           id: 'ws-3',
@@ -614,7 +616,16 @@ describe('WorkspaceTabStrip', () => {
       const alpha = screen.getByRole('tab', { name: /Alpha/ });
       expect(alpha.getAttribute('aria-selected')).toBe('false');
       const tooltipRoot = alpha.closest<HTMLElement>('[data-testid="workspace-tab-tooltip-root"]')!;
-      expect(tooltipRoot.getAttribute('data-tooltip-disable-hoverable-content')).toBe('true');
+      // Alpha reports `myRole: 'owner'`: its card carries Share / Remove
+      // controls, so the pointer must be able to travel into it. Beta is a
+      // collaborator's read-only preview and still closes on leave.
+      expect(tooltipRoot.getAttribute('data-tooltip-disable-hoverable-content')).toBe('false');
+      expect(
+        screen
+          .getByRole('tab', { name: /Beta/ })
+          .closest<HTMLElement>('[data-testid="workspace-tab-tooltip-root"]')!
+          .getAttribute('data-tooltip-disable-hoverable-content'),
+      ).toBe('true');
       await enterTabTooltip(tooltipRoot);
       vi.advanceTimersByTime(799);
       await tick();
@@ -1112,6 +1123,19 @@ describe('WorkspaceTabStrip', () => {
       (screen.getByRole('menuitem', { name: 'Close tabs to the right' }) as HTMLButtonElement)
         .disabled,
     ).toBe(true);
+  });
+
+  it('does not offer Share from the tab context menu, even on an owned tab', async () => {
+    render(WorkspaceTabStrip);
+
+    // Alpha reports `myRole: 'owner'`; Share lives in the workspace ⋯ menu only.
+    await fireEvent.contextMenu(screen.getByRole('tab', { name: /Alpha/ }));
+    await screen.findByRole('menuitem', { name: 'Close' });
+
+    expect(screen.queryByRole('menuitem', { name: 'Share…' })).toBeNull();
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'workspaceShare/openDialog' }),
+    );
   });
 
   it('closes other workspace tabs in order and focuses the context target', async () => {

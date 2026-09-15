@@ -172,6 +172,7 @@ import TrashIcon from 'phosphor-svelte/lib/TrashIcon';
 import TreeStructureIcon from 'phosphor-svelte/lib/TreeStructureIcon';
 import UploadSimpleIcon from 'phosphor-svelte/lib/UploadSimpleIcon';
 import UserIcon from 'phosphor-svelte/lib/UserIcon';
+import UserPlusIcon from 'phosphor-svelte/lib/UserPlusIcon';
 import UsersIcon from 'phosphor-svelte/lib/UsersIcon';
 import WarningCircleIcon from 'phosphor-svelte/lib/WarningCircleIcon';
 import WarningIcon from 'phosphor-svelte/lib/WarningIcon';
@@ -391,6 +392,7 @@ const iconComponents: Record<string, Component<any>> = {
   'up-right-from-square': ArrowSquareOutIcon,
   user: UserIcon,
   'user-graduate': StudentIcon,
+  'user-plus': UserPlusIcon,
   'user-tie': UserIcon,
   users: UsersIcon,
   vial: TestTubeIcon,
@@ -610,6 +612,7 @@ export const faUnderline = icon('underline');
 export const faUpRightFromSquare = icon('up-right-from-square');
 export const faUser = icon('user');
 export const faUserGraduate = icon('user-graduate');
+export const faUserPlus = icon('user-plus');
 export const faUserTie = icon('user-tie');
 export const faUsers = icon('users');
 export const faVial = icon('vial');
