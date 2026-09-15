@@ -374,9 +374,14 @@ import { workspaceService } from '../features/workspace/main/workspace.service';
 
 import { registerDeepLinkHandlers } from '../features/deeplink/main/deeplink.ipc';
 import { DeepLinkHandler } from '../features/deeplink/deep-link-handler';
+import {
+  handleInviteDeepLink,
+  routeInviteLinkFromOs,
+} from '../features/deeplink/main/invite-deep-link';
 import { handlePairDeepLink, routePairLinkFromOs } from '../features/deeplink/main/pair-deep-link';
 import { scrubToken } from '../features/deeplink/utils/scrub-token';
 import { findIntentUrl } from '../features/deeplink/utils/find-intent-url';
+import { isInviteUri } from '../shared/utils/invite-uri';
 import { isPairingUri } from '../shared/utils/pairing-uri';
 import { registerChatExportHandlers } from '../features/export/main/export.ipc';
 import { registerDebugExportHandlers } from '../features/debug-export/main/debug-export.ipc';
@@ -1724,11 +1729,13 @@ app.whenReady().then(async () => {
 
     // Check for intent:// deep link in process.argv (cold start)
     const intentUrlArg = findIntentUrl(process.argv);
-    const isPairLinkArg = intentUrlArg !== undefined && isPairingUri(intentUrlArg);
+    const isPairLinkArg =
+      intentUrlArg !== undefined && (isPairingUri(intentUrlArg) || isInviteUri(intentUrlArg));
 
-    // A pair link is handled fully in the main process: park it now and let
-    // the pending-URL pass after window creation route it to the pair handler.
-    // It is never embedded in the renderer load URL — createWindow skips it.
+    // A pair or invite link is handled fully in the main process: park it now
+    // and let the pending-URL pass after window creation route it to its
+    // handler. It is never embedded in the renderer load URL — createWindow
+    // skips it.
     if (intentUrlArg !== undefined && isPairLinkArg) {
       await deepLinkHandler.handleDeepLink(intentUrlArg, null);
     }
@@ -2019,6 +2026,11 @@ app.on('open-url', async (event: Electron.Event, url: string) => {
     await routePairLinkFromOs(url, (pending) => deepLinkHandler.handleDeepLink(pending, null));
     return;
   }
+  // Invite links follow the same main-process-only route as pair links.
+  if (isInviteUri(url)) {
+    await routeInviteLinkFromOs(url, (pending) => deepLinkHandler.handleDeepLink(pending, null));
+    return;
+  }
 
   // If app is ready and has a main window, create a new window for the deep link
   const mainWindow = getMainWindow();
@@ -2064,6 +2076,8 @@ if (!gotTheLock) {
         // Pair links go straight to the main-process handler — the first
         // instance is already running, so no parking or window is needed.
         await handlePairDeepLink(deepLinkUrl);
+      } else if (isInviteUri(deepLinkUrl)) {
+        await handleInviteDeepLink(deepLinkUrl);
       } else {
         const mainWindow = getMainWindow();
         if (mainWindow && !mainWindow.isDestroyed()) {

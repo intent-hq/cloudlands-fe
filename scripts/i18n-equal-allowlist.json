@@ -74,6 +74,7 @@
   "codeWalkthrough_section_annotationCount_one": ["fr"],
   "codeWalkthrough_section_sectionNumber_label": ["fr"],
   "dialog_about_version": ["de"],
+  "deeplink_inviteFailed_ok_button": ["de", "fr", "ja"],
   "deviceIcons_kind_macMini_label": "*",
   "deviceIcons_kind_macStudio_label": "*",
   "deviceIcons_kind_planet_label": ["de"],

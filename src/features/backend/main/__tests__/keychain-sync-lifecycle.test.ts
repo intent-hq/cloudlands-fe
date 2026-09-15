@@ -287,6 +287,68 @@ describe('keychain-sync lifecycle triggers', () => {
     expect(reconcileFn).toHaveBeenCalledTimes(2);
   });
 
+  it('runs the guest pass after the owner pass with its own adapter and status isolation', async () => {
+    const guestAdapter = { list: vi.fn(async () => []), applyRemote: vi.fn() };
+    const onGuestRemoteApplied = vi.fn();
+    const onRemoteApplied = vi.fn();
+    const order: string[] = [];
+    const reconcileFn = vi.fn(async () => {
+      order.push('owner');
+      return reconcileResult();
+    });
+    const guestReconcileFn = vi
+      .fn()
+      .mockImplementationOnce(async () => {
+        order.push('guest');
+        return reconcileResult({
+          pulled: ['g:1'],
+          status: { state: 'unavailable', reason: 'helper-missing', message: 'x' },
+        });
+      })
+      .mockRejectedValueOnce(new Error('guest exploded'));
+    lifecycle = initKeychainSyncLifecycle({
+      isEnabled: async () => true,
+      reconcileFn: reconcileFn as never,
+      guestAdapter,
+      guestReconcileFn: guestReconcileFn as never,
+      onRemoteApplied,
+      onGuestRemoteApplied,
+      debounceMs: DEBOUNCE,
+      focusMinIntervalMs: FOCUS_MIN,
+    });
+
+    await vi.advanceTimersByTimeAsync(DEBOUNCE);
+    expect(order).toEqual(['owner', 'guest']);
+    expect(guestReconcileFn).toHaveBeenCalledWith(
+      guestAdapter,
+      expect.objectContaining({ shouldAbort: expect.any(Function) }),
+    );
+    expect(onGuestRemoteApplied).toHaveBeenCalledTimes(1);
+    expect(onRemoteApplied).not.toHaveBeenCalled();
+    expect(lifecycle.getStatus()).toEqual({ state: 'active' });
+
+    fireMutation();
+    await vi.advanceTimersByTimeAsync(DEBOUNCE);
+    expect(reconcileFn).toHaveBeenCalledTimes(2);
+    expect(guestReconcileFn).toHaveBeenCalledTimes(2);
+    expect(onGuestRemoteApplied).toHaveBeenCalledTimes(1);
+  });
+
+  it('skips the guest pass when no guest adapter is configured', async () => {
+    const guestReconcileFn = vi.fn();
+    const reconcileFn = vi.fn(async () => reconcileResult());
+    lifecycle = initKeychainSyncLifecycle({
+      isEnabled: async () => true,
+      reconcileFn: reconcileFn as never,
+      guestReconcileFn: guestReconcileFn as never,
+      debounceMs: DEBOUNCE,
+      focusMinIntervalMs: FOCUS_MIN,
+    });
+    await vi.advanceTimersByTimeAsync(DEBOUNCE);
+    expect(reconcileFn).toHaveBeenCalledTimes(1);
+    expect(guestReconcileFn).not.toHaveBeenCalled();
+  });
+
   it('getStatus reflects the last completed reconcile', async () => {
     const reconcileFn = vi.fn(async () =>
       reconcileResult({

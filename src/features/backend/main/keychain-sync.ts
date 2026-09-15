@@ -6,9 +6,14 @@
  * the helper spawn wrapper, and the two-way reconciliation between the synced
  * keychain registry and the local connections store.
  *
- * Model: ONE keychain item per backend under the fixed service
- * `com.cloudlands.intent.backends`, keyed by the normalized `host:port`
- * account (mirrors the local store's dedupe identity). Conflicts resolve
+ * Model: ONE keychain item per backend under a fixed service — the paired
+ * (owner) backends live under `com.cloudlands.intent.backends`, guest
+ * sessions redeemed from an invite under
+ * `com.cloudlands.intent.guest-sessions` — keyed by the normalized
+ * `host:port` account (mirrors the local store's dedupe identity). Each
+ * service is reconciled independently against its own store, so tombstones
+ * are per service: forgetting a guest session never touches an owner
+ * record for the same daemon (and vice versa). Conflicts resolve
  * last-writer-wins by the payload's `updatedAt`. Deletes are TOMBSTONES
  * (`deleted: true`, token scrubbed) rather than raw item deletion, so "item
  * missing" is never ambiguous with "keychain unreadable"; tombstones are
@@ -44,6 +49,14 @@ import {
 } from '../../../shared/types/connections';
 
 const logger = new Logger('KeychainSync');
+
+/** Keychain service holding guest sessions (credentials minted by an
+ * `invite.redeem` join). Kept apart from the helper's default backends
+ * service (`com.cloudlands.intent.backends`, the only one the iOS companion
+ * reads) so a guest credential can never surface as — or tombstone — an
+ * owner record. */
+// i18n-ignore (keychain service identifier)
+export const KEYCHAIN_SERVICE_GUEST_SESSIONS = 'com.cloudlands.intent.guest-sessions';
 
 /** Current payload schema version. Items with a NEWER `v` (written by a newer
  * app) freeze their account: neither pulled nor overwritten by a push. */
@@ -90,6 +103,14 @@ export interface KeychainSyncRecord {
   detectHosts: boolean;
   /** Bearer token; always `''` on tombstones. */
   token: string;
+  /**
+   * Guest principal identity (guest-sessions service only): the principal id
+   * the daemon minted the credential for and the GitHub login it proved.
+   * Absent on owner-backend payloads — serialization omits the keys, so the
+   * backends service payload is byte-identical to before the field existed.
+   */
+  principalId?: string;
+  login?: string;
   /** Last-writer-wins conflict clock, ms since epoch. */
   updatedAt: number;
   /** Tombstone marker: the backend was forgotten on some machine. */
@@ -137,6 +158,8 @@ export function serializeRecord(record: KeychainSyncRecord): string {
     token: record.deleted === true ? '' : record.token,
     updatedAt: record.updatedAt,
   };
+  if (record.principalId !== undefined) payload.principalId = record.principalId;
+  if (record.login !== undefined) payload.login = record.login;
   if (record.deleted === true) {
     payload.deleted = true;
     payload.deletedAt = record.deletedAt ?? record.updatedAt;
@@ -192,6 +215,10 @@ export function parsePayload(payload: string): ParsedPayload {
     token: typeof obj.token === 'string' ? obj.token : '',
     updatedAt: obj.updatedAt,
   };
+  if (typeof obj.principalId === 'string' && obj.principalId !== '') {
+    record.principalId = obj.principalId;
+  }
+  if (typeof obj.login === 'string' && obj.login !== '') record.login = obj.login;
   if (obj.deleted === true) {
     record.deleted = true;
     record.deletedAt = typeof obj.deletedAt === 'number' ? obj.deletedAt : record.updatedAt;
@@ -393,13 +420,27 @@ export interface HelperClientOptions {
   platform?: NodeJS.Platform;
   /** Skip candidate probing and use this binary path directly. */
   helperPath?: string;
+  /**
+   * Keychain service the client operates on, passed to the helper as
+   * `--service <name>` ahead of the subcommand. Absent = the helper's default
+   * backends service, which keeps the argv of the owner registry client
+   * unchanged.
+   */
+  service?: string;
 }
 
 /** The real helper-backed client. Never throws — every failure is a result. */
 export function createHelperKeychainClient(options: HelperClientOptions = {}): KeychainClient {
   const platform = options.platform ?? process.platform;
 
-  async function invoke(args: string[], stdinBody?: string): Promise<KeychainClientResult<object>> {
+  // The service is a fixed identifier (not secret) — argv is fine.
+  const serviceArgs = options.service !== undefined ? ['--service', options.service] : [];
+
+  async function invoke(
+    subcommand: string[],
+    stdinBody?: string,
+  ): Promise<KeychainClientResult<object>> {
+    const args = [...serviceArgs, ...subcommand];
     if (platform !== 'darwin') {
       return {
         ok: false,
