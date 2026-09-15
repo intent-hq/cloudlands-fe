@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.158.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.157.0...v2.158.0) (2026-09-15)
+
+
+### 🚀 Features
+
+* reduce motion while on battery power ([#2468](https://github.com/intent-hq/cloudlands-fe/issues/2468)) ([53a0506](https://github.com/intent-hq/cloudlands-fe/commit/53a0506eb726df879ccfd878597c8ede7f650466))
+
 ## [2.157.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.156.0...v2.157.0) (2026-09-15)
 
 
