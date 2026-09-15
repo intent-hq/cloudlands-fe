@@ -6367,7 +6367,6 @@
   "workspace_share_loadFailed_error": "共有情報を読み込めませんでした",
   "workspace_share_createFailed_error": "招待リンクを作成できませんでした",
   "workspace_share_pinUnknown_error": "{login} という GitHub ユーザーは存在しません",
-  "workspace_hoverCard_member_ariaLabel": "{name}（{role}）",
   "workspace_share_ownerOnly_notice": "共有を管理できるのはワークスペースのオーナーのみです。",
   "workspace_share_removeMember_confirm_label": "{name} をこのワークスペースから削除しますか？",
   "workspace_share_removeMember_confirmAction_ariaLabel": "{name} の削除を確定",

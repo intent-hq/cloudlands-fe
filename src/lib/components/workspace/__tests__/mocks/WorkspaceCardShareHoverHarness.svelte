@@ -9,13 +9,13 @@
   import {
     selectShareDialogOpen,
     selectShareWorkspaceId,
-    selectWorkspaceRosterMembers,
     selectWorkspaceRosterRemovingPrincipalId,
   } from '$store/renderer/slices/workspace-share/workspace-share-selectors';
+  import { selectWorkspacePresencePeople } from '$store/renderer/slices/presence/presence-selectors';
   import {
-    shareRosterLoaded,
-    shareRosterRequested,
-  } from '$store/renderer/slices/workspace-share/workspace-share-slice';
+    presenceMembersReceived,
+    presenceOwnPrincipalReceived,
+  } from '$store/renderer/slices/presence/presence-slice';
 
   let { scenario = 'default' }: { scenario?: string } = $props();
 
@@ -40,34 +40,31 @@
     memberCount: 2,
   };
   appStore.dispatch(setWorkspaceEntity(workspace));
-  appStore.dispatch(shareRosterRequested({ workspaceId }));
+  appStore.dispatch(presenceOwnPrincipalReceived('p-alice'));
   appStore.dispatch(
-    shareRosterLoaded({
-      workspaceId,
-      members: [
-        {
-          principalId: 'p-alice',
-          login: 'alice',
-          displayName: 'Alice',
-          avatarUrl: null,
-          role: 'owner',
-          addedAt: '2026-09-01T00:00:00Z',
-        },
-        {
-          principalId: 'p-bob',
-          login: 'bob',
-          displayName: null,
-          avatarUrl: null,
-          role: 'collaborator',
-          addedAt: '2026-09-02T00:00:00Z',
-        },
-      ],
-    }),
+    presenceMembersReceived(workspaceId, [
+      {
+        principalId: 'p-alice',
+        login: 'alice',
+        displayName: 'Alice',
+        avatarUrl: null,
+        role: 'owner',
+        addedAt: '2026-09-01T00:00:00Z',
+      },
+      {
+        principalId: 'p-bob',
+        login: 'bob',
+        displayName: null,
+        avatarUrl: null,
+        role: 'collaborator',
+        addedAt: '2026-09-02T00:00:00Z',
+      },
+    ]),
   );
 
   const dialogOpen$ = selectShareDialogOpen();
   const dialogWorkspaceId$ = selectShareWorkspaceId();
-  const members$ = selectWorkspaceRosterMembers(workspaceId);
+  const people$ = selectWorkspacePresencePeople(workspaceId);
   const removingPrincipalId$ = selectWorkspaceRosterRemovingPrincipalId(workspaceId);
 </script>
 
@@ -75,7 +72,7 @@
   data-share-hover-state
   data-dialog-open={String($dialogOpen$)}
   data-dialog-workspace-id={$dialogWorkspaceId$ ?? ''}
-  data-member-count={$members$.length}
+  data-member-count={$people$.length}
   data-removing-principal-id={$removingPrincipalId$ ?? ''}
 ></output>
 <div
