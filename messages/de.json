@@ -1087,7 +1087,7 @@
   "workspace_card_viewSpec_label": "Spezifikation anzeigen",
   "workspace_codeChanges_readyToPush_many": "{count} Commits bereit zum Pushen",
   "workspace_codeChanges_readyToPush_one": "1 Commit bereit zum Pushen",
-  "workspace_commitDrawer_autoCommitWhenDone_label": "Automatisch committen, wenn fertig",
+  "workspace_commitDrawer_autoCommit_label": "Auto-Commit",
   "workspace_commitDrawer_commitMessage_placeholder": "Commit-Nachricht...",
   "workspace_commitDrawer_commit_label": "Committen",
   "workspace_commitDrawer_committing_label": "Wird committet...",

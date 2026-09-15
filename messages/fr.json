@@ -1087,7 +1087,7 @@
   "workspace_card_viewSpec_label": "Voir la spécification",
   "workspace_codeChanges_readyToPush_many": "{count} commits prêts à être poussés",
   "workspace_codeChanges_readyToPush_one": "1 commit prêt à être poussé",
-  "workspace_commitDrawer_autoCommitWhenDone_label": "Valider automatiquement à la fin",
+  "workspace_commitDrawer_autoCommit_label": "Validation automatique",
   "workspace_commitDrawer_commitMessage_placeholder": "Message de commit...",
   "workspace_commitDrawer_commit_label": "Valider",
   "workspace_commitDrawer_committing_label": "Validation...",

@@ -1087,7 +1087,7 @@
   "workspace_card_viewSpec_label": "查看规范",
   "workspace_codeChanges_readyToPush_many": "{count} 个提交待推送",
   "workspace_codeChanges_readyToPush_one": "1 个提交待推送",
-  "workspace_commitDrawer_autoCommitWhenDone_label": "完成后自动提交",
+  "workspace_commitDrawer_autoCommit_label": "自动提交",
   "workspace_commitDrawer_commitMessage_placeholder": "提交信息…",
   "workspace_commitDrawer_commit_label": "提交",
   "workspace_commitDrawer_committing_label": "提交中…",

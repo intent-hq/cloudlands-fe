@@ -1087,7 +1087,7 @@
   "workspace_card_viewSpec_label": "仕様を表示",
   "workspace_codeChanges_readyToPush_many": "{count} 件のコミットがプッシュ可能",
   "workspace_codeChanges_readyToPush_one": "1 件のコミットがプッシュ可能",
-  "workspace_commitDrawer_autoCommitWhenDone_label": "完了時に自動コミット",
+  "workspace_commitDrawer_autoCommit_label": "自動コミット",
   "workspace_commitDrawer_commitMessage_placeholder": "コミットメッセージ...",
   "workspace_commitDrawer_commit_label": "コミット",
   "workspace_commitDrawer_committing_label": "コミット中...",

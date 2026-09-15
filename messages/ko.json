@@ -1087,7 +1087,7 @@
   "workspace_card_viewSpec_label": "사양 보기",
   "workspace_codeChanges_readyToPush_many": "푸시 가능한 커밋 {count}개",
   "workspace_codeChanges_readyToPush_one": "푸시 가능한 커밋 1개",
-  "workspace_commitDrawer_autoCommitWhenDone_label": "완료 시 자동 커밋",
+  "workspace_commitDrawer_autoCommit_label": "자동 커밋",
   "workspace_commitDrawer_commitMessage_placeholder": "커밋 메시지...",
   "workspace_commitDrawer_commit_label": "커밋",
   "workspace_commitDrawer_committing_label": "커밋 중...",

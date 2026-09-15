@@ -195,7 +195,7 @@
             {#if $commitWhenReady$}
               <Fa icon={faCheck} size="xs" />
             {/if}
-            {m.workspace_commitDrawer_autoCommitWhenDone_label()}
+            {m.workspace_commitDrawer_autoCommit_label()}
           </Button>
         </div>
       {:else}

@@ -648,13 +648,13 @@
           disableCloseOnTriggerClick={true}
         >
           <span class="text-ui min-w-0 truncate text-subtle">
-            {m.workspace_commitDrawer_autoCommitWhenDone_label()}
+            {m.workspace_commitDrawer_autoCommit_label()}
           </span>
           <Switch
             size="xs"
             checked={$autoCommitEnabled}
             class="-mr-1 shrink-0"
-            ariaLabel={m.workspace_commitDrawer_autoCommitWhenDone_label()}
+            ariaLabel={m.workspace_commitDrawer_autoCommit_label()}
             onCheckedChange={() => {
               if (workspaceId) {
                 appStore.dispatch(setAutoCommitEnabled(workspaceId as string, !$autoCommitEnabled));

@@ -155,7 +155,7 @@ describe('CommitDrawer', () => {
     mocks.executorState.agentId = 'agent-42';
     const { container } = await renderDrawer();
     const toggleBtn = Array.from(container.querySelectorAll('button')).find((b) =>
-      b.textContent?.includes('Auto-commit when done'),
+      b.textContent?.includes('Auto-commit'),
     );
     expect(toggleBtn).toBeDefined();
     await fireEvent.click(toggleBtn!);
