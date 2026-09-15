@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { canonicalComponentManifest } from '$lib/components/ui/manifest';
   import type { CatalogEntry } from './catalog';
   import { getCatalogRenderer } from './catalog-renderers';
   import ProposalCatalogPreview from './renderers/ProposalCatalogPreview.svelte';
@@ -10,6 +11,7 @@
   } from './chat-polish/chat-polish-geometry';
 
   let { entry }: { entry: CatalogEntry } = $props();
+  const metadata = $derived(canonicalComponentManifest.find(({ id }) => id === entry.slug));
   const renderer = $derived(getCatalogRenderer(entry.slug));
   let chatPolishGeometry = $state<ChatPolishGeometry>({ ...defaultChatPolishGeometry });
   const visibleFixtures = $derived(
@@ -46,18 +48,11 @@
       <article class="fixture-card" data-catalog-fixture={fixture.id}>
         {#if entry.slug !== 'chat-polish'}
           <div class="fixture-heading">
-            <h2 class="text-sm font-medium">{fixture.title}</h2>
-            {#if fixture.viewport}
-              <span
-                class="rounded-full border border-border bg-muted px-2 py-0.5 text-xs text-muted-foreground"
-              >
-                {fixture.viewport}
-              </span>
-            {/if}
+            <h2>{fixture.title}</h2>
           </div>
         {/if}
         <div
-          class="fixture-preview min-h-20 rounded-md border border-border bg-background"
+          class="fixture-preview min-h-20 rounded-md bg-background"
           data-catalog-preview={entry.slug}
           data-catalog-fixture-id={fixture.id}
         >
@@ -79,6 +74,10 @@
             <summary>Fixture details</summary>
             <dl class="inspector-grid">
               <div>
+                <dt>Viewport</dt>
+                <dd class="mt-1 text-foreground">{fixture.viewport ?? 'responsive'}</dd>
+              </div>
+              <div>
                 <dt>States</dt>
                 <dd class="mt-1 text-foreground">{fixture.states.join(', ')}</dd>
               </div>
@@ -98,30 +97,30 @@
   class="catalog-detail w-full min-w-0 p-4 sm:p-6 lg:p-10"
   class:chat-polish-detail={entry.slug === 'chat-polish'}
 >
-  <header class="entry-header border-b border-border">
+  <header class="entry-header">
     <div class="min-w-0">
-      <div class="flex flex-wrap items-baseline gap-2">
-        <p class="text-xs font-medium text-muted-foreground">Component focus</p>
-        <h1 class="mt-1 text-3xl font-medium tracking-tight">{entry.name}</h1>
-        <span
-          class="rounded-full border border-border bg-muted px-2 py-0.5 text-xs text-muted-foreground"
-        >
-          {entry.category}
-        </span>
+      <h1>{entry.name}</h1>
+      <p class="entry-purpose">{entry.description}</p>
+    </div>
+    <details class="entry-inspector text-xs text-muted-foreground">
+      <summary>Source</summary>
+      <div class="inspector-popover">
+        <p class="text-foreground">Canonical source</p>
+        <code class="mt-1 block break-all">{entry.source}</code>
+        <dl class="inspector-grid">
+          <div>
+            <dt>Category</dt>
+            <dd class="mt-1 text-foreground">{entry.category}</dd>
+          </div>
+          {#if metadata}
+            <div>
+              <dt>Removal gate</dt>
+              <dd class="mt-1 text-foreground">{metadata.removalGate}</dd>
+            </div>
+          {/if}
+        </dl>
       </div>
-      <p class="mt-1 max-w-3xl text-xs leading-relaxed text-muted-foreground">
-        {entry.description}
-      </p>
-    </div>
-    <div class="flex shrink-0 items-center gap-2">
-      <details class="entry-inspector text-xs text-muted-foreground">
-        <summary>Source</summary>
-        <div class="inspector-popover">
-          <p class="text-foreground">Canonical source</p>
-          <code class="mt-1 block break-all">{entry.source}</code>
-        </div>
-      </details>
-    </div>
+    </details>
   </header>
 
   {#if entry.slug === 'chat-polish'}
@@ -154,13 +153,29 @@
     align-items: flex-start;
     justify-content: space-between;
     gap: var(--catalog-row-gap);
-    padding: calc(var(--catalog-preview-padding) * 1.25);
   }
 
-  .catalog-detail > .entry-header {
-    border: 1px solid hsl(var(--border));
-    border-radius: var(--radius-large);
-    background: hsl(var(--card));
+  h1 {
+    font-size: var(--text-display-size);
+    font-weight: var(--text-display-weight);
+    line-height: var(--text-display-line-height);
+    letter-spacing: var(--text-display-tracking);
+  }
+
+  h2 {
+    font-size: var(--text-title-size);
+    font-weight: var(--text-title-weight);
+    line-height: var(--text-title-line-height);
+    letter-spacing: var(--text-title-tracking);
+  }
+
+  .entry-purpose {
+    margin-top: 0.5rem;
+    color: hsl(var(--muted-foreground));
+    font-size: var(--text-body-size);
+    font-weight: var(--text-body-weight);
+    line-height: var(--text-body-line-height);
+    letter-spacing: var(--text-body-tracking);
   }
 
   .fixture-grid {
@@ -223,10 +238,6 @@
     align-content: start;
     gap: var(--catalog-row-gap);
     padding: var(--catalog-preview-padding);
-    border: 1px solid hsl(var(--border));
-    border-radius: var(--radius-large);
-    background: hsl(var(--card));
-    box-shadow: var(--elevation-raised);
   }
 
   .fixture-heading {

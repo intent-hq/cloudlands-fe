@@ -234,7 +234,7 @@
   data-preview-fit={requestedFit}
   bind:this={sceneElement}
 >
-  {#if requestedFit !== 'component'}
+  {#if requestedFit !== 'component' && !fallbackEntry}
     <header class="rounded-lg border border-border bg-card p-4">
       <p class="text-xs font-medium text-muted-foreground">Named preview</p>
       <h1 class="mt-1 text-2xl font-medium tracking-tight">{title || slug}</h1>
@@ -282,18 +282,19 @@
       </div>
     {/if}
     {#if fallbackEntry}
-      <div
-        class="preview-frame max-w-full overflow-auto rounded-lg border border-border bg-background p-6"
-      >
-        <div
-          class="preview-focus mx-auto max-w-full p-6"
-          style:width={`${width}px`}
-          data-testid="catalog-scene-focus"
-        >
-          <p class="type-caption mb-3 text-muted-foreground" role="status">{fallbackNote}</p>
-          <CatalogFixtureList entry={fallbackEntry} />
-          <div data-catalog-portal-target="scene"></div>
-        </div>
+      <div class="mx-auto max-w-full" style:width={`${width}px`} data-testid="catalog-scene-focus">
+        <p class="type-caption mb-3 text-muted-foreground" role="status">
+          {fallbackNote}
+          {#if availableStates.length > 0}
+            Available states: {availableStates.join(', ')}.
+          {:else}
+            Available fixture states: {fallbackEntry.fixtures
+              .flatMap((fixture) => fixture.states)
+              .join(', ')}.
+          {/if}
+        </p>
+        <CatalogFixtureList entry={fallbackEntry} />
+        <div data-catalog-portal-target="scene"></div>
       </div>
     {:else if Preview && scenes.length > 0}
       <div
