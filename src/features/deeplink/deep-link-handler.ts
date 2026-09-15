@@ -70,9 +70,10 @@ export class DeepLinkHandler {
         type: action as 'open' | 'create' | 'clone' | 'settings',
         params,
       };
-    } catch (error) {
+    } catch {
+      // Node's URL errors can carry the complete credential-bearing input.
       // i18n-ignore (developer log message)
-      mainLogger.error('[DeepLinkHandler] Failed to parse URL:', error as Error);
+      mainLogger.error('[DeepLinkHandler] Failed to parse URL');
       return null;
     }
   }

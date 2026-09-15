@@ -1,4 +1,4 @@
-import { TC_ADDRESS } from '../../../../test/fixtures/tc-address.fixture';
+import { TC_ADDRESS, TC_ADDRESS_WITH_PSK } from '../../../../test/fixtures/tc-address.fixture';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EventEmitter } from 'node:events';
 import * as fs from 'node:fs';
@@ -17,11 +17,13 @@ import type { ChildProcess } from 'node:child_process';
  * directions.
  */
 
+const loggerMocks = vi.hoisted(() => ({ debug: vi.fn(), warn: vi.fn() }));
+
 vi.mock('$shared/logger', () => ({
   Logger: class {
-    debug() {}
+    debug = loggerMocks.debug;
     info() {}
-    warn() {}
+    warn = loggerMocks.warn;
     error() {}
   },
 }));
@@ -87,6 +89,7 @@ function stalledInner(localPort: number): Duplex {
 let tmpDir: string;
 
 beforeEach(() => {
+  vi.clearAllMocks();
   tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tailcat-test-'));
 });
 
@@ -142,7 +145,7 @@ describe('createTailcatTunnel', () => {
     const children: FakeChild[] = [];
     const args: string[][] = [];
     const tunnel = await createTailcatTunnel({
-      tcAddress: TC_ADDRESS,
+      tcAddress: TC_ADDRESS_WITH_PSK,
       remotePort: 8443,
       binaryPath: '/fake/tailcat',
       spawn: fakeSpawn(children, args),
@@ -155,12 +158,75 @@ describe('createTailcatTunnel', () => {
       });
       socket.write('hello-through-tunnel');
       expect(await echoed).toBe('hello-through-tunnel');
-      expect(args).toEqual([[TC_ADDRESS, '8443']]);
+      expect(args).toEqual([[TC_ADDRESS_WITH_PSK, '8443']]);
       socket.destroy();
     } finally {
       tunnel.close();
     }
     expect(children).toHaveLength(1);
+  });
+
+  it.each(['spawn', 'child'] as const)(
+    'closes a failed %s connection without logging arbitrary error details',
+    async (failure) => {
+      const child = new FakeChild();
+      const secretError = new Error(`tailcat ${TC_ADDRESS_WITH_PSK}: dummy-tailcat-psk`);
+      const spawn: TailcatSpawn = () => {
+        if (failure === 'spawn') throw secretError;
+        queueMicrotask(() => child.emit('error', secretError));
+        return child as unknown as ChildProcess;
+      };
+      const tunnel = await createTailcatTunnel({
+        tcAddress: TC_ADDRESS_WITH_PSK,
+        remotePort: 8443,
+        binaryPath: '/fake/tailcat',
+        spawn,
+      });
+      const socket = net.connect(tunnel.localPort, '127.0.0.1');
+      const errors: Error[] = [];
+      socket.on('error', (error) => errors.push(error));
+      try {
+        await new Promise<void>((resolve) => socket.once('close', () => resolve()));
+        expect(loggerMocks.warn).toHaveBeenCalled();
+        const diagnostics = JSON.stringify({
+          logs: loggerMocks.warn.mock.calls,
+          errors: errors.map((error) => error.message),
+        });
+        expect(diagnostics).not.toContain(TC_ADDRESS_WITH_PSK);
+        expect(diagnostics).not.toContain('dummy-tailcat-psk');
+        if (failure === 'child') expect(child.killed).toBe(true);
+      } finally {
+        socket.destroy();
+        tunnel.close();
+      }
+    },
+  );
+
+  it('drains stderr without logging complete, split or decoded credentials', async () => {
+    const children: FakeChild[] = [];
+    const tunnel = await createTailcatTunnel({
+      tcAddress: TC_ADDRESS_WITH_PSK,
+      remotePort: 8443,
+      binaryPath: '/fake/tailcat',
+      spawn: fakeSpawn(children, []),
+    });
+    const socket = net.connect(tunnel.localPort, '127.0.0.1');
+    try {
+      const child = await vi.waitFor(() => {
+        expect(children).toHaveLength(1);
+        return children[0]!;
+      });
+      child.stderr.write(TC_ADDRESS_WITH_PSK);
+      for (const char of TC_ADDRESS_WITH_PSK) child.stderr.write(char);
+      child.stderr.write('dummy-tailcat-psk');
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(child.stderr.readableLength).toBe(0);
+      expect(loggerMocks.debug).not.toHaveBeenCalled();
+      expect(loggerMocks.warn).not.toHaveBeenCalled();
+    } finally {
+      socket.destroy();
+      tunnel.close();
+    }
   });
 
   it('close() kills spawned children and stops accepting', async () => {
@@ -287,7 +353,7 @@ describe('createTunneledSocket', () => {
     let dialedPort = 0;
     let inner: Duplex | null = null;
     const facade = createTunneledSocket({
-      tcAddress: TC_ADDRESS,
+      tcAddress: TC_ADDRESS_WITH_PSK,
       remotePort: 8443,
       binaryPath: '/fake/tailcat',
       spawn: fakeSpawn(children, []),
@@ -301,6 +367,8 @@ describe('createTunneledSocket', () => {
     const failed = new Promise<Error>((resolve) => facade.once('error', resolve));
     const error = await failed;
     expect(error.message).toMatch(/did not connect within 50ms/);
+    expect(error.message).not.toContain(TC_ADDRESS_WITH_PSK);
+    expect(JSON.stringify(loggerMocks.debug.mock.calls)).not.toContain(TC_ADDRESS_WITH_PSK);
     expect(facade.destroyed).toBe(true);
     // The inner socket had been dialed (TCP-accepted by the forwarder) and is
     // destroyed with the facade; the forwarder's child dies and it stops

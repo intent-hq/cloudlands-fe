@@ -210,13 +210,15 @@ export function createBackendSocket(config: BackendConnectionConfig): Duplex {
 export function describeBackendConfig(config: BackendConnectionConfig): string {
   if (config.transport === 'uds') return `uds:${config.socketPath}`;
   if (config.transport === 'ws') return `ws:${describeBackendUrl(config.wsUrl)}`;
-  // Deliberately omit the token and fingerprint — this string reaches logs.
+  // Tailcat addresses can embed a pre-shared key. Like the token and
+  // fingerprint, they must not reach connection lifecycle logs.
+  const host = isTcAddress(config.host ?? '') ? 'tailcat:REDACTED' : config.host;
   if (config.transport === 'wss') {
     const extra = candidateWssHosts(config).length - 1;
     const suffix = extra > 0 ? ` (+${extra} candidate${extra === 1 ? '' : 's'})` : '';
-    return `wss:${config.host}:${config.port}${suffix}`;
+    return `wss:${host}:${config.port}${suffix}`;
   }
-  return `tcp:${config.host}:${config.port}${config.tls ? ' (tls)' : ''}`;
+  return `tcp:${host}:${config.port}${config.tls ? ' (tls)' : ''}`;
 }
 
 /**

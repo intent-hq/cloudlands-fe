@@ -1,10 +1,14 @@
-/**
- * Redact the pairing bearer token (`token=` query param, PROTOCOL §5 pairing
- * URI) in free-form text destined for a log line. The deep-link entry points
- * log the URLs they receive, and an `intent://pair` link carries a bearer
- * token — every such log site must pass the text through this first.
- */
+import { isTcAddress } from '$shared/tc-address';
+
+/** Redact pairing credentials in free-form diagnostics, never in connection inputs. */
 export function scrubToken(text: string): string {
+  // Drop whole pairing links (even malformed ones), including encoded query
+  // keys and credentials in host=. Tailcat payloads can embed a pre-shared key.
   // i18n-ignore (log scrubbing constant, never user-facing)
-  return text.replace(/token=[^&\s"']*/gi, 'token=REDACTED');
+  return text
+    .replace(/intent:\/\/pair[^\s"'<>]*/gi, 'intent://pair:REDACTED')
+    .replace(/(token|tc)=[^&\s"']*/gi, '$1=REDACTED')
+    .replace(/tc[A-Za-z0-9_-]{50,}/g, (address) =>
+      isTcAddress(address) ? 'tailcat:REDACTED' : address,
+    );
 }
