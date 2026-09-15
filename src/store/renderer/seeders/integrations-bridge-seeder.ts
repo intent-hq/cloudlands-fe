@@ -24,6 +24,7 @@ import type {
   GitHubAuthState,
   GitHubAuthStatus,
   GithubRepo,
+  GithubUserSearchHit,
   StartAuthResult,
 } from '$features/github-auth/types';
 import { LINEAR_AUTH_CHANNELS } from '$features/linear-auth/constants';
@@ -249,6 +250,42 @@ registerMockIpcHandler(GITHUB_AUTH_CHANNELS.SEARCH_REPOS, async (arg) => {
       query,
     });
     return { success: true, data: (result?.repos ?? []).map(toLegacyRepo) };
+  } catch (error) {
+    return { success: false, error: errorMessage(error) };
+  }
+});
+
+// ── GitHub user search for the Share dialog's pin typeahead (PROTOCOL §5.27) ──
+
+/** Daemon `github.users.search` hit — `{ id, login, avatarUrl, htmlUrl }`. */
+interface GithubUserSearchHitWire {
+  id: number;
+  login: string;
+  avatarUrl?: string | null;
+  htmlUrl?: string | null;
+}
+
+function toUserSearchHit(user: GithubUserSearchHitWire): GithubUserSearchHit {
+  return {
+    id: user.id,
+    login: user.login,
+    avatarUrl: user.avatarUrl ?? null,
+    htmlUrl: user.htmlUrl ?? null,
+  };
+}
+
+// `limit` is left to the daemon default (8, clamped into [1, 10]).
+registerMockIpcHandler(GITHUB_AUTH_CHANNELS.SEARCH_USERS, async (arg) => {
+  const query = asRecord(arg).query;
+  if (typeof query !== 'string' || query.length === 0) {
+    return { success: false, error: 'query is required' };
+  }
+  try {
+    const result = await backendRequest<{ users?: GithubUserSearchHitWire[] }>(
+      'github.users.search',
+      { query },
+    );
+    return { success: true, data: (result?.users ?? []).map(toUserSearchHit) };
   } catch (error) {
     return { success: false, error: errorMessage(error) };
   }

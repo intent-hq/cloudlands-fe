@@ -8,6 +8,9 @@
    *
    * The one-time invite url is resolved here from its vault handle (the store
    * only ever holds the handle) and handed to the dialog as a plain prop.
+   *
+   * The pin typeahead reads the github-user-search slice and dispatches the
+   * (saga-debounced) `searchGithubUsers` trigger on every keystroke.
    */
 
   import ShareWorkspaceDialog from './ShareWorkspaceDialog.svelte';
@@ -36,6 +39,13 @@
     selectShareWorkspaceTitle,
   } from '$store/renderer/slices/workspace-share/workspace-share-selectors';
   import { selectGitHubAuthIsAuthenticated } from '$store/renderer/slices/github-auth/github-auth-selectors';
+  import { searchGithubUsers } from '$store/renderer/slices/github-user-search/github-user-search-slice';
+  import {
+    selectGithubUserSearchError,
+    selectGithubUserSearchLastQuery,
+    selectGithubUserSearchLoading,
+    selectGithubUserSearchResults,
+  } from '$store/renderer/slices/github-user-search/github-user-search-selectors';
   import { openGitHubAuthModal } from '$store/renderer/slices/global-modals/global-modals-slice';
 
   const open$ = selectShareDialogOpen();
@@ -53,6 +63,10 @@
   const revokingInviteId$ = selectShareRevokingInviteId();
   const removingPrincipalId$ = selectShareRemovingPrincipalId();
   const actionError$ = selectShareActionError();
+  const userSuggestions$ = selectGithubUserSearchResults();
+  const userSearchLoading$ = selectGithubUserSearchLoading();
+  const userSearchError$ = selectGithubUserSearchError();
+  const userSearchQuery$ = selectGithubUserSearchLastQuery();
   const createdLinkUrl = $derived($createdLink$ ? readInviteLink($createdLink$.linkHandle) : null);
 </script>
 
@@ -73,9 +87,14 @@
   revokingInviteId={$revokingInviteId$}
   removingPrincipalId={$removingPrincipalId$}
   actionError={$actionError$}
+  userSuggestions={$userSuggestions$}
+  userSearchLoading={$userSearchLoading$}
+  userSearchError={$userSearchError$}
+  userSearchQuery={$userSearchQuery$}
   onClose={() => appStore.dispatch(closeShareDialog())}
   onConnectGitHub={() => appStore.dispatch(openGitHubAuthModal(null))}
   onCreateInvite={(pinLogin) => appStore.dispatch(shareInviteCreateRequested({ pinLogin }))}
   onRevokeInvite={(inviteId) => appStore.dispatch(shareInviteRevokeRequested(inviteId))}
   onRemoveMember={(principalId) => appStore.dispatch(shareMemberRemoveRequested(principalId))}
+  onSearchUsers={(query) => appStore.dispatch(searchGithubUsers(query))}
 />
