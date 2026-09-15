@@ -194,7 +194,7 @@ describe('power-bridge-seeder', () => {
       await expect(source.read()).resolves.toBe(true);
     });
 
-    it('logs the seed line with both raw source values on the first merged read', async () => {
+    it('logs the seed line with both raw source values exactly once across repeated reads', async () => {
       const debugSpy = vi.spyOn(console, 'debug').mockImplementation(() => {});
       const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => {});
       installGenuineBridge({ invoke: vi.fn(async () => ({ onBattery: false })) });
@@ -202,13 +202,16 @@ describe('power-bridge-seeder', () => {
       (navigator as any).getBattery = vi.fn(async () => makeFakeBatteryManager(false));
 
       const source = createBatterySource();
+      await Promise.all([source.read(), source.read()]);
       await source.read();
       const lines = [...debugSpy.mock.calls, ...infoSpy.mock.calls].map((args) =>
         args.map(String).join(' '),
       );
-      expect(lines.some((line) => /ipc=false/.test(line) && /navigator=true/.test(line))).toBe(
-        true,
+      const seedLines = lines.filter(
+        (line) =>
+          /battery seed:/.test(line) && /ipc=false/.test(line) && /navigator=true/.test(line),
       );
+      expect(seedLines).toHaveLength(1);
     });
 
     it('emits ipc || navigator on chargingchange while IPC stays silent', async () => {
