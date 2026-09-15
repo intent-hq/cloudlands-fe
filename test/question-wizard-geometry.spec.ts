@@ -85,7 +85,7 @@ async function readGeometry(page: Page) {
       document.querySelector<HTMLElement>('[data-testid="question-wizard-card"]')!,
     );
     const inputBoundary = document.querySelector<HTMLElement>(
-      '[data-testid="question-wizard-card"] input',
+      '[data-testid="question-wizard-card"] textarea',
     )?.parentElement;
     const indicator = document.querySelector<HTMLElement>('[data-option-indicator]');
     const borderWidths = (node: HTMLElement | null | undefined) => {
