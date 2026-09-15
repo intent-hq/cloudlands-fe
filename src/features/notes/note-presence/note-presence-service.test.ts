@@ -444,4 +444,129 @@ describe('note presence session', () => {
     expect(calls('note.presence.subscribe')).toHaveLength(3);
     session.release();
   });
+
+  it('releases the lease and re-registers for a fresh snapshot on a sequence gap', async () => {
+    const SUB2 = 'sub-presence-2';
+    let subscribes = 0;
+    transport.request.mockImplementation(async (method) => {
+      if (method === 'principal.me') return { id: 'principal-me' };
+      if (method === 'note.presence.subscribe')
+        return { subscriptionId: [SUB, SUB2][subscribes++] };
+      return {};
+    });
+    const session = joinNotePresence('ws-1', 'note-1');
+    await settle();
+    push({ seq: 0, kind: 'snapshot', snapshot: { viewers: [viewer('principal-b', null)] } });
+    push({ seq: 1, kind: 'delta', delta: { kind: 'joined', viewer: viewer('principal-c', null) } });
+    expect(session.getViewers().map((v) => v.principalId)).toEqual(['principal-b', 'principal-c']);
+
+    // seq 2 (a `left`) was lost: the roster can no longer be trusted.
+    push({ seq: 3, kind: 'delta', delta: { kind: 'joined', viewer: viewer('principal-d', null) } });
+    expect(calls('note.presence.unsubscribe')).toEqual([{ subscriptionId: SUB }]);
+    // The stale roster is kept (not flashed empty) until the fresh snapshot lands.
+    expect(session.getViewers().map((v) => v.principalId)).toEqual(['principal-b', 'principal-c']);
+    await settle();
+    expect(calls('note.presence.subscribe')).toHaveLength(2);
+
+    // Pushes on the released lease are ignored; the new lease's snapshot rebuilds.
+    push({ seq: 4, kind: 'delta', delta: { kind: 'joined', viewer: viewer('principal-e', null) } });
+    for (const handler of transport.notificationHandlers) {
+      handler({
+        method: 'subscription.push',
+        params: {
+          subscriptionId: SUB2,
+          seq: 0,
+          kind: 'snapshot',
+          snapshot: { viewers: [viewer('principal-b', null)] },
+        },
+      });
+    }
+    expect(session.getViewers().map((v) => v.principalId)).toEqual(['principal-b']);
+    session.release();
+    expect(calls('note.presence.unsubscribe')).toEqual([
+      { subscriptionId: SUB },
+      { subscriptionId: SUB2 },
+    ]);
+  });
+
+  it('re-registers when a delta arrives before the snapshot', async () => {
+    const session = joinNotePresence('ws-1', 'note-1');
+    await settle();
+    push({ seq: 1, kind: 'delta', delta: { kind: 'joined', viewer: viewer('principal-b', null) } });
+    expect(session.getViewers()).toEqual([]);
+    expect(calls('note.presence.unsubscribe')).toEqual([{ subscriptionId: SUB }]);
+    await settle();
+    expect(calls('note.presence.subscribe')).toHaveLength(2);
+    session.release();
+  });
+
+  it('retries a failed identity read with backoff before registering', async () => {
+    let identityReads = 0;
+    transport.request.mockImplementation(async (method) => {
+      if (method === 'principal.me') {
+        identityReads += 1;
+        if (identityReads === 1) throw new Error('transport down');
+        return { id: 'principal-me' };
+      }
+      if (method === 'note.presence.subscribe') return { subscriptionId: SUB };
+      return {};
+    });
+    const session = joinNotePresence('ws-1', 'note-1');
+    await settle();
+    expect(calls('note.presence.subscribe')).toEqual([]);
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(identityReads).toBe(2);
+    expect(calls('note.presence.subscribe')).toHaveLength(1);
+    push({
+      seq: 0,
+      kind: 'snapshot',
+      snapshot: { viewers: [viewer('principal-me', null), viewer('principal-b', null)] },
+    });
+    expect(session.getViewers().map((v) => v.principalId)).toEqual(['principal-b']);
+    session.release();
+  });
+
+  it('registers once the daemon reports no principal id', async () => {
+    transport.request.mockImplementation(async (method) => {
+      if (method === 'principal.me') return {};
+      if (method === 'note.presence.subscribe') return { subscriptionId: SUB };
+      return {};
+    });
+    const session = joinNotePresence('ws-1', 'note-1');
+    await settle();
+    expect(calls('note.presence.subscribe')).toHaveLength(1);
+    session.release();
+  });
+
+  it('holds one lease when reconnect fires while the identity read is pending', async () => {
+    let resolveIdentity!: (value: unknown) => void;
+    transport.request.mockImplementation(async (method) => {
+      if (method === 'principal.me') {
+        return new Promise((resolve) => {
+          resolveIdentity = resolve;
+        });
+      }
+      if (method === 'note.presence.subscribe') return { subscriptionId: SUB };
+      return {};
+    });
+    const session = joinNotePresence('ws-1', 'note-1');
+    await settle();
+    for (const handler of transport.reconnectHandlers) handler();
+    await settle();
+    expect(calls('note.presence.subscribe')).toEqual([]);
+
+    resolveIdentity({ id: 'principal-me' });
+    await settle();
+    expect(calls('note.presence.subscribe')).toHaveLength(1);
+    expect(calls('note.presence.unsubscribe')).toEqual([]);
+    push({
+      seq: 0,
+      kind: 'snapshot',
+      snapshot: { viewers: [viewer('principal-me', null), viewer('principal-b', null)] },
+    });
+    expect(session.getViewers().map((v) => v.principalId)).toEqual(['principal-b']);
+    session.release();
+    expect(calls('note.presence.unsubscribe')).toEqual([{ subscriptionId: SUB }]);
+  });
 });
