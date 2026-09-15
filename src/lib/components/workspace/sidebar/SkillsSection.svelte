@@ -100,6 +100,7 @@
       title={m.workspace_skills_title()}
       meta={formatInteger($skills$.length)}
       expanded={isExpanded}
+      collapsedChevronClass="rotate-90"
       onclick={() => (isExpanded = !isExpanded)}
     />
 

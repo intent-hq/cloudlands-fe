@@ -8,9 +8,10 @@
     meta?: string;
     expanded: boolean;
     onclick: () => void;
+    collapsedChevronClass?: string;
   }
 
-  let { title, meta, expanded, onclick }: Props = $props();
+  let { title, meta, expanded, onclick, collapsedChevronClass = '-rotate-90' }: Props = $props();
 </script>
 
 <Button
@@ -29,6 +30,6 @@
     icon={faChevronDown}
     class="size-3 shrink-0 opacity-50 transition-transform duration-spring-moderate ease-spring-moderate motion-reduce:transition-none {expanded
       ? ''
-      : '-rotate-90'}"
+      : collapsedChevronClass}"
   />
 </Button>

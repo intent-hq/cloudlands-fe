@@ -130,6 +130,7 @@
       title={m.workspace_mcpServers_title()}
       meta={m.workspace_mcpServers_enabledCount_label({ count: formatInteger(enabledServerCount) })}
       expanded={isExpanded}
+      collapsedChevronClass="rotate-90"
       onclick={() => (isExpanded = !isExpanded)}
     />
 
