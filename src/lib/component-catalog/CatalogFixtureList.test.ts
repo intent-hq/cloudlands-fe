@@ -39,7 +39,7 @@ describe('CatalogFixtureList real previews', () => {
   it('mounts and operates the canonical Button renderer', async () => {
     const { container } = renderEntry('button');
 
-    expect(container.querySelectorAll('[data-catalog-preview="button"]')).toHaveLength(2);
+    expect(container.querySelectorAll('[data-catalog-preview="button"]')).toHaveLength(3);
     await fireEvent.click(screen.getByRole('button', { name: '1. Primary' }));
     expect(screen.getByLabelText('Button click count').textContent).toBe('1');
     expect(screen.getByLabelText('Button action status').textContent).toBe(
