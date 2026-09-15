@@ -49,6 +49,9 @@
         leadingIcon: Boolean(leadingIcon),
         trailingIcon: Boolean(trailingIcon),
       }),
+      !wrapContent &&
+        (resolvedSize === 'xs' || resolvedSize === 'sm' || resolvedSize === 'compact') &&
+        'has-[>svg]:pl-2 has-[>svg]:pr-2.5',
       className,
     ),
   );
