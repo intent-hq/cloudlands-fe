@@ -8,6 +8,9 @@
 // through the `reduced-motion` helpers; CSS queries
 // `@container style(--motion-reduced: 1)` or uses the `motion-reduce:` variant.
 export const DIRECT_QUERY = 'prefers-reduced-motion';
+// Media features are case-insensitive: `(PREFERS-REDUCED-MOTION: reduce)` is a
+// valid query, so the match must be too. No `g` flag: `test()` stays stateless.
+export const DIRECT_QUERY_PATTERN = /prefers-reduced-motion/i;
 
 // The only non-test files allowed to spell the query: the token definition, its
 // script mirror, the pre-hydration splash in app.html, and the specialist prompt
@@ -36,6 +39,41 @@ const MESSAGE =
   '`$lib/utils/reduced-motion` in script, or `@container style(--motion-reduced: 1)` ' +
   '(the `motion-reduce:` variant) in CSS.';
 
+const BLOCK_COMMENT = /\/\*[\s\S]*?\*\//g;
+const HTML_COMMENT = /<!--[\s\S]*?-->/g;
+const STYLE_ELEMENT = /<style\b[^>]*>[\s\S]*?<\/style>/gi;
+
+const patternRanges = (text, pattern, offset = 0) =>
+  Array.from(text.matchAll(pattern), (match) => [
+    offset + match.index,
+    offset + match.index + match[0].length,
+  ]);
+
+/** `/* ... *\/` comment ranges in CSS text; `offset` shifts them into a host document. */
+export const cssCommentRanges = (text, offset = 0) => patternRanges(text, BLOCK_COMMENT, offset);
+
+/** `<!-- ... -->` comments plus `/* ... *\/` comments inside `<style>` blocks. */
+export const htmlCommentRanges = (text) => [
+  ...patternRanges(text, HTML_COMMENT),
+  ...Array.from(text.matchAll(STYLE_ELEMENT)).flatMap((match) =>
+    cssCommentRanges(match[0], match.index),
+  ),
+];
+
+/** Blank out `[start, end)` ranges, keeping newlines so line/column positions survive. */
+export function maskRanges(text, ranges) {
+  let masked = text;
+  for (const [start, end] of ranges) {
+    masked =
+      masked.slice(0, start) + masked.slice(start, end).replace(/[^\n]/g, ' ') + masked.slice(end);
+  }
+  return masked;
+}
+
+/** `[start, end)` of every direct query in `text`, ignoring the given comment ranges. */
+export const findDirectQueries = (text, commentRanges = []) =>
+  patternRanges(maskRanges(text, commentRanges), new RegExp(DIRECT_QUERY_PATTERN.source, 'gi'));
+
 export default {
   meta: {
     type: 'problem',
@@ -51,24 +89,32 @@ export default {
 
   create(context) {
     const { sourceCode } = context;
+    // Script comments come from the parser; svelte-eslint-parser exposes HTML
+    // comments as nodes and leaves `<style>` content as raw text, so its CSS
+    // comments are located inside that text.
+    const commentRanges = sourceCode
+      .getAllComments()
+      .flatMap((comment) => (comment.range ? [comment.range] : []));
     return {
-      Program() {
-        const text = sourceCode.text;
-        const comments = sourceCode.getAllComments();
-        const inComment = (index) =>
-          comments.some(({ range }) => range && index >= range[0] && index < range[1]);
-        let index = text.indexOf(DIRECT_QUERY);
-        while (index !== -1) {
-          if (!inComment(index)) {
-            context.report({
-              loc: {
-                start: sourceCode.getLocFromIndex(index),
-                end: sourceCode.getLocFromIndex(index + DIRECT_QUERY.length),
-              },
-              messageId: 'noDirectQuery',
-            });
-          }
-          index = text.indexOf(DIRECT_QUERY, index + DIRECT_QUERY.length);
+      SvelteHTMLComment(node) {
+        commentRanges.push(node.range);
+      },
+      SvelteStyleElement(node) {
+        for (const child of node.children) {
+          commentRanges.push(
+            ...cssCommentRanges(
+              sourceCode.text.slice(child.range[0], child.range[1]),
+              child.range[0],
+            ),
+          );
+        }
+      },
+      'Program:exit'() {
+        for (const [start, end] of findDirectQueries(sourceCode.text, commentRanges)) {
+          context.report({
+            loc: { start: sourceCode.getLocFromIndex(start), end: sourceCode.getLocFromIndex(end) },
+            messageId: 'noDirectQuery',
+          });
         }
       },
     };

@@ -79,6 +79,60 @@ describe('reduced-motion query scan', () => {
     ]);
   });
 
+  it('matches the media feature case-insensitively', () => {
+    const hits = findDirectQueryHits([
+      { path: 'src/lib/styles/probe.css', content: '@media (PREFERS-REDUCED-MOTION: reduce) {}' },
+      { path: 'src/other.html', content: '<style>@media (Prefers-Reduced-Motion) {}</style>' },
+    ]);
+    expect(hits.map((hit) => [hit.path, hit.line])).toEqual([
+      ['src/lib/styles/probe.css', 1],
+      ['src/other.html', 1],
+    ]);
+  });
+
+  it('ignores css and html comments but still reports the query beside them', () => {
+    const css = [
+      '/* prefers-reduced-motion is mirrored by --motion-reduced',
+      '   across lines */',
+      '.a { color: red; } /* PREFERS-REDUCED-MOTION */',
+      '',
+    ].join('\n');
+    const html = [
+      '<!-- prefers-reduced-motion is handled by app.html -->',
+      '<div><!-- nested prefers-reduced-motion --></div>',
+      '<style>',
+      '  /* prefers-reduced-motion */',
+      '  .a { color: red; }',
+      '</style>',
+      '',
+    ].join('\n');
+    expect(
+      findDirectQueryHits([
+        { path: 'src/lib/styles/probe.css', content: css },
+        { path: 'src/other.html', content: html },
+      ]),
+    ).toEqual([]);
+
+    const hits = findDirectQueryHits([
+      {
+        path: 'src/lib/styles/probe.css',
+        content: css.replace('.a { color: red; }', '@media (prefers-reduced-motion) {}'),
+      },
+      {
+        path: 'src/other.html',
+        content: html.replace('.a { color: red; }', '@media (prefers-reduced-motion) {}'),
+      },
+    ]);
+    expect(hits).toEqual([
+      {
+        path: 'src/lib/styles/probe.css',
+        line: 3,
+        text: '@media (prefers-reduced-motion) {} /* PREFERS-REDUCED-MOTION */',
+      },
+      { path: 'src/other.html', line: 5, text: '@media (prefers-reduced-motion) {}' },
+    ]);
+  });
+
   it('accepts the container-query route', () => {
     expect(
       findDirectQueryHits([

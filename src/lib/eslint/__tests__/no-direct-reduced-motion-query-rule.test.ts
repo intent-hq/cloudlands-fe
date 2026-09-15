@@ -93,6 +93,52 @@ describe('no-direct-reduced-motion-query under the real eslint.config.js', () =>
     expect(multiple.map((m) => m.line)).toEqual([1, 2]);
   });
 
+  it('matches the media feature case-insensitively in script and Svelte <style>', async () => {
+    const [script, style] = await Promise.all([
+      lintCode(
+        "export const r = matchMedia('(PREFERS-REDUCED-MOTION: reduce)').matches;",
+        'src/lib/utils/probe.ts',
+      ),
+      lintCode(
+        svelte(
+          'export const x = 1;',
+          '@media (Prefers-Reduced-Motion: reduce) { .a { animation: none; } }',
+        ),
+        'src/lib/components/Probe.svelte',
+      ),
+    ]);
+    expect(ruleHits(script)).toEqual([[1, 31]]);
+    expect(ruleHits(style)).toEqual([[6, 9]]);
+  });
+
+  it('ignores Svelte HTML comments and <style> comments but not the query next to them', async () => {
+    const commentsOnly = [
+      '<script lang="ts">',
+      '/* script prefers-reduced-motion */',
+      'export const x = 1;',
+      '</script>',
+      '<!-- markup prefers-reduced-motion -->',
+      '<div>',
+      '  <!-- nested PREFERS-REDUCED-MOTION -->',
+      '</div>',
+      '<style>',
+      '/* style prefers-reduced-motion',
+      '   spans lines */',
+      '.a { color: red; } /* trailing prefers-reduced-motion */',
+      '</style>',
+    ].join('\n');
+    const withQuery = commentsOnly.replace(
+      '.a { color: red; }',
+      '@media (prefers-reduced-motion: reduce) { .a { animation: none; } }',
+    );
+    const [clean, hit] = await Promise.all([
+      lintCode(commentsOnly, 'src/lib/components/Probe.svelte'),
+      lintCode(withQuery, 'src/lib/components/Probe.svelte'),
+    ]);
+    expect(clean).toEqual([]);
+    expect(ruleHits(hit)).toEqual([[12, 9]]);
+  });
+
   it('allows the container-query route, the shared helper, and comments', async () => {
     const [helper, container, comments] = await Promise.all([
       lintCode(

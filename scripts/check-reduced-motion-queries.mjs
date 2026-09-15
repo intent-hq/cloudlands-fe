@@ -5,8 +5,12 @@ import tailwindcss from '@tailwindcss/postcss';
 import postcss from 'postcss';
 import {
   DIRECT_QUERY,
+  DIRECT_QUERY_PATTERN,
   SOURCE_OF_TRUTH_FILES,
   TEST_FILE_GLOBS,
+  cssCommentRanges,
+  htmlCommentRanges,
+  maskRanges,
 } from '../eslint-rules/no-direct-reduced-motion-query.js';
 
 // Reduced motion has one source of truth (`--motion-reduced` in tokens.css, 1 under
@@ -66,14 +70,20 @@ export function collectSourceFiles(root, directory = path.join(root, SCAN_ROOT))
   return files;
 }
 
-/** Every line spelling the direct query in the given `{ path, content }` files. */
+const commentRangesFor = (filePath, content) =>
+  filePath.endsWith('.html') ? htmlCommentRanges(content) : cssCommentRanges(content);
+
+/** Every line spelling the direct query (outside comments) in the given `{ path, content }` files. */
 export function findDirectQueryHits(files) {
   const hits = [];
   for (const { path: filePath, content } of files) {
-    content.split('\n').forEach((text, index) => {
-      if (text.includes(DIRECT_QUERY))
-        hits.push({ path: filePath, line: index + 1, text: text.trim() });
-    });
+    const lines = content.split('\n');
+    maskRanges(content, commentRangesFor(filePath, content))
+      .split('\n')
+      .forEach((text, index) => {
+        if (DIRECT_QUERY_PATTERN.test(text))
+          hits.push({ path: filePath, line: index + 1, text: lines[index].trim() });
+      });
   }
   return hits;
 }
@@ -100,7 +110,7 @@ export function auditCompiledMotionReduce(css) {
     if (!rule.selector.includes('motion-reduce')) return;
     motionReduceRules += 1;
     const chain = atRuleChain(rule);
-    const media = chain.find((at) => at.name === 'media' && at.params.includes(DIRECT_QUERY));
+    const media = chain.find((at) => at.name === 'media' && DIRECT_QUERY_PATTERN.test(at.params));
     const container = chain.some(
       (at) => at.name === 'container' && at.params.includes(MOTION_REDUCE_CONTAINER_QUERY),
     );
