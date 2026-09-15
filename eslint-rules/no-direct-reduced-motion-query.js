@@ -21,6 +21,16 @@ export const SOURCE_OF_TRUTH_FILES = Object.freeze([
   'src/lib/constants/specialists.ts',
 ]);
 
+// Tests, specs and their fixtures/goldens may spell the query to assert the
+// behaviour. Nothing else is exempt — in particular not generated, build or
+// vendored paths, which ship to users like any other source.
+export const TEST_FILE_GLOBS = Object.freeze([
+  '**/__tests__/**',
+  '**/tests/**',
+  '**/*.test.*',
+  '**/*.spec.*',
+]);
+
 const MESSAGE =
   'Direct `prefers-reduced-motion` queries bypass battery mode. Use the helpers in ' +
   '`$lib/utils/reduced-motion` in script, or `@container style(--motion-reduced: 1)` ' +

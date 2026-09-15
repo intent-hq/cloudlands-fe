@@ -6,6 +6,7 @@ import postcss from 'postcss';
 import {
   DIRECT_QUERY,
   SOURCE_OF_TRUTH_FILES,
+  TEST_FILE_GLOBS,
 } from '../eslint-rules/no-direct-reduced-motion-query.js';
 
 // Reduced motion has one source of truth (`--motion-reduced` in tokens.css, 1 under
@@ -15,7 +16,7 @@ import {
 // and audits the compiled Tailwind output so the `motion-reduce:` variant keeps
 // compiling to `@container style(--motion-reduced: 1)`, never to the bare OS query
 // the built-in variant emits when the `@custom-variant` override in app.css is lost.
-export { DIRECT_QUERY, SOURCE_OF_TRUTH_FILES };
+export { DIRECT_QUERY, SOURCE_OF_TRUTH_FILES, TEST_FILE_GLOBS };
 export const SCAN_ROOT = 'src';
 export const SCANNED_EXTENSIONS = new Set(['.css', '.html']);
 export const APP_CSS = 'src/app.css';
@@ -32,18 +33,20 @@ export const REMEDIATION_HINT = [
   'in script use the helpers in `$lib/utils/reduced-motion`.',
 ].join('\n');
 
-const SKIPPED_DIRECTORIES = new Set(['node_modules', 'dist', 'build', '.git', 'paraglide']);
-const TEST_PATH = /(?:^|\/)(?:__tests__|tests)\/|\.(?:test|spec)\.[^/]+$/;
-
 const normalize = (value) => value.split(path.sep).join('/').replace(/^\.\//, '');
+const matchesAny = (relativePath, patterns) =>
+  patterns.some((pattern) => path.matchesGlob(relativePath, pattern));
 
-export const isSourceOfTruth = (relativePath) =>
-  SOURCE_OF_TRUTH_FILES.some((pattern) => path.matchesGlob(relativePath, pattern));
+export const isSourceOfTruth = (relativePath) => matchesAny(relativePath, SOURCE_OF_TRUTH_FILES);
+export const isTestPath = (relativePath) => matchesAny(relativePath, TEST_FILE_GLOBS);
 
+// Every css/html file under src/ counts — including generated, build and vendored
+// directories, which ship to users like any other stylesheet. Only tests and the
+// source of truth are exempt, the same allow-list ESLint applies to script files.
 export const isScannedPath = (relativePath) =>
   relativePath.startsWith(`${SCAN_ROOT}/`) &&
   SCANNED_EXTENSIONS.has(path.extname(relativePath)) &&
-  !TEST_PATH.test(relativePath) &&
+  !isTestPath(relativePath) &&
   !isSourceOfTruth(relativePath);
 
 export function collectSourceFiles(root, directory = path.join(root, SCAN_ROOT)) {
@@ -52,7 +55,7 @@ export function collectSourceFiles(root, directory = path.join(root, SCAN_ROOT))
   for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
     const absolute = path.join(directory, entry.name);
     if (entry.isDirectory()) {
-      if (!SKIPPED_DIRECTORIES.has(entry.name)) files.push(...collectSourceFiles(root, absolute));
+      files.push(...collectSourceFiles(root, absolute));
     } else if (entry.isFile()) {
       const relative = normalize(path.relative(root, absolute));
       if (isScannedPath(relative)) {

@@ -1,8 +1,9 @@
 // @vitest-environment node
 // @verify-changed-triggers: src/**/*.css, src/**/*.html, eslint-rules/no-direct-reduced-motion-query.js
-import { readFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import {
   APP_CSS,
   MOTION_REDUCE_CONTAINER_QUERY,
@@ -20,9 +21,38 @@ const directQueryCss =
   '.spin { animation: spin 1s; }\n@media (prefers-reduced-motion: reduce) { .spin { animation: none; } }\n';
 
 describe('reduced-motion query scan', () => {
+  const fixtureRoots: string[] = [];
+  afterEach(() => {
+    for (const root of fixtureRoots.splice(0)) rmSync(root, { recursive: true, force: true });
+  });
+
+  it('collects css/html from every src/ directory, including generated/build/dist/paraglide', () => {
+    const root = mkdtempSync(join(tmpdir(), 'reduced-motion-scan-'));
+    fixtureRoots.push(root);
+    const directories = ['ordinary', 'generated', 'build', 'dist', 'paraglide'];
+    for (const directory of directories) {
+      mkdirSync(join(root, 'src', directory), { recursive: true });
+      writeFileSync(join(root, 'src', directory, 'probe.css'), directQueryCss);
+    }
+    mkdirSync(join(root, 'src', 'ordinary', '__tests__'), { recursive: true });
+    writeFileSync(join(root, 'src', 'ordinary', '__tests__', 'probe.css'), directQueryCss);
+    writeFileSync(join(root, 'src', 'ordinary', 'probe.test.css'), directQueryCss);
+
+    const expected = directories.map((directory) => `src/${directory}/probe.css`).sort();
+    const files = collectSourceFiles(root);
+    expect(files.map((file) => file.path).sort()).toEqual(expected);
+    expect(
+      findDirectQueryHits(files)
+        .map((hit) => hit.path)
+        .sort(),
+    ).toEqual(expected);
+  });
+
   it('scans css and html under src/, skipping tests and the source-of-truth files', () => {
     expect(isScannedPath('src/lib/styles/chat-messages.css')).toBe(true);
     expect(isScannedPath('src/features/hud/hud.html')).toBe(true);
+    expect(isScannedPath('src/shared/generated/theme.generated.css')).toBe(true);
+    expect(isScannedPath('src/shared/paraglide/runtime.css')).toBe(true);
     expect(isScannedPath('src/lib/styles/tokens.css')).toBe(false);
     expect(isScannedPath('src/app.html')).toBe(false);
     expect(isScannedPath('src/lib/styles/__tests__/fixture.css')).toBe(false);
