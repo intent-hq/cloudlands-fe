@@ -59,7 +59,25 @@ async function mountWizard(
       document.body.append(target);
       mount(Host, { target, props: hostProps });
       await tick();
-      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      await document.fonts.ready;
+      // ResizeObserver retargets the card height after layout, even with reduced motion.
+      // Wait for stable frames so zoom/font layout has propagated into the wrapper.
+      let previous = '';
+      let stableFrames = 0;
+      const deadline = performance.now() + 5_000;
+      while (stableFrames < 3) {
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+        const geometry = JSON.stringify(
+          [
+            ...target.querySelectorAll(
+              '[data-question-wizard], [data-testid="question-wizard-card"], [data-animated-height-target]',
+            ),
+          ].map((node) => node.getBoundingClientRect().toJSON()),
+        );
+        stableFrames = geometry === previous ? stableFrames + 1 : 0;
+        previous = geometry;
+        if (performance.now() > deadline) throw new Error('Wizard layout did not settle');
+      }
     },
     { props, theme: options.theme ?? 'light', zoom },
   );
