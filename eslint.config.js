@@ -12,6 +12,9 @@ import noProductionDynamicImportRule from './eslint-rules/no-production-dynamic-
 import noComponentAsyncDataFetchRule from './eslint-rules/no-component-async-data-fetch.js';
 import noColdSvelteImportInTestsRule from './eslint-rules/no-cold-svelte-import-in-tests.js';
 import noFlushSyncInTeardownRule from './eslint-rules/no-flushsync-in-teardown.js';
+import noDirectReducedMotionQueryRule, {
+  SOURCE_OF_TRUTH_FILES as reducedMotionSourceOfTruthFiles,
+} from './eslint-rules/no-direct-reduced-motion-query.js';
 
 const intentPlugin = {
   rules: {
@@ -19,6 +22,7 @@ const intentPlugin = {
     'no-production-dynamic-import': noProductionDynamicImportRule,
     'no-cold-svelte-import-in-tests': noColdSvelteImportInTestsRule,
     'no-flushsync-in-teardown': noFlushSyncInTeardownRule,
+    'no-direct-reduced-motion-query': noDirectReducedMotionQueryRule,
   },
 };
 
@@ -686,6 +690,21 @@ export default [
     },
     rules: {
       'intent/no-flushsync-in-teardown': 'error',
+    },
+  },
+  // A direct `prefers-reduced-motion` query (matchMedia in script, `@media` in a
+  // component <style>) sees only the OS preference and bypasses battery saver.
+  // Reduced motion has one source of truth — `--motion-reduced` in tokens.css,
+  // mirrored by `$lib/utils/reduced-motion` — so only those files may spell the
+  // query. `.css`/`.html` files are covered by scripts/check-reduced-motion-queries.mjs.
+  {
+    files: ['src/**/*.{js,ts,svelte}'],
+    ignores: [...productionModuleIgnores, ...reducedMotionSourceOfTruthFiles],
+    plugins: {
+      intent: intentPlugin,
+    },
+    rules: {
+      'intent/no-direct-reduced-motion-query': 'error',
     },
   },
   ...themisFullConfig,
