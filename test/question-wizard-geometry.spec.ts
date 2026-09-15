@@ -297,6 +297,84 @@ test('single-select rows use native full-row keyboard submission without radio i
   expect(widths.every((width) => width > 300)).toBe(true);
 });
 
+test('free-text field grows with its content to a six-line cap and keeps a manual resize', async ({
+  page,
+}) => {
+  await mountWizard(page, { width: 720, height: 640 }, { optionCount: 2, questionCount: 2 });
+  await page.evaluate(() => document.fonts.ready);
+
+  const field = page.locator('[data-testid="question-wizard-card"] textarea');
+  const settle = () =>
+    page.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        ),
+    );
+  const metrics = () =>
+    field.evaluate((node) => ({
+      height: node.getBoundingClientRect().height,
+      lineHeight: parseFloat(getComputedStyle(node).lineHeight),
+      scrollHeight: node.scrollHeight,
+      clientHeight: node.clientHeight,
+      value: (node as HTMLTextAreaElement).value,
+    }));
+
+  const empty = await metrics();
+  expect(empty.lineHeight).toBeGreaterThan(0);
+  expect(empty.height).toBeCloseTo(empty.lineHeight, 1);
+
+  await field.click();
+  await page.keyboard.type(
+    'This answer is intentionally long so that it wraps onto a second line inside the wizard field, which starts out one line tall and should grow.',
+  );
+  await settle();
+  const wrapped = await metrics();
+  expect(wrapped.height).toBeCloseTo(2 * empty.lineHeight, 1);
+  expect(wrapped.scrollHeight).toBe(wrapped.clientHeight);
+
+  for (let line = 3; line <= 10; line += 1) {
+    await page.keyboard.press('Shift+Enter');
+    await page.keyboard.type(`line ${line}`);
+  }
+  await settle();
+  const capped = await metrics();
+  expect(capped.value.split('\n')).toHaveLength(9);
+  expect(capped.height).toBeCloseTo(6 * empty.lineHeight, 1);
+  expect(capped.scrollHeight).toBeGreaterThan(capped.clientHeight);
+
+  await page.keyboard.press('ControlOrMeta+A');
+  await page.keyboard.press('Backspace');
+  await page.keyboard.type('short');
+  await settle();
+  expect((await metrics()).height).toBeCloseTo(empty.lineHeight, 1);
+
+  const box = (await field.boundingBox())!;
+  await page.mouse.move(box.x + box.width - 4, box.y + box.height - 4);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width - 4, box.y + box.height + 60, { steps: 8 });
+  await page.mouse.up();
+  await settle();
+  const dragged = await metrics();
+  expect(dragged.height).toBeGreaterThanOrEqual(empty.lineHeight + 40);
+
+  await page.keyboard.type(' plus more typing after the drag');
+  await page.keyboard.press('Shift+Enter');
+  await page.keyboard.type('and a second line');
+  await settle();
+  const afterTyping = await metrics();
+  expect(afterTyping.value).toBe('short plus more typing after the drag\nand a second line');
+  expect(afterTyping.height).toBeCloseTo(dragged.height, 1);
+  await expect(page.getByTestId('panel-boundary')).toHaveAttribute('data-completion-count', '0');
+
+  await page.keyboard.press('Enter');
+  await expect(field).toHaveValue('');
+  await settle();
+  const nextStep = await metrics();
+  expect(nextStep.height).toBeCloseTo(empty.lineHeight, 1);
+  await expect(page.getByTestId('panel-boundary')).toHaveAttribute('data-completion-count', '0');
+});
+
 test('collapsed and scrolling states keep the slot flush without clipping or scroll jumps', async ({
   page,
 }) => {
