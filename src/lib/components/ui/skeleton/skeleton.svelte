@@ -38,7 +38,7 @@
     }
   }
 
-  @media (prefers-reduced-motion: reduce) {
+  @container style(--motion-reduced: 1) {
     .skeleton-shimmer {
       animation: none;
       background-image: none;

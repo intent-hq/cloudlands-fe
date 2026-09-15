@@ -161,7 +161,7 @@ describe('SuggestedPrompts', () => {
     expect(hint.className).toContain('opacity-100');
     expect(hint.className).not.toContain('text-ui');
     expect(hint.className).not.toMatch(/text-(?:muted-foreground|subtle)\//);
-    expect(hint.closest('button')?.className).toContain('type-body');
+    expect(hint.closest('[data-suggested-prompt-row]')?.className).toContain('type-body');
   });
 
   it('preserves keyboard selection and the separate edit affordance', async () => {

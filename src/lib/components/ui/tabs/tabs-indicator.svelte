@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { prefersReducedMotion } from '$lib/utils/reduced-motion';
   import type { ItemRect, ProximityHover } from '$lib/interaction';
   import type { Action } from 'svelte/action';
   import {
@@ -13,7 +14,6 @@
   );
 
   const springRect: Action<HTMLElement, ItemRect> = (node, rect) => {
-    const media = window.matchMedia('(prefers-reduced-motion: reduce)');
     const springs = createTabsIndicatorSprings(rect);
     const disposeEffect = $effect.root(() => {
       $effect(() => {
@@ -25,7 +25,7 @@
 
     return {
       update(next) {
-        retargetTabsIndicator(springs, next, media.matches);
+        retargetTabsIndicator(springs, next, prefersReducedMotion());
       },
       destroy() {
         disposeEffect();

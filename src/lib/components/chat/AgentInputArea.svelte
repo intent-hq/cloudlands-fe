@@ -270,7 +270,7 @@
     animation: bounce-dot calc(var(--spring-slow) * 6) var(--spring-slow-ease) infinite;
   }
 
-  @media (prefers-reduced-motion: reduce) {
+  @container style(--motion-reduced: 1) {
     .animate-bounce-dot {
       animation: none;
     }

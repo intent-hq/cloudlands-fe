@@ -116,7 +116,7 @@
     stroke-width: 2;
   }
 
-  @media (prefers-reduced-motion: reduce) {
+  @container style(--motion-reduced: 1) {
     .checkbox-mark path {
       transition: none;
     }

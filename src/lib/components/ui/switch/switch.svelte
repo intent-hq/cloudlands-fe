@@ -1,7 +1,8 @@
 <script lang="ts">
   import { cn } from '$lib/utils';
   import { Switch as SwitchPrimitive } from 'bits-ui';
-  import { onMount, untrack } from 'svelte';
+  import { onDestroy, untrack } from 'svelte';
+  import { watchReducedMotion } from '$lib/utils/reduced-motion.svelte';
   import { createSwitchThumbSpring, retargetSwitchThumb } from './switch-motion.svelte';
 
   interface Props extends Omit<SwitchPrimitive.RootProps, 'children' | 'child'> {
@@ -81,20 +82,13 @@
   let padding = $derived(sizes[size].padding);
   let thumbWidth = $derived(sizes[size].thumb);
   let thumbHeight = $derived(thumbWidth);
-  let reducedMotion = $state(false);
+  const reducedMotion = watchReducedMotion();
+  onDestroy(reducedMotion.cleanup);
   const thumbPosition = createSwitchThumbSpring(untrack(() => padding));
   const targetPosition = $derived(checked ? width - thumbWidth - padding : padding);
 
   $effect(() => {
-    retargetSwitchThumb(thumbPosition, targetPosition, reducedMotion);
-  });
-
-  onMount(() => {
-    const media = window.matchMedia('(prefers-reduced-motion: reduce)');
-    const update = () => (reducedMotion = media.matches);
-    update();
-    media.addEventListener('change', update);
-    return () => media.removeEventListener('change', update);
+    retargetSwitchThumb(thumbPosition, targetPosition, reducedMotion.current);
   });
 </script>
 

@@ -156,18 +156,18 @@ describe('QuestionWizard', () => {
       // Mounted on AC, then switched to battery: the next step must not animate.
       root.setAttribute(REDUCE_MOTION_ATTRIBUTE, '');
       await fireEvent.click(screen.getByText('OS keychain'));
-      expect(screen.getByText('2 of 3')).toBeTruthy();
+      expect(screen.getByText('Question 2 of 3')).toBeTruthy();
       expect(animate).not.toHaveBeenCalled();
 
       // Plugged back in: the following step animates at full duration again.
       root.removeAttribute(REDUCE_MOTION_ATTRIBUTE);
       await fireEvent.click(screen.getByRole('button', { name: /skip/i }));
-      expect(screen.getByText('3 of 3')).toBeTruthy();
+      expect(screen.getByText('Question 3 of 3')).toBeTruthy();
       await waitFor(() => {
         const durations = animate.mock.calls.map(([, options]) =>
           typeof options === 'number' ? options : options?.duration,
         );
-        expect(durations).toContain(150);
+        expect(durations).toContain(240);
       });
     } finally {
       root.removeAttribute(REDUCE_MOTION_ATTRIBUTE);

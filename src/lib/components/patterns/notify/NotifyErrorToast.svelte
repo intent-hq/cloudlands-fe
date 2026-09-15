@@ -73,7 +73,7 @@
     border-radius: var(--toast-action-radius, var(--radius));
   }
 
-  @media (prefers-reduced-motion: reduce) {
+  @container style(--motion-reduced: 1) {
     .toast-details-chevron {
       transition: none;
     }

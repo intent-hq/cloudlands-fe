@@ -1057,7 +1057,7 @@
     animation: slideUpIn var(--spring-slow) var(--spring-slow-ease) both;
   }
 
-  @media (prefers-reduced-motion: reduce) {
+  @container style(--motion-reduced: 1) {
     .content-block--animate-in {
       animation: none;
     }

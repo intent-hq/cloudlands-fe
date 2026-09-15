@@ -698,7 +698,7 @@
     }
   }
 
-  @media (prefers-reduced-motion: reduce) {
+  @container style(--motion-reduced: 1) {
     .enhanced-mention-list,
     .skeleton-icon,
     .skeleton-text {

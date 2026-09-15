@@ -64,11 +64,7 @@
   import { buildWorkspacePRPresentationModel } from './sidebar/workspace-pr-presentation';
   import { constructPrUrl, legacyWorkspacePullRequest } from './sidebar/sidebar-changes-utils';
   import { selectPrMonitors } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
-  import {
-    prefersReducedMotion,
-    spring,
-    type ImmediateMotionConfig as TransitionConfig,
-  } from '$lib/motion';
+  import { spring, type ImmediateMotionConfig as TransitionConfig } from '$lib/motion';
 
   import { onDestroy, onMount, tick } from 'svelte';
   import { writable } from 'svelte/store';

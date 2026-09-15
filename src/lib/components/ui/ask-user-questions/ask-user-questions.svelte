@@ -68,7 +68,7 @@
   let rootElement = $state<HTMLElement | null>(null);
   let rowsElement = $state<HTMLElement | null>(null);
   let otherInput = $state<HTMLTextAreaElement | null>(null);
-  let hover = $state<ProximityHover>();
+  let hover = $state.raw<ProximityHover>();
   let freeTextError = $state<string | null>(null);
   const pendingRows = new Map<number, HTMLElement>();
 
@@ -178,13 +178,16 @@
 
   const connectRows: Action<HTMLElement> = (node) => {
     rowsElement = node;
-    hover = createProximityHover(node);
+    const rowHover = createProximityHover(node);
+    hover = rowHover;
     pendingRows.forEach((element, rowIndex) => hover?.registerItem(rowIndex, element));
     return {
       destroy() {
-        hover?.destroy();
-        hover = undefined;
-        rowsElement = null;
+        rowHover.destroy();
+        if (hover === rowHover) {
+          hover = undefined;
+          rowsElement = null;
+        }
       },
     };
   };
@@ -636,11 +639,14 @@
                   onkeydown={handleRowsKeydown}
                 >
                   {#if hover}
+                    {@const rowHover = hover}
                     <ProximityHighlight
-                      store={hover}
+                      store={rowHover}
                       {selectedIndexes}
                       selectedClass="bg-selected"
-                      hoverClass={hover.activeIndex === otherIndex ? 'bg-transparent' : 'bg-hover'}
+                      hoverClass={rowHover.activeIndex === otherIndex
+                        ? 'bg-transparent'
+                        : 'bg-hover'}
                     />
                   {/if}
 

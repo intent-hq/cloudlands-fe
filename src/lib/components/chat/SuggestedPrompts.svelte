@@ -7,6 +7,7 @@
   import { m } from '$shared/paraglide/messages.js';
   import { Button } from '$lib/components/ui/button';
   import { Badge } from '$lib/components/ui/badge';
+  import { ListView } from '$lib/components/patterns/collection';
   import type { WorkspaceId } from '$shared/types/branded-ids';
   import { handleLink } from '$features/navigation/link-handler';
   import {
@@ -98,12 +99,17 @@
     in:springIn={{ tier: 'fast', y: 0, scale: 1 }}
     out:crispOut={{ tier: 'fast' }}
   >
-    <div
-      class="flex flex-col {compact ? 'gap-0' : 'gap-0.5'}"
+    <ListView
+      items={prompts}
+      virtualize={false}
+      onActivate={handleClick}
+      class="overflow-visible! [&>div>div:last-child]:flex [&>div>div:last-child]:flex-col {compact
+        ? '[&>div>div:last-child]:gap-0'
+        : '[&>div>div:last-child]:gap-0.5'}"
       data-testid="suggested-prompts-list"
       data-compact={compact}
     >
-      {#each prompts as prompt, index (`prompt-${index}`)}
+      {#snippet row({ item: prompt, index })}
         {@const parts = splitPromptMarkdownLinks(prompt)}
         {@const leadingText = parts[0]?.type === 'text' ? parts[0].content : ''}
         <!-- The row is a presentational mouse target; the send control is the text span so
@@ -113,7 +119,6 @@
           class="{OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS} {OPERATIONAL_ROW_TONE_CLASS} group relative flex cursor-pointer items-center gap-[var(--operational-leading-gap)] rounded-sm border border-transparent bg-transparent px-1.5 py-0.5 text-left opacity-100 pr-9 transition-colors hover:text-foreground has-[[data-suggested-prompt-text]:focus-visible]:outline-2 has-[[data-suggested-prompt-text]:focus-visible]:outline-offset-2 has-[[data-suggested-prompt-text]:focus-visible]:outline-ring"
           data-typography-role="body"
           data-suggested-prompt-row
-          onclick={() => handleClick(prompt)}
         >
           <span
             class="{CHAT_OPERATIONAL_LEADING_CLASS} mt-px self-start"
@@ -128,6 +133,10 @@
               aria-label={promptVisibleText(prompt)}
               class="focus-visible:outline-none"
               data-suggested-prompt-text
+              onclick={(event) => {
+                event.stopPropagation();
+                handleClick(prompt);
+              }}
               onkeydown={(e) => handleKeyDown(e, prompt)}>{leadingText}</span
             >{#each parts.slice(leadingText ? 1 : 0) as part, partIndex (partIndex)}{#if part.type === 'link'}{@const url =
                   promptLinkRoutingUrl(part.url)}<a
@@ -172,7 +181,7 @@
             </Tooltip>
           {/if}
         </div>
-      {/each}
-    </div>
+      {/snippet}
+    </ListView>
   </div>
 {/if}

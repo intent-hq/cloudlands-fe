@@ -331,7 +331,7 @@
   :global(.catalog-reduced-motion) .reduced-motion-note {
     display: block;
   }
-  @media (prefers-reduced-motion: reduce) {
+  @container style(--motion-reduced: 1) {
     .spring-row i.active {
       animation: none;
     }

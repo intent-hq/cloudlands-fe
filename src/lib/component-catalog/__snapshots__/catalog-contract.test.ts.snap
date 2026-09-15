@@ -8345,7 +8345,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:list:edito
                       <span aria-level="3" class="flex-1 font-medium text-left text-muted-foreground type-caption" role="heading">
                         "Recent work"
                       <div class="flex gap-1 items-center">
-                    <div class="flex flex-col items-stretch min-w-0 text-left" data-slot="list-section-content">
+                    <div class="flex flex-col items-stretch min-w-0 svelte-<scope> text-left" data-slot="list-section-content">
                       <div class="flex-1 grid group/list-item min-w-0 relative w-full" data-slot="list-item-row">
                         <div>
                           <button aria-labelledby="c<id>-content" class="[&_[data-slot=button-content]]:justify-start [&_[data-slot=button-content]]:min-w-0 [&_[data-slot=button-content]]:w-full [&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-selected border border-transparent col-start-1 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast duration-spring-fast ease-spring-fast ease-spring-fast flex focus-visible:-outline-offset-1 font-inherit font-normal gap-1.5 group group/button h-full isolate items-center justify-start min-h-(--control-height-medium) min-w-0 motion-reduce:transition-none px-2 py-1.5 relative rounded-(--radius-row) row-start-1 shrink-0 text-foreground text-left transition-colors type-caption w-full whitespace-nowrap" data-selected="true" data-slot="list-item" type="button">
@@ -16571,15 +16571,6 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:modals:produ
                                       "Build reviewer"
                                     <span class="shrink-0 text-muted-foreground type-caption">
                                       "Will be interrupted"
-                                  <li class="flex gap-2 items-center min-w-0 py-1">
-                                    <span class="shrink-0">
-                                      <svg aria-hidden="true" class="agent-avatar agent-avatar--named svelte-<scope>" data-agent-avatar="" data-avatar-design="fallback-code" data-avatar-variant="compact">
-                                        <g>
-                                          <path>
-                                    <span class="flex-1 min-w-0 text-foreground truncate type-body">
-                                      "Design reviewer"
-                                    <span class="shrink-0 text-muted-foreground type-caption">
-                                      "Keep running"
                                   <li class="min-w-0 py-1 text-muted-foreground">
                                     <div class="truncate type-body">
                                       "Component docs"
@@ -16587,25 +16578,6 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:modals:produ
                                       "https://intent.app/docs/components"
                                     <div class="type-caption">
                                       "Browsers disconnected"
-                              <section aria-label="Release prep" class="space-y-1">
-                                <h3 class="flex gap-2 items-center min-w-0 px-2 py-1.5">
-                                  <span aria-hidden="true" class="forced-colors:text-[CanvasText] inline-flex items-center justify-center shrink-0 svelte-<scope> text-muted-foreground/35 workspace-status-icon" data-workspace-status-visual="dot" data-workspace-status="idle">
-                                    <span class="svelte-<scope> workspace-status-dot" data-workspace-status-dot="">
-                                  <span class="font-normal min-w-0 text-foreground truncate type-body">
-                                    "Release prep"
-                                <ul class="pl-7 pr-2 space-y-1">
-                                  <li class="flex gap-2 items-center min-w-0 py-1">
-                                    <span class="shrink-0">
-                                      <svg aria-hidden="true" class="agent-avatar agent-avatar--named svelte-<scope>" data-agent-avatar="" data-avatar-design="fallback-crown" data-avatar-variant="compact">
-                                        <g>
-                                          <g>
-                                            <path>
-                                            <circle>
-                                            <circle>
-                                    <span class="flex-1 min-w-0 text-foreground truncate type-body">
-                                      "Remote verifier"
-                                    <span class="shrink-0 text-muted-foreground type-caption">
-                                      "Keep running"
                             <div class="flex gap-2 items-center justify-end mt-6" data-slot="dialog-footer">
                               <div class="flex gap-3 items-center justify-between" data-size="default" data-slot="form-actions">
                                 <div class="flex items-center" data-slot="form-actions-destructive">

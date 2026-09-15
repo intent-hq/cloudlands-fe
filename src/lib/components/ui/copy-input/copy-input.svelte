@@ -275,7 +275,7 @@
     }
   }
 
-  @media (prefers-reduced-motion: reduce) {
+  @container style(--motion-reduced: 1) {
     .copy-input-draw {
       animation: none;
       stroke-dashoffset: 0;

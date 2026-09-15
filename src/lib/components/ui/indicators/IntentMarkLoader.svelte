@@ -82,7 +82,7 @@
     transform-origin: 0 0;
   }
 
-  @media (prefers-reduced-motion: reduce) {
+  @container style(--motion-reduced: 1) {
     .intent-mark-loader,
     .intent-mark-loader :global(*) {
       transition-property: none;

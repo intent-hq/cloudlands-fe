@@ -1,6 +1,5 @@
 import {
   crispOut,
-  prefersReducedMotion,
   spring,
   springIn,
   type ImmediateMotionConfig as TransitionConfig,

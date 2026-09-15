@@ -301,7 +301,7 @@
     }
   }
 
-  @media (prefers-reduced-motion: reduce) {
+  @container style(--motion-reduced: 1) {
     .message-wrapper,
     .status-spinner,
     :global(.highlight-flash) {

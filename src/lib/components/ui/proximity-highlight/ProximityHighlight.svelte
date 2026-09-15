@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { prefersReducedMotion, onReducedMotionChange } from '$lib/utils/reduced-motion';
   import { createMergeSplit, type ProximityHover, type SelectedIndexes } from '$lib/interaction';
   import { fade, Spring, type SpringTierName } from '$lib/motion';
   import { cn } from '$lib/utils.js';
@@ -34,7 +35,6 @@
   });
 
   const springRect: Action<HTMLElement, SpringRectOptions> = (node, options) => {
-    const media = window.matchMedia('(prefers-reduced-motion: reduce)');
     const top = new Spring(options.rect.top, options.tier);
     const left = new Spring(options.rect.left, options.tier);
     const width = new Spring(options.rect.width, options.tier);
@@ -53,8 +53,8 @@
       void width.set(next.rect.width);
       void height.set(next.rect.height);
     };
-    const reduce = () => media.matches && setRect(options);
-    media.addEventListener('change', reduce);
+    const reduce = () => prefersReducedMotion() && setRect(options);
+    const stopMotionListener = onReducedMotionChange(reduce);
 
     return {
       update(next) {
@@ -62,7 +62,7 @@
         setRect(next);
       },
       destroy() {
-        media.removeEventListener('change', reduce);
+        stopMotionListener();
         disposeEffect();
       },
     };
