@@ -350,6 +350,17 @@ describe('presenceSaga lifecycle', () => {
     expect(wire.count('presence.snapshot:ws-1')).toBe(2);
   });
 
+  it('reports the focus settled before boot once the first attach completes', async () => {
+    start();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(mocks.invoke).toHaveBeenCalledTimes(1);
+    expect(mocks.invoke).toHaveBeenCalledWith('presence:report', {
+      focus: [{ workspaceId: 'ws-1' }],
+      typing: null,
+    });
+    expect(store.state.presence.ownTypingSource).toBe('ts-own');
+  });
+
   it('re-reads identity and the displayed rosters once the firehose is resubscribed, then reports once', async () => {
     start();
     await vi.advanceTimersByTimeAsync(500);
