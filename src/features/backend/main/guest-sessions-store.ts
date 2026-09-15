@@ -401,8 +401,8 @@ function decryptToken(encToken: EncryptedToken): string {
 }
 
 /**
- * Listeners notified after every LOCAL syncable mutation that persisted a
- * change (add / forget / setHostname / leaveWorkspace). Remote applications via
+ * Listeners notified after every LOCAL mutation that persisted a change
+ * (add / forget / setHostname / leaveWorkspace). Remote applications via
  * {@link applyRemoteSyncRecord} do NOT notify — a pull must not loop back
  * into a push.
  */
@@ -686,14 +686,19 @@ export async function setHosts(id: string, hosts: string[]): Promise<boolean> {
  * Drop one workspace from a session's local record (per-workspace *Leave*,
  * after the host accepted `workspace.members.leave`). The session stays,
  * even with zero workspaces, until *Leave host*. Returns whether anything
- * changed; no-op for an unknown session or workspace.
+ * changed; no-op for an unknown session or workspace. Like
+ * {@link setWorkspaces}, this edits only the local-only workspace cache
+ * (omitted from {@link listSyncRecords}), so the record's `updatedAt` — the
+ * keychain LWW clock — is left alone: advancing it would republish this
+ * device's possibly stale credential as the newer copy and roll back a
+ * re-join another device just made. Listeners still fire so the renderer
+ * sees the new list.
  */
 export async function leaveWorkspace(id: string, workspaceId: string): Promise<boolean> {
   const changed = await mutate(async (state) => {
     const session = state.sessions.find((s) => s.id === id);
     if (!session?.workspaces?.some((w) => w.id === workspaceId)) return false;
     session.workspaces = session.workspaces.filter((w) => w.id !== workspaceId);
-    session.updatedAt = Math.max(Date.now(), session.updatedAt + 1);
     await writeState(state);
     return true;
   });
