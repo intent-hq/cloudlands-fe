@@ -84,6 +84,35 @@ describe('sidebar launcher primary ordering', () => {
     ]);
   });
 
+  it('drops retired sessions from the stack, count, and running set until restored', () => {
+    const active = agent('active');
+    const retired = agent('retired', {
+      hasUnread: true,
+      retiredAt: '2026-03-19T01:00:00.000Z',
+    });
+    const derive = (agents: AgentSession[]) =>
+      deriveAgentLauncherItems(
+        agents,
+        agents.length,
+        ({ id }) => id === 'retired',
+        () => ({ lastUserMessage: '', response: '' }),
+      );
+
+    const retiredState = derive([active, retired]);
+    expect(retiredState.launcherAgents.map(({ agent: item }) => item.id)).toEqual(['active']);
+    expect(retiredState.totalAgents).toBe(1);
+    expect(retiredState.overflowCount).toBe(0);
+    expect(retiredState.runningAgents).toEqual([]);
+
+    const restoredState = derive([active, { ...retired, retiredAt: undefined }]);
+    expect(restoredState.launcherAgents.map(({ agent: item }) => item.id)).toEqual([
+      'retired',
+      'active',
+    ]);
+    expect(restoredState.totalAgents).toBe(2);
+    expect(restoredState.runningAgents.map(({ id }) => id)).toEqual(['retired']);
+  });
+
   it('keeps the Spec note first without changing the remaining root-note order', () => {
     const notes = [
       { id: 'context', title: 'Context' },
