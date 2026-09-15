@@ -406,6 +406,14 @@ export const IpcContracts = {
       version: z.string(),
     }),
   },
+
+  // Power channels (Electron powerMonitor)
+  'power:get-battery-state': {
+    request: z.object({}),
+    response: z.object({
+      onBattery: z.boolean(),
+    }),
+  },
 } as const;
 
 export type IpcContractKey = keyof typeof IpcContracts;
