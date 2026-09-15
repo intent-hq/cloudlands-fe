@@ -15,6 +15,7 @@
   import {
     presenceMembersReceived,
     presenceOwnPrincipalReceived,
+    presenceRosterReceived,
   } from '$store/renderer/slices/presence/presence-slice';
 
   let { scenario = 'default' }: { scenario?: string } = $props();
@@ -60,6 +61,23 @@
         addedAt: '2026-09-02T00:00:00Z',
       },
     ]),
+  );
+  // The people selector shows nothing while nobody else is online; put bob on
+  // the roster so the roster section renders.
+  appStore.dispatch(
+    presenceRosterReceived({
+      workspaceId,
+      members: [
+        {
+          principalId: 'p-bob',
+          login: 'bob',
+          displayName: null,
+          avatarUrl: null,
+          focus: [{ workspaceId }],
+          typing: [],
+        },
+      ],
+    }),
   );
 
   const dialogOpen$ = selectShareDialogOpen();
