@@ -175,6 +175,100 @@ describe('presence selectors', () => {
       );
       expect(selectWorkspacePresencePeople.select(left, 'ws-1')).toEqual([]);
     });
+
+    it('shows nothing while the own principal is unknown, even with another accepted member listed', () => {
+      const workspace = workspacesWith(shared('ws-1', { ownerPrincipalId: 'me', memberCount: 2 }));
+      const two = presenceMembersReceived('ws-1', [accepted('me', 'owner'), accepted('away')]);
+      const meOnly = presenceRosterReceived({
+        workspaceId: 'ws-1',
+        members: [member('me', { focus: [{ workspaceId: 'ws-1', agentId: 'agent-1' }] })],
+      });
+      const unknown = stateWith(reduce(meOnly, two), { workspace });
+      expect(selectWorkspacePresencePeople.select(unknown, 'ws-1')).toEqual([]);
+      const knownLater = stateWith(reduce(meOnly, two, presenceOwnPrincipalReceived('me')), {
+        workspace,
+      });
+      expect(selectWorkspacePresencePeople.select(knownLater, 'ws-1')).toEqual([]);
+      const everyoneOnline = stateWith(reduce(roster, two), { workspace });
+      expect(selectWorkspacePresencePeople.select(everyoneOnline, 'ws-1')).toEqual([]);
+      const identified = stateWith(reduce(roster, two, presenceOwnPrincipalReceived('me')), {
+        workspace,
+      });
+      expect(ids(selectWorkspacePresencePeople.select(identified, 'ws-1'))).toEqual([]);
+      const viewerAccepted = presenceMembersReceived('ws-1', [
+        accepted('me', 'owner'),
+        accepted('viewer'),
+      ]);
+      const viewerIdentified = stateWith(
+        reduce(roster, viewerAccepted, presenceOwnPrincipalReceived('me')),
+        { workspace },
+      );
+      expect(ids(selectWorkspacePresencePeople.select(viewerIdentified, 'ws-1'))).toEqual([
+        'me',
+        'viewer',
+      ]);
+    });
+
+    it('tells the members apart by principal id, not by name: a same-named other person counts, a same-named self does not', () => {
+      const workspace = workspacesWith(shared('ws-1', { ownerPrincipalId: 'p-1', memberCount: 2 }));
+      const twins = presenceMembersReceived('ws-1', [
+        { ...accepted('p-1', 'owner'), login: 'alice', displayName: 'Alice' },
+        { ...accepted('p-2'), login: 'alice', displayName: 'Alice' },
+      ]);
+      const bothOnline = presenceRosterReceived({
+        workspaceId: 'ws-1',
+        members: [
+          member('p-1', { login: 'alice', displayName: 'Alice', focus: [{ workspaceId: 'ws-1' }] }),
+          member('p-2', { login: 'alice', displayName: 'Alice', focus: [{ workspaceId: 'ws-1' }] }),
+        ],
+      });
+      const shown = stateWith(reduce(bothOnline, twins, presenceOwnPrincipalReceived('p-1')), {
+        workspace,
+      });
+      expect(
+        selectWorkspacePresencePeople.select(shown, 'ws-1').map((p) => [p.principalId, p.self]),
+      ).toEqual([
+        ['p-1', true],
+        ['p-2', false],
+      ]);
+      const selfOnly = presenceRosterReceived({
+        workspaceId: 'ws-1',
+        members: [
+          member('p-1', { login: 'alice', displayName: 'Alice', focus: [{ workspaceId: 'ws-1' }] }),
+        ],
+      });
+      const hidden = stateWith(reduce(selfOnly, twins, presenceOwnPrincipalReceived('p-1')), {
+        workspace,
+      });
+      expect(selectWorkspacePresencePeople.select(hidden, 'ws-1')).toEqual([]);
+    });
+
+    it('shows the owner to a guest looking at the shared workspace, with the guest as self', () => {
+      const workspace = workspacesWith(shared('ws-1', { ownerPrincipalId: 'me', memberCount: 2 }));
+      const membershipWithGuest = presenceMembersReceived('ws-1', [
+        accepted('me', 'owner'),
+        accepted('guest:abc'),
+      ]);
+      const bothLooking = presenceRosterReceived({
+        workspaceId: 'ws-1',
+        members: [
+          member('me', { focus: [{ workspaceId: 'ws-1' }] }),
+          member('guest:abc', { focus: [{ workspaceId: 'ws-1' }] }),
+        ],
+      });
+      const state = stateWith(
+        reduce(bothLooking, membershipWithGuest, presenceOwnPrincipalReceived('guest:abc')),
+        { workspace },
+      );
+      expect(
+        selectWorkspacePresencePeople
+          .select(state, 'ws-1')
+          .map((p) => [p.principalId, p.owner, p.self]),
+      ).toEqual([
+        ['me', true, false],
+        ['guest:abc', false, true],
+      ]);
+    });
   });
 
   describe('hasOtherPresence (the indicator rule)', () => {
@@ -243,11 +337,105 @@ describe('presence selectors', () => {
       expect(selectAgentPresencePeople.select(sharedButAlone, 'ws-1', 'agent-1')).toEqual([]);
     });
 
-    it('treats every roster row as someone else while the own principal is unknown', () => {
-      const state = stateWith(reduce(roster), { workspace: workspacesWith() });
-      const people = selectAgentPresencePeople.select(state, 'ws-1', 'agent-1');
-      expect(ids(people)).toEqual(['me', 'viewer']);
-      expect(people.every((p) => !p.self && !p.owner)).toBe(true);
+    it('shows no circle while the own principal is unknown, however many roster rows look at the chat', () => {
+      const workspace = workspacesWith(shared('ws-1', { ownerPrincipalId: 'me', memberCount: 2 }));
+      const meOnly = presenceRosterReceived({
+        workspaceId: 'ws-1',
+        members: [member('me', { focus: [{ workspaceId: 'ws-1', agentId: 'agent-1' }] })],
+      });
+      expect(
+        selectAgentPresencePeople.select(
+          stateWith(reduce(meOnly), { workspace }),
+          'ws-1',
+          'agent-1',
+        ),
+      ).toEqual([]);
+      const unknown = stateWith(reduce(roster), { workspace });
+      expect(selectAgentPresencePeople.select(unknown, 'ws-1', 'agent-1')).toEqual([]);
+      expect(selectAgentPresencePeople.select(unknown, 'ws-1', 'agent-2')).toEqual([]);
+      const identified = stateWith(reduce(roster, presenceOwnPrincipalReceived('me')), {
+        workspace,
+      });
+      expect(ids(selectAgentPresencePeople.select(identified, 'ws-1', 'agent-1'))).toEqual([
+        'me',
+        'viewer',
+      ]);
+    });
+
+    it('hides the circles the moment the workspace stops being shared, before any roster replacement', () => {
+      const bothLooking = presenceRosterReceived({
+        workspaceId: 'ws-1',
+        members: [
+          member('me', { focus: [{ workspaceId: 'ws-1', agentId: 'agent-1' }] }),
+          member('other', { focus: [{ workspaceId: 'ws-1', agentId: 'agent-1' }] }),
+        ],
+      });
+      const presence = reduce(bothLooking, presenceOwnPrincipalReceived('me'));
+      const sharedState = stateWith(presence, {
+        workspace: workspacesWith(shared('ws-1', { ownerPrincipalId: 'me', memberCount: 2 })),
+      });
+      expect(ids(selectAgentPresencePeople.select(sharedState, 'ws-1', 'agent-1'))).toEqual([
+        'me',
+        'other',
+      ]);
+      const unshared = stateWith(presence, {
+        workspace: workspacesWith(shared('ws-1', { ownerPrincipalId: 'me', memberCount: 1 })),
+      });
+      expect(selectAgentPresencePeople.select(unshared, 'ws-1', 'agent-1')).toEqual([]);
+      expect(selectWorkspacePresencePeople.select(unshared, 'ws-1')).toEqual([]);
+      const legacy = stateWith(presence, { workspace: workspacesWith(shared('ws-1', {})) });
+      expect(selectAgentPresencePeople.select(legacy, 'ws-1', 'agent-1')).toEqual([]);
+      const unlisted = stateWith(presence, { workspace: workspacesWith() });
+      expect(selectAgentPresencePeople.select(unlisted, 'ws-1', 'agent-1')).toEqual([]);
+    });
+
+    it('shows the owner to a guest in the chat, guest first as self and the owner blue', () => {
+      const bothLooking = presenceRosterReceived({
+        workspaceId: 'ws-1',
+        members: [
+          member('me', { focus: [{ workspaceId: 'ws-1', agentId: 'agent-1' }] }),
+          member('guest:abc', { focus: [{ workspaceId: 'ws-1', agentId: 'agent-1' }] }),
+        ],
+      });
+      const state = stateWith(reduce(bothLooking, presenceOwnPrincipalReceived('guest:abc')), {
+        workspace: workspacesWith(shared('ws-1', { ownerPrincipalId: 'me', memberCount: 2 })),
+      });
+      expect(
+        selectAgentPresencePeople
+          .select(state, 'ws-1', 'agent-1')
+          .map((p) => [p.principalId, p.owner, p.self]),
+      ).toEqual([
+        ['guest:abc', false, true],
+        ['me', true, false],
+      ]);
+    });
+
+    it('tells a same-named other person apart from self by principal id', () => {
+      const workspace = workspacesWith(shared('ws-1', { ownerPrincipalId: 'p-1', memberCount: 2 }));
+      const alice = (principalId: string) =>
+        member(principalId, {
+          login: 'alice',
+          displayName: 'Alice',
+          focus: [{ workspaceId: 'ws-1', agentId: 'agent-1' }],
+        });
+      const twins = presenceRosterReceived({
+        workspaceId: 'ws-1',
+        members: [alice('p-1'), alice('p-2')],
+      });
+      const shown = stateWith(reduce(twins, presenceOwnPrincipalReceived('p-1')), { workspace });
+      expect(
+        selectAgentPresencePeople
+          .select(shown, 'ws-1', 'agent-1')
+          .map((p) => [p.principalId, p.self]),
+      ).toEqual([
+        ['p-1', true],
+        ['p-2', false],
+      ]);
+      const selfOnly = presenceRosterReceived({ workspaceId: 'ws-1', members: [alice('p-1')] });
+      const hidden = stateWith(reduce(selfOnly, presenceOwnPrincipalReceived('p-1')), {
+        workspace,
+      });
+      expect(selectAgentPresencePeople.select(hidden, 'ws-1', 'agent-1')).toEqual([]);
     });
   });
 

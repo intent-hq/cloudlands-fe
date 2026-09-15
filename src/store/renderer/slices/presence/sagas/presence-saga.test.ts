@@ -106,6 +106,17 @@ describe('presenceSaga lifecycle', () => {
   });
 
   it('reads the local owner principal on start without a backend change and marks self', async () => {
+    if (!dispose) dispose = store.init();
+    store.dispatch(
+      replaceWorkspaceList([
+        {
+          id: WorkspaceId('ws-1'),
+          title: 'ws-1',
+          ownerPrincipalId: 'me',
+          memberCount: 2,
+        } as Workspace,
+      ]),
+    );
     start();
     await vi.advanceTimersByTimeAsync(0);
     expect(calls('principal.me')).toEqual([{}]);
