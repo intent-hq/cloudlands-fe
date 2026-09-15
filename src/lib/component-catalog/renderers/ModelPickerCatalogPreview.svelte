@@ -1,8 +1,11 @@
 <script lang="ts">
   import { onMount, type Component } from 'svelte';
+  import type { CatalogRendererProps } from '../catalog-renderers';
+
+  let _catalogProps: CatalogRendererProps = $props();
 
   let Preview = $state<Component | undefined>();
-  let props = $state({});
+  let previewProps = $state({});
   onMount(() => {
     let disposed = false;
     let cleanup: void | (() => void);
@@ -11,7 +14,7 @@
       if (disposed) return;
       const state = module.preview.states.populated;
       cleanup = state.setup?.();
-      props = state.props;
+      previewProps = state.props;
       Preview = module.default;
     });
     return () => {
@@ -22,5 +25,5 @@
 </script>
 
 {#if Preview}
-  <Preview {...props} />
+  <Preview {...previewProps} />
 {/if}

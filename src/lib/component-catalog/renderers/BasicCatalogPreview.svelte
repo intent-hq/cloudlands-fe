@@ -207,16 +207,19 @@
         </p>
         {#each buttonMetadata.apiGuidance?.compatibilityAliases ?? [] as alias (`${alias.prop}:${alias.alias}`)}
           <div class="flex flex-wrap items-center gap-2">
-            <Button
-              variant={alias.prop === 'variant' ? (alias.alias as ButtonVariant) : 'secondary'}
-              size={alias.prop === 'size' ? (alias.alias as ButtonSize) : 'default'}
-              iconOnly={alias.alias.startsWith('icon-') ? true : undefined}
-              aria-label={`${alias.prop} ${alias.alias}`}
-              >{#if alias.alias.startsWith('icon-')}<Fa
-                  icon={faPlus}
-                  size="xs"
-                />{:else}{alias.alias}{/if}</Button
-            >
+            {#if alias.alias.startsWith('icon-')}
+              <Button
+                size={alias.alias as ButtonSize}
+                iconOnly
+                aria-label={`${alias.prop} ${alias.alias}`}><Fa icon={faPlus} size="xs" /></Button
+              >
+            {:else}
+              <Button
+                variant={alias.prop === 'variant' ? (alias.alias as ButtonVariant) : 'secondary'}
+                size={alias.prop === 'size' ? (alias.alias as ButtonSize) : 'default'}
+                aria-label={`${alias.prop} ${alias.alias}`}>{alias.alias}</Button
+              >
+            {/if}
             <span class="type-caption text-muted-foreground"
               >Deprecated — use {alias.prop}="{alias.replacement}".</span
             >
