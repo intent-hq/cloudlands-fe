@@ -253,6 +253,56 @@ describe('QuestionWizard', () => {
     expect(screen.getByText('Question 2 of 3')).toBeTruthy();
   });
 
+  it('renders the free-form field as a single-row textarea that wraps and resizes', () => {
+    setup();
+    const input = screen.getByPlaceholderText('Or type your own answer…') as HTMLTextAreaElement;
+    expect(input.tagName).toBe('TEXTAREA');
+    expect(input.rows).toBe(1);
+    expect(input.getAttribute('aria-label')).toBe('Type your own answer');
+    expect(input.className).toContain('resize-y');
+    expect(input.parentElement?.className).not.toContain('items-center');
+  });
+
+  it('Shift+Enter keeps the step and lets the field hold a newline', async () => {
+    const { onComplete } = setup();
+    const input = screen.getByPlaceholderText('Or type your own answer…') as HTMLTextAreaElement;
+    await fireEvent.input(input, { target: { value: 'first line' } });
+    const shiftEnter = await fireEvent.keyDown(input, { key: 'Enter', shiftKey: true });
+    // Not prevented → the browser inserts the newline natively.
+    expect(shiftEnter).toBe(true);
+    await fireEvent.input(input, { target: { value: 'first line\nsecond line' } });
+
+    expect(screen.getByText('Question 1 of 3')).toBeTruthy();
+    expect(input.value).toBe('first line\nsecond line');
+    expect(onComplete).not.toHaveBeenCalled();
+  });
+
+  it('Enter during IME composition does not advance', async () => {
+    setup();
+    const input = screen.getByPlaceholderText('Or type your own answer…');
+    await fireEvent.input(input, { target: { value: 'にほん' } });
+    const composing = await fireEvent.keyDown(input, { key: 'Enter', isComposing: true });
+    expect(composing).toBe(true);
+    expect(screen.getByText('Question 1 of 3')).toBeTruthy();
+  });
+
+  it('plain Enter after a Shift+Enter newline advances with the newline preserved', async () => {
+    const { onComplete } = setup([SINGLE, LAST]);
+    const input = screen.getByPlaceholderText('Or type your own answer…');
+    await fireEvent.input(input, { target: { value: '  first line\nsecond line  ' } });
+    const plainEnter = await fireEvent.keyDown(input, { key: 'Enter' });
+    expect(plainEnter).toBe(false);
+    expect(screen.getByText('Question 2 of 2')).toBeTruthy();
+
+    await fireEvent.click(screen.getByText('Migrate silently'));
+    expect(onComplete.mock.calls[0][0][0]).toEqual({
+      question: SINGLE,
+      selectedLabels: [],
+      freeText: 'first line\nsecond line',
+      skipped: false,
+    });
+  });
+
   it('Enter explicitly submits an exact typed answer on the only question', async () => {
     const { onComplete } = setup([LAST]);
     const input = screen.getByPlaceholderText('Or type your own answer…');
@@ -676,7 +726,7 @@ describe('QuestionWizard draft persistence', () => {
       props: { questions: [LAST], draftKey: KEY, onDismiss: vi.fn(async () => {}) },
     });
     expect(
-      (screen.getByPlaceholderText('Or type your own answer…') as HTMLInputElement).value,
+      (screen.getByPlaceholderText('Or type your own answer…') as HTMLTextAreaElement).value,
     ).toBe('draft');
 
     await fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));

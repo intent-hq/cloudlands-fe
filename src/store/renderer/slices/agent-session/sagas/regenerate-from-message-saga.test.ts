@@ -507,20 +507,30 @@ describe('regenerateFromMessageSaga', () => {
       await task.toPromise();
     });
 
-    it('fails closed on a legacy inline file block instead of dropping it, and toasts', async () => {
-      const { channel, edits, dispatched, task } = start(
+    it('replays a legacy inline file block (no attachmentId) as text, with no data on the wire', async () => {
+      // Older daemons persisted inline file bytes; the block is text now (the
+      // daemon's `degrade_inline_file_blocks` pass serves it as
+      // `Attached file: <name>`). The regenerate
+      // mirrors that: no file block, no bytes, no fail-closed toast.
+      const { channel, edits, task } = start(
         userMessageWith([
           { type: 'file', data: 'aGVsbG8=', fileName: 'legacy.txt', mimeType: 'text/plain' },
+          { type: 'file', attachmentId: 'f1', fileName: 'a.csv', size: 3 },
         ]),
       );
       const action = agentSessionRegenerateFromMessageRequested(AGENT, WS, 'a9');
       channel.put(action);
-      await expect(action.promise).rejects.toBeInstanceOf(Error);
-
-      expect(edits).toHaveLength(0);
-      expect(dispatched.map((item) => item.type)).toEqual([action.failure(new Error('x')).type]);
       await settle();
-      expect(mocks.toastError).toHaveBeenCalledTimes(1);
+
+      expect(edits).toHaveLength(1);
+      expect(edits[0].payload[3]).toBe('see attachedAttached file: legacy.txt');
+      expect(edits[0].payload[4]).toEqual({
+        fileBlocks: [{ type: 'file', attachmentId: 'f1', fileName: 'a.csv', size: 3 }],
+      });
+      expect(JSON.stringify(edits[0].payload)).not.toContain('aGVsbG8=');
+      expect(mocks.toastError).not.toHaveBeenCalled();
+      edits[0].success(undefined as never);
+      await action.promise;
       task.cancel();
       await task.toPromise();
     });

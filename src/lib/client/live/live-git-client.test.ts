@@ -387,7 +387,7 @@ describe('LiveGitClient reads (fake transport)', () => {
     expect(mockedRequest).toHaveBeenLastCalledWith('git.diffs', { workspaceId: 'ws-1' });
   });
 
-  it('diffs forwards gitRootId exactly when set and omits it otherwise (v6.15)', async () => {
+  it('diffs forwards gitRootId exactly when set and omits it otherwise (secondary git root scoping)', async () => {
     mockedRequest.mockResolvedValue([]);
     const client = new LiveGitClient();
 
@@ -442,7 +442,7 @@ describe('LiveGitClient reads (fake transport)', () => {
     });
   });
 
-  it('commitDetails forwards gitRootId exactly when set and omits it otherwise (v6.15)', async () => {
+  it('commitDetails forwards gitRootId exactly when set and omits it otherwise (secondary git root scoping)', async () => {
     mockedRequest.mockResolvedValue({
       commitHash: 'abc123',
       author: '',

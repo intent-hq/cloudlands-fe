@@ -1,27 +1,25 @@
 #!/usr/bin/env node
 import { execFileSync, spawn } from 'node:child_process';
-import { createHash, randomUUID } from 'node:crypto';
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  readdirSync,
-  realpathSync,
-  rmSync,
-  statSync,
-  writeFileSync,
-} from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from 'node:fs';
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { escape as escapeGlob, globSync } from 'glob';
 import { checkDepsFresh, checkNodeSupport, ensureI18nFresh } from './check-deps-fresh.mjs';
 import { pnpmInvocation } from './pnpm-launcher.mjs';
 import {
+  acquireVerificationLock,
+  ctLockKey,
+  defaultLockPath,
+  HELD_LOCK_ENV,
+  lockTimeout,
+} from './verification-lock.mjs';
+import {
   listDeclaredSuites,
   selectDeclaredSuites,
   TRIGGER_MARKER,
 } from './verify-changed-triggers.mjs';
+
+export { acquireVerificationLock, defaultLockPath, lockTimeout };
 
 export const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const FRONTEND_PREFIX = 'packages/cloudlands-fe/';
@@ -632,83 +630,10 @@ export function createVerificationPlan(files, options = {}) {
   };
 }
 
-function processIsAlive(pid) {
-  if (!Number.isInteger(pid) || pid <= 0) return false;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return error?.code === 'EPERM';
-  }
-}
-
 export function verificationLockKey(check, env = process.env) {
   if (check.lockKind === 'vitest-full') return 'vitest-full';
-  if (check.lockKind === 'ct') return `ct-${env.CT_PORT ? Number(env.CT_PORT) : 3100}`;
+  if (check.lockKind === 'ct') return ctLockKey(env);
   return null;
-}
-
-export function defaultLockPath(lockKey) {
-  const key = createHash('sha256')
-    .update(`cloudlands-fe-verification:${lockKey}`)
-    .digest('hex')
-    .slice(0, 12);
-  return join(tmpdir(), `intent-${key}.lock`);
-}
-
-export async function acquireVerificationLock(options = {}) {
-  const lockPath = options.lockPath ?? defaultLockPath();
-  const timeoutMs = options.timeoutMs ?? 30_000;
-  const pollMs = options.pollMs ?? 250;
-  const statLock = options.statLock ?? statSync;
-  const token = randomUUID();
-  const started = Date.now();
-  while (true) {
-    try {
-      mkdirSync(lockPath);
-      writeFileSync(
-        join(lockPath, 'owner.json'),
-        JSON.stringify({ pid: process.pid, cwd: options.cwd ?? process.cwd(), token }),
-      );
-      return () => {
-        try {
-          const owner = JSON.parse(readFileSync(join(lockPath, 'owner.json'), 'utf8'));
-          if (owner.token === token) rmSync(lockPath, { recursive: true, force: true });
-        } catch {
-          // A missing or replaced lock is not ours to remove.
-        }
-      };
-    } catch (error) {
-      if (error?.code !== 'EEXIST') throw error;
-      let stale;
-      let owner;
-      try {
-        owner = JSON.parse(readFileSync(join(lockPath, 'owner.json'), 'utf8'));
-        stale = !processIsAlive(owner.pid);
-      } catch {
-        try {
-          stale = Date.now() - statLock(lockPath).mtimeMs > 4 * 60 * 60 * 1000;
-        } catch (statError) {
-          if (statError?.code === 'ENOENT') continue;
-          throw statError;
-        }
-      }
-      if (stale) {
-        rmSync(lockPath, { recursive: true, force: true });
-        continue;
-      }
-      if (Date.now() - started >= timeoutMs) {
-        const waitedMs = Date.now() - started;
-        const ownerDetails = owner
-          ? `owner pid ${owner.pid} cwd ${owner.cwd ?? '<unknown>'}`
-          : 'owner metadata unavailable';
-        throw new Error(`verification lock ${lockPath}: ${ownerDetails}; waited ${waitedMs}ms`, {
-          cause: error,
-        });
-      }
-      await new Promise((done) => setTimeout(done, pollMs));
-    }
-  }
 }
 
 function shellQuote(value) {
@@ -733,15 +658,20 @@ export function printPlan(plan, dryRun, log = console.log) {
   if (dryRun) log('verify:changed: dry-run; no commands were run');
 }
 
-async function runCheck(check, root) {
+async function runCheck(check, root, { heldLock = null } = {}) {
   console.log(`\n[verify:changed] ${check.label}`);
   const launcher = pnpmInvocation(check.args);
+  // A locked check spawns the CT launcher, which takes the same `ct-<port>`
+  // lock for direct runs; tell it the lock is already held so it does not
+  // wait on its own parent.
+  const env = { ...process.env, GIT_TERMINAL_PROMPT: '0' };
+  if (heldLock) env[HELD_LOCK_ENV] = heldLock;
   await new Promise((resolveRun, reject) => {
     const child = spawn(launcher.executable, launcher.args, {
       cwd: root,
       stdio: 'inherit',
       shell: launcher.shell,
-      env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+      env,
     });
     child.on('error', reject);
     child.on('exit', (code, signal) => {
@@ -754,12 +684,6 @@ async function runCheck(check, root) {
         );
     });
   });
-}
-
-export function lockTimeout(lockKey, envValue) {
-  const value = Number(envValue);
-  const defaultMs = lockKey.startsWith('ct-') ? 240_000 : 120_000;
-  return Number.isFinite(value) && value >= 0 ? Math.min(value, 300_000) : defaultMs;
 }
 
 export async function runVerificationPlan(plan, root, options = {}) {
@@ -784,7 +708,7 @@ export async function runVerificationPlan(plan, root, options = {}) {
       cwd: root,
     });
     try {
-      await run(check, root);
+      await run(check, root, { heldLock: lockKey });
     } finally {
       releaseLock();
     }

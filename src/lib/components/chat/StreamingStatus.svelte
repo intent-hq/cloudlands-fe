@@ -3,11 +3,12 @@
 
   Streaming status indicator:
   - Normal: Intent mark with "Thinking"
+  - Slot/memory wait: "Thinking" plus a red row explaining the admission wait
   - Error/Timeout: clear failed state with Try Again button
 -->
 <script lang="ts">
   import { onDestroy } from 'svelte';
-  import { fade } from '$lib/motion';
+  import { crispOut, fade } from '$lib/motion';
   import Fa from 'svelte-fa';
   import {
     faRotateRight,
@@ -18,6 +19,8 @@
   } from '@fortawesome/free-solid-svg-icons';
   import { Button } from '$lib/components/ui/button';
   import { cn } from '$lib/utils/cn';
+  import { navigateToSettings } from '$lib/utils/workspace-navigation';
+  import type { FeOwnedSessionState } from '$store/renderer/slices/agent-session/agent-session-types';
   import CopyButton from '$lib/components/ui/CopyButton.svelte';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import {
@@ -90,6 +93,12 @@
     streamingStartTime?: number | null;
     /** Whether a permission request is pending - if true, hide the thinking indicator */
     hasPendingPermission?: boolean;
+    /**
+     * Daemon admission hint (PROTOCOL §6.5): while `waiting` is true the turn
+     * is parked for a free agent slot or memory headroom, so the row explains
+     * the wait instead of leaving a bare "Thinking" that looks stalled.
+     */
+    processQueueHint?: FeOwnedSessionState['processQueueHint'];
     /** Callback to retry the last message */
     onRetry?: () => void;
     /** Callback to retry with a specific model */
@@ -126,6 +135,7 @@
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     streamingStartTime = null,
     hasPendingPermission = false,
+    processQueueHint = undefined,
     onRetry,
     onRetryWithModel,
     onRetryWithProvider,
@@ -163,17 +173,30 @@
   let visible = $derived(
     error || modelUnavailable || ((isStreaming || isProcessing) && !hasPendingPermission),
   );
+  let turnActive = $derived(
+    status === 'normal' && (isStreaming || isProcessing) && !hasPendingPermission,
+  );
+  // Slot/memory-budget wait: shown alongside "Thinking" (the turn is open, just
+  // parked). It also explains any concurrent stall, so it supersedes that row.
+  let queueWait = $derived(turnActive && processQueueHint?.waiting ? processQueueHint : null);
   // Daemon-reported mid-turn stall (monorepo#3402): only meaningful while the
   // turn is still active — turn end/failure clears statusEvents or flips
   // status away from 'normal', so the stalled row can never outlive the turn.
   let stalledEvent = $derived(
-    status === 'normal' && (isStreaming || isProcessing) && !hasPendingPermission
-      ? getActiveStalledEvent(statusEvents, lastChunkTime)
+    turnActive && !queueWait ? getActiveStalledEvent(statusEvents, lastChunkTime) : null,
+  );
+  let thinkingVisible = $derived(turnActive && !stalledEvent);
+  let queueWaitMessage = $derived(
+    queueWait
+      ? queueWait.reason === 'memory-budget'
+        ? m.chat_streamingStatus_memoryWait_label({ used: queueWait.used, cap: queueWait.cap })
+        : m.chat_streamingStatus_slotWait_label({ used: queueWait.used, cap: queueWait.cap })
       : null,
   );
-  let thinkingVisible = $derived(
-    status === 'normal' && (isStreaming || isProcessing) && !hasPendingPermission && !stalledEvent,
-  );
+
+  function openAgentBackendSettings() {
+    void navigateToSettings({ hash: 'agent-backend' });
+  }
   // Skips stalled events: an active stall has its own row, and a superseded
   // one must not leak its stale message into the returning thinking indicator.
   let latestStatusEvent = $derived(getLatestThinkingStatusEvent(statusEvents));
@@ -258,6 +281,35 @@
   variant={markVariant}
   class="mt-2 {className}"
 />
+
+{#if queueWait && queueWaitMessage}
+  <div
+    role="status"
+    aria-live="polite"
+    data-stream-slot-wait="true"
+    data-queue-reason={queueWait.reason}
+    class={cn(
+      'type-caption mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md border border-danger/20 bg-danger/5 py-2 pl-2 pr-1 text-danger',
+      className,
+    )}
+    in:fade={{ tier: 'moderate' }}
+    out:crispOut={{ tier: 'moderate' }}
+  >
+    <Fa icon={faExclamationTriangle} class="shrink-0 text-danger/70" />
+    <span class="min-w-0 flex-1 break-words" data-testid="slot-wait-message"
+      >{queueWaitMessage}</span
+    >
+    <Button
+      variant="link"
+      size="sm"
+      onclick={openAgentBackendSettings}
+      class="type-caption h-7 shrink-0 px-2 text-danger underline"
+      data-testid="slot-wait-change-limit"
+    >
+      {m.chat_streamingStatus_changeLimit_label()}
+    </Button>
+  </div>
+{/if}
 
 {#if stalledEvent}
   <div

@@ -5,7 +5,7 @@
    *
    * Renders the working-tree file list and commit history of a registered
    * secondary git root via the `gitRootId`-scoped `git.status` / `git.commits`
-   * reads (PROTOCOL §5.6, v6.15). Secondary roots are read-only: no staging,
+   * reads (PROTOCOL §5.6). Secondary roots are read-only: no staging,
    * commit, push, or PR affordances.
    */
   import type { WorkspaceGitRootEntry } from '$store/renderer/slices/git-roots/git-roots-selectors';

@@ -147,7 +147,7 @@ function* hydrateChatTranscriptSaga(request: ChatRequest): SagaGenerator<Hydrate
       return { started, succeeded: true };
     }
     // Skip rows carrying the daemon's delete-grace-window deadline (PROTOCOL
-    // §5.5 `pendingDeleteAt`, v6.7+) — a deletion scheduled by another
+    // §5.5 `pendingDeleteAt`) — a deletion scheduled by another
     // window/client (or before an FE restart) is not in the local registry.
     if (session.pendingDeleteAt) return { started, succeeded: true };
     if (yield* call(isAgentDeletionPending, agentId)) {
@@ -335,7 +335,7 @@ function* snapshotRecoveryWorker(action: ReturnType<typeof chatTranscriptSnapsho
 }
 
 /**
- * Lazy block hydration (§5.5 slim projection → v7.2 `agent.getMessageBlock`):
+ * Lazy block hydration (§5.5 slim projection → `agent.getMessageBlock`):
  * fetch one FULL content block on demand when the user expands a truncated
  * tool row or views a truncated image. Single-flight per block, twice over:
  * the `messageBlockHydrationRequested` reducer parks `loading` under the

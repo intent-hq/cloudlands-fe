@@ -40,6 +40,14 @@ export const STREAMING_STATUS_PREVIEW_FIXTURES = Object.freeze({
       }),
     ],
   }),
+  'slot-wait': statusProps({
+    isProcessing: true,
+    processQueueHint: { waiting: true, used: 3, cap: 3, reason: 'slots' },
+  }),
+  'memory-wait': statusProps({
+    isProcessing: true,
+    processQueueHint: { waiting: true, used: 2, cap: 4, reason: 'memory-budget' },
+  }),
   error: statusProps({
     error: 'The response stream ended before the agent finished.',
     onRetry: retry,

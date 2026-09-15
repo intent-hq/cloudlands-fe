@@ -456,7 +456,7 @@ describe('browser-mock backend:* transport envelope', () => {
     expect(scripts.ok).toBe(true);
     expect(Array.isArray(scripts.result?.scripts)).toBe(true);
 
-    // v4.0 envelope: { terminals, daemonBootId } — never the bare array.
+    // `terminal.list` envelope: { terminals, daemonBootId } — never the bare array.
     const terminals = await api.invoke('backend:request', {
       method: 'terminal.list',
       params: { workspaceId: 'mock-ws-1' },

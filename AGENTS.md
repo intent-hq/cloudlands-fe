@@ -252,8 +252,10 @@ For focused browser validation, run:
 corepack pnpm run test:ct -- src/features/agent/components/agent-avatar/__tests__/agent-avatar-waiting.ct.spec.ts
 ```
 
-The CT harness defaults to port 3100 (the `CT_PORT` env var overrides it). Stop the
-process on that port before retrying if it is occupied. The run exits with Playwright's
+The CT harness defaults to port 3100 (the `CT_PORT` env var overrides it). A run holds
+the host-wide `ct-<CT_PORT>` lock, so a second run on an occupied port waits for the
+first instead of reusing its server; set a free `CT_PORT` to run concurrently (see
+[Verification](#verification)). The run exits with Playwright's
 status as soon as the tests finish — the HTML report is written to `playwright-report/`
 but never served automatically. To browse it after the run, opt in from an interactive
 terminal with `CT_HTML_REPORT=open` (or `-- --open-report`); `node
@@ -360,8 +362,17 @@ in `package.json`, never into a separate workflow step, so local and CI cannot d
 step in `intent-pr.yml`, and an edit to that workflow runs it locally) —
 because those scans are cross-file graph checks that per-file linting cannot see:
 cloudlands-fe#2315 passed `verify:changed` locally and failed CI in
-`lint:saga-watcher-ownership`. A change to `scripts/type-check.ts` additionally runs
-`pnpm run type-check:validate`, since `lint:architecture` omits that wrapper and the
+`lint:saga-watcher-ownership`. One of those gates, `lint:protocol-version-literals`, fails
+any `src/` line carrying a `v`-prefixed version literal (`v10.1`), and a bare one (`10.1`)
+when the same line mentions protocol/intentd/daemon(s): reference the method/field name,
+the `§` section, or the capability, not protocol version numbers — they are provisional
+until merge and went stale in cloudlands-fe#2447. A deliberate exception appends a
+`// protocol-version-ok: <reason>` comment to the line, or puts
+`// protocol-version-ok-file: <reason>` in the first 10 lines of a fixture-heavy file —
+only a comment with a non-empty reason exempts; a bare token or one inside a string does
+not. A
+change to `scripts/type-check.ts` additionally runs `pnpm run type-check:validate`, since
+`lint:architecture` omits that wrapper and the
 per-boundary checks invoke `tsc` directly.
 
 `vitest related` follows the import graph, so a suite that reads the tree from disk is
@@ -382,7 +393,13 @@ Playwright CT uses `ct-<CT_PORT>` (default `ct-3100`) and the full Vitest fallba
 `vitest-full`. CT runs on different ports can proceed concurrently; Svelte and TypeScript
 checks do not lock. The default waits are 240 seconds for CT and 120 seconds for full
 Vitest. `VERIFY_CHANGED_LOCK_TIMEOUT_MS` overrides either wait but remains capped at
-300000 ms, and the command never stops the process that owns a lock.
+300000 ms, and the command never stops the process that owns a lock. Direct
+`pnpm run test:ct` runs hold the same `ct-<CT_PORT>` lock (`scripts/verification-lock.mjs`),
+because the CT runtime reuses any server already listening on its port — an unlocked
+second run from another worktree would test that tree's component registry and then fail
+with ECONNREFUSED when the first run exits (intent-hq/intent#4964). A second run on an
+occupied port waits, then fails naming the owner's pid and worktree; pick a free `CT_PORT`
+to run concurrently.
 
 After any structural change (moving files, changing imports, extracting modules):
 
@@ -470,8 +487,8 @@ reducer runs, calls the `AppClient` seam and dispatches the per-dispatch
 dependency-light (no selector imports — they evaluate `store.createSelector` at chain
 construction); read state directly off `appStore.state` and import the toast lib lazily.
 
-Agent **deletion** uses the **daemon-owned delete grace window** (PROTOCOL §5.5, v6.7+;
-the handlers live in the agent mutation saga):
+Agent **deletion** uses the **daemon-owned delete grace window** (PROTOCOL §5.5,
+`agent.delete { undoDelayMs }`; the handlers live in the agent mutation saga):
 
 - `deleteAgentWithUndoRequested` **soft-hides** the session locally (drops it from the
   visible list) and sends `agent.delete { undoDelayMs: 15000 }` **immediately**, so the

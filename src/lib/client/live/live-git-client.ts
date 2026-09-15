@@ -520,7 +520,7 @@ export class LiveGitClient implements GitClient {
 
   // `git.commitDetails` (PROTOCOL §5.6) returns the metadata + per-file
   // `(additions, deletions)` for one commit. `opts.gitRootId` scopes the read
-  // to a registered secondary root (v6.15 param family); omitted keeps the
+  // to a registered secondary root (§5.6 git roots); omitted keeps the
   // request byte-identical. The daemon already degrades non-repo / remote /
   // unknown-hash workspaces to an empty envelope, so we only fold transport
   // failures to `null`.

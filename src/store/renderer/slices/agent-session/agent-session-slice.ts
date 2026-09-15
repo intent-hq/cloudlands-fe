@@ -11,7 +11,9 @@ import type {
   AgentSessionLaunchOptions,
   AgentSessionSendMessageOptions,
   AgentSessionState,
+  FeOwnedSessionState,
   StoredAgentSession,
+  WireAgentSession,
 } from './agent-session-types';
 import {
   deduplicateAgentMessages,
@@ -473,7 +475,7 @@ type CanonicalAgentSessionUpdates = {
   stopReasonTimestamp?: string | null;
   sessionCorrupted?: boolean;
   lastAgentResponse?: string;
-  processQueueHint?: AgentSession['processQueueHint'];
+  processQueueHint?: FeOwnedSessionState['processQueueHint'];
   isWaitingForOtherAgents?: boolean;
   waitingForAgentIds?: string[];
   waitingOnHooks?: AgentSession['waitingOnHooks'];
@@ -502,6 +504,109 @@ const TERMINAL_STATUSES: ReadonlySet<string> = new Set([
   'error',
   'deleted',
 ]);
+
+// ============================================================================
+// FE-owned field carry-forward (session upserts)
+// ============================================================================
+
+/**
+ * How one FE-owned field survives `applySessionUpsert`. The incoming wire
+ * snapshot never carries FE-owned fields, so the stored value always comes
+ * from the policy: `existing` is the stored session before the upsert (or
+ * undefined for a new session) and `incoming` the wire snapshot being applied.
+ * Returning `undefined` drops the field.
+ */
+type FeOwnedFieldPolicy<K extends keyof FeOwnedSessionState> = (
+  existing: Readonly<FeOwnedSessionState> | undefined,
+  incoming: AgentSession,
+) => FeOwnedSessionState[K] | undefined;
+
+function isTerminalWireStatus(incoming: AgentSession): boolean {
+  return typeof incoming.status === 'string' && TERMINAL_STATUSES.has(incoming.status);
+}
+
+/** Only `isActive: false` or a terminal status closes the sticky live-turn slot. */
+function incomingClosesLiveTurn(incoming: AgentSession): boolean {
+  return incoming.isActive === false || isTerminalWireStatus(incoming);
+}
+
+/**
+ * Exhaustive carry-forward table over `FeOwnedSessionState` — the mapped `-?`
+ * type makes a missing entry a compile error, so a new FE-owned field cannot
+ * be added without declaring how it survives an `agent.get` refetch
+ * (cloudlands-fe#2443 shipped without the processQueueHint block and the
+ * slot-wait warning flickered off on every refresh; intent-hq/intent#1815 was
+ * the same omission for liveTurnOpen).
+ */
+export const FE_OWNED_FIELD_POLICY: { [K in keyof FeOwnedSessionState]-?: FeOwnedFieldPolicy<K> } =
+  {
+    // Latch: an upsert must not clear it. An incoming snapshot itself
+    // overflowing the cap also latches (its overflow rows were just dropped
+    // client-side). No hole accounting here — a re-delivered snapshot must
+    // not double-count.
+    tailCapPruned: (existing, incoming) =>
+      existing?.tailCapPruned === true || (incoming.messages?.length ?? 0) > MAX_MESSAGES_PER_AGENT
+        ? true
+        : undefined,
+    // Sticky: a racy `turnInFlight: false` snapshot cannot close the slot.
+    liveTurnOpen: (existing, incoming) =>
+      existing?.liveTurnOpen === true && !incomingClosesLiveTurn(incoming) ? true : undefined,
+    // Rides with liveTurnOpen (ordering signal for the monorepo#1815 guard).
+    liveTurnOpenedAt: (existing, incoming) =>
+      existing?.liveTurnOpen === true && !incomingClosesLiveTurn(incoming)
+        ? existing.liveTurnOpenedAt
+        : undefined,
+    // Set from agent:process:queued, so a snapshot refresh triggered by an
+    // unrelated agent event must not drop it while the agent is still parked
+    // — otherwise the chat slot-wait warning flickers off. Carry it forward
+    // unless the snapshot itself shows the wait is over (same signals as
+    // canonicalSessionUpdates).
+    processQueueHint: (existing, incoming) => {
+      if (existing?.processQueueHint?.waiting !== true) return undefined;
+      const waitOver =
+        incoming.isStreaming === true ||
+        incoming.isResponding === false ||
+        incoming.isActive === false ||
+        isTerminalWireStatus(incoming);
+      return waitOver ? undefined : existing.processQueueHint;
+    },
+  };
+
+const FE_OWNED_FIELD_KEYS = Object.keys(FE_OWNED_FIELD_POLICY) as Array<keyof FeOwnedSessionState>;
+
+function applyFeOwnedFieldPolicy<K extends keyof FeOwnedSessionState>(
+  target: FeOwnedSessionState,
+  key: K,
+  existing: Readonly<FeOwnedSessionState> | undefined,
+  incoming: AgentSession,
+): void {
+  const policy = FE_OWNED_FIELD_POLICY[key] as FeOwnedFieldPolicy<K>;
+  const value = policy(existing, incoming);
+  if (value === undefined) delete target[key];
+  else target[key] = value;
+}
+
+function restoreFeOwnedField<K extends keyof FeOwnedSessionState>(
+  target: FeOwnedSessionState,
+  key: K,
+  saved: Readonly<FeOwnedSessionState>,
+): void {
+  const value = saved[key];
+  if (value === undefined) delete target[key];
+  else target[key] = value;
+}
+
+/**
+ * Comparison key for the FE-owned fields, driven by the same key set as the
+ * policy table so a drop-only refresh of any FE-owned field is never swallowed
+ * as a no-op. `false` collapses to absent (like the wire booleans in
+ * `toSessionComparisonSnapshot`) so a false↔absent flip is not a change.
+ */
+function feOwnedFieldsComparisonKey(session: Readonly<FeOwnedSessionState>): string {
+  return JSON.stringify(
+    FE_OWNED_FIELD_KEYS.map((key) => (session[key] === false ? undefined : session[key])),
+  );
+}
 
 type CanonicalAgentStatusWithSummary = CanonicalAgentStatusFields & {
   lastResponseSummary?: unknown;
@@ -600,12 +705,17 @@ function canonicalSessionUpdates(
     updates.liveTurnOpenedAt = undefined;
   }
 
-  // Defensively clear processQueueHint when agent transitions to normal running state
-  // or terminal state. This handles reconnect cases where agent:process:resumed may
-  // not arrive, and prevents stale hints after failed/idle transitions.
+  // Clear processQueueHint only on genuine evidence the turn got past admission
+  // (streaming started), on a terminal status, or when the session goes idle
+  // (`isResponding`/`isActive` false — the reconnect safety net for a missed
+  // `agent:process:resumed`). `isResponding === true` / `isActive === true` are
+  // NOT clearing signals: an agent parked waiting for a slot (§6.5) IS
+  // responding — its turn is open — so an ordinary status tick landing while it
+  // is still queued would wipe the hint and flicker the chat warning off.
   if (
-    fields.isResponding === true ||
-    fields.isActive === true ||
+    fields.isStreaming === true ||
+    fields.isResponding === false ||
+    fields.isActive === false ||
     (typeof fields.status === 'string' && TERMINAL_STATUSES.has(fields.status))
   ) {
     updates.processQueueHint = undefined;
@@ -846,9 +956,7 @@ type SessionComparisonSnapshot = Pick<
   sandboxBranch: string | undefined;
   waitingForAgentIdsKey: string | undefined;
   turnInFlight: boolean | undefined;
-  liveTurnOpen: boolean | undefined;
-  liveTurnOpenedAt: string | undefined;
-  tailCapPruned: boolean | undefined;
+  feOwnedFieldsKey: string;
   harnessVersion: string | undefined;
   harnessFeaturesKey: string | undefined;
 };
@@ -912,10 +1020,7 @@ function toSessionComparisonSnapshot(session: StoredAgentSession): SessionCompar
       ? session.waitingForAgentIds.join(',')
       : undefined,
     turnInFlight: session.turnInFlight === true ? true : undefined,
-    liveTurnOpen: session.liveTurnOpen === true ? true : undefined,
-    liveTurnOpenedAt:
-      typeof session.liveTurnOpenedAt === 'string' ? session.liveTurnOpenedAt : undefined,
-    tailCapPruned: session.tailCapPruned === true ? true : undefined,
+    feOwnedFieldsKey: feOwnedFieldsComparisonKey(session),
     // Harness stamp (§5.5, additive): normally immutable, but a daemon
     // upgrade backfills harnessVersion on legacy rows and first activation
     // materializes harnessFeatures — those upserts must not be swallowed
@@ -964,15 +1069,10 @@ function applySessionUpsert(
   const wsId = String(session.workspaceId);
   const existing = getSession(state, agentId);
 
-  // The latch is FE-owned: wire sessions never carry it, so an upsert must
-  // not clear it. An incoming snapshot itself overflowing the cap also
-  // latches (its overflow rows were just dropped client-side). No hole
-  // accounting here — a re-delivered snapshot must not double-count.
-  if (
-    existing?.tailCapPruned === true ||
-    (session.messages?.length ?? 0) > MAX_MESSAGES_PER_AGENT
-  ) {
-    finalSession.tailCapPruned = true;
+  // FE-owned fields never ride the wire snapshot: each one's stored value
+  // comes from its FE_OWNED_FIELD_POLICY entry, never from `session`.
+  for (const key of FE_OWNED_FIELD_KEYS) {
+    applyFeOwnedFieldPolicy(finalSession, key, existing, session);
   }
 
   if (existing) {
@@ -1043,15 +1143,6 @@ function applySessionUpsert(
     ) {
       finalSession.lastAgentResponse = existing.lastAgentResponse;
     }
-    if (existing.liveTurnOpen === true && finalSession.liveTurnOpen === undefined) {
-      const incomingClosed =
-        session.isActive === false ||
-        (typeof session.status === 'string' && TERMINAL_STATUSES.has(session.status));
-      if (!incomingClosed) {
-        finalSession.liveTurnOpen = true;
-        finalSession.liveTurnOpenedAt = existing.liveTurnOpenedAt;
-      }
-    }
 
     // Guard (monorepo#1815): an agents.list snapshot fetched while the daemon
     // still reported a failure can land AFTER the live crash-recovery edges
@@ -1097,6 +1188,35 @@ function applySessionUpsert(
   return next;
 }
 
+/**
+ * Reinstate a previously stored session (soft-hide undo, failed delete,
+ * `agent:delete-cancelled`). Unlike a wire snapshot, the saved session already
+ * carries its FE-owned fields, so they are copied back verbatim instead of
+ * running the carry-forward policy — that policy seeds from `existing`, which
+ * a restore after `removeSession` never has.
+ */
+function applyStoredSessionRestore(
+  state: AgentSessionState,
+  session: StoredAgentSession,
+): AgentSessionState {
+  const finalSession = toStoredSession(session);
+  const agentId = String(finalSession.id);
+  const wsId = String(session.workspaceId);
+  for (const key of FE_OWNED_FIELD_KEYS) {
+    restoreFeOwnedField(finalSession, key, session);
+  }
+
+  const existing = getSession(state, agentId);
+  const alreadyIndexed = (state.agentIdsByWorkspace[wsId] ?? []).includes(agentId);
+  if (existing && alreadyIndexed && isSessionEquivalent(existing, finalSession)) {
+    return state;
+  }
+
+  let next = setSession(state, agentId, finalSession);
+  next = registerInWorkspaceIndex(next, agentId, wsId);
+  return next;
+}
+
 function removeFromWorkspaceIndex(state: AgentSessionState, agentId: string): AgentSessionState {
   const agentIdsByWorkspace = { ...state.agentIdsByWorkspace };
   for (const wsId of Object.keys(agentIdsByWorkspace)) {
@@ -1126,8 +1246,14 @@ export const initialState: AgentSessionState = {
 // Actions
 // ============================================================================
 
-/** Upsert a session — normalize dates, order/prune messages to `MAX_MESSAGES_PER_AGENT`, register in workspace index */
-export const upsertSession = createAction<[session: AgentSession]>('agentSessions/upsertSession');
+/**
+ * Upsert a wire session — normalize dates, order/prune messages to
+ * `MAX_MESSAGES_PER_AGENT`, register in workspace index. The payload rejects
+ * FE-owned keys (`WireAgentSession`): a stored row is not an incoming snapshot.
+ */
+export const upsertSession = createAction<[session: WireAgentSession]>(
+  'agentSessions/upsertSession',
+);
 
 /** Remove a session by agentId (from byAgentId and agentIdsByWorkspace) */
 export const removeSession = createAction<[agentId: string]>('agentSessions/removeSession');
@@ -1354,10 +1480,28 @@ export type BulkUpsertSessionsOptions = {
   staleRuntimeFlagClearAgentIds?: string[];
 };
 
-/** Bulk upsert sessions (initial load / snapshot reconciliation / batched upsert storage) */
+/**
+ * Bulk upsert wire sessions (initial load / snapshot reconciliation / batched
+ * upsert storage). Like `upsertSession`, the payload rejects FE-owned keys.
+ */
 export const bulkUpsertSessions = createAction<
-  [sessions: AgentSession[], options?: BulkUpsertSessionsOptions]
+  [sessions: WireAgentSession[], options?: BulkUpsertSessionsOptions]
 >('agentSessions/bulkUpsertSessions');
+
+/**
+ * Reinstate saved stored sessions verbatim (FE-owned fields included), or apply
+ * a local patch to one (`[{ ...existing, ...patch }]`). Skips the wire-snapshot
+ * carry-forward policy entirely.
+ *
+ * The type boundary is enforced in the data-loss direction only: the wire
+ * upserts reject a `StoredAgentSession` (`WireAgentSession`), but this action's
+ * `StoredAgentSession[]` input is structurally satisfied by a wire `AgentSession`
+ * too — the wire→restore distinction is semantic, so only pass rows previously
+ * read from this slice.
+ */
+export const restoreStoredSessions = createAction<[sessions: StoredAgentSession[]]>(
+  'agentSessions/restoreStoredSessions',
+);
 
 /** Remove all sessions for a workspace */
 export const removeWorkspaceSessions = createAction<[wsId: string]>(
@@ -1563,6 +1707,13 @@ agentSessionReducer.with(bulkUpsertSessions, (state, { payload: [sessions, optio
   }
   return next;
 });
+agentSessionReducer.with(restoreStoredSessions, (state, { payload: [sessions] }) => {
+  let next = state;
+  for (const session of sessions) {
+    next = applyStoredSessionRestore(next, session);
+  }
+  return next;
+});
 agentSessionReducer.with(removeWorkspaceSessions, (state, { payload: [wsId] }) => {
   const agentIds = state.agentIdsByWorkspace[wsId] ?? [];
   if (agentIds.length === 0 && !state.agentIdsByWorkspace[wsId]) return state;
@@ -1600,10 +1751,24 @@ agentSessionReducer.with(clearAllSessions, () => initialState);
 // -----------------------------------------------------------------------
 // Cross-slice: handle workspace-agents actions directly (replaces bridge saga)
 // -----------------------------------------------------------------------
+// Streaming means the process was admitted, so every reducer path that sets
+// isStreaming=true also drops the FE-owned processQueueHint. These paths
+// (setAgentStreaming, chatSendStarted via agent:stream:start,
+// chatStreamingReconciled) bypass canonicalSessionUpdates, so a missed
+// agent:process:resumed would otherwise leave the slot-wait warning up while
+// the agent streams.
+function streamingStartedFields(
+  existing: StoredAgentSession | undefined,
+): Pick<StoredAgentSession, 'processQueueHint'> | Record<string, never> {
+  return existing?.processQueueHint ? { processQueueHint: undefined } : {};
+}
 agentSessionReducer.with(setAgentStreaming, (state, { payload: [agentId, isStreaming] }) => {
   const session = getSession(state, agentId);
-  if (!session || session.isStreaming === isStreaming) return state;
-  return updateSessionFields(state, agentId, { isStreaming });
+  if (!session) return state;
+  return updateSessionFields(state, agentId, {
+    isStreaming,
+    ...(isStreaming ? streamingStartedFields(session) : {}),
+  });
 });
 agentSessionReducer.with(updateAgentDigest, (state, { payload: [, agentId, digest] }) => {
   const session = getSession(state, agentId);
@@ -1623,7 +1788,11 @@ agentSessionReducer.with(renameAgent, (state, { payload: [, agentId, name] }) =>
 agentSessionReducer.with(chatSendStarted, (state, { payload: { agentId, wsId, timestampIso } }) => {
   const existing = getSession(state, agentId);
   if (existing) {
-    return updateSessionFields(state, agentId, { isStreaming: true, isProcessing: true });
+    return updateSessionFields(state, agentId, {
+      isStreaming: true,
+      isProcessing: true,
+      ...streamingStartedFields(existing),
+    });
   }
   if (!wsId) return state;
   // Session not yet loaded (e.g. restored workspace where disk load is still in flight).
@@ -1680,7 +1849,11 @@ agentSessionReducer.with(chatReset, (state, { payload: [agentId] }) =>
   ),
 );
 agentSessionReducer.with(chatStreamingReconciled, (state, { payload: { agentId } }) =>
-  updateSessionFields(state, agentId, { isStreaming: true, isProcessing: true }),
+  updateSessionFields(state, agentId, {
+    isStreaming: true,
+    isProcessing: true,
+    ...streamingStartedFields(getSession(state, agentId)),
+  }),
 );
 agentSessionReducer.with(chatInitialized, (state, { payload: [agentId, data] }) => {
   const session = getSession(state, agentId);

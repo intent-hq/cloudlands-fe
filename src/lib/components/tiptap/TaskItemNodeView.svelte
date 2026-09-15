@@ -117,7 +117,7 @@
     return agentIds[agentIds.length - 1];
   });
 
-  // Task relations (PROTOCOL §5.2/§5.4, v6.8). `unmetDependsOn` is the
+  // Task relations (PROTOCOL §5.2/§5.4). `unmetDependsOn` is the
   // daemon-computed projection carried on note-shaped read/push payloads
   // (monorepo#1979) — a dep is unmet unless its task note is `complete`
   // (missing and cancelled deps count as unmet). A dependency status change

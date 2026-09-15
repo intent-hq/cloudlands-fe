@@ -1,5 +1,5 @@
 /**
- * Lazy full-block hydration helpers (PROTOCOL §5.5 slim projection → v7.2
+ * Lazy full-block hydration helpers (PROTOCOL §5.5 slim projection →
  * `agent.getMessageBlock`).
  *
  * Slim conversation reads replace oversized `tool_use.input` /

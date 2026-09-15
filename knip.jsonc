@@ -76,6 +76,7 @@
     "src/lib/motion/index.ts",
     // Compile-time type-assertion file, checked by tsc (pnpm run check), never imported
     "src/store/renderer/utils/context-saga-effects.typecheck.ts",
+    "src/store/renderer/slices/agent-session/agent-session-slice.typecheck.ts",
   ],
   "ignore": [
     // Accordion namespace members are used in NavigationPrimitivesCatalogPreview.svelte markup; knip misses them.

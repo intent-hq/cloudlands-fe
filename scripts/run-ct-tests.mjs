@@ -29,6 +29,12 @@
  * automation (verify:changed, saved scripts, CI) never sees the exit status.
  * The launcher pins `PLAYWRIGHT_HTML_OPEN=never` unless the caller opts in
  * from an interactive terminal (see `usage()`).
+ *
+ * Test runs hold the same host-wide `ct-<CT_PORT>` lock `verify:changed` uses
+ * (intent-hq/intent#4964): the CT runtime reuses any endpoint already
+ * listening on its port, so an unlocked second run from another worktree
+ * would test against that tree's component registry and then fail with
+ * ECONNREFUSED when the first run exits.
  */
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
@@ -37,6 +43,14 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { nonFontPackagesFromDryRun } from './playwright-os-deps-lib.mjs';
+import {
+  acquireVerificationLock,
+  ctLockKey,
+  ctPort,
+  defaultLockPath,
+  HELD_LOCK_ENV,
+  lockTimeout,
+} from './verification-lock.mjs';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -64,6 +78,11 @@ export function usage() {
     '  --help, -h        Show this help.',
     '',
     'Environment:',
+    '  CT_PORT           Component server port (default 3100). Test runs hold the host-wide',
+    '                    ct-<CT_PORT> lock verify:changed uses, so two worktrees never share',
+    '                    one component server; use a free port to run concurrently.',
+    '  VERIFY_CHANGED_LOCK_TIMEOUT_MS',
+    '                    How long to wait for that lock (default 240000, capped at 300000).',
     `  ${CT_HTML_REPORT_ENV}=open|always|on-failure|never`,
     '                    HTML report viewing policy. Default: never — the run exits with',
     "                    Playwright's status as soon as tests finish; the report is still",
@@ -179,6 +198,26 @@ export function exitCodeFromChild(code, signal) {
 }
 
 /**
+ * Take the host-wide `ct-<CT_PORT>` lock for a test run and resolve to its
+ * release function. When `verify:changed` already holds the lock for this port
+ * it exports `HELD_LOCK_ENV`; the nested run then skips acquisition instead of
+ * waiting on its own parent. `acquireLock` / `lockPath` are injectable for tests.
+ */
+export async function acquireCtPortLock({
+  env = process.env,
+  cwd = repoRoot,
+  acquireLock = acquireVerificationLock,
+  lockPath = defaultLockPath,
+  log = (message) => console.error(message),
+} = {}) {
+  const lockKey = ctLockKey(env);
+  if (env[HELD_LOCK_ENV] === lockKey) return () => {};
+  const timeoutMs = lockTimeout(lockKey, env.VERIFY_CHANGED_LOCK_TIMEOUT_MS);
+  log(`[run-ct-tests] waiting up to ${timeoutMs}ms for ${lockKey} lock`);
+  return acquireLock({ lockPath: lockPath(lockKey), timeoutMs, cwd });
+}
+
+/**
  * Spawn the playwright CLI and propagate its exit status through `exit`.
  * `spawnImpl` / `exit` are injectable for tests.
  */
@@ -206,6 +245,47 @@ export function runPlaywright({
     exit(exitCodeFromChild(code, signal));
   });
   return child;
+}
+
+/** How long a signalled Playwright child gets to tear down before SIGKILL. */
+export const CHILD_SHUTDOWN_GRACE_MS = 10_000;
+
+/**
+ * Forward SIGINT/SIGTERM to the child and keep the launcher alive until the
+ * child has actually exited: the `ct-<port>` lock is released from the child's
+ * exit event, and Playwright's shutdown is asynchronous, so exiting on the
+ * signal itself would hand the lock to a contender while the old component
+ * server is still listening on the port. A repeated signal, or a child still
+ * running after `graceMs`, escalates to SIGKILL.
+ */
+export function forwardSignalsToChild({
+  child,
+  proc = process,
+  signals = ['SIGINT', 'SIGTERM'],
+  graceMs = CHILD_SHUTDOWN_GRACE_MS,
+  log = (message) => console.error(message),
+}) {
+  let forwarded = null;
+  let graceTimer = null;
+  const clear = () => {
+    if (graceTimer) clearTimeout(graceTimer);
+    for (const signal of signals) proc.off(signal, onSignal);
+  };
+  const onSignal = (signal) => {
+    if (forwarded) {
+      child.kill('SIGKILL');
+      return;
+    }
+    forwarded = signal;
+    log(`[run-ct-tests] ${signal}: waiting for playwright to shut down`);
+    child.kill(signal);
+    graceTimer = setTimeout(() => child.kill('SIGKILL'), graceMs);
+    graceTimer.unref?.();
+  };
+  for (const signal of signals) proc.on(signal, onSignal);
+  child.once('exit', clear);
+  child.once('error', clear);
+  return clear;
 }
 
 export function resolveCtAlignedPlaywrightCli() {
@@ -271,7 +351,7 @@ export function assertNoCoreDumps({ root = repoRoot, env = process.env } = {}) {
   }
 }
 
-function main(argv) {
+async function main(argv) {
   const { forwarded, openReport, help } = parseLauncherArgs(argv);
   if (help) {
     process.stdout.write(`${usage()}\n`);
@@ -329,7 +409,26 @@ function main(argv) {
   const { env, notice } = buildChildEnv({ isTTY: Boolean(process.stdout.isTTY), openReport });
   if (notice) console.error(notice);
 
-  runPlaywright({ cliPath: cli.cliPath, args, env });
+  let releaseLock = () => {};
+  if (args[0] === 'test') {
+    try {
+      releaseLock = await acquireCtPortLock();
+    } catch (error) {
+      console.error(
+        `[run-ct-tests] ${error instanceof Error ? error.message : error}\n` +
+          `[run-ct-tests] another CT run owns port ${ctPort()}; wait for it to finish or ` +
+          'set a free CT_PORT (two worktrees must not share one component server)',
+      );
+      process.exit(1);
+    }
+  }
+
+  const exit = (code) => {
+    releaseLock();
+    process.exit(code);
+  };
+  const child = runPlaywright({ cliPath: cli.cliPath, args, env, exit });
+  forwardSignalsToChild({ child });
 }
 
 const isDirectRun = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;

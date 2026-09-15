@@ -319,7 +319,7 @@ function buildVisibleWorkspaceState(
     }
 
     // Rows carrying the daemon's delete-grace-window deadline (PROTOCOL §5.1
-    // `pendingDeleteAt`, v6.7+) stay hidden: the daemon still serves them while
+    // `pendingDeleteAt`) stay hidden: the daemon still serves them while
     // the window runs, but the FE soft-hid them at delete-request time.
     if (workspace.pendingDeleteAt) {
       continue;

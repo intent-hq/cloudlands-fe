@@ -130,7 +130,7 @@ describe('ToolCall conversation legibility', () => {
   });
 });
 
-describe('ToolCall lazy block hydration (§5.5 slim → v7.2 agent.getMessageBlock)', () => {
+describe('ToolCall lazy block hydration (§5.5 slim → agent.getMessageBlock)', () => {
   afterEach(() => dispatchMock.mockClear());
 
   it('expanding a slim-truncated row dispatches one hydration request per truncated block', async () => {

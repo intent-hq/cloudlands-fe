@@ -486,22 +486,22 @@
     activeTabBoundsPollers.add(scheduleClampAndReport);
     activeTabBoundsReporters.add(reportVisibleActiveBounds);
     scheduleClampAndReport();
-    const setActive = (nextIsActive: boolean) => {
+    const setActive = (nextIsActive: boolean, immediate = true) => {
+      if (!immediate && active === nextIsActive) return;
       const wasActive = active;
       active = nextIsActive;
       node.dataset.active = String(nextIsActive);
-      // Action updates can run inside a parent render. Report immediately without
-      // a nested flush, which can strand sibling updates; frame reports stay sync.
+      // Avoid nested render flushes from action updates; frame reports stay sync.
       if (active) {
-        reportVisibleActiveBounds(false);
+        // Only close/handoff controllers bypass the batched geometry pass.
+        if (immediate) reportVisibleActiveBounds(false);
         scheduleClampAndReport();
       } else if (wasActive) emitActiveTabBounds(null, { sync: false });
     };
     const workspaceId = node.dataset.workspaceTab;
     if (workspaceId) activeTabBoundsControllers.set(workspaceId, setActive);
-
     return {
-      update: setActive,
+      update: (nextIsActive: boolean) => setActive(nextIsActive, false),
       destroy() {
         if (scrollTrackingTimeout !== null) clearTimeout(scrollTrackingTimeout);
         if (active && scrollTracking) {

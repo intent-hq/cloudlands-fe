@@ -14,7 +14,11 @@
    */
   import { onMount, onDestroy } from 'svelte';
   import { browser } from '$app/environment';
-  import { scheduleLayoutRead, type CancelLayoutTask } from '$lib/utils/layout-phases';
+  import {
+    scheduleLayoutRead,
+    scheduleLayoutWrite,
+    type CancelLayoutTask,
+  } from '$lib/utils/layout-phases';
 
   interface Props {
     agentId?: string;
@@ -96,6 +100,22 @@
   let cachedCanvasWidth: number | null = null;
   let cachedCanvasHeight: number | null = null;
   let canvasResizeObserver: ResizeObserver | null = null;
+  let sizeReadPending = false;
+  let cancelSizeRead: CancelLayoutTask | null = null;
+  let cancelSizeWrite: CancelLayoutTask | null = null;
+
+  function scheduleCanvasSizeUpdate() {
+    if (sizeReadPending || destroyed) return;
+    sizeReadPending = true;
+    cancelSizeRead = scheduleLayoutRead(() => {
+      sizeReadPending = false;
+      if (!canvas || destroyed) return;
+      cachedCanvasWidth ??= canvas.clientWidth;
+      cachedCanvasHeight ??= canvas.clientHeight;
+      cancelSizeWrite?.();
+      cancelSizeWrite = scheduleLayoutWrite(() => updateCanvasSize());
+    });
+  }
 
   function getSemanticAuroraColor(): [number, number, number] | null {
     if (!canvas) return null;
@@ -382,14 +402,14 @@
     gl.uniform1fv(uniformLocations.phases, phaseOffsets);
     scheduleSemanticColorSync();
 
-    updateCanvasSize();
+    scheduleCanvasSizeUpdate();
 
     startTime = performance.now();
     render();
   }
 
   function updateCanvasSize(width?: number, height?: number) {
-    if (!canvas) return;
+    if (!canvas || destroyed) return;
 
     const cssWidth = width ?? cachedCanvasWidth ?? canvas.clientWidth;
     const cssHeight = height ?? cachedCanvasHeight ?? canvas.clientHeight;
@@ -416,7 +436,6 @@
       }
     });
     canvasResizeObserver.observe(canvas);
-    updateCanvasSize();
   }
 
   function scheduleRender() {
@@ -492,6 +511,11 @@
     cancelColorRead?.();
     cancelColorRead = null;
     colorReadPending = false;
+    cancelSizeRead?.();
+    cancelSizeWrite?.();
+    cancelSizeRead = null;
+    cancelSizeWrite = null;
+    sizeReadPending = false;
     canvasResizeObserver?.disconnect();
     canvasResizeObserver = null;
     if (gl) {
@@ -551,7 +575,7 @@
     const dprQuery = window.matchMedia(`(resolution: ${dpr}dppx)`);
     const handler = () => {
       cachedDpr = Math.min(window.devicePixelRatio || 1, MAX_RENDER_DPR);
-      updateCanvasSize();
+      scheduleCanvasSizeUpdate();
       // Remove old listener and set up a new one with the updated DPR
       dprQuery.removeEventListener('change', handler);
       setupDprListener();
@@ -583,7 +607,7 @@
     setupDprListener();
     setupCanvasResizeObserver();
 
-    const handleSemanticColorChange = () => syncSemanticAuroraColor();
+    const handleSemanticColorChange = () => scheduleSemanticColorSync();
     const themeObserver = new MutationObserver(handleSemanticColorChange);
     themeObserver.observe(document.documentElement, {
       attributes: true,

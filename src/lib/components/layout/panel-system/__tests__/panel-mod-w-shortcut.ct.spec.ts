@@ -49,12 +49,7 @@ for (const { platform, isMac, modifier } of [
       await component.getByTestId('shortcut-input').focus();
 
       await page.keyboard.press(`${modifier}+w`);
-      await expect(layoutState).toHaveAttribute('data-empty-panel-ids', 'p2');
-      await expect(layoutState).toHaveAttribute('data-column-count', '3');
-      await expect(layoutState).toHaveAttribute('data-panel-ids', 'p1,p2,p3');
-      await expect(layoutState).toHaveAttribute('data-root-sizes', '20,50,30');
-
-      await page.keyboard.press(`${modifier}+w`);
+      await expect(layoutState).toHaveAttribute('data-empty-panel-ids', '');
       await expect(layoutState).toHaveAttribute('data-column-count', '2');
       await expect(layoutState).toHaveAttribute('data-panel-ids', 'p1,p3');
       await expect(layoutState).toHaveAttribute('data-focused-panel', 'p3');

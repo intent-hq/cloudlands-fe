@@ -3,7 +3,7 @@
  * small images take the single-shot data arm, oversized ones the chunked
  * upload session, failures reject with per-image detail, existing
  * reference blocks pass through without re-uploading, and keyed placement
- * (v9.13) recovers a lost reply through the `file.getAttachmentInfo` key arm.
+ * (`idempotencyKey`) recovers a lost reply through the `file.getAttachmentInfo` key arm.
  */
 import { describe, expect, it, vi } from 'vitest';
 import {
@@ -43,7 +43,7 @@ function makeApi(overrides: Partial<ImagePlacementApi> = {}): ImagePlacementApi 
     getAttachmentInfo: vi.fn(async () => {
       throw invalidParams('unknown idempotency key');
     }),
-    // Pre-9.13 daemon by default: no key minted, wire shapes unchanged.
+    // Daemon without keyed placement by default: no key minted, wire shapes unchanged.
     mintIdempotencyKey: vi.fn(() => undefined),
     ...overrides,
   };
@@ -137,7 +137,7 @@ describe('placeImageAttachment', () => {
   });
 });
 
-describe('placeImageAttachment — idempotencyKey (v9.13)', () => {
+describe('placeImageAttachment — idempotencyKey (keyed placement)', () => {
   it('threads the key onto the single-shot data arm', async () => {
     const api = makeApi();
     await placeImageAttachment(
@@ -334,7 +334,7 @@ describe('toImageReferenceBlocks', () => {
     ).rejects.toThrow(/image-.*\.png \(disk full\)/);
   });
 
-  it('mints one key per inline block against a 9.13+ daemon and sends it', async () => {
+  it('mints one key per inline block against a daemon with keyed placement and sends it', async () => {
     let n = 0;
     const api = makeApi({ mintIdempotencyKey: vi.fn(() => `key-${++n}`) });
     await toImageReferenceBlocks(
@@ -353,7 +353,7 @@ describe('toImageReferenceBlocks', () => {
     expect(keys).toEqual(['key-1', 'key-2']);
   });
 
-  it('sends no key when the daemon predates 9.13', async () => {
+  it('sends no key when the daemon lacks keyed placement', async () => {
     const api = makeApi();
     await toImageReferenceBlocks(
       'ws-1',
@@ -365,7 +365,7 @@ describe('toImageReferenceBlocks', () => {
   });
 
   describe('retry identity', () => {
-    /** 9.13+ daemon: reuses a retained key, mints `fresh-N` otherwise. */
+    /** Daemon with keyed placement: reuses a retained key, mints `fresh-N` otherwise. */
     function keyed(overrides: Partial<ImagePlacementApi> = {}) {
       let n = 0;
       return makeApi({
@@ -431,7 +431,7 @@ describe('toImageReferenceBlocks', () => {
       });
     });
 
-    it('drops a retained key when the daemon connected now predates 9.13', async () => {
+    it('drops a retained key when the daemon connected now lacks keyed placement', async () => {
       const api = makeApi();
       await toImageReferenceBlocks(
         'ws-1',

@@ -14,6 +14,8 @@ describe('streaming status preview', () => {
     expect(Object.keys(preview.states)).toEqual([
       'streaming',
       'waiting',
+      'slot-wait',
+      'memory-wait',
       'error',
       'model-unavailable',
       'long-content',
@@ -24,11 +26,22 @@ describe('streaming status preview', () => {
     );
   });
 
-  it.each(['streaming', 'waiting'] as const)('renders the %s operational state', (state) => {
-    render(StreamingStatus, { props: preview.states[state].props });
-    expect(screen.getByRole('status', { name: 'Loading' })).toBeTruthy();
-    expect(screen.getByTestId('streaming-status-thinking-label').textContent).toBe('Thinking');
-  });
+  it.each(['streaming', 'waiting', 'slot-wait', 'memory-wait'] as const)(
+    'renders the %s operational state',
+    (state) => {
+      render(StreamingStatus, { props: preview.states[state].props });
+      expect(screen.getByRole('status', { name: 'Loading' })).toBeTruthy();
+      expect(screen.getByTestId('streaming-status-thinking-label').textContent).toBe('Thinking');
+    },
+  );
+
+  it.each(['slot-wait', 'memory-wait'] as const)(
+    'renders the %s admission-wait row beside the thinking indicator',
+    (state) => {
+      const { container } = render(StreamingStatus, { props: preview.states[state].props });
+      expect(container.querySelector('[data-stream-slot-wait="true"]')).toBeTruthy();
+    },
+  );
 
   it.each(['error', 'long-content'] as const)('renders the %s terminal state', (state) => {
     render(StreamingStatus, { props: preview.states[state].props });

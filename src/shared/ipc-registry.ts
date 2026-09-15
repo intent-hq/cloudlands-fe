@@ -666,6 +666,7 @@ export const IPC_CHANNELS = {
     CREATE_PULL_REQUEST: 'git-tracking:create-pull-request',
     GET_GITHUB_ISSUES: 'git-tracking:get-github-issues',
     SEARCH_GITHUB_ISSUES: 'git-tracking:search-github-issues',
+    LIST_RELATED_REPOS: 'git-tracking:list-related-repos',
     GET_REMOTE_URL: 'git-tracking:get-remote-url',
     GET_CHECK_RUNS: 'git-tracking:get-check-runs',
     GET_PR_REVIEWS: 'git-tracking:get-pr-reviews',

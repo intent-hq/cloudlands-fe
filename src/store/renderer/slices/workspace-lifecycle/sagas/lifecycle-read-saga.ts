@@ -288,8 +288,8 @@ function* refreshAgentStats(agentId: string, forceRefresh: boolean): SagaGenerat
 
 /**
  * Drop rows the FE soft-hid (local pending registry) and rows carrying the
- * daemon's delete-grace-window deadline (PROTOCOL §5.5 `pendingDeleteAt`,
- * v6.7+) — e.g. a deletion scheduled by another window.
+ * daemon's delete-grace-window deadline (PROTOCOL §5.5 `pendingDeleteAt`)
+ * — e.g. a deletion scheduled by another window.
  */
 function* filterPendingDeletions(
   listed: Awaited<ReturnType<typeof appClient.agents.list>>,
@@ -319,7 +319,7 @@ function* hydrateAgents(workspaceId: string): SagaGenerator<void> {
   }
   // Default read (§5.5 soft retire): retired rows are excluded daemon-side
   // and no longer ride every hydration frame; the sidebar's Retired bin
-  // renders its collapsed toggle from `retiredCount` (v8.2, served on every
+  // renders its collapsed toggle from `retiredCount` (served on every
   // read) and loads the rows on demand via the retired-only read.
   const {
     agents: defaultRows,
@@ -407,7 +407,7 @@ function* hydrateAgents(workspaceId: string): SagaGenerator<void> {
 }
 
 /**
- * On-demand retired-row load (§5.5 soft retire, v8.2): triggered when the
+ * On-demand retired-row load (§5.5 soft retire, `retiredOnly: true`): triggered when the
  * sidebar's Retired bin expands (or an active search needs retired coverage).
  * Loads once per workspace — a failed read leaves `retiredAgentsLoaded` false
  * so the next expand retries. Rows merge in via `addAgent` (append-only) so a

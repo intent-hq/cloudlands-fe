@@ -1122,7 +1122,7 @@
    * immediately in the `placing` state, then flips to `placed` or `failed`.
    * A failed item shows a retry affordance in the pill and blocks send until
    * retried or removed. The item carries one placement `idempotencyKey`
-   * (v9.13) for its whole attempt series, so a retry after a lost reply
+   * (`file.placeAttachment` keyed placement) for its whole attempt series, so a retry after a lost reply
    * replays the committed attachment instead of placing a duplicate.
    */
   async function placeNonImageFile(file: File) {

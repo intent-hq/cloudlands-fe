@@ -23,7 +23,7 @@
  * The request carries lightweight dynamic context (workspace title, branch,
  * visible agent names) as `context.keyterms` + `context.prompt`, gathered
  * off `appStore.state` only — no extra RPCs — plus the active workspace id
- * (`workspaceId`, §5.41 v5.1) so the daemon injects the workspace's
+ * (`workspaceId`, §5.41) so the daemon injects the workspace's
  * auto-derived vocabulary server-side; the OS-engine route fetches the same
  * terms via the cached workspace-vocabulary-service for parity.
  * The app-owned transcription saga owns action watching and cancellation;
@@ -244,7 +244,7 @@ export function mergeOsContextualStrings(
  * workspace-vocabulary-service; a failed fetch degrades to no terms), and
  * the context keyterms as contextual strings; `daemon` calls the cloud
  * `voice.transcribe` with the `workspaceId` so the daemon injects the same
- * workspace vocabulary server-side (§5.41 v5.1). `unavailable` still goes
+ * workspace vocabulary server-side (§5.41). `unavailable` still goes
  * to the daemon — the triggers gate that case up front, and the daemon's
  * no-key error toast covers any race. State is read at call time so a
  * settings change applies to the next dictation without re-wiring the
@@ -282,8 +282,8 @@ async function transcribeWithSelectedEngine(
 }
 
 /**
- * Matches the daemon's no-API-key failure (intent-voice registry). Daemons on
- * PROTOCOL §5.41 v4.4+ carry a structured `error.data.code`
+ * Matches the daemon's no-API-key failure (intent-voice registry). Daemons
+ * whose `voice.transcribe` failure (PROTOCOL §5.41) carries a structured `error.data.code`
  * (`voice-no-api-key`, intent-hq/monorepo#1448), matched first; the
  * descriptive-message sniff is kept only as a fallback for older daemons
  * whose `error.data` is the plain string.
@@ -474,7 +474,8 @@ export async function handleFinishedRecording(
     : (composerAgentId ?? resolveTargetAgentId(state, routeWorkspaceId));
   const context = gatherTranscriptionContext(state, routeWorkspaceId);
   // The active workspace (chief excluded, same rule as the context) opts the
-  // call into workspace-vocabulary biasing on both engines (§5.41 v5.1).
+  // call into workspace-vocabulary biasing on both engines (§5.41
+  // `voice.transcribe` `workspaceId`).
   const workspaceId = normalizedWorkspaceId(routeWorkspaceId) ?? undefined;
 
   const hudLabel = m.hardwareConsole_voice_transcribing_label();

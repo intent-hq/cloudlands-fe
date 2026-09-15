@@ -1578,19 +1578,13 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:confirm:conf
                     <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                       "Confirm"
                   <span aria-hidden="true" class="absolute flex inset-0 items-center justify-center pointer-events-none" data-slot="button-spinner">
-                    <svg aria-label="Loading" class="intent-mark-loader size-4! svelte-<scope>" data-loop-phase="0.5737704918032787" data-motion-state="playing" data-playing="true" data-slot="intent-mark-loader" data-variant="bloom" role="status">
-                      <foreignobject aria-hidden="true">
-                        <div class="intent-mark-arm-layer svelte-<scope>">
-                          <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                            <path class="svelte-<scope>" data-bloom-arm="upper-left" data-mark-arm="upper-left">
-                          <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                            <path class="svelte-<scope>" data-bloom-arm="upper-right" data-mark-arm="upper-right">
-                          <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                            <path class="svelte-<scope>" data-bloom-arm="lower-left" data-mark-arm="lower-left">
-                          <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                            <path class="svelte-<scope>" data-bloom-arm="lower-right" data-mark-arm="lower-right">
-                          <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                            <path class="svelte-<scope>" data-bloom-arm="bottom" data-mark-arm="bottom">
+                    <svg aria-label="Loading" class="intent-mark-loader size-4! svelte-<scope>" data-motion-state="playing" data-playing="true" data-slot="intent-mark-loader" data-variant="bloom" role="status">
+                      <g aria-hidden="true" data-mark-layer="bloom">
+                        <path class="svelte-<scope>" data-mark-arm="0">
+                        <path class="svelte-<scope>" data-mark-arm="1">
+                        <path class="svelte-<scope>" data-mark-arm="2">
+                        <path class="svelte-<scope>" data-mark-arm="3">
+                        <path class="svelte-<scope>" data-mark-arm="4">
     <div>
       <button aria-label="Close dialog" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-4 absolute aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 right-3 rounded-(--radius-medium) shrink-0 size-(--control-height-small) text-muted-foreground top-3 transition-[color,opacity] type-caption whitespace-nowrap" data-dialog-close="" data-slot="button" data-state="open" disabled="" id="bits-<id>" tabindex="0" type="button">
         <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
@@ -1702,19 +1696,13 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:confirm:dest
                     <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                       "Remove workspace"
                   <span aria-hidden="true" class="absolute flex inset-0 items-center justify-center pointer-events-none" data-slot="button-spinner">
-                    <svg aria-label="Loading" class="intent-mark-loader size-4! svelte-<scope>" data-loop-phase="0.5737704918032787" data-motion-state="playing" data-playing="true" data-slot="intent-mark-loader" data-variant="bloom" role="status">
-                      <foreignobject aria-hidden="true">
-                        <div class="intent-mark-arm-layer svelte-<scope>">
-                          <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                            <path class="svelte-<scope>" data-bloom-arm="upper-left" data-mark-arm="upper-left">
-                          <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                            <path class="svelte-<scope>" data-bloom-arm="upper-right" data-mark-arm="upper-right">
-                          <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                            <path class="svelte-<scope>" data-bloom-arm="lower-left" data-mark-arm="lower-left">
-                          <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                            <path class="svelte-<scope>" data-bloom-arm="lower-right" data-mark-arm="lower-right">
-                          <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                            <path class="svelte-<scope>" data-bloom-arm="bottom" data-mark-arm="bottom">
+                    <svg aria-label="Loading" class="intent-mark-loader size-4! svelte-<scope>" data-motion-state="playing" data-playing="true" data-slot="intent-mark-loader" data-variant="bloom" role="status">
+                      <g aria-hidden="true" data-mark-layer="bloom">
+                        <path class="svelte-<scope>" data-mark-arm="0">
+                        <path class="svelte-<scope>" data-mark-arm="1">
+                        <path class="svelte-<scope>" data-mark-arm="2">
+                        <path class="svelte-<scope>" data-mark-arm="3">
+                        <path class="svelte-<scope>" data-mark-arm="4">
     <div>
       <button aria-label="Close dialog" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-4 absolute aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 right-3 rounded-(--radius-medium) shrink-0 size-(--control-height-small) text-muted-foreground top-3 transition-[color,opacity] type-caption whitespace-nowrap" data-dialog-close="" data-slot="button" data-state="open" disabled="" id="bits-<id>" tabindex="0" type="button">
         <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
@@ -1796,19 +1784,13 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:confirm:form
                     <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                       "Confirm"
                   <span aria-hidden="true" class="absolute flex inset-0 items-center justify-center pointer-events-none" data-slot="button-spinner">
-                    <svg aria-label="Loading" class="intent-mark-loader size-4! svelte-<scope>" data-loop-phase="0.5737704918032787" data-motion-state="playing" data-playing="true" data-slot="intent-mark-loader" data-variant="bloom" role="status">
-                      <foreignobject aria-hidden="true">
-                        <div class="intent-mark-arm-layer svelte-<scope>">
-                          <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                            <path class="svelte-<scope>" data-bloom-arm="upper-left" data-mark-arm="upper-left">
-                          <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                            <path class="svelte-<scope>" data-bloom-arm="upper-right" data-mark-arm="upper-right">
-                          <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                            <path class="svelte-<scope>" data-bloom-arm="lower-left" data-mark-arm="lower-left">
-                          <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                            <path class="svelte-<scope>" data-bloom-arm="lower-right" data-mark-arm="lower-right">
-                          <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                            <path class="svelte-<scope>" data-bloom-arm="bottom" data-mark-arm="bottom">
+                    <svg aria-label="Loading" class="intent-mark-loader size-4! svelte-<scope>" data-motion-state="playing" data-playing="true" data-slot="intent-mark-loader" data-variant="bloom" role="status">
+                      <g aria-hidden="true" data-mark-layer="bloom">
+                        <path class="svelte-<scope>" data-mark-arm="0">
+                        <path class="svelte-<scope>" data-mark-arm="1">
+                        <path class="svelte-<scope>" data-mark-arm="2">
+                        <path class="svelte-<scope>" data-mark-arm="3">
+                        <path class="svelte-<scope>" data-mark-arm="4">
     <div>
       <button aria-label="Close dialog" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-4 absolute aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 right-3 rounded-(--radius-medium) shrink-0 size-(--control-height-small) text-muted-foreground top-3 transition-[color,opacity] type-caption whitespace-nowrap" data-dialog-close="" data-slot="button" data-state="open" disabled="" id="bits-<id>" tabindex="0" type="button">
         <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
@@ -6630,19 +6612,13 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:button:int
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                           "Loading action"
                       <span aria-hidden="true" class="absolute flex inset-0 items-center justify-center pointer-events-none" data-slot="button-spinner">
-                        <svg aria-label="Loading" class="intent-mark-loader size-4! svelte-<scope>" data-loop-phase="0.5737704918032787" data-motion-state="playing" data-playing="true" data-slot="intent-mark-loader" data-variant="bloom" role="status">
-                          <foreignobject aria-hidden="true">
-                            <div class="intent-mark-arm-layer svelte-<scope>">
-                              <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                                <path class="svelte-<scope>" data-bloom-arm="upper-left" data-mark-arm="upper-left">
-                              <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                                <path class="svelte-<scope>" data-bloom-arm="upper-right" data-mark-arm="upper-right">
-                              <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                                <path class="svelte-<scope>" data-bloom-arm="lower-left" data-mark-arm="lower-left">
-                              <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                                <path class="svelte-<scope>" data-bloom-arm="lower-right" data-mark-arm="lower-right">
-                              <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                                <path class="svelte-<scope>" data-bloom-arm="bottom" data-mark-arm="bottom">
+                        <svg aria-label="Loading" class="intent-mark-loader size-4! svelte-<scope>" data-motion-state="playing" data-playing="true" data-slot="intent-mark-loader" data-variant="bloom" role="status">
+                          <g aria-hidden="true" data-mark-layer="bloom">
+                            <path class="svelte-<scope>" data-mark-arm="0">
+                            <path class="svelte-<scope>" data-mark-arm="1">
+                            <path class="svelte-<scope>" data-mark-arm="2">
+                            <path class="svelte-<scope>" data-mark-arm="3">
+                            <path class="svelte-<scope>" data-mark-arm="4">
                   <div>
                     <button aria-busy="true" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border border-border cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" disabled="" type="button">
                       <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-hover/button:bg-hover inset-px motion-reduce:transition-none pointer-events-none shadow-none transition-[box-shadow,background-color,filter]" data-slot="button-surface">
@@ -6650,19 +6626,13 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:button:int
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                           "Outline loading"
                       <span aria-hidden="true" class="absolute flex inset-0 items-center justify-center pointer-events-none" data-slot="button-spinner">
-                        <svg aria-label="Loading" class="intent-mark-loader size-4! svelte-<scope>" data-loop-phase="0.5737704918032787" data-motion-state="playing" data-playing="true" data-slot="intent-mark-loader" data-variant="bloom" role="status">
-                          <foreignobject aria-hidden="true">
-                            <div class="intent-mark-arm-layer svelte-<scope>">
-                              <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                                <path class="svelte-<scope>" data-bloom-arm="upper-left" data-mark-arm="upper-left">
-                              <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                                <path class="svelte-<scope>" data-bloom-arm="upper-right" data-mark-arm="upper-right">
-                              <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                                <path class="svelte-<scope>" data-bloom-arm="lower-left" data-mark-arm="lower-left">
-                              <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                                <path class="svelte-<scope>" data-bloom-arm="lower-right" data-mark-arm="lower-right">
-                              <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                                <path class="svelte-<scope>" data-bloom-arm="bottom" data-mark-arm="bottom">
+                        <svg aria-label="Loading" class="intent-mark-loader size-4! svelte-<scope>" data-motion-state="playing" data-playing="true" data-slot="intent-mark-loader" data-variant="bloom" role="status">
+                          <g aria-hidden="true" data-mark-layer="bloom">
+                            <path class="svelte-<scope>" data-mark-arm="0">
+                            <path class="svelte-<scope>" data-mark-arm="1">
+                            <path class="svelte-<scope>" data-mark-arm="2">
+                            <path class="svelte-<scope>" data-mark-arm="3">
+                            <path class="svelte-<scope>" data-mark-arm="4">
                   <div>
                     <button aria-busy="true" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" disabled="" type="button">
                       <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
@@ -6670,19 +6640,13 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:button:int
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                           "Ghost loading"
                       <span aria-hidden="true" class="absolute flex inset-0 items-center justify-center pointer-events-none" data-slot="button-spinner">
-                        <svg aria-label="Loading" class="intent-mark-loader size-4! svelte-<scope>" data-loop-phase="0.5737704918032787" data-motion-state="playing" data-playing="true" data-slot="intent-mark-loader" data-variant="bloom" role="status">
-                          <foreignobject aria-hidden="true">
-                            <div class="intent-mark-arm-layer svelte-<scope>">
-                              <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                                <path class="svelte-<scope>" data-bloom-arm="upper-left" data-mark-arm="upper-left">
-                              <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                                <path class="svelte-<scope>" data-bloom-arm="upper-right" data-mark-arm="upper-right">
-                              <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                                <path class="svelte-<scope>" data-bloom-arm="lower-left" data-mark-arm="lower-left">
-                              <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                                <path class="svelte-<scope>" data-bloom-arm="lower-right" data-mark-arm="lower-right">
-                              <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                                <path class="svelte-<scope>" data-bloom-arm="bottom" data-mark-arm="bottom">
+                        <svg aria-label="Loading" class="intent-mark-loader size-4! svelte-<scope>" data-motion-state="playing" data-playing="true" data-slot="intent-mark-loader" data-variant="bloom" role="status">
+                          <g aria-hidden="true" data-mark-layer="bloom">
+                            <path class="svelte-<scope>" data-mark-arm="0">
+                            <path class="svelte-<scope>" data-mark-arm="1">
+                            <path class="svelte-<scope>" data-mark-arm="2">
+                            <path class="svelte-<scope>" data-mark-arm="3">
+                            <path class="svelte-<scope>" data-mark-arm="4">
                   <div>
                     <button aria-busy="true" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.375rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1 group/button h-(--control-height-small) inline-flex isolate items-center justify-center motion-reduce:transition-none px-3 relative rounded-(--radius-medium) shrink-0 text-secondary-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" disabled="" type="button">
                       <span aria-hidden="true" class="absolute bg-secondary duration-spring-fast ease-spring-fast group-active/button:brightness-90 group-active/button:shadow-none group-hover/button:brightness-95 inset-px motion-reduce:transition-none pointer-events-none shadow-(--elevation-raised) transition-[box-shadow,background-color,filter]" data-slot="button-surface">
@@ -6690,19 +6654,13 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:button:int
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                           "Small loading"
                       <span aria-hidden="true" class="absolute flex inset-0 items-center justify-center pointer-events-none" data-slot="button-spinner">
-                        <svg aria-label="Loading" class="intent-mark-loader size-3! svelte-<scope>" data-loop-phase="0.5737704918032787" data-motion-state="playing" data-playing="true" data-slot="intent-mark-loader" data-variant="bloom" role="status">
-                          <foreignobject aria-hidden="true">
-                            <div class="intent-mark-arm-layer svelte-<scope>">
-                              <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                                <path class="svelte-<scope>" data-bloom-arm="upper-left" data-mark-arm="upper-left">
-                              <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                                <path class="svelte-<scope>" data-bloom-arm="upper-right" data-mark-arm="upper-right">
-                              <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                                <path class="svelte-<scope>" data-bloom-arm="lower-left" data-mark-arm="lower-left">
-                              <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                                <path class="svelte-<scope>" data-bloom-arm="lower-right" data-mark-arm="lower-right">
-                              <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                                <path class="svelte-<scope>" data-bloom-arm="bottom" data-mark-arm="bottom">
+                        <svg aria-label="Loading" class="intent-mark-loader size-3! svelte-<scope>" data-motion-state="playing" data-playing="true" data-slot="intent-mark-loader" data-variant="bloom" role="status">
+                          <g aria-hidden="true" data-mark-layer="bloom">
+                            <path class="svelte-<scope>" data-mark-arm="0">
+                            <path class="svelte-<scope>" data-mark-arm="1">
+                            <path class="svelte-<scope>" data-mark-arm="2">
+                            <path class="svelte-<scope>" data-mark-arm="3">
+                            <path class="svelte-<scope>" data-mark-arm="4">
                   <div>
                     <button aria-busy="true" aria-label="Icon loading" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-4 aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 relative rounded-(--radius-medium) shrink-0 size-(--control-height-medium) text-secondary-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" disabled="" type="button">
                       <span aria-hidden="true" class="absolute bg-secondary duration-spring-fast ease-spring-fast group-active/button:brightness-90 group-active/button:shadow-none group-hover/button:brightness-95 inset-px motion-reduce:transition-none pointer-events-none shadow-(--elevation-raised) transition-[box-shadow,background-color,filter]" data-slot="button-surface">
@@ -6712,19 +6670,13 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:button:int
                             <rect>
                             <path>
                       <span aria-hidden="true" class="absolute flex inset-0 items-center justify-center pointer-events-none" data-slot="button-spinner">
-                        <svg aria-label="Loading" class="intent-mark-loader size-4! svelte-<scope>" data-loop-phase="0.5737704918032787" data-motion-state="playing" data-playing="true" data-slot="intent-mark-loader" data-variant="bloom" role="status">
-                          <foreignobject aria-hidden="true">
-                            <div class="intent-mark-arm-layer svelte-<scope>">
-                              <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                                <path class="svelte-<scope>" data-bloom-arm="upper-left" data-mark-arm="upper-left">
-                              <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                                <path class="svelte-<scope>" data-bloom-arm="upper-right" data-mark-arm="upper-right">
-                              <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                                <path class="svelte-<scope>" data-bloom-arm="lower-left" data-mark-arm="lower-left">
-                              <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                                <path class="svelte-<scope>" data-bloom-arm="lower-right" data-mark-arm="lower-right">
-                              <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                                <path class="svelte-<scope>" data-bloom-arm="bottom" data-mark-arm="bottom">
+                        <svg aria-label="Loading" class="intent-mark-loader size-4! svelte-<scope>" data-motion-state="playing" data-playing="true" data-slot="intent-mark-loader" data-variant="bloom" role="status">
+                          <g aria-hidden="true" data-mark-layer="bloom">
+                            <path class="svelte-<scope>" data-mark-arm="0">
+                            <path class="svelte-<scope>" data-mark-arm="1">
+                            <path class="svelte-<scope>" data-mark-arm="2">
+                            <path class="svelte-<scope>" data-mark-arm="3">
+                            <path class="svelte-<scope>" data-mark-arm="4">
                   <div>
                     <button aria-label="Add item" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-4 aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 relative rounded-(--radius-medium) shrink-0 size-(--control-height-medium) text-secondary-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
                       <span aria-hidden="true" class="absolute bg-secondary duration-spring-fast ease-spring-fast group-active/button:brightness-90 group-active/button:shadow-none group-hover/button:brightness-95 inset-px motion-reduce:transition-none pointer-events-none shadow-(--elevation-raised) transition-[box-shadow,background-color,filter]" data-slot="button-surface">
@@ -7850,19 +7802,13 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:file-input
                           <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                             "Importing theme"
                         <span aria-hidden="true" class="absolute flex inset-0 items-center justify-center pointer-events-none" data-slot="button-spinner">
-                          <svg aria-label="Loading" class="intent-mark-loader size-4! svelte-<scope>" data-loop-phase="0.5737704918032787" data-motion-state="playing" data-playing="true" data-slot="intent-mark-loader" data-variant="bloom" role="status">
-                            <foreignobject aria-hidden="true">
-                              <div class="intent-mark-arm-layer svelte-<scope>">
-                                <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                                  <path class="svelte-<scope>" data-bloom-arm="upper-left" data-mark-arm="upper-left">
-                                <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                                  <path class="svelte-<scope>" data-bloom-arm="upper-right" data-mark-arm="upper-right">
-                                <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                                  <path class="svelte-<scope>" data-bloom-arm="lower-left" data-mark-arm="lower-left">
-                                <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                                  <path class="svelte-<scope>" data-bloom-arm="lower-right" data-mark-arm="lower-right">
-                                <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                                  <path class="svelte-<scope>" data-bloom-arm="bottom" data-mark-arm="bottom">
+                          <svg aria-label="Loading" class="intent-mark-loader size-4! svelte-<scope>" data-motion-state="playing" data-playing="true" data-slot="intent-mark-loader" data-variant="bloom" role="status">
+                            <g aria-hidden="true" data-mark-layer="bloom">
+                              <path class="svelte-<scope>" data-mark-arm="0">
+                              <path class="svelte-<scope>" data-mark-arm="1">
+                              <path class="svelte-<scope>" data-mark-arm="2">
+                              <path class="svelte-<scope>" data-mark-arm="3">
+                              <path class="svelte-<scope>" data-mark-arm="4">
                     <span aria-live="polite" class="flex-1 min-w-0 text-muted-foreground truncate type-caption" role="status">
                       "No file selected"
           <details class="fixture-inspector svelte-<scope> text-muted-foreground text-xs">
@@ -8440,19 +8386,13 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:list:edito
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                         <div class="col-start-1 flex gap-2 items-center min-h-(--control-height-medium) min-w-0 pointer-events-none px-2 py-1.5 relative row-start-1 w-full">
                           <div class="flex items-center justify-center shrink-0 w-3.5">
-                            <svg aria-label="Loading" class="intent-mark-loader svelte-<scope>" data-loop-phase="0.5737704918032787" data-motion-state="playing" data-playing="true" data-slot="intent-mark-loader" data-variant="bloom" role="status">
-                              <foreignobject aria-hidden="true">
-                                <div class="intent-mark-arm-layer svelte-<scope>">
-                                  <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                                    <path class="svelte-<scope>" data-bloom-arm="upper-left" data-mark-arm="upper-left">
-                                  <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                                    <path class="svelte-<scope>" data-bloom-arm="upper-right" data-mark-arm="upper-right">
-                                  <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                                    <path class="svelte-<scope>" data-bloom-arm="lower-left" data-mark-arm="lower-left">
-                                  <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                                    <path class="svelte-<scope>" data-bloom-arm="lower-right" data-mark-arm="lower-right">
-                                  <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                                    <path class="svelte-<scope>" data-bloom-arm="bottom" data-mark-arm="bottom">
+                            <svg aria-label="Loading" class="intent-mark-loader svelte-<scope>" data-motion-state="playing" data-playing="true" data-slot="intent-mark-loader" data-variant="bloom" role="status">
+                              <g aria-hidden="true" data-mark-layer="bloom">
+                                <path class="svelte-<scope>" data-mark-arm="0">
+                                <path class="svelte-<scope>" data-mark-arm="1">
+                                <path class="svelte-<scope>" data-mark-arm="2">
+                                <path class="svelte-<scope>" data-mark-arm="3">
+                                <path class="svelte-<scope>" data-mark-arm="4">
                           <div class="flex flex-1 gap-1 items-baseline min-w-0 text-left" id="c<id>-content">
                             <div class="leading-5 max-w-full min-w-0 shrink truncate type-caption">
                               "Loading item"
@@ -15210,19 +15150,13 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:modals:primi
                                   <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                                     "Save changes"
                                 <span aria-hidden="true" class="absolute flex inset-0 items-center justify-center pointer-events-none" data-slot="button-spinner">
-                                  <svg aria-label="Loading" class="intent-mark-loader size-4! svelte-<scope>" data-loop-phase="0.5737704918032787" data-motion-state="playing" data-playing="true" data-slot="intent-mark-loader" data-variant="bloom" role="status">
-                                    <foreignobject aria-hidden="true">
-                                      <div class="intent-mark-arm-layer svelte-<scope>">
-                                        <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                                          <path class="svelte-<scope>" data-bloom-arm="upper-left" data-mark-arm="upper-left">
-                                        <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                                          <path class="svelte-<scope>" data-bloom-arm="upper-right" data-mark-arm="upper-right">
-                                        <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                                          <path class="svelte-<scope>" data-bloom-arm="lower-left" data-mark-arm="lower-left">
-                                        <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                                          <path class="svelte-<scope>" data-bloom-arm="lower-right" data-mark-arm="lower-right">
-                                        <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                                          <path class="svelte-<scope>" data-bloom-arm="bottom" data-mark-arm="bottom">
+                                  <svg aria-label="Loading" class="intent-mark-loader size-4! svelte-<scope>" data-motion-state="playing" data-playing="true" data-slot="intent-mark-loader" data-variant="bloom" role="status">
+                                    <g aria-hidden="true" data-mark-layer="bloom">
+                                      <path class="svelte-<scope>" data-mark-arm="0">
+                                      <path class="svelte-<scope>" data-mark-arm="1">
+                                      <path class="svelte-<scope>" data-mark-arm="2">
+                                      <path class="svelte-<scope>" data-mark-arm="3">
+                                      <path class="svelte-<scope>" data-mark-arm="4">
                           <div>
                             <button aria-label="Close dialog" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-4 absolute aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 right-3 rounded-(--radius-medium) shrink-0 size-(--control-height-small) text-muted-foreground top-3 transition-[color,opacity] type-caption whitespace-nowrap" data-dialog-close="" data-slot="button" data-state="open" disabled="" id="bits-<id>" tabindex="0" type="button">
                               <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
@@ -15667,19 +15601,13 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:modals:produ
                                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                                           "Delete workspace"
                                       <span aria-hidden="true" class="absolute flex inset-0 items-center justify-center pointer-events-none" data-slot="button-spinner">
-                                        <svg aria-label="Loading" class="intent-mark-loader size-4! svelte-<scope>" data-loop-phase="0.5737704918032787" data-motion-state="playing" data-playing="true" data-slot="intent-mark-loader" data-variant="bloom" role="status">
-                                          <foreignobject aria-hidden="true">
-                                            <div class="intent-mark-arm-layer svelte-<scope>">
-                                              <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                                                <path class="svelte-<scope>" data-bloom-arm="upper-left" data-mark-arm="upper-left">
-                                              <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                                                <path class="svelte-<scope>" data-bloom-arm="upper-right" data-mark-arm="upper-right">
-                                              <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                                                <path class="svelte-<scope>" data-bloom-arm="lower-left" data-mark-arm="lower-left">
-                                              <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                                                <path class="svelte-<scope>" data-bloom-arm="lower-right" data-mark-arm="lower-right">
-                                              <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                                                <path class="svelte-<scope>" data-bloom-arm="bottom" data-mark-arm="bottom">
+                                        <svg aria-label="Loading" class="intent-mark-loader size-4! svelte-<scope>" data-motion-state="playing" data-playing="true" data-slot="intent-mark-loader" data-variant="bloom" role="status">
+                                          <g aria-hidden="true" data-mark-layer="bloom">
+                                            <path class="svelte-<scope>" data-mark-arm="0">
+                                            <path class="svelte-<scope>" data-mark-arm="1">
+                                            <path class="svelte-<scope>" data-mark-arm="2">
+                                            <path class="svelte-<scope>" data-mark-arm="3">
+                                            <path class="svelte-<scope>" data-mark-arm="4">
                         <div>
                           <button aria-label="Close dialog" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-4 absolute aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 right-3 rounded-(--radius-medium) shrink-0 size-(--control-height-small) text-muted-foreground top-3 transition-[color,opacity] type-caption whitespace-nowrap" data-dialog-close="" data-slot="button" data-state="open" disabled="" id="bits-<id>" tabindex="0" type="button">
                             <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
@@ -16161,19 +16089,13 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:modals:produ
                                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                                           "Delete workspace"
                                       <span aria-hidden="true" class="absolute flex inset-0 items-center justify-center pointer-events-none" data-slot="button-spinner">
-                                        <svg aria-label="Loading" class="intent-mark-loader size-4! svelte-<scope>" data-loop-phase="0.5737704918032787" data-motion-state="playing" data-playing="true" data-slot="intent-mark-loader" data-variant="bloom" role="status">
-                                          <foreignobject aria-hidden="true">
-                                            <div class="intent-mark-arm-layer svelte-<scope>">
-                                              <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                                                <path class="svelte-<scope>" data-bloom-arm="upper-left" data-mark-arm="upper-left">
-                                              <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                                                <path class="svelte-<scope>" data-bloom-arm="upper-right" data-mark-arm="upper-right">
-                                              <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                                                <path class="svelte-<scope>" data-bloom-arm="lower-left" data-mark-arm="lower-left">
-                                              <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                                                <path class="svelte-<scope>" data-bloom-arm="lower-right" data-mark-arm="lower-right">
-                                              <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                                                <path class="svelte-<scope>" data-bloom-arm="bottom" data-mark-arm="bottom">
+                                        <svg aria-label="Loading" class="intent-mark-loader size-4! svelte-<scope>" data-motion-state="playing" data-playing="true" data-slot="intent-mark-loader" data-variant="bloom" role="status">
+                                          <g aria-hidden="true" data-mark-layer="bloom">
+                                            <path class="svelte-<scope>" data-mark-arm="0">
+                                            <path class="svelte-<scope>" data-mark-arm="1">
+                                            <path class="svelte-<scope>" data-mark-arm="2">
+                                            <path class="svelte-<scope>" data-mark-arm="3">
+                                            <path class="svelte-<scope>" data-mark-arm="4">
                         <div>
                           <button aria-label="Close dialog" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-4 absolute aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 right-3 rounded-(--radius-medium) shrink-0 size-(--control-height-small) text-muted-foreground top-3 transition-[color,opacity] type-caption whitespace-nowrap" data-dialog-close="" data-slot="button" data-state="open" disabled="" id="bits-<id>" tabindex="0" type="button">
                             <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
@@ -16249,19 +16171,13 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:modals:produ
                                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                                           "Confirm"
                                       <span aria-hidden="true" class="absolute flex inset-0 items-center justify-center pointer-events-none" data-slot="button-spinner">
-                                        <svg aria-label="Loading" class="intent-mark-loader size-4! svelte-<scope>" data-loop-phase="0.5737704918032787" data-motion-state="playing" data-playing="true" data-slot="intent-mark-loader" data-variant="bloom" role="status">
-                                          <foreignobject aria-hidden="true">
-                                            <div class="intent-mark-arm-layer svelte-<scope>">
-                                              <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                                                <path class="svelte-<scope>" data-bloom-arm="upper-left" data-mark-arm="upper-left">
-                                              <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                                                <path class="svelte-<scope>" data-bloom-arm="upper-right" data-mark-arm="upper-right">
-                                              <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                                                <path class="svelte-<scope>" data-bloom-arm="lower-left" data-mark-arm="lower-left">
-                                              <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                                                <path class="svelte-<scope>" data-bloom-arm="lower-right" data-mark-arm="lower-right">
-                                              <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                                                <path class="svelte-<scope>" data-bloom-arm="bottom" data-mark-arm="bottom">
+                                        <svg aria-label="Loading" class="intent-mark-loader size-4! svelte-<scope>" data-motion-state="playing" data-playing="true" data-slot="intent-mark-loader" data-variant="bloom" role="status">
+                                          <g aria-hidden="true" data-mark-layer="bloom">
+                                            <path class="svelte-<scope>" data-mark-arm="0">
+                                            <path class="svelte-<scope>" data-mark-arm="1">
+                                            <path class="svelte-<scope>" data-mark-arm="2">
+                                            <path class="svelte-<scope>" data-mark-arm="3">
+                                            <path class="svelte-<scope>" data-mark-arm="4">
                         <div>
                           <button aria-label="Close dialog" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-4 absolute aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 right-3 rounded-(--radius-medium) shrink-0 size-(--control-height-small) text-muted-foreground top-3 transition-[color,opacity] type-caption whitespace-nowrap" data-dialog-close="" data-slot="button" data-state="open" disabled="" id="bits-<id>" tabindex="0" type="button">
                             <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
@@ -18391,19 +18307,13 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:rows:row-fam
                             <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                               "Saving"
                           <span aria-hidden="true" class="absolute flex inset-0 items-center justify-center pointer-events-none" data-slot="button-spinner">
-                            <svg aria-label="Loading" class="intent-mark-loader size-3! svelte-<scope>" data-loop-phase="0.5737704918032787" data-motion-state="playing" data-playing="true" data-slot="intent-mark-loader" data-variant="bloom" role="status">
-                              <foreignobject aria-hidden="true">
-                                <div class="intent-mark-arm-layer svelte-<scope>">
-                                  <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                                    <path class="svelte-<scope>" data-bloom-arm="upper-left" data-mark-arm="upper-left">
-                                  <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                                    <path class="svelte-<scope>" data-bloom-arm="upper-right" data-mark-arm="upper-right">
-                                  <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                                    <path class="svelte-<scope>" data-bloom-arm="lower-left" data-mark-arm="lower-left">
-                                  <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                                    <path class="svelte-<scope>" data-bloom-arm="lower-right" data-mark-arm="lower-right">
-                                  <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                                    <path class="svelte-<scope>" data-bloom-arm="bottom" data-mark-arm="bottom">
+                            <svg aria-label="Loading" class="intent-mark-loader size-3! svelte-<scope>" data-motion-state="playing" data-playing="true" data-slot="intent-mark-loader" data-variant="bloom" role="status">
+                              <g aria-hidden="true" data-mark-layer="bloom">
+                                <path class="svelte-<scope>" data-mark-arm="0">
+                                <path class="svelte-<scope>" data-mark-arm="1">
+                                <path class="svelte-<scope>" data-mark-arm="2">
+                                <path class="svelte-<scope>" data-mark-arm="3">
+                                <path class="svelte-<scope>" data-mark-arm="4">
                 <div class="row-cell svelte-<scope>" data-row-preview="settings-field-row-compact-disabled">
                   <div class="first:pt-3 gap-3 grid grid-cols-1 last:pb-3 min-w-0 py-3" data-disabled="true" data-highlight-id="rows-setting-compact" data-orientation="stacked" data-settings-search-text="Compact disabled field" data-slot="settings-field-row" id="rows-setting-compact">
                     <div class="flex gap-3 items-start min-w-0">
@@ -18838,19 +18748,13 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:screen-state
                       "LoadingIndicator"
                     <div class="preview-frame svelte-<scope>" data-preview-width="full">
                       <div class="flex items-center justify-center min-h-28">
-                        <svg aria-label="Loading" class="intent-mark-loader svelte-<scope>" data-loop-phase="0.5737704918032787" data-motion-state="playing" data-playing="true" data-slot="intent-mark-loader" data-variant="bloom" role="status">
-                          <foreignobject aria-hidden="true">
-                            <div class="intent-mark-arm-layer svelte-<scope>">
-                              <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                                <path class="svelte-<scope>" data-bloom-arm="upper-left" data-mark-arm="upper-left">
-                              <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                                <path class="svelte-<scope>" data-bloom-arm="upper-right" data-mark-arm="upper-right">
-                              <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                                <path class="svelte-<scope>" data-bloom-arm="lower-left" data-mark-arm="lower-left">
-                              <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                                <path class="svelte-<scope>" data-bloom-arm="lower-right" data-mark-arm="lower-right">
-                              <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                                <path class="svelte-<scope>" data-bloom-arm="bottom" data-mark-arm="bottom">
+                        <svg aria-label="Loading" class="intent-mark-loader svelte-<scope>" data-motion-state="playing" data-playing="true" data-slot="intent-mark-loader" data-variant="bloom" role="status">
+                          <g aria-hidden="true" data-mark-layer="bloom">
+                            <path class="svelte-<scope>" data-mark-arm="0">
+                            <path class="svelte-<scope>" data-mark-arm="1">
+                            <path class="svelte-<scope>" data-mark-arm="2">
+                            <path class="svelte-<scope>" data-mark-arm="3">
+                            <path class="svelte-<scope>" data-mark-arm="4">
                   <article aria-labelledby="skeleton-text-avatar-label" class="preview-cell svelte-<scope>" data-screen-preview="skeleton-text-avatar">
                     <h4 class="preview-label svelte-<scope>" id="skeleton-text-avatar-label">
                       "Skeleton · text and avatar"
@@ -18876,18 +18780,12 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:screen-state
                     <div class="preview-frame svelte-<scope>" data-preview-width="full">
                       <div class="gap-3 grid p-4" data-reduced-motion="">
                         <svg aria-label="Loading" class="intent-mark-loader svelte-<scope>" data-motion-state="neutral" data-playing="false" data-slot="intent-mark-loader" data-variant="bloom" role="status">
-                          <foreignobject aria-hidden="true">
-                            <div class="intent-mark-arm-layer svelte-<scope>">
-                              <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                                <path class="svelte-<scope>" data-bloom-arm="upper-left" data-mark-arm="upper-left">
-                              <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                                <path class="svelte-<scope>" data-bloom-arm="upper-right" data-mark-arm="upper-right">
-                              <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                                <path class="svelte-<scope>" data-bloom-arm="lower-left" data-mark-arm="lower-left">
-                              <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                                <path class="svelte-<scope>" data-bloom-arm="lower-right" data-mark-arm="lower-right">
-                              <svg aria-hidden="true" class="intent-mark-arm svelte-<scope>" data-mark-arm-box="" data-mark="">
-                                <path class="svelte-<scope>" data-bloom-arm="bottom" data-mark-arm="bottom">
+                          <g aria-hidden="true" data-mark-layer="neutral">
+                            <path class="svelte-<scope>" data-mark-arm="0">
+                            <path class="svelte-<scope>" data-mark-arm="1">
+                            <path class="svelte-<scope>" data-mark-arm="2">
+                            <path class="svelte-<scope>" data-mark-arm="3">
+                            <path class="svelte-<scope>" data-mark-arm="4">
                         <div class="bg-(--skeleton) h-3 rounded-(--radius-small) skeleton-shimmer svelte-<scope> w-full" data-slot="skeleton">
                         <div class="bg-(--skeleton) h-3 rounded-(--radius-small) skeleton-shimmer svelte-<scope> w-2/3" data-slot="skeleton">
                   <article aria-labelledby="loading-zoom-200-label" class="preview-cell svelte-<scope>" data-screen-preview="loading-zoom-200">

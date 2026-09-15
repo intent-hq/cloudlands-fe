@@ -344,7 +344,7 @@
     branchBaseCommitSha?: string | null;
     /**
      * Secondary git root scoping the committed-content fetches (multi git
-     * root tracking, v6.15). Absent → primary-root behavior, byte-identical.
+     * root tracking, §5.6). Absent → primary-root behavior, byte-identical.
      */
     gitRootId?: string;
     /**
@@ -925,7 +925,7 @@
         plan.map((item) => {
           if (item.kind === 'fetch-committed') {
             // `currentGitRootId` scopes the reads to a registered secondary
-            // root (v6.15); normalize absolute UI paths against that root
+            // root (§5.6 git roots); normalize absolute UI paths against that root
             // before sending the root-relative Git path.
             const showOpts = currentGitRootId ? { gitRootId: currentGitRootId } : undefined;
             const rootRelativePath = toGitRootRelativePath(

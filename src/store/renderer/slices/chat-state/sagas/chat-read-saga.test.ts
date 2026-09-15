@@ -167,7 +167,7 @@ describe('chatReadSaga (single-transfer hydration)', () => {
   // Regression (monorepo#1977): a deletion scheduled by ANOTHER window/client
   // (or before an FE restart) is not in this window's local pending-delete
   // registry — the fetched row's daemon-owned `pendingDeleteAt` deadline
-  // (PROTOCOL §5.5, v6.7+) is the only signal, and hydration must skip.
+  // (PROTOCOL §5.5) is the only signal, and hydration must skip.
   it('skips hydration when the fetched session carries pendingDeleteAt', async () => {
     mocks.get.mockResolvedValue(session({ pendingDeleteAt: '2026-01-01T00:00:15.000Z' }));
     const run = harness();
@@ -745,7 +745,7 @@ describe('chatReadSaga (single-transfer hydration)', () => {
   });
 });
 
-describe('chatReadSaga lazy block hydration (§5.5 slim → v7.2 agent.getMessageBlock)', () => {
+describe('chatReadSaga lazy block hydration (§5.5 slim → agent.getMessageBlock)', () => {
   afterEach(() => vi.clearAllMocks());
 
   const MSG = 'msg-1';

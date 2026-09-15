@@ -140,6 +140,7 @@ import {
   removeSession,
   removeWorkspaceSessions,
   replaceMessages,
+  restoreStoredSessions,
   updateSession,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { workspaceDeleted } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
@@ -1272,6 +1273,7 @@ type ChatSubscribeAction =
   | ReturnType<typeof chatTranscriptSnapshotRerequested>
   | ReturnType<typeof clearCurrentlyViewedAgent>
   | ReturnType<typeof bulkUpsertSessions>
+  | ReturnType<typeof restoreStoredSessions>
   | ReturnType<typeof removeSession>
   | ReturnType<typeof removeWorkspaceSessions>
   | ReturnType<typeof workspaceDeleted>
@@ -1370,10 +1372,14 @@ function* routeLifecycleAction(
         coordinator.pendingSweepCloses.add(scopeAgentId);
       }
     }
-  } else if (action.type === bulkUpsertSessions.type) {
+  } else if (
+    action.type === bulkUpsertSessions.type ||
+    action.type === restoreStoredSessions.type
+  ) {
     // Reducers commit the entire session batch before saga observers receive
     // this action. It is the sole shell-ready signal for pending snapshots;
     // membership-only per-agent upserts must not replay against a missing shell.
+    // A stored-snapshot restore reinstates the shell the same way.
     const [sessions] = action.payload as [AgentSession[]];
     for (const session of sessions) replayPendingSnapshot(coordinator, session.id);
   } else if (action.type === removeSession.type) {
@@ -1463,6 +1469,7 @@ export function* chatSubscribeSaga(): SagaGenerator<void> {
       chatTranscriptSnapshotRerequested,
       clearCurrentlyViewedAgent,
       bulkUpsertSessions,
+      restoreStoredSessions,
       removeSession,
       removeWorkspaceSessions,
       workspaceDeleted,

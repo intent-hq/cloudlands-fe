@@ -770,7 +770,7 @@ describe('tool-result-parser', () => {
   });
 
   describe('agent delegate/create TOON results', () => {
-    // Fixtures mirror the daemon's toon-format v0.5 `encode_default` output
+    // Fixtures mirror the daemon's toon-format v0.5 `encode_default` output // protocol-version-ok: toon-format crate version
     // (`render_workspace_api_value` in intentd): hyphenated strings are
     // quoted, arrays use the `tasks[N]:` list / inline syntax.
     const AGENT_ID = 'agent-12345678-1234-1234-1234-123456789abc';
@@ -889,7 +889,7 @@ describe('tool-result-parser', () => {
   });
 
   describe('workspace_api TOON results (generalized renderers)', () => {
-    // Fixtures mirror the daemon's toon-format v0.5 `encode_default` output
+    // Fixtures mirror the daemon's toon-format v0.5 `encode_default` output // protocol-version-ok: toon-format crate version
     // (`render_workspace_api_value` in intentd), verified against the npm
     // `@toon-format/toon` decoder.
     const wsInput = (code: string) => ({ code, summary: 'ws call' });

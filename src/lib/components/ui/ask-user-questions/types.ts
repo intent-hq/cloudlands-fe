@@ -16,6 +16,10 @@ export interface AskUserQuestion {
   multiSelect?: boolean;
   allowOther?: boolean;
   otherPlaceholder?: string;
+  otherAriaLabel?: string;
+  /** Cap auto-growth in lines and allow manual vertical resizing. */
+  otherAutoGrowMaxLines?: number;
+  otherEnterSubmits?: boolean;
   skippable?: boolean;
   nextLabel?: string;
   layout?: 'inline' | 'stacked';

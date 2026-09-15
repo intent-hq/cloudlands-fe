@@ -132,15 +132,48 @@
     }
   });
 
+  let fittedHeight = 0;
+  let manuallyResized = false;
+
+  function fitOtherInput() {
+    const el = otherInput;
+    if (!el || manuallyResized) return;
+    el.style.height = 'auto';
+    if (el.scrollHeight === 0) return;
+    const lineHeight = parseFloat(getComputedStyle(el).lineHeight);
+    const maxLines = question?.otherAutoGrowMaxLines;
+    const cap = maxLines && Number.isFinite(lineHeight) ? lineHeight * maxLines : Infinity;
+    el.style.height = `${Math.min(el.scrollHeight, cap)}px`;
+    fittedHeight = el.offsetHeight;
+    hover?.measure();
+  }
+
+  $effect(() => {
+    const el = otherInput;
+    const maxLines = question?.otherAutoGrowMaxLines;
+    if (!el) return;
+    manuallyResized = false;
+    untrack(fitOtherInput);
+    if (!maxLines || typeof ResizeObserver === 'undefined') return;
+    let lastWidth = el.offsetWidth;
+    const observer = new ResizeObserver(() => {
+      if (Math.abs(el.offsetHeight - fittedHeight) > 1) {
+        manuallyResized = true;
+        return;
+      }
+      if (el.offsetWidth !== lastWidth) {
+        lastWidth = el.offsetWidth;
+        fitOtherInput();
+      }
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  });
+
   $effect(() => {
     otherText;
     questionId;
-    void tick().then(() => {
-      if (!otherInput) return;
-      otherInput.style.height = '0px';
-      otherInput.style.height = `${otherInput.scrollHeight}px`;
-      hover?.measure();
-    });
+    void tick().then(fitOtherInput);
   });
 
   const connectRows: Action<HTMLElement> = (node) => {
@@ -325,7 +358,7 @@
   }
 
   function handleDocumentKeydown(event: KeyboardEvent) {
-    if (!question || disabled || !rootElement) return;
+    if (!question || disabled || !rootElement || event.isComposing) return;
     const target = event.target instanceof HTMLElement ? event.target : null;
     const activeInstance = mountedInstances.find((element) =>
       element.contains(document.activeElement),
@@ -407,7 +440,12 @@
 
   function handleRootKeydown(event: KeyboardEvent) {
     onkeydown?.(event);
-    if (event.defaultPrevented || event.key !== 'Enter' || (!event.metaKey && !event.ctrlKey))
+    if (
+      event.isComposing ||
+      event.defaultPrevented ||
+      event.key !== 'Enter' ||
+      (!event.metaKey && !event.ctrlKey)
+    )
       return;
     if (!isMulti && !isFreeText) return;
     event.preventDefault();
@@ -570,6 +608,7 @@
                     onkeydown={(event) => {
                       if (
                         event.key === 'Enter' &&
+                        !event.isComposing &&
                         !event.shiftKey &&
                         !event.metaKey &&
                         !event.ctrlKey &&
@@ -761,7 +800,8 @@
                       data-chip-position={question.chipPosition ?? 'right'}
                       data-state={otherText.length > 0 ? 'checked' : 'unchecked'}
                       class={cn(
-                        'relative z-10 flex cursor-text items-center rounded-(--radius-small)',
+                        'relative z-10 flex cursor-text rounded-(--radius-small)',
+                        question.otherAutoGrowMaxLines ? 'items-start' : 'items-center',
                         compact ? 'px-2.5' : 'px-3',
                         question.chipPosition === 'left' ? 'gap-2' : 'gap-3',
                         compact ? 'min-h-8 py-1' : 'min-h-10 py-1.5',
@@ -784,19 +824,29 @@
                         rows={1}
                         value={otherText}
                         placeholder={question.otherPlaceholder ?? DEFAULT_OTHER_PLACEHOLDER}
-                        aria-label={question.otherPlaceholder ?? DEFAULT_OTHER_ARIA_LABEL}
+                        aria-label={question.otherAriaLabel ??
+                          question.otherPlaceholder ??
+                          DEFAULT_OTHER_ARIA_LABEL}
                         {disabled}
                         oninput={(event) => updateOther(event.currentTarget.value)}
                         onkeydown={(event) => {
-                          if (event.key === 'Enter' && !event.shiftKey && !isMulti) {
+                          if (
+                            event.key === 'Enter' &&
+                            !event.shiftKey &&
+                            !event.isComposing &&
+                            (!isMulti || question.otherEnterSubmits)
+                          ) {
                             event.preventDefault();
                             submitOther();
                           }
                         }}
                         onclick={(event) => event.stopPropagation()}
                         class={cn(
-                          'min-h-0! min-w-0 flex-1 resize-none overflow-hidden rounded-none border-0 bg-transparent hover:bg-transparent p-0 leading-snug text-foreground shadow-none placeholder:text-muted-foreground',
+                          'min-h-0! min-w-0 flex-1 rounded-none border-0 bg-transparent hover:bg-transparent p-0 leading-snug text-foreground shadow-none placeholder:text-muted-foreground',
                           compact ? 'text-xs' : 'type-caption',
+                          question.otherAutoGrowMaxLines
+                            ? 'min-h-[1lh]! resize-y overflow-y-auto'
+                            : 'resize-none overflow-hidden',
                         )}
                       />
                       {#if question.chipPosition !== 'left'}

@@ -20,7 +20,7 @@ describe('shouldRunOnboardingTestPrompt', () => {
     expect(shouldRunOnboardingTestPrompt(entry({ supportsTestPrompt: false }))).toBe(false);
   });
 
-  it('treats an absent flag (pre-v9.3 daemon) and a missing entry as unsupported', () => {
+  it('treats an absent flag (daemon without host.providerTestPrompt) and a missing entry as unsupported', () => {
     expect(shouldRunOnboardingTestPrompt(entry())).toBe(false);
     expect(shouldRunOnboardingTestPrompt(undefined)).toBe(false);
   });

@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { createServer, type Plugin, type ViteDevServer } from 'vite';
@@ -118,6 +119,11 @@ const virtualModules: Record<string, string> = {
 };
 
 function geometryStubs(): Plugin {
+  const componentPath = 'src/lib/components/layout/WorkspaceTabStrip.svelte';
+  const sourceRef = process.env.WORKSPACE_TAB_STRIP_REF;
+  const baselineSource = sourceRef
+    ? execFileSync('git', ['show', `${sourceRef}:${componentPath}`], { encoding: 'utf8' })
+    : null;
   const aliasRoots = new Map([
     ['$lib', resolve(process.cwd(), 'src/lib')],
     ['$store', resolve(process.cwd(), 'src/store')],
@@ -143,11 +149,25 @@ function geometryStubs(): Plugin {
     resolveId(source) {
       if (source === 'svelte-fa')
         return resolve(process.cwd(), 'src/lib/components/ui/__tests__/mocks/Fa.svelte');
+      // Let the initial scan discover icon dependencies before the browser mounts.
+      if (source === '@fortawesome/free-solid-svg-icons')
+        return resolve(process.cwd(), 'src/lib/icons/phosphor-icons.ts');
+      // Vite scans .svelte imports from disk, even when resolved to virtual JS (#4624).
+      if (
+        source === '$lib/components/workspace/WorkspaceHoverCard.svelte' ||
+        source === resolve(process.cwd(), 'src/lib/components/workspace/WorkspaceHoverCard.svelte')
+      ) {
+        return resolve(
+          process.cwd(),
+          'src/lib/components/layout/__tests__/mocks/MockWorkspaceHoverCard.svelte',
+        );
+      }
       const canonical = canonicalSource(source);
       if (canonical) return virtualPrefix + canonical + '.js';
       return null;
     },
     load(id) {
+      if (baselineSource && id === resolve(process.cwd(), componentPath)) return baselineSource;
       return id.startsWith(virtualPrefix)
         ? virtualModules[id.slice(virtualPrefix.length, -3)]
         : null;
@@ -161,6 +181,7 @@ test.beforeAll(async () => {
     configFile: false,
     root: process.cwd(),
     cacheDir: viteHarnessCacheDir('workspace-tab-strip-status-geometry'),
+    optimizeDeps: { entries: ['src/lib/components/layout/WorkspaceTabStrip.svelte'] },
     plugins: [geometryStubs(), svelte({ configFile: resolve(process.cwd(), 'svelte.config.js') })],
     resolve: {
       alias: {

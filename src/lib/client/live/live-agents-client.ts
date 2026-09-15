@@ -82,7 +82,7 @@ function normalizeAgent(raw: Record<string, unknown>): AgentSession {
     createdAt: String(raw.createdAt ?? now),
     updatedAt: String(raw.updatedAt ?? now),
   } as AgentSession;
-  // `retiredAt` (§5.5 soft retire, v7.5) is presence-detected on the wire:
+  // `retiredAt` (§5.5 soft retire) is presence-detected on the wire:
   // set on retired rows, omitted (never null) on active ones. Pure presence
   // pass-through — assign only when a non-empty string is present; a
   // divergent shape (null, empty string) is not healed away client-side.
@@ -106,12 +106,12 @@ export class LiveAgentsClient implements AgentsClient {
     workspaceId: string,
     options?: { retiredOnly?: boolean },
   ): Promise<{ agents: AgentSession[]; retiredCount: number }> {
-    // `retiredOnly` (§5.5 soft retire, v8.2) rides the wire only when true —
+    // `retiredOnly` (§5.5 soft retire) rides the wire only when true —
     // the daemon treats absent and `false` identically, so the default read
     // carries no flags (retired rows excluded daemon-side) even for an
-    // explicit `retiredOnly: false` caller. `retiredCount` (v8.2) is served on
-    // every read variant; the FE assumes an 8.2+ daemon and defaults to 0 only
-    // if the field is somehow absent.
+    // explicit `retiredOnly: false` caller. `retiredCount` is served on every
+    // read variant; the FE assumes a daemon that serves it and defaults to 0
+    // only if the field is somehow absent.
     const params: Record<string, unknown> = { workspaceId };
     if (options?.retiredOnly) params.retiredOnly = true;
     const result = await backendRequest<{ agents?: unknown[]; retiredCount?: number }>(
@@ -148,7 +148,7 @@ export class LiveAgentsClient implements AgentsClient {
   // 0-based ordinal from the OLDEST message — out-of-range clamps daemon-side,
   // and daemons predating the param reject it with -32602 (the scrollback saga
   // handles the fallback). Every read opts into the §5.5 slim projection
-  // (`projection: "slim"`, additive within v7.1): oversized tool/image block
+  // (`projection: "slim"`, additive `agent.getConversation` param): oversized tool/image block
   // bodies arrive as bounded previews with `*Truncated`/`*Bytes` flags so a
   // large transcript never produces multi-MB frames (an older daemon ignores
   // the unknown param and serves full blocks — same additive convention as
@@ -212,7 +212,7 @@ export class LiveAgentsClient implements AgentsClient {
     };
   }
 
-  // One FULL content block by id (`agent.getMessageBlock`, §5.5, v7.2) — the
+  // One FULL content block by id (`agent.getMessageBlock`, §5.5) — the
   // on-demand counterpart of the slim projection: fetches the complete body
   // of a `*Truncated` slim block. The daemon returns `{ block }`; a missing
   // or malformed envelope rejects (callers rely on a real block or an error,
@@ -236,7 +236,7 @@ export class LiveAgentsClient implements AgentsClient {
     return block;
   }
 
-  // Full user-message index (`agent.listUserMessages`, §5.5, v7.3): every
+  // Full user-message index (`agent.listUserMessages`, §5.5): every
   // user-role row as a lightweight `{ id, preview, createdAt, metadata? }`
   // item, oldest→newest, deliberately unpaged. `previewChars` only rides
   // along when supplied so the daemon default (300) applies otherwise.
@@ -647,7 +647,8 @@ export class LiveAgentsClient implements AgentsClient {
     // `undoDelayMs > 0` the daemon registers the delete grace window and
     // returns `{ success, scheduled, deleteAt }` — surfaced verbatim so the
     // caller can render the daemon-owned deadline. Without it, the immediate
-    // delete request is byte-identical to pre-6.7.
+    // delete request is byte-identical to the shape sent before the
+    // `undoDelayMs` grace window existed.
     const undoDelayMs = options?.undoDelayMs;
     try {
       const result = await backendRequest<{ scheduled?: unknown; deleteAt?: unknown }>(
@@ -679,7 +680,7 @@ export class LiveAgentsClient implements AgentsClient {
     }
   }
   async restore(agentId: string, workspaceId?: string): Promise<MutationResult> {
-    // `agent.restore` (§5.5 soft retire, v7.5) clears `retiredAt` and emits
+    // `agent.restore` (§5.5 soft retire) clears `retiredAt` and emits
     // `agent:restored`, which reconciles the list. Idempotent — restoring an
     // active agent succeeds. `workspaceId` is optional on the wire; it only
     // rides along when the caller supplied it.

@@ -5,6 +5,9 @@ interface RetainedWorkspaceSurface {
   hadEntity: boolean;
 }
 
+// Keep a small working set warm without mounting every open workspace's editors.
+const MAX_RETAINED_WORKSPACE_SURFACES = 2;
+
 export interface WorkspaceSurfaceRetentionState {
   activeWorkspaceId: string | null;
   nextSequence: number;
@@ -83,11 +86,14 @@ export function reconcileWorkspaceSurfaces(
     );
   }
 
-  const inactive = surfaces
-    .filter((surface) => surface.workspaceId !== activeWorkspaceId)
-    .sort((left, right) => right.lastActive - left.lastActive)[0];
+  const inactive = new Set(
+    surfaces
+      .filter((surface) => surface.workspaceId !== activeWorkspaceId)
+      .sort((left, right) => right.lastActive - left.lastActive)
+      .slice(0, MAX_RETAINED_WORKSPACE_SURFACES - 1),
+  );
   surfaces = surfaces.filter(
-    (surface) => surface.workspaceId === activeWorkspaceId || surface === inactive,
+    (surface) => surface.workspaceId === activeWorkspaceId || inactive.has(surface),
   );
 
   const next = { activeWorkspaceId, nextSequence, surfaces };

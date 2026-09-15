@@ -3,7 +3,9 @@ import { call, cancelled, put, takeEvery, type SagaGenerator } from 'typed-redux
 import { appClient } from '$lib/client';
 import { dropTailResidentRows } from '$lib/components/chat/chat-scrollback-composition';
 import { createLogger } from '$lib/utils/client-logger';
+import { degradeLegacyFileBlocks } from '$lib/utils/user-message-presentation';
 import type { AgentMessage, ContentBlock } from '$shared/types';
+import { isFileBlock } from '$shared/types/content-block.guards';
 import { m } from '$shared/paraglide/messages.js';
 import type { AgentSessionSendMessageOptions } from '../agent-session-types';
 import {
@@ -49,9 +51,15 @@ function findRegenerateSource(
   return undefined;
 }
 
-/** Stored user text, unchanged (no presentation stripping — this is a replay, not an edit). */
+/**
+ * Stored user text, unchanged (no presentation stripping — this is a replay,
+ * not an edit). A legacy inline file block (no `attachmentId`; persisted by
+ * an older daemon) is text now: it is projected in place to the same
+ * `Attached file: <name>` text the daemon's `degrade_inline_file_blocks` pass
+ * serves, so the replay text is identical whichever daemon served the row.
+ */
 function storedText(blocks: ContentBlock[]): string {
-  return blocks
+  return degradeLegacyFileBlocks(blocks)
     .filter((block) => block.type === 'text')
     .map((block) => block.text ?? block.content ?? '')
     .join('');
@@ -132,11 +140,10 @@ function* hydrateSlimImage(
 // unchanged edit would: image references pass through by attachmentId,
 // inline images ride inline with their canonical bytes (the edit saga
 // places them), and attachment-reference file blocks are re-sent as
-// references. Anything the wire cannot carry — a legacy inline file (the
-// `fileBlocks` contract has no bytes arm; the edit strip's fileData path
-// drops those at submit), an image with neither bytes nor reference —
-// fails closed rather than silently dropping the attachment from the
-// regenerated message.
+// references. A file block without an attachmentId is text (see
+// storedText), never a block. An image with neither bytes nor reference —
+// something the wire cannot carry — fails closed rather than silently
+// dropping the attachment from the regenerated message.
 function* replayBlocks(
   agentId: string,
   messageId: string,
@@ -163,22 +170,14 @@ function* replayBlocks(
           blockId: stored.id,
         });
       }
-    } else if (stored.type === 'file') {
-      if (stored.attachmentId && stored.fileName) {
-        fileBlocks.push({
-          type: 'file',
-          attachmentId: stored.attachmentId,
-          fileName: stored.fileName,
-          ...(stored.mimeType ? { mimeType: stored.mimeType } : {}),
-          ...(stored.size !== undefined ? { size: stored.size } : {}),
-        });
-      } else {
-        throw new UnreplayableBlockError('file block is not an attachment reference', {
-          messageId,
-          blockId: stored.id,
-          fileName: stored.fileName,
-        });
-      }
+    } else if (isFileBlock(stored)) {
+      fileBlocks.push({
+        type: 'file',
+        attachmentId: stored.attachmentId,
+        fileName: stored.fileName,
+        ...(stored.mimeType ? { mimeType: stored.mimeType } : {}),
+        ...(stored.size !== undefined ? { size: stored.size } : {}),
+      });
     }
   }
   return { imageBlocks, fileBlocks };

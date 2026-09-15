@@ -207,8 +207,11 @@ import { lifecycleReadSaga } from '$store/renderer/slices/workspace-lifecycle/sa
 import {
   bulkUpsertSessions,
   clearAllSessions,
+  setProcessQueueHint,
+  updateSession,
   upsertSession,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
+import type { StoredAgentSession } from '$store/renderer/slices/agent-session/agent-session-types';
 import { selectAgentIsResponding } from '$store/renderer/slices/agent-session/agent-session-selectors';
 import { selectEnabledProviderIds } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
 import {
@@ -316,9 +319,9 @@ function notificationWithSub(
   };
 }
 
-function readSession(): AgentSession | undefined {
+function readSession(): StoredAgentSession | undefined {
   const state = appStore.state as {
-    agentSessions?: { byAgentId: Record<string, AgentSession> };
+    agentSessions?: { byAgentId: Record<string, StoredAgentSession> };
   };
   return state.agentSessions?.byAgentId[AGENT];
 }
@@ -573,10 +576,15 @@ describe('daemonEventsBridge (wire contract — agent:idle clears the spinner)',
       isStreaming: true,
       isProcessing: true,
       isResponding: true,
-      liveTurnOpen: true,
-      liveTurnOpenedAt: '2026-01-01T12:00:00.000Z',
-      processQueueHint: { waiting: true, used: 3, cap: 3, reason: 'slots' },
-    } as Partial<AgentSession>);
+    });
+    // FE-owned fields never ride the wire snapshot; set them the way
+    // production does (reducer actions), not via the upsert fixture.
+    appStore.dispatch(
+      updateSession(AGENT, { liveTurnOpen: true, liveTurnOpenedAt: '2026-01-01T12:00:00.000Z' }),
+    );
+    appStore.dispatch(setProcessQueueHint(AGENT, 3, 3, 'slots'));
+    expect(readSession()?.liveTurnOpen).toBe(true);
+    expect(readSession()?.processQueueHint?.waiting).toBe(true);
     expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(true);
     await primeBridge();
     const handler = capturedHandlers[0]!;
@@ -5418,7 +5426,7 @@ describe('daemonEventsBridge (session lifecycle — agent:created/renamed/update
     expect(notifyInterruptedAgentUpdatedSpy).not.toHaveBeenCalled();
   });
 });
-describe('daemonEventsBridge (agent:retired/restored/deleted → lazy Retired bin count, §5.5 v8.2)', () => {
+describe('daemonEventsBridge (agent:retired/restored/deleted → lazy Retired bin count, §5.5 retiredCount)', () => {
   beforeAll(() => {
     appStore.init();
   });
@@ -6757,6 +6765,87 @@ describe('daemonEventsBridge (delete grace window schedule/cancel events, monore
     expect(backendRequestSpy).toHaveBeenCalledWith('agent.list', {
       workspaceId: PENDING_WS,
     });
+  });
+
+  it('agent:delete-scheduled → agent:delete-cancelled round-trips every FE-owned field', async () => {
+    const { FE_OWNED_FIELD_POLICY, MAX_MESSAGES_PER_AGENT, addMessage } =
+      await import('$store/renderer/slices/agent-session/agent-session-slice');
+    const policyKeys = Object.keys(FE_OWNED_FIELD_POLICY) as Array<keyof StoredAgentSession>;
+    const OPENED_AT = '2026-01-02T00:00:00.000Z';
+    const message = (i: number): AgentMessage =>
+      ({
+        id: `msg-${i}`,
+        role: 'user',
+        contentBlocks: [{ type: 'text', text: `m${i}` }],
+        timestamp: new Date(Date.parse('2026-01-01T00:00:00.000Z') + i * 1000).toISOString(),
+      }) as AgentMessage;
+    const liveSession: AgentSession = {
+      id: PENDING_AGENT,
+      backendSessionId: 'backend-pending',
+      workspaceId: PENDING_WS,
+      name: 'Live',
+      status: AgentStatus.Active,
+      isActive: true,
+      isResponding: true,
+      messages: Array.from({ length: MAX_MESSAGES_PER_AGENT }, (_, i) => message(i)),
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    } as AgentSession;
+    appStore.dispatch(bulkUpsertSessions([liveSession]));
+    // FE-owned fields never ride the wire snapshot; seed each one through its
+    // production writer (cap overflow latch, event fold, agent:process:queued).
+    appStore.dispatch(addMessage(PENDING_AGENT, message(MAX_MESSAGES_PER_AGENT + 1)));
+    appStore.dispatch(
+      updateSession(PENDING_AGENT, { liveTurnOpen: true, liveTurnOpenedAt: OPENED_AT }),
+    );
+    appStore.dispatch(setProcessQueueHint(PENDING_AGENT, 3, 3, 'slots'));
+    const readSession = () =>
+      (appStore.state as { agentSessions: { byAgentId: Record<string, StoredAgentSession> } })
+        .agentSessions.byAgentId[PENDING_AGENT];
+    const seeded = readSession();
+    for (const key of policyKeys) expect(seeded[key], key).toBeDefined();
+    const expected = Object.fromEntries(policyKeys.map((key) => [key, seeded[key]]));
+
+    backendRequestSpy.mockImplementation((method: string) => {
+      if (method === 'agent.list') return Promise.resolve({ agents: [] });
+      return Promise.resolve({ subscriptionId: 'sub-1' });
+    });
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    handler({
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-agent-del-scheduled-roundtrip',
+          workspaceId: PENDING_WS,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'agent:delete-scheduled',
+          actor: { type: 'user', id: 'u1' },
+          data: { agentId: PENDING_AGENT, workspaceId: PENDING_WS, deleteAt: DELETE_AT },
+        },
+      },
+    });
+    expect(readSession()).toBeUndefined();
+    handler({
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-agent-del-cancelled-roundtrip',
+          workspaceId: PENDING_WS,
+          timestamp: '2026-01-02T00:00:01.000Z',
+          type: 'agent:delete-cancelled',
+          actor: { type: 'user', id: 'u1' },
+          data: { agentId: PENDING_AGENT, workspaceId: PENDING_WS },
+        },
+      },
+    });
+    await flush();
+
+    const restored = readSession();
+    expect(restored?.name).toBe('Live');
+    for (const key of policyKeys) {
+      expect(restored?.[key], key).toEqual(expected[key]);
+    }
   });
 
   it('agent:delete-cancelled without a local snapshot still refetches the canonical list', async () => {
