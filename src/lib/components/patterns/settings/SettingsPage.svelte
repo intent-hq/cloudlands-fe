@@ -76,7 +76,7 @@
 <style>
   [data-slot='settings-page'] :global([data-slot='settings-section-body']),
   [data-slot='settings-page'] :global([data-slot='settings-section-content']) {
-    padding: calc(var(--spacing) * 4) calc(var(--spacing) * 6);
+    padding: var(--space-4) var(--space-5);
   }
 
   [data-slot='settings-page']
