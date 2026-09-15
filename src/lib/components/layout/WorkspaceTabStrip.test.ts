@@ -549,6 +549,19 @@ describe('WorkspaceTabStrip', () => {
         ).toBeTruthy();
       });
 
+      it('lists members and offers Remove on the current tab too when the workspace is shared', async () => {
+        mocks.presencePeople = { 'ws-1': [owner, collaborator] };
+        render(WorkspaceTabStrip, { props: { activeWorkspaceId: 'ws-1' } });
+
+        expect(screen.getByRole('tab', { name: /Alpha/ }).getAttribute('aria-selected')).toBe(
+          'true',
+        );
+        await openHoverCard(/Alpha/);
+        const card = document.querySelector('[data-workspace-tab-hover-content="ws-1"]');
+        expect(card).toBeTruthy();
+        expect(card?.querySelector('[data-workspace-hover-card-person-remove]')).toBeTruthy();
+      });
+
       it('keeps a collaborator-side tab, and an owner alone, non-hoverable with no Remove', async () => {
         // Beta is the tab this window does not own (`myRole: 'collaborator'`);
         // Alpha is owned here and stays hoverable for its Share entry regardless
