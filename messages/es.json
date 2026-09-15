@@ -6379,7 +6379,6 @@
   "workspace_share_loadFailed_error": "No se pudieron cargar los detalles de uso compartido",
   "workspace_share_createFailed_error": "No se pudo crear el enlace de invitación",
   "workspace_share_pinUnknown_error": "No existe ningún usuario de GitHub llamado {login}",
-  "workspace_hoverCard_member_ariaLabel": "{name}: {role}",
   "workspace_share_ownerOnly_notice": "Solo el propietario del espacio de trabajo puede gestionar el uso compartido.",
   "workspace_share_removeMember_confirm_label": "¿Quitar a {name} de este espacio de trabajo?",
   "workspace_share_removeMember_confirmAction_ariaLabel": "Confirmar la eliminación de {name}",

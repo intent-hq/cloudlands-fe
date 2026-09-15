@@ -45,18 +45,13 @@
   import { selectWorkspaceTabStatuses } from '$store/renderer/slices/hud/hud-selectors';
   import type { WorkspaceTabStatus } from '$store/renderer/slices/hud/hud-types';
   import PresenceAvatarStack from '$features/presence/components/PresenceAvatarStack.svelte';
-  import { presencePersonName } from '$features/presence/components/presence-person';
-  import BulkActionConfirmDialog from '$lib/components/modals/BulkActionConfirmDialog.svelte';
-  import { toast } from 'svelte-sonner';
-  import { removeHostedMemberRequested } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
   import {
     selectPresenceMembers,
     selectPresenceOwnPrincipalId,
     selectPresenceRosters,
     selectWorkspacePresencePeople,
   } from '$store/renderer/slices/presence/presence-selectors';
-  import type { PresencePerson } from '$store/renderer/slices/presence/presence-types';
-  import { WorkspaceStatus, type Workspace } from '$shared/types';
+  import { WorkspaceStatus } from '$shared/types';
   import { resolveEmptyWindowDestination } from '$features/workspace/utils/empty-window-destination';
   import {
     WORKSPACE_TAB_MOVED_EVENT,
@@ -360,39 +355,6 @@
     void $presenceOwnPrincipalId$;
     void $workspaceItems$;
     return selectWorkspacePresencePeople.select(appStore.state, workspaceId);
-  }
-
-  /**
-   * The hover card offers Remove only to the workspace's owner, and only on
-   * collaborator rows — so a card gets one (and becomes hoverable, see
-   * `disableHoverableContent`) when this window owns the workspace and some
-   * other member is listed. The current tab normally has no preview, but a
-   * shared workspace's member rows stay reachable there too.
-   */
-  function canRemoveMembers(people: PresencePerson[]) {
-    return (
-      people.some((person) => person.self && person.owner) &&
-      people.some((person) => !person.self && !person.owner)
-    );
-  }
-
-  let removeMemberTarget = $state<{ workspace: Workspace; person: PresencePerson } | null>(null);
-  let removeMemberDialogOpen = $state(false);
-  function requestRemoveMember(workspace: Workspace, person: PresencePerson) {
-    removeMemberTarget = { workspace, person };
-    removeMemberDialogOpen = true;
-  }
-  async function removeMember(target: typeof removeMemberTarget) {
-    if (!target) return;
-    const action = removeHostedMemberRequested(target.workspace.id, target.person.principalId);
-    appStore.dispatch(action);
-    try {
-      await action.promise;
-    } catch {
-      toast.error(
-        m.settings_guestSessions_remove_error({ name: presencePersonName(target.person) }),
-      );
-    }
   }
 
   function tabAccessibleLabel(
@@ -990,7 +952,6 @@
           {@const runningAgentIds = getRunningAgentIds(workspaceId)}
           {@const canManageSharing = workspace.myRole === 'owner'}
           {@const presencePeople = getPresencePeople(workspaceId)}
-          {@const removableMembers = canRemoveMembers(presencePeople)}
           {@const tabStatus = $workspaceTabStatuses$[workspaceId]}
           {@const workspaceStatusState = resolveWorkspaceStatusState(workspace)}
           {@const isArchived = workspace.status === WorkspaceStatus.Archived}
@@ -1050,13 +1011,15 @@
               <!-- The hover card offers member Remove only to the
                    workspace's owner, so the card stays hoverable (see
                    `disableHoverableContent`) when this window owns the workspace;
-                   otherwise it is a read-only preview that closes on leave. -->
+                   otherwise it is a read-only preview that closes on leave. The
+                   current tab normally has no preview, but a shared workspace's
+                   member rows stay reachable there too. -->
               <TooltipRich
                 side="bottom"
                 align="start"
                 delayDuration={workspaceHoverCardOpenDelay}
                 onOpenChange={(open) => handleWorkspaceHoverCardOpenChange(workspaceId, open)}
-                disableHoverableContent={!(canManageSharing || removableMembers)}
+                disableHoverableContent={!canManageSharing}
                 disabled={(isCurrent && presencePeople.length === 0) || draggedWorkspaceId !== null}
                 showArrow={false}
                 maxWidth="none"
@@ -1066,13 +1029,7 @@
               >
                 {#snippet content()}
                   <div data-workspace-tab-hover-content={workspaceId}>
-                    <WorkspaceHoverCard
-                      {workspace}
-                      activeAgentIds={runningAgentIds}
-                      onRemoveMember={removableMembers
-                        ? (person) => requestRemoveMember(workspace, person)
-                        : undefined}
-                    />
+                    <WorkspaceHoverCard {workspace} activeAgentIds={runningAgentIds} />
                   </div>
                 {/snippet}
                 <Button
@@ -1214,18 +1171,6 @@
     onClickOutside={() => (tabContextMenu = null)}
   />
 {/if}
-
-<BulkActionConfirmDialog
-  bind:open={removeMemberDialogOpen}
-  title={m.settings_guestSessions_removeConfirm_title()}
-  description={m.settings_guestSessions_removeConfirm_description({
-    name: removeMemberTarget ? presencePersonName(removeMemberTarget.person) : '',
-    workspace: removeMemberTarget?.workspace.title ?? '',
-  })}
-  confirmText={m.settings_guestSessions_remove_label()}
-  variant="destructive"
-  onConfirm={() => void removeMember(removeMemberTarget)}
-/>
 
 <style>
   [data-workspace-tab][data-active='true'] {

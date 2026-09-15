@@ -2,13 +2,12 @@
 import RealTooltip from '$lib/components/ui/tooltip/TooltipRich.svelte';
 import RealTooltipShortcut from '$lib/components/ui/tooltip/TooltipShortcut.svelte';
 import { m } from '$shared/paraglide/messages.js';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { flushSync, tick } from 'svelte';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkspaceTabStatus } from '$store/renderer/slices/hud/hud-types';
-import { removeHostedMemberRequested } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
 import { WORKSPACE_TAB_MOVED_EVENT } from '$features/workspace/utils/workspace-tab-move-event';
 import {
   WORKSPACE_HOVER_CARD_OPEN_DELAY_MS,
@@ -492,7 +491,9 @@ describe('WorkspaceTabStrip', () => {
       );
     });
 
-    describe('owner-only member removal from the hover card', () => {
+    // The card itself owns Remove (share slice, inline confirm); the strip only
+    // decides which tabs keep their card hoverable so those controls are reachable.
+    describe('hoverable card for owner-side member removal', () => {
       const owner = { ...person(1), owner: true, online: true, viewing: true, self: true };
       const collaborator = {
         ...person(2),
@@ -524,7 +525,7 @@ describe('WorkspaceTabStrip', () => {
         vi.useRealTimers();
       });
 
-      it('makes only the tab whose card has a removable row hoverable, and offers Remove there', async () => {
+      it('keeps only the tab whose card has a removable row hoverable, and mounts the card there', async () => {
         mocks.presencePeople = {
           'ws-1': [owner, collaborator],
           'ws-3': [
@@ -544,25 +545,26 @@ describe('WorkspaceTabStrip', () => {
         await openHoverCard(/Alpha/);
         expect(
           document.querySelector(
-            '[data-workspace-tab-hover-content="ws-1"] [data-workspace-hover-card-person-remove]',
+            '[data-workspace-tab-hover-content="ws-1"] [data-workspace-hover-card]',
           ),
         ).toBeTruthy();
       });
 
-      it('lists members and offers Remove on the current tab too when the workspace is shared', async () => {
+      it('keeps the card reachable on the current tab too when the workspace is shared', async () => {
         mocks.presencePeople = { 'ws-1': [owner, collaborator] };
         render(WorkspaceTabStrip, { props: { activeWorkspaceId: 'ws-1' } });
 
         expect(screen.getByRole('tab', { name: /Alpha/ }).getAttribute('aria-selected')).toBe(
           'true',
         );
+        expect(tooltipRootOf(/Alpha/).getAttribute('data-tooltip-disable-hoverable-content')).toBe(
+          'false',
+        );
         await openHoverCard(/Alpha/);
-        const card = document.querySelector('[data-workspace-tab-hover-content="ws-1"]');
-        expect(card).toBeTruthy();
-        expect(card?.querySelector('[data-workspace-hover-card-person-remove]')).toBeTruthy();
+        expect(document.querySelector('[data-workspace-tab-hover-content="ws-1"]')).toBeTruthy();
       });
 
-      it('keeps a collaborator-side tab, and an owner alone, non-hoverable with no Remove', async () => {
+      it('keeps a collaborator-side tab, and an owner alone, non-hoverable', () => {
         // Beta is the tab this window does not own (`myRole: 'collaborator'`);
         // Alpha is owned here and stays hoverable for its Share entry regardless
         // of who is present.
@@ -580,37 +582,6 @@ describe('WorkspaceTabStrip', () => {
             'true',
           );
         }
-        await openHoverCard(/Beta/);
-        expect(document.querySelector('[data-workspace-hover-card-person-remove]')).toBeNull();
-      });
-
-      it('dispatches workspace.members.remove for the row only once the removal is confirmed', async () => {
-        mocks.presencePeople = { 'ws-1': [owner, collaborator] };
-        render(WorkspaceTabStrip, { props: { activeWorkspaceId: 'ws-2' } });
-        await openHoverCard(/Alpha/);
-
-        const removals = () =>
-          mocks.dispatch.mock.calls
-            .map(([action]) => action as { type?: string; payload?: unknown })
-            .filter((action) => action.type === removeHostedMemberRequested('', '').type);
-
-        await fireEvent.click(document.querySelector('[data-workspace-hover-card-person-remove]')!);
-        const dialog = await screen.findByRole('dialog');
-        expect(dialog.textContent).toContain(m.settings_guestSessions_removeConfirm_title());
-        expect(removals()).toEqual([]);
-
-        await fireEvent.click(
-          within(dialog).getByRole('button', { name: m.modals_bulkActionConfirm_cancel_label() }),
-        );
-        expect(removals()).toEqual([]);
-
-        await fireEvent.click(document.querySelector('[data-workspace-hover-card-person-remove]')!);
-        await fireEvent.click(
-          within(await screen.findByRole('dialog')).getByRole('button', {
-            name: m.settings_guestSessions_remove_label(),
-          }),
-        );
-        expect(removals().map((action) => action.payload)).toEqual([['ws-1', 'p-2']]);
       });
     });
   });
