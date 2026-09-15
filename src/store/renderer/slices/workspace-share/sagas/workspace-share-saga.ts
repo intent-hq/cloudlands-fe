@@ -193,6 +193,22 @@ function* loadShareData(): SagaGenerator<void> {
   yield* call(() => read.settled);
 }
 
+/**
+ * Inline error for a failed `workspace.invite.create`: the pin failure names
+ * the login; `listener-down` (Remote access off, so the daemon cannot serve
+ * an invite) tells the owner what to turn on; anything else stays generic.
+ */
+function createInviteErrorMessage(code: ShareFailure['code'], requestedPin: string): string {
+  switch (code) {
+    case 'invite-pin-unknown':
+      return m.workspace_share_pinUnknown_error({ login: `@${requestedPin}` });
+    case 'listener-down':
+      return m.workspace_share_listenerDown_error();
+    default:
+      return m.workspace_share_createFailed_error();
+  }
+}
+
 function* createInvite(action: ReturnType<typeof shareInviteCreateRequested>): SagaGenerator<void> {
   const target = yield* manageableTarget();
   if (!target) return;
@@ -213,10 +229,7 @@ function* createInvite(action: ReturnType<typeof shareInviteCreateRequested>): S
       shareInviteCreateFailed({
         target,
         request,
-        error:
-          outcome.code === 'invite-pin-unknown'
-            ? m.workspace_share_pinUnknown_error({ login: `@${requestedPin}` })
-            : m.workspace_share_createFailed_error(),
+        error: createInviteErrorMessage(outcome.code, requestedPin),
       }),
     );
     return;

@@ -1,13 +1,12 @@
 /**
- * Regression (fe#2440 verifier): the owner's hover-card Share/Remove controls
- * must be reachable with a real pointer in the real wrapper. WorkspaceCard
- * portals the card beside the row; leaving the row toward the card must not
- * dismiss it, and pressing its controls must not count as an outside click.
+ * Regression (fe#2440 verifier): the owner's hover-card Remove controls must
+ * be reachable with a real pointer in the real wrapper. WorkspaceCard portals
+ * the card beside the row; leaving the row toward the card must not dismiss
+ * it, and pressing its controls must not count as an outside click.
  *
  * Sagas do not run in the CT bundle, so the mutation the confirm step
  * dispatches is observed as the reducer-owned in-flight marker rather than a
- * wire call; the Share entry is observed as the dialog target the reducer
- * records.
+ * wire call. Share… is not on the card (it lives in the workspace ⋯ menu).
  */
 import { expect, test, type MountResult } from '@playwright/experimental-ct-svelte';
 import type { Locator, Page } from '@playwright/test';
@@ -44,7 +43,7 @@ test('the card stays open while the pointer travels from the row into it', async
   const { surface, state } = await enterCardFromRow(page, component);
 
   await expect(surface.getByRole('button', { name: 'Remove bob' })).toBeVisible();
-  await expect(surface.locator('[data-workspace-hover-card-share]')).toBeVisible();
+  await expect(surface.locator('[data-workspace-hover-card-share]')).toHaveCount(0);
   await expect(state).toHaveAttribute('data-member-count', '2');
 });
 
@@ -87,18 +86,6 @@ test('confirming removes only the collaborator and keeps the card open', async (
   await expect(surface).toBeVisible();
   await expect(members.getByRole('button', { name: 'Remove bob' })).toBeDisabled();
   await expect(members.locator('[data-workspace-hover-card-member-row]')).toHaveCount(2);
-});
-
-test('Share opens the dialog for the hovered workspace in one step', async ({ mount, page }) => {
-  const component = await mount(WorkspaceCardShareHoverHarness, {
-    props: { scenario: 'share' },
-  });
-  const { surface, state } = await enterCardFromRow(page, component);
-
-  await surface.locator('[data-workspace-hover-card-share]').click();
-
-  await expect(state).toHaveAttribute('data-dialog-open', 'true');
-  await expect(state).toHaveAttribute('data-dialog-workspace-id', 'share-hover-share');
 });
 
 // Pointer parked far from the row and card so only focus drives the surface.
@@ -197,7 +184,7 @@ test('keyboard: Cancel returns focus to Remove and a genuine blur still dismisse
 // Regression (fe#2440 verifier, f5f4a22): focus that travelled row → card left
 // the row's focus flag set, so after a focus-driven close the pointer could no
 // longer reopen the card.
-test('focus row → Share → outside closes the card, and hovering the row reopens it', async ({
+test('focus row → Remove → outside closes the card, and hovering the row reopens it', async ({
   mount,
   page,
 }) => {
@@ -207,7 +194,7 @@ test('focus row → Share → outside closes the card, and hovering the row reop
   const { surface, outside } = await openCardFromKeyboard(page, component);
   const row = component.locator('[data-workspace-card-row]');
 
-  await surface.locator('[data-workspace-hover-card-share]').focus();
+  await surface.getByRole('button', { name: 'Remove bob' }).focus();
   await expect(surface).toBeVisible();
   await outside.focus();
   await expect(surface).toHaveCount(0);
@@ -225,7 +212,7 @@ test('focus outside while the pointer rests in the card keeps it; leaving with t
   });
   const { surface, outside } = await openCardFromKeyboard(page, component);
 
-  await surface.locator('[data-workspace-hover-card-share]').focus();
+  await surface.getByRole('button', { name: 'Remove bob' }).focus();
   const box = (await surface.boundingBox())!;
   await page.mouse.move(box.x + 24, box.y + 24, { steps: 5 });
   await outside.focus();

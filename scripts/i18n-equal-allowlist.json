@@ -313,6 +313,5 @@
   "settings_section_git": "*",
   "settings_sidebar_appBehavior_label": ["es"],
   "settings_sidebar_agents_label": ["fr"],
-  "workspace_share_pinLogin_placeholder": "*",
   "workspace_hoverCard_member_ariaLabel": ["fr", "ko"]
 }

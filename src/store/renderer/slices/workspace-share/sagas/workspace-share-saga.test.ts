@@ -382,6 +382,38 @@ describe('workspaceShareSaga', () => {
     h.task.cancel();
   });
 
+  // Remote access off: the daemon's `Error::ListenerDown` (-32603,
+  // `data.code = 'listener-down'`) gets the actionable inline error; any
+  // other failure keeps the generic one.
+  it('maps the listener-down daemon code onto the Remote Access inline error, others stay generic', async () => {
+    const listenerDown = Object.assign(new Error('invite listener is down'), {
+      rpcCode: -32603,
+      data: { code: 'listener-down' },
+    });
+    replyByMethod({ 'workspace.invite.create': listenerDown });
+    const h = harness(opened());
+
+    h.dispatch(shareInviteCreateRequested({ pinLogin: '' }));
+    await settle();
+
+    expect(h.state().creating).toBe(false);
+    const listenerDownError = h.state().createError;
+    expect(listenerDownError).toContain('Remote Access');
+    expect(h.state().createdLink).toBeNull();
+
+    replyByMethod({
+      'workspace.invite.create': Object.assign(new Error('boom'), { rpcCode: -32603 }),
+    });
+    h.dispatch(shareInviteCreateRequested({ pinLogin: '' }));
+    await settle();
+
+    expect(h.state().creating).toBe(false);
+    expect(h.state().createError).not.toBeNull();
+    expect(h.state().createError).not.toBe(listenerDownError);
+    expect(h.state().createError).not.toContain('Remote Access');
+    h.task.cancel();
+  });
+
   // Regression (fe#2440 review P2): revoking the just-created invite retires
   // its one-time link.
   it('revokes an invite then re-reads, retiring the created link, and localizes a rejected revoke', async () => {

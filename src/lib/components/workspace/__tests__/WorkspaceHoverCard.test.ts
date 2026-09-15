@@ -717,22 +717,18 @@ describe('WorkspaceHoverCard', () => {
     expect(rows[0]!.getAttribute('data-member-role')).toBe('owner');
     expect(text(rows[0]!)).toBe('A Alice Owner');
     expect(text(rows[1]!)).toBe('bob Collaborator');
-    // Withheld from collaborators: no Remove on the roster, no Share entry.
+    // Withheld from collaborators: no Remove on the roster.
     expect(section.querySelector('button')).toBeNull();
-    expect(container.querySelector('[data-workspace-hover-card-share]')).toBeNull();
   });
 
-  it('offers the owner a one-step Share entry that opens the Share dialog', async () => {
+  // Share… lives only in the workspace ⋯ menu (WorkspaceProgressCard); the
+  // card never offers it, owner or not.
+  it('does not offer a Share entry to the owner', async () => {
     seedRoster('ws-1', { canManage: true });
     const { container } = await renderHoverCard({ statusMessage: '   ', myRole: 'owner' });
 
-    const share = container.querySelector<HTMLButtonElement>('[data-workspace-hover-card-share]');
-    expect(share).not.toBeNull();
-    await fireEvent.click(share!);
-
-    expect(dispatched('workspaceShare/openDialog')).toEqual([
-      [{ workspaceId: 'ws-1', workspaceTitle: 'Hover Card Workspace' }],
-    ]);
+    expect(container.querySelector('[data-workspace-hover-card-share]')).toBeNull();
+    expect(dispatched('workspaceShare/openDialog')).toEqual([]);
   });
 
   it('dispatches a collaborator removal only after confirming, and never for the owner row', async () => {
@@ -788,7 +784,7 @@ describe('WorkspaceHoverCard', () => {
   // Regression (fe#2440 verifier, 6138cb4 round): a daemon `-32003` on an
   // owner-only method withholds every owner control on the card, not just
   // the row that was being removed, and says why.
-  it('withholds Share and Remove and shows the owner-only notice once the daemon refused', async () => {
+  it('withholds Remove and shows the owner-only notice once the daemon refused', async () => {
     seedRoster('ws-1', { canManage: false, withheld: true });
     const { container } = await renderHoverCard({
       statusMessage: '   ',
@@ -797,11 +793,7 @@ describe('WorkspaceHoverCard', () => {
     });
 
     expect(container.querySelectorAll('[data-workspace-hover-card-member-row]')).toHaveLength(2);
-    expect(
-      container.querySelectorAll(
-        '[data-workspace-hover-card-member-remove], [data-workspace-hover-card-share]',
-      ),
-    ).toHaveLength(0);
+    expect(container.querySelectorAll('[data-workspace-hover-card-member-remove]')).toHaveLength(0);
     const notice = container.querySelector('[data-workspace-hover-card-member-error]');
     expect(notice).not.toBeNull();
     expect(text(notice!)).toBe('Only the workspace owner can manage sharing.');

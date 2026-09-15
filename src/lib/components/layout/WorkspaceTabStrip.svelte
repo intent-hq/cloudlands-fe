@@ -43,7 +43,6 @@
   import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
   import { selectWorkspaceTabStatuses } from '$store/renderer/slices/hud/hud-selectors';
   import type { WorkspaceTabStatus } from '$store/renderer/slices/hud/hud-types';
-  import { openShareDialog } from '$store/renderer/slices/workspace-share/workspace-share-slice';
   import { WorkspaceStatus } from '$shared/types';
   import { resolveEmptyWindowDestination } from '$features/workspace/utils/empty-window-destination';
   import {
@@ -169,13 +168,9 @@
   const tabContextMenuItems = $derived.by<SidebarMenuEntry[]>(() => {
     if (!tabContextMenu) return [];
     const { workspaceId } = tabContextMenu;
-    const workspace = workspaceById.get(workspaceId);
     return buildWorkspaceTabContextMenu({
       order: $workspaceTabOrder$,
       workspaceId,
-      canShare: workspace?.myRole === 'owner',
-      onShare: () =>
-        appStore.dispatch(openShareDialog({ workspaceId, workspaceTitle: workspace?.title ?? '' })),
       onClose: () => closeWorkspace(workspaceId),
       onCloseTabs: closeWorkspaceTabs,
     });
@@ -992,7 +987,7 @@
               durationMs={isDragged ? 0 : WORKSPACE_TAB_MOTION_DURATION_MS}
             />
             {#key isCurrent && pointerOpenEligibleWorkspaceHoverCardIds.has(workspaceId)}
-              <!-- The hover card offers Share and member Remove only to the
+              <!-- The hover card offers member Remove only to the
                    workspace's owner, so the card stays hoverable (see
                    `disableHoverableContent`) when this window owns the workspace;
                    otherwise it is a read-only preview that closes on leave. -->
