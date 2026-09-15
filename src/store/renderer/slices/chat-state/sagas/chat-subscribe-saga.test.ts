@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { AgentStatus } from '$shared/types/agent.types';
-import type { AgentMessage, AgentSession } from '$shared/types';
+import type { AgentMessage, AgentSession, ContentBlock } from '$shared/types';
 import type { ChatLiveStreamPhase, ChatTranscript } from '$lib/client/app-client';
 
 // FAKE seam: chat.subscribe is stubbed so no daemon call happens; each call
@@ -97,6 +97,8 @@ import {
   markAgentAsViewed,
 } from '$store/renderer/slices/unread-tracking/unread-tracking-slice';
 import { chatSubscribeSaga, SWITCH_BACK_REVEAL_WAIT_MS } from './chat-subscribe-saga';
+import { agentStreamSaga } from '$store/renderer/slices/agent-session/sagas/agent-stream-saga';
+import { agentStreamUpdateReceived } from '$store/renderer/slices/workspace-agents/workspace-agents-stream-slice';
 import {
   clearPendingAgentDeletions,
   removePendingAgentDeletion,
@@ -1387,6 +1389,151 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
       } finally {
         stopRecorder();
       }
+    });
+  });
+
+  // Out-of-view chat, in-flight turn: the legacy `agent:*` firehose keeps
+  // dispatching `agentStreamUpdateReceived` for the agent (tool blocks for a
+  // new assistantMessageId, then `complete`). If the agent-stream saga wrote
+  // those into `agentSession.messages`, an incomplete row the daemon never
+  // reconciled would sit at the tail and the §7.1 `sinceMessageId` fallback
+  // scan could anchor on it — the resumed delta would then skip that turn's
+  // text and every message the firehose did not carry. Only `chat.subscribe`
+  // (and `agents.getConversation` hydration) may write rows once the
+  // standing registration is gone.
+  describe('firehose events after close do not move the resume anchor', () => {
+    const FIREHOSE_MESSAGE_ID = 'm-firehose-tool-turn';
+    let stopStreamSaga: (() => void) | undefined;
+
+    beforeAll(() => {
+      stopStreamSaga = appStore.runSaga(agentStreamSaga);
+    });
+    afterAll(() => stopStreamSaga?.());
+
+    function canonicalRows(): AgentMessage[] {
+      return [
+        makeMessage('u-1', 'read the file', { role: 'user' }),
+        makeMessage('m-1', 'reading it now'),
+      ];
+    }
+
+    // What the bridge ships for an agent it does not consider covered:
+    // tool blocks only (never assistant text, never user rows).
+    function feedFirehoseToolTurn(agentId: string): void {
+      const toolBlocks: ContentBlock[] = [
+        {
+          type: 'tool_use',
+          id: 'tool-fh-1',
+          name: 'read',
+          input: { path: 'a.ts' },
+          toolCallId: 'call-fh-1',
+        },
+        { type: 'tool_result', tool_use_id: 'tool-fh-1', output: 'contents' },
+      ];
+      appStore.dispatch(
+        agentStreamUpdateReceived({
+          agentId,
+          workspaceId: WS,
+          handlerSessionId: agentId,
+          source: 'sendMessage',
+          eventType: 'content-blocks',
+          assistantMessageId: FIREHOSE_MESSAGE_ID,
+          contentBlocks: toolBlocks,
+        }),
+      );
+      appStore.dispatch(
+        agentStreamUpdateReceived({
+          agentId,
+          workspaceId: WS,
+          handlerSessionId: agentId,
+          source: 'sendMessage',
+          eventType: 'complete',
+          assistantMessageId: FIREHOSE_MESSAGE_ID,
+          contentBlocks: toolBlocks,
+        }),
+      );
+    }
+
+    function hydrateFromSnapshot(sub: FakeSubscription, rows: AgentMessage[]): void {
+      appStore.dispatch(transcriptHydrationStarted(sub.agentId));
+      sub.handler({ ...transcript(rows), fromSnapshot: true });
+      appStore.dispatch(transcriptHydrationSettled(sub.agentId));
+    }
+
+    it('adds no rows after close and reopens with the close-time anchor', () => {
+      const agentA = 'agent-sub-firehose-a';
+      const agentB = 'agent-sub-firehose-b';
+      seedSession(agentA);
+      seedSession(agentB);
+      const sub = openChat(agentA);
+      hydrateFromSnapshot(sub, canonicalRows());
+      expect(selectAgentMessages.select(appStore.state, agentA).map((m) => m.id)).toEqual([
+        'u-1',
+        'm-1',
+      ]);
+
+      // Chat goes out of view: A's standing registration closes.
+      appStore.dispatch(markAgentAsViewed(agentB));
+      expect(sub.unsubscribe).toHaveBeenCalledOnce();
+      expect(hasStandingChatSubscription(agentA)).toBe(false);
+
+      feedFirehoseToolTurn(agentA);
+
+      expect(selectAgentMessages.select(appStore.state, agentA).map((m) => m.id)).toEqual([
+        'u-1',
+        'm-1',
+      ]);
+
+      // Back in view: chat.subscribe resumes from the close-time anchor
+      // (PROTOCOL §7.1 request params: agentId + sinceMessageId).
+      appStore.dispatch(markAgentAsViewed(agentA));
+      const reopened = [...fakeSubscriptions].reverse().find((s) => s.agentId === agentA);
+      expect(reopened).toBeDefined();
+      expect(reopened).not.toBe(sub);
+      expect(chatApi.subscribe).toHaveBeenLastCalledWith(
+        agentA,
+        expect.any(Function),
+        expect.any(Function),
+        { sinceMessageId: 'm-1' },
+      );
+      expect(reopened!.options).toEqual({ sinceMessageId: 'm-1' });
+    });
+
+    it('never resolves the fallback anchor to a firehose-created row when no close-time anchor was captured', () => {
+      const agentId = 'agent-sub-firehose-fallback';
+      seedSession(agentId);
+      const first = openChat(agentId);
+      hydrateFromSnapshot(first, canonicalRows());
+
+      // A session removal closes the registration AND drops the captured
+      // anchor, so the next open scans the rows for the newest persisted id.
+      appStore.dispatch(removeSession(agentId));
+      expect(first.unsubscribe).toHaveBeenCalledOnce();
+      expect(hasStandingChatSubscription(agentId)).toBe(false);
+
+      // Rehydrated from the daemon with the same canonical rows, still no
+      // standing subscription; the firehose keeps flowing for the agent.
+      seedSession(agentId, { messages: canonicalRows() });
+      appStore.dispatch(transcriptHydrationStarted(agentId));
+      appStore.dispatch(transcriptHydrationSettled(agentId));
+      feedFirehoseToolTurn(agentId);
+
+      expect(selectAgentMessages.select(appStore.state, agentId).map((m) => m.id)).toEqual([
+        'u-1',
+        'm-1',
+      ]);
+
+      appStore.dispatch(initializeChatRequested(agentId, { wsId: WS }));
+      const reopened = [...fakeSubscriptions].reverse().find((s) => s.agentId === agentId);
+      expect(reopened).toBeDefined();
+      expect(reopened).not.toBe(first);
+      expect(chatApi.subscribe).toHaveBeenLastCalledWith(
+        agentId,
+        expect.any(Function),
+        expect.any(Function),
+        { sinceMessageId: 'm-1' },
+      );
+      expect(reopened!.options).not.toEqual({ sinceMessageId: FIREHOSE_MESSAGE_ID });
     });
   });
 
