@@ -1,3 +1,4 @@
+import { deepEqual } from 'fast-equals';
 import type { AgentMessage } from '$shared/types';
 import { getContentBlockFingerprint, getContentBlocksRichness } from './content-block-helpers';
 
@@ -318,11 +319,16 @@ function isReconciledRow(message: AgentMessage): boolean {
   );
 }
 
+/** Structural equality of the content a row carries; the fingerprint is lossy. */
+function hasSameContent(a: AgentMessage, b: AgentMessage): boolean {
+  return deepEqual(a.content, b.content) && deepEqual(a.contentBlocks ?? [], b.contentBlocks ?? []);
+}
+
 /**
  * The renderer-local `provisional` marker never survives a merge whose result
  * IS the canonical row's content, whichever side keeps identity: the losing
  * side's marker is dropped before the spread, and when the losing side is a
- * reconciled row whose content the merged row carries (fingerprint-equal),
+ * reconciled row whose content the merged row carries (structurally equal),
  * the winner's marker comes off too. The marker stays when the loser is
  * still live, or when the merge kept the winner's differing (partial)
  * content — a near-duplicate merge does not deliver the canonical blocks, so
@@ -330,9 +336,7 @@ function isReconciledRow(message: AgentMessage): boolean {
  */
 function reconcileProvisional(merged: AgentMessage, losing: AgentMessage): AgentMessage {
   if (merged.provisional !== true || !isReconciledRow(losing)) return merged;
-  return computeMessageContentHash(merged) === computeMessageContentHash(losing)
-    ? withoutProvisional(merged)
-    : merged;
+  return hasSameContent(merged, losing) ? withoutProvisional(merged) : merged;
 }
 
 function mergeLogicalMessage(existing: AgentMessage, incoming: AgentMessage): AgentMessage {

@@ -116,6 +116,33 @@ describe('message-dedup utility', () => {
     expect(merged.provisional).toBe(true);
   });
 
+  it('keeps the provisional marker when fingerprints match but the retained blocks differ', () => {
+    const toolResult = (isError: boolean) => ({
+      type: 'tool_result' as const,
+      id: 'tool-result-1',
+      tool_use_id: 'call-1',
+      output: 'done',
+      is_error: isError,
+    });
+    const settledLocally = makeAssistant('msg_firehose', '', {
+      turnNumber: 3,
+      contentBlocks: [toolResult(false)],
+      isStreaming: false,
+      streamingComplete: true,
+      provisional: true,
+    });
+    const canonical = makeAssistant('msg_transcript', '', {
+      turnNumber: 3,
+      contentBlocks: [toolResult(true)],
+    });
+
+    const [merged] = deduplicateAgentMessages([settledLocally, canonical]);
+    expect(merged.id).toBe('msg_firehose');
+    expect(computeMessageContentHash(merged)).toBe(computeMessageContentHash(canonical));
+    expect(merged.contentBlocks).toEqual([toolResult(false)]);
+    expect(merged.provisional).toBe(true);
+  });
+
   it('merges an optimistic user message into the canonical one without duplicating', () => {
     const optimistic: AgentMessage = {
       id: 'optimistic_abc',
