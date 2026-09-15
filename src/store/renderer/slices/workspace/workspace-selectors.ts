@@ -16,7 +16,10 @@ import {
 import { selectGitStatus } from '../git/git-selectors';
 import { selectIsDaemonLocal } from '../daemon-health/daemon-health-selectors';
 import { selectActivePrMonitors } from '../pr-monitor/pr-monitor-selectors';
-import { selectIsGuestWindow } from '../guest-sessions/guest-sessions-selectors';
+import {
+  selectIsGuestWindow,
+  selectWindowIdentitySettled,
+} from '../guest-sessions/guest-sessions-selectors';
 import type {
   WorkflowStage,
   WorkspaceActivePrStatus,
@@ -180,10 +183,15 @@ export const selectIsWorkspaceCollaborator = store.createSelector<[wsId: string]
  * workspaces must still be able to create one — except in a window bound to
  * a host joined as a guest (multiplayer w4), whose principal is a
  * non-administrator by construction: it is a collaborator-only client from
- * boot, before the list loads and with zero shared workspaces.
+ * boot, before the list loads and with zero shared workspaces. Until the
+ * window's guest/owner identity has settled it therefore reads as
+ * collaborator-only (the safe default: a guest window must never expose the
+ * administrator surfaces while its identity is still the boot-time default);
+ * only the workspace list itself stays optimistic while unloaded.
  */
 export const selectIsCollaboratorOnlyClient = store.createSelector((state) => {
   if (selectIsGuestWindow.select(state)) return true;
+  if (!selectWindowIdentitySettled.select(state)) return true;
   if (!state.workspace.hasLoaded) return false;
   const workspaces = getItems(state.workspace.workspaces);
   return workspaces.length > 0 && workspaces.every((ws) => ws.myRole === 'collaborator');

@@ -9,7 +9,11 @@ import {
   workspaceReducer,
 } from '../workspace/workspace-slice';
 import { initialState as connectionsInitialState } from '../connections/connections-slice';
-import { initialState as guestSessionsInitialState } from '../guest-sessions/guest-sessions-slice';
+import {
+  guestSessionsListReceived,
+  guestSessionsReducer,
+  initialState as guestSessionsInitialState,
+} from '../guest-sessions/guest-sessions-slice';
 import { selectEffectiveVoiceEngine } from './voice-settings-selectors';
 import {
   addVoiceVocabularyTerm,
@@ -267,9 +271,13 @@ describe('selectEffectiveVoiceEngine (multiplayer w3 role gate)', () => {
     return {
       workspace: workspaceReducer(listed, setWorkspaceHasLoaded(true)),
       voiceSettings,
-      // The role gate also rules out a guest window (multiplayer w4).
+      // The role gate also rules out a guest window (multiplayer w4): a
+      // settled owner identity (guest list in, no host joined).
       connections: connectionsInitialState,
-      guestSessions: guestSessionsInitialState,
+      guestSessions: guestSessionsReducer(
+        guestSessionsInitialState,
+        guestSessionsListReceived({ sessions: [], openIds: [], connectedIds: [] }),
+      ),
     } as StoreState;
   }
 

@@ -5,9 +5,10 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { GuestSessionRecord } from '$shared/types/guest-sessions';
 import type { Workspace } from '$shared/types';
-import type {
-  HostedRoster,
-  WorkspaceMember,
+import {
+  HostedRosterOperationError,
+  type HostedRoster,
+  type WorkspaceMember,
 } from '$store/renderer/slices/guest-sessions/guest-sessions-types';
 
 const mocks = vi.hoisted(() => ({
@@ -205,6 +206,40 @@ describe('GuestSessionsSettings', () => {
     expect(mocks.dispatch).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'connections/openRequested', payload: ['guest-1'] }),
     );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.queryByTestId('guest-sessions-open-error')).toBeNull();
+  });
+
+  it('surfaces an unavailable stored guest token (a resolved secret-unavailable open) as an error', async () => {
+    mocks.sessions = [guest];
+    mocks.open.mockImplementationOnce((id) =>
+      resolvedAction('connections/openRequested', [id], { status: 'secret-unavailable' }),
+    );
+    render(GuestSessionsSettings);
+    const row = screen
+      .getByTestId('guest-sessions-joined')
+      .querySelector('[data-session-id="guest-1"]')!;
+    await fireEvent.click(within(row as HTMLElement).getByRole('button', { name: 'Open' }));
+    const alert = await screen.findByTestId('guest-sessions-open-error');
+    expect(alert.getAttribute('role')).toBe('alert');
+    expect(alert.textContent).toContain('studio.local');
+  });
+
+  it('surfaces a rejected open as an error', async () => {
+    mocks.sessions = [guest];
+    mocks.open.mockImplementationOnce((id) => ({
+      type: 'connections/openRequested',
+      payload: [id],
+      promise: Promise.reject(new Error('ipc failed')),
+    }));
+    render(GuestSessionsSettings);
+    const row = screen
+      .getByTestId('guest-sessions-joined')
+      .querySelector('[data-session-id="guest-1"]')!;
+    await fireEvent.click(within(row as HTMLElement).getByRole('button', { name: 'Open' }));
+    expect((await screen.findByTestId('guest-sessions-open-error')).textContent).toContain(
+      'studio.local',
+    );
   });
 
   it('requires confirmation before leaving a host and keeps a retry after failure', async () => {
@@ -308,12 +343,30 @@ describe('GuestSessionsSettings', () => {
       );
     });
 
+    it('offers no retry once a forbidden removal has withheld the roster', async () => {
+      mocks.rosters = { 'ws-1': { status: 'loaded', members: [owner, collaborator] } };
+      mocks.removeMember.mockImplementationOnce((workspaceId, principalId) => ({
+        type: 'guestSessions/removeHostedMemberRequested',
+        payload: [workspaceId, principalId],
+        promise: Promise.reject(new HostedRosterOperationError('forbidden')),
+      }));
+      render(GuestSessionsSettings);
+      const roster = screen.getByTestId('hosted-workspace-roster');
+
+      await fireEvent.click(within(roster).getByRole('button', { name: 'Remove' }));
+      const removeButtons = screen.getAllByRole('button', { name: 'Remove' });
+      await fireEvent.click(removeButtons[removeButtons.length - 1]);
+      await waitFor(() => expect(mocks.removeMember).toHaveBeenCalledTimes(1));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(within(roster).queryByRole('alert')).toBeNull();
+    });
+
     it('keeps a retry action when the removal fails', async () => {
       mocks.rosters = { 'ws-1': { status: 'loaded', members: [owner, collaborator] } };
       mocks.removeMember.mockImplementationOnce((workspaceId, principalId) => ({
         type: 'guestSessions/removeHostedMemberRequested',
         payload: [workspaceId, principalId],
-        promise: Promise.reject(new Error('forbidden')),
+        promise: Promise.reject(new HostedRosterOperationError('transport')),
       }));
       render(GuestSessionsSettings);
       const roster = screen.getByTestId('hosted-workspace-roster');

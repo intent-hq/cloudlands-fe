@@ -432,7 +432,9 @@
    * Dispatch a connection open. A `secret-unavailable` resolution (the stored
    * access token cannot be read — keychain locked or entry gone) is a failure,
    * not a success (#3783): surface it and route to Devices settings, where the
-   * token can be re-entered.
+   * token can be re-entered. A guest session's token cannot be re-entered
+   * (leave the host and rejoin from a new invite), so it routes to Guest
+   * Sessions settings instead.
    */
   async function openConnectionOrRecover(id: string) {
     try {
@@ -440,6 +442,12 @@
       appStore.dispatch(action);
       const result = await action.promise;
       if (result.status === 'secret-unavailable') {
+        const guest = $guestSessions$.find((session) => session.id === id);
+        if (guest) {
+          toast.error(m.layout_daemonStatus_guestSecretUnavailable_error({ label: guest.label }));
+          void navigateToSettings({ tab: 'guest-sessions' });
+          return;
+        }
         toast.error(
           m.layout_daemonStatus_secretUnavailable_error({ label: connectionDisplayLabel(id) }),
         );
