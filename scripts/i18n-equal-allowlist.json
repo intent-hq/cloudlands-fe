@@ -317,5 +317,6 @@
   "settings_sidebar_agents_label": ["fr"],
   "workspace_hoverCard_member_ariaLabel": ["fr", "ko"],
   "presence_avatarStack_more_label": "*",
-  "workspace_hoverCard_personOnline_label": ["de"]
+  "workspace_hoverCard_personOnline_label": ["de"],
+  "workspace_hoverCard_personOffline_label": ["de"]
 }

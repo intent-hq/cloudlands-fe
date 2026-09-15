@@ -46,6 +46,9 @@ vi.mock('$store/renderer/slices/presence/presence-selectors', () => ({
   selectPresenceRosters: () => ({
     subscribe: (run: (value: Record<string, never>) => void) => (run({}), () => {}),
   }),
+  selectPresenceMembers: () => ({
+    subscribe: (run: (value: Record<string, never>) => void) => (run({}), () => {}),
+  }),
   selectPresenceOwnPrincipalId: () => ({
     subscribe: (run: (value: null) => void) => (run(null), () => {}),
   }),

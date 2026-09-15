@@ -6385,5 +6385,9 @@
   "presence_typing_many": "{first} and {count} others are typing…",
   "workspace_hoverCard_people_label": "People",
   "workspace_hoverCard_personViewing_label": "Viewing",
-  "workspace_hoverCard_personOnline_label": "Online"
+  "workspace_hoverCard_personOnline_label": "Online",
+  "workspace_hoverCard_personOffline_label": "Offline",
+  "workspace_hoverCard_personRemove_ariaLabel": "Remove {name}",
+  "presence_avatarStack_onlyYou_label": "Only you here",
+  "presence_person_you_label": "{name} (you)"
 }
