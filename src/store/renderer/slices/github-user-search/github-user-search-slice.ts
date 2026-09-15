@@ -39,7 +39,11 @@ export const initialState: GithubUserSearchState = {
 /** Trigger: debounced by the saga so rapid keystrokes coalesce into one call. */
 export const searchGithubUsers = createAction<[query: string]>('githubUserSearch/search');
 
-/** Saga → reducer: flip loading and record the query being searched. */
+/**
+ * Saga → reducer: flip loading and record the query being searched. Drops the
+ * previous results: they belong to the old `lastQuery` and would otherwise
+ * render as current rows until the new call settles.
+ */
 export const setGithubUserSearchLoading = createAction<[query: string]>(
   'githubUserSearch/setLoading',
 );
@@ -61,6 +65,7 @@ export const githubUserSearchReducer = createReducer<GithubUserSearchState>(init
 
 githubUserSearchReducer.with(setGithubUserSearchLoading, (state, { payload: [query] }) => ({
   ...state,
+  results: createCollection<GithubUserSearchItem, 'login'>('login'),
   loading: true,
   error: null,
   lastQuery: query,
