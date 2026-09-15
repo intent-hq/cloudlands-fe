@@ -71,18 +71,19 @@
  *      relay path so the "View PR" pill / progress card refresh live while the
  *      app runs.
  *
- * The stream family is accumulated per agent (one in-flight assistant per
- * agent) using the BE's monotonic `blockIndex` so the candidate transcript
- * always grows. Post-intentd#775 the accumulator is text-starved (tool blocks
- * only), so the stream saga merges each dispatch into the message's current
- * blocks by block identity (`resolveStreamContentBlocks` →
- * `mergeStreamContentBlocks`) instead of replacing them — updates the blocks
- * this bridge knows about without deleting subscription-owned text blocks
- * (monorepo#2814). Cleanup runs on `agent:stream:end` / `agent:failed` so a
- * subsequent prompt turn starts from a clean slate. Dedup on hydration is
- * preserved by carrying the BE-canonical `messageId` as `assistantMessageId`
- * so the in-flight message id matches the one `agents.getConversation`
- * returns later.
+ * The stream family is tracked per agent (one in-flight assistant per agent)
+ * under the BE-canonical `messageId`. The firehose is BOOKKEEPING-ONLY:
+ * transcript CONTENT comes solely from the standing `chat.subscribe` stream
+ * (PROTOCOL §7.1) and `agents.getConversation` hydration, so no stream
+ * dispatch from this bridge carries `contentBlocks` — the saga applies only
+ * streaming flags and terminal metadata (stopReason / finishReason /
+ * interrupt attribution). The per-agent accumulator keeps the tool blocks it
+ * sees (`agent:tool:call` ticks, `seedStreamFromSnapshot`) purely so repeated
+ * ticks for the same tool can be recognised for the status-hint dedup below.
+ * Cleanup runs on `agent:stream:end` / `agent:failed` so a subsequent prompt
+ * turn starts from a clean slate. Dedup on hydration is preserved by carrying
+ * the BE-canonical `messageId` as `assistantMessageId` so the in-flight
+ * message id matches the one `agents.getConversation` returns later.
  *
  * Dependency-light: registers a one-shot subscription on first dispatch and a
  * single notification listener; both are cleaned up if the host store
@@ -143,18 +144,7 @@ import type {
   TaskStatus,
   Workspace,
 } from '$shared/types';
-import {
-  WorkspaceStatus,
-  isProposal,
-  isWorkspaceAttention,
-  isWorkspaceDisplayStatus,
-} from '$shared/types';
-import {
-  PROPOSAL_RESOURCE_MIME_TYPE,
-  createProposalResource,
-} from '$shared/types/proposal-resource';
-import { dedupeResourceBlocks, getResourceContents } from '$shared/types/resource-block-identity';
-import { hasStandingChatSubscription } from '$features/agent/utils/chat-subscription-registry';
+import { WorkspaceStatus, isWorkspaceAttention, isWorkspaceDisplayStatus } from '$shared/types';
 import type { AppliedSettingChange } from '$lib/client/app-client';
 import { isAcceptChangesStatusEvent } from './accept-changes-status-events';
 import { store as appStore } from '$store/renderer/store';
@@ -319,28 +309,17 @@ const SUBSCRIPTION_REFRESH_EVENT_TYPES = new Set([
 /**
  * Per-agent in-flight stream accumulator. The BE assigns each block a
  * monotonic `blockIndex` (see `crates/intent-services/src/agent_session.rs`
- * `Transcript`); we mirror that order on the FE so the candidate transcript
- * monotonically grows and never regresses. `toolResultsByUseIndex` holds the
- * synthesized `tool_result` block (the BE pushes one of its own, but only
- * exposes the *use* index on `agent:tool:call`), so it is rendered immediately
- * after its tool_use in `buildContentBlocks`.
+ * `Transcript`); we key tool blocks by that index so a later
+ * `agent:tool:call` tick for the same tool finds its prior copy (status-hint
+ * dedup, progress-only updates). The blocks are never dispatched as
+ * transcript content — the standing chat.subscribe stream owns that,
+ * including the synthesized `tool_result` and any standalone resource blocks
+ * a completed tool claims.
  */
 interface StreamState {
   messageId: string;
   workspaceId: string;
   blocksByIndex: Map<number, ContentBlock>;
-  toolResultsByUseIndex: Map<number, ContentBlock>;
-  /**
-   * `tool_use` index → standalone resource blocks (PROTOCOL §7.1) appended
-   * right after that tool's `tool_result`. The daemon-claimed canonical batch
-   * carried on the `agent:tool:call` event (`registeredAttachments`,
-   * deterministic attach) wins; otherwise the FE lifts a proposal-MIME
-   * resource item out of the echoed output (`crates/intent-services/src/
-   * tool_block.rs::lift_proposal_resource`), mirroring the daemon's
-   * `subscriptions.rs` delta path so the live transcript matches the
-   * persisted one and the card renders mid-stream.
-   */
-  attachmentsByUseIndex: Map<number, ContentBlock[]>;
 }
 
 const streamsByAgent = new Map<string, StreamState>();
@@ -462,8 +441,6 @@ function ensureStream(agentId: string, messageId: string, workspaceId: string): 
     messageId,
     workspaceId,
     blocksByIndex: new Map(),
-    toolResultsByUseIndex: new Map(),
-    attachmentsByUseIndex: new Map(),
   };
   streamsByAgent.set(agentId, fresh);
   return fresh;
@@ -486,31 +463,26 @@ function parseBlockIndexFromId(blockId: unknown): number | undefined {
 
 /**
  * REJOIN-STREAM SEEDING: prime the stream accumulator with the TOOL blocks
- * from a chat.subscribe snapshot's in-flight assistant message so subsequent
- * agent:tool:call dispatches carry the already-completed tool prefix instead
- * of only the post-rejoin suffix. Called by the chat-subscribe saga after
- * merging the snapshot's partial assistant into the hydrated transcript.
+ * from a chat.subscribe snapshot's in-flight assistant message so a subsequent
+ * agent:tool:call tick for an already-running tool is recognised as a repeat
+ * (progress-only update / status-hint dedup) instead of a fresh tool start.
+ * Called by the chat-subscribe saga after merging the snapshot's partial
+ * assistant into the hydrated transcript.
  *
  * TOOL BLOCKS ONLY (monorepo#2818): post-intentd#775 the agent:* firehose
- * carries no text updates, so a seeded text/thinking block would be frozen at
- * its seed-time copy while the standing subscription keeps advancing it in
- * the store — the next tool tick's dispatch would then regress the fresher
- * text via the identity merge (`mergeStreamContentBlocks`, same stable block
- * id). Text/thinking blocks are subscription-owned and never seeded; the
- * merge preserves them in the store regardless (monorepo#2814).
+ * carries no text updates, and text/thinking blocks are subscription-owned —
+ * the accumulator never dispatches content, so there is nothing for a seeded
+ * text block to feed.
  *
  * tool_use blocks seed under their daemon blockIndex (parsed from the stable
  * `{messageId}:{blockIndex}` id, PROTOCOL §7.1) so a later agent:tool:call
- * tick — whose blockIndex is the daemon's — merges into the seeded block. The
+ * tick — whose blockIndex is the daemon's — lands on the seeded block. The
  * daemon's index space is shared by all block kinds (text, tool_use,
  * tool_result, resource; `Transcript::block_id` in agent_session.rs), so a
  * faithful snapshot array has position == id suffix; parsing from the id
  * keeps seeding correct even if the array is ever partial or reordered
- * relative to daemon indices. tool_result blocks ride `toolResultsByUseIndex`
- * keyed by their paired tool_use (tool_use_id ↔ toolCallId, §7.1 synthesized
- * pairing), matching how live completions land — never `blocksByIndex`, so
- * `buildContentBlocks` cannot emit them twice. Blocks whose pairing cannot be
- * resolved are skipped: the subscription still owns the full transcript.
+ * relative to daemon indices. Every other block kind (text, thinking,
+ * tool_result, resource) is subscription-owned and skipped.
  *
  * NO-OP when the message has no content blocks or when a different message id
  * already holds the stream slot.
@@ -530,213 +502,12 @@ export function seedStreamFromSnapshot(
   const blocks = Array.isArray(inFlightMessage.contentBlocks) ? inFlightMessage.contentBlocks : [];
   if (blocks.length === 0) return;
   const state = ensureStream(agentId, messageId, workspaceId);
-  const useIndexByToolCallId = new Map<string, number>();
   for (const block of blocks) {
-    if (block.type === 'tool_use') {
-      const blockIndex = parseBlockIndexFromId((block as { id?: unknown }).id);
-      if (blockIndex === undefined) continue;
-      state.blocksByIndex.set(blockIndex, block);
-      const toolCallId = (block as { toolCallId?: unknown }).toolCallId;
-      if (typeof toolCallId === 'string' && toolCallId.length > 0) {
-        useIndexByToolCallId.set(toolCallId, blockIndex);
-      }
-    } else if (block.type === 'tool_result') {
-      const toolUseId = (block as { tool_use_id?: unknown }).tool_use_id;
-      if (typeof toolUseId !== 'string' || toolUseId.length === 0) continue;
-      const useIndex = useIndexByToolCallId.get(toolUseId);
-      if (useIndex === undefined) continue;
-      state.toolResultsByUseIndex.set(useIndex, block);
-    }
+    if (block.type !== 'tool_use') continue;
+    const blockIndex = parseBlockIndexFromId((block as { id?: unknown }).id);
+    if (blockIndex === undefined) continue;
+    state.blocksByIndex.set(blockIndex, block);
   }
-}
-
-function buildContentBlocks(state: StreamState): ContentBlock[] {
-  const sortedKeys = [...state.blocksByIndex.keys()].sort((a, b) => a - b);
-  const result: ContentBlock[] = [];
-  for (const key of sortedKeys) {
-    result.push(state.blocksByIndex.get(key)!);
-    const toolResult = state.toolResultsByUseIndex.get(key);
-    if (toolResult) result.push(toolResult);
-    const attachments = state.attachmentsByUseIndex.get(key);
-    if (attachments) result.push(...attachments);
-  }
-  // The same logical resource can reach the accumulator twice — e.g. a
-  // tool-call-claimed attachment (`registeredAttachments`) plus the terminal
-  // `agent:stream:end` trailingBlocks copy; collapse to one card per logical
-  // resource, preferring the daemon-canonical variant.
-  return dedupeResourceBlocks(result);
-}
-
-/**
- * Find the first well-formed proposal resource item in a completed tool's
- * `output` array — `{ type: "resource", resource: { mimeType: <proposal MIME>,
- * text: <string> } }` — mirroring the daemon's
- * `crates/intent-services/src/tool_block.rs::find_proposal_resource` (§7.1).
- * Returns null for non-array output, no matching item, or a malformed resource.
- */
-function findProposalResourceItem(output: unknown): Record<string, unknown> | null {
-  if (!Array.isArray(output)) return null;
-  for (const item of output) {
-    if (!item || typeof item !== 'object') continue;
-    const candidate = item as { type?: unknown; resource?: { mimeType?: unknown; text?: unknown } };
-    if (
-      candidate.type === 'resource' &&
-      candidate.resource &&
-      typeof candidate.resource === 'object' &&
-      candidate.resource.mimeType === PROPOSAL_RESOURCE_MIME_TYPE &&
-      typeof candidate.resource.text === 'string'
-    ) {
-      return item as Record<string, unknown>;
-    }
-  }
-  return null;
-}
-
-/**
- * Size cap for the collapsed-output fallback parse — mirrors the daemon's
- * `COLLAPSED_PROPOSAL_MAX_BYTES` (tool_block.rs): a stringified
- * `{ok, proposal}` payload larger than this is never a real proposal echo.
- */
-const COLLAPSED_PROPOSAL_MAX_BYTES = 256 * 1024;
-
-/**
- * Extract the candidate stringified payload from a provider-collapsed tool
- * output: `{ "output": "<string>" }` (auggie's shape) or a bare string —
- * mirrors the daemon's `collapsed_output_text` (tool_block.rs).
- */
-function collapsedOutputText(output: unknown): string | null {
-  if (typeof output === 'string') return output;
-  if (output && typeof output === 'object' && !Array.isArray(output)) {
-    const nested = (output as { output?: unknown }).output;
-    if (typeof nested === 'string') return nested;
-  }
-  return null;
-}
-
-/**
- * WRAP REPAIR: strip raw control characters (U+0000–U+001F) that appear
- * inside JSON string literals, leaving everything outside strings (including
- * pretty-print newlines) untouched. Some providers hard-wrap the collapsed
- * `{ok, proposal}` payload at 1000 columns, injecting raw newlines into
- * string values (even mid-word / mid-escape); raw control characters are
- * invalid inside JSON string literals, so JSON.parse throws and the lift
- * silently skips. The scan is a state machine honoring escapes: a control
- * character between a backslash and its escaped character is stripped
- * without consuming the escape. Returns null when nothing was stripped
- * (repair cannot help). Mirrors the daemon's wrap repair in
- * `tool_block.rs::rebuild_collapsed_proposal_resource`.
- */
-function stripRawControlsInJsonStrings(text: string): string | null {
-  let out = '';
-  let changed = false;
-  let inString = false;
-  let escapePending = false;
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
-    if (inString) {
-      if (text.charCodeAt(i) < 0x20) {
-        changed = true;
-        continue;
-      }
-      if (escapePending) {
-        escapePending = false;
-      } else if (ch === '\\') {
-        escapePending = true;
-      } else if (ch === '"') {
-        inString = false;
-      }
-    } else if (ch === '"') {
-      inString = true;
-      escapePending = false;
-    }
-    out += ch;
-  }
-  return changed ? out : null;
-}
-
-/**
- * §7.1 collapsed-output fallback — mirrors the daemon's
- * `rebuild_collapsed_proposal_resource` (tool_block.rs). Some providers (e.g.
- * auggie) flatten the daemon's dual text+resource MCP content items into a
- * single `{ "output": "<stringified {ok, proposal}>" }` object, dropping the
- * resource item, so `findProposalResourceItem` finds nothing in the live
- * `agent:tool:call` output even though the daemon lifts the block into the
- * persisted transcript. Recover the proposal from the collapsed string under
- * the same guards (size cap, JSON object with `ok: true`, proposal passing
- * canonical validation) and rebuild the resource item with the same shape the
- * daemon's `build_proposal_resource_item` emits (`createProposalResource`).
- * Note the rebuilt uri/text may differ superficially from the persisted
- * block's (percent-encoding set, JSON key order); the daemon's re-hydrated
- * transcript replaces the live block after the turn completes.
- */
-function rebuildCollapsedProposalResourceItem(output: unknown): Record<string, unknown> | null {
-  const text = collapsedOutputText(output);
-  if (!text || !text.trimStart().startsWith('{')) return null;
-  // The cap is in BYTES like the daemon's; text.length counts UTF-16 code
-  // units (each up to 3 UTF-8 bytes), so only encode when the cheap length
-  // check cannot rule the payload in or out on its own.
-  if (text.length > COLLAPSED_PROPOSAL_MAX_BYTES) return null;
-  if (
-    text.length * 3 > COLLAPSED_PROPOSAL_MAX_BYTES &&
-    new TextEncoder().encode(text).length > COLLAPSED_PROPOSAL_MAX_BYTES
-  ) {
-    return null;
-  }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text);
-  } catch {
-    // Provider-wrapped payload: retry once with raw control characters
-    // stripped from inside string literals (see stripRawControlsInJsonStrings).
-    const repaired = stripRawControlsInJsonStrings(text);
-    if (repaired === null) return null;
-    try {
-      parsed = JSON.parse(repaired);
-    } catch {
-      return null;
-    }
-  }
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
-  const envelope = parsed as { ok?: unknown; proposal?: unknown };
-  if (envelope.ok !== true || !isProposal(envelope.proposal)) return null;
-  // The shared isProposal is looser than the daemon's is_valid_proposal
-  // (proposal.rs): match the daemon's extra requirements — non-empty
-  // preview.title and a payload that is a JSON object (not an array) — so the
-  // FE never lifts a block the daemon would decline to persist.
-  const proposal = envelope.proposal;
-  if (proposal.preview.title.length === 0 || Array.isArray(proposal.payload)) return null;
-  return { type: 'resource', resource: createProposalResource(proposal) };
-}
-
-/**
- * Find or reconstruct the proposal resource item for a completed tool's
- * output (§7.1) — mirrors the daemon's `lift_proposal_resource`
- * (tool_block.rs): the array path first, then the collapsed-output fallback.
- */
-function liftProposalResourceItem(output: unknown): Record<string, unknown> | null {
-  return findProposalResourceItem(output) ?? rebuildCollapsedProposalResourceItem(output);
-}
-
-/**
- * Predict a standalone attachment block's stable id from the `tool_use`
- * blockId: the daemon appends `tool_result` at index + 1 and the Nth
- * attachment block at index + 2 + N (the `{messageId}:{index}` scheme
- * produced by the daemon's `Transcript::block_id`, agent_session.rs; §7.1
- * tool_delta). Returns undefined when the blockId does not follow that
- * scheme.
- */
-function predictAttachmentBlockId(
-  toolUseBlockId: unknown,
-  attachmentOrdinal: number,
-): string | undefined {
-  if (typeof toolUseBlockId !== 'string') return undefined;
-  const separator = toolUseBlockId.lastIndexOf(':');
-  if (separator < 0) return undefined;
-  // Bare unsigned decimal only — mirrors the `{messageId}:{index}` scheme
-  // produced by the daemon's `Transcript::block_id` (agent_session.rs).
-  const suffix = toolUseBlockId.slice(separator + 1);
-  if (!/^[0-9]+$/.test(suffix)) return undefined;
-  return `${toolUseBlockId.slice(0, separator)}:${Number(suffix) + 2 + attachmentOrdinal}`;
 }
 
 /**
@@ -801,21 +572,12 @@ function dispatchStreamUpdate(
   eventType: 'chunk' | 'content-blocks' | 'complete' | 'error',
   end?: StreamEndMetadata,
 ): void {
-  // SOLE-WRITER INVARIANT (PROTOCOL §7.1): when a standing chat.subscribe
-  // registration covers this agent, the subscription owns message CONTENT —
-  // omit the accumulator's blocks so this dispatch keeps only its bookkeeping
-  // duties (streaming flags, stopReason/finishReason metadata, chat-state
-  // resets). The terminal `complete` would otherwise replace the reconciled
-  // transcript with the accumulator's text-starved stale set — with no later
-  // emit to heal it, the turn's tail goes missing — and mid-turn
-  // `content-blocks` ticks flicker subscription-owned rows. The accumulator
-  // itself keeps accumulating regardless, so it stays the complete fallback
-  // writer for agents whose coverage ends mid-turn. The apply-time guard in
-  // agent-stream-saga re-checks coverage for dispatches buffered across a
-  // registration install.
-  const covered = hasStandingChatSubscription(agentId);
-  const contentBlocks = covered ? undefined : buildContentBlocks(state);
-
+  // BOOKKEEPING-ONLY (PROTOCOL §7.1): the standing chat.subscribe stream is
+  // the transcript's sole content writer, so this dispatch never carries
+  // `contentBlocks` — it keeps only its bookkeeping duties (streaming flags,
+  // stopReason/finishReason metadata, chat-state resets). The saga applies
+  // those to the covered agent's target row and, for an agent without a
+  // standing subscription, runs only the session-level resets (no row writes).
   appStore.dispatch(
     agentStreamUpdateReceived({
       workspaceId: state.workspaceId,
@@ -824,7 +586,6 @@ function dispatchStreamUpdate(
       source: 'sendMessage',
       eventType,
       assistantMessageId: state.messageId,
-      ...(contentBlocks ? { contentBlocks } : {}),
       ...streamEndMetadataFields(end),
     }),
   );
@@ -833,7 +594,6 @@ function dispatchStreamUpdate(
     event: `stream-${eventType}-dispatched`,
     turnCorrelation: streamTurnCorrelation(state.messageId),
     callbackResult: 'dispatched',
-    ...(contentBlocks ? { blockCount: contentBlocks.length } : {}),
   });
 }
 
@@ -1051,8 +811,6 @@ function handleToolCallEvent(event: WorkspaceEvent, workspaceId: string): void {
   const toolKind = data.toolKind;
   const status = data.status;
   const input = data.input;
-  const output = data.output;
-  const registeredAttachments = data.registeredAttachments;
   if (
     typeof agentId !== 'string' ||
     typeof messageId !== 'string' ||
@@ -1116,52 +874,6 @@ function handleToolCallEvent(event: WorkspaceEvent, workspaceId: string): void {
     },
   } as ContentBlock;
   state.blocksByIndex.set(blockIndex, toolUseBlock);
-
-  if ((status === 'completed' || status === 'error') && output !== undefined) {
-    state.toolResultsByUseIndex.set(blockIndex, {
-      type: 'tool_result',
-      tool_use_id: toolCallId,
-      output: output as ContentBlock['output'],
-      is_error: status === 'error',
-    } as ContentBlock);
-
-    // §7.1: append the standalone resource block(s) right after the
-    // tool_result of a COMPLETED tool, mirroring the daemon's persisted
-    // transcript (`record_tool`) and live delta stream (subscriptions.rs) so
-    // the card renders mid-stream. The daemon-claimed canonical batch carried
-    // on the event (`registeredAttachments`, deterministic attach) wins;
-    // otherwise fall back to the FE lift of a proposal-MIME resource item out
-    // of the echoed output — including the collapsed-output/wrap-repair
-    // fallback for providers that flatten the MCP content-item array. A tool
-    // that ends in `error` never surfaces a standalone block.
-    if (status === 'completed') {
-      // Deliberate deviation from the daemon's own delta path
-      // (subscriptions.rs::tool_delta uses the array wholesale): items are
-      // validated through getResourceContents and the lift fallback fires
-      // when ALL are malformed. Defensive only — every item the daemon sends
-      // today is well-formed by construction (TurnAttachment::resource_item);
-      // revisit if the batch shape ever grows new item variants.
-      const registered = Array.isArray(registeredAttachments)
-        ? registeredAttachments.filter((item) => getResourceContents(item) !== null)
-        : [];
-      const items =
-        registered.length > 0
-          ? registered
-          : ([liftProposalResourceItem(output)].filter(Boolean) as Record<string, unknown>[]);
-      if (items.length > 0) {
-        state.attachmentsByUseIndex.set(
-          blockIndex,
-          items.map((item, ordinal) => {
-            const attachmentBlockId = predictAttachmentBlockId(blockId, ordinal);
-            return {
-              ...(item as Record<string, unknown>),
-              ...(attachmentBlockId ? { id: attachmentBlockId } : {}),
-            } as unknown as ContentBlock;
-          }),
-        );
-      }
-    }
-  }
 
   dispatchStreamUpdate(agentId, state, 'content-blocks');
 
@@ -1320,7 +1032,6 @@ function handleStreamStartEvent(event: WorkspaceEvent, workspaceId: string): voi
       source: 'sendMessage',
       eventType: 'started',
       assistantMessageId: messageId,
-      contentBlocks: [{ type: 'text', text: '' }],
       createInitialPlaceholder: true,
     }),
   );
@@ -1364,14 +1075,13 @@ function handleStreamEndEvent(event: WorkspaceEvent, workspaceId: string): void 
     interruptedBy,
   };
   const messageId = typeof data?.messageId === 'string' ? data.messageId : undefined;
-  // LIVE Q&A DELIVERY (PROTOCOL §7): the terminal `agent:stream:end` carries
-  // `trailingBlocks` — the standalone resource blocks the daemon appended to
-  // the turn's final assistant message after the text stream finished (Agent
-  // Q&A questions today), byte-identical to the persisted transcript. Append
-  // them into the accumulator before finalizing so the wizard triggers live
-  // without a refetch. `buildContentBlocks`'s `dedupeResourceBlocks` keeps
-  // this idempotent against tool-call-claimed copies of the same canonical
-  // block (stamped `attachmentId` nonce).
+  // `trailingBlocks` (PROTOCOL §7) — the standalone resource blocks the daemon
+  // appended to the turn's final assistant message after the text stream
+  // finished (Agent Q&A questions today). Their CONTENT reaches the transcript
+  // through the standing chat.subscribe §7.1 reconcile, never through this
+  // bridge; here they only mark the terminal event as transcript-bearing (so a
+  // question-only turn with no local stream state still finalizes its
+  // placeholder) and size the lifecycle reports.
   const trailingBlocks = Array.isArray(data?.trailingBlocks)
     ? (data.trailingBlocks.filter((b) => b !== null && typeof b === 'object') as ContentBlock[])
     : [];
@@ -1420,19 +1130,13 @@ function handleStreamEndEvent(event: WorkspaceEvent, workspaceId: string): void 
     blockCount: trailingBlocks.length,
   });
   if (state && (!messageId || state.messageId === messageId)) {
-    if (trailingBlocks.length > 0) {
-      const maxIndex = Math.max(-1, ...state.blocksByIndex.keys());
-      trailingBlocks.forEach((block, ordinal) => {
-        state.blocksByIndex.set(maxIndex + 1 + ordinal, block);
-      });
-    }
     dispatchStreamUpdate(agentId, state, 'complete', endMetadata);
     streamsByAgent.delete(agentId);
     return;
   }
   if (state) {
     // Accumulator holds a DIFFERENT turn's message: finalize it as-is and
-    // fall through so the trailing blocks land under their own messageId.
+    // fall through so the terminal bookkeeping lands under its own messageId.
     // The stopReason/finishReason/interrupt attribution belong to THIS
     // event's messageId — do not stamp the Stopped badge / finish notice onto
     // the unrelated accumulated turn.
@@ -1444,12 +1148,10 @@ function handleStreamEndEvent(event: WorkspaceEvent, workspaceId: string): void 
   // interrupted row on `agent.stop`, a zero-output abnormal turn (refusal /
   // token-limit marker row carrying `finishReason`), or a turn whose ONLY
   // content is the trailing blocks (e.g. questions with no streamed text).
-  // Finalize a matching placeholder so the Stopped indicator / finish notice /
-  // question wizard appears live. A later `agents.getConversation` reconcile
-  // dedupes by message id. SOLE-WRITER INVARIANT: for a subscription-covered
-  // agent the terminal §7.1 reconcile delivers the drained question blocks as
-  // `added` blocks itself, so the firehose copy is omitted (same gate as
-  // `dispatchStreamUpdate`) and only the metadata/flag bookkeeping applies.
+  // Finalize a matching placeholder so the Stopped indicator / finish notice
+  // appears live; the terminal §7.1 reconcile delivers the row's content
+  // (including the drained question blocks) and replaces the placeholder by
+  // message id. BOOKKEEPING-ONLY: no `contentBlocks` ride this dispatch.
   if (messageId && (trailingBlocks.length > 0 || stopReason === 'interrupted' || finishReason)) {
     appStore.dispatch(
       agentStreamUpdateReceived({
@@ -1459,9 +1161,6 @@ function handleStreamEndEvent(event: WorkspaceEvent, workspaceId: string): void 
         source: 'sendMessage',
         eventType: 'complete',
         assistantMessageId: messageId,
-        ...(hasStandingChatSubscription(agentId)
-          ? {}
-          : { contentBlocks: dedupeResourceBlocks(trailingBlocks) }),
         ...streamEndMetadataFields(endMetadata),
       }),
     );

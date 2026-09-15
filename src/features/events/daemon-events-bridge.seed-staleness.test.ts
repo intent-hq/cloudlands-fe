@@ -11,9 +11,12 @@
  * id — overwrites the fresher text with the stale one until the next
  * subscription emit restores it (visible text flicker/regression).
  *
- * Fix under test: `seedStreamFromSnapshot` seeds TOOL blocks only
- * (tool_use / tool_result) — the only block kinds the firehose can advance —
- * and never text/thinking blocks, which are subscription-owned.
+ * Fix under test: `seedStreamFromSnapshot` seeds TOOL_USE blocks only — the
+ * accumulator's sole remaining job is status-hint dedup for `agent:tool:call`
+ * ticks — and the firehose never dispatches content blocks at all: the
+ * standing chat.subscribe stream is the transcript's sole content writer, so
+ * a tool tick leaves the subscription-owned row untouched and its only
+ * store-visible effect is the `chatState` status hint.
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentStatus } from '$shared/types/agent.types';
@@ -46,6 +49,7 @@ import {
   clearAllSessions,
   replaceMessages,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
+import { chatReset } from '$store/renderer/slices/chat-state/chat-state-slice';
 import {
   __resetDaemonEventsBridgeForTests,
   routeDaemonEventsNotification,
@@ -111,6 +115,13 @@ function readAssistantMessage(): AgentMessage | undefined {
   );
 }
 
+function readStatusPhases(): string[] {
+  const state = appStore.state as {
+    chatState?: { byAgentId: Record<string, { statusEvents: Array<{ phase?: string }> }> };
+  };
+  return (state.chatState?.byAgentId[AGENT]?.statusEvents ?? []).map((e) => e.phase ?? '');
+}
+
 const stops: Array<() => void> = [];
 
 beforeAll(() => {
@@ -126,6 +137,7 @@ afterAll(() => {
 describe('seed staleness regression (monorepo#2818)', () => {
   beforeEach(() => {
     appStore.dispatch(clearAllSessions());
+    appStore.dispatch(chatReset(AGENT));
     __resetDaemonEventsBridgeForTests();
     capturedHandlers.length = 0;
     capturedHandlers[0] = (n) => routeDaemonEventsNotification(n.method, n.params, 'sub-1');
@@ -192,11 +204,14 @@ describe('seed staleness regression (monorepo#2818)', () => {
     expect((textBlock as { text?: string })?.text).toBe(FRESH_TEXT);
   });
 
-  it('characterization: seeded tool identity still survives a progress-only tick', () => {
+  it('characterization: the seeded tool is recognised as already started (status-hint dedup), row untouched', () => {
     const handler = capturedHandlers[0]!;
+    const before = readAssistantMessage()!.contentBlocks;
 
-    // Status-only tick: empty toolName/no input (the daemon mapper's default
-    // for a progress tick) — the seeded name/input/toolKind must be retained.
+    // Completion tick for the SEEDED tool (status-only: empty toolName, the
+    // daemon mapper's default). The seed recorded it as `started`, so the
+    // bridge must emit the "awaiting tool response" hint — without the seed
+    // there is no prior `started` and the hint is suppressed.
     handler(
       notification('agent:tool:call', {
         agentId: AGENT,
@@ -205,19 +220,13 @@ describe('seed staleness regression (monorepo#2818)', () => {
         blockId: `${MESSAGE_ID}:1`,
         toolCallId: 'toolu_01',
         toolName: '',
-        status: 'in_progress',
+        status: 'completed',
       }),
     );
 
-    const message = readAssistantMessage();
-    const toolUse = (message?.contentBlocks ?? []).find(
-      (b) => b.type === 'tool_use' && (b as { toolCallId?: string }).toolCallId === 'toolu_01',
-    ) as { name?: string; input?: unknown; metadata?: { toolKind?: string; status?: string } };
-    expect(toolUse).toBeDefined();
-    expect(toolUse.name).toBe('str-replace-editor');
-    expect(toolUse.input).toEqual({ path: 'src/app.ts' });
-    expect(toolUse.metadata?.toolKind).toBe('edit');
-    expect(toolUse.metadata?.status).toBe('in_progress');
+    expect(readStatusPhases()).toEqual(['tool-waiting']);
+    // The subscription-owned row is never rewritten by a firehose tick.
+    expect(readAssistantMessage()!.contentBlocks).toEqual(before);
   });
 
   it('seeding keys by the id suffix even when array position diverges from daemon blockIndex', () => {
@@ -240,11 +249,10 @@ describe('seed staleness regression (monorepo#2818)', () => {
     //
     // Positional seeding keyed blocksByIndex by position: under this ordering
     // the mid-flight toolu_02 sat at key 4 while its live ticks carry
-    // blockIndex 3 (where the seeded text block sat) — a progress-only tick
-    // then found no prior tool_use and collapsed the name; and the seeded
-    // tool_result lived in blocksByIndex, duplicating against the live
-    // completion's toolResultsByUseIndex entry.
+    // blockIndex 3 (where the seeded text block sat) — a completion tick then
+    // found no prior `started` tool_use and the status hint was suppressed.
     appStore.dispatch(clearAllSessions());
+    appStore.dispatch(chatReset(AGENT));
     __resetDaemonEventsBridgeForTests();
     capturedHandlers.length = 0;
     capturedHandlers[0] = (n) => routeDaemonEventsNotification(n.method, n.params, 'sub-1');
@@ -291,10 +299,11 @@ describe('seed staleness regression (monorepo#2818)', () => {
     );
     seedStreamFromSnapshot(AGENT, { id: MESSAGE_ID, contentBlocks: rejoinBlocks }, WS);
 
-    // Progress-only tick for the mid-flight tool (empty toolName — the daemon
-    // mapper's default): it must merge into the SEEDED block at daemon
-    // blockIndex 3. Pre-fix that key held the seeded text block (position 3),
-    // so the tick collapsed the tool name.
+    // Status-only completion tick for the mid-flight tool (empty toolName —
+    // the daemon mapper's default): it must find the SEEDED `started` block at
+    // daemon blockIndex 3 and emit the "awaiting tool response" hint. Pre-fix
+    // that key held the seeded text block (position 3), so no prior `started`
+    // was found and the hint was suppressed.
     handler(
       notification('agent:tool:call', {
         agentId: AGENT,
@@ -303,14 +312,14 @@ describe('seed staleness regression (monorepo#2818)', () => {
         blockId: `${MESSAGE_ID}:3`,
         toolCallId: 'toolu_02',
         toolName: '',
-        status: 'in_progress',
+        status: 'completed',
       }),
     );
+    expect(readStatusPhases()).toEqual(['tool-waiting']);
 
     // The completed tick for toolu_01 REPLAYS (duplicate delivery / late
-    // re-emit) carrying the persisted result identity. The seeded result must
-    // be overwritten in place via toolResultsByUseIndex, never doubled from a
-    // positional blocksByIndex copy.
+    // re-emit) carrying the persisted result identity. The seed already holds
+    // it as `completed`, so the replay is deduped: no second hint.
     handler(
       notification('agent:tool:call', {
         agentId: AGENT,
@@ -327,23 +336,10 @@ describe('seed staleness regression (monorepo#2818)', () => {
       }),
     );
 
-    const message = readAssistantMessage();
-    const blocks = message?.contentBlocks ?? [];
+    expect(readStatusPhases()).toEqual(['tool-waiting']);
 
-    // Seeded identity of the mid-flight tool survived the progress-only tick
-    // (pre-fix: name collapsed to '' because the seed miskeyed it at 4).
-    const secondUse = blocks.find(
-      (b) => b.type === 'tool_use' && (b as { toolCallId?: string }).toolCallId === 'toolu_02',
-    ) as { name?: string; metadata?: { status?: string } };
-    expect(secondUse).toBeDefined();
-    expect(secondUse.name).toBe('launch-process');
-    expect(secondUse.metadata?.status).toBe('in_progress');
-
-    // Exactly one tool_result for the replayed completion (pre-fix: the
-    // positionally-seeded copy in blocksByIndex doubled the live one).
-    const firstToolResults = blocks.filter(
-      (b) => b.type === 'tool_result' && (b as { tool_use_id?: string }).tool_use_id === 'toolu_01',
-    );
-    expect(firstToolResults).toHaveLength(1);
+    // Neither tick touched the subscription-owned row: the firehose writes
+    // no transcript content, so the snapshot blocks stand exactly as seeded.
+    expect(readAssistantMessage()!.contentBlocks).toEqual(rejoinBlocks);
   });
 });
