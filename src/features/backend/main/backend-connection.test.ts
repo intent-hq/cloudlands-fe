@@ -1481,6 +1481,51 @@ describe('raceDuplexSockets (multi-host racing, #1746)', () => {
     expect(a.destroyedByRace).toBe(true);
   });
 
+  // Multiplayer guest caps (intent-hq/intentd#1917): the client keys its slow
+  // retry cadence on the typed 503 refusal, so a later generic failure (or the
+  // race timeout) on another candidate must not downgrade it.
+  it('keeps a ConnectionLimitError when a later candidate fails generically', async () => {
+    const capped = new FakeCandidate();
+    const refused = new FakeCandidate();
+    const facade = raceDuplexSockets([
+      { host: 'capped', create: () => capped },
+      { host: 'refused', create: () => refused },
+    ]);
+    const failed = new Promise<Error>((res) => facade.once('error', (e: Error) => res(e)));
+    capped.emit('error', new ConnectionLimitError());
+    refused.emit('error', new Error('ECONNREFUSED'));
+    expect(await failed).toBeInstanceOf(ConnectionLimitError);
+  });
+
+  it('keeps a ConnectionLimitError when the remaining candidate times out', async () => {
+    const capped = new FakeCandidate();
+    const hanging = new FakeCandidate();
+    const facade = raceDuplexSockets(
+      [
+        { host: 'capped', create: () => capped },
+        { host: 'hanging', create: () => hanging },
+      ],
+      { timeoutMs: 50 },
+    );
+    const failed = new Promise<Error>((res) => facade.once('error', (e: Error) => res(e)));
+    capped.emit('error', new ConnectionLimitError());
+    expect(await failed).toBeInstanceOf(ConnectionLimitError);
+    expect(hanging.destroyedByRace).toBe(true);
+  });
+
+  it('still prefers a pin mismatch over a ConnectionLimitError', async () => {
+    const capped = new FakeCandidate();
+    const foreign = new FakeCandidate();
+    const facade = raceDuplexSockets([
+      { host: 'capped', create: () => capped },
+      { host: 'foreign', create: () => foreign },
+    ]);
+    const failed = new Promise<Error>((res) => facade.once('error', (e: Error) => res(e)));
+    capped.emit('error', new ConnectionLimitError());
+    foreign.emit('error', new PinMismatchError('AA', 'BB'));
+    expect(await failed).toBeInstanceOf(PinMismatchError);
+  });
+
   it('fails when every attempt factory throws synchronously', async () => {
     const facade = raceDuplexSockets([
       {

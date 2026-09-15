@@ -609,6 +609,38 @@ describe('JsonRpcClient reconnect + heartbeat', () => {
     client.dispose();
   });
 
+  it('holds the connection-limit cadence against on-demand start() and request()', async () => {
+    vi.useFakeTimers();
+    const { client, sockets } = makeReconnectingClient();
+    client.start();
+    sockets[0].emit('error', new ConnectionLimitError());
+    expect(client.isConnectionLimited()).toBe(true);
+    expect(sockets).toHaveLength(1);
+
+    // Neither an explicit start nor a request re-presents the refused
+    // upgrade ahead of the slow retry; the request fails fast with the cap
+    // refusal instead of dialing or parking behind the timer.
+    client.start();
+    expect(sockets).toHaveLength(1);
+    await expect(client.request('system.status')).rejects.toBeInstanceOf(ConnectionLimitError);
+    expect(sockets).toHaveLength(1);
+    expect(client.getStatus()).toBe('disconnected');
+
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(sockets).toHaveLength(2);
+    // Once the retry itself is in flight, a request waits on it as usual.
+    const pending = client.request('system.status');
+    sockets[1].open();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(sockets[1].writes).toHaveLength(1);
+    const { id } = JSON.parse(sockets[1].writes[0]) as { id: number };
+    sockets[1].receive(`${JSON.stringify({ jsonrpc: '2.0', id, result: { ok: true } })}\n`);
+    await expect(pending).resolves.toEqual({ ok: true });
+    expect(client.isConnectionLimited()).toBe(false);
+
+    client.dispose();
+  });
+
   it('resets the backoff after a successful reconnect', async () => {
     vi.useFakeTimers();
     const { client, sockets } = makeReconnectingClient();
