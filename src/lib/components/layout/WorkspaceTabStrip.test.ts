@@ -870,9 +870,7 @@ describe('WorkspaceTabStrip', () => {
       props: { activeWorkspaceId: 'ws-1', onActiveTabBoundsChange },
     });
     container.classList.add('window-title-bar');
-    const strip = screen.getByRole('tablist', {
-      name: m.layout_workspaceTabStrip_openSpaces_ariaLabel(),
-    });
+    const strip = container.querySelector<HTMLElement>('[data-workspace-tab-scroller]')!;
     strip.getBoundingClientRect = () => makeRect(0, 20, 600);
     Object.defineProperties(strip, {
       scrollWidth: { value: 600, configurable: true },
