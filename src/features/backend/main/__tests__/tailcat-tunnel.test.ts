@@ -1,3 +1,4 @@
+import { TC_ADDRESS } from '../../../../test/fixtures/tc-address.fixture';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EventEmitter } from 'node:events';
 import * as fs from 'node:fs';
@@ -141,7 +142,7 @@ describe('createTailcatTunnel', () => {
     const children: FakeChild[] = [];
     const args: string[][] = [];
     const tunnel = await createTailcatTunnel({
-      tcAddress: 'tc.example.ts.net',
+      tcAddress: TC_ADDRESS,
       remotePort: 8443,
       binaryPath: '/fake/tailcat',
       spawn: fakeSpawn(children, args),
@@ -154,7 +155,7 @@ describe('createTailcatTunnel', () => {
       });
       socket.write('hello-through-tunnel');
       expect(await echoed).toBe('hello-through-tunnel');
-      expect(args).toEqual([['tc.example.ts.net', '8443']]);
+      expect(args).toEqual([[TC_ADDRESS, '8443']]);
       socket.destroy();
     } finally {
       tunnel.close();
@@ -165,7 +166,7 @@ describe('createTailcatTunnel', () => {
   it('close() kills spawned children and stops accepting', async () => {
     const children: FakeChild[] = [];
     const tunnel = await createTailcatTunnel({
-      tcAddress: 'tc.example.ts.net',
+      tcAddress: TC_ADDRESS,
       remotePort: 8443,
       binaryPath: '/fake/tailcat',
       spawn: fakeSpawn(children, []),
@@ -183,7 +184,7 @@ describe('createTunneledSocket', () => {
     const children: FakeChild[] = [];
     let dialedPort = 0;
     const facade = createTunneledSocket({
-      tcAddress: 'tc.example.ts.net',
+      tcAddress: TC_ADDRESS,
       remotePort: 8443,
       binaryPath: '/fake/tailcat',
       spawn: fakeSpawn(children, []),
@@ -208,7 +209,7 @@ describe('createTunneledSocket', () => {
     const children: FakeChild[] = [];
     const createInner = vi.fn((localPort: number) => net.connect(localPort, '127.0.0.1'));
     const facade = createTunneledSocket({
-      tcAddress: 'tc.example.ts.net',
+      tcAddress: TC_ADDRESS,
       remotePort: 8443,
       binaryPath: '/fake/tailcat',
       spawn: fakeSpawn(children, []),
@@ -224,7 +225,7 @@ describe('createTunneledSocket', () => {
   it('surfaces the tunnel dying mid-stream as end-of-stream on the facade', async () => {
     const children: FakeChild[] = [];
     const facade = createTunneledSocket({
-      tcAddress: 'tc.example.ts.net',
+      tcAddress: TC_ADDRESS,
       remotePort: 8443,
       binaryPath: '/fake/tailcat',
       spawn: fakeSpawn(children, []),
@@ -257,7 +258,7 @@ describe('createTunneledSocket', () => {
     // propagate through the tunnel facade to the spawned tailcat children.
     const children: FakeChild[] = [];
     const tunnelFacade = createTunneledSocket({
-      tcAddress: 'tc.example.ts.net',
+      tcAddress: TC_ADDRESS,
       remotePort: 8443,
       binaryPath: '/fake/tailcat',
       spawn: fakeSpawn(children, []),
@@ -266,7 +267,7 @@ describe('createTunneledSocket', () => {
     const directWinner = new PassThrough() as unknown as net.Socket;
     const raced = raceDuplexSockets([
       { host: 'direct.example', create: () => directWinner as never },
-      { host: 'tunnel:tc.example.ts.net', create: () => tunnelFacade },
+      { host: 'tailcat-tunnel', create: () => tunnelFacade },
     ]);
     const won = new Promise<void>((resolve) => raced.once('connect', resolve));
     directWinner.emit('connect');
@@ -286,7 +287,7 @@ describe('createTunneledSocket', () => {
     let dialedPort = 0;
     let inner: Duplex | null = null;
     const facade = createTunneledSocket({
-      tcAddress: 'tc.example.ts.net',
+      tcAddress: TC_ADDRESS,
       remotePort: 8443,
       binaryPath: '/fake/tailcat',
       spawn: fakeSpawn(children, []),
@@ -319,7 +320,7 @@ describe('createTunneledSocket', () => {
   it('leaves a candidate that connects within the bound alone; the timer never fires later', async () => {
     const children: FakeChild[] = [];
     const facade = createTunneledSocket({
-      tcAddress: 'tc.example.ts.net',
+      tcAddress: TC_ADDRESS,
       remotePort: 8443,
       binaryPath: '/fake/tailcat',
       spawn: fakeSpawn(children, []),
@@ -347,7 +348,7 @@ describe('createTunneledSocket', () => {
     try {
       const neverConnects = new PassThrough();
       const facade = createTunneledSocket({
-        tcAddress: 'tc.example.ts.net',
+        tcAddress: TC_ADDRESS,
         remotePort: 8443,
         binaryPath: '/fake/tailcat',
         spawn: fakeSpawn([], []),

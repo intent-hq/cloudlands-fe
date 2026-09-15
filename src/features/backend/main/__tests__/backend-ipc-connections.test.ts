@@ -1,3 +1,4 @@
+import { TC_ADDRESS } from '../../../../test/fixtures/tc-address.fixture';
 /**
  * T3 — open orchestration + connections registry IPC (backend.ipc.ts).
  *
@@ -2581,30 +2582,28 @@ describe('self-publish IPC', () => {
   it('connections:publish-self publishes in tunnel-only posture (loopback bind + tcAddress)', async () => {
     // Tunnel-only: the daemon binds loopback only, so localIps filters to
     // empty — the dialable tc address stands in as the record's host.
-    installPairingInfo({ localIps: ['127.0.0.1', '::1'], tcAddress: 'tc7f2a91.tailcat.net' });
-    store.add.mockResolvedValue({ ...SELF_RECORD, host: 'tc7f2a91.tailcat.net' });
+    installPairingInfo({ localIps: ['127.0.0.1', '::1'], tcAddress: TC_ADDRESS });
+    store.add.mockResolvedValue({ ...SELF_RECORD, host: TC_ADDRESS });
     installWindow();
     const { mod } = await loadModule();
     mod.registerBackendHandlers();
 
     await findHandler('connections:publish-self')!({}, undefined);
-    expect(store.add).toHaveBeenCalledWith(
-      expect.objectContaining({ host: 'tc7f2a91.tailcat.net' }),
-    );
+    expect(store.add).toHaveBeenCalledWith(expect.objectContaining({ host: TC_ADDRESS }));
     // No routable IPs to persist as extras; the tc address rides its own field.
     expect(store.setHosts).toHaveBeenCalledWith('self-1', []);
-    expect(store.setTcAddress).toHaveBeenCalledWith('self-1', 'tc7f2a91.tailcat.net');
+    expect(store.setTcAddress).toHaveBeenCalledWith('self-1', TC_ADDRESS);
   });
 
   it('connections:publish-self persists the pairingInfo tcAddress on the self record', async () => {
-    installPairingInfo({ tcAddress: 'tc7f2a91.tailcat.net' });
+    installPairingInfo({ tcAddress: TC_ADDRESS });
     store.add.mockResolvedValue(SELF_RECORD);
     installWindow();
     const { mod } = await loadModule();
     mod.registerBackendHandlers();
 
     await findHandler('connections:publish-self')!({}, undefined);
-    expect(store.setTcAddress).toHaveBeenCalledWith('self-1', 'tc7f2a91.tailcat.net');
+    expect(store.setTcAddress).toHaveBeenCalledWith('self-1', TC_ADDRESS);
   });
 
   it('connections:publish-self clears the tcAddress when pairingInfo omits it (tunnel down)', async () => {
@@ -2952,9 +2951,9 @@ describe('self-entry refresh IPC', () => {
     // Tunnel-only: localIps filters to empty but the tunnel is dialable —
     // the refresh must keep the entry fresh instead of no-opping, or the
     // record goes stale on the user's other devices.
-    installPairingInfo({ localIps: ['127.0.0.1', '::1'], tcAddress: 'tc7f2a91.tailcat.net' });
+    installPairingInfo({ localIps: ['127.0.0.1', '::1'], tcAddress: TC_ADDRESS });
     store.list.mockResolvedValue([LOCAL, { ...REMOTE, id: 'self-1', fingerprint: '11:22:33:44' }]);
-    store.add.mockResolvedValue({ ...SELF_RECORD, host: 'tc7f2a91.tailcat.net' });
+    store.add.mockResolvedValue({ ...SELF_RECORD, host: TC_ADDRESS });
     installWindow();
     const { mod } = await loadModule();
     mod.registerBackendHandlers();
@@ -2962,10 +2961,8 @@ describe('self-entry refresh IPC', () => {
     const result = await findHandler('connections:refresh-self')!({}, undefined);
 
     expect(result).toEqual({ refreshed: true });
-    expect(store.add).toHaveBeenCalledWith(
-      expect.objectContaining({ host: 'tc7f2a91.tailcat.net' }),
-    );
-    expect(store.setTcAddress).toHaveBeenCalledWith('self-1', 'tc7f2a91.tailcat.net');
+    expect(store.add).toHaveBeenCalledWith(expect.objectContaining({ host: TC_ADDRESS }));
+    expect(store.setTcAddress).toHaveBeenCalledWith('self-1', TC_ADDRESS);
   });
 
   it('stays a no-op when neither a routable IP nor a tcAddress exists', async () => {
@@ -3401,16 +3398,14 @@ describe('multi-host candidates (#1746)', () => {
     installWindow();
     rpc.handler = async (method) => {
       if (method === 'server.pairingInfo') {
-        return { localIps: ['10.0.0.5'], tcAddress: 'tc7f2a91.tailcat.net' };
+        return { localIps: ['10.0.0.5'], tcAddress: TC_ADDRESS };
       }
       return {};
     };
     const { mod } = await loadModule();
     await mod.openBackendWindow('remote-1');
 
-    await vi.waitFor(() =>
-      expect(store.setTcAddress).toHaveBeenCalledWith('remote-1', 'tc7f2a91.tailcat.net'),
-    );
+    await vi.waitFor(() => expect(store.setTcAddress).toHaveBeenCalledWith('remote-1', TC_ADDRESS));
   });
 
   it('clears the stored tcAddress when a successful pairingInfo omits it', async () => {
