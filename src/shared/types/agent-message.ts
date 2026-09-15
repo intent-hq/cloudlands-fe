@@ -168,6 +168,13 @@ export interface AgentMessage {
   // Streaming state
   isStreaming?: boolean;
   streamingComplete?: boolean;
+  // Renderer-local, never on the wire: the row was settled without the §7.1
+  // stream delivering it (firehose terminal on a covered agent — the empty
+  // placeholder or an existing row — or the close-time / retained-row
+  // `settleStreaming` normalize). Absent means daemon-canonical (or still
+  // streaming). Cleared by construction when a §7.1 snapshot/delta replaces
+  // the row by id: transcript rows never carry it.
+  provisional?: true;
 
   // Metadata
   metadata?: MessageMetadata;

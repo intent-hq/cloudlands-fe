@@ -41,6 +41,20 @@ describe('message-dedup utility', () => {
     ]);
   });
 
+  it("does not carry a settled local row's provisional marker onto the canonical row it merges into", () => {
+    const local = makeAssistant('local-id', 'final', {
+      appMessageId: 'app_msg_prov',
+      isStreaming: false,
+      streamingComplete: true,
+      provisional: true,
+    });
+    const backend = makeAssistant('msg_backend', 'final', { appMessageId: 'app_msg_prov' });
+
+    const [merged] = deduplicateAgentMessages([local, backend]);
+    expect(merged.id).toBe('msg_backend');
+    expect(merged).not.toHaveProperty('provisional');
+  });
+
   it('merges an optimistic user message into the canonical one without duplicating', () => {
     const optimistic: AgentMessage = {
       id: 'optimistic_abc',

@@ -476,11 +476,13 @@ describe('agentStreamSaga', () => {
     await settle();
 
     const message = run.messages()[0];
+    // The firehose, not the §7.1 terminal frame, settled the existing row.
     expect(message).toEqual(
       expect.objectContaining({
         id: 'msg-ok',
         isStreaming: false,
         streamingComplete: true,
+        provisional: true,
       }),
     );
     expect(message?.metadata?.interrupted).toBeUndefined();
@@ -603,10 +605,13 @@ describe('agentStreamSaga', () => {
     await settle();
 
     expect(run.messages()).toHaveLength(1);
+    // No row existed for `good`: the covered-path placeholder is provisional
+    // until the §7.1 reconcile replaces it by id.
     expect(run.messages()[0]).toMatchObject({
       id: 'good',
       isStreaming: false,
       streamingComplete: true,
+      provisional: true,
     });
     expect(
       run.dispatch.mock.calls.some(([action]) => action.type === 'chatState/streamCompleted'),
@@ -649,6 +654,7 @@ describe('agentStreamSaga', () => {
         id: `msg-${eventType}`,
         isStreaming: false,
         streamingComplete: true,
+        provisional: true,
         contentBlocks: [],
       }),
     );

@@ -1971,8 +1971,14 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
         .find((message) => message.id === STALE);
       expect(stale?.isStreaming).toBe(false);
       expect(stale?.streamingComplete).toBe(true);
+      // Settled by the renderer, not by a §7.1 delivery of the row itself.
+      expect(stale?.provisional).toBe(true);
       // Flags only — the frozen content is never rewritten.
       expect(stale?.contentBlocks?.[0]).toMatchObject({ text: 'frozen at block 152' });
+      // The canonical page rows never carry the marker.
+      expect(
+        selectAgentMessages.select(appStore.state, agentId).find((message) => message.id === PRIOR),
+      ).not.toHaveProperty('provisional');
     });
 
     // A dropped or held snapshot is the failure mode behind a panel stuck on a
@@ -2064,8 +2070,28 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
       .find((m) => m.id === 'partial-a');
     expect(partial?.isStreaming).toBe(false);
     expect(partial?.streamingComplete).toBe(true);
+    // The renderer settled the row, not a §7.1 terminal delivery.
+    expect(partial?.provisional).toBe(true);
     // Content untouched — only the flags normalize.
     expect(partial?.contentBlocks?.[0]).toMatchObject({ text: 'streamed so far' });
+
+    // Re-view A: the reopened subscription's §7.1 snapshot covers the same
+    // id, so the canonical row replaces the provisional one outright.
+    appStore.dispatch(markAgentAsViewed(agentA));
+    const reopened = [...fakeSubscriptions].reverse().find((s) => s.agentId === agentA);
+    expect(reopened).toBeDefined();
+    reopened!.handler({
+      ...transcript([makeMessage('partial-a', 'streamed so far, then finished')]),
+      fromSnapshot: true,
+    });
+
+    const canonical = selectAgentMessages
+      .select(appStore.state, agentA)
+      .find((m) => m.id === 'partial-a');
+    expect(canonical?.contentBlocks?.[0]).toMatchObject({
+      text: 'streamed so far, then finished',
+    });
+    expect(canonical).not.toHaveProperty('provisional');
   });
 
   it('tears down all subscriptions when the chat closes (clearCurrentlyViewedAgent)', () => {

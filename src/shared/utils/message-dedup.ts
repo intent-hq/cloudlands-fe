@@ -299,11 +299,23 @@ function getPreferredIdentityMessage(existing: AgentMessage, incoming: AgentMess
   return incoming;
 }
 
+/**
+ * The losing side of a merge with its renderer-local `provisional` marker
+ * dropped: only the winning row decides whether the merged row is still
+ * unreconciled, so a settled local row never taints the canonical one it
+ * merges into.
+ */
+function withoutProvisional(message: AgentMessage): AgentMessage {
+  if (message.provisional === undefined) return message;
+  const { provisional: _provisional, ...rest } = message;
+  return rest;
+}
+
 function mergeLogicalMessage(existing: AgentMessage, incoming: AgentMessage): AgentMessage {
   const preferredIdentityMessage = getPreferredIdentityMessage(existing, incoming);
   const secondaryMessage = preferredIdentityMessage === existing ? incoming : existing;
   return {
-    ...secondaryMessage,
+    ...withoutProvisional(secondaryMessage),
     ...preferredIdentityMessage,
     id: preferredIdentityMessage.id,
     appMessageId: getAppMessageId(incoming) ?? getAppMessageId(existing),
@@ -321,7 +333,7 @@ function mergeStreamingFinalizationDuplicate(
   const finalizedMessage = existing.isStreaming === true ? incoming : existing;
   const streamingMessage = finalizedMessage === existing ? incoming : existing;
   return {
-    ...streamingMessage,
+    ...withoutProvisional(streamingMessage),
     ...finalizedMessage,
     id: finalizedMessage.id,
     appMessageId: getAppMessageId(finalizedMessage) ?? getAppMessageId(streamingMessage),
