@@ -124,9 +124,9 @@ function isPresenceMember(value: unknown): value is PresenceMember {
   const member = value as Record<string, unknown>;
   return (
     typeof member.principalId === 'string' &&
-    isNullableString(member.login ?? null) &&
-    isNullableString(member.displayName ?? null) &&
-    isNullableString(member.avatarUrl ?? null) &&
+    isNullableString(member.login) &&
+    isNullableString(member.displayName) &&
+    isNullableString(member.avatarUrl) &&
     Array.isArray(member.focus) &&
     member.focus.every(isFocusItem) &&
     Array.isArray(member.typing) &&
