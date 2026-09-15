@@ -17,13 +17,14 @@ import {
   initialState,
 } from './presence-slice';
 import {
+  hasOtherPresence,
   selectAgentPresencePeople,
   selectAgentTypingPeople,
   selectOwnPresenceReport,
   selectPresenceMembershipKeys,
   selectWorkspacePresencePeople,
 } from './presence-selectors';
-import type { PresenceState } from './presence-types';
+import type { PresencePerson, PresenceState } from './presence-types';
 
 const member = (principalId: string, overrides: Partial<PresenceMember> = {}): PresenceMember => ({
   principalId,
@@ -130,6 +131,80 @@ describe('presence selectors', () => {
       });
       expect(selectWorkspacePresencePeople.select(state, 'ws-1')).toEqual([]);
     });
+
+    it('shows nothing in a shared workspace while only this window is online, then everyone once someone else arrives or until they leave', () => {
+      const workspace = workspacesWith(shared('ws-1', { ownerPrincipalId: 'me', memberCount: 3 }));
+      const shared3 = presenceMembersReceived('ws-1', [
+        accepted('me', 'owner'),
+        accepted('viewer'),
+        accepted('away'),
+      ]);
+      const aloneRoster = presenceRosterReceived({
+        workspaceId: 'ws-1',
+        members: [member('me', { focus: [{ workspaceId: 'ws-1' }] })],
+      });
+      const alone = stateWith(reduce(aloneRoster, shared3, presenceOwnPrincipalReceived('me')), {
+        workspace,
+      });
+      expect(selectWorkspacePresencePeople.select(alone, 'ws-1')).toEqual([]);
+
+      const emptyRoster = presenceRosterReceived({ workspaceId: 'ws-1', members: [] });
+      const nobody = stateWith(reduce(emptyRoster, shared3, presenceOwnPrincipalReceived('me')), {
+        workspace,
+      });
+      expect(selectWorkspacePresencePeople.select(nobody, 'ws-1')).toEqual([]);
+
+      const joinedRoster = presenceRosterReceived({
+        workspaceId: 'ws-1',
+        members: [member('me', { focus: [{ workspaceId: 'ws-1' }] }), member('viewer')],
+      });
+      const joined = stateWith(reduce(joinedRoster, shared3, presenceOwnPrincipalReceived('me')), {
+        workspace,
+      });
+      const people = selectWorkspacePresencePeople.select(joined, 'ws-1');
+      expect(ids(people)).toEqual(['me', 'viewer', 'away']);
+      expect(people.map((p) => [p.online, p.self])).toEqual([
+        [true, true],
+        [true, false],
+        [false, false],
+      ]);
+
+      const left = stateWith(
+        reduce(joinedRoster, shared3, presenceOwnPrincipalReceived('me'), aloneRoster),
+        { workspace },
+      );
+      expect(selectWorkspacePresencePeople.select(left, 'ws-1')).toEqual([]);
+    });
+  });
+
+  describe('hasOtherPresence (the indicator rule)', () => {
+    const person = (facts: Pick<PresencePerson, 'online' | 'self'>): PresencePerson => ({
+      principalId: `${facts.self ? 'me' : 'other'}-${facts.online ? 'on' : 'off'}`,
+      login: null,
+      displayName: null,
+      avatarUrl: null,
+      owner: false,
+      viewing: false,
+      ...facts,
+    });
+
+    it('is true only when someone other than self is online', () => {
+      expect(hasOtherPresence([])).toBe(false);
+      expect(hasOtherPresence([person({ online: true, self: true })])).toBe(false);
+      expect(
+        hasOtherPresence([
+          person({ online: true, self: true }),
+          person({ online: false, self: false }),
+        ]),
+      ).toBe(false);
+      expect(
+        hasOtherPresence([
+          person({ online: true, self: true }),
+          person({ online: true, self: false }),
+        ]),
+      ).toBe(true);
+      expect(hasOtherPresence([person({ online: true, self: false })])).toBe(true);
+    });
   });
 
   describe('agent people (chat circles)', () => {
@@ -149,17 +224,23 @@ describe('presence selectors', () => {
       expect(selectAgentPresencePeople.select(state, 'ws-9', 'agent-1')).toEqual([]);
     });
 
-    it('shows exactly one circle — self — in a solo chat of an unshared workspace', () => {
+    it('shows no circle at all in a chat only this window looks at', () => {
       const soloRoster = presenceRosterReceived({
         workspaceId: 'ws-1',
-        members: [member('me', { focus: [{ workspaceId: 'ws-1', agentId: 'agent-1' }] })],
+        members: [
+          member('me', { focus: [{ workspaceId: 'ws-1', agentId: 'agent-1' }] }),
+          member('elsewhere', { focus: [{ workspaceId: 'ws-1', agentId: 'agent-2' }] }),
+        ],
       });
-      const state = stateWith(reduce(soloRoster, presenceOwnPrincipalReceived('me')), {
+      const presence = reduce(soloRoster, presenceOwnPrincipalReceived('me'));
+      const unshared = stateWith(presence, {
         workspace: workspacesWith(shared('ws-1', { ownerPrincipalId: 'me', memberCount: 1 })),
       });
-      const people = selectAgentPresencePeople.select(state, 'ws-1', 'agent-1');
-      expect(people).toHaveLength(1);
-      expect(people[0]).toMatchObject({ principalId: 'me', self: true, owner: true, online: true });
+      expect(selectAgentPresencePeople.select(unshared, 'ws-1', 'agent-1')).toEqual([]);
+      const sharedButAlone = stateWith(presence, {
+        workspace: workspacesWith(shared('ws-1', { ownerPrincipalId: 'me', memberCount: 2 })),
+      });
+      expect(selectAgentPresencePeople.select(sharedButAlone, 'ws-1', 'agent-1')).toEqual([]);
     });
 
     it('treats every roster row as someone else while the own principal is unknown', () => {
