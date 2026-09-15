@@ -3,32 +3,39 @@
   import { faPlus } from '$lib/icons/phosphor-icons';
   import { Button } from '$lib/components/ui/button';
   import { setShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
+  import { selectIsCollaboratorOnlyClient } from '$store/renderer/slices/workspace/workspace-selectors';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
+
+  // Workspace creation (repo picker) is administrator-only (multiplayer w3):
+  // a collaborator-only client has no launcher.
+  const isCollaboratorOnlyClient$ = selectIsCollaboratorOnlyClient();
 
   function openNewWorkspace() {
     appStore.dispatch(setShowCreateModal(true));
   }
 </script>
 
-<div
-  class="app-no-drag shrink-0"
-  data-workspace-repo-launcher
-  style:translate="var(--workspace-tab-launcher-offset, 0px) 0"
->
-  <Button
-    variant="ghost"
-    size="icon"
-    iconOnly
-    class="size-8 shrink-0 border-transparent text-foreground hover:border-transparent hover:bg-transparent hover:text-foreground active:bg-muted focus-visible:border-foreground focus-visible:bg-muted focus-visible:outline-0 focus-visible:outline-offset-0 focus-visible:ring-0 [&_svg]:size-4!"
-    onclick={openNewWorkspace}
-    aria-label={m.menu_new_workspace()}
-    tooltip={m.menu_new_workspace()}
-    tooltipSide="bottom"
+{#if !$isCollaboratorOnlyClient$}
+  <div
+    class="app-no-drag shrink-0"
+    data-workspace-repo-launcher
+    style:translate="var(--workspace-tab-launcher-offset, 0px) 0"
   >
-    <FaWrapper icon={faPlus} size={16} class="pointer-events-none size-4!" />
-  </Button>
-</div>
+    <Button
+      variant="ghost"
+      size="icon"
+      iconOnly
+      class="size-8 shrink-0 border-transparent text-foreground hover:border-transparent hover:bg-transparent hover:text-foreground active:bg-muted focus-visible:border-foreground focus-visible:bg-muted focus-visible:outline-0 focus-visible:outline-offset-0 focus-visible:ring-0 [&_svg]:size-4!"
+      onclick={openNewWorkspace}
+      aria-label={m.menu_new_workspace()}
+      tooltip={m.menu_new_workspace()}
+      tooltipSide="bottom"
+    >
+      <FaWrapper icon={faPlus} size={16} class="pointer-events-none size-4!" />
+    </Button>
+  </div>
+{/if}
 
 <style>
   :global([data-workspace-repo-launcher] button:focus-visible) {

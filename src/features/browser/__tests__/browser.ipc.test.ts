@@ -59,6 +59,7 @@ vi.mock('../../../main/window', () => ({
 }));
 vi.mock('../../backend/main/tunnel-manager', () => ({
   TunnelManager: mocks.TunnelManager,
+  TunnelForbiddenError: class TunnelForbiddenError extends Error {},
 }));
 vi.mock('../../backend/main/direct-relay', () => ({
   DirectRelay: mocks.DirectRelay,

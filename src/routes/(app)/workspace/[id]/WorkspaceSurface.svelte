@@ -32,6 +32,7 @@
   import {
     selectWorkspaceIsEmpty,
     selectIsNewWorkspaceSession,
+    selectIsWorkspaceCollaborator,
   } from '$store/renderer/slices/workspace/workspace-selectors';
   import {
     selectWorkspaceLoadResult,
@@ -178,6 +179,9 @@
   // workspaceId changes AND Redux state updates.
   const workspace = selectWorkspaceLoadResult(workspaceIdStore);
   const workspaceLoadState = selectWorkspaceLoadState(workspaceIdStore);
+  // Collaborators (multiplayer w3) have no terminal access; the quake overlay
+  // (and its shortcut) is withheld rather than surfacing -32003 on open.
+  const isCollaborator$ = selectIsWorkspaceCollaborator(workspaceIdStore);
 
   $effect(() => {
     const currentWorkspaceId = workspaceId;
@@ -828,7 +832,7 @@
 
 <!-- Terminal Overlay Snippet -->
 {#snippet terminalOverlayContent()}
-  {#if active}
+  {#if active && !$isCollaborator$}
     <QuakeTerminalOverlay
       workspaceId={WorkspaceId($workspace?.id || workspaceId)}
       showDockWhenClosed={false}

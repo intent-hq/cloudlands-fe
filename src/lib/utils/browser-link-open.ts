@@ -40,7 +40,11 @@ export async function resolveBrowserLinkForOpen(
     typeof window !== 'undefined' ? window.electronAPI?.invoke : undefined,
   );
   if (resolved.error && resolved.rewritten) {
-    toast.error(m.browser_embedded_resolveFailed_error(), { description: resolved.error });
+    if (resolved.forbidden) {
+      toast.error(m.browser_linkOpen_ownerOnlyForward_error());
+    } else {
+      toast.error(m.browser_embedded_resolveFailed_error(), { description: resolved.error });
+    }
   } else if (resolved.warning) {
     toast.warning(m.browser_linkOpen_loopbackAmbiguity_warning(), {
       description: resolved.warning,

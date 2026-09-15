@@ -105,7 +105,16 @@ function isValidTabId(value: string): value is TabId {
   return TAB_DEFINITIONS.some((tab) => tab.id === value);
 }
 
-export function normalizeSelectedTabs(tabIds: string[]): Set<TabId> {
-  const normalized = tabIds.filter(isValidTabId);
-  return new Set([normalized[0] ?? 'overview']);
+/**
+ * Strip tabs collaborators (multiplayer w3) never see: their terminal + browser
+ * methods are refused by the daemon, so a persisted or restored selection of
+ * these tabs must not reopen for them.
+ */
+export const OWNER_ONLY_TAB_IDS: ReadonlySet<TabId> = new Set<TabId>(['browser', 'shell']);
+
+export function normalizeSelectedTabs(tabIds: string[], isCollaborator = false): Set<TabId> {
+  const normalized = tabIds.filter(
+    (tabId) => isValidTabId(tabId) && !(isCollaborator && OWNER_ONLY_TAB_IDS.has(tabId as TabId)),
+  );
+  return new Set([(normalized[0] as TabId | undefined) ?? 'overview']);
 }

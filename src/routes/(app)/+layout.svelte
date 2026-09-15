@@ -86,6 +86,8 @@
   import { openTabInRightmostColumnRequested } from '$store/renderer/slices/panel-layout/panel-layout-slice';
   import { resolveTerminalShortcutWorkspaceId } from '$features/terminal/terminal-shortcut-context';
   import {
+    selectIsCollaboratorOnlyClient,
+    selectIsWorkspaceCollaborator,
     selectWorkspaceHasLoaded,
     selectWorkspaceItems,
     selectWorkspaceLoading,
@@ -161,6 +163,8 @@
   const workspaceId = $derived(workspaceIdFromRoute(routePathname, routeWorkspaceId) ?? undefined);
   const workspaceItems = selectWorkspaceItems();
   const workspaceHasLoaded = selectWorkspaceHasLoaded();
+  // Workspace creation (repo picker) is administrator-only (multiplayer w3).
+  const isCollaboratorOnlyClient$ = selectIsCollaboratorOnlyClient();
   const backendSetupGate = selectBackendSetupGate();
   const bootGateResolved = selectBootRouteGateResolved();
   const currentWorkspaceTabId = selectCurrentWorkspaceTabId();
@@ -663,6 +667,9 @@
     // Ctrl+` -> toggle terminal overlay (matches VS Code behavior - Ctrl on all platforms including Mac)
     // Registered globally so it works on workspace and non-workspace pages alike.
     const toggleTerminal = () => {
+      // Collaborators (multiplayer w3) are refused on terminal methods: no root
+      // overlay for a collaborator-only client, none for a collaborator workspace.
+      if ($isCollaboratorOnlyClient$) return;
       const isOnWorkspacePage = $page.url.pathname.startsWith('/workspace/');
       const terminalContextId = resolveTerminalShortcutWorkspaceId({
         isOnWorkspacePage,
@@ -670,6 +677,7 @@
         selectedWorkspaceId: $currentWorkspaceTabId,
         routeWorkspaceId: currentWorkspaceId,
       });
+      if (selectIsWorkspaceCollaborator.select(appStore.state, terminalContextId)) return;
       appStore.dispatch(toggleTerminalOverlay(terminalContextId));
     };
     register({
@@ -991,7 +999,9 @@
             </div>
 
             <!-- Root Quake Terminal Overlay (self-gates on __root__ terminal state) -->
-            <RootQuakeTerminalOverlay />
+            {#if !$isCollaboratorOnlyClient$}
+              <RootQuakeTerminalOverlay />
+            {/if}
           </main>
         </div>
       </div>
@@ -1080,7 +1090,7 @@
 
   <!-- Create Workspace Modal (opened from sidebar nav + button) -->
   <NewSpaceModal
-    open={$showCreateModal$}
+    open={$showCreateModal$ && !$isCollaboratorOnlyClient$}
     onClose={() => appStore.dispatch(setShowCreateModal(false))}
   />
 

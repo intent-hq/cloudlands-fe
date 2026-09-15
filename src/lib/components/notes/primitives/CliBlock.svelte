@@ -15,11 +15,13 @@
   import { invoke, listenSync } from '$lib/electron-bridge';
   import { toast } from 'svelte-sonner';
   import { onDestroy } from 'svelte';
+  import { writable } from 'svelte/store';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import { createLogger } from '$lib/utils/client-logger';
 
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { openTab } from '$store/renderer/slices/panel-layout/panel-layout-slice';
+  import { selectIsWorkspaceCollaborator } from '$store/renderer/slices/workspace/workspace-selectors';
   import { store as appStore } from '$store/renderer/store';
   import { getNavigationContext } from '$lib/components/layout/panel-system/panel-context';
   import { m } from '$shared/paraglide/messages.js';
@@ -39,6 +41,14 @@
 
   // Get workspaceId from extension options
   let workspaceId = $derived(extension?.options?.workspaceId as string | undefined);
+
+  // Running a command spawns a host terminal, which collaborators (multiplayer
+  // w3) are refused on — the Run affordance is withheld for them.
+  const workspaceIdStore = writable(workspaceId ?? '');
+  $effect(() => {
+    workspaceIdStore.set(workspaceId ?? '');
+  });
+  const isCollaborator$ = selectIsWorkspaceCollaborator(workspaceIdStore);
 
   // Cleanup on destroy
   onDestroy(() => {
@@ -204,16 +214,18 @@
       <code class="type-code min-w-0 flex-1 truncate bg-transparent p-0 text-foreground">
         {primitive.command}
       </code>
-      <Button
-        variant="ghost-light"
-        size="sm"
-        class="type-caption shrink-0"
-        onclick={hasTerminal ? openTerminal : runCommand}
-        disabled={running}
-      >
-        <Fa icon={buttonState.icon} size="xs" class={buttonState.spin ? 'animate-spin' : ''} />
-        {buttonState.label}
-      </Button>
+      {#if !$isCollaborator$}
+        <Button
+          variant="ghost-light"
+          size="sm"
+          class="type-caption shrink-0"
+          onclick={hasTerminal ? openTerminal : runCommand}
+          disabled={running}
+        >
+          <Fa icon={buttonState.icon} size="xs" class={buttonState.spin ? 'animate-spin' : ''} />
+          {buttonState.label}
+        </Button>
+      {/if}
     </div>
   {:else}
     <div class="ws-block-widget type-caption my-2 text-muted-foreground">

@@ -76,6 +76,25 @@ describe('resolveBrowserLinkForOpen', () => {
     });
   });
 
+  it('shows localized copy instead of the agent-facing error for an owner-only forward refusal (collaborator, multiplayer w3)', async () => {
+    invoke.mockResolvedValue({
+      url: 'http://10.0.0.5:3000/',
+      rewritten: true,
+      forbidden: true,
+      error:
+        'Only the workspace owner can open forwarded ports: http://localhost:3000/ lives on the daemon...',
+    });
+
+    const resolved = await resolveBrowserLinkForOpen('http://localhost:3000/');
+
+    expect(resolved.url).toBe('http://10.0.0.5:3000/');
+    expect(mocks.toastError).toHaveBeenCalledTimes(1);
+    const [title, options] = mocks.toastError.mock.calls[0];
+    expect(typeof title).toBe('string');
+    expect(options?.description).toBeUndefined();
+    expect(JSON.stringify(mocks.toastError.mock.calls[0])).not.toContain('lives on the daemon');
+  });
+
   it('toasts the ambiguity warning for bare-loopback rewrites', async () => {
     invoke.mockResolvedValue({
       url: 'http://10.0.0.5:5173/',

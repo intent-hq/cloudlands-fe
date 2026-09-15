@@ -30,9 +30,11 @@
     activeTab: SettingsTab;
     onSelect: (tab: SettingsTab) => void;
     agentsNavigation: Snippet;
+    /** Tabs withheld from this client (e.g. administrator-only sections for a collaborator). */
+    hiddenTabs?: readonly SettingsTab[];
   }
 
-  let { activeTab, onSelect, agentsNavigation }: Props = $props();
+  let { activeTab, onSelect, agentsNavigation, hiddenTabs = [] }: Props = $props();
 
   const primaryItems = [
     {
@@ -105,7 +107,7 @@
   class="flex min-h-0 w-full flex-1 flex-col gap-0 overflow-y-auto px-3 py-4"
   aria-label={m.settings_page_title()}
 >
-  {#each primaryItems as item (item.id)}
+  {#each primaryItems.filter((item) => !hiddenTabs.includes(item.id as SettingsTab)) as item (item.id)}
     <button
       type="button"
       onclick={() => onSelect(item.id as SettingsTab)}

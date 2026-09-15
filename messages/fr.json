@@ -4504,6 +4504,7 @@
   "browser_embedded_loadFailed_error": "Impossible de charger la page",
   "browser_embedded_resolveFailed_error": "Impossible d'atteindre cette URL sur l'hôte du daemon distant",
   "browser_linkOpen_loopbackAmbiguity_warning": "L'URL de bouclage a été réécrite vers l'hôte du daemon",
+  "browser_linkOpen_ownerOnlyForward_error": "Seul le propriétaire de l'espace de travail peut ouvrir des ports redirigés sur l'hôte du daemon",
   "browser_embedded_protocolNotAllowed_error": "Le protocole \"{protocol}\" n'est pas autorisé. Pris en charge : {protocols}",
   "browser_embedded_selfLoad_error": "Impossible de charger l'application dans elle-même",
   "browser_embedded_invalidUrlFormat_error": "Format d'URL non valide",

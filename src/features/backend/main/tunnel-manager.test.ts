@@ -25,6 +25,7 @@ import {
   isConnectionRefusedOpenErr,
   MAX_DATA_PAYLOAD_BYTES,
   OP_DATA,
+  TunnelForbiddenError,
   TunnelManager,
   type TunnelFrame,
   type TunnelSocketLike,
@@ -1129,11 +1130,18 @@ class RejectingTunnelDaemon {
   port = 0;
   fingerprint = '';
   statusCode = 401;
+  private onUpgrade: (() => void) | null = null;
+
+  /** Observe every upgrade attempt (to assert a latched manager stops dialing). */
+  countUpgrades(listener: () => void): void {
+    this.onUpgrade = listener;
+  }
 
   async start(): Promise<void> {
     this.fingerprint = new crypto.X509Certificate(WSS_CERT_PEM).fingerprint256;
     this.server = https.createServer({ cert: WSS_CERT_PEM, key: WSS_KEY_PEM });
     this.server.on('upgrade', (_req, socket) => {
+      this.onUpgrade?.();
       socket.write(
         `HTTP/1.1 ${this.statusCode} Rejected\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`,
       );
@@ -1246,5 +1254,31 @@ describe('tunnel wss wire-level pinning (handshake-enforced, monorepo#4072)', ()
     const error = await manager.ensureTunnel().catch((e: unknown) => e);
     expect(error).toBeInstanceOf(AuthRejectedError);
     expect((error as AuthRejectedError).statusCode).toBe(401);
+  });
+
+  it('latches owner-only on a 403 upgrade rejection and stops re-dialing (multiplayer w3)', async () => {
+    const rejecting = new RejectingTunnelDaemon();
+    rejecting.statusCode = 403;
+    let upgrades = 0;
+    await rejecting.start();
+    rejecting.countUpgrades(() => (upgrades += 1));
+    onCleanup(() => rejecting.stop());
+    const manager = new TunnelManager({
+      getConfig: () => ({
+        transport: 'wss',
+        host: rejecting.host,
+        port: rejecting.port,
+        token: TOKEN,
+        fingerprint: rejecting.fingerprint,
+      }),
+      connectTimeoutMs: 2000,
+    });
+    onCleanup(() => manager.dispose());
+    await expect(manager.ensureTunnel()).rejects.toBeInstanceOf(TunnelForbiddenError);
+    expect(upgrades).toBe(1);
+    // Later calls fail fast with the same classification and never redial.
+    await expect(manager.forwardPort(8080)).rejects.toBeInstanceOf(TunnelForbiddenError);
+    await expect(manager.ensureTunnel()).rejects.toBeInstanceOf(TunnelForbiddenError);
+    expect(upgrades).toBe(1);
   });
 });

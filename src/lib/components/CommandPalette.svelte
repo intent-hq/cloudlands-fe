@@ -32,7 +32,11 @@
 
   import { selectBrowserRecentUrls } from '$store/renderer/slices/browser/browser-selectors';
   import { initBrowserWorkspace } from '$store/renderer/slices/browser/browser-slice';
-  import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
+  import {
+    selectIsCollaboratorOnlyClient,
+    selectIsWorkspaceCollaborator,
+    selectWorkspaceItems,
+  } from '$store/renderer/slices/workspace/workspace-selectors';
   import { createAgentRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import { createTerminalRequested } from '$store/renderer/slices/terminals/terminals-slice';
   import { createNoteRequested } from '$store/renderer/slices/note-read-tracking/note-read-tracking-slice';
@@ -118,7 +122,21 @@
 
   let searchQuery = $state('');
   const workspaceItems = selectWorkspaceItems();
-  const commands = COMMAND_PALETTE_COMMANDS;
+  // Collaborators (multiplayer w3) are refused on terminal + browser methods and
+  // cannot create workspaces, so those commands and result groups are withheld.
+  const isCollaborator$ = selectIsWorkspaceCollaborator(workspaceIdStore);
+  const isCollaboratorOnlyClient$ = selectIsCollaboratorOnlyClient();
+  const WORKSPACE_OWNER_ONLY_COMMAND_IDS: ReadonlySet<string> = new Set([
+    'new-terminal',
+    'open-url',
+  ]);
+  const commands = $derived(
+    COMMAND_PALETTE_COMMANDS.filter(
+      (command) =>
+        !($isCollaborator$ && WORKSPACE_OWNER_ONLY_COMMAND_IDS.has(command.id)) &&
+        !($isCollaboratorOnlyClient$ && command.id === 'new-workspace'),
+    ),
+  );
   const currentChanges$ = selectCurrentChanges(workspaceIdStore);
   const workspaceAgents$ = selectAllWorkspaceAgents(workspaceIdStore);
   const allNotes$ = selectAllNotes(workspaceIdStore);
@@ -214,9 +232,10 @@
       _time: formatRelativeTime(c.attribution.timestamp),
     }));
   });
-  let terminals: WorkspaceObject[] = $state([]);
+  let loadedTerminals: WorkspaceObject[] = $state([]);
+  let terminals: WorkspaceObject[] = $derived($isCollaborator$ ? [] : loadedTerminals);
   let browserUrls: WorkspaceObject[] = $derived.by(() =>
-    $browserRecentUrls$.map((url) => {
+    ($isCollaborator$ ? [] : $browserRecentUrls$).map((url) => {
       // Extract domain from URL for display
       let domain = url.url;
       try {
@@ -276,7 +295,7 @@
   $effect(() => {
     if (!workspaceId) {
       untrack(() => {
-        terminals = [];
+        loadedTerminals = [];
       });
       return;
     }
@@ -292,7 +311,7 @@
     // Load non-Redux terminal metadata for this workspace.
     untrack(() => {
       const terminalMetadata = terminalManager.loadTerminalMetadata(wsId);
-      terminals = terminalMetadata
+      loadedTerminals = terminalMetadata
         .map((t: any) => {
           // Get the latest command from history tracker
           const lastCommand = terminalHistoryTracker.getLastCommand(t.terminalId);
@@ -755,7 +774,9 @@
   function handleCommand(commandId: string): boolean {
     switch (commandId) {
       case 'new-workspace':
-        appStore.dispatch(setShowCreateModal(true));
+        if (!$isCollaboratorOnlyClient$) {
+          appStore.dispatch(setShowCreateModal(true));
+        }
         return true;
       case 'settings':
         navigateToSettings();
@@ -766,7 +787,7 @@
         }
         return true;
       case 'new-terminal':
-        if (workspaceId) {
+        if (workspaceId && !$isCollaborator$) {
           appStore.dispatch(createTerminalRequested(workspaceId));
         }
         return true;
@@ -782,7 +803,7 @@
         return true;
       case 'open-url':
         // Open a browser panel with default URL
-        if (workspaceId) {
+        if (workspaceId && !$isCollaborator$) {
           appStore.dispatch(openWorkspaceBrowser(workspaceId, 'about:blank'));
         }
         return true;
