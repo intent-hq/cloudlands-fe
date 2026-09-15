@@ -365,13 +365,12 @@ describe('shared operational disclosure-row contract', () => {
   it('keeps reasoning indented and centers the response-group guide on its header icon', async () => {
     const reasoning = render(ThinkingBlock, { props: { content: 'Expanded reasoning' } });
     await fireEvent.click(screen.getByTestId('reasoning-disclosure'));
-    expectClasses(
-      reasoning.container.querySelector('[data-operational-expanded-content]')!,
-      OPERATIONAL_EXPANDED_CONTENT_CLASS,
-    );
-    expect(
-      reasoning.container.querySelector('[data-operational-expanded-content]')?.className,
-    ).toContain('pb-2');
+    // Padding belongs inside the measured height wrapper so it cannot clip reasoning.
+    const reasoningContent = reasoning.container.querySelector(
+      '[data-operational-expanded-content] > div',
+    )!;
+    expectClasses(reasoningContent, OPERATIONAL_EXPANDED_CONTENT_CLASS);
+    expect(reasoningContent.className).toContain('pb-2');
     cleanup();
 
     const group = render(ResponseGroup, { props: { name: 'Group', children } });

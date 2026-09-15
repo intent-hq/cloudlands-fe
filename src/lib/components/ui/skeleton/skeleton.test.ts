@@ -24,7 +24,9 @@ describe('Skeleton', () => {
     expect(skeleton?.className).toContain('rounded-(--radius-small)');
     expect(source).toContain('calc(var(--spring-moderate) * 10) linear infinite');
     expect(source).toContain('color-mix(in oklab, hsl(var(--selected)) 55%, transparent)');
-    expect(source).toMatch(/prefers-reduced-motion: reduce[\s\S]*animation: none/);
+    expect(source).toMatch(
+      /@container style\(--motion-reduced: 1\)\s*\{\s*\.skeleton-shimmer\s*\{\s*animation: none;\s*background-image: none;/,
+    );
   });
 
   it('publishes deterministic theme, compact, and reduced-motion fixtures', () => {

@@ -73,13 +73,15 @@ describe('settings pattern', () => {
     const generalTab = screen.getByRole('tab', { name: 'General settings' });
     await fireEvent.click(generalTab);
     expect(generalTab.getAttribute('aria-selected')).toBe('true');
-    expect(screen.getByRole('button', { name: 'Display' }).getAttribute('aria-current')).toBe(
+    expect(screen.getByRole('button', { name: 'Appearance' }).getAttribute('aria-current')).toBe(
       'page',
     );
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Setup' }));
-    expect(screen.getByRole('button', { name: 'Setup' }).getAttribute('aria-current')).toBe('page');
-    expect(screen.getByRole('button', { name: 'Display' }).hasAttribute('aria-current')).toBe(
+    await fireEvent.click(screen.getByRole('button', { name: 'Workspace setup' }));
+    expect(
+      screen.getByRole('button', { name: 'Workspace setup' }).getAttribute('aria-current'),
+    ).toBe('page');
+    expect(screen.getByRole('button', { name: 'Appearance' }).hasAttribute('aria-current')).toBe(
       false,
     );
   });
