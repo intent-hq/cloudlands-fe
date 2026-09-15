@@ -184,10 +184,9 @@
     return {
       destroy() {
         rowHover.destroy();
-        if (hover === rowHover) {
-          hover = undefined;
-          rowsElement = null;
-        }
+        // Keep the outgoing store available until its highlight subtree unmounts.
+        // An instant transition can flush child effects during action teardown.
+        if (rowsElement === node) rowsElement = null;
       },
     };
   };
