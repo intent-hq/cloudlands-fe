@@ -205,12 +205,16 @@ let syncedBackendId: string | null = null;
 let syncedConnectionGeneration: number | null = null;
 /**
  * The daemon refused a `browser.*` call with `-32003` on the current
- * connection (multiplayer w3: browser tabs are owner-only). The answer is
- * stable for the connection, so the connect-time sync stops retrying instead
- * of burning its attempts on the same refusal, later loads answer from the
- * latch without re-dialing, and `listTabs` reads as an authoritative empty
- * listing so the workspace settles (`applied`, nothing reported); the next
- * connection starts clean.
+ * connection (multiplayer w3: browser tabs are owner-only). The refusal is a
+ * property of the connection, not of the workspace named in the call: the
+ * daemon gates every `browser.*` method on the caller's administrator flag
+ * (`is_non_administrator_caller() && !collaborator_may_call(method)` in
+ * intent-transport's frame dispatch), so one refusal is the answer for every
+ * workspace this connection can see. The connect-time sync therefore stops
+ * retrying instead of burning its attempts on the same refusal, later loads
+ * answer from the latch without re-dialing, and `listTabs` reads as an
+ * authoritative empty listing so the workspace settles (`applied`, nothing
+ * reported); the next connection starts clean.
  */
 let registryForbidden = false;
 
