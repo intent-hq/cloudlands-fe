@@ -669,7 +669,9 @@ describe('IssueSuggestions server-side search + pagination wire contract', () =>
       },
     });
     await settle();
-    intersectLatestSentinel();
+    const sentinel = document.querySelector('[aria-hidden="true"].h-px');
+    expect(sentinel).not.toBeNull();
+    intersectSentinel(sentinel!);
     await settle();
 
     const pagedIssues = issueCalls.find((c) => c.options?.nextToken !== undefined);
@@ -697,7 +699,9 @@ describe('IssueSuggestions server-side search + pagination wire contract', () =>
       },
     });
     await settle();
-    intersectLatestSentinel();
+    const prSentinel = document.querySelector('[aria-hidden="true"].h-px');
+    expect(prSentinel).not.toBeNull();
+    intersectSentinel(prSentinel!);
     await settle();
 
     const pagedPRs = prCalls.find((c) => c.options?.nextToken !== undefined);
