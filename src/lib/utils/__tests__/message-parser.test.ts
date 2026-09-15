@@ -1166,6 +1166,49 @@ Valid prompt
     expect(result.cleanedContent).toBe('');
   });
 
+  it('should measure the length limit on visible text, not raw markdown link syntax', () => {
+    const url = 'https://github.com/intent-hq/intent/pull/5034';
+    const links = Array.from({ length: 5 }, (_, i) => `[#${5030 + i}](${url})`).join(', ');
+    const prompt = `Approve ${links} and merge them.`;
+    expect(prompt.length).toBeGreaterThan(200);
+    const content = ['<!-- suggested-prompts', prompt, '-->'].join('\n');
+
+    const result = parseSuggestedPrompts(content);
+
+    expect(result.prompts).toEqual([prompt]);
+    expect(result.cleanedContent).toBe('');
+  });
+
+  it('should drop a prompt whose visible text is over-long even with markdown links', () => {
+    const prompt = `[#1](https://a.test/1) ${'x'.repeat(200)}`;
+    const content = ['<!-- suggested-prompts', prompt, 'Run tests', '-->'].join('\n');
+
+    const result = parseSuggestedPrompts(content);
+
+    expect(result.prompts).toEqual(['Run tests']);
+    expect(result.cleanedContent).toBe('');
+  });
+
+  it('should keep markdown links raw while stripping Label| and delay:N| prefixes', () => {
+    const link = '[#5034](https://github.com/intent-hq/intent/pull/5034)';
+    const content = [
+      '<!-- suggested-prompts',
+      `Approve|Approve ${link} now`,
+      `delay:30|Merge ${link}`,
+      `${link} needs review`,
+      '-->',
+    ].join('\n');
+
+    const result = parseSuggestedPrompts(content);
+
+    expect(result.prompts).toEqual([
+      `Approve ${link} now`,
+      `Merge ${link}`,
+      `${link} needs review`,
+    ]);
+    expect(result.cleanedContent).toBe('');
+  });
+
   it('should not treat an inline opener followed by prose as a block', () => {
     const content = 'Write a <!-- suggested-prompts block --> at the end.';
 

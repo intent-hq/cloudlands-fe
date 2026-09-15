@@ -2,9 +2,11 @@
   import { faArrowRight, faPencil } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import type { SuggestedPrompt } from '$shared/types';
+  import type { WorkspaceId } from '$shared/types/branded-ids';
   import { fade } from 'svelte/transition';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import { m } from '$shared/paraglide/messages.js';
+  import { handleLink } from '$features/navigation/link-handler';
   import {
     CHAT_OPERATIONAL_ICON_CLASS,
     CHAT_OPERATIONAL_LEADING_CLASS,
@@ -12,6 +14,7 @@
     OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS,
     OPERATIONAL_ROW_TONE_CLASS,
   } from './operational-disclosure-row';
+  import { splitPromptMarkdownLinks } from './suggested-prompt-markdown-links';
 
   interface Props {
     /** Array of suggested prompts to display */
@@ -28,9 +31,18 @@
      * chats are visible at once — matches the shortcut's runtime gating.
      */
     showShortcutHints?: boolean;
+    /** Workspace the prompts belong to; routes markdown-link clicks like chat links. */
+    workspaceId?: WorkspaceId;
   }
 
-  let { prompts, onSelect, onEdit, compact = false, showShortcutHints = false }: Props = $props();
+  let {
+    prompts,
+    onSelect,
+    onEdit,
+    compact = false,
+    showShortcutHints = false,
+    workspaceId,
+  }: Props = $props();
 
   const isMac =
     typeof navigator !== 'undefined' && navigator.platform.toUpperCase().includes('MAC');
@@ -50,6 +62,23 @@
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
       handleClick(prompt);
+    }
+  }
+
+  // Markdown links inside a prompt open like chat links instead of selecting the row.
+  function handleLinkClick(event: MouseEvent, url: string) {
+    event.preventDefault();
+    event.stopPropagation();
+    void handleLink(url, { workspaceId, event });
+  }
+
+  function handleLinkKeyDown(event: KeyboardEvent, url: string) {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      event.stopPropagation();
+      void handleLink(url, { workspaceId, event });
+    } else if (event.key === ' ') {
+      event.stopPropagation();
     }
   }
 
@@ -85,7 +114,15 @@
           >
             <Fa icon={faArrowRight} size={16} class={CHAT_OPERATIONAL_ICON_CLASS} />
           </span>
-          <span class="min-w-0 flex-1 text-pretty" data-suggested-prompt-label>{prompt}</span>
+          <span class="min-w-0 flex-1 text-pretty" data-suggested-prompt-label
+            >{#each splitPromptMarkdownLinks(prompt) as part, partIndex (partIndex)}{#if part.type === 'link'}<a
+                  href={part.url}
+                  class="cursor-pointer underline underline-offset-2 hover:opacity-80"
+                  data-suggested-prompt-link
+                  onclick={(e) => handleLinkClick(e, part.url)}
+                  onkeydown={(e) => handleLinkKeyDown(e, part.url)}>{part.label}</a
+                >{:else}{part.content}{/if}{/each}</span
+          >
           {#if onEdit}
             <Tooltip side="top" delayDuration={300}>
               {#snippet trigger()}

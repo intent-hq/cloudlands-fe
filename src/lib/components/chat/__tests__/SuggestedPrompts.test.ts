@@ -2,9 +2,10 @@
  * @vitest-environment jsdom
  */
 import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { WorkspaceId } from '$shared/types/branded-ids';
 import SuggestedPrompts from '../SuggestedPrompts.svelte';
 import {
   CHAT_OPERATIONAL_LEADING_CLASS,
@@ -13,11 +14,25 @@ import {
   OPERATIONAL_ROW_TONE_CLASS,
 } from '../operational-disclosure-row';
 
+const { handleLinkMock } = vi.hoisted(() => ({ handleLinkMock: vi.fn() }));
+
 vi.mock('svelte-fa', async () => ({
   default: (await import('./mocks/SlotOnly.svelte')).default,
 }));
 
+vi.mock('$features/navigation/link-handler', () => ({
+  handleLink: handleLinkMock,
+}));
+
+beforeEach(() => {
+  handleLinkMock.mockReset();
+  handleLinkMock.mockResolvedValue(true);
+});
+
 afterEach(cleanup);
+
+const PR_URL = 'https://github.com/intent-hq/intent/pull/5034';
+const LINK_PROMPT = `Approve the [#5034](${PR_URL}) diagnostic.`;
 
 describe('SuggestedPrompts', () => {
   it('uses canonical operational body typography and preserves selection behavior', async () => {
@@ -145,5 +160,96 @@ describe('SuggestedPrompts', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Edit in input' }));
     expect(onEdit).toHaveBeenCalledWith('Review this change');
     expect(onSelect).toHaveBeenCalledTimes(1);
+  });
+
+  describe('markdown links', () => {
+    it('renders a well-formed link as an anchor showing its label and keeps the row sending the raw prompt', async () => {
+      const onSelect = vi.fn();
+      render(SuggestedPrompts, {
+        props: { prompts: [LINK_PROMPT], onSelect, workspaceId: WorkspaceId('ws-1') },
+      });
+
+      const row = screen.getByRole('button', { name: 'Approve the #5034 diagnostic.' });
+      const link = screen.getByRole('link', { name: '#5034' });
+      expect(link.getAttribute('href')).toBe(PR_URL);
+      expect(link.classList.contains('underline')).toBe(true);
+      expect(row.contains(link)).toBe(true);
+      expect(row.querySelector('[data-suggested-prompt-label]')?.textContent).toBe(
+        'Approve the #5034 diagnostic.',
+      );
+
+      await fireEvent.click(row);
+      expect(onSelect).toHaveBeenCalledWith(LINK_PROMPT);
+      expect(handleLinkMock).not.toHaveBeenCalled();
+    });
+
+    it('routes a link click through handleLink with the workspace and does not select the row', async () => {
+      const onSelect = vi.fn();
+      render(SuggestedPrompts, {
+        props: { prompts: [LINK_PROMPT], onSelect, workspaceId: WorkspaceId('ws-1') },
+      });
+
+      const link = screen.getByRole('link', { name: '#5034' });
+      const clickEvent = new MouseEvent('click', { bubbles: true, cancelable: true });
+      link.dispatchEvent(clickEvent);
+
+      expect(clickEvent.defaultPrevented).toBe(true);
+      expect(handleLinkMock).toHaveBeenCalledTimes(1);
+      expect(handleLinkMock).toHaveBeenCalledWith(
+        PR_URL,
+        expect.objectContaining({ workspaceId: 'ws-1', event: clickEvent }),
+      );
+      expect(onSelect).not.toHaveBeenCalled();
+    });
+
+    it('opens the link on Enter and leaves Space to the browser without selecting the row', async () => {
+      const onSelect = vi.fn();
+      render(SuggestedPrompts, { props: { prompts: [LINK_PROMPT], onSelect } });
+
+      const link = screen.getByRole('link', { name: '#5034' });
+      await fireEvent.keyDown(link, { key: 'Enter' });
+      expect(handleLinkMock).toHaveBeenCalledWith(
+        PR_URL,
+        expect.objectContaining({ workspaceId: undefined }),
+      );
+      expect(onSelect).not.toHaveBeenCalled();
+
+      await fireEvent.keyDown(link, { key: ' ' });
+      expect(onSelect).not.toHaveBeenCalled();
+      expect(handleLinkMock).toHaveBeenCalledTimes(1);
+
+      await fireEvent.keyDown(screen.getByRole('button', { name: /Approve/ }), { key: 'Enter' });
+      expect(onSelect).toHaveBeenCalledWith(LINK_PROMPT);
+    });
+
+    it('keeps bare URLs, bare #N and malformed link syntax as literal text', () => {
+      const prompts = [
+        'Approve #5034 now',
+        `See ${PR_URL} please`,
+        '[x](javascript:alert(1)) and ![img](https://a.test/i.png)',
+      ];
+      render(SuggestedPrompts, { props: { prompts, onSelect: vi.fn() } });
+
+      expect(screen.queryAllByRole('link')).toHaveLength(0);
+      for (const prompt of prompts) {
+        expect(screen.getByRole('button', { name: prompt })).toBeTruthy();
+      }
+    });
+
+    it('renders several links in one prompt in order', () => {
+      render(SuggestedPrompts, {
+        props: {
+          prompts: ['Merge [#1](https://a.test/1) then [note](intent://local/note/spec).'],
+          onSelect: vi.fn(),
+        },
+      });
+
+      const links = screen.getAllByRole('link');
+      expect(links.map((a) => [a.textContent, a.getAttribute('href')])).toEqual([
+        ['#1', 'https://a.test/1'],
+        ['note', 'intent://local/note/spec'],
+      ]);
+      expect(screen.getByRole('button', { name: 'Merge #1 then note.' })).toBeTruthy();
+    });
   });
 });

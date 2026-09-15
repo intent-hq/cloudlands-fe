@@ -6495,6 +6495,7 @@
               onEdit={handleEditSuggestedPrompt}
               compact={isCompactMode}
               showShortcutHints={isChatFocused}
+              workspaceId={workspace?.id}
             />
           </div>
         {/if}
