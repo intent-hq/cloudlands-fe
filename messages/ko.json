@@ -4524,6 +4524,7 @@
   "daemonStatus_overlay_cannotConnectTitle_label": "intentd에 연결할 수 없음",
   "daemonStatus_overlay_connectionLimitTitle_label": "호스트 연결 한도 도달",
   "daemonStatus_overlay_connectionLimit_description": "호스트가 게스트 연결 한도에 도달했습니다. 자리가 나면 자동으로 다시 연결됩니다.",
+  "daemonStatus_overlay_connectionLimitRetryAfter_description": "호스트가 게스트 연결 한도에 도달했습니다. 약 {seconds}초 후에 다시 시도하며, 자리가 나면 자동으로 다시 연결됩니다.",
   "daemonStatus_overlay_stoppedTitle_label": "intentd가 중지됨",
   "daemonStatus_overlay_startupFailed_description": "앱이 자체 intentd 데몬을 실행하는데 시작에 실패했습니다.",
   "daemonStatus_overlay_startupFailedWithReason_description": "앱이 자체 intentd 데몬을 실행하는데 시작에 실패했습니다({reason}).",
