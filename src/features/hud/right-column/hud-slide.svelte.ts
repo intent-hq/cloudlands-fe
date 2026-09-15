@@ -5,6 +5,9 @@
  * then settles (`idle`). Disabled entirely under reduced motion.
  */
 
+/** Reduced-motion watcher now lives in `$lib/utils/reduced-motion.svelte`; re-exported for HUD callers. */
+export { watchReducedMotion } from '$lib/utils/reduced-motion.svelte';
+
 export type HudSlidePhase = 'idle' | 'prep' | 'run';
 
 /** Matches the mock's release delay (40ms) and settle timeout (600ms). */
@@ -34,32 +37,4 @@ export class HudSlide {
     clearTimeout(this.#settleTimer);
     this.phase = 'idle';
   }
-}
-
-/**
- * Reactive `prefers-reduced-motion` flag. Call from component init; returns
- * a getter plus the cleanup to run on unmount.
- */
-export function watchReducedMotion(): { readonly current: boolean; cleanup: () => void } {
-  let reduced = $state(false);
-  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
-    return {
-      get current() {
-        return reduced;
-      },
-      cleanup: () => {},
-    };
-  }
-  const query = window.matchMedia('(prefers-reduced-motion: reduce)');
-  reduced = query.matches;
-  const onChange = (event: MediaQueryListEvent) => {
-    reduced = event.matches;
-  };
-  query.addEventListener('change', onChange);
-  return {
-    get current() {
-      return reduced;
-    },
-    cleanup: () => query.removeEventListener('change', onChange),
-  };
 }
