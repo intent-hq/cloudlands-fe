@@ -146,7 +146,7 @@
     pointer-events: none;
   }
 
-  @media (prefers-reduced-motion: no-preference) {
+  @container not style(--motion-reduced: 1) {
     .panel-drop-destination {
       animation: panel-drop-destination-in 140ms ease-out;
       transition: opacity 140ms ease-out;

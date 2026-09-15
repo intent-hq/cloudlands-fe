@@ -1270,7 +1270,7 @@
     background: hsl(var(--ring) / 0.3);
   }
 
-  @media (prefers-reduced-motion: reduce) {
+  @container style(--motion-reduced: 1) {
     [data-workspace-title-edit-decoration],
     [data-workspace-status-edit-decoration] {
       transition-duration: 0s !important;

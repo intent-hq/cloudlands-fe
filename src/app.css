@@ -658,14 +658,14 @@ body.panel-resizing webview {
 }
 
 /* ===== Reduced motion support ===== */
-/* Respects user's motion preferences for accessibility */
+/* Follows `--motion-reduced` (OS preference or battery saver), see tokens.css */
 html[data-window-blurred] *,
 html[data-window-blurred] *::before,
 html[data-window-blurred] *::after {
   animation-play-state: paused !important;
 }
 
-@media (prefers-reduced-motion: reduce) {
+@container style(--motion-reduced: 1) {
   /* Disable infinite animations */
   .animate-tool-pulse,
   .streaming-cursor,

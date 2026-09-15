@@ -8,6 +8,7 @@
   import { TooltipRich } from '$lib/components/ui/tooltip';
   import { cn } from '$lib/utils';
   import { scheduleLayoutRead, scheduleLayoutWrite } from '$lib/utils/layout-phases';
+  import { watchReducedMotion } from '$lib/utils/reduced-motion.svelte';
   import WorkspaceHoverCard from '$lib/components/workspace/WorkspaceHoverCard.svelte';
   import WorkspaceStatusIcon from '$lib/components/workspace/WorkspaceStatusIcon.svelte';
   import {
@@ -129,7 +130,7 @@
   let dragClientX = $state(0);
   let proposedTabOrder = $state<string[] | null>(null);
   let lifecycleMotionReady = $state(false);
-  let prefersReducedMotion = $state(false);
+  const reducedMotion = watchReducedMotion();
   let suppressClickWorkspaceId: string | null = null;
   const renderedTabOrder = $derived(proposedTabOrder ?? $workspaceTabOrder$);
   const selectedWorkspaceId = $derived(
@@ -137,7 +138,7 @@
   );
   const visualActiveWorkspaceId = $derived(selectedWorkspaceId);
   const workspaceTabMotionDuration = $derived(
-    prefersReducedMotion ? 0 : WORKSPACE_TAB_MOTION_DURATION_MS,
+    reducedMotion.current ? 0 : WORKSPACE_TAB_MOTION_DURATION_MS,
   );
   let refreshOverflow = () => {};
   let reorderAnnouncement = $state('');
@@ -251,10 +252,6 @@
     const unsubscribeHoverCardIntent = workspaceHoverCardIntentSession.subscribe(
       (delay) => (workspaceHoverCardOpenDelay = delay),
     );
-    const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
-    const updateMotionPreference = () => (prefersReducedMotion = motionQuery.matches);
-    updateMotionPreference();
-    motionQuery.addEventListener('change', updateMotionPreference);
     const lifecycleFrame = requestAnimationFrame(() => {
       lifecycleMotionReady = true;
     });
@@ -270,7 +267,7 @@
       pointerOpenEligibleWorkspaceHoverCardIds.clear();
       cancelAnimationFrame(lifecycleFrame);
       if (overflowRefreshFrame !== null) cancelAnimationFrame(overflowRefreshFrame);
-      motionQuery.removeEventListener('change', updateMotionPreference);
+      reducedMotion.cleanup();
       window.removeEventListener(WORKSPACE_TAB_MOVED_EVENT, handleMoved);
     };
   });
