@@ -3,6 +3,7 @@ import { END, buffers, eventChannel, type EventChannel } from 'redux-saga';
 import { call, put, take } from 'typed-redux-saga';
 
 import { createLogger } from '$lib/utils/client-logger';
+import { REDUCE_MOTION_ATTRIBUTE } from '$lib/utils/reduced-motion';
 import {
   createBatterySource,
   type BatterySource,
@@ -11,9 +12,6 @@ import { selectReduceMotionActive } from '../power-selectors';
 import { setOnBattery } from '../power-slice';
 
 const logger = createLogger('PowerSaga');
-
-/** Root attribute read by the reduced-motion helper; set iff on battery AND the preference is on. */
-export const REDUCE_MOTION_ROOT_ATTRIBUTE = 'data-reduce-motion';
 
 function createBatteryChannel(source: BatterySource): EventChannel<boolean> {
   return eventChannel<boolean>(
@@ -24,7 +22,7 @@ function createBatteryChannel(source: BatterySource): EventChannel<boolean> {
 
 function applyReduceMotionRootAttribute(active: boolean): void {
   if (typeof document === 'undefined') return;
-  document.documentElement.toggleAttribute(REDUCE_MOTION_ROOT_ATTRIBUTE, active);
+  document.documentElement.toggleAttribute(REDUCE_MOTION_ATTRIBUTE, active);
 }
 
 function* reduceMotionRootAttributeWorker({ payload }: SelectorChannelPayload<boolean>) {

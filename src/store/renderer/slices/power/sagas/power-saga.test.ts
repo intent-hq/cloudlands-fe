@@ -28,19 +28,20 @@ vi.mock('$store/renderer/seeders/power-bridge-seeder', async (importOriginal) =>
   };
 });
 
+import { REDUCE_MOTION_ATTRIBUTE } from '$lib/utils/reduced-motion';
 import {
   initialState as userPreferencesInitialState,
   setReduceMotionOnBattery,
   userPreferencesReducer,
 } from '../../user-preferences/user-preferences-slice';
 import { initialState as powerInitialState, powerReducer, setOnBattery } from '../power-slice';
-import { REDUCE_MOTION_ROOT_ATTRIBUTE, powerSaga } from './power-saga';
+import { powerSaga } from './power-saga';
 
 const settle = async () => {
   for (let i = 0; i < 4; i++) await Promise.resolve();
 };
 
-const hasRootAttribute = () => document.documentElement.hasAttribute(REDUCE_MOTION_ROOT_ATTRIBUTE);
+const hasRootAttribute = () => document.documentElement.hasAttribute(REDUCE_MOTION_ATTRIBUTE);
 
 function createHarness() {
   let state = { power: powerInitialState, userPreferences: userPreferencesInitialState };
@@ -78,11 +79,11 @@ describe('powerSaga', () => {
     vi.clearAllMocks();
     mocks.listeners.clear();
     mocks.read.mockResolvedValue(false);
-    document.documentElement.removeAttribute(REDUCE_MOTION_ROOT_ATTRIBUTE);
+    document.documentElement.removeAttribute(REDUCE_MOTION_ATTRIBUTE);
   });
 
   afterEach(() => {
-    document.documentElement.removeAttribute(REDUCE_MOTION_ROOT_ATTRIBUTE);
+    document.documentElement.removeAttribute(REDUCE_MOTION_ATTRIBUTE);
   });
 
   it('seeds onBattery from the initial read and keeps the root attribute absent off battery', async () => {
