@@ -170,17 +170,149 @@ describe('power-bridge-seeder', () => {
     expect(mockInvokeSpy).not.toHaveBeenCalled();
   });
 
-  it('genuine preload bridge wins over navigator.getBattery in an Electron renderer', async () => {
-    const invokeSpy = vi.fn(async () => ({ onBattery: true }));
-    installGenuineBridge({ invoke: invokeSpy });
-    registerPowerBridge();
-    const getBattery = vi.fn(async () => makeFakeBatteryManager(true));
-    (navigator as any).getBattery = getBattery;
+  describe('Electron renderer: merged powerMonitor IPC || navigator.getBattery source', () => {
+    it('reads true from navigator.getBattery when powerMonitor reports unknown (not on battery) and never emits', async () => {
+      const invokeSpy = vi.fn(async () => ({ onBattery: false }));
+      installGenuineBridge({ invoke: invokeSpy });
+      registerPowerBridge();
+      const battery = makeFakeBatteryManager(false);
+      const getBattery = vi.fn(async () => battery);
+      (navigator as any).getBattery = getBattery;
 
-    const source = createBatterySource();
-    await expect(source.read()).resolves.toBe(true);
-    expect(invokeSpy).toHaveBeenCalledWith(IPC_CHANNELS.POWER.GET_BATTERY_STATE, undefined);
-    expect(getBattery).not.toHaveBeenCalled();
+      const source = createBatterySource();
+      await expect(source.read()).resolves.toBe(true);
+      expect(invokeSpy).toHaveBeenCalledWith(IPC_CHANNELS.POWER.GET_BATTERY_STATE, undefined);
+      expect(getBattery).toHaveBeenCalled();
+    });
+
+    it('reads true from IPC when navigator says charging', async () => {
+      installGenuineBridge({ invoke: vi.fn(async () => ({ onBattery: true })) });
+      registerPowerBridge();
+      (navigator as any).getBattery = vi.fn(async () => makeFakeBatteryManager(true));
+
+      const source = createBatterySource();
+      await expect(source.read()).resolves.toBe(true);
+    });
+
+    it('logs the seed line with both raw source values on the first merged read', async () => {
+      const debugSpy = vi.spyOn(console, 'debug').mockImplementation(() => {});
+      const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => {});
+      installGenuineBridge({ invoke: vi.fn(async () => ({ onBattery: false })) });
+      registerPowerBridge();
+      (navigator as any).getBattery = vi.fn(async () => makeFakeBatteryManager(false));
+
+      const source = createBatterySource();
+      await source.read();
+      const lines = [...debugSpy.mock.calls, ...infoSpy.mock.calls].map((args) =>
+        args.map(String).join(' '),
+      );
+      expect(lines.some((line) => /ipc=false/.test(line) && /navigator=true/.test(line))).toBe(
+        true,
+      );
+    });
+
+    it('emits ipc || navigator on chargingchange while IPC stays silent', async () => {
+      installGenuineBridge({ invoke: vi.fn(async () => ({ onBattery: false })) });
+      registerPowerBridge();
+      const battery = makeFakeBatteryManager(false);
+      (navigator as any).getBattery = vi.fn(async () => battery);
+
+      const source = createBatterySource();
+      const received: boolean[] = [];
+      const dispose = source.subscribe((onBattery) => received.push(onBattery));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(battery.listenerCount()).toBe(1);
+
+      battery.setCharging(true);
+      expect(received).toEqual([false]);
+      battery.setCharging(false);
+      expect(received).toEqual([false, true]);
+      dispose();
+    });
+
+    it('emits true on IPC power:battery-changed while navigator says charging', async () => {
+      installGenuineBridge({ invoke: vi.fn(async () => ({ onBattery: false })) });
+      registerPowerBridge();
+      const battery = makeFakeBatteryManager(true);
+      (navigator as any).getBattery = vi.fn(async () => battery);
+
+      const source = createBatterySource();
+      const received: boolean[] = [];
+      const dispose = source.subscribe((onBattery) => received.push(onBattery));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      emitMockIpcEvent(IPC_CHANNELS.POWER.BATTERY_CHANGED, { onBattery: true });
+      expect(received).toEqual([true]);
+      emitMockIpcEvent(IPC_CHANNELS.POWER.BATTERY_CHANGED, { onBattery: false });
+      expect(received).toEqual([true, false]);
+      dispose();
+    });
+
+    it('does not re-emit identical consecutive merged values', async () => {
+      installGenuineBridge({ invoke: vi.fn(async () => ({ onBattery: false })) });
+      registerPowerBridge();
+      const battery = makeFakeBatteryManager(true);
+      (navigator as any).getBattery = vi.fn(async () => battery);
+
+      const source = createBatterySource();
+      const received: boolean[] = [];
+      const dispose = source.subscribe((onBattery) => received.push(onBattery));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      emitMockIpcEvent(IPC_CHANNELS.POWER.BATTERY_CHANGED, { onBattery: true });
+      expect(received).toEqual([true]);
+      emitMockIpcEvent(IPC_CHANNELS.POWER.BATTERY_CHANGED, { onBattery: true });
+      battery.setCharging(false);
+      expect(received).toEqual([true]);
+      emitMockIpcEvent(IPC_CHANNELS.POWER.BATTERY_CHANGED, { onBattery: false });
+      expect(received).toEqual([true]);
+      battery.setCharging(true);
+      expect(received).toEqual([true, false]);
+      dispose();
+    });
+
+    it('behaves as IPC-only when navigator.getBattery rejects (no unhandled rejection)', async () => {
+      const unhandled = vi.fn();
+      process.on('unhandledRejection', unhandled);
+      try {
+        installGenuineBridge({ invoke: vi.fn(async () => ({ onBattery: true })) });
+        registerPowerBridge();
+        (navigator as any).getBattery = vi.fn(() => Promise.reject(new Error('denied')));
+
+        const source = createBatterySource();
+        await expect(source.read()).resolves.toBe(true);
+
+        const received: boolean[] = [];
+        const dispose = source.subscribe((onBattery) => received.push(onBattery));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        emitMockIpcEvent(IPC_CHANNELS.POWER.BATTERY_CHANGED, { onBattery: false });
+        expect(received).toEqual([false]);
+        dispose();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(unhandled).not.toHaveBeenCalled();
+      } finally {
+        process.off('unhandledRejection', unhandled);
+      }
+    });
+
+    it('unsubscribe removes both the IPC and the chargingchange listeners', async () => {
+      installGenuineBridge({ invoke: vi.fn(async () => ({ onBattery: false })) });
+      registerPowerBridge();
+      const battery = makeFakeBatteryManager(true);
+      (navigator as any).getBattery = vi.fn(async () => battery);
+
+      const source = createBatterySource();
+      const received: boolean[] = [];
+      const dispose = source.subscribe((onBattery) => received.push(onBattery));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(battery.listenerCount()).toBe(1);
+
+      dispose();
+      expect(battery.listenerCount()).toBe(0);
+      emitMockIpcEvent(IPC_CHANNELS.POWER.BATTERY_CHANGED, { onBattery: true });
+      battery.setCharging(false);
+      expect(received).toEqual([]);
+    });
   });
 
   it('ignores window.electronAPI when the build is the web target even under an Electron UA (<webview>)', async () => {

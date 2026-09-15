@@ -2,16 +2,29 @@
  * Power (battery) bridge seeder — the renderer's single source for "is this
  * machine on battery?", consumed by the power saga to drive `power.onBattery`.
  *
- * Three sources, chosen in this order by `createBatterySource()`:
+ * Two underlying signals, combined by `createBatterySource()`:
  *
- * 1. Genuine Electron preload bridge → `power:get-battery-state` invoke
- *    (forwarded to main's powerMonitor handler) plus `power:battery-changed`
- *    events, relayed from the bridge onto the mock-router event channel so
- *    `listenSync` consumers (and tests via `emitMockIpcEvent`) share one path.
- * 2. Browser build with the Battery Status API → `navigator.getBattery()`,
- *    `onBattery = !battery.charging`, re-derived on `chargingchange`. The real
- *    Battery API is preferred over the mock router here.
- * 3. Neither (jsdom, desktop browsers without the API) → constant `false`.
+ * - Genuine Electron preload bridge → `power:get-battery-state` invoke
+ *   (forwarded to main's powerMonitor handler) plus `power:battery-changed`
+ *   events, relayed from the bridge onto the mock-router event channel so
+ *   `listenSync` consumers (and tests via `emitMockIpcEvent`) share one path.
+ * - Battery Status API → `navigator.getBattery()`, `onBattery =
+ *   !battery.charging`, re-derived on `chargingchange`. The real Battery API
+ *   is preferred over the mock router here.
+ *
+ * Selection:
+ *
+ * 1. Electron with both → merged source, `onBattery = ipc || navigator`.
+ *    Electron 42's powerMonitor (Chromium `battery_level_provider_mac.mm`)
+ *    yields "unknown" on Macs whose IOKit power-source entry lacks the raw
+ *    capacity keys, so `isOnBatteryPower()` is false and `on-battery` never
+ *    fires; on Linux powerMonitor has no battery implementation at all. The
+ *    Battery Status API reads through a separate backend (IOPS / UPower), so
+ *    it detects battery power there while IPC stays the instant signal where
+ *    it works. Each side is guarded independently (rejection → `false`).
+ * 2. Electron without the Battery API → IPC only.
+ * 3. Browser build with the Battery API → Battery API only.
+ * 4. Neither (jsdom, desktop browsers without the API) → constant `false`.
  *
  * "Genuine preload" is decided by `expectsElectronPreloadBridge()` (the same
  * detector `hooks.client.ts` uses), not by `window.electronAPI` presence: the
@@ -23,6 +36,7 @@
  * genuine bridge exists and otherwise answers `{ onBattery: false }`, so the
  * mock IPC path never depends on host hardware.
  */
+import { createLogger } from '$lib/utils/client-logger';
 import { invoke, listenSync } from '$lib/electron-bridge';
 import { expectsElectronPreloadBridge } from '$lib/utils/platform-capabilities';
 import { emitMockIpcEvent, registerMockIpcHandler } from '$shared/ipc-mock-router';
@@ -49,6 +63,8 @@ interface BatteryManagerLike {
 type NavigatorWithBattery = Navigator & { getBattery?: () => Promise<BatteryManagerLike> };
 
 const NOT_ON_BATTERY: BatteryState = { onBattery: false };
+
+const logger = createLogger('PowerBridgeSeeder');
 
 function isBatteryState(value: unknown): value is BatteryState {
   return (
@@ -146,15 +162,85 @@ function createNavigatorBatterySource(
   };
 }
 
+/** Read one source, treating a rejection or a non-boolean result as off-battery. */
+async function readGuarded(source: BatterySource): Promise<boolean> {
+  try {
+    return (await source.read()) === true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Union of the powerMonitor IPC and Battery API signals: `onBattery` is true
+ * when either side reports it. Each side's last known value is seeded from its
+ * `read()` and updated by its own change events; the merged value is emitted
+ * only when it actually changes.
+ */
+function createMergedBatterySource(ipc: BatterySource, nav: BatterySource): BatterySource {
+  let seedLogged = false;
+  return {
+    async read() {
+      const [fromIpc, fromNavigator] = await Promise.all([readGuarded(ipc), readGuarded(nav)]);
+      if (!seedLogged) {
+        seedLogged = true;
+        logger.info(`battery seed: ipc=${fromIpc}, navigator=${fromNavigator}`);
+      }
+      return fromIpc || fromNavigator;
+    },
+    subscribe(listener) {
+      let disposed = false;
+      let fromIpc = false;
+      let fromNavigator = false;
+      let ipcSeen = false;
+      let navigatorSeen = false;
+      let last: boolean | undefined;
+      const emit = () => {
+        if (disposed) return;
+        const merged = fromIpc || fromNavigator;
+        if (merged === last) return;
+        last = merged;
+        listener(merged);
+      };
+      const unsubscribeIpc = ipc.subscribe((onBattery) => {
+        ipcSeen = true;
+        fromIpc = onBattery;
+        emit();
+      });
+      const unsubscribeNavigator = nav.subscribe((onBattery) => {
+        navigatorSeen = true;
+        fromNavigator = onBattery;
+        emit();
+      });
+      Promise.all([readGuarded(ipc), readGuarded(nav)]).then(([seedIpc, seedNavigator]) => {
+        if (disposed) return;
+        if (!ipcSeen) fromIpc = seedIpc;
+        if (!navigatorSeen) fromNavigator = seedNavigator;
+        if (last === undefined) last = fromIpc || fromNavigator;
+      });
+      return () => {
+        disposed = true;
+        unsubscribeIpc();
+        unsubscribeNavigator();
+      };
+    },
+  };
+}
+
 const NO_BATTERY_SOURCE: BatterySource = {
   read: async () => false,
   subscribe: () => () => {},
 };
 
-/** Pick the battery signal for this build: genuine Electron IPC → Battery API → none. */
+/** Pick the battery signal for this build: Electron IPC merged with the Battery API → IPC → Battery API → none. */
 export function createBatterySource(): BatterySource {
-  if (hasPreloadBridge()) return createIpcBatterySource();
   const getBattery = getBatteryApi();
+  if (hasPreloadBridge()) {
+    const ipc = createIpcBatterySource();
+    return getBattery
+      ? createMergedBatterySource(ipc, createNavigatorBatterySource(getBattery))
+      : ipc;
+  }
   if (getBattery) return createNavigatorBatterySource(getBattery);
   return NO_BATTERY_SOURCE;
 }
