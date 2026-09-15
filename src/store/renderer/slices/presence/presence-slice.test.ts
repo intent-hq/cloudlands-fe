@@ -1,8 +1,11 @@
 import { getItem, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
 import { describe, expect, it } from 'vitest';
 import type { PresenceMember, PresenceRoster, PresenceTypingEntry } from '$shared/types/presence';
+import type { WorkspaceRole } from '$shared/types';
+import type { WorkspaceMember } from '../guest-sessions/guest-sessions-types';
 import {
   initialState,
+  presenceMembersReceived,
   presenceOwnPrincipalReceived,
   presenceOwnTypingSourceReceived,
   presenceReducer,
@@ -35,6 +38,15 @@ const typing = (source: string, pulse: number, agentId = 'agent-1'): PresenceTyp
   agentId,
   since: '2026-09-14T12:00:00Z',
   pulse,
+});
+
+const accepted = (principalId: string, role: WorkspaceRole = 'collaborator'): WorkspaceMember => ({
+  principalId,
+  login: principalId,
+  displayName: null,
+  avatarUrl: null,
+  role,
+  addedAt: '2026-09-14T12:00:00Z',
 });
 
 describe('presence slice', () => {
@@ -143,9 +155,24 @@ describe('presence slice', () => {
     expect(presenceReducer(state, presenceOwnTypingSourceReceived('ts-me'))).toBe(state);
   });
 
+  it('replaces a workspace membership, keyed by principal, and keeps other workspaces', () => {
+    let state = presenceReducer(
+      initialState,
+      presenceMembersReceived('ws-1', [accepted('owner-1', 'owner'), accepted('a')]),
+    );
+    state = presenceReducer(state, presenceMembersReceived('ws-2', [accepted('b')]));
+    state = presenceReducer(state, presenceMembersReceived('ws-1', [accepted('owner-1', 'owner')]));
+    expect(getItems(state.members['ws-1']).map((m) => m.principalId)).toEqual(['owner-1']);
+    expect(getItems(state.members['ws-2']).map((m) => m.principalId)).toEqual(['b']);
+    expect(getItem(state.members['ws-1'], 'a')).toBeUndefined();
+    expect(getItem(state.members['ws-1'], 'owner-1')?.role).toBe('owner');
+    expect(state.rosters).toEqual({});
+  });
+
   it('resets everything but the window visibility on a backend switch', () => {
     let state = presenceReducer(initialState, presenceWindowVisibilityChanged(false));
     state = presenceReducer(state, presenceRosterReceived(roster([member('a')])));
+    state = presenceReducer(state, presenceMembersReceived('ws-1', [accepted('a')]));
     state = presenceReducer(state, presenceOwnPrincipalReceived('me'));
     state = presenceReducer(state, presenceTypingPulse('agent-1'));
     const reset = presenceReducer(state, presenceReset());
