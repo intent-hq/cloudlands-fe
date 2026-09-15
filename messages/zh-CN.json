@@ -6297,5 +6297,8 @@
   "workspace_share_removeMember_confirm_label": "要将 {name} 从此工作区移除吗？",
   "workspace_share_removeMember_confirmAction_ariaLabel": "确认移除 {name}",
   "workspace_share_cancel_label": "取消",
-  "workspace_share_listenerDown_error": "邀请前请先在设置中开启远程访问 + Tailcat"
+  "workspace_share_listenerDown_error": "邀请前请先在设置中开启远程访问 + Tailcat",
+  "notes_presenceStack_viewers_one": "另有 1 人正在查看此笔记",
+  "notes_presenceStack_viewers_many": "另有 {count} 人正在查看此笔记",
+  "notes_presenceStack_overflow_label": "+{count}"
 }
