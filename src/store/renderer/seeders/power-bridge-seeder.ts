@@ -4,7 +4,7 @@
  *
  * Three sources, chosen in this order by `createBatterySource()`:
  *
- * 1. Electron preload bridge present → `power:get-battery-state` invoke
+ * 1. Genuine Electron preload bridge → `power:get-battery-state` invoke
  *    (forwarded to main's powerMonitor handler) plus `power:battery-changed`
  *    events, relayed from the bridge onto the mock-router event channel so
  *    `listenSync` consumers (and tests via `emitMockIpcEvent`) share one path.
@@ -13,11 +13,18 @@
  *    Battery API is preferred over the mock router here.
  * 3. Neither (jsdom, desktop browsers without the API) → constant `false`.
  *
+ * "Genuine preload" is decided by `expectsElectronPreloadBridge()` (the same
+ * detector `hooks.client.ts` uses), not by `window.electronAPI` presence: the
+ * dev:web build installs `$lib/browser-mock`, whose `electronAPI.invoke`
+ * routes back into the mock router, so presence alone would hide the Battery
+ * API branch behind the mock (intent-hq/monorepo#3606).
+ *
  * The mock-router invoke handler stays deterministic: it forwards when the
- * bridge exists and otherwise answers `{ onBattery: false }`, so the mock IPC
- * path never depends on host hardware.
+ * genuine bridge exists and otherwise answers `{ onBattery: false }`, so the
+ * mock IPC path never depends on host hardware.
  */
 import { invoke, listenSync } from '$lib/electron-bridge';
+import { expectsElectronPreloadBridge } from '$lib/utils/platform-capabilities';
 import { emitMockIpcEvent, registerMockIpcHandler } from '$shared/ipc-mock-router';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 
@@ -51,9 +58,17 @@ function isBatteryState(value: unknown): value is BatteryState {
   );
 }
 
-function hasElectronBridge(): boolean {
-  const bridge = typeof window !== 'undefined' ? window.electronAPI : undefined;
-  return !!bridge && typeof bridge.invoke === 'function';
+/**
+ * The real preload bridge, or `undefined` in the browser build (where
+ * `window.electronAPI` is the dev mock) and in non-window contexts.
+ */
+function getPreloadBridge(): Window['electronAPI'] | undefined {
+  if (typeof window === 'undefined' || !expectsElectronPreloadBridge()) return undefined;
+  return window.electronAPI;
+}
+
+function hasPreloadBridge(): boolean {
+  return typeof getPreloadBridge()?.invoke === 'function';
 }
 
 function getBatteryApi(): (() => Promise<BatteryManagerLike>) | undefined {
@@ -62,10 +77,10 @@ function getBatteryApi(): (() => Promise<BatteryManagerLike>) | undefined {
   return typeof getBattery === 'function' ? getBattery.bind(navigator) : undefined;
 }
 
-/** Forward `power:get-battery-state` to main when bridged; deterministic otherwise. */
+/** Forward `power:get-battery-state` to main over the genuine preload; deterministic otherwise. */
 export function registerPowerBridge(): void {
   registerMockIpcHandler(IPC_CHANNELS.POWER.GET_BATTERY_STATE, async (payload?: unknown) => {
-    const bridge = typeof window !== 'undefined' ? window.electronAPI : undefined;
+    const bridge = getPreloadBridge();
     if (bridge && typeof bridge.invoke === 'function') {
       return bridge.invoke(IPC_CHANNELS.POWER.GET_BATTERY_STATE, payload);
     }
@@ -79,8 +94,7 @@ export function registerPowerBridge(): void {
  * `window:fullscreen` relay in window-state-bridge-seeder).
  */
 export function registerBatteryChangedEventRelay(): void {
-  if (typeof window === 'undefined') return;
-  const bridge = window.electronAPI;
+  const bridge = getPreloadBridge();
   if (bridge && typeof bridge.on === 'function') {
     bridge.on('power:battery-changed', (payload: unknown) => {
       emitMockIpcEvent('power:battery-changed', payload);
@@ -137,9 +151,9 @@ const NO_BATTERY_SOURCE: BatterySource = {
   subscribe: () => () => {},
 };
 
-/** Pick the battery signal for this build: Electron IPC → Battery API → none. */
+/** Pick the battery signal for this build: genuine Electron IPC → Battery API → none. */
 export function createBatterySource(): BatterySource {
-  if (hasElectronBridge()) return createIpcBatterySource();
+  if (hasPreloadBridge()) return createIpcBatterySource();
   const getBattery = getBatteryApi();
   if (getBattery) return createNavigatorBatterySource(getBattery);
   return NO_BATTERY_SOURCE;

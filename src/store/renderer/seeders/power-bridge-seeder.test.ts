@@ -13,6 +13,23 @@ import {
 const originalElectronAPI = (window as any).electronAPI;
 const originalGetBattery = (navigator as any).getBattery;
 
+const ELECTRON_UA =
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Cloudlands/2.3.0 Chrome/136.0.7103.115 Electron/36.4.0 Safari/537.36';
+
+/**
+ * Make `expectsElectronPreloadBridge()` true: Electron UA + Electron build
+ * target. jsdom's own UA is not Electron, so the default is the browser build.
+ */
+function simulateElectronRuntime() {
+  Object.defineProperty(navigator, 'userAgent', { value: ELECTRON_UA, configurable: true });
+  vi.stubEnv('INTENT_BUILD_TARGET', 'electron');
+}
+
+function installGenuineBridge(bridge: Record<string, unknown>) {
+  simulateElectronRuntime();
+  (window as any).electronAPI = bridge;
+}
+
 function makeFakeBatteryManager(charging: boolean) {
   const listeners = new Set<() => void>();
   return {
@@ -38,12 +55,14 @@ describe('power-bridge-seeder', () => {
     (window as any).electronAPI = originalElectronAPI;
     if (originalGetBattery) (navigator as any).getBattery = originalGetBattery;
     else delete (navigator as any).getBattery;
+    delete (navigator as any).userAgent;
+    vi.unstubAllEnvs();
     resetMockIpcRouter();
   });
 
   it('forwards power:get-battery-state to window.electronAPI.invoke when bridged', async () => {
     const invokeSpy = vi.fn(async () => ({ onBattery: true }));
-    (window as any).electronAPI = { invoke: invokeSpy };
+    installGenuineBridge({ invoke: invokeSpy });
     registerPowerBridge();
 
     await expect(mockInvoke(IPC_CHANNELS.POWER.GET_BATTERY_STATE)).resolves.toEqual({
@@ -61,13 +80,13 @@ describe('power-bridge-seeder', () => {
 
   it('relays main-process power:battery-changed events onto the mock event channel', () => {
     let bridgeListener: ((payload: unknown) => void) | undefined;
-    (window as any).electronAPI = {
+    installGenuineBridge({
       invoke: vi.fn(),
       on: vi.fn((channel: string, cb: (payload: unknown) => void) => {
         if (channel === IPC_CHANNELS.POWER.BATTERY_CHANGED) bridgeListener = cb;
         return 'listener-1';
       }),
-    };
+    });
     registerBatteryChangedEventRelay();
     expect(bridgeListener).toBeDefined();
 
@@ -83,7 +102,7 @@ describe('power-bridge-seeder', () => {
 
   it('IPC source reads onBattery from the invoke result and treats malformed results as off-battery', async () => {
     const invokeSpy = vi.fn(async () => ({ onBattery: true }));
-    (window as any).electronAPI = { invoke: invokeSpy };
+    installGenuineBridge({ invoke: invokeSpy });
     registerPowerBridge();
     const source = createBatterySource();
     await expect(source.read()).resolves.toBe(true);
@@ -93,7 +112,7 @@ describe('power-bridge-seeder', () => {
   });
 
   it('IPC source subscription stops receiving after dispose', () => {
-    (window as any).electronAPI = { invoke: vi.fn() };
+    installGenuineBridge({ invoke: vi.fn() });
     const source = createBatterySource();
     const received: boolean[] = [];
     const dispose = source.subscribe((onBattery) => received.push(onBattery));
@@ -120,6 +139,67 @@ describe('power-bridge-seeder', () => {
 
     dispose();
     expect(battery.listenerCount()).toBe(0);
+  });
+
+  it('dev:web with the browser mock installed still reads navigator.getBattery (mock electronAPI is not a preload)', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const battery = makeFakeBatteryManager(false);
+    const getBattery = vi.fn(async () => battery);
+    (navigator as any).getBattery = getBattery;
+    const { installBrowserMock } = await import('$lib/browser-mock');
+    installBrowserMock();
+    expect(typeof (window as any).electronAPI?.invoke).toBe('function');
+    const mockInvokeSpy = vi.spyOn((window as any).electronAPI, 'invoke');
+    registerPowerBridge();
+
+    const source = createBatterySource();
+    await expect(source.read()).resolves.toBe(true);
+    expect(getBattery).toHaveBeenCalled();
+    expect(mockInvokeSpy).not.toHaveBeenCalled();
+
+    const received: boolean[] = [];
+    const dispose = source.subscribe((onBattery) => received.push(onBattery));
+    await Promise.resolve();
+    battery.setCharging(true);
+    expect(received).toEqual([false]);
+    dispose();
+
+    await expect(mockInvoke(IPC_CHANNELS.POWER.GET_BATTERY_STATE)).resolves.toEqual({
+      onBattery: false,
+    });
+    expect(mockInvokeSpy).not.toHaveBeenCalled();
+  });
+
+  it('genuine preload bridge wins over navigator.getBattery in an Electron renderer', async () => {
+    const invokeSpy = vi.fn(async () => ({ onBattery: true }));
+    installGenuineBridge({ invoke: invokeSpy });
+    registerPowerBridge();
+    const getBattery = vi.fn(async () => makeFakeBatteryManager(true));
+    (navigator as any).getBattery = getBattery;
+
+    const source = createBatterySource();
+    await expect(source.read()).resolves.toBe(true);
+    expect(invokeSpy).toHaveBeenCalledWith(IPC_CHANNELS.POWER.GET_BATTERY_STATE, undefined);
+    expect(getBattery).not.toHaveBeenCalled();
+  });
+
+  it('ignores window.electronAPI when the build is the web target even under an Electron UA (<webview>)', async () => {
+    simulateElectronRuntime();
+    vi.stubEnv('INTENT_BUILD_TARGET', 'web');
+    const invokeSpy = vi.fn(async () => ({ onBattery: true }));
+    (window as any).electronAPI = { invoke: invokeSpy, on: vi.fn() };
+    registerPowerBridge();
+    registerBatteryChangedEventRelay();
+    const battery = makeFakeBatteryManager(true);
+    (navigator as any).getBattery = vi.fn(async () => battery);
+
+    const source = createBatterySource();
+    await expect(source.read()).resolves.toBe(false);
+    expect(invokeSpy).not.toHaveBeenCalled();
+    expect((window as any).electronAPI.on).not.toHaveBeenCalled();
+    await expect(mockInvoke(IPC_CHANNELS.POWER.GET_BATTERY_STATE)).resolves.toEqual({
+      onBattery: false,
+    });
   });
 
   it('does not leak an unhandled rejection when navigator.getBattery rejects (Permissions Policy denial)', async () => {
