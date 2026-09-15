@@ -302,6 +302,17 @@ export class AuthRejectedError extends Error {
 }
 
 /**
+ * Retry cadence the client falls back to when a 503 cap refusal carries no
+ * usable `Retry-After`: transient but not something a prompt retry resolves —
+ * a seat frees only when another guest connection closes — so bounded and
+ * slow, never tight.
+ */
+export const CONNECTION_LIMIT_RETRY_DEFAULT_MS = 30_000;
+/** Clamp bounds for a daemon-supplied `Retry-After` on the cap refusal. */
+export const CONNECTION_LIMIT_RETRY_MIN_MS = 5_000;
+export const CONNECTION_LIMIT_RETRY_MAX_MS = 300_000;
+
+/**
  * Raised when a pin-verified `wss` upgrade is refused with HTTP 503 by the
  * daemon's guest connection cap (`sharing.maxGuestConnections` /
  * `sharing.maxConnectionsPerGuest`, intent-hq/intentd#1917). Transient —
@@ -310,11 +321,38 @@ export class AuthRejectedError extends Error {
  * of the generic reconnect copy.
  */
 export class ConnectionLimitError extends Error {
-  constructor() {
+  /**
+   * How long the daemon asked the client to wait before re-presenting the
+   * upgrade (its `Retry-After` header, already clamped by
+   * {@link parseRetryAfterMs}); the default cadence when the header was absent
+   * or unparseable.
+   */
+  readonly retryAfterMs: number;
+  constructor(retryAfterMs: number = CONNECTION_LIMIT_RETRY_DEFAULT_MS) {
     // i18n-ignore (main-process error message for logs, not renderer copy)
     super('WebSocket upgrade refused with HTTP 503 (connection limit reached)');
     this.name = 'ConnectionLimitError';
+    this.retryAfterMs = retryAfterMs;
   }
+}
+
+/**
+ * Parse the `Retry-After` header of a 503 cap refusal into a retry delay.
+ * Only the delta-seconds form is honored (the daemon never sends an HTTP
+ * date here); the value is clamped to [5, 300] s, and anything absent or
+ * unparseable falls back to {@link CONNECTION_LIMIT_RETRY_DEFAULT_MS}.
+ */
+export function parseRetryAfterMs(header: string | string[] | undefined): number {
+  const raw = Array.isArray(header) ? header[0] : header;
+  if (raw === undefined) return CONNECTION_LIMIT_RETRY_DEFAULT_MS;
+  const trimmed = raw.trim();
+  if (!/^\d+$/.test(trimmed)) return CONNECTION_LIMIT_RETRY_DEFAULT_MS;
+  const seconds = Number(trimmed);
+  if (!Number.isFinite(seconds)) return CONNECTION_LIMIT_RETRY_DEFAULT_MS;
+  return Math.min(
+    CONNECTION_LIMIT_RETRY_MAX_MS,
+    Math.max(CONNECTION_LIMIT_RETRY_MIN_MS, seconds * 1000),
+  );
 }
 
 /**
@@ -413,7 +451,7 @@ function createWssSocket(config: BackendConnectionConfig): Duplex {
       return;
     }
     if (statusCode === 503) {
-      duplex.destroy(new ConnectionLimitError());
+      duplex.destroy(new ConnectionLimitError(parseRetryAfterMs(response.headers['retry-after'])));
       return;
     }
     duplex.destroy(new Error(`Unexpected server response: ${statusCode}`));

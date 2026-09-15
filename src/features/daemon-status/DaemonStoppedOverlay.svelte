@@ -31,6 +31,7 @@
     selectDaemonTransport,
     selectReconnectAttempts,
     selectConnectionLimited,
+    selectConnectionLimitRetryAfterMs,
     selectSidecarGaveUp,
     selectSidecarGaveUpReason,
     selectSidecarStartupFailed,
@@ -64,12 +65,14 @@
   import Portal from '$lib/components/ui/Portal.svelte';
   import { DAEMON_UPDATING_COUNTDOWN_MS } from './DaemonUpdatingOverlay.svelte';
   import { m } from '$shared/paraglide/messages.js';
+  import { formatInteger } from '$lib/i18n/format';
 
   const health$ = selectDaemonHealth();
   const updateDisconnectedAt$ = selectDaemonUpdateDisconnectedAt();
   const transport$ = selectDaemonTransport();
   const reconnectAttempts$ = selectReconnectAttempts();
   const connectionLimited$ = selectConnectionLimited();
+  const connectionLimitRetryAfterMs$ = selectConnectionLimitRetryAfterMs();
   const sidecarGaveUp$ = selectSidecarGaveUp();
   const sidecarGaveUpReason$ = selectSidecarGaveUpReason();
   const sidecarStartupFailed$ = selectSidecarStartupFailed();
@@ -192,6 +195,13 @@
   // nothing on their side is broken. Terminal postures (auth rejected,
   // sidecar failure) take precedence: they never coexist with a 503 retry.
   const isConnectionLimited = $derived($connectionLimited$ && !isAuthRejected && !isSidecarFailure);
+  // The wait main scheduled (the host's Retry-After), in whole seconds, so
+  // the copy can name the actual cadence instead of a vague "automatically".
+  const connectionLimitRetrySeconds = $derived(
+    $connectionLimitRetryAfterMs$ === null
+      ? null
+      : Math.max(1, Math.round($connectionLimitRetryAfterMs$ / 1000)),
+  );
 
   // Revoked-guest posture (multiplayer w4): this window is bound to a host
   // joined as a guest and that host rejected the credential — the owner
@@ -376,7 +386,11 @@
             {/if}
           {:else if isConnectionLimited}
             <span data-testid="daemon-stopped-connection-limit">
-              {m.daemonStatus_overlay_connectionLimit_description()}
+              {connectionLimitRetrySeconds === null
+                ? m.daemonStatus_overlay_connectionLimit_description()
+                : m.daemonStatus_overlay_connectionLimitRetryAfter_description({
+                    seconds: formatInteger(connectionLimitRetrySeconds),
+                  })}
             </span>
           {:else if isExternalMode && machineName}
             {$hasEverConnected$

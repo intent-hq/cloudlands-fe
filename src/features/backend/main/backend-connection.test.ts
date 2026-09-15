@@ -29,11 +29,15 @@ import {
   AuthRejectedError,
   candidateWssHosts,
   captureFingerprint,
+  CONNECTION_LIMIT_RETRY_DEFAULT_MS,
+  CONNECTION_LIMIT_RETRY_MAX_MS,
+  CONNECTION_LIMIT_RETRY_MIN_MS,
   ConnectionLimitError,
   createBackendSocket,
   defaultSocketPath,
   describeBackendConfig,
   normalizeFingerprint,
+  parseRetryAfterMs,
   PinMismatchError,
   raceDuplexSockets,
   resolveBackendConfig,
@@ -908,6 +912,8 @@ class RejectingWssDaemon {
   port = 0;
   fingerprint = '';
   statusCode = 401;
+  /** `Retry-After` header value sent with the rejection (503 cap refusals), if any. */
+  retryAfter: string | null = null;
   /** Number of upgrade attempts observed (for reconnect-halt assertions). */
   upgradeAttempts = 0;
   lastAuthHeader: string | undefined;
@@ -920,8 +926,9 @@ class RejectingWssDaemon {
       this.upgradeAttempts += 1;
       this.lastAuthHeader = req.headers.authorization;
       this.lastUpgradeUrl = req.url;
+      const retryAfter = this.retryAfter === null ? '' : `Retry-After: ${this.retryAfter}\r\n`;
       socket.write(
-        `HTTP/1.1 ${this.statusCode} Rejected\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`,
+        `HTTP/1.1 ${this.statusCode} Rejected\r\nConnection: close\r\n${retryAfter}Content-Length: 0\r\n\r\n`,
       );
       socket.destroy();
     });
@@ -933,6 +940,42 @@ class RejectingWssDaemon {
     await new Promise<void>((res) => this.server.close(() => res()));
   }
 }
+
+// Multiplayer guest caps (intent-hq/intentd#1917): the 503 cap refusal carries
+// `Retry-After: <delta-seconds>`. Only that form is honored, clamped to
+// [5, 300] s; anything else falls back to the default slow cadence.
+describe('parseRetryAfterMs', () => {
+  it('honors a delta-seconds Retry-After within the clamp bounds', () => {
+    expect(parseRetryAfterMs('45')).toBe(45_000);
+    expect(parseRetryAfterMs(' 45 ')).toBe(45_000);
+    expect(parseRetryAfterMs(['45', '90'])).toBe(45_000);
+  });
+
+  it('falls back to the default cadence when absent or unparseable', () => {
+    expect(parseRetryAfterMs(undefined)).toBe(CONNECTION_LIMIT_RETRY_DEFAULT_MS);
+    expect(parseRetryAfterMs('')).toBe(CONNECTION_LIMIT_RETRY_DEFAULT_MS);
+    expect(parseRetryAfterMs('soon')).toBe(CONNECTION_LIMIT_RETRY_DEFAULT_MS);
+    expect(parseRetryAfterMs('-5')).toBe(CONNECTION_LIMIT_RETRY_DEFAULT_MS);
+    expect(parseRetryAfterMs('1.5')).toBe(CONNECTION_LIMIT_RETRY_DEFAULT_MS);
+    // HTTP-date form is not honored here.
+    expect(parseRetryAfterMs('Wed, 21 Oct 2026 07:28:00 GMT')).toBe(
+      CONNECTION_LIMIT_RETRY_DEFAULT_MS,
+    );
+  });
+
+  it('clamps out-of-range values into [5, 300] seconds', () => {
+    expect(parseRetryAfterMs('0')).toBe(CONNECTION_LIMIT_RETRY_MIN_MS);
+    expect(parseRetryAfterMs('1')).toBe(CONNECTION_LIMIT_RETRY_MIN_MS);
+    expect(parseRetryAfterMs('5')).toBe(CONNECTION_LIMIT_RETRY_MIN_MS);
+    expect(parseRetryAfterMs('300')).toBe(CONNECTION_LIMIT_RETRY_MAX_MS);
+    expect(parseRetryAfterMs('3600')).toBe(CONNECTION_LIMIT_RETRY_MAX_MS);
+  });
+
+  it('defaults a ConnectionLimitError built without a value to the default cadence', () => {
+    expect(new ConnectionLimitError().retryAfterMs).toBe(CONNECTION_LIMIT_RETRY_DEFAULT_MS);
+    expect(new ConnectionLimitError(60_000).retryAfterMs).toBe(60_000);
+  });
+});
 
 describe('WSS auth rejection (401/403 upgrade responses)', () => {
   let daemon: RejectingWssDaemon;
@@ -1015,7 +1058,28 @@ describe('WSS auth rejection (401/403 upgrade responses)', () => {
     expect(errors.some((e) => e instanceof PinMismatchError)).toBe(false);
     expect(client.getStatus()).toBe('disconnected');
     expect(client.isConnectionLimited()).toBe(true);
+    // No Retry-After on the wire → the default slow cadence.
+    expect(client.getConnectionLimitRetryAfterMs()).toBe(CONNECTION_LIMIT_RETRY_DEFAULT_MS);
     client.dispose();
+  });
+
+  it('carries the 503 Retry-After (delta-seconds) on the ConnectionLimitError', async () => {
+    daemon.statusCode = 503;
+    daemon.retryAfter = '45';
+    try {
+      const client = makeClient();
+      const errors: Error[] = [];
+      client.on('error', (e) => errors.push(e));
+      await expect(client.request('system.status')).rejects.toBeInstanceOf(ConnectionLimitError);
+      const refusal = errors.find(
+        (e): e is ConnectionLimitError => e instanceof ConnectionLimitError,
+      );
+      expect(refusal?.retryAfterMs).toBe(45_000);
+      expect(client.getConnectionLimitRetryAfterMs()).toBe(45_000);
+      client.dispose();
+    } finally {
+      daemon.retryAfter = null;
+    }
   });
 
   it('classifies a 401 from a cert that fails the pin as PinMismatchError, not auth rejection', async () => {
@@ -1492,9 +1556,12 @@ describe('raceDuplexSockets (multi-host racing, #1746)', () => {
       { host: 'refused', create: () => refused },
     ]);
     const failed = new Promise<Error>((res) => facade.once('error', (e: Error) => res(e)));
-    capped.emit('error', new ConnectionLimitError());
+    capped.emit('error', new ConnectionLimitError(45_000));
     refused.emit('error', new Error('ECONNREFUSED'));
-    expect(await failed).toBeInstanceOf(ConnectionLimitError);
+    const error = await failed;
+    expect(error).toBeInstanceOf(ConnectionLimitError);
+    // The daemon's Retry-After rides along with the retained refusal.
+    expect((error as ConnectionLimitError).retryAfterMs).toBe(45_000);
   });
 
   it('keeps a ConnectionLimitError when the remaining candidate times out', async () => {
@@ -1508,8 +1575,10 @@ describe('raceDuplexSockets (multi-host racing, #1746)', () => {
       { timeoutMs: 50 },
     );
     const failed = new Promise<Error>((res) => facade.once('error', (e: Error) => res(e)));
-    capped.emit('error', new ConnectionLimitError());
-    expect(await failed).toBeInstanceOf(ConnectionLimitError);
+    capped.emit('error', new ConnectionLimitError(120_000));
+    const error = await failed;
+    expect(error).toBeInstanceOf(ConnectionLimitError);
+    expect((error as ConnectionLimitError).retryAfterMs).toBe(120_000);
     expect(hanging.destroyedByRace).toBe(true);
   });
 

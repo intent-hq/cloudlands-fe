@@ -4513,6 +4513,7 @@
   "daemonStatus_overlay_cannotConnectTitle_label": "Verbindung mit intentd nicht möglich",
   "daemonStatus_overlay_connectionLimitTitle_label": "Verbindungslimit des Hosts erreicht",
   "daemonStatus_overlay_connectionLimit_description": "Der Host hat sein Limit für Gastverbindungen erreicht. Die Verbindung wird automatisch wiederhergestellt, sobald ein Platz frei wird.",
+  "daemonStatus_overlay_connectionLimitRetryAfter_description": "Der Host hat sein Limit für Gastverbindungen erreicht. Neuer Versuch in etwa {seconds} Sekunden und automatisch, sobald ein Platz frei wird.",
   "daemonStatus_overlay_stoppedTitle_label": "intentd ist gestoppt",
   "daemonStatus_overlay_startupFailed_description": "Die App betreibt ihren eigenen intentd-Daemon, und dieser konnte nicht gestartet werden.",
   "daemonStatus_overlay_startupFailedWithReason_description": "Die App betreibt ihren eigenen intentd-Daemon, und dieser konnte nicht gestartet werden ({reason}).",

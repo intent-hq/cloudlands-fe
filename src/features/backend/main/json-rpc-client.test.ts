@@ -609,6 +609,40 @@ describe('JsonRpcClient reconnect + heartbeat', () => {
     client.dispose();
   });
 
+  it('retries on the Retry-After the refusal carries instead of the default cadence', async () => {
+    vi.useFakeTimers();
+    const { client, sockets } = makeReconnectingClient();
+    client.start();
+    expect(client.getConnectionLimitRetryAfterMs()).toBeNull();
+
+    // The daemon asked for 45 s: the default 30 s must NOT re-dial.
+    sockets[0].emit('error', new ConnectionLimitError(45_000));
+    expect(client.getConnectionLimitRetryAfterMs()).toBe(45_000);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(sockets).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(sockets).toHaveLength(2);
+    // The on-demand fast-fail carries the same wait.
+    sockets[1].emit('error', new ConnectionLimitError(120_000));
+    await expect(client.request('system.status')).rejects.toMatchObject({
+      name: 'ConnectionLimitError',
+      retryAfterMs: 120_000,
+    });
+    await vi.advanceTimersByTimeAsync(119_000);
+    expect(sockets).toHaveLength(2);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(sockets).toHaveLength(3);
+
+    // Connecting clears the wait along with the posture.
+    sockets[2].open();
+    expect(client.getConnectionLimitRetryAfterMs()).toBeNull();
+    // A failure of another kind never reports one.
+    sockets[2].emit('close');
+    expect(client.getConnectionLimitRetryAfterMs()).toBeNull();
+
+    client.dispose();
+  });
+
   it('holds the connection-limit cadence against on-demand start() and request()', async () => {
     vi.useFakeTimers();
     const { client, sockets } = makeReconnectingClient();
