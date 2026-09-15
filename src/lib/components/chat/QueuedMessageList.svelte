@@ -20,7 +20,8 @@
   import { tick } from 'svelte';
   import { safeSlide } from '$lib/utils/animations';
   import { beforeFollowBottomMutation } from '$lib/utils/smartScroll';
-  import type { QueuedMessage } from '$shared/types';
+  import type { MessageAuthor, QueuedMessage } from '$shared/types';
+  import { getMessageAuthorLabel, getQueuedMessageAuthor } from '$lib/utils/message-authorship';
   import Button from '../ui/button/button.svelte';
   import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
   import { openWorkspaceAttachment } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
@@ -51,9 +52,24 @@
     onremove?: (messageId: string) => void;
     onsendnow?: (messageId: string) => void;
     ondone?: () => void;
+    /**
+     * Queue-surface attribution (multiplayer w2). `null` = off (single-member
+     * workspace). Otherwise a user-authored entry renders its own `author`
+     * projection, or — on a daemon that stamps `fromPrincipalId` only — the
+     * transcript author this map resolves it to.
+     */
+    authors?: ReadonlyMap<string, MessageAuthor> | null;
   }
 
-  let { messages = [], disabled = false, onedit, onremove, onsendnow, ondone }: Props = $props();
+  let {
+    messages = [],
+    disabled = false,
+    onedit,
+    onremove,
+    onsendnow,
+    ondone,
+    authors = null,
+  }: Props = $props();
 
   const workspaceId = getWorkspaceRouteContext()?.workspaceId ?? undefined;
 
@@ -573,6 +589,10 @@
                   </Button>
                 </div>
               {:else}
+                {@const queuedAuthor = getQueuedMessageAuthor(message, authors)}
+                {@const queuedAuthorLabel = queuedAuthor
+                  ? getMessageAuthorLabel(queuedAuthor)
+                  : null}
                 <!-- Display mode -->
                 <div class="col-span-full row-span-full flex flex-1 min-w-0 gap-2">
                   {#if message.requeuedAfterFailure}
@@ -594,6 +614,36 @@
                     data-mode="display"
                     onclick={() => startEdit(message)}
                   >
+                    {#if queuedAuthor}
+                      <span
+                        class="type-caption mb-0.5 flex min-w-0 items-center gap-1.5 text-subtle"
+                        data-testid="queued-message-author"
+                        data-principal-id={queuedAuthor.principalId}
+                        aria-label={m.chat_queuedMessages_author_ariaLabel({
+                          name: queuedAuthorLabel ?? m.chat_chatMessage_authorUnknown_label(),
+                        })}
+                      >
+                        {#if queuedAuthor.avatarUrl}
+                          <img
+                            src={queuedAuthor.avatarUrl}
+                            alt=""
+                            class="size-4 shrink-0 rounded-full"
+                            referrerpolicy="no-referrer"
+                            data-testid="queued-message-author-avatar"
+                          />
+                        {:else}
+                          <span
+                            aria-hidden="true"
+                            class="type-caption flex size-4 shrink-0 items-center justify-center rounded-full bg-muted font-medium uppercase leading-none text-muted-foreground"
+                            data-testid="queued-message-author-avatar-fallback"
+                            >{(queuedAuthorLabel ?? '?').slice(0, 1)}</span
+                          >
+                        {/if}
+                        <span class="truncate" data-testid="queued-message-author-name"
+                          >{queuedAuthorLabel ?? m.chat_chatMessage_authorUnknown_label()}</span
+                        >
+                      </span>
+                    {/if}
                     <span class="block truncate" data-testid="queued-message-text">
                       {message.requeuedAfterFailure
                         ? m.chat_queuedMessages_failedWillRetryPrefix_label() + ' '

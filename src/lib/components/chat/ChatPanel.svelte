@@ -371,6 +371,7 @@
     isUserQueuedMessage,
     omitDrainedQueuedMessages,
   } from '$lib/utils/queued-message-visibility';
+  import { getQueueSurfaceAuthors } from '$lib/utils/message-authorship';
   import {
     findPreviousUserMessage,
     isAutomatedChatMessage,
@@ -1076,6 +1077,14 @@
   // is still in flight, so an answer never renders twice.
   const visibleQueuedMessages = $derived(
     omitDrainedQueuedMessages($queuedMessages$.filter(isUserQueuedMessage), $agentMessages$),
+  );
+
+  // Queue-surface attribution (multiplayer w2): on only once the workspace
+  // has more than one member. Entries carry their own `author` projection;
+  // the transcript's projections are the fallback for daemons that stamp
+  // `fromPrincipalId` only.
+  const queuedMessageAuthors = $derived(
+    getQueueSurfaceAuthors(workspace?.memberCount, $agentMessages$),
   );
 
   // Queue visibility around the wizard: hidden while the wizard is expanded,
@@ -6548,6 +6557,7 @@
               <QueuedMessageList
                 bind:this={queuedMessageListRef}
                 messages={visibleQueuedMessages}
+                authors={queuedMessageAuthors}
                 onedit={handleEditQueuedMessage}
                 onremove={handleRemoveQueuedMessage}
                 onsendnow={handleSendQueuedMessageNow}
