@@ -1231,6 +1231,107 @@ describe('indicator predicate stays marker-driven for out-of-view agents', () =>
     );
   });
 
+  // The standing subscription closes mid-turn (chat went out of view while
+  // the asking turn streamed text): `closeSubscription` keeps the row's
+  // partial content and only settles its streaming flags, and the terminal
+  // question resource never lands because the firehose writes no rows for an
+  // uncovered agent. The daemon marker then names a row that IS cached
+  // locally but lacks its question content — the marker must still light
+  // the badge.
+  it('pends on the marker when the cached marked row is a frozen partial without a question resource', () => {
+    const frozenPartial = assistantMessage([{ type: 'text', text: 'Before I continue, ' }], {
+      id: 'msg-marked',
+      isStreaming: false,
+      streamingComplete: true,
+    });
+    const state = stateWith(
+      makeStoredSession({
+        messages: [userMessage('msg-u1'), frozenPartial],
+        metadata: { pendingQuestionsMessageId: 'msg-marked' },
+      }),
+    );
+    expect(
+      deriveWizardPendingQuestions(
+        state,
+        AGENT_ID,
+        state.agentSessions.byAgentId[AGENT_ID].messages,
+      ),
+    ).toBeNull();
+    expect(
+      deriveAgentHasPendingQuestion(
+        state,
+        AGENT_ID,
+        state.agentSessions.byAgentId[AGENT_ID].messages,
+      ),
+    ).toBe(true);
+    // The same row reached only through the stored session (indicator called
+    // with an empty tail) is still just a frozen partial.
+    expect(deriveAgentHasPendingQuestion(state, AGENT_ID, [])).toBe(true);
+    // An empty terminal placeholder (a covered question-only turn finalized
+    // before its §7.1 resource delta arrived) is no more authoritative.
+    const placeholder = stateWith(
+      makeStoredSession({
+        messages: [assistantMessage([], { id: 'msg-marked', streamingComplete: true })],
+        metadata: { pendingQuestionsMessageId: 'msg-marked' },
+      }),
+    );
+    expect(deriveAgentHasPendingQuestion(placeholder, AGENT_ID, [])).toBe(true);
+  });
+
+  it('keeps the dismissal / answer suppression for a frozen partial marked row', () => {
+    const frozenPartial = assistantMessage([{ type: 'text', text: 'Before I continue, ' }], {
+      id: 'msg-marked',
+    });
+    const dismissed = stateWith(
+      makeStoredSession({
+        messages: [frozenPartial],
+        metadata: {
+          pendingQuestionsMessageId: 'msg-marked',
+          dismissedQuestionsMessageId: 'msg-marked',
+        },
+      }),
+    );
+    expect(deriveAgentHasPendingQuestion(dismissed, AGENT_ID, [frozenPartial])).toBe(false);
+    const answeredInTail = stateWith(
+      makeStoredSession({ metadata: { pendingQuestionsMessageId: 'msg-marked' } }),
+    );
+    expect(
+      deriveAgentHasPendingQuestion(answeredInTail, AGENT_ID, [
+        frozenPartial,
+        answerMessage('msg-marked'),
+      ]),
+    ).toBe(false);
+    const answeredInQueue = stateWith(
+      makeStoredSession({
+        messages: [frozenPartial],
+        metadata: { pendingQuestionsMessageId: 'msg-marked' },
+      }),
+      [queuedMessage(buildAnswerMessageMetadata('msg-marked'))],
+    );
+    expect(deriveAgentHasPendingQuestion(answeredInQueue, AGENT_ID, [frozenPartial])).toBe(false);
+  });
+
+  it('pends when the marked row is present with unanswered questions and not when all are answered', () => {
+    const state = stateWith(
+      makeStoredSession({
+        messages: [marked],
+        metadata: { pendingQuestionsMessageId: 'msg-marked' },
+      }),
+    );
+    expect(deriveAgentHasPendingQuestion(state, AGENT_ID, [marked])).toBe(true);
+    expect(
+      deriveAgentHasPendingQuestion(state, AGENT_ID, [marked, answerMessage('msg-marked')]),
+    ).toBe(false);
+    const answeredInQueue = stateWith(
+      makeStoredSession({
+        messages: [marked],
+        metadata: { pendingQuestionsMessageId: 'msg-marked' },
+      }),
+      [queuedMessage(buildAnswerMessageMetadata('msg-marked'))],
+    );
+    expect(deriveAgentHasPendingQuestion(answeredInQueue, AGENT_ID, [marked])).toBe(false);
+  });
+
   it('defers to the wizard gate when the marked set was recovered', () => {
     const pendingRecovered = recoveryState(
       stateWith(makeStoredSession({ metadata: { pendingQuestionsMessageId: 'msg-marked' } })),
