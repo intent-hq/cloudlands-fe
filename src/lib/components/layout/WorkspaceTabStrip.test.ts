@@ -1228,21 +1228,17 @@ describe('WorkspaceTabStrip', () => {
     ).toBe(true);
   });
 
-  it('offers Share only on tabs the caller owns and opens the share dialog for that workspace', async () => {
+  it('does not offer Share from the tab context menu, even on an owned tab', async () => {
     render(WorkspaceTabStrip);
 
-    // Beta reports `myRole: 'collaborator'` — no owner-side Share entry.
-    await fireEvent.contextMenu(screen.getByRole('tab', { name: /Beta/ }));
-    expect(screen.queryByRole('menuitem', { name: 'Share…' })).toBeNull();
-
-    await fireEvent.mouseDown(document.body);
+    // Alpha reports `myRole: 'owner'`; Share lives in the workspace ⋯ menu only.
     await fireEvent.contextMenu(screen.getByRole('tab', { name: /Alpha/ }));
-    await fireEvent.click(screen.getByRole('menuitem', { name: 'Share…' }));
+    await screen.findByRole('menuitem', { name: 'Close' });
 
-    expect(mocks.dispatch).toHaveBeenCalledWith({
-      type: 'workspaceShare/openDialog',
-      payload: [{ workspaceId: 'ws-1', workspaceTitle: 'Alpha' }],
-    });
+    expect(screen.queryByRole('menuitem', { name: 'Share…' })).toBeNull();
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'workspaceShare/openDialog' }),
+    );
   });
 
   it('closes other workspace tabs in order and focuses the context target', async () => {

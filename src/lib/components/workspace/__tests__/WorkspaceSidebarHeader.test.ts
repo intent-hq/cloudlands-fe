@@ -503,29 +503,4 @@ describe('WorkspaceSidebarHeader status message', () => {
 
     expect(screen.queryByRole('button', { name: 'Transfer/Download…' })).toBeNull();
   });
-
-  it('offers Share to the workspace owner and opens the share dialog', async () => {
-    await renderHeader({ myRole: 'owner' });
-    const trigger = screen.getByRole('button', { name: 'Workspace actions' });
-
-    await fireEvent.keyDown(trigger, { key: 'Enter' });
-    const share = await screen.findByRole('button', { name: 'Share…' });
-
-    expect(share.getAttribute('data-icon-name')).toBe('user-plus');
-    await fireEvent.click(share);
-
-    expect(mocks.dispatch).toHaveBeenCalledWith({
-      type: 'workspaceShare/openDialog',
-      payload: [{ workspaceId: 'ws-1', workspaceTitle: 'Status Workspace' }],
-    });
-  });
-
-  it('does not offer Share to a collaborator or when the daemon reports no role', async () => {
-    await renderHeader({ myRole: 'collaborator' });
-    await fireEvent.keyDown(screen.getByRole('button', { name: 'Workspace actions' }), {
-      key: 'Enter',
-    });
-    await screen.findByRole('menu');
-    expect(screen.queryByRole('button', { name: 'Share…' })).toBeNull();
-  });
 });

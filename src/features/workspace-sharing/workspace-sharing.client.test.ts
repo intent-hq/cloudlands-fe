@@ -135,6 +135,26 @@ describe('workspaceSharingClient wire contract (fake transport)', () => {
     });
   });
 
+  // Remote access off: the daemon's `Error::ListenerDown` (-32603) carries
+  // `data.code = 'listener-down'`, which is not an invite code but must still
+  // reach the saga as a bounded, actionable failure class.
+  it('createInvite surfaces the listener-down code without widening the invite codes', async () => {
+    mockedRequest.mockRejectedValueOnce(
+      new BackendError({
+        code: 'internal',
+        message: 'invite listener is down',
+        rpcCode: -32603,
+        data: { code: 'listener-down' },
+      }),
+    );
+    await expect(workspaceSharingClient.createInvite('ws-1')).resolves.toEqual({
+      success: false,
+      code: 'listener-down',
+      rpcCode: -32603,
+    });
+    expect(inviteErrorCode({ data: { code: 'listener-down' } })).toBeUndefined();
+  });
+
   it('listInvites forwards workspace.invite.list and returns the rows verbatim', async () => {
     mockedRequest.mockResolvedValueOnce({ invites: [invite] });
     await expect(workspaceSharingClient.listInvites('ws-1')).resolves.toEqual([invite]);

@@ -216,7 +216,6 @@
               <Input
                 id="share-pin-login"
                 bind:value={pinLogin}
-                placeholder={m.workspace_share_pinLogin_placeholder()}
                 autocomplete="off"
                 spellcheck={false}
                 disabled={creating}

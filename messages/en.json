@@ -6267,7 +6267,6 @@
   "workspace_share_githubRequired_description": "Members are identified by their GitHub account. Connect GitHub to create invite links.",
   "workspace_share_connectGithub_label": "Connect GitHub",
   "workspace_share_pinLogin_label": "Restrict to a GitHub user (optional)",
-  "workspace_share_pinLogin_placeholder": "octocat",
   "workspace_share_createLink_label": "Create invite link",
   "workspace_share_creating_label": "Creating…",
   "workspace_share_newLink_label": "New invite link",
@@ -6297,5 +6296,5 @@
   "workspace_share_removeMember_confirm_label": "Remove {name} from this workspace?",
   "workspace_share_removeMember_confirmAction_ariaLabel": "Confirm removing {name}",
   "workspace_share_cancel_label": "Cancel",
-  "workspace_hoverCard_share_label": "Share"
+  "workspace_share_listenerDown_error": "Turn on Remote Access + Tailcat in Settings before inviting"
 }

@@ -24,11 +24,10 @@ describe('workspace tab context actions', () => {
   });
 
   function menu(overrides: Partial<Parameters<typeof buildWorkspaceTabContextMenu>[0]> = {}) {
-    const handlers = { onShare: vi.fn(), onClose: vi.fn(), onCloseTabs: vi.fn() };
+    const handlers = { onClose: vi.fn(), onCloseTabs: vi.fn() };
     const entries = buildWorkspaceTabContextMenu({
       order,
       workspaceId: 'middle',
-      canShare: false,
       ...handlers,
       ...overrides,
     });
@@ -52,16 +51,5 @@ describe('workspace tab context actions', () => {
       !isSeparator(entry) && entry.disabled ? [entry.id] : [],
     );
     expect(disabled).toEqual(['close-others', 'close-right']);
-  });
-
-  it('prepends the Share entry only for an owner', () => {
-    expect(menu().ids).not.toContain('share');
-
-    const { entries, ids, handlers } = menu({ canShare: true });
-    expect(ids).toEqual(['share', '-', 'close', '-', 'close-others', 'close-right']);
-    const share = entries[0]!;
-    if (isSeparator(share)) throw new Error('expected the share item first');
-    share.onClick();
-    expect(handlers.onShare).toHaveBeenCalledTimes(1);
   });
 });
