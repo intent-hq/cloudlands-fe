@@ -81,6 +81,14 @@ export interface WorkspaceShareState {
   members: Collection<WorkspaceMember, 'principalId'>;
   /** Open invites in daemon order. */
   invites: Collection<WorkspaceInvite, 'id'>;
+  /**
+   * Guest cap of the dialog's workspace as `workspace.members.list` reports
+   * it (intent-hq/intentd#1917): `guestCount` collaborators plus open invites
+   * spent against `guestLimit`. `null` until read, or when the daemon omits
+   * the fields; the dialog gates Create only on a known cap.
+   */
+  guestCount: number | null;
+  guestLimit: number | null;
   loadStatus: 'idle' | 'loading' | 'loaded' | 'error';
   loadError: string | null;
   /**
@@ -115,6 +123,8 @@ export const initialState: WorkspaceShareState = {
   session: 0,
   members: createCollection<WorkspaceMember, 'principalId'>('principalId'),
   invites: createCollection<WorkspaceInvite, 'id'>('id'),
+  guestCount: null,
+  guestLimit: null,
   loadStatus: 'idle',
   loadError: null,
   mutationGeneration: 0,
@@ -159,6 +169,8 @@ export const shareDataLoaded = createAction<
       generation: number;
       members: WorkspaceMember[];
       invites: WorkspaceInvite[];
+      guestCount: number | null;
+      guestLimit: number | null;
     },
   ]
 >('workspaceShare/dataLoaded');
@@ -245,6 +257,8 @@ function withoutRows(state: WorkspaceShareState): WorkspaceShareState {
     ...state,
     members: initialState.members,
     invites: initialState.invites,
+    guestCount: null,
+    guestLimit: null,
     creating: false,
     createError: null,
     createdLink: null,
@@ -333,7 +347,7 @@ workspaceShareReducer.with(shareDataRequested, (state) => {
 });
 workspaceShareReducer.with(
   shareDataLoaded,
-  (state, { payload: [{ target, generation, members, invites }] }) => {
+  (state, { payload: [{ target, generation, members, invites, guestCount, guestLimit }] }) => {
     if (!targets(state, target) || state.withheld || state.mutationGeneration !== generation) {
       return state;
     }
@@ -346,6 +360,8 @@ workspaceShareReducer.with(
       ...state,
       members: createCollection('principalId', members),
       invites: invitesById,
+      guestCount,
+      guestLimit,
       createdLink,
       loadStatus: 'loaded',
       loadError: null,

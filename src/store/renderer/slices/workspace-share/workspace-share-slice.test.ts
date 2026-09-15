@@ -83,6 +83,31 @@ describe('workspaceShareReducer', () => {
     });
     expect(getItems(initialState.members)).toEqual([]);
     expect(getItems(initialState.invites)).toEqual([]);
+    expect(initialState.guestCount).toBeNull();
+    expect(initialState.guestLimit).toBeNull();
+  });
+
+  it('records the guest cap from a loaded read, and drops it on close or retarget', () => {
+    const loaded = reduce(
+      opened(),
+      shareDataLoaded({
+        target: target(opened()),
+        generation: 0,
+        members: [owner],
+        invites: [invite],
+        guestCount: 2,
+        guestLimit: 5,
+      }),
+    );
+    expect(loaded).toMatchObject({ guestCount: 2, guestLimit: 5 });
+
+    expect(workspaceShareReducer(loaded, closeShareDialog())).toMatchObject({
+      guestCount: null,
+      guestLimit: null,
+    });
+    expect(
+      workspaceShareReducer(loaded, openShareDialog({ workspaceId: 'ws-2', workspaceTitle: 'B' })),
+    ).toMatchObject({ guestCount: null, guestLimit: null });
   });
 
   it('openShareDialog records the target workspace and starts a new session', () => {
@@ -103,6 +128,8 @@ describe('workspaceShareReducer', () => {
         generation: 0,
         members: [owner],
         invites: [invite],
+        guestCount: null,
+        guestLimit: null,
       }),
       shareInviteCreateRequested({ pinLogin: '' }),
       shareInviteCreated({ target: target(opened()), request: 1, link }),
@@ -128,6 +155,8 @@ describe('workspaceShareReducer', () => {
         generation: 0,
         members: [owner],
         invites: [invite],
+        guestCount: null,
+        guestLimit: null,
       }),
     );
     const closed = workspaceShareReducer(loaded, closeShareDialog());
@@ -149,6 +178,8 @@ describe('workspaceShareReducer', () => {
         generation: 0,
         members: [owner],
         invites: [invite],
+        guestCount: null,
+        guestLimit: null,
       }),
     );
     expect(loaded).toMatchObject({ loadStatus: 'loaded', loadError: null });
@@ -175,6 +206,8 @@ describe('workspaceShareReducer', () => {
         generation: 0,
         members: [owner],
         invites: [],
+        guestCount: null,
+        guestLimit: null,
       }),
       shareDataFailed({ target: { workspaceId: 'ws-stale', session: 1 }, error: 'nope' }),
     );
@@ -187,7 +220,14 @@ describe('workspaceShareReducer', () => {
     const state = reduce(
       initialState,
       shareDataRequested(),
-      shareDataLoaded({ target: stale, generation: 0, members: [owner], invites: [] }),
+      shareDataLoaded({
+        target: stale,
+        generation: 0,
+        members: [owner],
+        invites: [],
+        guestCount: null,
+        guestLimit: null,
+      }),
       shareInviteCreated({ target: stale, request: 0, link }),
       shareActionSettled({ target: stale, error: 'late' }),
     );
@@ -275,6 +315,8 @@ describe('workspaceShareReducer', () => {
         generation: 1,
         members: [owner],
         invites: [invite, { ...invite, id: 'inv-2' }],
+        guestCount: null,
+        guestLimit: null,
       }),
     );
     expect(created.createdLink).toEqual(link);
@@ -300,6 +342,8 @@ describe('workspaceShareReducer', () => {
         generation: created.mutationGeneration,
         members: [owner],
         invites: [invite],
+        guestCount: null,
+        guestLimit: null,
       }),
     );
     expect(vanished.createdLink).toBeNull();
@@ -326,6 +370,8 @@ describe('workspaceShareReducer', () => {
         generation: preCreateGeneration,
         members: [owner],
         invites: [],
+        guestCount: null,
+        guestLimit: null,
       }),
     );
     expect(staleEmpty).toBe(created);
@@ -338,6 +384,8 @@ describe('workspaceShareReducer', () => {
         generation: staleEmpty.mutationGeneration,
         members: [owner],
         invites: [{ ...invite, id: 'inv-2' }],
+        guestCount: null,
+        guestLimit: null,
       }),
     );
     expect(fresh.createdLink).toEqual(link);
@@ -370,6 +418,8 @@ describe('workspaceShareReducer', () => {
         generation: 0,
         members: [owner],
         invites: [invite],
+        guestCount: null,
+        guestLimit: null,
       }),
       shareInviteCreateRequested({ pinLogin: '' }),
       shareInviteCreated({ target: target(opened()), request: 1, link }),
@@ -397,6 +447,8 @@ describe('workspaceShareReducer', () => {
           generation: withheld.mutationGeneration,
           members: [owner],
           invites: [],
+          guestCount: null,
+          guestLimit: null,
         }),
       ),
     ).toBe(withheld);

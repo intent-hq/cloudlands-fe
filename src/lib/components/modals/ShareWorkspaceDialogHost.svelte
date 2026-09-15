@@ -29,6 +29,8 @@
     selectShareCreateError,
     selectShareCreating,
     selectShareDialogOpen,
+    selectShareGuestCount,
+    selectShareGuestLimit,
     selectShareInvites,
     selectShareLoadError,
     selectShareLoading,
@@ -55,6 +57,8 @@
   const canManage$ = selectShareCanManage();
   const members$ = selectShareMembers();
   const invites$ = selectShareInvites();
+  const guestCount$ = selectShareGuestCount();
+  const guestLimit$ = selectShareGuestLimit();
   const loading$ = selectShareLoading();
   const loadError$ = selectShareLoadError();
   const creating$ = selectShareCreating();
@@ -88,6 +92,8 @@
   members={$members$}
   invites={$invites$}
   {inviteLinks}
+  guestCount={$guestCount$}
+  guestLimit={$guestLimit$}
   loading={$loading$}
   loadError={$loadError$}
   creating={$creating$}
