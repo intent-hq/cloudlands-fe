@@ -23,7 +23,7 @@
 <div class="flex items-center gap-2.5">
   {#if item.type === 'message' && item.isArchivedWorkspace}
     <span
-      class="text-ui font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded bg-foreground/[0.05] text-subtle flex-none"
+      class="text-ui font-semibold px-1.5 py-0.5 rounded bg-foreground/[0.05] text-subtle flex-none"
     >
       {m.lib_commandPalette_archivedWorkspace_pill()}
     </span>

@@ -66,11 +66,7 @@ for (const theme of ['light', 'dark'] as const) {
               '[data-operational-icon-box], [data-tool-icon]',
             ) as HTMLElement;
             const icon = iconBox.querySelector('svg') as SVGElement;
-            const content = (
-              element.matches('button')
-                ? element.children[1]
-                : element.querySelector('button > :nth-child(2), [data-tool-sentence]')
-            ) as HTMLElement;
+            const content = element.querySelector('[data-operational-summary]') as HTMLElement;
             return {
               contentX: content.getBoundingClientRect().x + window.scrollX,
               height: element.getBoundingClientRect().height,
@@ -486,6 +482,31 @@ for (const theme of ['light', 'dark'] as const) {
   }
 }
 
+for (const theme of ['light', 'dark'] as const) {
+  test(`renders operational summaries and attribution headers at body-copy size in ${theme}`, async ({
+    mount,
+  }) => {
+    const component = await mount(AssistantProseGeometryHost, { props: { theme } });
+    const baseline = component.locator('[data-testid="baseline-geometry"]');
+    const proseFontSize = await baseline
+      .locator('[data-assistant-prose] > *')
+      .first()
+      .evaluate((element) => getComputedStyle(element).fontSize);
+    const summaryFontSizes = await baseline
+      .locator('[data-chat-operational-row] [data-operational-summary]')
+      .evaluateAll((elements) => elements.map((element) => getComputedStyle(element).fontSize));
+    const attributionFontSizes = await baseline
+      .locator(
+        '[data-testid="hook-wake-attribution"], [data-testid="pr-monitor-wake-attribution"], [data-testid="pr-monitor-wake-chip"]',
+      )
+      .evaluateAll((elements) => elements.map((element) => getComputedStyle(element).fontSize));
+
+    expect(proseFontSize).toBe('15px');
+    expect(summaryFontSizes).toEqual(Array(5).fill(proseFontSize));
+    expect(attributionFontSizes).toEqual(Array(3).fill(proseFontSize));
+  });
+}
+
 test('removes operational detail motion when reduced motion is preferred', async ({
   mount,
   page,
@@ -501,5 +522,5 @@ test('removes operational detail motion when reduced motion is preferred', async
   await disclosure.click();
   const details = component.locator(`[id="${controls}"]`);
   await expect(details).toBeVisible();
-  expect(await details.evaluate((element) => element.getAnimations().length)).toBe(0);
+  await expect.poll(() => details.evaluate((element) => element.getAnimations().length)).toBe(0);
 });

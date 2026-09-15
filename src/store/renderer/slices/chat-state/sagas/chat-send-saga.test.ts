@@ -30,8 +30,8 @@ const mocks = vi.hoisted(() => ({
   ),
 }));
 vi.mock('$features/agent/agent-send', () => ({ sendMessage: mocks.send }));
-vi.mock('svelte-sonner', () => ({
-  toast: { info: mocks.toastInfo, error: mocks.toastError },
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { info: mocks.toastInfo, error: mocks.toastError },
 }));
 vi.mock('../../model/model-utils', () => ({
   getModelsForProviderForLoadingState: mocks.getModelsForProvider,

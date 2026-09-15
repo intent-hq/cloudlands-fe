@@ -90,10 +90,10 @@ test('keeps the edge gap at zero for empty, one, and many queues in every displa
           expect(await outerGap(component)).toBeCloseTo(0, 5);
           expect(await visibleComposerGap(component)).toBeCloseTo(0, 5);
           expect(await rowGeometry(component)).toEqual({
-            paddingTop: '4px',
-            paddingBottom: '4px',
-            rowGap: 'normal',
-            containerPaddingBottom: '8px',
+            paddingTop: '0px',
+            paddingBottom: '0px',
+            rowGap: '4px',
+            containerPaddingBottom: '4px',
           });
         }
       }
@@ -113,7 +113,7 @@ test('preserves edit, selection, reorder, save, cancel, removal, and scroll owne
   const rows = component.getByTestId('queued-message-row');
 
   await rows.first().hover();
-  await rows.first().getByTestId('queued-message-actions').getByRole('button').nth(1).click();
+  await rows.first().getByTestId('queued-message-content').dblclick();
   const textarea = component.locator('textarea');
   await expect(textarea).toBeFocused();
   await textarea.fill('Edited queued message');
@@ -138,14 +138,14 @@ test('preserves edit, selection, reorder, save, cancel, removal, and scroll owne
   expect(await rowGeometry(component)).toEqual(baseline);
 
   await rows.first().hover();
-  await rows.first().getByTestId('queued-message-actions').getByRole('button').nth(1).click();
+  await rows.first().getByTestId('queued-message-content').dblclick();
   await expect(textarea).toBeFocused();
   await textarea.press('Escape');
   await expect(textarea).toHaveCount(0);
   expect(await outerGap(component)).toBeCloseTo(0, 5);
 
   await rows.first().hover();
-  await rows.first().getByTestId('queued-message-actions').getByRole('button').nth(2).click();
+  await rows.first().getByTestId('queued-message-actions').getByRole('button').click();
   await settle(component, page);
   await expect(rows).toHaveCount(2);
   expect(await rowGeometry(component)).toEqual(baseline);
@@ -185,7 +185,7 @@ test('leaves no stale shell after removal, transition reversal, or reduced motio
 
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await component.getByTestId('queued-message-row').hover();
-  await component.getByTestId('queued-message-actions').getByRole('button').nth(2).click();
+  await component.getByTestId('queued-message-actions').getByRole('button').click();
   await expect(component.getByTestId('queued-message-utility-area')).toHaveCount(0);
   await expect(component.getByTestId('queued-messages-container')).toHaveCount(0);
   await expect(component.getByTestId('chat-scroll-end-marker')).toHaveCSS('height', '0px');

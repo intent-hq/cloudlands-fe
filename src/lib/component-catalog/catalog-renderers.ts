@@ -1,27 +1,58 @@
+import ModelPickerCatalogPreview from './renderers/ModelPickerCatalogPreview.svelte';
 import type { Component } from 'svelte';
 import type { UiComponentFixture } from '$lib/components/ui/component-metadata';
+import MessageComposerCatalogPreview from './renderers/MessageComposerCatalogPreview.svelte';
+import AskUserQuestionsCatalogPreview from './renderers/AskUserQuestionsCatalogPreview.svelte';
 import BasicCatalogPreview from './renderers/BasicCatalogPreview.svelte';
 import ChoiceCatalogPreview from './renderers/ChoiceCatalogPreview.svelte';
+import ChoiceGroupCatalogPreview from './renderers/ChoiceGroupCatalogPreview.svelte';
 import ContentFieldCatalogPreview from './renderers/ContentFieldCatalogPreview.svelte';
 import NavigationHelpCatalogPreview from './renderers/NavigationHelpCatalogPreview.svelte';
+import NavigationPrimitivesCatalogPreview from './renderers/NavigationPrimitivesCatalogPreview.svelte';
 import OverlayCatalogPreview from './renderers/OverlayCatalogPreview.svelte';
+import ProximityHighlightCatalogPreview from './renderers/ProximityHighlightCatalogPreview.svelte';
 import SettingsCatalogPreview from './renderers/SettingsCatalogPreview.svelte';
+import ToastCatalogPreview from './renderers/ToastCatalogPreview.svelte';
+import ModalCatalogPreview from './renderers/ModalCatalogPreview.svelte';
+import PopoversCatalogPreview from './renderers/PopoversCatalogPreview.svelte';
+import RowsCatalogPreview from './renderers/RowsCatalogPreview.svelte';
+import FieldsCatalogPreview from './renderers/FieldsCatalogPreview.svelte';
+import ScreenStatesCatalogPreview from './renderers/ScreenStatesCatalogPreview.svelte';
 
-export const catalogRendererIds = [
+const catalogRendererIds = [
+  'accordion',
+  'ask-user-questions',
   'badge',
   'breadcrumb',
   'button',
   'button-group',
   'card',
   'checkbox',
+  'checkbox-group',
   'combobox',
+  'dropdown',
+  'grouped-combobox',
+  'copy-input',
   'dialog',
   'file-input',
+  'fields',
   'input',
+  'input-group',
+  'input-message',
+  'kbd',
   'label',
   'list',
   'menu',
+  'message-composer',
+  'modals',
+  'model-picker',
+  'proximity-highlight',
+  'popovers',
+  'rows',
+  'screen-states',
+  'radio-group',
   'scroll-area',
+  'searchable-select',
   'select',
   'separator',
   'settings-field-row',
@@ -31,9 +62,12 @@ export const catalogRendererIds = [
   'sidebar',
   'skeleton',
   'slider',
-  'spinner',
+  'loading-indicator',
   'switch',
+  'table',
+  'tabs',
   'textarea',
+  'toast',
   'toggle',
   'toggle-group',
   'tooltip',
@@ -56,20 +90,39 @@ type CatalogRendererRegistry = {
 };
 
 export const catalogRenderers = {
+  'model-picker': ModelPickerCatalogPreview,
+  accordion: NavigationPrimitivesCatalogPreview,
+  'ask-user-questions': AskUserQuestionsCatalogPreview,
   badge: BasicCatalogPreview,
   breadcrumb: NavigationHelpCatalogPreview,
   button: BasicCatalogPreview,
   'button-group': BasicCatalogPreview,
   card: ContentFieldCatalogPreview,
   checkbox: BasicCatalogPreview,
+  'checkbox-group': ChoiceGroupCatalogPreview,
   combobox: ChoiceCatalogPreview,
+  dropdown: ChoiceCatalogPreview,
+  'grouped-combobox': ChoiceCatalogPreview,
+  'copy-input': ContentFieldCatalogPreview,
   dialog: OverlayCatalogPreview,
   'file-input': SettingsCatalogPreview,
+  fields: FieldsCatalogPreview,
   input: ContentFieldCatalogPreview,
+  'input-group': ContentFieldCatalogPreview,
+  'input-message': ContentFieldCatalogPreview,
+  kbd: NavigationHelpCatalogPreview,
   label: ContentFieldCatalogPreview,
   list: ContentFieldCatalogPreview,
   menu: OverlayCatalogPreview,
+  'message-composer': MessageComposerCatalogPreview,
+  modals: ModalCatalogPreview,
+  popovers: PopoversCatalogPreview,
+  rows: RowsCatalogPreview,
+  'screen-states': ScreenStatesCatalogPreview,
+  'proximity-highlight': ProximityHighlightCatalogPreview,
+  'radio-group': ChoiceGroupCatalogPreview,
   'scroll-area': NavigationHelpCatalogPreview,
+  'searchable-select': ChoiceCatalogPreview,
   select: ChoiceCatalogPreview,
   separator: ContentFieldCatalogPreview,
   'settings-field-row': SettingsCatalogPreview,
@@ -79,9 +132,12 @@ export const catalogRenderers = {
   sidebar: NavigationHelpCatalogPreview,
   skeleton: ContentFieldCatalogPreview,
   slider: SettingsCatalogPreview,
-  spinner: ContentFieldCatalogPreview,
+  'loading-indicator': ContentFieldCatalogPreview,
   switch: BasicCatalogPreview,
+  table: ContentFieldCatalogPreview,
+  tabs: NavigationPrimitivesCatalogPreview,
   textarea: ContentFieldCatalogPreview,
+  toast: ToastCatalogPreview,
   toggle: BasicCatalogPreview,
   'toggle-group': BasicCatalogPreview,
   tooltip: NavigationHelpCatalogPreview,

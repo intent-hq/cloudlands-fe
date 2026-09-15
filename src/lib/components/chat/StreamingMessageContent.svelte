@@ -1054,6 +1054,12 @@
   }
 
   .content-block--animate-in {
-    animation: slideUpIn 250ms ease-out both;
+    animation: slideUpIn var(--spring-slow) var(--spring-slow-ease) both;
+  }
+
+  @container style(--motion-reduced: 1) {
+    .content-block--animate-in {
+      animation: none;
+    }
   }
 </style>

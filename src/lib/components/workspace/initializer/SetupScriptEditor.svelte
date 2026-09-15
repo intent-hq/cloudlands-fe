@@ -5,7 +5,7 @@
   import * as Tooltip from '$lib/components/ui/tooltip';
   import CodeEditor from '$lib/components/editor/CodeEditor.svelte';
   import SetupScriptAgent from './SetupScriptAgent.svelte';
-  import { slide } from 'svelte/transition';
+  import { slide } from '$lib/motion';
   import { untrack } from 'svelte';
   import {
     SETUP_SCRIPT_TEMPLATES,
@@ -304,16 +304,14 @@
     <div class="flex flex-col flex-[2] min-w-0 overflow-y-auto pl-10 pt-6 pb-6 pr-5">
       <!-- Auto-generate -->
       <div class="mb-4">
-        <h4
-          class="text-ui font-semibold uppercase tracking-wider text-muted-foreground mb-1.5 px-2"
-        >
+        <h4 class="text-ui font-semibold text-muted-foreground mb-1.5 px-2">
           {m.workspace_setupScriptEditor_generate_label()}
         </h4>
         <p class="text-xs text-subtle px-2 mb-2">
           {m.workspace_setupScriptEditor_generate_description()}
         </p>
         {#if showAgentPanel && repoPath}
-          <div transition:slide={{ duration: 200 }}>
+          <div transition:slide={{ tier: 'moderate' }}>
             <SetupScriptAgent
               {repoPath}
               onScriptGenerated={(script) => {
@@ -346,12 +344,11 @@
       <!-- Repo-committed script from .intent/config.json -->
       {#if repoConfigScript}
         <div class="mb-4">
-          <h4
-            class="text-ui font-semibold uppercase tracking-wider text-muted-foreground mb-1.5 px-2"
-          >
+          <h4 class="text-ui font-semibold text-muted-foreground mb-1.5 px-2">
             {m.workspace_setupScriptEditor_repoConfig_label()}
           </h4>
-          <button
+          <Button
+            variant="ghost"
             class="w-full text-left px-2 py-1.5 rounded-md cursor-pointer transition-colors {selectedScriptId ===
             REPO_CONFIG_SCRIPT_ID
               ? 'bg-background text-foreground ring-1 ring-border'
@@ -364,19 +361,18 @@
             <p class="text-xs text-subtle mt-0.5 line-clamp-1">
               {m.workspace_setupScriptEditor_repoConfig_description()}
             </p>
-          </button>
+          </Button>
         </div>
       {/if}
 
       <!-- Last-used script for this repo (localStorage) -->
       {#if lastUsedScript}
         <div class="mb-4">
-          <h4
-            class="text-ui font-semibold uppercase tracking-wider text-muted-foreground mb-1.5 px-2"
-          >
+          <h4 class="text-ui font-semibold text-muted-foreground mb-1.5 px-2">
             {m.workspace_setupScriptEditor_lastUsed_label()}
           </h4>
-          <button
+          <Button
+            variant="ghost"
             class="w-full text-left px-2 py-1.5 rounded-md cursor-pointer transition-colors {selectedScriptId ===
             LAST_USED_SCRIPT_ID
               ? 'bg-background text-foreground ring-1 ring-border'
@@ -389,19 +385,18 @@
             <p class="text-xs text-subtle mt-0.5 line-clamp-1">
               {m.workspace_setupScriptEditor_lastUsed_description()}
             </p>
-          </button>
+          </Button>
         </div>
       {/if}
 
       <!-- Templates -->
       <div class="mb-4">
-        <h4
-          class="text-ui font-semibold uppercase tracking-wider text-muted-foreground mb-1.5 px-2"
-        >
+        <h4 class="text-ui font-semibold text-muted-foreground mb-1.5 px-2">
           {m.workspace_setupScriptEditor_templates_label()}
         </h4>
         {#each SETUP_SCRIPT_TEMPLATES as template (template.id)}
-          <button
+          <Button
+            variant="ghost"
             class="w-full text-left px-2 py-1.5 rounded-md cursor-pointer transition-colors {selectedScriptId ===
             `template-${template.id}`
               ? 'bg-background text-foreground ring-1 ring-border'
@@ -418,7 +413,7 @@
               {/if}
             </div>
             <p class="text-xs text-subtle mt-0.5 line-clamp-1">{template.description}</p>
-          </button>
+          </Button>
         {/each}
       </div>
     </div>
@@ -445,7 +440,7 @@
       </div>
       <!-- Bottom bar -->
       <div class="flex items-center gap-3 px-3 py-1.5 bg-muted/30 shrink-0">
-        <span class="text-ui font-medium uppercase tracking-wider text-muted-foreground shrink-0"
+        <span class="text-ui font-medium text-muted-foreground shrink-0"
           >{m.workspace_setupScriptEditor_variables_label()}</span
         >
         <div class="flex flex-wrap gap-1.5">
@@ -461,7 +456,7 @@
                 </Tooltip.Trigger>
                 <Tooltip.Content side="bottom" class="max-w-xs z-[200]">
                   <p class="text-xs">{variable.description}</p>
-                  <p class="text-xs opacity-50 mt-1">
+                  <p class="mt-1 text-xs text-muted-foreground">
                     {m.workspace_setupScriptEditor_example_before()}
                     <code class="text-ui">{variable.example}</code>
                   </p>
@@ -490,7 +485,7 @@
   {#if expanded}
     <div
       class="{contentClass} flex flex-col gap-3 flex-1 min-h-0"
-      transition:slide={{ duration: 200 }}
+      transition:slide={{ tier: 'moderate' }}
     >
       {@render expandedContentSnippet()}
     </div>
@@ -513,7 +508,7 @@
 
     <!-- Expanded Content (non-compact mode renders inside, compact mode renders via slot) -->
     {#if expanded && !compact}
-      <div class="mt-1 pl-7 space-y-3" transition:slide={{ duration: 200 }}>
+      <div class="mt-1 pl-7 space-y-3" transition:slide={{ tier: 'moderate' }}>
         {@render expandedContentSnippet()}
       </div>
     {/if}
@@ -521,7 +516,7 @@
 
   <!-- Compact mode: expanded content rendered outside wrapper (parent controls placement) -->
   {#if expanded && compact}
-    <div class="space-y-3" transition:slide={{ duration: 200 }}>
+    <div class="space-y-3" transition:slide={{ tier: 'moderate' }}>
       {@render expandedContentSnippet()}
     </div>
   {/if}

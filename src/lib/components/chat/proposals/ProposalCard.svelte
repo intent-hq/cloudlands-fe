@@ -1028,7 +1028,7 @@
                   <div
                     bind:this={branchRowElement}
                     class={branchNeedsAttention
-                      ? 'min-w-0 max-w-[50%] rounded-md ring-1 ring-amber-500/70 focus:outline-none'
+                      ? 'min-w-0 max-w-[50%] rounded-md ring-1 ring-warning/30 focus:outline-none'
                       : 'min-w-0 max-w-[50%] focus:outline-none'}
                     data-testid="proposal-branch-picker"
                     data-branch-warning={branchNeedsAttention ? 'true' : undefined}
@@ -1055,7 +1055,7 @@
                 {#if proposedBranchMissing}
                   <p
                     id={`${metadataIdPrefix}-branch-mismatch`}
-                    class="type-caption mt-1 text-amber-600 dark:text-amber-400"
+                    class="type-caption mt-1 text-warning-ink"
                     data-testid="proposal-branch-mismatch-warning"
                   >
                     {m.chat_proposalCard_branchNotFound_label({
@@ -1108,7 +1108,7 @@
           </div>
 
           {#if proposal.preview.warnings?.length}
-            <div class="type-caption text-warning">
+            <div class="type-caption text-warning-ink">
               {#each proposal.preview.warnings as warning}
                 <div>⚠ {warning}</div>
               {/each}
@@ -1152,7 +1152,7 @@
                     : m.chat_proposalCard_createWorkspace_label()}
             </span>
             {#if isSiblingWorkspaceCreate ? showWorkspaceShortcutHint : !isApplying && !isFailed}
-              <span class="opacity-50">{shortcutModifier}+↵</span>
+              <span>{shortcutModifier}+↵</span>
             {/if}
           </Button>
         </div>
@@ -1370,7 +1370,7 @@
         {/if}
 
         {#if proposal.preview.warnings?.length}
-          <div class="type-caption text-warning">
+          <div class="type-caption text-warning-ink">
             {#each proposal.preview.warnings as warning}
               <div>⚠ {warning}</div>
             {/each}

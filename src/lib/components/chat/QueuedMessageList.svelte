@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { COMPOSER_INSET_CLASS } from './composer-inset';
   /**
    * QueuedMessageList Component
    *
@@ -8,20 +9,19 @@
 
   import Fa from 'svelte-fa';
   import {
-    faPen,
-    faTrash,
     faCheck,
     faTimes,
-    faArrowRight,
     faRotateRight,
     faFile,
     faChevronDown,
   } from '@fortawesome/free-solid-svg-icons';
+  import XIcon from 'phosphor-svelte/lib/XIcon';
   import { tick } from 'svelte';
-  import { safeSlide } from '$lib/utils/animations';
+  import { safeDisclosureTransition } from './disclosure-motion';
   import { beforeFollowBottomMutation } from '$lib/utils/smartScroll';
   import type { QueuedMessage } from '$shared/types';
-  import Button from '../ui/button/button.svelte';
+  import { Button } from '$lib/components/ui/button';
+  import { Textarea } from '$lib/components/ui/textarea';
   import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
   import { openWorkspaceAttachment } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import { evictAttachmentImageUrl, resolveAttachmentImageUrl } from './attachment-image-url';
@@ -29,7 +29,6 @@
   import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
-  import { safeSubscriptionSlide } from './subscription-disclosure';
   import {
     cancelQueuedMessageRowMotion,
     captureQueuedMessageRowMotion,
@@ -37,8 +36,7 @@
   } from './queued-message-row-motion';
 
   const QUEUE_ACTION_CLUSTER_CLASS =
-    'pointer-events-none absolute top-1/2 right-2.5 z-10 flex -translate-y-1/2 items-center gap-0.5 opacity-0 transition-opacity duration-[var(--motion-fast)] group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 motion-reduce:transition-none';
-  const QUEUE_THREE_ACTION_CONTENT_CLASS = 'box-border pr-24';
+    'pointer-events-none flex shrink-0 items-center opacity-0 transition-opacity duration-spring-fast ease-spring-fast group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 motion-reduce:transition-none';
 
   interface Props {
     messages: QueuedMessage[];
@@ -283,6 +281,17 @@
     return { destroy: () => cancelAnimationFrame(frame) };
   }
 
+  $effect(() => {
+    const textarea = editTextarea;
+    if (!textarea) return;
+    const autofocus = autofocusAction(textarea);
+    const resize = autoResize(textarea);
+    return () => {
+      autofocus.destroy();
+      resize.destroy();
+    };
+  });
+
   async function startEdit(message: QueuedMessage, programmatic = false) {
     if (activeEditOperation || editingId === message.id) return;
     const operation = beginEditOperation(message.id);
@@ -397,6 +406,19 @@
     onremove?.(id);
   }
 
+  function handleDisplayKeydown(event: KeyboardEvent, message: QueuedMessage) {
+    if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+      event.preventDefault();
+      onsendnow?.(message.id);
+    } else if (event.key === 'Enter' || event.key === 'F2') {
+      event.preventDefault();
+      void startEdit(message);
+    } else if (event.key === 'Delete' && !disabled) {
+      event.preventDefault();
+      handleRemove(message.id);
+    }
+  }
+
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -425,13 +447,14 @@
     <div class="inline-flex items-center gap-1 shrink-0">
       {#each message.imageBlocks as block, i (i)}
         {@const src = queuedImageSrc(block)}
-        <button
+        <Button
           type="button"
-          class="inline-flex shrink-0 p-0 border-0 bg-transparent cursor-pointer align-text-bottom rounded-sm focus:outline-none focus:ring-1 focus:ring-primary"
+          variant="plain"
+          class="inline-flex shrink-0 p-0 border-0 bg-transparent cursor-pointer align-text-bottom rounded-sm"
           data-testid="queued-image-thumbnail"
           onclick={(e) => {
             e.stopPropagation();
-            openImageLightbox(block, e.currentTarget, i);
+            openImageLightbox(block, e.currentTarget as HTMLButtonElement, i);
           }}
           aria-label={m.chat_chatMessage_viewAttachedImage_ariaLabel({
             number: formatInteger(i + 1),
@@ -453,7 +476,7 @@
               data-testid="queued-image-placeholder"
             ></span>
           {/if}
-        </button>
+        </Button>
       {/each}
     </div>
   {/if}
@@ -463,8 +486,9 @@
   {#if message.fileBlocks && message.fileBlocks.length > 0}
     <div class="inline-flex items-center gap-1 shrink-0">
       {#each message.fileBlocks as block, i (i)}
-        <button
+        <Button
           type="button"
+          variant="plain"
           class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-border bg-muted/50 hover:bg-muted transition-colors text-[0.7rem] text-muted-foreground hover:text-foreground cursor-pointer"
           data-testid="queued-file-chip"
           onclick={(e) => {
@@ -475,7 +499,7 @@
         >
           <Fa icon={faFile} class="w-2.5 h-2.5" />
           <span class="truncate max-w-[120px]">{block.fileName}</span>
-        </button>
+        </Button>
       {/each}
     </div>
   {/if}
@@ -483,13 +507,14 @@
 
 {#if messages.length > 0}
   <div
-    class="queued-messages-surface relative z-20 px-2 pt-3 pb-2"
+    class="queued-messages-surface relative z-20 pb-1"
     data-testid="queued-messages-container"
-    transition:safeSlide={{ duration: 200 }}
+    transition:safeDisclosureTransition={{ tier: 'moderate' }}
   >
-    <button
+    <Button
       type="button"
-      class="type-caption flex w-full cursor-pointer items-center rounded border-0 bg-transparent px-2.5 py-0 text-left text-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      variant="plain"
+      class="type-caption flex w-full cursor-pointer items-center rounded-(--radius-medium) border-0 bg-transparent {COMPOSER_INSET_CLASS} py-0 text-left text-subtle"
       aria-expanded={expanded}
       aria-controls={contentId}
       data-testid="queued-messages-disclosure"
@@ -512,19 +537,19 @@
             : 'rotate-90'}"
         />
       </span>
-    </button>
+    </Button>
 
     {#if expanded}
       <div
         id={contentId}
-        class="pt-2"
+        class="pt-1"
         data-testid="queued-messages-content"
-        transition:safeSubscriptionSlide
+        transition:safeDisclosureTransition={{ tier: 'moderate' }}
       >
-        <div class="space-y-px">
+        <div class="flex flex-col gap-1">
           {#each messages as message (message.id)}
             <div
-              class="group relative type-body flex items-start gap-2 px-2.5 py-1 text-subtle {message.editing
+              class="group relative type-caption flex min-h-8 select-none items-center gap-2 rounded-(--radius-medium) bg-muted {COMPOSER_INSET_CLASS} font-normal! text-muted-foreground {message.editing
                 ? 'opacity-60'
                 : ''}"
               data-testid="queued-message-row"
@@ -536,21 +561,20 @@
               {#if editingId === message.id}
                 <!-- Edit mode -->
                 <div
-                  class="col-span-full row-span-full flex-1 flex gap-2 flex"
+                  class="col-span-full row-span-full flex flex-1 gap-2 py-1"
                   data-testid="queued-message-edit-mode"
                 >
-                  <textarea
-                    bind:this={editTextarea}
+                  <Textarea
+                    bind:ref={editTextarea}
                     bind:value={editContent}
                     onkeydown={handleKeydown}
-                    use:autofocusAction
-                    use:autoResize
                     onblur={handleEditBlur}
-                    rows="1"
-                    class="type-body flex-1 resize-none overflow-hidden rounded py-0! text-foreground focus:outline-none! focus:ring-0!"
+                    rows={1}
+                    class="type-caption min-w-0 flex-1 resize-none overflow-hidden rounded bg-transparent py-0! font-normal! text-foreground"
                     autocorrect="off"
                     autocapitalize="off"
-                    spellcheck="false"></textarea>
+                    spellcheck="false"
+                  />
                   <Button
                     variant="ghost-light"
                     size="icon-xs"
@@ -574,10 +598,10 @@
                 </div>
               {:else}
                 <!-- Display mode -->
-                <div class="col-span-full row-span-full flex flex-1 min-w-0 gap-2">
+                <div class="col-span-full row-span-full flex min-w-0 flex-1 items-center gap-2">
                   {#if message.requeuedAfterFailure}
                     <div
-                      class="type-caption flex shrink-0 items-center gap-1 text-warning"
+                      class="type-caption flex shrink-0 items-center gap-1 text-warning-ink"
                       title={m.chat_queuedMessages_failedWillRetry_label()}
                     >
                       <div aria-hidden="true">
@@ -588,46 +612,34 @@
                   {/if}
                   {@render imageThumbnails(message)}
                   {@render fileChips(message)}
-                  <button
-                    class="flex-1 min-w-0 text-left cursor-pointer {QUEUE_THREE_ACTION_CONTENT_CLASS}"
+                  <Button
+                    variant="plain"
+                    class="min-w-0 flex-1 cursor-default justify-start text-left font-normal!"
                     data-testid="queued-message-content"
                     data-mode="display"
-                    onclick={() => startEdit(message)}
+                    aria-label={message.content}
+                    ondblclick={() => startEdit(message)}
+                    onkeydown={(event) => handleDisplayKeydown(event, message)}
                   >
                     <span class="block truncate" data-testid="queued-message-text">
                       {message.requeuedAfterFailure
                         ? m.chat_queuedMessages_failedWillRetryPrefix_label() + ' '
                         : ''}{message.content}
                     </span>
-                  </button>
+                  </Button>
                   {#if !disabled}
                     <div class={QUEUE_ACTION_CLUSTER_CLASS} data-testid="queued-message-actions">
                       <Button
                         variant="ghost-light"
                         size="icon-xs"
+                        iconOnly
                         class="-my-1"
-                        onclick={() => onsendnow?.(message.id)}
-                        tooltip={m.chat_queuedMessages_sendNow_tooltip()}
-                      >
-                        <Fa icon={faArrowRight} class="w-3 h-3" />
-                      </Button>
-                      <Button
-                        variant="ghost-light"
-                        size="icon-xs"
-                        class="-my-1"
-                        onclick={() => startEdit(message)}
-                        tooltip={m.chat_queuedMessages_edit_tooltip()}
-                      >
-                        <Fa icon={faPen} class="w-3 h-3" />
-                      </Button>
-                      <Button
-                        variant="ghost-light"
-                        size="icon-xs"
-                        class="-my-1"
+                        aria-label={m.chat_queuedMessages_remove_tooltip()}
+                        onpointerdown={(event) => event.stopPropagation()}
                         onclick={() => handleRemove(message.id)}
                         tooltip={m.chat_queuedMessages_remove_tooltip()}
                       >
-                        <Fa icon={faTrash} class="w-3 h-3" />
+                        <XIcon size={13} weight="bold" aria-hidden="true" />
                       </Button>
                     </div>
                   {/if}

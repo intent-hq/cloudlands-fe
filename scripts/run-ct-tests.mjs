@@ -14,6 +14,15 @@
  * version always matches the CT transform version, then forwards all CLI
  * args to `playwright test -c playwright-ct.config.ts`.
  *
+ * Local CT bundle builds need the same 8 GB heap cap as CI's build step;
+ * Node's default heap can run out while Vite bundles the component registry.
+ * Default NODE_OPTIONS only when absent, preserving explicit caller options.
+ * CI keeps its per-step limits: 8 GB for building, 4 GB for cached test runs,
+ * so the larger build allowance does not leak into its long-lived test phase.
+ * Playwright rebuilds in-process when sources change between dependency
+ * population and begin(), so concurrent edits during a cold build can exceed
+ * the cap; this is upstream behavior, not a launcher concern.
+ *
  * It also owns the HTML-report policy (intent-hq/intent#4652): Playwright's
  * html reporter defaults to `open: 'on-failure'`, which keeps the process
  * alive serving the report on :9323 after a failing run, so chained
@@ -28,7 +37,7 @@
  * ECONNREFUSED when the first run exits.
  */
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
@@ -80,6 +89,8 @@ export function usage() {
     '                    written to playwright-report/ (view it with `pnpm exec playwright',
     '                    show-report`). Opt-in values only take effect on an interactive',
     '                    terminal; automated (non-TTY) runs never block on the report.',
+    '  CT_NODE_ARGS      Space-separated Node flags (default: empty; no shell quoting).',
+    '  CT_ALLOW_CORE=1   Allow CT runs with core dumps in the package root.',
     '  PLAYWRIGHT_HTML_OPEN',
     `                    When set, respected verbatim (overrides ${CT_HTML_REPORT_ENV}).`,
     '',
@@ -217,13 +228,22 @@ export function runPlaywright({
   env = process.env,
   spawnImpl = spawn,
   exit = (code) => process.exit(code),
+  printError = console.error,
 }) {
-  const child = spawnImpl(process.execPath, [cliPath, ...args], { cwd, stdio: 'inherit', env });
+  const flags = env.CT_NODE_ARGS?.trim().split(/\s+/).filter(Boolean) ?? [];
+  const child = spawnImpl(process.execPath, [...flags, cliPath, ...args], {
+    cwd,
+    stdio: 'inherit',
+    env,
+  });
   child.on('error', (error) => {
-    console.error(`[run-ct-tests] failed to spawn playwright: ${error.message}`);
+    printError(`[run-ct-tests] failed to spawn playwright: ${error.message}`);
     exit(1);
   });
-  child.on('exit', (code, signal) => exit(exitCodeFromChild(code, signal)));
+  child.on('exit', (code, signal) => {
+    if (code === null && signal) printError(`playwright died with ${signal}`);
+    exit(exitCodeFromChild(code, signal));
+  });
   return child;
 }
 
@@ -308,9 +328,27 @@ export function buildChildEnv({ env = process.env, isTTY, openReport = false, ro
     env.PWTEST_CACHE_DIR?.trim() ||
     path.join(root, 'node_modules', '.cache', 'playwright-transform');
   const childEnv = { ...env, PWTEST_CACHE_DIR: transformCacheDir };
+  if (env.NODE_OPTIONS === undefined) childEnv.NODE_OPTIONS = '--max-old-space-size=8192';
   const { open, notice } = resolveHtmlReportOpen({ env, isTTY, openReport });
   if (open) childEnv.PLAYWRIGHT_HTML_OPEN = open;
   return { env: childEnv, notice };
+}
+
+/** Refuse core dumps before the CT source scanner can read them. */
+export function assertNoCoreDumps({ root = repoRoot, env = process.env } = {}) {
+  if (env.CT_ALLOW_CORE === '1') return;
+  const dumps = readdirSync(root)
+    .filter((name) => /^core(?:\.[0-9]+)?$/.test(name))
+    .flatMap((name) => {
+      const stat = statSync(path.join(root, name));
+      return stat.isFile() ? [`${name} (${stat.size} bytes)`] : [];
+    });
+  if (dumps.length) {
+    throw new Error(
+      `Refusing CT run: core dumps in ${root}: ${dumps.join(', ')}. ` +
+        'Move or remove them before running CT, or set CT_ALLOW_CORE=1 to override.',
+    );
+  }
 }
 
 async function main(argv) {
@@ -318,6 +356,13 @@ async function main(argv) {
   if (help) {
     process.stdout.write(`${usage()}\n`);
     process.exit(0);
+  }
+
+  try {
+    assertNoCoreDumps();
+  } catch (error) {
+    console.error(`[run-ct-tests] ${error instanceof Error ? error.message : error}`);
+    process.exit(1);
   }
 
   let cli;

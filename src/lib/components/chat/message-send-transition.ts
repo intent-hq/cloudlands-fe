@@ -1,12 +1,13 @@
 import { USER_MESSAGE_SURFACE_CLASS, USER_MESSAGE_TEXT_CLASS } from './user-message-surface';
+import { spring } from '$lib/motion';
 import { prefersReducedMotion } from '$lib/utils/reduced-motion';
 import { followToBottom } from '$lib/utils/smartScroll';
 
-export const MESSAGE_SEND_TRANSITION_DURATION_MS = 280;
-export const MESSAGE_SEND_TRANSITION_EASING = 'cubic-bezier(0.2, 0, 0, 1)';
-export const MESSAGE_SEND_TRANSITION_MAX_SETTLE_MS = 600;
+export const MESSAGE_SEND_TRANSITION_DURATION_MS = spring.slow.settleMs;
+export const MESSAGE_SEND_TRANSITION_MAX_SETTLE_MS =
+  spring.slow.settleMs * 2 + spring.slow.exit.duration;
 export const MESSAGE_SEND_MATCH_TIMEOUT_MS = 3000;
-export const MESSAGE_SEND_DISMISS_DURATION_MS = 160;
+export const MESSAGE_SEND_DISMISS_DURATION_MS = spring.slow.exit.duration;
 
 interface TargetTransitionOwner {
   cancel: () => void;
@@ -30,6 +31,10 @@ interface AnimateMessageSendOptions {
   followBottom?: boolean;
   reducedMotion?: boolean;
   signal?: AbortSignal;
+}
+
+function messageSendEasing(node: HTMLElement): string | undefined {
+  return getComputedStyle(node).getPropertyValue('--spring-slow-ease').trim() || undefined;
 }
 
 export function captureMessageSendOrigin(composer: HTMLElement): MessageSendOrigin {
@@ -111,7 +116,7 @@ export function dismissMessageSendLaunchBubble(bubble: HTMLElement | null): Prom
         ],
         {
           duration: MESSAGE_SEND_DISMISS_DURATION_MS,
-          easing: MESSAGE_SEND_TRANSITION_EASING,
+          easing: messageSendEasing(bubble),
           fill: 'forwards',
         },
       );
@@ -265,7 +270,7 @@ export function animateMessageSend({
       ],
       {
         duration: MESSAGE_SEND_TRANSITION_DURATION_MS,
-        easing: MESSAGE_SEND_TRANSITION_EASING,
+        easing: messageSendEasing(overlay),
         fill: 'both',
       },
     );

@@ -29,7 +29,12 @@ describe('getAgentMessageAttribution', () => {
         sourceMessageId: 'msg-source',
         sourceUrl,
       }),
-    ).toEqual({ kind: 'chief', fromAgentId: 'agent-chief', sourceUrl });
+    ).toEqual({
+      kind: 'chief',
+      fromAgentId: 'agent-chief',
+      rawName: 'Chief of Staff',
+      sourceUrl,
+    });
   });
 
   it.each([
@@ -47,7 +52,7 @@ describe('getAgentMessageAttribution', () => {
         fromAgentId: 'agent-chief',
         ...sourceMetadata,
       }),
-    ).toEqual({ kind: 'chief', fromAgentId: 'agent-chief' });
+    ).toEqual({ kind: 'chief', fromAgentId: 'agent-chief', rawName: '' });
   });
 
   it('falls back to a plain message when Chief sender identity is missing', () => {

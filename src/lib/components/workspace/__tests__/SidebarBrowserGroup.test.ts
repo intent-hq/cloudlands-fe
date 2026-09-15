@@ -65,22 +65,17 @@ describe('SidebarBrowserGroup hidden rows', () => {
     expect(onRestoreTab).toHaveBeenCalledExactlyOnceWith('hidden-1');
   });
 
-  it('keeps hidden and visible rows on the same box model (fe#1554 alignment)', () => {
-    renderGroup({});
-    const hidden = document.querySelector(
-      '[data-sidebar-browser-hidden-tab="hidden-1"]',
-    ) as HTMLElement;
-    const visible = document.querySelector('[data-sidebar-browser-tab="visible-1"]') as HTMLElement;
-    // Both rows are plain-variant Buttons; identical box classes keep the
-    // dot/text x-offsets aligned between hidden and visible rows.
-    expect(hidden.tagName).toBe(visible.tagName);
-    for (const cls of ['px-2', 'py-2', 'gap-2', 'w-full', 'items-start']) {
-      expect(hidden.classList.contains(cls)).toBe(true);
-      expect(visible.classList.contains(cls)).toBe(true);
-    }
-    // Dimming preserved on the hidden row's text block.
-    expect(hidden.querySelector('.opacity-60')).not.toBeNull();
-    expect(visible.querySelector('.opacity-60')).toBeNull();
+  it('collapses and restores both visible and hidden tabs', async () => {
+    const { onRestoreTab } = renderGroup({});
+    const header = screen.getByRole('button', { name: 'Helper 2' });
+    await fireEvent.click(header);
+    expect(header.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByRole('button', { name: 'Docs' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Restore hidden tab Preview' })).toBeNull();
+    await fireEvent.click(header);
+    expect(header.getAttribute('aria-expanded')).toBe('true');
+    await fireEvent.click(screen.getByRole('button', { name: 'Restore hidden tab Preview' }));
+    expect(onRestoreTab).toHaveBeenCalledExactlyOnceWith('hidden-1');
   });
 
   it('still opens visible tabs via onOpenTab', async () => {

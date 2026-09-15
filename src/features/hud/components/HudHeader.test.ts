@@ -217,14 +217,14 @@ describe('HudHeader theme switcher with SYSTEM mode', () => {
     const btn = screen.getByTestId('hud-header-theme-btn');
 
     // Default preference is `system` (same as the main app's default).
-    expect(btn.textContent?.trim()).toBe('THEME · SYSTEM');
+    expect(btn.textContent?.trim()).toBe('Theme · system');
 
     await fireEvent.click(btn);
     await settle();
     expect(themeState().preference).toBe('light');
     await waitFor(() => {
       flushSync();
-      expect(btn.textContent?.trim()).toBe('THEME · LIGHT');
+      expect(btn.textContent?.trim()).toBe('Theme · light');
     });
 
     await fireEvent.click(btn);
@@ -232,7 +232,7 @@ describe('HudHeader theme switcher with SYSTEM mode', () => {
     expect(themeState().preference).toBe('dark');
     await waitFor(() => {
       flushSync();
-      expect(btn.textContent?.trim()).toBe('THEME · DARK');
+      expect(btn.textContent?.trim()).toBe('Theme · dark');
     });
 
     await fireEvent.click(btn);
@@ -240,7 +240,7 @@ describe('HudHeader theme switcher with SYSTEM mode', () => {
     expect(themeState().preference).toBe('system');
     await waitFor(() => {
       flushSync();
-      expect(btn.textContent?.trim()).toBe('THEME · SYSTEM');
+      expect(btn.textContent?.trim()).toBe('Theme · system');
     });
 
     await fireEvent.click(btn);
@@ -248,7 +248,7 @@ describe('HudHeader theme switcher with SYSTEM mode', () => {
     expect(themeState().preference).toBe('light');
     await waitFor(() => {
       flushSync();
-      expect(btn.textContent?.trim()).toBe('THEME · LIGHT');
+      expect(btn.textContent?.trim()).toBe('Theme · light');
     });
   });
 
@@ -287,7 +287,7 @@ describe('HudHeader theme switcher with SYSTEM mode', () => {
 
     expect(themeState().preference).toBe('system');
     expect(themeState().name).toBe('dark');
-    expect(btn.textContent?.trim()).toBe('THEME · SYSTEM');
+    expect(btn.textContent?.trim()).toBe('Theme · system');
   });
 });
 
@@ -309,17 +309,17 @@ describe('HudHeader sound-effects toggle', () => {
     cleanup();
   });
 
-  it('renders the speaker button immediately LEFT of the theme button, same styling', () => {
+  it('renders separate sound and theme controls with the same HUD styling', () => {
     render(HudHeader, { props: { nowMs: NOW_MS } });
 
     const soundBtn = screen.getByTestId('hud-header-sound-btn');
     const themeBtn = screen.getByTestId('hud-header-theme-btn');
-    // The button sits in the hover group (with the volume slider) whose
-    // next sibling is the theme button.
+    // The sound button stays in the hover group that owns the volume slider,
+    // while the theme control remains independently operable.
     const group = screen.getByTestId('hud-header-sound-group');
     expect(soundBtn.closest('[data-testid="hud-header-sound-group"]')).toBe(group);
-    expect(group.nextElementSibling).toBe(themeBtn);
-    // Same bordered JetBrains Mono uppercase look as the theme button, and
+    expect(themeBtn.closest('[data-testid="hud-header-sound-group"]')).toBeNull();
+    // Same bordered JetBrains Mono look as the theme button, and
     // still clickable inside the frameless window's drag region.
     expect(soundBtn.classList.contains('hud-header-sound-btn')).toBe(true);
     expect(soundBtn.closest('.app-drag-region')).toBe(screen.getByTestId('hud-header'));
@@ -329,7 +329,7 @@ describe('HudHeader sound-effects toggle', () => {
     render(HudHeader, { props: { nowMs: NOW_MS } });
 
     const soundBtn = screen.getByTestId('hud-header-sound-btn');
-    expect(soundBtn.textContent?.trim()).toBe('SOUND · OFF');
+    expect(soundBtn.textContent?.trim()).toBe('Sound · off');
     expect(soundBtn.getAttribute('aria-pressed')).toBe('false');
     expect(soundBtn.getAttribute('aria-label')).toBe('Toggle HUD sound effects');
   });
@@ -340,13 +340,13 @@ describe('HudHeader sound-effects toggle', () => {
 
     await fireEvent.click(soundBtn);
     flushSync();
-    expect(soundBtn.textContent?.trim()).toBe('SOUND · ON');
+    expect(soundBtn.textContent?.trim()).toBe('Sound · on');
     expect(soundBtn.getAttribute('aria-pressed')).toBe('true');
     expect(window.localStorage.setItem).toHaveBeenCalledWith(HUD_SOUND_ENABLED_STORAGE_KEY, 'true');
 
     await fireEvent.click(soundBtn);
     flushSync();
-    expect(soundBtn.textContent?.trim()).toBe('SOUND · OFF');
+    expect(soundBtn.textContent?.trim()).toBe('Sound · off');
     expect(soundBtn.getAttribute('aria-pressed')).toBe('false');
     expect(window.localStorage.setItem).toHaveBeenCalledWith(
       HUD_SOUND_ENABLED_STORAGE_KEY,
@@ -373,7 +373,7 @@ describe('HudHeader sound-effects toggle', () => {
     render(HudHeader, { props: { nowMs: NOW_MS } });
 
     const soundBtn = screen.getByTestId('hud-header-sound-btn');
-    expect(soundBtn.textContent?.trim()).toBe('SOUND · ON');
+    expect(soundBtn.textContent?.trim()).toBe('Sound · on');
     expect(soundBtn.getAttribute('aria-pressed')).toBe('true');
   });
 });

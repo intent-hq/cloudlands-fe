@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
   /**
    * ContextPickerModal - Modal overlay for picking context items
    *
@@ -9,8 +10,7 @@
   import ProviderIcon from '$features/context/components/ContextProviderIcon.svelte';
   import { faTimes } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
-  import { fade, fly } from 'svelte/transition';
-  import { quintOut } from 'svelte/easing';
+  import { fade, fly } from '$lib/motion';
   import LinearPicker from './LinearPicker.svelte';
   import SentryPicker from './SentryPicker.svelte';
   import BrowserUrlPicker from './BrowserUrlPicker.svelte';
@@ -66,17 +66,18 @@
 </script>
 
 {#if isOpen}
-  <div class="fixed inset-0 z-50" transition:fade={{ duration: 150 }}>
-    <button
+  <div class="fixed inset-0 z-50" transition:fade={{ tier: 'moderate' }}>
+    <Button
+      variant="plain"
       type="button"
-      class="absolute inset-0 bg-black/50 backdrop-blur-sm border-0 p-0"
+      class="absolute inset-0 h-full rounded-none bg-black/50 backdrop-blur-sm border-0 p-0"
       aria-label={m.workspace_contextPicker_closeModal_ariaLabel()}
       onclick={handleBackdropClick}
-    ></button>
+    ></Button>
     <div class="absolute inset-0 flex items-center justify-center">
       <div
         class="bg-background border border-border rounded-lg shadow-xl w-full max-w-lg max-h-[70vh] flex flex-col overflow-hidden"
-        transition:fly={{ y: 20, duration: 200, easing: quintOut }}
+        transition:fly={{ axis: 'y', distance: 20, tier: 'moderate' }}
       >
         <!-- Header -->
         <div class="flex items-center justify-between px-4 py-3 border-b border-border">
@@ -84,13 +85,14 @@
             <ProviderIcon {provider} size={18} />
             <h2 class="text-sm font-semibold">{providerTitles[provider]}</h2>
           </div>
-          <button
+          <Button
+            variant="ghost"
             type="button"
             class="p-1.5 rounded hover:bg-muted transition-colors cursor-pointer"
             onclick={onClose}
           >
             <Fa icon={faTimes} size="sm" class="text-ghost" />
-          </button>
+          </Button>
         </div>
 
         <!-- Content -->
@@ -102,12 +104,12 @@
           {:else if provider === 'browser'}
             <BrowserUrlPicker {workspaceId} {onSelect} {onClose} />
           {:else if provider === 'github'}
-            <div class="p-8 text-center text-subtle">
+            <div class="p-8 text-left text-subtle">
               <p class="text-sm">{m.workspace_contextPicker_githubComingSoon_label()}</p>
               <p class="text-xs mt-2">{m.workspace_contextPicker_useBrowserUrls_label()}</p>
             </div>
           {:else}
-            <div class="p-8 text-center text-subtle">
+            <div class="p-8 text-left text-subtle">
               <p class="text-sm">{m.workspace_contextPicker_selectProvider_label()}</p>
             </div>
           {/if}

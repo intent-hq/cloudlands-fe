@@ -16,7 +16,7 @@ const {
   selectorWorkspaceArgs,
   executorState,
   mockGetNavigationContext,
-  toast,
+  notify,
 } = vi.hoisted(() => {
   const mockDetect = vi.fn();
   const mockExecute = vi.fn();
@@ -48,7 +48,7 @@ const {
     executorState: { isRunning: false, agentId: null as string | null },
     mockGetNavigationContext: vi.fn(),
     selectorWorkspaceArgs: [] as unknown[],
-    toast: {
+    notify: {
       success: vi.fn(),
       info: vi.fn(),
       error: vi.fn(),
@@ -132,9 +132,9 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
 vi.mock('$store/renderers/terminal-overlay.store.svelte', () => ({
   terminalsStore: { terminals: [], activeTerminalId: null },
 }));
-vi.mock('$lib/components/ui/toast', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('$lib/components/ui/toast')>()),
-  toast,
+vi.mock('$lib/components/patterns/notify', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$lib/components/patterns/notify')>()),
+  notify,
 }));
 vi.mock('$lib/utils/client-logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
@@ -282,7 +282,7 @@ describe('TerminalSidebar detection flow', () => {
     expect(screen.getByText('Scanning files…')).toBeTruthy();
 
     resolveDetect?.();
-    await waitFor(() => expect(toast.info).toHaveBeenCalled());
+    await waitFor(() => expect(notify.info).toHaveBeenCalled());
   });
 
   it('offers manual agent-assisted detection after local detection finds no scripts', async () => {
@@ -403,7 +403,7 @@ describe('TerminalSidebar workspace prop changes', () => {
       true,
     );
 
-    await fireEvent.contextMenu(screen.getByText('Script B'));
+    await fireEvent.contextMenu(screen.getByRole('button', { name: /^Script B(?:\s|$)/ }));
     await fireEvent.click(screen.getByText('Delete'));
 
     await waitFor(() => expect(mockScriptRemove).toHaveBeenCalledWith('ws-b', 'script-b'));
@@ -481,9 +481,9 @@ describe('TerminalSidebar agent detection result handling (running-script guard)
       expect.objectContaining({ name: 'lint', command: 'pnpm lint', mode: 'command' }),
     );
     expect(mockScriptRemove).toHaveBeenCalledWith('ws-1', 'auto-stale');
-    expect(toast.warning).toHaveBeenCalledTimes(1);
-    expect(toast.warning).toHaveBeenCalledWith(expect.stringContaining('"dev"'));
-    expect(toast.success).toHaveBeenCalled();
+    expect(notify.warning).toHaveBeenCalledTimes(1);
+    expect(notify.warning).toHaveBeenCalledWith(expect.stringContaining('"dev"'));
+    expect(notify.success).toHaveBeenCalled();
   });
 });
 
@@ -517,7 +517,7 @@ describe('TerminalSidebar context menu Escape handling', () => {
   it('closes the context menu on Escape via the escape-layer stack', async () => {
     render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
 
-    await fireEvent.contextMenu(screen.getByText('build'));
+    await fireEvent.contextMenu(screen.getByRole('button', { name: /^build(?:\s|$)/ }));
     await waitFor(() => expect(screen.getByText('Edit')).toBeTruthy());
 
     const event = pressEscape();
@@ -556,7 +556,7 @@ describe('TerminalSidebar script inline rename', () => {
   it('shows a prefilled rename input on double-click and restores the row on Escape', async () => {
     const { container } = render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
 
-    await fireEvent.doubleClick(screen.getByText('build'));
+    await fireEvent.doubleClick(screen.getByRole('button', { name: /build.*npm run build/ }));
 
     const input = container.querySelector<HTMLInputElement>('[data-edit-script="script-1"]');
     expect(input).toBeTruthy();
@@ -571,7 +571,7 @@ describe('TerminalSidebar script inline rename', () => {
   it('commits a non-empty rename with Enter', async () => {
     const { container } = render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
 
-    await fireEvent.doubleClick(screen.getByText('build'));
+    await fireEvent.doubleClick(screen.getByRole('button', { name: /build.*npm run build/ }));
     const input = container.querySelector<HTMLInputElement>('[data-edit-script="script-1"]');
     await fireEvent.input(input!, { target: { value: 'compile' } });
     await fireEvent.keyDown(input!, { key: 'Enter' });
@@ -584,7 +584,7 @@ describe('TerminalSidebar script inline rename', () => {
 
   it('commits a non-empty rename on blur', async () => {
     const { container } = render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
-    await fireEvent.doubleClick(screen.getByText('build'));
+    await fireEvent.doubleClick(screen.getByRole('button', { name: /build.*npm run build/ }));
     const input = container.querySelector<HTMLInputElement>('[data-edit-script="script-1"]');
     await fireEvent.input(input!, { target: { value: 'bundle' } });
 
@@ -598,7 +598,7 @@ describe('TerminalSidebar script inline rename', () => {
 
   it('never leaves the script row empty when an empty rename is submitted', async () => {
     const { container } = render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
-    await fireEvent.doubleClick(screen.getByText('build'));
+    await fireEvent.doubleClick(screen.getByRole('button', { name: /build.*npm run build/ }));
     const input = container.querySelector<HTMLInputElement>('[data-edit-script="script-1"]');
     await fireEvent.input(input!, { target: { value: '   ' } });
 

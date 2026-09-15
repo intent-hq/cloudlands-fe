@@ -27,14 +27,14 @@ describe('Textarea', () => {
     });
     const textarea = getByRole('textbox', { name: 'Read-only notes' }) as HTMLTextAreaElement;
     expect(textarea.readOnly).toBe(true);
-    expect(textarea.className).toContain('read-only:bg-muted/30');
+    expect(textarea.className).toContain('read-only:text-muted-foreground');
   });
 
-  it('uses a contrast-validated invalid border and ring', () => {
+  it('uses a contrast-validated invalid border without an outer ring', () => {
     const { getByRole } = render(TextareaHarness);
     const textarea = getByRole('textbox', { name: 'Workspace summary' });
     expect(textarea.className.split(/\s+/)).toContain('aria-invalid:border-danger');
-    expect(textarea.className.split(/\s+/)).toContain('aria-invalid:ring-danger/25');
+    expect(textarea.className.split(/\s+/)).not.toContain('aria-invalid:ring-1');
     for (const { label, ratio } of invalidControlContrastCases()) {
       expect(ratio, label).toBeGreaterThanOrEqual(3);
     }
@@ -47,19 +47,28 @@ describe('Textarea', () => {
     );
   });
 
-  it('uses the shared Body, neutral field, radius, and elevation language', () => {
-    const { getByRole } = render(Textarea, { props: { 'aria-label': 'Editorial notes' } });
-    const textarea = getByRole('textbox', { name: 'Editorial notes' });
-    expect(textarea.className).toContain('type-body');
-    expect(textarea.className).toContain('border-border');
-    expect(textarea.className).toContain('bg-card');
-    expect(textarea.className).toContain('hover:border-input');
-    expect(textarea.className).toContain('focus-visible:border-ring');
-    expect(textarea.className).toContain('focus-visible:outline-none');
-    expect(textarea.className).toContain('focus-visible:ring-0');
-    expect(textarea.className).not.toContain('focus-visible:ring-2');
-    expect(textarea.className).not.toContain('focus-visible:ring-ring/40');
-    expect(textarea.className).toContain('rounded-(--radius-medium)');
-    expect(textarea.className).toContain('shadow-(--elevation-raised)');
+  it('publishes its resolved compact size', () => {
+    const { getByRole } = render(Textarea, {
+      props: { 'aria-label': 'Editorial notes', size: 'compact' },
+    });
+    expect(getByRole('textbox', { name: 'Editorial notes' }).dataset.size).toBe('compact');
+  });
+
+  it('supports the autoResize alias and connects error feedback', async () => {
+    const { getByRole } = render(Textarea, {
+      props: {
+        id: 'summary',
+        'aria-label': 'Summary',
+        autoResize: true,
+        minHeight: 40,
+        maxHeight: 100,
+        error: 'A summary is required',
+      },
+    });
+    const textarea = getByRole('textbox', { name: 'Summary' }) as HTMLTextAreaElement;
+    Object.defineProperty(textarea, 'scrollHeight', { configurable: true, value: 72 });
+    await fireEvent.input(textarea, { target: { value: 'Two lines' } });
+    expect(textarea.style.height).toBe('72px');
+    expect(textarea.getAttribute('aria-describedby')).toBe(getByRole('alert').id);
   });
 });

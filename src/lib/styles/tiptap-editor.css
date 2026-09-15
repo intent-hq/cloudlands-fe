@@ -246,13 +246,18 @@
   font-size: 0.82em;
 }
 
-/* Linked-task cards are UI chrome, not prose — keep them in the UI font
-   (and slightly smaller) instead of inheriting the serif body font. */
-.note-font-serif .tiptap-editor li[data-type='taskItem'] button[contenteditable='false'],
-.note-font-serif .tiptap-editor li[data-type='taskItem'] div[role='group'] {
-  font-family: var(--font-ui);
-  font-size: 0.9375rem;
-  letter-spacing: normal;
+/* Task titles remain prose in every note font; controls keep their own sizing. */
+.tiptap-editor [data-task-item-row],
+.tiptap-editor [data-task-row-title] {
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: normal;
+  line-height: inherit;
+}
+
+.note-font-serif .tiptap-editor [data-task-item-row] {
+  font-size: 1rem;
+  line-height: 1.48;
 }
 
 .note-font-monospace .tiptap-editor {
@@ -392,7 +397,7 @@
 }
 
 .mention-chip:focus {
-  outline: 2px solid hsl(var(--ring));
+  outline: 1px solid hsl(var(--ring));
   outline-offset: 1px;
 }
 
@@ -412,7 +417,7 @@
 }
 
 .skill-command-chip.ProseMirror-selectednode {
-  outline: 2px solid hsl(var(--ring));
+  outline: 1px solid hsl(var(--ring));
   outline-offset: 1px;
 }
 
@@ -575,11 +580,11 @@ div.tiptap-editor ol {
 
 .tiptap-editor ul.task-list li.task-item input[type='checkbox']:checked {
   background: hsl(var(--primary));
-  border-color: hsl(var(--primary));
+  border-color: hsl(var(--primary-ink));
 }
 
 .tiptap-editor ul.task-list li.task-item input[type='checkbox']:hover {
-  border-color: hsl(var(--primary));
+  border-color: hsl(var(--primary-ink));
 }
 
 .tiptap-editor ul.task-list li.task-item[data-checked='true'] > div > p,
@@ -724,7 +729,7 @@ code:has(.is-file-path):hover {
 
 .tiptap-editor code:has(.is-file-path):focus,
 code:has(.is-file-path):focus {
-  outline: 2px solid hsl(var(--ring));
+  outline: 1px solid hsl(var(--ring));
   outline-offset: 1px;
 }
 
@@ -756,7 +761,7 @@ code.is-file-path:hover {
 
 .tiptap-editor code.is-file-path:focus,
 code.is-file-path:focus {
-  outline: 2px solid hsl(var(--ring));
+  outline: 1px solid hsl(var(--ring));
   outline-offset: 1px;
 }
 
@@ -818,7 +823,7 @@ code.is-file-path:focus {
 }
 
 .tiptap-editor pre .code-block-copy-btn.copied {
-  color: hsl(var(--primary));
+  color: hsl(var(--primary-ink));
 }
 
 /* Syntax highlighting for code blocks */

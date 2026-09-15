@@ -1,11 +1,12 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
   /**
    * WalkthroughSection
    *
    * A collapsible section that groups related files in the walkthrough.
    * Shows a title, description, and contains multiple diff viewers.
    */
-  import { slide } from 'svelte/transition';
+  import { slide } from '$lib/motion';
   import Fa from 'svelte-fa';
   import { faChevronDown, faChevronLeft, faFile } from '@fortawesome/free-solid-svg-icons';
   import type { WalkthroughSection as SectionType, WalkthroughAnnotation } from './types';
@@ -61,7 +62,7 @@
 
 <div class="walkthrough-section rounded-lg border border-border overflow-hidden {className}">
   <!-- Section header -->
-  <button
+  <Button
     type="button"
     class="w-full flex items-center gap-3 px-4 py-3 bg-muted/30 hover:bg-muted/50 transition-colors text-left"
     onclick={toggleExpanded}
@@ -91,11 +92,11 @@
           : m.codeWalkthrough_section_annotationCount_many({ count: totalAnnotations })}</span
       >
     </div>
-  </button>
+  </Button>
 
   <!-- Section content -->
   {#if expanded}
-    <div class="p-4 space-y-4" transition:slide={{ duration: 200 }}>
+    <div class="p-4 space-y-4" transition:slide={{ tier: 'moderate' }}>
       {#each section.files as filePath (filePath)}
         {@const diff = getDiffForFile(filePath)}
         {@const fileAnnotations = getAnnotationsForFile(filePath)}

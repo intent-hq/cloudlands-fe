@@ -1,7 +1,9 @@
 /** @vitest-environment jsdom */
 import { cleanup, fireEvent, render, waitFor, within } from '@testing-library/svelte';
+import axe from 'axe-core';
 import type { ComponentProps } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { m } from '$shared/paraglide/messages.js';
 
 vi.mock('$store/renderer/slices/specialists/specialists-selectors', async () => {
   const { readable } = await import('svelte/store');
@@ -36,8 +38,8 @@ vi.mock('$lib/components/chat/input/attachment-placement', () => ({
   isRemoteBackend: () => placementMocks.isRemote,
   mintPlacementIdempotencyKey: () => undefined,
 }));
-vi.mock('svelte-sonner', () => ({
-  toast: { error: vi.fn(), success: vi.fn(), info: vi.fn(), warning: vi.fn() },
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { error: vi.fn(), success: vi.fn(), info: vi.fn(), warning: vi.fn() },
 }));
 vi.mock('$lib/components/modals/SetupScriptModal.svelte', async () => ({
   default: (
@@ -187,6 +189,31 @@ describe('OnboardingPromptStep rendered metadata layout', () => {
     ).toBe(true);
   });
 
+  it('opens the hidden FileInput host and attaches the selected file', async () => {
+    (window as any).electronAPI.getPathForFile = vi.fn(() => '/tmp/notes.txt');
+    const result = render(OnboardingPromptStep, { props: props() });
+    const input = result.container.querySelector<HTMLInputElement>('input[type="file"]')!;
+    const open = vi.spyOn(input, 'click');
+
+    await fireEvent.click(
+      result.getByRole('button', { name: m.onboarding_promptStep_addFiles_tooltip() }),
+    );
+    expect(open).toHaveBeenCalledOnce();
+
+    const file = new File(['notes'], 'notes.txt', { type: 'text/plain' });
+    await fireEvent.change(input, { target: { files: [file] } });
+    await waitFor(() =>
+      expect(result.container.querySelector('[data-testid="attachment-pill"]')).toBeTruthy(),
+    );
+  });
+
+  it('has no scoped axe violations', async () => {
+    const { container } = render(OnboardingPromptStep, { props: props() });
+    container.setAttribute('role', 'main');
+    const result = await axe.run(container, { rules: { 'color-contrast': { enabled: false } } });
+    expect(result.violations.map(({ id }) => id)).toEqual([]);
+  });
+
   it.each([
     ['local', { ...local, branch: '' }],
     [
@@ -300,8 +327,8 @@ describe('OnboardingPromptStep folder drop (path references, local daemon only)'
       expect(pills(result.container)).toHaveLength(1);
     });
     expect(pills(result.container)[0].dataset.name).toBe('my-folder');
-    const { toast } = await import('svelte-sonner');
-    expect(toast.error).not.toHaveBeenCalled();
+    const { notify } = await import('$lib/components/patterns/notify');
+    expect(notify.error).not.toHaveBeenCalled();
   });
 
   it('remote drop containing a folder rejects the WHOLE drop with one error toast', async () => {
@@ -319,9 +346,9 @@ describe('OnboardingPromptStep folder drop (path references, local daemon only)'
       ]),
     );
 
-    const { toast } = await import('svelte-sonner');
+    const { notify } = await import('$lib/components/patterns/notify');
     await waitFor(() => {
-      expect(toast.error).toHaveBeenCalledTimes(1);
+      expect(notify.error).toHaveBeenCalledTimes(1);
     });
     // Nothing attaches — not even the file in the same drop.
     expect(pills(result.container)).toHaveLength(0);
@@ -378,9 +405,9 @@ describe('OnboardingPromptStep folder drop (path references, local daemon only)'
       makeItemsDropEvent([{ file: folder, isDirectory: true }]),
     );
 
-    const { toast } = await import('svelte-sonner');
+    const { notify } = await import('$lib/components/patterns/notify');
     await waitFor(() => {
-      expect(toast.error).toHaveBeenCalledTimes(1);
+      expect(notify.error).toHaveBeenCalledTimes(1);
     });
     expect(pills(result.container)).toHaveLength(0);
   });

@@ -7,6 +7,16 @@ export const scrollAreaMetadata = parseUiComponentMetadata({
   publicImport: '$lib/components/ui/scroll-area',
   legacyImports: [],
   exports: ['Root', 'ScrollArea', 'ScrollAreaScrollbar', 'Scrollbar', 'scrollAreaMetadata'],
+  // Minimal composition from the scroll-area-orientations default fixture.
+  usage: `<script lang="ts">
+  import { ScrollArea } from '$lib/components/ui/scroll-area';
+</script>
+
+<ScrollArea orientation="vertical" class="h-36">
+  {#each Array.from({ length: 18 }) as _, index}
+    <p>Documentation row {index + 1}</p>
+  {/each}
+</ScrollArea>`,
   category: 'primitive',
   owner: '012-F2',
   callers: [

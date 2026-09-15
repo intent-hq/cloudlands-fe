@@ -111,7 +111,7 @@ vi.mock('$lib/components/settings/ColorThemeSettings.svelte', async () => ({
   default: (await import('./mocks/SettingsStateFixture.svelte')).default,
 }));
 vi.mock('$lib/components/settings/NotificationSettings.svelte', async () => ({
-  default: (await import('./mocks/SettingsStateFixture.svelte')).default,
+  default: (await import('./mocks/NotificationSettingsFixture.svelte')).default,
 }));
 vi.mock('$lib/components/settings/RtkSettings.svelte', async () => ({
   default: (await import('$lib/components/chat/__tests__/mocks/SlotOnly.svelte')).default,
@@ -392,7 +392,7 @@ describe('settings state and save-mode fixtures', () => {
 
   it.each(SETTINGS_CAPTURE_FIXTURES)(
     'exercises the $id state and save mode',
-    async ({ id, url, label, tab, state, stateOwner, saveMode }) => {
+    async ({ id, url, tab, state, stateOwner, saveMode }) => {
       if (stateOwner === 'daemon settings') {
         settingsCatalogResponse = settingsCatalogResponse.map((setting) =>
           setting.path === 'model.defaultProvider' ? { ...setting, value: state } : setting,
@@ -403,7 +403,7 @@ describe('settings state and save-mode fixtures', () => {
 
       renderSettings(url, id, catalog);
 
-      const activeTab = screen.getByRole('button', { name: label });
+      const activeTab = document.querySelector(`[data-settings-tab="${tab}"]`)!;
       await waitFor(() => expect(activeTab.getAttribute('aria-current')).toBe('page'));
 
       const renderedState = screen.getAllByTestId('settings-state-fixture')[0];
@@ -494,21 +494,35 @@ describe('settings tab route and focus behavior', () => {
     expect(main?.getAttribute('aria-labelledby')).toBe(heading.id);
   });
 
+  it('renders route content through the integrated settings page and sidebar', async () => {
+    const { container } = renderSettings('/settings?tab=setup');
+    const settingsPage = container.querySelector('[data-slot="settings-page"]');
+
+    expect(settingsPage).not.toBeNull();
+    expect(settingsPage?.querySelector('[data-settings-git-workspace]')).not.toBeNull();
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Workspace setup' }).getAttribute('aria-current'),
+      ).toBe('page'),
+    );
+    expect(settingsPage?.querySelector('[data-settings-agents-section]')).not.toBeNull();
+  });
+
   it.each([
     ['accounts', 'Providers', 'page'],
-    ['agents', 'Agent Behavior', 'page'],
-    ['setup', 'Setup', 'page'],
-    ['tools', 'Setup', 'page'],
-    ['git-workspace', 'Setup', 'page'],
-    ['fonts-colors', 'Display', 'page'],
-    ['notifications', 'App Behavior', 'page'],
-    ['general', 'Display', 'page'],
+    ['agents', 'Agent defaults', 'page'],
+    ['setup', 'Workspace setup', 'page'],
+    ['tools', 'Workspace setup', 'page'],
+    ['git-workspace', 'Workspace setup', 'page'],
+    ['fonts-colors', 'Appearance', 'page'],
+    ['notifications', 'General', 'page'],
+    ['general', 'Appearance', 'page'],
     ['connections', 'Connections', 'page'],
     ['devices', 'Devices', 'page'],
     ['machines', 'Devices', 'page'],
-    ['interface-system', 'Display', 'page'],
-    ['input', 'Input', 'page'],
-    ['unknown', 'Display', 'page'],
+    ['interface-system', 'Appearance', 'page'],
+    ['input', 'Input and shortcuts', 'page'],
+    ['unknown', 'Appearance', 'page'],
   ])('maps ?tab=%s to %s', async (tab, label, current) => {
     renderSettings(`/settings?tab=${tab}`);
     await waitFor(() =>
@@ -550,9 +564,9 @@ describe('settings tab route and focus behavior', () => {
 
     const tools = renderSettings('/settings?tab=tools');
     await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Setup' }).getAttribute('aria-current')).toBe(
-        'page',
-      ),
+      expect(
+        screen.getByRole('button', { name: 'Workspace setup' }).getAttribute('aria-current'),
+      ).toBe('page'),
     );
     expect(tools.container.querySelector('#agent-backend')).toBeNull();
   });
@@ -573,16 +587,16 @@ describe('settings tab route and focus behavior', () => {
   });
 
   it.each([
-    ['/settings?tab=input#voice', 'Input', 'voice'],
-    ['/settings?tab=connections#voice', 'Input', 'voice'],
+    ['/settings?tab=input#voice', 'Input and shortcuts', 'voice'],
+    ['/settings?tab=connections#voice', 'Input and shortcuts', 'voice'],
     ['/settings?tab=advanced#workspace-api', 'Advanced', 'workspace-api'],
     ['/settings?tab=system#workspace-api', 'Advanced', 'workspace-api'],
     ['/settings#websocket-api', 'Devices', 'websocket-api'],
     ['/settings#remote-access', 'Devices', 'websocket-api'],
     // Legacy deep link from when the section lived on Advanced.
     ['/settings?tab=advanced#websocket-api', 'Devices', 'websocket-api'],
-    ['/settings?tab=agent-behavior#agent-features', 'Agent Behavior', 'agent-features'],
-    ['/settings?tab=behavior#agent-features', 'Agent Behavior', 'agent-features'],
+    ['/settings?tab=agent-behavior#agent-features', 'Agent defaults', 'agent-features'],
+    ['/settings?tab=behavior#agent-features', 'Agent defaults', 'agent-features'],
   ])('routes canonical and legacy URL %s to %s', async (url, category, sectionId) => {
     renderSettings(url);
 
@@ -652,14 +666,14 @@ describe('settings tab route and focus behavior', () => {
 
     expect(document.getElementById('utility-default-model')).not.toBeNull();
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Agent Behavior' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Agent defaults' }));
 
     expect((await screen.findByTestId('ai-behavior-view')).textContent).toContain('system-prompt');
     expect(document.getElementById('utility-default-model')).toBeNull();
     expect(selectSelectedModel.select(appStore.state, 'codex')).toBe('shared-fixture');
   });
 
-  it('activates a clicked sidebar item while preserving params and hash', async () => {
+  it('activates a clicked sidebar item while preserving params and clearing the old hash', async () => {
     renderSettings('/settings?tab=connections&specialist=reviewer#integrations');
     const connections = screen.getByRole('button', { name: 'Connections' });
     const advanced = screen.getByRole('button', { name: 'Advanced' });
@@ -670,7 +684,23 @@ describe('settings tab route and focus behavior', () => {
     expect(advanced.getAttribute('aria-current')).toBe('page');
     expect(connections.hasAttribute('aria-current')).toBe(false);
     expect(window.location.search).toBe('?tab=advanced&specialist=reviewer');
-    expect(window.location.hash).toBe('#integrations');
+    expect(window.location.hash).toBe('');
+  });
+
+  it('resets the content scroll on tab selection and cancels a pending deep-link scroll', async () => {
+    vi.useFakeTimers();
+    renderSettings('/settings?tab=display#note-font');
+    const container = document.querySelector<HTMLElement>(
+      '[data-slot="settings-page-content-scroll"]',
+    )!;
+    const scrollTo = vi.mocked(container.scrollTo);
+    scrollTo.mockClear();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Advanced' }));
+    expect(scrollTo).toHaveBeenCalledWith({ top: 0, behavior: 'instant' });
+    await vi.advanceTimersByTimeAsync(100);
+    expect(scrollTo).toHaveBeenCalledTimes(1);
+    expect(window.location.hash).toBe('');
   });
 
   it.each([
@@ -732,7 +762,7 @@ describe('settings tab route and focus behavior', () => {
 
       await waitFor(() =>
         expect(
-          screen.getByRole('button', { name: 'Agent Behavior' }).getAttribute('aria-current'),
+          screen.getByRole('button', { name: 'Agent defaults' }).getAttribute('aria-current'),
         ).toBe('page'),
       );
       const workspaceId = screen.getByTestId('ai-behavior-workspace-id');
@@ -765,25 +795,25 @@ describe('settings hash target integration', () => {
   it.each([
     ['default-model', 'utility-default-model', 'Providers', 'page'],
     ['quickActions.defaultModel', 'utility-default-model', 'Providers', 'page'],
-    ['global-instructions', 'global-instructions', 'Agent Behavior', 'page'],
+    ['global-instructions', 'global-instructions', 'Agent defaults', 'page'],
     ['utility-default-model', 'utility-default-model', 'Providers', 'page'],
-    ['updates', 'updates', 'App Behavior', 'page'],
-    ['open-in', 'open-in', 'App Behavior', 'page'],
-    ['github-link-action', 'github-link-action', 'App Behavior', 'page'],
-    ['notifications', 'notifications', 'App Behavior', 'page'],
-    ['agent-features', 'agent-features', 'Agent Behavior', 'page'],
+    ['updates', 'updates', 'General', 'page'],
+    ['open-in', 'open-in', 'General', 'page'],
+    ['github-link-action', 'github-link-action', 'General', 'page'],
+    ['notifications', 'notifications', 'General', 'page'],
+    ['agent-features', 'agent-features', 'Agent defaults', 'page'],
     ['mcp-servers', 'mcp-servers', 'Connections', 'page'],
-    ['cli-optimization', 'cli-optimization', 'Setup', 'page'],
+    ['cli-optimization', 'cli-optimization', 'Workspace setup', 'page'],
     ['workspace-api', 'workspace-api', 'Advanced', 'page'],
     ['websocket-api', 'websocket-api', 'Devices', 'page'],
     ['remote-access', 'websocket-api', 'Devices', 'page'],
-    ['keyboard-shortcuts', 'keyboard-shortcuts', 'Input', 'page'],
-    ['voice', 'voice', 'Input', 'page'],
-    ['language', 'language', 'Display', 'page'],
-    ['color-theme', 'color-theme', 'Display', 'page'],
-    ['note-font', 'note-font', 'Display', 'page'],
-    ['agent-chat-font', 'agent-chat-font', 'Display', 'page'],
-    ['code-font', 'code-font', 'Display', 'page'],
+    ['keyboard-shortcuts', 'keyboard-shortcuts', 'Input and shortcuts', 'page'],
+    ['voice', 'voice', 'Input and shortcuts', 'page'],
+    ['language', 'language', 'Appearance', 'page'],
+    ['color-theme', 'color-theme', 'Appearance', 'page'],
+    ['note-font', 'note-font', 'Appearance', 'page'],
+    ['agent-chat-font', 'agent-chat-font', 'Appearance', 'page'],
+    ['code-font', 'code-font', 'Appearance', 'page'],
   ])(
     'activates the registry tab and target for /settings#%s',
     async (hash, expectedId, tabLabel, expectedCurrent) => {
@@ -801,6 +831,19 @@ describe('settings hash target integration', () => {
       });
     },
   );
+
+  it.each([
+    ['providers', 'providers'],
+    ['voice', 'input'],
+    ['theme', 'display'],
+  ])('preserves the /settings#%s deep link', async (hash, tab) => {
+    renderSettings(`/settings#${hash}`);
+    await waitFor(() => {
+      expect(
+        document.querySelector(`[data-settings-tab="${tab}"]`)?.getAttribute('aria-current'),
+      ).toBe('page');
+    });
+  });
 
   it('waits 100 ms before scrolling the active hash target in its content container', async () => {
     vi.useFakeTimers();

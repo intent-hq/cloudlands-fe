@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { Button } from '$lib/components/ui/button';
+  import { Button } from '$lib/components/patterns/settings/custom-controls';
+  import { ListView } from '$lib/components/patterns/collection';
   import { Fa } from 'svelte-fa';
   import { faPlus } from '@fortawesome/free-solid-svg-icons';
   import BulkActionConfirmDialog from '$lib/components/modals/BulkActionConfirmDialog.svelte';
@@ -70,44 +71,49 @@
 
 <div class="space-y-5">
   <div>
-    <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+    <h2 class="type-caption font-medium text-muted-foreground mb-3">
       {m.settings_devices_title()}
     </h2>
-    <p class="max-w-2xl text-sm text-muted-foreground">
+    <p class="max-w-2xl type-body text-muted-foreground">
       {m.settings_devices_description()}
     </p>
   </div>
 
-  {#if !$loaded$}
-    <p
-      class="rounded-xl border border-border bg-card p-6 text-sm text-muted-foreground"
-      role="status"
-    >
-      {m.settings_devices_loading_label()}
-    </p>
-  {:else}
-    {#if $connections$.length > 0}
-      <div class="flex flex-col overflow-hidden rounded-xl bg-card divide-y divide-border">
-        {#each $connections$ as device (device.id)}
-          <DeviceRow
-            {device}
-            panelMode={activeDeviceId === device.id ? activePanel : null}
-            onOpenPanel={(panel) => openPanel(device.id, panel)}
-            onClosePanel={closePanel}
-            onRequestRemove={requestRemove}
-          />
-        {/each}
+  <ListView
+    virtualize={false}
+    items={$connections$}
+    getKey={(device) => device.id}
+    getText={(device) => device.label}
+    status={$loaded$ ? 'ready' : 'loading'}
+    ariaLabel={m.settings_devices_title()}
+    class="overflow-visible rounded-xl bg-card"
+  >
+    {#snippet row({ item: device })}
+      <DeviceRow
+        {device}
+        panelMode={activeDeviceId === device.id ? activePanel : null}
+        onOpenPanel={(panel) => openPanel(device.id, panel)}
+        onClosePanel={closePanel}
+        onRequestRemove={requestRemove}
+      />
+    {/snippet}
+    {#snippet loading()}
+      <p
+        class="rounded-xl border border-border bg-card p-6 type-body text-muted-foreground"
+        role="status"
+      >
+        {m.settings_devices_loading_label()}
+      </p>
+    {/snippet}
+    {#snippet empty()}
+      <div class="rounded-xl border border-dashed border-border bg-card p-8 text-left">
+        <p class="type-body font-medium text-foreground">{m.settings_devices_empty_title()}</p>
+        <p class="mt-1 type-body text-muted-foreground">{m.settings_devices_empty_description()}</p>
       </div>
-    {/if}
-    {#if $connections$.length === 0}
-      <div class="rounded-xl border border-dashed border-border bg-card p-8 text-center">
-        <p class="text-sm font-medium text-foreground">{m.settings_devices_empty_title()}</p>
-        <p class="mt-1 text-sm text-muted-foreground">{m.settings_devices_empty_description()}</p>
-      </div>
-    {/if}
-  {/if}
+    {/snippet}
+  </ListView>
 
-  <div class="flex justify-end">
+  <div class="flex justify-start">
     <Button variant="ghost" size="sm" onclick={() => (connectModalOpen = true)}>
       <Fa icon={faPlus} class="mr-1.5" size="xs" />
       {m.settings_devices_add_label()}
@@ -119,7 +125,7 @@
       class="flex items-center justify-between gap-3 rounded-md border border-danger/30 bg-danger-background/10 p-3"
       role="alert"
     >
-      <p class="text-sm text-danger">{removeError}</p>
+      <p class="type-body text-danger">{removeError}</p>
       <Button variant="ghost" disabled={removing || !removeTarget} onclick={() => removeDevice()}>
         {m.settings_devices_retry_label()}
       </Button>

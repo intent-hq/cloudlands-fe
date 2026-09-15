@@ -42,31 +42,30 @@
 
 {#if isLoading}
   <!-- Skeleton loading state - shows structure with known info -->
-  <div class="space-y-6">
+  <div class="divide-y divide-border [&>*:first-child]:pt-0 [&>*:last-child]:pb-0">
     {#each integrations as integration}
-      <div class="flex items-start justify-between gap-4">
-        <div class="space-y-1">
-          <div class="flex items-center gap-2">
-            {#if integration.icon === 'github'}
-              <Fa icon={faGithub} class="w-4 h-4 text-ghost" />
-            {:else if integration.icon === 'linear'}
-              <LinearIcon size={14} class="text-ghost" />
-            {:else if integration.icon === 'sentry'}
-              <SentryIcon size={17} class="text-ghost" />
-            {/if}
-            <span class="text-sm text-foreground">{integration.name}</span>
-            <!-- Status skeleton -->
-            <div class="h-3 w-16 bg-muted/50 rounded animate-pulse"></div>
-          </div>
-          <p class="text-xs text-subtle pl-6">{integration.description}</p>
+      <div class="grid grid-cols-[1rem_minmax(0,1fr)_auto] items-start gap-x-3 gap-y-1 py-3">
+        <div class="flex size-4 items-center justify-center text-ghost">
+          {#if integration.icon === 'github'}
+            <Fa icon={faGithub} class="size-4" />
+          {:else if integration.icon === 'linear'}
+            <LinearIcon size={16} />
+          {:else if integration.icon === 'sentry'}
+            <SentryIcon size={16} />
+          {/if}
+        </div>
+        <div class="flex min-w-0 items-center gap-3">
+          <span class="type-body font-medium text-foreground">{integration.name}</span>
+          <div class="h-3 w-16 animate-pulse rounded bg-muted/50"></div>
         </div>
         <!-- Action button skeleton -->
-        <div class="h-4 w-14 bg-muted/50 rounded animate-pulse"></div>
+        <div class="mt-1 h-4 w-14 animate-pulse rounded bg-muted/50"></div>
+        <p class="type-body col-start-2 text-muted-foreground">{integration.description}</p>
       </div>
     {/each}
   </div>
 {:else}
-  <div class="space-y-6">
+  <div class="divide-y divide-border [&>*:first-child]:pt-0 [&>*:last-child]:pb-0">
     <GitHubAuthConnection />
     <LinearAuthConnection />
     <SentryAuthConnection />

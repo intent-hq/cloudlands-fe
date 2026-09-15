@@ -6,6 +6,7 @@ import { cleanup, fireEvent, render, waitFor, within } from '@testing-library/sv
 import { tick } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentSession } from '$shared/types';
+import { spring } from '$lib/motion';
 
 import type { InstalledEditor } from '$store/renderer/slices/external-editors/external-editors-slice';
 import {
@@ -107,8 +108,8 @@ vi.mock('$lib/utils/platform-capabilities', () => ({
   isElectronPlatform: () => true,
 }));
 vi.mock('$lib/electron-bridge', () => ({ invoke: mocks.invoke }));
-vi.mock('$lib/components/ui/toast', () => ({
-  toast: { success: vi.fn(), error: vi.fn() },
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { success: vi.fn(), error: vi.fn() },
 }));
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
 vi.mock('$features/navigation/link-handler', () => ({ handleLink: mocks.handleLink }));
@@ -1279,7 +1280,7 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
       expect(
         animations.some(
           ({ node, duration }) =>
-            node.matches('[data-sidebar-card-tab="changes"]') && duration === 300,
+            node.matches('[data-sidebar-card-tab="changes"]') && duration === spring.slow.settleMs,
         ),
       ).toBe(true),
     );
@@ -1291,7 +1292,8 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     await waitFor(() =>
       expect(
         animations.filter(
-          ({ node, duration }) => node.matches('.sidebar-expanded-card') && duration === 180,
+          ({ node, duration }) =>
+            node.matches('.sidebar-expanded-card') && duration === spring.moderate.settleMs,
         ),
       ).toHaveLength(2),
     );
@@ -1304,7 +1306,7 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
       expect(
         animations.some(
           ({ node, duration }) =>
-            node.matches('[data-sidebar-card-tab="files"]') && duration === 300,
+            node.matches('[data-sidebar-card-tab="files"]') && duration === spring.slow.settleMs,
         ),
       ).toBe(true),
     );

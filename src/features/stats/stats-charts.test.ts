@@ -206,11 +206,11 @@ describe('monthCardModel', () => {
 
   it('derives YTD hero, avg, best month, and delta vs prior month', () => {
     const m = monthCardModel(byMonth, 4);
-    expect(m.heroLabel).toBe('YEAR TO DATE');
+    expect(m.heroLabel).toBe('Year to date');
     expect(m.heroValue).toBe('1K');
     expect(m.avgSub).toBe('avg 250 / month');
     expect(m.bestLabel).toBe('Mar · 400');
-    expect(m.deltaLabel).toBe('VS FEB');
+    expect(m.deltaLabel).toBe('vs FEB');
     expect(m.deltaValue).toBe('+100%');
   });
 

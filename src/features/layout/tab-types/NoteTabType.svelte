@@ -33,7 +33,7 @@
   import NoteVersionHistory from '$lib/components/workspace/NoteVersionHistory.svelte';
   import SpecWritingOnboarding from '$lib/components/workspace/SpecWritingOnboarding.svelte';
   import { Button } from '$lib/components/ui/button';
-  import { withToastCountdown } from '$lib/components/ui/toast';
+  import { withToastCountdown } from '$lib/components/patterns/notify';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import * as Menu from '$lib/components/ui/menu';
   import OpenComboButton from '$features/external-editors/components/OpenComboButton.svelte';
@@ -189,8 +189,8 @@
   async function handleDeleteNote() {
     if (!tab.noteId || isNoteDeleting) return;
     if (isSpecNote(tab.noteId)) {
-      const { toast } = await import('svelte-sonner');
-      toast.error(m.layout_noteTab_cannotDeleteSpec_error());
+      const { notify } = await import('$lib/components/patterns/notify');
+      notify.error(m.layout_noteTab_cannotDeleteSpec_error());
       return;
     }
     const noteIdToDelete = tab.noteId;
@@ -203,8 +203,8 @@
       void deleteNote(workspaceId, noteIdToDelete);
 
       // Show undo toast
-      const { toast } = await import('svelte-sonner');
-      const toastId = toast.warning(
+      const { notify } = await import('$lib/components/patterns/notify');
+      const toastId = notify.warning(
         m.layout_noteTab_deletedNote_toast({ title: noteTitle }),
         withToastCountdown(
           {
@@ -222,10 +222,10 @@
                         parentId: savedNote.parentId,
                         visibility: savedNote.visibility,
                       });
-                      toast.dismiss(toastId);
+                      notify.dismiss(toastId);
                     } catch (err) {
                       logger.error('Failed to restore note', err);
-                      toast.error(m.layout_noteTab_restoreFailed_error());
+                      notify.error(m.layout_noteTab_restoreFailed_error());
                     }
                   },
                 }
@@ -236,8 +236,8 @@
       );
     } catch (error) {
       logger.error('Failed to delete note', error);
-      const { toast } = await import('svelte-sonner');
-      toast.error(m.layout_noteTab_deleteFailed_error());
+      const { notify } = await import('$lib/components/patterns/notify');
+      notify.error(m.layout_noteTab_deleteFailed_error());
     } finally {
       isNoteDeleting = false;
     }

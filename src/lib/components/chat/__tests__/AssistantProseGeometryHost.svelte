@@ -4,6 +4,8 @@
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
   import { store } from '$store/renderer/store';
   import MessageContent from '../MessageContent.svelte';
+  import HookWakeAttributionHeader from '../HookWakeAttributionHeader.svelte';
+  import PrMonitorWakeAttributionHeader from '../PrMonitorWakeAttributionHeader.svelte';
   import StreamingMessageContent from '../StreamingMessageContent.svelte';
   import ThinkingBlock from '../ThinkingBlock.svelte';
 
@@ -209,6 +211,17 @@
       <div data-testid="group-adjacency"><MessageContent content={grouped} /></div>
       <div data-testid="expanded-group-prose"><MessageContent content={expandedGroupProse} /></div>
       <div data-testid="full-width-tool"><MessageContent content={tool} /></div>
+      <HookWakeAttributionHeader
+        attribution={{
+          hookId: 'hook-1',
+          displayName: 'CI watch',
+          rawName: 'CI watch',
+          reason: 'dispatched',
+        }}
+      />
+      <PrMonitorWakeAttributionHeader
+        attribution={{ monitorId: 'monitor-1', repo: 'intent-hq/intent', prNumber: 42 }}
+      />
     </div>
     <div data-testid="expanded-group-operational-rows">
       <MessageContent content={expandedGroupOperationalRows} />

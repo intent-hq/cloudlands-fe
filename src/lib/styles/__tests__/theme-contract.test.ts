@@ -12,6 +12,7 @@ const COLOR_ROLES = [
   'popover',
   'popover-foreground',
   'primary',
+  'primary-ink',
   'primary-foreground',
   'secondary',
   'secondary-foreground',
@@ -29,6 +30,7 @@ const COLOR_ROLES = [
   'success',
   'success-foreground',
   'warning',
+  'warning-ink',
   'warning-foreground',
   'sidebar',
   'sidebar-foreground',
@@ -41,6 +43,7 @@ const CONTRAST_PAIRS = [
   ['foreground', 'background'],
   ['card-foreground', 'card'],
   ['popover-foreground', 'popover'],
+  ['primary-ink', 'background'],
   ['primary-foreground', 'primary'],
   ['secondary-foreground', 'secondary'],
   ['accent-foreground', 'accent'],
@@ -61,7 +64,7 @@ const DEFAULT_NEUTRAL_SOURCE = {
     foreground: '0 0% 0%',
     card: '0 0% 100%',
     'card-foreground': '0 0% 0%',
-    popover: '60 5% 92.1568627451%',
+    popover: '0 0% 100%',
     'popover-foreground': '0 0% 0%',
     secondary: '0 0% 89.8039215686%',
     'secondary-foreground': '0 0% 0%',
@@ -83,7 +86,7 @@ const DEFAULT_NEUTRAL_SOURCE = {
     foreground: '0 0% 100%',
     card: '0 0% 10.1960784314%',
     'card-foreground': '0 0% 100%',
-    popover: '0 0% 14.9019607843%',
+    popover: '0 0% 10.1960784314%',
     'popover-foreground': '0 0% 100%',
     secondary: '0 0% 14.9019607843%',
     'secondary-foreground': '20 4.7619047619% 87.6470588235%',
@@ -103,8 +106,9 @@ const DEFAULT_NEUTRAL_SOURCE = {
 } as const;
 
 const PRESERVED_SEMANTIC_SOURCE = {
-  'theme-light-primary': '145 67% 28%',
-  'theme-light-primary-foreground': '0 0% 100%',
+  'theme-light-primary': '66.4 67% 64.3%',
+  'theme-light-primary-ink': '66 60% 28%',
+  'theme-light-primary-foreground': '67 40% 12%',
   'theme-light-danger': '0 63% 31%',
   'theme-light-danger-background': '0 65% 94%',
   'theme-light-ring': '217.2 91.2% 59.8%',
@@ -114,6 +118,7 @@ const PRESERVED_SEMANTIC_SOURCE = {
   'theme-light-success-foreground': '0 0% 100%',
   'theme-light-warning': '42 91% 54%',
   'theme-light-warning-foreground': '154 44% 14%',
+  'theme-light-warning-ink': 'var(--theme-light-warning-foreground)',
   'theme-light-agent-avatar-surface-completed': '145 14% 88%',
   'theme-light-agent-avatar-foreground-completed': '154 32% 24%',
   'theme-light-agent-avatar-surface-attention': '30.785 100% 62.549%',
@@ -121,7 +126,8 @@ const PRESERVED_SEMANTIC_SOURCE = {
   'theme-light-agent-avatar-surface-active': '66.892 71.845% 59.608%',
   'theme-light-workspace-status-unread': '217.2 91.2% 59.8%',
   'theme-light-agent-avatar-surface-waiting': '263.2 74.257% 80.196%',
-  'theme-dark-primary': '145 58% 55%',
+  'theme-dark-primary': '67 78% 68%',
+  'theme-dark-primary-ink': 'var(--theme-dark-primary)',
   'theme-dark-primary-foreground': '154 25% 9%',
   'theme-dark-danger': '0 70% 88%',
   'theme-dark-danger-background': '0 35% 22%',
@@ -132,6 +138,7 @@ const PRESERVED_SEMANTIC_SOURCE = {
   'theme-dark-success-foreground': '154 25% 9%',
   'theme-dark-warning': '42 91% 63%',
   'theme-dark-warning-foreground': '154 25% 9%',
+  'theme-dark-warning-ink': 'var(--theme-dark-warning)',
   'theme-dark-agent-avatar-surface-completed': '145 14% 24%',
   'theme-dark-agent-avatar-foreground-completed': '135 20% 86%',
   'theme-dark-agent-avatar-surface-attention': '31 100% 70%',
@@ -173,16 +180,28 @@ function parseHsl(value: string): [number, number, number] {
   ];
 }
 
-function contrast(first: string, second: string): number {
-  const luminance = (value: string) => {
-    const channels = parseHsl(value).map((channel) => {
+function contrastChannels(first: number[], second: number[]): number {
+  const luminance = (channels: number[]) => {
+    const linear = channels.map((channel) => {
       const normalized = channel / 255;
       return normalized <= 0.04045 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4;
     });
-    return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
+    return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2];
   };
   const values = [luminance(first), luminance(second)].sort((a, b) => b - a);
   return (values[0] + 0.05) / (values[1] + 0.05);
+}
+
+function contrast(first: string, second: string): number {
+  return contrastChannels(parseHsl(first), parseHsl(second));
+}
+
+function blend(foreground: string, background: string, opacity: number): number[] {
+  const foregroundRGB = parseHsl(foreground);
+  const backgroundRGB = parseHsl(background);
+  return backgroundRGB.map(
+    (channel, index) => channel * (1 - opacity) + foregroundRGB[index] * opacity,
+  );
 }
 
 function tokenValues(css: string, mode: 'light' | 'dark'): Record<string, string> {
@@ -242,6 +261,54 @@ describe('theme color contract', () => {
     (mode) => {
       const css = fs.readFileSync(path.resolve(process.cwd(), 'src/lib/styles/tokens.css'), 'utf8');
       expectCompleteAndLegible(tokenValues(css, mode));
+    },
+  );
+
+  it.each(['light', 'dark'] as const)(
+    'keeps %s primary ink readable on neutral surfaces',
+    (mode) => {
+      const css = fs.readFileSync(path.resolve(process.cwd(), 'src/lib/styles/tokens.css'), 'utf8');
+      const values = tokenValues(css, mode);
+      for (const surface of ['background', 'card'] as const) {
+        expect(
+          contrast(values['primary-ink'], values[surface]),
+          `primary-ink on ${surface}`,
+        ).toBeGreaterThanOrEqual(4.5);
+      }
+    },
+  );
+
+  it.each(['light', 'dark'] as const)(
+    'keeps %s warning ink readable on neutral surfaces',
+    (mode) => {
+      const css = fs.readFileSync(path.resolve(process.cwd(), 'src/lib/styles/tokens.css'), 'utf8');
+      const values = tokenValues(css, mode);
+      for (const surface of ['background', 'card'] as const) {
+        expect(
+          contrast(values['warning-ink'], values[surface]),
+          `warning-ink on ${surface}`,
+        ).toBeGreaterThanOrEqual(4.5);
+        expect(
+          contrastChannels(
+            parseHsl(values['warning-ink']),
+            blend(values.warning, values[surface], 0.1),
+          ),
+          `warning-ink on soft ${surface}`,
+        ).toBeGreaterThanOrEqual(4.5);
+      }
+    },
+  );
+
+  it.each(['light', 'dark'] as const)(
+    'keeps %s primary foreground readable on the primary fill',
+    (mode) => {
+      const css = fs.readFileSync(path.resolve(process.cwd(), 'src/lib/styles/tokens.css'), 'utf8');
+      const values = tokenValues(css, mode);
+
+      expect(
+        contrast(values['primary-foreground'], values.primary),
+        'primary-foreground on primary',
+      ).toBeGreaterThanOrEqual(4.5);
     },
   );
 
@@ -401,8 +468,7 @@ describe('theme color contract', () => {
     );
     const css = fs.readFileSync(path.resolve(process.cwd(), 'src/lib/styles/tokens.css'), 'utf8');
 
-    expect(picker).toContain('border-border! focus-visible:border-ring!');
-    expect(picker).toContain('focus-visible:ring-2 focus-visible:ring-ring/40');
+    expect(picker).toContain("'w-full justify-between border-border!'");
     expect(picker).not.toMatch(/(?:border|ring)-\[#/);
     expect(avatar).toContain('color: hsl(var(--agent-avatar-foreground))');
     expect(avatar).not.toContain('color: #080808');
@@ -435,6 +501,24 @@ describe('theme color contract', () => {
     );
     expect(config).not.toMatch(/\bdestructive\s*:/);
     expect(config).not.toContain("'error-foreground'");
+  });
+
+  it('uses the exact neutral interaction roles in light and dark themes', () => {
+    const css = fs.readFileSync(path.resolve(process.cwd(), 'src/lib/styles/tokens.css'), 'utf8');
+    expect(tokenValue(css, 'theme-light-overlay')).toBe('0 0 0');
+    expect(tokenValue(css, 'theme-light-hover')).toBe('rgb(var(--theme-light-overlay) / 0.04)');
+    expect(tokenValue(css, 'theme-light-active')).toBe('rgb(var(--theme-light-overlay) / 0.07)');
+    expect(tokenValue(css, 'theme-light-selected')).toBe('0 0% 83%');
+    expect(tokenValue(css, 'theme-dark-overlay')).toBe('255 255 255');
+    expect(tokenValue(css, 'theme-dark-hover')).toBe('rgb(var(--theme-dark-overlay) / 0.06)');
+    expect(tokenValue(css, 'theme-dark-active')).toBe('rgb(var(--theme-dark-overlay) / 0.1)');
+    expect(tokenValue(css, 'theme-dark-selected')).toBe('0 0% 32%');
+    expect(tokenValue(css, 'focus-ring')).toBe('223 100% 71%');
+    expect(tokenValue(css, 'overlay')).toBe('var(--theme-overlay)');
+    expect(tokenValue(css, 'hover')).toBe('var(--theme-hover)');
+    expect(tokenValue(css, 'active')).toBe('var(--theme-active)');
+    expect(tokenValue(css, 'selected')).toBe('var(--theme-selected)');
+    expect(css).toMatch(/\.dark\s*{[^}]*--theme-overlay:\s*var\(--theme-dark-overlay\);/s);
   });
 
   it('keeps primary, focus, and semantic status source values unchanged', () => {
@@ -544,14 +628,21 @@ describe('theme color contract', () => {
       'motion-fast',
       'motion-standard',
       'motion-slow',
+      'spring-fast',
+      'spring-fast-exit',
+      'spring-fast-ease',
+      'spring-moderate',
+      'spring-moderate-exit',
+      'spring-moderate-ease',
+      'spring-slow',
+      'spring-slow-exit',
+      'spring-slow-ease',
+      'press-inset',
       'ease-standard',
       'ease-emphasized-out',
-      'layer-base',
-      'layer-sticky',
       'layer-chrome',
       'layer-popover',
       'layer-modal',
-      'layer-toast',
       'layer-tooltip',
       'layer-drag-overlay',
       'space-1',
@@ -561,23 +652,37 @@ describe('theme color contract', () => {
       'space-5',
       'space-6',
       'space-7',
-      'content-measure-reading',
       'content-measure-form',
       'content-measure-wide',
-      'surface-hatch',
     ])
       expect(css).toContain(`--${token}:`);
+    for (const tier of ['fast', 'moderate', 'slow']) {
+      const springToken = ['var(', '--spring-', tier, ')'].join('');
+      const springExitToken = ['var(', '--spring-', tier, '-exit)'].join('');
+      const springEaseToken = ['var(', '--spring-', tier, '-ease)'].join('');
+      expect(tokenValue(css, `transition-duration-spring-${tier}`)).toBe(springToken);
+      expect(tokenValue(css, `transition-duration-spring-${tier}-exit`)).toBe(springExitToken);
+      expect(tokenValue(css, `ease-spring-${tier}`)).toBe(springEaseToken);
+    }
+    expect(tokenValue(css, 'ease-spring-exit')).toBe('var(--spring-exit-ease)');
+    expect(tokenValue(css, 'spring-exit-ease')).toBe('cubic-bezier(0.33, 1, 0.68, 1)');
+    expect(tokenValue(css, 'motion-fast')).toBe('var(--spring-fast)');
+    expect(tokenValue(css, 'motion-standard')).toBe('var(--spring-moderate)');
+    expect(tokenValue(css, 'motion-slow')).toBe('var(--spring-slow)');
+    expect(tokenValue(css, 'press-inset')).toBe('1px');
     expect(tokenValue(css, 'control-height-compact')).toBe('1.75rem');
     expect(tokenValue(css, 'control-height-small')).toBe('1.75rem');
     expect(tokenValue(css, 'control-height-medium')).toBe('2rem');
     expect(tokenValue(css, 'control-height-large')).toBe('2.25rem');
-    expect(tokenValue(css, 'radius-small')).toBe('5px');
-    expect(tokenValue(css, 'radius-medium')).toBe('7px');
-    expect(tokenValue(css, 'radius-large')).toBe('9px');
-    expect(tokenValue(css, 'surface-hatch')).toContain('repeating-linear-gradient');
-    for (const role of ['background', 'muted', 'border']) {
-      expect(tokenValue(css, 'surface-hatch')).toContain(`var(--${role})`);
+    expect(tokenValue(css, 'radius-small')).toBe('8px');
+    expect(tokenValue(css, 'radius-medium')).toBe('8px');
+    expect(tokenValue(css, 'radius-large')).toBe('8px');
+    expect(tokenValue(css, 'radius-row')).toBe('8px');
+    expect(tokenValue(css, 'radius-pill')).toBe('8px');
+    for (const token of ['content-measure-reading', 'layer-base', 'layer-sticky', 'layer-toast']) {
+      expect(css).not.toContain(`--${token}:`);
     }
+    expect(css).not.toContain(['--surface', 'hatch:'].join('-'));
     expect(css).toMatch(
       /@media \(prefers-reduced-motion: reduce\)[\s\S]*transition-duration: 0\.01ms/,
     );
@@ -606,6 +711,23 @@ describe('theme color contract', () => {
     );
   });
 
+  it('defines one theme-aware overlay surface recipe', () => {
+    const appCss = fs.readFileSync(path.resolve(process.cwd(), 'src/app.css'), 'utf8');
+    const recipe = fs.readFileSync(
+      path.resolve(process.cwd(), 'src/lib/styles/overlay-surface.css'),
+      'utf8',
+    );
+
+    expect(appCss).toContain("@import '$lib/styles/overlay-surface.css';");
+    expect(recipe).toContain('border-radius: var(--radius-medium);');
+    expect(recipe).toContain('box-shadow: var(--elevation-overlay);');
+    expect(recipe).toContain('--overlay-surface-border-width: 0px;');
+    expect(recipe).toMatch(
+      /\.dark \.overlay-surface\s*{[^}]*--overlay-surface-border-width:\s*1px/s,
+    );
+    expect(recipe).toContain('--overlay-surface-border-color: hsl(var(--border));');
+  });
+
   it('limits product typography to five canonical styles with compatibility aliases', () => {
     const tokens = fs.readFileSync(
       path.resolve(process.cwd(), 'src/lib/styles/tokens.css'),
@@ -622,6 +744,11 @@ describe('theme color contract', () => {
     expect(tokens).toContain('--text-display-large-size: var(--text-display-size);');
     expect(tokens).toContain('--text-body-size: 0.9375rem;');
     expect(tokens).toContain('--text-caption-tracking: -0.01em;');
+    expect(tokenValue(tokens, 'font-ui')).toBe(
+      "Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+    );
+    expect(appCss.match(/@fontsource-variable\/inter\/files\//g)).toHaveLength(1);
+    expect(appCss).toContain('inter-latin-wght-normal.woff2');
     for (const role of ['body', 'title', 'display']) {
       expect(tokens).toContain(`--text-${role}-tracking: -0.016em;`);
     }

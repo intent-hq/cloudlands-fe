@@ -11,17 +11,17 @@
    */
 
   import { onMount, onDestroy } from 'svelte';
-  import { slide } from 'svelte/transition';
+  import { slide } from '$lib/motion';
   import { createLogger } from '$lib/utils/client-logger';
   import { ErrorHandler } from '$features/agent/services/error-handler';
   import { Button } from '$lib/components/ui/button';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import Fa from 'svelte-fa';
   import {
     faTriangleExclamation,
     faRotateRight,
     faArrowsRotate,
     faLayerGroup,
-    faSpinner,
     faCopy,
     faCheck,
   } from '@fortawesome/free-solid-svg-icons';
@@ -229,7 +229,7 @@
               class="w-14 h-14 rounded-full bg-warning/15 flex items-center justify-center ring-1 ring-warning/20 animate-in fade-in zoom-in duration-300"
             >
               {#if isRecovering}
-                <Fa icon={faSpinner} class="w-10 h-10 text-warning" spin />
+                <IntentMarkLoader size={40} class="text-warning-ink" />
               {:else}
                 <Fa icon={faTriangleExclamation} class="w-10 h-10 text-subtle" />
               {/if}
@@ -305,7 +305,10 @@
 
               <!-- Stack Trace Details - Full width with proper overflow handling -->
               {#if showDetails && errorInfo}
-                <div class="w-full pt-6 border-t border-border" transition:slide={{ axis: 'y' }}>
+                <div
+                  class="w-full pt-6 border-t border-border"
+                  transition:slide={{ axis: 'y', tier: 'moderate' }}
+                >
                   <div class="bg-muted/60 rounded-lg p-4 border border-border">
                     <pre
                       class="text-xs font-mono text-subtle leading-relaxed overflow-x-auto max-h-64 text-left whitespace-pre-wrap break-all">{errorInfo}</pre>

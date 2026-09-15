@@ -1,5 +1,7 @@
 <script lang="ts">
   import * as Sheet from './index';
+  import { Button } from '$lib/components/ui/button';
+  import { Input } from '$lib/components/ui/input';
 
   let {
     closeDisabled = false,
@@ -16,8 +18,8 @@
       <Sheet.Title>Canonical sheet</Sheet.Title>
       <Sheet.Description>Sheet behavior fixture</Sheet.Description>
     </Sheet.Header>
-    <input aria-label="Sheet field" />
-    <button>Nested sheet action</button>
+    <Input aria-label="Sheet field" />
+    <Button variant="ghost">Nested sheet action</Button>
     {#if longContent}
       <div data-testid="sheet-long-content">
         {#each Array.from({ length: 24 }) as _, index (index)}
@@ -26,7 +28,7 @@
       </div>
     {/if}
     <Sheet.Footer>
-      <button class="text-danger" onclick={() => (destructiveCount += 1)}>Delete item</button>
+      <Button variant="destructive" onclick={() => (destructiveCount += 1)}>Delete item</Button>
     </Sheet.Footer>
     <output aria-label="Sheet destructive count">{destructiveCount}</output>
   </Sheet.Content>

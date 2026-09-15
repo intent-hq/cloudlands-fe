@@ -6,12 +6,13 @@
 -->
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { safeSlide } from '$lib/utils/animations';
+  import { safeDisclosureTransition } from './disclosure-motion';
   import Fa from 'svelte-fa';
   import { faInfoCircle, faChevronDown, faChevronLeft } from '@fortawesome/free-solid-svg-icons';
   import { cn } from '$lib/utils/cn';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
+  import { Button } from '$lib/components/ui/button';
 
   interface Props {
     /** When streaming/processing started (timestamp in ms) */
@@ -75,16 +76,14 @@
 
 {#if shouldShow}
   <div
-    class={cn(
-      'rounded-md border border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400',
-      className,
-    )}
-    transition:safeSlide={{ duration: 200 }}
+    class={cn('rounded-md border border-warning/30 bg-warning/10 text-warning-ink', className)}
+    transition:safeDisclosureTransition={{ tier: 'moderate' }}
   >
     <!-- Header - always visible -->
-    <button
+    <Button
       type="button"
-      class="flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-amber-500/10"
+      variant="plain"
+      class="flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-warning/10"
       onclick={() => (isExpanded = !isExpanded)}
     >
       <Fa icon={faInfoCircle} class="shrink-0" />
@@ -93,39 +92,31 @@
         <strong>{formattedTime}</strong>
       </span>
       <Fa icon={isExpanded ? faChevronDown : faChevronLeft} class="shrink-0 opacity-60" />
-    </button>
+    </Button>
 
     <!-- Expanded debug details -->
     {#if isExpanded}
       <div
-        class="border-t border-amber-500/20 px-3 py-2 text-ui space-y-1.5"
-        transition:safeSlide={{ duration: 150 }}
+        class="border-t border-warning/30 px-3 py-2 text-ui space-y-1.5"
+        transition:safeDisclosureTransition={{ tier: 'fast' }}
       >
-        <p class="text-amber-600/80 dark:text-amber-400/80">
+        <p class="text-warning-ink">
           {m.chat_longRunningDebug_intro_label()}
         </p>
 
         <div class="grid grid-cols-2 gap-x-4 gap-y-1 font-mono">
-          <span class="text-amber-600/60 dark:text-amber-400/60"
-            >{m.chat_longRunningDebug_agentId_label()}</span
-          >
+          <span class="text-warning-ink">{m.chat_longRunningDebug_agentId_label()}</span>
           <span class="truncate">{agentId || m.chat_longRunningDebug_notAvailable_fallback()}</span>
 
-          <span class="text-amber-600/60 dark:text-amber-400/60"
-            >{m.chat_longRunningDebug_sessionId_label()}</span
-          >
+          <span class="text-warning-ink">{m.chat_longRunningDebug_sessionId_label()}</span>
           <span class="truncate"
             >{sessionId || m.chat_longRunningDebug_notActivated_fallback()}</span
           >
 
-          <span class="text-amber-600/60 dark:text-amber-400/60"
-            >{m.chat_longRunningDebug_messages_label()}</span
-          >
+          <span class="text-warning-ink">{m.chat_longRunningDebug_messages_label()}</span>
           <span>{formatInteger(messageCount)}</span>
 
-          <span class="text-amber-600/60 dark:text-amber-400/60"
-            >{m.chat_longRunningDebug_responseSize_label()}</span
-          >
+          <span class="text-warning-ink">{m.chat_longRunningDebug_responseSize_label()}</span>
           <span
             >{streamingContentLength > 0
               ? m.chat_longRunningDebug_chars_label({
@@ -134,13 +125,11 @@
               : m.chat_longRunningDebug_noResponseYet_label()}</span
           >
 
-          <span class="text-amber-600/60 dark:text-amber-400/60"
-            >{m.chat_longRunningDebug_elapsed_label()}</span
-          >
+          <span class="text-warning-ink">{m.chat_longRunningDebug_elapsed_label()}</span>
           <span>{formattedTime}</span>
         </div>
 
-        <div class="pt-1.5 text-amber-600/70 dark:text-amber-400/70">
+        <div class="pt-1.5 text-warning-ink">
           <p class="font-medium mb-1">{m.chat_longRunningDebug_possibleCauses_label()}</p>
           <ul class="list-disc list-inside space-y-0.5 pl-1">
             {#if !sessionId}

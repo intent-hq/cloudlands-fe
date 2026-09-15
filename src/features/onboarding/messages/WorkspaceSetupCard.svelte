@@ -13,8 +13,7 @@
    * - "this terminal" → focuses the setup terminal
    * - Specialist name → rich tooltip with description, prompt preview, settings link
    */
-  import { slide, blur } from 'svelte/transition';
-  import { cubicOut } from 'svelte/easing';
+  import { blur, slide } from '$lib/motion';
   import Fa from 'svelte-fa';
   import {
     faFolderOpen,
@@ -23,9 +22,10 @@
     faRobot,
     faCopy,
   } from '@fortawesome/free-solid-svg-icons';
-  import { toast } from 'svelte-sonner';
+  import { notify } from '$lib/components/patterns/notify';
   import { m } from '$shared/paraglide/messages.js';
   import ShimmerOverlay from '$lib/components/ui/ShimmerOverlay.svelte';
+  import { Button } from '$lib/components/ui/button';
   import OpenComboButton from '$features/external-editors/components/OpenComboButton.svelte';
   import { TooltipRich } from '$lib/components/ui/tooltip';
   import {
@@ -174,7 +174,7 @@
 
   function copyToClipboard(text: string, label: string) {
     navigator.clipboard.writeText(text);
-    toast.success(m.onboarding_setupCard_copied_label({ label }));
+    notify.success(m.onboarding_setupCard_copied_label({ label }));
   }
 
   function shortenPath(p: string): string {
@@ -200,8 +200,8 @@
       {#key allDone}
         <h3
           class="text-lg font-semibold tracking-[-0.016em] transition-colors duration-500"
-          in:blur={{ duration: 400, delay: 200, amount: 3, easing: cubicOut }}
-          out:blur={{ duration: 300, amount: 3, easing: cubicOut }}
+          in:blur={{ tier: 'slow', distance: 3 }}
+          out:blur={{ tier: 'slow', distance: 3 }}
         >
           {#if allDone}
             <span class="inline-flex items-center gap-1.5">
@@ -217,10 +217,7 @@
       <span class="text-sm font-mono text-muted-foreground tabular-nums">
         <span class="inline-grid *:[grid-area:1/1]">
           {#key currentStep}
-            <span
-              class="inline-block col-span-1 row-span-1"
-              in:slide={{ axis: 'y', duration: 300 }}
-            >
+            <span class="inline-block col-span-1 row-span-1" in:slide={{ axis: 'y', tier: 'slow' }}>
               {currentStep}
             </span>
           {/key}
@@ -242,7 +239,7 @@
         class="relative flex items-start overflow-hidden rounded-md py-0.75 text-base leading-relaxed"
         style:gap="var(--operational-leading-gap)"
         style:padding-inline="var(--operational-row-inline-padding)"
-        transition:slide={{ duration: 300, easing: cubicOut }}
+        transition:slide={{ tier: 'slow' }}
       >
         {#if status === 'active'}
           <div class="absolute inset-0 left-5">
@@ -258,15 +255,15 @@
         <span class="text-muted-foreground font-normal leading-snug relative z-10">
           {#if status === 'active'}
             <div
-              in:slide={{ axis: 'y', duration: 200, easing: cubicOut }}
-              out:slide={{ axis: 'y', duration: 200, easing: cubicOut }}
+              in:slide={{ axis: 'y', tier: 'moderate' }}
+              out:slide={{ axis: 'y', tier: 'moderate' }}
             >
               {@render activeContent()}
             </div>
           {:else}
             <div
-              in:slide={{ axis: 'y', duration: 200, easing: cubicOut }}
-              out:slide={{ axis: 'y', duration: 200, easing: cubicOut }}
+              in:slide={{ axis: 'y', tier: 'moderate' }}
+              out:slide={{ axis: 'y', tier: 'moderate' }}
             >
               {@render doneContent()}
             </div>
@@ -375,17 +372,19 @@
       {:else if branch}
         {m.onboarding_setupCard_creatingBranch_before()} <span class="">{branch}</span>
         {m.onboarding_setupCard_creatingBranch_middle()}
-        <button
+        <Button
+          variant="ghost"
           class="underline underline-offset-2 cursor-pointer hover:text-foreground transition-colors"
           onclick={() => copyToClipboard(baseRef, m.onboarding_setupCard_baseRef_label())}
-          >{baseRef}</button
+          >{baseRef}</Button
         >{m.onboarding_setupCard_creatingBranch_after()}
       {:else}
         {m.onboarding_setupCard_creatingBranchNoName_label()}
       {/if}
     {/snippet}
     {#snippet copyableRef(text: string, label: string, copyValue?: string)}
-      <button
+      <Button
+        variant="ghost"
         class="group/copy inline-flex items-center gap-0.5 underline underline-offset-2 cursor-pointer hover:text-foreground transition-colors"
         onclick={() => copyToClipboard(copyValue ?? text, label)}
       >
@@ -393,7 +392,7 @@
           class="inline-flex w-0 overflow-hidden opacity-0 group-hover/copy:w-3.5 group-hover/copy:opacity-40 transition-all duration-200"
           ><Fa icon={faCopy} size="xs" class="ml-0.5" /></span
         >
-      </button>
+      </Button>
     {/snippet}
     {#snippet branchDone()}
       {#if skipIsolation}
@@ -438,9 +437,10 @@
       {m.onboarding_setupCard_ranSetup_middle()}{#if onFocusSetupTerminal}{' '}{m.onboarding_setupCard_ranSetupIn_middle()}
         <TooltipRich side="bottom" align="start" interactive maxWidth="22rem" delayDuration={300}>
           {#snippet trigger()}
-            <button
+            <Button
+              variant="ghost"
               class="underline underline-offset-2 cursor-pointer hover:text-foreground transition-colors"
-              onclick={onFocusSetupTerminal}>{m.onboarding_setupCard_terminalTab_label()}</button
+              onclick={onFocusSetupTerminal}>{m.onboarding_setupCard_terminalTab_label()}</Button
             >
           {/snippet}
           {#snippet content()}
@@ -464,9 +464,10 @@
     {#snippet specialistWithTooltip()}
       <TooltipRich side="bottom" align="start" interactive maxWidth="22rem" delayDuration={300}>
         {#snippet trigger()}
-          <button
+          <Button
+            variant="ghost"
             class="underline underline-offset-2 cursor-pointer hover:text-foreground transition-colors"
-            onclick={openSpecialistSettings}>{displaySpecialistName}</button
+            onclick={openSpecialistSettings}>{displaySpecialistName}</Button
           >
         {/snippet}
         {#snippet content()}
@@ -523,12 +524,9 @@
 </div>
 
 <style>
-  @keyframes celebrate-bounce {
+  @keyframes celebrate-settle {
     0% {
-      transform: scale(1);
-    }
-    50% {
-      transform: scale(1.005);
+      transform: scale(0.995);
     }
     100% {
       transform: scale(1);
@@ -537,10 +535,7 @@
 
   @keyframes celebrate-glow {
     0% {
-      box-shadow: 0 0 0 0 hsl(var(--primary) / 0.15);
-    }
-    40% {
-      box-shadow: 0 0 16px 2px hsl(var(--primary) / 0.12);
+      box-shadow: 0 0 16px 2px hsl(var(--primary) / 0.15);
     }
     100% {
       box-shadow: 0 0 0 0 hsl(var(--primary) / 0);
@@ -549,7 +544,7 @@
 
   :global(.setup-card-celebrate) {
     animation:
-      celebrate-bounce 0.3s cubic-bezier(0.34, 1.56, 0.64, 1),
+      celebrate-settle var(--spring-slow) var(--ease-spring-slow),
       celebrate-glow 1.2s ease-out;
   }
 </style>

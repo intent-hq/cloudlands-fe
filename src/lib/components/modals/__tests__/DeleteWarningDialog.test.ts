@@ -34,7 +34,10 @@ describe('DeleteWarningDialog', () => {
     render(DeleteWarningDialog, {
       props: {
         open: true,
-        agentNames: ['Agent One', 'Agent Two'],
+        agents: [
+          { id: 'one', name: 'Agent One', state: 'running' },
+          { id: 'two', name: 'Agent Two', specialist: 'verifier', state: 'running' },
+        ],
         onDeleteAnyway,
       },
     });
@@ -48,7 +51,8 @@ describe('DeleteWarningDialog', () => {
 
     const deleteButton = screen.getByRole('button', { name: 'Stop work and delete' });
     await waitFor(() => expect(document.activeElement).toBe(deleteButton));
-    expect(deleteButton.className).toContain('ring-[3px]');
+    expect(deleteButton.className).toContain('focus-visible:outline');
+    expect(deleteButton.className).toContain('focus-visible:-outline-offset-1');
     expect(screen.getByRole('dialog').querySelector('.svelte-fa')).toBeNull();
 
     await fireEvent.click(deleteButton);
@@ -62,7 +66,7 @@ describe('DeleteWarningDialog', () => {
     render(DeleteWarningDialog, {
       props: {
         open: true,
-        agentNames: ['Agent One'],
+        agents: [{ id: 'one', name: 'Agent One', state: 'running' }],
         hookNames: ['ci-watch', 'pr-watch'],
       },
     });
@@ -79,7 +83,7 @@ describe('DeleteWarningDialog', () => {
     render(DeleteWarningDialog, {
       props: {
         open: true,
-        agentNames: [],
+        agents: [],
         hookNames: ['ci-watch'],
       },
     });
@@ -94,7 +98,7 @@ describe('DeleteWarningDialog', () => {
     render(DeleteWarningDialog, {
       props: {
         open: true,
-        agentNames: [],
+        agents: [],
         hookNames: [],
         openPrs: [],
       },
@@ -180,7 +184,7 @@ describe('DeleteWarningDialog', () => {
     });
 
     expect(screen.queryByRole('link')).toBeNull();
-    const item = screen.getByText('#9 No url yet');
+    const item = screen.getByText('No url yet');
     await fireEvent.click(item);
 
     expect(openExternalUrlMock).not.toHaveBeenCalled();
@@ -218,7 +222,7 @@ describe('DeleteWarningDialog', () => {
       props: {
         open: true,
         mode: 'archive' as const,
-        agentNames: ['Agent One'],
+        agents: [{ id: 'one', name: 'Agent One', state: 'running' }],
         hookNames: ['ci-watch'],
         onDeleteAnyway,
       },
@@ -280,7 +284,11 @@ describe('DeleteWarningDialog', () => {
       const DeleteWarningDialog = (await import('../DeleteWarningDialog.svelte')).default;
 
       render(DeleteWarningDialog, {
-        props: { open: true, agentNames: ['Agent One'], localChanges: null },
+        props: {
+          open: true,
+          agents: [{ id: 'one', name: 'Agent One', state: 'running' }],
+          localChanges: null,
+        },
       });
 
       expect(screen.getByText('Agent One')).toBeTruthy();
@@ -400,7 +408,7 @@ describe('DeleteWarningDialog', () => {
     render(DeleteWarningDialog, {
       props: {
         open: true,
-        agentNames: ['Agent One'],
+        agents: [{ id: 'one', name: 'Agent One', state: 'running' }],
         onCancel,
       },
     });
@@ -412,6 +420,6 @@ describe('DeleteWarningDialog', () => {
     await fireEvent.keyDown(dialog, { key: 'Escape' });
 
     expect(onCancel).toHaveBeenCalledOnce();
-    expect(screen.queryByRole('dialog')).toBeNull();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 });

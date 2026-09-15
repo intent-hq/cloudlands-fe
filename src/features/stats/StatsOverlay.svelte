@@ -10,7 +10,10 @@
    * The wire call lives in the stats read-service middleware; this component
    * only dispatches `loadUsageStatsRequested` and reads the `stats` slice.
    */
-  import { fade } from 'svelte/transition';
+  import { fade } from '$lib/motion';
+  import { Button } from '$lib/components/ui/button';
+  import { menuItem } from '$lib/components/ui/menu';
+  import { cn } from '$lib/utils';
   import Fa from 'svelte-fa';
   import { faChevronDown, faCheck, faDownload, faXmark } from '@fortawesome/free-solid-svg-icons';
   import AgentPassportCard from './AgentPassportCard.svelte';
@@ -112,8 +115,8 @@
       await exportCardPng(node, fileName);
     } catch (error) {
       console.error('stats PNG export failed', error);
-      const { toast } = await import('svelte-sonner');
-      toast.error(m.stats_overlay_exportFailed_error(), {
+      const { notify } = await import('$lib/components/patterns/notify');
+      notify.error(m.stats_overlay_exportFailed_error(), {
         description: error instanceof Error ? error.message : String(error),
       });
     }
@@ -126,7 +129,7 @@
   <!-- Backdrop: blur + dim the real app behind (design shows it at ~.22 opacity) -->
   <div
     class="stats-backdrop fixed inset-0 z-50"
-    transition:fade={{ duration: 150 }}
+    transition:fade={{ tier: 'moderate' }}
     onclick={close}
     aria-hidden="true"
   ></div>
@@ -136,16 +139,17 @@
     role="dialog"
     aria-modal="true"
     aria-label={m.stats_overlay_dialog_ariaLabel()}
-    transition:fade={{ duration: 150 }}
+    transition:fade={{ tier: 'moderate' }}
   >
     <!-- Close affordance -->
-    <button
+    <Button
+      variant="ghost"
       class="stats-close pointer-events-auto fixed top-10 right-5 z-10 flex h-8 w-8 items-center justify-center rounded-lg cursor-pointer"
       onclick={close}
       aria-label={m.stats_overlay_close_ariaLabel()}
     >
       <Fa icon={faXmark} size={14} />
-    </button>
+    </Button>
 
     <!-- Mode pill + period dropdown. The mt-auto here pairs with the hint's mb-auto to
          center the content block when it fits the viewport, without the top-clipping
@@ -153,7 +157,8 @@
     <div class="pointer-events-auto relative z-[3] mt-auto flex items-center gap-2.5">
       <div class="stats-pill flex rounded-lg p-[3px]">
         {#each STATS_MODES as entry (entry.mode)}
-          <button
+          <Button
+            variant="ghost"
             class="stats-pill-seg rounded-md px-3.5 py-[5px] text-[12.5px] font-medium cursor-pointer select-none {$mode$ ===
             entry.mode
               ? 'stats-pill-seg-active'
@@ -161,13 +166,14 @@
             onclick={() => setMode(entry.mode)}
           >
             {entry.label}
-          </button>
+          </Button>
         {/each}
       </div>
 
       {#if $mode$ !== '24h'}
         <div class="relative">
-          <button
+          <Button
+            variant="ghost"
             class="stats-dd-trigger flex h-8 items-center gap-2 rounded-lg px-3 text-[12.5px] font-medium cursor-pointer select-none"
             onclick={() => (dropdownOpen = !dropdownOpen)}
             aria-haspopup="listbox"
@@ -177,18 +183,20 @@
             <span class="opacity-60 text-[9px] a11y-ignore"
               ><Fa icon={faChevronDown} size={9} /></span
             >
-          </button>
+          </Button>
           {#if dropdownOpen}
             <div
               class="stats-dd absolute top-[38px] left-0 z-[4] w-40 rounded-lg p-1"
               role="listbox"
             >
               {#each options as key (key)}
-                <button
-                  class="stats-dd-opt flex w-full items-center justify-between rounded-[5px] px-[9px] py-1.5 text-xs cursor-pointer select-none {key ===
-                  $periodKey$
-                    ? 'stats-dd-opt-sel'
-                    : ''}"
+                <Button
+                  variant="ghost"
+                  class={cn(
+                    menuItem(),
+                    'stats-dd-opt justify-between rounded-[5px] px-[9px] py-1.5 text-xs cursor-pointer',
+                    key === $periodKey$ && 'stats-dd-opt-sel',
+                  )}
                   role="option"
                   aria-selected={key === $periodKey$}
                   onclick={() => pickPeriod(key)}
@@ -197,7 +205,7 @@
                   {#if key === $periodKey$}
                     <span class="stats-check"><Fa icon={faCheck} size={9} /></span>
                   {/if}
-                </button>
+                </Button>
               {:else}
                 <div class="px-[9px] py-1.5 text-xs stats-muted">
                   {m.stats_overlay_noData_label()}
@@ -247,14 +255,15 @@
 {/if}
 
 {#snippet exportBtn(card: StatsCardName)}
-  <button
+  <Button
+    variant="ghost"
     class="stats-export-btn absolute top-3.5 right-3.5 z-[2] flex h-[30px] items-center gap-1.5 rounded-lg px-3 text-xs font-medium cursor-pointer"
-    onclick={(event) => exportCard(event.currentTarget, card)}
+    onclick={(event) => exportCard(event.currentTarget as HTMLElement, card)}
     aria-label={m.stats_overlay_exportCard_ariaLabel({ card })}
   >
     <Fa icon={faDownload} size={11} />
     {m.stats_overlay_png_label()}
-  </button>
+  </Button>
 {/snippet}
 
 <style>

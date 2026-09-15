@@ -36,7 +36,7 @@ vi.mock('$store/renderer/store', () => ({
     }),
   },
 }));
-vi.mock('svelte-sonner', () => ({ toast: { error: vi.fn(), info: vi.fn() } }));
+vi.mock('$lib/components/patterns/notify', () => ({ notify: { error: vi.fn(), info: vi.fn() } }));
 
 import { voiceTranscriptionStarted } from '$store/renderer/slices/hardware-console/hardware-console-slice';
 import { voiceTranscriptionSaga } from '$store/renderer/slices/hardware-console/sagas/voice-transcription-saga';

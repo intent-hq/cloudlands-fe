@@ -1,9 +1,8 @@
-import { cubicOut } from 'svelte/easing';
-import type { TransitionConfig } from 'svelte/transition';
+import { spring, type ImmediateMotionConfig as TransitionConfig } from '$lib/motion';
 import { prefersReducedMotion } from '$lib/utils/reduced-motion';
 import { beforeFollowBottomMutation, type FollowBottomMutation } from '$lib/utils/smartScroll';
 
-const DURATION_MS = 180;
+const DURATION_MS = spring.moderate.settleMs;
 // Svelte's `transition.stop()` aborts the animation without a terminal tick,
 // so the transition lease also carries a lifetime bound: a full bidirectional
 // reversal plus slack, after which the follower releases it on its own.
@@ -70,13 +69,14 @@ export function captureQueuedMessageRowMotion(node: HTMLElement): () => void {
     }
 
     node.style.height = `${currentHeight}px`;
+    const easing = getComputedStyle(node).getPropertyValue('--spring-exit-ease').trim();
     const animation = node.animate(
       [
         { height: `${currentHeight}px`, opacity: currentOpacity },
         { height: `${targetHeight}px`, opacity: Math.min(currentOpacity, targetOpacity, 0.72) },
         { height: `${targetHeight}px`, opacity: targetOpacity },
       ],
-      { duration: DURATION_MS, easing: 'cubic-bezier(0.33, 1, 0.68, 1)' },
+      { duration: spring.moderate.settleMs, ...(easing && { easing }) },
     );
     const motion = { animation, bottomMutation };
     activeMotions.set(node, motion);
@@ -124,8 +124,8 @@ export function queuedMessageRowTransition(
   const opacity = numericStyle(style, 'opacity') || 1;
 
   return {
-    duration: DURATION_MS,
-    easing: cubicOut,
+    duration: spring.moderate.settleMs,
+    easing: spring.moderate.exit.easing,
     css: (t) =>
       `overflow:hidden;height:${t * height}px;` +
       `padding-top:${t * numericStyle(style, 'paddingTop')}px;` +

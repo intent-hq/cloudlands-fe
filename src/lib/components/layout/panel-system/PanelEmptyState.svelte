@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
+  import { EmptyState } from '$lib/components/patterns/screen';
   /**
    * PanelEmptyState - Empty state for panels without tabs
    *
@@ -242,8 +244,10 @@
   ]);
 </script>
 
-<div
-  class="empty-state flex h-full items-center justify-center overflow-y-auto bg-sidebar px-6 py-8 text-foreground"
+<EmptyState
+  class="empty-state h-full overflow-y-auto bg-sidebar px-6 py-8 text-foreground text-left"
+  contentClass="w-full max-w-xs"
+  aria-label={m.layout_panelEmptyState_createInEmptyPanel_ariaLabel()}
   data-panel-empty-state
 >
   <section
@@ -252,13 +256,16 @@
   >
     <div class="creation-list flex flex-col gap-0.5">
       {#each creationActions as action (action.id)}
-        <button
-          class="creation-action empty-state-row grid min-h-7 min-w-0 w-full max-w-full cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 px-2 py-1 text-left font-medium text-foreground transition-colors hover:text-muted-foreground focus-visible:outline focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-ring motion-reduce:transition-none"
+        <Button
+          wrapContent={false}
+          variant="ghost"
+          size="sm"
+          class="creation-action empty-state-row grid min-h-7 min-w-0 w-full max-w-full cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 px-2 py-1 text-left font-medium text-foreground transition-colors duration-spring-fast ease-spring-fast hover:text-muted-foreground focus-visible:outline focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-ring motion-reduce:transition-none"
           onclick={action.action}
           title={m.layout_panelEmptyState_newItem_tooltip({ label: action.label })}
           aria-label={m.layout_panelEmptyState_newItem_tooltip({ label: action.label })}
         >
-          <span class="flex min-w-0 items-center gap-x-2">
+          <span class="relative flex min-w-0 items-center gap-x-2">
             <span class="flex shrink-0 items-center" aria-hidden="true">
               <Fa icon={action.icon} class="size-[1em]" />
             </span>
@@ -267,87 +274,83 @@
             </span>
           </span>
           <kbd
-            class="shortcut-key shrink-0 justify-self-end whitespace-nowrap text-right text-muted-foreground"
+            class="shortcut-key relative shrink-0 justify-self-end whitespace-nowrap text-right text-muted-foreground"
           >
             {formatShortcut(action.key)}
           </kbd>
-        </button>
+        </Button>
       {/each}
     </div>
 
     {#if recentItems.length > 0}
       <div class="recent-list mt-5 flex flex-col gap-0.5">
         {#each recentRows as row (row.id)}
-          <button
-            class:reopen-hint={row.isUtility}
-            class:recent-item={!row.isUtility}
-            class="empty-state-row grid min-h-7 min-w-0 w-full max-w-full cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 px-2 py-1 text-left font-normal text-muted-foreground transition-colors hover:text-foreground focus-visible:outline focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-ring motion-reduce:transition-none"
+          <Button
+            wrapContent={false}
+            variant="ghost"
+            size="sm"
+            class="{row.isUtility
+              ? 'reopen-hint'
+              : 'recent-item'} empty-state-row grid min-h-7 min-w-0 w-full max-w-full cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 px-2 py-1 text-left font-normal text-muted-foreground transition-colors duration-spring-fast ease-spring-fast hover:text-foreground focus-visible:outline focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-ring motion-reduce:transition-none"
             onclick={row.onSelect}
             title={row.title}
           >
             {#if row.icon}
-              <span class="flex min-w-0 items-center gap-x-2">
+              <span class="relative flex min-w-0 items-center gap-x-2">
                 <span class="flex shrink-0 items-center opacity-70" aria-hidden="true">
                   <Fa icon={row.icon} class="size-[1em]" />
                 </span>
-                <span class="min-w-0 truncate">{row.label}</span>
+                <span class="relative min-w-0 truncate">{row.label}</span>
               </span>
             {:else}
-              <span class="min-w-0 truncate">{row.label}</span>
+              <span class="relative min-w-0 truncate">{row.label}</span>
             {/if}
             {#if row.shortcut}
               <kbd
-                class="shortcut-key shrink-0 justify-self-end whitespace-nowrap text-right text-muted-foreground"
+                class="shortcut-key relative shrink-0 justify-self-end whitespace-nowrap text-right text-muted-foreground"
               >
                 {formatShortcut(row.shortcut)}
               </kbd>
             {/if}
-          </button>
+          </Button>
         {/each}
       </div>
     {/if}
 
     <div class="shortcut-list mt-5 flex flex-col gap-0.5">
       {#each utilityActions as action (action.label)}
-        <button
-          class="shortcut-item empty-state-row grid min-h-7 min-w-0 w-full max-w-full cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 px-2 py-1 text-left font-normal text-muted-foreground transition-colors hover:text-foreground focus-visible:outline focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-ring motion-reduce:transition-none"
+        <Button
+          wrapContent={false}
+          variant="ghost"
+          size="sm"
+          class="shortcut-item empty-state-row grid min-h-7 min-w-0 w-full max-w-full cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 px-2 py-1 text-left font-normal text-muted-foreground transition-colors duration-spring-fast ease-spring-fast hover:text-foreground focus-visible:outline focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-ring motion-reduce:transition-none"
           onclick={action.action}
           title={action.label}
           aria-label={action.label}
         >
-          <span class="min-w-0 truncate">{action.label}</span>
+          <span class="relative min-w-0 truncate">{action.label}</span>
           <kbd
-            class="shortcut-key shrink-0 justify-self-end whitespace-nowrap text-right text-muted-foreground"
+            class="shortcut-key relative shrink-0 justify-self-end whitespace-nowrap text-right text-muted-foreground"
           >
             {formatShortcut(action.key)}
           </kbd>
-        </button>
+        </Button>
       {/each}
     </div>
   </section>
-</div>
+</EmptyState>
 
 <style>
-  .creation-action {
+  :global(.empty-state .creation-action) {
     color: hsl(var(--foreground));
   }
 
-  .creation-action:hover {
+  :global(.empty-state .creation-action:hover) {
     color: hsl(var(--muted-foreground));
   }
 
   .shortcut-key {
     color: hsl(var(--muted-foreground));
     font-weight: 500;
-  }
-
-  .creation-action:active,
-  .reopen-hint:active,
-  .shortcut-item:active {
-    transform: scale(0.98);
-  }
-
-  .recent-item:active {
-    transform: scale(0.99);
   }
 </style>

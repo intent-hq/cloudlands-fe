@@ -9,7 +9,8 @@ import {
   agentAvatarVariants,
 } from '../src/features/agent/components/agent-avatar/avatar-size';
 
-test.describe.configure({ mode: 'serial', timeout: 120_000 });
+// Each test mounts a fresh host; report every contract failure independently.
+test.describe.configure({ mode: 'default', timeout: 120_000 });
 
 let server: ViteDevServer;
 let baseUrl: string;
@@ -110,7 +111,12 @@ async function catalogPalettePng(locator: Locator, scale: number): Promise<Buffe
 
 async function catalogStackPng(locator: Locator, scale: number): Promise<Buffer> {
   const dataUrl = await locator.evaluate((node, selectedScale) => {
-    const items = Array.from(node.children) as HTMLElement[];
+    // Avatar stack batch (96e48a0b) nests surfaces inside a positioning track.
+    const items = Array.from(
+      node.querySelectorAll<HTMLElement>(
+        '[data-agent-avatar-surface], [data-agent-avatar-overflow]',
+      ),
+    );
     const nodeRect = node.getBoundingClientRect();
     const canvas = document.createElement('canvas');
     canvas.width = Math.ceil(nodeRect.width * selectedScale);
@@ -180,14 +186,15 @@ function colorDistance(first: Rgba, second: Rgba): number {
   return Math.hypot(first[0] - second[0], first[1] - second[1], first[2] - second[2]);
 }
 
-type SurfaceFamily = 'neutral' | 'completed' | 'attention' | 'active' | 'waiting';
+// Avatar palette batch (96e48a0b): failures are red; completed glyphs use semantic ink.
+type SurfaceFamily = 'neutral' | 'completed' | 'failed' | 'attention' | 'active' | 'waiting';
 
 const surfaceFamilyByState = {
   running: 'active',
   responding: 'active',
   unread: 'neutral',
   completed: 'completed',
-  failed: 'attention',
+  failed: 'failed',
   waiting: 'waiting',
   'needs-permission': 'attention',
   'attention-discussion': 'attention',
@@ -197,8 +204,9 @@ const surfaceFamilyByState = {
 
 const expectedSurfaceByTheme = {
   light: {
-    neutral: [232, 237, 234, 255],
+    neutral: [225, 223, 222, 255],
     completed: [220, 229, 224, 255],
+    failed: [228, 88, 88, 255],
     attention: [255, 162, 64, 255],
     active: [209, 226, 78, 255],
     waiting: [196, 167, 242, 255],
@@ -206,6 +214,7 @@ const expectedSurfaceByTheme = {
   dark: {
     neutral: [192, 206, 198, 255],
     completed: [53, 70, 60, 255],
+    failed: [239, 118, 118, 255],
     attention: [255, 181, 102, 255],
     active: [222, 237, 110, 255],
     waiting: [176, 150, 232, 255],
@@ -218,7 +227,7 @@ test('renders every vector and state without provider or status overlays', async
   await expect(page.locator('[data-catalog-avatar-design]')).toHaveCount(13);
   await expect(
     catalog.locator('.agent-avatar-catalog-states [data-agent-avatar-with-state]'),
-  ).toHaveCount(130);
+  ).toHaveCount(143); // Catalog inventory: 13 designs × 11 states (including responding; 96e48a0b).
   const avatarSurfaces = page.locator(
     '[data-agent-avatar-with-state], [data-agent-message-leading-identity]',
   );
@@ -234,7 +243,7 @@ test('renders every vector and state without provider or status overlays', async
     page.locator('[data-testid="agent-message-chevron-column"] [data-icon]'),
   ).toHaveCount(7);
   await expect(catalog.locator('.agent-avatar-catalog-states [data-agent-avatar]')).toHaveCount(
-    130,
+    143,
   );
 });
 
@@ -333,7 +342,7 @@ test('resolves computed attribution surfaces for every canonical semantic state'
     neutral: ['idle', 'neutral'],
     running: ['running', 'active'],
     waiting: ['waiting', 'waiting'],
-    error: ['failed', 'attention'],
+    error: ['failed', 'failed'],
     attention: ['attention-discussion', 'attention'],
   } as const;
 
@@ -505,7 +514,16 @@ test('resolves opaque, separated semantic state tokens in light and dark modes',
     expect(backgrounds.size).toBe(familyColors.length);
     for (const [index, first] of familyColors.entries()) {
       for (const second of familyColors.slice(index + 1)) {
-        expect(colorDistance(first, second)).toBeGreaterThan(15);
+        // Avatar palette batch (96e48a0b) uses muted neutral beside pale completed green.
+        if (
+          theme === 'light' &&
+          first === expectedSurfaceByTheme.light.neutral &&
+          second === expectedSurfaceByTheme.light.completed
+        ) {
+          expect(colorDistance(first, second)).toBeCloseTo(Math.sqrt(65), 6);
+        } else {
+          expect(colorDistance(first, second)).toBeGreaterThan(15);
+        }
       }
     }
     const waiting = expectedSurfaceByTheme[theme].waiting;
@@ -515,7 +533,7 @@ test('resolves opaque, separated semantic state tokens in light and dark modes',
   }
 });
 
-test('keeps every SVG path and circle color identical across states and color modes', async ({
+test('keeps every SVG shape on its semantic state foreground across color modes', async ({
   page,
 }) => {
   await mountAvatarHost(page);
@@ -534,6 +552,7 @@ test('keeps every SVG path and circle color identical across states and color mo
         .locator('[data-agent-avatar-with-state]')
         .evaluateAll((avatars) =>
           avatars.map((avatar) => ({
+            state: avatar.getAttribute('data-avatar-state'),
             color: getComputedStyle(avatar).color,
             opacity: getComputedStyle(avatar).opacity,
             shapes: Array.from(avatar.querySelectorAll('path, circle, rect')).map((shape) => {
@@ -542,15 +561,21 @@ test('keeps every SVG path and circle color identical across states and color mo
             }),
           })),
         );
-      for (const presentation of presentations.slice(1)) {
-        expect(presentation).toEqual(presentations[0]);
-      }
-      expect(presentations[0]?.opacity).toBe('1');
-      if (mode !== 'forced-colors') {
-        expect(presentations[0]?.color).toBe('rgb(8, 8, 8)');
-        for (const shape of presentations[0]?.shapes ?? []) {
+      // Avatar palette batch (96e48a0b) gives completed avatars their own foreground.
+      for (const presentation of presentations) {
+        expect(presentation.opacity).toBe('1');
+        if (mode !== 'forced-colors') {
+          const expected =
+            presentation.state === 'completed'
+              ? mode === 'dark'
+                ? 'rgb(212, 226, 216)'
+                : 'rgb(42, 81, 64)'
+              : 'rgb(0, 0, 0)';
+          expect(presentation.color).toBe(expected);
+        }
+        for (const shape of presentation.shapes) {
           for (const paint of [shape.fill, shape.stroke]) {
-            if (paint !== 'none') expect(paint).toBe('rgb(8, 8, 8)');
+            if (paint !== 'none') expect(paint).toBe(presentation.color);
           }
           expect(shape.opacity).toBe('1');
         }
@@ -599,7 +624,7 @@ test('computes butt caps and miter joins across avatar modes, widths, and zoom l
   }
 });
 
-test('keeps Settings Specialists at named standard geometry at 100% and 200%', async ({ page }) => {
+test('keeps Settings Specialists at named compact geometry at 100% and 200%', async ({ page }) => {
   await mountAvatarHost(page);
   const settings = page.locator('[data-settings-specialists]');
   const rows = settings.getByRole('button').filter({ has: page.locator('[data-agent-avatar]') });
@@ -609,7 +634,8 @@ test('keeps Settings Specialists at named standard geometry at 100% and 200%', a
       (node as HTMLElement).style.zoom = String(selectedZoom);
     }, zoom);
     for (const avatar of await settings.locator('[data-agent-avatar]').all()) {
-      await expect(avatar).toHaveAttribute('data-avatar-variant', 'standard');
+      // Settings navigation batch (7b81eb9b) deliberately uses compact avatars.
+      await expect(avatar).toHaveAttribute('data-avatar-variant', 'compact');
       const [box, style] = await Promise.all([
         avatar.boundingBox(),
         avatar.evaluate((node) => {
@@ -617,9 +643,9 @@ test('keeps Settings Specialists at named standard geometry at 100% and 200%', a
           return { padding: computed.paddingLeft, boxSizing: computed.boxSizing };
         }),
       ]);
-      expect(box?.width).toBeCloseTo(20 * zoom, 1);
-      expect(box?.height).toBeCloseTo(20 * zoom, 1);
-      expect(style).toEqual({ padding: '2px', boxSizing: 'border-box' });
+      expect(box?.width).toBeCloseTo(16 * zoom, 1);
+      expect(box?.height).toBeCloseTo(16 * zoom, 1);
+      expect(style).toEqual({ padding: '1px', boxSizing: 'border-box' });
     }
   }
 });

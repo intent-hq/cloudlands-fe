@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
   import { tick } from 'svelte';
   import type { TaskStatus } from '$shared/types';
   import type { WorkspaceId, NoteId } from '$shared/types/branded-ids';
@@ -7,6 +8,7 @@
 
   import { updateTaskNoteStatus } from '$features/tasks/tasks-write-service';
   import { m } from '$shared/paraglide/messages.js';
+  import { menuItem } from '$lib/components/ui/menu';
 
   let {
     workspaceId,
@@ -67,7 +69,7 @@
   const statusColors: Record<TaskStatus, string> = {
     not_started: 'bg-gray-400/10 text-gray-400',
     waiting: 'bg-gray-300/10 text-gray-400',
-    discussion_needed: 'bg-amber-500/10 text-amber-700/70',
+    discussion_needed: 'bg-warning/10 text-warning-ink',
     blocked: 'bg-red-500/10 text-red-600',
     in_progress: 'bg-sky-400/10 text-sky-600',
     review_required: 'bg-blue-500/10 text-blue-600',
@@ -79,7 +81,7 @@
   const statusDotColors: Record<TaskStatus, string> = {
     not_started: 'bg-gray-400',
     waiting: 'bg-gray-300',
-    discussion_needed: 'bg-amber-500',
+    discussion_needed: 'bg-warning',
     blocked: 'bg-red-500',
     in_progress: 'bg-sky-400',
     review_required: 'bg-blue-500',
@@ -137,7 +139,8 @@
 {#if isInteractive}
   <DropdownMenu bind:open={menuOpen} align="start" side="bottom">
     {#snippet trigger({ props })}
-      <button
+      <Button
+        variant="ghost"
         {...props}
         class="inline-flex font-mediumx text-subtlex items-center cursor-pointer {compact
           ? 'py-0.5 text-sm gap-1.5'
@@ -145,7 +148,7 @@
       >
         <TaskStatusIcon {status} size={12} />
         {statusLabels[status]}
-      </button>
+      </Button>
     {/snippet}
     {#snippet content({ close }: { close: () => void })}
       <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
@@ -157,20 +160,20 @@
         role="listbox"
       >
         {#each statusOptions as option, i (option)}
-          <button
+          <Button
+            variant="ghost"
             onclick={() => handleStatusSelect(option, close)}
             onmouseenter={() => (selectedIndex = i)}
-            class="w-full text-left px-3 py-1.5 text-sm rounded transition-colors flex items-center gap-2 cursor-pointer {i ===
-            selectedIndex
-              ? 'bg-muted/30'
-              : ''} {option === status ? 'font-medium' : ''}"
+            class={`${menuItem()} px-3 py-1.5 text-sm cursor-pointer ${
+              i === selectedIndex ? 'bg-muted/30' : ''
+            } ${option === status ? 'font-medium' : ''}`}
             role="option"
             aria-selected={option === status}
           >
             <!-- <span class="size-2 rounded-full {statusDotColors[option]}"></span> -->
             <TaskStatusIcon status={option} size={12} />
             {statusLabels[option]}
-          </button>
+          </Button>
         {/each}
       </div>
     {/snippet}
@@ -178,8 +181,8 @@
 {:else}
   <span
     class="inline-flex items-center rounded-md font-semibold {compact
-      ? 'px-2 py-0.5 text-[0.66rem] uppercase tracking-wide'
-      : 'px-2 py-1 text-sm uppercase tracking-wide'} {statusColors[status]}"
+      ? 'px-2 py-0.5 text-[0.66rem] '
+      : 'px-2 py-1 text-sm '} {statusColors[status]}"
   >
     {statusLabels[status]}
   </span>

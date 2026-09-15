@@ -1,9 +1,11 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
   import GitRepoIcon from '$lib/components/icons/GitRepoIcon.svelte';
   import ServerIcon from '$lib/components/icons/ServerIcon.svelte';
   import Checkbox from '$lib/components/ui/checkbox/checkbox.svelte';
-  import { faPlus, faSpinner } from '@fortawesome/free-solid-svg-icons';
+  import { faPlus } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import BranchSelector, { type BranchListInfo, type BranchStatus } from './BranchSelector.svelte';
   import RepoSelector from './RepoSelector.svelte';
   import { m } from '$shared/paraglide/messages.js';
@@ -288,9 +290,9 @@
         onchange={handleBranchChange}
       />
       {#if isMetadataBranchLoading}
-        <Fa
-          icon={faSpinner}
-          class="pointer-events-none absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-subtle"
+        <IntentMarkLoader
+          size={16}
+          class="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-subtle"
         />
       {/if}
     </div>
@@ -447,7 +449,8 @@
     {/if}
     <!-- Skip isolation toggle for remote -->
     {#if typeof onSkipIsolationChange === 'function'}
-      <button
+      <Button
+        variant="ghost"
         type="button"
         onclick={() => onSkipIsolationChange?.(!skipIsolation)}
         class="flex items-center gap-1.5 ml-3 shrink-0 cursor-pointer"
@@ -460,7 +463,7 @@
         <span class="text-ui text-subtle whitespace-nowrap">
           {m.workspace_repoAndBranchPicker_workDirectly_label()}
         </span>
-      </button>
+      </Button>
     {/if}
   {:else if isMetadataPresentation}
     <RepoSelector

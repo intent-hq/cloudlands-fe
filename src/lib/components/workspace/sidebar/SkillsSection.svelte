@@ -1,4 +1,6 @@
 <script lang="ts">
+  import SidebarGroupHeader from './SidebarGroupHeader.svelte';
+  import { Button } from '$lib/components/ui/button';
   /**
    * SkillsSection - Displays discovered agent skills in the sidebar
    *
@@ -10,11 +12,12 @@
   import { loadSkillsRequested } from '$store/renderer/slices/skills/skills-slice';
   import { writable } from 'svelte/store';
 
-  import { slide } from 'svelte/transition';
-  import { faChevronDown, faGlobe, faPuzzlePiece } from '@fortawesome/free-solid-svg-icons';
+  import { slide } from '$lib/motion';
+  import { faGlobe, faPuzzlePiece } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { navigateToFile } from '$lib/utils/workspace-navigation';
   import { store as appStore } from '$store/renderer/store';
+  import { formatInteger } from '$lib/i18n/format';
   import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
@@ -66,11 +69,13 @@
 
 {#snippet skillRow(skill: SkillInfo)}
   {@const isGlobal = skill.scope === 'user' || !skill.scope}
-  <div class="flex items-center gap-1.5 px-2 py-1.5 rounded-md transition-colors group">
+  <div class="flex min-w-0 items-center rounded-md group">
     <!-- Skill Icon + Name (clickable) -->
-    <button
+    <Button
+      variant="ghost"
       type="button"
-      class="flex items-center gap-1.5 flex-1 min-w-0 cursor-pointer text-left"
+      size="compact"
+      class="h-7 w-full flex items-center gap-1.5 px-2 flex-1 min-w-0 cursor-pointer text-left"
       onclick={() => handleSkillClick(skill)}
     >
       <div class="size-3.5 rounded flex items-center justify-center shrink-0">
@@ -85,29 +90,22 @@
           {skill.name}
         </span>
       </div>
-    </button>
+    </Button>
   </div>
 {/snippet}
 
 {#if $skills$.length > 0}
   <div class="mt-3 {className ?? ''}">
-    <!-- Section Header -->
-    <button
-      type="button"
-      class="w-full flex items-center gap-2 px-1.5 py-1 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+    <SidebarGroupHeader
+      title={m.workspace_skills_title()}
+      meta={formatInteger($skills$.length)}
+      expanded={isExpanded}
+      collapsedChevronClass="rotate-90"
       onclick={() => (isExpanded = !isExpanded)}
-    >
-      <Fa
-        icon={faChevronDown}
-        size="xs"
-        class="opacity-50 transition-transform duration-200 {isExpanded ? '' : 'rotate-90'}"
-      />
-      <span>{m.workspace_skills_title()}</span>
-      <span class="ml-auto text-ui opacity-60">{$skills$.length}</span>
-    </button>
+    />
 
     {#if isExpanded}
-      <div class="space-y-0.5 mt-1 pl-4" transition:slide={{ axis: 'y', duration: 200 }}>
+      <div class="space-y-0.5 mt-1" transition:slide={{ axis: 'y', tier: 'moderate' }}>
         {#each sortedSkills as skill (skill.name)}
           {@render skillRow(skill)}
         {/each}

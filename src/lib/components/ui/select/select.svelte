@@ -2,6 +2,10 @@
   import { setContext, type Snippet } from 'svelte';
   import { Select as SelectPrimitive } from 'bits-ui';
 
+  const uid = $props.id();
+  const fallbackTriggerId = `${uid}-trigger`;
+  let triggerId = $state(fallbackTriggerId);
+
   interface SelectItemData {
     value: string;
     label: string;
@@ -20,6 +24,7 @@
     onchange?: (value: string) => void;
     onopenchange?: (open: boolean) => void;
     children?: Snippet;
+    staticPosition?: boolean;
   }
 
   let {
@@ -34,9 +39,17 @@
     onchange,
     onopenchange,
     children,
+    staticPosition = false,
   }: Props = $props();
 
   setContext('canonical-select', {
+    get triggerId() {
+      return triggerId;
+    },
+    registerTriggerId(id?: string) {
+      triggerId = id ?? fallbackTriggerId;
+    },
+    listboxId: `${uid}-listbox`,
     get value() {
       return value;
     },
@@ -49,13 +62,16 @@
     get open() {
       return open;
     },
+    get staticPosition() {
+      return staticPosition;
+    },
     set open(nextOpen: boolean) {
       open = nextOpen;
     },
   });
 </script>
 
-<div class="relative min-w-0 w-full">
+<div data-slot="select-root" class="relative min-w-0 w-full">
   <SelectPrimitive.Root
     type="single"
     bind:value

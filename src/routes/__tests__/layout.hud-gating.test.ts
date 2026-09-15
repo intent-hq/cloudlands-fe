@@ -13,7 +13,10 @@ import { installConsoleTeardownGuard } from './helpers/console-teardown-guard';
 installConsoleTeardownGuard();
 
 const mockPage = vi.hoisted(() => ({ pathname: '/' }));
-const mocks = vi.hoisted(() => ({ startAppStoreLifecycle: vi.fn(() => () => {}) }));
+const mocks = vi.hoisted(() => ({
+  dismissSplashElement: vi.fn(),
+  startAppStoreLifecycle: vi.fn(() => () => {}),
+}));
 
 vi.mock('$app/navigation', () => ({
   goto: vi.fn(),
@@ -43,7 +46,10 @@ vi.mock('$store/renderer/app-store-lifecycle', () => ({
 vi.mock('$store/renderer/sagas', () => ({ startAllAppSagas: () => [] }));
 vi.mock('$store/renderer/seeders', () => ({}));
 vi.mock('$features/layout/tab-types/register-all', () => ({ registerAllTabTypes: () => {} }));
-vi.mock('$features/backend/splash-gate', () => ({ wireSplashGate: () => () => {} }));
+vi.mock('$features/backend/splash-gate', () => ({
+  dismissSplashElement: mocks.dismissSplashElement,
+  wireSplashGate: () => () => {},
+}));
 vi.mock('$lib/utils/diff-highlighter-preloader', () => ({ preloadDiffHighlighter: () => {} }));
 vi.mock('$lib/utils/monaco-workers', () => ({ configureMonacoWorkers: async () => {} }));
 vi.mock('$features/agent/interrupted-agents-service', () => ({
@@ -138,6 +144,7 @@ const childrenSnippet = createRawSnippet(() => ({
 describe('+layout.svelte isHudRoute chrome-less gating', () => {
   beforeEach(() => {
     appStore.init();
+    mocks.dismissSplashElement.mockClear();
     mocks.startAppStoreLifecycle.mockClear();
   });
 
@@ -203,5 +210,21 @@ describe('+layout.svelte isHudRoute chrome-less gating', () => {
 
     view.unmount();
     expect(stopAppStoreLifecycle).toHaveBeenCalledOnce();
+  });
+
+  it('dismisses the splash and removes the static drag region on mount', () => {
+    const splash = document.createElement('div');
+    splash.id = 'splash';
+    document.body.appendChild(splash);
+    const dragRegion = document.createElement('div');
+    dragRegion.id = 'app-drag-region';
+    document.body.appendChild(dragRegion);
+
+    render(HudLayout, { props: { children: childrenSnippet } });
+
+    expect(mocks.dismissSplashElement).toHaveBeenCalledOnce();
+    expect(mocks.dismissSplashElement).toHaveBeenCalledWith(splash);
+    expect(dragRegion.isConnected).toBe(false);
+    splash.remove();
   });
 });

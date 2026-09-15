@@ -10,9 +10,14 @@
     faCircleXmark,
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
-  import { safeSlide } from '$lib/utils/animations';
   import type { TaskDiffSections, ParsedTask } from './tool-result-parser';
   import { m } from '$shared/paraglide/messages.js';
+  import {
+    Accordion,
+    AccordionContent,
+    AccordionItem,
+    AccordionTrigger,
+  } from '$lib/components/ui/accordion';
 
   interface Props {
     sections: TaskDiffSections;
@@ -21,15 +26,7 @@
   let { sections }: Props = $props();
 
   // Track which sections are expanded
-  let expandedSections = $state<Record<string, boolean>>({
-    created: true,
-    updated: true,
-    deleted: true,
-  });
-
-  function toggleSection(section: string) {
-    expandedSections[section] = !expandedSections[section];
-  }
+  let expandedSections = $state<string[]>(['created', 'updated', 'deleted']);
 
   // Get icon for task state
   function getTaskStateIcon(state: ParsedTask['state']) {
@@ -86,39 +83,37 @@
 </script>
 
 {#if hasAnyTasks}
-  <div class="task-diff-renderer">
+  <Accordion type="multiple" bind:value={expandedSections} class="task-diff-renderer">
     {#each sectionConfig as config}
       {#if sections[config.key].length > 0}
-        <div class="section">
-          <button class="section-header" onclick={() => toggleSection(config.key)}>
+        <AccordionItem value={config.key} class="section">
+          <AccordionTrigger class="section-header">
             <span class="section-icon" style:color={config.iconColor}>
               <Fa icon={config.icon} size="xs" />
             </span>
             <span class="section-label">{config.label}</span>
             <span class="section-count">({sections[config.key].length})</span>
-            <span class="chevron" class:expanded={expandedSections[config.key]}>
+            <span class="chevron" class:expanded={expandedSections.includes(config.key)}>
               <Fa icon={faChevronDown} size="xs" />
             </span>
-          </button>
+          </AccordionTrigger>
 
-          {#if expandedSections[config.key]}
-            <div class="section-content" transition:safeSlide={{ duration: 150 }}>
-              {#each sections[config.key] as task (task.uuid)}
-                <div class="task-item">
-                  <span class="task-state-icon" style:color={getTaskStateColor(task.state)}>
-                    <Fa icon={getTaskStateIcon(task.state)} size="xs" />
-                  </span>
-                  <span class="task-name" class:cancelled={task.state === 'CANCELLED'}>
-                    {task.name}
-                  </span>
-                </div>
-              {/each}
-            </div>
-          {/if}
-        </div>
+          <AccordionContent class="section-content">
+            {#each sections[config.key] as task (task.uuid)}
+              <div class="task-item">
+                <span class="task-state-icon" style:color={getTaskStateColor(task.state)}>
+                  <Fa icon={getTaskStateIcon(task.state)} size="xs" />
+                </span>
+                <span class="task-name" class:cancelled={task.state === 'CANCELLED'}>
+                  {task.name}
+                </span>
+              </div>
+            {/each}
+          </AccordionContent>
+        </AccordionItem>
       {/if}
     {/each}
-  </div>
+  </Accordion>
 {:else}
   <div class="empty-state">{m.chat_taskDiffRenderer_noChanges_label()}</div>
 {/if}

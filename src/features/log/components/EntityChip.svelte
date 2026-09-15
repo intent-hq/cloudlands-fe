@@ -17,6 +17,7 @@
     faFolder,
   } from '@fortawesome/free-solid-svg-icons';
   import * as Tooltip from '$lib/components/ui/tooltip';
+  import { Button } from '$lib/components/ui/button';
 
   type EntityType =
     'file' | 'note' | 'agent' | 'branch' | 'command' | 'folder' | 'text' | 'custom' | 'blank';
@@ -71,8 +72,9 @@
 <Tooltip.Provider>
   <Tooltip.Root>
     <Tooltip.Trigger>
-      <button
+      <Button
         type="button"
+        variant="ghost"
         class={cn(
           'inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium',
           'transition-colors duration-150 cursor-pointer',
@@ -88,7 +90,7 @@
           <Fa icon={displayIcon} class="text-ui opacity-60 {iconClass}" />
         {/if}
         <span class="truncate max-w-[120px]">{label}</span>
-      </button>
+      </Button>
     </Tooltip.Trigger>
     {#if sublabel}
       <Tooltip.Content side="top" class="text-xs">

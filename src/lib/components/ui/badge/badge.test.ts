@@ -1,29 +1,51 @@
 /**
  * @vitest-environment jsdom
  */
-import { render, screen } from '@testing-library/svelte';
-import { readFileSync } from 'node:fs';
+import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { describe, expect, it } from 'vitest';
 import Badge from './badge.svelte';
 import { badgeFixtures } from './badge.fixtures';
 import { badgeMetadata } from './badge.meta';
-import { badgeVariants } from './badge.variants';
+import BadgeHarness from './BadgeHarness.svelte';
 
 describe('Badge', () => {
-  it('owns one semantic variant recipe', () => {
-    const sources = ['badge.svelte', 'index.ts', 'badge.variants.ts'].map((file) =>
-      readFileSync(new URL(file, import.meta.url), 'utf8'),
-    );
-    const source = sources.join('\n');
-    expect(source.match(/\btv\(/g)).toHaveLength(1);
-    expect(source.match(/export type BadgeVariant\b/g)).toHaveLength(1);
-    expect(source.match(/export type BadgeProps\b/g)).toHaveLength(1);
-    expect(badgeVariants({ variant: 'secondary' })).toContain('bg-muted');
-    expect(badgeVariants({ variant: 'destructive' })).toContain('text-danger');
-    expect(badgeVariants({ variant: 'destructive' })).not.toContain('text-white');
-    expect(badgeVariants({ variant: 'success' })).toContain('before:bg-success');
-    expect(badgeVariants({ variant: 'info' })).toContain('before:bg-info');
-    expect(badgeVariants({ variant: 'outline' })).toContain('bg-card');
+  it.each([
+    ['default', 'solid', 'gray'],
+    ['secondary', 'solid', 'gray'],
+    ['outline', 'dot', 'gray'],
+    ['destructive', 'solid', 'red'],
+    ['success', 'solid', 'green'],
+    ['info', 'solid', 'blue'],
+  ] as const)('maps the legacy %s variant', (variant, expectedVariant, expectedColor) => {
+    const { container } = render(Badge, { props: { variant } });
+    const badge = container.querySelector('[data-slot="badge"]')!;
+    expect(badge.getAttribute('data-variant')).toBe(expectedVariant);
+    expect(badge.getAttribute('data-color')).toBe(expectedColor);
+    expect(Boolean(badge.querySelector('[data-slot="badge-dot"]'))).toBe(expectedVariant === 'dot');
+  });
+
+  it('lets explicit color override a legacy semantic color', () => {
+    const { container } = render(Badge, {
+      props: { variant: 'success', color: 'violet', size: 'sm' },
+    });
+    const badge = container.querySelector('[data-slot="badge"]')!;
+    expect(badge.getAttribute('data-color')).toBe('violet');
+    expect(badge.getAttribute('data-size')).toBe('compact');
+  });
+
+  it('renders optional leading affordances and removes after its exit', async () => {
+    const { getByLabelText, getByTestId } = render(BadgeHarness);
+    const badge = getByTestId('removable-badge');
+    expect(badge.querySelector('[data-slot="badge-dot"]')).not.toBeNull();
+    expect(getByLabelText('Shield icon')).toBeTruthy();
+    const remove = getByLabelText('Remove status');
+    expect(remove.className).toContain('size-4');
+    expect(remove.className).toContain('rounded-full');
+    expect(remove.className).toContain('border-0');
+
+    await fireEvent.click(remove);
+    await waitFor(() => expect(screen.getByLabelText('Badge removed').textContent).toBe('true'));
+    expect(screen.queryByTestId('removable-badge')).toBeNull();
   });
 
   it('preserves span and anchor behavior', () => {
@@ -44,6 +66,8 @@ describe('Badge', () => {
         'destructive',
         'success-ring-dot',
         'info-ring-dot',
+        'leading-icon',
+        'removable',
         'dark',
       ]),
     );

@@ -95,8 +95,10 @@
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
   import { createLogger } from '$lib/utils/client-logger';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
-  import { toast } from 'svelte-sonner';
+  import { notify } from '$lib/components/patterns/notify';
   import { m } from '$shared/paraglide/messages.js';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
+  import { OPTION_LIST_END_SLOT_CLASS } from '$lib/styles/option-list-row';
   import {
     faArrowsRotate,
     faCheck,
@@ -213,7 +215,7 @@
     defaultOptionDescription?: string;
     // Wraps the resolved defaultModelId label on the trigger when no explicit
     // model is selected (e.g. "Default ({model})" for the specialist editor's
-    // inherit state). Only applied when defaultModelId is set.
+    // inherit state). Also applies to the catalog-default fallback.
     formatDefaultModelLabel?: (modelLabel: string) => string;
     // Gates agent-session updates (updateAgentSessionFields, agent.setModel).
     updateGlobalStore?: boolean;
@@ -771,7 +773,7 @@
             error: errorMsg,
           });
           if (errorMsg) {
-            toast.error(errorMsg, { duration: 6000 });
+            notify.error(errorMsg, { duration: 6000 });
           }
         }
       } catch (error) {
@@ -957,6 +959,11 @@
     defaultModelId ? mapDefaultPseudoSelection(defaultModelId) : undefined,
   );
 
+  function formatResolvedDefaultLabel(model: string): string {
+    if (formatDefaultModelLabel) return formatDefaultModelLabel(model);
+    return showDefaultOption ? m.chat_modelPicker_defaultModelPreview_label({ model }) : model;
+  }
+
   const currentModelLabel = $derived.by(() => {
     if (hasExplicitModel) {
       return localModel
@@ -970,17 +977,12 @@
     // defaultModelLabel (e.g. "Provider default"), then the bare model id. A
     // `<provider>:default` preview maps to its D2 row's label first.
     if (defaultModelId) {
-      const resolvedLabel =
-        defaultModelIdMappedOption?.label ??
-        getModelLabel(defaultModelId) ??
-        defaultModelLabel ??
-        parseCompoundModelId(defaultModelId).modelId;
-      return formatDefaultModelLabel ? formatDefaultModelLabel(resolvedLabel) : resolvedLabel;
+      const resolvedLabel = defaultModelIdMappedOption?.label ?? getModelLabel(defaultModelId);
+      if (resolvedLabel) return formatResolvedDefaultLabel(resolvedLabel);
+      return defaultModelLabel ?? parseCompoundModelId(defaultModelId).modelId;
     }
     if (catalogDefaultFallbackOption) {
-      return formatDefaultModelLabel
-        ? formatDefaultModelLabel(catalogDefaultFallbackOption.label)
-        : catalogDefaultFallbackOption.label;
+      return formatResolvedDefaultLabel(catalogDefaultFallbackOption.label);
     }
     return defaultModelLabel ?? m.chat_modelPicker_defaultModel_label();
   });
@@ -1144,7 +1146,7 @@
     if (hasNoAvailableProvider) {
       if (!noProviderToastShown) {
         noProviderToastShown = true;
-        toast.error(m.chat_modelPicker_noProviderAvailable_toast(), {
+        notify.error(m.chat_modelPicker_noProviderAvailable_toast(), {
           id: 'no-provider-available',
           duration: 6000,
           action: {
@@ -1595,7 +1597,7 @@
       });
 
       // Show toast notification explaining the switch
-      toast.info(
+      notify.info(
         m.chat_modelPicker_unavailableSwitched_toast({
           from: unavailableModelName,
           to: fallbackModelName,
@@ -1684,7 +1686,7 @@
       }
 
       const providerName = providerDisplayName(currentProvider);
-      toast.warning(m.chat_modelPicker_noModelsForProvider_toast({ provider: providerName }), {
+      notify.warning(m.chat_modelPicker_noModelsForProvider_toast({ provider: providerName }), {
         description: m.chat_modelPicker_tryRefreshing_description(),
       });
     })();
@@ -1860,9 +1862,7 @@
     {/if}
     {#if !allProvidersLoaded && Object.keys(allProviderModels).length > 0}
       <div class="px-3 py-2 flex items-center gap-2 text-xs text-muted-foreground">
-        <div
-          class="size-3 border-2 border-muted-foreground/30 border-t-muted-foreground rounded-full animate-spin"
-        ></div>
+        <IntentMarkLoader size={12} />
         <span>{m.chat_modelPicker_loadingMore_label()}</span>
       </div>
     {/if}
@@ -1901,13 +1901,11 @@
     headerClass={providerTabsEnabled ? 'bg-popover! border-b!' : 'border-b-0!'}
     triggerClass={cn(
       'max-w-full',
-      (variant === 'outline' || variant === 'default') &&
-        'w-full justify-between border-border! focus-visible:border-ring! focus-visible:ring-2 focus-visible:ring-ring/40',
+      (variant === 'outline' || variant === 'default') && 'w-full justify-between border-border!',
       triggerClass,
     )}
     contentClass={cn(
       'max-w-[calc(100vw-32px)] bg-background! text-foreground!',
-      '[&_[role=searchbox]]:border-b! [&_[role=searchbox]]:border-solid! [&_[role=searchbox]]:border-border!',
       showReasoning ? 'w-85 h-90 min-h-0 max-h-90 flex flex-col' : 'w-[332px]',
     )}
     contentMaxHeight={showReasoning ? 360 : undefined}
@@ -1937,14 +1935,11 @@
           <Fa icon={faSettings} class="h-4 w-4" />
         {:else if isTriggerLabelResolved}
           {#if showModelLoading}
-            <span
-              class="size-3 border-2 border-muted-foreground/30 border-t-muted-foreground rounded-full animate-spin shrink-0"
-              role="status"
-              aria-label={modelLoadingTitle}
-              title={modelLoadingTitle}
-            ></span>
+            <span class="size-3 shrink-0" title={modelLoadingTitle}>
+              <IntentMarkLoader size={12} />
+            </span>
           {:else if showModelWarning}
-            <Fa icon={faTriangleExclamation} class="h-3 w-3 text-amber-600 shrink-0" />
+            <Fa icon={faTriangleExclamation} class="h-3 w-3 text-warning-ink shrink-0" />
           {/if}
           {#if hasProviderIcon(triggerProviderId)}
             <ProviderIcon providerId={triggerProviderId} class="size-3.5" />
@@ -1982,7 +1977,7 @@
           {#each providerTabIds as providerTabId (providerTabId)}
             <Button
               variant="ghost"
-              size="icon"
+              size="icon-xs"
               iconOnly={true}
               role="tab"
               aria-selected={providerTabId === activeBrowseProviderId}
@@ -2000,7 +1995,7 @@
           {/each}
           <Button
             variant="ghost"
-            size="icon"
+            size="icon-xs"
             iconOnly={true}
             aria-label={m.chat_modelPicker_noProviderAvailable_openSettings_label()}
             class="text-muted-foreground hover:bg-muted/40"
@@ -2011,7 +2006,7 @@
           </Button>
           <Button
             variant="ghost"
-            size="xs"
+            size="icon-xs"
             iconOnly={true}
             title={m.chat_modelPicker_refreshGroup_title({
               group: providerDisplayName(activeBrowseProviderId),
@@ -2030,10 +2025,7 @@
             <Fa
               icon={faArrowsRotate}
               size={10}
-              class={cn(
-                'text-subtle transition-transform duration-500',
-                refreshingProviders.has(activeBrowseProviderId) && 'animate-spin',
-              )}
+              class="text-subtle transition-transform duration-spring-slow ease-spring-slow motion-reduce:transition-none"
             />
           </Button>
         </div>
@@ -2041,10 +2033,7 @@
       {#if showModelWarning && warningMessage}
         <div class="px-3 py-2.5 border-b border-border bg-warning/5">
           <div class="flex items-start gap-2" role="alert">
-            <Fa
-              icon={faTriangleExclamation}
-              class="h-3.5 w-3.5 text-warning-foreground mt-0.5 shrink-0"
-            />
+            <Fa icon={faTriangleExclamation} class="h-3.5 w-3.5 text-warning-ink mt-0.5 shrink-0" />
             <div class="min-w-0">
               <div class="text-xs font-medium text-foreground leading-tight">
                 {warningMessage.title}
@@ -2065,9 +2054,7 @@
       <div class="flex gap-2 w-full min-w-0">
         {#if providerLoading}
           <div class="flex items-center gap-2 text-muted-foreground text-sm">
-            <div
-              class="size-3 border-2 border-muted-foreground/30 border-t-muted-foreground rounded-full animate-spin"
-            ></div>
+            <IntentMarkLoader size={12} />
             <span>{option.label}</span>
           </div>
         {:else if providerLoadError}
@@ -2079,26 +2066,25 @@
           />
         {:else}
           <div class="flex-1 min-w-0">
-            <div class="flex items-baseline justify-between gap-2">
-              <span
-                class={cn(
-                  'truncate text-sm font-medium',
-                  option.value === USE_DEFAULT_VALUE && 'italic text-muted-foreground',
-                  selected && 'font-medium',
-                )}
-              >
-                {option.label}
-              </span>
-              {#if selected}
-                <Fa icon={faCheck} class="text-xs text-primary shrink-0" />
-              {/if}
-            </div>
+            <span
+              class={cn(
+                'block truncate text-sm font-medium',
+                option.value === USE_DEFAULT_VALUE && 'text-muted-foreground',
+              )}
+            >
+              {option.label}
+            </span>
             {#if option.description}
               <div class="text-xs text-subtle truncate mt-0.5" title={option.description}>
                 {option.description}
               </div>
             {/if}
           </div>
+          {#if selected}
+            <span class={OPTION_LIST_END_SLOT_CLASS}>
+              <Fa icon={faCheck} class="text-xs text-primary-ink shrink-0" />
+            </span>
+          {/if}
         {/if}
       </div>
     {/snippet}

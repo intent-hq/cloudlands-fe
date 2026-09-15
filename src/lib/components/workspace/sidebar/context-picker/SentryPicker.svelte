@@ -21,7 +21,8 @@
   import SentryIcon from '$lib/components/icons/SentryIcon.svelte';
   import { Input } from '$lib/components/ui/input';
   import { Button } from '$lib/components/ui/button';
-  import { faSpinner, faSearch } from '@fortawesome/free-solid-svg-icons';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
+  import { faSearch } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { onMount } from 'svelte';
   import { store as appStore } from '$store/renderer/store';
@@ -130,9 +131,9 @@
 </script>
 
 {#if !$isAuthenticated$}
-  <div class="p-6 flex flex-col items-center gap-4">
+  <div class="flex flex-col items-start gap-4 p-6 text-left">
     <SentryIcon size={48} class="text-subtle" />
-    <p class="text-sm text-subtle text-center">{m.workspace_sentryPicker_connectPrompt_label()}</p>
+    <p class="text-left text-sm text-subtle">{m.workspace_sentryPicker_connectPrompt_label()}</p>
 
     {#if showConfigForm}
       <div class="w-full space-y-3">
@@ -157,7 +158,7 @@
             class="flex-1"
           >
             {#if $storeIsConnecting$}
-              <Fa icon={faSpinner} class="animate-spin mr-2" />
+              <IntentMarkLoader size={16} class="mr-2" />
             {/if}
             {m.workspace_sentryPicker_connect_label()}
           </Button>
@@ -171,7 +172,7 @@
   </div>
 {:else if isLoadingIssues}
   <div class="p-8 flex justify-center">
-    <Fa icon={faSpinner} class="animate-spin text-subtle" size="lg" />
+    <IntentMarkLoader size={20} class="text-subtle" />
   </div>
 {:else}
   <!-- Search -->
@@ -190,12 +191,13 @@
   <!-- Issues list continues in next chunk due to line limit -->
   <div class="max-h-80 overflow-y-auto">
     {#if filteredIssues.length === 0}
-      <div class="p-8 text-center text-subtle text-sm">
+      <div class="p-8 text-left text-sm text-subtle">
         {searchQuery ? 'No matching issues found' : 'No issues found'}
       </div>
     {:else}
       {#each filteredIssues as issue (issue.id)}
-        <button
+        <Button
+          variant="ghost"
           type="button"
           class="w-full text-left px-4 py-2.5 hover:bg-muted/50 transition-colors cursor-pointer flex items-start gap-3 border-b border-border last:border-0"
           onclick={() => handleSelect(issue)}
@@ -212,7 +214,7 @@
             </div>
             <p class="text-sm truncate mt-0.5">{issue.title}</p>
           </div>
-        </button>
+        </Button>
       {/each}
     {/if}
   </div>

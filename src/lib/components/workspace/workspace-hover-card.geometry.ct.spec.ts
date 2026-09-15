@@ -386,7 +386,8 @@ for (const theme of ['light', 'dark'] as const) {
     );
     expect(new Set(surfaces.map(({ card }) => card)).size).toBe(1);
     for (const surface of surfaces) {
-      expect(surface.card).not.toBe(surface.elevated);
+      // Batch 18-F makes popovers match the page/card surface in both themes.
+      expect(surface.card).toBe(surface.elevated);
       expect(surface.card).toBe(surface.dockPlate);
       expect(surface.card).not.toBe('rgba(0, 0, 0, 0)');
     }

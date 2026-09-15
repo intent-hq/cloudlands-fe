@@ -15,7 +15,7 @@
 
   import { onMount } from 'svelte';
   import { m } from '$shared/paraglide/messages.js';
-  import { Switch } from '$lib/components/ui/switch';
+  import { SettingsForm, defineSettings } from '$lib/components/patterns/settings';
   import { store as appStore } from '$store/renderer/store';
   import { selectKeychainSyncState } from '$store/renderer/slices/connections/connections-selectors';
   import {
@@ -65,52 +65,58 @@
       toggleOn = selectKeychainSyncState.select(appStore.state)?.enabled ?? false;
     }
   }
+
+  const schema = $derived.by(() =>
+    defineSettings({
+      sections: [
+        {
+          id: 'backend-sync',
+          title: m.settings_backendSync_toggle_label(),
+          entries: [
+            {
+              kind: 'switch',
+              id: 'backend-sync',
+              label: m.settings_backendSync_toggle_label(),
+              get: () => toggleOn,
+              set: handleToggle,
+              error: () =>
+                loadFailed
+                  ? m.settings_backendSync_loadError()
+                  : saveFailed
+                    ? m.settings_backendSync_saveError()
+                    : undefined,
+              disabled: () => !supported || !loaded || writing,
+              class: 'py-0 first:pt-0 last:pb-0',
+            },
+          ],
+        },
+      ],
+    }),
+  );
 </script>
 
-<div class="flex items-start justify-between gap-4">
-  <div class="flex-1 min-w-0">
-    <p class="text-sm font-medium text-foreground">
-      {m.settings_backendSync_toggle_label()}
-    </p>
-    <p class="text-xs text-subtle mt-0.5">
-      {m.settings_backendSync_toggle_description()}
-    </p>
-    {#if !supported && loaded}
-      <p class="text-xs text-subtle mt-0.5">
-        {m.settings_backendSync_unsupported_description()}
-      </p>
-    {/if}
-    {#if loadFailed}
-      <p class="text-xs text-danger mt-0.5">{m.settings_backendSync_loadError()}</p>
-    {:else if saveFailed}
-      <p class="text-xs text-danger mt-0.5">{m.settings_backendSync_saveError()}</p>
-    {/if}
-    {#if supported && enabled}
-      {#if status === null}
-        <p class="text-xs text-subtle mt-1">{m.settings_backendSync_status_checking()}</p>
-      {:else if status.state === 'active'}
-        <p class="text-xs text-success mt-1">{m.settings_backendSync_status_active()}</p>
-        {#if status.errorCount}
-          <p class="text-xs text-warning mt-0.5">{m.settings_backendSync_status_degraded()}</p>
-        {/if}
-      {:else}
-        <p class="text-xs text-warning mt-1">
-          {m.settings_backendSync_status_unavailable()}
-        </p>
-        {#if status.message}
-          <!-- Helper-reported diagnostic detail; wire content, not translated. -->
-          <!-- i18n-ignore (main-process diagnostic message) -->
-          <p class="text-xs text-subtle mt-0.5">{status.message}</p>
-        {/if}
+{#snippet syncDescription()}
+  <span class="block">{m.settings_backendSync_toggle_description()}</span>
+  {#if !supported && loaded}
+    <span class="block">{m.settings_backendSync_unsupported_description()}</span>
+  {/if}
+  {#if supported && enabled}
+    {#if status === null}
+      <span class="block">{m.settings_backendSync_status_checking()}</span>
+    {:else if status.state === 'active'}
+      <span class="block text-success">{m.settings_backendSync_status_active()}</span>
+      {#if status.errorCount}
+        <span class="block text-warning-ink">{m.settings_backendSync_status_degraded()}</span>
+      {/if}
+    {:else}
+      <span class="block text-warning-ink">{m.settings_backendSync_status_unavailable()}</span>
+      {#if status.message}
+        <!-- Helper-reported diagnostic detail; wire content, not translated. -->
+        <!-- i18n-ignore (main-process diagnostic message) -->
+        <span class="block">{status.message}</span>
       {/if}
     {/if}
-  </div>
-  <div class="shrink-0">
-    <Switch
-      bind:checked={toggleOn}
-      onCheckedChange={handleToggle}
-      disabled={!supported || !loaded || writing}
-      ariaLabel={m.settings_backendSync_toggle_label()}
-    />
-  </div>
-</div>
+  {/if}
+{/snippet}
+
+<SettingsForm {schema} embedded descriptions={{ 'backend-sync': syncDescription }} />

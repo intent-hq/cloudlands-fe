@@ -597,9 +597,15 @@ jobs:
       # the per-worker state, so this only gains headroom (the CT jobs'
       # OOM lesson — monorepo#3352 — was a job-wide 8 GB cap, not this).
       NODE_OPTIONS: '--max-old-space-size=4096'
+      DESIGN_SYSTEM_BASELINE_BASE_REF: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+      - name: Fetch baseline comparison commit
+        run: |
+          if [ -n "$DESIGN_SYSTEM_BASELINE_BASE_REF" ]; then
+            git fetch --no-tags --depth=1 origin "$DESIGN_SYSTEM_BASELINE_BASE_REF"
+          fi
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
         with:

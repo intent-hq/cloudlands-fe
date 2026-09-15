@@ -9,6 +9,9 @@ const handleLink = vi.hoisted(() => vi.fn(() => Promise.resolve(true)));
 const dispatch = vi.hoisted(() => vi.fn());
 
 vi.mock('$features/navigation/link-handler', () => ({ handleLink }));
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { error: vi.fn(), success: vi.fn(), warning: vi.fn(), info: vi.fn() },
+}));
 vi.mock('$store/renderer/store', () => ({ store: { dispatch } }));
 
 warmImport(() => import('../MarkdownViewer.svelte'));

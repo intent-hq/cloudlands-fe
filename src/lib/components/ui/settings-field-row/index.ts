@@ -1,3 +1,1 @@
-import Root from './settings-field-row.svelte';
-
-export { Root as SettingsFieldRow };
+export { SettingsFieldRow } from '$lib/components/patterns/settings';

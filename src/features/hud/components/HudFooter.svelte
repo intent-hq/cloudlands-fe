@@ -158,7 +158,7 @@
     font-size: 15px;
   }
   .hud-stat-run {
-    color: hsl(var(--primary));
+    color: hsl(var(--primary-ink));
   }
   .hud-stat-attn {
     color: hsl(var(--warning));
@@ -181,7 +181,7 @@
     color: hsl(var(--danger));
   }
   .hud-stat-completed {
-    color: hsl(var(--primary));
+    color: hsl(var(--primary-ink));
   }
   .hud-stat-blink {
     animation: hudblink 1.6s step-end infinite;

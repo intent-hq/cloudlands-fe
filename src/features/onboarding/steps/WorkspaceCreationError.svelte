@@ -4,7 +4,7 @@
    * workspace creation. Classifies the raw error via `diagnoseCloneError`
    * and renders guidance (commands, links) matched to the diagnosis kind.
    */
-  import { fly } from 'svelte/transition';
+  import { fly } from '$lib/motion';
   import Fa from 'svelte-fa';
   import {
     faExclamationTriangle,
@@ -83,23 +83,17 @@
 
 <div
   class="rounded-lg border px-4 py-3 text-sm {variant === 'warning'
-    ? 'border-amber-500/30 bg-amber-500/5'
+    ? 'border-warning/30 bg-warning/10'
     : 'border-danger/30 bg-danger-background/5'}"
-  in:fly={{ y: 10, duration: 200 }}
+  in:fly={{ tier: 'moderate', distance: 10 }}
   role="alert"
 >
   <div class="flex items-start gap-2 mb-2">
     <Fa
       icon={faExclamationTriangle}
-      class="mt-0.5 shrink-0 {variant === 'warning'
-        ? 'text-amber-600 dark:text-amber-400'
-        : 'text-danger'}"
+      class="mt-0.5 shrink-0 {variant === 'warning' ? 'text-warning-ink' : 'text-danger'}"
     />
-    <p
-      class="font-medium {variant === 'warning'
-        ? 'text-amber-700 dark:text-amber-300'
-        : 'text-danger'}"
-    >
+    <p class="font-medium {variant === 'warning' ? 'text-warning-ink' : 'text-danger'}">
       {titles[diagnosis.kind]}
     </p>
   </div>
@@ -116,31 +110,34 @@
           <!-- i18n-ignore (shell command) -->
           gh auth login
         </code>
-        <button
+        <Button
+          variant="ghost"
           type="button"
           class="shrink-0 rounded p-1.5 text-muted-foreground hover:text-foreground hover:bg-background/70 cursor-pointer"
           aria-label={m.onboarding_creationError_copyCommand_ariaLabel()}
           onclick={() => copyCommand('gh auth login')}
         >
           <Fa icon={copiedCommand === 'gh auth login' ? faCheck : faClipboard} size="sm" />
-        </button>
+        </Button>
       </div>
       <p class="text-xs text-muted-foreground">
         {m.onboarding_creationError_noCli_before()}
-        <button
+        <Button
+          variant="ghost"
           type="button"
           class="underline hover:text-foreground cursor-pointer"
           onclick={() => openLink('https://cli.github.com/')}
-          >{m.onboarding_creationError_installIt_label()}</button
+          >{m.onboarding_creationError_installIt_label()}</Button
         >
         {m.onboarding_creationError_or_label()}
-        <button
+        <Button
+          variant="ghost"
           type="button"
           class="underline hover:text-foreground cursor-pointer"
           onclick={() =>
             openLink(
               'https://docs.github.com/en/get-started/getting-started-with-git/caching-your-github-credentials-in-git',
-            )}>{m.onboarding_creationError_credentialHelper_label()}</button
+            )}>{m.onboarding_creationError_credentialHelper_label()}</Button
         >{m.onboarding_creationError_noCli_after()}
       </p>
     </div>
@@ -187,14 +184,15 @@
       <!-- i18n-ignore (command and domain names) -->
       <code class="font-mono text-xs">git</code>
       {m.onboarding_creationError_gitNotInstalled_middle()}
-      <button
+      <Button
+        variant="ghost"
         type="button"
         class="underline hover:text-foreground cursor-pointer"
         onclick={() => openLink('https://git-scm.com/downloads')}
       >
         <!-- i18n-ignore (domain name) -->
         git-scm.com
-      </button>
+      </Button>
       {m.onboarding_creationError_gitNotInstalled_after()}
     </p>
   {:else}
@@ -208,7 +206,8 @@
       >
     {/if}
     {#if diagnosis.kind !== 'unknown' && diagnosis.rawMessage.trim()}
-      <button
+      <Button
+        variant="ghost"
         type="button"
         class="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground cursor-pointer"
         onclick={() => (showDetails = !showDetails)}
@@ -220,7 +219,7 @@
             ? m.onboarding_creationError_hideErrorDetails_label()
             : m.onboarding_creationError_showErrorDetails_label()}</span
         >
-      </button>
+      </Button>
     {/if}
   </div>
 

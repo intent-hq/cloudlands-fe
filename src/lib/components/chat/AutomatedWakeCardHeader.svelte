@@ -101,7 +101,8 @@
       <Button
         type="button"
         variant="plain"
-        class="h-auto min-w-0 max-w-full justify-start whitespace-normal break-words text-left font-inherit text-muted-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        truncateLabel={false}
+        class="type-body h-auto! min-w-0 max-w-full justify-start whitespace-normal break-words p-0! text-left font-inherit text-muted-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         data-testid="pr-monitor-wake-chip"
         title={m.chat_prMonitorWakeAttribution_openPrWithLabel_tooltip({ label: chipLabel })}
         onclick={openPr}
@@ -119,8 +120,11 @@
       {statusLabel}
     </span>
   </span>
-  <button
+  <Button
     type="button"
+    variant="ghost-light"
+    size="icon-xs"
+    iconOnly
     class="inline-flex h-6 w-6 shrink-0 self-start items-center justify-center rounded {SUBSCRIPTION_ICON_BUTTON_CLASS} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     aria-expanded={expanded}
     aria-controls={controlsId}
@@ -137,5 +141,5 @@
         ? ''
         : 'rotate-90'}"
     />
-  </button>
+  </Button>
 </div>

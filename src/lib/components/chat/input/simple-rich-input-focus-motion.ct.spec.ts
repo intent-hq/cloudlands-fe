@@ -45,6 +45,22 @@ async function placeholderMotion(editor: Locator) {
   });
 }
 
+// Resolve token units and CSS easing serialization through the browser, just as
+// a consumer does; the motion tokens now carry CSS time units.
+async function motionTier(input: Locator, tier: 'slow' | 'fast') {
+  return input.evaluate((node, name) => {
+    const probe = document.createElement('span');
+    probe.style.transitionDuration = name === 'slow' ? 'var(--spring-slow)' : 'var(--spring-fast)';
+    probe.style.transitionTimingFunction =
+      name === 'slow' ? 'var(--spring-slow-ease)' : 'var(--spring-fast-ease)';
+    node.append(probe);
+    const style = getComputedStyle(probe);
+    const result = { duration: style.transitionDuration, easing: style.transitionTimingFunction };
+    probe.remove();
+    return result;
+  }, tier);
+}
+
 /* Focus or blur the editor, catch the placeholder fade as it starts, pause it
    and seek to its midpoint, then read the opacity there. Sampling after a fixed
    delay reads the terminal value once the 0.3s transition has already finished
@@ -120,15 +136,15 @@ for (const state of states) {
       .toBe(`${idle}px`);
     await expect(editorWrapper).toHaveClass(/placeholder-hidden/);
     await expect(editor.locator('p')).toHaveAttribute('data-placeholder', 'Ask anything');
-    /* The placeholder fades out over 0.3s after blur; on fast runners the
+    /* The placeholder fades out over the slow motion tier after blur; on fast runners the
        assertions above settle sooner than that, so sampling opacity without
        waiting reads a mid-transition value. Poll to the terminal value first. */
     await expect.poll(async () => (await placeholderMotion(editor)).opacity).toBe(0);
+    const slowTier = await motionTier(input, 'slow');
     expect(await placeholderMotion(editor)).toEqual({
       opacity: 0,
       property: 'opacity',
-      duration: '0.3s',
-      easing: 'ease-in-out',
+      ...slowTier,
     });
     const motion = await input.evaluate((node) => {
       const style = getComputedStyle(node);
@@ -139,8 +155,9 @@ for (const state of states) {
       };
     });
     expect(motion.property).toContain('min-height');
-    expect(motion.duration).toBe('0.1s');
-    expect(motion.easing).toBe('cubic-bezier(0.2, 0, 0, 1)');
+    const fastTier = await motionTier(input, 'fast');
+    expect(motion.duration).toBe(fastTier.duration);
+    expect(motion.easing).toBe(fastTier.easing);
 
     const idleRendered = await composerHeight(input, state.zoom);
     const fadingIn = await placeholderFadeMidpointOpacity(editor, 'focus');

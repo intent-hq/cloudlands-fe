@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS } from './subscription-disclosure';
   /**
    * QueuedMessageNoticeHeader
    *
@@ -34,7 +35,7 @@
 
 {#if durationLabel}
   <div
-    class="type-caption flex items-center gap-1.5 rounded-md text-subtle {isSticky
+    class="{SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS} flex items-center gap-1.5 rounded-md text-subtle {isSticky
       ? 'min-w-0 overflow-hidden'
       : ''} {className}"
     title={formatFullDateTime(queueInfo.queuedAt)}

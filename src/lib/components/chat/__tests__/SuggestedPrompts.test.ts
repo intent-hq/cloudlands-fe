@@ -95,7 +95,6 @@ describe('SuggestedPrompts', () => {
     });
 
     const surface = screen.getByTestId('suggested-prompts-surface');
-    expect(surface.className).toContain('mt-4');
     expect(surface.className).not.toContain('bg-');
     expect(surface.className).not.toContain('rounded');
     expect(surface.className).not.toContain('border');
@@ -134,7 +133,9 @@ describe('SuggestedPrompts', () => {
   it('connects chat panel compact mode to prompt spacing', () => {
     const chatPanel = readFileSync(resolve('src/lib/components/chat/ChatPanel.svelte'), 'utf8');
 
-    expect(chatPanel).toContain("class=\"w-full {isCompactMode ? 'pb-1 pt-2' : 'py-2'}\"");
+    expect(chatPanel).toContain(
+      "class=\"w-full {isCompactMode ? 'pb-1' : 'pb-2'} {isChiefWorkspace",
+    );
     expect(chatPanel).toContain('compact={isCompactMode}');
   });
 
@@ -147,18 +148,20 @@ describe('SuggestedPrompts', () => {
       },
     });
 
-    const hint = screen.getByText(/(?:⌃|Alt\+)1/);
-    expect(hint.className).toContain('font-normal!');
+    const hint = screen.getByText(/(?:⌃|Alt\+)1/).closest<HTMLElement>('[data-slot="badge"]')!;
+    expect(hint.className).toContain('!font-normal');
     expect(hint.className).toContain('text-muted-foreground!');
     for (const className of COMPACT_TOOL_TRAILING_CLASS.replace('text-ui', '').split(' ')) {
       if (!className) continue;
       expect(hint.classList.contains(className)).toBe(true);
     }
     expect(hint.className).toContain('type-caption');
+    expect(hint.className).toContain('mt-px');
+    expect(hint.className).toContain('self-start');
+    expect(hint.className).toContain('opacity-100');
     expect(hint.className).not.toContain('text-ui');
-    expect(hint.className).not.toContain('font-medium');
     expect(hint.className).not.toMatch(/text-(?:muted-foreground|subtle)\//);
-    expect(hint.parentElement?.className).toContain('type-body');
+    expect(hint.closest('[data-suggested-prompt-row]')?.className).toContain('type-body');
   });
 
   it('preserves keyboard selection and the separate edit affordance', async () => {

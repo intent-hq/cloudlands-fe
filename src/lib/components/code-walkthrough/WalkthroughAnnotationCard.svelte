@@ -61,9 +61,9 @@
       case 'warning':
         return {
           icon: faExclamationTriangle,
-          bgColor: 'bg-amber-50 dark:bg-amber-950/30',
-          borderColor: 'border-amber-200 dark:border-amber-800',
-          iconColor: 'text-amber-500',
+          bgColor: 'bg-warning/10',
+          borderColor: 'border-warning/30',
+          iconColor: 'text-warning-ink',
         };
       case 'highlight':
         return {

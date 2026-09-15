@@ -26,7 +26,7 @@ async function inspectLauncher(card: Locator) {
       const surfaceRect = surface?.getBoundingClientRect();
       const textNode = item.hasAttribute('data-agent-avatar-overflow')
         ? item
-        : item.querySelector<HTMLElement>('span[aria-hidden="true"]');
+        : item.querySelector<HTMLElement>('[data-slot="button-label"] > span[aria-hidden="true"]');
       const textRect = textNode?.getBoundingClientRect();
       return {
         left: (rect.left - cardRect.left) / scale,

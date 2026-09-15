@@ -12,8 +12,11 @@ function audit(mode: string): string {
 }
 
 describe('design token audit', () => {
-  it('enforces the semantic contract and ratchets', () => {
-    expect(audit('check')).toMatch(/^token audit passed;/);
+  it('passes all token ratchets without undefined references', () => {
+    const result = spawnSync(process.execPath, [script, 'check'], { encoding: 'utf8' });
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(audit('undefined')).toBe('');
   });
 
   it('produces deterministic, sorted approved-token and alias inventories', () => {
@@ -23,6 +26,9 @@ describe('design token audit', () => {
     expect(approved).toContain('--background');
     expect(approved).toContain('--danger');
     expect(approved).toContain('--danger-background');
+    expect(approved).toContain('--primary-ink');
+    expect(approved).toContain('--hover');
+    expect(approved).toContain('--focus-ring');
     expect(approved).toContain('--warning-foreground');
     expect(approved).not.toContain('--destructive');
     expect(approved).not.toContain('--destructive-foreground');
@@ -32,8 +38,24 @@ describe('design token audit', () => {
     expect(audit('aliases')).toBe(audit('aliases'));
   });
 
-  it('reports no unowned undefined custom properties', () => {
-    expect(audit('undefined')).toBe('');
+  it('recognizes the Sonner height without exempting retired or unknown tokens', () => {
+    const directory = mkdtempSync(path.join(tmpdir(), 'design-token-audit-'));
+    try {
+      writeFileSync(
+        path.join(directory, 'product.svelte'),
+        '<div style="height: var(--front-toast-height); width: var(--front-toast-width); font-size: var(--text-body); line-height: var(--text-caption)" />',
+      );
+      const output = execFileSync(process.execPath, [script, 'undefined'], {
+        encoding: 'utf8',
+        env: { ...process.env, DESIGN_TOKEN_AUDIT_SOURCE_ROOT: directory },
+      });
+      expect(output).not.toContain('--front-toast-height');
+      expect(output).toContain('--front-toast-width');
+      expect(output).toContain('--text-body');
+      expect(output).toContain('--text-caption');
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 
   it('recognizes the Bits UI Select height without exempting other custom properties', () => {
@@ -250,6 +272,14 @@ describe('design token audit', () => {
           entry.removalCondition,
       ),
     ).toBe(true);
+    expect(allowlist.canonicalRaw['src/lib/components/ui/kbd/ShortcutChip.svelte']).toEqual({
+      palette: 0,
+      arbitrary: 1,
+    });
+    expect(allowlist.canonicalRaw['src/lib/components/ui/toast/Toast.svelte']).toEqual({
+      palette: 0,
+      arbitrary: 25,
+    });
   });
 
   it('reports the file, raw utility, and replacement family when a ratchet grows', () => {

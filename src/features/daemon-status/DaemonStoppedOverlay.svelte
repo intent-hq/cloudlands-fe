@@ -24,6 +24,7 @@
    * the user can fail over without opening the daemon-status menu.
    */
   import { page } from '$app/stores';
+  import { Button } from '$lib/components/ui/button';
   import { store as appStore } from '$store/renderer/store';
   import {
     selectDaemonHealth,
@@ -58,7 +59,6 @@
   import type { ConnectionRecord } from '$shared/types/connections';
   import ConnectBackendModal from '$lib/components/layout/ConnectBackendModal.svelte';
   import Portal from '$lib/components/ui/Portal.svelte';
-  import { Button } from '$lib/components/ui/button';
   import { DAEMON_UPDATING_COUNTDOWN_MS } from './DaemonUpdatingOverlay.svelte';
   import { m } from '$shared/paraglide/messages.js';
 
@@ -345,7 +345,7 @@
 
         {#if !isSidecarFailure && !isAuthRejected}
           <p class="mt-3 text-sm text-muted-foreground" data-testid="daemon-stopped-retrying">
-            <span class="inline-block h-2 w-2 animate-pulse rounded-full bg-yellow-500 align-middle"
+            <span class="inline-block h-2 w-2 animate-pulse rounded-full bg-warning align-middle"
             ></span>
             <span class="ml-1.5 align-middle">
               {$reconnectAttempts$ > 0
@@ -365,7 +365,7 @@
         -->
         {#if $certWarnings$.length > 0}
           <div
-            class="mt-3 rounded-md border border-yellow-600/40 bg-yellow-500/10 p-2"
+            class="mt-3 rounded-md border border-warning/30 bg-warning/10 p-2"
             data-testid="daemon-stopped-cert-warnings"
           >
             <p class="text-xs text-muted-foreground">
@@ -390,7 +390,7 @@
 
         {#if isAuthRejected}
           <div class="mt-4 border-t border-border pt-4">
-            <button
+            <Button
               type="button"
               class="w-full rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
               disabled={$isConnecting$}
@@ -398,13 +398,13 @@
               data-testid="daemon-stopped-repair"
             >
               {m.daemonStatus_overlay_repair_label()}
-            </button>
+            </Button>
           </div>
         {/if}
 
         {#if isSidecarFailure}
           <div class="mt-4 border-t border-border pt-4">
-            <button
+            <Button
               type="button"
               class="w-full rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
               disabled={$spawnPending$}
@@ -414,7 +414,7 @@
               {$spawnPending$
                 ? m.daemonStatus_overlay_startingIntentd_label()
                 : m.daemonStatus_overlay_tryStartAgain_label()}
-            </button>
+            </Button>
 
             {#if $spawnError$}
               <p class="mt-2 text-sm text-danger" data-testid="daemon-stopped-spawn-error">
@@ -422,7 +422,7 @@
               </p>
             {/if}
 
-            <button
+            <Button
               type="button"
               class="mt-2 w-full rounded-md border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
               disabled={$runLogPending$}
@@ -432,7 +432,7 @@
               {$runLogPending$
                 ? m.daemonStatus_overlay_loadingLogs_label()
                 : m.daemonStatus_overlay_showRunLog_label()}
-            </button>
+            </Button>
 
             {#if $runLogError$}
               <p class="mt-2 text-sm text-danger" data-testid="daemon-stopped-run-log-error">
@@ -467,7 +467,7 @@
           </div>
         {:else if showSpawnButton}
           <div class="mt-4 border-t border-border pt-4">
-            <button
+            <Button
               type="button"
               class="w-full rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
               disabled={$spawnPending$}
@@ -481,7 +481,7 @@
               {:else}
                 {m.daemonStatus_overlay_startLocalIntentd_label()}
               {/if}
-            </button>
+            </Button>
 
             {#if $spawnError$}
               <p class="mt-2 text-sm text-danger" data-testid="daemon-stopped-spawn-error">
@@ -506,7 +506,8 @@
             </p>
             <div class="mt-2 space-y-2">
               {#each otherConnections as conn (conn.id)}
-                <button
+                <Button
+                  variant="ghost"
                   type="button"
                   class="w-full truncate rounded-md border border-border px-4 py-2 text-left text-sm font-medium text-foreground hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
                   disabled={$isConnecting$}
@@ -514,7 +515,7 @@
                   data-testid="daemon-stopped-open-backend"
                 >
                   {m.daemonStatus_overlay_openBackend_label({ label: connectionLabel(conn) })}
-                </button>
+                </Button>
               {/each}
             </div>
             {#if secretUnavailableConnection}

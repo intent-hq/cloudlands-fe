@@ -18,7 +18,8 @@
   const groupClass = $derived(
     cn(
       buttonGroupVariants({ orientation }),
-      '[&_[data-slot=button]]:rounded-sm [&_[data-slot=button]]:border-border [&_[data-slot=button]]:shadow-none',
+      '[&_[data-slot=button]]:rounded-sm [&_[data-slot=button]]:border-transparent',
+      '[&_[data-slot=button-surface]]:rounded-[inherit]',
       '[&_[data-slot=button]:hover]:z-10 [&_[data-slot=button]:focus-visible]:z-20',
       '[&_[data-slot=button][data-state=active]]:z-10',
       className,
@@ -35,3 +36,29 @@
 >
   {@render children?.()}
 </div>
+
+<style>
+  /* Button roots use display:contents wrappers, so separators live on the control. */
+  [data-slot='button-group'] > :global(:not(:last-child)) :global([data-slot='button'])::after {
+    content: '';
+    position: absolute;
+    pointer-events: none;
+    background: var(--color-border);
+  }
+
+  [data-orientation='horizontal']
+    > :global(:not(:last-child))
+    :global([data-slot='button'])::after {
+    right: -1px;
+    top: 0.5rem;
+    bottom: 0.5rem;
+    width: 1px;
+  }
+
+  [data-orientation='vertical'] > :global(:not(:last-child)) :global([data-slot='button'])::after {
+    bottom: -1px;
+    left: 0.5rem;
+    right: 0.5rem;
+    height: 1px;
+  }
+</style>

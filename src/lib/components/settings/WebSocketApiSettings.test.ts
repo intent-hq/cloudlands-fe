@@ -6,6 +6,9 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/sv
 import { m } from '$shared/paraglide/messages.js';
 import WebSocketApiSettings from './WebSocketApiSettings.svelte';
 
+const isCheckboxChecked = (element: HTMLElement): boolean =>
+  element.getAttribute('aria-checked') === 'true';
+
 // Mock appClient - use vi.hoisted to avoid hoisting issues
 const mocks = vi.hoisted(() => ({
   mockSettingsList: vi.fn(),
@@ -34,8 +37,8 @@ const mockToast = vi.hoisted(() => ({
   warning: vi.fn(),
 }));
 
-vi.mock('svelte-sonner', () => ({
-  toast: mockToast,
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: mockToast,
 }));
 
 // Mock the lazily-imported qrcode module so QR tests can assert the pairing URI.
@@ -148,6 +151,7 @@ describe('WebSocketApiSettings', () => {
       expect(mockToast.error).toHaveBeenCalledWith(
         expect.stringContaining('Port 5181 is already in use'),
       );
+      expect(toggle.getAttribute('aria-checked')).toBe('false');
     });
   });
 
@@ -174,6 +178,7 @@ describe('WebSocketApiSettings', () => {
     // Assert: toast.error was called (daemon rolled back the setting)
     await waitFor(() => {
       expect(mockToast.error).toHaveBeenCalled();
+      expect(toggle.getAttribute('aria-checked')).toBe('false');
     });
   });
 
@@ -985,8 +990,8 @@ describe('WebSocketApiSettings', () => {
 
       const loopback = screen.getByRole('checkbox', {
         name: m.settings_listenTargets_loopback_label(),
-      }) as HTMLInputElement;
-      expect(loopback.checked).toBe(true);
+      }) as HTMLButtonElement;
+      expect(isCheckboxChecked(loopback)).toBe(true);
       expect(loopback.disabled).toBe(true);
 
       mocks.mockSettingsUpdate.mockResolvedValueOnce([]);
@@ -1235,11 +1240,11 @@ describe('WebSocketApiSettings', () => {
       // unchecked and toggleable again.
       await waitFor(() =>
         expect(
-          (screen.getByRole('checkbox', { name: '10.0.0.5' }) as HTMLInputElement).disabled,
+          (screen.getByRole('checkbox', { name: '10.0.0.5' }) as HTMLButtonElement).disabled,
         ).toBe(false),
       );
-      const specific = screen.getByRole('checkbox', { name: '10.0.0.5' }) as HTMLInputElement;
-      expect(specific.checked).toBe(false);
+      const specific = screen.getByRole('checkbox', { name: '10.0.0.5' }) as HTMLButtonElement;
+      expect(isCheckboxChecked(specific)).toBe(false);
       expect(
         screen.getByRole('switch', { name: LOCAL_NETWORK() }).getAttribute('aria-checked'),
       ).toBe('true');
@@ -1304,18 +1309,18 @@ describe('WebSocketApiSettings', () => {
       });
       await waitFor(() =>
         expect(
-          (screen.getByRole('checkbox', { name: '10.0.0.5' }) as HTMLInputElement).disabled,
+          (screen.getByRole('checkbox', { name: '10.0.0.5' }) as HTMLButtonElement).disabled,
         ).toBe(false),
       );
       for (const ip of ['192.168.1.2', '10.0.0.5']) {
-        const box = screen.getByRole('checkbox', { name: ip }) as HTMLInputElement;
-        expect(box.checked).toBe(false);
+        const box = screen.getByRole('checkbox', { name: ip }) as HTMLButtonElement;
+        expect(isCheckboxChecked(box)).toBe(false);
         expect(box.disabled).toBe(false);
       }
       const loopback = screen.getByRole('checkbox', {
         name: m.settings_listenTargets_loopback_label(),
-      }) as HTMLInputElement;
-      expect(loopback.checked).toBe(true);
+      }) as HTMLButtonElement;
+      expect(isCheckboxChecked(loopback)).toBe(true);
       expect(loopback.disabled).toBe(true);
       expect(
         screen.getByRole('switch', { name: LOCAL_NETWORK() }).getAttribute('aria-checked'),
@@ -1339,12 +1344,8 @@ describe('WebSocketApiSettings', () => {
       render(WebSocketApiSettings);
 
       await waitFor(() => expect(screen.getByRole('checkbox', { name: '10.0.0.5' })).toBeTruthy());
-      expect((screen.getByRole('checkbox', { name: '10.0.0.5' }) as HTMLInputElement).checked).toBe(
-        false,
-      );
-      expect(
-        (screen.getByRole('checkbox', { name: '192.168.1.2' }) as HTMLInputElement).checked,
-      ).toBe(true);
+      expect(isCheckboxChecked(screen.getByRole('checkbox', { name: '10.0.0.5' }))).toBe(false);
+      expect(isCheckboxChecked(screen.getByRole('checkbox', { name: '192.168.1.2' }))).toBe(true);
     });
 
     it('falls back to localIps as the candidate list on daemons without availableIps', async () => {
@@ -1363,9 +1364,7 @@ describe('WebSocketApiSettings', () => {
       await waitFor(() =>
         expect(screen.getByRole('checkbox', { name: '192.168.1.2' })).toBeTruthy(),
       );
-      expect(
-        (screen.getByRole('checkbox', { name: '192.168.1.2' }) as HTMLInputElement).checked,
-      ).toBe(true);
+      expect(isCheckboxChecked(screen.getByRole('checkbox', { name: '192.168.1.2' }))).toBe(true);
       // Candidate list == localIps: only All interfaces, loopback and the
       // single bound IP are rendered — no extra candidates from anywhere.
       expect(screen.getAllByRole('checkbox')).toHaveLength(3);
@@ -1424,12 +1423,10 @@ describe('WebSocketApiSettings', () => {
       });
       await waitFor(() =>
         expect(
-          (screen.getByRole('checkbox', { name: '192.168.1.2' }) as HTMLInputElement).disabled,
+          (screen.getByRole('checkbox', { name: '192.168.1.2' }) as HTMLButtonElement).disabled,
         ).toBe(false),
       );
-      expect(
-        (screen.getByRole('checkbox', { name: '192.168.1.2' }) as HTMLInputElement).checked,
-      ).toBe(false);
+      expect(isCheckboxChecked(screen.getByRole('checkbox', { name: '192.168.1.2' }))).toBe(false);
       expect(
         screen.getByRole('switch', { name: LOCAL_NETWORK() }).getAttribute('aria-checked'),
       ).toBe('true');
@@ -1493,7 +1490,7 @@ describe('WebSocketApiSettings', () => {
       );
       await waitFor(() =>
         expect(
-          (screen.getByRole('checkbox', { name: '10.0.0.5' }) as HTMLInputElement).disabled,
+          (screen.getByRole('checkbox', { name: '10.0.0.5' }) as HTMLButtonElement).disabled,
         ).toBe(false),
       );
       await waitFor(() =>
@@ -1553,11 +1550,11 @@ describe('WebSocketApiSettings', () => {
       });
       await waitFor(() =>
         expect(
-          (
+          isCheckboxChecked(
             screen.getByRole('checkbox', {
               name: m.settings_listenTargets_allInterfaces_label(),
-            }) as HTMLInputElement
-          ).checked,
+            }),
+          ),
         ).toBe(true),
       );
     });
@@ -1629,11 +1626,11 @@ describe('WebSocketApiSettings', () => {
         ).toBe('true'),
       );
       expect(
-        (
+        isCheckboxChecked(
           screen.getByRole('checkbox', {
             name: m.settings_listenTargets_allInterfaces_label(),
-          }) as HTMLInputElement
-        ).checked,
+          }),
+        ),
       ).toBe(true);
       expect(
         screen

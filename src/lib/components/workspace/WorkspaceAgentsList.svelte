@@ -9,7 +9,7 @@
   import { faChevronDown, faRotateLeft } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { untrack } from 'svelte';
-  import { slide } from 'svelte/transition';
+  import { slide } from '$lib/motion';
   import Button from '$lib/components/ui/button/button.svelte';
   import Header from '$lib/components/ui/Header.svelte';
   import { formatInteger } from '$lib/i18n/format';
@@ -196,11 +196,13 @@
     {#if children.length > 0}
       {@const isExpanded = hasActiveSearch || expandedAgentIds.has(agent.id)}
       {@const runningChildren = children.filter((child) => isAgentRunning(child.id))}
+      <!-- Keep child indentation; align the toggle with parent padding + avatar + gap + border. -->
       <div class="mb-2" style="padding-left: 26px;">
         <Button
           variant="ghost-light"
           size="sm"
-          class="flex h-9 w-full cursor-pointer items-center gap-2 rounded-md bg-transparent px-2 text-sm font-normal text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground active:bg-transparent focus-visible:-outline-offset-2 focus-visible:outline-2 focus-visible:outline-ring focus-visible:ring-0"
+          class="flex h-7 w-full cursor-pointer items-center gap-2 rounded-md bg-transparent px-2 text-sm font-normal text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground active:bg-transparent focus-visible:-outline-offset-2 focus-visible:outline-1 focus-visible:outline-ring focus-visible:ring-0"
+          style="padding-left: calc(var(--agent-avatar-emphasized-surface-size) + 1rem + 1px - 26px);"
           onclick={(event) => {
             event.stopPropagation();
             toggleDelegation(agent.id);
@@ -224,14 +226,14 @@
           <Fa
             icon={faChevronDown}
             size="xs"
-            class="ml-auto shrink-0 opacity-50 transition-transform duration-200 {isExpanded
+            class="ml-auto shrink-0 opacity-50 transition-transform duration-spring-moderate ease-spring-moderate motion-reduce:transition-none {isExpanded
               ? ''
               : 'rotate-90'}"
           />
         </Button>
 
         {#if isExpanded}
-          <div class="flex flex-col gap-0.5" transition:slide={{ axis: 'y', duration: 150 }}>
+          <div class="flex flex-col gap-0.5" transition:slide={{ axis: 'y', tier: 'moderate' }}>
             {@render agentTree(children)}
           </div>
         {/if}
@@ -317,7 +319,7 @@
     <Button
       variant="ghost-light"
       size="sm"
-      class="h-9 w-full min-w-0 gap-1.5 rounded-md bg-transparent px-2 text-sm font-normal hover:bg-transparent active:bg-transparent focus-visible:-outline-offset-2 focus-visible:outline-2 focus-visible:outline-ring focus-visible:ring-0"
+      class="h-9 w-full min-w-0 gap-1.5 rounded-md bg-transparent px-2 text-sm font-normal hover:bg-transparent active:bg-transparent focus-visible:-outline-offset-2 focus-visible:outline-1 focus-visible:outline-ring focus-visible:ring-0"
       onclick={() => (showBackgroundAgents = !showBackgroundAgents)}
       aria-expanded={showBackgroundAgents}
       data-agent-background-toggle
@@ -337,7 +339,7 @@
       <Fa
         icon={faChevronDown}
         size="xs"
-        class="ml-auto shrink-0 transition-transform duration-200 {showBackgroundAgents
+        class="ml-auto shrink-0 transition-transform duration-spring-moderate ease-spring-moderate motion-reduce:transition-none {showBackgroundAgents
           ? ''
           : 'rotate-90'}"
       />
@@ -347,7 +349,7 @@
   <div class="flex flex-col gap-0.5 pt-1">
     {#each standaloneBackgroundAgents as agent (agent.id)}
       {#if hasActiveSearch || showBackgroundAgents || isAgentRunning(agent.id)}
-        <div transition:slide={{ axis: 'y', duration: 150 }}>
+        <div transition:slide={{ axis: 'y', tier: 'moderate' }}>
           <LazyAgentCard
             cacheKey={agent.id}
             agentId={agent.id}
@@ -370,7 +372,7 @@
     <Button
       variant="ghost-light"
       size="sm"
-      class="h-9 w-full min-w-0 gap-1.5 rounded-md bg-transparent px-2 text-sm font-normal hover:bg-transparent active:bg-transparent focus-visible:-outline-offset-2 focus-visible:outline-2 focus-visible:outline-ring focus-visible:ring-0"
+      class="h-9 w-full min-w-0 gap-1.5 rounded-md bg-transparent px-2 text-sm font-normal hover:bg-transparent active:bg-transparent focus-visible:-outline-offset-2 focus-visible:outline-1 focus-visible:outline-ring focus-visible:ring-0"
       onclick={toggleRetiredBin}
       aria-expanded={showRetiredAgents}
       data-agent-retired-toggle
@@ -383,7 +385,7 @@
       <Fa
         icon={faChevronDown}
         size="xs"
-        class="ml-auto shrink-0 transition-transform duration-200 {showRetiredAgents
+        class="ml-auto shrink-0 transition-transform duration-spring-moderate ease-spring-moderate motion-reduce:transition-none {showRetiredAgents
           ? ''
           : 'rotate-90'}"
       />
@@ -440,7 +442,7 @@
           {#snippet rowActions()}
             {@render retiredActions(agent.id)}
           {/snippet}
-          <div transition:slide={{ axis: 'y', duration: 150 }} class="opacity-70">
+          <div transition:slide={{ axis: 'y', tier: 'moderate' }} class="opacity-70">
             <LazyAgentCard
               cacheKey={agent.id}
               agentId={agent.id}

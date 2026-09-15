@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
+  import { Slider } from '$lib/components/ui/slider';
   /**
    * TimeScrubber Component
    *
@@ -34,9 +36,7 @@
   });
 
   // Handle slider input (during drag)
-  function handleInput(event: Event) {
-    const target = event.target as HTMLInputElement;
-    const ms = parseInt(target.value, 10);
+  function handleInput(ms: number) {
     sliderValue = ms;
     const time = new Date(ms).toISOString();
     onTimeChange(time);
@@ -71,7 +71,8 @@
 
 <div class="flex items-center gap-3 px-4 py-2.5 bg-background border-t border-border min-w-0">
   <!-- Live toggle -->
-  <button
+  <Button
+    variant="ghost"
     type="button"
     class="shrink-0 inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium transition-all
       {isLive
@@ -94,7 +95,7 @@
         ? m.agentOverview_timeScrubber_live_label()
         : m.agentOverview_timeScrubber_paused_label()}</span
     >
-  </button>
+  </Button>
 
   <!-- Slider container -->
   <div class="flex-1 flex items-center gap-2 min-w-0">
@@ -112,24 +113,17 @@
         style="width: {progress}%"
       ></div>
 
-      <!-- Native range input -->
-      <input
-        type="range"
+      <Slider
+        appearance="overlay"
         min={minMs}
         max={maxMs}
         bind:value={sliderValue}
-        oninput={handleInput}
-        onmousedown={handleSliderClick}
+        onValueChange={handleInput}
+        onInteractionStart={handleSliderClick}
         disabled={!hasValidRange}
-        class="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed z-10"
+        aria-label={m.agentOverview_timeScrubber_paused_label()}
+        class="absolute inset-0 z-10 h-full w-full"
       />
-
-      <!-- Custom thumb -->
-      <div
-        class="absolute h-3 w-3 rounded-full bg-foreground shadow-sm transition-all duration-75 pointer-events-none
-          {!hasValidRange ? 'opacity-40' : 'opacity-100'}"
-        style="left: calc({progress}% - 6px)"
-      ></div>
     </div>
 
     <span class="shrink-0 text-ui text-subtle font-mono tabular-nums">

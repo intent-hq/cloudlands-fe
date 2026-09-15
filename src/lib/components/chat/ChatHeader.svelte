@@ -10,14 +10,10 @@
   import type { AgentSession, PendingAgentSession } from '$shared/types';
   import { isPendingAgentSession } from '$shared/types';
   import Fa from 'svelte-fa';
-  import {
-    faRobot,
-    faTrash,
-    faSearch,
-    faChevronDown,
-    faSpinner,
-  } from '@fortawesome/free-solid-svg-icons';
+  import { faRobot, faTrash, faSearch, faChevronDown } from '@fortawesome/free-solid-svg-icons';
   import { Badge } from '$lib/components/ui/badge';
+  import { Button } from '$lib/components/ui/button';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import * as Tooltip from '$lib/components/ui/tooltip';
 
   import {
@@ -123,7 +119,7 @@
     if (!session) return '';
 
     if (isPendingAgentSession(session)) {
-      return 'text-yellow-500';
+      return 'text-warning-ink';
     }
 
     switch (session.status) {
@@ -170,7 +166,7 @@
         {#if session}
           <span class="text-xs flex items-center {getStatusClass()}">
             {#if isPendingAgentSession(session)}
-              <Fa icon={faSpinner} class="animate-spin mr-1" />
+              <IntentMarkLoader size={16} class="mr-1" />
             {/if}
             {getAgentStatus()}
           </span>
@@ -183,8 +179,9 @@
     <!-- Model Selector -->
     {#if !isModelLocked}
       <div class="relative">
-        <button
-          class="flex items-center px-3 py-2 bg-background border border-border rounded-md text-foreground text-sm cursor-pointer transition-all duration-200 hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
+        <Button
+          variant="outline"
+          class="flex items-center px-3 py-2 bg-background border border-border rounded-md text-foreground text-sm cursor-pointer transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
           onclick={() => (showModelDropdown = !showModelDropdown)}
           disabled={isModelLocked}
         >
@@ -192,22 +189,23 @@
             {models.find((m) => m.value === selectedModel)?.label || selectedModel}
           </span>
           <Fa icon={faChevronDown} class="ml-1" />
-        </button>
+        </Button>
 
         {#if showModelDropdown}
           <div
             class="absolute top-full right-0 mt-1 bg-background border border-border rounded-md shadow-lg z-1000 min-w-[200px]"
           >
             {#each models as model (model.value)}
-              <button
-                class="block w-full px-3 py-2 text-left bg-transparent border-none text-foreground text-sm cursor-pointer transition-colors duration-200 hover:bg-muted {model.value ===
+              <Button
+                variant="plain"
+                class="block w-full px-3 py-2 text-left bg-transparent border-none text-foreground text-sm cursor-pointer transition-colors duration-spring-moderate ease-spring-moderate motion-reduce:transition-none hover:bg-muted {model.value ===
                 selectedModel
                   ? 'bg-muted font-semibold'
                   : ''}"
                 onclick={() => handleModelSelect(model.value)}
               >
                 {model.label}
-              </button>
+              </Button>
             {/each}
           </div>
         {/if}
@@ -216,23 +214,29 @@
 
     <!-- Action Buttons -->
     <div class="flex gap-2">
-      <button
-        class="p-2 bg-transparent border-none text-muted-foreground cursor-pointer rounded-md transition-all duration-200 hover:bg-muted hover:text-foreground {showSearch
-          ? 'bg-muted text-primary'
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        iconOnly
+        class="p-2 bg-transparent border-none text-muted-foreground cursor-pointer rounded-md transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none hover:bg-muted hover:text-foreground {showSearch
+          ? 'bg-muted text-primary-ink'
           : ''}"
         onclick={onSearchToggle}
         title={m.chat_chatHeader_searchMessages_title()}
       >
         <Fa icon={faSearch} />
-      </button>
+      </Button>
 
-      <button
-        class="p-2 bg-transparent border-none text-muted-foreground cursor-pointer rounded-md transition-all duration-200 hover:bg-muted hover:text-danger"
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        iconOnly
+        class="p-2 bg-transparent border-none text-muted-foreground cursor-pointer rounded-md transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none hover:bg-muted hover:text-danger"
         onclick={onDelete}
         title={m.chat_chatHeader_deleteChat_title()}
       >
         <Fa icon={faTrash} />
-      </button>
+      </Button>
     </div>
   </div>
 </div>

@@ -93,6 +93,11 @@
 </div>
 
 <style>
+  /* Keep the catalog-only gap control effective after operational rows lost production margins. */
+  .chat-polish-conversation :global([data-adjacent-operational-row='true']) {
+    margin-top: var(--chat-operational-row-gap);
+  }
+
   .chat-polish-preview {
     width: min(100%, var(--chat-polish-panel-width, 510px));
     padding: var(--chat-polish-content-inset, 22px);

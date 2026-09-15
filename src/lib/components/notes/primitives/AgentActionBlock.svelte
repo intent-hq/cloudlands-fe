@@ -7,11 +7,11 @@
   import {
     faRobot,
     faPlay,
-    faSpinner,
     faArrowUpRightFromSquare,
     faCheck,
   } from '@fortawesome/free-solid-svg-icons';
-  import { toast } from 'svelte-sonner';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
+  import { notify } from '$lib/components/patterns/notify';
   import { parseAgentTypeId } from '$shared/types/agent.types';
   import { selectSelectedModel } from '$store/renderer/slices/model/model-selectors';
 
@@ -47,26 +47,25 @@
   // Get button state
   let buttonState = $derived.by(() => {
     if (running) {
-      return { label: m.notes_agentActionBlock_running_label(), icon: faSpinner, spin: true };
+      return { label: m.notes_agentActionBlock_running_label(), icon: null };
     }
     if (agentId) {
       return {
         label: m.notes_agentActionBlock_view_label(),
         icon: faArrowUpRightFromSquare,
-        spin: false,
       };
     }
     if (primitive?.lastRun?.status === 'success') {
-      return { label: m.notes_agentActionBlock_done_label(), icon: faCheck, spin: false };
+      return { label: m.notes_agentActionBlock_done_label(), icon: faCheck };
     }
-    return { label: m.notes_agentActionBlock_run_label(), icon: faPlay, spin: false };
+    return { label: m.notes_agentActionBlock_run_label(), icon: faPlay };
   });
 
   // Run the agent action
   async function runAction() {
     if (!primitive || running) return;
     if (!workspaceId) {
-      toast.error(m.notes_agentActionBlock_noWorkspace_error());
+      notify.error(m.notes_agentActionBlock_noWorkspace_error());
       return;
     }
     running = true;
@@ -119,7 +118,7 @@
         });
       }
 
-      toast.success(m.notes_agentActionBlock_started_label());
+      notify.success(m.notes_agentActionBlock_started_label());
     } catch (err) {
       const errorMessage = getErrorMessage(err);
       logger.error('[runAction] Error running agent action', {
@@ -146,7 +145,7 @@
         });
       }
 
-      toast.error(errorMessage);
+      notify.error(errorMessage);
     }
   }
 
@@ -188,14 +187,15 @@
     >
       {#if linkedAgentId}
         <!-- Show agent avatar that opens the agent panel -->
-        <button
+        <Button
           type="button"
+          variant="ghost"
           class="shrink-0 rounded-sm transition-opacity hover:opacity-80"
           onclick={(e) => handleOpenAgent(e, linkedAgentId)}
           title={m.notes_agentActionBlock_viewAgent_tooltip()}
         >
           <AgentAvatar agentId={linkedAgentId} variant="compact" />
-        </button>
+        </Button>
       {:else}
         <Fa icon={faRobot} size="sm" class="shrink-0 text-muted-foreground" />
       {/if}
@@ -209,7 +209,11 @@
         onclick={handleButtonClick}
         disabled={running}
       >
-        <Fa icon={buttonState.icon} size="xs" class={buttonState.spin ? 'animate-spin' : ''} />
+        {#if running}
+          <IntentMarkLoader size={12} />
+        {:else if buttonState.icon}
+          <Fa icon={buttonState.icon} size="xs" />
+        {/if}
         {buttonState.label}
       </Button>
     </div>

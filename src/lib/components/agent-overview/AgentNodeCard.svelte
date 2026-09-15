@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
   /**
    * AgentNodeCard Component
    *
@@ -67,13 +68,14 @@
   });
 </script>
 
-<button
+<Button
+  variant="ghost"
   type="button"
   class="agent-node-card flex flex-col items-center gap-1 p-2 rounded-lg border transition-all duration-200 cursor-pointer
     {node.isCoordinator
     ? 'bg-primary/5 border-primary/30 shadow-sm'
     : 'bg-background/95 border-border hover:border-border'}
-    {isActive ? 'ring-2 ring-primary/40' : ''}"
+    {isActive ? 'ring-2 ring-primary-ink/40' : ''}"
   {onclick}
 >
   <!-- Avatar -->
@@ -96,7 +98,7 @@
         compact
         class="text-ui leading-none {$attentionRequest$.kind === 'blocker'
           ? 'text-danger'
-          : 'text-warning'}"
+          : 'text-warning-ink'}"
       />
     {/if}
     <!-- {#if specialist}
@@ -108,7 +110,7 @@
       </div>
     {/if} -->
   </div>
-</button>
+</Button>
 
 <style>
   .agent-node-card {

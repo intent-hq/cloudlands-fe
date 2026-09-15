@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
   /**
    * Simplified FileChangesList for displaying file operations in compact views
    * Used in hover cards and other UI elements that need a simple file list
@@ -106,7 +107,7 @@
     {#each displayedChanges as change (change.path)}
       {@const fileName = getFileName(change.path)}
       {@const directory = getDirectory(change.path)}
-      <button
+      <Button
         class={cn(
           'w-full flex items-center gap-2 px-2 py-1 rounded hover:bg-muted/50 transition-colors text-left',
           compact ? 'py-0.5' : 'py-1',
@@ -137,7 +138,7 @@
             {@render actions({ change })}
           </div>
         {/if}
-      </button>
+      </Button>
     {/each}
 
     {#if remainingCount > 0}

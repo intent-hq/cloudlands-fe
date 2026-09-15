@@ -1,4 +1,6 @@
 /** @vitest-environment jsdom */
+import RealTooltipRich from '$lib/components/ui/tooltip/TooltipRich.svelte';
+import RealTooltipShortcut from '$lib/components/ui/tooltip/TooltipShortcut.svelte';
 import { m } from '$shared/paraglide/messages.js';
 import { mount, unmount } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -53,8 +55,15 @@ vi.mock('$features/agent/services/active-streams-tracker', () => ({
 vi.mock('$lib/components/workspace/WorkspaceHoverCard.svelte', async () => ({
   default: (await import('./__tests__/mocks/MockWorkspaceHoverCard.svelte')).default,
 }));
-vi.mock('$lib/components/ui/tooltip', async () => ({
-  TooltipRich: (await import('$lib/components/ui/tooltip/TooltipRich.svelte')).default,
+// TooltipRich imports Button, which imports this barrel. Awaiting TooltipRich
+// inside the mock factory deadlocks collection on the factory's own promise.
+vi.mock('$lib/components/ui/tooltip', () => ({
+  get TooltipRich() {
+    return RealTooltipRich;
+  },
+  get TooltipShortcut() {
+    return RealTooltipShortcut;
+  },
 }));
 vi.mock('svelte-fa', async () => ({
   default: (await import('$lib/components/ui/__tests__/mocks/Fa.svelte')).default,

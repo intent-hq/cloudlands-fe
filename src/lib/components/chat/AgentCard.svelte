@@ -8,10 +8,11 @@
    */
   import { tick, type Snippet } from 'svelte';
   import { writable } from 'svelte/store';
-  import { toast } from 'svelte-sonner';
+  import { notify } from '$lib/components/patterns/notify';
   import { createLogger } from '$lib/utils/client-logger';
   import LineChangeStats from '$lib/components/shared/LineChangeStats.svelte';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
+  import { Input } from '$lib/components/ui/input';
   import {
     selectAgentIsResponding,
     selectAgentSession,
@@ -35,9 +36,9 @@
   import { isAgentRunningState, toAgentRuntimeStateInput } from '$shared/utils/agent-runtime-state';
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { selectPendingCount } from '$store/renderer/slices/permission/permission-selectors';
+  import { safeDisclosureTransition } from './disclosure-motion';
   import { selectHudAgentHasPendingQuestion } from '$store/renderer/slices/hud/hud-selectors';
   import { deriveAgentHasPendingQuestion } from './questions/wizard-gate';
-  import { safeSlide } from '$lib/utils/animations';
   import { findSourcePanelId } from '$lib/utils/workspace-navigation';
   import { updateSession as updateAgentSessionFields } from '$store/renderer/slices/agent-session/agent-session-slice';
   import {
@@ -237,7 +238,7 @@
               nameExplicitlySet: previousNameExplicitlySet,
             } as any),
           );
-          toast.error(m.chat_agentCard_renameFailed_error());
+          notify.error(m.chat_agentCard_renameFailed_error());
         });
       }
     }
@@ -356,7 +357,7 @@
           try {
             await invoke('shell:showItemInFolder', { path: sandboxPath });
           } catch (error) {
-            toast.error(
+            notify.error(
               error instanceof Error
                 ? error.message
                 : m.chat_agentCard_revealFailed_error({ fileManager: fileManagerName }),
@@ -601,10 +602,10 @@
     if (!showStateBorder) return '';
     if (avatarState === 'running' || avatarState === 'responding') return 'agent-glow-active';
     if (avatarState === 'failed') return 'shadow shadow-red-500 shadow-sm';
-    if (avatarState === 'needs-permission') return 'shadow shadow-amber-500 shadow-sm';
-    if (avatarState === 'attention-discussion') return 'shadow shadow-amber-500 shadow-sm';
+    if (avatarState === 'needs-permission') return 'shadow shadow-warning shadow-sm';
+    if (avatarState === 'attention-discussion') return 'shadow shadow-warning shadow-sm';
     if (avatarState === 'attention-blocker') return 'shadow shadow-red-500 shadow-sm';
-    if (avatarState === 'waiting') return 'shadow shadow-amber-500 shadow-sm';
+    if (avatarState === 'waiting') return 'shadow shadow-warning shadow-sm';
     return 'glow-transparent';
   });
 
@@ -672,10 +673,10 @@
     <svelte:element
       this={isEditing ? 'div' : 'button'}
       type={isEditing ? undefined : 'button'}
-      class="flex w-full min-w-0 max-w-full text-left gap-2 transition-colors duration-150 {isEditing
+      class="flex w-full min-w-0 max-w-full text-left gap-2 transition-colors duration-spring-fast ease-spring-fast motion-reduce:transition-none {isEditing
         ? 'overflow-visible'
         : 'overflow-hidden'} {isEditing ? 'cursor-text' : 'cursor-pointer'} group border {panelRow
-        ? 'h-10 items-center rounded-md border-transparent bg-transparent px-2 py-2 type-body font-normal text-foreground hover:bg-transparent active:bg-transparent focus-visible:-outline-offset-2 focus-visible:bg-transparent focus-visible:outline-2 focus-visible:outline-ring focus-visible:ring-0'
+        ? 'h-10 items-center rounded-md border-transparent bg-transparent px-2 py-2 type-body font-normal text-foreground hover:bg-transparent active:bg-transparent focus-visible:-outline-offset-2 focus-visible:bg-transparent focus-visible:outline-1 focus-visible:outline-ring focus-visible:ring-0'
         : inline
           ? `type-body items-center rounded-md ${inlineRowClass}`
           : 'px-1.75 pt-1.25 pb-1.5'} {panelRow
@@ -750,8 +751,8 @@
             >
               {#if isEditing}
                 <!-- svelte-ignore a11y_autofocus -->
-                <input
-                  bind:this={editInputRef}
+                <Input
+                  bind:ref={editInputRef}
                   type="text"
                   bind:value={editingValue}
                   aria-label={m.chat_agentCard_menu_rename_label()}
@@ -893,14 +894,14 @@
           <div
             class="mt-0.5 w-full min-w-0 max-w-full overflow-hidden"
             data-testid="agent-card-preview-row"
-            transition:safeSlide={{ axis: 'y', duration: 150 }}
+            transition:safeDisclosureTransition={{ tier: 'fast' }}
           >
             {#if $preview$.kind === 'attention'}
               <p
                 class="block w-full min-w-0 max-w-full truncate whitespace-nowrap text-sm {$preview$
                   .attention.kind === 'blocker'
                   ? 'text-red-500'
-                  : 'text-amber-500'}"
+                  : 'text-warning-ink'}"
                 data-testid="agent-card-attention"
               >
                 {$preview$.attention.kind === 'blocker'
@@ -1038,7 +1039,7 @@
   :global(.agent-glow-active) {
     position: relative;
     box-shadow: 0 0 12px 2px rgba(16, 185, 129, 0.1);
-    animation: agent-glow-pulse 2s ease-in-out infinite;
+    animation: agent-glow-pulse calc(var(--spring-slow) * 8) var(--spring-slow-ease) infinite;
   }
 
   :global(.agent-glow-active)::before {

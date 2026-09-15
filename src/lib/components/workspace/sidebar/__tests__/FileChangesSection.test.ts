@@ -148,8 +148,8 @@ vi.mock('$features/git/git-write-service', () => ({
   commit: vi.fn(),
 }));
 
-vi.mock('$lib/components/ui/toast', () => ({
-  toast: {
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: {
     error: vi.fn(),
     success: vi.fn(),
     info: vi.fn(),
@@ -353,7 +353,6 @@ describe('FileChangesSection', () => {
     const { container } = await renderSection();
     const toggle = container.querySelector('button[role="switch"], [role="switch"]') as HTMLElement;
     expect(toggle).toBeDefined();
-    expect(toggle.className).toContain('border-0!');
     await fireEvent.click(toggle);
     expect(mocks.dispatch).toHaveBeenCalledWith(
       expect.objectContaining({

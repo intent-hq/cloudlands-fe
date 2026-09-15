@@ -3,6 +3,11 @@
   import type { HTMLButtonAttributes } from 'svelte/elements';
   import { Fa } from 'svelte-fa';
   import { TooltipShortcut } from '$lib/components/ui/tooltip';
+  import { Button, type ButtonProps } from '$lib/components/ui/button';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
+  import { proximityItem } from '$lib/interaction';
+  import { getListProximityContext } from './list-context';
+  import { untrack } from 'svelte';
 
   interface Props extends HTMLButtonAttributes {
     class?: string;
@@ -26,6 +31,8 @@
     children?: any;
     iconSnippet?: any; // Custom icon snippet for inline SVG or custom rendering
     onclick?: (e: MouseEvent) => void;
+    onfocus?: (e: FocusEvent) => void;
+    onblur?: (e: FocusEvent) => void;
     onRightClick?: (e: MouseEvent) => void;
     actions?: Array<{
       icon: any;
@@ -62,30 +69,52 @@
     children,
     iconSnippet,
     onclick,
+    onfocus,
+    onblur,
     onRightClick,
     actions = [],
     actionsClass,
     actionsVisible = 'hover',
     indent = 0,
     indentSize = 22,
+    'aria-label': ariaLabel,
+    'aria-labelledby': ariaLabelledby,
     ...restProps
   }: Props = $props();
+
+  const uid = $props.id();
+  const contentId = `${uid}-content`;
+  const listContext = getListProximityContext();
+  const proximityIndex = listContext?.claimIndex() ?? -1;
+  let itemElement: HTMLDivElement | null = $state(null);
+  let proximityActive = $derived(
+    listContext?.interactive && listContext.hover?.activeIndex === proximityIndex,
+  );
+
+  $effect(() => {
+    const hover = listContext?.interactive ? listContext.hover : null;
+    if (!hover || !itemElement || disabled) return;
+    const registration = untrack(() =>
+      proximityItem(itemElement!, { hover, index: proximityIndex }),
+    );
+    return () => registration?.destroy?.();
+  });
 
   // Size configurations
   const sizeConfig = {
     sm: {
-      padding: 'min-h-7 px-2 py-0.5',
-      basePaddingX: 0, // px value for inline style
+      padding: 'min-h-(--control-height-compact) px-2 py-0.5',
+      basePaddingX: 8, // px value for inline style
       iconSize: '12',
-      titleSize: 'type-body',
+      titleSize: 'type-caption',
       subtitleSize: 'type-caption',
       gap: 'gap-2',
     },
     md: {
-      padding: 'min-h-8 px-2 py-1.5',
-      basePaddingX: 0, // px value for inline style
+      padding: 'min-h-(--control-height-medium) px-2 py-1.5',
+      basePaddingX: 8, // px value for inline style
       iconSize: '14',
-      titleSize: 'type-body',
+      titleSize: 'type-caption',
       subtitleSize: 'type-caption',
       gap: 'gap-2',
     },
@@ -96,19 +125,22 @@
   // Variant styles with active and selected states
   const variantStyles = $derived({
     default: cn(
-      'hover:bg-accent/60 hover:text-accent-foreground',
-      selected && 'bg-accent text-accent-foreground',
-      active && 'bg-card text-foreground',
+      !listContext?.interactive && 'group-hover/list-item:bg-hover',
+      selected && 'bg-selected text-foreground',
+      active && 'bg-active text-foreground',
+      proximityActive && 'bg-hover text-foreground',
     ),
     ghost: cn(
-      'hover:bg-accent/60 hover:text-accent-foreground',
-      selected && 'bg-accent text-accent-foreground',
-      active && 'bg-card text-foreground',
+      !listContext?.interactive && 'group-hover/list-item:bg-hover',
+      selected && 'bg-selected text-foreground',
+      active && 'bg-active text-foreground',
+      proximityActive && 'bg-hover text-foreground',
     ),
     subtle: cn(
-      'hover:bg-muted',
-      selected && 'bg-accent text-accent-foreground',
-      active && 'bg-card text-foreground',
+      !listContext?.interactive && 'group-hover/list-item:bg-hover',
+      selected && 'bg-selected text-foreground',
+      active && 'bg-active text-foreground',
+      proximityActive && 'bg-hover text-foreground',
     ),
   });
 
@@ -116,61 +148,85 @@
   const badgeVariantStyles = {
     default: 'bg-muted text-subtle',
     success: 'bg-success/20 text-success',
-    warning: 'bg-warning/20 text-warning',
+    warning: 'bg-warning/20 text-warning-ink',
     error: 'bg-danger-background/10 text-danger',
     info: 'bg-info/20 text-info',
   };
 
-  let leftIndent = $derived(
-    indent > 0 ? indent * indentSize + config.basePaddingX : config.basePaddingX,
-  );
+  let leftIndent = $derived(indent * indentSize + config.basePaddingX);
 </script>
 
-<button
-  data-slot="list-item"
-  data-selected={selected || undefined}
-  data-active={active || undefined}
-  aria-current={active ? 'true' : undefined}
-  class={cn(
-    // Base styles
-    'relative flex w-full min-w-0 cursor-pointer items-center rounded-md border border-transparent bg-transparent text-left font-inherit text-foreground outline-none transition-colors',
-    'focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40',
-    'motion-reduce:transition-none',
-    'group',
-
-    // Size styles
-    config.padding,
-
-    // Variant styles
-    variantStyles[variant],
-
-    // State styles
-    disabled && 'opacity-50 cursor-not-allowed pointer-events-none',
-
-    // Custom class
-    className,
-  )}
-  style={`margin-left: ${leftIndent}px; padding-right: ${config.basePaddingX}px; width: calc(100% - ${leftIndent}px);`}
-  {disabled}
-  {onclick}
-  oncontextmenu={onRightClick}
-  {...restProps}
+<div
+  bind:this={itemElement}
+  data-slot="list-item-row"
+  class="group/list-item relative grid w-full min-w-0 flex-1"
 >
-  <div class="relative w-full flex items-center {config.gap}">
+  <Button
+    variant="plain"
+    data-slot="list-item"
+    data-selected={selected || undefined}
+    data-active={active || undefined}
+    data-proximity-active={proximityActive || undefined}
+    aria-current={active ? 'true' : undefined}
+    aria-label={ariaLabel}
+    aria-labelledby={ariaLabelledby ?? (ariaLabel ? undefined : contentId)}
+    class={cn(
+      // Base styles
+      'relative col-start-1 row-start-1 flex h-full w-full min-w-0 cursor-pointer items-center justify-start rounded-(--radius-row) border border-transparent bg-transparent text-left font-inherit text-foreground transition-colors duration-spring-fast ease-spring-fast',
+      '[&_[data-slot=button-content]]:min-w-0 [&_[data-slot=button-content]]:w-full [&_[data-slot=button-content]]:justify-start',
+      'focus-visible:-outline-offset-1',
+      'motion-reduce:transition-none',
+      'group',
+
+      // Size styles
+      config.padding,
+
+      // Variant styles
+      variantStyles[variant],
+
+      // State styles
+      disabled && 'opacity-50 cursor-not-allowed pointer-events-none',
+
+      // Custom class
+      className,
+    )}
+    style={`padding-left: ${leftIndent}px !important; padding-right: ${config.basePaddingX}px !important;`}
+    {disabled}
+    {onclick}
+    onfocus={(event) => {
+      listContext?.hover?.setActiveIndex(proximityIndex);
+      onfocus?.(event);
+    }}
+    onblur={(event) => {
+      if (listContext?.hover?.activeIndex === proximityIndex) {
+        listContext.hover.setActiveIndex(null);
+      }
+      onblur?.(event);
+    }}
+    oncontextmenu={onRightClick}
+    {...restProps as ButtonProps}
+  ></Button>
+
+  <div
+    class={cn(
+      'pointer-events-none relative col-start-1 row-start-1 flex w-full min-w-0 items-center',
+      config.gap,
+      config.padding,
+    )}
+    style={`padding-left: ${leftIndent}px !important; padding-right: ${config.basePaddingX}px !important;`}
+  >
     <!-- Icon Section -->
-    {#if iconSnippet}
+    {#if loading}
+      <div class="flex w-3.5 shrink-0 items-center justify-center">
+        <IntentMarkLoader size={14} />
+      </div>
+    {:else if iconSnippet}
       <div class={cn('shrink-0 flex items-center justify-center', iconClass)}>
         {@render iconSnippet()}
       </div>
     {:else if icon || IconComponent}
       <div class={cn('shrink-0 flex items-center justify-center', iconClass)}>
-        {#if loading && icon}
-          <Fa
-            {icon}
-            size={config.iconSize}
-            class="w-3.5 animate-spin opacity-60 motion-reduce:animate-none"
-          />
-        {:else if IconComponent}
+        {#if IconComponent}
           <IconComponent {...iconProps} />
         {:else if icon}
           <Fa
@@ -183,13 +239,13 @@
     {/if}
 
     <!-- Content Section -->
-    <div class="flex-1 min-w-0 flex items-center gap-1">
+    <div id={contentId} class="flex min-w-0 flex-1 items-baseline gap-1 text-left">
       {#if title}
         <div
           class={cn(
             config.titleSize,
-            'max-w-full min-w-0 shrink truncate font-medium leading-5',
-            selected || active,
+            'max-w-full min-w-0 shrink truncate leading-5',
+            (selected || active) && '[--text-caption-weight:500]',
             titleClass,
           )}
         >
@@ -219,35 +275,32 @@
     {#if actions.length > 0}
       <div
         class={cn(
-          'shrink-0 flex items-center gap-1',
-          actionsVisible === 'hover' && 'opacity-0 group-hover:opacity-100',
+          'pointer-events-auto relative z-10 shrink-0 flex items-center gap-1',
+          actionsVisible === 'hover' &&
+            'opacity-0 group-hover/list-item:opacity-100 group-focus-within/list-item:opacity-100 focus-within:opacity-100',
           'transition-opacity motion-reduce:transition-none',
           actionsClass,
         )}
       >
         {#each actions as action (action.label)}
           <TooltipShortcut label={action.tooltip ?? action.label} delayDuration={0}>
-            <div
-              role="button"
-              tabindex={0}
+            <Button
+              variant="plain"
+              size="icon-compact"
+              iconOnly
+              aria-label={action.tooltip ?? action.label}
+              {disabled}
               class={cn(
-                'cursor-pointer rounded-sm border border-transparent p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 motion-reduce:transition-none',
+                'h-auto w-auto cursor-pointer rounded-sm border border-transparent p-1 text-muted-foreground transition-colors duration-spring-fast ease-spring-fast hover:bg-hover hover:text-foreground motion-reduce:transition-none',
                 action.className,
               )}
               onclick={(e: MouseEvent) => {
                 e.stopPropagation();
                 action.onClick(e);
               }}
-              onkeydown={(e: KeyboardEvent) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.stopPropagation();
-                  e.preventDefault();
-                  action.onClick(e as any);
-                }
-              }}
             >
               <Fa icon={action.icon} size="10" />
-            </div>
+            </Button>
           </TooltipShortcut>
         {/each}
       </div>
@@ -268,11 +321,4 @@
       </div>
     {/if}
   </div>
-</button>
-
-<style>
-  [data-slot='list-item'],
-  [role='button'] {
-    transition-duration: var(--motion-fast);
-  }
-</style>
+</div>

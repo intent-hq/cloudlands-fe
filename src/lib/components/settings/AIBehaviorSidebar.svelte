@@ -11,8 +11,8 @@
   } from '$store/renderer/slices/specialists/specialists-selectors';
   import { selectGitHubAuthIsAuthenticated } from '$store/renderer/slices/github-auth/github-auth-selectors';
 
-  import { Tooltip } from '$lib/components/ui/tooltip';
-  import { highlightTarget } from '$lib/components/ui/highlight/highlight-target';
+  import { Button, Tooltip } from '$lib/components/patterns/settings/custom-controls';
+  import { highlightTarget } from '$lib/components/patterns/settings/highlight-target';
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
 
@@ -34,6 +34,16 @@
   const visibleSpecialists = $derived.by(() =>
     filterSpecialistsByGitHubAuth($specialists, $isGitHubAuth$),
   );
+  let specialistButtonRefs = $state<Record<string, HTMLButtonElement | null>>({});
+  let createSpecialistButtonRef = $state<HTMLButtonElement | null>(null);
+
+  $effect(() => {
+    const targets = [...Object.values(specialistButtonRefs), createSpecialistButtonRef].filter(
+      (target): target is HTMLButtonElement => target !== null,
+    );
+    const actions = targets.map((target) => highlightTarget(target));
+    return () => actions.forEach((action) => action.destroy());
+  });
 
   function getHasOverrides(id: string): boolean {
     void $fileSpecialists$; // track file specialist changes for reactivity
@@ -56,15 +66,16 @@
   {@const hasOverrides = getHasOverrides(specialist.id)}
   {@const sourceLabel = selectSpecialistSourceLabel.select(appStore.state, specialist.id)}
 
-  <button
+  <Button
+    bind:ref={specialistButtonRefs[specialist.id]}
+    variant="ghost"
     id={`specialist-${specialist.id}`}
     type="button"
     onclick={() => onSelect({ type: 'specialist', id: specialist.id })}
     data-highlight-id={`specialist-${specialist.id}`}
     data-settings-agent-row
-    use:highlightTarget
     aria-current={isSelected({ type: 'specialist', id: specialist.id }) ? 'true' : undefined}
-    class="flex w-full min-w-0 cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring
+    class="flex h-auto w-full min-w-0 cursor-pointer items-center gap-2.5 rounded-lg !px-2.5 !py-2 text-left type-body transition-colors
       {isSelected({ type: 'specialist', id: specialist.id })
       ? 'bg-muted font-medium text-foreground shadow-xs'
       : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'}"
@@ -94,7 +105,7 @@
             delayDuration={400}
           >
             <span
-              class="text-ui px-1 py-0.5 rounded font-medium shrink-0 bg-primary/15 text-primary"
+              class="type-caption shrink-0 rounded bg-muted px-1 py-0.5 font-medium text-muted-foreground"
             >
               {m.settings_aiBehavior_sidebar_projectBadge()}
             </span>
@@ -102,23 +113,24 @@
         {/if}
       </div>
     </div>
-  </button>
+  </Button>
 {/each}
 
 <!-- Create button - flows after specialists -->
-<button
+<Button
+  bind:ref={createSpecialistButtonRef}
+  variant="ghost"
   id="create-specialist"
   type="button"
   onclick={() => onSelect({ type: 'create-specialist' })}
   data-highlight-id="create-specialist"
   data-settings-agent-row
-  use:highlightTarget
   aria-current={isSelected({ type: 'create-specialist' }) ? 'true' : undefined}
-  class="flex w-full min-w-0 cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring
+  class="flex h-auto w-full min-w-0 cursor-pointer items-center gap-2.5 rounded-lg !px-2.5 !py-2 text-left type-body transition-colors
     {isSelected({ type: 'create-specialist' })
     ? 'bg-muted font-medium text-foreground shadow-xs'
     : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'}"
 >
   <Fa icon={faPlus} class="h-3 w-3 shrink-0" />
   <span class="truncate">{m.settings_aiBehavior_sidebar_createSpecialist()}</span>
-</button>
+</Button>

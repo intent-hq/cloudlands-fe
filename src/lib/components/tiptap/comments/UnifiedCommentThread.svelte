@@ -7,7 +7,7 @@
   import TipTapEditor from '$lib/components/chat/input/TipTapEditor.svelte';
   import type { Workspace } from '$shared/types';
   import { Button } from '$lib/components/ui/button';
-  import { slide } from 'svelte/transition';
+  import { slide } from '$lib/motion';
 
   import { processMarkdownToHTML, processHTMLToMarkdown } from '$lib/utils/markdown-processor';
   import { createWorkspaceFileVersion } from '$lib/utils/workspace-file-image';
@@ -249,7 +249,8 @@
       <!-- Show replies count in collapsed state -->
       {#if isCollapsed && replies.length > 0}
         <div class="ml-8">
-          <button
+          <Button
+            variant="ghost"
             class="text-ui text-muted-foreground hover:text-foreground mt-1"
             onclick={(e) => {
               e.stopPropagation();
@@ -260,14 +261,14 @@
             {replies.length === 1
               ? m.tiptap_commentThread_showReplies_one()
               : m.tiptap_commentThread_showReplies_many({ count: formatInteger(replies.length) })}
-          </button>
+          </Button>
         </div>
       {/if}
 
       {#if orphaned && !isCollapsed}
         <div class="ml-8">
           <span
-            class="text-xs text-amber-600 mt-1 inline-block"
+            class="text-xs text-warning-ink mt-1 inline-block"
             title={m.tiptap_commentThread_unlinked_tooltip()}
             >{m.tiptap_commentThread_unlinked_label()}</span
           >
@@ -276,9 +277,12 @@
 
       <!-- Replies (only shown when expanded) -->
       {#if !isCollapsed && replies.length > 0}
-        <div class="pt-1.5 flex flex-col gap-1.5" transition:slide={{ axis: 'y', duration: 200 }}>
+        <div
+          class="pt-1.5 flex flex-col gap-1.5"
+          transition:slide={{ axis: 'y', tier: 'moderate' }}
+        >
           {#each replies as reply, index (reply.id)}
-            <div transition:slide={{ axis: 'y', duration: 200 }}>
+            <div transition:slide={{ axis: 'y', tier: 'moderate' }}>
               <Comment
                 comment={reply}
                 {workspace}
@@ -306,7 +310,7 @@
     {#if !isCollapsed}
       <div
         class="px-3 py-1.5 border-t border-border"
-        transition:slide={{ axis: 'y', duration: 200 }}
+        transition:slide={{ axis: 'y', tier: 'moderate' }}
       >
         <div class="flex items-center gap-px">
           <InitialsAvatar name="User" size={24} class="shrink-0" />

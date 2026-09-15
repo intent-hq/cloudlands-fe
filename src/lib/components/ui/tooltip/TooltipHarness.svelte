@@ -1,4 +1,5 @@
 <script lang="ts">
+  /* eslint-disable intent/no-raw-menu-row -- Static tooltip fixture, not a rendered menu row. */
   import Button from '../button/button.svelte';
   import * as Tooltip from './index';
 
@@ -21,9 +22,20 @@
 </div>
 
 <div data-testid="rich-tooltip">
-  <Tooltip.TooltipRich title="Rich button help" delayDuration={0}>
+  <Tooltip.TooltipRich title="Rich button help" delayDuration={0} showClose>
     <button type="button" aria-label="Show rich help">Rich help</button>
   </Tooltip.TooltipRich>
+</div>
+
+<div data-testid="shortcut-tooltip">
+  <Tooltip.TooltipShortcut
+    label="Open navigation"
+    shortcut="mod+k"
+    delayDuration={0}
+    portalTarget="[data-testid='shortcut-tooltip']"
+  >
+    <Button aria-label="Show shortcut help" variant="ghost">Shortcut help</Button>
+  </Tooltip.TooltipShortcut>
 </div>
 
 <div data-testid="passive-tooltip">

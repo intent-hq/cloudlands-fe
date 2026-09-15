@@ -24,25 +24,25 @@
     display: flex;
     flex-direction: column;
     height: 100vh;
-    background: #1e1e1e;
+    background: hsl(var(--background));
   }
 
   .header {
     padding: 20px;
-    background: #2d2d2d;
-    border-bottom: 1px solid #3e3e3e;
+    background: hsl(var(--muted));
+    border-bottom: 1px solid hsl(var(--border));
   }
 
   .header h1 {
     margin: 0;
-    color: var(--foreground);
+    color: hsl(var(--foreground));
     font-size: 20px;
     font-weight: 500;
   }
 
   .header p {
     margin: 5px 0 0 0;
-    color: var(--muted-foreground);
+    color: hsl(var(--muted-foreground));
     font-size: 14px;
   }
 

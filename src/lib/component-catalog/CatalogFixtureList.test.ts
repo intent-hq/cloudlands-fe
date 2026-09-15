@@ -39,15 +39,17 @@ describe('CatalogFixtureList real previews', () => {
   it('mounts and operates the canonical Button renderer', async () => {
     const { container } = renderEntry('button');
 
-    expect(container.querySelectorAll('[data-catalog-preview="button"]')).toHaveLength(2);
-    await fireEvent.click(screen.getByRole('button', { name: 'Run action' }));
+    expect(container.querySelectorAll('[data-catalog-preview="button"]')).toHaveLength(3);
+    await fireEvent.click(screen.getByRole('button', { name: '1. Primary' }));
     expect(screen.getByLabelText('Button click count').textContent).toBe('1');
-    expect(screen.getByLabelText('Button action status').textContent).toBe('Run action completed');
+    expect(screen.getByLabelText('Button action status').textContent).toBe(
+      'Primary action completed',
+    );
 
     for (const [name, status] of [
-      ['Secondary', 'Secondary action completed'],
-      ['Outline', 'Outline action completed'],
-      ['Delete', 'Delete requested'],
+      ['2. Secondary', 'Secondary action completed'],
+      ['3. Ghost', 'Ghost action completed'],
+      ['4. Destructive', 'Delete requested'],
       ['Add item', 'Item added'],
     ] as const) {
       await fireEvent.click(screen.getByRole('button', { name }));
@@ -72,6 +74,21 @@ describe('CatalogFixtureList real previews', () => {
     );
   });
 
+  it('distinguishes transient ButtonGroup activity from selection', () => {
+    const { container } = renderEntry('button-group');
+
+    const preview = container.querySelector('[data-catalog-preview="button-group"]');
+    expect(preview).not.toBeNull();
+    const groups = within(preview as HTMLElement).getAllByRole('group');
+    expect(groups).toHaveLength(2);
+    const activeButton = groups[1].querySelector('[data-state="active"]');
+    expect(activeButton?.getAttribute('aria-expanded')).toBe('true');
+    expect(activeButton?.hasAttribute('aria-pressed')).toBe(false);
+    expect(
+      (within(groups[0]).getByRole('button', { name: 'Delete' }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+  });
+
   it('keeps machine-readable fixture state out of the visual preview', () => {
     const checkboxRender = renderEntry('checkbox');
     expect(screen.getByText('Selection required').className).toContain('text-danger');
@@ -80,6 +97,26 @@ describe('CatalogFixtureList real previews', () => {
     const toggleGroupRender = renderEntry('toggle-group');
     expect(screen.getByLabelText('Display mode value').className).toContain('sr-only');
     toggleGroupRender.unmount();
+  });
+
+  it('renders one-line Radio and selected Checkbox group row fixtures', () => {
+    const radioRender = renderEntry('radio-group');
+    const oneLineRadios = screen.getByRole('radiogroup', { name: 'One-line delivery speed' });
+    expect(within(oneLineRadios).getAllByRole('radio')).toHaveLength(3);
+    expect(
+      within(oneLineRadios).getByRole('radio', { name: 'Standard' }).getAttribute('aria-checked'),
+    ).toBe('true');
+    expect(oneLineRadios.textContent).not.toContain('Balanced delivery');
+    radioRender.unmount();
+
+    const checkboxRender = renderEntry('checkbox-group');
+    const selectedRows = screen.getByRole('group', { name: 'One-line notifications' });
+    expect(within(selectedRows).getAllByRole('checkbox')).toHaveLength(3);
+    expect(
+      within(selectedRows).getByRole('checkbox', { name: 'Alerts' }).getAttribute('aria-checked'),
+    ).toBe('true');
+    expect(selectedRows.textContent).not.toContain('Important changes');
+    checkboxRender.unmount();
   });
 
   it('renders truthful Combobox open, multi-select, size, and long-list states', () => {
@@ -152,21 +189,104 @@ describe('CatalogFixtureList real previews', () => {
   });
 
   it('opens and dismisses the canonical Dialog preview', async () => {
-    renderEntry('dialog');
+    const { container } = renderEntry('dialog');
     const trigger = screen.getByRole('button', { name: 'Open catalog dialog' });
 
     await fireEvent.click(trigger);
-    expect(screen.getByRole('dialog', { name: 'Catalog dialog' })).not.toBeNull();
+    const dialog = screen.getByRole('dialog', { name: 'Catalog dialog' });
+    expect(dialog.closest('[data-catalog-portal-target="dialog"]')).not.toBeNull();
     await fireEvent.keyDown(document, { key: 'Escape' });
-    expect(screen.queryByRole('dialog', { name: 'Catalog dialog' })).toBeNull();
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: 'Catalog dialog' })).toBeNull(),
+    );
+    expect(container.querySelector('[data-catalog-portal-target="dialog"]')).not.toBeNull();
   });
 
-  it('keeps collapsed Sidebar navigation recognizable with icons', () => {
-    const { container } = renderEntry('sidebar');
+  it('mounts Dialog and Tooltip capture fixtures open and preserves trigger focus on close', async () => {
+    const dialogRender = renderEntry('dialog');
+    const dialogTrigger = screen.getByRole('button', { name: 'Open-state dialog trigger' });
+    await waitFor(() =>
+      expect(screen.getByRole('dialog', { name: 'Catalog dialog open state' })).toBeTruthy(),
+    );
+    await fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: 'Catalog dialog open state' })).toBeNull(),
+    );
+    expect(document.activeElement).toBe(dialogTrigger);
+    dialogRender.unmount();
 
-    expect(screen.getByRole('button', { name: 'Catalog overview' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Unavailable catalog page' })).toBeTruthy();
-    expect(container.querySelectorAll('[data-catalog-sidebar-icon]')).toHaveLength(2);
+    const originalResizeObserver = window.ResizeObserver;
+    window.ResizeObserver = class ResizeObserverMock {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    };
+    const tooltipRender = renderEntry('tooltip');
+    const tooltipFixture = tooltipRender.container.querySelector(
+      '[data-catalog-fixture-id="tooltip-open-state"]',
+    );
+    if (!(tooltipFixture instanceof HTMLElement)) throw new Error('Tooltip fixture did not render');
+    const tooltipPreview = within(tooltipFixture);
+    const tooltipTrigger = tooltipPreview.getByRole('button', {
+      name: 'Open-state tooltip trigger',
+    });
+    await waitFor(() => expect(tooltipPreview.getByRole('tooltip', { hidden: true })).toBeTruthy());
+    expect(document.activeElement).toBe(tooltipTrigger);
+    await fireEvent.keyDown(tooltipTrigger, { key: 'Escape' });
+    await waitFor(() => expect(tooltipPreview.queryByRole('tooltip', { hidden: true })).toBeNull());
+    expect(document.activeElement).toBe(tooltipTrigger);
+    tooltipRender.unmount();
+    window.ResizeObserver = originalResizeObserver;
+  });
+
+  it('renders all thirteen Toast catalog states', () => {
+    const { container } = renderEntry('toast');
+    expect(container.querySelectorAll('[data-toast-preview]')).toHaveLength(13);
+  });
+
+  it('operates the canonical Menu, Sheet, and Accordion previews', async () => {
+    const menuRender = renderEntry('menu');
+    const menuTrigger = screen.getByRole('button', { name: 'Open catalog menu' });
+    menuTrigger.focus();
+    await fireEvent.keyDown(menuTrigger, { key: 'ArrowDown' });
+    const menu = await screen.findByRole('menu');
+    expect(menu.closest('[data-catalog-portal-target="menu"]')).not.toBeNull();
+    await fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+    menuRender.unmount();
+
+    const sheetRender = renderEntry('sheet');
+    const sheetTrigger = screen.getByRole('button', { name: 'Open catalog sheet' });
+    await fireEvent.click(sheetTrigger);
+    const sheet = screen.getByRole('dialog', { name: 'Catalog sheet' });
+    expect(sheet.closest('[data-catalog-portal-target="sheet"]')).not.toBeNull();
+    await fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Catalog sheet' })).toBeNull());
+    sheetRender.unmount();
+
+    renderEntry('accordion');
+    const details = screen.getByRole('button', { name: 'Details' });
+    expect(details.getAttribute('aria-expanded')).toBe('true');
+    await fireEvent.click(details);
+    expect(details.getAttribute('aria-expanded')).toBe('false');
+    details.focus();
+    await fireEvent.keyDown(details, { key: 'Enter' });
+    expect(details.getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('keeps Sidebar navigation operable from its collapsed state', async () => {
+    const { container } = renderEntry('sidebar');
+    const sidebar = container.querySelector('[data-slot="sidebar"][data-state]');
+
+    expect(sidebar?.getAttribute('data-state')).toBe('collapsed');
+    expect(screen.getByRole('button', { name: 'Overview' }).getAttribute('data-active')).toBe(
+      'true',
+    );
+    expect(
+      (screen.getByRole('button', { name: 'Disabled navigation' }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+    await fireEvent.click(container.querySelector<HTMLButtonElement>('[data-sidebar="trigger"]')!);
+    expect(sidebar?.getAttribute('data-state')).toBe('expanded');
   });
 
   it('mounts and operates the canonical Settings Slider and FileInput previews', async () => {
@@ -186,9 +306,10 @@ describe('CatalogFixtureList real previews', () => {
 
   it('mounts each canonical Settings presentation pattern', () => {
     const page = renderEntry('settings-page-shell');
-    expect(screen.getAllByRole('heading', { level: 1, name: 'Application settings' }).length).toBe(
-      2,
-    );
+    expect(screen.getByRole('region', { name: 'Editorial Settings shell' })).toBeTruthy();
+    expect(screen.getByRole('region', { name: 'Busy Settings shell' })).toBeTruthy();
+    expect(screen.getByRole('region', { name: 'Editorial Settings shell general' })).toBeTruthy();
+    expect(screen.getByRole('region', { name: 'Busy Settings shell general' })).toBeTruthy();
     page.unmount();
     const section = renderEntry('settings-section');
     expect(screen.getByRole('region', { name: 'Notifications' })).toBeTruthy();

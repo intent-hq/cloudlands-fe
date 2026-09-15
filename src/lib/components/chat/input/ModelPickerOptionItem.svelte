@@ -8,6 +8,7 @@
   import ModelProviderErrorItem from './ModelProviderErrorItem.svelte';
   import type { ProviderLoadError } from './model-picker-provider-errors';
   import { m } from '$shared/paraglide/messages.js';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
 
   interface Props {
     option: DropdownOption;
@@ -28,9 +29,7 @@
 <div class="flex gap-2 w-full min-w-0">
   {#if providerLoading}
     <div class="type-body flex items-center gap-2 text-muted-foreground">
-      <div
-        class="size-3 border-2 border-muted-foreground/30 border-t-muted-foreground rounded-full animate-spin"
-      ></div>
+      <IntentMarkLoader size={12} />
       <span>{option.label}</span>
     </div>
   {:else if providerLoadError}
@@ -56,7 +55,7 @@
           {option.label}
         </span>
         {#if selected}
-          <Fa icon={faCheck} class="h-3 w-3 shrink-0 text-primary" />
+          <Fa icon={faCheck} class="h-3 w-3 shrink-0 text-primary-ink" />
         {/if}
       </div>
       {#if option.description}

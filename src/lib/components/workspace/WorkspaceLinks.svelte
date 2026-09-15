@@ -171,7 +171,7 @@
                       aria-label={m.workspace_links_remoteSpace_label()}
                       title={m.workspace_links_remoteSpace_label()}
                     >
-                      <Fa icon={faServer} size="xs" class="text-primary flex-shrink-0" />
+                      <Fa icon={faServer} size="xs" class="text-primary-ink flex-shrink-0" />
                     </div>
                   {/if}
                   {#if workspace.title}
@@ -231,7 +231,7 @@
                   aria-label={m.workspace_links_remoteSpace_label()}
                   title={m.workspace_links_remoteSpace_label()}
                 >
-                  <Fa icon={faServer} size="xs" class="text-primary flex-shrink-0" />
+                  <Fa icon={faServer} size="xs" class="text-primary-ink flex-shrink-0" />
                 </div>
               {/if}
               {#if workspace.title}
@@ -272,6 +272,7 @@
         class="block"
       >
         <Button
+          variant="ghost"
           class="w-full h-8 flex items-center justify-center rounded-md transition-colors {isActive
             ? 'bg-secondary text-secondary-foreground'
             : 'hover:bg-accent'}"

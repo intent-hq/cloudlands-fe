@@ -129,6 +129,7 @@
 
   interface Props {
     value?: string;
+    ariaLabel?: string;
     placeholder?: string;
     class?: string;
     disabled?: boolean;
@@ -162,6 +163,7 @@
 
   let {
     value = '',
+    ariaLabel = m.chat_richInput_editor_ariaLabel(),
     placeholder = m.chat_richInput_askAnything_placeholder(),
     disabled = false,
     editableWhileDisabled = false,
@@ -203,6 +205,10 @@
   let hoverPreview: any = null;
   let hoverPreviewContainer: HTMLDivElement | null = null;
   let isClearing = false;
+  $effect(() => {
+    if (editor) editor.view.dom.setAttribute('aria-label', ariaLabel);
+  });
+
   let editorFocused = $state(false);
   let slashContext = $state<SlashCommandContext | null>(null);
   let dismissedSlashContext = $state<string | null>(null);
@@ -751,7 +757,7 @@
               return /^https?:\/\//.test(url) || url.startsWith('intent://');
             },
             HTMLAttributes: {
-              class: 'text-primary underline',
+              class: 'text-primary-ink underline',
             },
           }),
           Placeholder.configure({
@@ -903,6 +909,9 @@
         editorProps: {
           attributes: {
             class: `tiptap-editor ${editorClassName}`,
+            role: 'textbox',
+            'aria-multiline': 'true',
+            'aria-label': ariaLabel,
             autocomplete: 'off',
             spellcheck: 'false',
             autocorrect: 'off',
@@ -1573,7 +1582,6 @@
     if (!editorElement) return;
 
     editorElement.setAttribute('aria-haspopup', 'listbox');
-    editorElement.setAttribute('aria-expanded', String(slashMenuOpen));
     if (slashMenuOpen && slashActiveOptionId) {
       editorElement.setAttribute('aria-controls', slashListboxId);
       editorElement.setAttribute('aria-activedescendant', slashActiveOptionId);
@@ -1595,7 +1603,7 @@
         trapFocus={false}
         onOpenAutoFocus={preserveEditorFocus}
         onCloseAutoFocus={preserveEditorFocus}
-        class="z-(--layer-popover) w-72 max-w-full outline-none"
+        class="z-(--layer-popover) w-72 max-w-full"
         data-testid="slash-skill-menu"
       >
         <SlashSkillSuggestionList
@@ -1683,7 +1691,7 @@
     -webkit-user-select: none;
     white-space: nowrap;
     vertical-align: baseline;
-    transition: opacity var(--motion-fast);
+    transition: opacity var(--spring-fast) var(--spring-fast-ease);
   }
 
   .tiptap-container :global(.prompt-trailing-hint[data-state='ready']) {
@@ -1733,7 +1741,7 @@
     font-size: var(--text-caption-size);
     line-height: var(--text-caption-line-height);
     white-space: nowrap;
-    animation: prompt-trailing-tooltip-in var(--motion-fast) var(--ease-emphasized-out);
+    animation: prompt-trailing-tooltip-in var(--spring-fast) var(--spring-fast-ease);
   }
 
   :global(.prompt-trailing-hint-tooltip[data-side='top']) {
@@ -1745,17 +1753,13 @@
   }
 
   .tiptap-container :global(.prompt-trailing-hint[data-state='enhanced']) {
-    animation: prompt-enhanced 260ms ease-out both;
+    animation: prompt-enhanced var(--spring-slow) var(--spring-slow-ease) both;
   }
 
   @keyframes prompt-enhanced {
     0% {
       opacity: 0.15;
       transform: translateY(2px) scale(0.98);
-    }
-    55% {
-      opacity: 0.75;
-      transform: translateY(0) scale(1.03);
     }
     100% {
       opacity: 0.4;

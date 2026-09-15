@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
   import type { TrackedChange } from '$features/file-tracking/types';
   import type { LocalCommitInfo } from '$features/accept-changes/types';
   import type { PRInfo } from '$lib/components/file-tracking/accept-changes/types';
@@ -14,7 +15,7 @@
     faExternalLink,
     faArrowRight,
   } from '@fortawesome/free-solid-svg-icons';
-  import { slide } from 'svelte/transition';
+  import { slide } from '$lib/motion';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
 
@@ -95,7 +96,7 @@
   }
 </script>
 
-<div class="px-3 pb-2" transition:slide={{ duration: 150 }}>
+<div class="px-3 pb-2" transition:slide={{ tier: 'moderate' }}>
   {#if showSkeleton}
     <!-- Skeleton loader for changes list -->
     <div class="space-y-1 py-2">
@@ -125,7 +126,7 @@
     <!-- Staged Changes -->
     {#if stagedChanges.length > 0}
       <div class="mt-2">
-        <p class="text-ui uppercase tracking-wider text-muted-foreground px-2 mb-1">
+        <p class="text-ui text-muted-foreground px-2 mb-1">
           {m.workspace_fileChanges_staged_label()}
         </p>
         <FileChangesList
@@ -154,7 +155,8 @@
             })) as UIFileChange[]}
             <div class="rounded-md border border-border overflow-hidden">
               <!-- Commit header -->
-              <button
+              <Button
+                variant="ghost"
                 type="button"
                 class="group flex items-center gap-2 w-full text-left py-1.5 px-2 hover:bg-muted/50 transition-colors cursor-pointer"
                 onclick={() => toggleCommitExpanded(commit.hash)}
@@ -168,13 +170,13 @@
                     size="xs"
                   />
                 {/if}
-              </button>
+              </Button>
 
               <!-- Files list -->
               {#if isExpanded && files.length > 0}
                 <div
                   class="pl-2 pr-1.5 pb-1 pt-0.5 bg-muted/20 space-y-px"
-                  transition:slide={{ duration: 150 }}
+                  transition:slide={{ tier: 'moderate' }}
                 >
                   {#each files as file (file.path)}
                     <FileRow
@@ -190,7 +192,8 @@
         </div>
       {:else}
         <div class="px-3 py-2">
-          <button
+          <Button
+            variant="ghost"
             type="button"
             class="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
             onclick={() => onAcceptChanges?.()}
@@ -203,7 +206,7 @@
                     count: formatInteger(effectiveUnpushedCount),
                   })}</span
             >
-          </button>
+          </Button>
         </div>
       {/if}
     {/if}
@@ -221,7 +224,8 @@
           })) as UIFileChange[]}
           <div class="rounded-md border border-border overflow-hidden">
             <!-- Commit header -->
-            <button
+            <Button
+              variant="ghost"
               type="button"
               class="group flex items-center gap-2 w-full text-left py-1.5 px-2 hover:bg-muted/50 transition-colors cursor-pointer"
               onclick={() => toggleCommitExpanded(commit.hash)}
@@ -240,13 +244,13 @@
                 size="xs"
                 class="text-ghost opacity-0 group-hover:opacity-100 transition-opacity"
               />
-            </button>
+            </Button>
 
             <!-- Files list -->
             {#if isExpanded && files.length > 0}
               <div
                 class="pl-2 pr-1.5 pb-1 pt-0.5 bg-muted/20 space-y-px"
-                transition:slide={{ duration: 150 }}
+                transition:slide={{ tier: 'moderate' }}
               >
                 {#each files as file (file.path)}
                   <FileRow
@@ -281,7 +285,8 @@
             <Fa icon={faCodePullRequest} size="xs" class="shrink-0 opacity-50 {statusColor}" />
             <span class="text-xs truncate flex-1">{pr.title}</span>
             <span class="text-ui text-subtle">#{pr.number}</span>
-            <button
+            <Button
+              variant="ghost"
               type="button"
               class="opacity-0 group-hover:opacity-30 transition-opacity hover:opacity-100 cursor-pointer"
               onclick={(e) => {
@@ -290,7 +295,7 @@
               }}
             >
               <Fa icon={faExternalLink} size="xs" class="text-ghost" />
-            </button>
+            </Button>
           </div>
         {/each}
       </div>

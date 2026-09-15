@@ -18,8 +18,8 @@ export default defineConfig({
   // Retry on CI only
   retries: process.env.CI ? 2 : 0,
 
-  // Opt out of parallel tests on CI
-  workers: process.env.CI ? 1 : undefined,
+  // Each worker starts its own Vite module graph; bound concurrent cold compilation locally.
+  workers: process.env.CI ? 1 : 2,
 
   // Reporter to use
   reporter: 'html',

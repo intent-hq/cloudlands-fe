@@ -67,7 +67,6 @@ describe('editorial conversation presentation contract', () => {
     );
     expect(panel).not.toContain('max-w-[var(--content-measure-wide)]');
     expect(panel).toContain('<div class="w-full" data-testid="question-wizard-slot">');
-    expect(panel).toContain("? 'w-full px-3!'");
     expect(panel).toContain('conversation-composer relative z-10 w-full');
     expect(panel).toContain(
       'class="composer-prompt-lane chat-content-measure mx-auto w-full min-w-0"',
@@ -93,12 +92,14 @@ describe('editorial conversation presentation contract', () => {
     expect(panel).toContain('data-conversation-turn');
     expect(panel).toContain('<PinnedUserPrompt');
     expect(panel).toContain('text={getPinnedPromptText(pinnedPrompt.message)}');
+    expect(panel).toContain('surface={pinnedPrompt.surface}');
     expect(panel).toContain('onActivate={handlePinnedPromptClick}');
     expect(panel).toContain(':global(.conversation-turn) {\n    contain: style;');
     expect(panel).toContain(':global(.message-nav-target) {\n    contain: style;');
     expect(panel).not.toContain('contain: style paint');
     expect(pinned).toContain('data-testid="pinned-user-prompt"');
     expect(pinned).toContain('USER_MESSAGE_SURFACE_CLASS');
+    expect(pinned).toContain('SUBSCRIPTION_CARD_SURFACE_CLASS');
     expect(pinned).toContain('USER_MESSAGE_TEXT_CLASS');
     expect(pinned).toContain('truncate whitespace-nowrap');
     expect(message).toContain(': USER_MESSAGE_TEXT_CLASS}');
@@ -296,6 +297,7 @@ describe('editorial conversation presentation contract', () => {
     );
     expect(wakeupWrapper).toContain('data-message-id={message.id}');
     expect(wakeupWrapper).toContain('data-message-index={globalIndex}');
+    expect(wakeupWrapper).toContain('data-pinnable-user-prompt');
     expect(wakeupWrapper).toContain('message-nav-target relative z-10');
     expect(wakeupWrapper).toContain('data-pinned-prompt-id={message.id}');
     expect(wakeupWrapper).toContain('use:attachPinnedPromptMessage={message}');
@@ -323,7 +325,7 @@ describe('editorial conversation presentation contract', () => {
     expect(panel).not.toContain('data-testid="chat-scroll-to-bottom-button"');
     expect(panel).toContain('showAgentCards={!isDelegatedBackgroundTaskAgent}');
     expect(panel).not.toContain('agentEventsForCards');
-    expect(wakeup).toMatch(/items-center gap-1.5 py-0.5 pr-2 pl-0 text-primary/);
+    expect(wakeup).toMatch(/items-center gap-1.5 py-0.5 pr-2 pl-0 text-primary-ink/);
     expect(wakeup).toContain('SUBSCRIPTION_CARD_CONTAINMENT_CLASS');
     expect(wakeup).toContain('SUBSCRIPTION_CARD_SURFACE_CLASS');
     expect(wakeup).toContain('{#if showSummary || (showAgentCards && agentEvents.length > 0)}');
@@ -350,12 +352,12 @@ describe('editorial conversation presentation contract', () => {
     expect(suggestions).not.toContain('faPaperPlane');
   });
 
-  it('supports the nested ChatPanel composer without changing standalone chrome', () => {
+  it('uses the MessageComposer surface shell in docked and standalone contexts', () => {
     const input = source('src/lib/components/chat/input/SimpleRichInput.svelte');
 
-    expect(input).toMatch(/edgeDocked\s*\?/);
-    expect(input).toContain('rounded-lg border-0 bg-sidebar shadow-none');
-    expect(input).toContain('rounded-lg border border-border shadow-(--elevation-raised)');
+    expect(input).toContain('surfaceClasses(2, 2)');
+    expect(input).toContain('rounded-(--radius-large)');
+    expect(input).toContain('data-ring-state={ringState}');
     expect(input).not.toContain(':global(.panel:not(.focused) .rich-input-container) {');
     expect(input).toContain('@container style(--motion-reduced: 1)');
   });
@@ -412,7 +414,7 @@ describe('editorial conversation presentation contract', () => {
     expect(panel).toContain('const transcriptBottomInsetClass = $derived(');
     expect(panel).toContain('{transcriptBottomInsetClass}');
     expect(queueEdgeLayout).toContain("return isCompactMode ? 'pb-3' : 'pb-6'");
-    expect(panel).toContain("isCompactMode ? 'pb-1 pt-2' : 'py-2'");
+    expect(panel).toContain("isCompactMode ? 'pb-1' : 'pb-2'");
     expect(panel).not.toContain("'pb-1 pt-3'");
     expect(panel).not.toContain('eventSubscriptionsOwnEndGap');
     expect(panel).not.toContain('eventSubscriptionsVisible');
@@ -455,7 +457,9 @@ describe('editorial conversation presentation contract', () => {
     expect(panel).not.toContain('AuroraSofteningLayer');
     expect(panel).toContain('style:height={`calc(${composerHeight}px + 10rem)`}');
     expect(panel).toContain('height: calc(100% + 10rem)');
-    expect(panel).toContain('class="relative z-20 mt-6 {isChiefWorkspace');
+    expect(panel).toContain('{#snippet queueRegion()}');
+    expect(panel).toContain('<QueuedMessageList');
+    expect(panel).not.toContain('data-testid="queued-message-utility-area"');
     expect(panel).not.toContain('regular-composer-aurora-host');
   });
 });

@@ -122,8 +122,9 @@ test('keeps the Mac sidebar hit target clear of traffic lights through live zoom
     await expect.poll(async () => (await toggle.boundingBox())!.x).toBeCloseTo(initialLeft, 0);
     await expect.poll(async () => (await wrapper.boundingBox())!.height).toBeCloseTo(35, 0);
     const box = (await toggle.boundingBox())!;
-    expect(box.width).toBeCloseTo(32, 0);
-    expect(box.height).toBeCloseTo(32, 0);
+    // Batch 7b (165c72ff) makes default icon controls 36px.
+    expect(box.width).toBeCloseTo(36, 0);
+    expect(box.height).toBeCloseTo(36, 0);
     await toggle.click();
     await expect(toggle).toHaveAttribute('aria-pressed', 'true');
     await toggle.press('Enter');
@@ -216,12 +217,14 @@ test('mounts accepted control geometry and shortcut tooltips', async ({ page }, 
           page.locator('[data-titlebar-spaces-control]'),
           page.locator('[data-workspace-repo-launcher] button'),
         ];
-        for (const control of controls) {
+        for (const [index, control] of controls.entries()) {
+          // Batch 7b grows the default sidebar control; the repo launcher retains its explicit 32px size.
+          const size = index === 0 ? 36 : 32;
           // Startup zoom arrives asynchronously over IPC, then selector readables
           // schedule the titlebar's inverse-zoom layout update.
-          await expect.poll(async () => (await control.boundingBox())?.width).toBeCloseTo(32, 0);
+          await expect.poll(async () => (await control.boundingBox())?.width).toBeCloseTo(size, 0);
           const box = await control.boundingBox();
-          expect(box?.height).toBeCloseTo(32, 0);
+          expect(box?.height).toBeCloseTo(size, 0);
           await expect(control).not.toHaveAttribute('title', /.+/);
         }
         const sidebarControl = controls[0];

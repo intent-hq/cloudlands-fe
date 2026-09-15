@@ -257,7 +257,9 @@ test('Agents card shares adaptive stack geometry at boundary counts', async ({ p
             'running',
             ...Array.from({ length: visibleCount - 1 }, () => 'idle'),
           ]);
-          expect(geometry.items.at(-1)?.mask).toBe('none');
+          // Upstream panel polish (0519bd81): the overflow tile overlaps the final avatar too.
+          if (geometry.overflow) expect(geometry.items.at(-1)?.mask).toContain('url(');
+          else expect(geometry.items.at(-1)?.mask).toBe('none');
           expect(geometry.items.slice(0, -1).every(({ mask }) => mask.includes('url('))).toBe(true);
           const steps = geometry.items
             .slice(1)
@@ -312,6 +314,8 @@ test('visible Agents stack avatars support hover, focus, Enter, and Space', asyn
   await buttons.nth(0).hover();
   await expect(page.locator('[data-sidebar-hover-card="agent"]')).toBeVisible();
   await page.mouse.move(0, 0);
+  // Wait for the previous hover card exit before asserting the next focused card.
+  await expect(page.locator('[data-sidebar-hover-card="agent"]')).toHaveCount(0);
   await buttons.nth(1).focus();
   await expect(buttons.nth(1)).toBeFocused();
   await expect(page.locator('[data-sidebar-hover-card="agent"]')).toBeVisible();

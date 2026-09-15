@@ -166,17 +166,16 @@
   <!-- Recent URLs -->
   {#if $recentUrls$.length > 0}
     <div class="flex items-center justify-between px-4 py-1">
-      <span class="text-ui uppercase tracking-wider text-muted-foreground"
-        >{m.browser_panel_recent_label()}</span
-      >
-      <button
+      <span class="text-ui text-muted-foreground">{m.browser_panel_recent_label()}</span>
+      <Button
         type="button"
+        variant="ghost"
         class="text-ui text-muted-foreground hover:text-muted-foreground transition-colors cursor-pointer"
         onclick={handleClearAll}
         title={m.browser_panel_clearAll_tooltip()}
       >
         {m.browser_panel_clear_label()}
-      </button>
+      </Button>
     </div>
     <ListContainer class="px-3" spacing="compact">
       {#each $recentUrls$ as entry (entry.url)}
@@ -190,14 +189,15 @@
             size="sm"
             active={isUrlActive(entry.url)}
           />
-          <button
+          <Button
             type="button"
+            variant="ghost"
             class="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover/url:opacity-100 p-1 text-muted-foreground hover:text-danger transition-all cursor-pointer"
             onclick={(e) => handleDeleteUrl(e, entry.url)}
             title={m.browser_panel_remove_tooltip()}
           >
             <Fa icon={faTimes} size="xs" />
-          </button>
+          </Button>
         </div>
       {/each}
     </ListContainer>

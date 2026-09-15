@@ -120,9 +120,20 @@ describe('formatRelativeTime', () => {
 });
 
 describe('formatCompactRelativeTime', () => {
+  it('shows seconds for positive sub-minute ages and now for zero or future ages', () => {
+    expect(en.formatCompactRelativeTime(new Date(NOW.getTime() - 18_000), { now: NOW })).toBe(
+      '18s',
+    );
+    expect(en.formatCompactRelativeTime(NOW, { now: NOW })).toBe('now');
+    expect(en.formatCompactRelativeTime(new Date(NOW.getTime() + 18_000), { now: NOW })).toBe(
+      'now',
+    );
+    expect(en.formatCompactRelativeTime(new Date(NOW.getTime() - 60_000), { now: NOW })).toBe('1m');
+  });
+
   it('formats unit-only compact ages', () => {
     expect(en.formatCompactRelativeTime(new Date(NOW.getTime() - 30_000), { now: NOW })).toBe(
-      'now',
+      '30s',
     );
     expect(en.formatCompactRelativeTime(new Date(NOW.getTime() - 5 * 60_000), { now: NOW })).toBe(
       '5m',

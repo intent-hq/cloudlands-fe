@@ -24,8 +24,6 @@ describe('panel content insets', () => {
     expect(panel).toContain('chatTranscriptBottomInsetClass({');
     expect(panel).toContain('{transcriptBottomInsetClass}');
     expect(panel).not.toContain('eventSubscriptionsOwnEndGap');
-    expect(panel).toContain("? 'w-full px-3!'");
-    expect(panel).toContain("? 'w-full px-3'");
     expect(panel).toContain('--composer-lane-inset-x: 1rem');
     expect(panel).toContain('--composer-lane-inset-bottom: 1rem');
     expect(panel).toContain('--composer-lane-inset-x: 1.5rem');
@@ -36,7 +34,7 @@ describe('panel content insets', () => {
     expect(panel).toContain(
       'padding: 0.5rem var(--composer-lane-inset-x) var(--composer-lane-inset-bottom)',
     );
-    expect(input).toContain("contentInsetClassName ?? (edgeDocked ? 'px-4 sm:px-6' : 'px-2')");
+    expect(input).toContain("contentInsetClassName ?? 'px-2'");
     expect(input.match(/\{contentInsetClasses\}/g)?.length).toBe(3);
   });
 });

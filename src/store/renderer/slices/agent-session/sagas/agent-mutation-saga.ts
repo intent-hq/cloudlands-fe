@@ -18,7 +18,7 @@ import {
 } from '$features/agent/utils/pending-agent-deletions';
 import { readAgentSession } from '$features/agent/agent-read-service';
 import { appClient } from '$lib/client';
-import { withToastCountdown } from '$lib/components/ui/toast';
+import { withToastCountdown } from '$lib/components/patterns/notify';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
 import type { AgentSession } from '$shared/types';
@@ -77,8 +77,8 @@ function mutationError(error: unknown, fallback: string): Error {
 
 async function showError(message: string): Promise<void> {
   try {
-    const { toast } = await import('svelte-sonner');
-    toast.error(message);
+    const { notify } = await import('$lib/components/patterns/notify');
+    notify.error(message);
   } catch (error) {
     logger.error('Failed to surface agent mutation error', error);
   }
@@ -86,9 +86,9 @@ async function showError(message: string): Promise<void> {
 
 async function showUndoToast(wsId: string, agentId: string, agentName?: string): Promise<void> {
   try {
-    const { toast } = await import('svelte-sonner');
+    const { notify } = await import('$lib/components/patterns/notify');
     const { store } = await import('../../../store');
-    toast.warning(
+    notify.warning(
       agentName
         ? m.agent_mutation_deletedAgent_message({ name: agentName })
         : m.agent_mutation_deletedAgentGeneric_message(),

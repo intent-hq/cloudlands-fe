@@ -17,8 +17,8 @@ import {
 vi.mock('svelte-fa', async () => ({
   default: (await import('$lib/components/ui/__tests__/mocks/Fa.svelte')).default,
 }));
-vi.mock('$lib/components/ui/toast', () => ({
-  toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
 }));
 
 import AgentBackendSettings from '$lib/components/settings/AgentBackendSettings.svelte';
@@ -230,7 +230,7 @@ describe('Settings deterministic mock-BE contracts', () => {
 
     render(WebSocketApiSettings);
     const input = (await screen.findByRole('spinbutton', {
-      name: m.settings_wsApi_port_ariaLabel(),
+      name: m.settings_wsApi_port_label(),
     })) as HTMLInputElement;
     await waitFor(() => expect(input.value).toBe('5181'));
     await fireEvent.input(input, { target: { value: '6123' } });

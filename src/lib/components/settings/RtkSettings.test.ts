@@ -44,8 +44,8 @@ vi.mock('$store/renderer/store', () => ({
   },
 }));
 
-vi.mock('$lib/components/ui/toast', () => ({
-  toast: { success: vi.fn(), info: vi.fn(), error: mocks.mockToastError, warning: vi.fn() },
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { success: vi.fn(), info: vi.fn(), error: mocks.mockToastError, warning: vi.fn() },
 }));
 
 describe('RtkSettings', () => {
@@ -68,6 +68,17 @@ describe('RtkSettings', () => {
     });
   });
 
+  it('renders one self-owned label and description in the available state', async () => {
+    mocks.mockSettingsGet.mockResolvedValue({ path: 'rtk.enabled', value: true });
+    mocks.mockInvoke.mockResolvedValue({ data: { available: true } });
+
+    render(RtkSettings);
+
+    await screen.findByRole('switch', { name: m.settings_rtk_label() });
+    expect(screen.getAllByText(m.settings_rtk_label())).toHaveLength(1);
+    expect(screen.getAllByText(m.settings_rtk_enabledDescription())).toHaveLength(1);
+  });
+
   it('defaults to false when settings.get returns no value', async () => {
     mocks.mockSettingsGet.mockResolvedValue({ path: 'rtk.enabled', value: undefined });
     mocks.mockInvoke.mockResolvedValue({ data: { available: true } });
@@ -75,7 +86,7 @@ describe('RtkSettings', () => {
     render(RtkSettings);
 
     const toggle = await screen.findByRole('switch');
-    expect(toggle.getAttribute('data-state')).toBe('off');
+    expect(toggle.getAttribute('data-state')).toBe('unchecked');
   });
 
   it('calls settings.update with correct arguments when toggle is clicked', async () => {
@@ -203,13 +214,13 @@ describe('RtkSettings', () => {
     render(RtkSettings);
 
     const toggle = await screen.findByRole('switch');
-    expect(toggle.getAttribute('data-state')).toBe('off');
+    expect(toggle.getAttribute('data-state')).toBe('unchecked');
 
     await fireEvent.click(toggle);
 
     await waitFor(() =>
       expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([{ path: 'rtk.enabled', value: true }]),
     );
-    expect(toggle.getAttribute('data-state')).toBe('off');
+    expect(toggle.getAttribute('data-state')).toBe('unchecked');
   });
 });

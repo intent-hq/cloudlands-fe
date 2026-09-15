@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { builtinModules } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { includeIgnoreFile } from '@eslint/compat';
@@ -10,6 +11,23 @@ import unusedImports from 'eslint-plugin-unused-imports';
 import { svelte as themisFullConfig } from '@augmentcode/themis/eslint-plugins';
 import noProductionDynamicImportRule from './eslint-rules/no-production-dynamic-import.js';
 import noComponentAsyncDataFetchRule from './eslint-rules/no-component-async-data-fetch.js';
+import cssParser from './eslint-rules/design-system/css-parser.js';
+import { designSystemRules } from './eslint-rules/design-system/index.js';
+import { namedColorAllowlist } from './eslint-rules/design-system/common.js';
+
+const designSystemBaseline = JSON.parse(
+  readFileSync(new URL('./eslint-rules/design-system/baseline.json', import.meta.url), 'utf8'),
+);
+const designSystemBaselineOverrides = Object.entries(designSystemBaseline).flatMap(
+  ([rule, exceptions]) => {
+    const files = exceptions.flatMap((exception) => exception.files ?? []);
+    return files.length > 0 ? [{ files, rules: { [`intent/${rule}`]: 'off' } }] : [];
+  },
+);
+const semanticColorBaseline = Object.assign(
+  {},
+  ...designSystemBaseline['no-arbitrary-motion-or-color'].map((entry) => entry.counts ?? {}),
+);
 import noColdSvelteImportInTestsRule from './eslint-rules/no-cold-svelte-import-in-tests.js';
 import noFlushSyncInTeardownRule from './eslint-rules/no-flushsync-in-teardown.js';
 import noDirectReducedMotionQueryRule, {
@@ -21,6 +39,7 @@ const intentPlugin = {
   rules: {
     'no-component-async-data-fetch': noComponentAsyncDataFetchRule,
     'no-production-dynamic-import': noProductionDynamicImportRule,
+    ...designSystemRules,
     'no-cold-svelte-import-in-tests': noColdSvelteImportInTestsRule,
     'no-flushsync-in-teardown': noFlushSyncInTeardownRule,
     'no-direct-reduced-motion-query': noDirectReducedMotionQueryRule,
@@ -671,6 +690,42 @@ export default [
       'max-lines': ['error', { max: 1200 }],
     },
   },
+  {
+    files: ['src/**/*.{js,mjs,ts,tsx,svelte}'],
+    ignores: productionModuleIgnores,
+    plugins: {
+      intent: intentPlugin,
+    },
+    rules: {
+      'intent/no-adhoc-transitions': 'error',
+      'intent/no-arbitrary-motion-or-color': [
+        'error',
+        { allowlist: namedColorAllowlist, baseline: semanticColorBaseline },
+      ],
+      'intent/no-button-compatibility-aliases': 'warn',
+      'intent/no-dialog-root-outside-patterns': 'error',
+      'intent/no-direct-toast': 'error',
+      'intent/no-legacy-spinner': 'error',
+      'intent/no-native-dialogs': 'error',
+      'intent/no-raw-controls': 'error',
+      'intent/no-raw-menu-row': 'error',
+      'intent/no-raw-typography': 'error',
+      'intent/settings-use-schema': 'error',
+    },
+  },
+  {
+    files: ['src/**/*.{svelte,ts,tsx,js}'],
+    ignores: productionModuleIgnores,
+    plugins: { intent: intentPlugin },
+    rules: { 'intent/no-uppercase': 'error' },
+  },
+  {
+    files: ['src/**/*.css'],
+    languageOptions: { parser: cssParser },
+    plugins: { intent: intentPlugin },
+    rules: { 'intent/no-uppercase': 'error' },
+  },
+  ...designSystemBaselineOverrides,
   {
     files: ['**/*.svelte'],
     ignores: componentAsyncDataFetchBaselineIgnorePatterns,

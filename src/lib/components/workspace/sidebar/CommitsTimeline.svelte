@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Input } from '$lib/components/ui/input';
   /**
    * CommitsTimeline - Commits section of the sidebar changes panel
    * Shows commit list, expand/collapse, inline edit, push/undo, context menu, older commits, base commit.
@@ -46,9 +47,10 @@
   import LineChangesBadge from '$lib/components/shared/LineChangesBadge.svelte';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import { Button } from '$lib/components/ui/button';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
   import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
-  import { toast } from '$lib/components/ui/toast';
+  import { notify } from '$lib/components/patterns/notify';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
   import { invoke } from '$lib/electron-bridge';
@@ -63,12 +65,11 @@
     faCodeCommit,
     faFlag,
     faRotateLeft,
-    faSpinner,
   } from '@fortawesome/free-solid-svg-icons';
   import { tick } from 'svelte';
   import { writable } from 'svelte/store';
   import Fa from 'svelte-fa';
-  import { slide } from 'svelte/transition';
+  import { slide } from '$lib/motion';
   import TimelineSection from './TimelineSection.svelte';
   import {
     openWorkspaceCommitChangeset,
@@ -264,13 +265,13 @@
       if (result.ok) {
         appStore.dispatch(ftClearOlderCommits(workspaceId));
         appStore.dispatch(refreshRequested(workspaceId));
-        toast.success(m.workspace_commitsTimeline_baseUpdated_label());
+        notify.success(m.workspace_commitsTimeline_baseUpdated_label());
       } else {
-        toast.error(m.workspace_commitsTimeline_baseUpdateFailed_error());
+        notify.error(m.workspace_commitsTimeline_baseUpdateFailed_error());
       }
     } catch (error) {
       logger.error('Failed to set base commit', error as Error);
-      toast.error(m.workspace_commitsTimeline_baseUpdateFailed_error());
+      notify.error(m.workspace_commitsTimeline_baseUpdateFailed_error());
     }
   }
 
@@ -281,13 +282,13 @@
       if (result.ok) {
         appStore.dispatch(ftClearOlderCommits(workspaceId));
         appStore.dispatch(refreshRequested(workspaceId));
-        toast.success(m.workspace_commitsTimeline_baseReset_label());
+        notify.success(m.workspace_commitsTimeline_baseReset_label());
       } else {
-        toast.error(m.workspace_commitsTimeline_baseResetFailed_error());
+        notify.error(m.workspace_commitsTimeline_baseResetFailed_error());
       }
     } catch (error) {
       logger.error('Failed to clear base commit', error as Error);
-      toast.error(m.workspace_commitsTimeline_baseResetFailed_error());
+      notify.error(m.workspace_commitsTimeline_baseResetFailed_error());
     }
   }
 
@@ -363,14 +364,14 @@
             Promise.resolve(appStore.dispatch(loadGitStatus(workspaceId, true))),
             appStore.dispatch(refreshRequested(workspaceId, true)),
           ]);
-          toast.success(
+          notify.success(
             wasPushed
               ? m.workspace_commitsTimeline_messageUpdatedPushed_label()
               : m.workspace_commitsTimeline_messageUpdated_label(),
           );
         } catch (error) {
           logger.error('[saveCommitEdit] Failed to amend commit message', { error });
-          toast.error(m.workspace_commitsTimeline_messageUpdateFailed_error());
+          notify.error(m.workspace_commitsTimeline_messageUpdateFailed_error());
         }
       }
     }
@@ -513,7 +514,7 @@
     if (!workspaceId) return;
     const worktreePath = $workspace?.worktreePath || $workspace?.repositoryPath;
     if (!worktreePath) {
-      toast.error(m.workspace_commitsTimeline_noSpacePath_error());
+      notify.error(m.workspace_commitsTimeline_noSpacePath_error());
       return;
     }
     try {
@@ -531,7 +532,7 @@
       if (result.ok && result.terminalId) {
         appStore.dispatch(addTerminal(workspaceId, result.terminalId, terminalTitle));
         appStore.dispatch(openTerminalOverlay(workspaceId, result.terminalId));
-        toast.success(m.workspace_commitsTimeline_pullStarted_label(), {
+        notify.success(m.workspace_commitsTimeline_pullStarted_label(), {
           description: m.workspace_commitsTimeline_pullStarted_description(),
           action: {
             label: m.workspace_commitsTimeline_refresh_label(),
@@ -541,17 +542,17 @@
                 Promise.resolve(appStore.dispatch(loadGitStatus(workspaceId, true))),
                 appStore.dispatch(refreshRequested(workspaceId, true)),
               ]);
-              toast.success(m.workspace_commitsTimeline_statusRefreshed_label());
+              notify.success(m.workspace_commitsTimeline_statusRefreshed_label());
             },
           },
           duration: 30000,
         });
       } else {
-        toast.error(result.error || m.workspace_commitsTimeline_openTerminalFailed_error());
+        notify.error(result.error || m.workspace_commitsTimeline_openTerminalFailed_error());
       }
     } catch (error) {
       logger.error('Failed to open pull terminal', error as Error);
-      toast.error(m.workspace_commitsTimeline_openTerminalFailed_error());
+      notify.error(m.workspace_commitsTimeline_openTerminalFailed_error());
     }
   }
 
@@ -579,7 +580,7 @@
         const errorMsg = result.error || m.workspace_prSection_pushFailed_error();
         // i18n-ignore (matching backend error strings)
         if (errorMsg.includes('Pull the latest changes') || errorMsg.includes('behind')) {
-          toast.error(m.workspace_commitsTimeline_remoteHasNewCommits_error(), {
+          notify.error(m.workspace_commitsTimeline_remoteHasNewCommits_error(), {
             description: m.workspace_commitsTimeline_pullBeforePush_description(),
             action: {
               label: m.workspace_commitsTimeline_pullInTerminal_label(),
@@ -588,11 +589,11 @@
             duration: 10000,
           });
         } else {
-          toast.error(errorMsg);
+          notify.error(errorMsg);
         }
       }
     } catch {
-      toast.error(m.workspace_prSection_pushCommitsFailed_error());
+      notify.error(m.workspace_prSection_pushCommitsFailed_error());
     } finally {
       appStore.dispatch(setGitOperationFlag(workspaceId, 'isPushing', false));
       undoState.commitHash = null;
@@ -611,7 +612,7 @@
       if ($workspace?.baseCommitSha) {
         resetToHash = $workspace.baseCommitSha;
       } else {
-        toast.error(m.workspace_commitsTimeline_cannotUndo_error());
+        notify.error(m.workspace_commitsTimeline_cannotUndo_error());
         return;
       }
     }
@@ -622,7 +623,7 @@
         upToCommitHash: resetToHash,
       });
       if (result.success) {
-        toast.warning(
+        notify.warning(
           commitCount === 1
             ? m.workspace_commitsTimeline_removedFromRemote_one()
             : m.workspace_commitsTimeline_removedFromRemote_many({
@@ -635,10 +636,10 @@
           appStore.dispatch(refreshRequested(workspaceId, true)),
         ]);
       } else {
-        toast.error(result.error || m.workspace_commitsTimeline_undoPushFailed_error());
+        notify.error(result.error || m.workspace_commitsTimeline_undoPushFailed_error());
       }
     } catch {
-      toast.error(m.workspace_commitsTimeline_undoPushFailed_error());
+      notify.error(m.workspace_commitsTimeline_undoPushFailed_error());
     } finally {
       undoState.undoing = false;
       undoState.commitHash = null;
@@ -657,7 +658,7 @@
       if ($workspace?.baseCommitSha) {
         resetToHash = $workspace.baseCommitSha;
       } else {
-        toast.error(m.workspace_commitsTimeline_cannotUndo_error());
+        notify.error(m.workspace_commitsTimeline_cannotUndo_error());
         return;
       }
     }
@@ -686,7 +687,7 @@
         undoCommitsMetadata,
       });
       if (result.success) {
-        toast.warning(
+        notify.warning(
           commitCount === 1
             ? m.workspace_commitsTimeline_commitsUndone_one()
             : m.workspace_commitsTimeline_commitsUndone_many({
@@ -699,10 +700,10 @@
           appStore.dispatch(refreshRequested(workspaceId, true)),
         ]);
       } else {
-        toast.error(result.error || m.workspace_commitsTimeline_undoCommitFailed_error());
+        notify.error(result.error || m.workspace_commitsTimeline_undoCommitFailed_error());
       }
     } catch {
-      toast.error(m.workspace_commitsTimeline_undoCommitFailed_error());
+      notify.error(m.workspace_commitsTimeline_undoCommitFailed_error());
     } finally {
       undoState.undoingCommit = false;
       undoState.commitHash = null;
@@ -783,8 +784,8 @@
             <div class="relative flex min-w-0 flex-1 items-center">
               {#if commitEdit.hash === commit.hash}
                 <!-- Inline edit mode for commit message -->
-                <input
-                  bind:this={commitEdit.inputRef}
+                <Input
+                  bind:ref={commitEdit.inputRef}
                   type="text"
                   bind:value={commitEdit.value}
                   onblur={saveCommitEdit}
@@ -793,7 +794,8 @@
                   onclick={(e) => e.stopPropagation()}
                 />
               {:else}
-                <button
+                <Button
+                  variant="ghost"
                   type="button"
                   class="relative z-10 flex min-w-0 flex-1 cursor-text items-center gap-2 text-left {commit.isPushed &&
                   !commit.agentId
@@ -808,7 +810,7 @@
                   >
                     {commit.message}
                   </span>
-                </button>
+                </Button>
               {/if}
               <span
                 aria-hidden="true"
@@ -858,7 +860,7 @@
                     tooltipSide="top"
                   >
                     {#if isOperatingOnThis && undoState.undoing}
-                      <Fa icon={faSpinner} size="xs" class="animate-spin text-subtle" />
+                      <IntentMarkLoader size={12} class="text-subtle" />
                     {:else}
                       <Fa icon={faRotateLeft} size="xs" class="text-ghost" />
                     {/if}
@@ -877,7 +879,7 @@
                   tooltipSide="top"
                 >
                   {#if isOperatingOnThis && undoState.undoingCommit}
-                    <Fa icon={faSpinner} size="xs" class="animate-spin text-subtle" />
+                    <IntentMarkLoader size={12} class="text-subtle" />
                   {:else}
                     <Fa icon={faRotateLeft} size="xs" class="text-ghost" />
                   {/if}
@@ -895,7 +897,7 @@
                     tooltipSide="top"
                   >
                     {#if isOperatingOnThis && isPushing}
-                      <Fa icon={faSpinner} size="xs" class="animate-spin text-subtle" />
+                      <IntentMarkLoader size={12} class="text-subtle" />
                     {:else}
                       <Fa icon={faArrowUpFromBracket} size="xs" class="text-subtle" />
                     {/if}
@@ -907,7 +909,10 @@
 
           <!-- Expanded panel content -->
           {#if isExpanded}
-            <div class="pl-5 pr-1.5 pb-0.5 pt-0.5 space-y-px" transition:slide={{ duration: 150 }}>
+            <div
+              class="pl-5 pr-1.5 pb-0.5 pt-0.5 space-y-px"
+              transition:slide={{ tier: 'moderate' }}
+            >
               <!-- Files list -->
               {#each files as file (file.path)}
                 <FileRow
@@ -931,7 +936,8 @@
 
   <!-- Workspace start boundary marker + show previous toggle -->
   {#if $ftBoundarySha$}
-    <button
+    <Button
+      variant="ghost"
       class="group/boundary relative w-full cursor-pointer {allCommits.length > 0 ? 'mt-2' : ''}"
       disabled={$ftLoadingOlderCommits$}
       onclick={() => {
@@ -951,7 +957,7 @@
         <span class="flex items-center gap-1.5 text-ui text-subtle bg-sidebar select-none">
           {m.workspace_commitsTimeline_workspaceStart_label()}
           {#if $ftLoadingOlderCommits$}
-            <Fa icon={faSpinner} class="opacity-50 animate-spin" size="xs" />
+            <IntentMarkLoader size={12} class="opacity-50" />
           {:else}
             <Fa
               icon={faChevronDown}
@@ -962,12 +968,12 @@
         </span>
       </div>
       <div class="absolute top-4.5 left-0 right-0 flex-1 border-t border-border"></div>
-    </button>
+    </Button>
   {/if}
 
   <!-- Older commits (dimmed, below boundary) -->
   {#if olderCommits.length > 0}
-    <div class="space-y-0.5 opacity-60 hover:opacity-100 transition-opacity">
+    <div class="space-y-0.5 text-muted-foreground">
       {#each olderCommits as commit (commit.hash)}
         {@const isExpanded = expandedCommits.has(commit.hash)}
         {@const commitFiles = getCommitFiles(commit)}
@@ -1009,7 +1015,8 @@
             </Button>
 
             <Fa icon={faCodeCommit} size="xs" class="text-ghost shrink-0" />
-            <button
+            <Button
+              variant="ghost"
               type="button"
               class="flex items-center gap-2 flex-1 min-w-0 text-left cursor-pointer"
               onclick={() => handleOpenCommitChangeset(commit.hash, commit.message)}
@@ -1017,11 +1024,14 @@
               <span class="text-ui text-subtle truncate flex-1" title={commit.message}>
                 {commit.message}
               </span>
-            </button>
+            </Button>
           </div>
 
           {#if isExpanded}
-            <div class="pl-5 pr-1.5 pb-0.5 pt-0.5 space-y-px" transition:slide={{ duration: 150 }}>
+            <div
+              class="pl-5 pr-1.5 pb-0.5 pt-0.5 space-y-px"
+              transition:slide={{ tier: 'moderate' }}
+            >
               {#each files as file (file.path)}
                 <FileRow
                   {file}
@@ -1044,7 +1054,8 @@
 
   <!-- Load more previous commits -->
   {#if olderCommits.length > 0}
-    <button
+    <Button
+      variant="ghost"
       class="w-full text-ui text-ghost hover:text-muted-foreground py-1 transition-colors cursor-pointer"
       disabled={$ftLoadingOlderCommits$}
       onclick={() => {
@@ -1053,10 +1064,10 @@
       }}
     >
       {#if $ftLoadingOlderCommits$}
-        <Fa icon={faSpinner} class="animate-spin mr-1" size="xs" />
+        <IntentMarkLoader size={12} class="mr-1" />
       {/if}
       {m.workspace_commitsTimeline_showMorePrevious_label()}
-    </button>
+    </Button>
   {/if}
 </TimelineSection>
 

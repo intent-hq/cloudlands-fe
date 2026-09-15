@@ -49,6 +49,7 @@
   import Toast from '$lib/components/ui/toast/Toast.svelte';
   import NodeVersionToast from '$lib/components/NodeVersionToast.svelte';
   import { TooltipProvider } from '$lib/components/ui/tooltip';
+  import { ConfirmHost } from '$lib/components/patterns/confirm';
   import LinkTooltip from '$lib/components/ui/tooltip/LinkTooltip.svelte';
   import LinkActionMenu from '$features/navigation/LinkActionMenu.svelte';
   import OffscreenWebviewHost from '$lib/components/browser/OffscreenWebviewHost.svelte';
@@ -112,6 +113,7 @@
   import { isFocusInEditableElement, KeyboardShortcutManager } from '$lib/utils/keyboardShortcuts';
   import { configureMonacoWorkers } from '$lib/utils/monaco-workers';
   import { hasCapability } from '$lib/utils/platform-capabilities';
+  import { dismissSplashElement } from '$features/backend/splash-gate';
   import { onDestroy, onMount, untrack } from 'svelte';
 
   import { createLinkTooltipHandler } from '$features/navigation/link-handler';
@@ -314,12 +316,7 @@
 
   onMount(() => {
     // Hide the splash screen from app.html now that Svelte has mounted
-    const splash = document.getElementById('splash');
-    if (splash) {
-      splash.classList.add('mounted');
-      // Remove from DOM after fade-out transition completes
-      splash.addEventListener('transitionend', () => splash.remove(), { once: true });
-    }
+    dismissSplashElement(document.getElementById('splash'));
 
     // Remove the static drag region from app.html now that Svelte's own drag region is active
     document.getElementById('app-drag-region')?.remove();
@@ -873,9 +870,9 @@
       });
     }
 
-    import('svelte-sonner')
-      .then(({ toast }) => {
-        toast.success(m.layout_appShell_githubConnected_toast(), {
+    import('$lib/components/patterns/notify')
+      .then(({ notify }) => {
+        notify.success(m.layout_appShell_githubConnected_toast(), {
           duration: 3000,
         });
       })
@@ -1031,6 +1028,7 @@
   <AuggieSetupGate />
 
   <Toast />
+  <ConfirmHost />
 
   <!-- Once-per-session Node.js requirement warning (renders nothing itself) -->
   <NodeVersionToast />

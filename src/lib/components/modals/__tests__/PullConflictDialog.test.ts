@@ -5,8 +5,13 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/sve
 import { readable } from 'svelte/store';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { warmImport } from '../../../../test/warm-import';
+import {
+  createAppStoreMock,
+  createStoreMockModule,
+} from '$store/renderer/utils/test-helpers/store-mock';
 
 const dispatch = vi.fn();
+const appStore = createAppStoreMock({ dispatch });
 
 vi.mock('svelte-fa', async () => ({
   default: (await import('../../workspace/sidebar/__tests__/mocks/Fa.svelte')).default,
@@ -17,7 +22,7 @@ vi.mock('$store/renderer/slices/external-editors/external-editors-selectors', ()
 vi.mock('$store/renderer/slices/external-editors/external-editors-slice', () => ({
   fetchEditors: () => ({ type: 'externalEditors/fetchEditors' }),
 }));
-vi.mock('$store/renderer/store', () => ({ store: { dispatch } }));
+vi.mock('$store/renderer/store', () => createStoreMockModule(appStore));
 
 warmImport(() => import('../../workspace/sidebar/__tests__/mocks/Fa.svelte'));
 warmImport(() => import('./PullConflictDialogHarness.svelte'));

@@ -1,8 +1,6 @@
 <script lang="ts">
-  import Portal from '$lib/components/ui/Portal.svelte';
+  import * as Menu from '$lib/components/ui/menu';
   import { writeTextToClipboard } from '$lib/utils/clipboard';
-  import { pushEscapeLayer } from '$lib/utils/escapeLayers';
-  import { scheduleLayoutRead, type CancelLayoutTask } from '$lib/utils/layout-phases';
   import { m } from '$shared/paraglide/messages.js';
   import { setShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
   import { setWorkspaceInitializerPendingGitHubPrefill } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
@@ -11,83 +9,23 @@
   import { openInBrowserPanel, openInExternalBrowser } from './link-handler';
 
   let menuElement: HTMLElement | null = $state(null);
-  let adjustedX = $state(0);
-  let adjustedY = $state(0);
-
-  function adjustPosition() {
-    adjustedX = linkActionMenuState.x;
-    adjustedY = linkActionMenuState.y;
-    if (!menuElement) return;
-    const rect = menuElement.getBoundingClientRect();
-    if (linkActionMenuState.x + rect.width > window.innerWidth - 10) {
-      adjustedX = window.innerWidth - rect.width - 10;
-    }
-    if (linkActionMenuState.y + rect.height > window.innerHeight - 10) {
-      adjustedY = window.innerHeight - rect.height - 10;
-    }
-  }
-
-  function menuItems(): HTMLButtonElement[] {
-    return menuElement ? Array.from(menuElement.querySelectorAll('button[role="menuitem"]')) : [];
-  }
-
-  // ARIA menu keyboard pattern: Arrow cycling, Home/End; Enter/Space activate
-  // the focused button natively.
-  function handleMenuKeyDown(event: KeyboardEvent) {
-    const items = menuItems();
-    if (items.length === 0) return;
-    const currentIndex = items.indexOf(document.activeElement as HTMLButtonElement);
-    let nextIndex: number | null = null;
-    if (event.key === 'ArrowDown') {
-      nextIndex = currentIndex < 0 ? 0 : (currentIndex + 1) % items.length;
-    } else if (event.key === 'ArrowUp') {
-      nextIndex =
-        currentIndex < 0 ? items.length - 1 : (currentIndex - 1 + items.length) % items.length;
-    } else if (event.key === 'Home') {
-      nextIndex = 0;
-    } else if (event.key === 'End') {
-      nextIndex = items.length - 1;
-    }
-    if (nextIndex !== null) {
-      event.preventDefault();
-      items[nextIndex]?.focus();
-    }
-  }
-
-  // Positioning effect: re-runs when the menu is re-shown at new coordinates
-  // without re-attaching the dismissal listeners below. The measurement is
-  // batched through the shared layout-read phase so it does not force a
-  // standalone reflow.
-  let pendingAdjust: CancelLayoutTask | null = null;
-
-  $effect(() => {
-    if (!linkActionMenuState.visible) return;
-    adjustedX = linkActionMenuState.x;
-    adjustedY = linkActionMenuState.y;
-    // Measure after render to keep the menu on-screen, then move focus into
-    // the menu so keyboard users can operate it.
-    pendingAdjust?.();
-    pendingAdjust = scheduleLayoutRead(() => {
-      pendingAdjust = null;
-      adjustPosition();
-      menuItems()[0]?.focus();
-    });
-    return () => {
-      pendingAdjust?.();
-      pendingAdjust = null;
+  const menuAnchor = $derived.by(() => {
+    const x = linkActionMenuState.x;
+    const y = linkActionMenuState.y;
+    return {
+      getBoundingClientRect: () => DOMRect.fromRect({ x, y, width: 0, height: 0 }),
     };
   });
+
+  function handleOpenAutoFocus(event: Event) {
+    event.preventDefault();
+    menuElement?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
+  }
 
   $effect(() => {
     if (!linkActionMenuState.visible) return;
     const anchorElement = linkActionMenuState.anchorElement;
 
-    // Use mousedown so the menu closes before any other click handler fires
-    const handleMouseDown = (event: MouseEvent) => {
-      if (menuElement && !menuElement.contains(event.target as Node)) {
-        hideLinkActionMenu();
-      }
-    };
     // The menu is position:fixed at the click point — dismiss on scroll
     // (capture phase: chat scrolls in nested containers) and resize so it
     // never floats at stale coordinates.
@@ -98,18 +36,17 @@
       hideLinkActionMenu();
     };
     const handleResize = () => hideLinkActionMenu();
-    document.addEventListener('mousedown', handleMouseDown);
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!menuElement?.contains(event.target as Node)) hideLinkActionMenu();
+    };
+    document.addEventListener('pointerdown', handlePointerDown);
     window.addEventListener('scroll', handleScroll, true);
     window.addEventListener('resize', handleResize);
-    const releaseEscapeLayer = pushEscapeLayer(() => {
-      hideLinkActionMenu();
-    });
 
     return () => {
-      document.removeEventListener('mousedown', handleMouseDown);
+      document.removeEventListener('pointerdown', handlePointerDown);
       window.removeEventListener('scroll', handleScroll, true);
       window.removeEventListener('resize', handleResize);
-      releaseEscapeLayer();
       // Restore focus to the triggering element if focus is still inside the menu
       if (
         anchorElement?.isConnected &&
@@ -172,51 +109,52 @@
 </script>
 
 {#if linkActionMenuState.visible}
-  <Portal zIndex={100}>
-    <div
-      bind:this={menuElement}
-      class="fixed z-[100] bg-popover border border-border shadow-lg py-0.5 min-w-40"
-      style="left: {adjustedX}px; top: {adjustedY}px;"
-      role="menu"
-      tabindex="-1"
+  <Menu.Root
+    open={linkActionMenuState.visible}
+    onOpenChange={(open) => {
+      if (!open) hideLinkActionMenu();
+    }}
+  >
+    <Menu.Content
+      bind:ref={menuElement}
+      customAnchor={menuAnchor}
+      side="bottom"
+      align="start"
+      sideOffset={0}
+      collisionPadding={10}
+      strategy="fixed"
+      preventScroll={false}
+      onOpenAutoFocus={handleOpenAutoFocus}
+      class="z-[100] py-0.5 min-w-40"
       aria-label={m.navigation_linkActionMenu_menu_ariaLabel()}
-      onkeydown={handleMenuKeyDown}
     >
-      <button
-        type="button"
+      <Menu.Item
         class="w-full px-3 py-1 text-sm text-left transition-colors flex items-center gap-2 outline-none focus-visible:bg-accent text-foreground hover:bg-accent cursor-pointer"
-        onclick={handleStartWorkspace}
-        role="menuitem"
+        onSelect={handleStartWorkspace}
       >
         {startWorkspaceLabel}
-      </button>
-      <div class="h-px bg-border my-0.5"></div>
-      <button
-        type="button"
+      </Menu.Item>
+      <Menu.Separator />
+      <Menu.Item
         class="w-full px-3 py-1 text-sm text-left transition-colors flex items-center gap-2 outline-none focus-visible:bg-accent text-foreground hover:bg-accent cursor-pointer"
-        onclick={handleOpenInBrowser}
-        role="menuitem"
+        onSelect={handleOpenInBrowser}
       >
         {m.navigation_linkActionMenu_openInBrowser_label()}
-      </button>
+      </Menu.Item>
       {#if linkActionMenuState.workspaceId}
-        <button
-          type="button"
+        <Menu.Item
           class="w-full px-3 py-1 text-sm text-left transition-colors flex items-center gap-2 outline-none focus-visible:bg-accent text-foreground hover:bg-accent cursor-pointer"
-          onclick={handleOpenInApp}
-          role="menuitem"
+          onSelect={handleOpenInApp}
         >
           {m.navigation_linkActionMenu_openInApp_label()}
-        </button>
+        </Menu.Item>
       {/if}
-      <button
-        type="button"
+      <Menu.Item
         class="w-full px-3 py-1 text-sm text-left transition-colors flex items-center gap-2 outline-none focus-visible:bg-accent text-foreground hover:bg-accent cursor-pointer"
-        onclick={handleCopyLink}
-        role="menuitem"
+        onSelect={handleCopyLink}
       >
         {m.navigation_linkActionMenu_copyLink_label()}
-      </button>
-    </div>
-  </Portal>
+      </Menu.Item>
+    </Menu.Content>
+  </Menu.Root>
 {/if}

@@ -32,6 +32,17 @@ export const tooltipMetadata = parseUiComponentMetadata({
     'showLinkTooltip',
     'tooltipMetadata',
   ],
+  // Minimal composition from the tooltip-interaction default fixture.
+  usage: `<script lang="ts">
+  import * as Tooltip from '$lib/components/ui/tooltip';
+</script>
+
+<Tooltip.Provider>
+  <Tooltip.Root>
+    <Tooltip.Trigger>Keyboard help</Tooltip.Trigger>
+    <Tooltip.Content>Press Command K to open navigation.</Tooltip.Content>
+  </Tooltip.Root>
+</Tooltip.Provider>`,
   category: 'pattern',
   owner: '012-F2',
   callers: [
@@ -40,6 +51,7 @@ export const tooltipMetadata = parseUiComponentMetadata({
     'src/features/onboarding/messages/ProviderCard.svelte',
     'src/features/onboarding/messages/WorkspaceSetupCard.svelte',
     'src/lib/component-catalog/renderers/NavigationHelpCatalogPreview.svelte',
+    'src/lib/component-catalog/renderers/PopoversCatalogPreview.svelte',
     'src/lib/components/chat/AgentInputArea.svelte',
     'src/lib/components/chat/AgentSubscriptions.svelte',
     'src/lib/components/chat/ChatHeader.svelte',
@@ -67,6 +79,7 @@ export const tooltipMetadata = parseUiComponentMetadata({
     'src/lib/components/tiptap/PasteChipNodeView.svelte',
     'src/lib/components/tiptap/TaskItemNodeView.svelte',
     'src/lib/components/ui/CopyButton.svelte',
+    'src/lib/components/ui/copy-input/copy-input.svelte',
     'src/lib/components/ui/NavigationButtons.svelte',
     'src/lib/components/ui/SaveIndicator.svelte',
     'src/lib/components/ui/button/button.svelte',

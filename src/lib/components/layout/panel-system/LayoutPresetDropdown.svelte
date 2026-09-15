@@ -17,13 +17,13 @@
     faGripLines,
     faCheck,
     faWandMagicSparkles,
-    faSpinner,
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { m } from '$shared/paraglide/messages.js';
   import { cn } from '$lib/utils';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import { Button } from '$lib/components/ui/button';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import type { LayoutPresetId } from './PanelLayoutControls.svelte';
   import Header from '$lib/components/ui/Header.svelte';
   import Input from '$lib/components/ui/input/input.svelte';
@@ -211,7 +211,8 @@
         {#if 'divider' in preset}
           <div class="h-px bg-border my-1"></div>
         {:else}
-          <button
+          <Button
+            variant="ghost"
             class="w-full flex gap-2.5 px-3 py-1.5 text-left hover:bg-muted transition-colors rounded-sm cursor-pointer"
             onclick={() => handlePresetClick(preset.id, close)}
           >
@@ -221,9 +222,9 @@
               <div class="text-xs text-subtle truncate">{preset.description()}</div>
             </div>
             {#if currentPreset === preset.id}
-              <Fa icon={faCheck} size="xs" class="text-primary shrink-0" />
+              <Fa icon={faCheck} size="xs" class="text-primary-ink shrink-0" />
             {/if}
-          </button>
+          </Button>
         {/if}
       {/each}
 
@@ -253,7 +254,7 @@
               tooltipSide="bottom"
             >
               {#if isGenerating}
-                <Fa icon={faSpinner} size="xs" class="animate-spin" />
+                <IntentMarkLoader size={12} />
               {:else}
                 <Fa icon={faWandMagicSparkles} size="xs" />
               {/if}

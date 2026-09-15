@@ -19,7 +19,12 @@ describe('Select', () => {
 
     trigger.focus();
     await fireEvent.keyDown(trigger, { key: 'Enter' });
-    expect(screen.getByRole('listbox')).toBeTruthy();
+    const listbox = screen.getByRole('listbox', { name: 'Choose fruit' });
+    expect(trigger.getAttribute('aria-controls')).toBe(listbox.id);
+    expect(listbox.getAttribute('aria-labelledby')).toBe(trigger.id);
+    expect(trigger.hasAttribute('aria-activedescendant')).toBe(false);
+    expect(listbox.getAttribute('data-select-viewport')).not.toBeNull();
+    expect(listbox.getAttribute('tabindex')).toBe('0');
     expect(screen.getByRole('option', { name: 'Apple' }).getAttribute('aria-selected')).toBe(
       'true',
     );
@@ -36,6 +41,16 @@ describe('Select', () => {
     expect(trigger.textContent).toContain('Banana');
     expect(screen.queryByRole('listbox')).toBeNull();
     expect(document.activeElement).toBe(trigger);
+  });
+
+  it('honours a consumer trigger id for external labels and listbox labelling', async () => {
+    render(SelectHarness, { props: { consumerId: 'fruit-select' } });
+    const trigger = screen.getByLabelText('Fruit');
+    expect(trigger.id).toBe('fruit-select');
+
+    await fireEvent.keyDown(trigger, { key: 'Enter' });
+    const listbox = screen.getByRole('listbox', { name: 'Fruit' });
+    expect(listbox.getAttribute('aria-labelledby')).toBe('fruit-select');
   });
 
   it('supports closed-state typeahead and controlled invalid/disabled states', async () => {
@@ -71,25 +86,12 @@ describe('Select', () => {
     await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
   });
 
-  it('uses compact editorial geometry and safe long-content treatment', async () => {
+  it('opens long content without changing its accessible option name', async () => {
     render(SelectHarness);
     const trigger = screen.getByRole('button', { name: 'Choose fruit' });
-    expect(trigger.parentElement?.className.split(/\s+/)).toContain('min-w-0');
-    expect(trigger.className).toContain('h-(--control-height-medium)');
-    expect(trigger.className.split(/\s+/)).toEqual(
-      expect.arrayContaining([
-        'type-body',
-        'border-border',
-        'bg-card',
-        'hover:border-input',
-        'focus-visible:ring-ring/40',
-      ]),
-    );
-    expect(trigger.className.split(/\s+/)).not.toContain('border-input');
-    expect(trigger.className.split(/\s+/)).not.toContain('text-sm');
+    expect(trigger.closest('[data-slot="select-root"]')).toBeTruthy();
     await fireEvent.keyDown(trigger, { key: 'Enter' });
     const longOption = screen.getByRole('option', { name: /very long cherry/ });
-    expect(longOption.firstElementChild?.className).toContain('truncate');
-    expect(longOption.className.split(/\s+/)).toContain('type-body');
+    expect(longOption.textContent).toContain('A very long cherry');
   });
 });

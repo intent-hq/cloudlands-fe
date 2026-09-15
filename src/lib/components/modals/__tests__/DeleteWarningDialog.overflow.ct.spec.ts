@@ -56,7 +56,11 @@ test('long local-changes row truncates instead of pushing the footer out of the 
   await page.setViewportSize({ width: 900, height: 800 });
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await mount(DeleteWarningDialog, {
-    props: { open: true, agentNames: ['Coordinator'], localChanges: longLocalChanges },
+    props: {
+      open: true,
+      agents: [{ id: 'coordinator', name: 'Coordinator', state: 'running' }],
+      localChanges: longLocalChanges,
+    },
   });
 
   const dialog = page.getByRole('dialog');

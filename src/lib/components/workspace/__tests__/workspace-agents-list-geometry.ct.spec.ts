@@ -198,7 +198,7 @@ test('keeps every Agents-panel row and disclosure transparent with accessible st
       const style = getComputedStyle(node);
       return { style: style.outlineStyle, width: style.outlineWidth };
     });
-    expect(focus).toEqual({ style: 'solid', width: '2px' });
+    expect(focus).toEqual({ style: 'solid', width: '1px' });
 
     for (const selector of [
       '[data-agent-delegation-toggle="coordinator"]',

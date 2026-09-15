@@ -3,6 +3,7 @@
   import { cn } from '$lib/utils.js';
   import { isMacPlatform } from '$lib/utils/shortcuts';
   import type { Snippet } from 'svelte';
+  import { ShortcutChip } from '$lib/components/ui/kbd';
 
   interface Props {
     label: string;
@@ -12,6 +13,7 @@
     sideOffset?: number;
     delayDuration?: number;
     disabled?: boolean;
+    portalTarget?: Element | string;
     class?: string;
     contentClass?: string;
     /** Child elements to wrap with the tooltip trigger */
@@ -28,6 +30,7 @@
     sideOffset = 4,
     delayDuration = 500,
     disabled = false,
+    portalTarget,
     class: className = '',
     contentClass = '',
     children,
@@ -93,6 +96,7 @@
   {sideOffset}
   {delayDuration}
   {disabled}
+  {portalTarget}
   class={className}
   contentClass={cn('flex items-center gap-3', contentClass)}
 >
@@ -105,15 +109,13 @@
   {/snippet}
 
   {#snippet content()}
-    <span class="type-body">{label}</span>
+    <span class="type-caption">{label}</span>
 
     {#if formattedShortcut.length > 0}
-      <div class="flex items-center text-muted-foreground">
+      <div class="flex items-center gap-1 text-muted-foreground">
         <!-- a11y-ignore -->
         {#each formattedShortcut as key, i (`key-${i}-${key}`)}
-          <kbd class={cn()}>
-            {key}
-          </kbd>
+          <ShortcutChip>{key}</ShortcutChip>
         {/each}
       </div>
     {/if}

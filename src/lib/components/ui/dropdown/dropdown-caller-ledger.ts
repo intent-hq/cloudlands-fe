@@ -8,6 +8,16 @@ export interface DropdownCallerLedgerEntry {
 
 export const dropdownCallerLedger = [
   {
+    caller: 'src/lib/component-catalog/renderers/ChoiceCatalogPreview.svelte',
+    replacement: 'Combobox',
+    reason: 'catalog characterization of the deprecated value-selection wrapper',
+  },
+  {
+    caller: 'src/lib/component-catalog/renderers/PopoversCatalogPreview.svelte',
+    replacement: 'Combobox',
+    reason: 'catalog characterization of the deprecated action-menu wrapper',
+  },
+  {
     caller: 'src/lib/components/chat/input/ModelPicker.svelte',
     replacement: 'Combobox',
     reason: 'searchable grouped value selection',
@@ -36,10 +46,5 @@ export const dropdownCallerLedger = [
     caller: 'src/lib/components/chat/input/ModelPickerOptionItem.svelte',
     replacement: 'Combobox',
     reason: 'shared option model for ModelPicker',
-  },
-  {
-    caller: 'src/lib/components/settings/mcp/McpServerCard.svelte',
-    replacement: 'Menu',
-    reason: 'action items and separator without value selection',
   },
 ] as const satisfies readonly DropdownCallerLedgerEntry[];

@@ -6,6 +6,9 @@ export const fileInputFixtures = [
     title: 'File input states',
     states: [
       'default',
+      'rest',
+      'hover',
+      'focus',
       'disabled',
       'invalid',
       'error',
@@ -26,6 +29,7 @@ export const fileInputFixtures = [
       'no-overflow',
       'form-reset',
       'parent-reset',
+      'hidden-host',
     ],
     themes: ['light', 'dark'],
     viewport: 'both',

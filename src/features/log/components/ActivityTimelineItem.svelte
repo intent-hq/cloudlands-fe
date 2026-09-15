@@ -13,10 +13,12 @@
   import { cn } from '$lib/utils';
   import Fa from 'svelte-fa';
   import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
-  import { faCheckCircle, faXmarkCircle, faSpinner } from '@fortawesome/free-solid-svg-icons';
+  import { faCheckCircle, faXmarkCircle } from '@fortawesome/free-solid-svg-icons';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
+  import { Button } from '$lib/components/ui/button';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
-  import { slide } from 'svelte/transition';
+  import { slide } from '$lib/motion';
   import type { Snippet } from 'svelte';
 
   type Status = 'success' | 'error' | 'pending' | 'neutral';
@@ -58,14 +60,14 @@
   const statusIcons: Record<Status, IconDefinition | null> = {
     success: faCheckCircle,
     error: faXmarkCircle,
-    pending: faSpinner,
+    pending: null,
     neutral: null,
   };
 
   const statusColors: Record<Status, string> = {
     success: 'text-green-500',
     error: 'text-danger',
-    pending: 'text-amber-500 animate-spin',
+    pending: 'text-warning-ink',
     neutral: '',
   };
 
@@ -80,7 +82,9 @@
 
   <!-- Icon container -->
   <div class="relative z-10 flex items-center justify-center w-5 h-5 mt-0.5 shrink-0">
-    {#if statusIcon}
+    {#if status === 'pending'}
+      <IntentMarkLoader size={14} class={statusColors.pending} />
+    {:else if statusIcon}
       <Fa icon={statusIcon} class={cn('text-sm', statusColors[status])} />
     {:else}
       <Fa {icon} class="text-sm text-ghost" />
@@ -88,8 +92,9 @@
   </div>
 
   <!-- Content -->
-  <button
+  <Button
     type="button"
+    variant="ghost"
     class="flex-1 min-w-0 text-left cursor-pointer group/content"
     onclick={onClick}
   >
@@ -104,23 +109,24 @@
         · <RelativeTime date={timestamp} compact />
       </span>
     </div>
-  </button>
+  </Button>
 
   <!-- Agent avatar (right side) -->
   {#if isAgent && agentId}
-    <button
+    <Button
       type="button"
+      variant="ghost"
       class="shrink-0 opacity-70 hover:opacity-100 transition-opacity"
       onclick={onAgentClick}
     >
       <AgentAvatar variant="standard" {agentId} />
-    </button>
+    </Button>
   {/if}
 </div>
 
 <!-- Expanded details -->
 {#if isExpanded && details}
-  <div transition:slide={{ axis: 'y', duration: 200 }} class="ml-8 mr-2 py-2">
+  <div transition:slide={{ axis: 'y', tier: 'moderate' }} class="ml-8 mr-2 py-2">
     {@render details()}
   </div>
 {/if}

@@ -22,12 +22,9 @@
   import LineChangeStats from '$lib/components/shared/LineChangeStats.svelte';
   import AgentPreviewToolLabel from '$lib/components/chat/AgentPreviewToolLabel.svelte';
   import { Button } from '$lib/components/ui/button';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import Fa from 'svelte-fa';
-  import {
-    faArrowRight,
-    faSpinner,
-    faExclamationTriangle,
-  } from '@fortawesome/free-solid-svg-icons';
+  import { faArrowRight, faExclamationTriangle } from '@fortawesome/free-solid-svg-icons';
   import { cn } from '$lib/utils';
   import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { store as appStore } from '$store/renderer/store';
@@ -125,7 +122,8 @@
 {#if displayMode === 'icon'}
   <!-- Icon mode - just show avatar -->
   {#if agentData}
-    <button
+    <Button
+      variant="ghost"
       class="icon-button session-comment"
       onclick={() => onShow?.()}
       aria-label={m.tiptap_agentPeek_session_ariaLabel({ name: agentData.name })}
@@ -137,21 +135,23 @@
           class={cn($agentIsResponding$ && 'animate-pulse')}
         />
       </div>
-    </button>
+    </Button>
   {:else if isRecentComment}
     <!-- Waiting state in icon mode -->
-    <button
+    <Button
+      variant="ghost"
       class="icon-button session-comment"
       onclick={() => onShow?.()}
       aria-label={m.tiptap_agentPeek_launching_ariaLabel()}
     >
       <div class="icon-wrapper">
-        <Fa icon={faSpinner} class="animate-spin" size="sm" />
+        <IntentMarkLoader size={14} />
       </div>
-    </button>
+    </Button>
   {:else}
     <!-- Error state in icon mode -->
-    <button
+    <Button
+      variant="ghost"
       class="icon-button session-comment error"
       onclick={() => onShow?.()}
       aria-label={m.tiptap_agentPeek_notFound_ariaLabel()}
@@ -159,7 +159,7 @@
       <div class="icon-wrapper">
         <Fa icon={faExclamationTriangle} size="sm" />
       </div>
-    </button>
+    </Button>
   {/if}
 {:else}
   <!-- Full mode (used for both compact and full display modes) -->
@@ -276,7 +276,7 @@
         {#if isRecentComment}
           <!-- Waiting for agent to register (comment is recent) -->
           <div class="flex items-center gap-2">
-            <Fa icon={faSpinner} class="h-4 w-4 animate-spin text-ghost" />
+            <IntentMarkLoader size={16} class="text-ghost" />
             <div class="flex-1">
               <div class="text-sm font-medium">{m.tiptap_agentPeek_waitingLaunch_label()}</div>
               <div class="text-xs text-subtle mt-0.5">
@@ -317,7 +317,7 @@
   }
 
   /* Icon mode styles */
-  .icon-button {
+  :global(.icon-button) {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -330,17 +330,17 @@
     transition: all 0.2s;
   }
 
-  .icon-button.session-comment {
+  :global(.icon-button.session-comment) {
     border-color: rgb(125, 211, 252); /* sky-300 */
     background: rgb(224, 242, 254); /* sky-100 */
   }
 
-  .icon-button.session-comment.error {
+  :global(.icon-button.session-comment.error) {
     border-color: hsl(var(--danger));
     background: hsl(var(--danger-background));
   }
 
-  .icon-button:hover {
+  :global(.icon-button:hover) {
     transform: scale(1.1);
   }
 

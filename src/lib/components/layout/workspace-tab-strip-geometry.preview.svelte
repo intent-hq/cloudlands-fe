@@ -15,6 +15,7 @@
     title: 'Workspace tab-strip geometry',
     defaultState: 'first-tab',
     states: {
+      default: { props: {} },
       'first-tab': { props: { activeWorkspaceId: ids[0] } },
       'middle-tab': { props: { activeWorkspaceId: ids[1] } },
       'open-close': { props: { initialOpenWorkspaceIds: ids.slice(0, 2), interactive: true } },

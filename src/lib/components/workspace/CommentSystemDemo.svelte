@@ -1,8 +1,13 @@
 <script lang="ts">
+  import { Textarea } from '$lib/components/ui/textarea';
+  import { Button } from '$lib/components/ui/button';
+  import { RadioGroup, RadioGroupItem } from '$lib/components/ui/radio-group';
   import { onMount, onDestroy } from 'svelte';
   import { Editor } from '@tiptap/core';
   import { createEditorConfig } from '$lib/utils/editor-config';
   import { CommentManagerV2 } from '$features/comments/comment-manager-v2';
+  import { alert as showAlert } from '$lib/components/patterns/confirm';
+  import { m } from '$shared/paraglide/messages.js';
 
   import {
     selectComments,
@@ -146,7 +151,7 @@
 
     const { from, to } = editor.state.selection;
     if (from === to) {
-      alert('Please select some text to comment on'); // i18n-ignore (dev-only demo)
+      void showAlert('Please select some text to comment on'); // i18n-ignore (dev-only demo)
       return;
     }
 
@@ -202,11 +207,16 @@
     <!-- Editor -->
     <div class="editor-panel">
       <div class="editor-toolbar">
-        <button onclick={handleAddComment} class="toolbar-button" disabled={!editor}>
+        <Button
+          variant="ghost"
+          onclick={handleAddComment}
+          class="toolbar-button"
+          disabled={!editor}
+        >
           <Fa icon={faComment} />
           <!-- i18n-ignore (dev-only demo UI) -->
           Add Comment
-        </button>
+        </Button>
       </div>
 
       <div class="editor-container">
@@ -254,15 +264,23 @@
 
             <div class="comment-actions">
               {#if comment.status === 'open'}
-                <button onclick={() => resolveComment(comment.id)} class="action-button resolve">
+                <Button
+                  variant="ghost"
+                  onclick={() => resolveComment(comment.id)}
+                  class="action-button resolve"
+                >
                   <!-- i18n-ignore (dev-only demo UI) -->
                   <Fa icon={faCheck} /> Resolve
-                </button>
+                </Button>
               {/if}
-              <button onclick={() => deleteComment(comment.id)} class="action-button delete">
+              <Button
+                variant="ghost"
+                onclick={() => deleteComment(comment.id)}
+                class="action-button delete"
+              >
                 <!-- i18n-ignore (dev-only demo UI) -->
                 <Fa icon={faTrash} /> Delete
-              </button>
+              </Button>
             </div>
           </div>
         {/each}
@@ -298,42 +316,40 @@
         <!-- i18n-ignore (dev-only demo UI) -->
         <h3>Add Comment</h3>
 
-        <div class="comment-type-selector">
-          <label>
-            <input type="radio" bind:group={newCommentType} value="comment" />
-            <!-- i18n-ignore (dev-only demo UI) -->
-            <Fa icon={faComment} /> Comment
-          </label>
-          <label>
-            <input type="radio" bind:group={newCommentType} value="suggestion" />
-            <!-- i18n-ignore (dev-only demo UI) -->
-            <Fa icon={faLightbulb} /> Suggestion
-          </label>
-          <label>
-            <input type="radio" bind:group={newCommentType} value="change-request" />
-            <!-- i18n-ignore (dev-only demo UI) -->
-            <Fa icon={faCodePullRequest} /> Change Request
-          </label>
-          <label>
-            <input type="radio" bind:group={newCommentType} value="question" />
-            <!-- i18n-ignore (dev-only demo UI) -->
-            <Fa icon={faCircleQuestion} /> Question
-          </label>
-        </div>
+        {#snippet commentMarker()}<Fa icon={faComment} />{/snippet}
+        {#snippet suggestionMarker()}<Fa icon={faLightbulb} />{/snippet}
+        {#snippet requestMarker()}<Fa icon={faCodePullRequest} />{/snippet}
+        {#snippet questionMarker()}<Fa icon={faCircleQuestion} />{/snippet}
+        <RadioGroup
+          value={newCommentType}
+          onValueChange={(value) => (newCommentType = value as typeof newCommentType)}
+          layout="inline"
+          class="comment-type-selector"
+          aria-label={m.tiptap_comment_type_tooltip()}
+        >
+          <!-- i18n-ignore (dev-only demo UI) -->
+          <RadioGroupItem value="comment" title="Comment" marker={commentMarker} />
+          <!-- i18n-ignore (dev-only demo UI) -->
+          <RadioGroupItem value="suggestion" title="Suggestion" marker={suggestionMarker} />
+          <!-- i18n-ignore (dev-only demo UI) -->
+          <RadioGroupItem value="change-request" title="Change Request" marker={requestMarker} />
+          <!-- i18n-ignore (dev-only demo UI) -->
+          <RadioGroupItem value="question" title="Question" marker={questionMarker} />
+        </RadioGroup>
 
         <!-- i18n-ignore (dev-only demo UI) -->
-        <textarea bind:value={newCommentContent} placeholder="Enter your comment..." rows="4"
-        ></textarea>
+        <Textarea bind:value={newCommentContent} placeholder="Enter your comment..." rows={4}
+        ></Textarea>
 
         <div class="dialog-actions">
-          <button onclick={() => (showCommentDialog = false)} class="cancel-button">
+          <Button onclick={() => (showCommentDialog = false)} class="cancel-button">
             <!-- i18n-ignore (dev-only demo UI) -->
             Cancel
-          </button>
-          <button onclick={submitComment} class="submit-button" disabled={!newCommentContent}>
+          </Button>
+          <Button onclick={submitComment} class="submit-button" disabled={!newCommentContent}>
             <!-- i18n-ignore (dev-only demo UI) -->
             Add Comment
-          </button>
+          </Button>
         </div>
       </div>
     </div>

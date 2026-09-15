@@ -207,8 +207,8 @@ function* writeWorkspaceBrowserClient(
 
 async function toastError(message: string, description?: string): Promise<void> {
   try {
-    const { toast } = await import('svelte-sonner');
-    toast.error(message, description ? { description } : undefined);
+    const { notify } = await import('$lib/components/patterns/notify');
+    notify.error(message, description ? { description } : undefined);
   } catch {
     // Toasts are best-effort.
   }

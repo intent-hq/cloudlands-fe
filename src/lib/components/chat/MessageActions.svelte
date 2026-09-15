@@ -5,21 +5,17 @@
   Appears on hover for both user and assistant messages.
 -->
 <script lang="ts">
-  import { safeSlide } from '$lib/utils/animations';
-  import Button from '$lib/components/ui/button/button.svelte';
-  import { Tooltip, TooltipShortcut } from '$lib/components/ui/tooltip';
+  import { ActionBar, defineActions } from '$lib/components/patterns/action-menu';
   import { formatFullDateTime, formatTime, type DateInput } from '$lib/i18n/format';
-  import Fa from 'svelte-fa';
   import {
-    faCopy,
-    faCheck,
-    faPencil,
-    faRotateRight,
-    faThumbsUp,
-    faThumbsDown,
-    faCodeBranch,
+    faArrowRotateRight,
     faArrowUp,
-  } from '@fortawesome/free-solid-svg-icons';
+    faCodeBranch,
+    faCopy,
+    faPencil,
+    faThumbsDown,
+    faThumbsUp,
+  } from '$lib/icons/phosphor-icons';
   import { m } from '$shared/paraglide/messages.js';
   import {
     MESSAGE_ACTION_REVEAL_CLASS,
@@ -67,28 +63,93 @@
     createdAt,
   }: Props = $props();
 
-  let copied = $state(false);
-  let copiedSessionId = $state(false);
   let actionDate = $derived(resolveMessageActionDate(timestamp, createdAt));
   let compactTime = $derived(actionDate ? formatTime(actionDate) : '');
   let fullTime = $derived(actionDate ? formatFullDateTime(actionDate) : '');
+  const actions = $derived(
+    defineActions([
+      {
+        id: 'edit',
+        label: m.chat_messageActions_editMessage_ariaLabel(),
+        icon: faPencil,
+        shortcut: 'e',
+        when: role === 'user' && Boolean(onEdit),
+      },
+      {
+        id: 'regenerate',
+        label: m.chat_messageActions_regenerate_ariaLabel(),
+        icon: faArrowRotateRight,
+        when: role === 'assistant' && Boolean(onRegenerate),
+      },
+      {
+        id: 'fork',
+        label: m.chat_messageActions_fork_ariaLabel(),
+        icon: faCodeBranch,
+        when: role === 'assistant' && Boolean(onFork),
+      },
+      {
+        id: 'vote-up',
+        label: m.chat_messageActions_goodResponse_label(),
+        icon: faThumbsUp,
+        checked: currentVote === 'up',
+        when: role === 'assistant' && Boolean(onVote),
+      },
+      {
+        id: 'vote-down',
+        label: m.chat_messageActions_badResponse_label(),
+        icon: faThumbsDown,
+        checked: currentVote === 'down',
+        when: role === 'assistant' && Boolean(onVote),
+      },
+      {
+        id: 'copy',
+        label: m.chat_messageActions_copyMessage_ariaLabel(),
+        icon: faCopy,
+        when: Boolean(onCopy),
+      },
+      {
+        id: 'scroll-previous',
+        label: m.chat_messageActions_scrollToPrevious_label(),
+        icon: faArrowUp,
+        when: role === 'user' && Boolean(onScrollToPrevious),
+      },
+    ]),
+  );
 
-  async function handleCopy(event: MouseEvent) {
-    if (event.shiftKey && requestId) {
+  async function handleCopy(event: Event) {
+    if ('shiftKey' in event && event.shiftKey && requestId) {
       // Shift+click: copy session ID
       await navigator.clipboard.writeText(requestId);
-      copiedSessionId = true;
-      setTimeout(() => (copiedSessionId = false), 2000);
     } else {
       // Normal click: copy message content
       onCopy?.();
-      copied = true;
-      setTimeout(() => (copied = false), 2000);
     }
   }
 
-  function handleVote(vote: 'up' | 'down') {
-    onVote?.(vote);
+  function handleAction(id: string, event: Event) {
+    switch (id) {
+      case 'edit':
+        onEdit?.();
+        break;
+      case 'regenerate':
+        onRegenerate?.();
+        break;
+      case 'fork':
+        onFork?.();
+        break;
+      case 'vote-up':
+        onVote?.('up');
+        break;
+      case 'vote-down':
+        onVote?.('down');
+        break;
+      case 'copy':
+        void handleCopy(event);
+        break;
+      case 'scroll-previous':
+        onScrollToPrevious?.();
+        break;
+    }
   }
 </script>
 
@@ -108,143 +169,9 @@
     >
   {/if}
 
-  {#if role === 'user'}
-    <!-- User message actions: Edit, Copy -->
-    {#if onEdit}
-      <TooltipShortcut
-        label={m.chat_messageActions_edit_label()}
-        shortcut="e"
-        side="top"
-        delayDuration={300}
-      >
-        <Button
-          variant="ghost-light"
-          size="icon-xs"
-          onclick={onEdit}
-          aria-label={m.chat_messageActions_editMessage_ariaLabel()}
-        >
-          <Fa icon={faPencil} class="w-2.5! h-2.5!" />
-        </Button>
-      </TooltipShortcut>
-    {/if}
-  {:else}
-    <!-- Assistant message actions: Regenerate, Fork, Vote, Copy -->
-    {#if onRegenerate}
-      <TooltipShortcut
-        label={m.chat_messageActions_regenerate_label()}
-        side="top"
-        delayDuration={300}
-      >
-        <Button
-          variant="ghost-light"
-          size="icon-xs"
-          onclick={onRegenerate}
-          aria-label={m.chat_messageActions_regenerate_ariaLabel()}
-        >
-          <Fa icon={faRotateRight} class="w-2.5! h-2.5!" />
-        </Button>
-      </TooltipShortcut>
-    {/if}
-
-    {#if onFork}
-      <TooltipShortcut label={m.chat_messageActions_fork_label()} side="top" delayDuration={300}>
-        <Button
-          variant="ghost-light"
-          size="icon-xs"
-          onclick={onFork}
-          aria-label={m.chat_messageActions_fork_ariaLabel()}
-        >
-          <Fa icon={faCodeBranch} class="w-2.5! h-2.5!" />
-        </Button>
-      </TooltipShortcut>
-    {/if}
-
-    {#if onVote}
-      <TooltipShortcut
-        label={m.chat_messageActions_goodResponse_label()}
-        side="top"
-        delayDuration={300}
-      >
-        <Button
-          variant="ghost-light"
-          size="icon-xs"
-          onclick={() => handleVote('up')}
-          aria-label={m.chat_messageActions_goodResponse_label()}
-          class={currentVote === 'up' ? 'text-green-500' : ''}
-        >
-          <Fa icon={faThumbsUp} class="w-2.5! h-2.5!" />
-        </Button>
-      </TooltipShortcut>
-
-      <TooltipShortcut
-        label={m.chat_messageActions_badResponse_label()}
-        side="top"
-        delayDuration={300}
-      >
-        <Button
-          variant="ghost-light"
-          size="icon-xs"
-          onclick={() => handleVote('down')}
-          aria-label={m.chat_messageActions_badResponse_label()}
-          class={currentVote === 'down' ? 'text-red-500' : ''}
-        >
-          <Fa icon={faThumbsDown} class="w-2.5! h-2.5!" />
-        </Button>
-      </TooltipShortcut>
-    {/if}
-  {/if}
-
-  <!-- Copy button for all messages -->
-  {#if onCopy}
-    <Tooltip side="top" delayDuration={300} contentClass="whitespace-nowrap">
-      {#snippet trigger()}
-        <Button
-          variant="ghost-light"
-          size="icon-xs"
-          onclick={handleCopy}
-          aria-label={m.chat_messageActions_copyMessage_ariaLabel()}
-        >
-          {#if copied || copiedSessionId}
-            <div in:safeSlide={{ axis: 'x', duration: 150 }}>
-              <Fa icon={faCheck} class="w-2.5! h-2.5! text-green-500" />
-            </div>
-          {:else}
-            <div in:safeSlide={{ axis: 'x', duration: 150 }}>
-              <Fa icon={faCopy} class="w-2.5! h-2.5!" />
-            </div>
-          {/if}
-        </Button>
-      {/snippet}
-      {#snippet content()}
-        <div class="w-full flex flex-col">
-          <div class="flex items-center gap-3">
-            <span class="text-sm">{m.chat_messageActions_copyMessage_label()}</span>
-          </div>
-          {#if requestId}
-            <div class="text-subtle text-sm">
-              {m.chat_messageActions_copySessionIdHint_label()}
-            </div>
-          {/if}
-        </div>
-      {/snippet}
-    </Tooltip>
-  {/if}
-
-  <!-- Scroll to previous button for user messages -->
-  {#if role === 'user' && onScrollToPrevious}
-    <TooltipShortcut
-      label={m.chat_messageActions_scrollToPrevious_label()}
-      side="top"
-      delayDuration={300}
-    >
-      <Button
-        variant="ghost-light"
-        size="icon-xs"
-        onclick={() => onScrollToPrevious?.()}
-        aria-label={m.chat_messageActions_scrollToPrevious_label()}
-      >
-        <Fa icon={faArrowUp} class="w-2.5! h-2.5!" />
-      </Button>
-    </TooltipShortcut>
-  {/if}
+  <ActionBar
+    {actions}
+    overflowLabel={m.lib_commandPalette_quickActions_ariaLabel()}
+    onAction={handleAction}
+  />
 </div>

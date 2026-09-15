@@ -13,6 +13,7 @@
   import { sendMessage as sendAgentMessage } from '$features/agent/agent-send';
   import { subscribeToAgent } from '$features/agent/browser';
   import { followBottom, scrollToBottom } from '$lib/utils/smartScroll';
+  import { Button } from '$lib/components/ui/button';
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
 
   import { restoreAgentSessionRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
@@ -240,7 +241,7 @@
             <div class="flex justify-between items-center">
               <span
                 class="font-semibold text-sm {message.role === 'user'
-                  ? 'text-primary'
+                  ? 'text-primary-ink'
                   : 'text-success'}"
               >
                 {message.role === 'user'
@@ -267,7 +268,7 @@
 
       <!-- Scroll to bottom button -->
       {#if showScrollToBottom}
-        <button
+        <Button
           onclick={() => {
             if (scrollContainer) {
               shouldFollowBottom = true;
@@ -277,7 +278,12 @@
           class="absolute bottom-24 right-6 p-2 rounded-full bg-primary/10 hover:bg-primary/20 border border-primary/20 transition-all duration-200 shadow-lg"
           aria-label={m.chat_agentThread_scrollToBottom_ariaLabel()}
         >
-          <svg class="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg
+            class="w-5 h-5 text-primary-ink"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
             <path
               stroke-linecap="round"
               stroke-linejoin="round"
@@ -285,7 +291,7 @@
               d="M19 14l-7 7m0 0l-7-7m7 7V3"
             />
           </svg>
-        </button>
+        </Button>
       {/if}
 
       <div class="p-4 border-t border-border bg-muted/30">

@@ -80,11 +80,22 @@ for (const mode of preferences) {
           animations: 'disabled',
         });
         await modelButton.focus();
+        await page.keyboard.press('Tab');
+        await page.keyboard.press('Shift+Tab');
+        await expect(modelButton).toBeFocused();
         const focusStyle = await modelButton.evaluate((element) => {
           const style = getComputedStyle(element);
-          return { borderColor: style.borderColor, boxShadow: style.boxShadow };
+          return {
+            outlineStyle: style.outlineStyle,
+            outlineWidth: style.outlineWidth,
+            outlineOffset: style.outlineOffset,
+          };
         });
-        expect(focusStyle.boxShadow).not.toBe('none');
+        expect(focusStyle).toEqual({
+          outlineStyle: 'solid',
+          outlineWidth: '1px',
+          outlineOffset: '2px',
+        });
         await page.screenshot({
           path: path.join(artifactDirectory, `${id}-model-focus.png`),
           fullPage: true,

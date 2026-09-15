@@ -30,6 +30,8 @@ interface AgentSenderAttribution extends BaseMessageAttribution {
 
 interface ChiefMessageAttribution extends BaseMessageAttribution {
   kind: 'chief';
+  /** Verbatim sender name used to rebuild the daemon's literal sender header. */
+  rawName: string;
   /** Exact source message link when the complete metadata contract is valid. */
   sourceUrl?: string;
 }
@@ -49,6 +51,7 @@ export function getAgentMessageAttribution(metadata: unknown): AgentMessageAttri
   if (!fromAgentId) return null;
 
   if (md.type === 'chief_message') {
+    const rawName = typeof md.fromAgentName === 'string' ? md.fromAgentName : '';
     const fromWorkspaceId = typeof md.fromWorkspaceId === 'string' ? md.fromWorkspaceId.trim() : '';
     const sourceMessageId = typeof md.sourceMessageId === 'string' ? md.sourceMessageId.trim() : '';
     const sourceUrl = typeof md.sourceUrl === 'string' ? md.sourceUrl.trim() : '';
@@ -60,6 +63,7 @@ export function getAgentMessageAttribution(metadata: unknown): AgentMessageAttri
     return {
       kind: 'chief',
       fromAgentId,
+      rawName,
       ...(sourceUrl && sourceUrl === expectedSourceUrl ? { sourceUrl } : {}),
     };
   }
@@ -115,7 +119,7 @@ export function stripAgentMessageHeader(
   text: string,
   attribution?: AgentMessageAttribution | null,
 ): string {
-  if (attribution?.kind === 'agent') {
+  if (attribution) {
     const { rawName, fromAgentId } = attribution;
     const literal = rawName
       ? `[MESSAGE FROM AGENT ${rawName} (${fromAgentId})]`

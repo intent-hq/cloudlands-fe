@@ -10,7 +10,7 @@
   import Fa from 'svelte-fa';
   import type { Snippet } from 'svelte';
   import { flushSync, onDestroy } from 'svelte';
-  import type { TransitionConfig } from 'svelte/transition';
+  import type { ImmediateMotionConfig as TransitionConfig, SpringTierName } from '$lib/motion';
   import type { ContentBlock } from '$shared/types';
   import { getContentBlockText } from '$shared/utils/content-block-helpers';
   import { m } from '$shared/paraglide/messages.js';
@@ -67,7 +67,7 @@
   let prevTerminal = false;
   let collapseTimer: ReturnType<typeof setTimeout> | null = null;
   let contentEl: HTMLElement | undefined = $state();
-  let triggerEl: HTMLButtonElement | undefined = $state();
+  let triggerEl: HTMLButtonElement | null = $state(null);
   const instanceId = $props.id();
   const detailsId = `response-group-details-${instanceId}`;
   let searchOwnsExpansion = false;
@@ -219,7 +219,7 @@
   // props instead.
   function previewTransition(
     node: Element,
-    params: { duration?: number; y?: number } = {},
+    params: { tier?: SpringTierName; y?: number } = {},
     options: { direction?: 'in' | 'out' | 'both' } = {},
   ): TransitionConfig {
     if (isExpanded || (!isStreaming && isTerminal && disclosureOverride !== 'collapsed')) {

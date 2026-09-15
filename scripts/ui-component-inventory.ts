@@ -13,16 +13,25 @@ const CHARACTERIZATION_GATE = 'scripts/ui-component-audit.test.ts';
 const sortText = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 
 const primitiveFamilies = new Set([
+  'accordion',
+  'ask-user-questions',
   'badge',
   'breadcrumb',
   'button',
   'button-group',
   'checkbox',
+  'checkbox-group',
+  'copy-input',
   'dialog',
   'file-input',
   'input',
+  'input-group',
+  'kbd',
   'label',
   'menu',
+  'message-composer',
+  'proximity-highlight',
+  'radio-group',
   'scroll-area',
   'select',
   'separator',
@@ -30,6 +39,8 @@ const primitiveFamilies = new Set([
   'slider',
   'skeleton',
   'switch',
+  'table',
+  'tabs',
   'textarea',
   'toggle',
   'toggle-group',
@@ -38,6 +49,7 @@ const patternFamilies = new Set([
   'card',
   'combobox',
   'indicators',
+  'input-message',
   'list',
   'panel-find-bar',
   'settings-field-row',
@@ -49,7 +61,6 @@ const patternFamilies = new Set([
 ]);
 const standalonePatterns = new Map<string, string>([
   ['AnimatedNumber.svelte', '007-B1'],
-  ['CollapsiblePanel.svelte', 'design-system'],
   ['CopyButton.svelte', '007-B1'],
   ['EditableName.svelte', '007-B2'],
   ['Header.svelte', 'design-system'],
@@ -90,12 +101,12 @@ interface Policy {
 
 function policyFor(publicImport: string): Policy {
   const family = publicImport.slice(UI_IMPORT.length).split('/')[0];
-  if (publicImport === `${UI_IMPORT}tabs`) {
+  if (publicImport === `${UI_IMPORT}CollapsiblePanel.svelte`) {
     return {
-      category: 'deletion-candidate',
-      owner: '007-B7',
-      replacement: 'delete: add a Bits-backed Tabs primitive only with a real consumer',
-      removalGate: 'Static and dynamic callers remain zero and the inventory audit passes.',
+      category: 'product',
+      owner: 'design-system',
+      replacement: '$lib/components/ui/accordion',
+      removalGate: 'Move persisted collapse state to callers, then adopt Accordion.',
     };
   }
   if (publicImport === `${UI_IMPORT}TabBar.svelte`) {
@@ -131,8 +142,10 @@ function policyFor(publicImport: string): Policy {
                   ? '007-B1'
                   : [
                         'checkbox',
+                        'checkbox-group',
                         'input',
                         'label',
+                        'radio-group',
                         'switch',
                         'textarea',
                         'toggle',

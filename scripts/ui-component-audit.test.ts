@@ -9,7 +9,7 @@ import {
   parseUiComponentInventory,
   parseUiComponentMetadata,
 } from '../src/lib/components/ui/component-metadata';
-import { runUiComponentAudit } from './ui-component-audit';
+import { buildPatternAdoptionAudit, runUiComponentAudit } from './ui-component-audit';
 import { buildUiComponentInventory } from './ui-component-inventory';
 
 const auditScript = path.resolve(process.cwd(), 'scripts/ui-component-audit.ts');
@@ -114,6 +114,19 @@ describe('UI component inventory gate', () => {
     ).toMatchObject({ category: 'primitive', owner: '007-B5', replacement: null });
   });
 
+  it('classifies Kbd as a canonical design-system primitive', () => {
+    expect(
+      buildUiComponentInventory().components.find(
+        (component) => component.publicImport === '$lib/components/ui/kbd',
+      ),
+    ).toMatchObject({
+      source: 'src/lib/components/ui/kbd/index.ts',
+      category: 'primitive',
+      owner: 'design-system',
+      replacement: null,
+    });
+  });
+
   it('resolves relative callers with deterministic component counts', () => {
     const components = buildUiComponentInventory().components;
     const toggleGroup = components.find(
@@ -128,9 +141,10 @@ describe('UI component inventory gate', () => {
       'src/features/layout/tab-types/NoteViewSettingsDropdown.svelte',
       'src/lib/component-catalog/CatalogControls.svelte',
       'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte',
-      'src/lib/components/settings/ColorThemeSettings.svelte',
+      'src/lib/components/patterns/settings/custom-controls.ts',
+      'src/routes/(app)/settings/+page.svelte',
     ]);
-    expect(dropdownMenu?.callers).toHaveLength(17);
+    expect(dropdownMenu?.callers).toHaveLength(16);
     expect(dropdownMenu?.callers).toContain('src/lib/components/chat/RegularAgentWelcome.svelte');
     expect(buildUiComponentInventory().components).toEqual(components);
   });
@@ -141,17 +155,71 @@ describe('UI component inventory gate', () => {
     expect(audit('inventory').split('\n')).toEqual([...audit('inventory').split('\n')].sort());
   });
 
-  it('removes zero-reference tabs from inventory without unresolved imports', () => {
-    const legacyTabs = ['$lib/components/ui/tabs', '$lib/components/ui/TabBar.svelte'];
+  it('reports raw-element files and occurrences against per-directory ceilings', () => {
+    const report = JSON.parse(audit('raw-elements')) as {
+      directories: Record<
+        string,
+        Record<string, { files: number; elements: number; ceiling: number }>
+      >;
+      failures: string[];
+    };
+
+    expect(Object.keys(report.directories)).toEqual(['src/features', 'src/lib', 'src/routes']);
+    expect(report.failures).toEqual([]);
+    for (const controls of Object.values(report.directories)) {
+      for (const counts of Object.values(controls)) {
+        expect(counts).toEqual({ files: 0, elements: 0, ceiling: 0 });
+      }
+    }
+  });
+
+  it('fails check when a raw-element file count exceeds its directory ceiling', () => {
+    const directory = mkdtempSync(path.join(tmpdir(), 'ui-component-raw-elements-'));
+    try {
+      const files = {
+        'src/lib/components/ui/button/index.ts': "export const Button = 'button';",
+        'src/lib/components/ui/button/button.svelte': '<button>primitive host</button>',
+        'src/features/example/Controls.svelte': '<button>one</button><button>two</button><input />',
+        'src/features/example/Attachment.svelte': '<input type="file" />',
+        'scripts/ui-component-raw-element-allowlist.json': JSON.stringify({
+          ceilings: {
+            'src/features': { button: 0, input: 0, select: 0, textarea: 0 },
+            'src/lib': { button: 0, input: 0, select: 0, textarea: 0 },
+          },
+          exceptions: [],
+        }),
+      };
+      for (const [file, source] of Object.entries(files)) {
+        const target = path.join(directory, file);
+        mkdirSync(path.dirname(target), { recursive: true });
+        writeFileSync(target, source);
+      }
+
+      const report = runUiComponentAudit('raw-elements', directory);
+      expect(report.exitCode).toBe(0);
+      expect(JSON.parse(report.stdout).directories['src/features']).toMatchObject({
+        button: { files: 1, elements: 2, ceiling: 0 },
+        input: { files: 2, elements: 2, ceiling: 0 },
+      });
+
+      const result = runUiComponentAudit('check', directory);
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain('src/features: raw <button> files 1 exceed ceiling 0');
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('publishes canonical tabs while keeping the deleted TabBar out of inventory', () => {
     const publicImports = buildUiComponentInventory().components.map(
       (component) => component.publicImport,
     );
     const dynamicOutput = audit('dynamic');
 
-    expect(publicImports).not.toEqual(expect.arrayContaining(legacyTabs));
-    for (const publicImport of legacyTabs) {
-      expect(dynamicOutput).not.toContain(publicImport);
-    }
+    expect(publicImports).toContain('$lib/components/ui/tabs');
+    expect(publicImports).not.toContain('$lib/components/ui/TabBar.svelte');
+    expect(dynamicOutput).not.toContain('$lib/components/ui/tabs');
+    expect(dynamicOutput).not.toContain('$lib/components/ui/TabBar.svelte');
     expect(audit('check')).toMatch(/^UI component audit passed;/);
   });
 
@@ -202,4 +270,31 @@ describe('UI component inventory gate', () => {
       rmSync(directory, { recursive: true, force: true });
     }
   }, 120_000);
+});
+
+describe('settings pattern adoption', () => {
+  it('accepts standalone field rows and still flags sections without a schema form', () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'settings-pattern-audit-'));
+    const settings = path.join(root, 'src/lib/components/settings');
+    mkdirSync(settings, { recursive: true });
+    try {
+      writeFileSync(
+        path.join(settings, 'CustomSettings.svelte'),
+        '<SettingsFieldRow id="custom" label="Custom"><CustomControl /></SettingsFieldRow>',
+      );
+      writeFileSync(
+        path.join(settings, 'FormSettings.svelte'),
+        '<SettingsSection><SettingsForm schema={schema} /></SettingsSection>',
+      );
+      writeFileSync(
+        path.join(settings, 'UnmigratedSettings.svelte'),
+        '<SettingsSection><CustomControl /></SettingsSection>',
+      );
+      expect(buildPatternAdoptionAudit(root).patterns.settingsForm.findings).toEqual([
+        { file: 'src/lib/components/settings/UnmigratedSettings.svelte', occurrences: 1 },
+      ]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });

@@ -1,9 +1,11 @@
 import type { AgentMessage } from '$shared/types';
 import { scheduleLayoutRead, type CancelLayoutTask } from '$lib/utils/layout-phases';
+import { isAutomatedChatMessage } from '$lib/utils/previous-user-message';
 
 export interface PinnedPromptState {
   id: string;
   message: AgentMessage;
+  surface: 'user' | 'subscription';
 }
 
 export interface PinnedPromptController {
@@ -36,6 +38,7 @@ function candidates(container: HTMLElement): Candidate[] {
       return {
         id,
         message,
+        surface: isAutomatedChatMessage(message) ? 'subscription' : 'user',
         sourceBottom: source.getBoundingClientRect().bottom,
         turnBottom: turn.getBoundingClientRect().bottom,
       };

@@ -8,8 +8,13 @@ import {
 } from '../pinned-prompt';
 import { measureScrollbarGutterWidth } from '../scrollbar-gutter';
 
-function message(id: string): AgentMessage {
-  return { id, role: 'user', contentBlocks: [{ type: 'text', text: id }] } as AgentMessage;
+function message(id: string, metadata?: Record<string, unknown>): AgentMessage {
+  return {
+    id,
+    role: 'user',
+    metadata,
+    contentBlocks: [{ type: 'text', text: id }],
+  } as AgentMessage;
 }
 
 describe('pinned prompt controller', () => {
@@ -56,6 +61,20 @@ describe('pinned prompt controller', () => {
     const controller = createPinnedPromptController();
     expect(controller.update(container, true)?.id).toBe('prompt-1');
     expect(controller.update(container, false)).toBeNull();
+  });
+
+  it('carries the subscription surface for automated user rows', () => {
+    const container = document.createElement('div');
+    container.getBoundingClientRect = () => ({ top: 100 }) as DOMRect;
+    const candidate = addPrompt(container, 'wake-row', 90, 180);
+    const wake = message('wake-row', { type: 'event_notification' });
+    attachPinnedPromptMessage(candidate.source, wake);
+
+    expect(createPinnedPromptController().update(container, true)).toMatchObject({
+      id: 'wake-row',
+      message: wake,
+      surface: 'subscription',
+    });
   });
 
   it('updates streaming content without leaking ownership between panels', () => {

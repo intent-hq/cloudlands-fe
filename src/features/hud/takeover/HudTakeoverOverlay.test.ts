@@ -306,7 +306,7 @@ describe('HudTakeoverOverlay status-update banner hierarchy', () => {
     const chip = banner.querySelector('.ov-banner-chip');
     const headline = banner.querySelector('.ov-banner-big');
     const subtitle = screen.getByTestId('hud-takeover-banner-status');
-    expect(chip?.textContent?.trim()).toBe('STATUS UPDATE');
+    expect(chip?.textContent?.trim()).toBe('Status update');
     expect(headline?.textContent?.trim()).toBe('Sidecar auto-update');
     expect(subtitle.textContent?.trim()).toBe('Implementing the toggle; 8 tasks to go.');
     // Hierarchy order: chip above headline above subtitle.
@@ -341,12 +341,12 @@ describe('HudTakeoverOverlay status-update banner hierarchy', () => {
   // jsdom normalizes concrete hsl() colors to rgb, so the card's purple
   // prMerged accent (hsl(262 60% 62%)) asserts as its rgb serialization.
   it.each([
-    ['workspace_idle', 'WORKSPACE IDLE', 'hsl(var(--muted-foreground) / 0.65)'],
-    ['pr_open', 'PR OPEN', 'hsl(var(--ring))'],
-    ['pr_ready', 'PR MERGEABLE', 'hsl(var(--ring))'],
+    ['workspace_idle', 'Workspace idle', 'hsl(var(--muted-foreground) / 0.65)'],
+    ['pr_open', 'PR open', 'hsl(var(--ring))'],
+    ['pr_ready', 'PR mergeable', 'hsl(var(--ring))'],
     ['pr_queued', m.hud_takeover_kindPrQueued_label(), 'hsl(var(--ring))'],
-    ['pr_merged', 'PR MERGED', 'rgb(143, 100, 216)'],
-    ['workspace_complete', 'COMPLETE', 'hsl(var(--primary))'],
+    ['pr_merged', 'PR merged', 'rgb(143, 100, 216)'],
+    ['workspace_complete', 'Complete', 'hsl(var(--primary))'],
   ] as const)(
     'workspace displayStatus banner (%s): kind chip + workspace name headline, no subtitle',
     (kind, chipLabel, color) => {
@@ -404,7 +404,7 @@ describe('HudTakeoverOverlay attention banner (question / blocker / discussion)'
     const chip = banner.querySelector('.ov-banner-chip');
     const headline = banner.querySelector('.ov-banner-big');
     const subtitle = screen.getByTestId('hud-takeover-banner-attention');
-    expect(chip?.textContent?.trim()).toBe('QUESTION');
+    expect(chip?.textContent?.trim()).toBe('Question');
     // The dot-matrix line (`.ov-banner-big`, rendered in the Doto dot-matrix
     // font) renders the AGENT name, not the question text.
     expect(headline?.textContent?.trim()).toBe('Coordinator');
@@ -445,7 +445,7 @@ describe('HudTakeoverOverlay attention banner (question / blocker / discussion)'
     const subs = banners.map((b) =>
       b.querySelector('[data-testid="hud-takeover-banner-attention"]')?.textContent?.trim(),
     );
-    expect(chips).toEqual(['BLOCKED', 'DISCUSSION REQUIRED']);
+    expect(chips).toEqual(['Blocked', 'Discussion required']);
     expect(heads).toEqual(['Verifier', 'Coordinator']);
     expect(subs).toEqual([
       'Blocker: Sandbox network is down',
@@ -1459,7 +1459,7 @@ describe('HudTakeoverOverlay headline overflow marquee', () => {
     // extra → phase ends NOW+9400; the RETURN countdown reads it directly.
     vi.advanceTimersByTime(1250);
     flushSync();
-    expect(returnLabel()).toBe('RETURN 00:10');
+    expect(returnLabel()).toBe('Return 00:10');
   });
 
   it('fitting headline: no marquee, timings byte-identical to today', () => {
@@ -1473,7 +1473,7 @@ describe('HudTakeoverOverlay headline overflow marquee', () => {
     // Un-extended dwell: 1200 + 3000 → phase ends NOW+4200.
     vi.advanceTimersByTime(1250);
     flushSync();
-    expect(returnLabel()).toBe('RETURN 00:05');
+    expect(returnLabel()).toBe('Return 00:05');
   });
 
   it('wrapping headline never gets a marquee even when it overflows', () => {
@@ -1513,7 +1513,7 @@ describe('HudTakeoverOverlay headline overflow marquee', () => {
 
     vi.advanceTimersByTime(1250);
     flushSync();
-    expect(returnLabel()).toBe('RETURN 00:05');
+    expect(returnLabel()).toBe('Return 00:05');
   });
 
   it('measurement resets per entry: the next takeover never inherits the scroll', () => {
@@ -1531,7 +1531,7 @@ describe('HudTakeoverOverlay headline overflow marquee', () => {
 
     vi.advanceTimersByTime(1250); // dwelling, ends NOW+9400.
     flushSync();
-    expect(returnLabel()).toBe('RETURN 00:10');
+    expect(returnLabel()).toBe('Return 00:10');
 
     // Queue ws-2 (fits: no overflow), dismiss ws-1 → close 950ms → ws-2 opens.
     overflowPx = 0;
@@ -1554,7 +1554,7 @@ describe('HudTakeoverOverlay headline overflow marquee', () => {
     // a leaked 5200ms measurement would read RETURN 00:12 here.
     vi.advanceTimersByTime(1250);
     flushSync();
-    expect(returnLabel()).toBe('RETURN 00:07');
+    expect(returnLabel()).toBe('Return 00:07');
   });
 
   it('stacked banners: the LONGEST scroll wins the dwell extension (Math.max)', () => {
@@ -1601,7 +1601,7 @@ describe('HudTakeoverOverlay headline overflow marquee', () => {
     // 3200) would read 00:09; no extension at all would read 00:06.
     vi.advanceTimersByTime(1250);
     flushSync();
-    expect(returnLabel()).toBe('RETURN 00:11');
+    expect(returnLabel()).toBe('Return 00:11');
   });
 });
 

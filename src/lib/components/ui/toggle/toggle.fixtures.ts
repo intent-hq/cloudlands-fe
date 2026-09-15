@@ -11,6 +11,8 @@ export const toggleFixtures = [
       'selected',
       'disabled',
       'keyboard-focus',
+      'hover-overlay',
+      'active-overlay',
       'dark',
       'compact',
       'reduced-motion',
@@ -18,11 +20,5 @@ export const toggleFixtures = [
     themes: ['light', 'dark', 'high-contrast'],
     viewport: 'both',
     reducedMotion: true,
-  },
-  {
-    id: 'toggle-compatibility-modes',
-    title: 'Deprecated Toggle modes',
-    states: ['group', 'switch', 'indicator'],
-    viewport: 'both',
   },
 ] satisfies UiComponentFixture[];

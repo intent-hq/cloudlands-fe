@@ -25,8 +25,8 @@ vi.mock('$store/renderer/store', async () => {
 });
 
 const toastSuccess = vi.fn();
-vi.mock('$lib/components/ui/toast', () => ({
-  toast: {
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: {
     get success() {
       return toastSuccess;
     },

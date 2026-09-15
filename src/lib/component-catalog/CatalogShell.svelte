@@ -1,6 +1,12 @@
 <script lang="ts">
   import { onMount, type Snippet } from 'svelte';
   import CatalogControls from './CatalogControls.svelte';
+  import { Input } from '$lib/components/ui/input';
+  import { Button } from '$lib/components/ui/button';
+  import * as Sidebar from '$lib/components/ui/sidebar';
+  import SizeProvider from '$lib/components/ui/SizeProvider.svelte';
+  import { catalogEntries } from './catalog';
+  import { buildCatalogNavigation } from './catalog-navigation';
   import { themePresets } from '$lib/utils/theme-presets';
   import { parseVSCodeTheme } from '$lib/utils/vscode-theme-parser';
   import {
@@ -14,13 +20,23 @@
   } from './catalog-preferences';
   import { installPreviewBrowserApi } from './preview-discovery';
 
-  let { activeSlug, children }: { activeSlug?: string; children?: Snippet } = $props();
+  let {
+    activeSlug,
+    activePath = '/sandbox',
+    children,
+  }: { activeSlug?: string; activePath?: string; children?: Snippet } = $props();
   let theme = $state<CatalogTheme>(defaultCatalogPreferences.theme);
   let colorTheme = $state<CatalogColorTheme>(defaultCatalogPreferences.colorTheme);
   let reducedMotion = $state(defaultCatalogPreferences.reducedMotion);
   let fit = $state<CatalogPreviewFit>();
   let systemDark = $state(false);
   let hydrated = $state(false);
+  let width = $state<number | undefined>(undefined);
+  let density = $state<'default' | 'compact'>('default');
+  let radius = $state<'rounded' | 'square'>('rounded');
+  let customizeOpen = $state(false);
+  let search = $state('');
+  const navigation = $derived(buildCatalogNavigation(catalogEntries, search));
   let initialRootDark = false;
   let initialRootLight = false;
   let initialRootReducedMotion = false;
@@ -72,6 +88,7 @@
     theme = urlSettings.theme ?? saved.theme;
     colorTheme = saved.colorTheme;
     reducedMotion = urlSettings.reducedMotion ?? saved.reducedMotion;
+    width = urlSettings.width;
     fit = urlSettings.fit;
     const removePreviewBrowserApi = installPreviewBrowserApi(window);
 
@@ -110,6 +127,8 @@
       const url = new URL(window.location.href);
       url.searchParams.set('theme', theme);
       url.searchParams.set('motion', reducedMotion ? 'reduced' : 'full');
+      if (width) url.searchParams.set('width', String(width));
+      else url.searchParams.delete('width');
       window.history.replaceState(window.history.state, '', url);
     }
   });
@@ -122,29 +141,102 @@
   data-catalog-theme={theme}
   data-catalog-color-theme={colorTheme}
   data-catalog-motion={reducedMotion ? 'reduced' : 'full'}
+  data-catalog-density={density}
+  data-catalog-radius={radius}
+  style={`${radius === 'square' ? '--radius-small:2px;--radius-medium:3px;--radius-large:4px;' : ''}${width ? `--catalog-preview-width:${width}px` : ''}`}
 >
-  <div class="catalog-shell-content min-h-screen w-full min-w-0">
-    {#if fit !== 'component'}
-      <header class="catalog-topbar sticky top-0 border-b border-border bg-card/95 backdrop-blur">
-        <div class="catalog-topbar-inner mx-auto max-w-[1680px] px-4 py-2 sm:px-6">
-          <div class="flex min-w-0 items-center gap-3">
-            <a class="catalog-brand" href="/sandbox" aria-label="Component catalog home">
-              <span class="brand-mark" aria-hidden="true">DS</span>
-              <span class="truncate text-sm font-medium">Design system</span>
-            </a>
-            {#if activeSlug}
-              <a
-                class="rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                href="/sandbox">View all</a
-              >
-            {/if}
-          </div>
-          <CatalogControls bind:theme bind:colorTheme {resolvedTheme} bind:reducedMotion />
-        </div>
-      </header>
-    {/if}
-    <main class="min-w-0 overflow-x-clip">{@render children?.()}</main>
-  </div>
+  {#if fit === 'component'}
+    <SizeProvider size={density}
+      ><main class="catalog-component-content">{@render children?.()}</main></SizeProvider
+    >
+  {:else}
+    {#key density}
+      <SizeProvider size={density}>
+        <Sidebar.Provider open persist={false} width="256px" class="catalog-layout">
+          <Sidebar.Root
+            collapsible="none"
+            rail={false}
+            class="catalog-sidebar"
+            role="navigation"
+            aria-label="Component catalog"
+          >
+            <Sidebar.Header class="catalog-sidebar-header">
+              <a class="catalog-brand" href="/sandbox" aria-label="Component catalog home">
+                <span class="brand-mark" aria-hidden="true">I</span>
+                <span>Intent UI</span>
+              </a>
+              <Input
+                type="search"
+                aria-label="Search catalog"
+                placeholder="Search catalog"
+                bind:value={search}
+                onkeydown={(event) => {
+                  if (event.key === 'Escape') search = '';
+                }}
+              />
+            </Sidebar.Header>
+            <Sidebar.Content class="catalog-sidebar-content">
+              {#each navigation as group (group.id)}
+                <Sidebar.Group>
+                  <Sidebar.GroupLabel
+                    >{group.name} <span>{group.entries.length}</span></Sidebar.GroupLabel
+                  >
+                  <Sidebar.GroupContent>
+                    <Sidebar.Menu>
+                      {#each group.entries as entry (entry.slug)}
+                        <Sidebar.MenuItem>
+                          <Sidebar.MenuButton
+                            isActive={activeSlug === entry.slug ||
+                              (entry.slug === 'introduction'
+                                ? activePath === '/sandbox'
+                                : activePath === entry.href ||
+                                  activePath.startsWith(`${entry.href}/`))}
+                          >
+                            {#snippet child({ props })}
+                              <a {...props} href={entry.href}>{entry.name}</a>
+                            {/snippet}
+                          </Sidebar.MenuButton>
+                        </Sidebar.MenuItem>
+                      {/each}
+                    </Sidebar.Menu>
+                  </Sidebar.GroupContent>
+                </Sidebar.Group>
+              {:else}
+                <p class="type-caption p-2 text-muted-foreground" role="status">
+                  No catalog entries match your search.
+                </p>
+              {/each}
+            </Sidebar.Content>
+          </Sidebar.Root>
+          <aside
+            class="catalog-customize"
+            class:customize-open={customizeOpen}
+            aria-label="Catalog customization"
+          >
+            <Button
+              variant="outline"
+              class="catalog-customize-toggle"
+              aria-expanded={customizeOpen}
+              aria-controls="catalog-customize-content"
+              onclick={() => (customizeOpen = !customizeOpen)}>Customize preview</Button
+            >
+            <div id="catalog-customize-content">
+              <CatalogControls
+                bind:theme
+                bind:colorTheme
+                {resolvedTheme}
+                bind:reducedMotion
+                bind:width
+                bind:density
+                bind:radius
+              />
+            </div>
+          </aside>
+          <main class="catalog-main">{@render children?.()}</main>
+        </Sidebar.Provider>
+      </SizeProvider>
+    {/key}
+  {/if}
 </div>
 
 <style>
@@ -156,7 +248,7 @@
   }
 
   .catalog-shell.component-fit,
-  .component-fit .catalog-shell-content {
+  .component-fit .catalog-component-content {
     width: max-content;
     min-height: 0;
   }
@@ -175,17 +267,11 @@
     overflow: visible;
   }
 
-  .catalog-topbar {
-    z-index: var(--layer-chrome);
-    box-shadow: var(--elevation-raised);
-  }
-
-  .catalog-topbar-inner {
-    display: flex;
-    min-width: 0;
-    align-items: center;
-    justify-content: space-between;
-    gap: calc(var(--control-height-small) / 2);
+  :global(.catalog-layout) {
+    display: grid;
+    grid-template-columns: 256px minmax(0, 1fr);
+    align-items: start;
+    min-height: 100svh;
   }
 
   .catalog-brand {
@@ -197,7 +283,7 @@
   }
 
   .catalog-brand:focus-visible {
-    outline: 2px solid hsl(var(--ring));
+    outline: 1px solid hsl(var(--ring));
     outline-offset: 2px;
   }
 
@@ -211,15 +297,102 @@
     border: 1px solid hsl(var(--border));
     border-radius: var(--radius-medium);
     background: hsl(var(--primary));
-    color: hsl(var(--primary-foreground));
+    color: hsl(var(--primary-ink, var(--primary-foreground)));
     font-size: var(--text-caption-size);
     box-shadow: var(--elevation-raised);
   }
 
+  :global(.catalog-sidebar) {
+    position: sticky;
+    top: 0;
+    height: 100svh;
+    border-right: 0;
+  }
+
+  :global(.catalog-sidebar-header) {
+    padding: 1rem 1rem 0.5rem;
+  }
+
+  :global(.catalog-sidebar-content) {
+    padding: 0 0.5rem 1rem;
+  }
+
+  :global(.catalog-sidebar [data-sidebar='group']) {
+    padding-block: 0.375rem;
+  }
+
+  :global(.catalog-sidebar [data-sidebar='group-label']) {
+    display: flex;
+    justify-content: space-between;
+  }
+
+  .catalog-main {
+    grid-column: 2;
+    grid-row: 2;
+    min-width: 0;
+  }
+
+  .catalog-customize {
+    grid-column: 2;
+    grid-row: 1;
+    width: 100%;
+    min-width: 0;
+    padding: 1.5rem 1.5rem 0;
+  }
+
+  :global(.catalog-customize-toggle) {
+    display: inline-flex;
+  }
+
+  .catalog-customize:not(.customize-open) #catalog-customize-content {
+    display: none;
+  }
+
+  .customize-open #catalog-customize-content {
+    margin-top: 0.75rem;
+  }
+
+  :global(.catalog-sidebar) {
+    grid-row: 1 / span 2;
+  }
+
+  .catalog-customize :global(.catalog-controls) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .catalog-customize :global(.catalog-controls h2) {
+    grid-column: 1 / -1;
+  }
+
   @media (max-width: 767px) {
-    .catalog-topbar-inner {
-      align-items: flex-start;
-      flex-direction: column;
+    :global(.catalog-layout) {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    :global(.catalog-sidebar) {
+      position: static;
+      width: 100%;
+      height: auto;
+      max-height: 18rem;
+      border-bottom: 1px solid hsl(var(--border));
+      grid-column: 1;
+      grid-row: 1;
+    }
+
+    .catalog-customize {
+      grid-column: 1;
+      grid-row: 2;
+    }
+
+    .catalog-main {
+      grid-column: 1;
+      grid-row: 3;
+    }
+  }
+
+  @media (max-width: 479px) {
+    .catalog-customize :global(.catalog-controls) {
+      grid-template-columns: minmax(0, 1fr);
     }
   }
 

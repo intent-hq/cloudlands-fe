@@ -187,6 +187,13 @@
   let hoverCardId = $derived(workspace ? `workspace-hover-card-${workspace.id}` : undefined);
   let hoverCardVisible = $state(false);
   let rowElement: HTMLDivElement | null = $state(null);
+  let phaseRowButtonRef: HTMLButtonElement | null = $state(null);
+
+  $effect(() => {
+    if (!phaseRowButtonRef) return;
+    const action = highlightTarget(phaseRowButtonRef, { id: highlightId });
+    return () => action.destroy();
+  });
   let titleElement: HTMLSpanElement | null = $state(null);
   let titleTextElement: HTMLSpanElement | null = $state(null);
   let actionsElement: HTMLDivElement | null = $state(null);
@@ -779,7 +786,7 @@
             size="icon-xs"
             iconOnly
             class="transition-all hover:bg-muted/50 hover:text-foreground focus-visible:border-transparent focus-visible:bg-muted/50 focus-visible:text-foreground focus-visible:ring-0
-              {isPinned ? 'text-primary' : 'text-muted-foreground'}"
+              {isPinned ? 'text-primary-ink' : 'text-muted-foreground'}"
             onclick={(event) => {
               event.stopPropagation();
               onTogglePin?.(event);
@@ -842,10 +849,9 @@
     />
   {/if}
 {:else if phase && stats && variant === 'row'}
-  <button
-    type="button"
+  <div
     class={cn(
-      'flex items-center gap-2 w-full min-w-0 text-left text-sm py-1',
+      'relative flex items-center gap-2 w-full min-w-0 text-left text-sm py-1',
       onClick && 'cursor-pointer transition-colors rounded',
       !onClick && 'cursor-default',
       highlighted && 'bg-sidebar',
@@ -853,10 +859,20 @@
       className,
     )}
     data-highlight-id={highlightId}
-    use:highlightTarget={{ id: highlightId }}
-    onclick={onClick}
-    disabled={!onClick}
   >
+    {#if onClick}
+      <Button
+        bind:ref={phaseRowButtonRef}
+        variant="plain"
+        type="button"
+        class="absolute inset-0 z-0 h-auto w-auto rounded focus-visible:bg-sidebar"
+        aria-label={_title || phase.label}
+        onclick={(event) => {
+          event.stopPropagation();
+          onClick?.(event);
+        }}
+      ></Button>
+    {/if}
     <WorkspacePhaseIndicator
       phase={phase.phase}
       progress={statusBuildProgress}
@@ -866,8 +882,12 @@
     <span class="font-medium truncate">{phase.label}</span>
     <span class="shrink-0 text-muted-foreground">·</span>
     <span class="truncate text-xs text-muted-foreground">{statusSubtitle}</span>
-    {@render actions?.()}
-  </button>
+    {#if actions}
+      <div class="relative z-10 flex shrink-0 items-center">
+        {@render actions()}
+      </div>
+    {/if}
+  </div>
 {:else if phase && stats && variant === 'header'}
   <div
     class={cn(
@@ -907,22 +927,31 @@
     {@render actions?.()}
   </div>
 {:else if phase && stats}
-  <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions a11y_no_noninteractive_tabindex -->
   <div
     class={cn(
-      'rounded-lg border border-border bg-sidebar text-left w-full',
+      'relative rounded-lg border border-border bg-sidebar text-left w-full',
       onClick && 'cursor-pointer hover:bg-sidebar/80 transition-colors',
-      highlighted && 'ring-1 ring-primary/40',
+      highlighted && 'ring-1 ring-primary-ink/40',
       selected && 'bg-primary/5 ring-1 ring-primary/30',
       className,
     )}
     data-highlight-id={highlightId}
     use:highlightTarget={{ id: highlightId }}
-    onclick={onClick}
-    onkeydown={handleKeydown}
-    role="button"
-    tabindex={onClick ? 0 : undefined}
+    role="group"
   >
+    {#if onClick}
+      <Button
+        variant="plain"
+        type="button"
+        class="absolute inset-0 z-0 h-auto w-auto rounded-lg focus-visible:bg-sidebar/80"
+        aria-label={_title || phase.label}
+        data-workspace-phase-card-trigger
+        onclick={(event) => {
+          event.stopPropagation();
+          onClick?.(event);
+        }}
+      ></Button>
+    {/if}
     <div class="flex items-start gap-2.5 px-3 pt-3 pb-2">
       <WorkspacePhaseIndicator
         phase={phase.phase}
@@ -980,11 +1009,11 @@
     {/if}
 
     {#if actions}
-      <div class="flex items-center gap-1.5 px-2 pb-2">
+      <div class="relative z-10 flex items-center gap-1.5 px-2 pb-2">
         {@render actions()}
       </div>
     {:else if onAction}
-      <div class="flex items-center gap-1.5 px-2 pb-2">
+      <div class="relative z-10 flex items-center gap-1.5 px-2 pb-2">
         <Button
           class="flex-1 h-7 text-xs"
           variant="outline"

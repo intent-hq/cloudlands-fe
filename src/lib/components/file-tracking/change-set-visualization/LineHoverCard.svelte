@@ -161,10 +161,10 @@
     color: hsl(var(--danger)) !important;
   }
   .code-content :global(.hljs-string) {
-    color: hsl(var(--primary)) !important;
+    color: hsl(var(--primary-ink)) !important;
   }
   .code-content :global(.hljs-number) {
-    color: hsl(var(--primary)) !important;
+    color: hsl(var(--primary-ink)) !important;
   }
   .code-content :global(.hljs-comment) {
     color: hsl(var(--muted-foreground)) !important;
@@ -179,16 +179,16 @@
     color: hsl(var(--foreground)) !important;
   }
   .code-content :global(.hljs-built_in) {
-    color: hsl(var(--primary)) !important;
+    color: hsl(var(--primary-ink)) !important;
   }
   .code-content :global(.hljs-type) {
     color: hsl(30, 80%, 45%) !important;
   }
   .code-content :global(.hljs-attr) {
-    color: hsl(var(--primary)) !important;
+    color: hsl(var(--primary-ink)) !important;
   }
   .code-content :global(.hljs-property) {
-    color: hsl(var(--primary)) !important;
+    color: hsl(var(--primary-ink)) !important;
   }
   .code-content :global(.hljs-tag) {
     color: hsl(140, 50%, 40%) !important;
@@ -203,7 +203,7 @@
     color: hsl(var(--foreground)) !important;
   }
   .code-content :global(.hljs-literal) {
-    color: hsl(var(--primary)) !important;
+    color: hsl(var(--primary-ink)) !important;
   }
   .code-content :global(.hljs-punctuation) {
     color: hsl(var(--foreground)) !important;

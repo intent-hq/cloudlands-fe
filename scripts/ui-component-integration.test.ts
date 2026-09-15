@@ -17,21 +17,34 @@ import {
 
 const root = process.cwd();
 const canonicalImports = [
+  'accordion',
+  'ask-user-questions',
   'badge',
   'breadcrumb',
   'button',
   'button-group',
   'card',
   'checkbox',
+  'checkbox-group',
   'combobox',
+  'copy-input',
   'dialog',
+  'dropdown',
   'file-input',
+  'grouped-combobox',
   'indicators',
   'input',
+  'input-group',
+  'input-message',
+  'kbd',
   'label',
   'list',
   'menu',
+  'message-composer',
+  'proximity-highlight',
+  'radio-group',
   'scroll-area',
+  'searchable-select',
   'select',
   'separator',
   'settings-field-row',
@@ -42,7 +55,10 @@ const canonicalImports = [
   'skeleton',
   'slider',
   'switch',
+  'table',
+  'tabs',
   'textarea',
+  'toast',
   'toggle',
   'toggle-group',
   'tooltip',
@@ -105,10 +121,19 @@ describe('Gate C generated migration ledger', () => {
 
     expect(
       ledger.find(({ oldImport }) => oldImport.endsWith('dropdown-menu.svelte'))?.callers,
-    ).toHaveLength(17);
+    ).toHaveLength(16);
     expect(ledger.find(({ oldImport }) => oldImport.endsWith('/dropdown'))).toMatchObject({
       replacement: 'ledger:src/lib/components/ui/dropdown/dropdown-caller-ledger.ts',
-      callers: expect.arrayContaining(['src/lib/components/settings/mcp/McpServerCard.svelte']),
+      callers: [
+        'src/lib/component-catalog/renderers/ChoiceCatalogPreview.svelte',
+        'src/lib/component-catalog/renderers/PopoversCatalogPreview.svelte',
+        'src/lib/components/chat/input/ModelPicker.svelte',
+        'src/lib/components/chat/input/ModelPickerGroupHeader.svelte',
+        'src/lib/components/chat/input/ModelPickerOptionItem.svelte',
+        'src/lib/components/chat/input/model-picker-groups.ts',
+        'src/lib/components/chat/input/model-picker-utils.ts',
+        'src/lib/components/layout/sidebar-nav/cards/ChiefCard.svelte',
+      ],
     });
     expect(buildUiMigrationLedger(root)).toEqual(ledger);
   });
@@ -128,9 +153,7 @@ describe('Gate C generated migration ledger', () => {
       '$lib/components/ui/content-header',
       '$lib/components/ui/diff',
       '$lib/components/ui/tab',
-      '$lib/components/ui/grouped-combobox',
       '$lib/components/ui/searchable-combobox',
-      '$lib/components/ui/searchable-select',
     ];
     expect(publicImports).not.toEqual(expect.arrayContaining(reconciledImports));
     expect(existsSync(path.join(root, 'src/lib/components/icons/ProviderIcon.svelte'))).toBe(false);
@@ -138,8 +161,8 @@ describe('Gate C generated migration ledger', () => {
     const retained = new Map(
       buildUiMigrationLedger(root).map((entry) => [entry.oldImport, entry.callers.length]),
     );
-    expect(retained.get('$lib/components/ui/dropdown-menu.svelte')).toBe(17);
-    expect(retained.get('$lib/components/ui/dropdown')).toBe(7);
+    expect(retained.get('$lib/components/ui/dropdown-menu.svelte')).toBe(16);
+    expect(retained.get('$lib/components/ui/dropdown')).toBe(8);
   });
 });
 
@@ -189,9 +212,14 @@ describe('Gate C structural ratchets', () => {
   });
 
   it('ratchets raw controls outside approved primitive implementations', () => {
+    const policy = JSON.parse(
+      readFileSync(path.join(root, 'scripts/ui-component-raw-element-allowlist.json'), 'utf8'),
+    ) as { exceptions: unknown[] };
     const counts = countRawUiControls(root);
-    for (const tag of ['button', 'input', 'select', 'textarea'] as const) {
-      expect(counts[tag], tag).toBeLessThanOrEqual(uiComponentGuardrails.rawControls[tag]);
-    }
+    const zeroControls = { button: 0, input: 0, select: 0, textarea: 0 };
+
+    expect(policy.exceptions).toEqual([]);
+    expect(uiComponentGuardrails.rawControls).toEqual(zeroControls);
+    expect(counts).toEqual(zeroControls);
   });
 });

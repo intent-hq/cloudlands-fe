@@ -1,10 +1,11 @@
 <script lang="ts">
+  import { Input } from '$lib/components/ui/input';
   /* eslint-disable max-lines */
   /**
    * PanelTabBar - Compact header bar for a panel
    *
    * Displays a breadcrumb-style header with:
-   * - Category label (muted, uppercase)
+   * - Category label (muted, sentence case)
    * - Tab switcher dropdown (when multiple tabs)
    * - Active tab title
    * - Content actions on the right
@@ -37,7 +38,7 @@
     faComment,
   } from '@fortawesome/free-solid-svg-icons';
   import { invoke } from '$lib/electron-bridge';
-  import { toast } from '$lib/components/ui/toast';
+  import { notify } from '$lib/components/patterns/notify';
   import { locateItemInSidebarRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
   import Fa from 'svelte-fa';
@@ -46,7 +47,7 @@
   import * as Menu from '$lib/components/ui/menu';
   import Portal from '$lib/components/ui/Portal.svelte';
   import { onDestroy, tick } from 'svelte';
-  import type { TransitionConfig } from 'svelte/transition';
+  import { springIn, type ImmediateMotionConfig as TransitionConfig } from '$lib/motion';
   import { Button } from '$lib/components/ui/button';
   import { selectIsDragging } from '$store/renderer/slices/tab-state/tab-state-selectors';
   import { startDrag, endDrag } from '$store/renderer/slices/tab-state/tab-state-slice';
@@ -459,9 +460,9 @@
     if (!relativePath) return;
     try {
       await navigator.clipboard.writeText(toNativePath(relativePath));
-      toast.success(m.layout_panelTabBar_pathCopied_label());
+      notify.success(m.layout_panelTabBar_pathCopied_label());
     } catch {
-      toast.error(m.layout_panelTabBar_copyPathFailed_error());
+      notify.error(m.layout_panelTabBar_copyPathFailed_error());
     }
   }
 
@@ -473,9 +474,9 @@
     if (!absolutePath) return;
     try {
       await navigator.clipboard.writeText(toNativePath(absolutePath));
-      toast.success(m.layout_panelTabBar_absolutePathCopied_label());
+      notify.success(m.layout_panelTabBar_absolutePathCopied_label());
     } catch {
-      toast.error(m.layout_panelTabBar_copyPathFailed_error());
+      notify.error(m.layout_panelTabBar_copyPathFailed_error());
     }
   }
 
@@ -488,9 +489,9 @@
     const fileName = path.split(/[/\\]/).pop() || path;
     try {
       await navigator.clipboard.writeText(fileName);
-      toast.success(m.layout_panelTabBar_filenameCopied_label());
+      notify.success(m.layout_panelTabBar_filenameCopied_label());
     } catch {
-      toast.error(m.layout_panelTabBar_copyFilenameFailed_error());
+      notify.error(m.layout_panelTabBar_copyFilenameFailed_error());
     }
   }
 
@@ -503,7 +504,7 @@
     try {
       await invoke('shell:showItemInFolder', { path: absolutePath });
     } catch {
-      toast.error(m.layout_panelTabBar_revealFailed_error({ fileManager: fileManagerName }));
+      notify.error(m.layout_panelTabBar_revealFailed_error({ fileManager: fileManagerName }));
     }
   }
 
@@ -535,9 +536,9 @@
     const relativePath = `.workspace/agents/${tab.agentId}.json`;
     try {
       await navigator.clipboard.writeText(toNativePath(relativePath));
-      toast.success(m.layout_panelTabBar_pathCopied_label());
+      notify.success(m.layout_panelTabBar_pathCopied_label());
     } catch {
-      toast.error(m.layout_panelTabBar_copyPathFailed_error());
+      notify.error(m.layout_panelTabBar_copyPathFailed_error());
     }
   }
 
@@ -547,14 +548,14 @@
   async function copyAgentAbsolutePath(tab: PanelTab) {
     const absolutePath = await getAgentSessionAbsolutePath(tab);
     if (!absolutePath) {
-      toast.error(m.layout_panelTabBar_agentPathUnresolved_error());
+      notify.error(m.layout_panelTabBar_agentPathUnresolved_error());
       return;
     }
     try {
       await navigator.clipboard.writeText(toNativePath(absolutePath));
-      toast.success(m.layout_panelTabBar_absolutePathCopied_label());
+      notify.success(m.layout_panelTabBar_absolutePathCopied_label());
     } catch {
-      toast.error(m.layout_panelTabBar_copyPathFailed_error());
+      notify.error(m.layout_panelTabBar_copyPathFailed_error());
     }
   }
 
@@ -565,9 +566,9 @@
     const fileName = `${tab.agentId}.json`;
     try {
       await navigator.clipboard.writeText(fileName);
-      toast.success(m.layout_panelTabBar_filenameCopied_label());
+      notify.success(m.layout_panelTabBar_filenameCopied_label());
     } catch {
-      toast.error(m.layout_panelTabBar_copyFilenameFailed_error());
+      notify.error(m.layout_panelTabBar_copyFilenameFailed_error());
     }
   }
 
@@ -577,13 +578,13 @@
   async function revealAgentInFinder(tab: PanelTab) {
     const absolutePath = await getAgentSessionAbsolutePath(tab);
     if (!absolutePath) {
-      toast.error(m.layout_panelTabBar_agentPathUnresolved_error());
+      notify.error(m.layout_panelTabBar_agentPathUnresolved_error());
       return;
     }
     try {
       await invoke('shell:showItemInFolder', { path: absolutePath });
     } catch {
-      toast.error(m.layout_panelTabBar_revealFailed_error({ fileManager: fileManagerName }));
+      notify.error(m.layout_panelTabBar_revealFailed_error({ fileManager: fileManagerName }));
     }
   }
 
@@ -614,9 +615,9 @@
     const relativePath = `.workspace/notes/${tab.noteId}.md`;
     try {
       await navigator.clipboard.writeText(toNativePath(relativePath));
-      toast.success(m.layout_panelTabBar_pathCopied_label());
+      notify.success(m.layout_panelTabBar_pathCopied_label());
     } catch {
-      toast.error(m.layout_panelTabBar_copyPathFailed_error());
+      notify.error(m.layout_panelTabBar_copyPathFailed_error());
     }
   }
 
@@ -626,14 +627,14 @@
   async function copyNoteAbsolutePath(tab: PanelTab) {
     const absolutePath = await getNoteAbsolutePath(tab);
     if (!absolutePath) {
-      toast.error(m.layout_panelTabBar_notePathUnresolved_error());
+      notify.error(m.layout_panelTabBar_notePathUnresolved_error());
       return;
     }
     try {
       await navigator.clipboard.writeText(toNativePath(absolutePath));
-      toast.success(m.layout_panelTabBar_absolutePathCopied_label());
+      notify.success(m.layout_panelTabBar_absolutePathCopied_label());
     } catch {
-      toast.error(m.layout_panelTabBar_copyPathFailed_error());
+      notify.error(m.layout_panelTabBar_copyPathFailed_error());
     }
   }
 
@@ -644,9 +645,9 @@
     const fileName = `${tab.noteId}.md`;
     try {
       await navigator.clipboard.writeText(fileName);
-      toast.success(m.layout_panelTabBar_filenameCopied_label());
+      notify.success(m.layout_panelTabBar_filenameCopied_label());
     } catch {
-      toast.error(m.layout_panelTabBar_copyFilenameFailed_error());
+      notify.error(m.layout_panelTabBar_copyFilenameFailed_error());
     }
   }
 
@@ -656,13 +657,13 @@
   async function revealNoteInFinder(tab: PanelTab) {
     const absolutePath = await getNoteAbsolutePath(tab);
     if (!absolutePath) {
-      toast.error(m.layout_panelTabBar_notePathUnresolved_error());
+      notify.error(m.layout_panelTabBar_notePathUnresolved_error());
       return;
     }
     try {
       await invoke('shell:showItemInFolder', { path: absolutePath });
     } catch {
-      toast.error(m.layout_panelTabBar_revealFailed_error({ fileManager: fileManagerName }));
+      notify.error(m.layout_panelTabBar_revealFailed_error({ fileManager: fileManagerName }));
     }
   }
 
@@ -673,10 +674,10 @@
     if (!tab.browserUrl) return;
     try {
       await writeTextToClipboard(tab.browserUrl);
-      toast.success(m.layout_panelTabBar_urlCopied_label());
+      notify.success(m.layout_panelTabBar_urlCopied_label());
     } catch (error) {
       logger.error('Failed to copy browser tab URL', error, { url: tab.browserUrl });
-      toast.error(m.layout_panelTabBar_copyUrlFailed_error());
+      notify.error(m.layout_panelTabBar_copyUrlFailed_error());
     }
   }
 
@@ -688,7 +689,7 @@
     try {
       await invoke('shell:openExternal', { url: tab.browserUrl });
     } catch {
-      toast.error(m.layout_panelTabBar_openInBrowserFailed_error());
+      notify.error(m.layout_panelTabBar_openInBrowserFailed_error());
     }
   }
 
@@ -699,9 +700,9 @@
     const title = getTabTitle(tab);
     try {
       await navigator.clipboard.writeText(title);
-      toast.success(m.layout_panelTabBar_copied_label());
+      notify.success(m.layout_panelTabBar_copied_label());
     } catch {
-      toast.error(m.layout_panelTabBar_copyFailed_error());
+      notify.error(m.layout_panelTabBar_copyFailed_error());
     }
   }
 
@@ -1060,11 +1061,9 @@
   // Get the currently active tab
   const activeTab = $derived(tabs.find((t) => t.id === activeTabId) || tabs[0] || null);
 
-  function paneStackLineMotion(_node: Element, { offset }: { offset: number }): TransitionConfig {
-    return {
-      duration: prefersReducedMotion() ? 0 : 160,
-      css: (t) => `opacity: ${t}; transform: translateY(${(1 - t) * offset}px);`,
-    };
+  function paneStackLineMotion(node: Element, { offset }: { offset: number }): TransitionConfig {
+    if (prefersReducedMotion()) return { duration: 0 };
+    return springIn(node, { tier: 'moderate', y: offset });
   }
 
   /**
@@ -1205,10 +1204,8 @@
       </Tooltip>
     {/snippet}
     {#snippet content({ close }: { close: () => void })}
-      <div class="type-caption px-2 pb-0.5 pt-1.5 font-medium text-muted-foreground">
-        {m.layout_panelTabBar_displaySection_label()}
-      </div>
-      <div data-panel-actions-section="display">
+      <Menu.Group data-panel-actions-section="display">
+        <Menu.Label>{m.layout_panelTabBar_displaySection_label()}</Menu.Label>
         {@render contentActions?.display?.()}
         <Menu.CommandItem
           icon={isZoomed ? faCompress : faExpand}
@@ -1240,14 +1237,12 @@
             close();
           }}
         />
-      </div>
+      </Menu.Group>
 
       <Menu.Separator />
 
-      <div class="type-caption px-2 pb-0.5 pt-1.5 font-medium text-muted-foreground">
-        {m.layout_panelTabBar_actionsSection_label()}
-      </div>
-      <div data-panel-actions-section="actions">
+      <Menu.Group data-panel-actions-section="actions">
+        <Menu.Label>{m.layout_panelTabBar_actionsSection_label()}</Menu.Label>
         {@render contentActions?.actions?.()}
         <Menu.CommandItem
           icon={faArrowLeft}
@@ -1279,7 +1274,7 @@
             close();
           }}
         />
-      </div>
+      </Menu.Group>
 
       {#if $isWorkspaceHostLocal$ || activeTab?.type === 'browser'}
         {#if activeTab}
@@ -1530,16 +1525,18 @@
               data-pane-stack-item={tab.id}
               data-attention={attentionPaneIds.has(tab.id) ? '' : undefined}
             >
-              <span
-                class="flex size-5 shrink-0 items-center justify-center"
-                data-pane-stack-item-identity={tab.type}
-              >
-                {#if tab.type === 'agent' && tab.agentId}
-                  <AgentAvatar agentId={tab.agentId} variant="standard" />
-                {:else}
-                  {@render panelIdentity(tab, true)}
-                {/if}
-              </span>
+              {#snippet leading()}
+                <span
+                  class="flex size-4 shrink-0 items-center justify-center"
+                  data-pane-stack-item-identity={tab.type}
+                >
+                  {#if tab.type === 'agent' && tab.agentId}
+                    <AgentAvatar agentId={tab.agentId} variant="standard" />
+                  {:else}
+                    {@render panelIdentity(tab, true)}
+                  {/if}
+                </span>
+              {/snippet}
               <span class="min-w-0 flex-1 truncate">{getTabTitle(tab)}</span>
               {#if attentionPaneIds.has(tab.id)}
                 <span class="size-1.5 shrink-0 rounded-full bg-primary" aria-hidden="true"></span>
@@ -1550,7 +1547,7 @@
                   aria-hidden="true"
                   data-pane-stack-current-check
                 >
-                  <Fa icon={faCheck} size="xs" class="text-primary" />
+                  <Fa icon={faCheck} size="xs" class="text-primary-ink" />
                 </span>
               {/if}
             </Menu.Item>
@@ -1659,8 +1656,8 @@
               {/if}
               {#if renamingTabId === tab.id}
                 <!-- Inline rename input -->
-                <input
-                  bind:this={renameInputRef}
+                <Input
+                  bind:ref={renameInputRef}
                   bind:value={renameValue}
                   class="tab-title font-medium bg-transparent border-none outline-none focus:ring-0! focus:outline-none! px-0 text-inherit max-w-24"
                   onkeydown={(e) => {
@@ -1681,8 +1678,7 @@
               {/if}
 
               {#if isBackgroundAgent(tab)}
-                <span
-                  class="text-ui font-medium text-muted-foreground bg-muted px-1 py-0.5 rounded uppercase tracking-wider"
+                <span class="text-ui font-medium text-muted-foreground bg-muted px-1 py-0.5 rounded"
                   >{m.layout_panelTabBar_bgBadge_label()}</span
                 >
               {/if}
@@ -1694,7 +1690,8 @@
               {#if tab.closable}
                 <!-- User close of an agent-owned browser tab hides it (webview
                      kept alive for the agent, monorepo#2857) — say so. -->
-                <button
+                <Button
+                  variant="ghost-light"
                   class={cn(
                     'tab-close ml-1 p-0.5 rounded transition-opacity cursor-pointer',
                     isActive
@@ -1710,7 +1707,7 @@
                     : m.layout_panelTabBar_closeTab_ariaLabel()}
                 >
                   <Fa icon={faXmark} size="xs" />
-                </button>
+                </Button>
               {/if}
             </div>
             <!-- Drop indicator after: only show for last tab -->
@@ -1757,7 +1754,8 @@
               <div class="flex flex-col min-w-35">
                 {#if onCreateAgentWithSpecialist}
                   <!-- Blank Agent option -->
-                  <button
+                  <Button
+                    variant="ghost-light"
                     class="flex items-center gap-2 px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer rounded-sm transition-colors"
                     onclick={() => {
                       onCreateAgentWithSpecialist(null);
@@ -1766,83 +1764,101 @@
                   >
                     <AgentAvatar agentId="blank" variant="compact" />
                     <span>{m.layout_panelTabBar_blankAgent_label()}</span>
-                  </button>
+                  </Button>
                   <!-- Specialist options -->
                   {#each visibleSpecialists as specialist (specialist.id)}
-                    <button
+                    <Button
+                      variant="ghost-light"
                       class="flex items-center gap-2 px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer rounded-sm transition-colors"
                       onclick={() => {
                         onCreateAgentWithSpecialist(specialist.id);
                         close();
                       }}
                     >
-                      <AgentAvatar
-                        agentId="blank"
-                        variant="compact"
-                        specialist={specialist.id}
-                        icon={specialist.icon}
-                      />
+                      <span class="flex size-4 shrink-0 items-center justify-center"
+                        ><AgentAvatar
+                          agentId="blank"
+                          variant="compact"
+                          specialist={specialist.id}
+                          icon={specialist.icon}
+                        /></span
+                      >
                       <span>{specialist.name}</span>
-                    </button>
+                    </Button>
                   {/each}
                   <!-- Manage specialists link -->
-                  <button
+                  <Button
+                    variant="ghost-light"
                     class="flex items-center gap-2 px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer rounded-sm transition-colors text-subtle border-t border-border mt-0.5 pt-1.5"
                     onclick={async () => {
                       await navigateToSettings({ tab: 'agents' });
                       close();
                     }}
                   >
-                    <Fa icon={faPlus} size="xs" class="text-ghost" />
+                    <span class="flex size-4 shrink-0 items-center justify-center"
+                      ><Fa icon={faPlus} size="xs" class="text-ghost" /></span
+                    >
                     <span>{m.layout_panelTabBar_manageSpecialists_label()}</span>
-                  </button>
+                  </Button>
                 {:else if onCreateAgent}
-                  <button
+                  <Button
+                    variant="ghost-light"
                     class="flex items-center gap-2 px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer rounded-sm transition-colors"
                     onclick={() => {
                       onCreateAgent();
                       close();
                     }}
                   >
-                    <Fa icon={faRobot} size="xs" class="text-ghost" />
+                    <span class="flex size-4 shrink-0 items-center justify-center"
+                      ><Fa icon={faRobot} size="xs" class="text-ghost" /></span
+                    >
                     <span>{m.menu_new_agent()}</span>
-                  </button>
+                  </Button>
                 {/if}
                 {#if onCreateNote}
-                  <button
+                  <Button
+                    variant="ghost-light"
                     class="flex items-center gap-2 px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer rounded-sm transition-colors"
                     onclick={() => {
                       onCreateNote();
                       close();
                     }}
                   >
-                    <Fa icon={RESOURCE_ICON_BY_KIND.note} size="xs" class="text-ghost" />
+                    <span class="flex size-4 shrink-0 items-center justify-center"
+                      ><Fa icon={RESOURCE_ICON_BY_KIND.note} size="xs" class="text-ghost" /></span
+                    >
                     <span>{m.menu_new_note()}</span>
-                  </button>
+                  </Button>
                 {/if}
                 {#if onCreateTerminal}
-                  <button
+                  <Button
+                    variant="ghost-light"
                     class="flex items-center gap-2 px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer rounded-sm transition-colors"
                     onclick={() => {
                       onCreateTerminal();
                       close();
                     }}
                   >
-                    <Fa icon={faTerminal} size="xs" class="text-ghost" />
+                    <span class="flex size-4 shrink-0 items-center justify-center"
+                      ><Fa icon={faTerminal} size="xs" class="text-ghost" /></span
+                    >
                     <span>{m.menu_new_terminal()}</span>
-                  </button>
+                  </Button>
                 {/if}
                 {#if onOpenBrowser}
-                  <button
+                  <Button
+                    variant="ghost-light"
                     class="flex items-center gap-2 px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer rounded-sm transition-colors"
                     onclick={() => {
                       onOpenBrowser();
                       close();
                     }}
                   >
-                    <Fa icon={faGlobe} size="xs" class="text-ghost" />
+                    <span class="flex size-4 shrink-0 items-center justify-center"
+                      ><Fa icon={faGlobe} size="xs" class="text-ghost" /></span
+                    >
                     <span>{m.menu_new_browser()}</span>
-                  </button>
+                  </Button>
                 {/if}
               </div>
             {/snippet}
@@ -2061,12 +2077,13 @@
         closeContextMenu();
       }}
     >
-      <button
+      <Button
+        variant="plain"
         type="button"
         class="absolute inset-0 bg-transparent border-0 p-0 cursor-default"
         aria-label={m.layout_panelTabBar_closeContextMenu_ariaLabel()}
         onclick={closeContextMenu}
-      ></button>
+      ></Button>
       <div
         bind:this={contextMenuElement}
         class="absolute bg-popover border border-border shadow w-56 max-h-[calc(100vh-1rem)] overflow-y-auto z-10"
@@ -2074,7 +2091,8 @@
         data-panel-context-menu={contextMenuTab.source}
       >
         {#if contextTab && canLocateInSidebar(contextTab)}
-          <button
+          <Button
+            variant="ghost-light"
             class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center gap-2"
             onclick={(e) => {
               handleLocateInSidebar(e, contextTab);
@@ -2083,11 +2101,12 @@
           >
             <Fa icon={faCrosshairs} size="xs" class="text-ghost" />
             {m.layout_panelTabBar_revealInSidebar_label()}
-          </button>
+          </Button>
         {/if}
         <!-- Type-specific actions for file/diff tabs -->
         {#if contextTab && (contextTab.type === 'file' || contextTab.type === 'diff')}
-          <button
+          <Button
+            variant="ghost-light"
             class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center gap-2"
             onclick={() => {
               copyRelativePath(contextTab);
@@ -2096,8 +2115,9 @@
           >
             <Fa icon={faCopy} size="xs" class="text-ghost" />
             {m.layout_panelTabBar_copyRelativePath_label()}
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="ghost-light"
             class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center gap-2"
             onclick={() => {
               copyAbsolutePath(contextTab);
@@ -2106,8 +2126,9 @@
           >
             <Fa icon={faCopy} size="xs" class="text-ghost" />
             {m.layout_panelTabBar_copyAbsolutePath_label()}
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="ghost-light"
             class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center gap-2"
             onclick={() => {
               copyFileName(contextTab);
@@ -2116,9 +2137,10 @@
           >
             <Fa icon={faCopy} size="xs" class="text-ghost" />
             {m.layout_panelTabBar_copyFilename_label()}
-          </button>
+          </Button>
           {#if $isWorkspaceHostLocal$}
-            <button
+            <Button
+              variant="ghost-light"
               class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center gap-2"
               onclick={() => {
                 revealInFinder(contextTab);
@@ -2127,12 +2149,13 @@
             >
               <Fa icon={faFolderOpen} size="xs" class="text-ghost" />
               {m.layout_panelTabBar_revealIn_label({ fileManager: fileManagerName })}
-            </button>
+            </Button>
           {/if}
         {/if}
         <!-- Type-specific actions for browser tabs -->
         {#if contextTab && contextTab.type === 'browser' && contextTab.browserUrl}
-          <button
+          <Button
+            variant="ghost-light"
             class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center justify-between gap-4"
             onclick={() => {
               copyBrowserUrl(contextTab);
@@ -2144,8 +2167,9 @@
               {m.layout_panelTabBar_copyUrl_label()}
             </span>
             <span class="text-subtle text-xs">{copyBrowserUrlShortcutHint}</span>
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="ghost-light"
             class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center gap-2"
             onclick={() => {
               openInExternalBrowser(contextTab);
@@ -2154,11 +2178,12 @@
           >
             <Fa icon={faArrowUpRightFromSquare} size="xs" class="text-ghost" />
             {m.layout_panelTabBar_openInBrowser_label()}
-          </button>
+          </Button>
         {/if}
         <!-- Type-specific actions for agent tabs -->
         {#if contextTab && contextTab.type === 'agent'}
-          <button
+          <Button
+            variant="ghost-light"
             class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center gap-2"
             onclick={() => {
               copyAgentRelativePath(contextTab);
@@ -2167,8 +2192,9 @@
           >
             <Fa icon={faCopy} size="xs" class="text-ghost" />
             {m.layout_panelTabBar_copyRelativePath_label()}
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="ghost-light"
             class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center gap-2"
             onclick={() => {
               copyAgentAbsolutePath(contextTab);
@@ -2177,8 +2203,9 @@
           >
             <Fa icon={faCopy} size="xs" class="text-ghost" />
             {m.layout_panelTabBar_copyAbsolutePath_label()}
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="ghost-light"
             class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center gap-2"
             onclick={() => {
               copyAgentFileName(contextTab);
@@ -2187,9 +2214,10 @@
           >
             <Fa icon={faCopy} size="xs" class="text-ghost" />
             {m.layout_panelTabBar_copyFilename_label()}
-          </button>
+          </Button>
           {#if $isWorkspaceHostLocal$}
-            <button
+            <Button
+              variant="ghost-light"
               class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center gap-2"
               onclick={() => {
                 revealAgentInFinder(contextTab);
@@ -2198,12 +2226,13 @@
             >
               <Fa icon={faFolderOpen} size="xs" class="text-ghost" />
               {m.layout_panelTabBar_revealIn_label({ fileManager: fileManagerName })}
-            </button>
+            </Button>
           {/if}
         {/if}
         <!-- Type-specific actions for note tabs -->
         {#if contextTab && contextTab.type === 'note'}
-          <button
+          <Button
+            variant="ghost-light"
             class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center gap-2"
             onclick={() => {
               copyNoteRelativePath(contextTab);
@@ -2212,8 +2241,9 @@
           >
             <Fa icon={faCopy} size="xs" class="text-ghost" />
             {m.layout_panelTabBar_copyRelativePath_label()}
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="ghost-light"
             class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center gap-2"
             onclick={() => {
               copyNoteAbsolutePath(contextTab);
@@ -2222,8 +2252,9 @@
           >
             <Fa icon={faCopy} size="xs" class="text-ghost" />
             {m.layout_panelTabBar_copyAbsolutePath_label()}
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="ghost-light"
             class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center gap-2"
             onclick={() => {
               copyNoteFileName(contextTab);
@@ -2232,9 +2263,10 @@
           >
             <Fa icon={faCopy} size="xs" class="text-ghost" />
             {m.layout_panelTabBar_copyFilename_label()}
-          </button>
+          </Button>
           {#if $isWorkspaceHostLocal$}
-            <button
+            <Button
+              variant="ghost-light"
               class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center gap-2"
               onclick={() => {
                 revealNoteInFinder(contextTab);
@@ -2243,12 +2275,13 @@
             >
               <Fa icon={faFolderOpen} size="xs" class="text-ghost" />
               {m.layout_panelTabBar_revealIn_label({ fileManager: fileManagerName })}
-            </button>
+            </Button>
           {/if}
         {/if}
         <!-- Type-specific actions for terminal tabs -->
         {#if contextTab && contextTab.type === 'terminal'}
-          <button
+          <Button
+            variant="ghost-light"
             class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center gap-2"
             onclick={() => {
               copyTabTitle(contextTab);
@@ -2257,13 +2290,14 @@
           >
             <Fa icon={faCopy} size="xs" class="text-ghost" />
             {m.layout_panelTabBar_copyTerminalName_label()}
-          </button>
+          </Button>
         {/if}
         {#if contextTab}
           <div class="border-t border-border"></div>
         {/if}
         <!-- Zoom toggle -->
-        <button
+        <Button
+          variant="ghost-light"
           class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center justify-between"
           onclick={() => {
             onZoomToggle?.();
@@ -2274,7 +2308,7 @@
             ? m.layout_panelTabBar_unzoomPanel_label()
             : m.layout_panelTabBar_zoomPanel_label()}
           <span class="text-subtle text-xs">⇧⌘↵</span>
-        </button>
+        </Button>
         <div class="border-t border-border"></div>
         <!-- Split options -->
         {#if contextMenuTab.source === 'panel'}
@@ -2339,7 +2373,8 @@
           <span class="text-subtle text-xs">{movePaneRightShortcutHint}</span>
         </Button>
         <div class="border-t border-border"></div>
-        <button
+        <Button
+          variant="ghost-light"
           class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center justify-between disabled:cursor-not-allowed disabled:opacity-50"
           disabled={!onSplitHorizontal}
           onclick={() => {
@@ -2374,10 +2409,11 @@
             {m.layout_panelTabBar_splitRight_label()}
           </span>
           <span class="text-subtle text-xs">{createColumnRightShortcutHint}</span>
-        </button>
+        </Button>
         <div class="border-t border-border"></div>
         {#if contextMenuTab.source === 'tab'}
-          <button
+          <Button
+            variant="ghost-light"
             class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center justify-between"
             onclick={() => {
               onTabClose?.(menuTabId);
@@ -2386,8 +2422,9 @@
           >
             {m.layout_panelTabBar_close_label()}
             <span class="text-subtle text-xs">{closePaneShortcutHint}</span>
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="ghost-light"
             class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center justify-between"
             onclick={() => {
               onCloseOtherTabs?.(menuTabId);
@@ -2396,8 +2433,9 @@
           >
             {m.layout_panelTabBar_closeOtherTabs_label()}
             <span class="text-subtle text-xs"></span>
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="ghost-light"
             class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center justify-between"
             onclick={() => {
               onCloseTabsToRight?.(menuTabId);
@@ -2406,9 +2444,10 @@
           >
             {m.layout_panelTabBar_closeTabsToRight_label()}
             <span class="text-subtle text-xs"></span>
-          </button>
+          </Button>
         {/if}
-        <button
+        <Button
+          variant="ghost-light"
           class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center justify-between"
           onclick={() => {
             onClosePanel?.();
@@ -2417,8 +2456,9 @@
         >
           {m.layout_panelTabBar_closePanel_label()}
           <span class="text-subtle text-xs"></span>
-        </button>
-        <button
+        </Button>
+        <Button
+          variant="ghost-light"
           class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center justify-between"
           onclick={() => {
             onCloseAllOthersEverywhere?.(menuTabId);
@@ -2427,7 +2467,7 @@
         >
           {m.layout_panelTabBar_closeAllOthers_label()}
           <span class="text-subtle text-xs"></span>
-        </button>
+        </Button>
       </div>
     </div>
   </Portal>

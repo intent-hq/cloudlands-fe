@@ -6,155 +6,150 @@
    * disconnected — each section only when non-empty. The primary button is
    * always "Quit"; Escape/backdrop/X = cancel.
    */
-  import { Button } from '$lib/components/ui/button';
-  import Fa from 'svelte-fa';
-  import { faExclamationTriangle, faXmark } from '@fortawesome/free-solid-svg-icons';
-  import Portal from '$lib/components/ui/Portal.svelte';
-  import type { QuitConfirmationShowPayload } from '$shared/ipc/quit-confirmation';
+  import { FormDialog } from '$lib/components/patterns/confirm';
+  import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
+  import WorkspaceStatusIcon from '$lib/components/workspace/WorkspaceStatusIcon.svelte';
+  import type {
+    QuitAgentSummary,
+    QuitBrowserTabSummary,
+    QuitConfirmationShowPayload,
+  } from '$shared/ipc/quit-confirmation';
   import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     open?: boolean;
+    static?: boolean;
     payload?: QuitConfirmationShowPayload | null;
     /** Called exactly once per open with the user's decision. */
     onRespond?: (proceed: boolean) => void;
   }
 
-  let { open = $bindable(false), payload = null, onRespond }: Props = $props();
+  let {
+    open = $bindable(false),
+    static: staticPosition = false,
+    payload = null,
+    onRespond,
+  }: Props = $props();
 
   const dialogTitleId = 'quit-confirmation-dialog-title';
   const dialogDescriptionId = 'quit-confirmation-dialog-description';
 
-  let dialogEl = $state<HTMLDivElement | null>(null);
-
-  // Move focus into the dialog on open (ARIA alertdialog pattern) so Escape
-  // reaches the keydown handler immediately — without this, focus stays on
-  // the previously focused page element outside the portal.
-  $effect(() => {
-    if (open && payload && dialogEl) {
-      dialogEl.focus();
-    }
-  });
-
   const interrupted = $derived(payload?.interrupted ?? []);
   const disruptedTabs = $derived(payload?.disruptedBrowserTabs ?? []);
+
+  const workspaces = $derived.by(() => {
+    const groups = new Map<
+      string,
+      {
+        key: string;
+        name: string;
+        agents: { agent: QuitAgentSummary; interrupted: boolean }[];
+        tabs: QuitBrowserTabSummary[];
+      }
+    >();
+    function group(workspaceId?: string, workspaceName?: string) {
+      const key = workspaceId
+        ? `id:${workspaceId}`
+        : workspaceName
+          ? `name:${workspaceName}`
+          : 'other';
+      let value = groups.get(key);
+      if (!value) {
+        value = {
+          key,
+          name:
+            workspaceName ||
+            (workspaceId ? m.workspace_links_untitled_label() : m.workspace_links_other_label()),
+          agents: [],
+          tabs: [],
+        };
+        groups.set(key, value);
+      } else if (workspaceName) {
+        value.name = workspaceName;
+      }
+      return value;
+    }
+    const agents = interrupted;
+    for (const agent of interrupted)
+      group(agent.workspaceId, agent.workspaceName).agents.push({ agent, interrupted: true });
+    for (const tab of disruptedTabs) {
+      const owner = agents.find((agent) => agent.agentId === tab.ownerAgentId);
+      const workspaceId = tab.workspaceId ?? owner?.workspaceId;
+      const workspaceName =
+        !tab.workspaceId || tab.workspaceId === owner?.workspaceId
+          ? owner?.workspaceName
+          : undefined;
+      group(workspaceId, workspaceName).tabs.push(tab);
+    }
+    return [...groups.values()];
+  });
 
   function respond(proceed: boolean) {
     if (!open) return;
     open = false;
     onRespond?.(proceed);
   }
-
-  function handleKeydown(e: KeyboardEvent) {
-    if (e.key === 'Escape') {
-      e.preventDefault();
-      e.stopPropagation();
-      respond(false);
-    }
-  }
 </script>
 
 {#if open && payload}
-  <Portal target="body" zIndex={100}>
-    <div
-      class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-[1px]"
-      role="presentation"
-      onkeydown={handleKeydown}
-      onclick={() => respond(false)}
-    >
-      <div
-        bind:this={dialogEl}
-        class="flex w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-border bg-background shadow-xl shadow-black/20 max-h-[85vh] outline-none"
-        onclick={(e) => e.stopPropagation()}
-        role="alertdialog"
-        aria-modal="true"
-        aria-labelledby={dialogTitleId}
-        aria-describedby={dialogDescriptionId}
-        tabindex="-1"
-        onkeydown={handleKeydown}
-      >
-        <div class="flex items-start justify-between gap-4 px-6 pt-6">
-          <div class="flex items-start gap-4">
-            <div
-              class="mt-0.5 flex size-10 shrink-0 items-center justify-center rounded-full bg-amber-500/20 text-amber-600 ring-1 ring-amber-600/20 dark:bg-amber-500/15 dark:text-amber-400"
+  <FormDialog
+    bind:open
+    static={staticPosition}
+    role="alertdialog"
+    title={m.quitConfirmation_modal_quit_title()}
+    description={m.quitConfirmation_modal_quit_description()}
+    titleId={dialogTitleId}
+    descriptionId={dialogDescriptionId}
+    submitLabel={m.quitConfirmation_modal_quitButton_label()}
+    cancelLabel={m.quitConfirmation_modal_cancelButton_label()}
+    submitVariant="destructive"
+    class="max-w-2xl"
+    focusContent
+    onSubmit={() => respond(true)}
+    onCancel={() => respond(false)}
+  >
+    <div class="flex-1 space-y-3 overflow-auto">
+      {#each workspaces as workspace (workspace.key)}
+        <section aria-label={workspace.name} class="space-y-1">
+          <h3 class="flex min-w-0 items-center gap-2 px-2 py-1.5">
+            <WorkspaceStatusIcon status="idle" size={14} decorative />
+            <span class="type-body min-w-0 truncate font-normal text-foreground"
+              >{workspace.name}</span
             >
-              <Fa icon={faExclamationTriangle} size="lg" />
-            </div>
-            <div>
-              <h2 id={dialogTitleId} class="text-lg font-semibold leading-6">
-                {m.quitConfirmation_modal_quit_title()}
-              </h2>
-              <p class="mt-1 text-sm text-subtle">
-                {m.quitConfirmation_modal_quit_description()}
-              </p>
-            </div>
-          </div>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            class="-mr-1 mt-0.5 text-subtle hover:text-foreground"
-            aria-label={m.quitConfirmation_modal_dismiss_ariaLabel()}
-            onclick={() => respond(false)}
-          >
-            <Fa icon={faXmark} />
-          </Button>
-        </div>
-
-        <div id={dialogDescriptionId} class="flex-1 overflow-auto px-6 py-5 space-y-5">
-          {#if interrupted.length > 0}
-            <section class="space-y-2">
-              <h3 class="text-sm font-medium text-foreground">
-                {m.quitConfirmation_modal_interruptedSection_title()}
-              </h3>
-              <p class="text-xs text-subtle">
-                {m.quitConfirmation_modal_interruptedSection_description()}
-              </p>
-              <ul class="space-y-1 pl-2">
-                {#each interrupted as agent (agent.agentId)}
-                  <li class="text-sm text-foreground truncate">
-                    {agent.agentName}
-                    {#if agent.workspaceName}
-                      <span class="text-xs text-subtle">— {agent.workspaceName}</span>
-                    {/if}
-                  </li>
-                {/each}
-              </ul>
-            </section>
-          {/if}
-
-          {#if disruptedTabs.length > 0}
-            <section class="space-y-2">
-              <h3 class="text-sm font-medium text-foreground">
-                {m.quitConfirmation_modal_browsersSection_title()}
-              </h3>
-              <p class="text-xs text-subtle">
-                {m.quitConfirmation_modal_browsersSection_description()}
-              </p>
-              <ul class="space-y-1 pl-2">
-                {#each disruptedTabs as tab (tab.tabId)}
-                  <li class="text-sm text-foreground truncate">
-                    {tab.title || tab.url || m.quitConfirmation_modal_untitledTab_label()}
-                    {#if tab.ownerAgentName}
-                      <span class="text-xs text-subtle">— {tab.ownerAgentName}</span>
-                    {/if}
-                  </li>
-                {/each}
-              </ul>
-            </section>
-          {/if}
-        </div>
-
-        <div
-          class="flex flex-col-reverse gap-2 border-t border-border bg-muted/20 px-6 py-4 sm:flex-row sm:justify-end"
-        >
-          <Button variant="outline" onclick={() => respond(false)}>
-            {m.quitConfirmation_modal_cancelButton_label()}
-          </Button>
-          <Button variant="destructive" class="sm:min-w-[8rem]" onclick={() => respond(true)}>
-            {m.quitConfirmation_modal_quitButton_label()}
-          </Button>
-        </div>
-      </div>
+          </h3>
+          <ul class="space-y-1 pl-7 pr-2">
+            {#each workspace.agents as { agent } (agent.agentId)}
+              <li class="flex min-w-0 items-center gap-2 py-1">
+                <span class="shrink-0"
+                  ><AgentAvatar agentId={agent.agentId} variant="compact" /></span
+                >
+                <span
+                  class="type-body min-w-0 flex-1 truncate text-foreground"
+                  title={agent.agentName}>{agent.agentName}</span
+                >
+                <span
+                  class="type-caption shrink-0 text-muted-foreground"
+                  title={m.quitConfirmation_modal_interruptedSection_description()}
+                >
+                  {m.quitConfirmation_modal_interruptedSection_title()}
+                </span>
+              </li>
+            {/each}
+            {#each workspace.tabs as tab (tab.tabId)}
+              <li
+                class="min-w-0 py-1 text-muted-foreground"
+                title={m.quitConfirmation_modal_browsersSection_description()}
+              >
+                <div class="type-body truncate">
+                  {tab.title || tab.url || m.quitConfirmation_modal_untitledTab_label()}
+                </div>
+                {#if tab.title && tab.url}<div class="type-caption truncate">{tab.url}</div>{/if}
+                <div class="type-caption">{m.quitConfirmation_modal_browsersSection_title()}</div>
+              </li>
+            {/each}
+          </ul>
+        </section>
+      {/each}
     </div>
-  </Portal>
+  </FormDialog>
 {/if}

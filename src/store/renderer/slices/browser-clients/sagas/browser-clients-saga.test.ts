@@ -23,7 +23,7 @@ vi.mock('$lib/client', () => ({
     },
   },
 }));
-vi.mock('svelte-sonner', () => ({ toast: { error: mocks.toastError } }));
+vi.mock('$lib/components/patterns/notify', () => ({ notify: { error: mocks.toastError } }));
 
 import type { LiveClient } from '$shared/types/browser-clients';
 import { resolveDrivingClientView } from '$lib/components/workspace/driving-indicator';

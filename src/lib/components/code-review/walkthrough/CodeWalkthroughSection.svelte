@@ -1,15 +1,15 @@
 <script lang="ts">
   import { Button } from '$lib/components/ui/button';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import Fa from 'svelte-fa';
   import {
     faWandMagicSparkles,
-    faSpinner,
     faRotateRight,
     faChevronDown,
     faChevronLeft,
     faFolderOpen,
   } from '@fortawesome/free-solid-svg-icons';
-  import { fly, slide } from 'svelte/transition';
+  import { fly, slide } from '$lib/motion';
   import { batchedGitDiff } from '$features/file-tracking/components/diff/diff-ipc-batcher';
   import WalkthroughFileDiff from './WalkthroughFileDiff.svelte';
   import WalkthroughCategoriesGrid from './WalkthroughCategoriesGrid.svelte';
@@ -233,7 +233,8 @@
 
 <div class="border-t border-border">
   <!-- Header -->
-  <button
+  <Button
+    variant="ghost"
     class="flex items-center gap-2 w-full px-4 py-3 hover:bg-muted/30 transition-colors cursor-pointer"
     onclick={() => (isExpanded = !isExpanded)}
   >
@@ -241,16 +242,16 @@
     <Fa icon={faWandMagicSparkles} class="h-4 w-4 text-purple-500" />
     <span class="text-sm font-medium">{m.codeReview_walkthroughSection_title()}</span>
     {#if isRunning}
-      <Fa icon={faSpinner} class="h-3 w-3 animate-spin text-ghost ml-auto" />
+      <IntentMarkLoader size={12} class="text-ghost ml-auto" />
     {/if}
-  </button>
+  </Button>
 
   {#if isExpanded}
-    <div class="px-4 pb-4" transition:slide={{ duration: 200 }}>
+    <div class="px-4 pb-4" transition:slide={{ tier: 'moderate' }}>
       <!-- Running state: Show loading -->
       {#if isRunning}
         <div class="flex items-center gap-2 text-sm text-subtle py-2">
-          <Fa icon={faSpinner} class="h-3 w-3 animate-spin" />
+          <IntentMarkLoader size={12} />
           <span>{m.codeReview_walkthroughSection_generating_label()}</span>
         </div>
       {/if}
@@ -275,7 +276,7 @@
           {#if walkthrough.title}
             <h2
               class="text-lg font-semibold text-foreground"
-              transition:fly={{ y: 4, duration: 200 }}
+              transition:fly={{ axis: 'y', distance: 4, tier: 'moderate' }}
             >
               {walkthrough.title}
             </h2>
@@ -283,7 +284,10 @@
 
           <!-- Overview - simple italic text -->
           {#if walkthrough.overview}
-            <p class="text-sm text-subtle italic" transition:fly={{ y: 4, duration: 200 }}>
+            <p
+              class="text-sm text-subtle italic"
+              transition:fly={{ axis: 'y', distance: 4, tier: 'moderate' }}
+            >
               {walkthrough.overview}
             </p>
           {/if}
@@ -304,7 +308,7 @@
           {#if categories.length > 0}
             <div class="space-y-8 pt-4">
               {#each categories as category, i (i)}
-                <div transition:fly={{ y: 8, duration: 200, delay: i * 100 }}>
+                <div transition:fly={{ axis: 'y', distance: 8, tier: 'moderate' }}>
                   <WalkthroughCategorySection
                     {category}
                     categoryIndex={i}
@@ -321,8 +325,9 @@
           <!-- Other files not mentioned in walkthrough -->
           {#if otherFiles.length > 0}
             <div class="pt-4 border-t border-border">
-              <button
+              <Button
                 type="button"
+                variant="ghost"
                 class="flex items-center gap-2 w-full text-left py-2 hover:bg-muted/30 rounded transition-colors"
                 onclick={() => (isOtherFilesExpanded = !isOtherFilesExpanded)}
               >
@@ -334,13 +339,13 @@
                 <span class="text-sm font-medium text-subtle">
                   {m.codeReview_walkthroughSection_otherChanges_label({ count: otherFiles.length })}
                 </span>
-              </button>
+              </Button>
 
               {#if isOtherFilesExpanded}
-                <div class="space-y-3 pt-2" transition:slide={{ duration: 200 }}>
-                  {#each otherFiles as change, i (change.id)}
+                <div class="space-y-3 pt-2" transition:slide={{ tier: 'moderate' }}>
+                  {#each otherFiles as change (change.id)}
                     {@const patchData = fileDiffsCache.get(change.relativePath)}
-                    <div transition:fly={{ y: 8, duration: 200, delay: i * 30 }}>
+                    <div transition:fly={{ axis: 'y', distance: 8, tier: 'moderate' }}>
                       <WalkthroughFileDiff
                         fileName={change.relativePath}
                         patch={patchData?.patch ?? ''}

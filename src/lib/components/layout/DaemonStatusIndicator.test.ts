@@ -99,12 +99,12 @@ describe('DaemonStatusIndicator', () => {
     it('maps health states to correct colors', () => {
       const healthColors = {
         healthy: 'bg-green-500',
-        degraded: 'bg-yellow-500',
+        degraded: 'bg-warning',
         down: 'bg-red-500',
       };
 
       expect(healthColors.healthy).toBe('bg-green-500');
-      expect(healthColors.degraded).toBe('bg-yellow-500');
+      expect(healthColors.degraded).toBe('bg-warning');
       expect(healthColors.down).toBe('bg-red-500');
     });
 
@@ -814,7 +814,7 @@ describe('DaemonStatusIndicator', () => {
       render(DaemonStatusIndicator);
 
       const trigger = screen.getByRole('button', { name: 'intentd: healthy' });
-      expect(iconOf(trigger).classList.contains('text-yellow-500')).toBe(true);
+      expect(iconOf(trigger).classList.contains('text-warning')).toBe(true);
       expect(iconOf(trigger).classList.contains('text-subtle')).toBe(false);
 
       await fireEvent.click(trigger);
@@ -823,9 +823,9 @@ describe('DaemonStatusIndicator', () => {
       const icon = screen.getByLabelText('Less than 10% of the workspaces volume is free');
       // role="img" so the aria-label on the plain span is reliably exposed.
       expect(icon.getAttribute('role')).toBe('img');
-      // In-menu status text renders yellow, not green.
+      // In-menu status text renders with warning emphasis, not green.
       const statusValue = screen.getByText('Healthy');
-      expect(statusValue.classList.contains('text-yellow-500')).toBe(true);
+      expect(statusValue.classList.contains('text-warning-ink')).toBe(true);
       expect(statusValue.classList.contains('text-green-500')).toBe(false);
     });
 
@@ -847,7 +847,7 @@ describe('DaemonStatusIndicator', () => {
 
       const trigger = screen.getByRole('button', { name: 'intentd: not running' });
       expect(iconOf(trigger).classList.contains('text-red-500')).toBe(true);
-      expect(iconOf(trigger).classList.contains('text-yellow-500')).toBe(false);
+      expect(iconOf(trigger).classList.contains('text-warning')).toBe(false);
     });
   });
 
@@ -966,7 +966,7 @@ describe('DaemonStatusIndicator', () => {
       const trigger = screen.getByRole('button', {
         name: 'intentd: healthy (version mismatch)',
       });
-      expect(iconOf(trigger).classList.contains('text-yellow-500')).toBe(true);
+      expect(iconOf(trigger).classList.contains('text-warning')).toBe(true);
       expect(iconOf(trigger).classList.contains('text-subtle')).toBe(false);
     });
 
@@ -1059,7 +1059,7 @@ describe('DaemonStatusIndicator', () => {
       render(DaemonStatusIndicator);
 
       const trigger = screen.getByRole('button', { name: 'intentd: degraded' });
-      expect(iconOf(trigger).classList.contains('text-yellow-500')).toBe(true);
+      expect(iconOf(trigger).classList.contains('text-warning')).toBe(true);
     });
 
     it('keeps the red dot and down label when the daemon is down despite a mismatch', async () => {
@@ -1074,7 +1074,7 @@ describe('DaemonStatusIndicator', () => {
 
       const trigger = screen.getByRole('button', { name: 'intentd: not running' });
       expect(iconOf(trigger).classList.contains('text-red-500')).toBe(true);
-      expect(iconOf(trigger).classList.contains('text-yellow-500')).toBe(false);
+      expect(iconOf(trigger).classList.contains('text-warning')).toBe(false);
     });
   });
 

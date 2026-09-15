@@ -3,6 +3,7 @@
   import { onMount, type Snippet } from 'svelte';
   import { page } from '$app/state';
   import CatalogShell from '$lib/component-catalog/CatalogShell.svelte';
+  import { Toast } from '$lib/components/ui/toast';
 
   interface Props {
     children?: Snippet;
@@ -11,6 +12,7 @@
   let { children }: Props = $props();
 
   const activeSlug = $derived((page.params as { slug?: string }).slug);
+  const activePath = $derived(page.url.pathname);
 
   // The stylesheet rule below shares specificity with the token defaults, so which one wins
   // depends on stylesheet order. The inline declaration makes the bundled face win regardless;
@@ -34,7 +36,8 @@
   <title>Component sandbox</title>
 </svelte:head>
 
-<CatalogShell {activeSlug}>{@render children?.()}</CatalogShell>
+<CatalogShell {activeSlug} {activePath}>{@render children?.()}</CatalogShell>
+<Toast />
 
 <style>
   :global(:root) {

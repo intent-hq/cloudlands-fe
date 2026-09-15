@@ -3,8 +3,13 @@
   import { cn } from '$lib/utils';
   import Fa from 'svelte-fa';
   import { faCheck, faChevronDown, faChevronRight } from '@fortawesome/free-solid-svg-icons';
-  import { slide } from 'svelte/transition';
   import Portal from '../Portal.svelte';
+  import { Button } from '$lib/components/ui/button';
+  import { Input } from '$lib/components/ui/input';
+  import { getPageTargetIndex } from '$lib/components/ui/menu';
+  import ListHighlight from '../menu/menu-list-highlight.svelte';
+  import { menuItem, menuOverlay, menuOverlayTransition } from '../menu/menu-recipes';
+  import { crispOut, slide, springIn } from '$lib/motion';
   import type {
     DropdownOption,
     DropdownGroup,
@@ -15,6 +20,8 @@
   } from './types';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
+
+  const uid = $props.id();
 
   interface Props {
     /** Current value - string for single, string[] for multiple */
@@ -27,6 +34,8 @@
     placeholder?: string;
     /** Whether to use a portal to render content (useful when inside overflow:hidden containers) */
     portal?: boolean;
+    /** Render the open panel in normal flow without portal or positioning observers. */
+    staticPosition?: boolean;
     /** Optional containing boundary for collision-aware inline content. */
     collisionBoundary?: string | HTMLElement | null;
     /** Space kept between collision-aware content and its boundary. */
@@ -83,6 +92,7 @@
     groups = [],
     placeholder = m.ui_dropdown_select_placeholder(),
     portal = false,
+    staticPosition = false,
     collisionBoundary = null,
     collisionPadding = 8,
     searchable = true,
@@ -113,11 +123,14 @@
   let triggerRef = $state.raw<HTMLButtonElement | null>(null);
   let portalContentRef = $state.raw<HTMLDivElement | null>(null);
   let portalStyle = $state('');
+  let openedWidth = $state<number | undefined>();
   let inlineContentRef = $state.raw<HTMLDivElement | null>(null);
   let inlineStyle = $state('');
   let inlineSide = $state<'top' | 'bottom'>('bottom');
   let containerRef = $state.raw<HTMLDivElement | null>(null);
   let inputRef = $state.raw<HTMLInputElement | null>(null);
+  const triggerId = `${uid}-trigger`;
+  const listboxId = `${uid}-listbox`;
 
   // Keyboard navigation state
   let highlightedIndex = $state(-1);
@@ -273,6 +286,14 @@
     }
   }
 
+  function pinOpenWidth(node: HTMLDivElement) {
+    // Measure the natural layout on each mount, before the entrance transform.
+    // Clearing the previous width also lets a reopened panel fit updated options.
+    node.style.removeProperty('width');
+    openedWidth = Math.max(node.offsetWidth, triggerRef?.offsetWidth ?? 0);
+    node.style.width = `${openedWidth}px`;
+  }
+
   function resolveCollisionRect(): Pick<DOMRect, 'top' | 'right' | 'bottom' | 'left'> {
     const boundary =
       typeof collisionBoundary === 'string'
@@ -302,6 +323,7 @@
     const spaceAbove = Math.max(0, rect.top - topBoundary - 4);
     const preferredDropdownHeight = contentMaxHeight ?? (portal ? 300 : 360);
     const opensAbove = spaceBelow < preferredDropdownHeight && spaceAbove > spaceBelow;
+    inlineSide = opensAbove ? 'top' : 'bottom';
     const maxHeight = Math.min(preferredDropdownHeight, opensAbove ? spaceAbove : spaceBelow);
 
     // Clamp horizontal position so dropdown doesn't overflow the viewport
@@ -322,7 +344,6 @@
 
     const containerRect = containerRef?.getBoundingClientRect() ?? rect;
     const relativeLeft = left - containerRect.left;
-    inlineSide = opensAbove ? 'top' : 'bottom';
     if (opensAbove) {
       const bottom = containerRect.bottom - rect.top + 4;
       inlineStyle = `position: absolute; top: auto; bottom: ${bottom}px; left: ${relativeLeft}px; min-width: ${minWidth}px; max-width: ${availableWidth}px; max-height: ${maxHeight}px;`;
@@ -384,7 +405,7 @@
   }
 
   // Handle submenu hover
-  function handleSubmenuEnter(option: DropdownOption, event: MouseEvent) {
+  function handleSubmenuEnter(option: DropdownOption, event: Event) {
     if (option.type === 'submenu' && option.children?.length) {
       openSubmenu = option.value;
       // Position submenu to the right of the parent item
@@ -438,10 +459,34 @@
     tick().then(() => {
       const container = portalContentRef ?? inlineContentRef ?? containerRef;
       if (!container || highlightedIndex < 0) return;
-      const options = container.querySelectorAll('[role="option"]');
+      const options = container.querySelectorAll('[role="option"][id]');
       const el = options[highlightedIndex] as HTMLElement | undefined;
       el?.scrollIntoView?.({ block: 'nearest' });
     });
+  }
+
+  function moveHighlight(nextIndex: number) {
+    const container = portalContentRef ?? inlineContentRef ?? containerRef;
+    const activeElement = document.activeElement;
+    const shouldMoveFocus =
+      activeElement instanceof HTMLElement &&
+      activeElement.matches('[role="option"]') &&
+      Boolean(container?.contains(activeElement));
+    highlightedIndex = nextIndex;
+    void tick().then(() => {
+      const option = container?.querySelector<HTMLElement>(`#${uid}-option-${nextIndex}`);
+      if (shouldMoveFocus) option?.focus({ preventScroll: true });
+      option?.scrollIntoView?.({ block: 'nearest' });
+    });
+  }
+
+  function moveHighlightByPage(direction: -1 | 1) {
+    const content = portalContentRef ?? inlineContentRef ?? containerRef;
+    const viewport = content?.querySelector<HTMLElement>('[data-scroll-container]');
+    if (!viewport) return;
+    const options = Array.from(viewport.querySelectorAll<HTMLElement>('[role="option"][id]'));
+    const nextIndex = getPageTargetIndex(options, highlightedIndex, viewport, direction);
+    if (nextIndex >= 0) moveHighlight(nextIndex);
   }
 
   // Handle keyboard
@@ -453,33 +498,35 @@
         e.preventDefault();
         e.stopPropagation();
         if (selectableOptions.length > 0) {
-          highlightedIndex = Math.min(highlightedIndex + 1, selectableOptions.length - 1);
-          scrollHighlightedIntoView();
+          moveHighlight(Math.min(highlightedIndex + 1, selectableOptions.length - 1));
         }
         break;
       case 'ArrowUp':
         e.preventDefault();
         e.stopPropagation();
         if (selectableOptions.length > 0) {
-          highlightedIndex = Math.max(highlightedIndex - 1, 0);
-          scrollHighlightedIntoView();
+          moveHighlight(Math.max(highlightedIndex - 1, 0));
         }
         break;
       case 'Home':
         e.preventDefault();
         e.stopPropagation();
         if (selectableOptions.length > 0) {
-          highlightedIndex = 0;
-          scrollHighlightedIntoView();
+          moveHighlight(0);
         }
         break;
       case 'End':
         e.preventDefault();
         e.stopPropagation();
         if (selectableOptions.length > 0) {
-          highlightedIndex = selectableOptions.length - 1;
-          scrollHighlightedIntoView();
+          moveHighlight(selectableOptions.length - 1);
         }
+        break;
+      case 'PageDown':
+      case 'PageUp':
+        e.preventDefault();
+        e.stopPropagation();
+        moveHighlightByPage(e.key === 'PageDown' ? 1 : -1);
         break;
       case 'Enter':
         e.preventDefault();
@@ -498,6 +545,7 @@
   }
 
   onMount(() => {
+    if (staticPosition) return;
     document.addEventListener('mousedown', handleClickOutside, true);
     // Listen for scroll (with capture to catch scrolling in any container) and resize
     window.addEventListener('scroll', updateContentPosition, true);
@@ -512,7 +560,7 @@
 
   // Update portal position when dropdown opens
   $effect(() => {
-    if (open && (portal || collisionBoundary)) {
+    if (!staticPosition && open && (portal || collisionBoundary)) {
       // Use requestAnimationFrame to ensure DOM is ready
       requestAnimationFrame(() => updateContentPosition());
     }
@@ -520,19 +568,23 @@
 
   // Size classes for trigger
   const sizeClasses: Record<DropdownTriggerSize, string> = {
-    xs: 'h-6 px-2 text-xs',
-    sm: 'h-8 px-2.5 text-sm',
-    md: 'h-9 px-3 text-sm',
-    lg: 'h-10 px-4 text-base',
+    xs: 'h-(--control-height-compact) px-3',
+    sm: 'h-(--control-height-small) px-3',
+    md: 'h-(--control-height-medium) px-4',
+    lg: 'h-(--control-height-large) px-4',
   };
 
   // Variant classes for trigger
   const variantClasses: Record<DropdownTriggerVariant, string> = {
-    default: 'border border-input bg-background hover:bg-muted/50',
-    ghost: 'border-0 bg-transparent hover:bg-muted/50',
-    outline: 'border border-input bg-transparent hover:bg-muted/50',
+    default: 'border border-border bg-transparent hover:bg-hover',
+    ghost: 'border-0 bg-transparent hover:bg-hover active:bg-active',
+    outline: 'border border-border bg-transparent hover:bg-hover active:bg-active',
     inline: 'border-0 bg-transparent p-0 h-auto hover:text-foreground',
   };
+  const buttonVariant = $derived(
+    variant === 'inline' ? 'plain' : variant === 'default' ? 'default' : variant,
+  );
+  const buttonSize = $derived(size === 'md' ? 'default' : size);
 
   // Check if we have any results
   const hasResults = $derived(
@@ -570,17 +622,21 @@
   }
 </script>
 
-<div bind:this={containerRef} class={cn('relative inline-block', className)}>
+<div
+  bind:this={containerRef}
+  data-slot="dropdown-root"
+  class={cn('relative inline-block', className)}
+>
   <!-- Trigger -->
-  <button
-    bind:this={triggerRef}
+  <Button
+    bind:ref={triggerRef}
+    id={triggerId}
     type="button"
     onclick={handleTriggerClick}
     onkeydown={handleKeyDown}
     {disabled}
     class={cn(
-      'inline-flex items-center gap-2 rounded-md transition-colors cursor-pointer',
-      'focus:outline-none focus-visible:outline-none focus-visible:bg-muted/50 focus-visible:text-foreground focus-visible:border-foreground/50',
+      'type-caption inline-flex cursor-pointer items-center gap-2 rounded-(--radius-medium)',
       'disabled:cursor-not-allowed disabled:opacity-50',
       sizeClasses[size],
       variantClasses[variant],
@@ -588,6 +644,10 @@
     )}
     aria-haspopup="listbox"
     aria-expanded={open}
+    aria-controls={open ? listboxId : undefined}
+    active={open}
+    variant={buttonVariant}
+    size={buttonSize}
   >
     {#if trigger}
       {@render trigger({ open, value })}
@@ -595,48 +655,63 @@
       <span class="truncate text-left flex-1 {!displayLabel ? 'text-muted-foreground' : ''}">
         {displayLabel ?? placeholder}
       </span>
-      <Fa icon={faChevronDown} class="h-2! w-2! opacity-50 shrink-0" />
+      <Fa icon={faChevronDown} class="size-4! shrink-0 text-muted-foreground" />
     {/if}
-  </button>
+  </Button>
 
   <!-- Content (inline, no portal) -->
   {#if open && !portal}
-    <div
-      bind:this={inlineContentRef}
-      transition:slide={{ duration: 150 }}
-      class={cn(
-        'absolute z-50 min-w-full w-max',
-        collisionBoundary ? 'flex flex-col' : 'top-full left-0 mt-1',
-        'overflow-hidden rounded-md border border-border',
-        'bg-popover text-popover-foreground shadow-(--elevation-overlay)',
-        contentClass,
-      )}
-      style={collisionBoundary ? inlineStyle : undefined}
-      data-side={collisionBoundary ? inlineSide : undefined}
-      data-collision-aware={collisionBoundary ? 'true' : undefined}
-      role="listbox"
-      tabindex="-1"
-      onkeydown={handleKeyDown}
-    >
-      {@render dropdownContent(Boolean(collisionBoundary))}
-    </div>
+    {#if staticPosition}
+      <!-- svelte-ignore a11y_no_static_element_interactions (static catalog keyboard boundary) -->
+      <div
+        bind:this={inlineContentRef}
+        class={cn(menuOverlay(), 'relative z-50 min-w-full w-full', contentClass)}
+        data-static-position
+        data-slot="dropdown-content"
+        onkeydown={handleKeyDown}
+      >
+        {@render dropdownContent(false)}
+      </div>
+    {:else}
+      <!-- svelte-ignore a11y_no_static_element_interactions (keyboard boundary for nested popup controls) -->
+      <div
+        bind:this={inlineContentRef}
+        use:pinOpenWidth
+        style:width={openedWidth === undefined ? undefined : `${openedWidth}px`}
+        in:springIn={menuOverlayTransition.enter}
+        out:crispOut={menuOverlayTransition.exit}
+        class={cn(
+          menuOverlay(),
+          'absolute z-50 min-w-full w-max',
+          collisionBoundary ? 'flex flex-col' : 'top-full left-0 mt-1',
+          contentClass,
+        )}
+        style={collisionBoundary ? inlineStyle : undefined}
+        data-side={collisionBoundary ? inlineSide : undefined}
+        data-collision-aware={collisionBoundary ? 'true' : undefined}
+        data-slot="dropdown-content"
+        onkeydown={handleKeyDown}
+      >
+        {@render dropdownContent(Boolean(collisionBoundary))}
+      </div>
+    {/if}
   {/if}
 </div>
 
 <!-- Portal content (renders outside overflow:hidden containers) -->
-{#if open && portal}
+{#if open && portal && !staticPosition}
   <Portal zIndex={100}>
+    <!-- svelte-ignore a11y_no_static_element_interactions (keyboard boundary for nested popup controls) -->
     <div
       bind:this={portalContentRef}
-      class={cn(
-        'w-max flex flex-col',
-        'overflow-hidden rounded-md border border-border',
-        'bg-popover text-popover-foreground shadow-(--elevation-overlay)',
-        contentClass,
-      )}
+      use:pinOpenWidth
+      style:width={openedWidth === undefined ? undefined : `${openedWidth}px`}
+      in:springIn={menuOverlayTransition.enter}
+      out:crispOut={menuOverlayTransition.exit}
+      class={cn(menuOverlay(), 'w-max flex flex-col', contentClass)}
       style={portalStyle}
-      role="listbox"
-      tabindex="-1"
+      data-side={inlineSide}
+      data-slot="dropdown-content"
       onkeydown={handleKeyDown}
     >
       {@render dropdownContent(true)}
@@ -655,19 +730,21 @@
   <!-- Search Input -->
   {#if searchable}
     <div class={cn('w-full', isPortal && 'shrink-0')}>
-      <input
-        bind:this={inputRef}
+      <Input
+        bind:ref={inputRef}
         type="text"
-        class="w-full bg-transparent px-3 py-2 text-sm placeholder:text-muted-foreground/50 outline-none border-none ring-0 focus:ring-0! focus:outline-none!"
+        class="w-full bg-transparent px-3 py-2 text-sm placeholder:text-muted-foreground outline-none border-none ring-0 focus:outline-none!"
         {placeholder}
         role="searchbox"
         aria-label={m.ui_dropdown_search_ariaLabel()}
+        aria-controls={listboxId}
         aria-activedescendant={highlightedIndex >= 0
-          ? `dropdown-option-${highlightedIndex}`
+          ? `${uid}-option-${highlightedIndex}`
           : undefined}
         value={searchValue}
         oninput={(e) => (searchValue = e.currentTarget.value)}
         onkeydown={handleKeyDown}
+        noFocusStyle
       />
     </div>
     <!-- Screen reader announcement for filtered results -->
@@ -682,23 +759,34 @@
 
   <!-- Options -->
   <div
+    id={listboxId}
     data-scroll-container
+    role="listbox"
+    aria-labelledby={triggerId}
+    tabindex="-1"
+    onkeydown={handleKeyDown}
     class={cn(
       isPortal || fillContentHeight ? 'flex-1 min-h-0' : 'max-h-[300px]',
-      'overflow-y-auto pb-1',
+      'overflow-y-auto p-1',
     )}
   >
+    <ListHighlight
+      activeIndex={highlightedIndex >= 0 ? highlightedIndex : null}
+      onactiveindexchange={(index) => {
+        if (index !== null) highlightedIndex = index;
+      }}
+    />
     {#if groups.length > 0}
       <!-- Grouped options -->
       {#each filteredGroups as group, groupIndex (group.key)}
-        <div>
+        <div transition:slide={{ tier: 'fast' }}>
           {#if groupHeader}
             {@render groupHeader({ group, groupIndex })}
           {:else if group.label}
             <div
-              class="px-3 {groupIndex === 0
+              class="type-caption px-2 {groupIndex === 0
                 ? ''
-                : 'pt-3 border-t border-border'} py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider sticky top-0 z-10 bg-popover"
+                : 'pt-3 border-t border-border'} py-1 text-xs font-medium text-muted-foreground sticky top-0 z-10 bg-popover"
             >
               {#if group.icon}
                 <Fa icon={group.icon} class="inline-block mr-1.5 h-3 w-3" />
@@ -708,14 +796,18 @@
           {/if}
 
           {#each group.options as option (option.value)}
-            {@render optionItem(option)}
+            <div transition:slide={{ tier: 'fast' }}>
+              {@render optionItem(option)}
+            </div>
           {/each}
         </div>
       {/each}
     {:else}
       <!-- Flat options -->
       {#each filteredOptions as option (option.value)}
-        {@render optionItem(option)}
+        <div transition:slide={{ tier: 'fast' }}>
+          {@render optionItem(option)}
+        </div>
       {/each}
     {/if}
 
@@ -723,14 +815,18 @@
     {#if !hasResults}
       {#if searchValue && allOptions.length > 0}
         <!-- Search yielded no results but there are options available -->
-        <div class="flex flex-col items-center gap-1 py-6 px-3 text-muted-foreground">
-          <span class="text-sm">{m.ui_dropdown_noResultsFor_label({ query: searchValue })}</span>
-          <span class="text-xs text-subtle">{m.ui_dropdown_tryDifferentSearch_description()}</span>
+        <div class="type-caption flex flex-col items-center gap-1 py-1 px-2 text-muted-foreground">
+          <span>{m.ui_dropdown_noResultsFor_label({ query: searchValue })}</span>
+          <span class="type-caption text-muted-foreground"
+            >{m.ui_dropdown_tryDifferentSearch_description()}</span
+          >
         </div>
       {:else if empty}
         {@render empty()}
       {:else}
-        <div class="px-2 py-4 text-center text-sm text-subtle">
+        <div
+          class="type-caption min-h-(--control-height-small) px-2 py-1 text-center text-muted-foreground"
+        >
           {m.ui_dropdown_noResults_label()}
         </div>
       {/if}
@@ -745,7 +841,7 @@
   {/if}
 {/snippet}
 
-{#snippet optionItem(option: DropdownOption)}
+{#snippet optionItem(option: DropdownOption, popupRole: 'listbox' | 'menu' = 'listbox')}
   {@const optionIndex = selectableOptions.findIndex((o) => o.value === option.value)}
   <!-- i18n-ignore (scanner false positive: `<` comparison inside the const expression) -->
   {@const isHighlighted =
@@ -760,31 +856,28 @@
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
       class="relative"
-      onmouseenter={(e) => handleSubmenuEnter(option, e)}
+      onmouseover={(e) => handleSubmenuEnter(option, e)}
+      onfocus={(e) => handleSubmenuEnter(option, e)}
+      onfocusin={(e) => handleSubmenuEnter(option, e)}
       onmouseleave={handleSubmenuLeave}
     >
-      <button
+      <Button
+        variant="plain"
         type="button"
-        id={optionIndex >= 0 ? `dropdown-option-${optionIndex}` : undefined}
+        id={optionIndex >= 0 ? `${uid}-option-${optionIndex}` : undefined}
         onclick={(e) => handleSelect(option, e)}
-        onmouseenter={() => {
-          if (optionIndex >= 0) highlightedIndex = optionIndex;
-        }}
         disabled={option.disabled}
         data-highlighted={isHighlighted ? 'true' : undefined}
-        style="scroll-margin-top: 32px"
-        class={cn(
-          'relative flex items-center gap-1.5 px-3 py-2 text-sm w-full text-left min-w-0 overflow-hidden',
-          'cursor-pointer select-none transition-colors duration-100',
-          'focus:bg-muted/40 focus:outline-none',
-          'disabled:pointer-events-none disabled:opacity-50',
-          isHighlighted && 'bg-muted/40',
-          option.class,
-        )}
-        role={option.type === 'submenu' ? 'menuitem' : 'option'}
-        aria-selected={option.type !== 'submenu' ? isSelected(option.value) : undefined}
+        data-menu-item
+        style="scroll-margin-top: var(--control-height-medium)"
+        class={cn(menuItem(), 'h-auto gap-1.5 overflow-hidden', option.class)}
+        role={popupRole === 'menu' ? 'menuitem' : 'option'}
+        aria-selected={popupRole === 'listbox' ? isSelected(option.value) : undefined}
         aria-haspopup={option.type === 'submenu' ? 'menu' : undefined}
-        aria-expanded={option.type === 'submenu' ? openSubmenu === option.value : undefined}
+        aria-expanded={popupRole === 'menu' && option.type === 'submenu'
+          ? openSubmenu === option.value
+          : undefined}
+        tabindex={isHighlighted && !option.disabled ? 0 : -1}
       >
         {#if item}
           {@render item({ option, selected: isSelected(option.value), highlighted: isHighlighted })}
@@ -852,7 +945,7 @@
             <Fa icon={faCheck} class="h-4 w-4 shrink-0 text-foreground" />
           {/if}
         {/if}
-      </button>
+      </Button>
 
       <!-- Submenu (rendered in portal for proper positioning) -->
       {#if option.type === 'submenu' && option.children?.length && openSubmenu === option.value}
@@ -860,17 +953,22 @@
           <!-- svelte-ignore a11y_no_static_element_interactions -->
           <div
             data-submenu
+            in:springIn={menuOverlayTransition.enter}
+            out:crispOut={menuOverlayTransition.exit}
             class={cn(
+              menuOverlay(),
               'min-w-45 overflow-hidden rounded-md border border-border',
-              'bg-popover text-popover-foreground shadow-(--elevation-overlay) py-1',
+              'py-1',
             )}
             style={submenuStyle}
             onmouseleave={() => (openSubmenu = null)}
             role="menu"
+            data-side="right"
             tabindex="-1"
           >
+            <ListHighlight />
             {#each deduplicateOptions(option.children) as child (child.value)}
-              {@render optionItem(child)}
+              {@render optionItem(child, 'menu')}
             {/each}
           </div>
         </Portal>

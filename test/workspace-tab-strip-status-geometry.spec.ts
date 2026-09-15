@@ -20,7 +20,10 @@ const virtualModules: Record<string, string> = {
     export const resolveEmptyWindowDestination = () => '/';`,
   '$lib/components/ui/tooltip': `
     import Tooltip from '/src/lib/components/layout/__tests__/mocks/MockWorkspaceTooltipRich.svelte';
-    export const TooltipRich = Tooltip;`,
+    export const TooltipRich = Tooltip;
+    export const TooltipShortcut = Tooltip;`,
+  '$lib/components/workspace/WorkspaceHoverCard.svelte': `
+    export { default } from '/src/lib/components/layout/__tests__/mocks/MockWorkspaceHoverCard.svelte';`,
   '$lib/components/workspace/utils/workspace-tab-status-presentation': `
     export const getWorkspaceTabStatusPresentation = (category) => ({
       icon: { iconName: category }, className: '', label: category.toUpperCase(),
@@ -77,6 +80,9 @@ const virtualModules: Record<string, string> = {
     };`,
   '$shared/paraglide/messages.js': `
     export const m = {
+      layout_panelTabBar_close_label: () => 'Close',
+      layout_panelTabBar_closeAllOthers_label: () => 'Close all others',
+      layout_panelTabBar_closeTabsToRight_label: () => 'Close tabs to the right',
       layout_workspaceTabStrip_openSpaces_ariaLabel: () => 'Open spaces',
       layout_workspaceTabStrip_untitled_label: () => 'Untitled',
       layout_workspaceTabStrip_status_ariaLabel: ({ name, statuses }) => name + '. ' + statuses,
@@ -96,6 +102,20 @@ const virtualModules: Record<string, string> = {
       workspace_statusIcon_prOpen_label: () => 'PR open',
       workspace_statusIcon_prMerged_label: () => 'PR merged',
     };`,
+  '@fortawesome/free-solid-svg-icons': `
+    export const faArrowRight = { iconName: 'arrow-right' };
+    export const faCheck = { iconName: 'check' };
+    export const faChevronRight = { iconName: 'chevron-right' };
+    export const faCircleCheck = { iconName: 'circle-check' };
+    export const faCircleQuestion = { iconName: 'circle-question' };
+    export const faClock = { iconName: 'clock' };
+    export const faCodeMerge = { iconName: 'code-merge' };
+    export const faCodePullRequest = { iconName: 'code-pull-request' };
+    export const faEllipsis = { iconName: 'ellipsis' };
+    export const faHourglassHalf = { iconName: 'hourglass-half' };
+    export const faLayerGroup = { iconName: 'layer-group' };
+    export const faTriangleExclamation = { iconName: 'triangle-exclamation' };
+    export const faXmark = { iconName: 'xmark' };`,
 };
 
 function geometryStubs(): Plugin {
@@ -233,8 +253,8 @@ async function mountStrip(
     target.append(mask);
     const stripProps = {
       onActiveTabBoundsChange(bounds: { left: number; width: number } | null) {
-        mask.style.left = bounds ? `${bounds.left - 6}px` : '';
-        mask.style.width = bounds ? `${Math.max(0, bounds.width + 13)}px` : '';
+        mask.style.left = bounds ? `${bounds.left}px` : '';
+        mask.style.width = bounds ? `${bounds.width}px` : '';
       },
       onActiveTabTrackingChange(tracking: boolean) {
         mask.dataset.tracking = String(tracking);
@@ -320,6 +340,19 @@ async function settle(page: Page) {
   await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
 }
 
+async function tabFocusTuple(tab: Locator) {
+  return tab.evaluate((node) => {
+    const style = getComputedStyle(node);
+    return {
+      outlineWidth: style.outlineWidth,
+      outlineStyle: style.outlineStyle,
+      outlineOffset: style.outlineOffset,
+      boxShadow: style.boxShadow,
+      focusVisible: node.matches(':focus-visible'),
+    };
+  });
+}
+
 async function expectNormalActiveShape(
   page: Page,
   workspaceId: string,
@@ -337,9 +370,20 @@ async function expectNormalActiveShape(
   });
   expect(radii.leading).toBeGreaterThan(0);
   expect(radii.trailing).toBe(radii.leading);
-  await expect(tab.locator('[data-workspace-tab-leading-flare]')).toHaveCount(1);
-  await expect(tab.locator('[data-workspace-tab-trailing-flare]')).toHaveCount(1);
-  if (assertHeight) expect((await box(tab)).height).toBeCloseTo(32 * zoom, 0);
+  const leadingFlare = tab.locator('[data-workspace-tab-leading-flare]');
+  const trailingFlare = tab.locator('[data-workspace-tab-trailing-flare]');
+  await expect(leadingFlare).toHaveCount(1);
+  await expect(trailingFlare).toHaveCount(1);
+  const [tabBox, leadingFlareBox, trailingFlareBox] = await Promise.all([
+    box(tab),
+    box(leadingFlare),
+    box(trailingFlare),
+  ]);
+  const tabBottom = tabBox.y + tabBox.height;
+  // 8b092e33 aligns the extracted stroke with the seam using a 2px SVG inset.
+  expect(leadingFlareBox.y + leadingFlareBox.height).toBeCloseTo(tabBottom - 2 * zoom, 1);
+  expect(trailingFlareBox.y + trailingFlareBox.height).toBeCloseTo(tabBottom - 2 * zoom, 1);
+  if (assertHeight) expect(tabBox.height).toBeCloseTo(32 * zoom, 0);
   return radii;
 }
 
@@ -750,6 +794,25 @@ test('Escape-cancelled real pointer drag suppresses its browser click', async ({
   ).toEqual([{ type: 'open', payload: ['inactive'] }]);
 });
 
+for (const theme of ['light', 'dark'] as const) {
+  test(`uses the shared 1px focus outline in the ${theme} theme`, async ({ page }) => {
+    await mountStrip(page, { viewport: 900, zoom: 1, reduced: true, theme });
+    const tab = page.locator('[data-workspace-tab="active"] [role="tab"]');
+
+    await tab.focus();
+    await expect(tab).toBeFocused();
+    const focus = await tabFocusTuple(tab);
+
+    expect(focus).toMatchObject({
+      outlineWidth: '1px',
+      outlineStyle: 'solid',
+      boxShadow: 'none',
+      focusVisible: true,
+    });
+    expect(Number.parseFloat(focus.outlineOffset)).not.toBe(0);
+  });
+}
+
 test('drag keeps one horizontal real tab and drops it at the invisible reserved slot', async ({
   page,
 }) => {
@@ -780,13 +843,13 @@ test('drag keeps one horizontal real tab and drops it at the invisible reserved 
     const tracked = await box(active);
     const titlebarBounds = await box(titlebar);
     const scrollerBounds = await box(strip);
-    const visibleLeft = Math.max(tracked.x, scrollerBounds.x);
-    const visibleRight = Math.min(
+    const clippedLeft = Math.max(tracked.x, scrollerBounds.x);
+    const clippedRight = Math.min(
       tracked.x + tracked.width,
       scrollerBounds.x + scrollerBounds.width,
     );
     expect(tracked.x).toBeCloseTo(origin.x + pointerX - startX, 1);
-    expect(tracked.y).toBeCloseTo(origin.y - 2, 1);
+    expect(tracked.y).toBeCloseTo(origin.y, 1);
     await expect(mask).toHaveAttribute('data-tracking', 'true');
     expect(
       await mask.evaluate((node) => ({
@@ -795,9 +858,10 @@ test('drag keeps one horizontal real tab and drops it at the invisible reserved 
         width: Number.parseFloat((node as HTMLElement).style.width),
       })),
     ).toEqual({
-      left: expect.closeTo(visibleLeft - titlebarBounds.x - 6, 1),
+      // Main 550fd55d clips the seam mask to the visible scroller interval.
+      left: expect.closeTo(clippedLeft - titlebarBounds.x, 1),
       transition: 'none',
-      width: expect.closeTo(visibleRight - visibleLeft + 13, 1),
+      width: expect.closeTo(clippedRight - clippedLeft, 1),
     });
   }
 
@@ -834,10 +898,9 @@ test('drag keeps one horizontal real tab and drops it at the invisible reserved 
     outlineStyle: 'none',
   });
   expect(dragged.x).toBeCloseTo(origin.x + dragX - startX, 1);
-  expect(dragged.y).toBeCloseTo(origin.y - 2, 1);
-  // The lifted tab's flares end on the one-pixel titlebar seam.
-  expect(leadingFlare.y + leadingFlare.height).toBeCloseTo(origin.y + origin.height - 1, 1);
-  expect(trailingFlare.y + trailingFlare.height).toBeCloseTo(origin.y + origin.height - 1, 1);
+  expect(dragged.y).toBeCloseTo(origin.y, 1);
+  expect(leadingFlare.y + leadingFlare.height).toBeCloseTo(origin.y + origin.height - 2, 1);
+  expect(trailingFlare.y + trailingFlare.height).toBeCloseTo(origin.y + origin.height - 2, 1);
   expect(
     await page
       .locator('[data-workspace-tab-motion]')

@@ -179,7 +179,9 @@ for (const theme of ['light', 'dark'] as const) {
           await openGroup(fixture);
           const details = fixture.locator('[data-operational-expanded-content]');
           await expect(details).toBeVisible();
-          expect(await details.evaluate((element) => element.getAnimations().length)).toBe(0);
+          await expect
+            .poll(() => details.evaluate((element) => element.getAnimations().length))
+            .toBe(0);
           await assertExpandedFixture(fixture, zoom, true);
 
           const inline = component.getByTestId(`${renderer}-inline`);

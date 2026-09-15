@@ -82,6 +82,13 @@
     transform-origin: 0 0;
   }
 
+  @container style(--motion-reduced: 1) {
+    .intent-mark-loader,
+    .intent-mark-loader :global(*) {
+      transition-property: none;
+    }
+  }
+
   @media (forced-colors: active) {
     .intent-mark-loader {
       color: CanvasText;

@@ -29,6 +29,7 @@
   import { getChangedLineNumbersFromContent } from './line-staging';
   import Fa from 'svelte-fa';
   import { faExclamationTriangle } from '@fortawesome/free-solid-svg-icons';
+  import { Button } from '$lib/components/ui/button';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
@@ -1293,24 +1294,35 @@
           </span>
           {#if modifiedCount > 0}
             {#if change.stage === 'unstaged' && onStageHunk}
-              <button class="hunk-action-btn hunk-stage-btn" onclick={stageSelectedLines}>
+              <Button
+                variant="plain"
+                size="compact"
+                class="hunk-action-btn hunk-stage-btn h-auto! gap-1 rounded-sm! bg-success/15 px-2! py-[0.2rem]! text-success hover:bg-success/25"
+                onclick={stageSelectedLines}
+              >
                 <span class="icon">+</span>
                 {m.ui_trackedDiff_stage_label()}
-              </button>
+              </Button>
             {:else if change.stage === 'staged' && onUnstageHunk}
-              <button class="hunk-action-btn hunk-unstage-btn" onclick={unstageSelectedLines}>
+              <Button
+                variant="plain"
+                size="compact"
+                class="hunk-action-btn hunk-unstage-btn h-auto! gap-1 rounded-sm! bg-danger/15 px-2! py-[0.2rem]! text-danger hover:bg-danger/25"
+                onclick={unstageSelectedLines}
+              >
                 <span class="icon">−</span>
                 {m.ui_trackedDiff_unstage_label()}
-              </button>
+              </Button>
             {/if}
           {/if}
-          <button
-            class="hunk-action-btn"
-            style="background: transparent; color: hsl(var(--muted-foreground));"
+          <Button
+            variant="plain"
+            size="compact"
+            class="hunk-action-btn h-auto! rounded-sm! px-2! py-[0.2rem]! text-muted-foreground"
             onclick={() => (selectedLines = null)}
           >
             ✕
-          </button>
+          </Button>
         </div>
       {/if}
 

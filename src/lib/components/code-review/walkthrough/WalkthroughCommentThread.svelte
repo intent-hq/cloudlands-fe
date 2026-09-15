@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { Input } from '$lib/components/ui/input';
+  import { Button } from '$lib/components/ui/button';
   /**
    * WalkthroughCommentThread
    *
@@ -9,11 +11,12 @@
    * - Text input for asking questions
    */
   import { formatTime as formatClockTime } from '$lib/i18n/format';
-  import { slide, fly } from 'svelte/transition';
+  import { fly, slide } from '$lib/motion';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import Fa from 'svelte-fa';
   import {
     faPaperPlane,
-    faSpinner,
+    faRobot,
     faComment,
     faUser,
     faChevronDown,
@@ -123,7 +126,7 @@
         return 'text-blue-500';
       case 'explanation':
       default:
-        return 'text-amber-500';
+        return 'text-warning-ink';
     }
   }
 
@@ -140,7 +143,7 @@
 <!-- Simple annotation card matching goal design -->
 <div
   class="walkthrough-comment-thread relative flex w-full flex-col bg-white shadow-sm dark:bg-slate-900 {className}"
-  transition:slide={{ duration: 150 }}
+  transition:slide={{ tier: 'moderate' }}
 >
   <!-- Main annotation content - single row layout -->
   <div class="flex items-start gap-3 px-4 py-3">
@@ -169,35 +172,37 @@
 
     <!-- Close button -->
     {#if onClose}
-      <button
+      <Button
         type="button"
+        variant="ghost"
         onclick={onClose}
         class="shrink-0 p-1 text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300 transition-colors"
         title={m.codeReview_commentThread_dismiss_tooltip()}
       >
         <Fa icon={faTimes} class="h-3.5 w-3.5" />
-      </button>
+      </Button>
     {/if}
   </div>
 
   <!-- Suggested changes section (collapsible) -->
   {#if hasConversation}
     <div class="border-t border-border">
-      <button
+      <Button
         type="button"
+        variant="ghost"
         onclick={() => (showSuggestedChanges = !showSuggestedChanges)}
         class="w-full flex items-center justify-between px-4 py-2 text-sm text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
       >
         <span class="font-medium">{m.codeReview_commentThread_suggestedChanges_label()}</span>
         <Fa icon={showSuggestedChanges ? faChevronDown : faChevronLeft} class="h-3 w-3" />
-      </button>
+      </Button>
 
       {#if showSuggestedChanges}
-        <div class="px-4 pb-3 divide-y divide-border" transition:slide={{ duration: 150 }}>
-          {#each messages as msg, i (msg.id)}
+        <div class="px-4 pb-3 divide-y divide-border" transition:slide={{ tier: 'moderate' }}>
+          {#each messages as msg (msg.id)}
             <div
               class="flex items-start gap-3 py-2"
-              transition:fly={{ y: 4, duration: 150, delay: i * 30 }}
+              transition:fly={{ axis: 'y', distance: 4, tier: 'moderate' }}
             >
               <div
                 class="shrink-0 flex h-5 w-5 items-center justify-center rounded-full {msg.type ===
@@ -206,7 +211,7 @@
                   : 'bg-purple-100 dark:bg-purple-900/50'}"
               >
                 <Fa
-                  icon={msg.type === 'user' ? faUser : faSpinner}
+                  icon={msg.type === 'user' ? faUser : faRobot}
                   class="h-2.5 w-2.5 {msg.type === 'user'
                     ? 'text-blue-600 dark:text-blue-400'
                     : 'text-purple-600 dark:text-purple-400'}"
@@ -232,7 +237,7 @@
     <div
       class="flex items-center gap-2 px-4 py-2 text-xs text-slate-500 dark:text-slate-400 border-t border-border"
     >
-      <Fa icon={faSpinner} class="h-3 w-3 animate-spin" />
+      <IntentMarkLoader size={12} />
       <span>{m.codeReview_commentThread_agentResponding_label()}</span>
     </div>
   {/if}
@@ -240,29 +245,30 @@
   <!-- Ask a question section -->
   <div class="border-t border-border px-4 py-2">
     {#if showReplyInput}
-      <div class="flex items-center gap-2" transition:slide={{ duration: 100 }}>
-        <input
-          bind:this={inputElement}
+      <div class="flex items-center gap-2" transition:slide={{ tier: 'fast' }}>
+        <Input
+          bind:ref={inputElement}
           bind:value={replyText}
           onkeydown={handleKeydown}
           placeholder={m.codeReview_commentThread_followUp_placeholder()}
           disabled={isSending}
           class="flex-1 h-8 rounded-md border border-border bg-white dark:bg-slate-800 px-3 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500/30 focus:border-blue-500/50 disabled:opacity-50"
         />
-        <button
+        <Button
           type="button"
           onclick={handleSend}
           disabled={!replyText.trim() || isSending}
           class="h-8 w-8 flex items-center justify-center rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
           {#if isSending}
-            <Fa icon={faSpinner} class="h-3.5 w-3.5 animate-spin" />
+            <IntentMarkLoader size={14} />
           {:else}
             <Fa icon={faPaperPlane} class="h-3 w-3" />
           {/if}
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
+          variant="ghost"
           onclick={() => {
             showReplyInput = false;
             replyText = '';
@@ -270,20 +276,21 @@
           class="h-8 px-2 text-xs text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 transition-colors"
         >
           {m.codeReview_commentThread_cancel_label()}
-        </button>
+        </Button>
       </div>
       <p class="text-ui text-slate-400 dark:text-slate-500 mt-1">
         {m.codeReview_commentThread_inputHint_label()}
       </p>
     {:else}
-      <button
+      <Button
         type="button"
+        variant="ghost"
         onclick={() => (showReplyInput = true)}
         class="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 transition-colors"
       >
         <Fa icon={faComment} class="h-3 w-3" />
         <span>{m.codeReview_commentThread_askQuestion_label()}</span>
-      </button>
+      </Button>
     {/if}
   </div>
 </div>

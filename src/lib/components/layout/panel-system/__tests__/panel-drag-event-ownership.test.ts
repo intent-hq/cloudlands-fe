@@ -31,7 +31,7 @@ vi.mock('../panel-reorder-animation', async (importOriginal) => {
       return actual.animatePanelPreviewPositions(...args);
     },
     translatePanel(...args: Parameters<typeof actual.translatePanel>) {
-      motionSpies.committed(args[2]?.duration ?? 180);
+      motionSpies.committed(args[2]?.tier ?? 'moderate');
       return actual.translatePanel(...args);
     },
   };

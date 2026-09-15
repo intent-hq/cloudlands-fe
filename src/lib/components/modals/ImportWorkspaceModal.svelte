@@ -181,7 +181,7 @@
             {m.workspace_transfer_done_label()}
           </Button>
           <Button
-            variant="default"
+            variant="primary"
             onclick={() => onOpenWorkspace?.()}
             data-testid="import-open-button"
           >
@@ -191,7 +191,7 @@
           <Button variant="ghost" onclick={() => onCancel?.()}>
             {m.workspace_transfer_close_label()}
           </Button>
-          <Button variant="default" onclick={() => onRetry?.()} data-testid="import-retry-button">
+          <Button variant="primary" onclick={() => onRetry?.()} data-testid="import-retry-button">
             {m.workspace_transfer_retry_label()}
           </Button>
         {/if}

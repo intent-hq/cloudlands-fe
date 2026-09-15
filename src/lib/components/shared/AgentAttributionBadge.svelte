@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
   /**
    * AgentAttributionBadge
    *
@@ -79,7 +80,7 @@
   });
 </script>
 
-<button
+<Button
   type="button"
   class="inline-flex items-center gap-1.5 rounded-md transition-colors hover:bg-accent/50 focus:outline-none focus-visible:ring-1 focus-visible:ring-ring
     {size === 'xs'
@@ -100,4 +101,4 @@
       {displayName}
     </span>
   {/if}
-</button>
+</Button>

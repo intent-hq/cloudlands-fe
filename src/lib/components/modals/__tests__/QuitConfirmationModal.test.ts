@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import { fireEvent, render, screen } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
 import { warmImport } from '../../../../test/warm-import';
 import type { QuitConfirmationShowPayload } from '$shared/ipc/quit-confirmation';
@@ -34,7 +34,7 @@ warmImport(() => import('../../workspace/sidebar/__tests__/mocks/Fa.svelte'));
 warmImport(() => import('../QuitConfirmationModal.svelte'));
 
 describe('QuitConfirmationModal', () => {
-  it('lists interrupted agents and disrupted tabs and responds true on Quit', async () => {
+  it('renders quit framing with grouped content and responds true on Quit', async () => {
     const onRespond = vi.fn();
     const QuitConfirmationModal = (await import('../QuitConfirmationModal.svelte')).default;
 
@@ -61,6 +61,68 @@ describe('QuitConfirmationModal', () => {
 
     await fireEvent.click(screen.getByRole('button', { name: 'Quit' }));
 
+    expect(onRespond).toHaveBeenCalledExactlyOnceWith(true);
+  });
+
+  it('groups interrupted agents and owner tabs together, keeping unassigned agents separate', async () => {
+    const QuitConfirmationModal = (await import('../QuitConfirmationModal.svelte')).default;
+    render(QuitConfirmationModal, {
+      props: {
+        open: true,
+        payload: {
+          ...FULL_PAYLOAD,
+          interrupted: [
+            ...FULL_PAYLOAD.interrupted,
+            { agentId: 'a2', agentName: 'Remote Agent', workspaceId: 'w1', workspaceName: 'Alpha' },
+            { agentId: 'a3', agentName: 'Unassigned Agent' },
+            {
+              agentId: 'a4',
+              agentName: 'Second workspace agent',
+              workspaceId: 'w2',
+              workspaceName: 'Alpha',
+            },
+          ],
+        },
+      },
+    });
+    const groups = await screen.findAllByRole('region', { name: 'Alpha' });
+    expect(groups).toHaveLength(2);
+    const first = within(groups[0]);
+    expect(first.getByText('Local Agent')).toBeTruthy();
+    expect(first.getByText('Remote Agent')).toBeTruthy();
+    expect(first.getByText('Docs page')).toBeTruthy();
+    expect(first.queryByText('Second workspace agent')).toBeNull();
+    expect(within(groups[1]).getByText('Second workspace agent')).toBeTruthy();
+    expect(
+      within(screen.getByRole('region', { name: 'Other' })).getByText('Unassigned Agent'),
+    ).toBeTruthy();
+  });
+
+  it('keeps tabs-only workspaces and quit behavior when there are no agents', async () => {
+    const QuitConfirmationModal = (await import('../QuitConfirmationModal.svelte')).default;
+    const onRespond = vi.fn();
+    render(QuitConfirmationModal, {
+      props: {
+        open: true,
+        onRespond,
+        payload: {
+          requestId: 'tabs-only',
+          interrupted: [],
+          interrupted: [...FULL_PAYLOAD.interrupted],
+          disruptedBrowserTabs: [
+            {
+              tabId: 'tab',
+              ownerAgentId: 'missing',
+              workspaceId: 'w3',
+              url: 'https://example.com',
+            },
+          ],
+        },
+      },
+    });
+    expect(await screen.findByText('https://example.com')).toBeTruthy();
+    expect(screen.queryByRole('region', { name: 'Other' })).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: 'Quit' }));
     expect(onRespond).toHaveBeenCalledExactlyOnceWith(true);
   });
 
@@ -125,10 +187,17 @@ describe('QuitConfirmationModal', () => {
 
     render(QuitConfirmationModal, { props: { open: true, payload: FULL_PAYLOAD, onRespond } });
 
-    const dialogEl = await screen.findByRole('alertdialog', { name: 'Quit Intent?' });
-    await fireEvent.click(dialogEl.parentElement!);
+    await screen.findByRole('alertdialog', { name: 'Quit Intent?' });
+    const overlay = document.querySelector('[data-slot="dialog-overlay"]')!;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await fireEvent.pointerDown(overlay, {
+      button: 0,
+      clientX: 10,
+      clientY: 10,
+      pointerType: 'mouse',
+    });
 
-    expect(onRespond).toHaveBeenCalledExactlyOnceWith(false);
+    await waitFor(() => expect(onRespond).toHaveBeenCalledExactlyOnceWith(false));
   });
 
   it('renders nothing when closed or without payload', async () => {

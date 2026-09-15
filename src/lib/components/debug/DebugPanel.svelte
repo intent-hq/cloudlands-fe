@@ -1,5 +1,6 @@
 <script lang="ts">
   import { createLogger } from '$lib/utils/client-logger';
+  import { confirm } from '$lib/components/patterns/confirm';
 
   const logger = createLogger('DebugPanel');
 
@@ -103,9 +104,15 @@
     }
   }
 
-  function handleReset() {
-    // i18n-ignore (dev-only debug UI)
-    if (confirm('Reset all debug flags to defaults?')) {
+  async function handleReset() {
+    if (
+      await confirm({
+        title: m.debug_panel_reset_title(),
+        description: m.debug_panel_reset_description(),
+        confirmLabel: m.debug_panel_reset_confirmLabel(),
+        destructive: true,
+      })
+    ) {
       debugConfig.reset();
       flags = debugConfig.getAll();
     }
@@ -308,12 +315,12 @@
       <div class="overflow-y-auto flex-1 p-3 space-y-3">
         <!-- Creation Simulation -->
         <div class="space-y-2">
-          <h4 class="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+          <h4 class="text-xs font-medium text-muted-foreground">
             <!-- i18n-ignore (dev-only debug UI) -->
             Workspace Creation
           </h4>
 
-          <button
+          <Button
             type="button"
             class="w-full h-7 px-2 rounded-md text-xs font-medium {isSimulatingCreation
               ? 'bg-danger hover:bg-danger/90 text-danger-background'
@@ -334,7 +341,7 @@
               <!-- i18n-ignore (dev-only debug UI) -->
               <span>Simulate Creation</span>
             {/if}
-          </button>
+          </Button>
 
           <p class="text-xs text-subtle leading-tight">
             {#if isSimulatingCreation}
@@ -349,7 +356,7 @@
 
         <!-- Animation Settings -->
         <div class="space-y-2">
-          <h4 class="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+          <h4 class="text-xs font-medium text-muted-foreground">
             <!-- i18n-ignore (dev-only debug UI) -->
             Animations
           </h4>
@@ -583,7 +590,7 @@
     {/if}
 
     <!-- Header (at bottom, always visible) -->
-    <button
+    <Button
       type="button"
       class="flex items-center justify-between px-3 py-2 border-t border-border bg-muted/50 shrink-0 hover:bg-muted/70 transition-colors cursor-pointer"
       onclick={() => (isCollapsed = !isCollapsed)}
@@ -622,6 +629,6 @@
           <Fa icon={faTimes} size="xs" />
         </Button>
       </div>
-    </button>
+    </Button>
   </div>
 {/if}

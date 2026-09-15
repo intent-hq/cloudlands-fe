@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
+  import { Input } from '$lib/components/ui/input';
   /**
    * BranchDisplay - Branch display/edit with trunk branch picker
    * Shows working branch (editable) and trunk branch (selectable).
@@ -9,7 +11,7 @@
 
   import GitBranchIcon from '$lib/components/icons/GitBranchIcon.svelte';
   import { Tooltip } from '$lib/components/ui/tooltip';
-  import { toast } from '$lib/components/ui/toast';
+  import { notify } from '$lib/components/patterns/notify';
   import { m } from '$shared/paraglide/messages.js';
   import BranchSelector from '$lib/components/workspace/initializer/BranchSelector.svelte';
   import { getBranchNameValidationError } from './sidebar-changes-utils';
@@ -102,7 +104,7 @@
     const validationError = getBranchNameValidationError(newBranch);
     if (validationError) {
       logger.error('Invalid branch name format', { branchName: newBranch, error: validationError });
-      toast.error(validationError);
+      notify.error(validationError);
       branchRename.value = $workspace.branch || '';
       branchRename.active = false;
       return;
@@ -119,12 +121,12 @@
         await persistWorkspaceChanges({ branch: newBranch });
       } else {
         logger.error('Failed to rename branch', { error: result.error });
-        toast.error(result.error || m.workspace_sidebarHeader_renameBranchFailed_error());
+        notify.error(result.error || m.workspace_sidebarHeader_renameBranchFailed_error());
         branchRename.value = $workspace.branch || '';
       }
     } catch (error) {
       logger.error('Error renaming branch:', error);
-      toast.error(m.workspace_sidebarHeader_renameBranchFailed_error());
+      notify.error(m.workspace_sidebarHeader_renameBranchFailed_error());
       branchRename.value = $workspace.branch || '';
     } finally {
       branchRename.active = false;
@@ -163,14 +165,25 @@
 </script>
 
 <!-- Branch display/edit with trunk branch picker -->
-<div class="flex flex-wrap items-center gap-x-1 gap-y-0.5 text-subtle text-xs mb-3 -ml-0.5">
+<div
+  class="grid grid-cols-[minmax(0,auto)_minmax(1rem,1fr)_auto] items-start gap-x-1 text-subtle text-xs mt-1 mb-2"
+>
+  <p class="branch-label col-start-1 row-start-1 pl-4 text-subtle leading-snug text-ui">
+    {m.workspace_sidebarChanges_codeLivesIn_label()}
+  </p>
+  <p
+    class="branch-label col-start-3 row-start-1 justify-self-end text-right text-subtle leading-snug text-ui"
+  >
+    {m.workspace_sidebarChanges_mergedInto_label()}
+  </p>
+
   <!-- Working branch -->
-  <div class="flex shrink-0 items-center">
+  <div class="col-start-1 row-start-2 flex min-w-0 items-center">
     <GitBranchIcon size={12} class="shrink-0 text-ghost" />
     <div class="relative inline-flex min-w-0 items-center">
       {#if branchRename.active}
-        <input
-          bind:this={branchRename.inputRef}
+        <Input
+          bind:ref={branchRename.inputRef}
           type="text"
           bind:value={branchRename.value}
           onblur={saveBranch}
@@ -191,8 +204,9 @@
                 class="text-green-500 ml-1.5 inline-flex items-center gap-1"
                 ><Fa icon={faCheck} size="xs" /></span
               >{/if}{/snippet}
-          <button
-            class="relative z-10 max-w-full cursor-text overflow-hidden text-ellipsis whitespace-nowrap rounded border-none bg-transparent px-1 py-0.5 text-left text-ui leading-normal text-subtle transition-all duration-150 hover:text-foreground hover:opacity-80 focus-visible:outline-none! disabled:cursor-default disabled:opacity-50"
+          <Button
+            variant="ghost"
+            class="relative z-10 h-5 max-w-full cursor-text overflow-hidden text-ellipsis whitespace-nowrap rounded border-none bg-transparent px-1 py-0 text-left text-ui leading-normal text-subtle transition-all duration-150 hover:text-foreground hover:opacity-80 focus-visible:outline-none! disabled:cursor-default disabled:opacity-50"
             onclick={(e) => {
               if (e.shiftKey && $workspace?.branch) {
                 navigator.clipboard.writeText($workspace.branch);
@@ -211,7 +225,7 @@
             {#if $workspace}
               {$workspace.branch || m.workspace_branchDisplay_noBranch_label()}
             {/if}
-          </button>
+          </Button>
         </Tooltip>
       {/if}
       <span
@@ -225,13 +239,15 @@
 
   <!-- <span class="text-ghost mx-auto">→</span> -->
   <div
-    class="relative flex-1 ml-0.5 mr-1.5 bg-muted-foreground/70 text-subtle h-px flex items-end opacity-30"
+    class="col-start-2 row-start-2 self-center relative flex-1 ml-0.5 mr-1.5 bg-muted-foreground/70 text-subtle h-px flex items-end opacity-30"
   >
     <span class="absolute -right-0.5 top-1/2 transform -translate-y-1/2">→</span>
   </div>
 
   <!-- Trunk branch picker -->
-  <div class="flex items-center shrink-0 min-w-0 max-w-[min(100%,_10rem)]">
+  <div
+    class="col-start-3 row-start-2 justify-self-end flex items-center justify-end shrink-0 min-w-0 max-w-[min(100%,_10rem)]"
+  >
     <Tooltip
       class="min-w-0 max-w-full"
       side="top"
@@ -265,36 +281,47 @@
         }}
         onkeydown={() => {}}
       >
-        <BranchSelector
-          variant="ghost"
-          value={trunkBranch}
-          {repoPath}
-          {repoType}
-          disabled={!canChangeTrunk}
-          dropUp={false}
-          portal={true}
-          triggerClass="pl-0 pr-0 h-6 text-ui"
-          hasTriggerIcon={false}
-          onchange={async (e) => {
-            try {
-              const result = await persistWorkspaceChanges({
-                baseRef: e.detail.branch,
-              });
-              if (!result.ok) {
-                toast.error('Failed to update base branch');
+        {#if canChangeTrunk}
+          <BranchSelector
+            variant="ghost"
+            value={trunkBranch}
+            {repoPath}
+            {repoType}
+            dropUp={false}
+            portal={true}
+            triggerClass="pl-0 pr-0 py-0 h-5 text-ui"
+            hasTriggerIcon={false}
+            onchange={async (e) => {
+              try {
+                const result = await persistWorkspaceChanges({
+                  baseRef: e.detail.branch,
+                });
+                if (!result.ok) {
+                  notify.error('Failed to update base branch');
+                }
+              } catch (err) {
+                console.error('[BranchDisplay] Update error:', err);
+                notify.error('Failed to update base branch');
               }
-            } catch (err) {
-              console.error('[BranchDisplay] Update error:', err);
-              toast.error('Failed to update base branch');
-            }
-          }}
-        />
+            }}
+          />
+        {:else}
+          <span class="h-5 leading-5 text-ui text-subtle truncate">
+            {trunkBranch || m.workspace_branchSelector_noBranchSelected_label()}
+          </span>
+        {/if}
       </div>
     </Tooltip>
   </div>
 </div>
 
 <style>
+  @container (max-width: 250px) {
+    .branch-label {
+      display: none;
+    }
+  }
+
   input.inline-edit-input::selection {
     background: hsl(var(--ring) / 0.3);
   }

@@ -1,4 +1,7 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
+  import { readable } from 'svelte/store';
+  import type { ComponentProps } from 'svelte';
   import DeleteWarningDialog from './DeleteWarningDialog.svelte';
   import { store as appStore } from '$store/renderer/store';
   import {
@@ -14,43 +17,69 @@
     selectLocalChangesForDelete,
     selectOpenPrsForArchive,
     selectOpenPrsForDelete,
-    selectRunningAgentNamesForArchive,
-    selectRunningAgentNamesForDelete,
+    selectRunningAgentsForArchive,
+    selectRunningAgentsForDelete,
     selectShowArchiveWarning,
     selectShowDeleteWarning,
   } from '$store/renderer/slices/workspace-operations/workspace-operations-selectors';
 
-  const showDeleteWarning$ = selectShowDeleteWarning();
-  const runningAgentNamesForDelete$ = selectRunningAgentNamesForDelete();
-  const activeHookNamesForDelete$ = selectActiveHookNamesForDelete();
-  const openPrsForDelete$ = selectOpenPrsForDelete();
-  const localChangesForDelete$ = selectLocalChangesForDelete();
-  const showArchiveWarning$ = selectShowArchiveWarning();
-  const runningAgentNamesForArchive$ = selectRunningAgentNamesForArchive();
-  const activeHookNamesForArchive$ = selectActiveHookNamesForArchive();
-  const openPrsForArchive$ = selectOpenPrsForArchive();
-  const localChangesForArchive$ = selectLocalChangesForArchive();
+  let { staticData }: { staticData?: ComponentProps<typeof DeleteWarningDialog> } = $props();
+
+  const showDeleteWarning$ = untrack(() =>
+    staticData ? readable(undefined) : selectShowDeleteWarning(),
+  );
+  const runningAgentsForDelete$ = untrack(() =>
+    staticData ? readable(undefined) : selectRunningAgentsForDelete(),
+  );
+  const activeHookNamesForDelete$ = untrack(() =>
+    staticData ? readable(undefined) : selectActiveHookNamesForDelete(),
+  );
+  const openPrsForDelete$ = untrack(() =>
+    staticData ? readable(undefined) : selectOpenPrsForDelete(),
+  );
+  const localChangesForDelete$ = untrack(() =>
+    staticData ? readable(undefined) : selectLocalChangesForDelete(),
+  );
+  const showArchiveWarning$ = untrack(() =>
+    staticData ? readable(undefined) : selectShowArchiveWarning(),
+  );
+  const runningAgentsForArchive$ = untrack(() =>
+    staticData ? readable(undefined) : selectRunningAgentsForArchive(),
+  );
+  const activeHookNamesForArchive$ = untrack(() =>
+    staticData ? readable(undefined) : selectActiveHookNamesForArchive(),
+  );
+  const openPrsForArchive$ = untrack(() =>
+    staticData ? readable(undefined) : selectOpenPrsForArchive(),
+  );
+  const localChangesForArchive$ = untrack(() =>
+    staticData ? readable(undefined) : selectLocalChangesForArchive(),
+  );
 </script>
 
-<!-- Redux-owned delete warning host (global for all workspace delete entrypoints) -->
-<DeleteWarningDialog
-  open={$showDeleteWarning$}
-  agentNames={$runningAgentNamesForDelete$}
-  hookNames={$activeHookNamesForDelete$}
-  openPrs={$openPrsForDelete$}
-  localChanges={$localChangesForDelete$}
-  onDeleteAnyway={() => appStore.dispatch(confirmDeleteWorkspace())}
-  onCancel={() => appStore.dispatch(closeDeleteWarning())}
-/>
+{#if staticData}
+  <DeleteWarningDialog {...staticData} static />
+{:else}
+  <!-- Redux-owned delete warning host (global for all workspace delete entrypoints) -->
+  <DeleteWarningDialog
+    open={$showDeleteWarning$}
+    agents={$runningAgentsForDelete$}
+    hookNames={$activeHookNamesForDelete$}
+    openPrs={$openPrsForDelete$}
+    localChanges={$localChangesForDelete$}
+    onDeleteAnyway={() => appStore.dispatch(confirmDeleteWorkspace())}
+    onCancel={() => appStore.dispatch(closeDeleteWarning())}
+  />
 
-<!-- Redux-owned archive warning host (global for all workspace archive entrypoints) -->
-<DeleteWarningDialog
-  open={$showArchiveWarning$}
-  mode="archive"
-  agentNames={$runningAgentNamesForArchive$}
-  hookNames={$activeHookNamesForArchive$}
-  openPrs={$openPrsForArchive$}
-  localChanges={$localChangesForArchive$}
-  onDeleteAnyway={() => appStore.dispatch(confirmArchiveWorkspace())}
-  onCancel={() => appStore.dispatch(closeArchiveWarning())}
-/>
+  <!-- Redux-owned archive warning host (global for all workspace archive entrypoints) -->
+  <DeleteWarningDialog
+    open={$showArchiveWarning$}
+    mode="archive"
+    agents={$runningAgentsForArchive$}
+    hookNames={$activeHookNamesForArchive$}
+    openPrs={$openPrsForArchive$}
+    localChanges={$localChangesForArchive$}
+    onDeleteAnyway={() => appStore.dispatch(confirmArchiveWorkspace())}
+    onCancel={() => appStore.dispatch(closeArchiveWarning())}
+  />
+{/if}

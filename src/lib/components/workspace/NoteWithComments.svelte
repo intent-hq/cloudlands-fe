@@ -2132,7 +2132,7 @@
         {#if isTooLargeForRichEditor}
           <div class="w-full p-4">
             <div
-              class="mb-3 rounded-md bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 px-4 py-2 text-sm text-yellow-800 dark:text-yellow-200"
+              class="mb-3 rounded-md bg-warning/10 border border-warning/30 px-4 py-2 text-sm text-warning-ink"
             >
               {m.workspace_noteWithComments_tooLarge_label({
                 sizeKb: formatInteger(Math.round(plainTextFallbackContent.length / 1024)),
@@ -2298,7 +2298,7 @@
 
   /* Drag and drop visual feedback for images */
   :global(.tiptap-editor-wrapper.is-dragging) {
-    outline: 2px dashed hsl(var(--primary));
+    outline: 1px dashed hsl(var(--primary-ink));
     outline-offset: -2px;
     background-color: hsl(var(--primary) / 0.05);
   }

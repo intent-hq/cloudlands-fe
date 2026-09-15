@@ -89,32 +89,48 @@ const observers: Array<{
   callback: IntersectionObserverCallback;
   elements: Element[];
   instance: IntersectionObserver;
+  disconnected: boolean;
 }> = [];
 
 class MockIntersectionObserver {
   constructor(private callback: IntersectionObserverCallback) {
-    observers.push({ callback, elements: [], instance: this as unknown as IntersectionObserver });
+    observers.push({
+      callback,
+      elements: [],
+      instance: this as unknown as IntersectionObserver,
+      disconnected: false,
+    });
   }
   observe(el: Element) {
     observers
       .find((o) => o.instance === (this as unknown as IntersectionObserver))
       ?.elements.push(el);
   }
-  disconnect() {}
-  unobserve() {}
+  disconnect() {
+    const observer = observers.find(
+      (o) => o.instance === (this as unknown as IntersectionObserver),
+    );
+    if (observer) observer.disconnected = true;
+  }
+  unobserve(el: Element) {
+    const observer = observers.find(
+      (o) => o.instance === (this as unknown as IntersectionObserver),
+    );
+    if (observer) observer.elements = observer.elements.filter((element) => element !== el);
+  }
   takeRecords() {
     return [];
   }
 }
 
-function intersectLatestSentinel(): void {
-  const latest = observers.at(-1);
-  if (!latest) throw new Error('no IntersectionObserver was created');
-  latest.callback(
-    latest.elements.map(
-      (el) => ({ isIntersecting: true, target: el }) as IntersectionObserverEntry,
-    ),
-    latest.instance,
+function intersectSentinel(sentinel: Element): void {
+  const observer = [...observers]
+    .reverse()
+    .find((candidate) => !candidate.disconnected && candidate.elements.includes(sentinel));
+  if (!observer) throw new Error('no active IntersectionObserver observes the live sentinel');
+  observer.callback(
+    [{ isIntersecting: true, target: sentinel } as IntersectionObserverEntry],
+    observer.instance,
   );
 }
 
@@ -269,7 +285,9 @@ describe('IssueSuggestions server-side search + pagination wire contract', () =>
     await settle();
 
     expect(observers.length).toBeGreaterThan(0);
-    intersectLatestSentinel();
+    const sentinel = container.querySelector('[aria-hidden="true"].h-px');
+    expect(sentinel).not.toBeNull();
+    intersectSentinel(sentinel!);
     await settle();
 
     const pagedCall = issueCalls.find((c) => c.options?.nextToken !== undefined);
@@ -651,7 +669,9 @@ describe('IssueSuggestions server-side search + pagination wire contract', () =>
       },
     });
     await settle();
-    intersectLatestSentinel();
+    const sentinel = document.querySelector('[aria-hidden="true"].h-px');
+    expect(sentinel).not.toBeNull();
+    intersectSentinel(sentinel!);
     await settle();
 
     const pagedIssues = issueCalls.find((c) => c.options?.nextToken !== undefined);
@@ -679,7 +699,9 @@ describe('IssueSuggestions server-side search + pagination wire contract', () =>
       },
     });
     await settle();
-    intersectLatestSentinel();
+    const prSentinel = document.querySelector('[aria-hidden="true"].h-px');
+    expect(prSentinel).not.toBeNull();
+    intersectSentinel(prSentinel!);
     await settle();
 
     const pagedPRs = prCalls.find((c) => c.options?.nextToken !== undefined);

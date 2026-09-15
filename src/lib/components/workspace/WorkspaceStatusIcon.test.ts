@@ -33,7 +33,7 @@ describe('WorkspaceStatusIcon', () => {
 
     expect(indicator.getAttribute('data-workspace-status-visual')).toBe('icon');
     expect(indicator.getAttribute('data-workspace-status-icon')).toBe('circle-question');
-    expect(indicator.className).toContain('text-warning');
+    expect(indicator.className).toContain('text-warning-ink');
     expect(view.container.querySelector('[data-workspace-status-dot]')).toBeNull();
     expect(view.container.querySelector('svg')).not.toBeNull();
   });

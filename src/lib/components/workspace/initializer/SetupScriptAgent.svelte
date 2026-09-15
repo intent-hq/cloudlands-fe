@@ -3,6 +3,7 @@
   import { createLogger } from '$lib/utils/client-logger';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import CodeEditor from '$lib/components/editor/CodeEditor.svelte';
   import { appClient } from '$lib/client';
   import { store as appStore } from '$store/renderer/store';
@@ -129,9 +130,7 @@
       </div>
     {:else if isGenerating}
       <div class="flex items-center gap-2 text-subtle">
-        <div
-          class="w-4 h-4 border-2 border-muted-foreground/30 border-t-primary rounded-full animate-spin"
-        ></div>
+        <IntentMarkLoader size={16} class="text-primary" />
         <span class="text-sm">{m.workspace_setupScriptAgent_analyzing_label()}</span>
       </div>
     {/if}
@@ -146,7 +145,7 @@
           <span class="text-sm font-medium">{generatedScript.name}</span>
         </div>
         <Button
-          variant="default"
+          variant="primary"
           size="sm"
           onclick={() => handleUseScript(generatedScript!)}
           class="h-7"

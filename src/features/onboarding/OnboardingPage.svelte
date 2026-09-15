@@ -7,8 +7,7 @@
    * for the workspace creation flow (/workspace/new).
    */
 
-  import { fly } from 'svelte/transition';
-  import { cubicOut } from 'svelte/easing';
+  import { fly } from '$lib/motion';
   import { onDestroy, onMount } from 'svelte';
   import Fa from 'svelte-fa';
   import { faArrowLeft } from '@fortawesome/free-solid-svg-icons';
@@ -31,7 +30,7 @@
   } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import { goto } from '$app/navigation';
   import { v4 as uuidv4 } from 'uuid';
-  import { toast } from 'svelte-sonner';
+  import { notify } from '$lib/components/patterns/notify';
   import { m } from '$shared/paraglide/messages.js';
 
   import WorkspaceSetupCard from '$features/onboarding/messages/WorkspaceSetupCard.svelte';
@@ -994,10 +993,10 @@
       const result = await enhancePrompt(onboardingInputValue);
       onboardingInputValue = result.enhanced;
       await getOnboardingRichTextarea()?.setContent(result.enhanced);
-      toast.success(m.onboarding_page_promptEnhanced_label());
+      notify.success(m.onboarding_page_promptEnhanced_label());
     } catch (error) {
       logger.error('Failed to enhance prompt', error);
-      toast.error(
+      notify.error(
         error instanceof EnhancePromptUnavailableError
           ? m.onboarding_page_enhanceUnavailable_error()
           : error instanceof Error && error.message
@@ -1139,14 +1138,14 @@
         ? selectedPRBranch
         : currentBranch;
     if (!treatAsNewRepo && !effectiveBranch.trim()) {
-      toast.error(m.onboarding_page_branchRequired_toast());
+      notify.error(m.onboarding_page_branchRequired_toast());
       return;
     }
 
     if (hasBlockingAttachments(onboardingStagedItems)) {
       // The error banner's Retry also lands here — surface why nothing
       // happened instead of a silent no-op (pills must be retried/removed).
-      toast.error(m.onboarding_page_blockingAttachments_toast());
+      notify.error(m.onboarding_page_blockingAttachments_toast());
       return;
     }
 
@@ -1589,7 +1588,7 @@
         <!-- Replace the form with the summary card while creating -->
         <div
           class="flex-1 flex flex-col items-center justify-center"
-          in:fly={{ y: 20, duration: 400, easing: cubicOut }}
+          in:fly={{ tier: 'slow', distance: 20 }}
         >
           <div class="w-full max-w-lg">
             <!-- Key on the progressId: the card binds its progress selector at
@@ -1646,7 +1645,8 @@
                         {/if}
 
                         {#if !isRequirementsStep && onboardingVisibleStep > 1}
-                          <button
+                          <Button
+                            variant="ghost"
                             type="button"
                             class="flex items-center gap-1.5 text-muted-foreground/60 hover:text-foreground transition-colors cursor-pointer"
                             onclick={() =>
@@ -1657,14 +1657,14 @@
                           >
                             <Fa icon={faArrowLeft} size="xs" />
                             <span>{m.onboarding_page_back_label()}</span>
-                          </button>
+                          </Button>
                         {/if}
                       </div>
                     </div>
 
                     <div class="flex flex-col">
                       {#if isRequirementsStep}
-                        <div in:fly={{ y: 10, duration: 250, easing: cubicOut }} style="order: 1">
+                        <div in:fly={{ tier: 'slow', distance: 10 }} style="order: 1">
                           <div class="space-y-3">
                             {#if !$requirementsCheckedOnce$}
                               <h1 class="text-5xl font-semibold tracking-tight leading-tight">
@@ -1681,7 +1681,7 @@
                           </div>
                         </div>
                       {:else if isWelcomeStep}
-                        <div in:fly={{ y: 10, duration: 250, easing: cubicOut }} style="order: 1">
+                        <div in:fly={{ tier: 'slow', distance: 10 }} style="order: 1">
                           <div class="space-y-3">
                             <h1 class="text-5xl font-semibold tracking-tight leading-tight">
                               {m.onboarding_page_welcome_title()}
@@ -1694,7 +1694,7 @@
                           </div>
                         </div>
                       {:else if isGitHubStep}
-                        <div in:fly={{ y: 10, duration: 250, easing: cubicOut }} style="order: 2">
+                        <div in:fly={{ tier: 'slow', distance: 10 }} style="order: 2">
                           <div class="space-y-3">
                             <h2 class="text-5xl font-semibold tracking-tight leading-tight">
                               {m.onboarding_page_connectGithub_title()}
@@ -1707,7 +1707,7 @@
                           </div>
                         </div>
                       {:else if isProjectStep}
-                        <div in:fly={{ y: 10, duration: 250, easing: cubicOut }} style="order: 3">
+                        <div in:fly={{ tier: 'slow', distance: 10 }} style="order: 3">
                           <div class="space-y-3">
                             <h2 class="text-5xl font-semibold tracking-tight leading-tight">
                               {m.onboarding_page_whatProject_title()}
@@ -1718,7 +1718,7 @@
                           </div>
                         </div>
                       {:else}
-                        <div in:fly={{ y: 10, duration: 250, easing: cubicOut }} style="order: 4">
+                        <div in:fly={{ tier: 'slow', distance: 10 }} style="order: 4">
                           <div class="space-y-6">
                             <h2 class="text-5xl font-semibold tracking-tighter">
                               {m.onboarding_page_whatToBuild_title()}
@@ -1733,7 +1733,7 @@
                 <!-- Interactive widgets -->
                 <div class="w-full min-w-0">
                   {#key $onboardingStep$}
-                    <div class="py-8 space-y-6" in:fly={{ y: 15, duration: 300, easing: cubicOut }}>
+                    <div class="py-8 space-y-6" in:fly={{ tier: 'slow', distance: 15 }}>
                       {#if isRequirementsStep}
                         <div class="max-w-5xl mx-auto" data-testid="onboarding-requirements-step">
                           <OnboardingRequirementsStep />
@@ -1763,7 +1763,7 @@
                           <Button
                             class="group/button"
                             size="xl"
-                            variant={!hasConnectedProvider ? 'outline' : 'default'}
+                            variant={!hasConnectedProvider ? 'outline' : 'primary'}
                             disabled={!hasConnectedProvider}
                             loading={onboardingTestPromptRunning}
                             onclick={advanceFromWelcomeStep}
@@ -1811,13 +1811,15 @@
                               {/if}
                               {#if onboardingTestPromptFailure.loginDocsUrl}
                                 {@const docsUrl = onboardingTestPromptFailure.loginDocsUrl}
-                                <button
+                                <Button
                                   type="button"
-                                  class="mt-2 text-xs underline hover:no-underline"
+                                  variant="link"
+                                  size="xs"
+                                  class="mt-2 h-auto px-0 text-xs underline hover:no-underline"
                                   onclick={() => shell.open(docsUrl)}
                                 >
                                   {m.chat_modelPicker_setupDocs_label()}
-                                </button>
+                                </Button>
                               {/if}
                             </div>
                           {/if}
@@ -1844,7 +1846,7 @@
                             <Button
                               class="group/button"
                               size="xl"
-                              variant={!projectSelection?.isValid ? 'outline' : 'default'}
+                              variant={!projectSelection?.isValid ? 'outline' : 'primary'}
                               disabled={!projectSelection?.isValid}
                               onclick={() => appStore.dispatch(goToStep('configuring'))}
                             >

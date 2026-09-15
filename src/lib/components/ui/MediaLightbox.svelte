@@ -1,15 +1,11 @@
 <script lang="ts">
-  import { onMount, type Snippet } from 'svelte';
-  import { fade } from 'svelte/transition';
+  import type { Snippet } from 'svelte';
+  import { fade } from '$lib/motion';
   import { faXmark } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import Portal from './Portal.svelte';
   import Button from './button/button.svelte';
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
-  import {
-    onReducedMotionChange,
-    prefersReducedMotion as isReducedMotionPreferred,
-  } from '$lib/utils/reduced-motion';
 
   interface Props {
     open?: boolean;
@@ -37,7 +33,6 @@
 
   let dialogElement: HTMLDivElement | null = $state(null);
   let closeButtonElement: HTMLButtonElement | null = $state(null);
-  let prefersReducedMotion = $state(isReducedMotionPreferred());
 
   function close() {
     open = false;
@@ -73,12 +68,6 @@
     }
   }
 
-  onMount(() =>
-    onReducedMotionChange((reduced) => {
-      prefersReducedMotion = reduced;
-    }),
-  );
-
   $effect(() => {
     if (!open) return;
     return pushEscapeLayer(close);
@@ -104,7 +93,7 @@
       aria-modal="true"
       aria-label={ariaLabel}
       tabindex="-1"
-      transition:fade={{ duration: prefersReducedMotion ? 0 : 200 }}
+      transition:fade={{ tier: 'moderate' }}
     >
       <div class="absolute right-4 top-4 z-[1002] flex items-center gap-1">
         {#if actions}

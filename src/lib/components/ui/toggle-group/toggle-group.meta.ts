@@ -7,6 +7,15 @@ export const toggleGroupMetadata = {
   publicImport: '$lib/components/ui/toggle-group',
   legacyImports: [],
   exports: ['Item', 'Root', 'ToggleGroup', 'ToggleGroupItem'],
+  // Minimal composition from the toggle-group-state-matrix default fixture.
+  usage: `<script lang="ts">
+  import * as ToggleGroup from '$lib/components/ui/toggle-group';
+</script>
+
+<ToggleGroup.Root type="single" value="left" aria-label="Alignment">
+  <ToggleGroup.Item value="left" aria-label="Align left">Left</ToggleGroup.Item>
+  <ToggleGroup.Item value="right" aria-label="Align right">Right</ToggleGroup.Item>
+</ToggleGroup.Root>`,
   category: 'primitive',
   owner: '007-B2',
   callers: [
@@ -14,7 +23,8 @@ export const toggleGroupMetadata = {
     'src/features/layout/tab-types/NoteViewSettingsDropdown.svelte',
     'src/lib/component-catalog/CatalogControls.svelte',
     'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte',
-    'src/lib/components/settings/ColorThemeSettings.svelte',
+    'src/lib/components/patterns/settings/custom-controls.ts',
+    'src/routes/(app)/settings/+page.svelte',
   ],
   replacement: null,
   characterizationTest: 'src/lib/components/ui/toggle-group/toggle-group.test.ts',

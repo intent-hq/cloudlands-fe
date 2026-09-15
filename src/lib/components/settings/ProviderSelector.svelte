@@ -44,7 +44,6 @@
     faArrowsRotate,
     faBan,
     faCheck,
-    faCircleNotch,
     faDownload,
     faEllipsisVertical,
     faFolder,
@@ -53,17 +52,21 @@
     faTriangleExclamation,
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
-  import { toast } from 'svelte-sonner';
+  import { notify } from '$lib/components/patterns/notify';
   import { m } from '$shared/paraglide/messages.js';
-  import GrokLogo from '../ui/GrokLogo.svelte';
-  import CopyButton from '$lib/components/ui/CopyButton.svelte';
+  import {
+    Button,
+    CopyButton,
+    DropdownMenu,
+    GrokLogo,
+    IntentMarkLoader,
+    Menu,
+  } from '$lib/components/patterns/settings/custom-controls';
   import AuggieLogo from '../AuggieLogo.svelte';
   import ProviderPathConfig from './ProviderPathConfig.svelte';
   import AgentProviderIcon from '$features/agent/components/AgentProviderIcon.svelte';
   import { isProviderAuthenticationReady } from '$shared/types/provider-availability';
   import { checkPiMcpAdapterInstalled, installPiMcpAdapter } from '$features/pi/pi-models.client';
-  import Button from '../ui/button/button.svelte';
-  import DropdownMenu from '../ui/dropdown-menu.svelte';
   import { store as appStore } from '$store/renderer/store';
   import AntigravityConnect from '$features/antigravity/AntigravityConnect.svelte';
   import { selectAntigravitySetupPolicy } from '$store/renderer/slices/antigravity-setup/antigravity-setup-selectors';
@@ -239,7 +242,7 @@
     if (!enabled) {
       const reason = $providerInUseReasons$[providerId];
       if (reason) {
-        toast.error(
+        notify.error(
           m.settings_providers_cannotDisable({
             name: selectProviderDisplayName.select(appStore.state, providerId),
           }),
@@ -416,15 +419,15 @@
       const result = await installPiMcpAdapter();
       if (result?.success) {
         await loadPiMcpAdapterStatus();
-        toast.success(m.settings_providers_piAdapterInstalled());
+        notify.success(m.settings_providers_piAdapterInstalled());
       } else {
-        toast.error(m.settings_providers_piAdapterInstallFailed(), {
+        notify.error(m.settings_providers_piAdapterInstallFailed(), {
           description: result?.error || m.settings_providers_unknownError(),
         });
       }
     } catch (err) {
       logger.error('Failed to install pi-mcp-adapter', err);
-      toast.error(m.settings_providers_piAdapterInstallFailed(), {
+      notify.error(m.settings_providers_piAdapterInstallFailed(), {
         description: err instanceof Error ? err.message : m.settings_providers_unknownError(),
       });
     } finally {
@@ -446,7 +449,7 @@
       });
       appStore.dispatch(setActiveProvider(providerId));
       appStore.dispatch(reloadModelsForProvider());
-      toast.success(
+      notify.success(
         m.settings_providers_switchedTo({
           name: selectProviderDisplayName.select(appStore.state, providerId),
         }),
@@ -459,15 +462,19 @@
 
 <div class="flex flex-col gap-6">
   {#if checkError}
-    <div class="flex items-center justify-between gap-4 rounded-xl bg-card px-6 py-4">
-      <p class="text-sm text-danger">{checkError}</p>
-      <button
+    <div
+      data-slot="settings-section-body"
+      class="flex items-center justify-between gap-4 rounded-xl bg-card px-6 py-4"
+    >
+      <p class="type-body text-danger">{checkError}</p>
+      <Button
+        variant="ghost"
         type="button"
-        class="text-primary hover:text-primary/80 cursor-pointer transition-colors text-xs font-medium"
+        class="text-primary-ink hover:text-primary-ink/80 cursor-pointer transition-colors type-body font-medium"
         onclick={() => checkProviderAvailability(true, true)}
       >
         {m.settings_providers_tryAgain()}
-      </button>
+      </Button>
     </div>
   {/if}
 
@@ -476,7 +483,7 @@
       <div>
         <h2
           id={`provider-group-${group.id}`}
-          class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3"
+          class="type-caption font-medium text-muted-foreground mb-3"
         >
           {#if group.id === 'enabled'}
             {m.settings_providers_groupEnabled_label()}
@@ -536,22 +543,22 @@
                 : hasNpmOld
                   ? m.settings_providers_npmTooOld()
                   : provider.warning}
-            <div class="px-6 py-4">
+            <div data-slot="settings-section-body" class="px-6 py-4">
               <div class="flex items-start justify-between gap-4">
                 <div class="space-y-1">
                   <div class="flex items-center gap-2 h-7">
                     {@render providerIcon(provider.id)}
                     <span
-                      class="text-sm {provider.available || provider.statusPending
+                      class="type-body {provider.available || provider.statusPending
                         ? 'text-foreground'
-                        : 'text-muted-foreground opacity-60'}"
+                        : 'text-muted-foreground'}"
                     >
                       {provider.name}
                     </span>
                   </div>
                 </div>
 
-                <div class="flex min-h-7 shrink-0 items-center gap-2 text-xs">
+                <div class="flex min-h-7 shrink-0 items-center gap-2 type-caption">
                   {#if provider.statusPending}
                     <!-- This row's own probe has not settled yet; the rest of the
                      row is already rendered from the catalog. -->
@@ -562,13 +569,11 @@
                   {:else}
                     {#if isActive}
                       {#if provider.available}
-                        <span class="rounded-full bg-muted px-2 py-0.5 text-xs text-subtle">
+                        <span class="rounded-full bg-muted px-2 py-0.5 type-caption text-subtle">
                           {m.settings_providers_default()}
                         </span>
                       {:else}
-                        <span
-                          class="text-xs text-yellow-600 dark:text-yellow-500 flex items-center gap-1"
-                        >
+                        <span class="type-caption text-warning-ink flex items-center gap-1">
                           <Fa icon={faTriangleExclamation} class="w-2.5 h-2.5" />
                           {m.settings_providers_defaultUnavailable_label()}
                         </span>
@@ -591,7 +596,7 @@
                       role="img"
                       aria-label={warningLabel}
                       title={warningLabel}
-                      class="flex size-4 items-center justify-center text-yellow-600 dark:text-yellow-500"
+                      class="flex size-4 items-center justify-center text-warning-ink"
                     >
                       <Fa icon={faTriangleExclamation} class="size-3.5" />
                     </span>
@@ -645,130 +650,127 @@
                           {#if hasWarning}
                             <div class="border-b border-border pb-1">
                               {#if hasPiAdapterWarning}
-                                <p class="px-3 py-1.5 text-xs text-yellow-600 dark:text-yellow-500">
+                                <p class="px-2 py-1.5 type-body text-warning-ink">
                                   {m.settings_providers_piAdapterNeeded()}
                                 </p>
-                                <button
-                                  type="button"
-                                  role="menuitem"
+                                <Menu.Item
                                   disabled={setupInProgress.pi}
-                                  class="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-50"
-                                  onclick={() => void handleInstallPiMcpAdapter()}
+                                  class="cursor-pointer text-foreground"
+                                  onSelect={() => void handleInstallPiMcpAdapter()}
                                 >
-                                  {#if setupInProgress.pi}
-                                    <Fa
-                                      icon={faCircleNotch}
-                                      class="size-3.5 animate-spin text-muted-foreground"
-                                    />
-                                    {m.settings_providers_installing()}
-                                  {:else}
-                                    <Fa icon={faDownload} class="size-3.5 text-muted-foreground" />
-                                    {m.settings_providers_install()}
-                                  {/if}
-                                </button>
+                                  <span class="flex size-4 shrink-0 items-center justify-center">
+                                    {#if setupInProgress.pi}
+                                      <IntentMarkLoader size={14} class="text-muted-foreground" />
+                                    {:else}
+                                      <Fa
+                                        icon={faDownload}
+                                        class="size-3.5 text-muted-foreground"
+                                      />
+                                    {/if}
+                                  </span>
+                                  {setupInProgress.pi
+                                    ? m.settings_providers_installing()
+                                    : m.settings_providers_install()}
+                                </Menu.Item>
                               {/if}
 
                               {#if hasNodeMissing}
-                                <p class="px-3 py-1.5 text-xs text-yellow-600 dark:text-yellow-500">
+                                <p class="px-2 py-1.5 type-body text-warning-ink">
                                   {m.settings_providers_requiresNodejs()}
                                 </p>
-                                <button
-                                  type="button"
-                                  role="menuitem"
-                                  class="w-full cursor-pointer px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50"
-                                  onclick={() => {
+                                <Menu.Item
+                                  class="cursor-pointer text-foreground"
+                                  onSelect={() => {
                                     void shell.open('https://nodejs.org');
                                     close();
                                   }}
                                 >
+                                  <span class="size-4 shrink-0" aria-hidden="true"></span>
                                   {m.settings_providers_installFromNodejs()}
-                                </button>
+                                </Menu.Item>
                               {/if}
 
                               {#if hasNpmOld}
-                                <p class="px-3 py-1.5 text-xs text-yellow-600 dark:text-yellow-500">
+                                <p class="px-2 py-1.5 type-body text-warning-ink">
                                   {m.settings_providers_npmTooOld()}
                                 </p>
                               {/if}
 
                               {#if hasProviderWarning}
-                                <p class="px-3 py-1.5 text-xs text-yellow-600 dark:text-yellow-500">
+                                <p class="px-2 py-1.5 type-body text-warning-ink">
                                   {provider.warning}
                                 </p>
                                 {#if provider.warning === CLAUDE_CODE_NPX_MISSING_WARNING}
-                                  <button
-                                    type="button"
-                                    role="menuitem"
-                                    class="w-full cursor-pointer px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50"
-                                    onclick={() => {
+                                  <Menu.Item
+                                    class="cursor-pointer text-foreground"
+                                    onSelect={() => {
                                       void shell.open('https://nodejs.org');
                                       close();
                                     }}
                                   >
+                                    <span class="size-4 shrink-0" aria-hidden="true"></span>
                                     {m.settings_providers_installFromNodejs()}
-                                  </button>
+                                  </Menu.Item>
                                 {/if}
                               {/if}
                             </div>
                           {/if}
 
                           {#if provider.available && provider.authenticated === true}
-                            <div
-                              role="menuitem"
-                              aria-disabled="true"
-                              class="flex items-center gap-1.5 px-3 py-1.5 text-sm text-subtle"
-                            >
-                              <Fa icon={faCheck} class="w-2.5 h-2.5 text-green-500" />
+                            <Menu.Item disabled class="text-subtle">
+                              <span class="flex size-4 shrink-0 items-center justify-center">
+                                <Fa icon={faCheck} class="size-3 text-green-500" />
+                              </span>
                               {m.settings_providers_loggedInStatus()}
-                            </div>
+                            </Menu.Item>
                           {/if}
 
-                          <button
-                            type="button"
-                            role="menuitem"
-                            class="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50"
-                            onclick={() => {
+                          <Menu.Item
+                            class="cursor-pointer text-foreground"
+                            onSelect={() => {
                               close();
                               pathConfigOpen = { [provider.id]: true };
                             }}
                           >
-                            <Fa icon={faFolder} class="size-3.5 text-muted-foreground" />
+                            <span class="flex size-4 shrink-0 items-center justify-center">
+                              <Fa icon={faFolder} class="size-3.5 text-muted-foreground" />
+                            </span>
                             {m.settings_providerPath_setCustomPath_label()}
-                          </button>
+                          </Menu.Item>
 
                           {#if canSetDefault}
-                            <button
-                              type="button"
-                              role="menuitem"
-                              class="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-50"
+                            <Menu.Item
+                              class="cursor-pointer text-foreground"
                               disabled={selectingProviderId !== null}
-                              onclick={() => {
+                              onSelect={() => {
                                 void handleSelectProvider(provider.id);
                                 close();
                               }}
                             >
-                              <Fa icon={faStar} class="size-3.5 text-muted-foreground" />
+                              <span class="flex size-4 shrink-0 items-center justify-center">
+                                <Fa icon={faStar} class="size-3.5 text-muted-foreground" />
+                              </span>
                               {selectingProviderId === provider.id
                                 ? m.settings_providers_switching()
                                 : m.settings_providers_setAsDefault()}
-                            </button>
+                            </Menu.Item>
                           {/if}
 
                           {#if canDisable}
-                            <button
-                              type="button"
-                              role="menuitem"
-                              class="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-50"
+                            <Menu.Item
+                              class="cursor-pointer text-foreground"
                               disabled={!!inUseReason}
                               title={inUseReason ?? undefined}
-                              onclick={() => {
+                              onSelect={() => {
                                 handleToggleProvider(provider.id, false);
                                 close();
                               }}
                             >
-                              <Fa icon={faBan} class="size-3.5 text-muted-foreground" />
+                              <span class="flex size-4 shrink-0 items-center justify-center">
+                                <Fa icon={faBan} class="size-3.5 text-muted-foreground" />
+                              </span>
                               {m.settings_providers_disable()}
-                            </button>
+                            </Menu.Item>
                           {/if}
 
                           {#if needsLogin}
@@ -776,13 +778,13 @@
                               <!-- Actionable login guidance: the catalog's login
                                    command with copy-to-clipboard; docs link stays
                                    as the secondary action below. -->
-                              <div data-testid="provider-login-hint" class="px-3 py-1.5">
-                                <p class="text-xs text-muted-foreground">
+                              <div data-testid="provider-login-hint" class="px-2 py-1.5">
+                                <p class="type-body text-muted-foreground">
                                   {m.settings_providers_runToLogIn_label()}
                                 </p>
                                 <div class="mt-1 flex items-center gap-1">
                                   <code
-                                    class="min-w-0 flex-1 truncate rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-foreground"
+                                    class="min-w-0 flex-1 truncate rounded bg-muted px-1.5 py-0.5 font-mono type-caption text-foreground"
                                     >{provider.loginCommandHint}</code
                                   >
                                   <CopyButton
@@ -793,58 +795,58 @@
                               </div>
                             {/if}
                             {#if provider.id === 'claude-code'}
-                              <p class="px-3 py-1.5 text-xs text-muted-foreground">
+                              <p class="px-2 py-1.5 type-body text-muted-foreground">
                                 {m.settings_providers_claudeDesktopNote_label()}
                               </p>
                             {/if}
-                            <button
-                              type="button"
-                              role="menuitem"
-                              class="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-50"
+                            <Menu.Item
+                              class="cursor-pointer text-foreground"
                               disabled={$providerLoadingMap$[provider.id]}
-                              onclick={() => {
+                              onSelect={() => {
                                 appStore.dispatch(checkSingleProviderRequested(provider.id));
                                 close();
                               }}
                             >
-                              <span
-                                class="inline-block {$providerLoadingMap$[provider.id]
-                                  ? 'animate-spin'
-                                  : ''}"
-                              >
-                                <Fa icon={faArrowsRotate} class="size-3.5 text-muted-foreground" />
+                              <span class="flex size-4 shrink-0 items-center justify-center">
+                                {#if $providerLoadingMap$[provider.id]}
+                                  <IntentMarkLoader size={14} class="text-muted-foreground" />
+                                {:else}
+                                  <Fa
+                                    icon={faArrowsRotate}
+                                    class="size-3.5 text-muted-foreground"
+                                  />
+                                {/if}
                               </span>
                               {m.settings_providers_recheck_label()}
-                            </button>
+                            </Menu.Item>
                           {/if}
 
                           {#if canLogIn}
-                            <button
-                              type="button"
-                              role="menuitem"
-                              class="w-full cursor-pointer px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50"
-                              onclick={() => {
+                            <Menu.Item
+                              class="cursor-pointer text-foreground"
+                              onSelect={() => {
                                 openDocs(provider.loginDocsUrl!);
                                 close();
                               }}
                             >
+                              <span class="size-4 shrink-0" aria-hidden="true"></span>
                               {m.settings_providers_logIn()}
-                            </button>
+                            </Menu.Item>
                           {/if}
 
                           {#if canInstall}
-                            <button
-                              type="button"
-                              role="menuitem"
-                              class="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50"
-                              onclick={() => {
+                            <Menu.Item
+                              class="cursor-pointer text-foreground"
+                              onSelect={() => {
                                 openDocs(provider.docsUrl);
                                 close();
                               }}
                             >
-                              <Fa icon={faDownload} class="size-3.5 text-muted-foreground" />
+                              <span class="flex size-4 shrink-0 items-center justify-center">
+                                <Fa icon={faDownload} class="size-3.5 text-muted-foreground" />
+                              </span>
                               {m.settings_providers_install()}
-                            </button>
+                            </Menu.Item>
                           {/if}
                         </div>
                       {/snippet}
@@ -933,7 +935,7 @@
       <GrokLogo class="size-5" size={20} />
     {:else if providerId === 'unsloth'}
       <!-- Unsloth's brand mark is the sloth emoji (per their brand guidelines) -->
-      <span class="size-5 inline-flex items-center justify-center leading-none text-lg">🦥</span>
+      <span class="size-5 inline-flex items-center justify-center leading-none type-title">🦥</span>
     {:else if providerId === 'cortex'}
       <svg
         class="size-5"

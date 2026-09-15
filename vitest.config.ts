@@ -42,6 +42,12 @@ export default defineConfig(async () => {
       globals: true,
       environment: 'jsdom',
       setupFiles: ['./src/test-setup.ts'],
+      // Node 24's V8 Sparkplug/GC regression (nodejs/node#62393) SIGSEGVs long
+      // test runs: forks surface it as dropped files, while threads crash the
+      // controller directly. Keep process isolation and disable only Sparkplug
+      // in workers until the pinned runtime contains the upstream fix.
+      pool: 'forks',
+      execArgv: ['--no-sparkplug'],
       // Redirects every worker's os.tmpdir() into a private root and fails the
       // run if a test leaves a temp entry behind (see src/test-global-setup.ts).
       globalSetup: ['./src/test-global-setup.ts'],

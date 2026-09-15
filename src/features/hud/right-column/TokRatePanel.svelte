@@ -203,9 +203,7 @@
       600 10px Inter,
       system-ui,
       sans-serif;
-    letter-spacing: 0.18em;
     color: hsl(var(--muted-foreground));
-    text-transform: uppercase;
   }
   .hud-tokrate-rule {
     flex: 1;
@@ -335,7 +333,7 @@
     flex: 1;
   }
   .hud-tokrate-value {
-    color: hsl(var(--primary));
+    color: hsl(var(--primary-ink));
     font-size: 14px;
   }
   @container style(--motion-reduced: 1) {

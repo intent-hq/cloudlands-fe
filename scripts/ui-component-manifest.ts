@@ -188,21 +188,25 @@ export function buildUiInternalImportLedger(root = process.cwd()): UiInternalImp
 
 export function countRawUiControls(root = process.cwd()) {
   const approvedRoots = [
-    'button',
-    'input',
-    'select',
-    'textarea',
-    'checkbox',
-    'switch',
-    'toggle',
-    'toggle-group',
-    'menu',
-    'dialog',
-    'sheet',
-    'combobox',
-    'file-input',
-    'slider',
-  ].map((family) => `${UI_ROOT}/${family}/`);
+    ...[
+      'button',
+      'input',
+      'select',
+      'textarea',
+      'checkbox',
+      'switch',
+      'toggle',
+      'toggle-group',
+      'menu',
+      'dialog',
+      'sheet',
+      'combobox',
+      'file-input',
+      'slider',
+    ].map((family) => `${UI_ROOT}/${family}/`),
+    `${UI_ROOT}/sidebar/sidebar-rail.svelte`,
+    `${UI_ROOT}/sidebar/sidebar-menu-button.svelte`,
+  ];
   const counts = { button: 0, input: 0, select: 0, textarea: 0 };
   for (const absolute of walk(path.join(root, 'src')).filter(
     (file) => file.endsWith('.svelte') && productionSource(file),

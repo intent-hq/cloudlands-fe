@@ -1,10 +1,10 @@
 <script lang="ts">
   import { Button } from '$lib/components/ui/button';
   import { Tooltip } from '$lib/components/ui/tooltip';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import Fa from 'svelte-fa';
-  import { faCircle, faCheck, faCloudArrowUp, faSpinner } from '@fortawesome/free-solid-svg-icons';
-  import { fade, scale } from 'svelte/transition';
-  import { cubicOut } from 'svelte/easing';
+  import { faCircle, faCheck, faCloudArrowUp } from '@fortawesome/free-solid-svg-icons';
+  import { fade, scale } from '$lib/motion';
   import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
@@ -40,9 +40,9 @@
     switch (state) {
       case 'saving':
         return {
-          icon: faSpinner,
+          icon: null,
           tooltip: m.ui_saveIndicator_saving_tooltip(),
-          class: 'animate-spin text-info',
+          class: 'text-info',
         };
       case 'auto-saving':
         return {
@@ -54,7 +54,7 @@
         return {
           icon: faCircle,
           tooltip: m.ui_saveIndicator_clickToSave_tooltip(),
-          class: 'text-warning',
+          class: 'text-warning-ink',
         };
       case 'saved':
       default:
@@ -68,9 +68,9 @@
 
   // Size configurations
   const sizeConfig = {
-    xs: { button: 'h-5 w-5', icon: 'h-2.5 w-2.5', dot: 'h-1.5 w-1.5' },
-    sm: { button: 'h-6 w-6', icon: 'h-3 w-3', dot: 'h-2 w-2' },
-    md: { button: 'h-8 w-8', icon: 'h-4 w-4', dot: 'h-2.5 w-2.5' },
+    xs: { button: 'h-5 w-5', icon: 'h-2.5 w-2.5', loader: 10, dot: 'h-1.5 w-1.5' },
+    sm: { button: 'h-6 w-6', icon: 'h-3 w-3', loader: 12, dot: 'h-2 w-2' },
+    md: { button: 'h-8 w-8', icon: 'h-4 w-4', loader: 16, dot: 'h-2.5 w-2.5' },
   };
 
   const config = $derived.by(() => sizeConfig[size]);
@@ -81,7 +81,7 @@
   <Button
     variant="ghost"
     size="icon"
-    class={`relative transition-all duration-200 p-0 min-w-0 hover:bg-muted disabled:opacity-100 disabled:cursor-default ${config.button} ${className}`}
+    class={`relative transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none p-0 min-w-0 hover:bg-muted disabled:opacity-100 disabled:cursor-default ${config.button} ${className}`}
     onclick={isClickable ? onSave : undefined}
     disabled={!isClickable}
     aria-label={iconConfig?.tooltip}
@@ -90,8 +90,8 @@
       {#key state}
         <div
           class="absolute inset-0 flex items-center justify-center"
-          in:scale={{ duration: 200, easing: cubicOut, start: 0.8 }}
-          out:fade={{ duration: 150 }}
+          in:scale={{ distance: 0.2, tier: 'moderate' }}
+          out:fade={{ tier: 'moderate' }}
         >
           {#if state === 'unsaved'}
             <!-- Unsaved: Show a dot that pulses subtly -->
@@ -99,9 +99,11 @@
               <div class={`${config.dot} rounded-full bg-warning animate-pulse`}></div>
               <div class="absolute inset-0 rounded-full bg-warning opacity-30 animate-ping"></div>
             </div>
-          {:else}
+          {:else if state === 'saving'}
+            <IntentMarkLoader size={config.loader} class={iconConfig?.class} />
+          {:else if iconConfig.icon}
             <!-- Other states: Show the icon -->
-            <Fa icon={iconConfig?.icon} class="{config.icon} {iconConfig?.class}" />
+            <Fa icon={iconConfig.icon} class="{config.icon} {iconConfig.class}" />
           {/if}
         </div>
       {/key}

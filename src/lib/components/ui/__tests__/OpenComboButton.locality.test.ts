@@ -53,8 +53,8 @@ vi.mock('$lib/components/ui/button', async () => {
   return { Button: MockButton };
 });
 
-vi.mock('$lib/components/ui/toast', () => ({
-  toast: { success: vi.fn(), error: vi.fn() },
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { success: vi.fn(), error: vi.fn() },
 }));
 
 vi.mock('$lib/electron-bridge', () => ({

@@ -74,14 +74,8 @@
       : content,
   );
 
-  // PERF: Detect content complexity to choose rendering strategy
-  // - Simple: plain text, no markdown - render as <p>
-  // - Static: has markdown - render the processed HTML directly (no TipTap)
-  //
-  // Read-only rendering never needs a live ProseMirror view: the markdown
-  // processor already emits final HTML for task lists (read-only checkboxes),
-  // tables, images, and intent:// links, and the container click/keydown
-  // handlers below provide the interactivity.
+  // Plain text uses <p>; processed HTML covers read-only markdown, with
+  // click/keydown handlers providing interactivity without a ProseMirror view.
 
   // Patterns that need markdown processing (rendered as processed static HTML)
   const needsProcessingPatterns = [
@@ -996,7 +990,7 @@
   }
 
   .markdown-viewer :global(.markdown-link) {
-    color: hsl(var(--primary));
+    color: hsl(var(--primary-ink));
   }
 
   .markdown-viewer :global(a:hover),
@@ -1007,6 +1001,12 @@
 
   .markdown-viewer :global(.markdown-link:hover) {
     opacity: 0.8;
+  }
+
+  /* Keep sentence punctuation visually attached to inline intent-link pills. */
+  .markdown-viewer :global(.mention-chip) {
+    margin-inline: 0;
+    padding-inline: 0.25rem;
   }
 
   /* Blockquotes */

@@ -35,12 +35,30 @@ export const menuMetadata = {
     'menuMetadata',
     'menuSemantics',
   ],
+  // Minimal composition from the menu-command-states default fixture.
+  usage: `<script lang="ts">
+  import * as Menu from '$lib/components/ui/menu';
+
+  let selected = $state('');
+</script>
+
+<Menu.Root>
+  <Menu.Trigger>Open menu</Menu.Trigger>
+  <Menu.Content>
+    <Menu.Group>
+      <Menu.Label>Commands</Menu.Label>
+      <Menu.Item onSelect={() => (selected = 'Run command')}>Run command</Menu.Item>
+    </Menu.Group>
+  </Menu.Content>
+</Menu.Root>
+<p role="status">{selected}</p>`,
   category: 'primitive',
   owner: '007-B5',
   callers: [
     'src/features/external-editors/components/FileActionsDropdown.svelte',
     'src/features/external-editors/components/OpenComboButton.svelte',
     'src/features/layout/components/ViewSettingsDropdown.svelte',
+    'src/lib/component-catalog/renderers/PopoversCatalogPreview.svelte',
     'src/lib/components/chat/RegularAgentWelcome.svelte',
     'src/lib/components/chat/input/SimpleRichInput.svelte',
     'src/lib/components/chat/SpecialistDropdown.svelte',
@@ -58,7 +76,7 @@ export const menuMetadata = {
   replacement: null,
   characterizationTest: 'src/lib/components/ui/menu/menu.test.ts',
   removalGate:
-    'Retain the compatibility wrapper until all 16 callers migrate and canonical keyboard and focus tests pass.', // i18n-ignore (design-system catalog metadata)
+    'Retain the compatibility wrapper until all 17 callers migrate and canonical keyboard and focus tests pass.', // i18n-ignore (design-system catalog metadata)
   dynamicImports: [],
   fixtures: menuFixtures,
 } satisfies UiComponentMetadata;

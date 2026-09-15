@@ -200,7 +200,7 @@
     letter-spacing: 0.12em;
   }
   .hud-footer-online {
-    color: hsl(var(--primary));
+    color: hsl(var(--primary-ink));
   }
   .hud-footer-offline {
     color: hsl(var(--danger));

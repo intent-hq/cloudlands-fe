@@ -22,7 +22,7 @@ type HitProbe = {
 function probeSplitHandle(page: Page, axis: 'x' | 'y'): Promise<HitProbe> {
   return page.evaluate((probeAxis) => {
     const handle = document.querySelector<HTMLElement>('.panel-split-handle')!;
-    const wrapper = handle.parentElement!;
+    const wrapper = handle.closest('.panel-split-handle-wrapper')!;
     const rect = handle.getBoundingClientRect();
     const wrapperRect = wrapper.getBoundingClientRect();
     const classify = (x: number, y: number) => {

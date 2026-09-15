@@ -1,4 +1,5 @@
 <script lang="ts" module>
+  import { Button } from '$lib/components/ui/button';
   import { formatDateTime, formatNumber } from '$lib/i18n/format';
 
   /**
@@ -159,7 +160,7 @@
 
   const healthIconColors: Record<DaemonHealth, string> = {
     healthy: 'text-subtle',
-    degraded: 'text-yellow-500',
+    degraded: 'text-warning',
     down: 'text-red-500',
   };
 
@@ -202,7 +203,7 @@
   // yellow; degraded (already yellow) and down (red) are unchanged.
   const iconColorClass = $derived(
     $health$ === 'healthy' && (versionMismatch || workspaceDiskLow)
-      ? 'text-yellow-500'
+      ? 'text-warning'
       : healthIconColors[$health$],
   );
 
@@ -474,8 +475,9 @@
   portal={true}
 >
   {#snippet trigger({ props })}
-    <button
+    <Button
       {...props}
+      variant="ghost-light"
       class={cn(
         'flex items-center justify-center h-6 hover:bg-muted/50 rounded transition-colors cursor-pointer',
         currentRemoteName ? 'gap-1.5 px-1.5' : 'w-6',
@@ -492,7 +494,7 @@
           class={iconColorClass}
         />
       </span>
-    </button>
+    </Button>
   {/snippet}
 
   {#snippet content()}
@@ -533,7 +535,7 @@
                     'font-medium',
                     $health$ === 'healthy' && !workspaceDiskLow
                       ? 'text-green-500'
-                      : 'text-yellow-500',
+                      : 'text-warning-ink',
                   )}
                 >
                   {$health$ === 'healthy'
@@ -596,7 +598,7 @@
                         (role="img" so the span's aria-label is reliably mapped).
                       -->
                           <span
-                            class="text-yellow-600 dark:text-yellow-500"
+                            class="text-warning-ink"
                             role="img"
                             aria-label={versionMismatchTooltip}
                           >
@@ -676,7 +678,7 @@
                         so expose the warning as the icon's accessible name.
                       -->
                           <span
-                            class="text-warning"
+                            class="text-warning-ink"
                             role="img"
                             aria-label={m.layout_daemonStatus_workspaceDiskLow_tooltip()}
                           >
@@ -757,7 +759,7 @@
                     <span
                       class={cn(
                         'font-mono text-xs',
-                        $unslothStatus$.phase === 'ready' ? 'text-green-500' : 'text-yellow-500',
+                        $unslothStatus$.phase === 'ready' ? 'text-green-500' : 'text-warning-ink',
                       )}
                     >
                       {$unslothStatus$.phase}
@@ -812,7 +814,8 @@
                 {/if}
 
                 <!-- Stop action -->
-                <button
+                <Button
+                  variant="ghost-light"
                   class="w-full text-left text-xs text-danger hover:bg-muted/50 rounded px-1 py-1 mt-0.5 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-default"
                   disabled={$unslothStopping$}
                   onclick={() => {
@@ -823,7 +826,7 @@
                   {$unslothStopping$
                     ? m.layout_daemonStatus_stopUnsloth_stopping_label()
                     : m.layout_daemonStatus_stopUnsloth_action_label()}
-                </button>
+                </Button>
               {/if}
             </div>
           {/if}
@@ -873,7 +876,7 @@
                         protocol-mismatch icon below.
                       -->
                     <span
-                      class="text-yellow-600 dark:text-yellow-500"
+                      class="text-warning-ink"
                       role="img"
                       aria-label={`${m.layout_daemonStatus_certWarnings_tooltip()}: ${certWarningHosts}`}
                       data-testid="daemon-status-cert-warnings-icon"
@@ -894,7 +897,7 @@
                         so arrow-key navigation announces it with the row.
                       -->
                     <span
-                      class="text-yellow-600 dark:text-yellow-500"
+                      class="text-warning-ink"
                       role="img"
                       aria-label={m.layout_daemonStatus_protocolMismatch_tooltip()}
                     >
@@ -919,7 +922,8 @@
             </Menu.Item>
           {/each}
         {/if}
-        <button
+        <Button
+          variant="ghost-light"
           class="w-full text-left text-xs hover:bg-muted/50 rounded px-2 py-1.5 transition-colors cursor-pointer flex items-center gap-2"
           onclick={openDevicesSettings}
         >
@@ -927,7 +931,7 @@
           {hasSavedRemoteConnections
             ? m.layout_daemonStatus_manageDevices_action()
             : m.layout_daemonStatus_connectAnotherDevice_action()}
-        </button>
+        </Button>
       </div>
     </div>
   {/snippet}

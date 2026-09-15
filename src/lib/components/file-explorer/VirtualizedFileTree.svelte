@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
+  import { Input } from '$lib/components/ui/input';
   /* eslint-disable max-lines */
   import { onMount, tick, untrack } from 'svelte';
   import { writable } from 'svelte/store';
@@ -16,7 +18,7 @@
     faFolderOpen,
     faTrash,
   } from '@fortawesome/free-solid-svg-icons';
-  import { toast } from 'svelte-sonner';
+  import { notify } from '$lib/components/patterns/notify';
   import { getFileTypeIconSvg } from '$lib/utils/file-type-icons';
   import LineChangesBadge from '../shared/LineChangesBadge.svelte';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
@@ -776,14 +778,14 @@
         error?: { code: string; message: string };
       }>('file:download', { path: node.path });
       if (result?.success && result.data?.filePath) {
-        toast.success(
+        notify.success(
           m.fileExplorer_tree_downloadSuccess_toast({ filePath: result.data.filePath }),
         );
       } else if (!result?.canceled) {
-        toast.error(result?.error?.message || m.fileExplorer_tree_downloadFailed_error());
+        notify.error(result?.error?.message || m.fileExplorer_tree_downloadFailed_error());
       }
     } catch {
-      toast.error(m.fileExplorer_tree_downloadFailed_error());
+      notify.error(m.fileExplorer_tree_downloadFailed_error());
     }
   }
 
@@ -1133,8 +1135,8 @@
                 >
                   {@html getFileTypeIconSvg(creatingValue || '')}
                 </span>
-                <input
-                  bind:this={createInputRef}
+                <Input
+                  bind:ref={createInputRef}
                   type="text"
                   bind:value={creatingValue}
                   onblur={saveCreate}
@@ -1152,7 +1154,7 @@
             {@const gitColor =
               node.type === 'directory'
                 ? flatNode.directoryHasChanges
-                  ? 'text-yellow-700 dark:text-yellow-400'
+                  ? 'text-warning-ink'
                   : ''
                 : getGitStatusColor(flatNode.gitStatus?.status)}
             {@const hasChanges =
@@ -1171,12 +1173,12 @@
 
             <!-- svelte-ignore a11y_no_static_element_interactions -->
             <div
-              class="relative flex items-center transition-colors duration-150 {isIgnored
-                ? 'opacity-50'
+              class="group/file-row relative isolate flex items-center [&>[data-slot=list-item-row]]:min-w-0 [&>[data-slot=list-item-row]]:flex-1 transition-colors duration-150 {isIgnored
+                ? 'text-muted-foreground'
                 : ''}"
               class:folder-drop-target={isDropTarget}
               class:inside-drop-target={isInsideDropTarget}
-              style="height: {itemHeight}px; padding-left: {depth * 16}px;"
+              style="height: {itemHeight}px; padding-inline: var(--space-1);"
               data-file-path={node.path}
               ondblclick={(e) => handleDoubleClick(node, e)}
               oncontextmenu={(e) => handleContextMenu(e, node)}
@@ -1185,7 +1187,8 @@
                 <!-- Inline edit mode - matches ListItem sm size styling exactly -->
                 <div
                   class="relative z-10 min-w-0 flex items-center gap-2.5 py-1 rounded-md text-foreground"
-                  style="margin-left: 0.5px; padding-left: 9px; padding-right: 0.5px; width: calc(100% - 0.5px);"
+                  style="margin-left: 0.5px; padding-left: {9 +
+                    depth * 16}px; padding-right: 0.5px; width: calc(100% - 0.5px);"
                 >
                   <span
                     class={`shrink-0 flex items-center justify-center ${node.type === 'directory' ? `opacity-50 ${gitColor}` : `w-4 h-4 [&>svg]:w-full [&>svg]:h-full`}`}
@@ -1196,8 +1199,8 @@
                       {@html getFileTypeIconSvg(node.name)}
                     {/if}
                   </span>
-                  <input
-                    bind:this={editInputRef}
+                  <Input
+                    bind:ref={editInputRef}
                     type="text"
                     bind:value={editingValue}
                     onblur={saveEdit}
@@ -1217,7 +1220,9 @@
                   titleClass={`cursor-text ${gitColor}`}
                   onclick={(event) => handleItemClick(flatNode, absoluteIndex, event)}
                   size="sm"
-                  class="flex-1"
+                  indent={depth}
+                  indentSize={16}
+                  class="flex-1 bg-transparent!"
                   actions={onCreateFile
                     ? [
                         {
@@ -1245,7 +1250,9 @@
                   badgeClass={isModified ? 'text-blue-500' : undefined}
                   onclick={(event) => handleItemClick(flatNode, absoluteIndex, event)}
                   size="sm"
-                  class="flex-1"
+                  indent={depth}
+                  indentSize={16}
+                  class="flex-1 bg-transparent!"
                 >
                   {#snippet iconSnippet()}
                     <span class="w-4 h-4 [&>svg]:w-full [&>svg]:h-full">
@@ -1265,7 +1272,7 @@
               {#if flatNode.agentEdits && flatNode.agentEdits.length > 0 && (node.type === 'file' || !flatNode.isExpanded)}
                 <div class="flex items-center -space-x-1 mr-1 ml-2">
                   {#each flatNode.agentEdits.slice(0, 3) as agentId (agentId)}
-                    <button
+                    <Button
                       type="button"
                       class="rounded-full overflow-hidden cursor-pointer"
                       title={m.fileExplorer_tree_openAgent_tooltip()}
@@ -1275,16 +1282,16 @@
                       }}
                     >
                       <AgentAvatar {agentId} variant="compact" />
-                    </button>
+                    </Button>
                   {/each}
                 </div>
               {/if}
               <span
                 aria-hidden="true"
-                class="pointer-events-none absolute z-0 rounded-(--radius-small) border transition-[inset,border-color,background-color] duration-(--motion-standard) ease-(--ease-standard) motion-reduce:transition-none {editingPath ===
+                class="pointer-events-none absolute -z-10 rounded-(--radius-small) border transition-[inset,border-color,background-color] duration-(--motion-standard) ease-(--ease-standard) motion-reduce:transition-none {editingPath ===
                 node.path
-                  ? 'inset-px border-ring/60 bg-background'
-                  : 'inset-x-1 inset-y-0.5 border-transparent bg-transparent'}"
+                  ? 'inset-x-1 inset-y-px border-ring/60 bg-background'
+                  : `inset-x-1 inset-y-0.5 border-transparent ${isSelected(node.path) ? 'bg-active' : isFocused ? 'bg-selected' : 'bg-transparent group-hover/file-row:bg-hover'}`}"
               ></span>
             </div>
           {/if}
@@ -1312,7 +1319,7 @@
 
   /* Visual feedback when dragging files to root level (no specific folder targeted) */
   .file-drop-root {
-    outline: 2px dashed hsl(var(--primary));
+    outline: 2px dashed hsl(var(--primary-ink));
     outline-offset: -2px;
     background-color: hsl(var(--primary) / 0.05);
   }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { canonicalComponentManifest } from '$lib/components/ui/manifest';
 import { catalogEntries, getCatalogEntry } from './catalog';
+import { getCatalogComponentName } from './catalog-export';
 import { buildCatalogGroups } from './catalog-navigation';
 import { catalogRenderers } from './catalog-renderers';
 
@@ -26,9 +27,27 @@ describe('static component catalog', () => {
     expect(getCatalogEntry('not-a-catalog-entry')).toBeUndefined();
   });
 
+  it('publishes the loading indicator under its canonical name and import', () => {
+    const entry = getCatalogEntry('loading-indicator');
+    expect(entry).toMatchObject({
+      name: 'Loading indicator',
+      source: 'src/lib/components/ui/indicators/IntentMarkLoader.svelte',
+      publicImport: '$lib/components/ui/indicators',
+    });
+    expect(entry?.exports?.[0]).toBe('IntentMarkLoader');
+  });
+
   it('registers exactly one real preview renderer for every canonical fixture', () => {
-    const manifestIds = canonicalComponentManifest.map(({ id }) => id).sort();
-    expect(Object.keys(catalogRenderers).sort()).toEqual(manifestIds);
+    const rendererIds = [
+      ...canonicalComponentManifest.map(({ id }) => id),
+      'modals',
+      'model-picker',
+      'popovers',
+      'rows',
+      'screen-states',
+      'fields',
+    ].sort();
+    expect(Object.keys(catalogRenderers).sort()).toEqual(rendererIds);
 
     for (const component of canonicalComponentManifest) {
       expect(catalogRenderers[component.id], component.id).toBeDefined();
@@ -46,7 +65,13 @@ describe('static component catalog', () => {
     expect(new Set(groupedSlugs).size).toBe(groupedSlugs.length);
     expect(groups.find(({ id }) => id === 'products')?.entries.map(({ slug }) => slug)).toEqual([
       'chat-polish',
+      'fields',
+      'modals',
+      'model-picker',
+      'popovers',
       'proposal-card',
+      'rows',
+      'screen-states',
     ]);
     expect(
       buildCatalogGroups([
@@ -59,6 +84,43 @@ describe('static component catalog', () => {
           fixtures: [{ id: 'default', title: 'Default', states: ['default'] }],
         },
       ])[0].id,
-    ).toBe('fields');
+    ).toBe('primitives');
   });
+});
+
+const exportAliases: Record<string, string> = {
+  kbd: 'ShortcutChip',
+  list: 'ListContainer',
+  'loading-indicator': 'IntentMarkLoader',
+  'chat-polish': 'ChatMessage',
+  modals: 'Dialog',
+  popovers: 'Menu',
+  fields: 'FormRow',
+  rows: 'ListRow',
+  'screen-states': 'EmptyState',
+};
+
+it.each(catalogEntries)('resolves the public component export for $slug', (entry) => {
+  const expected =
+    exportAliases[entry.slug] ??
+    entry.slug.replace(/(^|-)([a-z])/g, (_, _separator, letter: string) => letter.toUpperCase());
+  expect(getCatalogComponentName(entry)).toBe(expected);
+  expect(entry.exports).toContain(expected);
+});
+
+it('skips default exports, bare parts, and lowercase helpers when selecting an alias', () => {
+  expect(
+    getCatalogComponentName({
+      slug: 'example',
+      exports: [
+        'default',
+        'Root',
+        'Item',
+        'Content',
+        'exampleMetadata',
+        'useExample',
+        'ExampleView',
+      ],
+    }),
+  ).toBe('ExampleView');
 });

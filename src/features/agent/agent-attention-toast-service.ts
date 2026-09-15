@@ -61,26 +61,20 @@ export function agentAttentionToastId(agentId: string): string {
   return `agent-attention:${agentId}`;
 }
 
-/**
- * Wrapper class for the Sonner toast element — the component is content-only,
- * so the single wrapper border carries the kind-flavored tint.
- */
-function wrapperClass(kind: AgentAttentionRequest['kind']): string {
-  return kind === 'blocker' ? '!border-danger/50' : '!border-primary/50';
-}
-
 /** Lazily pull the toast lib so this middleware-reachable module stays light.
  *  The import promise is cached — concurrent events must not race two
  *  first-time dynamic imports of the same module. */
-let toastPromise: Promise<(typeof import('svelte-sonner'))['toast']> | null = null;
+let toastPromise: Promise<(typeof import('$lib/components/patterns/notify'))['notify']> | null =
+  null;
 function getToast() {
-  if (!toastPromise) toastPromise = import('svelte-sonner').then((module) => module.toast);
+  if (!toastPromise)
+    toastPromise = import('$lib/components/patterns/notify').then((module) => module.notify);
   return toastPromise;
 }
 
 /** Lazily pull the toast component (kept out of the static module graph). */
 let toastComponentPromise: Promise<
-  (typeof import('$lib/components/ui/toast'))['AgentAttentionToast']
+  import('$lib/components/ui/toast').AgentAttentionToastComponent
 > | null = null;
 function getToastComponent() {
   if (!toastComponentPromise) {
@@ -168,8 +162,8 @@ function isUserViewingAgent(workspaceId: string, agentId: string): boolean {
  * keeps tab state synchronized with route navigation.
  */
 export async function switchToAttentionAgent(workspaceId: string, agentId: string): Promise<void> {
-  const toast = await getToast();
-  toast.dismiss(agentAttentionToastId(agentId));
+  const notify = await getToast();
+  notify.dismiss(agentAttentionToastId(agentId));
   appStore.dispatch(openWorkspaceTab(workspaceId));
   try {
     const { navigateToRoute } = await import('$lib/utils/navigation.client');
@@ -182,8 +176,8 @@ export async function switchToAttentionAgent(workspaceId: string, agentId: strin
 
 /**
  * Show (or update in place) the sticky attention toast for one agent.
- * Kind-flavored: title, icon, and border tint differ for discussion vs
- * blocker. Never auto-dismisses (`duration: Infinity`).
+ * Kind-flavored: title and icon differ for discussion vs blocker. Never
+ * auto-dismisses (`duration: Infinity`).
  *
  * Skipped entirely when the user is already viewing the raising agent's
  * conversation (see {@link isUserViewingAgent}) — the in-conversation notice
@@ -199,7 +193,7 @@ export async function showAgentAttentionToast(request: AgentAttentionRequest): P
     });
     return;
   }
-  const [toast, AgentAttentionToast, resolveConnectedWorkspaceKeySlot] = await Promise.all([
+  const [notify, AgentAttentionToast, resolveConnectedWorkspaceKeySlot] = await Promise.all([
     getToast(),
     getToastComponent(),
     getKeySlotResolver(),
@@ -208,7 +202,7 @@ export async function showAgentAttentionToast(request: AgentAttentionRequest): P
     kind === 'blocker'
       ? m.agent_attentionToast_blocker_title({ name: agentName })
       : m.agent_attentionToast_discussion_title({ name: agentName });
-  toast.custom(AgentAttentionToast, {
+  notify.custom(AgentAttentionToast, {
     id: agentAttentionToastId(agentId),
     componentProps: {
       title,
@@ -220,14 +214,13 @@ export async function showAgentAttentionToast(request: AgentAttentionRequest): P
       onClose: () => void dismissAgentAttentionToast(agentId),
     },
     duration: Number.POSITIVE_INFINITY,
-    class: wrapperClass(kind),
   });
 }
 
 /** Explicit user dismissal — the only other way the toast goes away. */
 export async function dismissAgentAttentionToast(agentId: string): Promise<void> {
-  const toast = await getToast();
-  toast.dismiss(agentAttentionToastId(agentId));
+  const notify = await getToast();
+  notify.dismiss(agentAttentionToastId(agentId));
 }
 
 /**
@@ -254,7 +247,7 @@ export async function showWorkspaceAutoUnarchiveToast(
   notice: WorkspaceAutoUnarchiveNotice,
 ): Promise<void> {
   const { workspaceId, agentId, agentName } = notice;
-  const toast = await getToast();
+  const notify = await getToast();
   let title: string | undefined;
   try {
     const { selectWorkspaceById } =
@@ -263,7 +256,7 @@ export async function showWorkspaceAutoUnarchiveToast(
   } catch (error) {
     logger.warn('Workspace title resolution failed — toast uses fallback', { workspaceId, error });
   }
-  toast.info(
+  notify.info(
     m.workspace_autoUnarchive_toast({
       title: title || m.workspace_page_space_title(),
       name: agentName,

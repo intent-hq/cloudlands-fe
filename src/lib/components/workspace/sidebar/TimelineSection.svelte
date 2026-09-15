@@ -25,7 +25,7 @@
   }: Props = $props();
 </script>
 
-<div class="relative pl-5 pb-3">
+<div class="relative pl-5 pb-2">
   <!-- Timeline node -->
   <div
     class="absolute left-[1.5px] top-[9px] size-1.5 rounded-full bg-border {active
@@ -33,11 +33,11 @@
       : 'bg-border'}"
   ></div>
 
-  <div class="flex items-center justify-between mb-1.5">
-    <Header size={6}>
+  <div class="flex items-center justify-between mb-1">
+    <Header size={6} class="shrink-0 whitespace-nowrap">
       {title}
       {#if subtitle}
-        <span class="inline-block ml-0.5 opacity-60 font-normal">/ {subtitle}</span>
+        <span class="inline-block ml-0.5 font-normal text-muted-foreground">/ {subtitle}</span>
       {/if}
     </Header>
     {#if action}

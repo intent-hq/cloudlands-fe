@@ -65,6 +65,11 @@ const config = {
       $store: './src/store',
       $features: './src/features',
       $shared: './src/shared',
+      '@fortawesome/fontawesome-common-types': './src/lib/icons/phosphor-icons.ts',
+      '@fortawesome/fontawesome-svg-core': './src/lib/icons/phosphor-icons.ts',
+      '@fortawesome/free-brands-svg-icons': './src/lib/icons/phosphor-icons.ts',
+      '@fortawesome/free-regular-svg-icons': './src/lib/icons/phosphor-icons.ts',
+      '@fortawesome/free-solid-svg-icons': './src/lib/icons/phosphor-icons.ts',
     },
   },
 

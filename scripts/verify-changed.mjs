@@ -476,7 +476,7 @@ export function createVerificationPlan(files, options = {}) {
       command(
         'vitest-full',
         'Vitest unit suite (safe fallback)',
-        ['run', 'test:unit'],
+        ['exec', 'vitest', 'run', '--config', 'vitest.config.ts', '--maxWorkers=1'],
         'vitest-full',
       ),
     );

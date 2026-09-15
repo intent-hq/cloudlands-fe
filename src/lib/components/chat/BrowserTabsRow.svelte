@@ -308,7 +308,7 @@
                     : 'bg-muted-foreground/40'}"
                 aria-hidden="true"
               ></span>
-              <span class="min-w-0 flex-1 {entry.hidden ? 'opacity-60' : ''}">
+              <span class="min-w-0 flex-1 {entry.hidden ? 'text-muted-foreground' : ''}">
                 <span class="block truncate" title={tabTitle}>{tabTitle}</span>
                 <span class="block truncate text-xs text-subtle" title={entry.tab.browserUrl ?? ''}>
                   {entry.tab.browserUrl || m.browser_embedded_noUrl_label()}
@@ -317,7 +317,7 @@
             </Button>
             <Button
               variant="plain"
-              size="icon-xs"
+              size="icon-compact"
               type="button"
               class="h-6 w-6 shrink-0 border-0 {SUBSCRIPTION_ACTION_ICON_CLASS} {SUBSCRIPTION_ICON_BUTTON_CLASS} focus-visible:ring-1"
               data-testid="browser-tab-close"
@@ -341,7 +341,7 @@
           >
             <Button
               variant="ghost-light"
-              size="xs"
+              size="compact"
               type="button"
               data-testid="browser-tabs-close-hidden"
               onclick={() => requestClose({ kind: 'hidden' })}

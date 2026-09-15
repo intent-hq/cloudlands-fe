@@ -1,3 +1,11 @@
+// @verify-changed-triggers: ../AgentSubscriptions.svelte, ../EventSubscriptionsCard.svelte, ../EventWakeupBanner.svelte, ../AutomatedWakeCardHeader.svelte, ../QueuedMessageNoticeHeader.svelte, ../subscription-disclosure.ts
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import {
+  SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS,
+  SUBSCRIPTION_DISCLOSURE_ROW_CLASS,
+} from '../subscription-disclosure';
+
 import '../../../../app.css';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -267,4 +275,32 @@ describe('subscription row typography', () => {
       expect(tone(icon).opacity).toBe('1');
     }
   });
+});
+
+describe('collapsed subscription typography contract', () => {
+  it('uses body typography for shared disclosure and status rows', () => {
+    for (const classes of [SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS, SUBSCRIPTION_DISCLOSURE_ROW_CLASS]) {
+      expect(classes.split(' ')).toContain('type-body');
+      expect(classes.split(' ')).not.toContain('type-caption');
+    }
+  });
+  for (const file of [
+    'AgentSubscriptions.svelte',
+    'EventSubscriptionsCard.svelte',
+    'EventWakeupBanner.svelte',
+    'AutomatedWakeCardHeader.svelte',
+    'QueuedMessageNoticeHeader.svelte',
+  ]) {
+    it(`${file} consumes body typography for collapsed rows`, () => {
+      const source = readFileSync(resolve(process.cwd(), 'src/lib/components/chat', file), 'utf8');
+      expect(source).toMatch(/type-body|SUBSCRIPTION_(?:ROW_TYPOGRAPHY|DISCLOSURE_ROW)_CLASS/);
+      const collapsed = source
+        .split('class=')
+        .slice(1)
+        .filter((part) =>
+          /SUBSCRIPTION_(?:ROW_TYPOGRAPHY|DISCLOSURE_ROW)_CLASS/.test(part.split('>')[0]),
+        );
+      for (const part of collapsed) expect(part.split('>')[0]).not.toContain('type-caption');
+    });
+  }
 });

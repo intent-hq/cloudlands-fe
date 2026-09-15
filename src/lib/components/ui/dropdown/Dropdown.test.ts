@@ -1,6 +1,7 @@
 // @ui-invariant
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import axe from 'axe-core';
 import Dropdown from './Dropdown.svelte';
 import { dropdownCallerLedger } from './dropdown-caller-ledger';
 import { buildUiComponentInventory } from '../../../../../scripts/ui-component-inventory';
@@ -118,6 +119,43 @@ describe('Dropdown duplicate option handling', () => {
   });
 });
 
+describe('Dropdown filtered rows', () => {
+  beforeEach(setupDropdownEnv);
+  afterEach(cleanupDropdownEnv);
+
+  it.each([false, true])(
+    'preserves surviving row identity while filtering (grouped: %s)',
+    async (grouped) => {
+      vi.stubGlobal('matchMedia', () => ({
+        matches: true,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      }));
+      const options = [
+        { value: 'a', label: 'Alpha' },
+        { value: 'b', label: 'Beta' },
+      ];
+      const { container } = render(Dropdown, {
+        props: {
+          ...(grouped ? { groups: [{ key: 'letters', label: 'Letters', options }] } : { options }),
+          portal: false,
+        },
+      });
+      await fireEvent.click(container.querySelector('button')!);
+      const beta = screen.getByRole('option', { name: 'Beta' });
+      const search = screen.getByRole('searchbox', { name: 'Search options' });
+      await fireEvent.input(search, { target: { value: 'Beta' } });
+      await waitFor(() => expect(screen.queryByRole('option', { name: 'Alpha' })).toBeNull());
+      expect(screen.getByRole('option', { name: 'Beta' })).toBe(beta);
+      await fireEvent.input(search, { target: { value: '' } });
+      expect(await screen.findByRole('option', { name: 'Alpha' })).toBeTruthy();
+      expect(screen.getByRole('option', { name: 'Beta' })).toBe(beta);
+      await fireEvent.input(search, { target: { value: 'missing' } });
+      expect(await screen.findByText('No results for “missing”')).toBeTruthy();
+    },
+  );
+});
+
 describe('Dropdown portal positioning', () => {
   beforeEach(setupDropdownEnv);
   afterEach(cleanupDropdownEnv);
@@ -155,11 +193,13 @@ describe('Dropdown portal positioning', () => {
     await fireEvent.click(trigger!);
 
     await waitFor(() => {
-      const listbox = document.body.querySelector('[role="listbox"]') as HTMLDivElement | null;
-      expect(listbox).toBeTruthy();
-      expect(listbox?.style.position).toBe('fixed');
-      expect(listbox?.style.bottom).toBeTruthy();
-      expect(listbox?.style.top).toBe('');
+      const content = document.body.querySelector(
+        '[data-slot="dropdown-content"]',
+      ) as HTMLDivElement | null;
+      expect(content).toBeTruthy();
+      expect(content?.style.position).toBe('fixed');
+      expect(content?.style.bottom).toBeTruthy();
+      expect(content?.style.top).toBe('');
     });
   });
 
@@ -182,24 +222,37 @@ describe('Dropdown portal positioning', () => {
     });
     const trigger = container.querySelector('button') as HTMLButtonElement;
     trigger.getBoundingClientRect = vi.fn(() => rect(120, 500, 120, 28));
-    trigger.parentElement!.getBoundingClientRect = vi.fn(() => rect(120, 500, 120, 28));
+    const root = container.querySelector<HTMLElement>('[data-slot="dropdown-root"]')!;
+    root.getBoundingClientRect = vi.fn(() => rect(120, 500, 120, 28));
 
     await fireEvent.click(trigger);
-    const listbox = await screen.findByRole('listbox');
-    expect(listbox.dataset.collisionAware).toBe('true');
-    expect(listbox.dataset.side).toBe('top');
-    expect(listbox.style.maxHeight).toBe('360px');
-    expect(listbox.style.bottom).toBe('32px');
-    expect(boundary.contains(listbox)).toBe(true);
+    const content = container.querySelector<HTMLElement>('[data-slot="dropdown-content"]')!;
+    expect(content.dataset.collisionAware).toBe('true');
+    expect(content.dataset.side).toBe('top');
+    expect(content.style.maxHeight).toBe('360px');
+    expect(content.style.bottom).toBe('32px');
+    expect(boundary.contains(content)).toBe(true);
 
     trigger.getBoundingClientRect = vi.fn(() => rect(120, 90, 120, 28));
-    trigger.parentElement!.getBoundingClientRect = vi.fn(() => rect(120, 90, 120, 28));
+    root.getBoundingClientRect = vi.fn(() => rect(120, 90, 120, 28));
     await fireEvent(window, new Event('resize'));
-    expect(listbox.dataset.side).toBe('bottom');
-    expect(listbox.style.top).toBe('32px');
-    expect(listbox.style.maxHeight).toBe('360px');
+    expect(content.dataset.side).toBe('bottom');
+    expect(content.style.top).toBe('32px');
+    expect(content.style.maxHeight).toBe('360px');
 
     const search = screen.getByRole('searchbox', { name: 'Search options' });
+    const listbox = screen.getByRole('listbox');
+    const options = screen.getAllByRole('option');
+    Object.defineProperty(listbox, 'clientHeight', { configurable: true, value: 90 });
+    options.forEach((option, index) => {
+      option.getBoundingClientRect = () =>
+        ({ top: index * 30, bottom: index * 30 + 30, height: 30 }) as DOMRect;
+    });
+    expect(options.filter((option) => option.tabIndex === 0)).toEqual([options[0]]);
+    await fireEvent.keyDown(search, { key: 'PageDown' });
+    expect(options.filter((option) => option.tabIndex === 0)).toEqual([options[3]]);
+    await fireEvent.keyDown(search, { key: 'PageUp' });
+    expect(options.filter((option) => option.tabIndex === 0)).toEqual([options[0]]);
     await fireEvent.keyDown(search, { key: 'End' });
     expect(screen.getByRole('option', { name: 'Option 11' }).dataset.highlighted).toBe('true');
     await fireEvent.keyDown(search, { key: 'Home' });
@@ -259,13 +312,52 @@ describe('Dropdown compatibility modes', () => {
         onopenchange,
       },
     });
-    await fireEvent.click(container.querySelector('button')!);
+    const trigger = container.querySelector('button')!;
+    await fireEvent.click(trigger);
     const search = await screen.findByRole('searchbox', { name: 'Search options' });
-    await fireEvent.input(search, { target: { value: 'Second' } });
+    const listbox = screen.getByRole('listbox');
+    expect(search.getAttribute('aria-controls')).toBe(listbox.id);
+    expect(listbox.getAttribute('aria-labelledby')).toBe(trigger.id);
+    expect(listbox.contains(search)).toBe(false);
+
+    await fireEvent.input(search, { target: { value: 'a' } });
+    await fireEvent.keyDown(search, { key: 'ArrowDown' });
+    expect(search.getAttribute('aria-activedescendant')).toBe(
+      screen.getByRole('option', { name: /Beta/ }).id,
+    );
     await fireEvent.keyDown(search, { key: 'Enter' });
     expect(onchange).toHaveBeenCalledWith('b', undefined);
     expect(onopenchange).toHaveBeenNthCalledWith(1, true);
     expect(onopenchange).toHaveBeenNthCalledWith(2, false);
+  });
+
+  it('shares one active index between arrow navigation and pointer proximity', async () => {
+    const { container } = render(Dropdown, {
+      props: {
+        options: [
+          { value: 'a', label: 'Alpha' },
+          { value: 'b', label: 'Beta' },
+        ],
+        searchable: false,
+        portal: false,
+      },
+    });
+    await fireEvent.click(container.querySelector('button')!);
+    const listbox = await screen.findByRole('listbox');
+    const options = screen.getAllByRole('option');
+    const optionContainer = listbox;
+    const activeIndex = optionContainer.querySelector<HTMLElement>(
+      '[data-slot="menu-list-highlight"]',
+    )!;
+    optionContainer.getBoundingClientRect = vi.fn(() => rect(0, 0, 200, 60));
+    options[0].getBoundingClientRect = vi.fn(() => rect(0, 0, 200, 30));
+    options[1].getBoundingClientRect = vi.fn(() => rect(0, 30, 200, 30));
+
+    await fireEvent.keyDown(listbox, { key: 'ArrowDown' });
+    await waitFor(() => expect(activeIndex.dataset.activeIndex).toBe('1'));
+    await fireEvent.pointerMove(optionContainer, { clientX: 10, clientY: 5 });
+    await waitFor(() => expect(activeIndex.dataset.activeIndex).toBe('0'));
+    expect(options[0].dataset.highlighted).toBe('true');
   });
 
   it('searches grouped options by both the display label and search label', async () => {
@@ -298,6 +390,7 @@ describe('Dropdown compatibility modes', () => {
       props: {
         multiple: true,
         searchable: false,
+        portal: true,
         onchange,
         options: [
           { value: 'a', label: 'Alpha' },
@@ -320,8 +413,13 @@ describe('Dropdown compatibility modes', () => {
 
     await fireEvent.click(screen.getByRole('option', { name: 'Toggle detail' }));
     expect(onchange).toHaveBeenCalledWith('toggle', expect.any(MouseEvent));
-    await fireEvent.mouseEnter(screen.getByRole('menuitem', { name: 'More' }).parentElement!);
+    await fireEvent.mouseOver(screen.getByRole('option', { name: 'More' }));
     expect(await screen.findByRole('menu')).toBeTruthy();
+    expect(screen.getByRole('menuitem', { name: 'Child action' })).toBeTruthy();
+    const axeResult = await axe.run(document.body, {
+      runOnly: ['aria-required-children', 'aria-required-parent'],
+    });
+    expect(axeResult.violations).toEqual([]);
 
     await fireEvent.click(screen.getByRole('option', { name: 'Run action' }));
     expect(action).toHaveBeenCalledOnce();
@@ -340,7 +438,10 @@ describe('Dropdown compatibility modes', () => {
 
     const emptyRender = render(Dropdown, { props: { options: [], searchable: false } });
     await fireEvent.click(emptyRender.container.querySelector('button')!);
-    expect(screen.getByText('No results found')).toBeTruthy();
+    const emptyState = screen.getByText('No results found');
+    expect(emptyState.classList.contains('type-caption')).toBe(true);
+    expect(emptyState.classList.contains('text-muted-foreground')).toBe(true);
+    expect(emptyState.classList.contains('py-1')).toBe(true);
   });
 });
 
@@ -355,9 +456,19 @@ describe('Dropdown caller migration ledger', () => {
     );
     expect(dropdownCallerLedger.map(({ caller }) => caller).sort()).toEqual(inventoryCallers);
     expect([...new Set(dropdownCallerLedger.map(({ replacement }) => replacement))].sort()).toEqual(
-      ['Combobox', 'Menu', 'Select'],
+      ['Combobox', 'Select'],
     );
     expect(dropdownCallerLedger).toEqual([
+      {
+        caller: 'src/lib/component-catalog/renderers/ChoiceCatalogPreview.svelte',
+        replacement: 'Combobox',
+        reason: 'catalog characterization of the deprecated value-selection wrapper',
+      },
+      {
+        caller: 'src/lib/component-catalog/renderers/PopoversCatalogPreview.svelte',
+        replacement: 'Combobox',
+        reason: 'catalog characterization of the deprecated action-menu wrapper',
+      },
       {
         caller: 'src/lib/components/chat/input/ModelPicker.svelte',
         replacement: 'Combobox',
@@ -387,11 +498,6 @@ describe('Dropdown caller migration ledger', () => {
         caller: 'src/lib/components/chat/input/ModelPickerOptionItem.svelte',
         replacement: 'Combobox',
         reason: 'shared option model for ModelPicker',
-      },
-      {
-        caller: 'src/lib/components/settings/mcp/McpServerCard.svelte',
-        replacement: 'Menu',
-        reason: 'action items and separator without value selection',
       },
     ]);
   });

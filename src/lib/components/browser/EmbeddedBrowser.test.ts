@@ -44,13 +44,13 @@ vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-slice', () => 
   ensureAgentSessionLoaded: vi.fn(),
 }));
 
-vi.mock('$lib/components/ui/toast', () => ({
-  toast: { error: vi.fn(), success: vi.fn() },
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { error: vi.fn(), success: vi.fn() },
 }));
 
 import EmbeddedBrowser from './EmbeddedBrowser.svelte';
 import { m } from '$shared/paraglide/messages.js';
-import { toast } from '$lib/components/ui/toast';
+import { notify } from '$lib/components/patterns/notify';
 import { elementPickerScript } from './element-picker-script';
 
 class ToolbarResizeObserver {
@@ -794,7 +794,7 @@ describe('EmbeddedBrowser', () => {
 
       await waitFor(() => expect(webview.capturePage).toHaveBeenCalledTimes(1));
       expect(captureActions()).toHaveLength(0);
-      expect(toast.error).toHaveBeenCalledTimes(1);
+      expect(notify.error).toHaveBeenCalledTimes(1);
     });
 
     it('targets the owner when no agent tab appears in focus history', async () => {

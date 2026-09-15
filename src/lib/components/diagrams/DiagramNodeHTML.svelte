@@ -267,8 +267,6 @@
       -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', sans-serif;
     font-size: var(--kind-font-size);
     font-weight: 500;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
     line-height: var(--kind-line-height);
   }
 </style>

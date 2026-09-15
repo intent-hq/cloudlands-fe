@@ -166,9 +166,7 @@
       600 10px Inter,
       system-ui,
       sans-serif;
-    letter-spacing: 0.18em;
     color: hsl(var(--warning));
-    text-transform: uppercase;
   }
   .hud-attention-rule {
     flex: 1;

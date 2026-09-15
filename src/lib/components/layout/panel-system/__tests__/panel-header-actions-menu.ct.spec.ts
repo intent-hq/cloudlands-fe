@@ -299,7 +299,7 @@ for (const scenario of [
 
     const geometry = await menu.evaluate((node) => {
       const item = node.querySelector<HTMLElement>('[data-slot="menu-command-item"]')!;
-      const label = item.querySelector<HTMLElement>(':scope > span')!;
+      const label = item.querySelector<HTMLElement>(':scope > span.truncate')!;
       const shortcut = item.querySelector<HTMLElement>('kbd')!;
       const box = node.getBoundingClientRect();
       return {
@@ -471,6 +471,12 @@ test('keeps the header flat and the complete selector operable at wide width', a
   const menu = page.getByRole('menu', { name: 'Panes in this stack' });
   const above = menu.getByRole('menuitem', { name: 'Open panel above' });
   const below = menu.getByRole('menuitem', { name: 'Open panel below' });
+  const labelOrigins = await menu
+    .locator('[data-slot="menu-item-leading"] + span')
+    .evaluateAll((nodes) => nodes.map((node) => node.getBoundingClientRect().left));
+  expect(Math.max(...labelOrigins) - Math.min(...labelOrigins)).toBeLessThanOrEqual(1);
+  await page.evaluate(() => document.documentElement.classList.add('dark'));
+  await page.evaluate(() => document.documentElement.classList.remove('dark'));
   await expect(above).toHaveAttribute('aria-disabled', 'true');
   await expect(below).not.toHaveAttribute('aria-disabled', 'true');
   await expect(above).toContainText(formatShortcut(SHORTCUTS.PREVIOUS_PANE.key));

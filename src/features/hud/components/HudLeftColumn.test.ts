@@ -179,7 +179,7 @@ describe('HudLeftColumn WORKSPACES-BY-STATE waiting row', () => {
     });
 
     const row = waitingRow();
-    expect(row.textContent).toContain('WAITING');
+    expect(row.textContent).toContain('Waiting');
     // Waiting is informational, never a call to action — no blink at any count.
     expect(blinks(row)).toBe(false);
   });
@@ -211,13 +211,13 @@ describe('HudLeftColumn AGENTS-BY-STATE rows', () => {
     );
     flushSync();
 
-    const agentPanel = screen.getByText('AGENTS BY STATE').closest('.hud-panel') as HTMLElement;
+    const agentPanel = screen.getByText('Agents by state').closest('.hud-panel') as HTMLElement;
     const labels = Array.from(agentPanel.querySelectorAll('.hud-state-bar-label')).map((el) =>
       el.textContent?.trim(),
     );
-    expect(labels).toEqual(['RUNNING', 'FAILED', 'IDLE']);
-    expect(labels).not.toContain('NEEDS ATTENTION');
-    expect(labels).not.toContain('DONE');
+    expect(labels).toEqual(['Running', 'Failed', 'Idle']);
+    expect(labels).not.toContain('Needs attention');
+    expect(labels).not.toContain('Done');
     expect(screen.queryByTestId('hud-agent-bar-needs-attention')).toBeNull();
   });
 });

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Input } from '$lib/components/ui/input';
   import { goto } from '$app/navigation';
   import { scrollFade } from '$lib/actions/scroll-fade';
   import { m } from '$shared/paraglide/messages.js';
@@ -86,7 +87,7 @@
   let showAllRecents = $state(false);
   let expandedRepositoryKeys = $state(new Set<string>());
   const searchInputClasses =
-    'box-border w-full min-w-0 rounded-md border border-border bg-background/30 px-2.5 py-1.5 text-sm text-foreground outline-none placeholder:text-muted-foreground/40 focus-visible:border-ring focus-visible:outline-none focus-visible:ring-0';
+    'box-border w-full min-w-0 rounded-md border border-border bg-background/30 px-2.5 py-1.5 text-sm text-foreground outline-none placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-0';
   const excludedWorkspaceIdSet = $derived(new Set(excludedWorkspaceIds));
 
   // Reset highlight when search query or view mode changes
@@ -439,8 +440,8 @@
   {#if recentsOnly}
     {#if $hasLoaded$ && searchRecents && searchVisible && recentWorkspaces.length > recentLimit}
       <div class="px-2 pb-2">
-        <input
-          bind:this={searchInputEl}
+        <Input
+          bind:ref={searchInputEl}
           type="text"
           placeholder={m.layout_activeCard_search_placeholder()}
           bind:value={searchQuery}
@@ -502,8 +503,8 @@
   {:else}
     {#if $hasLoaded$ && expanded && searchVisible && (discoverableWorkspaces.length > 3 || archivedWorkspaceCount > 0)}
       <div class="min-w-0 overflow-visible px-2 pb-2 pt-0.5" data-workspace-search-controls>
-        <input
-          bind:this={searchInputEl}
+        <Input
+          bind:ref={searchInputEl}
           type="text"
           placeholder={m.layout_activeCard_search_placeholder()}
           bind:value={searchQuery}
@@ -631,9 +632,10 @@
           {#each groupedByStatus as group (group.id)}
             {@const isExpanded = !$collapsedStatusGroupIds$.includes(group.id)}
             <div class="section-header px-2 pt-2 pb-1 mt-2 min-w-0" data-status-group={group.id}>
-              <button
+              <Button
+                variant="ghost"
                 type="button"
-                class="flex w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-sm text-left outline-none hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+                class="flex w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-sm text-left outline-none hover:text-foreground focus-visible:outline-1 focus-visible:outline-ring"
                 aria-expanded={isExpanded}
                 aria-controls={`status-group-${group.id}`}
                 data-status-group-toggle={group.id}
@@ -648,7 +650,7 @@
                     : '-rotate-90'}"
                 />
                 <Header size={4} class="min-w-0 flex-1 truncate">{group.label}</Header>
-              </button>
+              </Button>
             </div>
             <div id={`status-group-${group.id}`} hidden={!isExpanded}>
               {#each group.workspaces as workspace, _i (workspace.id)}

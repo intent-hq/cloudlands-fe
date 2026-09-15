@@ -7,9 +7,9 @@
   import { appClient } from '$lib/client';
   import { faCheck } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
-  import { toast } from 'svelte-sonner';
+  import { notify } from '$lib/components/patterns/notify';
   import { m } from '$shared/paraglide/messages.js';
-  import * as Menu from '$lib/components/ui/menu';
+  import { Menu } from '$lib/components/patterns/settings/custom-controls';
   import PathSettingField from './PathSettingField.svelte';
   import { createLogger } from '$lib/utils/client-logger';
 
@@ -97,11 +97,11 @@
         { path: 'providers.paths', value: { ...existing, [providerId]: path } },
       ]);
       onPathChange?.(path);
-      toast.success(m.settings_providerPath_saved());
+      notify.success(m.settings_providerPath_saved());
       logger.info(`[ProviderPathConfig] Saved ${providerId} path:`, path);
     } catch (error) {
       logger.error(`[ProviderPathConfig] Failed to save ${providerId} path:`, error);
-      toast.error(m.settings_providerPath_saveError());
+      notify.error(m.settings_providerPath_saveError());
     }
   }
 
@@ -153,10 +153,10 @@
     <div class="w-80 p-3 space-y-3 overflow-hidden">
       <!-- Header with helpful copy -->
       <div class="space-y-1">
-        <p class="text-sm font-medium text-foreground">
+        <p class="type-body font-medium text-foreground">
           {m.settings_providerPath_header({ name: providerName })}
         </p>
-        <p class="text-xs text-subtle">
+        <p class="type-body text-subtle">
           {#if npxPackage && resolvedPath}
             {m.settings_providerPath_npxOverrideHint_before({ package: npxPackage })}
             <code class="px-1 py-0.5 bg-muted rounded text-ui">{cliCommand}</code>
@@ -212,8 +212,8 @@
             {/if}
           </p>
           <code
-            class="mt-0.5 block px-1 py-0.5 bg-muted/50 rounded break-all {overridden
-              ? 'opacity-60'
+            class="mt-0.5 block rounded bg-muted/50 px-1 py-0.5 break-all {overridden
+              ? 'text-muted-foreground'
               : ''}">{path}</code
           >
         </div>

@@ -15,13 +15,13 @@ vi.mock('$lib/client', () => ({
   },
 }));
 
-// FAKE the toast seam so the conflict prompt is asserted without svelte-sonner.
-vi.mock('$lib/components/ui/toast', () => ({
-  toast: { warning: vi.fn(), success: vi.fn(), error: vi.fn(), message: vi.fn() },
+// FAKE the toast seam so the conflict prompt is asserted without $lib/components/patterns/notify.
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { warning: vi.fn(), success: vi.fn(), error: vi.fn(), message: vi.fn() },
 }));
 
 import { appClient } from '$lib/client';
-import { toast } from '$lib/components/ui/toast';
+import { notify } from '$lib/components/patterns/notify';
 import { store as appStore } from '$store/renderer/store';
 import { loadWorkspaceNotesSucceeded } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
 import { loadWorkspaceTasksSucceeded } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
@@ -170,6 +170,6 @@ describe('tasksWriteService (fake seam, real store)', () => {
     expect(noteStatus()).toBe('complete');
     expect(taskStatus()).toBe('complete');
     expect(selectNoteById.select(appStore.state, WS, 't1')?.rev).toBe(12);
-    expect(toast.warning).toHaveBeenCalledTimes(1);
+    expect(notify.warning).toHaveBeenCalledTimes(1);
   });
 });

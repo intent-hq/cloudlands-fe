@@ -26,7 +26,11 @@ describe('SidebarExpandableSearch', () => {
       .spyOn(Element.prototype, 'getBoundingClientRect')
       .mockImplementation(function () {
         if (this instanceof HTMLElement && this.matches('button[data-sidebar-action]')) {
-          const size = this.className.includes('size-7') ? 28 : 0;
+          const size =
+            this.dataset.slot === 'button' &&
+            this.className.includes('size-(--control-height-compact)')
+              ? 28
+              : 0;
           return new DOMRect(0, 0, size, size);
         }
         if (this instanceof SVGElement && this.matches('[data-sidebar-action-icon]')) {

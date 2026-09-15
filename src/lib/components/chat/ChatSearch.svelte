@@ -7,9 +7,11 @@
     faChevronUp,
     faChevronDown,
   } from '@fortawesome/free-solid-svg-icons';
-  import { safeSlide } from '$lib/utils/animations';
-  import { cubicOut } from 'svelte/easing';
+  import { safeDisclosureTransition } from './disclosure-motion';
   import { m } from '$shared/paraglide/messages.js';
+  import { Button } from '$lib/components/ui/button';
+  import { Checkbox } from '$lib/components/ui/checkbox';
+  import { Input } from '$lib/components/ui/input';
 
   interface Props {
     onSearch: (query: string, filters: SearchFilters) => void;
@@ -91,114 +93,130 @@
 
 <div
   class="fixed top-4 right-4 z-50 w-96 bg-background/95 backdrop-blur-sm border border-border rounded-lg shadow-xl"
-  transition:safeSlide={{ duration: 200, easing: cubicOut }}
+  transition:safeDisclosureTransition={{ tier: 'moderate' }}
 >
   <!-- Search Header -->
   <div class="flex items-center gap-2 p-3 border-b border-border">
     <Fa icon={faSearch} class="text-ghost" />
-    <input
-      bind:this={searchInput}
+    <Input
+      bind:ref={searchInput}
       bind:value={searchQuery}
       onkeydown={handleKeyDown}
       type="text"
       placeholder={m.chat_chatSearch_input_placeholder()}
-      class="flex-1 bg-transparent outline-none text-sm placeholder:text-muted-foreground"
+      noFocusStyle
+      class="h-auto flex-1 border-0 bg-transparent px-0 text-sm shadow-none placeholder:text-muted-foreground"
     />
 
     <!-- Results Counter -->
     {#if resultCount > 0}
       <div class="flex items-center gap-1 text-xs text-subtle">
         <span>{currentResult + 1}/{resultCount}</span>
-        <button
+        <Button
+          variant="ghost-light"
+          size="icon-xs"
+          iconOnly
           onclick={() => onNavigateResult('prev')}
           class="p-1 hover:bg-muted rounded transition-colors"
           title={m.chat_chatSearch_previousResult_title()}
         >
           <Fa icon={faChevronUp} size="xs" />
-        </button>
-        <button
+        </Button>
+        <Button
+          variant="ghost-light"
+          size="icon-xs"
+          iconOnly
           onclick={() => onNavigateResult('next')}
           class="p-1 hover:bg-muted rounded transition-colors"
           title={m.chat_chatSearch_nextResult_title()}
         >
           <Fa icon={faChevronDown} size="xs" />
-        </button>
+        </Button>
       </div>
     {/if}
 
     <!-- Filter Toggle -->
-    <button
+    <Button
+      variant="ghost-light"
+      size="icon-sm"
+      iconOnly
       onclick={() => (showFilters = !showFilters)}
       class="p-1.5 hover:bg-muted rounded transition-colors {showFilters ? 'bg-muted' : ''}"
       title={m.chat_chatSearch_toggleFilters_title()}
     >
       <Fa icon={faFilter} size="xs" class="text-ghost" />
-    </button>
+    </Button>
 
     <!-- Close Button -->
-    <button
+    <Button
+      variant="ghost-light"
+      size="icon-sm"
+      iconOnly
       onclick={onClose}
       class="p-1.5 hover:bg-muted rounded transition-colors"
       title={m.chat_chatSearch_closeSearch_title()}
     >
       <Fa icon={faXmark} size="xs" class="text-ghost" />
-    </button>
+    </Button>
   </div>
 
   <!-- Filters -->
   {#if showFilters}
     <div
       class="p-3 border-b border-border space-y-2"
-      transition:safeSlide={{ duration: 150, easing: cubicOut }}
+      transition:safeDisclosureTransition={{ tier: 'fast' }}
     >
       <!-- Role Filter -->
       <div class="flex items-center gap-2">
         <span class="text-xs text-subtle w-20">{m.chat_chatSearch_filterBy_label()}</span>
         <div class="flex gap-1">
-          <button
+          <Button
+            variant="plain"
             onclick={() => toggleFilter('role', 'all')}
             class="px-2 py-1 text-xs rounded transition-colors {filters.role === 'all'
               ? 'bg-primary text-primary-foreground'
               : 'bg-muted hover:bg-muted/80'}"
           >
             {m.chat_chatSearch_filterAll_label()}
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="plain"
             onclick={() => toggleFilter('role', 'user')}
             class="px-2 py-1 text-xs rounded transition-colors {filters.role === 'user'
               ? 'bg-primary text-primary-foreground'
               : 'bg-muted hover:bg-muted/80'}"
           >
             {m.chat_chatSearch_filterUser_label()}
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="plain"
             onclick={() => toggleFilter('role', 'assistant')}
             class="px-2 py-1 text-xs rounded transition-colors {filters.role === 'assistant'
               ? 'bg-primary text-primary-foreground'
               : 'bg-muted hover:bg-muted/80'}"
           >
             {m.chat_chatSearch_filterAssistant_label()}
-          </button>
+          </Button>
         </div>
       </div>
 
       <!-- Options -->
       <div class="flex items-center gap-4">
         <label class="flex items-center gap-2 cursor-pointer">
-          <input
-            type="checkbox"
+          <Checkbox
             bind:checked={filters.caseSensitive}
-            onchange={handleSearch}
-            class="w-3 h-3"
+            onCheckedChange={handleSearch}
+            size="sm"
+            ariaLabel={m.chat_chatSearch_caseSensitive_label()}
           />
           <span class="text-xs text-subtle">{m.chat_chatSearch_caseSensitive_label()}</span>
         </label>
         <label class="flex items-center gap-2 cursor-pointer">
-          <input
-            type="checkbox"
+          <Checkbox
             bind:checked={filters.regex}
-            onchange={handleSearch}
-            class="w-3 h-3"
+            onCheckedChange={handleSearch}
+            size="sm"
+            ariaLabel={m.chat_chatSearch_useRegex_label()}
           />
           <span class="text-xs text-subtle">{m.chat_chatSearch_useRegex_label()}</span>
         </label>

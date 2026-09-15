@@ -44,6 +44,7 @@
     activeAgentIds?: string[];
     loadAgentSessions?: boolean;
     loadWorkspaceData?: boolean;
+    staticData?: boolean;
   }
   let {
     workspace,
@@ -51,10 +52,17 @@
     activeAgentIds = [],
     loadAgentSessions = true,
     loadWorkspaceData = true,
+    staticData = false,
   }: Props = $props();
   const workspaceIdStore = writable('');
-  const workspaceAgents$ = selectAllWorkspaceAgents(workspaceIdStore);
-  const prMonitors$ = selectPrMonitors(workspaceIdStore);
+  function createWorkspaceAgentsStore() {
+    return staticData ? writable([]) : selectAllWorkspaceAgents(workspaceIdStore);
+  }
+  function createPrMonitorsStore() {
+    return staticData ? writable([]) : selectPrMonitors(workspaceIdStore);
+  }
+  const workspaceAgents$ = createWorkspaceAgentsStore();
+  const prMonitors$ = createPrMonitorsStore();
   $effect(() => workspaceIdStore.set(workspace?.id ?? ''));
   $effect(() => {
     if (workspace && loadWorkspaceData) {
@@ -155,7 +163,7 @@
       if (count > 1) {
         questionMeta = {
           compact: `${formatInteger(1)}/${formatInteger(count)}`,
-          accessible: `${m.workspace_hoverCard_question_label()} ${m.chat_questionWizard_stepCounter_label({ current: 1, total: count })}`,
+          accessible: m.chat_questionWizard_stepCounter_label({ current: 1, total: count }),
         };
       }
     } else if (canonicalState === 'attention-discussion') {
@@ -278,6 +286,7 @@
   }
   let activePullRequest = $derived.by(() => {
     if (!workspace) return null;
+    if (staticData) return getWorkspacePullRequest(workspace);
     return (
       selectWorkspaceActivePullRequest.select(appStore.state, workspace.id) ??
       getWorkspacePullRequest(workspace)
@@ -344,7 +353,7 @@
       <div class="min-w-0" data-workspace-hover-card-identity>
         <div class="flex min-w-0 items-center justify-between gap-3">
           <h2
-            class="type-body min-w-0 truncate font-medium! text-foreground"
+            class="type-body min-w-0 truncate font-medium text-foreground"
             data-workspace-hover-card-title
           >
             {workspace.title || m.workspace_links_untitled_label()}

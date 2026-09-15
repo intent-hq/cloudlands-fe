@@ -140,7 +140,10 @@ async function syncSvelteKitTypes() {
     env: syncEnv(),
   });
   const exitCode = await new Promise((resolve) => {
-    child.on('close', (code) => resolve(code ?? 1));
+    child.on('close', (code, signal) => {
+      if (code === null && signal) console.error(`svelte-kit sync died with ${signal}`);
+      resolve(code ?? 1);
+    });
   });
   if (exitCode !== 0) {
     console.error(`svelte-kit sync failed with exit code ${exitCode} — route typegen is stale.`);
@@ -181,6 +184,32 @@ export function createOutputCollector({
   };
 }
 
+/** Spawn the checker with optional space-separated CT_NODE_ARGS (no shell quoting). */
+export function runSvelteCheck({
+  cliPath,
+  args,
+  outputFd,
+  env = process.env,
+  spawnImpl = spawn,
+  printError = console.error,
+}) {
+  const flags = env.CT_NODE_ARGS?.trim().split(/\s+/).filter(Boolean) ?? [];
+  const child = spawnImpl(process.execPath, [...flags, cliPath, ...args], {
+    stdio: ['inherit', outputFd, 'inherit'],
+    env: syncEnv(env),
+  });
+  return new Promise((resolve) => {
+    child.on('error', (error) => {
+      printError(`svelte-check failed to spawn: ${error.message}`);
+      resolve(1);
+    });
+    child.on('close', (code, signal) => {
+      if (code === null && signal) printError(`svelte-check died with ${signal}`);
+      resolve(code ?? 1);
+    });
+  });
+}
+
 async function main() {
   await syncSvelteKitTypes();
   const args = [
@@ -195,13 +224,10 @@ async function main() {
   const outputDir = mkdtempSync(path.join(tmpdir(), 'cloudlands-svelte-check-'));
   const outputPath = path.join(outputDir, 'output.ndjson');
   const outputFd = openSync(outputPath, 'w');
-  const child = spawn(process.execPath, [resolveBin('svelte-check', 'svelte-check'), ...args], {
-    stdio: ['inherit', outputFd, 'inherit'],
-    env: syncEnv(),
-  });
-
-  const exitCode = await new Promise((resolve) => {
-    child.on('close', (code) => resolve(code ?? 1));
+  const exitCode = await runSvelteCheck({
+    cliPath: resolveBin('svelte-check', 'svelte-check'),
+    args,
+    outputFd,
   });
   closeSync(outputFd);
   const lines = readFileSync(outputPath, 'utf8').split(/\r?\n/);

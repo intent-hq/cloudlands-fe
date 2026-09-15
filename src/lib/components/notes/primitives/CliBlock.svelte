@@ -3,6 +3,7 @@
   import type { NodeViewProps } from '@tiptap/core';
   import type { CliPrimitive } from '$shared/types/notes-primitives';
   import { Button } from '$lib/components/ui/button';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import Fa from 'svelte-fa';
   import {
     faTerminal,
@@ -10,10 +11,9 @@
     faArrowUpRightFromSquare,
     faCheck,
     faTimes,
-    faSpinner,
   } from '@fortawesome/free-solid-svg-icons';
   import { invoke, listenSync } from '$lib/electron-bridge';
-  import { toast } from 'svelte-sonner';
+  import { notify } from '$lib/components/patterns/notify';
   import { onDestroy } from 'svelte';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import { createLogger } from '$lib/utils/client-logger';
@@ -51,22 +51,26 @@
   // Get button state
   let buttonState = $derived.by(() => {
     if (running) {
-      return { label: m.notes_cliBlock_running_label(), icon: faSpinner, spin: true };
+      return { label: m.notes_cliBlock_running_label(), icon: faPlay, loading: true };
     }
     if (hasTerminal) {
-      return { label: m.notes_cliBlock_open_label(), icon: faArrowUpRightFromSquare, spin: false };
+      return {
+        label: m.notes_cliBlock_open_label(),
+        icon: faArrowUpRightFromSquare,
+        loading: false,
+      };
     }
     if (primitive?.lastRun?.status === 'success') {
-      return { label: m.notes_cliBlock_ran_label(), icon: faCheck, spin: false };
+      return { label: m.notes_cliBlock_ran_label(), icon: faCheck, loading: false };
     }
     if (primitive?.lastRun?.status === 'error') {
       return {
         label: m.notes_cliBlock_exit_label({ code: primitive.lastRun.exitCode ?? '' }),
         icon: faTimes,
-        spin: false,
+        loading: false,
       };
     }
-    return { label: m.notes_cliBlock_run_label(), icon: faPlay, spin: false };
+    return { label: m.notes_cliBlock_run_label(), icon: faPlay, loading: false };
   });
 
   // Run the command - creates a terminal and opens it
@@ -74,7 +78,7 @@
     e.stopPropagation();
     if (!primitive || running) return;
     if (!workspaceId) {
-      toast.error(m.notes_cliBlock_noWorkspace_error());
+      notify.error(m.notes_cliBlock_noWorkspace_error());
       return;
     }
 
@@ -140,7 +144,7 @@
         }
 
         // Note: terminal:created event listener in +page.svelte will open the drawer
-        toast.success(m.notes_cliBlock_terminalOpened_label());
+        notify.success(m.notes_cliBlock_terminalOpened_label());
       } else {
         throw new Error(result.error || m.notes_cliBlock_createTerminalFailed_error());
       }
@@ -151,7 +155,7 @@
         workspaceId,
       });
       running = false;
-      toast.error(err instanceof Error ? err.message : m.notes_cliBlock_runFailed_error());
+      notify.error(err instanceof Error ? err.message : m.notes_cliBlock_runFailed_error());
     }
   }
 
@@ -181,8 +185,9 @@
     >
       {#if linkedAgentId}
         <!-- Show agent avatar that opens the agent panel -->
-        <button
+        <Button
           type="button"
+          variant="ghost"
           class="shrink-0 rounded-sm transition-opacity hover:opacity-80"
           onclick={(event) => {
             if (workspaceId) {
@@ -197,7 +202,7 @@
           title={m.notes_cliBlock_viewAgent_tooltip()}
         >
           <AgentAvatar agentId={linkedAgentId} variant="compact" />
-        </button>
+        </Button>
       {:else}
         <Fa icon={faTerminal} size="sm" class="shrink-0 text-muted-foreground" />
       {/if}
@@ -211,7 +216,11 @@
         onclick={hasTerminal ? openTerminal : runCommand}
         disabled={running}
       >
-        <Fa icon={buttonState.icon} size="xs" class={buttonState.spin ? 'animate-spin' : ''} />
+        {#if buttonState.loading}
+          <IntentMarkLoader size={12} />
+        {:else}
+          <Fa icon={buttonState.icon} size="xs" />
+        {/if}
         {buttonState.label}
       </Button>
     </div>

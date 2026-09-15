@@ -69,3 +69,24 @@ test('keeps a nested-row rename border inside the dark tree', async ({ mount, pa
   });
   await expectRenameDecorationInsideTree(component, '/project/src/nested.ts');
 });
+
+for (const theme of ['light', 'dark'] as const) {
+  test(`fills the same panel width at root and depth two in ${theme}`, async ({ mount, page }) => {
+    await page.evaluate(
+      (dark) => document.documentElement.classList.toggle('dark', dark),
+      theme === 'dark',
+    );
+    const component = await mount(VirtualizedFileTreeEditGeometryHost, { props: { theme } });
+    const rows = component.locator('[data-file-path]');
+    const root = rows.first();
+    const nested = rows.last();
+    await nested.hover();
+    const fill = (row: Locator) => row.locator(':scope > span[aria-hidden="true"]');
+    const rootBox = (await fill(root).boundingBox())!;
+    const nestedBox = (await fill(nested).boundingBox())!;
+    expect(nestedBox.x).toBeCloseTo(rootBox.x, 1);
+    expect(nestedBox.width).toBeCloseTo(rootBox.width, 1);
+    await expect(fill(nested)).not.toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+    await expectRenameDecorationInsideTree(component, '/project/src/nested.ts');
+  });
+}
