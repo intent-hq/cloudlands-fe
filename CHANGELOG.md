@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.158.4](https://github.com/intent-hq/cloudlands-fe/compare/v2.158.3...v2.158.4) (2026-09-15)
+
+
+### 🐛 Bug Fixes
+
+* merge navigator.getBattery() into the Electron battery source ([#2484](https://github.com/intent-hq/cloudlands-fe/issues/2484)) ([cc4762b](https://github.com/intent-hq/cloudlands-fe/commit/cc4762be004478649cfc98996338db3c7a67c889))
+
 ## [2.158.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.158.2...v2.158.3) (2026-09-15)
 
 
