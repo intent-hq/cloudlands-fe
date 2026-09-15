@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events';
 import type { Duplex } from 'node:stream';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { TUNNEL_RACE_HOST } from './backend-connection';
+import { ConnectionLimitError, TUNNEL_RACE_HOST } from './backend-connection';
 import { JsonRpcError, mapErrorCode } from './json-rpc-errors';
 import { JsonRpcClient, ReverseRpcHandlerError } from './json-rpc-client';
 
@@ -562,6 +562,49 @@ describe('JsonRpcClient reconnect + heartbeat', () => {
     sockets[2].emit('close');
     await vi.advanceTimersByTimeAsync(100);
     expect(client.getReconnectAttempts()).toBe(1);
+
+    client.dispose();
+  });
+
+  // Multiplayer guest caps (intent-hq/intentd#1917): a 503 upgrade refusal
+  // means the host's guest connection cap is spent. The client keeps
+  // retrying (a seat frees when another guest disconnects) but on a slow
+  // bounded cadence, and flags the posture for the daemon-loss overlay.
+  it('retries a connection-limit refusal slowly, flags it, and clears the flag on connect', async () => {
+    vi.useFakeTimers();
+    const { client, sockets } = makeReconnectingClient();
+    const statuses: Array<{ status: string; limited: boolean }> = [];
+    client.on('status', (status: string) =>
+      statuses.push({ status, limited: client.isConnectionLimited() }),
+    );
+    client.start();
+    expect(client.isConnectionLimited()).toBe(false);
+
+    sockets[0].emit('error', new ConnectionLimitError());
+    expect(client.isConnectionLimited()).toBe(true);
+    // The `disconnected` broadcast already carries the posture.
+    expect(statuses.at(-1)).toEqual({ status: 'disconnected', limited: true });
+
+    // Not re-presented on the ordinary 100ms/5s cadence…
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(sockets).toHaveLength(1);
+    // …but retried within the slow bound; the flag persists across the wait.
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(sockets).toHaveLength(2);
+    expect(client.isConnectionLimited()).toBe(true);
+    expect(client.getReconnectAttempts()).toBe(1);
+
+    // A seat freed: the connect clears the posture.
+    sockets[1].open();
+    expect(client.isConnectionLimited()).toBe(false);
+    expect(statuses.at(-1)).toEqual({ status: 'connected', limited: false });
+
+    // A later failure of another kind does not inherit the flag and is
+    // retried on the ordinary cadence again.
+    sockets[1].emit('close');
+    expect(client.isConnectionLimited()).toBe(false);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(sockets).toHaveLength(3);
 
     client.dispose();
   });

@@ -17,6 +17,19 @@ export interface WorkspaceMember {
 }
 
 /**
+ * `workspace.members.list` result: the roster plus the workspace's guest cap
+ * (intent-hq/intentd#1917). `guestCount` is the collaborators plus open
+ * invites spent against `guestLimit` (`sharing.maxGuestsPerWorkspace`; `0`
+ * closes the workspace to guests). Both are `null` when the daemon predates
+ * the cap fields, so a caller gates on the cap only when it is known.
+ */
+export interface WorkspaceMembersList {
+  members: WorkspaceMember[];
+  guestCount: number | null;
+  guestLimit: number | null;
+}
+
+/**
  * One `workspace_invite` row as `workspace.invite.list` / `.create` return it.
  * The raw secret is never on this shape; the ready-to-send `intent://invite`
  * link is (`url`), so an owner can copy any open invite again.
@@ -79,6 +92,8 @@ export const INVITE_ERROR_CODES = [
   'invite-flow-error',
   'invite-flow-not-found',
   'invite-flow-busy',
+  'guest-limit',
+  'workspace-full',
 ] as const;
 
 export type InviteErrorCode = (typeof INVITE_ERROR_CODES)[number];
