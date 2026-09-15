@@ -175,6 +175,7 @@ describe('handleInviteDeepLink', () => {
       principalId: 'gh:42',
       login: 'octocat',
       token: TOKEN,
+      workspace: { id: 'ws-1', title: 'Shared workspace' },
     });
     expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
     expect(close).toHaveBeenCalledTimes(1);

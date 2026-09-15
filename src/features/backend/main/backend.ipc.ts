@@ -47,6 +47,7 @@ import {
 import { JsonRpcError } from './json-rpc-errors';
 import {
   buildMainClientHelloParams,
+  getOrCreateClientId,
   persistClientId,
   setLocalHostIdentity,
 } from './client-identity';
@@ -77,7 +78,9 @@ import * as connectionsStore from './connections-store';
 import * as guestSessionsStore from './guest-sessions-store';
 import type {
   GuestSessionsListResult,
+  GuestWorkspaceRef,
   LeaveGuestSessionResult,
+  LeaveGuestWorkspaceResult,
 } from '../../../shared/types/guest-sessions';
 import {
   initKeychainSyncLifecycle,
@@ -131,6 +134,7 @@ import {
   ConnectionsForgetSchema,
   ConnectionsListSchema,
   GuestSessionsLeaveSchema,
+  GuestSessionsLeaveWorkspaceSchema,
   GuestSessionsListSchema,
   ConnectionsOpenSchema,
   ConnectionsRotateSecretSchema,
@@ -978,6 +982,9 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
         // propagates on the next reconnect. Fire-and-forget/fail-soft like
         // the version capture; the store dedupes the unchanged common case.
         void captureRemoteHostname(id);
+        // A guest session's joined-workspace cache refreshes from the host on
+        // the same (re)connect window; a no-op for paired (owner) backends.
+        void hydrateGuestWorkspaces(id);
         // Capture whether the daemon supports self-update (system.status
         // `updateSupported`) so the renderer can gate the Update affordance.
         // Fire-and-forget/fail-soft like the captures above.
@@ -1436,6 +1443,89 @@ function extractDeviceKind(result: unknown): DetectedDeviceKind | null {
   if (!result || typeof result !== 'object') return null;
   const value = (result as { deviceKind?: unknown }).deviceKind;
   return isDetectedDeviceKind(value) ? value : null;
+}
+
+/**
+ * Pull `{ id, title }` refs out of a `workspace.list` result (PROTOCOL §5 —
+ * `{ workspaces: [{ id, title, ... }] }`); null when the payload is not that
+ * shape, so a malformed answer never overwrites the cached list.
+ */
+function extractWorkspaceRefs(result: unknown): GuestWorkspaceRef[] | null {
+  const rows = (result as { workspaces?: unknown } | null)?.workspaces;
+  if (!Array.isArray(rows)) return null;
+  const refs: GuestWorkspaceRef[] = [];
+  for (const row of rows) {
+    const { id, title } = (row ?? {}) as { id?: unknown; title?: unknown };
+    if (typeof id !== 'string' || typeof title !== 'string') return null;
+    refs.push({ id, title });
+  }
+  return refs;
+}
+
+/**
+ * Per-session count of local membership edits (per-workspace *Leave*). A
+ * hydration snapshot requested before an edit describes a membership that no
+ * longer holds, so it must never be written over the edit — a
+ * `workspace.list` answer that predates a successful *Leave* would otherwise
+ * restore the left workspace.
+ */
+const guestMembershipEpochs = new Map<string, number>();
+
+function bumpGuestMembershipEpoch(id: string): void {
+  guestMembershipEpochs.set(id, (guestMembershipEpochs.get(id) ?? 0) + 1);
+}
+
+/**
+ * Per-session generation of the latest hydration read issued. Only that read
+ * may commit: two hello-triggered `workspace.list` calls on the same pooled
+ * client can answer out of order, and the older answer must not overwrite
+ * the newer membership.
+ */
+const guestHydrationReads = new Map<string, number>();
+
+/**
+ * Hydrate a guest session's joined-workspace list from the host once its
+ * connection is up (every (re)connect hello, like {@link captureRemoteHostname}).
+ * The local list is only a last-known cache: rows imported by keychain sync
+ * (which never carries the list) and rows written before the field existed
+ * have none, and a membership removed on the host must not linger. The
+ * guest connection's `workspace.list` is membership-filtered by the daemon,
+ * so its rows ARE the joined workspaces; the store reconciles by id. Fail-soft:
+ * an unreachable host, a refusal or a malformed answer keeps the cached list.
+ * A snapshot is discarded when the pooled client was replaced, a newer read
+ * was issued, or a local membership edit happened while it was in flight.
+ * The same fences are re-checked by the store at the commit boundary, so a
+ * mutation queued ahead of the write (a same-daemon re-join replacing the
+ * record, a *Leave*) also discards it; an edit that lands during the store
+ * write itself is queued behind it by the store and wins.
+ */
+async function hydrateGuestWorkspaces(id: string): Promise<void> {
+  try {
+    if ((await guestSessionsStore.findById(id)) === null) return;
+    const client = getBackendClientForId(id);
+    const epoch = guestMembershipEpochs.get(id);
+    const read = (guestHydrationReads.get(id) ?? 0) + 1;
+    guestHydrationReads.set(id, read);
+    const stillValid = () =>
+      backendClients.get(id) === client &&
+      guestHydrationReads.get(id) === read &&
+      guestMembershipEpochs.get(id) === epoch;
+    const result = await client.request('workspace.list');
+    if (!stillValid()) return;
+    const refs = extractWorkspaceRefs(result);
+    if (refs === null) {
+      logger.warn('Ignoring malformed workspace.list from guest host', { id });
+      return;
+    }
+    if (await guestSessionsStore.setWorkspaces(id, refs, stillValid)) {
+      await broadcastGuestSessionsChanged();
+    }
+  } catch (error) {
+    logger.warn('Failed to hydrate guest workspaces from host', {
+      id,
+      code: revokeFailureCode(error),
+    });
+  }
 }
 
 /**
@@ -2051,7 +2141,103 @@ async function leaveGuestSessionLocked(id: string): Promise<LeaveGuestSessionRes
   return { id, revoked };
 }
 
-/** Register the guest sessions IPC (token-free list, leave) + the change push. */
+/**
+ * Bound on the `workspace.members.leave` round trip of a per-workspace
+ * *Leave*, including the dial when the host has no live pooled client.
+ */
+export const GUEST_LEAVE_WORKSPACE_TIMEOUT_MS = 10_000;
+
+/**
+ * A per-workspace *Leave* that did not complete on the host, reduced to a
+ * bounded code before it crosses IPC (the raw transport / daemon message may
+ * echo host material). The local record is left untouched so the user can
+ * retry.
+ */
+export class GuestWorkspaceLeaveError extends Error {
+  constructor(readonly code: string) {
+    // i18n-ignore (bounded machine code, never rendered)
+    super(`guest workspace leave failed: ${code}`);
+    this.name = 'GuestWorkspaceLeaveError';
+  }
+}
+
+/**
+ * The host's `workspace.members.leave` for a per-workspace *Leave*: on the
+ * session's pooled client when it is live, otherwise on a short-lived client
+ * dialled from the stored guest credential (a joined host that was never
+ * opened has no pooled client, and *Leave* must not pool one — that would
+ * flip the nav block to "not connected" for a host with no window).
+ */
+async function requestGuestWorkspaceLeave(id: string, workspaceId: string): Promise<boolean> {
+  const pooled = backendClients.get(id);
+  const request = async (client: JsonRpcClient) => {
+    const result = (await client.request(
+      'workspace.members.leave',
+      { workspaceId },
+      { timeoutMs: GUEST_LEAVE_WORKSPACE_TIMEOUT_MS },
+    )) as { left?: unknown } | null;
+    return result?.left === true;
+  };
+  if (pooled && pooled.getStatus() === 'connected') return request(pooled);
+  const { config } = await buildConfigForConnection(id);
+  const client = new JsonRpcClient({
+    config,
+    helloParams: async () => ({ clientId: await getOrCreateClientId() }),
+  });
+  client.on('error', () => {});
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      request(client),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error('timed out')), GUEST_LEAVE_WORKSPACE_TIMEOUT_MS);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+    client.dispose();
+  }
+}
+
+/**
+ * Per-workspace *Leave* (multiplayer w4): ask the host to drop this
+ * principal's membership (`workspace.members.leave`), then drop the workspace
+ * from the session's local record. The record is dropped when the host
+ * confirms OR answers that the membership is already gone (`-32602`: the
+ * owner removed the guest first); any other failure keeps the record and
+ * rejects with a bounded code so the user can retry. A workspace no longer
+ * in the record (another window already left it) is completion, not an
+ * error, and sends nothing. The session itself is kept even at zero
+ * workspaces — *Leave host* is the only thing that forgets it.
+ */
+async function leaveGuestWorkspaceLocked(
+  id: string,
+  workspaceId: string,
+): Promise<LeaveGuestWorkspaceResult> {
+  const session = await guestSessionsStore.findById(id);
+  if (!session?.workspaces.some((w) => w.id === workspaceId)) {
+    return { id, workspaceId, left: false };
+  }
+  let left = false;
+  try {
+    left = await requestGuestWorkspaceLeave(id, workspaceId);
+  } catch (error) {
+    if (!(error instanceof JsonRpcError && error.rpcCode === -32602)) {
+      const code = revokeFailureCode(error);
+      logger.warn('workspace.members.leave failed; keeping the local record', {
+        id,
+        workspaceId,
+        code,
+      });
+      throw new GuestWorkspaceLeaveError(code);
+    }
+  }
+  bumpGuestMembershipEpoch(id);
+  await guestSessionsStore.leaveWorkspace(id, workspaceId);
+  return { id, workspaceId, left };
+}
+
+/** Register the guest sessions IPC (token-free list, leave, leave-workspace) + the change push. */
 function registerGuestSessionsHandlers(): void {
   ipcMain.handle(
     GUEST_SESSIONS.LIST,
@@ -2067,6 +2253,15 @@ function registerGuestSessionsHandlers(): void {
       GuestSessionsLeaveSchema,
       async (_event, { id }) => enqueueConnectionOperation(() => leaveGuestSessionLocked(id)),
       GUEST_SESSIONS.LEAVE,
+    ),
+  );
+  ipcMain.handle(
+    GUEST_SESSIONS.LEAVE_WORKSPACE,
+    createValidatedHandler(
+      GuestSessionsLeaveWorkspaceSchema,
+      async (_event, { id, workspaceId }) =>
+        enqueueConnectionOperation(() => leaveGuestWorkspaceLocked(id, workspaceId)),
+      GUEST_SESSIONS.LEAVE_WORKSPACE,
     ),
   );
   guestSessionsStore.onGuestSessionsMutated(() => {

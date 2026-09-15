@@ -144,6 +144,7 @@ export async function handleInviteDeepLink(url: string): Promise<void> {
       principalId: credential.principalId,
       login: credential.login,
       token: credential.token,
+      workspace: { id: credential.workspaceId, title: start.workspaceTitle },
     });
     logger.info('Joined workspace as a guest; opening the window', {
       id: record.id,

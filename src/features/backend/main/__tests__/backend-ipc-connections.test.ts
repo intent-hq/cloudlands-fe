@@ -32,6 +32,9 @@ const lifecycle = vi.hoisted(() => ({ events: [] as Array<{ type: string; seq: n
 const rpc = vi.hoisted(() => ({
   handler: (async () => ({})) as (method: string) => Promise<unknown>,
   calls: [] as string[],
+  /** Per-call `params` argument, parallel to `calls`. */
+  // eslint-disable-next-line themis/collection-state-shape -- test-only RPC recorder, not Redux state
+  params: [] as unknown[],
   /** Per-call `options` argument, parallel to `calls`. */
   options: [] as Array<{ timeoutMs?: number } | undefined>,
 }));
@@ -71,8 +74,9 @@ vi.mock('../json-rpc-client', () => {
     dispose(): void {
       lifecycle.events.push({ type: 'dispose', seq: this.id });
     }
-    request = vi.fn(async (method: string, _params?: unknown, options?: { timeoutMs?: number }) => {
+    request = vi.fn(async (method: string, params?: unknown, options?: { timeoutMs?: number }) => {
       rpc.calls.push(method);
+      rpc.params.push(params);
       rpc.options.push(options);
       return rpc.handler(method);
     });
@@ -180,6 +184,8 @@ const guestStore = vi.hoisted(() => ({
   list: vi.fn(),
   findById: vi.fn(),
   forget: vi.fn(),
+  leaveWorkspace: vi.fn(),
+  setWorkspaces: vi.fn(),
   getDecryptedToken: vi.fn(),
   setTcAddress: vi.fn(),
   setHosts: vi.fn(),
@@ -190,6 +196,8 @@ vi.mock('../guest-sessions-store', () => ({
   list: guestStore.list,
   findById: guestStore.findById,
   forget: guestStore.forget,
+  leaveWorkspace: guestStore.leaveWorkspace,
+  setWorkspaces: guestStore.setWorkspaces,
   getDecryptedToken: guestStore.getDecryptedToken,
   setHostname: vi.fn(async () => false),
   setTcAddress: guestStore.setTcAddress,
@@ -286,6 +294,7 @@ const GUEST = {
   principalId: 'prn_7',
   login: 'octocat',
   tokenEncrypted: true,
+  workspaces: [{ id: 'ws-guest', title: 'Guest project' }],
   updatedAt: 1,
 };
 
@@ -366,6 +375,7 @@ beforeEach(() => {
   lifecycle.events = [];
   rpc.handler = async () => ({});
   rpc.calls = [];
+  rpc.params = [];
   rpc.options = [];
   // Sensible defaults; individual tests override.
   store.getActiveId.mockResolvedValue('local');
@@ -379,6 +389,8 @@ beforeEach(() => {
   guestStore.list.mockResolvedValue([]);
   guestStore.findById.mockResolvedValue(null);
   guestStore.forget.mockResolvedValue(true);
+  guestStore.leaveWorkspace.mockResolvedValue(true);
+  guestStore.setWorkspaces.mockResolvedValue(false);
   guestStore.getDecryptedToken.mockResolvedValue(null);
   guestStore.setTcAddress.mockResolvedValue(false);
   guestStore.setHosts.mockResolvedValue(false);
@@ -4269,6 +4281,432 @@ describe('guest-sessions:* IPC handlers', () => {
     expect(send.mock.calls.some(([c]) => c === 'guest-sessions:changed')).toBe(false);
   });
 
+  /**
+   * The joined-workspace list on a guest record is only a last-known cache
+   * (keychain-imported and pre-field rows have none): each (re)connect hello
+   * hydrates it from the host's membership-filtered `workspace.list`.
+   */
+  describe('joined-workspace hydration on guest connect', () => {
+    type HelloClient = { hello(result: unknown): void };
+    const hello = { server: { version: '6.8.0', buildCommit: 'abc123' } };
+
+    it('reconciles the cached list from workspace.list through the guest connection and re-broadcasts', async () => {
+      installGuest();
+      guestStore.setWorkspaces.mockResolvedValue(true);
+      rpc.handler = async (method) =>
+        method === 'workspace.list'
+          ? {
+              workspaces: [
+                { id: 'ws-guest', title: 'Guest project', myRole: 'collaborator', memberCount: 2 },
+                { id: 'ws-new', title: 'Joined elsewhere', myRole: 'collaborator', memberCount: 3 },
+              ],
+            }
+          : {};
+      const send = installWindow();
+      const { mod } = await loadModule();
+      mod.registerBackendHandlers();
+      const guest = (await mod.connectBackendClient(GUEST.id)) as unknown as HelloClient;
+      send.mockClear();
+
+      guest.hello(hello);
+      await vi.waitFor(() =>
+        expect(guestStore.setWorkspaces).toHaveBeenCalledWith(
+          GUEST.id,
+          [
+            { id: 'ws-guest', title: 'Guest project' },
+            { id: 'ws-new', title: 'Joined elsewhere' },
+          ],
+          expect.any(Function),
+        ),
+      );
+      expect(rpc.params[rpc.calls.indexOf('workspace.list')]).toBeUndefined();
+      await vi.waitFor(() =>
+        expect(send.mock.calls.some(([c]) => c === 'guest-sessions:changed')).toBe(true),
+      );
+    });
+
+    it('never lists workspaces on a paired (owner) backend hello', async () => {
+      installGuest();
+      const { mod } = await loadModule();
+      mod.registerBackendHandlers();
+      const remote = (await mod.connectBackendClient('remote-1')) as unknown as HelloClient;
+      remote.hello(hello);
+      await vi.waitFor(() => expect(rpc.calls).toContain('host.status'));
+      expect(rpc.calls).not.toContain('workspace.list');
+      expect(guestStore.setWorkspaces).not.toHaveBeenCalled();
+    });
+
+    it('keeps the cached list when the host refuses or is unreachable', async () => {
+      installGuest();
+      rpc.handler = async (method) => {
+        if (method === 'workspace.list') throw new Error('socket closed');
+        return {};
+      };
+      const send = installWindow();
+      const { mod } = await loadModule();
+      mod.registerBackendHandlers();
+      const guest = (await mod.connectBackendClient(GUEST.id)) as unknown as HelloClient;
+      send.mockClear();
+
+      guest.hello(hello);
+      await vi.waitFor(() => expect(rpc.calls).toContain('workspace.list'));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(guestStore.setWorkspaces).not.toHaveBeenCalled();
+      expect(send.mock.calls.some(([c]) => c === 'guest-sessions:changed')).toBe(false);
+    });
+
+    it('keeps the cached list when workspace.list is not the documented shape', async () => {
+      installGuest();
+      rpc.handler = async (method) =>
+        method === 'workspace.list' ? { workspaces: [{ id: 'ws-guest' }] } : {};
+      const { mod } = await loadModule();
+      mod.registerBackendHandlers();
+      const guest = (await mod.connectBackendClient(GUEST.id)) as unknown as HelloClient;
+
+      guest.hello(hello);
+      await vi.waitFor(() => expect(rpc.calls).toContain('workspace.list'));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(guestStore.setWorkspaces).not.toHaveBeenCalled();
+    });
+
+    it('a snapshot requested before a per-workspace Leave cannot restore the left workspace', async () => {
+      installGuest();
+      let cached = [...GUEST.workspaces];
+      guestStore.findById.mockImplementation(async (id: string) =>
+        id === GUEST.id ? { ...GUEST, workspaces: [...cached] } : null,
+      );
+      guestStore.list.mockImplementation(async () => [{ ...GUEST, workspaces: [...cached] }]);
+      guestStore.setWorkspaces.mockImplementation(async (_id: string, refs: typeof cached) => {
+        cached = [...refs];
+        return true;
+      });
+      guestStore.leaveWorkspace.mockImplementation(async (_id: string, workspaceId: string) => {
+        cached = cached.filter((w) => w.id !== workspaceId);
+        return true;
+      });
+      let release!: (value: unknown) => void;
+      const snapshot = new Promise((resolve) => {
+        release = resolve;
+      });
+      rpc.handler = async (method) =>
+        method === 'workspace.list'
+          ? snapshot
+          : method === 'workspace.members.leave'
+            ? { left: true }
+            : {};
+      const { mod } = await loadModule();
+      mod.registerBackendHandlers();
+      const guest = (await mod.connectBackendClient(GUEST.id)) as unknown as HelloClient & {
+        status: string;
+      };
+      guest.status = 'connected';
+      guest.hello(hello);
+      await vi.waitFor(() => expect(rpc.calls).toContain('workspace.list'));
+
+      await expect(
+        findHandler('guest-sessions:leave-workspace')!(
+          {},
+          { id: GUEST.id, workspaceId: 'ws-guest' },
+        ),
+      ).resolves.toMatchObject({ left: true });
+      expect(cached).toEqual([]);
+
+      // The pre-Leave membership answers only now: it must be discarded.
+      release({ workspaces: GUEST.workspaces });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(guestStore.setWorkspaces).not.toHaveBeenCalled();
+      expect(
+        (await findHandler('guest-sessions:list')!({}, undefined)).sessions[0].workspaces,
+      ).toEqual([]);
+    });
+
+    it('a snapshot requested before a Leave the host already applied (-32602) is discarded too', async () => {
+      installGuest();
+      let release!: (value: unknown) => void;
+      const snapshot = new Promise((resolve) => {
+        release = resolve;
+      });
+      const { JsonRpcError } = await import('../json-rpc-errors');
+      rpc.handler = async (method) => {
+        if (method === 'workspace.list') return snapshot;
+        if (method === 'workspace.members.leave') {
+          throw new JsonRpcError({ code: -32602, message: 'not a member' });
+        }
+        return {};
+      };
+      const { mod } = await loadModule();
+      mod.registerBackendHandlers();
+      const guest = (await mod.connectBackendClient(GUEST.id)) as unknown as HelloClient & {
+        status: string;
+      };
+      guest.status = 'connected';
+      guest.hello(hello);
+      await vi.waitFor(() => expect(rpc.calls).toContain('workspace.list'));
+
+      await expect(
+        findHandler('guest-sessions:leave-workspace')!(
+          {},
+          { id: GUEST.id, workspaceId: 'ws-guest' },
+        ),
+      ).resolves.toMatchObject({ left: false });
+      expect(guestStore.leaveWorkspace).toHaveBeenCalledWith(GUEST.id, 'ws-guest');
+
+      release({ workspaces: GUEST.workspaces });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(guestStore.setWorkspaces).not.toHaveBeenCalled();
+    });
+
+    it('a late first-hello snapshot cannot overwrite the newer hello snapshot on the same client', async () => {
+      installGuest();
+      guestStore.setWorkspaces.mockResolvedValue(true);
+      let release!: (value: unknown) => void;
+      const first = new Promise((resolve) => {
+        release = resolve;
+      });
+      let reads = 0;
+      rpc.handler = async (method) =>
+        method === 'workspace.list' ? (++reads === 1 ? first : { workspaces: [] }) : {};
+      const { mod } = await loadModule();
+      mod.registerBackendHandlers();
+      const guest = (await mod.connectBackendClient(GUEST.id)) as unknown as HelloClient;
+
+      guest.hello(hello);
+      await vi.waitFor(() => expect(reads).toBe(1));
+      guest.hello(hello);
+      await vi.waitFor(() =>
+        expect(guestStore.setWorkspaces).toHaveBeenCalledWith(GUEST.id, [], expect.any(Function)),
+      );
+
+      release({
+        workspaces: [{ id: 'ws-stale', title: 'Old membership', myRole: 'collaborator' }],
+      });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(guestStore.setWorkspaces).toHaveBeenCalledTimes(1);
+      expect(guestStore.setWorkspaces).not.toHaveBeenCalledWith(
+        GUEST.id,
+        [{ id: 'ws-stale', title: 'Old membership' }],
+        expect.any(Function),
+      );
+    });
+
+    it('a snapshot with no Leave in flight is still applied after an unrelated round trip', async () => {
+      installGuest();
+      guestStore.setWorkspaces.mockResolvedValue(true);
+      let release!: (value: unknown) => void;
+      const snapshot = new Promise((resolve) => {
+        release = resolve;
+      });
+      rpc.handler = async (method) => (method === 'workspace.list' ? snapshot : {});
+      const { mod } = await loadModule();
+      mod.registerBackendHandlers();
+      const guest = (await mod.connectBackendClient(GUEST.id)) as unknown as HelloClient;
+      guest.hello(hello);
+      await vi.waitFor(() => expect(rpc.calls).toContain('workspace.list'));
+
+      release({
+        workspaces: [{ id: 'ws-guest', title: 'Renamed', myRole: 'collaborator', memberCount: 2 }],
+      });
+      await vi.waitFor(() =>
+        expect(guestStore.setWorkspaces).toHaveBeenCalledWith(
+          GUEST.id,
+          [{ id: 'ws-guest', title: 'Renamed' }],
+          expect.any(Function),
+        ),
+      );
+    });
+
+    it('a failed hydration logs only a bounded code, never the host message', async () => {
+      installGuest();
+      const marker = 'SENTINEL-hydration-detail-9c1e';
+      rpc.handler = async (method) => {
+        if (method === 'workspace.list') throw new Error(`socket closed ${marker}`);
+        return {};
+      };
+      const { Logger } = await import('$shared/logger');
+      const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => {});
+      const { mod } = await loadModule();
+      mod.registerBackendHandlers();
+      const guest = (await mod.connectBackendClient(GUEST.id)) as unknown as HelloClient;
+      guest.hello(hello);
+
+      await vi.waitFor(() =>
+        expect(warn.mock.calls.some(([message]) => /hydrate guest/.test(String(message)))).toBe(
+          true,
+        ),
+      );
+      const hydrationWarns = warn.mock.calls.filter(([message]) =>
+        /hydrate guest/.test(String(message)),
+      );
+      expect(JSON.stringify(hydrationWarns)).not.toContain(marker);
+      expect(hydrationWarns[0][1]).toEqual({ id: GUEST.id, code: 'transport' });
+      warn.mockRestore();
+    });
+
+    describe('commit-boundary fencing against the real store', () => {
+      type RealStore = typeof import('../guest-sessions-store');
+      let real: RealStore;
+      let directory: string;
+      let sessionId: string;
+      let backend: Awaited<ReturnType<typeof loadModule>>['mod'];
+      let client: HelloClient;
+      let setupElectron: Record<string, unknown>;
+      const renameSpies: Array<{ mockRestore(): void }> = [];
+
+      /** Hold the store's atomic rename so a mutation stays in flight until released. */
+      async function holdNextWrite() {
+        const fs = (await import('node:fs')).promises;
+        const originalRename = fs.rename.bind(fs);
+        let release!: () => void;
+        const pending = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        const rename = vi.spyOn(fs, 'rename').mockImplementationOnce(async (...args) => {
+          await pending;
+          return originalRename(...args);
+        });
+        renameSpies.push(rename);
+        return { rename, release };
+      }
+
+      beforeEach(async () => {
+        const fs = await import('node:fs/promises');
+        directory = await fs.mkdtemp('/tmp/guest-hydration-real-store-');
+        setupElectron = { ...(await import('electron')) };
+        vi.doMock('electron', () => ({
+          ...setupElectron,
+          safeStorage: {
+            isEncryptionAvailable: () => true,
+            encryptString: (s: string) => Buffer.from(s),
+            decryptString: (b: Buffer) => b.toString(),
+          },
+        }));
+        vi.mocked(app.getPath).mockReturnValue(directory);
+        real = await vi.importActual<RealStore>('../guest-sessions-store');
+        await real.applyRemoteSyncRecord({ ...GUEST, detectHosts: false, token: 'fixture-token' });
+        sessionId = (await real.list())[0].id;
+        guestStore.list.mockImplementation(real.list);
+        guestStore.findById.mockImplementation(real.findById);
+        guestStore.setWorkspaces.mockImplementation(real.setWorkspaces);
+        guestStore.leaveWorkspace.mockImplementation(real.leaveWorkspace);
+        guestStore.getDecryptedToken.mockImplementation(real.getDecryptedToken);
+        installWindow();
+        backend = (await loadModule()).mod;
+        backend.registerBackendHandlers();
+        client = (await backend.connectBackendClient(sessionId)) as unknown as HelloClient;
+        await real.setWorkspaces(sessionId, GUEST.workspaces);
+      });
+
+      afterEach(async () => {
+        backend.disconnectBackendClient(sessionId);
+        await real.__drainWriteChainForTesting();
+        for (const spy of renameSpies.splice(0)) spy.mockRestore();
+        for (const fn of [
+          guestStore.list,
+          guestStore.findById,
+          guestStore.setWorkspaces,
+          guestStore.leaveWorkspace,
+          guestStore.getDecryptedToken,
+        ]) {
+          fn.mockReset();
+        }
+        const fs = await import('node:fs/promises');
+        await fs.rm(directory, { recursive: true, force: true });
+        vi.doMock('electron', () => setupElectron);
+      });
+
+      it.each(['before the list answers', 'while the list answer is queued'])(
+        'a same-daemon re-join replacing the record %s fences the old hydration at the write',
+        async (timing) => {
+          const unsubscribe = real.onGuestCredentialReplaced((id) => {
+            for (const listener of guestStore.replacedListeners) listener(id);
+          });
+          let releaseList!: (value: unknown) => void;
+          const pendingList = new Promise((resolve) => {
+            releaseList = resolve;
+          });
+          rpc.handler = async (method) => (method === 'workspace.list' ? pendingList : {});
+          client.hello(hello);
+          await vi.waitFor(() => expect(rpc.calls).toContain('workspace.list'));
+
+          const write = await holdNextWrite();
+          const replacement = real.add({
+            ...GUEST,
+            token: 'replacement-token',
+            workspace: { id: 'ws-new', title: 'Fresh join' },
+          });
+          try {
+            await vi.waitFor(() => expect(write.rename).toHaveBeenCalledTimes(1));
+            if (timing === 'before the list answers') {
+              write.release();
+              await replacement;
+              expect(backend.getBackendClientForConnection(sessionId)).not.toBe(client);
+            }
+            releaseList({ workspaces: GUEST.workspaces });
+            if (timing === 'while the list answer is queued') {
+              await vi.waitFor(() =>
+                expect(guestStore.setWorkspaces).toHaveBeenCalledWith(
+                  sessionId,
+                  GUEST.workspaces,
+                  expect.any(Function),
+                ),
+              );
+            }
+            write.release();
+            await replacement;
+            await real.__drainWriteChainForTesting();
+            expect((await real.list())[0].workspaces).toEqual([
+              ...GUEST.workspaces,
+              { id: 'ws-new', title: 'Fresh join' },
+            ]);
+          } finally {
+            write.release();
+            await replacement;
+            unsubscribe();
+          }
+        },
+      );
+
+      it('a Leave during the hydration store write wins once the write chain drains', async () => {
+        const write = await holdNextWrite();
+        rpc.handler = async (method) =>
+          method === 'workspace.list'
+            ? { workspaces: [{ id: 'ws-guest', title: 'Renamed' }] }
+            : method === 'workspace.members.leave'
+              ? { left: true }
+              : {};
+        client.hello(hello);
+        try {
+          await vi.waitFor(() => expect(write.rename).toHaveBeenCalledTimes(1));
+          const leave = findHandler('guest-sessions:leave-workspace')!(
+            {},
+            { id: sessionId, workspaceId: 'ws-guest' },
+          );
+          await vi.waitFor(() => expect(guestStore.leaveWorkspace).toHaveBeenCalled());
+          write.release();
+          await expect(leave).resolves.toMatchObject({ left: true });
+          await real.__drainWriteChainForTesting();
+          expect((await real.list())[0].workspaces).toEqual([]);
+        } finally {
+          write.release();
+        }
+      });
+
+      it('an undisturbed snapshot still commits through the real store', async () => {
+        rpc.handler = async (method) =>
+          method === 'workspace.list'
+            ? { workspaces: [{ id: 'ws-guest', title: 'Renamed', myRole: 'collaborator' }] }
+            : {};
+        client.hello(hello);
+        await vi.waitFor(async () =>
+          expect((await real.list())[0].workspaces).toEqual([{ id: 'ws-guest', title: 'Renamed' }]),
+        );
+      });
+    });
+  });
+
   it('guest-sessions:leave revokes on the host (5 s bound), forgets locally, then tears the host windows down', async () => {
     installGuest();
     const { mod, ensureLocalWindowBeforeClose, closeForBackend } = await loadModule();
@@ -4341,6 +4779,127 @@ describe('guest-sessions:* IPC handlers', () => {
     expect(rpc.calls).not.toContain('principal.revokeSelf');
     expect(guestStore.forget).not.toHaveBeenCalled();
     expect(closeForBackend).not.toHaveBeenCalled();
+  });
+
+  it('guest-sessions:leave-workspace asks the host over the pooled client (10 s bound) and drops the workspace locally', async () => {
+    installGuest();
+    rpc.handler = async (method) => (method === 'workspace.members.leave' ? { left: true } : {});
+    const { mod, closeForBackend } = await loadModule();
+    const guest = (await mod.connectBackendClient(GUEST.id)) as unknown as { status: string };
+    guest.status = 'connected';
+    mod.registerBackendHandlers();
+    const constructed = lifecycle.events.filter((e) => e.type === 'construct').length;
+    const handler = findHandler('guest-sessions:leave-workspace')!;
+
+    await expect(handler({}, { id: GUEST.id, workspaceId: 'ws-guest' })).resolves.toEqual({
+      id: GUEST.id,
+      workspaceId: 'ws-guest',
+      left: true,
+    });
+    const leaveIndex = rpc.calls.indexOf('workspace.members.leave');
+    expect(leaveIndex).toBeGreaterThanOrEqual(0);
+    expect(rpc.params[leaveIndex]).toEqual({ workspaceId: 'ws-guest' });
+    expect(rpc.options[leaveIndex]).toEqual({ timeoutMs: mod.GUEST_LEAVE_WORKSPACE_TIMEOUT_MS });
+    expect(mod.GUEST_LEAVE_WORKSPACE_TIMEOUT_MS).toBe(10_000);
+    expect(guestStore.leaveWorkspace).toHaveBeenCalledWith(GUEST.id, 'ws-guest');
+    // No throwaway client: the pooled one served the request.
+    expect(lifecycle.events.filter((e) => e.type === 'construct')).toHaveLength(constructed);
+    // The session and its windows stay: only *Leave host* forgets / tears down.
+    expect(guestStore.forget).not.toHaveBeenCalled();
+    expect(closeForBackend).not.toHaveBeenCalled();
+    expect(mod.getBackendClientForConnection(GUEST.id)).toBeDefined();
+  });
+
+  it('guest-sessions:leave-workspace dials a short-lived client when the host has no pooled client, and never pools it', async () => {
+    installGuest();
+    rpc.handler = async (method) => (method === 'workspace.members.leave' ? { left: true } : {});
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+    const handler = findHandler('guest-sessions:leave-workspace')!;
+
+    await expect(handler({}, { id: GUEST.id, workspaceId: 'ws-guest' })).resolves.toEqual({
+      id: GUEST.id,
+      workspaceId: 'ws-guest',
+      left: true,
+    });
+    expect(rpc.calls).toContain('workspace.members.leave');
+    const constructs = lifecycle.events.filter((e) => e.type === 'construct');
+    expect(constructs).toHaveLength(1);
+    expect(lifecycle.events).toContainEqual({ type: 'dispose', seq: constructs[0].seq });
+    expect(mod.getBackendClientForConnection(GUEST.id)).toBeUndefined();
+    expect(guestStore.leaveWorkspace).toHaveBeenCalledWith(GUEST.id, 'ws-guest');
+  });
+
+  it('guest-sessions:leave-workspace keeps the local record and rejects bounded when the host refuses', async () => {
+    installGuest();
+    const sentinel = 'SENTINEL-leave-detail-2c9e';
+    rpc.handler = async (method) => {
+      if (method === 'workspace.members.leave') throw new Error(`socket closed ${sentinel}`);
+      return {};
+    };
+    const { Logger } = await import('$shared/logger');
+    const warn = vi.spyOn(Logger.prototype, 'warn');
+    const { mod } = await loadModule();
+    const guest = (await mod.connectBackendClient(GUEST.id)) as unknown as { status: string };
+    guest.status = 'connected';
+    mod.registerBackendHandlers();
+    const handler = findHandler('guest-sessions:leave-workspace')!;
+
+    const failure = (await handler({}, { id: GUEST.id, workspaceId: 'ws-guest' }).catch(
+      (e: unknown) => e,
+    )) as Error & { code?: string };
+    expect(failure).toBeInstanceOf(mod.GuestWorkspaceLeaveError);
+    expect(failure.code).toBe('transport');
+    expect(failure.message).not.toContain(sentinel);
+    expect(guestStore.leaveWorkspace).not.toHaveBeenCalled();
+    const leaveWarn = warn.mock.calls.find(([message]) => /members\.leave/.test(String(message)));
+    expect(leaveWarn).toBeDefined();
+    expect(JSON.stringify(leaveWarn)).not.toContain(sentinel);
+    expect(leaveWarn![1]).toEqual({ id: GUEST.id, workspaceId: 'ws-guest', code: 'transport' });
+  });
+
+  it('guest-sessions:leave-workspace treats an already-gone membership (-32602) as done and drops the record', async () => {
+    installGuest();
+    const { JsonRpcError } = await import('../json-rpc-errors');
+    rpc.handler = async (method) => {
+      if (method === 'workspace.members.leave')
+        throw new JsonRpcError({ code: -32602, message: 'not a member' });
+      return {};
+    };
+    const { mod } = await loadModule();
+    const guest = (await mod.connectBackendClient(GUEST.id)) as unknown as { status: string };
+    guest.status = 'connected';
+    mod.registerBackendHandlers();
+    const handler = findHandler('guest-sessions:leave-workspace')!;
+
+    await expect(handler({}, { id: GUEST.id, workspaceId: 'ws-guest' })).resolves.toEqual({
+      id: GUEST.id,
+      workspaceId: 'ws-guest',
+      left: false,
+    });
+    expect(guestStore.leaveWorkspace).toHaveBeenCalledWith(GUEST.id, 'ws-guest');
+  });
+
+  it('guest-sessions:leave-workspace settles a workspace absent from the record as completion without an RPC', async () => {
+    installGuest();
+    const { mod } = await loadModule();
+    const guest = (await mod.connectBackendClient(GUEST.id)) as unknown as { status: string };
+    guest.status = 'connected';
+    mod.registerBackendHandlers();
+    const handler = findHandler('guest-sessions:leave-workspace')!;
+
+    await expect(handler({}, { id: GUEST.id, workspaceId: 'ws-elsewhere' })).resolves.toEqual({
+      id: GUEST.id,
+      workspaceId: 'ws-elsewhere',
+      left: false,
+    });
+    await expect(handler({}, { id: 'guest-unknown', workspaceId: 'ws-guest' })).resolves.toEqual({
+      id: 'guest-unknown',
+      workspaceId: 'ws-guest',
+      left: false,
+    });
+    expect(rpc.calls).not.toContain('workspace.members.leave');
+    expect(guestStore.leaveWorkspace).not.toHaveBeenCalled();
   });
 
   /** Store double whose row disappears on forget, like the real registry. */
