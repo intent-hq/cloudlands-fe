@@ -2,12 +2,14 @@
   import { writable } from 'svelte/store';
   import Fa from 'svelte-fa';
   import SidebarGroupHeader from './sidebar/SidebarGroupHeader.svelte';
-  import type { ScriptStatus } from '$features/scripts/types';
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
   import { isLiveScriptStatus } from '$features/scripts/utils/script-status';
   import { Button } from '$lib/components/ui/button';
+  import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
+  import * as Menu from '$lib/components/ui/menu';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import {
+    faArrowUpRightFromSquare,
     faExclamationTriangle,
     faWindowMaximize,
     faPlay,
@@ -109,22 +111,9 @@
           : restartScriptRequested(workspaceId, scriptId);
     appStore.dispatch(operation);
   }
-
-  function statusLabel(status: ScriptStatus) {
-    switch (status) {
-      case 'running':
-        return m.workspace_devScripts_running_label();
-      case 'restarting':
-        return m.workspace_devScripts_restarting_label();
-      case 'exited':
-        return m.workspace_devScripts_exited_label();
-      default:
-        return m.workspace_devScripts_idle_label();
-    }
-  }
 </script>
 
-<div class="flex min-w-0 flex-col gap-4 px-4" data-workspace-shell-list>
+<div class="flex min-w-0 flex-col gap-4 px-2" data-workspace-shell-list>
   <section>
     <SidebarGroupHeader
       title={m.terminal_sidebar_terminals_title()}
@@ -151,41 +140,49 @@
                 >{terminalName}</span
               >
             </Button>
-            <span class="size-4 shrink-0" aria-hidden="true"></span>
             <div class="flex shrink-0 items-center" data-surface-actions>
-              <Button
-                variant="ghost"
-                size="icon-compact"
-                iconOnly
-                class="size-7"
-                tooltip={m.workspace_shell_showInPanel_tooltip()}
-                tooltipSide="left"
-                onclick={(event) => {
-                  event.stopPropagation();
-                  openTerminalInPanel(terminal.id, terminalName);
-                }}
-              >
-                <Fa icon={faTableColumns} class="size-3" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon-compact"
-                iconOnly
-                class="size-7"
-                tooltip={m.workspace_shell_showInBottomBar_tooltip()}
-                tooltipSide="left"
-                onclick={(event) => {
-                  event.stopPropagation();
-                  showTerminalInOverlay(terminal.id);
-                }}
-              >
-                <Fa icon={faWindowMaximize} class="size-3 rotate-180" />
-              </Button>
+              <DropdownMenu align="end" side="bottom">
+                {#snippet trigger({ props })}
+                  <Button
+                    {...props}
+                    variant="ghost"
+                    size="icon-compact"
+                    iconOnly
+                    class="size-7"
+                    tooltip={m.workspace_shell_openIn_tooltip()}
+                    tooltipSide="left"
+                  >
+                    <Fa icon={faArrowUpRightFromSquare} class="size-3" />
+                  </Button>
+                {/snippet}
+                {#snippet content()}
+                  <Menu.Item
+                    onclick={(event) => {
+                      event.stopPropagation();
+                      openTerminalInPanel(terminal.id, terminalName);
+                    }}
+                  >
+                    {#snippet leading()}<Fa icon={faTableColumns} class="size-3" />{/snippet}
+                    {m.workspace_shell_showInPanel_tooltip()}
+                  </Menu.Item>
+                  <Menu.Item
+                    onclick={(event) => {
+                      event.stopPropagation();
+                      showTerminalInOverlay(terminal.id);
+                    }}
+                  >
+                    {#snippet leading()}<Fa
+                        icon={faWindowMaximize}
+                        class="size-3 rotate-180"
+                      />{/snippet}
+                    {m.workspace_shell_showInBottomBar_tooltip()}
+                  </Menu.Item>
+                {/snippet}
+              </DropdownMenu>
             </div>
-            <span class="w-14 shrink-0" aria-hidden="true"></span>
           </div>
         {:else}
-          <p class="px-0 py-1.5 text-sm text-muted-foreground">
+          <p class="px-2 py-1.5 text-sm text-muted-foreground">
             {m.terminal_sidebar_noTerminals_label()}
           </p>
         {/each}
@@ -203,6 +200,12 @@
         {#each orderedScripts as script (script.id)}
           {@const live = isLiveScriptStatus(script.runtime.status)}
           {@const operation = $operations$[script.id]}
+          {@const statusDescription = {
+            running: m.workspace_devScripts_running_label(),
+            restarting: m.workspace_devScripts_restarting_label(),
+            exited: m.workspace_devScripts_exited_label(),
+            idle: m.workspace_devScripts_idle_label(),
+          }[script.runtime.status]}
           {@const errorLabel = operation?.error
             ? m.workspace_devScripts_actionFailed_error({
                 name: script.name,
@@ -225,7 +228,9 @@
                   : script.runtime.status === 'idle'
                     ? 'bg-muted-foreground/20'
                     : 'bg-muted-foreground/40'}"
-                aria-hidden="true"
+                role="img"
+                aria-label={statusDescription}
+                title={statusDescription}
                 data-script-status-indicator
               ></span>
               <span
@@ -234,54 +239,58 @@
               >
                 {script.name}
               </span>
-              <span
-                class="shrink-0 text-xs leading-none text-muted-foreground"
-                data-script-status={script.runtime.status}
-                >{statusLabel(script.runtime.status)}</span
-              >
             </Button>
-            <span
-              class="flex size-4 shrink-0 items-center justify-center text-danger"
-              role={errorLabel ? 'alert' : undefined}
-              aria-label={errorLabel}
-              title={errorLabel}
-              data-script-error-slot
-            >
-              {#if errorLabel}
+            {#if errorLabel}
+              <span
+                class="flex shrink-0 items-center justify-center text-danger"
+                role="alert"
+                aria-label={errorLabel}
+                title={errorLabel}
+              >
                 <Fa icon={faExclamationTriangle} class="size-3" />
-              {/if}
-            </span>
+              </span>
+            {/if}
             <div class="flex shrink-0 items-center" data-surface-actions>
-              <Button
-                variant="ghost"
-                size="icon-compact"
-                iconOnly
-                class="size-7"
-                tooltip={m.workspace_shell_showInPanel_tooltip()}
-                tooltipSide="left"
-                onclick={(event) => {
-                  event.stopPropagation();
-                  openScriptInPanel(script.id, script.name);
-                }}
-              >
-                <Fa icon={faTableColumns} class="size-3" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon-compact"
-                iconOnly
-                class="size-7"
-                tooltip={m.workspace_shell_showInBottomBar_tooltip()}
-                tooltipSide="left"
-                onclick={(event) => {
-                  event.stopPropagation();
-                  showScriptInOverlay(script.id);
-                }}
-              >
-                <Fa icon={faWindowMaximize} class="size-3 rotate-180" />
-              </Button>
+              <DropdownMenu align="end" side="bottom">
+                {#snippet trigger({ props })}
+                  <Button
+                    {...props}
+                    variant="ghost"
+                    size="icon-compact"
+                    iconOnly
+                    class="size-7"
+                    tooltip={m.workspace_shell_openIn_tooltip()}
+                    tooltipSide="left"
+                  >
+                    <Fa icon={faArrowUpRightFromSquare} class="size-3" />
+                  </Button>
+                {/snippet}
+                {#snippet content()}
+                  <Menu.Item
+                    onclick={(event) => {
+                      event.stopPropagation();
+                      openScriptInPanel(script.id, script.name);
+                    }}
+                  >
+                    {#snippet leading()}<Fa icon={faTableColumns} class="size-3" />{/snippet}
+                    {m.workspace_shell_showInPanel_tooltip()}
+                  </Menu.Item>
+                  <Menu.Item
+                    onclick={(event) => {
+                      event.stopPropagation();
+                      showScriptInOverlay(script.id);
+                    }}
+                  >
+                    {#snippet leading()}<Fa
+                        icon={faWindowMaximize}
+                        class="size-3 rotate-180"
+                      />{/snippet}
+                    {m.workspace_shell_showInBottomBar_tooltip()}
+                  </Menu.Item>
+                {/snippet}
+              </DropdownMenu>
             </div>
-            <div class="flex w-14 shrink-0 items-center" data-script-actions>
+            <div class="flex shrink-0 items-center" data-script-actions>
               {#if live}
                 {@const stopLabel = m.terminal_quakeOverlay_stop_label()}
                 {@const restartLabel = m.workspace_devScripts_restart_ariaLabel({
@@ -352,7 +361,7 @@
             </div>
           </div>
         {:else}
-          <p class="px-0 py-1.5 text-sm text-muted-foreground">
+          <p class="px-2 py-1.5 text-sm text-muted-foreground">
             {m.terminal_sidebar_noScriptsAddManually_label()}
           </p>
         {/each}
