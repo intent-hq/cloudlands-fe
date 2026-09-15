@@ -1115,6 +1115,7 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
           instance.getConnectedVia(),
         ),
         reconnectAttempts: instance.getReconnectAttempts(),
+        connectionLimited: instance.isConnectionLimited(),
         ...daemonUpdateMarker(id),
       },
       id,
@@ -2952,6 +2953,7 @@ export function registerBackendHandlers(): void {
       status: client.getStatus(),
       transport,
       reconnectAttempts: client.getReconnectAttempts(),
+      connectionLimited: client.isConnectionLimited(),
       ...daemonUpdateMarker(backendId),
     };
   });

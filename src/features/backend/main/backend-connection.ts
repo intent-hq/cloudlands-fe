@@ -302,6 +302,22 @@ export class AuthRejectedError extends Error {
 }
 
 /**
+ * Raised when a pin-verified `wss` upgrade is refused with HTTP 503 by the
+ * daemon's guest connection cap (`sharing.maxGuestConnections` /
+ * `sharing.maxConnectionsPerGuest`, intent-hq/intentd#1917). Transient —
+ * a seat frees when another guest connection closes — so the client keeps
+ * retrying, but on a slow bounded cadence, and the UI names the cap instead
+ * of the generic reconnect copy.
+ */
+export class ConnectionLimitError extends Error {
+  constructor() {
+    // i18n-ignore (main-process error message for logs, not renderer copy)
+    super('WebSocket upgrade refused with HTTP 503 (connection limit reached)');
+    this.name = 'ConnectionLimitError';
+  }
+}
+
+/**
  * Normalize a certificate SHA-256 fingerprint to the daemon's canonical form
  * (PROTOCOL §1.2): colon-separated **uppercase** hex byte pairs. Accepts any
  * mix of case and separators (Node's `fingerprint256` is already colon-hex
@@ -348,8 +364,9 @@ function peerFingerprint(response: IncomingMessage): string {
  * (PROTOCOL §2.1) with a `?token=` query fallback. An upgrade rejected with
  * HTTP 401/403 (bad token / WS API disabled, PROTOCOL §2.1) destroys the
  * stream with a distinct {@link AuthRejectedError} instead of a generic
- * transport error. The `upgrade`/`unexpected-response` pin checks are kept as
- * defense-in-depth behind the handshake-level pin.
+ * transport error, and HTTP 503 (guest connection cap) with a
+ * {@link ConnectionLimitError}. The `upgrade`/`unexpected-response` pin
+ * checks are kept as defense-in-depth behind the handshake-level pin.
  */
 function createWssSocket(config: BackendConnectionConfig): Duplex {
   const { host, port, token, fingerprint } = config;
@@ -393,6 +410,10 @@ function createWssSocket(config: BackendConnectionConfig): Duplex {
     const statusCode = response.statusCode ?? 0;
     if (statusCode === 401 || statusCode === 403) {
       duplex.destroy(new AuthRejectedError(statusCode));
+      return;
+    }
+    if (statusCode === 503) {
+      duplex.destroy(new ConnectionLimitError());
       return;
     }
     duplex.destroy(new Error(`Unexpected server response: ${statusCode}`));

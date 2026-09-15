@@ -498,6 +498,27 @@ describe('daemonHealthSaga', () => {
     await task.toPromise();
   });
 
+  it('passes connectionLimited from the status payload into the action extras', async () => {
+    const { dispatched, task } = startHealthSaga();
+    await settle();
+    statusHandler!({
+      status: 'disconnected',
+      transport: { mode: 'external-ws', target: 'wss:192.168.1.20:5181' },
+      reconnectAttempts: 1,
+      connectionLimited: true,
+    });
+    await settle();
+
+    const actions = statusActions(dispatched) as Array<{
+      payload: [string, unknown, { connectionLimited?: boolean } | undefined];
+    }>;
+    const disconnected = actions.find(({ payload: [status] }) => status === 'disconnected');
+    expect(disconnected).toBeDefined();
+    expect(disconnected!.payload[2]?.connectionLimited).toBe(true);
+    task.cancel();
+    await task.toPromise();
+  });
+
   it('forwards daemonUpdateDisconnectedAt from the status payload into the action extras', async () => {
     const transport = { mode: 'external-uds' as const, target: '/tmp/intentd.sock' };
     const disconnectedAt = new Date('2026-09-04T10:00:00.000Z').getTime();

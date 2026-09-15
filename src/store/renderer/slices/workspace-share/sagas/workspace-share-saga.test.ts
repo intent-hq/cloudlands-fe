@@ -178,6 +178,34 @@ describe('workspaceShareSaga', () => {
     h.task.cancel();
   });
 
+  // Guest cap (intent-hq/intentd#1917): `workspace.members.list` carries the
+  // spent/limit pair the dialog renders and gates Create on; a daemon that
+  // predates the fields leaves both `null` so nothing is gated.
+  it('records the guest cap the roster read reports, and null when the daemon omits it', async () => {
+    replyByMethod({
+      'workspace.members.list': { members: [owner], guestCount: 2, guestLimit: 5 },
+    });
+    const h = harness();
+
+    h.dispatch(openShareDialog({ workspaceId: 'ws-1', workspaceTitle: 'My Space' }));
+    await settle();
+
+    expect(h.state().loadStatus).toBe('loaded');
+    expect(h.state().guestCount).toBe(2);
+    expect(h.state().guestLimit).toBe(5);
+    h.task.cancel();
+
+    replyByMethod();
+    const legacy = harness();
+    legacy.dispatch(openShareDialog({ workspaceId: 'ws-2', workspaceTitle: 'Old daemon' }));
+    await settle();
+
+    expect(legacy.state().loadStatus).toBe('loaded');
+    expect(legacy.state().guestCount).toBeNull();
+    expect(legacy.state().guestLimit).toBeNull();
+    legacy.task.cancel();
+  });
+
   it('records a localized load error when a read fails, without echoing the daemon message', async () => {
     replyByMethod({ 'workspace.invite.list': new Error('daemon unavailable') });
     const h = harness();
@@ -424,6 +452,36 @@ describe('workspaceShareSaga', () => {
     expect(h.state().createdLink).toBeNull();
     expect(calls('workspace.invite.list')).toHaveLength(0);
     h.task.cancel();
+  });
+
+  // The cap was spent between the dialog's read and the create (another
+  // owner window, or a raced redeem): the daemon refuses with `guest-limit`
+  // and the inline error names the cap rather than the generic failure.
+  it('maps the guest-limit daemon code onto the localized cap error, distinct from the generic one', async () => {
+    const capSpent = Object.assign(new Error('guest limit reached'), {
+      data: { code: 'guest-limit' },
+    });
+    replyByMethod({ 'workspace.invite.create': capSpent });
+    const h = harness(opened());
+
+    h.dispatch(shareInviteCreateRequested({ pinLogin: '' }));
+    await settle();
+
+    expect(h.state().creating).toBe(false);
+    const capError = h.state().createError;
+    expect(capError).toEqual(expect.any(String));
+    expect(capError).not.toContain('guest limit reached');
+    expect(h.state().createdLink).toBeNull();
+    h.task.cancel();
+
+    replyByMethod({ 'workspace.invite.create': new Error('boom') });
+    const generic = harness(opened());
+    generic.dispatch(shareInviteCreateRequested({ pinLogin: '' }));
+    await settle();
+
+    expect(generic.state().createError).toEqual(expect.any(String));
+    expect(generic.state().createError).not.toBe(capError);
+    generic.task.cancel();
   });
 
   // Remote access off: the daemon's `Error::ListenerDown` (-32603,
