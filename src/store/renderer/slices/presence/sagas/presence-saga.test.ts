@@ -114,11 +114,15 @@ describe('presenceSaga lifecycle', () => {
     store.dispatch(
       presenceRosterReceived({
         workspaceId: 'ws-1',
-        members: [member('me', [{ workspaceId: 'ws-1', agentId: 'agent-1' }])],
+        members: [
+          member('me', [{ workspaceId: 'ws-1', agentId: 'agent-1' }]),
+          member('other', [{ workspaceId: 'ws-1', agentId: 'agent-1' }]),
+        ],
       }),
     );
     expect(selectAgentPresencePeople.select(store.state, 'ws-1', 'agent-1')).toMatchObject([
       { principalId: 'me', self: true },
+      { principalId: 'other', self: false },
     ]);
   });
 

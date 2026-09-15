@@ -4,9 +4,11 @@
  * The people selectors project the daemon's two sources into the brief's
  * circles: the accepted membership (`workspace.members.list`, owners first)
  * says who belongs and which of them owns the workspace; the roster
- * (`presence:changed`) says who is online and where they look. The typing
- * selector hands back the roster's own member objects, so its result stays
- * shallow-equal between rosters.
+ * (`presence:changed`) says who is online and where they look. Both people
+ * selectors show nothing while nobody but this window's own principal is
+ * online in their scope (`hasOtherPresence`), so an owner alone sees no
+ * presence indicator at all. The typing selector hands back the roster's own
+ * member objects, so its result stays shallow-equal between rosters.
  */
 
 import { getItem, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
@@ -34,6 +36,15 @@ const toPerson = (
   ...facts,
 });
 
+/**
+ * Whether someone other than this window's own principal is online among
+ * `people` — the rule every presence indicator renders by: an indicator is
+ * shown only when at least one other person is currently there, and the self
+ * avatar then rides along inside it. Offline members never count.
+ */
+export const hasOtherPresence = (people: readonly PresencePerson[]): boolean =>
+  people.some((person) => person.online && !person.self);
+
 /** Every roster this window received, by workspace id (self included). */
 export const selectPresenceRosters = store.createSelector((state) => state.presence.rosters);
 
@@ -45,8 +56,8 @@ export const selectPresenceMembers = store.createSelector((state) => state.prese
  * accepted member of a SHARED workspace (`memberCount > 1`; the owner and
  * this window's own principal included) in `workspace.members.list` order,
  * online when the roster lists them, viewing when that roster row has a
- * focus item. An unshared workspace — or one whose membership was not read
- * yet — shows nothing.
+ * focus item. An unshared workspace, one whose membership was not read yet,
+ * or one where nobody else is online right now shows nothing.
  */
 export const selectWorkspacePresencePeople = store.createSelector<
   [workspaceId: string],
@@ -66,14 +77,14 @@ export const selectWorkspacePresencePeople = store.createSelector<
       self: member.principalId === state.presence.ownPrincipalId,
     });
   });
-  return people.length === 0 ? NO_PEOPLE : people;
+  return hasOtherPresence(people) ? people : NO_PEOPLE;
 });
 
 /**
  * The circles of a chat's title bar: everyone whose focus includes this
- * agent's chat right now — this window's own principal first, so a solo
- * user sees exactly one circle — with the owner (`ownerPrincipalId`) blue.
- * Nobody offline appears here.
+ * agent's chat right now — this window's own principal first — with the
+ * owner (`ownerPrincipalId`) blue. Nobody offline appears here, and a solo
+ * user sees no circle at all.
  */
 export const selectAgentPresencePeople = store.createSelector<
   [workspaceId: string, agentId: string],
@@ -96,7 +107,7 @@ export const selectAgentPresencePeople = store.createSelector<
       }),
     )
     .sort((a, b) => Number(b.self) - Number(a.self));
-  return people.length === 0 ? NO_PEOPLE : people;
+  return hasOtherPresence(people) ? people : NO_PEOPLE;
 });
 
 /**
