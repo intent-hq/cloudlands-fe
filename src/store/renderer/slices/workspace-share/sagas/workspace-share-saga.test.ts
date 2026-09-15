@@ -3,11 +3,12 @@
  * `backendRequest` is mocked, so each test asserts the exact JSON-RPC method
  * + params (PROTOCOL §5.1 membership) and feeds a contract-shaped reply back.
  *
- * The regressions from the fe#2440 review ride here too: the invite secret
- * never reaches an action, the store, or a console sink (marker-based: the
- * mocked daemon returns `SECRET_MARKER` and every sink is scanned for it);
- * owner-only RPCs are never issued from a collaborator connection; a `-32003`
- * withholds the dialog; a delayed create reply cannot cross dialog sessions.
+ * The regressions from the fe#2440 review ride here too: a daemon error
+ * message never reaches a console sink or the rendered error (only bounded
+ * codes are logged); owner-only RPCs are never issued from a collaborator
+ * connection; a `-32003` withholds the dialog; a delayed create reply cannot
+ * cross dialog sessions. Invite links are ordinary state: `createdLink.url`
+ * after a create and `invite.url` on every listed open row.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runSaga, stdChannel } from 'redux-saga';
@@ -15,8 +16,11 @@ import { runSaga, stdChannel } from 'redux-saga';
 const mocks = vi.hoisted(() => ({ request: vi.fn() }));
 vi.mock('$lib/client/live/backend-transport', () => ({ backendRequest: mocks.request }));
 
-import { createCollection, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
-import { clearInviteLinks, readInviteLink } from '$features/workspace-sharing/invite-link-vault';
+import {
+  createCollection,
+  getItem,
+  getItems,
+} from '@augmentcode/themis/utils/collections/collection-utils';
 import type { WorkspaceInvite, WorkspaceMember } from '$features/workspace-sharing/types';
 import type { Workspace, WorkspaceRole } from '$shared/types';
 import {
@@ -38,8 +42,9 @@ import {
 } from '../workspace-share-slice';
 import { workspaceShareSaga } from './workspace-share-saga';
 
-const SECRET_MARKER = 'tok-SECRET-MARKER-9f3a';
-const INVITE_URL = `intent://invite?v=1&h=example.test&p=5181&f=fp&t=${SECRET_MARKER}`;
+const INVITE_URL = 'intent://invite?v=1&h=example.test&p=5181&f=fp&t=tok-inv-2';
+/** Rides only a mocked daemon error message; must never reach a sink. */
+const LEAK_MARKER = 'daemon-message-LEAK-MARKER-9f3a';
 
 const owner: WorkspaceMember = {
   principalId: 'p-alice',
@@ -56,6 +61,7 @@ const invite: WorkspaceInvite = {
   createdByPrincipalId: 'p-alice',
   pinLogin: 'carol',
   pinGithubUserId: 3,
+  url: 'intent://invite?v=1&h=example.test&p=5181&f=fp&t=tok-inv-1',
   createdAt: '2026-09-14T00:00:00Z',
   expiresAt: '2026-09-21T00:00:00Z',
 };
@@ -122,8 +128,8 @@ function calls(method: string) {
 }
 
 const createReply = (id = 'inv-2') => ({
-  invite: { ...invite, id, pinLogin: 'dave', pinGithubUserId: 4 },
-  secret: SECRET_MARKER,
+  invite: { ...invite, id, pinLogin: 'dave', pinGithubUserId: 4, url: INVITE_URL },
+  secret: 'tok-inv-2',
   url: INVITE_URL,
   hosts: ['example.test'],
   port: 5181,
@@ -134,7 +140,6 @@ const createReply = (id = 'inv-2') => ({
 describe('workspaceShareSaga', () => {
   const consoleSpies = { warn: vi.spyOn(console, 'warn'), error: vi.spyOn(console, 'error') };
   beforeEach(() => {
-    clearInviteLinks();
     consoleSpies.warn.mockImplementation(() => {});
     consoleSpies.error.mockImplementation(() => {});
   });
@@ -252,10 +257,12 @@ describe('workspaceShareSaga', () => {
   /** `invite.create` reply plus a list that includes the new row (as the daemon would). */
   const createdReplies = () => ({
     'workspace.invite.create': createReply(),
-    'workspace.invite.list': { invites: [invite, { ...invite, id: 'inv-2', pinLogin: 'dave' }] },
+    'workspace.invite.list': {
+      invites: [invite, { ...invite, id: 'inv-2', pinLogin: 'dave', url: INVITE_URL }],
+    },
   });
 
-  it('creates a pinned invite, vaults the one-time link, and re-reads the invites', async () => {
+  it('creates a pinned invite, keeps its link in state, and re-reads the invites', async () => {
     replyByMethod(createdReplies());
     const h = harness(opened());
 
@@ -268,40 +275,33 @@ describe('workspaceShareSaga', () => {
     });
     const { createdLink } = h.state();
     expect(h.state()).toMatchObject({ creating: false, createError: null, loadStatus: 'loaded' });
-    expect(createdLink).toMatchObject({ inviteId: 'inv-2', pinLogin: 'dave' });
-    expect(readInviteLink(createdLink!.linkHandle)).toBe(INVITE_URL);
+    expect(createdLink).toEqual({ inviteId: 'inv-2', url: INVITE_URL, pinLogin: 'dave' });
     expect(calls('workspace.invite.list')).toHaveLength(1);
     h.task.cancel();
   });
 
-  // Regression (fe#2440 review P1 / verifier #6): the invite secret must not
-  // reach any Redux action, the state, or a console sink.
-  it('keeps the invite secret out of every action, the state, and the console', async () => {
+  // The link is plain state: it stays copyable from the created-link panel and
+  // from the open-invite row the trailing read lists, and closing the dialog
+  // drops only the panel (the row's `url` comes back with the next read).
+  it('exposes the url on the created link and on the listed open invite row', async () => {
     replyByMethod(createdReplies());
     const h = harness(opened());
 
     h.dispatch(shareInviteCreateRequested({ pinLogin: 'dave' }));
     await settle();
 
-    expect(readInviteLink(h.state().createdLink!.linkHandle)).toContain(SECRET_MARKER);
-    expect(JSON.stringify(h.dispatched)).not.toContain(SECRET_MARKER);
-    expect(JSON.stringify(h.state())).not.toContain(SECRET_MARKER);
-    const consoleText = JSON.stringify([
-      ...consoleSpies.warn.mock.calls,
-      ...consoleSpies.error.mock.calls,
-    ]);
-    expect(consoleText).not.toContain(SECRET_MARKER);
+    expect(h.state().createdLink?.url).toBe(INVITE_URL);
+    expect(getItem(h.state().invites, 'inv-2')?.url).toBe(INVITE_URL);
+    expect(getItem(h.state().invites, 'inv-1')?.url).toBe(invite.url);
 
-    // Closing drops the vaulted url.
-    const { linkHandle } = h.state().createdLink!;
     h.dispatch(closeShareDialog());
     await settle();
-    expect(readInviteLink(linkHandle)).toBeNull();
+    expect(h.state().createdLink).toBeNull();
     h.task.cancel();
   });
 
-  it('logs only bounded codes when a mutation fails with a message carrying invite material', async () => {
-    const leaky = Object.assign(new Error(`invite ${INVITE_URL} rejected`), { rpcCode: -32602 });
+  it('logs only bounded codes when a mutation fails with a message carrying daemon material', async () => {
+    const leaky = Object.assign(new Error(`invite ${LEAK_MARKER} rejected`), { rpcCode: -32602 });
     replyByMethod({ 'workspace.invite.revoke': leaky });
     const h = harness(opened());
 
@@ -315,8 +315,7 @@ describe('workspaceShareSaga', () => {
       consoleSpies.warn.mock.calls,
       consoleSpies.error.mock.calls,
     ]);
-    expect(sinks).not.toContain(SECRET_MARKER);
-    expect(sinks).not.toContain('intent://');
+    expect(sinks).not.toContain(LEAK_MARKER);
     expect(consoleSpies.warn).toHaveBeenCalled();
     h.task.cancel();
   });
@@ -342,11 +341,11 @@ describe('workspaceShareSaga', () => {
     await settle();
 
     expect(h.state()).toMatchObject({ workspaceId: 'ws-2', creating: false, createdLink: null });
-    // A's reply was dropped outright: no created action, nothing vaulted.
+    // A's reply was dropped outright: no created action carries its link.
     expect(h.dispatched.map((a) => (a as { type: string }).type)).not.toContain(
       shareInviteCreated.type,
     );
-    expect(JSON.stringify(h.dispatched)).not.toContain(SECRET_MARKER);
+    expect(JSON.stringify(h.dispatched)).not.toContain(INVITE_URL);
     // Only B's own read went out after the retarget — no re-read for A's link.
     expect(calls('workspace.invite.list').map(([, params]) => params)).toEqual([
       { workspaceId: 'ws-2' },
@@ -577,7 +576,7 @@ describe('workspaceShareSaga', () => {
 
   // Regression (fe#2440 review P2, f5f4a22): Create is permitted while the
   // initial read is deferred. The pre-create snapshot (an empty list) settling
-  // after the create must not retire the vaulted link; the trailing read is
+  // after the create must not retire the created link; the trailing read is
   // the authoritative one and still lists the new invite.
   it('keeps the created link when a pre-create read settles after the create', async () => {
     let resolveInitialInvites!: () => void;
@@ -611,7 +610,7 @@ describe('workspaceShareSaga', () => {
     expect(calls('workspace.invite.list')).toHaveLength(2);
     expect(h.state().loadStatus).toBe('loaded');
     expect(getItems(h.state().invites).map((row) => row.id)).toEqual(['inv-2']);
-    expect(readInviteLink(h.state().createdLink!.linkHandle)).toBe(INVITE_URL);
+    expect(h.state().createdLink?.url).toBe(INVITE_URL);
     h.task.cancel();
   });
 
@@ -768,7 +767,7 @@ describe('workspaceShareSaga', () => {
     // whatever the daemon or transport put in its message.
     it('logs a bounded line, not the raw error, when the roster read fails', async () => {
       const marker = `leak-${Math.random().toString(36).slice(2)}`;
-      replyByMethod({ 'workspace.members.list': new Error(`boom ${marker} ${INVITE_URL}`) });
+      replyByMethod({ 'workspace.members.list': new Error(`boom ${marker} ${LEAK_MARKER}`) });
       const h = harness();
 
       h.dispatch(shareRosterRequested({ workspaceId: 'ws-1' }));
@@ -782,7 +781,7 @@ describe('workspaceShareSaga', () => {
         consoleSpies.error.mock.calls,
       ]);
       expect(sinks).not.toContain(marker);
-      expect(sinks).not.toContain(SECRET_MARKER);
+      expect(sinks).not.toContain(LEAK_MARKER);
       h.task.cancel();
     });
 
@@ -921,7 +920,7 @@ describe('workspaceShareSaga', () => {
     });
 
     it('localizes a rejected removal without echoing the daemon error', async () => {
-      const leaky = Object.assign(new Error(`cannot remove ${INVITE_URL}`), { rpcCode: -32602 });
+      const leaky = Object.assign(new Error(`cannot remove ${LEAK_MARKER}`), { rpcCode: -32602 });
       replyByMethod({ 'workspace.members.remove': leaky });
       const seeded = [
         shareRosterRequested({ workspaceId: 'ws-1' }),
@@ -935,7 +934,7 @@ describe('workspaceShareSaga', () => {
       expect(getRosterState(h.state(), 'ws-1').removeError).toEqual(expect.any(String));
       expect(rosterOf(h, 'ws-1')).toEqual(['p-alice', 'p-guest']);
       const sinks = JSON.stringify([h.dispatched, h.state(), consoleSpies.warn.mock.calls]);
-      expect(sinks).not.toContain(SECRET_MARKER);
+      expect(sinks).not.toContain(LEAK_MARKER);
       h.task.cancel();
     });
 
