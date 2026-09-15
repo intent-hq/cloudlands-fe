@@ -45,7 +45,9 @@ export interface PrMonitorSnapshot {
     changesRequested: number;
   };
   threads: {
-    unresolved: number;
+    /** Absent (never `null`) when the host could not read thread resolution
+     * state — the count is unknown, not zero. */
+    unresolved?: number;
     resolutionRequired?: boolean | null;
   };
   /** Additive: present (true) when the host reports the PR queued to merge;
