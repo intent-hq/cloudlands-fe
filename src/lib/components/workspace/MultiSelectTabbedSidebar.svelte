@@ -1026,45 +1026,37 @@
                           {:else if tabId === 'context' && $workspace?.path}
                             {tab.description}
                             {m.workspace_multiSelectSidebar_contextAndMetadataLiveIn_before()}
-                            <span class="inline-flex items-baseline gap-1">
-                              <OpenComboButton
-                                filePath={$workspace.path + '/.workspace'}
-                                {workspaceId}
-                                isDirectory={true}
-                                variant="sidebar"
-                                compact
-                                class="inline-flex"
+                            <OpenComboButton
+                              filePath={$workspace.path + '/.workspace'}
+                              {workspaceId}
+                              isDirectory={true}
+                              variant="sidebar"
+                              inline
+                            >
+                              <span
+                                ><!-- i18n-ignore (file path) -->/{$workspace.path
+                                  .split(/[/\\]/)
+                                  .slice(-1)[0]}/.workspace<!-- i18n-ignore (file path) --></span
                               >
-                                <span
-                                  class="text-inherit underline underline-offset-2 decoration-muted-foreground/20"
-                                  ><!-- i18n-ignore (file path) -->/{$workspace.path
-                                    .split(/[/\\]/)
-                                    .slice(-1)[0]}/.workspace<!-- i18n-ignore (file path) --></span
-                                >
-                              </OpenComboButton></span
-                            >.
+                            </OpenComboButton>.
                           {:else if tabId === 'files' && $fileExplorerWorkspacePath}
                             {$workspace?.skipWorktree
                               ? m.workspace_multiSelectSidebar_workingDirectlyIn_before()
                               : m.workspace_multiSelectSidebar_repoCopyLivesIn_before()}
-                            <span class="inline-flex items-baseline gap-1">
-                              <OpenComboButton
-                                filePath={$fileExplorerWorkspacePath}
-                                {workspaceId}
-                                isDirectory={true}
-                                variant="sidebar"
-                                compact
-                                class="inline-flex"
-                              >
-                                <span
-                                  class="text-inherit underline underline-offset-2 decoration-muted-foreground/20"
-                                  >/{$fileExplorerWorkspacePath
-                                    .split(/[/\\]/)
-                                    .slice(-2)
-                                    .join('/')}.</span
-                                >
-                              </OpenComboButton></span
+                            <OpenComboButton
+                              filePath={$fileExplorerWorkspacePath}
+                              {workspaceId}
+                              isDirectory={true}
+                              variant="sidebar"
+                              inline
                             >
+                              <span
+                                >/{$fileExplorerWorkspacePath
+                                  .split(/[/\\]/)
+                                  .slice(-2)
+                                  .join('/')}</span
+                              >
+                            </OpenComboButton>.
                           {:else}
                             {tab.description}
                           {/if}

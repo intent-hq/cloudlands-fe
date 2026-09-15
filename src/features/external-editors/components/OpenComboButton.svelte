@@ -77,6 +77,8 @@
     compact?: boolean;
     /** Render as a labeled submenu inside an existing action menu. */
     embedded?: boolean;
+    /** Render a children trigger as inline sentence text. */
+    inline?: boolean;
     children?: Snippet;
   }
 
@@ -93,6 +95,7 @@
     branchName,
     compact = false,
     embedded = false,
+    inline = false,
     children = undefined,
   }: Props = $props();
 
@@ -370,16 +373,25 @@
     </Menu.SubContent>
   </Menu.Sub>
 {:else}
-  <div class="inline-flex items-center {className}">
-    <DropdownMenu bind:open={dropdownOpen} align="end" portal={usePortal} {side}>
+  <div class="{inline && children ? 'contents' : 'inline-flex items-center'} {className}">
+    <DropdownMenu
+      bind:open={dropdownOpen}
+      align="end"
+      portal={usePortal}
+      {side}
+      class={inline && children ? 'contents!' : ''}
+    >
       {#snippet trigger({ props })}
         {#if children}
           <!-- With a single action there is no dropdown to show; run it directly. -->
           <Button
             type="button"
-            variant="ghost"
+            variant={inline ? 'plain' : 'ghost'}
+            wrapContent={!inline}
             onclick={actions.length > 1 ? undefined : handlePrimaryClick}
-            class="cursor-pointer"
+            class={inline
+              ? 'inline h-auto whitespace-normal break-words p-0 align-baseline text-left [font:inherit] text-inherit underline underline-offset-2 decoration-muted-foreground/20 hover:decoration-current focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
+              : 'cursor-pointer'}
             title={primaryTitle}
             {...actions.length > 1 ? props : {}}
           >
