@@ -447,20 +447,23 @@ describe('agentStreamSaga', () => {
   });
 
   it('does not stamp interruptReason/interruptedBy on a normal completion', async () => {
-    const run = harness();
-    run.channel.put(
-      agentStreamUpdateReceived({
-        agentId: AGENT,
-        workspaceId: WS,
-        handlerSessionId: AGENT,
-        source: 'sendMessage',
-        eventType: 'started',
-        assistantMessageId: 'msg-ok',
-        assistantAppMessageId: 'app-ok',
-        timestamp: 1,
-        contentBlocks: [{ type: 'text', text: '' }],
-      }),
-    );
+    // Seed an UNFLAGGED in-flight row so the assertion below proves the
+    // firehose complete setter adds `provisional` rather than inheriting it
+    // from a `started` placeholder.
+    const run = harness({
+      messages: [
+        {
+          id: 'msg-ok',
+          appMessageId: 'app-ok',
+          role: 'assistant',
+          contentBlocks: [{ type: 'text', text: 'partial' }],
+          timestamp: '2026-01-01T00:00:01.000Z',
+          isStreaming: true,
+          streamingComplete: false,
+        },
+      ],
+    });
+    expect(run.messages()[0]?.provisional).toBeUndefined();
     run.channel.put(
       agentStreamUpdateReceived({
         agentId: AGENT,
@@ -624,18 +627,22 @@ describe('agentStreamSaga', () => {
     ['error', streamCompleted(AGENT, { lastAttemptedMessage: null, modelUnavailable: null })],
     ['timeout', streamTimedOut(AGENT)],
   ] as const)('finalizes an existing message on %s', async (eventType, expectedAction) => {
-    const run = harness();
-    run.channel.put(
-      agentStreamUpdateReceived({
-        agentId: AGENT,
-        workspaceId: WS,
-        handlerSessionId: AGENT,
-        source: 'restored',
-        eventType: 'started',
-        assistantMessageId: `msg-${eventType}`,
-        contentBlocks: [{ type: 'text', text: 'partial' }],
-      }),
-    );
+    // Seed an UNFLAGGED in-flight row so the assertion below proves the
+    // error/timeout setter adds `provisional` itself.
+    const partial = [{ type: 'text' as const, text: 'partial' }];
+    const run = harness({
+      messages: [
+        {
+          id: `msg-${eventType}`,
+          role: 'assistant',
+          contentBlocks: partial,
+          timestamp: '2026-01-01T00:00:01.000Z',
+          isStreaming: true,
+          streamingComplete: false,
+        },
+      ],
+    });
+    expect(run.messages()[0]?.provisional).toBeUndefined();
     run.channel.put(
       agentStreamUpdateReceived({
         agentId: AGENT,
@@ -655,7 +662,7 @@ describe('agentStreamSaga', () => {
         isStreaming: false,
         streamingComplete: true,
         provisional: true,
-        contentBlocks: [],
+        contentBlocks: partial,
       }),
     );
     expect(run.dispatch).toHaveBeenCalledWith(expectedAction);
