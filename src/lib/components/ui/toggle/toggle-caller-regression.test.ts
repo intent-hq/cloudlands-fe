@@ -106,7 +106,6 @@ describe('B2 caller metadata regression', () => {
         'src/lib/components/workspace/initializer/RepoAndBranchPicker.svelte',
       ],
       switch: [
-        'src/lib/component-catalog/CatalogControls.svelte',
         'src/lib/component-catalog/ChatPolishGeometryControls.svelte',
         'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte',
         'src/lib/components/debug/DebugPanel.svelte',

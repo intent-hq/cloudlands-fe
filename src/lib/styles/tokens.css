@@ -243,6 +243,46 @@
 
   --font-ui: Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --font-code: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
+  --font-editorial:
+    'Source Serif 4', 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, serif;
+  --diagram-host-surface: hsl(var(--app-background));
+  --diagram-canvas: var(--diagram-host-surface);
+  --diagram-label-surface: var(--diagram-host-surface);
+  --diagram-node-surface: hsl(var(--sidebar));
+  --diagram-node-hover-surface: color-mix(
+    in srgb,
+    hsl(var(--sidebar-accent)) 28%,
+    var(--diagram-node-surface)
+  );
+  --diagram-node-outline: hsl(var(--border) / 0.42);
+  --diagram-node-title: hsl(var(--foreground));
+  --diagram-metadata: hsl(var(--muted-foreground));
+  --diagram-group-outline: hsl(var(--border) / 0.58);
+  --diagram-connector: color-mix(in srgb, hsl(var(--muted-foreground)) 52%, var(--diagram-canvas));
+  --diagram-connector-hover: color-mix(
+    in srgb,
+    hsl(var(--muted-foreground)) 64%,
+    var(--diagram-canvas)
+  );
+  --diagram-connector-muted: color-mix(
+    in srgb,
+    hsl(var(--muted-foreground)) 34%,
+    var(--diagram-canvas)
+  );
+  --diagram-connector-inactive: color-mix(
+    in srgb,
+    hsl(var(--muted-foreground)) 25%,
+    var(--diagram-canvas)
+  );
+  --diagram-connector-danger: color-mix(in srgb, hsl(var(--danger)) 58%, var(--diagram-canvas));
+  --diagram-connector-success: color-mix(in srgb, hsl(var(--success)) 56%, var(--diagram-canvas));
+  --diagram-connector-warning: color-mix(in srgb, hsl(var(--warning)) 52%, var(--diagram-canvas));
+  --diagram-connector-active: color-mix(in srgb, var(--diagram-accent) 58%, var(--diagram-canvas));
+  --diagram-accent: hsl(var(--agent-avatar-surface-active));
+  --diagram-accent-foreground: hsl(var(--agent-avatar-foreground));
+  --diagram-node-radius: 16px;
+  --diagram-group-radius: 32px;
+  --diagram-connector-width: 1.125px;
   /* Five canonical text styles: caption, body, title, display, and code. */
   --text-caption-size: 0.8125rem;
   --text-caption-line-height: 1.125rem;
@@ -417,9 +457,14 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
+  html:not(.catalog-full-motion),
+  html:not(.catalog-full-motion) *,
+  html:not(.catalog-full-motion) *::before,
+  html:not(.catalog-full-motion) *::after,
+  html.catalog-reduced-motion,
+  html.catalog-reduced-motion *,
+  html.catalog-reduced-motion *::before,
+  html.catalog-reduced-motion *::after {
     scroll-behavior: auto !important;
     transition-duration: 0.01ms !important;
     animation-duration: 0.01ms !important;

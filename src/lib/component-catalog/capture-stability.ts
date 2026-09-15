@@ -1,8 +1,17 @@
+import { shouldReduceMotion } from '$lib/utils/motion-preference';
+import type { PreviewCaptureReadiness } from './preview-definition';
+
 const DEFAULT_CAPTURE_STABILITY_TIMEOUT_MS = 5_000;
 
 export interface CaptureStabilityOptions {
+  readiness?: PreviewCaptureReadiness;
   signal?: AbortSignal;
   timeoutMs?: number;
+}
+
+export interface CaptureStabilityLifecycle {
+  onStable: (result: CaptureStabilityResult, generation: number) => void;
+  onWaiting?: (generation: number) => void;
 }
 
 export interface CaptureStabilityResult {
@@ -47,6 +56,104 @@ function raceWithAbort<T>(promise: PromiseLike<T>, signal: AbortSignal): Promise
         reject(error);
       },
     );
+  });
+}
+
+interface ReadinessMarker {
+  element: Element;
+  generation: string | null;
+}
+
+interface CaptureStabilitySnapshot {
+  result: CaptureStabilityResult;
+  markers: ReadinessMarker[] | null;
+}
+
+function readReadinessMarkers(
+  root: HTMLElement,
+  readiness: PreviewCaptureReadiness,
+): ReadinessMarker[] | null {
+  const elements = [
+    ...(root.matches(readiness.selector) ? [root] : []),
+    ...root.querySelectorAll(readiness.selector),
+  ];
+  if (readiness.count ? elements.length !== readiness.count : elements.length === 0) return null;
+  const markers = elements.map((element) => ({
+    element,
+    generation: readiness.generationAttribute
+      ? element.getAttribute(readiness.generationAttribute)
+      : null,
+  }));
+  if (readiness.generationAttribute && markers.some(({ generation }) => generation === null)) {
+    return null;
+  }
+  return markers;
+}
+
+function markersMatch(current: ReadinessMarker[] | null, expected: ReadinessMarker[]): boolean {
+  return (
+    current?.length === expected.length &&
+    current.every(
+      (marker, index) =>
+        marker.element === expected[index].element &&
+        marker.generation === expected[index].generation,
+    )
+  );
+}
+
+function waitForReadiness(
+  root: HTMLElement,
+  readiness: PreviewCaptureReadiness,
+  signal?: AbortSignal,
+): Promise<ReadinessMarker[]> {
+  if (signal?.aborted) return Promise.reject(abortError());
+  const current = readReadinessMarkers(root, readiness);
+  if (current) return Promise.resolve(current);
+
+  return new Promise<ReadinessMarker[]>((resolve, reject) => {
+    const observer = new MutationObserver(() => {
+      const markers = readReadinessMarkers(root, readiness);
+      if (!markers) return;
+      cleanup();
+      resolve(markers);
+    });
+    const onAbort = () => {
+      cleanup();
+      reject(abortError());
+    };
+    const cleanup = () => {
+      observer.disconnect();
+      signal?.removeEventListener('abort', onAbort);
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
+    observer.observe(root, { attributes: true, childList: true, subtree: true });
+  });
+}
+
+function waitForReadinessChange(
+  root: HTMLElement,
+  readiness: PreviewCaptureReadiness,
+  markers: ReadinessMarker[],
+  signal: AbortSignal,
+): Promise<void> {
+  if (signal.aborted) return Promise.reject(abortError());
+  if (!markersMatch(readReadinessMarkers(root, readiness), markers)) return Promise.resolve();
+  return new Promise<void>((resolve, reject) => {
+    const observer = new MutationObserver(() => {
+      if (markersMatch(readReadinessMarkers(root, readiness), markers)) return;
+      cleanup();
+      resolve();
+    });
+    const onAbort = () => {
+      cleanup();
+      reject(abortError());
+    };
+    const cleanup = () => {
+      observer.disconnect();
+      signal.removeEventListener('abort', onAbort);
+    };
+    signal.addEventListener('abort', onAbort, { once: true });
+    observer.observe(root, { attributes: true, childList: true, subtree: true });
   });
 }
 
@@ -169,42 +276,73 @@ export async function waitForCaptureStability(
   root: HTMLElement,
   options: CaptureStabilityOptions = {},
 ): Promise<CaptureStabilityResult> {
-  const timeoutMs = options.timeoutMs ?? DEFAULT_CAPTURE_STABILITY_TIMEOUT_MS;
-  const controller = new AbortController();
-  let timedOut = false;
-  const onAbort = () => controller.abort();
-  options.signal?.addEventListener('abort', onAbort, { once: true });
-  if (options.signal?.aborted) controller.abort();
-  const timeoutId = setTimeout(
-    () => {
-      timedOut = true;
+  return (await waitForCaptureStabilitySnapshot(root, options)).result;
+}
+
+async function waitForCaptureStabilitySnapshot(
+  root: HTMLElement,
+  options: CaptureStabilityOptions,
+): Promise<CaptureStabilitySnapshot> {
+  while (true) {
+    const readiness = options.readiness;
+    const markers = readiness ? await waitForReadiness(root, readiness, options.signal) : null;
+    const timeoutMs = options.timeoutMs ?? DEFAULT_CAPTURE_STABILITY_TIMEOUT_MS;
+    const controller = new AbortController();
+    let timedOut = false;
+    const onAbort = () => controller.abort();
+    options.signal?.addEventListener('abort', onAbort, { once: true });
+    if (options.signal?.aborted) controller.abort();
+    const timeoutId = setTimeout(
+      () => {
+        timedOut = true;
+        controller.abort();
+      },
+      Math.max(0, timeoutMs),
+    );
+
+    try {
+      const documentRef = root.ownerDocument;
+      const fontsReady = documentRef.fonts?.ready ?? Promise.resolve();
+      await Promise.all([
+        raceWithAbort(fontsReady, controller.signal),
+        waitForImages(root, controller.signal),
+      ]);
+      await waitForAnimationFrame(documentRef, controller.signal);
+      const images = await waitForImages(root, controller.signal);
+      await waitForAnimationFrame(documentRef, controller.signal);
+
+      if (readiness && markers && !markersMatch(readReadinessMarkers(root, readiness), markers)) {
+        continue;
+      }
+      return {
+        result: { ...images, reducedMotion: shouldReduceMotion(documentRef) },
+        markers,
+      };
+    } catch (error) {
+      if (timedOut) throw new CaptureStabilityTimeoutError(timeoutMs);
+      if (options.signal?.aborted) throw abortError();
+      throw error;
+    } finally {
+      clearTimeout(timeoutId);
+      options.signal?.removeEventListener('abort', onAbort);
       controller.abort();
-    },
-    Math.max(0, timeoutMs),
-  );
+    }
+  }
+}
 
-  try {
-    const documentRef = root.ownerDocument;
-    const fontsReady = documentRef.fonts?.ready ?? Promise.resolve();
-    await Promise.all([
-      raceWithAbort(fontsReady, controller.signal),
-      waitForImages(root, controller.signal),
-    ]);
-    await waitForAnimationFrame(documentRef, controller.signal);
-    const images = await waitForImages(root, controller.signal);
-    await waitForAnimationFrame(documentRef, controller.signal);
-
-    const reducedMotion =
-      documentRef.documentElement.classList.contains('catalog-reduced-motion') ||
-      documentRef.defaultView?.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true;
-    return { ...images, reducedMotion };
-  } catch (error) {
-    if (timedOut) throw new CaptureStabilityTimeoutError(timeoutMs);
-    if (options.signal?.aborted) throw abortError();
-    throw error;
-  } finally {
-    clearTimeout(timeoutId);
-    options.signal?.removeEventListener('abort', onAbort);
-    controller.abort();
+export async function watchCaptureStability(
+  root: HTMLElement,
+  options: CaptureStabilityOptions & { signal: AbortSignal },
+  lifecycle: CaptureStabilityLifecycle,
+): Promise<void> {
+  let generation = 1;
+  lifecycle.onWaiting?.(generation);
+  while (!options.signal.aborted) {
+    const { result, markers } = await waitForCaptureStabilitySnapshot(root, options);
+    lifecycle.onStable(result, generation);
+    if (!options.readiness || !markers) return;
+    await waitForReadinessChange(root, options.readiness, markers, options.signal);
+    generation += 1;
+    lifecycle.onWaiting?.(generation);
   }
 }

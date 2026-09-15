@@ -580,7 +580,7 @@
         class:w-64={displayMode === 'compact'}
         class:w-68={displayMode === 'full'}
         class:is-focused={isFocused}
-        style="top: {adjustedTop}px; right: {-10 - horizontalOffset}px; z-index: {isFocused
+        style="--comment-focus-inset: {-horizontalOffset}px; top: {adjustedTop}px; right: {-horizontalOffset}px; z-index: {isFocused
           ? 20
           : 10}; transition: right 0.3s ease-in-out, top 0.3s ease-in-out;"
         role="button"
@@ -646,12 +646,19 @@
     position: absolute;
     top: 0;
     right: 0;
+    width: 100%;
     pointer-events: none;
     z-index: 10;
   }
 
   .comments-container > * {
     pointer-events: auto;
+  }
+
+  .comments-container > .is-focused {
+    --comment-focused-width: 100%;
+    box-sizing: border-box;
+    width: min(300px, calc(100% - var(--comment-focus-inset)));
   }
 
   :global(.line-clamp-2) {

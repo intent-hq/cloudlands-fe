@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import CatalogControls from './CatalogControls.svelte';
@@ -34,7 +34,9 @@ describe('CatalogControls', () => {
     await waitFor(() => expect(trigger.textContent).toContain('Dracula'));
     expect(screen.queryByRole('listbox')).toBeNull();
 
-    const system = screen.getByRole('radio', { name: 'System' });
+    const system = within(screen.getByRole('group', { name: 'Theme' })).getByRole('radio', {
+      name: 'System',
+    });
     expect(system.getAttribute('aria-checked')).toBe('true');
     await fireEvent.click(screen.getByRole('radio', { name: 'Dark' }));
     expect(screen.getByText('Dark theme selected')).not.toBeNull();

@@ -9,6 +9,7 @@
     readCatalogPreferences,
     writeCatalogPreferences,
     type CatalogColorTheme,
+    type CatalogMotion,
     type CatalogPreviewFit,
     type CatalogTheme,
   } from './catalog-preferences';
@@ -17,13 +18,15 @@
   let { activeSlug, children }: { activeSlug?: string; children?: Snippet } = $props();
   let theme = $state<CatalogTheme>(defaultCatalogPreferences.theme);
   let colorTheme = $state<CatalogColorTheme>(defaultCatalogPreferences.colorTheme);
-  let reducedMotion = $state(defaultCatalogPreferences.reducedMotion);
+  let motion = $state<CatalogMotion>(defaultCatalogPreferences.motion);
   let fit = $state<CatalogPreviewFit>();
   let systemDark = $state(false);
+  let systemReducedMotion = $state(false);
   let hydrated = $state(false);
   let initialRootDark = false;
   let initialRootLight = false;
   let initialRootReducedMotion = false;
+  let initialRootFullMotion = false;
   let initialRootComponentFit = false;
   // Root inline properties this shell owns, keyed by property name, with the inline
   // declaration (or null when absent) that was present before the shell first wrote it.
@@ -34,6 +37,9 @@
   const priorRootProperties = new Map<string, InlineDeclaration | null>();
 
   const resolvedTheme = $derived(theme === 'system' ? (systemDark ? 'dark' : 'light') : theme);
+  const reducedMotion = $derived(
+    motion === 'reduced' || (motion === 'system' && systemReducedMotion),
+  );
 
   function applyRootProperties(root: HTMLElement, next: Record<string, string>) {
     for (const property of [...priorRootProperties.keys()]) {
@@ -66,26 +72,33 @@
     initialRootDark = root.classList.contains('dark');
     initialRootLight = root.classList.contains('light');
     initialRootReducedMotion = root.classList.contains('catalog-reduced-motion');
+    initialRootFullMotion = root.classList.contains('catalog-full-motion');
     initialRootComponentFit = root.classList.contains('catalog-component-fit');
     const saved = readCatalogPreferences(localStorage);
     const urlSettings = parseCatalogUrlSettings(new URLSearchParams(window.location.search));
     theme = urlSettings.theme ?? saved.theme;
     colorTheme = saved.colorTheme;
-    reducedMotion = urlSettings.reducedMotion ?? saved.reducedMotion;
+    motion = urlSettings.motion ?? saved.motion;
     fit = urlSettings.fit;
     const removePreviewBrowserApi = installPreviewBrowserApi(window);
 
     const media = window.matchMedia('(prefers-color-scheme: dark)');
+    const motionMedia = window.matchMedia('(prefers-reduced-motion: reduce)');
     const updateSystemTheme = () => (systemDark = media.matches);
+    const updateSystemMotion = () => (systemReducedMotion = motionMedia.matches);
     updateSystemTheme();
+    updateSystemMotion();
     media.addEventListener('change', updateSystemTheme);
+    motionMedia.addEventListener('change', updateSystemMotion);
     hydrated = true;
     return () => {
       media.removeEventListener('change', updateSystemTheme);
+      motionMedia.removeEventListener('change', updateSystemMotion);
       removePreviewBrowserApi();
       root.classList.toggle('dark', initialRootDark);
       root.classList.toggle('light', initialRootLight);
       root.classList.toggle('catalog-reduced-motion', initialRootReducedMotion);
+      root.classList.toggle('catalog-full-motion', initialRootFullMotion);
       root.classList.toggle('catalog-component-fit', initialRootComponentFit);
       for (const property of [...priorRootProperties.keys()]) restoreRootProperty(root, property);
     };
@@ -93,7 +106,7 @@
 
   $effect(() => {
     if (!hydrated) return;
-    writeCatalogPreferences(localStorage, { theme, colorTheme, reducedMotion });
+    writeCatalogPreferences(localStorage, { theme, colorTheme, motion });
     const root = document.documentElement;
     const preset = themePresets.find(({ id }) => id === colorTheme);
     const themeProperties: Record<string, string> = preset
@@ -103,13 +116,15 @@
     applyRootProperties(root, themeProperties);
     root.classList.toggle('dark', resolvedTheme === 'dark');
     root.classList.toggle('light', resolvedTheme === 'light');
-    root.classList.toggle('catalog-reduced-motion', reducedMotion);
+    root.classList.toggle('catalog-reduced-motion', motion === 'reduced');
+    root.classList.toggle('catalog-full-motion', motion === 'full');
     root.classList.toggle('catalog-component-fit', fit === 'component');
 
     if (activeSlug) {
       const url = new URL(window.location.href);
       url.searchParams.set('theme', theme);
-      url.searchParams.set('motion', reducedMotion ? 'reduced' : 'full');
+      if (motion === 'system') url.searchParams.delete('motion');
+      else url.searchParams.set('motion', motion);
       window.history.replaceState(window.history.state, '', url);
     }
   });
@@ -122,6 +137,7 @@
   data-catalog-theme={theme}
   data-catalog-color-theme={colorTheme}
   data-catalog-motion={reducedMotion ? 'reduced' : 'full'}
+  data-catalog-motion-preference={motion}
 >
   <div class="catalog-shell-content min-h-screen w-full min-w-0">
     {#if fit !== 'component'}
@@ -139,7 +155,7 @@
               >
             {/if}
           </div>
-          <CatalogControls bind:theme bind:colorTheme {resolvedTheme} bind:reducedMotion />
+          <CatalogControls bind:theme bind:colorTheme {resolvedTheme} bind:motion />
         </div>
       </header>
     {/if}
@@ -230,5 +246,16 @@
     transition-duration: 0.01ms !important;
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    :global(html:not(.catalog-full-motion) *),
+    :global(html:not(.catalog-full-motion) *::before),
+    :global(html:not(.catalog-full-motion) *::after) {
+      scroll-behavior: auto !important;
+      transition-duration: 0.01ms !important;
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+    }
   }
 </style>
