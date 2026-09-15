@@ -90,6 +90,9 @@ vi.mock('../json-rpc-client', () => ({
     isConnectionLimited(): boolean {
       return false;
     }
+    getConnectionLimitRetryAfterMs(): number | null {
+      return null;
+    }
   },
 }));
 
