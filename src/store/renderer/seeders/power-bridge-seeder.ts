@@ -175,7 +175,10 @@ async function readGuarded(source: BatterySource): Promise<boolean> {
  * Union of the powerMonitor IPC and Battery API signals: `onBattery` is true
  * when either side reports it. Each side's last known value is seeded from its
  * `read()` and updated by its own change events; the merged value is emitted
- * only when it actually changes.
+ * only when it actually changes. A change event beats a still-pending seed for
+ * its own side, and a seed that resolves after the first emission is
+ * reconciled through the same emit path so the subscriber ends on the value
+ * combining everything known.
  */
 function createMergedBatterySource(ipc: BatterySource, nav: BatterySource): BatterySource {
   let seedLogged = false;
@@ -202,6 +205,14 @@ function createMergedBatterySource(ipc: BatterySource, nav: BatterySource): Batt
         last = merged;
         listener(merged);
       };
+      let seedsPending = 2;
+      const seed = (apply: (value: boolean) => void) => (value: boolean) => {
+        if (disposed) return;
+        apply(value);
+        seedsPending -= 1;
+        if (last !== undefined) emit();
+        else if (seedsPending === 0) last = fromIpc || fromNavigator;
+      };
       const unsubscribeIpc = ipc.subscribe((onBattery) => {
         ipcSeen = true;
         fromIpc = onBattery;
@@ -212,12 +223,16 @@ function createMergedBatterySource(ipc: BatterySource, nav: BatterySource): Batt
         fromNavigator = onBattery;
         emit();
       });
-      Promise.all([readGuarded(ipc), readGuarded(nav)]).then(([seedIpc, seedNavigator]) => {
-        if (disposed) return;
-        if (!ipcSeen) fromIpc = seedIpc;
-        if (!navigatorSeen) fromNavigator = seedNavigator;
-        if (last === undefined) last = fromIpc || fromNavigator;
-      });
+      readGuarded(ipc).then(
+        seed((value) => {
+          if (!ipcSeen) fromIpc = value;
+        }),
+      );
+      readGuarded(nav).then(
+        seed((value) => {
+          if (!navigatorSeen) fromNavigator = value;
+        }),
+      );
       return () => {
         disposed = true;
         unsubscribeIpc();

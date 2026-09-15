@@ -295,6 +295,65 @@ describe('power-bridge-seeder', () => {
       }
     });
 
+    it('reconciles a late IPC seed after an early chargingchange (subscribe-before-read saga order)', async () => {
+      const pendingIpcReads: Array<(value: unknown) => void> = [];
+      installGenuineBridge({
+        invoke: vi.fn(() => new Promise((resolve) => pendingIpcReads.push(resolve))),
+      });
+      registerPowerBridge();
+      const battery = makeFakeBatteryManager(false);
+      (navigator as any).getBattery = vi.fn(async () => battery);
+
+      const source = createBatterySource();
+      const received: boolean[] = [];
+      const dispose = source.subscribe((onBattery) => received.push(onBattery));
+      const initialRead = source.read();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(battery.listenerCount()).toBe(1);
+
+      battery.setCharging(true);
+      expect(received).toEqual([false]);
+
+      for (const resolve of pendingIpcReads.splice(0)) resolve({ onBattery: true });
+      await expect(initialRead).resolves.toBe(true);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(received.at(-1)).toBe(true);
+
+      battery.setCharging(false);
+      battery.setCharging(true);
+      expect(received.at(-1)).toBe(true);
+      dispose();
+    });
+
+    it('a change event beats a later-resolving seed for the same source', async () => {
+      installGenuineBridge({ invoke: vi.fn(async () => ({ onBattery: false })) });
+      registerPowerBridge();
+      const pendingBatteryReads: Array<(value: unknown) => void> = [];
+      const battery = makeFakeBatteryManager(false);
+      (navigator as any).getBattery = vi.fn(
+        () => new Promise((resolve) => pendingBatteryReads.push(resolve)),
+      );
+
+      const source = createBatterySource();
+      const received: boolean[] = [];
+      const dispose = source.subscribe((onBattery) => received.push(onBattery));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      emitMockIpcEvent(IPC_CHANNELS.POWER.BATTERY_CHANGED, { onBattery: true });
+      expect(received).toEqual([true]);
+      emitMockIpcEvent(IPC_CHANNELS.POWER.BATTERY_CHANGED, { onBattery: false });
+      expect(received).toEqual([true, false]);
+
+      battery.charging = true;
+      for (const resolve of pendingBatteryReads.splice(0)) resolve(battery);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(battery.listenerCount()).toBe(1);
+      expect(received).toEqual([true, false]);
+      battery.setCharging(false);
+      expect(received).toEqual([true, false, true]);
+      dispose();
+    });
+
     it('unsubscribe removes both the IPC and the chargingchange listeners', async () => {
       installGenuineBridge({ invoke: vi.fn(async () => ({ onBattery: false })) });
       registerPowerBridge();
