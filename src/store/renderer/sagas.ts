@@ -66,6 +66,7 @@ import {
 import { browserTabRegistrySaga } from './slices/panel-layout/sagas/browser-tab-registry-saga';
 import { panelLayoutSaga } from './slices/panel-layout/sagas/panel-layout-saga';
 import { permissionResponseSaga } from './slices/permission/sagas/permission-response-saga';
+import { powerSaga } from './slices/power/sagas/power-saga';
 import { proposalLifecycleSaga } from './slices/proposal-lifecycle/sagas/proposal-lifecycle-saga';
 import { providerSettingsSaga } from './slices/provider-settings/sagas/provider-settings-saga';
 import { antigravitySetupSaga } from './slices/antigravity-setup/sagas/antigravity-setup-saga';
@@ -181,6 +182,7 @@ export const sagas = [
   hardwareConsoleSaga,
   voiceSettingsSaga,
   themeSaga,
+  powerSaga,
   autoUpdateSaga,
   specialistsSaga,
   proposalLifecycleSaga,

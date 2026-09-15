@@ -752,6 +752,8 @@
   "settings_appearance_chatAurora_description": "Animiertes Leuchten hinter dem Eingabefeld, während ein Agent antwortet.",
   "settings_appearance_translucentWindow_label": "Transluzentes Fenster",
   "settings_appearance_translucentWindow_description": "Lässt den Desktop durch den App-Hintergrund durchscheinen.",
+  "settings_appearance_reduceMotionOnBattery_label": "Bewegung im Akkubetrieb reduzieren",
+  "settings_appearance_reduceMotionOnBattery_description": "Pausiert Hintergrundanimationen, während das Gerät im Akkubetrieb läuft.",
   "settings_fontStyle_sans": "Serifenlos",
   "settings_fontStyle_mono": "Mono",
   "settings_font_notes_label": "Notizen",

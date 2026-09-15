@@ -176,6 +176,10 @@ export const EMITTED_MOCK_IPC_EVENT_CHANNELS: ReadonlySet<string> = new Set([
   // main-process enter/leave-full-screen (via the real preload bridge) or DOM
   // fullscreenchange re-emitted for listenSync('window:fullscreen') consumers.
   'window:fullscreen',
+  // power-bridge-seeder.ts registerBatteryChangedEventRelay — main-process
+  // powerMonitor battery ↔ AC transitions (via the real preload bridge)
+  // re-emitted for listenSync('power:battery-changed') consumers.
+  'power:battery-changed',
 ]);
 
 /**

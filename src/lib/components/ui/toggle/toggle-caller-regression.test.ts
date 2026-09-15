@@ -114,6 +114,7 @@ describe('B2 caller metadata regression', () => {
         'src/lib/components/settings/BackendSyncSettings.svelte',
         'src/lib/components/settings/DeviceRow.svelte',
         'src/lib/components/settings/OpenInAppsSettings.svelte',
+        'src/lib/components/settings/ReduceMotionOnBatterySettings.svelte',
         'src/lib/components/settings/mcp/McpServerCard.svelte',
         'src/lib/components/workspace/sidebar/McpServersSection.svelte',
         'src/lib/components/workspace/sidebar/MergePanel.svelte',

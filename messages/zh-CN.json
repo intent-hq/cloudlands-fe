@@ -752,6 +752,8 @@
   "settings_appearance_chatAurora_description": "智能体响应时，在输入框后方显示动态光效。",
   "settings_appearance_translucentWindow_label": "半透明窗口",
   "settings_appearance_translucentWindow_description": "让桌面透过应用背景显示出来。",
+  "settings_appearance_reduceMotionOnBattery_label": "使用电池时减少动效",
+  "settings_appearance_reduceMotionOnBattery_description": "设备使用电池供电时暂停环境动画。",
   "settings_fontStyle_sans": "无衬线",
   "settings_fontStyle_mono": "等宽",
   "settings_font_notes_label": "笔记",

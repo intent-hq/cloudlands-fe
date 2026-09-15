@@ -752,6 +752,8 @@
   "settings_appearance_chatAurora_description": "Brillo animado detrás del cuadro de redacción mientras un agente responde.",
   "settings_appearance_translucentWindow_label": "Ventana translúcida",
   "settings_appearance_translucentWindow_description": "Permite que el escritorio se vea a través del fondo de la aplicación.",
+  "settings_appearance_reduceMotionOnBattery_label": "Reducir movimiento con batería",
+  "settings_appearance_reduceMotionOnBattery_description": "Pausa las animaciones ambientales mientras el equipo funciona con batería.",
   "settings_fontStyle_sans": "Sans serif",
   "settings_fontStyle_mono": "Mono",
   "settings_font_notes_label": "Notas",

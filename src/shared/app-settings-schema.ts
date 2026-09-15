@@ -203,6 +203,17 @@ const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
     apply: { kind: 'redux-action', action: 'userPreferences/setShellTransparencyEnabled' },
   },
   {
+    path: 'appearance.reduceMotionOnBattery',
+    label: 'Reduce motion on battery',
+    description: 'Whether animations are reduced while the machine runs on battery power.',
+    category: 'theme',
+    type: 'boolean',
+    source: 'local-storage',
+    storageKey: 'appearance:reduceMotionOnBattery',
+    defaultValue: true,
+    apply: { kind: 'redux-action', action: 'userPreferences/setReduceMotionOnBattery' },
+  },
+  {
     path: 'theme.activePresetId',
     label: 'Theme preset',
     description: `Active built-in color theme preset ID. Available presets: ${THEME_PRESET_OPTIONS_DESCRIPTION}.`,

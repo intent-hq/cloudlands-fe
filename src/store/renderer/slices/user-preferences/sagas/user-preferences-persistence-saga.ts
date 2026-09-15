@@ -23,6 +23,7 @@ import {
   selectHasCompletedProviderSetup,
   selectLanguagePreference,
   selectNoteFontStyle,
+  selectReduceMotionOnBattery,
   selectShowArchived,
   selectShowReasoningBlocks,
   selectShellTransparencyEnabled,
@@ -46,6 +47,7 @@ import {
   setHasCompletedProviderSetup,
   setLanguagePreference,
   setNoteFontStyle,
+  setReduceMotionOnBattery,
   setShowArchived,
   setShowReasoningBlocks,
   setShellTransparencyEnabled,
@@ -55,6 +57,7 @@ import {
   toggleGroupByRepo,
   toggleHasCompletedProviderSetup,
   toggleChatAurora,
+  toggleReduceMotionOnBattery,
   toggleShowArchived,
   toggleShowReasoningBlocks,
   toggleShellTransparency,
@@ -71,6 +74,7 @@ const COMPLETED_PROVIDER_SETUP_STORAGE_KEY = 'workspace-list:completedProviderSe
 const SHOW_REASONING_BLOCKS_STORAGE_KEY = 'chat:showReasoningBlocks';
 const CHAT_AURORA_STORAGE_KEY = 'chat:auroraEnabled';
 const SHELL_TRANSPARENCY_STORAGE_KEY = 'appearance:shellTransparencyEnabled';
+const REDUCE_MOTION_ON_BATTERY_STORAGE_KEY = 'appearance:reduceMotionOnBattery';
 const AGENT_STORAGE_KEY = 'agent-font-settings';
 const NOTE_STORAGE_KEY = 'note-font-settings';
 const CODE_STORAGE_KEY = 'code-font-settings';
@@ -168,6 +172,13 @@ export function* hydrateUserPreferencesWorker() {
   );
   if (typeof shellTransparencyEnabled === 'boolean') {
     yield* put(setShellTransparencyEnabled(shellTransparencyEnabled));
+  }
+
+  const reduceMotionOnBattery = yield* getLocalStorageJSON<boolean>(
+    REDUCE_MOTION_ON_BATTERY_STORAGE_KEY,
+  );
+  if (typeof reduceMotionOnBattery === 'boolean') {
+    yield* put(setReduceMotionOnBattery(reduceMotionOnBattery));
   }
 
   const agentFont = yield* getLocalStorageJSON<unknown>(AGENT_STORAGE_KEY);
@@ -270,6 +281,13 @@ function* persistShellTransparencyWorker() {
   );
 }
 
+function* persistReduceMotionOnBatteryWorker() {
+  yield* setLocalStorageJSON(
+    REDUCE_MOTION_ON_BATTERY_STORAGE_KEY,
+    yield* selectReduceMotionOnBattery.effect(),
+  );
+}
+
 function* persistAgentFontWorker() {
   yield* setLocalStorageJSON(AGENT_STORAGE_KEY, {
     fontStyle: yield* selectAgentFontStyle.effect(),
@@ -342,6 +360,10 @@ function* watchUserPreferenceWrites() {
   yield* takeEvery(
     [setShellTransparencyEnabled, toggleShellTransparency],
     persistShellTransparencyWorker,
+  );
+  yield* takeEvery(
+    [setReduceMotionOnBattery, toggleReduceMotionOnBattery],
+    persistReduceMotionOnBatteryWorker,
   );
   yield* takeEvery([setAgentFontStyle], persistAgentFontWorker);
   yield* takeEvery([setNoteFontStyle, cycleNoteFontStyle], persistNoteFontWorker);

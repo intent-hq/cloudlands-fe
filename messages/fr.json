@@ -752,6 +752,8 @@
   "settings_appearance_chatAurora_description": "Lueur animée derrière la zone de saisie pendant qu’un agent répond.",
   "settings_appearance_translucentWindow_label": "Fenêtre translucide",
   "settings_appearance_translucentWindow_description": "Laisse le bureau apparaître à travers l’arrière-plan de l’application.",
+  "settings_appearance_reduceMotionOnBattery_label": "Réduire les animations sur batterie",
+  "settings_appearance_reduceMotionOnBattery_description": "Met en pause les animations d’ambiance lorsque l’appareil fonctionne sur batterie.",
   "settings_fontStyle_sans": "Sans-serif",
   "settings_fontStyle_mono": "Mono",
   "settings_font_notes_label": "Notes",

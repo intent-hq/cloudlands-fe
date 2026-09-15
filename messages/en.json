@@ -752,6 +752,8 @@
   "settings_appearance_chatAurora_description": "Animated glow behind the composer while an agent is responding.",
   "settings_appearance_translucentWindow_label": "Translucent window",
   "settings_appearance_translucentWindow_description": "Let the desktop show through the app background.",
+  "settings_appearance_reduceMotionOnBattery_label": "Reduce motion on battery",
+  "settings_appearance_reduceMotionOnBattery_description": "Pause ambient animations while the machine runs on battery power.",
   "settings_fontStyle_sans": "Sans-serif",
   "settings_fontStyle_mono": "Mono",
   "settings_font_notes_label": "Notes",

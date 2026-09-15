@@ -752,6 +752,8 @@
   "settings_appearance_chatAurora_description": "エージェントの応答中に入力欄の背後に表示されるアニメーションの光です。",
   "settings_appearance_translucentWindow_label": "半透明ウィンドウ",
   "settings_appearance_translucentWindow_description": "アプリの背景越しにデスクトップを表示します。",
+  "settings_appearance_reduceMotionOnBattery_label": "バッテリー駆動時にアニメーションを減らす",
+  "settings_appearance_reduceMotionOnBattery_description": "バッテリー駆動中は環境アニメーションを一時停止します。",
   "settings_fontStyle_sans": "サンセリフ",
   "settings_fontStyle_mono": "等幅",
   "settings_font_notes_label": "ノート",
