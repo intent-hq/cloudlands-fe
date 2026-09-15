@@ -149,7 +149,7 @@
                       size="icon-compact"
                       iconOnly
                       class="size-7"
-                      tooltip={m.workspace_shell_openIn_tooltip()}
+                      tooltip={m.ui_openCombo_openInApp_tooltip()}
                       tooltipSide="left"
                     >
                       <Fa icon={faArrowUpRightFromSquare} class="size-3" />
@@ -266,7 +266,7 @@
                       size="icon-compact"
                       iconOnly
                       class="size-7"
-                      tooltip={m.workspace_shell_openIn_tooltip()}
+                      tooltip={m.ui_openCombo_openInApp_tooltip()}
                       tooltipSide="left"
                     >
                       <Fa icon={faArrowUpRightFromSquare} class="size-3" />

@@ -132,7 +132,7 @@ describe('WorkspaceShellList development script controls', () => {
   }
 
   async function chooseSurface(row: HTMLElement, name: string) {
-    await fireEvent.click(within(row).getByRole('button', { name: 'Open in…' }));
+    await fireEvent.click(within(row).getByRole('button', { name: 'Open in...' }));
     await fireEvent.click(await screen.findByRole('menuitem', { name }));
   }
 
