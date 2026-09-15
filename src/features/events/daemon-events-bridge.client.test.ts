@@ -384,19 +384,15 @@ function expectNoContentOnStreamDispatches(): void {
 }
 
 /** Seed the assistant row exactly as the standing chat.subscribe stream leaves it (§7.1). */
-function seedSubscriptionOwnedAssistant(
-  messageId: string,
-  contentBlocks: unknown[],
-  streaming = true,
-): void {
+function seedSubscriptionOwnedAssistant(messageId: string, contentBlocks: unknown[]): void {
   appStore.dispatch(
     replaceMessages(AGENT, [
       {
         id: messageId,
         role: 'assistant',
         timestamp: '2026-01-02T00:00:00.000Z',
-        isStreaming: streaming,
-        streamingComplete: !streaming,
+        isStreaming: true,
+        streamingComplete: false,
         contentBlocks,
       } as unknown as AgentMessage,
     ]),
@@ -3203,7 +3199,11 @@ describe('daemonEventsBridge (Agent Q&A live delivery — trailingBlocks on agen
     vi.clearAllMocks();
   });
 
-  it('trailingBlocks on stream:end never ride the bridge — the row finalizes with the subscription-owned text and the §7.1 reconcile delivers the question', async () => {
+  // Delivery of the drained question block itself is the §7.1 reconciler's
+  // job and is covered in live-chat-client.test.ts ("renders
+  // daemon-synthesized standalone resource blocks verbatim"); these tests
+  // only pin what the bridge leaves behind for that reconcile to replace.
+  it('trailingBlocks on stream:end never ride the bridge — the row finalizes with exactly the subscription-owned text', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
     const streamedText = { type: 'text', id: `${MESSAGE_ID}:0`, text: 'Before I proceed:' };
@@ -3232,26 +3232,16 @@ describe('daemonEventsBridge (Agent Q&A live delivery — trailingBlocks on agen
     // Bookkeeping-only: the row finalizes with exactly the subscription's
     // text — no firehose-appended resource block, and nothing pends yet.
     expectNoContentOnStreamDispatches();
-    let assistantMessages = readAssistantMessages();
+    const assistantMessages = readAssistantMessages();
     expect(assistantMessages).toHaveLength(1);
     expect(assistantMessages[0].id).toBe(MESSAGE_ID);
     expect(assistantMessages[0].isStreaming).toBe(false);
+    expect(assistantMessages[0].streamingComplete).toBe(true);
     expect(assistantMessages[0].contentBlocks).toEqual([streamedText]);
     expect(derivePendingQuestions(readSession()?.messages ?? [], false)).toBeNull();
-
-    // The terminal §7.1 reconcile delivers the drained question block on the
-    // same row; the wizard derivation reads the transcript directly.
-    seedSubscriptionOwnedAssistant(MESSAGE_ID, [streamedText, questionBlock()], false);
-    assistantMessages = readAssistantMessages();
-    expect(assistantMessages).toHaveLength(1);
-    expect(assistantMessages[0].contentBlocks?.map((b) => b.type)).toEqual(['text', 'resource']);
-    const pending = derivePendingQuestions(readSession()?.messages ?? [], false);
-    expect(pending).not.toBeNull();
-    expect(pending!.messageId).toBe(MESSAGE_ID);
-    expect(pending!.questions.map((q) => q.header)).toEqual(['Auth method']);
   });
 
-  it('pre-first-token question turn: trailingBlocks with NO local stream state finalize an EMPTY placeholder the reconcile replaces by id', async () => {
+  it('pre-first-token question turn: trailingBlocks with NO local stream state finalize an EMPTY placeholder under the turn id', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
 
@@ -3270,24 +3260,16 @@ describe('daemonEventsBridge (Agent Q&A live delivery — trailingBlocks on agen
     );
 
     expectNoContentOnStreamDispatches();
-    let assistantMessages = readAssistantMessages();
+    const assistantMessages = readAssistantMessages();
     expect(assistantMessages).toHaveLength(1);
     expect(assistantMessages[0].id).toBe(MESSAGE_ID);
     expect(assistantMessages[0].isStreaming).toBe(false);
     expect(assistantMessages[0].streamingComplete).toBe(true);
     expect(assistantMessages[0].contentBlocks).toEqual([]);
     expect(derivePendingQuestions(readSession()?.messages ?? [], false)).toBeNull();
-
-    seedSubscriptionOwnedAssistant(MESSAGE_ID, [questionBlock()], false);
-    assistantMessages = readAssistantMessages();
-    expect(assistantMessages).toHaveLength(1);
-    expect(assistantMessages[0].contentBlocks?.map((b) => b.type)).toEqual(['resource']);
-    const pending = derivePendingQuestions(readSession()?.messages ?? [], false);
-    expect(pending).not.toBeNull();
-    expect(pending!.questions).toHaveLength(1);
   });
 
-  it('is idempotent against a later reconcile delivering the same canonical blocks (no duplicates)', async () => {
+  it('the hydration merge collapses the empty placeholder into the same-id canonical row (no duplicates)', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
 
@@ -3312,36 +3294,39 @@ describe('daemonEventsBridge (Agent Q&A live delivery — trailingBlocks on agen
     );
 
     // The live path left an EMPTY finalized placeholder under the turn's id.
-    // Simulate the chat-read-service hydration reconcile: the persisted row
-    // carries the canonical trailing block under the SAME message id and
-    // replaces the placeholder by id — one row, no duplicate.
     const session = readSession()!;
-    expect(readAssistantMessages()).toHaveLength(1);
-    expect(readAssistantMessages()[0].contentBlocks).toEqual([]);
+    const placeholder = readAssistantMessages();
+    expect(placeholder).toHaveLength(1);
+    expect(placeholder[0].id).toBe(MESSAGE_ID);
+    expect(placeholder[0].contentBlocks).toEqual([]);
+
+    // Model the chat-read-service hydration merge (its STALE-HYDRATION MERGE
+    // GUARD): the fetched canonical rows come FIRST and the store rows the
+    // live stream appended during the read follow — so the bridge's
+    // placeholder rides INTO the upsert payload under the SAME id, and the
+    // store's dedup on ingest must collapse the pair with the fetched copy
+    // winning. Two rows, or a row with the placeholder's empty content,
+    // means the same-id collapse regressed.
+    const canonicalRow = {
+      id: MESSAGE_ID,
+      role: 'assistant',
+      timestamp: '2026-01-02T00:00:01.000Z',
+      contentBlocks: [{ type: 'text', id: `${MESSAGE_ID}:0`, text: 'Question:' }, questionBlock()],
+    } as unknown as AgentMessage;
     appStore.dispatch(
       bulkUpsertSessions([
         {
           ...session,
           isStreaming: false,
           status: AgentStatus.Idle,
-          messages: [
-            ...(session.messages ?? []).filter((m) => m.role !== 'assistant'),
-            {
-              id: MESSAGE_ID,
-              role: 'assistant',
-              timestamp: '2026-01-02T00:00:01.000Z',
-              contentBlocks: [
-                { type: 'text', id: `${MESSAGE_ID}:0`, text: 'Question:' },
-                questionBlock(),
-              ],
-            } as unknown as AgentMessage,
-          ],
+          messages: [canonicalRow, ...(session.messages ?? [])],
         },
       ]),
     );
 
     const assistantMessages = readAssistantMessages();
     expect(assistantMessages).toHaveLength(1);
+    expect(assistantMessages[0].id).toBe(MESSAGE_ID);
     expect(assistantMessages[0].contentBlocks?.map((b) => b.type)).toEqual(['text', 'resource']);
 
     const pending = derivePendingQuestions(readSession()?.messages ?? [], false);

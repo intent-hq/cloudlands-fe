@@ -11,11 +11,12 @@
  *      `chatSendStarted`).
  *   2. `workspaceAgents/agentStreamUpdateReceived` for the live stream subset
  *      (`agent:stream:start`, `agent:stream:chunk`, `agent:tool:call`,
- *      `agent:stream:end`, `agent:failed`), so the `agent-stream-service`
- *      middleware grows the in-flight assistant message live and finalizes it
- *      in place. Without this wire the assistant reply only appears after a
- *      manual refresh (the chat-read-service hydration via
- *      `agents.getConversation`). `agent:stream:start` (§6.6, agent-initiated
+ *      `agent:stream:end`, `agent:failed`), carrying BOOKKEEPING ONLY: the
+ *      `agent-stream-service` saga applies streaming flags and terminal
+ *      metadata under the BE-canonical `messageId`, never transcript content.
+ *      The standing `chat.subscribe` stream (PROTOCOL §7.1) is the sole
+ *      transcript writer; this bridge never dispatches `contentBlocks`.
+ *      `agent:stream:start` (§6.6, agent-initiated
  *      harness-wake turns only) additionally dispatches `chatSendStarted` so
  *      the busy/Thinking UI opens without a user send — see
  *      `handleStreamStartEvent`. `agent:stream:activity` (§7 — the content-free
