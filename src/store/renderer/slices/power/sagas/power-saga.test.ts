@@ -5,20 +5,28 @@ const mocks = vi.hoisted(() => ({
   read: vi.fn<() => Promise<boolean>>(),
   listeners: new Set<(onBattery: boolean) => void>(),
   unsubscribe: vi.fn(),
+  useRealSource: false,
 }));
 
-vi.mock('$store/renderer/seeders/power-bridge-seeder', () => ({
-  createBatterySource: () => ({
-    read: mocks.read,
-    subscribe: (listener: (onBattery: boolean) => void) => {
-      mocks.listeners.add(listener);
-      return () => {
-        mocks.listeners.delete(listener);
-        mocks.unsubscribe();
-      };
-    },
-  }),
-}));
+vi.mock('$store/renderer/seeders/power-bridge-seeder', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('$store/renderer/seeders/power-bridge-seeder')>();
+  return {
+    createBatterySource: () =>
+      mocks.useRealSource
+        ? actual.createBatterySource()
+        : {
+            read: mocks.read,
+            subscribe: (listener: (onBattery: boolean) => void) => {
+              mocks.listeners.add(listener);
+              return () => {
+                mocks.listeners.delete(listener);
+                mocks.unsubscribe();
+              };
+            },
+          },
+  };
+});
 
 import {
   initialState as userPreferencesInitialState,
@@ -144,5 +152,59 @@ describe('powerSaga', () => {
     await task.toPromise();
     expect(mocks.unsubscribe).toHaveBeenCalledTimes(1);
     expect(hasRootAttribute()).toBe(false);
+  });
+
+  describe('with the real browser BatterySource', () => {
+    const originalElectronAPI = (window as any).electronAPI;
+    const originalGetBattery = (navigator as any).getBattery;
+    const unhandled = vi.fn();
+
+    beforeEach(() => {
+      mocks.useRealSource = true;
+      delete (window as any).electronAPI;
+      unhandled.mockClear();
+      process.on('unhandledRejection', unhandled);
+    });
+
+    afterEach(() => {
+      process.off('unhandledRejection', unhandled);
+      mocks.useRealSource = false;
+      (window as any).electronAPI = originalElectronAPI;
+      if (originalGetBattery) (navigator as any).getBattery = originalGetBattery;
+      else delete (navigator as any).getBattery;
+    });
+
+    it('stays off-battery with no unhandled rejection when navigator.getBattery rejects', async () => {
+      (navigator as any).getBattery = vi.fn(() => Promise.reject(new Error('denied')));
+      const { task, getState } = createHarness();
+      await settle();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(getState().power.onBattery).toBe(false);
+      expect(hasRootAttribute()).toBe(false);
+      task.cancel();
+      await task.toPromise();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(unhandled).not.toHaveBeenCalled();
+    });
+
+    it('cancelling while getBattery is still pending settles cleanly without attaching listeners', async () => {
+      const addEventListener = vi.fn();
+      let resolveBattery!: (value: unknown) => void;
+      (navigator as any).getBattery = vi.fn(
+        () => new Promise((resolve) => (resolveBattery = resolve)),
+      );
+      const { task } = createHarness();
+      await settle();
+
+      task.cancel();
+      await task.toPromise();
+      resolveBattery({ charging: false, addEventListener, removeEventListener: vi.fn() });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(addEventListener).not.toHaveBeenCalled();
+      expect(hasRootAttribute()).toBe(false);
+      expect(unhandled).not.toHaveBeenCalled();
+    });
   });
 });

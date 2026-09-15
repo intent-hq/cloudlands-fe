@@ -113,12 +113,17 @@ function createNavigatorBatterySource(
     subscribe(listener) {
       let disposed = false;
       let cleanup: (() => void) | undefined;
-      void getBattery().then((battery) => {
-        if (disposed) return;
-        const onChargingChange = () => listener(!battery.charging);
-        battery.addEventListener('chargingchange', onChargingChange);
-        cleanup = () => battery.removeEventListener('chargingchange', onChargingChange);
-      });
+      getBattery().then(
+        (battery) => {
+          if (disposed) return;
+          const onChargingChange = () => listener(!battery.charging);
+          battery.addEventListener('chargingchange', onChargingChange);
+          cleanup = () => battery.removeEventListener('chargingchange', onChargingChange);
+        },
+        () => {
+          // Battery API denied (e.g. Permissions Policy): stay silent, read() already reported it.
+        },
+      );
       return () => {
         disposed = true;
         cleanup?.();

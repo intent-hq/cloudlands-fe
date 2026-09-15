@@ -122,6 +122,48 @@ describe('power-bridge-seeder', () => {
     expect(battery.listenerCount()).toBe(0);
   });
 
+  it('does not leak an unhandled rejection when navigator.getBattery rejects (Permissions Policy denial)', async () => {
+    const unhandled = vi.fn();
+    process.on('unhandledRejection', unhandled);
+    try {
+      (navigator as any).getBattery = vi.fn(() => Promise.reject(new Error('denied')));
+      const source = createBatterySource();
+
+      await expect(source.read()).rejects.toThrow('denied');
+
+      const listener = vi.fn();
+      const dispose = source.subscribe(listener);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      dispose();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(listener).not.toHaveBeenCalled();
+      expect(unhandled).not.toHaveBeenCalled();
+    } finally {
+      process.off('unhandledRejection', unhandled);
+    }
+  });
+
+  it('never attaches a chargingchange listener when disposed while getBattery is still pending', async () => {
+    const battery = makeFakeBatteryManager(false);
+    let resolveBattery!: (value: typeof battery) => void;
+    (navigator as any).getBattery = vi.fn(
+      () => new Promise<typeof battery>((resolve) => (resolveBattery = resolve)),
+    );
+    const source = createBatterySource();
+
+    const listener = vi.fn();
+    const dispose = source.subscribe(listener);
+    dispose();
+    resolveBattery(battery);
+    await Promise.resolve();
+
+    expect(battery.addEventListener).not.toHaveBeenCalled();
+    expect(battery.listenerCount()).toBe(0);
+    battery.setCharging(true);
+    expect(listener).not.toHaveBeenCalled();
+  });
+
   it('falls back to a constant off-battery source when neither bridge nor Battery API exists', async () => {
     const source = createBatterySource();
     await expect(source.read()).resolves.toBe(false);
