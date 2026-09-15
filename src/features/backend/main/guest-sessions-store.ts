@@ -418,6 +418,34 @@ function notifyCredentialReplaced(id: string): void {
   }
 }
 
+/**
+ * Listeners notified with the session id when a keychain-sync tombstone
+ * ({@link applyRemoteSyncRecord}) DELETED a live session — the guest was
+ * forgotten on another device. The connection pool drops the client built on
+ * the now-deleted credential so it cannot keep serving a forgotten guest
+ * until restart. A local {@link forget} does NOT notify: its caller owns the
+ * pool/window teardown for that flow.
+ */
+const removedBySyncListeners = new Set<(id: string) => void>();
+
+/** Subscribe to sync-driven session deletions; returns an unsubscribe function. */
+export function onGuestSessionRemovedBySync(listener: (id: string) => void): () => void {
+  removedBySyncListeners.add(listener);
+  return () => removedBySyncListeners.delete(listener);
+}
+
+function notifyRemovedBySync(id: string): void {
+  for (const listener of removedBySyncListeners) {
+    try {
+      listener(id);
+    } catch (error) {
+      logger.warn('guest session removal listener failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+}
+
 type Identity = Pick<StoredGuestSession, 'host' | 'port' | 'fingerprint'>;
 
 function fingerprintKey(fingerprint: string | undefined | null): string | null {
@@ -490,8 +518,11 @@ export async function findMatching(identity: {
  * identity in place (the record keeps its `id`, so open windows stay
  * attached; {@link onGuestCredentialReplaced} fires so the pooled client is
  * rebuilt on the new credential) and stamps the clock strictly past any
- * superseded tombstone so a forget written elsewhere can never re-delete
- * the fresh join. The token is encrypted before it hits disk; a re-join that
+ * superseded tombstone AND past the replaced session's own clock, so neither
+ * a forget written elsewhere nor a clock-ahead record pulled from another
+ * device can out-clock the fresh join in the next LWW reconcile (which would
+ * hand the old remote credential the win over the freshly redeemed one).
+ * The token is encrypted before it hits disk; a re-join that
  * would downgrade stored ciphertext to plaintext fails closed
  * ({@link GuestEncryptionUnavailableError}). Returns the token-free record.
  */
@@ -501,7 +532,11 @@ export async function add(input: NewGuestSession): Promise<GuestSessionRecord> {
     const duplicates = state.sessions.filter((s) => sameDaemon(s, input));
     const encToken = encryptToken(input.token, duplicates[0]?.encToken);
     const superseded = state.tombstones.find((t) => tombstoneMatches(t, input));
-    const stamp = Math.max(Date.now(), (superseded?.updatedAt ?? 0) + 1);
+    const stamp = Math.max(
+      Date.now(),
+      (superseded?.updatedAt ?? 0) + 1,
+      ...duplicates.map((s) => s.updatedAt + 1),
+    );
     clearTombstone(state, input);
     if (duplicates.length > 0) {
       const survivor = duplicates[0];
@@ -554,6 +589,51 @@ export async function setHostname(id: string, hostname: string): Promise<boolean
     const session = state.sessions.find((s) => s.id === id);
     if (!session || session.hostname === trimmed) return false;
     session.hostname = trimmed;
+    session.updatedAt = Math.max(Date.now(), session.updatedAt + 1);
+    await writeState(state);
+    return true;
+  });
+  if (changed) notifyMutated();
+  return changed;
+}
+
+/**
+ * Persist the tunnel address a connected daemon currently advertises
+ * (PROTOCOL §12.3) — conclusively, so `null` clears a stale invite-time
+ * address the daemon no longer serves. The unchanged every-reconnect case
+ * skips the write so the LWW clock stays put; a change stamps strictly past
+ * the record's own clock (as `setHostname` does) so the refreshed route wins
+ * reconciliation. Returns whether anything changed. No-op for unknown ids.
+ */
+export async function setTcAddress(id: string, tcAddress: string | null): Promise<boolean> {
+  const normalized = tcAddress?.trim() || null;
+  const changed = await mutate(async (state) => {
+    const session = state.sessions.find((s) => s.id === id);
+    if (!session || (session.tcAddress ?? null) === normalized) return false;
+    session.tcAddress = normalized;
+    session.updatedAt = Math.max(Date.now(), session.updatedAt + 1);
+    await writeState(state);
+    return true;
+  });
+  if (changed) notifyMutated();
+  return changed;
+}
+
+/**
+ * Replace the candidate-host list learned from a connected daemon (its
+ * current interfaces), so reconnects and keychain sync stop dialing the
+ * invite-time list. The primary `host` always stays first; only deduplicated
+ * extras are persisted. An unchanged list skips the write (no artificial
+ * clock bump); a change stamps strictly past the record's own clock. Returns
+ * whether anything changed. No-op for unknown ids.
+ */
+export async function setHosts(id: string, hosts: string[]): Promise<boolean> {
+  const changed = await mutate(async (state) => {
+    const session = state.sessions.find((s) => s.id === id);
+    if (!session) return false;
+    const extras = dedupeHosts([session.host, ...hosts]).filter((h) => h !== session.host.trim());
+    if (JSON.stringify(extras) === JSON.stringify(session.hosts ?? [])) return false;
+    session.hosts = extras;
     session.updatedAt = Math.max(Date.now(), session.updatedAt + 1);
     await writeState(state);
     return true;
@@ -675,11 +755,13 @@ export async function listSyncRecords(): Promise<KeychainSyncRecord[]> {
  * guest principal identity are rejected — they cannot be guest sessions.
  * A remote win that replaces a live session's credential fires
  * {@link onGuestCredentialReplaced} exactly like a local re-join, so a
- * pooled client never keeps serving the superseded credential. Returns
- * whether the local store changed.
+ * pooled client never keeps serving the superseded credential; a tombstone
+ * that deletes a live session fires {@link onGuestSessionRemovedBySync} per
+ * deleted id so the pool drops that client too. Returns whether the local
+ * store changed.
  */
 export async function applyRemoteSyncRecord(record: KeychainSyncRecord): Promise<boolean> {
-  const { changed, replacedId } = await mutate(async (state) => {
+  const { changed, replacedId, removedIds } = await mutate(async (state) => {
     const extras = record.hosts.filter((h) => h.trim() !== record.host.trim());
     if (record.deleted === true) {
       const existing = state.sessions.filter((s) => tombstoneMatches(s, record));
@@ -698,14 +780,18 @@ export async function applyRemoteSyncRecord(record: KeychainSyncRecord): Promise
         deletedAt: record.deletedAt ?? record.updatedAt,
       });
       await writeState(state);
-      return { changed: existing.length > 0, replacedId: null };
+      return {
+        changed: existing.length > 0,
+        replacedId: null,
+        removedIds: existing.map((s) => s.id),
+      };
     }
 
     if (!record.principalId || !record.login) {
       logger.warn('ignoring remote guest record without principal identity', {
         account: accountKeyFor(record.host, record.port),
       });
-      return { changed: false, replacedId: null };
+      return { changed: false, replacedId: null, removedIds: [] };
     }
     clearTombstone(state, record);
     const duplicates = state.sessions.filter((s) => sameDaemon(s, record));
@@ -719,7 +805,7 @@ export async function applyRemoteSyncRecord(record: KeychainSyncRecord): Promise
       logger.warn('ignoring remote guest record: would downgrade an encrypted credential', {
         account: accountKeyFor(record.host, record.port),
       });
-      return { changed: false, replacedId: null };
+      return { changed: false, replacedId: null, removedIds: [] };
     }
     let replacedId: string | null = null;
     if (duplicates.length > 0) {
@@ -754,9 +840,10 @@ export async function applyRemoteSyncRecord(record: KeychainSyncRecord): Promise
       });
     }
     await writeState(state);
-    return { changed: true, replacedId };
+    return { changed: true, replacedId, removedIds: [] };
   });
   if (replacedId !== null) notifyCredentialReplaced(replacedId);
+  for (const id of removedIds) notifyRemovedBySync(id);
   return changed;
 }
 

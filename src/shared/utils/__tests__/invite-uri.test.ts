@@ -29,9 +29,26 @@ describe('isInviteUri', () => {
     expect(isInviteUri('intent://invite/?inviteId=x')).toBe(true);
     expect(isInviteUri('intent://invite#x')).toBe(true);
   });
+
+  it('classifies like the URL parser: tab/LF/CR inside the action are stripped', () => {
+    // WHATWG URL strips ASCII tab/newline anywhere in the input, so these
+    // parse as `intent://invite?…`; the classifier must agree or the secret
+    // falls through to the generic deep-link route.
+    expect(isInviteUri('intent://inv\nite?secret=s3cr3t')).toBe(true);
+    expect(isInviteUri('intent://in\tvite?secret=s3cr3t')).toBe(true);
+    expect(isInviteUri('intent:\r\n//invite?secret=s3cr3t')).toBe(true);
+    expect(isInviteUri('intent://inv\nites?secret=s3cr3t')).toBe(false);
+  });
 });
 
 describe('parseInviteUri', () => {
+  it('parses an invite whose action carries URL-stripped line breaks', () => {
+    expect(parseInviteUri('intent://inv\nite?inviteId=inv_42&sec\tret=s3cr3t')).toMatchObject({
+      inviteId: 'inv_42',
+      secret: 's3cr3t',
+    });
+  });
+
   it('parses every component field including the tc= tunnel address', () => {
     expect(parseInviteUri(FULL_URI)).toEqual({
       hosts: ['192.168.1.10', '10.0.0.5'],
