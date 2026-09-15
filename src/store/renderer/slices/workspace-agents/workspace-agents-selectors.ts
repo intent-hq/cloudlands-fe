@@ -58,12 +58,12 @@ export const selectForegroundWorkspaceAgents = store.createSelector((state, wsId
   return result;
 });
 
-/** True when any foreground (top-level) agent session has unread messages. */
+/** True when any non-retired foreground (top-level) agent session has unread messages. */
 export const selectWorkspaceHasUnreadForegroundAgents = store.createSelector(
   (state, wsId: string): boolean => {
     return selectForegroundWorkspaceAgents
       .select(state, wsId)
-      .some((agent) => agent.hasUnread === true);
+      .some((agent) => !agent.retiredAt && agent.hasUnread === true);
   },
 );
 

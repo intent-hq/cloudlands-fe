@@ -1,4 +1,5 @@
 import { currentFrameTime, subscribeFrameClock } from '$lib/utils/frame-clock';
+import { onReducedMotionChange, prefersReducedMotion } from '$lib/utils/reduced-motion';
 import { intentMarkPoses } from './intent-mark-poses';
 import { intentMarkMotionTiming, type IntentMarkVariant } from './intent-mark-vector';
 export {
@@ -24,7 +25,6 @@ export function createIntentMarkMotion(
   const neutral = root.querySelector<SVGGElement>('[data-mark-layer]');
   if (!neutral) throw new Error('Intent mark layer is missing');
   const template = neutral.cloneNode(true) as SVGGElement;
-  const media = window.matchMedia('(prefers-reduced-motion: reduce)');
   let options = initial;
   // Avoid building invisible loops before the observer's first notification.
   let inViewport = typeof IntersectionObserver === 'undefined';
@@ -65,7 +65,8 @@ export function createIntentMarkMotion(
     root.dataset.motionState = 'neutral';
   };
 
-  const mustRest = () => media.matches || !inViewport || !visible || !windowFocused || destroyed;
+  const mustRest = () =>
+    prefersReducedMotion() || !inViewport || !visible || !windowFocused || destroyed;
   const canPlay = () => options.playing && !mustRest();
 
   const startLoop = (variant: IntentMarkVariant) => {
@@ -202,7 +203,7 @@ export function createIntentMarkMotion(
     attributeFilter: ['data-window-blurred'],
   });
   document.addEventListener('visibilitychange', handleVisibility);
-  media.addEventListener('change', handleMotionPreference);
+  const stopWatchingMotion = onReducedMotionChange(handleMotionPreference);
   reconcile();
 
   return {
@@ -218,7 +219,7 @@ export function createIntentMarkMotion(
       observer?.disconnect();
       windowFocusObserver.disconnect();
       document.removeEventListener('visibilitychange', handleVisibility);
-      media.removeEventListener('change', handleMotionPreference);
+      stopWatchingMotion();
       root.dataset.motionState = 'destroyed';
     },
   };

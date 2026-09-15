@@ -18,6 +18,7 @@ export const switchMetadata = {
     'src/lib/components/patterns/settings/SettingsControl.svelte',
     'src/lib/components/patterns/settings/custom-controls.ts',
     'src/lib/components/workspace/sidebar/FileChangesSection.svelte',
+    'src/lib/components/settings/ReduceMotionOnBatterySettings.svelte',
     'src/lib/components/workspace/sidebar/McpServersSection.svelte',
     'src/lib/components/workspace/sidebar/MergePanel.svelte',
     'src/routes/(app)/settings/+page.svelte',

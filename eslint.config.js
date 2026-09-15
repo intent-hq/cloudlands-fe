@@ -30,6 +30,10 @@ const semanticColorBaseline = Object.assign(
 );
 import noColdSvelteImportInTestsRule from './eslint-rules/no-cold-svelte-import-in-tests.js';
 import noFlushSyncInTeardownRule from './eslint-rules/no-flushsync-in-teardown.js';
+import noDirectReducedMotionQueryRule, {
+  SOURCE_OF_TRUTH_FILES as reducedMotionSourceOfTruthFiles,
+  TEST_FILE_GLOBS as reducedMotionTestFileGlobs,
+} from './eslint-rules/no-direct-reduced-motion-query.js';
 
 const intentPlugin = {
   rules: {
@@ -38,6 +42,7 @@ const intentPlugin = {
     ...designSystemRules,
     'no-cold-svelte-import-in-tests': noColdSvelteImportInTestsRule,
     'no-flushsync-in-teardown': noFlushSyncInTeardownRule,
+    'no-direct-reduced-motion-query': noDirectReducedMotionQueryRule,
   },
 };
 
@@ -468,7 +473,7 @@ export default [
     },
   },
   {
-    files: ['**/*.ts', '**/*.tsx'],
+    files: ['**/*.ts', '**/*.tsx', '**/*.mts', '**/*.cts'],
     languageOptions: {
       parser: typescriptParser,
       parserOptions: {
@@ -741,6 +746,23 @@ export default [
     },
     rules: {
       'intent/no-flushsync-in-teardown': 'error',
+    },
+  },
+  // A direct `prefers-reduced-motion` query (matchMedia in script, `@media` in a
+  // component <style>) sees only the OS preference and bypasses battery saver.
+  // Reduced motion has one source of truth — `--motion-reduced` in tokens.css,
+  // mirrored by `$lib/utils/reduced-motion` — so only those files may spell the
+  // query. `.css`/`.html` files are covered by scripts/check-reduced-motion-queries.mjs.
+  // Deliberately not `productionModuleIgnores`: generated files ship like any other
+  // source, so only tests and the source of truth are exempt.
+  {
+    files: ['src/**/*.{js,mjs,cjs,jsx,ts,tsx,mts,cts,svelte}'],
+    ignores: [...reducedMotionTestFileGlobs, ...reducedMotionSourceOfTruthFiles],
+    plugins: {
+      intent: intentPlugin,
+    },
+    rules: {
+      'intent/no-direct-reduced-motion-query': 'error',
     },
   },
   ...themisFullConfig,

@@ -26,7 +26,8 @@ let frameId = 0;
 let nowMs = 0;
 let reducedMotion = false;
 let initiallyIntersecting: boolean | undefined = true;
-let mediaChange: (() => void) | undefined;
+let mediaListener: ((event: { matches: boolean }) => void) | undefined;
+const mediaChange = () => mediaListener?.({ matches: reducedMotion });
 
 const frameStepMs = 1000 / 60;
 
@@ -60,7 +61,7 @@ beforeEach(() => {
   nowMs += 10_007;
   reducedMotion = false;
   initiallyIntersecting = true;
-  mediaChange = undefined;
+  mediaListener = undefined;
   Object.defineProperty(document, 'hidden', { configurable: true, value: false });
   vi.spyOn(performance, 'now').mockImplementation(() => nowMs);
   vi.stubGlobal(
@@ -134,7 +135,8 @@ beforeEach(() => {
       get matches() {
         return reducedMotion;
       },
-      addEventListener: (_event: string, callback: () => void) => (mediaChange = callback),
+      addEventListener: (_event: string, callback: (event: { matches: boolean }) => void) =>
+        (mediaListener = callback),
       removeEventListener: vi.fn(),
     })),
   });
@@ -263,7 +265,7 @@ describe('IntentMarkLoader', () => {
       await view.rerender({ variant, playing: true });
       document.dispatchEvent(new Event('visibilitychange'));
       reducedMotion = true;
-      mediaChange?.();
+      mediaChange();
     }
     expect(mutations).not.toHaveBeenCalled();
     expect(readStyle).not.toHaveBeenCalled();
@@ -440,7 +442,7 @@ describe('IntentMarkLoader', () => {
 
     expect(isDriven(root)).toBe(true);
     reducedMotion = true;
-    mediaChange?.();
+    mediaChange();
     expect(root.dataset.motionState).toBe('neutral');
     expect(isDriven(root)).toBe(false);
     expect(root.querySelector('[data-mark-layer="neutral"]')).not.toBeNull();

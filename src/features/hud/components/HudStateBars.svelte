@@ -84,7 +84,7 @@
   .hud-state-bar-blink .hud-state-bar-count {
     animation: hudblink 1.6s step-end infinite;
   }
-  @media (prefers-reduced-motion: reduce) {
+  @container style(--motion-reduced: 1) {
     .hud-state-bar-blink .hud-state-bar-label,
     .hud-state-bar-blink .hud-state-bar-count {
       animation: none;

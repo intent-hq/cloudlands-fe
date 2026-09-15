@@ -225,7 +225,7 @@
       opacity: 0.15;
     }
   }
-  @media (prefers-reduced-motion: reduce) {
+  @container style(--motion-reduced: 1) {
     .hud-scan-band {
       animation: none;
       display: none;

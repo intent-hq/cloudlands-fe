@@ -1,3 +1,4 @@
+import { prefersReducedMotion, onReducedMotionChange } from '$lib/utils/reduced-motion';
 import './svelte-motion-match-media-fallback';
 import { Spring } from 'svelte/motion';
 import type { Action } from 'svelte/action';
@@ -36,12 +37,6 @@ function measuredHeight(node: HTMLElement): number {
   );
 }
 
-function prefersReducedMotion(): MediaQueryList | undefined {
-  return typeof window === 'undefined' || typeof window.matchMedia !== 'function'
-    ? undefined
-    : window.matchMedia('(prefers-reduced-motion: reduce)');
-}
-
 /** Animates a wrapper's real height while preserving velocity across retargets. */
 export const animatedHeight: Action<HTMLElement, AnimatedHeightParameter> = (
   node,
@@ -49,7 +44,6 @@ export const animatedHeight: Action<HTMLElement, AnimatedHeightParameter> = (
 ) => {
   let { open } = resolveOptions(parameter);
   const { tier } = resolveOptions(parameter);
-  const media = prefersReducedMotion();
   const initialHeight = measuredHeight(node);
   const height = new Spring(open ? initialHeight : 0, spring[tier]);
   const previousOverflow = node.style.overflow;
@@ -63,10 +57,10 @@ export const animatedHeight: Action<HTMLElement, AnimatedHeightParameter> = (
   });
 
   const retarget = () => {
-    void height.set(open ? measuredHeight(node) : 0, { instant: media?.matches === true });
+    void height.set(open ? measuredHeight(node) : 0, { instant: prefersReducedMotion() });
   };
   const handleMotionPreference = () => {
-    if (media?.matches) void height.set(height.target, { instant: true });
+    if (prefersReducedMotion()) void height.set(height.target, { instant: true });
   };
   const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(retarget);
   let observedContent: Element | null = null;
@@ -87,7 +81,7 @@ export const animatedHeight: Action<HTMLElement, AnimatedHeightParameter> = (
           retarget();
         });
   mutationObserver?.observe(node, { childList: true, subtree: true });
-  media?.addEventListener('change', handleMotionPreference);
+  const stopMotionListener = onReducedMotionChange(handleMotionPreference);
 
   return {
     update(nextParameter = true) {
@@ -97,7 +91,7 @@ export const animatedHeight: Action<HTMLElement, AnimatedHeightParameter> = (
     destroy() {
       observer?.disconnect();
       mutationObserver?.disconnect();
-      media?.removeEventListener('change', handleMotionPreference);
+      stopMotionListener();
       disposeEffect();
       node.style.height = previousHeight;
       node.style.overflow = previousOverflow;

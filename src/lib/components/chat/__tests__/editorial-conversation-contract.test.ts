@@ -359,7 +359,7 @@ describe('editorial conversation presentation contract', () => {
     expect(input).toContain('rounded-(--radius-large)');
     expect(input).toContain('data-ring-state={ringState}');
     expect(input).not.toContain(':global(.panel:not(.focused) .rich-input-container) {');
-    expect(input).toContain('@media (prefers-reduced-motion: reduce)');
+    expect(input).toContain('@container style(--motion-reduced: 1)');
   });
 
   it('gives tool, context, and reasoning rows one shared muted shell', () => {

@@ -105,8 +105,8 @@
     outline-offset: -2px;
   }
 
-  /* Respect prefers-reduced-motion */
-  @media (prefers-reduced-motion: reduce) {
+  /* Respect reduced motion */
+  @container style(--motion-reduced: 1) {
     :global(.tab-overflow-menu-item) {
       transition: none;
     }

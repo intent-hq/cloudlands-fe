@@ -10,7 +10,7 @@
    * - Renders the backing buffer at half the CSS resolution
    * - Pauses when tab is hidden (Page Visibility API)
    * - Simplified shader with fewer blobs (5 instead of 10)
-   * - Respects prefers-reduced-motion
+   * - Respects reduced motion (OS preference or battery saver)
    */
   import { onMount, onDestroy } from 'svelte';
   import { browser } from '$app/environment';
@@ -19,6 +19,10 @@
     scheduleLayoutWrite,
     type CancelLayoutTask,
   } from '$lib/utils/layout-phases';
+  import {
+    onReducedMotionChange,
+    prefersReducedMotion as isReducedMotionPreferred,
+  } from '$lib/utils/reduced-motion';
 
   interface Props {
     agentId?: string;
@@ -558,8 +562,8 @@
   }
 
   // Handle reduced motion preference changes
-  function handleMotionPreference(e: MediaQueryListEvent) {
-    prefersReducedMotion = e.matches;
+  function handleMotionPreference(reduced: boolean) {
+    prefersReducedMotion = reduced;
     if (prefersReducedMotion) cancelScheduledRender();
     else scheduleRender();
   }
@@ -588,7 +592,7 @@
     // Check initial states
     isPageVisible = !document.hidden;
     isWindowFocused = !document.documentElement.hasAttribute('data-window-blurred');
-    prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    prefersReducedMotion = isReducedMotionPreferred();
     cachedDpr = Math.min(window.devicePixelRatio || 1, MAX_RENDER_DPR);
 
     // Listen for visibility changes
@@ -600,8 +604,7 @@
     });
 
     // Listen for motion preference changes
-    const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
-    motionQuery.addEventListener('change', handleMotionPreference);
+    const stopWatchingMotion = onReducedMotionChange(handleMotionPreference);
 
     // Listen for DPR changes (e.g., moving between retina/non-retina displays)
     setupDprListener();
@@ -620,7 +623,7 @@
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       windowFocusObserver.disconnect();
-      motionQuery.removeEventListener('change', handleMotionPreference);
+      stopWatchingMotion();
       window.removeEventListener('theme-changed', handleSemanticColorChange);
       themeObserver.disconnect();
       dprCleanup?.();

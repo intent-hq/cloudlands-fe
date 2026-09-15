@@ -2,10 +2,9 @@
   /**
    * In-app quit confirmation dialog (replaces the native message box when a
    * renderer window is available). Shows, before quitting/restarting:
-   * agents that will be interrupted, agents that keep running, and
-   * agent-owned browser tabs that will be disconnected, grouped by workspace. The primary button mirrors the native copy branching:
-   * "Quit" when anything is interrupted/disrupted, "Close" when only
-   * keep-running agents are listed. Escape/backdrop/X = cancel.
+   * agents that will be interrupted and agent-owned browser tabs that will be
+   * disconnected — each section only when non-empty. The primary button is
+   * always "Quit"; Escape/backdrop/X = cancel.
    */
   import { FormDialog } from '$lib/components/patterns/confirm';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
@@ -36,10 +35,7 @@
   const dialogDescriptionId = 'quit-confirmation-dialog-description';
 
   const interrupted = $derived(payload?.interrupted ?? []);
-  const keepRunning = $derived(payload?.keepRunning ?? []);
   const disruptedTabs = $derived(payload?.disruptedBrowserTabs ?? []);
-  /** Only keep-running agents → non-destructive "Close" framing. */
-  const closeOnly = $derived(interrupted.length === 0 && disruptedTabs.length === 0);
 
   const workspaces = $derived.by(() => {
     const groups = new Map<
@@ -73,11 +69,9 @@
       }
       return value;
     }
-    const agents = [...interrupted, ...keepRunning];
+    const agents = interrupted;
     for (const agent of interrupted)
       group(agent.workspaceId, agent.workspaceName).agents.push({ agent, interrupted: true });
-    for (const agent of keepRunning)
-      group(agent.workspaceId, agent.workspaceName).agents.push({ agent, interrupted: false });
     for (const tab of disruptedTabs) {
       const owner = agents.find((agent) => agent.agentId === tab.ownerAgentId);
       const workspaceId = tab.workspaceId ?? owner?.workspaceId;
@@ -102,19 +96,13 @@
     bind:open
     static={staticPosition}
     role="alertdialog"
-    title={closeOnly
-      ? m.quitConfirmation_modal_close_title()
-      : m.quitConfirmation_modal_quit_title()}
-    description={closeOnly
-      ? m.quitConfirmation_modal_close_description()
-      : m.quitConfirmation_modal_quit_description()}
+    title={m.quitConfirmation_modal_quit_title()}
+    description={m.quitConfirmation_modal_quit_description()}
     titleId={dialogTitleId}
     descriptionId={dialogDescriptionId}
-    submitLabel={closeOnly
-      ? m.quitConfirmation_modal_closeButton_label()
-      : m.quitConfirmation_modal_quitButton_label()}
+    submitLabel={m.quitConfirmation_modal_quitButton_label()}
     cancelLabel={m.quitConfirmation_modal_cancelButton_label()}
-    submitVariant={closeOnly ? 'primary' : 'destructive'}
+    submitVariant="destructive"
     class="max-w-2xl"
     focusContent
     onSubmit={() => respond(true)}
@@ -130,7 +118,7 @@
             >
           </h3>
           <ul class="space-y-1 pl-7 pr-2">
-            {#each workspace.agents as { agent, interrupted: willInterrupt } (agent.agentId)}
+            {#each workspace.agents as { agent } (agent.agentId)}
               <li class="flex min-w-0 items-center gap-2 py-1">
                 <span class="shrink-0"
                   ><AgentAvatar agentId={agent.agentId} variant="compact" /></span
@@ -141,13 +129,9 @@
                 >
                 <span
                   class="type-caption shrink-0 text-muted-foreground"
-                  title={willInterrupt
-                    ? m.quitConfirmation_modal_interruptedSection_description()
-                    : m.quitConfirmation_modal_keepRunningSection_description()}
+                  title={m.quitConfirmation_modal_interruptedSection_description()}
                 >
-                  {willInterrupt
-                    ? m.quitConfirmation_modal_interruptedSection_title()
-                    : m.quitConfirmation_modal_keepRunningSection_title()}
+                  {m.quitConfirmation_modal_interruptedSection_title()}
                 </span>
               </li>
             {/each}

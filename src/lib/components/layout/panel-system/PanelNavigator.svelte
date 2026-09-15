@@ -233,7 +233,7 @@
       box-shadow 120ms ease;
   }
 
-  @media (prefers-reduced-motion: reduce) {
+  @container style(--motion-reduced: 1) {
     .panel-navigator-tile {
       transition: none;
     }

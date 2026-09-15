@@ -147,3 +147,11 @@
     </div>
   {/if}
 </div>
+
+<style>
+  @container style(--motion-reduced: 1) {
+    [data-slot='list-section-content'] {
+      transition-duration: 0ms !important;
+    }
+  }
+</style>

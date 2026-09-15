@@ -461,7 +461,7 @@
       outline-color: hsl(var(--primary-ink));
     }
   }
-  @media (prefers-reduced-motion: reduce) {
+  @container style(--motion-reduced: 1) {
     .hud-anim-pulse,
     .hud-anim-blink,
     :global(.hud-ws-card-flash),

@@ -15,6 +15,7 @@ import QuestionWizard, { type QuestionAnswer } from '../QuestionWizard.svelte';
 import { createNullableMessageSource } from './nullable-message-source.svelte';
 import { wizardDraftKey } from '../wizard-draft-storage';
 import type { Question } from '$shared/types/question-resource';
+import { REDUCE_MOTION_ATTRIBUTE } from '$lib/utils/reduced-motion';
 
 const SINGLE: Question = {
   attachmentId: 'tar-aaa111bbb222',
@@ -143,6 +144,35 @@ describe('QuestionWizard', () => {
     expect(screen.getByText('Question 2 of 3')).toBeTruthy();
     expect(screen.getByText('Scope')).toBeTruthy();
     expect(onComplete).not.toHaveBeenCalled();
+  });
+
+  it('re-reads the reduced-motion flag per step so battery/AC flips apply without remount', async () => {
+    const root = document.documentElement;
+    const animate = vi.spyOn(Element.prototype, 'animate');
+    try {
+      setup([SINGLE, MULTI, LAST]);
+      animate.mockClear();
+
+      // Mounted on AC, then switched to battery: the next step must not animate.
+      root.setAttribute(REDUCE_MOTION_ATTRIBUTE, '');
+      await fireEvent.click(screen.getByText('OS keychain'));
+      expect(screen.getByText('2 of 3')).toBeTruthy();
+      expect(animate).not.toHaveBeenCalled();
+
+      // Plugged back in: the following step animates at full duration again.
+      root.removeAttribute(REDUCE_MOTION_ATTRIBUTE);
+      await fireEvent.click(screen.getByRole('button', { name: /skip/i }));
+      expect(screen.getByText('3 of 3')).toBeTruthy();
+      await waitFor(() => {
+        const durations = animate.mock.calls.map(([, options]) =>
+          typeof options === 'number' ? options : options?.duration,
+        );
+        expect(durations).toContain(150);
+      });
+    } finally {
+      root.removeAttribute(REDUCE_MOTION_ATTRIBUTE);
+      animate.mockRestore();
+    }
   });
 
   it('single-select final question completes on one click with the exact full payload', async () => {

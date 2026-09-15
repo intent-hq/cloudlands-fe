@@ -7,6 +7,7 @@ import {
   type SpringTierName,
 } from '$lib/motion';
 import { areAnimationsEnabled } from '$lib/utils/animations';
+import { prefersReducedMotion } from '$lib/utils/reduced-motion';
 import { beforeFollowBottomMutation, type FollowBottomMutation } from '$lib/utils/smartScroll';
 
 interface DisclosureMotionParams {

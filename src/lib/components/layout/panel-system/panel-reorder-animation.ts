@@ -1,5 +1,6 @@
 import type { AnimationConfig } from 'svelte/animate';
-import { prefersReducedMotion, spring, type SpringTierName } from '$lib/motion';
+import { spring, type SpringTierName } from '$lib/motion';
+import { prefersReducedMotion } from '$lib/utils/reduced-motion';
 
 interface PanelReorderAnimationParams {
   enabled?: boolean;

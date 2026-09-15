@@ -15,17 +15,17 @@ const FULL_PAYLOAD: QuitConfirmationShowPayload = {
   interrupted: [
     { agentId: 'a1', agentName: 'Local Agent', workspaceId: 'w1', workspaceName: 'Alpha' },
   ],
-  keepRunning: [{ agentId: 'a2', agentName: 'Remote Agent', workspaceName: 'Beta' }],
   disruptedBrowserTabs: [
     { tabId: 't1', ownerAgentId: 'a1', ownerAgentName: 'Local Agent', title: 'Docs page' },
   ],
 };
 
-const KEEP_RUNNING_ONLY: QuitConfirmationShowPayload = {
+const TABS_ONLY: QuitConfirmationShowPayload = {
   requestId: 'req-2',
   interrupted: [],
-  keepRunning: [{ agentId: 'a2', agentName: 'Remote Agent' }],
-  disruptedBrowserTabs: [],
+  disruptedBrowserTabs: [
+    { tabId: 't1', ownerAgentId: 'a2', ownerAgentName: 'Tab Owner', title: 'Docs page' },
+  ],
 };
 
 // Pre-warm the component module graph so the cold dynamic import is not
@@ -41,11 +41,7 @@ describe('QuitConfirmationModal', () => {
     render(QuitConfirmationModal, { props: { open: true, payload: FULL_PAYLOAD, onRespond } });
 
     expect(await screen.findByRole('alertdialog', { name: 'Quit Intent?' })).toBeTruthy();
-    expect(screen.getByText('Will be interrupted')).toBeTruthy();
-    expect(screen.getByText('Keep running')).toBeTruthy();
-    expect(screen.getByText('Browsers disconnected')).toBeTruthy();
     expect(screen.getAllByText('Local Agent').length).toBeGreaterThan(0);
-    expect(screen.getByText('Remote Agent')).toBeTruthy();
     expect(screen.getByText('Docs page')).toBeTruthy();
 
     await fireEvent.click(screen.getByRole('button', { name: 'Quit' }));
@@ -53,31 +49,30 @@ describe('QuitConfirmationModal', () => {
     expect(onRespond).toHaveBeenCalledExactlyOnceWith(true);
   });
 
-  it('renders close framing when only keep-running agents are listed', async () => {
+  it('keeps the quit framing when only disrupted tabs are listed', async () => {
     const onRespond = vi.fn();
     const QuitConfirmationModal = (await import('../QuitConfirmationModal.svelte')).default;
 
-    render(QuitConfirmationModal, {
-      props: { open: true, payload: KEEP_RUNNING_ONLY, onRespond },
-    });
+    render(QuitConfirmationModal, { props: { open: true, payload: TABS_ONLY, onRespond } });
 
-    expect(await screen.findByRole('alertdialog', { name: 'Close Intent?' })).toBeTruthy();
-    expect(screen.queryByText('Will be interrupted')).toBeNull();
-    expect(screen.queryByText('Browsers disconnected')).toBeNull();
+    expect(await screen.findByRole('alertdialog', { name: 'Quit Intent?' })).toBeTruthy();
+    expect(screen.queryByText('Local Agent')).toBeNull();
+    expect(screen.getByText('Docs page')).toBeTruthy();
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Quit' }));
 
     expect(onRespond).toHaveBeenCalledExactlyOnceWith(true);
   });
 
-  it('groups mixed outcomes and owner tabs together, keeping unassigned agents separate', async () => {
+  it('groups interrupted agents and owner tabs together, keeping unassigned agents separate', async () => {
     const QuitConfirmationModal = (await import('../QuitConfirmationModal.svelte')).default;
     render(QuitConfirmationModal, {
       props: {
         open: true,
         payload: {
           ...FULL_PAYLOAD,
-          keepRunning: [
+          interrupted: [
+            ...FULL_PAYLOAD.interrupted,
             { agentId: 'a2', agentName: 'Remote Agent', workspaceId: 'w1', workspaceName: 'Alpha' },
             { agentId: 'a3', agentName: 'Unassigned Agent' },
             {
@@ -113,7 +108,7 @@ describe('QuitConfirmationModal', () => {
         payload: {
           requestId: 'tabs-only',
           interrupted: [],
-          keepRunning: [],
+          interrupted: [...FULL_PAYLOAD.interrupted],
           disruptedBrowserTabs: [
             {
               tabId: 'tab',

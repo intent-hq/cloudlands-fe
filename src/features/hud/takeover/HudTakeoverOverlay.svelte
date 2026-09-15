@@ -23,7 +23,7 @@
   import { ensureWorkspaceTasksLoaded } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
   import { hydrateTaskAgentAssociationsRequested } from '$store/renderer/slices/task-agent-associations/task-agent-associations-slice';
   import { microConnectedReadable } from '$features/hardware-console/device/connection-status';
-  import { watchReducedMotion } from '../right-column/hud-slide.svelte';
+  import { watchReducedMotion } from '$lib/utils/reduced-motion.svelte';
   import { onTakeoverTrigger } from './hud-takeover-bus';
   import {
     activeTakeoverTrigger,
@@ -1173,7 +1173,7 @@
   .ov-no-motion .ov-map-pan {
     transition: none;
   }
-  @media (prefers-reduced-motion: reduce) {
+  @container style(--motion-reduced: 1) {
     .ov-backdrop,
     .ov-fill,
     .ov-edge-h,

@@ -14,6 +14,7 @@
 
   import type { PanelTab } from '$features/layout/panel-layout-adapter';
   import { cn } from '$lib/utils';
+  import { prefersReducedMotion } from '$lib/utils/reduced-motion';
   import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
   import {
     faXmark,
@@ -1061,6 +1062,7 @@
   const activeTab = $derived(tabs.find((t) => t.id === activeTabId) || tabs[0] || null);
 
   function paneStackLineMotion(node: Element, { offset }: { offset: number }): TransitionConfig {
+    if (prefersReducedMotion()) return { duration: 0 };
     return springIn(node, { tier: 'moderate', y: offset });
   }
 

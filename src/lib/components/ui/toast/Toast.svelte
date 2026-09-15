@@ -474,7 +474,7 @@
     animation-play-state: paused;
   }
 
-  @media (prefers-reduced-motion: reduce) {
+  @container style(--motion-reduced: 1) {
     :global([data-sonner-toast][data-swiping='false']),
     :global([data-sonner-toast] button[data-button]),
     :global([data-sonner-toast] button[data-button]::before) {

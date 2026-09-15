@@ -28,6 +28,7 @@
 <script lang="ts">
   import { WorkspaceStatus, type Workspace } from '$shared/types';
   import { onMount } from 'svelte';
+  import { watchReducedMotion } from '$lib/utils/reduced-motion.svelte';
   import { WorkspaceId } from '$shared/types/branded-ids';
   import { Button } from '$lib/components/ui/button';
   import IntentNavigationIcon from '$lib/icons/IntentNavigationIcon.svelte';
@@ -59,7 +60,7 @@
   }: WorkspaceTabStripGeometryPreviewProps = $props();
   let activeTabBounds = $state<WorkspaceTabBorderMaskBounds | null>(null);
   let activeTabTracking = $state(false);
-  let prefersReducedMotion = $state(false);
+  const reducedMotion = watchReducedMotion();
   const leadingInsetPx = $derived(getWorkspaceTabLeadingInsetPx(sidebarPanelOpen));
   const scrollerMarginLeftPx = $derived(getWorkspaceTabScrollerMarginLeftPx(sidebarPanelOpen));
 
@@ -92,13 +93,7 @@
 
   initializeTabs();
 
-  onMount(() => {
-    const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
-    const updateMotionPreference = () => (prefersReducedMotion = motionQuery.matches);
-    updateMotionPreference();
-    motionQuery.addEventListener('change', updateMotionPreference);
-    return () => motionQuery.removeEventListener('change', updateMotionPreference);
-  });
+  onMount(() => reducedMotion.cleanup);
 </script>
 
 <div
@@ -139,7 +134,7 @@
         style:left={`${activeTabBounds.left}px`}
         style:width={`${activeTabBounds.width}px`}
         style:mask-image={getWorkspaceTabBorderMaskImage(activeTabBounds)}
-        style:transition={activeTabTracking || prefersReducedMotion
+        style:transition={activeTabTracking || reducedMotion.current
           ? 'none'
           : `left ${WORKSPACE_TAB_MOTION_DURATION_MS}ms ${WORKSPACE_TAB_MOTION_EASING}, width ${WORKSPACE_TAB_MOTION_DURATION_MS}ms ${WORKSPACE_TAB_MOTION_EASING}`}
         data-active-tab-border-mask

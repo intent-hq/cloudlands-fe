@@ -107,20 +107,6 @@
         workspaceName: 'Design system',
       },
     ],
-    keepRunning: [
-      {
-        agentId: 'agent-remote',
-        agentName: 'Remote verifier',
-        workspaceId: 'release',
-        workspaceName: 'Release prep',
-      },
-      {
-        agentId: 'agent-design',
-        agentName: 'Design reviewer',
-        workspaceId: 'design',
-        workspaceName: 'Design system',
-      },
-    ],
     disruptedBrowserTabs: [
       {
         tabId: 'tab-docs',

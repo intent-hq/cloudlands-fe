@@ -1,5 +1,6 @@
 import { USER_MESSAGE_SURFACE_CLASS, USER_MESSAGE_TEXT_CLASS } from './user-message-surface';
 import { spring } from '$lib/motion';
+import { prefersReducedMotion } from '$lib/utils/reduced-motion';
 import { followToBottom } from '$lib/utils/smartScroll';
 
 export const MESSAGE_SEND_TRANSITION_DURATION_MS = spring.slow.settleMs;
@@ -30,10 +31,6 @@ interface AnimateMessageSendOptions {
   followBottom?: boolean;
   reducedMotion?: boolean;
   signal?: AbortSignal;
-}
-
-function prefersReducedMotion(): boolean {
-  return window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
 }
 
 function messageSendEasing(node: HTMLElement): string | undefined {

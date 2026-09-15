@@ -1,4 +1,5 @@
 import type { AgentMessage } from '$shared/types';
+import { getQuestionFromResourceBlock } from '$shared/types/question-resource';
 import type { StoreState } from '$store/renderer/types';
 import {
   selectAgentIsResponding,
@@ -81,6 +82,70 @@ export function deriveWizardPendingQuestions(
   if (!pending) return null;
   if (isQuestionMessageDismissed(session?.metadata, pending.messageId)) return null;
   return pending;
+}
+
+/**
+ * True when the locally cached marked row carries its terminal question
+ * content: a daemon-canonical settled assistant row with at least one
+ * question resource. A `provisional` row — one the renderer settled itself
+ * (placeholder, firehose-settled row, or a partial frozen when the standing
+ * subscription closed mid-turn) — or one still flagged as streaming predates
+ * the §7.1 delta that delivers the drained question blocks, so it cannot
+ * speak for the marker: the indicator (`deriveAgentHasPendingQuestion`)
+ * treats it as absent and stays lit. The wizard itself
+ * (`deriveWizardPendingQuestions` → `derivePendingQuestions`) is not gated
+ * here: a provisional row that already carries question blocks still yields
+ * its set, as it did before the marker existed.
+ */
+function hasTerminalQuestionContent(message: AgentMessage): boolean {
+  return (
+    message.role === 'assistant' &&
+    message.provisional !== true &&
+    message.isStreaming !== true &&
+    (message.contentBlocks ?? []).some((block) => getQuestionFromResourceBlock(block) !== null)
+  );
+}
+
+/**
+ * Indicator-only pending predicate for the agent card / panel avatar /
+ * sidebar badge. True when the wizard gate yields a set, OR when the daemon
+ * marker is set and nothing local resolves it: no dismissal, no tagged answer
+ * row (in the tail or still queued), and no local copy of the marked message
+ * that actually carries its question content (a frozen partial / empty
+ * placeholder left behind when the chat went out of view mid-turn does not
+ * count — only the standing `chat.subscribe` delivers the terminal question
+ * blocks, and the firehose writes no rows for an uncovered agent). The marker
+ * reaches session metadata independently of the transcript, so an
+ * out-of-view agent must light up on the marker alone. Mirrors
+ * `deriveMarkedQuestionRecoveryState`'s fail-closed stance: a `not-found` /
+ * exhausted recovery for the current marker still pends until the daemon
+ * clears or replaces the marker. The wizard itself keeps calling
+ * `deriveWizardPendingQuestions` — it needs the actual question set.
+ */
+export function deriveAgentHasPendingQuestion(
+  state: StoreState,
+  agentId: string,
+  messages: readonly AgentMessage[],
+): boolean {
+  if (deriveWizardPendingQuestions(state, agentId, messages)) return true;
+  const session = state.agentSessions?.byAgentId[agentId];
+  const marker = classifyPendingQuestionMarker(session?.metadata?.pendingQuestionsMessageId);
+  if (marker.kind !== 'set') return false;
+  if (isQuestionMessageDismissed(session?.metadata, marker.messageId)) return false;
+  if (isQuestionSetAnswered(messages, marker.messageId)) return false;
+  const queuedMessages = selectAgentQueueMessages.select(state, agentId);
+  if (isQuestionSetAnsweredInQueue(queuedMessages, marker.messageId)) return false;
+  const markedMessage =
+    messages.find((message) => message.id === marker.messageId) ??
+    selectAgentMessageById.select(state, agentId, marker.messageId);
+  if (markedMessage) return !hasTerminalQuestionContent(markedMessage);
+  const recovery = state.chatState?.byAgentId[agentId]?.pendingQuestionRecovery;
+  const hasRecoveredSet =
+    recovery?.messageId === marker.messageId &&
+    recovery.status === 'found' &&
+    !!recovery.questions &&
+    recovery.questions.length > 0;
+  return !hasRecoveredSet;
 }
 
 export interface MarkedQuestionRecoveryState {

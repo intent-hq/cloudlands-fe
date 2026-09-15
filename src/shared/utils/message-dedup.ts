@@ -1,3 +1,4 @@
+import { deepEqual } from 'fast-equals';
 import type { AgentMessage } from '$shared/types';
 import { getContentBlockFingerprint, getContentBlocksRichness } from './content-block-helpers';
 
@@ -299,19 +300,61 @@ function getPreferredIdentityMessage(existing: AgentMessage, incoming: AgentMess
   return incoming;
 }
 
+function withoutProvisional(message: AgentMessage): AgentMessage {
+  if (message.provisional === undefined) return message;
+  const { provisional: _provisional, ...rest } = message;
+  return rest;
+}
+
+/**
+ * A settled row the renderer did not write itself: daemon-canonical. Liveness
+ * is either flag, matching the anchor consumer (`isStreaming: true` or
+ * `streamingComplete: false`).
+ */
+function isReconciledRow(message: AgentMessage): boolean {
+  return (
+    message.provisional !== true &&
+    message.isStreaming !== true &&
+    message.streamingComplete !== false
+  );
+}
+
+/** Structural equality of the blocks a row carries; the fingerprint is lossy. */
+function hasSameContent(a: AgentMessage, b: AgentMessage): boolean {
+  return deepEqual(a.contentBlocks ?? [], b.contentBlocks ?? []);
+}
+
+/**
+ * The renderer-local `provisional` marker never survives a merge whose result
+ * IS the canonical row's content, whichever side keeps identity: the losing
+ * side's marker is dropped before the spread, and when the losing side is a
+ * reconciled row whose content the merged row carries (structurally equal),
+ * the winner's marker comes off too. The marker stays when the loser is
+ * still live, or when the merge kept the winner's differing (partial)
+ * content — a near-duplicate merge does not deliver the canonical blocks, so
+ * the row is still unreconciled.
+ */
+function reconcileProvisional(merged: AgentMessage, losing: AgentMessage): AgentMessage {
+  if (merged.provisional !== true || !isReconciledRow(losing)) return merged;
+  return hasSameContent(merged, losing) ? withoutProvisional(merged) : merged;
+}
+
 function mergeLogicalMessage(existing: AgentMessage, incoming: AgentMessage): AgentMessage {
   const preferredIdentityMessage = getPreferredIdentityMessage(existing, incoming);
   const secondaryMessage = preferredIdentityMessage === existing ? incoming : existing;
-  return {
-    ...secondaryMessage,
-    ...preferredIdentityMessage,
-    id: preferredIdentityMessage.id,
-    appMessageId: getAppMessageId(incoming) ?? getAppMessageId(existing),
-    metadata:
-      existing.metadata || incoming.metadata
-        ? { ...secondaryMessage.metadata, ...preferredIdentityMessage.metadata }
-        : undefined,
-  };
+  return reconcileProvisional(
+    {
+      ...withoutProvisional(secondaryMessage),
+      ...preferredIdentityMessage,
+      id: preferredIdentityMessage.id,
+      appMessageId: getAppMessageId(incoming) ?? getAppMessageId(existing),
+      metadata:
+        existing.metadata || incoming.metadata
+          ? { ...secondaryMessage.metadata, ...preferredIdentityMessage.metadata }
+          : undefined,
+    },
+    secondaryMessage,
+  );
 }
 
 function mergeStreamingFinalizationDuplicate(
@@ -321,7 +364,7 @@ function mergeStreamingFinalizationDuplicate(
   const finalizedMessage = existing.isStreaming === true ? incoming : existing;
   const streamingMessage = finalizedMessage === existing ? incoming : existing;
   return {
-    ...streamingMessage,
+    ...withoutProvisional(streamingMessage),
     ...finalizedMessage,
     id: finalizedMessage.id,
     appMessageId: getAppMessageId(finalizedMessage) ?? getAppMessageId(streamingMessage),

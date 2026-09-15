@@ -345,6 +345,7 @@ import {
   installIntentCli,
   autoRepairCliSymlink,
 } from '../features/system/main/system.ipc';
+import { setupPowerStateIPC } from '../features/system/main/power-state';
 import { cleanupTerminals, setupTerminalIPC } from '../features/terminal/main/terminal.ipc';
 import { setupUserActivityIPC } from '../features/user-activity/main/user-activity.ipc';
 import { setupFirstVisitStateIPC } from '../features/workspace/main/first-visit-state.ipc';
@@ -1529,6 +1530,7 @@ app.whenReady().then(async () => {
   setupWorkspaceSummaryIPC();
   setupFileIPC();
   setupSystemIPC();
+  setupPowerStateIPC();
   await setupConfigIPC();
   registerIDEHandlers(); // Needed for IDE integration
   registerExternalEditorsHandlers(); // Needed for external editor detection and opening

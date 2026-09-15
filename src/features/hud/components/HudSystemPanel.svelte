@@ -94,7 +94,7 @@
     color: hsl(var(--danger));
     animation: hudblink 1.6s step-end infinite;
   }
-  @media (prefers-reduced-motion: reduce) {
+  @container style(--motion-reduced: 1) {
     .hud-system-dot-online,
     .hud-system-offline {
       animation: none;

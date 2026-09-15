@@ -38,7 +38,7 @@
   import { selectPendingCount } from '$store/renderer/slices/permission/permission-selectors';
   import { safeDisclosureTransition } from './disclosure-motion';
   import { selectHudAgentHasPendingQuestion } from '$store/renderer/slices/hud/hud-selectors';
-  import { deriveWizardPendingQuestions } from './questions/wizard-gate';
+  import { deriveAgentHasPendingQuestion } from './questions/wizard-gate';
   import { findSourcePanelId } from '$lib/utils/workspace-navigation';
   import { updateSession as updateAgentSessionFields } from '$store/renderer/slices/agent-session/agent-session-slice';
   import {
@@ -515,7 +515,8 @@
   const attentionRequest = $derived(getAgentAttentionRequest($agent$));
 
   // Mirrors PanelHeaderAgentAvatar / the mini dock: captured HUD question or
-  // transcript-derived pending question set.
+  // marker/transcript-derived pending question (the marker alone suffices for
+  // an out-of-view agent whose question row is not in the local store).
   const hasQuestion = $derived.by(() => {
     if ($hasCapturedQuestion$) return true;
     // The shared gate reads the responding flag, the marker/dismissal metadata
@@ -526,7 +527,7 @@
     void $agent$?.metadata?.pendingQuestionsMessageId;
     void $agent$?.metadata?.dismissedQuestionsMessageId;
     void $pendingQuestionRecovery$;
-    return deriveWizardPendingQuestions(appStore.state, agentId, $agent$?.messages ?? []) !== null;
+    return deriveAgentHasPendingQuestion(appStore.state, agentId, $agent$?.messages ?? []);
   });
 
   // Canonical running predicate for the session, independent of the display
@@ -1089,7 +1090,7 @@
   }
 
   /* Reduced motion support */
-  @media (prefers-reduced-motion: reduce) {
+  @container style(--motion-reduced: 1) {
     :global(.agent-glow-active) {
       animation: none;
       box-shadow: 0 0 10px 3px rgba(16, 185, 129, 0.12);

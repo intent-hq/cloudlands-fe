@@ -24,7 +24,7 @@
   import HudWorkspaceCard from './HudWorkspaceCard.svelte';
   import { applyHudGridFilter } from './hud-grid-filter';
   import { createCardVisibilityGate } from './hud-card-visibility';
-  import { watchReducedMotion } from '../right-column/hud-slide.svelte';
+  import { watchReducedMotion } from '$lib/utils/reduced-motion.svelte';
   import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
 
   let {

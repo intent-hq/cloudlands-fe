@@ -179,4 +179,9 @@
     opacity: 0.6;
     white-space: nowrap;
   }
+  @container style(--motion-reduced: 1) {
+    :global(.link-tooltip) {
+      animation: none;
+    }
+  }
 </style>

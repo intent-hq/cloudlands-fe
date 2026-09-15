@@ -20,7 +20,8 @@
     attentionMessageText,
     attentionSourceLabel,
   } from './hud-right-column-labels';
-  import { HudSlide, watchReducedMotion } from './hud-slide.svelte';
+  import { watchReducedMotion } from '$lib/utils/reduced-motion.svelte';
+  import { HudSlide } from './hud-slide.svelte';
 
   /** Mock's FLIP offset: one attention row (~54px) + list gap (10px). */
   const SLIDE_OFFSET_PX = 64;
@@ -270,7 +271,7 @@
       background: transparent;
     }
   }
-  @media (prefers-reduced-motion: reduce) {
+  @container style(--motion-reduced: 1) {
     .hud-attention-blink,
     .hud-attention-row-hint {
       animation: none !important;

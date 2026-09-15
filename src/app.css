@@ -46,6 +46,11 @@
    `.dark`/`.light` on the root element (src/lib/utils/theme.ts), so `dark:`
    variants must key off the class, not the OS `prefers-color-scheme` query. */
 @custom-variant dark (&:where(.dark, .dark *));
+/* The built-in `motion-reduce:` variant compiles to the raw OS media query, which
+   battery saver (`:root[data-reduce-motion]`) cannot reach. Route it through the
+   `--motion-reduced` token from tokens.css so every `motion-reduce:*` utility
+   follows the same single source of truth as the hand-written component CSS. */
+@custom-variant motion-reduce (@container style(--motion-reduced: 1));
 
 :root {
   /* Canonical navigation-row geometry. Product rows select compact or regular density. */
@@ -367,7 +372,7 @@ textarea::placeholder {
   background: hsl(var(--overlay) / 0.16);
 }
 
-@media (prefers-reduced-motion: reduce) {
+@container style(--motion-reduced: 1) {
   [data-slot='scroll-area-scrollbar'],
   [data-slot='scroll-area-thumb'] {
     transition: none;
@@ -757,14 +762,14 @@ body.panel-resizing webview {
 }
 
 /* ===== Reduced motion support ===== */
-/* Respects user's motion preferences for accessibility */
+/* Follows `--motion-reduced` (OS preference or battery saver), see tokens.css */
 html[data-window-blurred] *,
 html[data-window-blurred] *::before,
 html[data-window-blurred] *::after {
   animation-play-state: paused !important;
 }
 
-@media (prefers-reduced-motion: reduce) {
+@container style(--motion-reduced: 1) {
   /* Disable infinite animations */
   .animate-tool-pulse,
   .streaming-cursor,

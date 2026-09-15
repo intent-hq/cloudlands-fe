@@ -1,3 +1,4 @@
+import { prefersReducedMotion } from '$lib/utils/reduced-motion';
 import { cubicOut } from 'svelte/easing';
 import {
   Spring as SvelteSpring,
@@ -50,12 +51,7 @@ export const spring = {
   },
 } as const satisfies Record<SpringTierName, SpringTier>;
 
-export function prefersReducedMotion(): boolean {
-  return (
-    typeof window !== 'undefined' &&
-    window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches === true
-  );
-}
+export { prefersReducedMotion } from '$lib/utils/reduced-motion';
 
 /** A tier-bound Spring whose updates settle immediately for reduced motion. */
 export class Spring<T> extends SvelteSpring<T> {
