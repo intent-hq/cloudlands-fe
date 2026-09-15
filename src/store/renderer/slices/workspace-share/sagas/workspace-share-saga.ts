@@ -22,14 +22,13 @@
  * the `WorkspaceShareTarget` it was issued for and every roster settlement its
  * workspace id, so the reducer can drop a reply that outlived its surface.
  *
- * Secrets: the one-time invite url never enters an action, the store, or a
- * log line — it is parked in `invite-link-vault` and only its handle rides
- * `shareInviteCreated`. Failures are logged as bounded codes only.
+ * Invite links ride the store as ordinary state (`invite.url` on every open
+ * row, `createdLink.url` for the panel); failures are logged as bounded codes
+ * only, never the daemon message.
  */
 
 import { all, call, put, takeEvery, takeLatest, type SagaGenerator } from 'typed-redux-saga';
 
-import { clearInviteLinks, storeInviteLink } from '$features/workspace-sharing/invite-link-vault';
 import {
   workspaceSharingClient,
   type ShareFailure,
@@ -50,7 +49,6 @@ import {
   selectWorkspaceRosterTracked,
 } from '../workspace-share-selectors';
 import {
-  closeShareDialog,
   openShareDialog,
   shareAccessWithheld,
   shareActionSettled,
@@ -156,7 +154,7 @@ function* manageableTarget(): SagaGenerator<WorkspaceShareTarget | null> {
 /**
  * False once the dialog closed or retargeted while an RPC was in flight: the
  * reply is dropped here (the reducer would drop it too, but a stale create
- * must not park its url in the vault or trigger a re-read for the new target).
+ * must not trigger a re-read for the new target).
  */
 function* stillTargets(target: WorkspaceShareTarget): SagaGenerator<boolean> {
   const current = yield* selectShareTarget.effect();
@@ -234,14 +232,13 @@ function* createInvite(action: ReturnType<typeof shareInviteCreateRequested>): S
     );
     return;
   }
-  const linkHandle = yield* call(storeInviteLink, outcome.result.url);
   yield* put(
     shareInviteCreated({
       target,
       request,
       link: {
         inviteId: outcome.result.invite.id,
-        linkHandle,
+        url: outcome.result.url,
         pinLogin: outcome.result.invite.pinLogin,
       },
     }),
@@ -296,12 +293,7 @@ function* removeMember(action: ReturnType<typeof shareMemberRemoveRequested>): S
 }
 
 function* requestDataOnOpen(): SagaGenerator<void> {
-  yield* call(clearInviteLinks);
   yield* put(shareDataRequested());
-}
-
-function* clearLinksOnClose(): SagaGenerator<void> {
-  yield* call(clearInviteLinks);
 }
 
 /** Hover card: `workspace.members.list` for one workspace (Member+ may read). */
@@ -367,7 +359,6 @@ function* refreshOnMembershipChange(
 export function* workspaceShareSaga(): SagaGenerator<void> {
   yield* all([
     takeEvery(openShareDialog, requestDataOnOpen),
-    takeEvery(closeShareDialog, clearLinksOnClose),
     takeEvery(shareMembershipChanged, refreshOnMembershipChange),
     takeEvery(
       shareDataRequested,
