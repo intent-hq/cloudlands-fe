@@ -1094,7 +1094,7 @@
   "workspace_card_viewSpec_label": "View Spec",
   "workspace_codeChanges_readyToPush_many": "{count} commits ready to push",
   "workspace_codeChanges_readyToPush_one": "1 commit ready to push",
-  "workspace_commitDrawer_autoCommitWhenDone_label": "Auto commit",
+  "workspace_commitDrawer_autoCommitWhenDone_label": "Auto-commit when done",
   "workspace_commitDrawer_commitMessage_placeholder": "Commit message...",
   "workspace_commitDrawer_commit_label": "Commit",
   "workspace_commitDrawer_committing_label": "Committing...",
