@@ -4541,6 +4541,7 @@
   "daemonStatus_overlay_cannotConnectTitle_label": "Impossible de se connecter à intentd",
   "daemonStatus_overlay_connectionLimitTitle_label": "Limite de connexions de l'hôte atteinte",
   "daemonStatus_overlay_connectionLimit_description": "L'hôte a atteint sa limite de connexions invitées. Reconnexion automatique dès qu'une place se libère.",
+  "daemonStatus_overlay_connectionLimitRetryAfter_description": "L’hôte a atteint sa limite de connexions invitées. Nouvelle tentative dans environ {seconds} secondes, puis automatiquement dès qu’une place se libère.",
   "daemonStatus_overlay_stoppedTitle_label": "intentd est arrêté",
   "daemonStatus_overlay_startupFailed_description": "L'application exécute son propre démon intentd, et il n'a pas pu démarrer.",
   "daemonStatus_overlay_startupFailedWithReason_description": "L'application exécute son propre démon intentd, et il n'a pas pu démarrer ({reason}).",

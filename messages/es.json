@@ -4541,6 +4541,7 @@
   "daemonStatus_overlay_cannotConnectTitle_label": "No se puede conectar con intentd",
   "daemonStatus_overlay_connectionLimitTitle_label": "Límite de conexiones del host alcanzado",
   "daemonStatus_overlay_connectionLimit_description": "El host ha alcanzado su límite de conexiones de invitados. Se reconectará automáticamente cuando se libere un puesto.",
+  "daemonStatus_overlay_connectionLimitRetryAfter_description": "El host ha alcanzado su límite de conexiones de invitados. Se reintentará en unos {seconds} segundos y automáticamente cuando se libere un puesto.",
   "daemonStatus_overlay_stoppedTitle_label": "intentd está detenido",
   "daemonStatus_overlay_startupFailed_description": "La aplicación ejecuta su propio daemon intentd, y este no pudo iniciarse.",
   "daemonStatus_overlay_startupFailedWithReason_description": "La aplicación ejecuta su propio daemon intentd, y este no pudo iniciarse ({reason}).",

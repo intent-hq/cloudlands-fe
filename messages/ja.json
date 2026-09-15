@@ -4541,6 +4541,7 @@
   "daemonStatus_overlay_cannotConnectTitle_label": "intentd に接続できません",
   "daemonStatus_overlay_connectionLimitTitle_label": "ホストの接続上限に達しました",
   "daemonStatus_overlay_connectionLimit_description": "ホストはゲスト接続の上限に達しています。空きができ次第、自動的に再接続します。",
+  "daemonStatus_overlay_connectionLimitRetryAfter_description": "ホストはゲスト接続の上限に達しています。約{seconds}秒後に再試行し、空きができ次第、自動的に再接続します。",
   "daemonStatus_overlay_stoppedTitle_label": "intentd は停止しています",
   "daemonStatus_overlay_startupFailed_description": "アプリは独自の intentd デーモンを実行しますが、起動に失敗しました。",
   "daemonStatus_overlay_startupFailedWithReason_description": "アプリは独自の intentd デーモンを実行しますが、起動に失敗しました（{reason}）。",

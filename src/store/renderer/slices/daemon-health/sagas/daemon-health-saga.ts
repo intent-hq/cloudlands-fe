@@ -69,6 +69,8 @@ interface BackendStatusPayload {
   reconnectAttempts?: number;
   /** The last connect attempt was refused by the host's guest connection cap (HTTP 503). */
   connectionLimited?: boolean;
+  /** The wait main scheduled before its next attempt while `connectionLimited`. */
+  connectionLimitRetryAfterMs?: number | null;
   /**
    * Epoch ms of the first drop main observed while a user-requested daemon
    * update is outstanding for this backend.
@@ -182,6 +184,7 @@ function statusAction(payload: BackendStatusPayload, snapshot: boolean) {
       : payload.reason,
     reconnectAttempts: payload.reconnectAttempts,
     connectionLimited: payload.connectionLimited,
+    connectionLimitRetryAfterMs: payload.connectionLimitRetryAfterMs,
     daemonUpdateDisconnectedAt: payload.daemonUpdateDisconnectedAt,
   });
 }

@@ -4541,6 +4541,7 @@
   "daemonStatus_overlay_cannotConnectTitle_label": "无法连接到 intentd",
   "daemonStatus_overlay_connectionLimitTitle_label": "已达到主机连接上限",
   "daemonStatus_overlay_connectionLimit_description": "主机已达到访客连接上限。名额空出后将自动重新连接。",
+  "daemonStatus_overlay_connectionLimitRetryAfter_description": "主机已达到访客连接上限。将在约 {seconds} 秒后重试，名额空出后会自动重新连接。",
   "daemonStatus_overlay_stoppedTitle_label": "intentd 已停止",
   "daemonStatus_overlay_startupFailed_description": "应用运行其自带的 intentd 守护进程，但启动失败。",
   "daemonStatus_overlay_startupFailedWithReason_description": "应用运行其自带的 intentd 守护进程，但启动失败（{reason}）。",

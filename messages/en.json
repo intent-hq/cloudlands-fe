@@ -4541,6 +4541,7 @@
   "daemonStatus_overlay_cannotConnectTitle_label": "Cannot connect to intentd",
   "daemonStatus_overlay_connectionLimitTitle_label": "Host connection limit reached",
   "daemonStatus_overlay_connectionLimit_description": "The host has reached its guest connection limit. Reconnecting automatically once a seat frees up.",
+  "daemonStatus_overlay_connectionLimitRetryAfter_description": "The host has reached its guest connection limit. Retrying in about {seconds} seconds, and automatically once a seat frees up.",
   "daemonStatus_overlay_stoppedTitle_label": "intentd is stopped",
   "daemonStatus_overlay_startupFailed_description": "The app runs its own intentd daemon, and it failed to start.",
   "daemonStatus_overlay_startupFailedWithReason_description": "The app runs its own intentd daemon, and it failed to start ({reason}).",

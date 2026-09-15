@@ -100,11 +100,6 @@ const DEFAULT_RECONNECT_MS = 1_000;
 // a prompt automatic reconnect once the daemon comes back. Retries continue
 // indefinitely (there is no give-up).
 const DEFAULT_MAX_RECONNECT_MS = 5_000;
-// A 503 from the daemon's guest connection cap (intent-hq/intentd#1917) is
-// transient but not something a prompt retry resolves — a seat frees only
-// when another guest connection closes — so the retry that follows it waits
-// this long instead of the ordinary backoff. Bounded and slow, never tight.
-const CONNECTION_LIMIT_RECONNECT_MS = 30_000;
 
 /** §5.17 global handshake method — carries the stable client identity. */
 const HELLO_METHOD = 'client.hello';
@@ -164,6 +159,8 @@ export class JsonRpcClient extends EventEmitter {
   private reconnectAttempts = 0;
   /** The last connect attempt was refused by the guest connection cap (HTTP 503). */
   private connectionLimited = false;
+  /** The daemon-requested wait before the next attempt while `connectionLimited`. */
+  private connectionLimitRetryAfterMs: number | null = null;
   /** Handlers for daemon-initiated (reverse) requests, keyed by method name. */
   private readonly reverseHandlers = new Map<string, ReverseRequestHandler>();
 
@@ -214,6 +211,16 @@ export class JsonRpcClient extends EventEmitter {
     return this.connectionLimited;
   }
 
+  /**
+   * The wait the refusing daemon asked for (its `Retry-After`, clamped, or
+   * the default cadence) while {@link isConnectionLimited}; `null` otherwise.
+   * The slow retry is scheduled on exactly this value, so the renderer can
+   * show the actual wait.
+   */
+  getConnectionLimitRetryAfterMs(): number | null {
+    return this.connectionLimited ? this.connectionLimitRetryAfterMs : null;
+  }
+
   /** Connection config (transport type and target). */
   getConfig(): BackendConnectionConfig {
     return this.config;
@@ -233,7 +240,7 @@ export class JsonRpcClient extends EventEmitter {
    * Begin connecting (idempotent). While the connection-limit cooldown is
    * armed this is a no-op: the scheduled slow retry is the only path that
    * re-presents the refused upgrade, so on-demand starts (and the requests
-   * that trigger them) cannot collapse the 30 s cadence back into a loop.
+   * that trigger them) cannot collapse the slow cadence back into a loop.
    */
   start(): void {
     if (this.disposed) return;
@@ -372,7 +379,11 @@ export class JsonRpcClient extends EventEmitter {
     if (this.status === 'connected') return Promise.resolve();
     // Fail fast with the cap refusal instead of parking the request behind
     // the slow retry (or re-dialing ahead of it).
-    if (this.isInConnectionLimitCooldown()) return Promise.reject(new ConnectionLimitError());
+    if (this.isInConnectionLimitCooldown()) {
+      return Promise.reject(
+        new ConnectionLimitError(this.connectionLimitRetryAfterMs ?? undefined),
+      );
+    }
     this.start();
     return new Promise<void>((resolve, reject) => {
       this.connectWaiters.push({ resolve, reject });
@@ -477,6 +488,8 @@ export class JsonRpcClient extends EventEmitter {
     // Decided BEFORE the status broadcast so the `disconnected` push already
     // carries the cap posture.
     this.connectionLimited = error instanceof ConnectionLimitError;
+    this.connectionLimitRetryAfterMs =
+      error instanceof ConnectionLimitError ? error.retryAfterMs : null;
     this.setStatus('disconnected');
     // A 401/403 auth rejection (PROTOCOL §2.1) is not transient: every retry
     // would re-present the same stale credential and fail identically, so the
@@ -490,17 +503,15 @@ export class JsonRpcClient extends EventEmitter {
       });
       return;
     }
-    if (this.connectionLimited) {
-      // Keep retrying (a seat may free), but on the slow bounded cadence: the
-      // ordinary backoff would re-present the same refused upgrade every 5s.
+    if (error instanceof ConnectionLimitError) {
+      // Keep retrying (a seat may free), but on the slow bounded cadence the
+      // daemon asked for: the ordinary backoff would re-present the same
+      // refused upgrade every 5s.
       logger.warn('Backend refused the connection: guest connection limit reached', {
         target: describeBackendConfig(this.config),
-        retryInMs: CONNECTION_LIMIT_RECONNECT_MS,
+        retryInMs: error.retryAfterMs,
       });
-      this.currentReconnectDelay = Math.max(
-        this.currentReconnectDelay,
-        CONNECTION_LIMIT_RECONNECT_MS,
-      );
+      this.currentReconnectDelay = Math.max(this.currentReconnectDelay, error.retryAfterMs);
     }
     this.scheduleReconnect();
   }
