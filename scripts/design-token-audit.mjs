@@ -78,6 +78,11 @@ for (const file of files) {
   for (const match of source.matchAll(/\.setProperty\(\s*(['"])(--[A-Za-z0-9_-]+)\1\s*,/g)) {
     definitions.add(match[2]);
   }
+  // Svelte style directives (`style:--token={expr}` / `style:--token="value"`) define
+  // the custom property at runtime on the element.
+  for (const match of source.matchAll(/(?<=\s)style:(--[A-Za-z0-9_-]+)\s*=/g)) {
+    definitions.add(match[1]);
+  }
   for (const match of withoutNegativeAssertions(source).matchAll(/var\((--[A-Za-z0-9_-]+)/g)) {
     if (!usages.has(match[1])) usages.set(match[1], new Set());
     usages.get(match[1]).add(relative);
