@@ -71,6 +71,35 @@ function withoutNegativeAssertions(source) {
   );
 }
 
+// Svelte style directives (`style:--token={expr}` / `style:--token="value"`) define the
+// custom property at runtime on the element. Only real directive attributes count, so
+// the component is parsed and `StyleDirective` nodes are collected; comments, text,
+// script bodies, and other attributes' values never contribute definitions.
+function styleDirectiveDefinitions(source, parse) {
+  const names = [];
+  let ast;
+  try {
+    ast = parse(source, { modern: true });
+  } catch {
+    return names;
+  }
+  const stack = [ast.fragment];
+  while (stack.length) {
+    const node = stack.pop();
+    if (!node || typeof node !== 'object') continue;
+    if (node.type === 'StyleDirective' && node.name.startsWith('--')) names.push(node.name);
+    for (const value of Object.values(node)) {
+      if (Array.isArray(value)) stack.push(...value);
+      else if (value && typeof value === 'object' && typeof value.type === 'string') {
+        stack.push(value);
+      }
+    }
+  }
+  return names;
+}
+
+const styleDirectiveCandidates = [];
+
 for (const file of files) {
   const relative = path.relative(root, file);
   const source = fs.readFileSync(file, 'utf8');
@@ -78,10 +107,8 @@ for (const file of files) {
   for (const match of source.matchAll(/\.setProperty\(\s*(['"])(--[A-Za-z0-9_-]+)\1\s*,/g)) {
     definitions.add(match[2]);
   }
-  // Svelte style directives (`style:--token={expr}` / `style:--token="value"`) define
-  // the custom property at runtime on the element.
-  for (const match of source.matchAll(/(?<=\s)style:(--[A-Za-z0-9_-]+)\s*=/g)) {
-    definitions.add(match[1]);
+  if (path.extname(file) === '.svelte' && source.includes('style:--')) {
+    styleDirectiveCandidates.push(source);
   }
   for (const match of withoutNegativeAssertions(source).matchAll(/var\((--[A-Za-z0-9_-]+)/g)) {
     if (!usages.has(match[1])) usages.set(match[1], new Set());
@@ -97,6 +124,13 @@ for (const file of files) {
   const arbitrary = [...source.matchAll(arbitraryPattern)].length;
   if (palette || arbitrary) {
     rawByFile.set(relative, { palette, arbitrary, paletteUtilities, arbitraryUtilities });
+  }
+}
+
+if (styleDirectiveCandidates.length > 0) {
+  const { parse } = await import('svelte/compiler');
+  for (const source of styleDirectiveCandidates) {
+    for (const name of styleDirectiveDefinitions(source, parse)) definitions.add(name);
   }
 }
 
