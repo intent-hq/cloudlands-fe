@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  promptLinkRoutingUrl,
   promptVisibleText,
   splitPromptMarkdownLinks,
   type PromptMarkdownLinkPart,
@@ -97,8 +98,13 @@ describe('splitPromptMarkdownLinks', () => {
     ['unbalanced opening bracket', '[label(https://a.test)'],
     ['unbalanced closing paren', '[label](https://a.test'],
     ['nested brackets in label', '[[label]](https://a.test)'],
+    ['link nested in an unclosed outer bracket', '[[label](https://a.test)'],
+    ['link nested in an image alt', '![outer [inner](https://a.test)](https://a.test/image)'],
+    ['link nested in a rejected label', '[outer [inner](https://a.test)](javascript:alert(1))'],
     ['space between ] and (', '[label] (https://a.test)'],
     ['whitespace inside destination', '[label](https://a.test/a b)'],
+    ['nested parentheses in destination', '[label](https://a.test/a((b)))'],
+    ['empty destination', '[label]()'],
     ['bare URL', 'See https://a.test/pull/1 please'],
     ['bare #N', 'Approve #5034 now'],
   ])('leaves %s literal', (_name, prompt) => {
@@ -112,14 +118,55 @@ describe('splitPromptMarkdownLinks', () => {
     ]);
   });
 
+  it('still links an independent link after a rejected outer construct', () => {
+    expect(
+      splitPromptMarkdownLinks(
+        '![outer [inner](https://a.test)](https://a.test/i) then [[x]](https://a.test) and [ok](https://b.test)',
+      ),
+    ).toEqual([
+      {
+        type: 'text',
+        content:
+          '![outer [inner](https://a.test)](https://a.test/i) then [[x]](https://a.test) and ',
+      },
+      { type: 'link', label: 'ok', url: 'https://b.test' },
+    ]);
+  });
+
+  it('keeps an unclosed bracket literal through its line and links again on the next line', () => {
+    expect(splitPromptMarkdownLinks('[oops [a](https://a.test)\n[ok](https://b.test)')).toEqual([
+      { type: 'text', content: '[oops [a](https://a.test)\n' },
+      { type: 'link', label: 'ok', url: 'https://b.test' },
+    ]);
+  });
+
   it.each([
     'plain text',
     `Approve the [#5034](${PR_URL}) diagnostic.`,
     `[a](https://a.test)[b](https://b.test)`,
     `![img](https://a.test/i.png) and [x](javascript:alert(1)) and [ok](${PR_URL}).`,
     `Read [Foo](https://en.wikipedia.org/wiki/Foo_(bar)) now`,
+    `[[label](https://a.test) and [ok](https://b.test)`,
+    `![outer [inner](https://a.test)](https://a.test/image) [ok](https://b.test)`,
+    `[label](https://a.test/a b) [ok](https://b.test)`,
+    `[a](HTTPS://a.test)`,
   ])('round-trips %s', (prompt) => {
     expect(rebuild(splitPromptMarkdownLinks(prompt))).toBe(prompt);
+  });
+});
+
+describe('promptLinkRoutingUrl', () => {
+  it.each([
+    ['HTTPS://GitHub.com/Intent-HQ/x', 'https://GitHub.com/Intent-HQ/x'],
+    ['HTTP://a.test/Path', 'http://a.test/Path'],
+    ['INTENT://local/note/Spec', 'intent://local/note/Spec'],
+  ])('lowercases only the scheme of %s', (url, expected) => {
+    expect(promptLinkRoutingUrl(url)).toBe(expected);
+  });
+
+  it('leaves an already-lowercase scheme and the rest of the URL unchanged', () => {
+    expect(promptLinkRoutingUrl(PR_URL)).toBe(PR_URL);
+    expect(promptLinkRoutingUrl('intent://local/note/spec')).toBe('intent://local/note/spec');
   });
 });
 

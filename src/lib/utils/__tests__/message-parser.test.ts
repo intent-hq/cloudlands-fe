@@ -1209,6 +1209,24 @@ Valid prompt
     expect(result.cleanedContent).toBe('');
   });
 
+  it('should ignore pipes inside markdown link labels and destinations when stripping Label|', () => {
+    const labelPipe = 'Review [CI | results](https://a.test)';
+    const destinationPipe = 'Review [results](https://a.test?q=a|b)';
+    const content = [
+      '<!-- suggested-prompts',
+      labelPipe,
+      destinationPipe,
+      `Label|${labelPipe}`,
+      `[x|y](https://a.test)|delay:30|${destinationPipe}`,
+      '-->',
+    ].join('\n');
+
+    const result = parseSuggestedPrompts(content);
+
+    expect(result.prompts).toEqual([labelPipe, destinationPipe, labelPipe, destinationPipe]);
+    expect(result.cleanedContent).toBe('');
+  });
+
   it('should not treat an inline opener followed by prose as a block', () => {
     const content = 'Write a <!-- suggested-prompts block --> at the end.';
 

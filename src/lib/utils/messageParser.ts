@@ -23,7 +23,10 @@ import type { SuggestedPrompt } from '$shared/types';
 import type { ContentBlock } from '$shared/types/content-block';
 import type { VideoSource } from '$shared/types/content-block';
 import { splitWorkspaceVideoMarkdown } from './workspace-file-video';
-import { promptVisibleText } from '$lib/components/chat/suggested-prompt-markdown-links';
+import {
+  promptVisibleText,
+  splitPromptMarkdownLinks,
+} from '$lib/components/chat/suggested-prompt-markdown-links';
 
 const logger = new Logger('MessageParser');
 
@@ -1720,6 +1723,24 @@ function isValidSuggestedPromptText(text: string): boolean {
   return promptVisibleText(text).length <= MAX_SUGGESTED_PROMPT_LENGTH;
 }
 
+/**
+ * Index of the legacy `Label|` delimiter: the first `|` outside any inline
+ * markdown link, so pipes in a link label or destination never split the line.
+ */
+function legacyLabelPipeIndex(line: string): number {
+  let offset = 0;
+  for (const part of splitPromptMarkdownLinks(line)) {
+    if (part.type === 'text') {
+      const pipe = part.content.indexOf('|');
+      if (pipe !== -1) return offset + pipe;
+      offset += part.content.length;
+    } else {
+      offset += part.label.length + part.url.length + '[]()'.length;
+    }
+  }
+  return -1;
+}
+
 function parseSuggestedPromptLine(line: string): SuggestedPrompt | null {
   const fullDelayMatch = line.match(DELAY_PREFIX_REGEX);
   if (fullDelayMatch) {
@@ -1727,7 +1748,7 @@ function parseSuggestedPromptLine(line: string): SuggestedPrompt | null {
     return isValidSuggestedPromptText(text) ? text : null;
   }
 
-  const pipeIndex = line.indexOf('|');
+  const pipeIndex = legacyLabelPipeIndex(line);
   let promptPart = pipeIndex === -1 ? line : line.slice(pipeIndex + 1).trim();
   const delayMatch = promptPart.match(DELAY_PREFIX_REGEX);
   if (delayMatch) promptPart = delayMatch[2].trim();

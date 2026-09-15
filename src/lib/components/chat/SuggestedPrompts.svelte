@@ -14,7 +14,11 @@
     OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS,
     OPERATIONAL_ROW_TONE_CLASS,
   } from './operational-disclosure-row';
-  import { splitPromptMarkdownLinks } from './suggested-prompt-markdown-links';
+  import {
+    promptLinkRoutingUrl,
+    promptVisibleText,
+    splitPromptMarkdownLinks,
+  } from './suggested-prompt-markdown-links';
 
   interface Props {
     /** Array of suggested prompts to display */
@@ -73,12 +77,10 @@
   }
 
   function handleLinkKeyDown(event: KeyboardEvent, url: string) {
-    if (event.key === 'Enter') {
+    if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
       event.stopPropagation();
       void handleLink(url, { workspaceId, event });
-    } else if (event.key === ' ') {
-      event.stopPropagation();
     }
   }
 
@@ -100,13 +102,16 @@
       data-compact={compact}
     >
       {#each prompts as prompt, index (`prompt-${index}`)}
+        {@const parts = splitPromptMarkdownLinks(prompt)}
+        {@const leadingText = parts[0]?.type === 'text' ? parts[0].content : ''}
+        <!-- The row is a presentational mouse target; the send control is the text span so
+             the anchors are not presentational descendants of a button (ARIA). -->
         <div
-          role="button"
-          tabindex="0"
-          class="{OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS} {OPERATIONAL_ROW_TONE_CLASS} group flex cursor-pointer items-center gap-[var(--operational-leading-gap)] rounded-sm border border-transparent bg-transparent px-1.5 py-0.5 text-left transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+          role="presentation"
+          class="{OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS} {OPERATIONAL_ROW_TONE_CLASS} group flex cursor-pointer items-center gap-[var(--operational-leading-gap)] rounded-sm border border-transparent bg-transparent px-1.5 py-0.5 text-left transition-colors hover:text-foreground has-[[data-suggested-prompt-text]:focus-visible]:outline-2 has-[[data-suggested-prompt-text]:focus-visible]:outline-offset-2 has-[[data-suggested-prompt-text]:focus-visible]:outline-ring"
           data-typography-role="body"
+          data-suggested-prompt-row
           onclick={() => handleClick(prompt)}
-          onkeydown={(e) => handleKeyDown(e, prompt)}
         >
           <span
             class="{CHAT_OPERATIONAL_LEADING_CLASS} mt-px self-start"
@@ -115,12 +120,21 @@
             <Fa icon={faArrowRight} size={16} class={CHAT_OPERATIONAL_ICON_CLASS} />
           </span>
           <span class="min-w-0 flex-1 text-pretty" data-suggested-prompt-label
-            >{#each splitPromptMarkdownLinks(prompt) as part, partIndex (partIndex)}{#if part.type === 'link'}<a
-                  href={part.url}
+            ><span
+              role="button"
+              tabindex="0"
+              aria-label={promptVisibleText(prompt)}
+              class="focus-visible:outline-none"
+              data-suggested-prompt-text
+              onkeydown={(e) => handleKeyDown(e, prompt)}>{leadingText}</span
+            >{#each parts.slice(leadingText ? 1 : 0) as part, partIndex (partIndex)}{#if part.type === 'link'}{@const url =
+                  promptLinkRoutingUrl(part.url)}<a
+                  href={url}
+                  title={url}
                   class="cursor-pointer underline underline-offset-2 hover:opacity-80"
                   data-suggested-prompt-link
-                  onclick={(e) => handleLinkClick(e, part.url)}
-                  onkeydown={(e) => handleLinkKeyDown(e, part.url)}>{part.label}</a
+                  onclick={(e) => handleLinkClick(e, url)}
+                  onkeydown={(e) => handleLinkKeyDown(e, url)}>{part.label}</a
                 >{:else}{part.content}{/if}{/each}</span
           >
           {#if onEdit}

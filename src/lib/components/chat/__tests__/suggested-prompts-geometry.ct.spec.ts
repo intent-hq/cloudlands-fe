@@ -9,7 +9,9 @@ const scenarios = [
 for (const scenario of scenarios) {
   test(`aligns arrows to the first prompt line in ${scenario.name}`, async ({ mount }) => {
     const component = await mount(SuggestedPromptsGeometryHost, { props: scenario });
-    const rows = component.getByTestId('suggested-prompts-list').getByRole('button');
+    const rows = component
+      .getByTestId('suggested-prompts-list')
+      .locator('[data-suggested-prompt-row]');
     const shortRow = rows.nth(0);
     const wrappedRow = rows.nth(1);
     const label = wrappedRow.locator('[data-suggested-prompt-label]');
@@ -29,7 +31,12 @@ for (const scenario of scenarios) {
         const slotElement = element.querySelector('[data-suggested-prompt-icon]') as HTMLElement;
         const range = document.createRange();
         range.selectNodeContents(labelElement);
-        const lineBoxes = Array.from(range.getClientRects());
+        // The label wraps inline children (send control, anchors), so the range reports
+        // one rect per box; collapse them into distinct line boxes by vertical position.
+        const lineBoxes = Array.from(range.getClientRects())
+          .filter((rect) => rect.width > 0 && rect.height > 0)
+          .sort((a, b) => a.top - b.top)
+          .filter((rect, i, rects) => i === 0 || Math.abs(rect.top - rects[i - 1].top) > 1);
         const firstLineBox = lineBoxes[0];
         const rowBox = element.getBoundingClientRect();
         const labelBox = labelElement.getBoundingClientRect();
