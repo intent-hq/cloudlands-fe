@@ -782,6 +782,40 @@ describe('guestSessionsSaga', () => {
     await stop(run.task);
   });
 
+  it('a duplicate Remove of a member already in flight sends no second RPC and leaves the marker to the first', async () => {
+    let resolveRemove!: (value: unknown) => void;
+    mocks.request.mockImplementation((method) =>
+      method === 'workspace.members.remove'
+        ? new Promise((resolve) => {
+            resolveRemove = resolve;
+          })
+        : Promise.resolve({ members: [MEMBER] }),
+    );
+    const run = start();
+    await settle();
+    run.dispatch(replaceWorkspaceList([makeWorkspace('ws-1', 2)]));
+
+    const first = removeHostedMemberRequested('ws-1', MEMBER.principalId);
+    const second = removeHostedMemberRequested('ws-1', MEMBER.principalId);
+    run.dispatch(first);
+    run.dispatch(second);
+    const duplicate = (await second.promise.catch((e: unknown) => e)) as HostedRosterOperationError;
+    expect(duplicate).toBeInstanceOf(HostedRosterOperationError);
+    expect(duplicate.code).toBe('cancelled');
+    expect(mocks.request.mock.calls.filter(([m]) => m === 'workspace.members.remove')).toHaveLength(
+      1,
+    );
+    // The in-flight removal still owns its marker.
+    expect(run.getState().guestSessions.removingMemberKeys).toEqual([`ws-1:${MEMBER.principalId}`]);
+
+    resolveRemove({ removed: true });
+    await expect(first.promise).resolves.toEqual({ removed: true });
+    await settle();
+    expect(run.getState().guestSessions.removingMemberKeys).toEqual([]);
+
+    await stop(run.task);
+  });
+
   it('a terminal denial blocks later direct Remove and read intents without an RPC', async () => {
     const run = start();
     await settle();
@@ -961,11 +995,31 @@ describe('guestSessionsSaga', () => {
     },
   );
 
-  it('does nothing outside Electron', async () => {
+  it('marks the list unavailable when the boot hydration invoke fails', async () => {
+    invoke.mockImplementation(async () => {
+      throw new Error('store unreadable');
+    });
+    const run = start();
+    await settle();
+    expect(run.getState().guestSessions.hasReceivedList).toBe(false);
+    expect(run.getState().guestSessions.listUnavailable).toBe(true);
+
+    // A later push is authoritative again.
+    callbacks[GUEST_SESSIONS_CHANGED_EVENT]({ sessions: [GUEST], openIds: [], connectedIds: [] });
+    await settle();
+    expect(run.getState().guestSessions.hasReceivedList).toBe(true);
+    expect(run.getState().guestSessions.listUnavailable).toBe(false);
+
+    await stop(run.task);
+  });
+
+  it('outside Electron marks the list unavailable without any IPC', async () => {
     vi.unstubAllGlobals();
     vi.stubGlobal('electronAPI', undefined);
     const run = start();
     await run.task.toPromise();
     expect(run.getState().guestSessions.hasReceivedList).toBe(false);
+    expect(run.getState().guestSessions.listUnavailable).toBe(true);
+    expect(invoke).not.toHaveBeenCalled();
   });
 });

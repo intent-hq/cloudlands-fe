@@ -39,6 +39,21 @@ export const selectIsGuestWindow = store.createSelector(
 );
 
 /**
+ * Whether `selectIsGuestWindow` is an answer rather than a boot-time default:
+ * the boot hydration of the guest session list has concluded (a list arrived,
+ * or none could — see `listUnavailable`) and, when any host is joined, the
+ * connections list has bound `windowBackendId` (until it lands the id is the
+ * local default, under which a guest window reads as an owner window). With
+ * no host joined the window cannot be a guest one, so the connections list is
+ * not waited on — outside Electron it never arrives.
+ */
+export const selectWindowIdentitySettled = store.createSelector(
+  (state) =>
+    (state.guestSessions.hasReceivedList || state.guestSessions.listUnavailable) &&
+    (state.guestSessions.sessions.ids.length === 0 || state.connections.hasReceivedList),
+);
+
+/**
  * ids of the guest sessions with a pooled client (a window for that host was
  * opened). The nav block shows a connectivity status for these only; a
  * session outside this set has no window and shows no status.
