@@ -28,7 +28,7 @@
 <div class="flex min-w-0 flex-col items-start gap-2">
   <Button
     type="button"
-    variant="default"
+    variant="secondary"
     size="sm"
     class="disabled:pointer-events-auto"
     disabled={opening}
