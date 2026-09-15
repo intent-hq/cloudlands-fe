@@ -197,6 +197,19 @@ export interface DaemonHealthState {
    */
   reconnectAttempts: number;
   /**
+   * True while the last connect attempt was refused with HTTP 503 by the
+   * host's guest connection cap (intent-hq/intentd#1917). Main keeps
+   * retrying on a slow bounded cadence; the daemon-loss overlay names the
+   * cap instead of the generic reconnect copy. Cleared on connect.
+   */
+  connectionLimited: boolean;
+  /**
+   * The wait main scheduled before its next attempt while `connectionLimited`
+   * (the daemon's `Retry-After`, clamped, or the default cadence); null
+   * otherwise. The overlay shows it where it names the cap.
+   */
+  connectionLimitRetryAfterMs: number | null;
+  /**
    * Daemon-reported connection locality from the last system.status poll
    * (`host.locality`, PROTOCOL §5.7/§5.14), or null before the first poll.
    * Authoritative over the FE transport heuristic: it reflects a forced

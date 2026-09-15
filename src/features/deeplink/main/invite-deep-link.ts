@@ -290,6 +290,8 @@ function describeInviteFailure(error: unknown): string {
       return m.deeplink_inviteError_denied();
     case 'invite-flow-expired':
       return m.deeplink_inviteError_flowExpired();
+    case 'workspace-full':
+      return m.deeplink_inviteError_workspaceFull();
     default:
       return m.deeplink_inviteError_generic();
   }

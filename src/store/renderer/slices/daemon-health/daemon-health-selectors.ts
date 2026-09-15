@@ -40,6 +40,16 @@ export const selectReconnectAttempts = store.createSelector(
   (state) => state.daemonHealth.reconnectAttempts,
 );
 
+/** The host's guest connection cap refused the last connect (HTTP 503). */
+export const selectConnectionLimited = store.createSelector(
+  (state) => state.daemonHealth.connectionLimited,
+);
+
+/** Main's scheduled wait before the next attempt while the cap refuses us; null otherwise. */
+export const selectConnectionLimitRetryAfterMs = store.createSelector(
+  (state) => state.daemonHealth.connectionLimitRetryAfterMs,
+);
+
 /** Connected-daemon-vs-pin version comparison derived for the health UI. */
 export interface DaemonVersionComparison {
   /** Semver ordering of the daemon version relative to the pin ('unknown' when unparsable). */
