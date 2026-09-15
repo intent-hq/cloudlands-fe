@@ -1485,6 +1485,56 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
       const reopened = closeThenReopen(agentA, agentB, sub);
       expect(reopened.options).toBeUndefined();
     });
+
+    // The anchor scan keys on the row's `provisional` flag, not on empty
+    // content: a firehose `complete` settling a row that already streamed
+    // text keeps that text but is still renderer-settled, so the reopen must
+    // still anchor one row earlier.
+    it('skips a renderer-settled row that carries content when it is the newest row at close', () => {
+      const agentA = 'agent-sub-provisional-content-a';
+      const agentB = 'agent-sub-provisional-content-b';
+      seedSession(agentA);
+      seedSession(agentB);
+      const sub = openChat(agentA);
+      hydrate(sub, [
+        makeMessage('u-1', 'read the file', { role: 'user' }),
+        makeMessage('m-1', 'reading it now'),
+        makeMessage(PLACEHOLDER_ID, 'streamed so far', { isStreaming: true }),
+      ]);
+
+      completeNewAssistantTurn(agentA);
+      const rows = selectAgentMessages.select(appStore.state, agentA);
+      expect(rows.map((m) => m.id)).toEqual(['u-1', 'm-1', PLACEHOLDER_ID]);
+      expect(rows[2]).toMatchObject({
+        contentBlocks: [{ type: 'text', id: `${PLACEHOLDER_ID}:0`, text: 'streamed so far' }],
+        isStreaming: false,
+        streamingComplete: true,
+        provisional: true,
+      });
+
+      const reopened = closeThenReopen(agentA, agentB, sub);
+      expect(reopened.options).toEqual({ sinceMessageId: 'm-1' });
+    });
+
+    // Conversely, a daemon-delivered assistant row with no content blocks is
+    // canonical (never flagged), so it IS a valid anchor.
+    it('anchors on an unflagged empty-content assistant row delivered by the transcript', () => {
+      const agentA = 'agent-sub-canonical-empty-a';
+      const agentB = 'agent-sub-canonical-empty-b';
+      seedSession(agentA);
+      seedSession(agentB);
+      const sub = openChat(agentA);
+      hydrate(sub, [
+        makeMessage('u-1', 'read the file', { role: 'user' }),
+        makeMessage('m-empty', '', { contentBlocks: [] }),
+      ]);
+      const rows = selectAgentMessages.select(appStore.state, agentA);
+      expect(rows.map((m) => m.id)).toEqual(['u-1', 'm-empty']);
+      expect(rows[1].provisional).toBeUndefined();
+
+      const reopened = closeThenReopen(agentA, agentB, sub);
+      expect(reopened.options).toEqual({ sinceMessageId: 'm-empty' });
+    });
   });
 
   // Out-of-view chat, in-flight turn: the legacy `agent:*` firehose keeps

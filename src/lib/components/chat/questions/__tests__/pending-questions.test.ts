@@ -1278,6 +1278,48 @@ describe('indicator predicate stays marker-driven for out-of-view agents', () =>
     expect(deriveAgentHasPendingQuestion(placeholder, AGENT_ID, [])).toBe(true);
   });
 
+  // A row the renderer settled itself is flagged `provisional`; the flag, not
+  // the shape of its content, says it cannot speak for the marker. A flagged
+  // marked row that does carry a question resource therefore still pends on
+  // the marker, while the same row without the flag is the daemon-canonical
+  // terminal row and resolves the marker into an actual question set.
+  it('pends on the marker for a provisional marked row even when it carries a question resource', () => {
+    const provisionalMarked = assistantMessage([questionBlock()], {
+      id: 'msg-marked',
+      isStreaming: false,
+      streamingComplete: true,
+      provisional: true,
+    });
+    const provisional = stateWith(
+      makeStoredSession({
+        messages: [userMessage('msg-u1'), provisionalMarked],
+        metadata: { pendingQuestionsMessageId: 'msg-marked' },
+      }),
+    );
+    expect(
+      deriveAgentHasPendingQuestion(
+        provisional,
+        AGENT_ID,
+        provisional.agentSessions.byAgentId[AGENT_ID].messages,
+      ),
+    ).toBe(true);
+    expect(deriveAgentHasPendingQuestion(provisional, AGENT_ID, [])).toBe(true);
+
+    const { provisional: _flag, ...canonicalMarked } = provisionalMarked;
+    const canonical = stateWith(
+      makeStoredSession({
+        messages: [userMessage('msg-u1'), canonicalMarked],
+        metadata: { pendingQuestionsMessageId: 'msg-marked' },
+      }),
+    );
+    const canonicalMessages = canonical.agentSessions.byAgentId[AGENT_ID].messages;
+    expect(deriveWizardPendingQuestions(canonical, AGENT_ID, canonicalMessages)).toEqual({
+      messageId: 'msg-marked',
+      questions: [QUESTION],
+    });
+    expect(deriveAgentHasPendingQuestion(canonical, AGENT_ID, canonicalMessages)).toBe(true);
+  });
+
   it('keeps the dismissal / answer suppression for a frozen partial marked row', () => {
     const frozenPartial = assistantMessage([{ type: 'text', text: 'Before I continue, ' }], {
       id: 'msg-marked',

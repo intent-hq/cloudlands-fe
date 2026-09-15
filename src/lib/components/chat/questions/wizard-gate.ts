@@ -86,15 +86,17 @@ export function deriveWizardPendingQuestions(
 
 /**
  * True when the locally cached marked row carries its terminal question
- * content: a settled assistant row with at least one question resource. Any
- * other local copy — a placeholder or partial row frozen when the standing
- * subscription closed mid-turn, or one still flagged as streaming — predates
+ * content: a daemon-canonical settled assistant row with at least one
+ * question resource. A `provisional` row — one the renderer settled itself
+ * (placeholder, firehose-settled row, or a partial frozen when the standing
+ * subscription closed mid-turn) — or one still flagged as streaming predates
  * the §7.1 delta that delivers the drained question blocks, so it cannot
- * speak for the marker.
+ * speak for the marker and is treated as absent.
  */
 function hasTerminalQuestionContent(message: AgentMessage): boolean {
   return (
     message.role === 'assistant' &&
+    message.provisional !== true &&
     message.isStreaming !== true &&
     (message.contentBlocks ?? []).some((block) => getQuestionFromResourceBlock(block) !== null)
   );
