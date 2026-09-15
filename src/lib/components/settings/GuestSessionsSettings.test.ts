@@ -400,6 +400,105 @@ describe('GuestSessionsSettings', () => {
     });
   });
 
+  /**
+   * Leaves of different targets are independent operations: confirming B
+   * while A is still pending must dispatch B (not be silently dropped by a
+   * guard scoped to A), and when both fail each keeps its own retry.
+   */
+  describe('concurrent leaves are independent', () => {
+    async function confirmDialog(name: string) {
+      await fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name }));
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    }
+
+    it('per-workspace Leave: confirming B while A is pending leaves B too, with one retry each', async () => {
+      mocks.sessions = [guest];
+      const leaveA = pendingAction('guestSessions/leaveGuestWorkspaceRequested', [
+        'guest-1',
+        'ws-a',
+      ]);
+      const leaveB = pendingAction('guestSessions/leaveGuestWorkspaceRequested', [
+        'guest-1',
+        'ws-b',
+      ]);
+      mocks.leaveWorkspace
+        .mockImplementationOnce(() => leaveA.action)
+        .mockImplementationOnce(() => leaveB.action);
+      render(GuestSessionsSettings);
+      const joined = screen.getByTestId('guest-sessions-joined');
+      const rowA = joined.querySelector('[data-workspace-id="ws-a"]') as HTMLElement;
+      const rowB = joined.querySelector('[data-workspace-id="ws-b"]') as HTMLElement;
+
+      await fireEvent.click(within(rowA).getByRole('button', { name: 'Leave' }));
+      await confirmDialog('Leave');
+      await fireEvent.click(within(rowB).getByRole('button', { name: 'Leave' }));
+      await confirmDialog('Leave');
+      expect(mocks.leaveWorkspace.mock.calls).toEqual([
+        ['guest-1', 'ws-a'],
+        ['guest-1', 'ws-b'],
+      ]);
+      expect((within(rowA).getByRole('button') as HTMLButtonElement).disabled).toBe(true);
+      expect((within(rowB).getByRole('button') as HTMLButtonElement).disabled).toBe(true);
+
+      leaveA.reject(new Error('transport'));
+      leaveB.reject(new Error('transport'));
+      await waitFor(() =>
+        expect(screen.getAllByTestId('guest-leave-workspace-error')).toHaveLength(2),
+      );
+      const alerts = screen.getAllByTestId('guest-leave-workspace-error');
+      expect(alerts.map((a) => a.textContent)).toEqual([
+        expect.stringContaining('Design system'),
+        expect.stringContaining('Release notes'),
+      ]);
+
+      const alertB = alerts.find((a) => a.getAttribute('data-workspace-id') === 'ws-b')!;
+      await fireEvent.click(within(alertB).getByRole('button', { name: 'Retry' }));
+      await waitFor(() => expect(mocks.leaveWorkspace).toHaveBeenCalledTimes(3));
+      expect(mocks.leaveWorkspace).toHaveBeenLastCalledWith('guest-1', 'ws-b');
+      await waitFor(() =>
+        expect(screen.getAllByTestId('guest-leave-workspace-error')).toHaveLength(1),
+      );
+      expect(
+        screen.getByTestId('guest-leave-workspace-error').getAttribute('data-workspace-id'),
+      ).toBe('ws-a');
+    });
+
+    it('Leave host: confirming B while A is pending leaves B too, with one retry each', async () => {
+      const second: GuestSessionRecord = { ...guest, id: 'guest-2', label: 'second.local' };
+      mocks.sessions = [guest, second];
+      const leaveA = pendingAction('guestSessions/leaveRequested', ['guest-1']);
+      const leaveB = pendingAction('guestSessions/leaveRequested', ['guest-2']);
+      mocks.leave
+        .mockImplementationOnce(() => leaveA.action)
+        .mockImplementationOnce(() => leaveB.action);
+      render(GuestSessionsSettings);
+      const joined = screen.getByTestId('guest-sessions-joined');
+      const rowA = joined.querySelector('[data-session-id="guest-1"]') as HTMLElement;
+      const rowB = joined.querySelector('[data-session-id="guest-2"]') as HTMLElement;
+
+      await fireEvent.click(within(rowA).getByRole('button', { name: 'Leave host' }));
+      await confirmDialog('Leave host');
+      await fireEvent.click(within(rowB).getByRole('button', { name: 'Leave host' }));
+      await confirmDialog('Leave host');
+      expect(mocks.leave.mock.calls).toEqual([['guest-1'], ['guest-2']]);
+
+      leaveA.reject(new Error('transport'));
+      leaveB.reject(new Error('transport'));
+      await waitFor(() => expect(screen.getAllByTestId('guest-leave-error')).toHaveLength(2));
+      const alertA = screen
+        .getAllByTestId('guest-leave-error')
+        .find((a) => a.getAttribute('data-session-id') === 'guest-1')!;
+      expect(alertA.textContent).toContain('studio.local');
+      await fireEvent.click(within(alertA).getByRole('button', { name: 'Retry' }));
+      await waitFor(() => expect(mocks.leave).toHaveBeenCalledTimes(3));
+      expect(mocks.leave).toHaveBeenLastCalledWith('guest-1');
+      await waitFor(() => expect(screen.getAllByTestId('guest-leave-error')).toHaveLength(1));
+      expect(screen.getByTestId('guest-leave-error').getAttribute('data-session-id')).toBe(
+        'guest-2',
+      );
+    });
+  });
+
   it('shows no connection status for a joined host that has no window open', () => {
     mocks.sessions = [guest];
     mocks.openIds = [];

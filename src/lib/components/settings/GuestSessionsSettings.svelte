@@ -57,31 +57,38 @@
   /** What the *Leave host* confirm dialog shows — never what a retry acts on. */
   let leaveTarget = $state<GuestSessionRecord | null>(null);
   let leaveDialogOpen = $state(false);
-  /** The confirmed leave that failed; its retry re-runs exactly this one. */
-  let failedLeave = $state<GuestSessionRecord | null>(null);
-  let leaveError = $state<string | null>(null);
-  let leavingId = $state<string | null>(null);
   let openError = $state<string | null>(null);
+  /**
+   * The confirmed leaves that failed, keyed by session id; each retry re-runs
+   * exactly its own. Leaves of different hosts are independent operations, so
+   * one in flight never blocks or drops another and each failure keeps its
+   * own retry.
+   */
+  let failedLeaves = $state<Record<string, GuestSessionRecord>>({});
+  let leavingIds = $state<string[]>([]);
 
   function requestLeave(session: GuestSessionRecord) {
     leaveTarget = session;
     leaveDialogOpen = true;
   }
 
+  function dropFailedLeave(id: string) {
+    const { [id]: _dropped, ...rest } = failedLeaves;
+    failedLeaves = rest;
+  }
+
   async function leaveHost(session: GuestSessionRecord | null) {
-    if (!session || leavingId) return;
-    leavingId = session.id;
-    failedLeave = null;
-    leaveError = null;
+    if (!session || leavingIds.includes(session.id)) return;
+    leavingIds = [...leavingIds, session.id];
+    dropFailedLeave(session.id);
     try {
       const action = leaveGuestSessionRequested(session.id);
       appStore.dispatch(action);
       await action.promise;
     } catch {
-      failedLeave = session;
-      leaveError = m.settings_guestSessions_leave_error({ name: session.label });
+      failedLeaves = { ...failedLeaves, [session.id]: session };
     } finally {
-      leavingId = null;
+      leavingIds = leavingIds.filter((id) => id !== session.id);
     }
   }
 
@@ -113,10 +120,14 @@
   /** What the per-workspace *Leave* confirm dialog shows — never what a retry acts on. */
   let leaveWorkspaceTarget = $state<LeaveWorkspaceTarget | null>(null);
   let leaveWorkspaceDialogOpen = $state(false);
-  /** The confirmed per-workspace leave that failed; its retry re-runs exactly this one. */
-  let failedLeaveWorkspace = $state<LeaveWorkspaceTarget | null>(null);
-  let leaveWorkspaceError = $state<string | null>(null);
-  let leavingWorkspaceKey = $state<string | null>(null);
+  /**
+   * The confirmed per-workspace leaves that failed, keyed by
+   * `${sessionId}:${workspaceId}`; each retry re-runs exactly its own. As with
+   * hosts, leaves of different workspaces are independent: one in flight
+   * never blocks or drops another.
+   */
+  let failedLeaveWorkspaces = $state<Record<string, LeaveWorkspaceTarget>>({});
+  let leavingWorkspaceKeys = $state<string[]>([]);
 
   function workspaceKey(target: LeaveWorkspaceTarget): string {
     return `${target.session.id}:${target.workspace.id}`;
@@ -127,22 +138,25 @@
     leaveWorkspaceDialogOpen = true;
   }
 
+  function dropFailedLeaveWorkspace(key: string) {
+    const { [key]: _dropped, ...rest } = failedLeaveWorkspaces;
+    failedLeaveWorkspaces = rest;
+  }
+
   async function leaveWorkspace(target: LeaveWorkspaceTarget | null) {
-    if (!target || leavingWorkspaceKey) return;
-    leavingWorkspaceKey = workspaceKey(target);
-    failedLeaveWorkspace = null;
-    leaveWorkspaceError = null;
+    if (!target) return;
+    const key = workspaceKey(target);
+    if (leavingWorkspaceKeys.includes(key)) return;
+    leavingWorkspaceKeys = [...leavingWorkspaceKeys, key];
+    dropFailedLeaveWorkspace(key);
     try {
       const action = leaveGuestWorkspaceRequested(target.session.id, target.workspace.id);
       appStore.dispatch(action);
       await action.promise;
     } catch {
-      failedLeaveWorkspace = target;
-      leaveWorkspaceError = m.settings_guestSessions_leaveWorkspace_error({
-        workspace: target.workspace.title,
-      });
+      failedLeaveWorkspaces = { ...failedLeaveWorkspaces, [key]: target };
     } finally {
-      leavingWorkspaceKey = null;
+      leavingWorkspaceKeys = leavingWorkspaceKeys.filter((k) => k !== key);
     }
   }
 
@@ -332,10 +346,10 @@
                 <Button
                   variant="ghost"
                   size="sm"
-                  disabled={leavingId === session.id}
+                  disabled={leavingIds.includes(session.id)}
                   onclick={() => requestLeave(session)}
                 >
-                  {leavingId === session.id
+                  {leavingIds.includes(session.id)
                     ? m.settings_guestSessions_leaving_label()
                     : m.settings_guestSessions_leave_label()}
                 </Button>
@@ -357,10 +371,10 @@
                     <Button
                       variant="ghost"
                       size="sm"
-                      disabled={leavingWorkspaceKey === key}
+                      disabled={leavingWorkspaceKeys.includes(key)}
                       onclick={() => requestLeaveWorkspace(session, workspace)}
                     >
-                      {leavingWorkspaceKey === key
+                      {leavingWorkspaceKeys.includes(key)
                         ? m.settings_guestSessions_leaving_label()
                         : m.settings_guestSessions_leaveWorkspace_label()}
                     </Button>
@@ -397,38 +411,45 @@
     </div>
   {/if}
 
-  {#if leaveError}
+  {#each Object.values(failedLeaves) as failed (failed.id)}
     <div
       class="flex items-center justify-between gap-3 rounded-md border border-danger/30 bg-danger-background/10 p-3"
       role="alert"
+      data-testid="guest-leave-error"
+      data-session-id={failed.id}
     >
-      <p class="type-body text-danger">{leaveError}</p>
+      <p class="type-body text-danger">
+        {m.settings_guestSessions_leave_error({ name: failed.label })}
+      </p>
       <Button
         variant="ghost"
-        disabled={!failedLeave || leavingId !== null}
-        onclick={() => leaveHost(failedLeave)}
+        disabled={leavingIds.includes(failed.id)}
+        onclick={() => leaveHost(failed)}
       >
         {m.settings_guestSessions_retry_label()}
       </Button>
     </div>
-  {/if}
+  {/each}
 
-  {#if leaveWorkspaceError}
+  {#each Object.entries(failedLeaveWorkspaces) as [key, failed] (key)}
     <div
       class="flex items-center justify-between gap-3 rounded-md border border-danger/30 bg-danger-background/10 p-3"
       role="alert"
       data-testid="guest-leave-workspace-error"
+      data-workspace-id={failed.workspace.id}
     >
-      <p class="type-body text-danger">{leaveWorkspaceError}</p>
+      <p class="type-body text-danger">
+        {m.settings_guestSessions_leaveWorkspace_error({ workspace: failed.workspace.title })}
+      </p>
       <Button
         variant="ghost"
-        disabled={!failedLeaveWorkspace || leavingWorkspaceKey !== null}
-        onclick={() => leaveWorkspace(failedLeaveWorkspace)}
+        disabled={leavingWorkspaceKeys.includes(key)}
+        onclick={() => leaveWorkspace(failed)}
       >
         {m.settings_guestSessions_retry_label()}
       </Button>
     </div>
-  {/if}
+  {/each}
 </div>
 
 <BulkActionConfirmDialog
