@@ -1,6 +1,8 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import EventSubscriptionsCard from '$lib/components/chat/EventSubscriptionsCard.svelte';
+  import EventWakeupBanner from '$lib/components/chat/EventWakeupBanner.svelte';
+  import ChatOperationalRow from '$lib/components/chat/ChatOperationalRow.svelte';
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
   import { store } from '$store/renderer/store';
   import {
@@ -35,6 +37,7 @@
     initiallyExpanded?: boolean;
     parentBackground?: ParentBackground;
     agentStateScenario?: AgentStateScenario;
+    geometryOracle?: boolean;
   }
 
   let {
@@ -50,6 +53,7 @@
     initiallyExpanded = true,
     parentBackground = 'background',
     agentStateScenario = 'responding',
+    geometryOracle = false,
   }: Props = $props();
   const agentId = 'agent-subscription-inline-geometry';
   const workspaceId = 'workspace-subscription-inline-geometry';
@@ -191,6 +195,18 @@
     }));
     return reverseAgents ? rows.reverse() : rows;
   });
+  const wakeupMetadata = {
+    type: 'event_notification' as const,
+    eventCount: 1,
+    eventTypes: ['file:changed'],
+    events: [
+      {
+        type: 'file:changed',
+        data: {},
+        timestamp: '2026-08-15T12:05:00.000Z',
+      },
+    ],
+  };
 </script>
 
 {#snippet mixedPreview()}
@@ -206,13 +222,30 @@
   data-testid="subscription-inline-host"
 >
   <div
-    class="p-2 text-foreground {parentBackground === 'accent'
+    class="subscription-operational-lane p-2 text-foreground {parentBackground === 'accent'
       ? 'bg-accent'
       : parentBackground === 'muted'
         ? 'bg-muted'
         : 'bg-background'}"
     data-parent-background={parentBackground}
   >
+    {#if geometryOracle}
+      <ChatOperationalRow testId="subscription-inline-tool-row" toolIcon>
+        {#snippet leading()}
+          <span class="block size-4" data-testid="subscription-inline-tool-icon"></span>
+        {/snippet}
+        {#snippet summary()}
+          <span data-testid="subscription-inline-tool-summary">Reviewing</span>
+        {/snippet}
+      </ChatOperationalRow>
+      <EventWakeupBanner
+        metadata={wakeupMetadata}
+        asDivider
+        suppressTopGap
+        showAgentCards={false}
+        workspace={null}
+      />
+    {/if}
     <EventSubscriptionsCard
       {workspaceId}
       agentId="parent-subscription-inline-geometry"
@@ -226,3 +259,21 @@
     />
   </div>
 </section>
+
+<style>
+  section {
+    container-type: inline-size;
+  }
+
+  .subscription-operational-lane {
+    --chat-operational-row-inline-padding: 0.5rem;
+    --chat-operational-leading-gap: 0.5rem;
+  }
+
+  @container (max-width: 639.98px) {
+    .subscription-operational-lane {
+      --chat-operational-row-inline-padding: 0.125rem;
+      --chat-operational-leading-gap: 0.625rem;
+    }
+  }
+</style>

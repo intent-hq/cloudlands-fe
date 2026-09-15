@@ -23,6 +23,7 @@ import {
   SUBSCRIPTION_CARD_CONTAINMENT_CLASS,
   SUBSCRIPTION_CARD_SURFACE_CLASS,
   SUBSCRIPTION_DISCLOSURE_ROW_CLASS,
+  SUBSCRIPTION_LEADING_COLUMN_CLASS,
   EVENT_WAKEUP_IN_THREAD_SPACING_CLASS,
 } from '../subscription-disclosure';
 
@@ -105,6 +106,10 @@ describe('EventWakeupBanner details disclosure', () => {
     const header = screen.getByTestId('event-wakeup-header');
     for (const token of SUBSCRIPTION_DISCLOSURE_ROW_CLASS.split(' ')) {
       expect(header.classList.contains(token)).toBe(true);
+    }
+    const leading = screen.getByTestId('event-wakeup-leading-column');
+    for (const token of SUBSCRIPTION_LEADING_COLUMN_CLASS.split(' ')) {
+      expect(leading.classList.contains(token)).toBe(true);
     }
 
     await fireEvent.click(summary);

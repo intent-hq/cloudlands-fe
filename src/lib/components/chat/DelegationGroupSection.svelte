@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { CHAT_OPERATIONAL_ICON_CLASS } from './operational-disclosure-row';
   /**
    * DelegationGroupSection Component
    *
@@ -40,8 +41,10 @@
     safeSubscriptionSlide,
     SUBSCRIPTION_CHEVRON_CLASS,
     SUBSCRIPTION_CHEVRON_SIZE_CLASS,
+    SUBSCRIPTION_DISCLOSURE_ROW_CLASS,
     SUBSCRIPTION_ICON_CLASS,
-    SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS,
+    SUBSCRIPTION_LEADING_COLUMN_CLASS,
+    SUBSCRIPTION_LEADING_CONTENT_CLASS,
   } from './subscription-disclosure';
 
   interface Props {
@@ -94,13 +97,10 @@
   class="w-full min-w-0 max-w-full overflow-hidden font-family-child"
   data-testid="delegation-group-section"
 >
-  <div
-    class="flex min-h-9 w-full min-w-0 max-w-full items-center gap-2 overflow-hidden px-3 py-2 {SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS}"
-    data-testid="delegation-group-header"
-  >
+  <div class={SUBSCRIPTION_DISCLOSURE_ROW_CLASS} data-testid="delegation-group-header">
     <button
       type="button"
-      class="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded border-none bg-transparent p-0 text-left font-[inherit] text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+      class="min-w-0 flex-1 cursor-pointer rounded border-none bg-transparent p-0 text-left font-[inherit] text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring {SUBSCRIPTION_LEADING_CONTENT_CLASS}"
       class:text-warning={deliveryPending}
       data-testid="group-summary-toggle"
       aria-expanded={!isCollapsed}
@@ -109,12 +109,20 @@
       onkeydown={handleDisclosureKeydown}
     >
       {#if deliveryPending}
-        <Fa icon={faTriangleExclamation} size={14} class="h-3.5! w-3.5! shrink-0" />
+        <span class={SUBSCRIPTION_LEADING_COLUMN_CLASS}>
+          <Fa icon={faTriangleExclamation} size={16} class={CHAT_OPERATIONAL_ICON_CLASS} />
+        </span>
         <span class="min-w-0 truncate whitespace-nowrap" data-testid="group-delivery-pending">
           {m.chat_agentSubscriptions_deliveryPending_label()}
         </span>
       {:else}
-        <Fa icon={faHourglass} size={14} class="h-3.5! w-3.5! shrink-0 {SUBSCRIPTION_ICON_CLASS}" />
+        <span class={SUBSCRIPTION_LEADING_COLUMN_CLASS}>
+          <Fa
+            icon={faHourglass}
+            size={16}
+            class="{CHAT_OPERATIONAL_ICON_CLASS} {SUBSCRIPTION_ICON_CLASS}"
+          />
+        </span>
         <span class="min-w-0 truncate whitespace-nowrap" data-testid="group-summary-title">
           {remainingCount === 0
             ? m.chat_agentSubscriptions_allFinished_label()

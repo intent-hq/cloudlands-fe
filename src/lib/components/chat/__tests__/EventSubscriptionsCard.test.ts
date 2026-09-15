@@ -2,6 +2,8 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/sv
 import { tick } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { resetAgentSubscriptionsViewStateForTests } from '../agent-subscriptions-view-state';
+import { CHAT_OPERATIONAL_ICON_CLASS } from '../operational-disclosure-row';
+import { SUBSCRIPTION_DISCLOSURE_ROW_CLASS } from '../subscription-disclosure';
 
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
@@ -93,9 +95,11 @@ describe('EventSubscriptionsCard', () => {
     const toggle = screen.getByRole('button', { name: 'Subscribed to 3 events' });
     const body = screen.getByTestId('event-subscriptions-body');
 
-    expect(toggle.className).toContain('w-full');
-    expect(toggle.className).toContain('px-3!');
-    expect(toggle.className).toContain('py-2!');
+    expect(toggle.className).toContain(SUBSCRIPTION_DISCLOSURE_ROW_CLASS);
+    const icon = screen.getByTestId('event-subscriptions-leading-column').querySelector('svg')!;
+    for (const className of CHAT_OPERATIONAL_ICON_CLASS.split(' ')) {
+      expect(icon.classList.contains(className)).toBe(true);
+    }
     expect(toggle.getAttribute('aria-expanded')).toBe('true');
     expect(toggle.getAttribute('aria-controls')).toBe(body.id);
     expect(body.classList.contains('hidden')).toBe(false);

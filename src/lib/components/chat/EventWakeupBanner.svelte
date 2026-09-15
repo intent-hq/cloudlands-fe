@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { CHAT_OPERATIONAL_ICON_CLASS } from './operational-disclosure-row';
   /**
    * EventWakeupBanner Component
    *
@@ -30,6 +31,7 @@
     SUBSCRIPTION_CHEVRON_SIZE_CLASS,
     SUBSCRIPTION_DISCLOSURE_ROW_CLASS,
     SUBSCRIPTION_ICON_CLASS,
+    SUBSCRIPTION_LEADING_COLUMN_CLASS,
     EVENT_WAKEUP_IN_THREAD_SPACING_CLASS,
     safeSubscriptionRowTransition,
     safeSubscriptionSlide,
@@ -464,11 +466,17 @@
                 />
               </div>
             {:else}
-              <Fa
-                icon={faBell}
-                size={14}
-                class="h-3.5! w-3.5! shrink-0 {SUBSCRIPTION_ICON_CLASS}"
-              />
+              <span
+                class={SUBSCRIPTION_LEADING_COLUMN_CLASS}
+                data-testid="event-wakeup-leading-column"
+                aria-hidden="true"
+              >
+                <Fa
+                  icon={faBell}
+                  size={16}
+                  class="{CHAT_OPERATIONAL_ICON_CLASS} {SUBSCRIPTION_ICON_CLASS}"
+                />
+              </span>
             {/if}
             <button
               type="button"

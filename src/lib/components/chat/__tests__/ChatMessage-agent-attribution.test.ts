@@ -365,10 +365,10 @@ describe('ChatMessage agent-to-agent sender attribution', () => {
     for (const token of SUBSCRIPTION_DISCLOSURE_ROW_CLASS.split(' ')) {
       expect(disclosureHeader.classList.contains(token)).toBe(true);
     }
-    for (const token of ['h-auto!', 'min-h-9', 'px-3!', 'py-2!', 'type-body', 'font-normal']) {
+    for (const token of ['h-auto!', 'min-h-9', 'py-2!', 'type-body', 'font-normal']) {
       expect(disclosureHeader.classList.contains(token)).toBe(true);
     }
-    expect(disclosureHeader.classList.contains('gap-2')).toBe(true);
+    expect(disclosureHeader.classList.contains('gap-operational-leading')).toBe(true);
     expect(disclosureHeader.classList.contains('justify-start!')).toBe(true);
     expect(surface.querySelector('button button')).toBeNull();
   });
@@ -856,9 +856,7 @@ describe('ChatMessage hook wake attribution', () => {
     const textLane = screen.getByTestId('automated-wake-text-lane');
     expect(textLane.className).toContain('gap-x-1');
     expect(textLane.classList.contains('flex-wrap')).toBe(true);
-    const leadingIcon = header.firstElementChild;
-    expect(leadingIcon?.classList.contains('self-start')).toBe(true);
-    expect(leadingIcon?.classList.contains('mt-1')).toBe(true);
+    // First-line glyph alignment is verified by chat-event-geometry.ct.spec.ts.
     expect(screen.getByTestId('automated-wake-toggle').classList.contains('self-start')).toBe(true);
     const primaryLabel = screen.getByTestId('automated-wake-primary-label');
     expect(primaryLabel.textContent?.trim()).toBe('ci-watch');
