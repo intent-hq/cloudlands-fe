@@ -291,7 +291,7 @@
   onSelect={handlePickerSelect}
 />
 
-<div class="flex flex-col h-full {className ?? ''}">
+<div class="-mx-2 flex flex-col h-full {className ?? ''}">
   <!-- Add Context Section -->
   {#if showAddSection}
     <div bind:this={addContextAnchor} class="mb-1.5">
