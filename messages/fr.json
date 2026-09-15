@@ -6378,7 +6378,6 @@
   "workspace_share_loadFailed_error": "Impossible de charger les détails de partage",
   "workspace_share_createFailed_error": "Impossible de créer le lien d’invitation",
   "workspace_share_pinUnknown_error": "Aucun utilisateur GitHub nommé {login}",
-  "workspace_hoverCard_member_ariaLabel": "{name} — {role}",
   "workspace_share_ownerOnly_notice": "Seul le propriétaire de l’espace de travail peut gérer le partage.",
   "workspace_share_removeMember_confirm_label": "Retirer {name} de cet espace de travail ?",
   "workspace_share_removeMember_confirmAction_ariaLabel": "Confirmer le retrait de {name}",
