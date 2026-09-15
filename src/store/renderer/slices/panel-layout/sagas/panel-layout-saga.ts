@@ -1069,15 +1069,23 @@ function* reconcileAgentsFromSnapshot(action: ReturnType<typeof setAgents>): Sag
 // opening a linkless agent tab (see reconcileEmptyRestoredLayout). These two
 // actions are how the record can arrive afterwards; each re-runs the cheap,
 // fully-guarded reconcile so the deferred seed eventually resolves.
+//
+// The same race covers the role: a restore that wins against `workspace.list`
+// reads the not-yet-hydrated workspace as owner-equivalent and mounts its
+// persisted terminal / browser tabs, so the owner-only strip re-runs here once
+// the record lands. Both strips are no-ops on a layout with nothing to strip.
 function* reconcileWorkspaceEntityArrived(
   action: ReturnType<typeof setWorkspaceEntity>,
 ): SagaGenerator<void> {
   const [workspace] = action.payload;
-  yield* call(reconcileEmptyRestoredLayout, String(workspace.id));
+  const wsId = String(workspace.id);
+  if (restoredWorkspaceIds.has(wsId)) yield* call(stripOwnerOnlyTabsForCollaborator, wsId);
+  yield* call(reconcileEmptyRestoredLayout, wsId);
 }
 
 function* reconcileWorkspaceListLoaded(): SagaGenerator<void> {
   for (const wsId of restoredWorkspaceIds) {
+    yield* call(stripOwnerOnlyTabsForCollaborator, wsId);
     yield* call(reconcileEmptyRestoredLayout, wsId);
   }
 }
