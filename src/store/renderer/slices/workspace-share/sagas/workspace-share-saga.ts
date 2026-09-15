@@ -42,6 +42,8 @@ import {
   selectShareCanManage,
   selectShareCreateRequest,
   selectShareMutationGeneration,
+  selectShareRemovingPrincipalId,
+  selectShareRevokingInviteId,
   selectShareTarget,
   selectWorkspaceRosterCanManage,
   selectWorkspaceRosterRemovingPrincipalId,
@@ -234,10 +236,17 @@ function* createInvite(action: ReturnType<typeof shareInviteCreateRequested>): S
   yield* put(shareDataRequested());
 }
 
+/**
+ * The reducer admits one dialog mutation at a time (`revokingInviteId` /
+ * `removingPrincipalId`): a request it declined is never issued, so a rapid
+ * or stale second click cannot reach the daemon with a target the UI never
+ * showed as in flight.
+ */
 function* revokeInvite(action: ReturnType<typeof shareInviteRevokeRequested>): SagaGenerator<void> {
   const target = yield* manageableTarget();
   if (!target) return;
   const [inviteId] = action.payload;
+  if ((yield* selectShareRevokingInviteId.effect()) !== inviteId) return;
   const result = yield* call(workspaceSharingClient.revokeInvite, target.workspaceId, inviteId);
   if (!(yield* stillTargets(target))) return;
   if (!result.success) {
@@ -257,6 +266,7 @@ function* removeMember(action: ReturnType<typeof shareMemberRemoveRequested>): S
   const target = yield* manageableTarget();
   if (!target) return;
   const [principalId] = action.payload;
+  if ((yield* selectShareRemovingPrincipalId.effect()) !== principalId) return;
   const result = yield* call(workspaceSharingClient.removeMember, target.workspaceId, principalId);
   if (!(yield* stillTargets(target))) return;
   if (!result.success) {
@@ -359,7 +369,9 @@ export function* workspaceShareSaga(): SagaGenerator<void> {
     ),
     takeEvery(shareRosterMemberRemoveRequested, removeRosterMember),
     takeLatest(shareInviteCreateRequested, createInvite),
-    takeLatest(shareInviteRevokeRequested, revokeInvite),
-    takeLatest(shareMemberRemoveRequested, removeMember),
+    // `takeEvery`: a declined second request must not cancel the admitted
+    // worker mid-RPC (the reducer, not the watcher, serializes these).
+    takeEvery(shareInviteRevokeRequested, revokeInvite),
+    takeEvery(shareMemberRemoveRequested, removeMember),
   ]);
 }
