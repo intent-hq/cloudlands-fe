@@ -3,7 +3,7 @@
   import Fa from 'svelte-fa';
 
   import { Badge, badgeColors, type BadgeColor } from '$lib/components/ui/badge';
-  import { buttonMetadata } from '$lib/components/ui/button/button.meta';
+  import { buttonMetadata } from '$lib/components/ui/button';
   import { Button, type ButtonSize, type ButtonVariant } from '$lib/components/ui/button';
   import { ButtonGroup } from '$lib/components/ui/button-group';
   import { Checkbox } from '$lib/components/ui/checkbox';

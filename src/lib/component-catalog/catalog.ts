@@ -1,4 +1,4 @@
-import { buttonMetadata } from '$lib/components/ui/button/button.meta';
+import { buttonMetadata } from '$lib/components/ui/button';
 import type {
   UiComponentCategory,
   UiComponentFixture,

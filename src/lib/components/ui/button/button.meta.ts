@@ -11,7 +11,7 @@ export const buttonMetadata = parseUiComponentMetadata({
   source: 'src/lib/components/ui/button/button.svelte',
   publicImport: '$lib/components/ui/button',
   legacyImports: ['$lib/components/ui/button/button.svelte', '$lib/components/ui/button/index.js'],
-  exports: ['Button', 'ButtonVariant'],
+  exports: ['Button', 'ButtonVariant', 'buttonMetadata'],
   category: 'primitive',
   owner: '007-B1',
   callers: [
