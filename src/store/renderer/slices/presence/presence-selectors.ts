@@ -5,16 +5,20 @@
  * circles: the accepted membership (`workspace.members.list`, owners first)
  * says who belongs and which of them owns the workspace; the roster
  * (`presence:changed`) says who is online and where they look. Both people
- * selectors show nothing while nobody but this window's own principal is
- * online in their scope (`hasOtherPresence`), so an owner alone sees no
- * presence indicator at all. The typing selector hands back the roster's own
- * member objects, so its result stays shallow-equal between rosters.
+ * selectors show nothing for an unshared workspace, while this window's own
+ * principal is still unknown (nobody can then be told apart from self, so
+ * the indicators fail closed), and while nobody but that principal is online
+ * in their scope (`hasOtherPresence`), so an owner alone sees no presence
+ * indicator at all. The typing selector hands back the roster's own member
+ * objects, so its result stays shallow-equal between rosters.
  */
 
 import { getItem, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import type { Workspace } from '$shared/types';
 import { WorkspaceId } from '$shared/types/branded-ids';
 import type { PresenceFocusItem, PresenceMember } from '$shared/types/presence';
 import { store } from '../../store';
+import type { StoreState } from '../../types';
 import type { PresenceIdentity, PresencePerson, PresenceState } from './presence-types';
 
 const NO_MEMBERS: PresenceMember[] = [];
@@ -23,6 +27,12 @@ const NO_PEOPLE: PresencePerson[] = [];
 const rosterMembers = (presence: PresenceState, workspaceId: string): PresenceMember[] => {
   const roster = presence.rosters[workspaceId];
   return roster ? getItems(roster) : NO_MEMBERS;
+};
+
+/** The workspace row when it is shared (`memberCount > 1`); `undefined` gates both people selectors off. */
+const sharedWorkspace = (state: StoreState, workspaceId: string): Workspace | undefined => {
+  const workspace = getItem(state.workspace.workspaces, WorkspaceId(workspaceId));
+  return workspace && (workspace.memberCount ?? 1) > 1 ? workspace : undefined;
 };
 
 const toPerson = (
@@ -57,14 +67,14 @@ export const selectPresenceMembers = store.createSelector((state) => state.prese
  * this window's own principal included) in `workspace.members.list` order,
  * online when the roster lists them, viewing when that roster row has a
  * focus item. An unshared workspace, one whose membership was not read yet,
- * or one where nobody else is online right now shows nothing.
+ * an unknown own principal, or nobody else online right now shows nothing.
  */
 export const selectWorkspacePresencePeople = store.createSelector<
   [workspaceId: string],
   PresencePerson[]
 >((state, workspaceId) => {
-  const workspace = getItem(state.workspace.workspaces, WorkspaceId(workspaceId));
-  if (!workspace || (workspace.memberCount ?? 1) <= 1) return NO_PEOPLE;
+  const ownPrincipalId = state.presence.ownPrincipalId;
+  if (ownPrincipalId === null || !sharedWorkspace(state, workspaceId)) return NO_PEOPLE;
   const members = state.presence.members[workspaceId];
   if (!members) return NO_PEOPLE;
   const roster = state.presence.rosters[workspaceId];
@@ -74,7 +84,7 @@ export const selectWorkspacePresencePeople = store.createSelector<
       owner: member.role === 'owner',
       online: online !== undefined,
       viewing: (online?.focus.length ?? 0) > 0,
-      self: member.principalId === state.presence.ownPrincipalId,
+      self: member.principalId === ownPrincipalId,
     });
   });
   return hasOtherPresence(people) ? people : NO_PEOPLE;
@@ -83,27 +93,28 @@ export const selectWorkspacePresencePeople = store.createSelector<
 /**
  * The circles of a chat's title bar: everyone whose focus includes this
  * agent's chat right now — this window's own principal first — with the
- * owner (`ownerPrincipalId`) blue. Nobody offline appears here, and a solo
- * user sees no circle at all.
+ * owner (`ownerPrincipalId`) blue. Nobody offline appears here, and an
+ * unshared workspace, an unknown own principal, or a solo user shows no
+ * circle at all (so the last unshare hides the circles at once, before any
+ * roster replacement arrives).
  */
 export const selectAgentPresencePeople = store.createSelector<
   [workspaceId: string, agentId: string],
   PresencePerson[]
 >((state, workspaceId, agentId) => {
-  const ownerPrincipalId = getItem(
-    state.workspace.workspaces,
-    WorkspaceId(workspaceId),
-  )?.ownerPrincipalId;
+  const ownPrincipalId = state.presence.ownPrincipalId;
+  const workspace = sharedWorkspace(state, workspaceId);
+  if (ownPrincipalId === null || !workspace) return NO_PEOPLE;
   const people = rosterMembers(state.presence, workspaceId)
     .filter((member) =>
       member.focus.some((item) => item.workspaceId === workspaceId && item.agentId === agentId),
     )
     .map((member) =>
       toPerson(member, {
-        owner: member.principalId === ownerPrincipalId,
+        owner: member.principalId === workspace.ownerPrincipalId,
         online: true,
         viewing: true,
-        self: member.principalId === state.presence.ownPrincipalId,
+        self: member.principalId === ownPrincipalId,
       }),
     )
     .sort((a, b) => Number(b.self) - Number(a.self));

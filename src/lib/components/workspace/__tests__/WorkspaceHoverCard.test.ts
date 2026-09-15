@@ -8,8 +8,19 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PrMonitorRow } from '$features/pr-monitor/pr-monitor-service';
 import type { AgentMessage, AgentSession, ContentBlock, Workspace } from '$shared/types';
 import { PullRequestStatus, WorkspaceStatusEnum } from '$shared/types';
-import type { PresencePerson } from '$store/renderer/slices/presence/presence-types';
+import { WorkspaceId } from '$shared/types/branded-ids';
+import type { PresenceMember } from '$shared/types/presence';
 import { QUESTION_RESOURCE_MIME_TYPE } from '$shared/types/question-resource';
+import type { WorkspaceMember } from '$store/renderer/slices/guest-sessions/guest-sessions-types';
+import {
+  initialState as presenceInitialState,
+  presenceMembersReceived,
+  presenceOwnPrincipalReceived,
+  presenceReducer,
+  presenceRosterReceived,
+} from '$store/renderer/slices/presence/presence-slice';
+import type { PresencePerson, PresenceState } from '$store/renderer/slices/presence/presence-types';
+import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 import { warmImport } from '../../../../test/warm-import';
 
 const mocks = vi.hoisted(() => {
@@ -28,6 +39,8 @@ const mocks = vi.hoisted(() => {
   const rosters: Record<string, RosterFixture> = {};
   const rosterListeners = new Set<() => void>();
   const presenceMembersByWorkspace: Record<string, PresencePerson[]> = {};
+  /** When set, the PRODUCTION people selector runs against this store state instead of the fixtures above. */
+  const presenceStore: { state: unknown } = { state: null };
   const createWorkspaceReadable =
     <T>(resolve: (workspaceId: string) => T) =>
     (workspaceIdStore: { subscribe: (run: (value: string) => void) => () => void }) => ({
@@ -58,6 +71,7 @@ const mocks = vi.hoisted(() => {
     rosters,
     emitRosters,
     presenceMembersByWorkspace,
+    presenceStore,
     createWorkspaceReadable,
   };
 });
@@ -83,13 +97,25 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceActivePullRequest: { select: vi.fn(() => null) },
 }));
 
-vi.mock('$store/renderer/slices/presence/presence-selectors', () => ({
-  selectWorkspacePresencePeople: vi.fn(
-    mocks.createWorkspaceReadable(
-      (workspaceId: string) => mocks.presenceMembersByWorkspace[workspaceId] ?? [],
+vi.mock('$store/renderer/slices/presence/presence-selectors', async () => {
+  const actual = await vi.importActual<
+    typeof import('$store/renderer/slices/presence/presence-selectors')
+  >('$store/renderer/slices/presence/presence-selectors');
+  return {
+    selectWorkspacePresencePeople: vi.fn(
+      mocks.createWorkspaceReadable((workspaceId: string) =>
+        mocks.presenceStore.state
+          ? actual.selectWorkspacePresencePeople.select(
+              mocks.presenceStore.state as Parameters<
+                typeof actual.selectWorkspacePresencePeople.select
+              >[0],
+              workspaceId,
+            )
+          : (mocks.presenceMembersByWorkspace[workspaceId] ?? []),
+      ),
     ),
-  ),
-}));
+  };
+});
 
 vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', () => ({
   selectAllWorkspaceAgents: vi.fn(
@@ -243,6 +269,7 @@ describe('WorkspaceHoverCard', () => {
     ]) {
       for (const key of Object.keys(record)) delete record[key];
     }
+    mocks.presenceStore.state = null;
   });
 
   it('keeps pull request numbers and status visible in the pull request column', async () => {
@@ -699,6 +726,94 @@ describe('WorkspaceHoverCard', () => {
     it('renders no people section for a workspace with no membership on display', async () => {
       const { container } = await renderHoverCard();
       expect(container.querySelector('[data-workspace-hover-card-people]')).toBeNull();
+    });
+
+    describe('driven by the production selector over real store state', () => {
+      const roster = (
+        principalId: string,
+        focus: PresenceMember['focus'] = [],
+      ): PresenceMember => ({
+        principalId,
+        login: principalId,
+        displayName: null,
+        avatarUrl: null,
+        focus,
+        typing: [],
+      });
+      const accepted = (principalId: string, role: WorkspaceMember['role']): WorkspaceMember => ({
+        principalId,
+        login: principalId,
+        displayName: null,
+        avatarUrl: null,
+        role,
+        addedAt: '2026-09-14T12:00:00Z',
+      });
+      const sharedWith = (memberCount: number) => ({
+        workspaces: createCollection('id', [
+          { ...baseWorkspace, id: WorkspaceId('ws-1'), ownerPrincipalId: 'me', memberCount },
+        ]),
+      });
+      const presenceState = (...actions: Parameters<typeof presenceReducer>[1][]) =>
+        actions.reduce(presenceReducer, presenceInitialState);
+      const membership = presenceMembersReceived('ws-1', [
+        accepted('me', 'owner'),
+        accepted('other', 'collaborator'),
+      ]);
+      const alone = presenceRosterReceived({
+        workspaceId: 'ws-1',
+        members: [roster('me', [{ workspaceId: 'ws-1' }])],
+      });
+      const joined = presenceRosterReceived({
+        workspaceId: 'ws-1',
+        members: [
+          roster('me', [{ workspaceId: 'ws-1' }]),
+          roster('other', [{ workspaceId: 'ws-1' }]),
+        ],
+      });
+      const show = (presence: PresenceState, memberCount = 2) => {
+        mocks.presenceStore.state = { presence, workspace: sharedWith(memberCount) };
+        mocks.emitRosters();
+      };
+
+      it('shows the people only while someone else is online, and hides them again when they leave', async () => {
+        show(presenceState(alone, membership, presenceOwnPrincipalReceived('me')));
+        const { container } = await renderHoverCard({ myRole: 'owner', memberCount: 2 });
+        expect(container.querySelector('[data-workspace-hover-card-people]')).toBeNull();
+
+        show(presenceState(joined, membership, presenceOwnPrincipalReceived('me')));
+        await tick();
+        const rows = peopleRows(container);
+        expect(rows.map((row) => row.getAttribute('data-presence-self'))).toEqual(['true', null]);
+        expect(rows.map((row) => row.getAttribute('data-presence-state'))).toEqual([
+          'viewing',
+          'viewing',
+        ]);
+
+        show(presenceState(joined, membership, presenceOwnPrincipalReceived('me'), alone));
+        await tick();
+        expect(container.querySelector('[data-workspace-hover-card-people]')).toBeNull();
+      });
+
+      it('shows nothing while the own principal is unknown, then the people once identity arrives', async () => {
+        show(presenceState(joined, membership));
+        const { container } = await renderHoverCard({ myRole: 'owner', memberCount: 2 });
+        expect(container.querySelector('[data-workspace-hover-card-people]')).toBeNull();
+
+        show(presenceState(joined, membership, presenceOwnPrincipalReceived('me')));
+        await tick();
+        expect(peopleRows(container)).toHaveLength(2);
+      });
+
+      it('drops the people the moment the workspace stops being shared', async () => {
+        const presence = presenceState(joined, membership, presenceOwnPrincipalReceived('me'));
+        show(presence);
+        const { container } = await renderHoverCard({ myRole: 'owner', memberCount: 2 });
+        expect(peopleRows(container)).toHaveLength(2);
+
+        show(presence, 1);
+        await tick();
+        expect(container.querySelector('[data-workspace-hover-card-people]')).toBeNull();
+      });
     });
 
     it('lists every member — viewing, then online, then offline — with login, role and state', async () => {
