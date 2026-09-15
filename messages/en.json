@@ -6292,7 +6292,6 @@
   "workspace_share_loadFailed_error": "Could not load sharing details",
   "workspace_share_createFailed_error": "Could not create the invite link",
   "workspace_share_pinUnknown_error": "No GitHub user named {login}",
-  "workspace_hoverCard_member_ariaLabel": "{name} — {role}",
   "workspace_share_ownerOnly_notice": "Only the workspace owner can manage sharing.",
   "workspace_share_removeMember_confirm_label": "Remove {name} from this workspace?",
   "workspace_share_removeMember_confirmAction_ariaLabel": "Confirm removing {name}",
@@ -6300,5 +6299,19 @@
   "workspace_share_listenerDown_error": "Turn on Remote Access + Tailcat in Settings before inviting",
   "notes_presenceStack_viewers_one": "1 other person is viewing this note",
   "notes_presenceStack_viewers_many": "{count} other people are viewing this note",
-  "notes_presenceStack_overflow_label": "+{count}"
+  "notes_presenceStack_overflow_label": "+{count}",
+  "presence_person_unknown_label": "Someone",
+  "presence_avatarStack_people_one": "1 other person here",
+  "presence_avatarStack_people_many": "{count} other people here",
+  "presence_avatarStack_more_label": "+{count}",
+  "presence_typing_one": "{name} is typing…",
+  "presence_typing_two_label": "{first} and {second} are typing…",
+  "presence_typing_many": "{first} and {count} others are typing…",
+  "workspace_hoverCard_people_label": "People",
+  "workspace_hoverCard_personViewing_label": "Viewing",
+  "workspace_hoverCard_personOnline_label": "Online",
+  "workspace_hoverCard_personOffline_label": "Offline",
+  "workspace_hoverCard_personRemove_ariaLabel": "Remove {name}",
+  "presence_avatarStack_onlyYou_label": "Only you here",
+  "presence_person_you_label": "{name} (you)"
 }

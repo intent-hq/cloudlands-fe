@@ -33,6 +33,7 @@ import { chatSubscribeSaga } from './slices/chat-state/sagas/chat-subscribe-saga
 import { switchTimingSaga } from './slices/chat-state/sagas/switch-timing-saga';
 import { connectionsSaga } from './slices/connections/sagas/connections-saga';
 import { guestSessionsSaga } from './slices/guest-sessions/sagas/guest-sessions-saga';
+import { presenceSaga } from './slices/presence/sagas/presence-saga';
 import { contextSaga } from './slices/context/sagas/context-saga';
 import { daemonHealthSaga } from './slices/daemon-health/sagas/daemon-health-saga';
 import { directoryPickerSaga } from './slices/directory-picker/sagas/directory-picker-saga';
@@ -135,6 +136,7 @@ export const sagas = [
   daemonHealthSaga,
   connectionsSaga,
   guestSessionsSaga,
+  presenceSaga,
   settingsHydrationSaga,
   activeStreamsSaga,
   agentReadSaga,

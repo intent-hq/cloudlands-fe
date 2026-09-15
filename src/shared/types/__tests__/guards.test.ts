@@ -21,6 +21,7 @@ import {
   hasToolCalls,
 } from '../guards';
 import { isWorkspaceDisplayStatus, WORKSPACE_DISPLAY_STATUS_VALUES } from '../../types';
+import { isPresenceRoster } from '../presence';
 import type { AgentMessage } from '../agent-message';
 
 describe('Type Guards', () => {
@@ -223,6 +224,34 @@ describe('Type Guards', () => {
       expect(isWorkspaceDisplayStatus(undefined)).toBe(false);
       expect(isWorkspaceDisplayStatus(null)).toBe(false);
       expect(isWorkspaceDisplayStatus(42)).toBe(false);
+    });
+  });
+
+  describe('isPresenceRoster', () => {
+    const member = {
+      principalId: 'p-1',
+      login: 'alice',
+      displayName: null,
+      avatarUrl: null,
+      focus: [{ workspaceId: 'ws-1' }],
+      typing: [],
+    };
+
+    it('accepts a member whose profile fields are present, string or null', () => {
+      expect(isPresenceRoster({ workspaceId: 'ws-1', members: [member] })).toBe(true);
+      expect(
+        isPresenceRoster({
+          workspaceId: 'ws-1',
+          members: [{ ...member, login: null, displayName: 'Alice', avatarUrl: 'https://a/b' }],
+        }),
+      ).toBe(true);
+    });
+
+    it('rejects a member that omits a required profile field instead of healing it to null', () => {
+      for (const field of ['login', 'displayName', 'avatarUrl']) {
+        const partial = Object.fromEntries(Object.entries(member).filter(([key]) => key !== field));
+        expect(isPresenceRoster({ workspaceId: 'ws-1', members: [partial] })).toBe(false);
+      }
     });
   });
 });

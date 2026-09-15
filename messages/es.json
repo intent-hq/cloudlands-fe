@@ -6292,7 +6292,6 @@
   "workspace_share_loadFailed_error": "No se pudieron cargar los detalles de uso compartido",
   "workspace_share_createFailed_error": "No se pudo crear el enlace de invitación",
   "workspace_share_pinUnknown_error": "No existe ningún usuario de GitHub llamado {login}",
-  "workspace_hoverCard_member_ariaLabel": "{name}: {role}",
   "workspace_share_ownerOnly_notice": "Solo el propietario del espacio de trabajo puede gestionar el uso compartido.",
   "workspace_share_removeMember_confirm_label": "¿Quitar a {name} de este espacio de trabajo?",
   "workspace_share_removeMember_confirmAction_ariaLabel": "Confirmar la eliminación de {name}",
@@ -6300,5 +6299,19 @@
   "workspace_share_listenerDown_error": "Activa Acceso remoto + Tailcat en Ajustes antes de invitar",
   "notes_presenceStack_viewers_one": "1 persona más está viendo esta nota",
   "notes_presenceStack_viewers_many": "{count} personas más están viendo esta nota",
-  "notes_presenceStack_overflow_label": "+{count}"
+  "notes_presenceStack_overflow_label": "+{count}",
+  "presence_person_unknown_label": "Alguien",
+  "presence_avatarStack_people_one": "1 persona más aquí",
+  "presence_avatarStack_people_many": "{count} personas más aquí",
+  "presence_avatarStack_more_label": "+{count}",
+  "presence_typing_one": "{name} está escribiendo…",
+  "presence_typing_two_label": "{first} y {second} están escribiendo…",
+  "presence_typing_many": "{first} y {count} más están escribiendo…",
+  "workspace_hoverCard_people_label": "Personas",
+  "workspace_hoverCard_personViewing_label": "Viendo",
+  "workspace_hoverCard_personOnline_label": "En línea",
+  "workspace_hoverCard_personOffline_label": "Sin conexión",
+  "workspace_hoverCard_personRemove_ariaLabel": "Quitar a {name}",
+  "presence_avatarStack_onlyYou_label": "Solo usted está aquí",
+  "presence_person_you_label": "{name} (usted)"
 }

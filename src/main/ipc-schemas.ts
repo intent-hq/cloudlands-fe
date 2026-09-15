@@ -1109,6 +1109,24 @@ export const GuestSessionsLeaveWorkspaceSchema = z.object({
   workspaceId: z.string().min(1, 'Workspace id is required'),
 });
 
+/**
+ * `presence:report`: one window's focus set + typing target (multiplayer w5),
+ * merged per backend in main into a single `presence.update`.
+ */
+export const PresenceReportSchema = z.object({
+  focus: z.array(
+    z.object({
+      workspaceId: z.string().min(1, 'Workspace id is required'),
+      agentId: z.string().min(1).optional(),
+      noteId: z.string().min(1).optional(),
+    }),
+  ),
+  typing: z
+    .object({ agentId: z.string().min(1, 'Agent id is required') })
+    .nullable()
+    .optional(),
+});
+
 export const ConnectionsCaptureFingerprintSchema = z.object({
   host: z.string().min(1, 'Host is required'),
   port: z.number().int().positive('Port must be a positive integer'),

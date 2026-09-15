@@ -40,6 +40,18 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
 vi.mock('$store/renderer/slices/hud/hud-selectors', () => ({
   selectWorkspaceTabStatuses: () => fixture().statuses(),
 }));
+vi.mock('$store/renderer/slices/presence/presence-selectors', () => ({
+  selectPresenceRosters: () => ({
+    subscribe: (run: (value: Record<string, never>) => void) => (run({}), () => {}),
+  }),
+  selectPresenceMembers: () => ({
+    subscribe: (run: (value: Record<string, never>) => void) => (run({}), () => {}),
+  }),
+  selectPresenceOwnPrincipalId: () => ({
+    subscribe: (run: (value: null) => void) => (run(null), () => {}),
+  }),
+  selectWorkspacePresencePeople: { select: () => [] },
+}));
 vi.mock('$features/workspace/utils/empty-window-destination', () => ({
   resolveEmptyWindowDestination: () => '/',
 }));
