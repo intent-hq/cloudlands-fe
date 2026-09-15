@@ -360,6 +360,42 @@ describe('guest-sessions-store', () => {
     expect(await store.findById(rec.id)).toMatchObject({ hostname: 'studio' });
   });
 
+  it('setTcAddress() persists conclusively, skips unchanged writes, and out-clocks the record', async () => {
+    const store = await import('../guest-sessions-store');
+    const rec = await store.add({ ...sample, tcAddress: 'invite-time.tailcat.net' });
+    const mutated = vi.fn();
+    store.onGuestSessionsMutated(mutated);
+    expect(await store.setTcAddress(rec.id, 'invite-time.tailcat.net')).toBe(false);
+    expect(await store.setTcAddress(rec.id, ' tc7f2a91.tailcat.net ')).toBe(true);
+    const refreshed = await store.findById(rec.id);
+    expect(refreshed).toMatchObject({ tcAddress: 'tc7f2a91.tailcat.net' });
+    expect(refreshed!.updatedAt).toBeGreaterThan(rec.updatedAt);
+    // A successful answer without a tunnel clears the stale address.
+    expect(await store.setTcAddress(rec.id, null)).toBe(true);
+    expect(await store.setTcAddress(rec.id, '')).toBe(false);
+    expect(await store.setTcAddress('missing', 'x')).toBe(false);
+    expect((await store.findById(rec.id))?.tcAddress).toBeNull();
+    expect(mutated).toHaveBeenCalledTimes(2);
+    expect(await store.listSyncRecords()).toEqual([expect.objectContaining({ tcAddress: null })]);
+  });
+
+  it('setHosts() replaces the invite-time candidates, keeps the primary first, and skips no-ops', async () => {
+    const store = await import('../guest-sessions-store');
+    const rec = await store.add(sample);
+    const mutated = vi.fn();
+    store.onGuestSessionsMutated(mutated);
+    expect(await store.setHosts(rec.id, ['10.0.0.5', '10.0.0.5', sample.host])).toBe(true);
+    expect(await store.setHosts(rec.id, ['10.0.0.5'])).toBe(false);
+    expect(await store.setHosts('missing', ['10.0.0.5'])).toBe(false);
+    const refreshed = await store.findById(rec.id);
+    expect(refreshed?.hosts).toEqual([sample.host, '10.0.0.5']);
+    expect(refreshed!.updatedAt).toBeGreaterThan(rec.updatedAt);
+    expect(mutated).toHaveBeenCalledOnce();
+    // The current interfaces replace the invite-time list wholesale.
+    expect(await store.setHosts(rec.id, ['172.16.0.9'])).toBe(true);
+    expect((await store.findById(rec.id))?.hosts).toEqual([sample.host, '172.16.0.9']);
+  });
+
   it('forget() removes the session, leaves a tombstone, and notifies local listeners', async () => {
     const store = await import('../guest-sessions-store');
     const listener = vi.fn();
@@ -466,6 +502,24 @@ describe('guest-sessions-store keychain sync adapter', () => {
     expect(await store.getDecryptedToken(first.id)).toBe('synced-replacement');
   });
 
+  it('a local re-join out-clocks a clock-ahead record pulled from another device', async () => {
+    const store = await import('../guest-sessions-store');
+    const first = await store.add(sample);
+    const [remote] = await store.listSyncRecords();
+    const ahead = Date.now() + 60 * 60 * 1000;
+    await store.applyRemoteSyncRecord({ ...remote, token: 'remote-token', updatedAt: ahead });
+    expect(await store.getDecryptedToken(first.id)).toBe('remote-token');
+
+    // The local re-join must win the next LWW reconcile against that record,
+    // or the old remote credential would overwrite the fresh one.
+    const rejoined = await store.add({ ...sample, token: 'fresh-token', principalId: 'prn_9' });
+    expect(rejoined.id).toBe(first.id);
+    expect(rejoined.updatedAt).toBeGreaterThan(ahead);
+    const [synced] = await store.listSyncRecords();
+    expect(synced).toMatchObject({ token: 'fresh-token', principalId: 'prn_9' });
+    expect(synced.updatedAt).toBe(rejoined.updatedAt);
+  });
+
   it('applyRemoteSyncRecord() that is refused as a downgrade notifies nobody', async () => {
     const store = await import('../guest-sessions-store');
     const first = await store.add(sample);
@@ -505,6 +559,10 @@ describe('guest-sessions-store keychain sync adapter', () => {
   it('applyRemoteSyncRecord() tombstone deletes the matching session by fingerprint', async () => {
     const store = await import('../guest-sessions-store');
     const rec = await store.add(sample);
+    const removed = vi.fn();
+    const mutated = vi.fn();
+    store.onGuestSessionRemovedBySync(removed);
+    store.onGuestSessionsMutated(mutated);
     const changed = await store.applyRemoteSyncRecord({
       label: 'studio.local',
       host: '203.0.113.9',
@@ -521,7 +579,24 @@ describe('guest-sessions-store keychain sync adapter', () => {
     });
     expect(changed).toBe(true);
     expect(await store.findById(rec.id)).toBeNull();
+    // The pool is told which live session went away; a pull never loops back
+    // into a push.
+    expect(removed).toHaveBeenCalledExactlyOnceWith(rec.id);
+    expect(mutated).not.toHaveBeenCalled();
     const sync = await store.listSyncRecords();
     expect(sync).toEqual([expect.objectContaining({ deleted: true, fingerprint: 'aa:bb:cc' })]);
+  });
+
+  it('a tombstone matching no live session notifies no removal, and a local forget never does', async () => {
+    const store = await import('../guest-sessions-store');
+    const removed = vi.fn();
+    store.onGuestSessionRemovedBySync(removed);
+    const rec = await store.add(sample);
+    await store.forget(rec.id);
+    const [tomb] = await store.listSyncRecords();
+    expect(await store.applyRemoteSyncRecord({ ...tomb, updatedAt: tomb.updatedAt + 1 })).toBe(
+      false,
+    );
+    expect(removed).not.toHaveBeenCalled();
   });
 });
