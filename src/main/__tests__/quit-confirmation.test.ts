@@ -3,12 +3,14 @@
  * (src/main/quit-confirmation.ts). All collaborators are injected, so no
  * electron dialog or backend client is touched.
  *
- * The confirmation aggregates every live pooled backend with windows before
- * deciding anything, plus a best-effort startup/default-backend probe when the
- * local sidecar has no window. Each source is grouped by whether quitting shuts
- * its daemon down, so the framing follows daemon ownership rather than focus.
+ * The confirmation only cares about agents quitting interrupts — those on the
+ * spawned sidecar. They are enumerated only in `sidecar` connection mode, on
+ * the pooled local client when a window owns one, else through a best-effort
+ * startup/default-backend probe. Remote backends and an adopted external
+ * daemon outlive the app, so their agents are never queried and never prompt.
+ * Disrupted agent-owned browser tabs prompt on their own.
  *
- * The last suite drops the `listLocalRespondingAgents` override so the real
+ * The probe suite drops the `listLocalRespondingAgents` override so the real
  * probe runs against a faked JsonRpcClient.
  */
 
@@ -166,20 +168,11 @@ describe('confirmQuitWithRunningAgents', () => {
   });
 
   it('returns true when the user confirms, parenting the dialog to the focused/main window', async () => {
-    const { deps, parentWindow, dialogOptions } = makeDeps({
-      agents: AGENTS,
-      response: 0,
-      mode: 'external',
-    });
+    const { deps, parentWindow, dialogOptions } = makeDeps({ agents: AGENTS, response: 0 });
 
     await expect(confirmQuitWithRunningAgents(deps)).resolves.toBe(true);
 
-    // An adopted external daemon outlives the app: its agents keep running…
-    expect(deps.buildQuitDialogOptions).toHaveBeenCalledWith({
-      keepRunning: AGENTS,
-      interrupted: [],
-    });
-    // …and the dialog is shown parented to the window from getParentWindow().
+    expect(deps.buildQuitDialogOptions).toHaveBeenCalledWith(AGENTS);
     expect(deps.showMessageBox).toHaveBeenCalledWith(parentWindow, dialogOptions);
   });
 
@@ -201,66 +194,89 @@ describe('confirmQuitWithRunningAgents', () => {
   });
 });
 
-describe('confirmQuitWithRunningAgents — local only (no remote pinned)', () => {
-  it('groups agents as interrupted in sidecar mode', async () => {
+describe('confirmQuitWithRunningAgents — sidecar gate', () => {
+  it('prompts with the local agents as interrupted in sidecar mode', async () => {
     const { deps } = makeDeps({ agents: AGENTS, mode: 'sidecar' });
 
     await confirmQuitWithRunningAgents(deps);
 
-    expect(deps.buildQuitDialogOptions).toHaveBeenCalledWith({
-      keepRunning: [],
-      interrupted: AGENTS,
-    });
+    expect(deps.buildQuitDialogOptions).toHaveBeenCalledWith(AGENTS);
   });
 
-  it('treats unknown mode conservatively as interrupted', async () => {
+  it('never prompts for local agents on an adopted external daemon', async () => {
+    const { deps, client } = makeDeps({ agents: AGENTS, mode: 'external' });
+
+    await expect(confirmQuitWithRunningAgents(deps)).resolves.toBe(true);
+
+    expect(deps.listRespondingAgents).not.toHaveBeenCalledWith(client);
+    expect(deps.listLocalRespondingAgents).not.toHaveBeenCalled();
+    expect(deps.confirmViaRenderer).not.toHaveBeenCalled();
+    expect(deps.showMessageBox).not.toHaveBeenCalled();
+  });
+
+  it('never prompts while the connection mode is still unknown', async () => {
     const { deps } = makeDeps({ agents: AGENTS, mode: 'unknown' });
+
+    await expect(confirmQuitWithRunningAgents(deps)).resolves.toBe(true);
+
+    expect(deps.listRespondingAgents).not.toHaveBeenCalled();
+    expect(deps.listLocalRespondingAgents).not.toHaveBeenCalled();
+    expect(deps.showMessageBox).not.toHaveBeenCalled();
+  });
+
+  it('never prompts for agents that only a remote backend reports', async () => {
+    const { deps } = makeDeps({ agents: AGENTS, mode: 'sidecar', remoteActive: true });
+
+    await expect(confirmQuitWithRunningAgents(deps)).resolves.toBe(true);
+
+    expect(deps.confirmViaRenderer).not.toHaveBeenCalled();
+    expect(deps.showMessageBox).not.toHaveBeenCalled();
+  });
+
+  it('does not query remote backend targets for agents at all', async () => {
+    const { deps } = makeDeps({ agents: [], mode: 'sidecar' });
+    const localClient = { getStatus: () => 'connected' } as RunningAgentsRpc;
+    const remoteAClient = { getStatus: () => 'connected' } as RunningAgentsRpc;
+    const remoteBClient = { getStatus: () => 'connected' } as RunningAgentsRpc;
+    deps.getBackendTargets.mockReturnValue([
+      { id: 'remote-a', client: remoteAClient },
+      { id: 'local', client: localClient },
+      { id: 'remote-b', client: remoteBClient },
+    ]);
+    deps.listRespondingAgents.mockImplementation(async (target) =>
+      target === localClient ? LOCAL_AGENTS : AGENTS,
+    );
 
     await confirmQuitWithRunningAgents(deps);
 
-    expect(deps.buildQuitDialogOptions).toHaveBeenCalledWith({
-      keepRunning: [],
-      interrupted: AGENTS,
-    });
+    expect(deps.listRespondingAgents).toHaveBeenCalledTimes(1);
+    expect(deps.listRespondingAgents).toHaveBeenCalledWith(localClient);
+    expect(deps.listLocalRespondingAgents).not.toHaveBeenCalled();
+    expect(deps.buildQuitDialogOptions).toHaveBeenCalledWith(LOCAL_AGENTS);
   });
 
-  it('does not query the local daemon separately when its pooled client is live', async () => {
+  it('does not probe the local daemon separately when its pooled client is live', async () => {
     const { deps } = makeDeps({ agents: AGENTS, mode: 'sidecar', localAgents: LOCAL_AGENTS });
 
     await confirmQuitWithRunningAgents(deps);
 
     expect(deps.listLocalRespondingAgents).not.toHaveBeenCalled();
+    expect(deps.buildQuitDialogOptions).toHaveBeenCalledWith(AGENTS);
   });
 
-  it('still probes a running local sidecar when no backend has a window', async () => {
+  it('probes the running sidecar when no window owns a local client', async () => {
     const { deps } = makeDeps({ agents: [], localAgents: LOCAL_AGENTS, mode: 'sidecar' });
     deps.getBackendTargets.mockReturnValue([]);
 
     await confirmQuitWithRunningAgents(deps);
 
     expect(deps.listLocalRespondingAgents).toHaveBeenCalledTimes(1);
-    expect(deps.buildQuitDialogOptions).toHaveBeenCalledWith({
-      keepRunning: [],
-      interrupted: LOCAL_AGENTS,
-    });
-  });
-});
-
-describe('confirmQuitWithRunningAgents — remote backend active', () => {
-  it('frames remote agents as keeping running even when we spawned a local sidecar', async () => {
-    const { deps } = makeDeps({ agents: AGENTS, mode: 'sidecar', remoteActive: true });
-
-    await confirmQuitWithRunningAgents(deps);
-
-    expect(deps.buildQuitDialogOptions).toHaveBeenCalledWith({
-      keepRunning: AGENTS,
-      interrupted: [],
-    });
+    expect(deps.buildQuitDialogOptions).toHaveBeenCalledWith(LOCAL_AGENTS);
   });
 
-  it('shows the dialog for local sidecar agents even when the remote has none', async () => {
+  it('prompts for probed sidecar agents when only a remote window is open', async () => {
     const { deps, dialogOptions, parentWindow } = makeDeps({
-      agents: [],
+      agents: AGENTS,
       localAgents: LOCAL_AGENTS,
       mode: 'sidecar',
       remoteActive: true,
@@ -268,163 +284,45 @@ describe('confirmQuitWithRunningAgents — remote backend active', () => {
 
     await expect(confirmQuitWithRunningAgents(deps)).resolves.toBe(true);
 
-    expect(deps.buildQuitDialogOptions).toHaveBeenCalledWith({
-      keepRunning: [],
-      interrupted: LOCAL_AGENTS,
-    });
+    expect(deps.listLocalRespondingAgents).toHaveBeenCalledTimes(1);
+    expect(deps.buildQuitDialogOptions).toHaveBeenCalledWith(LOCAL_AGENTS);
     expect(deps.showMessageBox).toHaveBeenCalledWith(parentWindow, dialogOptions);
   });
 
-  it('combines remote keep-running agents with interrupted local sidecar agents', async () => {
-    const { deps } = makeDeps({
-      agents: AGENTS,
-      localAgents: LOCAL_AGENTS,
-      mode: 'sidecar',
-      remoteActive: true,
-    });
-
-    await confirmQuitWithRunningAgents(deps);
-
-    expect(deps.buildQuitDialogOptions).toHaveBeenCalledWith({
-      keepRunning: AGENTS,
-      interrupted: LOCAL_AGENTS,
-    });
-  });
-
-  it('merges adopted external local agents into the keep-running group', async () => {
-    const { deps } = makeDeps({
-      agents: AGENTS,
-      localAgents: LOCAL_AGENTS,
-      mode: 'external',
-      remoteActive: true,
-    });
-
-    await confirmQuitWithRunningAgents(deps);
-
-    expect(deps.buildQuitDialogOptions).toHaveBeenCalledWith({
-      keepRunning: [...AGENTS, ...LOCAL_AGENTS],
-      interrupted: [],
-    });
-  });
-
-  it('fails open when the local daemon query rejects', async () => {
+  it('fails open when the local probe rejects', async () => {
     const { deps } = makeDeps({ agents: AGENTS, mode: 'sidecar', remoteActive: true });
     deps.listLocalRespondingAgents.mockRejectedValue(new Error('no local daemon'));
 
     await expect(confirmQuitWithRunningAgents(deps)).resolves.toBe(true);
 
-    expect(deps.buildQuitDialogOptions).toHaveBeenCalledWith({
-      keepRunning: AGENTS,
-      interrupted: [],
-    });
+    expect(deps.showMessageBox).not.toHaveBeenCalled();
   });
 
-  it('treats unknown mode conservatively as interrupted for the local agents', async () => {
-    const { deps } = makeDeps({
-      agents: AGENTS,
-      localAgents: LOCAL_AGENTS,
-      mode: 'unknown',
-      remoteActive: true,
-    });
-
-    await confirmQuitWithRunningAgents(deps);
-
-    expect(deps.buildQuitDialogOptions).toHaveBeenCalledWith({
-      keepRunning: AGENTS,
-      interrupted: LOCAL_AGENTS,
-    });
-  });
-
-  it('shows no dialog when neither the remote nor the local daemon has agents', async () => {
+  it('shows no dialog when the sidecar has no agents and no tabs are disrupted', async () => {
     const { deps } = makeDeps({ agents: [], localAgents: [], mode: 'sidecar', remoteActive: true });
 
     await expect(confirmQuitWithRunningAgents(deps)).resolves.toBe(true);
 
     expect(deps.showMessageBox).not.toHaveBeenCalled();
   });
-});
 
-describe('confirmQuitWithRunningAgents — overlapping sources', () => {
-  it('lists an agent once when both sources resolve to the same daemon', async () => {
-    const { deps } = makeDeps({
-      agents: AGENTS,
-      localAgents: AGENTS,
-      mode: 'external',
-      remoteActive: true,
-    });
-
-    await confirmQuitWithRunningAgents(deps);
-
-    expect(deps.buildQuitDialogOptions).toHaveBeenCalledWith({
-      keepRunning: AGENTS,
-      interrupted: [],
-    });
-  });
-
-  it('keeps an overlapping agent in keepRunning only, never in both groups', async () => {
-    const { deps } = makeDeps({
-      agents: AGENTS,
-      localAgents: [AGENTS[0], ...LOCAL_AGENTS],
-      mode: 'sidecar',
-      remoteActive: true,
-    });
-
-    await confirmQuitWithRunningAgents(deps);
-
-    expect(deps.buildQuitDialogOptions).toHaveBeenCalledWith({
-      keepRunning: AGENTS,
-      interrupted: LOCAL_AGENTS,
-    });
-  });
-
-  it('queries both sources concurrently rather than one after the other', async () => {
-    const { deps } = makeDeps({ agents: AGENTS, mode: 'sidecar', remoteActive: true });
-    let activeSettled = false;
+  it('enumerates sidecar agents and disrupted tabs concurrently', async () => {
+    const { deps } = makeDeps({ agents: AGENTS, mode: 'sidecar' });
+    let agentsSettled = false;
     deps.listRespondingAgents.mockImplementation(async () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
-      activeSettled = true;
+      agentsSettled = true;
       return AGENTS;
     });
-    deps.listLocalRespondingAgents.mockImplementation(async () => {
-      // Started while the active query is still in flight.
-      expect(activeSettled).toBe(false);
-      return LOCAL_AGENTS;
+    deps.listDisruptedBrowserTabs.mockImplementation(async () => {
+      // Started while the agent query is still in flight.
+      expect(agentsSettled).toBe(false);
+      return [];
     });
 
     await confirmQuitWithRunningAgents(deps);
 
-    expect(deps.buildQuitDialogOptions).toHaveBeenCalledWith({
-      keepRunning: AGENTS,
-      interrupted: LOCAL_AGENTS,
-    });
-  });
-
-  it('aggregates local and every remote backend regardless of focus', async () => {
-    const { deps } = makeDeps({ agents: [], mode: 'sidecar' });
-    const localClient = { getStatus: () => 'connected' } as RunningAgentsRpc;
-    const remoteAClient = { getStatus: () => 'connected' } as RunningAgentsRpc;
-    const remoteBClient = { getStatus: () => 'connected' } as RunningAgentsRpc;
-    const remoteAAgents = [AGENTS[0]];
-    const remoteBAgents = [AGENTS[1]];
-    deps.getBackendTargets.mockReturnValue([
-      { id: 'local', client: localClient },
-      { id: 'remote-a', client: remoteAClient },
-      { id: 'remote-b', client: remoteBClient },
-    ]);
-    deps.listRespondingAgents.mockImplementation(async (target) => {
-      if (target === localClient) return LOCAL_AGENTS;
-      if (target === remoteAClient) return remoteAAgents;
-      return remoteBAgents;
-    });
-
-    await confirmQuitWithRunningAgents(deps);
-
-    expect(deps.listRespondingAgents).toHaveBeenCalledTimes(3);
-    expect(deps.buildQuitDialogOptions).toHaveBeenCalledWith({
-      keepRunning: [...remoteAAgents, ...remoteBAgents],
-      interrupted: LOCAL_AGENTS,
-    });
-    expect(deps.listLocalRespondingAgents).not.toHaveBeenCalled();
+    expect(deps.buildQuitDialogOptions).toHaveBeenCalledWith(AGENTS);
   });
 });
 
@@ -460,10 +358,7 @@ describe('confirmQuitWithRunningAgents — default startup-backend probe', () =>
 
     await confirmQuitWithRunningAgents(deps);
 
-    expect(deps.buildQuitDialogOptions).toHaveBeenCalledWith({
-      keepRunning: [],
-      interrupted: [PROBE_AGENT],
-    });
+    expect(deps.buildQuitDialogOptions).toHaveBeenCalledWith([PROBE_AGENT]);
     expect(fake.state.instances).toHaveLength(1);
     expect(fake.state.instances[0].started).toBe(1);
     expect(fake.state.instances[0].disposed).toBe(1);
@@ -500,26 +395,18 @@ const BROWSER_TABS: QuitBrowserTabSummary[] = [
 
 describe('confirmQuitWithRunningAgents — renderer round-trip', () => {
   it('resolves with the renderer decision and never opens the native dialog', async () => {
-    const { deps, parentWindow } = makeDeps({
-      agents: AGENTS,
-      mode: 'external',
-      rendererDecision: true,
-    });
+    const { deps, parentWindow } = makeDeps({ agents: AGENTS, rendererDecision: true });
 
     await expect(confirmQuitWithRunningAgents(deps)).resolves.toBe(true);
 
-    expect(deps.confirmViaRenderer).toHaveBeenCalledWith(
-      parentWindow,
-      expect.objectContaining({
-        requestId: expect.any(String),
-        keepRunning: [
-          { agentId: 'agent-1', agentName: 'Implementor', workspaceId: 'ws-1' },
-          { agentId: 'agent-2', agentName: 'Verifier', workspaceId: 'ws-2' },
-        ],
-        interrupted: [],
-        disruptedBrowserTabs: [],
-      }),
-    );
+    expect(deps.confirmViaRenderer).toHaveBeenCalledWith(parentWindow, {
+      requestId: expect.any(String),
+      interrupted: [
+        { agentId: 'agent-1', agentName: 'Implementor', workspaceId: 'ws-1' },
+        { agentId: 'agent-2', agentName: 'Verifier', workspaceId: 'ws-2' },
+      ],
+      disruptedBrowserTabs: [],
+    });
     expect(deps.showMessageBox).not.toHaveBeenCalled();
   });
 
@@ -580,7 +467,6 @@ describe('confirmQuitWithRunningAgents — renderer round-trip', () => {
     expect(deps.confirmViaRenderer).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
-        keepRunning: [],
         interrupted: [],
         disruptedBrowserTabs: BROWSER_TABS,
       }),
@@ -703,7 +589,6 @@ describe('confirmQuitWithRunningAgents — driven-workspace tab narrowing', () =
   it('still prompts for running agents when the only hosted tabs are driven elsewhere', async () => {
     const { deps } = makeDeps({
       agents: AGENTS,
-      mode: 'external',
       browserTabs: [HOSTED_TABS[1]],
       rendererDecision: true,
     });
@@ -714,13 +599,30 @@ describe('confirmQuitWithRunningAgents — driven-workspace tab narrowing', () =
     expect(deps.confirmViaRenderer).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
-        keepRunning: [
+        interrupted: [
           { agentId: 'agent-1', agentName: 'Implementor', workspaceId: 'ws-1' },
           { agentId: 'agent-2', agentName: 'Verifier', workspaceId: 'ws-2' },
         ],
         disruptedBrowserTabs: [],
       }),
     );
+  });
+
+  it('still filters tabs through the driving-client lookup on a remote-hosted backend', async () => {
+    const { deps, client } = makeDeps({
+      agents: [],
+      browserTabs: HOSTED_TABS,
+      remoteActive: true,
+      rendererDecision: true,
+    });
+
+    await confirmQuitWithRunningAgents(deps);
+
+    // Remote targets are never asked for agents, but the tab filter still
+    // asks the hosting (remote) backend which client drives each workspace.
+    expect(deps.listRespondingAgents).not.toHaveBeenCalled();
+    expect(deps.getWorkspaceBrowserClient).toHaveBeenCalledWith(client, 'ws-driven');
+    expect(deps.getWorkspaceBrowserClient).toHaveBeenCalledWith(client, 'ws-other');
   });
 
   it('fails open per workspace: a rejected lookup keeps that workspace tabs counted', async () => {
@@ -1092,7 +994,7 @@ describe('confirmQuitWithRunningAgents — default renderer round-trip', () => {
 
     const [channel, payload] = send.mock.calls[0] as [string, QuitConfirmationShowPayload];
     expect(channel).toBe('quit-confirmation:show');
-    expect(payload.keepRunning.length + payload.interrupted.length).toBe(AGENTS.length);
+    expect(payload.interrupted).toHaveLength(AGENTS.length);
 
     const handlers = await getHandlers();
     await handlers.ack({}, { requestId: payload.requestId });
