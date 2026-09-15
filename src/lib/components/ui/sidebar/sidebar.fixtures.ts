@@ -16,6 +16,7 @@ export const sidebarFixtures = [
       'skeleton',
       'compact',
       'collapsed',
+      'keyboard-focus',
       'peek-hover',
       'resizing',
       'reduced-motion',

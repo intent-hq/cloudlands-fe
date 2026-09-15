@@ -48,12 +48,13 @@
 <div class="grid w-full min-w-0 max-w-md gap-4" data-catalog-renderer-fixture={fixture.id}>
   {#if componentId === 'combobox'}
     {#if fixture.id === 'combobox-state-matrix'}
-      <div data-catalog-rendered-state="closed selected">
+      <div data-catalog-rendered-state="closed selected keyboard-focus">
         <Combobox
           bind:value={comboboxValue}
           {options}
           portal={false}
           ariaLabel="Catalog combobox"
+          inputClass="outline-1 outline-offset-2 outline-focus-ring outline-solid"
         />
         <output class="sr-only" aria-label="Combobox value">{JSON.stringify(comboboxValue)}</output>
       </div>

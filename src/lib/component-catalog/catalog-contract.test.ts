@@ -33,6 +33,18 @@ const cases: ContractCase[] = [
         fixture,
       })),
     ),
+  ...canonicalComponentManifest
+    .filter(({ id }) => id === 'combobox' || id === 'sidebar')
+    .flatMap(({ id, fixtures }) =>
+      fixtures
+        .filter(({ states }) => states.includes('keyboard-focus'))
+        .map((fixture) => ({
+          key: `primitive:${id}:${fixture.id}`,
+          kind: 'primitive' as const,
+          id,
+          fixture,
+        })),
+    ),
   ...canonicalPatternManifest.flatMap(({ id, fixtures }) =>
     fixtures.map((fixture) => ({
       key: `pattern:${id}:${fixture.id}`,

@@ -4,6 +4,7 @@
   import { ShortcutChip } from '$lib/components/ui/kbd';
   import { ScrollArea } from '$lib/components/ui/scroll-area';
   import * as Sidebar from '$lib/components/ui/sidebar';
+  import SidebarExpandableSearch from '$lib/components/workspace/sidebar/SidebarExpandableSearch.svelte';
   import * as Tooltip from '$lib/components/ui/tooltip';
   import { onMount } from 'svelte';
   import type { CatalogRendererProps } from '../catalog-renderers';
@@ -139,6 +140,12 @@
       data-catalog-rendered-state="default floating inset nested actions-and-badges collapsed peek-hover resizing reduced-motion"
     >
       <Sidebar.Harness insetAs="div" />
+      <div
+        class="p-3 [&_button[data-sidebar-action=search]]:outline-1 [&_button[data-sidebar-action=search]]:outline-solid [&_button[data-sidebar-action=search]]:outline-offset-2 [&_button[data-sidebar-action=search]]:outline-focus-ring"
+        data-catalog-rendered-state="keyboard-focus"
+      >
+        <SidebarExpandableSearch placeholder="Search sidebar" scope="agents" />
+      </div>
     </div>
   {:else if componentId === 'scroll-area'}
     <div

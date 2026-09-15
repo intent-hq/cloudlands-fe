@@ -94,7 +94,13 @@
       </span>
     </div>
   {:else}
-    <SidebarHeaderAction bind:ref={triggerRef} icon="search" label={placeholder} onclick={expand} />
+    <SidebarHeaderAction
+      bind:ref={triggerRef}
+      icon="search"
+      label={placeholder}
+      class="focus-visible:outline-solid"
+      onclick={expand}
+    />
   {/if}
 </div>
 

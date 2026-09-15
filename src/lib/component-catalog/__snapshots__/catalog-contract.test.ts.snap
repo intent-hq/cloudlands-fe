@@ -7162,6 +7162,152 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:checkbox-g
 }
 `;
 
+exports[`catalog DOM, token, and accessibility contracts > 'primitive:combobox:combobox-state-mat…' 1`] = `
+{
+  "declaredStates": [
+    "closed",
+    "open",
+    "selected",
+    "selected-checkmark",
+    "multi-selected",
+    "disabled",
+    "invalid",
+    "loading",
+    "keyboard-focus",
+    "pointer-proximity",
+    "merged-selection",
+    "spring-open",
+    "compact-28",
+    "medium-32",
+    "large-36",
+  ],
+  "dom": "<body>
+  <div>
+    <section class="catalog-detail lg:p-10 min-w-0 p-4 sm:p-6 svelte-<scope> w-full">
+      <header class="entry-header svelte-<scope>">
+        <div class="min-w-0">
+          <h1 class="svelte-<scope>">
+            "Combobox"
+          <p class="entry-purpose svelte-<scope>">
+            "Search available options and choose a matching value."
+        <details class="entry-inspector svelte-<scope> text-muted-foreground text-xs">
+          <summary class="svelte-<scope>">
+            "Source"
+          <div class="inspector-popover svelte-<scope>">
+            <p class="text-foreground">
+              "Canonical source"
+            <code class="block break-all mt-1">
+              "src/lib/components/ui/combobox/combobox.svelte"
+            <dl class="inspector-grid svelte-<scope>">
+              <div>
+                <dt>
+                  "Category"
+                <dd class="mt-1 text-foreground">
+                  "pattern"
+              <div>
+                <dt>
+                  "Removal gate"
+                <dd class="mt-1 text-foreground">
+                  "Retain while callers need the pattern and catalog coverage remains current."
+      <div class="fixture-grid svelte-<scope>">
+        <article class="fixture-card svelte-<scope>" data-catalog-fixture="combobox-state-matrix">
+          <div class="fixture-heading svelte-<scope>">
+            <h2 class="svelte-<scope>">
+              "Combobox states"
+          <div class="bg-background fixture-preview min-h-20 rounded-md svelte-<scope>" data-catalog-fixture-id="combobox-state-matrix" data-catalog-preview="combobox">
+            <div class="gap-4 grid max-w-md min-w-0 svelte-<scope> w-full" data-catalog-renderer-fixture="combobox-state-matrix">
+              <div class="svelte-<scope>" data-catalog-rendered-state="closed selected keyboard-focus">
+                <div class="relative w-full">
+                  <span class="sr-only" id="c<id>-label">
+                    "Catalog combobox"
+                  <input aria-autocomplete="list" aria-expanded="false" aria-labelledby="c<id>-label" class="aria-invalid:border-danger bg-transparent border border-border data-[state=hover]:bg-hover disabled:bg-transparent disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:opacity-60 duration-(--spring-fast) focus-visible:outline-solid h-(--control-height-medium) hover:bg-hover min-w-0 motion-reduce:transition-none outline-1 outline-focus-ring outline-offset-2 outline-solid placeholder:text-muted-foreground px-3 read-only:text-muted-foreground rounded-(--radius-medium) shadow-none text-foreground transition-[background-color,border-color,box-shadow,color] type-caption w-full" data-combobox-input="" data-size="default" data-state="closed" id="c<id>-input" role="combobox">
+                <output aria-label="Combobox value" class="sr-only">
+                  "\\"grace\\""
+              <div class="pb-32 svelte-<scope>" data-catalog-rendered-state="open" data-catalog-state="combobox-open">
+                <div class="relative w-full">
+                  <span class="sr-only" id="c<id>-label">
+                    "Open catalog combobox"
+                  <input aria-activedescendant="bits-<id>" aria-autocomplete="list" aria-controls="c<id>-listbox" aria-expanded="true" aria-labelledby="c<id>-label" class="aria-invalid:border-danger bg-transparent border border-border data-[state=hover]:bg-hover disabled:bg-transparent disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:opacity-60 duration-(--spring-fast) focus-visible:outline-solid h-(--control-height-medium) hover:bg-hover min-w-0 motion-reduce:transition-none placeholder:text-muted-foreground px-3 read-only:text-muted-foreground rounded-(--radius-medium) shadow-none text-foreground transition-[background-color,border-color,box-shadow,color] type-caption w-full" data-combobox-input="" data-size="default" data-state="open" id="c<id>-input" role="combobox">
+                  <div data-bits-floating-content-wrapper="" id="bits-<id>">
+                    <div class="bg-popover border border-border data-[side=bottom]:origin-top data-[side=left]:origin-right data-[side=right]:origin-left data-[side=top]:origin-bottom data-[state=closed]:animate-out data-[state=closed]:duration-spring-moderate-exit data-[state=closed]:ease-spring-exit data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:duration-spring-moderate data-[state=open]:ease-spring-moderate data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 focus-visible:-outline-offset-1 focus-visible:border-input focus-visible:outline isolate max-h-72 motion-reduce:animate-none motion-reduce:transition-none overflow-hidden relative rounded-(--radius-medium) shadow-(--elevation-overlay) text-popover-foreground type-body w-(--bits-<id>) z-(--layer-popover)" data-align="center" data-combobox-content="" data-side="bottom" data-state="open" data-surface-level="3" tokens=["--bits-floating-anchor-height","--bits-floating-anchor-width","--bits-floating-available-height","--bits-floating-available-width","--bits-floating-transform-origin","--space-4"]>
+                      <div aria-labelledby="c<id>-label" class="isolate max-h-72 overflow-y-auto overscroll-contain p-1 relative" data-combobox-viewport="" data-list-overlay="" id="c<id>-listbox" role="listbox" tabindex="0">
+                        <span aria-hidden="true" class="contents" data-active-index="1" data-slot="menu-list-highlight">
+                          <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
+                            <div class="absolute bg-selected" tokens=["--radius-row"]>
+                            <div class="absolute bg-hover" tokens=["--radius-row"]>
+                        <div data-combobox-group="" id="bits-<id>" role="group">
+                          <div class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground gap-2 group/menu-item items-center justify-start min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-combobox-item="" data-label="Ada Lovelace" data-menu-item="true" data-slot="combobox-option-motion" data-value="ada" id="bits-<id>" role="option">
+                            <span class="flex-1 min-w-0 truncate">
+                              "Ada Lovelace"
+                            <span aria-hidden="true" class="flex font-medium group-data-[selected]:opacity-100 items-center justify-center ml-auto opacity-0 shrink-0 size-4 text-primary-ink" data-slot="combobox-item-check">
+                              "✓"
+                          <div aria-selected="true" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground gap-2 group/menu-item items-center justify-start min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-combobox-item="" data-highlighted="" data-label="Grace Hopper" data-menu-item="true" data-selected="" data-slot="combobox-option-motion" data-value="grace" id="bits-<id>" role="option">
+                            <span class="flex-1 min-w-0 truncate">
+                              "Grace Hopper"
+                            <span aria-hidden="true" class="flex font-medium group-data-[selected]:opacity-100 items-center justify-center ml-auto opacity-0 shrink-0 size-4 text-primary-ink" data-slot="combobox-item-check">
+                              "✓"
+                          <div class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground gap-2 group/menu-item items-center justify-start min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-combobox-item="" data-label="A very long option label that remains readable in compact layouts" data-menu-item="true" data-slot="combobox-option-motion" data-value="long" id="bits-<id>" role="option">
+                            <span class="flex-1 min-w-0 truncate">
+                              "A very long option label that remains readable in compact layouts"
+                            <span aria-hidden="true" class="flex font-medium group-data-[selected]:opacity-100 items-center justify-center ml-auto opacity-0 shrink-0 size-4 text-primary-ink" data-slot="combobox-item-check">
+                              "✓"
+              <div class="svelte-<scope>" data-catalog-rendered-state="multi-selected" data-catalog-state="combobox-multi">
+                <div class="relative w-full">
+                  <span class="sr-only" id="c<id>-label">
+                    "Multi-select catalog combobox"
+                  <input aria-autocomplete="list" aria-expanded="false" aria-labelledby="c<id>-label" class="aria-invalid:border-danger bg-transparent border border-border data-[state=hover]:bg-hover disabled:bg-transparent disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:opacity-60 duration-(--spring-fast) focus-visible:outline-solid h-(--control-height-medium) hover:bg-hover min-w-0 motion-reduce:transition-none placeholder:text-muted-foreground px-3 read-only:text-muted-foreground rounded-(--radius-medium) shadow-none text-foreground transition-[background-color,border-color,box-shadow,color] type-caption w-full" data-combobox-input="" data-size="default" data-state="closed" id="c<id>-input" role="combobox">
+                <output aria-label="Multi-select combobox value" class="sr-only">
+                  "[\\"ada\\",\\"grace\\"]"
+              <div class="gap-2 grid svelte-<scope>" data-catalog-rendered-state="compact-28 medium-32 large-36">
+                <div class="relative w-full">
+                  <span class="sr-only" id="c<id>-label">
+                    "Compact catalog combobox"
+                  <input aria-autocomplete="list" aria-expanded="false" aria-labelledby="c<id>-label" class="aria-invalid:border-danger bg-transparent border border-border data-[state=hover]:bg-hover disabled:bg-transparent disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:opacity-60 duration-(--spring-fast) focus-visible:outline-solid h-(--control-height-small) hover:bg-hover min-w-0 motion-reduce:transition-none placeholder:text-muted-foreground px-3 read-only:text-muted-foreground rounded-(--radius-medium) shadow-none text-foreground transition-[background-color,border-color,box-shadow,color] type-caption w-full" data-combobox-input="" data-size="default" data-state="closed" id="c<id>-input" role="combobox">
+                <div class="relative w-full">
+                  <span class="sr-only" id="c<id>-label">
+                    "Medium catalog combobox"
+                  <input aria-autocomplete="list" aria-expanded="false" aria-labelledby="c<id>-label" class="aria-invalid:border-danger bg-transparent border border-border data-[state=hover]:bg-hover disabled:bg-transparent disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:opacity-60 duration-(--spring-fast) focus-visible:outline-solid h-(--control-height-medium) hover:bg-hover min-w-0 motion-reduce:transition-none placeholder:text-muted-foreground px-3 read-only:text-muted-foreground rounded-(--radius-medium) shadow-none text-foreground transition-[background-color,border-color,box-shadow,color] type-caption w-full" data-combobox-input="" data-size="default" data-state="closed" id="c<id>-input" role="combobox">
+                <div class="relative w-full">
+                  <span class="sr-only" id="c<id>-label">
+                    "Large catalog combobox"
+                  <input aria-autocomplete="list" aria-expanded="false" aria-labelledby="c<id>-label" class="aria-invalid:border-danger bg-transparent border border-border data-[state=hover]:bg-hover disabled:bg-transparent disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:opacity-60 duration-(--spring-fast) focus-visible:outline-solid h-(--control-height-large) hover:bg-hover min-w-0 motion-reduce:transition-none placeholder:text-muted-foreground px-3 read-only:text-muted-foreground rounded-(--radius-medium) shadow-none text-foreground transition-[background-color,border-color,box-shadow,color] type-caption w-full" data-combobox-input="" data-size="default" data-state="closed" id="c<id>-input" role="combobox">
+              <div class="svelte-<scope>" data-catalog-rendered-state="disabled">
+                <div class="relative w-full">
+                  <span class="sr-only" id="c<id>-label">
+                    "Disabled combobox"
+                  <input aria-autocomplete="list" aria-expanded="false" aria-labelledby="c<id>-label" class="aria-invalid:border-danger bg-transparent border border-border data-[state=hover]:bg-hover disabled:bg-transparent disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:opacity-60 duration-(--spring-fast) focus-visible:outline-solid h-(--control-height-medium) hover:bg-hover min-w-0 motion-reduce:transition-none placeholder:text-muted-foreground px-3 read-only:text-muted-foreground rounded-(--radius-medium) shadow-none text-foreground transition-[background-color,border-color,box-shadow,color] type-caption w-full" data-combobox-input="" data-disabled="" data-size="default" data-state="closed" disabled="" id="c<id>-input" role="combobox">
+              <div class="svelte-<scope>" data-catalog-rendered-state="invalid">
+                <div class="relative w-full">
+                  <span class="sr-only" id="c<id>-label">
+                    "Invalid combobox"
+                  <input aria-autocomplete="list" aria-expanded="false" aria-invalid="true" aria-labelledby="c<id>-label" class="aria-invalid:border-danger bg-transparent border border-danger data-[state=hover]:bg-hover disabled:bg-transparent disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:opacity-60 duration-(--spring-fast) focus-visible:outline-solid h-(--control-height-medium) hover:bg-hover min-w-0 motion-reduce:transition-none placeholder:text-muted-foreground px-3 read-only:text-muted-foreground ring-1 ring-danger/25 rounded-(--radius-medium) shadow-none text-foreground transition-[background-color,border-color,box-shadow,color] type-caption w-full" data-combobox-input="" data-size="default" data-state="closed" id="c<id>-input" role="combobox">
+              <div class="svelte-<scope>" data-catalog-rendered-state="loading">
+                <div class="relative w-full">
+                  <span class="sr-only" id="c<id>-label">
+                    "Loading combobox"
+                  <input aria-autocomplete="list" aria-expanded="false" aria-labelledby="c<id>-label" class="aria-invalid:border-danger bg-transparent border border-border data-[state=hover]:bg-hover disabled:bg-transparent disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:opacity-60 duration-(--spring-fast) focus-visible:outline-solid h-(--control-height-medium) hover:bg-hover min-w-0 motion-reduce:transition-none placeholder:text-muted-foreground px-3 read-only:text-muted-foreground rounded-(--radius-medium) shadow-none text-foreground transition-[background-color,border-color,box-shadow,color] type-caption w-full" data-combobox-input="" data-size="default" data-state="closed" id="c<id>-input" role="combobox">
+          <details class="fixture-inspector svelte-<scope> text-muted-foreground text-xs">
+            <summary class="svelte-<scope>">
+              "Fixture details"
+            <dl class="inspector-grid svelte-<scope>">
+              <div>
+                <dt>
+                  "Viewport"
+                <dd class="mt-1 text-foreground">
+                  "both"
+              <div>
+                <dt>
+                  "States"
+                <dd class="mt-1 text-foreground">
+                  "closed, open, selected, selected-checkmark, multi-selected, disabled, invalid, loading, keyboard-focus, pointer-proximity, merged-selection, spring-open, compact-28, medium-32, large-36"
+              <div>
+                <dt>
+                  "Themes"
+                <dd class="mt-1 text-foreground">
+                  "light, dark, high-contrast"",
+}
+`;
+
 exports[`catalog DOM, token, and accessibility contracts > 'primitive:copy-input:copy-input-state…' 1`] = `
 {
   "declaredStates": [
@@ -10342,6 +10488,170 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:sheet:shee
                   "States"
                 <dd class="mt-1 text-foreground">
                   "closed, open, entering, exiting, top, bottom, left, right, disabled-close, destructive-flow, nested-content, long-content, scrolling, compact, zoom-200, outside-dismiss, escape-dismiss, focus-return, reduced-motion"
+              <div>
+                <dt>
+                  "Themes"
+                <dd class="mt-1 text-foreground">
+                  "light, dark"",
+}
+`;
+
+exports[`catalog DOM, token, and accessibility contracts > 'primitive:sidebar:sidebar-navigation' 1`] = `
+{
+  "declaredStates": [
+    "default",
+    "floating",
+    "inset",
+    "nested",
+    "actions-and-badges",
+    "header-footer-stacking",
+    "callouts",
+    "status-dots",
+    "skeleton",
+    "compact",
+    "collapsed",
+    "keyboard-focus",
+    "peek-hover",
+    "resizing",
+    "reduced-motion",
+  ],
+  "dom": "<body>
+  <div>
+    <section class="catalog-detail lg:p-10 min-w-0 p-4 sm:p-6 svelte-<scope> w-full">
+      <header class="entry-header svelte-<scope>">
+        <div class="min-w-0">
+          <h1 class="svelte-<scope>">
+            "Sidebar"
+          <p class="entry-purpose svelte-<scope>">
+            "Organize primary navigation in an expandable side rail."
+        <details class="entry-inspector svelte-<scope> text-muted-foreground text-xs">
+          <summary class="svelte-<scope>">
+            "Source"
+          <div class="inspector-popover svelte-<scope>">
+            <p class="text-foreground">
+              "Canonical source"
+            <code class="block break-all mt-1">
+              "src/lib/components/ui/sidebar/index.ts"
+            <dl class="inspector-grid svelte-<scope>">
+              <div>
+                <dt>
+                  "Category"
+                <dd class="mt-1 text-foreground">
+                  "pattern"
+              <div>
+                <dt>
+                  "Removal gate"
+                <dd class="mt-1 text-foreground">
+                  "Retain while host-independent collapsed, mobile, menu, and shortcut tests pass."
+      <div class="fixture-grid svelte-<scope>">
+        <article class="fixture-card svelte-<scope>" data-catalog-fixture="sidebar-navigation">
+          <div class="fixture-heading svelte-<scope>">
+            <h2 class="svelte-<scope>">
+              "Sidebar responsive navigation states"
+          <div class="bg-background fixture-preview min-h-20 rounded-md svelte-<scope>" data-catalog-fixture-id="sidebar-navigation" data-catalog-preview="sidebar">
+            <div class="gap-4 grid grid-cols-1 min-w-0 overflow-hidden w-full" data-catalog-renderer-fixture="sidebar-navigation">
+              <div data-catalog-rendered-state="default floating inset nested actions-and-badges collapsed peek-hover resizing reduced-motion">
+                <div class="!min-h-0 border border-border flex group/sidebar-wrapper h-72 has-data-[variant=inset]:bg-sidebar min-h-svh overflow-hidden relative rounded-md w-full" data-force-actions="false" data-sidebar-fixture-state="default" data-slot="sidebar-wrapper">
+                  <div class="group hidden md:block peer text-sidebar-foreground" data-collapsible="offcanvas" data-peeking="false" data-side="left" data-slot="sidebar" data-state="collapsed" data-variant="sidebar">
+                    <div class="bg-transparent duration-spring-slow ease-spring-slow group-data-[collapsible=offcanvas]:w-0 group-data-[side=right]:rotate-180 motion-reduce:transition-none relative transition-[width] w-(--sidebar-width)" data-slot="sidebar-gap">
+                    <div class="!absolute !h-full !inset-y-0 border-border duration-spring-slow ease-spring-slow fixed group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width)*-1)] group-data-[peeking=true]:left-0 group-data-[peeking=true]:right-auto group-data-[side=left]:border-r group-data-[side=right]:border-l h-svh hidden inset-y-0 left-0 md:flex motion-reduce:transition-none transition-[left,right,width] w-(--sidebar-width) z-10" data-slot="sidebar-container">
+                      <div class="bg-sidebar flex flex-col group-data-[variant=floating]:border group-data-[variant=floating]:border-border group-data-[variant=floating]:rounded-md group-data-[variant=floating]:shadow-(--elevation-raised) group-data-[variant=inset]:overflow-hidden group-data-[variant=inset]:rounded-md h-full w-full" data-sidebar="sidebar" data-slot="sidebar-inner">
+                        <div class="flex flex-col gap-2 p-2 shrink-0" data-orientation="vertical" data-sidebar="header" data-slot="sidebar-header">
+                          <span class="flex-1 min-w-0 truncate type-title">
+                            "Workspace"
+                        <div class="border-border border-y flex flex-1 flex-col gap-2 min-h-0 overflow-auto" data-sidebar="content" data-slot="sidebar-content">
+                          <div class="flex flex-col min-w-0 p-2 relative w-full" data-collapsible="true" data-open="true" data-sidebar="group" data-slot="sidebar-group">
+                            <div>
+                              <button aria-expanded="true" class="[&>svg]:shrink-0 [&>svg]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.375rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast duration-spring-fast ease-spring-fast ease-spring-fast flex focus-visible:-outline-offset-1 focus-visible:outline font-normal gap-2 group/button group/group-label h-(--control-height-medium) isolate items-center justify-start motion-reduce:transition-none px-2 relative rounded-md shrink-0 text-muted-foreground text-xs transition-colors w-full whitespace-nowrap" data-sidebar="group-label" data-slot="sidebar-group-label" type="button">
+                                <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                                <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                                  <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                    <span class="flex-1 min-w-0 text-left truncate">
+                                      "Navigation"
+                                    <span aria-hidden="true" class="duration-spring-fast ease-spring-fast flex group-focus/group-label:opacity-100 group-focus/group-label:w-6 group-hover/group-label:opacity-100 group-hover/group-label:w-6 h-6 items-center justify-center ml-auto motion-reduce:transition-none opacity-0 overflow-hidden shrink-0 transition-[width,opacity] w-0">
+                                      <svg aria-hidden="true" data-icon="chevron-down" data-weight="bold" role="img">
+                                        <rect>
+                                        <path>
+                            <div class="type-body w-full will-change-[height]" data-sidebar="group-content" data-slot="sidebar-group-content">
+                              <div>
+                                <ul class="flex flex-col gap-0.5 min-w-0 p-1 relative select-none w-full" data-sidebar="menu" data-slot="sidebar-menu">
+                                  <div aria-hidden="true" class="absolute bg-active left-0 pointer-events-none rounded-md top-0 z-0" data-sidebar="menu-active-highlight">
+                                  <li class="group/menu-item relative z-10" data-sidebar="menu-item" data-slot="sidebar-menu-item">
+                                    <button aria-current="page" aria-label="Overview" class="[&>svg]:shrink-0 [&>svg]:size-4 aria-disabled:opacity-50 aria-disabled:pointer-events-none cursor-pointer data-[active=true]:text-foreground data-[proximity-active=true]:text-foreground disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:-outline-offset-1 focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:shadow-none gap-2 group-focus-within/menu-item:pr-(--row-gutter-hover) group-hover/menu-item:pr-(--row-gutter-hover) items-center min-h-(--control-height-small) motion-reduce:transition-none overflow-hidden peer/menu-button px-2 py-1 relative rounded-(--radius-row) select-none svelte-<scope> text-left transition-[padding] type-caption w-full z-10" data-active="true" data-delay-duration="700" data-proximity-active="false" data-sidebar-index="0" data-sidebar="menu-button" data-size="default" data-slot="tooltip-trigger" data-state="closed" data-tooltip-trigger="" id="bits-<id>" tabindex="0" type="button">
+                                      <span class="flex-1 inline-grid min-w-0 text-left">
+                                        <span aria-hidden="true" class="col-start-1 invisible row-start-1 truncate">
+                                          "Overview"
+                                        <span class="col-start-1 duration-spring-fast ease-spring-fast motion-reduce:transition-none row-start-1 svelte-<scope> text-foreground transition-[color,font-variation-settings] truncate">
+                                          "Overview"
+                                  <li class="group/menu-item relative z-10" data-sidebar="menu-item" data-slot="sidebar-menu-item">
+                                    <button aria-label="Projects navigation" class="[&>svg]:shrink-0 [&>svg]:size-4 aria-disabled:opacity-50 aria-disabled:pointer-events-none cursor-pointer data-[active=true]:text-foreground data-[proximity-active=true]:text-foreground disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:-outline-offset-1 focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:shadow-none gap-2 group-focus-within/menu-item:pr-(--row-gutter-hover) group-hover/menu-item:pr-(--row-gutter-hover) items-center min-h-(--control-height-small) motion-reduce:transition-none overflow-hidden peer/menu-button px-2 py-1 relative rounded-(--radius-row) select-none svelte-<scope> text-left transition-[padding] type-caption w-full z-10" data-active="false" data-proximity-active="false" data-sidebar-index="1" data-sidebar="menu-button" data-size="default" data-slot="sidebar-menu-button" tabindex="-1">
+                                      <span class="flex-1 inline-grid min-w-0 text-left">
+                                        <span aria-hidden="true" class="col-start-1 invisible row-start-1 truncate">
+                                          "Projects"
+                                        <span class="col-start-1 duration-spring-fast ease-spring-fast motion-reduce:transition-none row-start-1 svelte-<scope> text-muted-foreground transition-[color,font-variation-settings] truncate">
+                                          "Projects"
+                                  <li class="group/menu-item relative z-10" data-sidebar="menu-item" data-slot="sidebar-menu-item">
+                                    <button aria-label="Settings navigation" class="[&>svg]:shrink-0 [&>svg]:size-4 aria-disabled:opacity-50 aria-disabled:pointer-events-none cursor-pointer data-[active=true]:text-foreground data-[proximity-active=true]:text-foreground disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:-outline-offset-1 focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:shadow-none gap-2 group-focus-within/menu-item:pr-(--row-gutter-hover) group-hover/menu-item:pr-(--row-gutter-hover) items-center min-h-(--control-height-small) motion-reduce:transition-none overflow-hidden peer/menu-button px-2 py-1 relative rounded-(--radius-row) select-none svelte-<scope> text-left transition-[padding] type-caption w-full z-10" data-active="false" data-proximity-active="false" data-sidebar-index="2" data-sidebar="menu-button" data-size="default" data-slot="sidebar-menu-button" tabindex="-1">
+                                      <span class="flex-1 inline-grid min-w-0 text-left">
+                                        <span aria-hidden="true" class="col-start-1 invisible row-start-1 truncate">
+                                          "Settings"
+                                        <span class="col-start-1 duration-spring-fast ease-spring-fast motion-reduce:transition-none row-start-1 svelte-<scope> text-muted-foreground transition-[color,font-variation-settings] truncate">
+                                          "Settings"
+                                  <li class="group/menu-item relative z-10" data-sidebar="menu-item" data-slot="sidebar-menu-item">
+                                    <button aria-label="Disabled navigation" class="[&>svg]:shrink-0 [&>svg]:size-4 aria-disabled:opacity-50 aria-disabled:pointer-events-none cursor-pointer data-[active=true]:text-foreground data-[proximity-active=true]:text-foreground disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:-outline-offset-1 focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:shadow-none gap-2 group-focus-within/menu-item:pr-(--row-gutter-hover) group-hover/menu-item:pr-(--row-gutter-hover) items-center min-h-(--control-height-small) motion-reduce:transition-none overflow-hidden peer/menu-button px-2 py-1 relative rounded-(--radius-row) select-none svelte-<scope> text-left transition-[padding] type-caption w-full z-10" data-active="false" data-proximity-active="false" data-sidebar-index="3" data-sidebar="menu-button" data-size="default" data-slot="sidebar-menu-button" disabled="" tabindex="-1">
+                                      <span class="flex-1 inline-grid min-w-0 text-left">
+                                        <span aria-hidden="true" class="col-start-1 invisible row-start-1 truncate">
+                                          "Disabled navigation"
+                                        <span class="col-start-1 duration-spring-fast ease-spring-fast motion-reduce:transition-none row-start-1 svelte-<scope> text-muted-foreground transition-[color,font-variation-settings] truncate">
+                                          "Disabled navigation"
+                      <button aria-label="Toggle Sidebar" class="-translate-x-1/2 [[data-side=left][data-collapsible=offcanvas]_&]:-right-2 [[data-side=left][data-state=collapsed]_&]:cursor-e-resize [[data-side=right][data-collapsible=offcanvas]_&]:-left-2 [[data-side=right][data-state=collapsed]_&]:cursor-w-resize absolute after:absolute after:bg-border after:inset-y-0 after:left-[calc(1/2*100%-1px)] after:w-px duration-spring-fast ease-spring-fast group-data-[collapsible=offcanvas]:after:left-full group-data-[collapsible=offcanvas]:translate-x-0 group-data-[side=left]:-right-4 group-data-[side=right]:left-0 group-data-[variant=inset]:inset-y-2 hidden hover:after:bg-border hover:group-data-[collapsible=offcanvas]:bg-sidebar in-data-[side=left]:cursor-w-resize in-data-[side=right]:cursor-e-resize inset-y-0 motion-reduce:transition-none sm:flex transition-[background-color] w-4 z-20" data-sidebar="rail" data-slot="sidebar-rail" tabindex="-1">
+                  <div class="bg-background flex flex-1 flex-col md:peer-data-[variant=inset]:m-2 md:peer-data-[variant=inset]:ml-0 md:peer-data-[variant=inset]:peer-data-[state=collapsed]:ml-2 md:peer-data-[variant=inset]:rounded-md md:peer-data-[variant=inset]:shadow-(--elevation-raised) min-w-0 overflow-hidden p-6 pt-12 relative w-full" data-slot="sidebar-inset">
+                    <div>
+                      <button aria-label="Toggle Sidebar" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-4 absolute aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 right-3 rounded-(--radius-medium) shrink-0 size-6 text-foreground top-3 transition-[color,opacity] type-caption whitespace-nowrap" data-sidebar="trigger" data-slot="sidebar-trigger" type="button">
+                        <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                        <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                          <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                            <svg aria-hidden="true" data-icon="bars" data-weight="bold" role="img">
+                              <rect>
+                              <path>
+                            <span class="sr-only">
+                              "Toggle Sidebar"
+                    <div class="max-w-md space-y-2">
+                      <h2 class="type-title">
+                        "Overview"
+                      <p class="text-muted-foreground type-body">
+                        "Workspace status, progress, and key metrics at a glance."
+                      <p class="text-muted-foreground type-body">
+                        "Notes about the task, shared with all agents in this workspace."
+                  <output aria-label="Sidebar open state" class="sr-only">
+                    "false"
+                  <output aria-label="Sidebar menu selections" class="sr-only">
+                    "0"
+                <div class="[&_button[data-sidebar-action=search]]:outline-1 [&_button[data-sidebar-action=search]]:outline-focus-ring [&_button[data-sidebar-action=search]]:outline-offset-2 [&_button[data-sidebar-action=search]]:outline-solid p-3" data-catalog-rendered-state="keyboard-focus">
+                  <div class="flex items-center min-w-0 shrink-0 sidebar-search--header" data-sidebar-search="agents">
+                    <span class="inline-flex" id="bits-<id>" tabindex="-1">
+                      <div>
+                        <button aria-label="Search sidebar" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-3.5 aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent bg-transparent! border-0 border-0! cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast expanded-card-action focus-visible:bg-muted! focus-visible:border-transparent! focus-visible:outline-solid font-inherit font-normal forced-colors:focus-visible:outline forced-colors:hover:outline gap-1.5 group/button hover:bg-muted/50! inline-flex isolate items-center justify-center motion-reduce:transition-none outline-none p-0 p-0! px-0 py-0 relative rounded-(--radius-medium) rounded-md! shadow-none! shrink-0 size-(--control-height-compact) text-foreground transition-colors type-caption whitespace-nowrap" data-delay-duration="300" data-sidebar-action="search" data-slot="button" data-state="closed" data-tooltip-trigger="" type="button">
+                          <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast inset-px motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                          <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                            <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                              <svg aria-hidden="true" class="shrink-0 size-3.5" data-sidebar-action-icon="search">
+                                <circle>
+                                <path>
+          <details class="fixture-inspector svelte-<scope> text-muted-foreground text-xs">
+            <summary class="svelte-<scope>">
+              "Fixture details"
+            <dl class="inspector-grid svelte-<scope>">
+              <div>
+                <dt>
+                  "Viewport"
+                <dd class="mt-1 text-foreground">
+                  "both"
+              <div>
+                <dt>
+                  "States"
+                <dd class="mt-1 text-foreground">
+                  "default, floating, inset, nested, actions-and-badges, header-footer-stacking, callouts, status-dots, skeleton, compact, collapsed, keyboard-focus, peek-hover, resizing, reduced-motion"
               <div>
                 <dt>
                   "Themes"

@@ -187,7 +187,7 @@
         <Button
           variant="ghost"
           type="button"
-          class="flex h-full min-w-0 flex-1 items-center gap-1.5 rounded-sm text-left outline-none hover:bg-muted/30 focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:hover:bg-transparent"
+          class="flex h-full min-w-0 flex-1 items-center gap-1.5 rounded-sm text-left outline-none hover:bg-muted/30 focus-visible:ring-1 focus-visible:ring-focus-ring disabled:cursor-not-allowed disabled:hover:bg-transparent"
           onclick={() => void startEditingUrl()}
           disabled={offline}
           aria-label={m.browser_embedded_editAddress_ariaLabel()}

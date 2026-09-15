@@ -223,12 +223,11 @@ when no mapped utility expresses the property.
 
 ### Input focus treatment
 
-Text-entry controls suppress the browser outline and show no visible focus treatment: no outer ring,
-inset shadow, background change, or border change. Canonical `Input`, `Textarea`, `FileInput`, and
-composed input surfaces use a transparent rest state and `bg-hover` on hover, then return to the rest
-appearance on focus. The `noFocusStyle` compatibility prop remains available for composed input
-surfaces that own their presentation. This rule is limited to input surfaces: buttons, toggles, menus,
-and other keyboard-operable controls retain their focus rings.
+Caret-bearing text entries (`Input`, `Textarea`) and editor surfaces (TipTap, `AutoSaveTextarea`)
+show no visible focus treatment: the caret indicates focus. The `noFocusStyle` compatibility prop
+is limited to those editable surfaces. Composite and trigger elements (file pickers, copy actions,
+comboboxes, dropdowns, expandable search buttons, and tab headers) retain one keyboard-only
+`:focus-visible` indicator using `--focus-ring`, on the focusable element or its owning composite.
 
 The default light foundation uses a warm editorial canvas, white raised and overlay surfaces,
 forest foregrounds, sage selections, green actions/success, and violet information/focus. Dark mode
