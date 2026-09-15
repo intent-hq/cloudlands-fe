@@ -3,7 +3,15 @@
  */
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
 import type { WorkspaceInvite, WorkspaceMember } from '$features/workspace-sharing/types';
+import {
+  githubUserSearchReducer,
+  initialState as userSearchInitialState,
+  setGithubUserSearchLoading,
+  setGithubUserSearchResults,
+  type GithubUserSearchState,
+} from '$store/renderer/slices/github-user-search/github-user-search-slice';
 
 const toastMocks = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }));
 
@@ -280,6 +288,47 @@ describe('ShareWorkspaceDialog — pin typeahead', () => {
 
     expect(screen.queryAllByRole('option')).toHaveLength(0);
     expect(screen.getByTestId('share-pin-searching')).toBeTruthy();
+  });
+
+  // Regression (fe#2482 review F1): the props are derived from the real
+  // reducer, as the host does, so the stale rows the slice used to keep across
+  // `setLoading` would render here as current, selectable options.
+  it('drops the previous query rows while the next query is pending, then shows only the new rows', async () => {
+    const hubber = { login: 'hubber', githubUserId: 3, avatarUrl: null, htmlUrl: null };
+    const propsFrom = (state: GithubUserSearchState) => ({
+      ...baseProps,
+      onSearchUsers: vi.fn(),
+      userSuggestions: getItems(state.results),
+      userSearchLoading: state.loading,
+      userSearchError: state.error,
+      userSearchQuery: state.lastQuery,
+    });
+
+    const octoSettled = githubUserSearchReducer(
+      userSearchInitialState,
+      setGithubUserSearchResults('octo', [octocat]),
+    );
+    const { rerender } = renderDialog(propsFrom(octoSettled));
+    await fireEvent.input(pinField(), { target: { value: 'octo' } });
+    expect(screen.getAllByRole('option').map((o) => o.getAttribute('data-login'))).toEqual([
+      'octocat',
+    ]);
+
+    await fireEvent.input(pinField(), { target: { value: 'hub' } });
+    const hubPending = githubUserSearchReducer(octoSettled, setGithubUserSearchLoading('hub'));
+    await rerender(propsFrom(hubPending));
+    expect(screen.queryAllByRole('option')).toHaveLength(0);
+    expect(screen.getByTestId('share-pin-searching')).toBeTruthy();
+
+    const hubSettled = githubUserSearchReducer(
+      hubPending,
+      setGithubUserSearchResults('hub', [hubber]),
+    );
+    await rerender(propsFrom(hubSettled));
+    expect(screen.getAllByRole('option').map((o) => o.getAttribute('data-login'))).toEqual([
+      'hubber',
+    ]);
+    expect(screen.queryByTestId('share-pin-searching')).toBeNull();
   });
 
   it('shows the no-match row and the inline error for the current query', async () => {

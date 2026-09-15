@@ -30,6 +30,22 @@ describe('githubUserSearchReducer', () => {
     expect(next).toEqual({ ...previous, loading: true, error: null, lastQuery: 'octo' });
   });
 
+  // Regression (fe#2482 review F1): results for the previous query must not
+  // survive into the next query's loading window, or the dialog renders them
+  // as current, selectable rows until the second RPC settles.
+  it('drops the previous results when a new query starts loading', () => {
+    const settled = githubUserSearchReducer(
+      initialState,
+      setGithubUserSearchResults('octo', [mockUser('octocat', 1)]),
+    );
+
+    const next = githubUserSearchReducer(settled, setGithubUserSearchLoading('hub'));
+
+    expect(next.loading).toBe(true);
+    expect(next.lastQuery).toBe('hub');
+    expect(getItems(next.results)).toEqual([]);
+  });
+
   it('stores results as a Collection keyed by login', () => {
     const loading = { ...initialState, loading: true, lastQuery: 'octo' };
     const users = [mockUser('octocat', 1), mockUser('octokit', 2)];
