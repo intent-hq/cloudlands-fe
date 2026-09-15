@@ -106,6 +106,13 @@ export interface GuestSessionsState {
   connectedIds: string[];
   /** Whether the authoritative list has completed its first hydration. */
   hasReceivedList: boolean;
+  /**
+   * True when the boot hydration could not deliver a list (the invoke failed,
+   * or there is no Electron bridge to ask): the window's guest/owner identity
+   * is then settled on what is known rather than held open forever. Cleared
+   * by the next list payload.
+   */
+  listUnavailable: boolean;
   /** Guest session ids with a *Leave host* in flight. */
   leavingIds: string[];
   /**

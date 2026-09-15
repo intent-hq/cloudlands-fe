@@ -18,7 +18,10 @@
     loadHostedRosterRequested,
     removeHostedMemberRequested,
   } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
-  import type { WorkspaceMember } from '$store/renderer/slices/guest-sessions/guest-sessions-types';
+  import {
+    HostedRosterOperationError,
+    type WorkspaceMember,
+  } from '$store/renderer/slices/guest-sessions/guest-sessions-types';
   import { store as appStore } from '$store/renderer/store';
 
   interface Props {
@@ -44,6 +47,19 @@
     removeDialogOpen = true;
   }
 
+  /**
+   * A retry is offered only for a failure a retry can fix. `forbidden` has
+   * terminally moved the roster to `withheld` (the controls are gone) and
+   * `cancelled` means the workspace left this window or the same removal is
+   * already in flight — neither has anything to retry.
+   */
+  function isRetryable(error: unknown): boolean {
+    return !(
+      error instanceof HostedRosterOperationError &&
+      (error.code === 'forbidden' || error.code === 'cancelled')
+    );
+  }
+
   async function removeMember(member = removeTarget) {
     if (!member) return;
     removeError = null;
@@ -52,7 +68,11 @@
       appStore.dispatch(action);
       await action.promise;
       removeTarget = null;
-    } catch {
+    } catch (error) {
+      if (!isRetryable(error)) {
+        removeTarget = null;
+        return;
+      }
       removeError = m.settings_guestSessions_remove_error({ name: memberLabel(member) });
     }
   }
@@ -117,7 +137,11 @@
       role="alert"
     >
       <p class="text-sm text-danger">{removeError}</p>
-      <Button variant="ghost" disabled={!removeTarget} onclick={() => removeMember()}>
+      <Button
+        variant="ghost"
+        disabled={!removeTarget || $removingIds$.includes(removeTarget.principalId)}
+        onclick={() => removeMember()}
+      >
         {m.settings_guestSessions_retry_label()}
       </Button>
     </div>

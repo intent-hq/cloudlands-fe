@@ -36,6 +36,7 @@
   let leaveDialogOpen = $state(false);
   let leaveError = $state<string | null>(null);
   let leavingId = $state<string | null>(null);
+  let openError = $state<string | null>(null);
 
   function requestLeave(session: GuestSessionRecord) {
     leaveTarget = session;
@@ -59,10 +60,24 @@
     }
   }
 
-  function openHost(session: GuestSessionRecord) {
-    const action = openConnectionRequested(session.id);
-    action.promise.catch(() => {});
-    appStore.dispatch(action);
+  /**
+   * `connections:open` reports an unreadable stored guest token as a resolved
+   * `secret-unavailable` (no window opens), not a rejection: surface it here,
+   * where the only recovery — leave the host and rejoin from a new invite —
+   * sits next to the row.
+   */
+  async function openHost(session: GuestSessionRecord) {
+    openError = null;
+    try {
+      const action = openConnectionRequested(session.id);
+      appStore.dispatch(action);
+      const result = await action.promise;
+      if (result.status === 'secret-unavailable') {
+        openError = m.settings_guestSessions_open_secretUnavailable_error({ name: session.label });
+      }
+    } catch {
+      openError = m.settings_guestSessions_open_error({ name: session.label });
+    }
   }
 </script>
 
@@ -165,6 +180,16 @@
       </div>
     {/if}
   </div>
+
+  {#if openError}
+    <div
+      class="rounded-md border border-danger/30 bg-danger-background/10 p-3"
+      role="alert"
+      data-testid="guest-sessions-open-error"
+    >
+      <p class="text-sm text-danger">{openError}</p>
+    </div>
+  {/if}
 
   {#if leaveError}
     <div

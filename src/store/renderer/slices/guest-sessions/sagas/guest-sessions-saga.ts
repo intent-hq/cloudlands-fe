@@ -63,6 +63,7 @@ import {
 } from '../guest-sessions-types';
 import {
   guestSessionsListReceived,
+  guestSessionsListUnavailable,
   hostedRosterFailed,
   hostedRosterLoading,
   hostedRosterReceived,
@@ -79,6 +80,7 @@ import {
 import {
   selectCanManageHostedWorkspace,
   selectGuestSessionsLoaded,
+  selectHostedRemovingPrincipalIds,
   selectHostedRosterMemberCounts,
   selectIsHostedWorkspaceListed,
   selectWindowGuestSession,
@@ -133,6 +135,9 @@ function* hydrate(action: ReturnType<typeof loadGuestSessionsRequested>): SagaGe
     yield* put(action.success(result));
     settled = true;
   } catch (error) {
+    // Settle the window's identity on what is known rather than holding the
+    // administrator surfaces closed until a list that may never come.
+    yield* put(guestSessionsListUnavailable());
     yield* put(action.failure(toGuestSessionFailure(error)));
     settled = true;
   } finally {
@@ -336,7 +341,10 @@ function* watchRosterLoads(): SagaGenerator<void> {
  * window (or whose whole list was reset) mid-flight is failed `cancelled` —
  * its late success does not refetch, its late `-32003` does not withhold, so
  * a purged entry is never re-installed and a same-id workspace of the next
- * backend is never clobbered.
+ * backend is never clobbered. Single-flight per member: a second *Remove* of
+ * a member whose removal is already in flight sends no RPC and is failed
+ * `cancelled` (superseded by the in-flight one) without touching that
+ * removal's marker, so the marker clears only when the real request settles.
  */
 function* removeHostedMember(
   action: ReturnType<typeof removeHostedMemberRequested>,
@@ -346,6 +354,10 @@ function* removeHostedMember(
   if (!(yield* select(selectCanManageHostedWorkspace.select, workspaceId))) {
     yield* call(withholdRoster, workspaceId);
     yield* put(action.failure(new HostedRosterOperationError('forbidden')));
+    return;
+  }
+  if ((yield* select(selectHostedRemovingPrincipalIds.select, workspaceId)).includes(principalId)) {
+    yield* put(action.failure(new HostedRosterOperationError('cancelled')));
     return;
   }
   yield* put(removeMemberOperationStarted(workspaceId, principalId));
@@ -532,7 +544,13 @@ function* watchActions(): SagaGenerator<void> {
 }
 
 export function* guestSessionsSaga(): SagaGenerator<void> {
-  if (!getApi()) return;
+  if (!getApi()) {
+    // Outside Electron there is no main to ask and nothing can be joined as a
+    // guest: settle the window's identity (`selectWindowIdentitySettled`) as
+    // owner instead of leaving it a boot-time unknown forever.
+    yield* put(guestSessionsListUnavailable());
+    return;
+  }
 
   const events = createChangedChannel();
   const eventTask = yield* fork(consumeChangedEvents, events);
@@ -545,6 +563,10 @@ export function* guestSessionsSaga(): SagaGenerator<void> {
     },
   );
   const initial = loadGuestSessionsRequested();
+  // Nobody awaits the boot hydration: a failed invoke settles the store
+  // (`guestSessionsListUnavailable`) and must not surface as an unhandled
+  // rejection.
+  initial.promise.catch(() => {});
   try {
     yield* call(hydrate, initial);
     yield* all([join(eventTask), join(actionsTask), join(rosterTask)]);
