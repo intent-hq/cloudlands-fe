@@ -11,11 +11,13 @@
   import { untrack } from 'svelte';
   import { slide } from '$lib/motion';
   import Button from '$lib/components/ui/button/button.svelte';
+  import Header from '$lib/components/ui/Header.svelte';
   import { formatInteger } from '$lib/i18n/format';
   import {
     filterWorkspaceAgentRows,
     getFlatWorkspaceAgentRows,
     isBackgroundAgentSession as isBackgroundAgent,
+    isCoordinatorAgentSession as isCoordinator,
     isRetiredAgentSession as isRetiredAgent,
     shouldVirtualizeWorkspaceAgentRows,
     WORKSPACE_AGENT_ROW_HEIGHT,
@@ -102,7 +104,9 @@
   const standaloneBackgroundAgents = $derived(
     topLevelAgents.filter((agent) => isBackgroundAgent(agent)),
   );
-  // Preserve the existing virtualization eligibility and lazy-loading behavior.
+  const hasCoordinator = $derived(topLevelForegroundAgents.some(isCoordinator));
+  // Fall back to the regular list when delegations exist (tree heights are variable)
+  // or a coordinator is present (its section headers need the regular rendering).
   const shouldUseVirtual = $derived(shouldVirtualizeWorkspaceAgentRows(filteredAgentRows));
   // The retired bin is always flat with uniform-height rows, so a length check suffices.
   const shouldVirtualizeRetired = $derived(
@@ -289,7 +293,24 @@
   </div>
 {:else}
   <div class="flex flex-col gap-0.5">
-    {@render agentTree(topLevelForegroundAgents)}
+    {#if topLevelForegroundAgents.length > 0}
+      {#if hasCoordinator}
+        <div class="pt-1 pb-0.5">
+          <Header size={6}>{m.workspace_agentsList_coordinator_label()}</Header>
+        </div>
+      {/if}
+      {@const coordinatorAgents = topLevelForegroundAgents.filter(isCoordinator)}
+      {@const otherAgents = topLevelForegroundAgents.filter((agent) => !isCoordinator(agent))}
+      {@render agentTree(coordinatorAgents)}
+      {#if otherAgents.length > 0}
+        {#if hasCoordinator}
+          <div class="pt-2.5 pb-0.5">
+            <Header size={6}>{m.workspace_overviewTimeline_yourAgents_label()}</Header>
+          </div>
+        {/if}
+        {@render agentTree(otherAgents)}
+      {/if}
+    {/if}
   </div>
 {/if}
 
