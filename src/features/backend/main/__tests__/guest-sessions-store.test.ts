@@ -141,6 +141,24 @@ describe('guest-sessions-store', () => {
     expect(await store.getDecryptedToken(rec.id)).toBe('guest-secret');
   });
 
+  it('leaveWorkspace() leaves the keychain LWW clock alone, so it cannot outrank a remote re-join', async () => {
+    const store = await import('../guest-sessions-store');
+    const rec = await store.add({ ...sample, workspace: { id: 'ws-1', title: 'Design' } });
+    const before = (await store.findById(rec.id))!.updatedAt;
+
+    expect(await store.leaveWorkspace(rec.id, 'ws-1')).toBe(true);
+    expect((await store.findById(rec.id))!.updatedAt).toBe(before);
+    const [sync] = await store.listSyncRecords();
+    expect(sync.updatedAt).toBe(before);
+
+    // A strictly newer remote copy (another device re-joined with a fresh
+    // credential) still wins against the record that just left a workspace.
+    const remote = { ...sync, token: 'rejoined-token', updatedAt: before + 1 };
+    expect(await store.applyRemoteSyncRecord(remote)).toBe(true);
+    expect((await store.findById(rec.id))!.updatedAt).toBe(before + 1);
+    expect(await store.getDecryptedToken(rec.id)).toBe('rejoined-token');
+  });
+
   it('reads rows written before the workspace list existed as having no workspaces', async () => {
     const store = await import('../guest-sessions-store');
     const rec = await store.add(sample);
