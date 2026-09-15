@@ -34,11 +34,26 @@ export function inviteErrorCode(error: unknown): InviteErrorCode | undefined {
 }
 
 /**
+ * `error.data.code` of the daemon's `Error::ListenerDown` (`-32603`): the
+ * invite listener is off because Remote access is disabled. Not an
+ * `InviteErrorCode` (it is a transport-side refusal), so detected separately.
+ */
+const LISTENER_DOWN_CODE = 'listener-down';
+
+function isListenerDownError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const data = (error as { data?: unknown }).data;
+  if (!data || typeof data !== 'object') return false;
+  return (data as { code?: unknown }).code === LISTENER_DOWN_CODE;
+}
+
+/**
  * Bounded failure class of a sharing RPC: `forbidden` is the daemon's `-32003`
  * capability refusal (the caller is not the owner), an `InviteErrorCode` is a
- * machine-readable invite failure, and everything else is `unknown`.
+ * machine-readable invite failure, `listener-down` means Remote access is off
+ * so no invite can be served, and everything else is `unknown`.
  */
-type ShareFailureCode = 'forbidden' | InviteErrorCode | 'unknown';
+type ShareFailureCode = 'forbidden' | InviteErrorCode | typeof LISTENER_DOWN_CODE | 'unknown';
 
 export interface ShareFailure {
   success: false;
@@ -63,10 +78,12 @@ function shareFailure(error: unknown): ShareFailure {
     typeof (error as { rpcCode?: unknown }).rpcCode === 'number'
       ? (error as { rpcCode: number }).rpcCode
       : undefined;
-  const failure: ShareFailure = {
-    success: false,
-    code: isForbiddenErrorResponse(error) ? 'forbidden' : (inviteErrorCode(error) ?? 'unknown'),
-  };
+  const code: ShareFailureCode = isForbiddenErrorResponse(error)
+    ? 'forbidden'
+    : isListenerDownError(error)
+      ? LISTENER_DOWN_CODE
+      : (inviteErrorCode(error) ?? 'unknown');
+  const failure: ShareFailure = { success: false, code };
   if (rpcCode !== undefined) failure.rpcCode = rpcCode;
   return failure;
 }

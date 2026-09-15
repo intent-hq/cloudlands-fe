@@ -6278,7 +6278,6 @@
   "workspace_share_githubRequired_description": "Los miembros se identifican por su cuenta de GitHub. Conecta GitHub para crear enlaces de invitación.",
   "workspace_share_connectGithub_label": "Conectar GitHub",
   "workspace_share_pinLogin_label": "Restringir a un usuario de GitHub (opcional)",
-  "workspace_share_pinLogin_placeholder": "octocat",
   "workspace_share_createLink_label": "Crear enlace de invitación",
   "workspace_share_creating_label": "Creando…",
   "workspace_share_newLink_label": "Nuevo enlace de invitación",
@@ -6308,5 +6307,5 @@
   "workspace_share_removeMember_confirm_label": "¿Quitar a {name} de este espacio de trabajo?",
   "workspace_share_removeMember_confirmAction_ariaLabel": "Confirmar la eliminación de {name}",
   "workspace_share_cancel_label": "Cancelar",
-  "workspace_hoverCard_share_label": "Compartir"
+  "workspace_share_listenerDown_error": "Activa Acceso remoto + Tailcat en Ajustes antes de invitar"
 }

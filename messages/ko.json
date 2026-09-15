@@ -6278,7 +6278,6 @@
   "workspace_share_githubRequired_description": "멤버는 GitHub 계정으로 식별됩니다. 초대 링크를 만들려면 GitHub를 연결하세요.",
   "workspace_share_connectGithub_label": "GitHub 연결",
   "workspace_share_pinLogin_label": "GitHub 사용자로 제한(선택 사항)",
-  "workspace_share_pinLogin_placeholder": "octocat",
   "workspace_share_createLink_label": "초대 링크 만들기",
   "workspace_share_creating_label": "만드는 중…",
   "workspace_share_newLink_label": "새 초대 링크",
@@ -6308,5 +6307,5 @@
   "workspace_share_removeMember_confirm_label": "{name}을(를) 이 워크스페이스에서 제거할까요?",
   "workspace_share_removeMember_confirmAction_ariaLabel": "{name} 제거 확인",
   "workspace_share_cancel_label": "취소",
-  "workspace_hoverCard_share_label": "공유"
+  "workspace_share_listenerDown_error": "초대하기 전에 설정에서 원격 액세스 + Tailcat을 켜세요"
 }

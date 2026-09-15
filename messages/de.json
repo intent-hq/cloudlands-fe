@@ -6278,7 +6278,6 @@
   "workspace_share_githubRequired_description": "Mitglieder werden über ihr GitHub-Konto identifiziert. Verbinden Sie GitHub, um Einladungslinks zu erstellen.",
   "workspace_share_connectGithub_label": "GitHub verbinden",
   "workspace_share_pinLogin_label": "Auf einen GitHub-Benutzer beschränken (optional)",
-  "workspace_share_pinLogin_placeholder": "octocat",
   "workspace_share_createLink_label": "Einladungslink erstellen",
   "workspace_share_creating_label": "Wird erstellt…",
   "workspace_share_newLink_label": "Neuer Einladungslink",
@@ -6308,5 +6307,5 @@
   "workspace_share_removeMember_confirm_label": "{name} aus diesem Workspace entfernen?",
   "workspace_share_removeMember_confirmAction_ariaLabel": "Entfernen von {name} bestätigen",
   "workspace_share_cancel_label": "Abbrechen",
-  "workspace_hoverCard_share_label": "Teilen"
+  "workspace_share_listenerDown_error": "Aktiviere Fernzugriff + Tailcat in den Einstellungen, bevor du einlädst"
 }

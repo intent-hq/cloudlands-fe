@@ -15,7 +15,7 @@
   import { onMount, tick, untrack } from 'svelte';
   import { writable } from 'svelte/store';
   import Fa from 'svelte-fa';
-  import { faChevronRight, faUserPlus } from '@fortawesome/free-solid-svg-icons';
+  import { faChevronRight } from '@fortawesome/free-solid-svg-icons';
   import { Button } from '$lib/components/ui/button';
   import {
     selectAgentPreview,
@@ -36,7 +36,6 @@
   import { formatWorkspaceHoverCardTimestamp } from './workspace-hover-card-time';
   import type { WorkspaceMember } from '$features/workspace-sharing/types';
   import {
-    openShareDialog,
     shareRosterMemberRemoveRequested,
     shareRosterRequested,
   } from '$store/renderer/slices/workspace-share/workspace-share-slice';
@@ -330,9 +329,10 @@
   // hovered workspace — `memberCount` changes (member added / removed by any
   // client — the `workspace:updated` membership delta carries it) re-key the
   // request so the roster converges on live events — and reads the rows,
-  // in-flight removal, and error back through selectors. Remove and the Share
-  // entry are owner-only (`myRole === 'owner'`) and withheld once the daemon
-  // refuses an owner-only method; only the Remove confirmation step is local.
+  // in-flight removal, and error back through selectors. Remove is owner-only
+  // (`myRole === 'owner'`) and withheld once the daemon refuses an owner-only
+  // method; only the Remove confirmation step is local. Share… itself lives in
+  // the workspace ⋯ menu (WorkspaceProgressCard), not on the card.
   const rosterMembers$ = selectWorkspaceRosterMembers(workspaceIdStore);
   const rosterCanManage$ = selectWorkspaceRosterCanManage(workspaceIdStore);
   const rosterWithheld$ = selectWorkspaceRosterWithheld(workspaceIdStore);
@@ -351,12 +351,6 @@
   let removeError = $derived(
     $rosterWithheld$ ? m.workspace_share_ownerOnly_notice() : $rosterRemoveError$,
   );
-  function openShare() {
-    if (!workspace || !canManageSharing) return;
-    appStore.dispatch(
-      openShareDialog({ workspaceId: String(workspace.id), workspaceTitle: workspace.title ?? '' }),
-    );
-  }
   // Swapping Remove for confirm/cancel (and back) unmounts the focused
   // control; move focus onto its replacement so a keyboard user keeps their
   // place and the hover surface does not read the transient blur as leaving.
@@ -463,20 +457,6 @@
             ><WorkspaceStatusIcon status={statusState} size={16} decorative /></span
           >
         </div>
-        {#if canManageSharing}
-          <div class="mt-2 flex" data-workspace-hover-card-actions>
-            <Button
-              variant="ghost-light"
-              size="sm"
-              onclick={openShare}
-              aria-label={m.workspace_share_menu_label()}
-              data-workspace-hover-card-share
-            >
-              <Fa icon={faUserPlus} />
-              {m.workspace_hoverCard_share_label()}
-            </Button>
-          </div>
-        {/if}
         <div
           class="type-caption mt-1 min-w-0 truncate text-muted-foreground"
           data-workspace-hover-card-repo
