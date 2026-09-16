@@ -131,8 +131,8 @@ describe('showInviteConsent — renderer round-trip', () => {
     expect(dismissesSent(send)).toEqual([{ requestId: PAYLOAD.requestId, outcome: 'cancelled' }]);
   });
 
-  it('after dismiss, a late response for the request is ignored', async () => {
-    const { window } = makeWindow();
+  it('after dismiss joined, a late cancel is refused: logged with a bounded code, never a cancellation', async () => {
+    const { window, send } = makeWindow();
     const prompt = showInviteConsent(PAYLOAD, { getParentWindow: () => window });
     const handlers = await getHandlers();
     await handlers.ack({}, { requestId: PAYLOAD.requestId });
@@ -145,6 +145,28 @@ describe('showInviteConsent — renderer round-trip', () => {
     await handlers.response({}, { requestId: PAYLOAD.requestId, action: 'cancel' });
     await Promise.resolve();
     expect(cancelled).toBe(false);
+    expect(logLines.some((line) => line.includes('cancel-after-grant'))).toBe(true);
+    // The join stands: no second dismiss, nothing reported back as cancelled.
+    expect(dismissesSent(send)).toEqual([{ requestId: PAYLOAD.requestId, outcome: 'joined' }]);
+    prompt.dismiss('failed');
+    expect(dismissesSent(send)).toHaveLength(1);
+  });
+
+  it('after dismiss failed, a late cancel is ignored without the after-grant code', async () => {
+    const { window } = makeWindow();
+    const prompt = showInviteConsent(PAYLOAD, { getParentWindow: () => window });
+    const handlers = await getHandlers();
+    await handlers.ack({}, { requestId: PAYLOAD.requestId });
+    await handlers.response({}, { requestId: PAYLOAD.requestId, action: 'open' });
+    await prompt.decision;
+    prompt.dismiss('failed');
+
+    let cancelled = false;
+    void prompt.cancelledWhileWaiting.then(() => (cancelled = true));
+    await handlers.response({}, { requestId: PAYLOAD.requestId, action: 'cancel' });
+    await Promise.resolve();
+    expect(cancelled).toBe(false);
+    expect(logLines.some((line) => line.includes('cancel-after-grant'))).toBe(false);
   });
 
   it('ignores ack/response for a stale requestId and keeps waiting', async () => {

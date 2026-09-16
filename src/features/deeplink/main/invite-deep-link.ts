@@ -16,8 +16,12 @@
  *    channels) and stays up while the grant is awaited, where Cancel still
  *    aborts the join; with no window or no ack it falls back to the native
  *    message box so a cold start from a link never hangs.
- * 3. Store the minted credential as a GUEST session — never in the paired
- *    backend registry — and open the daemon's window.
+ * 3. The grant is the point of no return: the host has minted the credential
+ *    and consumed a seat, so the modal is dismissed (`joined`) the moment the
+ *    grant resolves and a Cancel from then on is ignored. Store the minted
+ *    credential as a GUEST session — never in the paired backend registry —
+ *    and open the daemon's window; a store failure after the grant surfaces
+ *    as a failure, never as a cancellation.
  *
  * Security posture mirrors the pair flow: the invite secret and the minted
  * token are never logged — failures are logged as bounded error kinds and
@@ -183,6 +187,10 @@ export async function handleInviteDeepLink(url: string): Promise<void> {
       logger.info('User cancelled the invite while waiting for the GitHub grant');
       return;
     }
+    // Point of no return: the host has minted the credential and consumed a
+    // seat. Close the modal now — before the asynchronous store write — so
+    // Cancel is neither offered nor honoured while the credential persists.
+    consent.dismiss('joined');
     const record = await guestSessionsStore.add({
       label: connection.host,
       host: connection.host,
@@ -201,7 +209,6 @@ export async function handleInviteDeepLink(url: string): Promise<void> {
       via: connection.via,
       tokenEncrypted: record.tokenEncrypted,
     });
-    consent.dismiss('joined');
     if (!record.tokenEncrypted) {
       // Flagged plaintext fallback (spec ruling): the join stands, but the
       // user learns the credential is not protected by OS encryption.
@@ -210,6 +217,7 @@ export async function handleInviteDeepLink(url: string): Promise<void> {
     await openBackendWindow(record.id);
   } catch (error) {
     logger.warn('Invite deep link handling failed', describeErrorForLog(error));
+    // A no-op once the modal was dismissed `joined`; the failure box still shows.
     consent?.dismiss('failed');
     await showFailure(error);
   } finally {

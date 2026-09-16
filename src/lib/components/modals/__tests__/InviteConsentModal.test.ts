@@ -132,6 +132,25 @@ describe('InviteConsentModal', () => {
     expect(onRespond).not.toHaveBeenCalled();
   });
 
+  it('after the grant (main dismisses the waiting dialog) Cancel is no longer offered and Escape reports nothing', async () => {
+    const onRespond = vi.fn();
+    const InviteConsentModal = await loadModal();
+
+    const { rerender } = render(InviteConsentModal, {
+      props: { open: true, payload: PAYLOAD, onRespond },
+    });
+    await fireEvent.click(screen.getByRole('button', { name: 'Open GitHub' }));
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeTruthy();
+
+    await rerender({ open: false, payload: null, onRespond });
+
+    expect(screen.queryByRole('button', { name: 'Cancel' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Close invite dialog' })).toBeNull();
+    expect(screen.queryByRole('status')).toBeNull();
+    await fireEvent.keyDown(document.body, { key: 'Escape' });
+    expect(onRespond.mock.calls).toEqual([['open']]);
+  });
+
   it('renders nothing when closed or without payload', async () => {
     const InviteConsentModal = await loadModal();
 
