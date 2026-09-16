@@ -3879,8 +3879,18 @@ describe('ChatPanel mounted lifecycle', () => {
       view.container.querySelectorAll('[data-testid="event-subscriptions-card"]'),
     ).toHaveLength(1);
 
+    mocks.agentSubscriptionUIEntries['workspace-a:agent-without-subscriptions'] = {
+      subscriptions: [],
+      delegationGroups: [],
+      agentStatuses: {},
+      waitingState: 'idle',
+      wokenUpInfo: null,
+      snapshotStatus: 'ready',
+    };
     await view.rerender({ workspace: currentWorkspace, agentId: 'agent-without-subscriptions' });
     await tick();
+    // The mock selector runtime needs an explicit emission after the agent rebinds.
+    (appStore as unknown as { emitState: () => void }).emitState();
 
     await tick();
     await tick();

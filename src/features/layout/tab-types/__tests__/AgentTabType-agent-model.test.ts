@@ -130,6 +130,12 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   }),
 }));
 vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
+  selectPanels: () => ({
+    subscribe: (run: (value: object) => void) => (run({}), () => {}),
+  }),
+  selectHiddenTabs: () => ({
+    subscribe: (run: (value: unknown[]) => void) => (run([]), () => {}),
+  }),
   selectAgentTabInfoByTabId: () => ({
     subscribe: (run: (value: null) => void) => (run(null), () => {}),
   }),
