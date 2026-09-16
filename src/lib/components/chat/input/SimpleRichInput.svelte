@@ -1779,7 +1779,7 @@
             groups={withContextPickerContent(promptActionGroups, contextPickerSubmenu)}
             align="end"
             side="top"
-            class="w-52"
+            class="min-w-60"
             submenuClass="p-0"
           />
         </Menu.Root>

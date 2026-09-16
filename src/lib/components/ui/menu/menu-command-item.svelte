@@ -21,7 +21,7 @@
 
 {#snippet leading()}
   {#if icon}
-    <Fa {icon} size="xs" class="size-4 text-muted-foreground opacity-70" />
+    <Fa {icon} size={16} class="size-4 text-muted-foreground opacity-70" />
   {/if}
 {/snippet}
 

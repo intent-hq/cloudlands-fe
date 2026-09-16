@@ -1,6 +1,5 @@
 <script lang="ts">
   import type { DropdownMenu as MenuPrimitive } from 'bits-ui';
-  import Fa from '$lib/components/shared/icons/FaWrapper.svelte';
   import { cn } from '$lib/utils.js';
   import CommandItem from './menu-command-item.svelte';
   import Content from './menu-content.svelte';
@@ -28,10 +27,7 @@
   {#each items as item (item.id)}
     {#if item.items?.length || item.content}
       <DropdownMenu.Sub>
-        <SubTrigger disabled={item.disabled} class={item.class}>
-          {#if item.icon}
-            <Fa icon={item.icon} size="xs" class="w-4 shrink-0 text-muted-foreground opacity-70" />
-          {/if}
+        <SubTrigger icon={item.icon} disabled={item.disabled} class={item.class}>
           <span class="min-w-0 flex-1 truncate">{item.label}</span>
           {#if item.shortcut}
             <span class="ml-5" aria-hidden="true"><ShortcutChip>{item.shortcut}</ShortcutChip></span

@@ -100,7 +100,7 @@
       </Menu.RadioGroup>
       <Menu.Sub>
         <Menu.SubTrigger icon={faPaperclip}>More</Menu.SubTrigger>
-        <Menu.SubContent portal={false}>
+        <Menu.SubContent>
           <Menu.Item onSelect={() => (selected = 'archive')}>Archive</Menu.Item>
         </Menu.SubContent>
       </Menu.Sub>

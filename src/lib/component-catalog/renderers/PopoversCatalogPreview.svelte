@@ -77,7 +77,12 @@
             <Menu.RadioItem value="comfortable">Comfortable radio</Menu.RadioItem>
           </Menu.RadioGroup>
           <Menu.CommandItem icon={faPaperclip} label="Attach files" shortcut="⇧⌘A" />
-          <Menu.Sub><Menu.SubTrigger>More actions</Menu.SubTrigger></Menu.Sub>
+          <Menu.Sub>
+            <Menu.SubTrigger>More actions</Menu.SubTrigger>
+            <Menu.SubContent staticPosition={false}>
+              <Menu.Item>Archive workspace</Menu.Item>
+            </Menu.SubContent>
+          </Menu.Sub>
           <Menu.Item destructive>Delete workspace</Menu.Item>
           <Menu.Separator />
           <Menu.Item>After separator</Menu.Item>
