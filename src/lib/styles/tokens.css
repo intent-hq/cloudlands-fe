@@ -354,7 +354,7 @@
   --border: var(--theme-border);
   --input: var(--theme-input);
   --ring: var(--theme-ring);
-  --focus-ring: 223 100% 71%;
+  --focus-ring: var(--ring);
   /* Interaction fills use the reference's neutral RGB overlays in both themes. */
   --overlay: var(--theme-overlay);
   --hover: var(--theme-hover);

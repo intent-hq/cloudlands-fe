@@ -513,7 +513,7 @@ describe('theme color contract', () => {
     expect(tokenValue(css, 'theme-dark-hover')).toBe('rgb(var(--theme-dark-overlay) / 0.06)');
     expect(tokenValue(css, 'theme-dark-active')).toBe('rgb(var(--theme-dark-overlay) / 0.1)');
     expect(tokenValue(css, 'theme-dark-selected')).toBe('0 0% 32%');
-    expect(tokenValue(css, 'focus-ring')).toBe('223 100% 71%');
+    expect(tokenValue(css, 'focus-ring')).toBe('var(--ring)');
     expect(tokenValue(css, 'overlay')).toBe('var(--theme-overlay)');
     expect(tokenValue(css, 'hover')).toBe('var(--theme-hover)');
     expect(tokenValue(css, 'active')).toBe('var(--theme-active)');
@@ -539,6 +539,44 @@ describe('theme color contract', () => {
           `${control} on ${surface}`,
         ).toBeGreaterThanOrEqual(3);
       }
+    }
+  });
+
+  it.each(['light', 'dark'] as const)(
+    'applies the contrast-safe %s theme ring as the keyboard focus color',
+    (mode) => {
+      const css = fs.readFileSync(path.resolve(process.cwd(), 'src/lib/styles/tokens.css'), 'utf8');
+      const applied = resolveTokenValue(
+        css,
+        tokenValue(css, 'focus-ring').replace(/^var\(--ring\)$/, `var(--theme-${mode}-ring)`),
+      );
+      const values = tokenValues(css, mode);
+      expect(applied).toBe(values.ring);
+      for (const surface of ['background', 'card', 'popover', 'sidebar'] as const) {
+        expect(
+          contrast(applied, values[surface]),
+          `focus-ring on ${surface}`,
+        ).toBeGreaterThanOrEqual(3);
+      }
+    },
+  );
+
+  it('keeps the applied focus ring legible on an imported light surface', () => {
+    const parsed = parseVSCodeTheme({
+      type: 'light',
+      colors: {
+        'editor.background': '#7c9cff',
+        'editor.foreground': '#111111',
+        focusBorder: '#7c9cff',
+      },
+    });
+    const ring = parsed.cssVariables['--ring'];
+    expect(ring).toBeDefined();
+    for (const surface of ['--background', '--card', '--popover', '--sidebar'] as const) {
+      expect(
+        contrast(ring, parsed.cssVariables[surface]),
+        `focus-ring on ${surface}`,
+      ).toBeGreaterThanOrEqual(3);
     }
   });
 
