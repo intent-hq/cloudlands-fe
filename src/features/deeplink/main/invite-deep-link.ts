@@ -37,6 +37,7 @@ import { openBackendWindow } from '../../backend/main/backend.ipc';
 import { PinMismatchError } from '../../backend/main/backend-connection';
 import {
   InviteRpcError,
+  InviteTransportError,
   openInviteConnection,
   type InviteConnection,
 } from '../../backend/main/invite-connection';
@@ -185,12 +186,15 @@ export async function routeInviteLinkFromOs(
  * library-authored free-form text that may carry the invite secret or the
  * minted token — and so is anything on the error beyond a known code
  * (`InviteRpcError.inviteCode` is already reduced to the documented set;
- * `flowCode` / `code` below are local literals).
+ * `transportCode` / `flowCode` / `code` below are local literals).
  */
 function describeErrorForLog(error: unknown): Record<string, unknown> {
   if (error instanceof PinMismatchError) return { kind: 'pin-mismatch' };
   if (error instanceof InviteRpcError) {
     return { kind: 'rpc', rpcCode: error.code, inviteCode: error.inviteCode };
+  }
+  if (error instanceof InviteTransportError) {
+    return { kind: 'transport', transportCode: error.transportCode };
   }
   if (error instanceof InviteFlowError) return { kind: 'flow', flowCode: error.flowCode };
   if (error instanceof guestSessionsStore.GuestStoreCorruptError) {
@@ -246,9 +250,13 @@ async function showPlaintextWarning(): Promise<void> {
   });
 }
 
-/** Map a redeem failure onto one user-facing sentence (routes on `error.data.code`). */
+/**
+ * Map a failure onto one user-facing sentence: transport failures route on
+ * `InviteTransportError.transportCode`, redeem refusals on `error.data.code`.
+ */
 function describeInviteFailure(error: unknown): string {
   if (error instanceof PinMismatchError) return m.deeplink_inviteError_certMismatch();
+  if (error instanceof InviteTransportError) return describeTransportFailure(error);
   if (error instanceof guestSessionsStore.GuestEncryptionUnavailableError) {
     return m.deeplink_inviteError_encryptionUnavailable();
   }
@@ -276,6 +284,22 @@ function describeInviteFailure(error: unknown): string {
       return m.deeplink_inviteError_workspaceFull();
     default:
       return m.deeplink_inviteError_generic();
+  }
+}
+
+/** One sentence per transport code — which of the distinct causes stopped the dial. */
+function describeTransportFailure(error: InviteTransportError): string {
+  switch (error.transportCode) {
+    case 'tailcat-unavailable':
+      return m.deeplink_inviteError_tailcatUnavailable();
+    case 'tunnel-failed':
+      return m.deeplink_inviteError_tunnelFailed();
+    case 'host-unreachable':
+      return m.deeplink_inviteError_hostUnreachable();
+    case 'host-refused':
+      return m.deeplink_inviteError_hostRefused();
+    case 'connection-closed':
+      return m.deeplink_inviteError_connectionClosed();
   }
 }
 

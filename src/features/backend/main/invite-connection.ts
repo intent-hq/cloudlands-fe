@@ -131,6 +131,63 @@ export class InviteRpcError extends Error {
   }
 }
 
+/**
+ * Why the transport failed, as a closed set the failure dialog and the log
+ * route on (the underlying socket/library error text is dropped: it can echo
+ * addresses or argv, including the tc address's pre-shared key):
+ * - `tailcat-unavailable`: no direct host answered (or none was given) and
+ *   the bundled tailcat client binary is missing, so the tunnel cannot be
+ *   dialed at all.
+ * - `tunnel-failed`: the local tailcat forwarder could not start, or the
+ *   tunneled dial broke before the handshake completed (e.g. the tailcat
+ *   child exited immediately).
+ * - `host-unreachable`: no candidate answered within the connect bound, or
+ *   the daemon never answered a redeem request within its bound.
+ * - `host-refused`: a candidate answered but refused the connection
+ *   (ECONNREFUSED, or a non-101 answer to the `/invite` upgrade).
+ * - `connection-closed`: the socket closed (or reset) before the invite flow
+ *   completed.
+ */
+export type InviteTransportCode =
+  | 'tailcat-unavailable'
+  | 'tunnel-failed'
+  | 'host-unreachable'
+  | 'host-refused'
+  | 'connection-closed';
+
+/** A transport-level failure of the `/invite` connection, identified by a bounded code. */
+export class InviteTransportError extends Error {
+  constructor(readonly transportCode: InviteTransportCode) {
+    // i18n-ignore (internal error, fixed text + local code literal)
+    super(`invite transport failed: ${transportCode}`);
+    this.name = 'InviteTransportError';
+  }
+}
+
+/** Node `SystemError` codes meaning the peer never answered (as opposed to refusing). */
+const UNREACHABLE_SOCKET_CODES = new Set([
+  'ETIMEDOUT',
+  'EHOSTUNREACH',
+  'ENETUNREACH',
+  'ENOTFOUND',
+  'EAI_AGAIN',
+]);
+
+/**
+ * Reduce a socket/library error to an {@link InviteTransportError}: only the
+ * Node error `code` is inspected, never the message. An unrecognized error
+ * (reset, EOF mid-handshake, …) counts as `connection-closed`.
+ */
+function toTransportError(error: unknown): InviteTransportError {
+  if (error instanceof InviteTransportError) return error;
+  const code = error && typeof error === 'object' ? (error as { code?: unknown }).code : undefined;
+  if (code === 'ECONNREFUSED') return new InviteTransportError('host-refused');
+  if (typeof code === 'string' && UNREACHABLE_SOCKET_CODES.has(code)) {
+    return new InviteTransportError('host-unreachable');
+  }
+  return new InviteTransportError('connection-closed');
+}
+
 /** Where to dial: the invite link's envelope. */
 export interface InviteTarget {
   /** Direct candidate hosts (`host=`); may be empty when `tcAddress` is set. */
@@ -197,9 +254,10 @@ interface InviteDial {
 /**
  * Dial one candidate's `/invite` endpoint with the pin enforced at the TLS
  * handshake. The promise resolves with the open socket or rejects with the
- * transport error ({@link PinMismatchError} for a foreign cert); `cancel()`
- * tears the socket down at whatever stage it is (a still-connecting
- * handshake is aborted, an open socket terminated) and rejects the promise.
+ * transport error ({@link PinMismatchError} for a foreign cert, else an
+ * {@link InviteTransportError}); `cancel()` tears the socket down at whatever
+ * stage it is (a still-connecting handshake is aborted, an open socket
+ * terminated) and rejects the promise.
  */
 function dialInvite(host: string, port: number, expected: string): InviteDial {
   let cancel: () => void = () => {};
@@ -239,10 +297,13 @@ function dialInvite(host: string, port: number, expected: string): InviteDial {
         fail(new PinMismatchError(expected, actual));
         return;
       }
-      fail(new Error(`Unexpected server response: ${response.statusCode ?? 0}`));
+      fail(new InviteTransportError('host-refused'));
     });
-    ws.on('error', (error: Error) => fail(error));
-    ws.on('close', () => fail(new Error('invite socket closed before open')));
+    ws.on('error', (error: Error) => {
+      // pinnedTlsConnect rejects a foreign cert by erroring the socket.
+      fail(error instanceof PinMismatchError ? error : toTransportError(error));
+    });
+    ws.on('close', () => fail(new InviteTransportError('connection-closed')));
     ws.on('open', () => {
       if (settled) return;
       settled = true;
@@ -259,7 +320,8 @@ function dialInvite(host: string, port: number, expected: string): InviteDial {
  * destroyed the moment the race settles (winner, all-failed, or the overall
  * deadline), so no stray TLS session outlives the outcome. Rejects with a
  * {@link PinMismatchError} over generic failures (the user must learn the
- * cert changed), else the last transport error, else a timeout.
+ * cert changed), else the last candidate's {@link InviteTransportError},
+ * else `host-unreachable` (the deadline hit with nothing answering).
  */
 function raceDirectHosts(
   hosts: string[],
@@ -271,7 +333,7 @@ function raceDirectHosts(
     let settled = false;
     let pending = hosts.length;
     let mismatch: PinMismatchError | null = null;
-    let lastError: Error | null = null;
+    let lastError: InviteTransportError | null = null;
     const dials = new Map<string, InviteDial>();
     const settle = (winner: string | null, error?: Error): void => {
       if (settled) return;
@@ -283,7 +345,7 @@ function raceDirectHosts(
       if (error) reject(error);
     };
     const timer = setTimeout(() => {
-      settle(null, mismatch ?? lastError ?? new Error('invite connect timed out'));
+      settle(null, mismatch ?? lastError ?? new InviteTransportError('host-unreachable'));
     }, timeoutMs);
     for (const host of hosts) {
       const dial = dialInvite(host, port, expected);
@@ -300,11 +362,11 @@ function raceDirectHosts(
             mismatch ??= error;
             logger.warn('invite candidate presented a foreign certificate', { host });
           } else {
-            lastError = error;
+            lastError = toTransportError(error);
           }
           pending -= 1;
           if (pending === 0) {
-            settle(null, mismatch ?? lastError ?? new Error('invite connect failed'));
+            settle(null, mismatch ?? lastError ?? new InviteTransportError('host-unreachable'));
           }
         },
       );
@@ -317,6 +379,13 @@ function raceDirectHosts(
  * the forwarder's port, pin enforced exactly like a direct dial). Returns
  * the open socket plus the tunnel that carries it; the tunnel is closed on
  * any failure so no forwarder or tailcat child is left behind.
+ *
+ * Failure codes: a missing binary is `tailcat-unavailable`; a forwarder that
+ * cannot start, or a tunneled dial that breaks before the handshake completes
+ * (the loopback forwarder itself always accepts, so a reset or early close
+ * means the tailcat child died — e.g. a bad tc address), is `tunnel-failed`;
+ * a connect that hits the bound stays `host-unreachable` (the daemon behind
+ * the tunnel never answered); a {@link PinMismatchError} passes through.
  */
 async function dialThroughTunnel(
   tcAddress: string,
@@ -326,19 +395,25 @@ async function dialThroughTunnel(
   spawn?: TailcatSpawn,
 ): Promise<{ ws: WsWebSocket; tunnel: TailcatTunnel }> {
   const binaryPath = resolveTailcatBinaryPath();
-  if (!binaryPath) throw new Error('tailcat binary unavailable; cannot dial the invite tunnel');
+  if (!binaryPath) throw new InviteTransportError('tailcat-unavailable');
   const tunnel = await createTailcatTunnel({
     tcAddress: tcAddress.trim(),
     remotePort: port,
     binaryPath,
     ...(spawn ? { spawn } : {}),
+  }).catch(() => {
+    throw new InviteTransportError('tunnel-failed');
   });
   try {
     const { ws } = await raceDirectHosts(['127.0.0.1'], tunnel.localPort, expected, timeoutMs);
     return { ws, tunnel };
   } catch (error) {
     tunnel.close();
-    throw error;
+    if (error instanceof PinMismatchError) throw error;
+    if (error instanceof InviteTransportError && error.transportCode === 'host-unreachable') {
+      throw error;
+    }
+    throw new InviteTransportError('tunnel-failed');
   }
 }
 
@@ -347,7 +422,9 @@ async function dialThroughTunnel(
  * first; when none answers (or the link has none) and the envelope carries a
  * tc address, the tunnel is tried next. Rejects when everything fails: a
  * {@link PinMismatchError} from any candidate wins over generic failures
- * (the user must learn the cert changed), else the last transport error.
+ * (the user must learn the cert changed), else the last attempt's
+ * {@link InviteTransportError} (the tunnel's when it was tried; the direct
+ * race's code is logged when the flow falls through to the tunnel).
  */
 export async function openInviteConnection(
   target: InviteTarget,
@@ -368,8 +445,13 @@ export async function openInviteConnection(
       const winner = await raceDirectHosts(hosts, target.port, expected, timeoutMs);
       return attachRpc(winner.host, 'direct', winner.ws);
     } catch (error) {
-      directError = error instanceof Error ? error : new Error(String(error));
+      directError = error instanceof PinMismatchError ? error : toTransportError(error);
       if (tcAddress === null) throw directError;
+      if (directError instanceof InviteTransportError) {
+        logger.debug('no direct invite candidate answered; trying the tunnel', {
+          transportCode: directError.transportCode,
+        });
+      }
     }
   }
 
@@ -391,7 +473,11 @@ export async function openInviteConnection(
 
 /**
  * Minimal JSON-RPC 2.0 request/response over an open `/invite` socket. A
- * `tunnel` that carried the socket is closed together with it.
+ * `tunnel` that carried the socket is closed together with it. Requests
+ * reject with an {@link InviteRpcError} on a daemon error frame, else an
+ * {@link InviteTransportError}: `connection-closed` when the socket ends
+ * (or `close()` is called) with the request outstanding, `host-unreachable`
+ * when the daemon never answers within the request's bound.
  */
 function attachRpc(
   host: string,
@@ -437,17 +523,17 @@ function attachRpc(
     }
     p.resolve(frame.result);
   });
-  ws.on('error', (error: Error) => failAll(error));
+  ws.on('error', (error: Error) => failAll(toTransportError(error)));
   ws.on('close', () => {
     closed = true;
-    failAll(new Error('invite connection closed'));
+    failAll(new InviteTransportError('connection-closed'));
     closeTunnel();
   });
 
   const request = (params: Record<string, string>, timeoutMs: number): Promise<unknown> =>
     new Promise<unknown>((resolve, reject) => {
       if (closed) {
-        reject(new Error('invite connection closed'));
+        reject(new InviteTransportError('connection-closed'));
         return;
       }
       const id = nextId++;
@@ -455,7 +541,7 @@ function attachRpc(
         timeoutMs > 0
           ? setTimeout(() => {
               pending.delete(id);
-              reject(new Error(`${INVITE_REDEEM_METHOD} timed out`));
+              reject(new InviteTransportError('host-unreachable'));
             }, timeoutMs)
           : null;
       pending.set(id, { resolve, reject, timer });
@@ -465,7 +551,7 @@ function attachRpc(
           if (!err) return;
           pending.delete(id);
           if (timer) clearTimeout(timer);
-          reject(err);
+          reject(toTransportError(err));
         },
       );
     });
@@ -479,7 +565,7 @@ function attachRpc(
     close: () => {
       if (closed) return;
       closed = true;
-      failAll(new Error('invite connection closed'));
+      failAll(new InviteTransportError('connection-closed'));
       ws.removeAllListeners('error');
       ws.on('error', () => {});
       ws.close();
