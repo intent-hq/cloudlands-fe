@@ -38,6 +38,7 @@
   import AgentBackendSettings from '$lib/components/settings/AgentBackendSettings.svelte';
   import AgentFeaturesSettings from '$lib/components/settings/AgentFeaturesSettings.svelte';
   import DefaultAgentModelSettings from '$lib/components/settings/DefaultAgentModelSettings.svelte';
+  import { keepToggleSelected } from '$lib/components/settings/utils/keep-toggle-selected';
   import Button from '$lib/components/ui/button/button.svelte';
   import CopyButton from '$lib/components/ui/CopyButton.svelte';
   import { highlightTarget } from '$lib/components/ui/highlight/highlight-target';
@@ -345,11 +346,11 @@
     { value: 'monospace', label: m.settings_fontStyle_mono() },
   ];
 
-  function handleNoteFontChange(value: string) {
+  function handleNoteFontChange(value: string | string[]) {
     appStore.dispatch(setNoteFontStyle(value as 'sans' | 'monospace'));
   }
 
-  function handleAgentFontChange(value: string) {
+  function handleAgentFontChange(value: string | string[]) {
     appStore.dispatch(setAgentFontStyle(value as AgentFontStyle));
   }
 
@@ -423,9 +424,8 @@
     }, 100);
   }
 
-  function handleThemeChange(newTheme: string) {
-    const theme = newTheme as ThemePreference;
-    appStore.dispatch(requestThemePreferenceChange(theme));
+  function handleThemeChange(newTheme: string | string[]) {
+    appStore.dispatch(requestThemePreferenceChange(newTheme as ThemePreference));
   }
 
   const updateChannelOptions = [
@@ -709,14 +709,15 @@
                   <ToggleGroup.Root
                     variant="outline"
                     type="single"
-                    value={$themePreference}
-                    onValueChange={handleThemeChange}
+                    bind:value={() => $themePreference, handleThemeChange}
                     size="sm"
                     aria-label={m.settings_theme_label()}
                     class="ml-4 shrink-0"
                   >
                     {#each themeOptions as option (option.value)}
-                      <ToggleGroup.Item value={option.value}>{option.label}</ToggleGroup.Item>
+                      <ToggleGroup.Item value={option.value} {...keepToggleSelected}>
+                        {option.label}
+                      </ToggleGroup.Item>
                     {/each}
                   </ToggleGroup.Root>
                 </SettingsFieldRow>
@@ -812,14 +813,15 @@
                   <ToggleGroup.Root
                     variant="outline"
                     type="single"
-                    value={$noteFontStyle}
-                    onValueChange={handleNoteFontChange}
+                    bind:value={() => $noteFontStyle, handleNoteFontChange}
                     size="sm"
                     aria-label={m.settings_font_notes_label()}
                     class="ml-4 shrink-0"
                   >
                     {#each fontStyleOptions as option (option.value)}
-                      <ToggleGroup.Item value={option.value}>{option.label}</ToggleGroup.Item>
+                      <ToggleGroup.Item value={option.value} {...keepToggleSelected}>
+                        {option.label}
+                      </ToggleGroup.Item>
                     {/each}
                   </ToggleGroup.Root>
                 </SettingsFieldRow>
@@ -844,14 +846,15 @@
                   <ToggleGroup.Root
                     variant="outline"
                     type="single"
-                    value={$agentFontStyle}
-                    onValueChange={handleAgentFontChange}
+                    bind:value={() => $agentFontStyle, handleAgentFontChange}
                     size="sm"
                     aria-label={m.settings_font_agentChat_label()}
                     class="ml-4 shrink-0"
                   >
                     {#each fontStyleOptions as option (option.value)}
-                      <ToggleGroup.Item value={option.value}>{option.label}</ToggleGroup.Item>
+                      <ToggleGroup.Item value={option.value} {...keepToggleSelected}>
+                        {option.label}
+                      </ToggleGroup.Item>
                     {/each}
                   </ToggleGroup.Root>
                 </SettingsFieldRow>

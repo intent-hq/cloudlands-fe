@@ -167,4 +167,49 @@ describe('Fonts & Colors settings migration', () => {
       recorder.restore();
     }
   });
+
+  it.each([
+    ['theme', () => screen.getByRole('radio', { name: 'Light' })],
+    [
+      'note font',
+      () =>
+        within(document.getElementById('note-font')!).getByRole('radio', { name: 'Sans-serif' }),
+    ],
+    [
+      'agent chat font',
+      () =>
+        within(document.getElementById('agent-chat-font')!).getByRole('radio', {
+          name: 'Sans-serif',
+        }),
+    ],
+  ])(
+    'reselecting the active %s keeps it selected and dispatches no preference',
+    async (_label, getActive) => {
+      const recorder = installDispatchRecorder();
+      try {
+        renderFontsColors();
+        const active = getActive();
+        expect(active.getAttribute('aria-checked')).toBe('true');
+
+        await fireEvent.click(active);
+        await waitFor(() => expect(getActive().getAttribute('aria-checked')).toBe('true'));
+
+        await fireEvent.keyDown(getActive(), { key: 'Enter' });
+        await waitFor(() => expect(getActive().getAttribute('aria-checked')).toBe('true'));
+        await fireEvent.keyDown(getActive(), { key: ' ' });
+        await waitFor(() => expect(getActive().getAttribute('aria-checked')).toBe('true'));
+
+        const relevantTypes = new Set([
+          'theme/requestThemePreferenceChange',
+          'fontSettings/setNoteFontStyle',
+          'fontSettings/setAgentFontStyle',
+        ]);
+        expect(
+          recorder.calls.filter((action) => relevantTypes.has((action as { type: string }).type)),
+        ).toEqual([]);
+      } finally {
+        recorder.restore();
+      }
+    },
+  );
 });
