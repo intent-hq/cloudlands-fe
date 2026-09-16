@@ -17786,14 +17786,14 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:popovers:non
                       <section aria-label="Pull requests" class="min-w-0 pull-requests" data-workspace-hover-card-pr-column="">
                         <div aria-label="Pull requests" class="gap-3 grid min-w-0" data-workspace-hover-card-pr-list="" role="list">
                           <div aria-label="intent-hq/cloudlands-fe #73 Polish workspace hover cards Open ⏳ 1/5 checks running" class="gap-x-2.5 grid grid-cols-[2rem_minmax(0,1fr)_auto_auto] items-center min-w-0" data-pr-identity="intent-hq/cloudlands-fe#73" data-pr-status="open" data-workspace-hover-card-pr-row="" role="listitem">
-                            <svg aria-hidden="true" class="justify-self-center shrink-0 size-4 text-success" data-icon="code-pull-request" data-weight="bold" role="img">
+                            <svg aria-hidden="true" class="justify-self-center shrink-0 text-success" data-icon="code-pull-request" data-weight="bold" role="img">
                               <rect>
                               <path>
-                            <span class="min-w-0 text-foreground text-sm truncate" data-workspace-hover-card-pr-title="">
+                            <span class="min-w-0 text-foreground truncate type-body" data-workspace-hover-card-pr-title="">
                               "Polish workspace hover cards"
-                            <span class="shrink-0 text-muted-foreground text-xs" data-workspace-hover-card-pr-status="">
+                            <span class="shrink-0 text-muted-foreground type-caption" data-workspace-hover-card-pr-status="">
                               "Open"
-                            <span class="shrink-0 text-muted-foreground text-xs" data-workspace-hover-card-pr-number="">
+                            <span class="shrink-0 text-muted-foreground type-caption" data-workspace-hover-card-pr-number="">
                               "#73"
               <article class="matrix-cell svelte-<scope>" data-catalog-rendered-state="hover-card github-link">
                 <h3 class="font-medium text-muted-foreground type-caption">
