@@ -25,11 +25,15 @@
  * - `invite-consent:response` (renderer → main, `invoke`):
  *   {@link InviteConsentResponsePayload}. `open` = "Open GitHub"; Escape /
  *   backdrop / × / Cancel all map to `cancel`. A `cancel` may also arrive after
- *   `open`, while the modal is in its waiting state — it aborts the join.
+ *   `open`, while the modal is in its waiting state — it aborts the join until
+ *   the GitHub grant resolves; a `cancel` that lands after main dismissed the
+ *   request as `joined` is ignored (logged, never a cancellation).
  * - `invite-consent:dismiss` (main → renderer, `webContents.send`):
  *   {@link InviteConsentDismissPayload}. Close the modal for a request that
  *   settled (joined / failed / cancelled) or was superseded (main gave up
- *   waiting for the ack and used the native fallback).
+ *   waiting for the ack and used the native fallback). `joined` is sent the
+ *   moment the grant resolves — before the credential is persisted — so the
+ *   modal leaves its waiting state at the point of no return.
  *
  * Kept in `src/shared/` so both processes import the same shapes; the Zod
  * schemas validating the renderer → main payloads live in

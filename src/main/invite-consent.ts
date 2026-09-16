@@ -15,7 +15,10 @@
  * cold start from a link never hangs. Once acked, main waits indefinitely for
  * the decision. After `open` the modal stays up in a waiting state; a later
  * `cancel` settles {@link InviteConsentPrompt.cancelledWhileWaiting} so the
- * caller can abort the grant wait. Nothing secret crosses this boundary: the
+ * caller can abort the grant wait. `dismiss('joined')` is the point of no
+ * return: the caller issues it the moment the grant resolves, and a `cancel`
+ * that lands after it is ignored and logged (`cancel-after-grant`), never
+ * treated as a cancellation. Nothing secret crosses this boundary: the
  * payload carries the user code, the (already allowlisted) verification URL
  * and display labels only.
  */
@@ -54,11 +57,17 @@ export interface InviteConsentPrompt {
    */
   readonly decision: Promise<InviteConsentAction | null>;
   /**
-   * Settles when the user cancels from the waiting state (after `open`).
-   * Never settles on any other path; race it against the grant wait.
+   * Settles when the user cancels from the waiting state (after `open`) and
+   * before `dismiss('joined')`. Never settles on any other path; race it
+   * against the grant wait.
    */
   readonly cancelledWhileWaiting: Promise<void>;
-  /** Close the modal with the request's outcome; idempotent and safe after fallback. */
+  /**
+   * Close the modal with the request's outcome; idempotent and safe after
+   * fallback. `joined` marks the point of no return: call it as soon as the
+   * grant resolves, before the credential is persisted — a `cancel` for this
+   * request that arrives afterwards is ignored and logged, never honoured.
+   */
   dismiss(outcome: InviteConsentOutcome): void;
 }
 
@@ -84,12 +93,16 @@ interface PendingRendererRequest {
 }
 
 let pendingRendererRequest: PendingRendererRequest | null = null;
+/** The request last dismissed as `joined`: past the point of no return, its `cancel` is refused. */
+let joinedRequestId: string | null = null;
 let rendererHandlersRegistered = false;
 
 /**
  * Register the ack/response invoke handlers once. Payloads are Zod-validated;
  * requests for an unknown/stale requestId are ignored (the modal for a
- * superseded request may still settle late).
+ * superseded request may still settle late), and a `cancel` for the request
+ * that already joined is logged with a bounded code so a Cancel that raced
+ * the grant is visible without ever counting as a cancellation.
  */
 function registerRendererHandlers(): void {
   if (rendererHandlersRegistered) return;
@@ -118,6 +131,11 @@ function registerRendererHandlers(): void {
           // show the native dialog over an answered modal.
           pendingRendererRequest.ack();
           pendingRendererRequest.respond(payload.action);
+        } else if (payload.requestId === joinedRequestId && payload.action === 'cancel') {
+          logger.warn('Ignoring invite consent cancel that arrived after the grant', {
+            requestId: payload.requestId,
+            code: 'cancel-after-grant',
+          });
         }
         return { success: true };
       },
@@ -129,6 +147,7 @@ function registerRendererHandlers(): void {
 /** Test-only: forget the renderer request main is waiting on. */
 export function resetInviteConsentStateForTests(): void {
   pendingRendererRequest = null;
+  joinedRequestId = null;
 }
 
 /** A prompt whose renderer path is unavailable: null decision, inert otherwise. */
@@ -146,8 +165,9 @@ const UNAVAILABLE_PROMPT: InviteConsentPrompt = {
  * so a late-mounting modal does not linger), or the renderer dying before it
  * answers). After `open`, the request stays live so a `cancel` from the
  * waiting state reaches `cancelledWhileWaiting`; the caller ends it with
- * `dismiss`. Renderer death after `open` only silences the request — the
- * join itself is not the renderer's to keep alive.
+ * `dismiss` — `joined` the moment the grant resolves, after which a late
+ * `cancel` is refused. Renderer death after `open` only silences the request
+ * — the join itself is not the renderer's to keep alive.
  */
 export function showInviteConsent(
   payload: InviteConsentShowPayload,
@@ -215,6 +235,7 @@ export function showInviteConsent(
   const dismiss = (outcome: InviteConsentOutcome): void => {
     if (ended) return;
     abandon();
+    if (outcome === 'joined') joinedRequestId = payload.requestId;
     try {
       if (!parent.isDestroyed() && !contents.isDestroyed()) {
         const dismissPayload: InviteConsentDismissPayload = {
