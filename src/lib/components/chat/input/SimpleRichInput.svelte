@@ -1532,7 +1532,11 @@
   ></Button>
 
   {#if queueRegion}
-    <div class="pb-1" data-chat-input-queue-region>
+    <div
+      class="min-h-0 shrink overflow-y-auto overscroll-contain pb-1"
+      style:max-height="{(containerHeight ?? maxAutoHeight) / 2}px"
+      data-chat-input-queue-region
+    >
       {@render queueRegion()}
     </div>
   {/if}
@@ -1599,7 +1603,7 @@
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
-    class="editor-wrapper relative min-h-0 cursor-text pt-1 {isAutoExpand
+    class="editor-wrapper relative min-h-6 cursor-text pt-1 {isAutoExpand
       ? 'flex-1 overflow-y-auto'
       : 'flex-1 overflow-hidden'} {editMode ? 'pr-5' : ''}"
     class:placeholder-hidden={!showPlaceholder}
@@ -1684,7 +1688,7 @@
   <Input bind:ref={fileInput} type="file" multiple class="hidden" onchange={handleFileChange} />
   <!-- Action Bar -->
   <div
-    class="action-bar mt-1 flex items-center justify-between gap-2 pb-0 {actionBarEndClassName} pt-0 text-muted-foreground transition-opacity duration-spring-fast ease-spring-fast motion-reduce:transition-none {contentInsetClasses}"
+    class="action-bar mt-1 flex shrink-0 items-center justify-between gap-2 pb-0 {actionBarEndClassName} pt-0 text-muted-foreground transition-opacity duration-spring-fast ease-spring-fast motion-reduce:transition-none {contentInsetClasses}"
     data-chat-input-action-bar
   >
     <div class="flex items-center gap-2 min-w-0" data-chat-input-primary-actions>
