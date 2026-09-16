@@ -30,7 +30,14 @@ vi.mock('$shared/logger', () => ({
   },
 }));
 vi.mock('electron', () => ({
-  BrowserWindow: class {},
+  // No focused/main window: the consent modal has nowhere to render, so the
+  // flow takes its native-dialog fallback (the cold-start posture under review).
+  BrowserWindow: class {
+    static getFocusedWindow(): null {
+      return null;
+    }
+  },
+  ipcMain: { handle: vi.fn() },
   app: { isReady: () => true },
   clipboard: { writeText: vi.fn() },
   shell: { openExternal: vi.fn() },
