@@ -19,6 +19,7 @@ import {
   CHIEF_ACTIVE_AGENT_ID_KEY,
   CHIEF_COLLAPSED_KEY,
   COLLAPSED_STATUS_GROUPS_KEY,
+  COLLAPSED_REPO_GROUPS_KEY,
   COMBINED_PANEL_SPLIT_KEY,
   hydrateSidebarNav,
   hydrateWorkspaceSidebarUi,
@@ -36,6 +37,7 @@ import {
   SHOW_ARCHIVED_KEY,
   toggleWorkspaceCollapsedNote,
   toggleStatusGroupCollapsed,
+  toggleRepoGroupCollapsed,
   VIEW_MODE_KEY,
   WORKSPACE_COLLAPSED_NOTES_PREFIX,
   WORKSPACE_NOTE_ORDER_PREFIX,
@@ -53,6 +55,7 @@ const current = {
     allSpacesViewMode: 'repo' as const,
     showArchivedWorkspaces: true,
     collapsedStatusGroupIds: ['idle'],
+    collapsedRepoGroupKeys: ['repo:alpha'],
     isChiefCollapsed: true,
     panelWidth: 320,
     combinedPanelSplit: 0.4,
@@ -86,6 +89,7 @@ describe('sidebarNavSaga', () => {
       if (key === PINNED_WORKSPACES_KEY) return ['ws-1', 2, 'ws-2'];
       if (key === SHOW_ARCHIVED_KEY) return true;
       if (key === COLLAPSED_STATUS_GROUPS_KEY) return ['idle', 2];
+      if (key === COLLAPSED_REPO_GROUPS_KEY) return ['repo:alpha', 2];
       if (key === CHIEF_COLLAPSED_KEY) return true;
       if (key === PANEL_WIDTH_KEY) return 320;
       if (key === COMBINED_PANEL_SPLIT_KEY) return 0.4;
@@ -108,6 +112,7 @@ describe('sidebarNavSaga', () => {
         allSpacesViewMode: 'repo',
         showArchivedWorkspaces: true,
         collapsedStatusGroupIds: ['idle'],
+        collapsedRepoGroupKeys: ['repo:alpha'],
         isChiefCollapsed: true,
         panelWidth: 320,
         combinedPanelSplit: 0.4,
@@ -202,11 +207,13 @@ describe('sidebarNavSaga', () => {
     await settle();
 
     channel.put(toggleStatusGroupCollapsed('idle'));
+    channel.put(toggleRepoGroupCollapsed('repo:alpha'));
     channel.put(setChiefCollapsed(true));
     await settle();
 
     expect(storage.setJSON.mock.calls).toEqual([
       [COLLAPSED_STATUS_GROUPS_KEY, ['idle']],
+      [COLLAPSED_REPO_GROUPS_KEY, ['repo:alpha']],
       [CHIEF_COLLAPSED_KEY, true],
     ]);
     task.cancel();

@@ -124,6 +124,10 @@ export const selectCollapsedStatusGroupIds = store.createSelector(
   (state) => state.sidebarNav.collapsedStatusGroupIds,
 );
 
+export const selectCollapsedRepoGroupKeys = store.createSelector(
+  (state) => state.sidebarNav.collapsedRepoGroupKeys,
+);
+
 export const selectIsChiefCollapsed = store.createSelector(
   (state) => state.sidebarNav.isChiefCollapsed,
 );

@@ -79,6 +79,7 @@
     workspace?: Workspace;
     phase?: WorkspacePhaseInfo;
     stats?: WorkspacePhaseStats;
+    showTime?: boolean;
     variant?: 'compact' | 'expanded' | 'header' | 'row';
     /** @deprecated Status visuals resolve from the workspace status contract. */
     isRunning?: boolean;
@@ -132,6 +133,7 @@
     phase,
     stats,
     variant = 'compact',
+    showTime = true,
     isRunning: _isRunning = false,
     isUnread = false,
     isWaiting: _isWaiting,
@@ -743,26 +745,28 @@
         </span>
       {/if}
 
-      <span
-        class="wc-secondary shrink-0 {actions || onTogglePin || (isUnread && onMarkAsRead)
-          ? highlighted
-            ? 'opacity-0'
-            : suppressHover
-              ? ''
-              : isolateHoverReveal
-                ? 'group-hover/wc:opacity-0 group-hover/message:opacity-0'
-                : 'group-hover:opacity-0 group-hover/message:opacity-0'
-          : ''}"
-        data-workspace-card-time
-      >
-        {#if getWorkspaceActivityDisplayTime(workspace) > 0}
-          <RelativeTime
-            date={getWorkspaceActivityDisplayTime(workspace)}
-            class="type-caption whitespace-nowrap tabular-nums text-muted-foreground"
-            compact
-          />
-        {/if}
-      </span>
+      {#if showTime}
+        <span
+          class="wc-secondary shrink-0 {actions || onTogglePin || (isUnread && onMarkAsRead)
+            ? highlighted
+              ? 'opacity-0'
+              : suppressHover
+                ? ''
+                : isolateHoverReveal
+                  ? 'group-hover/wc:opacity-0 group-hover/message:opacity-0'
+                  : 'group-hover:opacity-0 group-hover/message:opacity-0'
+            : ''}"
+          data-workspace-card-time
+        >
+          {#if getWorkspaceActivityDisplayTime(workspace) > 0}
+            <RelativeTime
+              date={getWorkspaceActivityDisplayTime(workspace)}
+              class="type-caption whitespace-nowrap tabular-nums text-muted-foreground"
+              compact
+            />
+          {/if}
+        </span>
+      {/if}
     </div>
 
     {#if actions || onOpenInNewWindow || onTogglePin || (isUnread && onMarkAsRead)}

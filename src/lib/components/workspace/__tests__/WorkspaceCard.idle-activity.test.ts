@@ -134,6 +134,19 @@ describe('WorkspaceCard compact agent metadata', () => {
     expect(icon?.getAttribute('data-workspace-status-icon')).toBe('xmark');
   });
 
+  it('can hide time while retaining the pin action and restore time when requested', async () => {
+    const workspace = makeWorkspace();
+    const onTogglePin = vi.fn();
+    const { container, rerender } = render(WorkspaceCard, {
+      props: { workspace, onTogglePin, showTime: false },
+    });
+    expect(container.querySelector('[data-workspace-card-time]')).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: 'Pin', exact: true }));
+    expect(onTogglePin).toHaveBeenCalledOnce();
+    await rerender({ workspace, onTogglePin, showTime: true });
+    expect(container.querySelector('[data-workspace-card-time]')).toBeTruthy();
+  });
+
   it('uses the canonical compact row hierarchy and inset styling', () => {
     const { container } = render(WorkspaceCard, { props: { workspace: makeWorkspace() } });
     const row = container.querySelector('[data-workspace-card-row]');

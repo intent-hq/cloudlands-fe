@@ -25,6 +25,7 @@
     selectPinnedWorkspaceIds,
     selectAllSpacesViewMode,
     selectCollapsedStatusGroupIds,
+    selectCollapsedRepoGroupKeys,
     selectShowArchivedWorkspaces,
   } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
   import { markWorkspaceSeen } from '$features/workspace/mark-workspace-seen';
@@ -32,6 +33,7 @@
   import {
     togglePinWorkspace,
     toggleStatusGroupCollapsed,
+    toggleRepoGroupCollapsed,
   } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
   import {
     compareWorkspaceActivityDisplayTimeDesc,
@@ -49,6 +51,7 @@
   const hasLoaded$ = selectWorkspaceHasLoaded();
   const pinnedIds$ = selectPinnedWorkspaceIds();
   const viewMode$ = selectAllSpacesViewMode();
+  const collapsedRepoGroupKeys$ = selectCollapsedRepoGroupKeys();
   const collapsedStatusGroupIds$ = selectCollapsedStatusGroupIds();
   const showArchivedWorkspaces$ = selectShowArchivedWorkspaces();
 
@@ -370,8 +373,10 @@
   const allVisibleIds = $derived.by(() => {
     if (recentsOnly) return visibleRecentWorkspaces.map((workspace) => workspace.id);
     if ($viewMode$ === 'repo') {
-      return visibleGroupedByRepo.flatMap(({ visibleWorkspaces }) =>
-        visibleWorkspaces.map((workspace) => workspace.id),
+      return visibleGroupedByRepo.flatMap(({ key, visibleWorkspaces }) =>
+        $collapsedRepoGroupKeys$.includes(key)
+          ? []
+          : visibleWorkspaces.map((workspace) => workspace.id),
       );
     } else if ($viewMode$ === 'status') {
       return groupedByStatus.flatMap((group) =>
@@ -466,6 +471,7 @@
             <WorkspaceCard
               {workspace}
               variant="compact"
+              showTime={true}
               isUnread={_isUnread(workspace)}
               isPinned={$pinnedIds$.includes(workspace.id)}
               streamingAgentIds={_getStreamingIds(workspace)}
@@ -543,6 +549,7 @@
             <WorkspaceCard
               {workspace}
               variant="compact"
+              showTime={false}
               isUnread={_isUnread(workspace)}
               isPinned={$pinnedIds$.includes(workspace.id)}
               trailingLabel={workspace.status === WorkspaceStatusEnum.Archived
@@ -565,83 +572,114 @@
           {/each}
         {:else if $viewMode$ === 'repo'}
           {#each visibleGroupedByRepo as repositoryGroup (repositoryGroup.key)}
+            {@const isExpanded = !$collapsedRepoGroupKeys$.includes(repositoryGroup.key)}
             <div
               class="mt-6 first:mt-0"
               data-repository-group
               data-repository-key={repositoryGroup.key}
             >
-              <div class="section-header flex items-center gap-1.5 px-2 pt-2 pb-1 min-w-0">
-                {#if repositoryGroup.group.owner}
-                  <GitHubAvatar
-                    identity={repositoryGroup.group.owner}
-                    alt={repositoryGroup.group.owner}
-                    size={14}
-                    class="size-3.5 rounded-full shrink-0"
-                  />
-                {/if}
-                <Header size={4} class="truncate">{repositoryGroup.group.label}</Header>
-              </div>
-              {#each repositoryGroup.visibleWorkspaces as workspace, _i (workspace.id)}
-                <div data-repository-space-row data-workspace-id={workspace.id}>
-                  <WorkspaceCard
-                    {workspace}
-                    variant="compact"
-                    isUnread={_isUnread(workspace)}
-                    isPinned={$pinnedIds$.includes(workspace.id)}
-                    trailingLabel={workspace.status === WorkspaceStatusEnum.Archived
-                      ? m.lib_commandPalette_archivedWorkspace_pill()
-                      : undefined}
-                    streamingAgentIds={_getStreamingIds(workspace)}
-                    highlighted={keyboardNavActive &&
-                      highlightedIndex === (_visibleIdIndex.get(workspace.id) ?? -1)}
-                    suppressHover={keyboardNavActive}
-                    onClick={(e) => handleClick(workspace.id, e)}
-                    onTogglePin={(e) => handleTogglePin(e, workspace.id)}
-                    onMarkAsRead={_isUnread(workspace)
-                      ? (e) => handleMarkAsRead(e, workspace.id)
-                      : undefined}
-                    onOpenInNewWindow={() => openWorkspaceInNewWindow(workspace.id)}
-                    onHover={() => {
-                      hoveredIndex = _visibleIdIndex.get(workspace.id) ?? -1;
-                    }}
-                  />
-                </div>
-              {/each}
-              {#if !searchQuery.trim() && repositoryGroup.group.workspaces.length > REPOSITORY_WORKSPACE_LIMIT}
-                <div class="flex min-w-0 pl-9.5 pr-2 pb-1">
-                  <Button
-                    variant="plain"
-                    type="button"
-                    class="repository-group-toggle h-auto min-h-7 w-fit max-w-full shrink appearance-none justify-start overflow-hidden border-0 bg-transparent px-0! py-1! text-left font-normal text-muted-foreground shadow-none hover:bg-transparent hover:text-foreground active:bg-transparent focus-visible:bg-transparent focus-visible:text-foreground focus-visible:underline focus-visible:outline-none focus-visible:ring-0!"
-                    aria-expanded={repositoryGroup.isExpanded}
-                    data-repository-group-toggle
-                    onclick={() => toggleRepositoryGroup(repositoryGroup.key)}
-                    onkeydown={(event) => event.stopPropagation()}
+              <div class="section-header mx-1 pt-2 pb-1 min-w-0">
+                <Button
+                  variant="ghost"
+                  type="button"
+                  class="h-auto! w-full min-w-0 justify-start gap-2.5 px-2.5! py-1! text-left"
+                  aria-expanded={isExpanded}
+                  aria-controls={`repo-group-${encodeURIComponent(repositoryGroup.key)}`}
+                  data-repository-collapse-toggle
+                  onclick={() => appStore.dispatch(toggleRepoGroupCollapsed(repositoryGroup.key))}
+                  onkeydown={(event) => event.stopPropagation()}
+                >
+                  <span class="size-3.5 shrink-0">
+                    {#if repositoryGroup.group.owner}
+                      <GitHubAvatar
+                        identity={repositoryGroup.group.owner}
+                        alt=""
+                        size={14}
+                        class="size-3.5 rounded-full"
+                      />
+                    {/if}
+                  </span>
+                  <Header size={4} class="min-w-0 flex-1 truncate"
+                    >{repositoryGroup.group.label}</Header
                   >
-                    <span class="type-caption truncate" data-repository-group-toggle-label>
-                      {repositoryGroup.isExpanded
-                        ? m.layout_allCard_showLess_label()
-                        : m.layout_allCard_showMore_label()}
-                    </span>
-                  </Button>
-                </div>
-              {/if}
+                  <Fa
+                    icon={faChevronDown}
+                    size="xs"
+                    class="shrink-0 text-muted-foreground transition-transform {isExpanded
+                      ? ''
+                      : '-rotate-90'}"
+                  />
+                </Button>
+              </div>
+              <div
+                id={`repo-group-${encodeURIComponent(repositoryGroup.key)}`}
+                hidden={!isExpanded}
+              >
+                {#each repositoryGroup.visibleWorkspaces as workspace, _i (workspace.id)}
+                  <div data-repository-space-row data-workspace-id={workspace.id}>
+                    <WorkspaceCard
+                      {workspace}
+                      variant="compact"
+                      showTime={false}
+                      isUnread={_isUnread(workspace)}
+                      isPinned={$pinnedIds$.includes(workspace.id)}
+                      trailingLabel={workspace.status === WorkspaceStatusEnum.Archived
+                        ? m.lib_commandPalette_archivedWorkspace_pill()
+                        : undefined}
+                      streamingAgentIds={_getStreamingIds(workspace)}
+                      highlighted={keyboardNavActive &&
+                        highlightedIndex === (_visibleIdIndex.get(workspace.id) ?? -1)}
+                      suppressHover={keyboardNavActive}
+                      onClick={(e) => handleClick(workspace.id, e)}
+                      onTogglePin={(e) => handleTogglePin(e, workspace.id)}
+                      onMarkAsRead={_isUnread(workspace)
+                        ? (e) => handleMarkAsRead(e, workspace.id)
+                        : undefined}
+                      onOpenInNewWindow={() => openWorkspaceInNewWindow(workspace.id)}
+                      onHover={() => {
+                        hoveredIndex = _visibleIdIndex.get(workspace.id) ?? -1;
+                      }}
+                    />
+                  </div>
+                {/each}
+                {#if !searchQuery.trim() && repositoryGroup.group.workspaces.length > REPOSITORY_WORKSPACE_LIMIT}
+                  <div class="flex min-w-0 pl-9.5 pr-2 pb-1">
+                    <Button
+                      variant="plain"
+                      type="button"
+                      class="repository-group-toggle h-auto min-h-7 w-fit max-w-full shrink appearance-none justify-start overflow-hidden border-0 bg-transparent px-0! py-1! text-left font-normal text-muted-foreground shadow-none hover:bg-transparent hover:text-foreground active:bg-transparent focus-visible:bg-transparent focus-visible:text-foreground focus-visible:underline focus-visible:outline-none focus-visible:ring-0!"
+                      aria-expanded={repositoryGroup.isExpanded}
+                      data-repository-group-toggle
+                      onclick={() => toggleRepositoryGroup(repositoryGroup.key)}
+                      onkeydown={(event) => event.stopPropagation()}
+                    >
+                      <span class="type-caption truncate" data-repository-group-toggle-label>
+                        {repositoryGroup.isExpanded
+                          ? m.layout_allCard_showLess_label()
+                          : m.layout_allCard_showMore_label()}
+                      </span>
+                    </Button>
+                  </div>
+                {/if}
+              </div>
             </div>
           {/each}
         {:else if $viewMode$ === 'status'}
           {#each groupedByStatus as group (group.id)}
             {@const isExpanded = !$collapsedStatusGroupIds$.includes(group.id)}
-            <div class="section-header px-2 pt-2 pb-1 mt-2 min-w-0" data-status-group={group.id}>
+            <div class="section-header mx-1 pt-2 pb-1 mt-2 min-w-0" data-status-group={group.id}>
               <Button
                 variant="ghost"
                 type="button"
-                class="flex w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-sm text-left outline-none hover:text-foreground focus-visible:outline-1 focus-visible:outline-ring"
+                class="h-auto! w-full min-w-0 justify-start gap-2.5 px-2.5! py-1! text-left"
                 aria-expanded={isExpanded}
                 aria-controls={`status-group-${group.id}`}
                 data-status-group-toggle={group.id}
                 onclick={() => toggleStatusGroup(group.id)}
                 onkeydown={(event) => event.stopPropagation()}
               >
+                <span class="size-3.5 shrink-0" aria-hidden="true"></span>
+                <Header size={4} class="min-w-0 flex-1 truncate">{group.label}</Header>
                 <Fa
                   icon={faChevronDown}
                   size="xs"
@@ -649,7 +687,6 @@
                     ? ''
                     : '-rotate-90'}"
                 />
-                <Header size={4} class="min-w-0 flex-1 truncate">{group.label}</Header>
               </Button>
             </div>
             <div id={`status-group-${group.id}`} hidden={!isExpanded}>
@@ -657,6 +694,7 @@
                 <WorkspaceCard
                   {workspace}
                   variant="compact"
+                  showTime={false}
                   isUnread={_isUnread(workspace)}
                   isPinned={$pinnedIds$.includes(workspace.id)}
                   trailingLabel={workspace.status === WorkspaceStatusEnum.Archived
