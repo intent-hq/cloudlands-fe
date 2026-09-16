@@ -2,7 +2,7 @@
 // Intentionally update after reviewed fixture/contract changes with:
 // NODE_OPTIONS=--max-old-space-size=4096 pnpm vitest run src/lib/component-catalog/catalog-contract.test.ts --maxWorkers=1 -u
 // Always review the generated snapshot diff before staging it; unrelated churn is not acceptable.
-import { cleanup, render } from '@testing-library/svelte';
+import { cleanup, render, waitFor } from '@testing-library/svelte';
 import axe from 'axe-core';
 import { tick } from 'svelte';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -197,6 +197,18 @@ afterEach(() => {
 
 async function verifyCatalogContract(testCase: ContractCase) {
   const rendered = renderCase(testCase);
+  // Lazy renderer imports can outlast a tick and an otherwise stable empty preview.
+  await waitFor(
+    () => {
+      expect(
+        rendered.container.querySelector(
+          `[data-catalog-renderer-fixture="${testCase.fixture.id}"], ` +
+            `[data-catalog-fixture-id="${testCase.fixture.id}"] [data-catalog-rendered-state]`,
+        ),
+      ).not.toBeNull();
+    },
+    { timeout: 30_000 },
+  );
   await tick();
   await waitForCaptureStability(document.body, { timeoutMs: 2_000 });
 
