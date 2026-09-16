@@ -31,8 +31,23 @@ async function expectRow(row: Locator) {
   });
 }
 
+// bits-ui parks floating content at translate(0, -200%) until floating-ui has
+// positioned it, so a lone boundingBox() sample can catch that frame. Read every
+// box in one browser round trip and report whether the wrapper is positioned yet.
+async function sampleBoxes([first, ...rest]: Locator[]) {
+  const others = await Promise.all(rest.map((locator) => locator.elementHandle()));
+  return first.evaluate((element, others) => {
+    const wrapper = element.closest<HTMLElement>('[data-bits-floating-content-wrapper]');
+    const positioned = !wrapper || !wrapper.style.transform.includes('-200%');
+    const boxes = [element, ...others].map((node) => {
+      const { x, y, width, height } = node.getBoundingClientRect();
+      return { x, y, width, height };
+    });
+    return { positioned, boxes };
+  }, others);
+}
+
 async function expectInset(container: Locator, row: Locator) {
-  const [containerBox, rowBox] = await Promise.all([container.boundingBox(), row.boundingBox()]);
   const inset = await container.evaluate((element) => {
     const style = getComputedStyle(element);
     return {
@@ -42,21 +57,31 @@ async function expectInset(container: Locator, row: Locator) {
       paddingRight: style.paddingRight,
     };
   });
-  expect(containerBox).not.toBeNull();
-  expect(rowBox).not.toBeNull();
   expect(inset.paddingLeft).toBe('4px');
   expect(inset.paddingRight).toBe('4px');
-  expect(rowBox!.x - containerBox!.x).toBe(inset.borderLeft + 4);
-  expect(containerBox!.x + containerBox!.width - rowBox!.x - rowBox!.width).toBe(
-    inset.borderRight + 4,
-  );
+  await expect(async () => {
+    const {
+      positioned,
+      boxes: [containerBox, rowBox],
+    } = await sampleBoxes([container, row]);
+    expect(positioned).toBe(true);
+    expect(rowBox.x - containerBox.x).toBe(inset.borderLeft + 4);
+    expect(containerBox.x + containerBox.width - rowBox.x - rowBox.width).toBe(
+      inset.borderRight + 4,
+    );
+  }).toPass();
 }
 
 async function expectHighlight(row: Locator, highlight: Locator) {
   await expect(highlight).toBeVisible();
-  const rowBox = await row.boundingBox();
-  expect(rowBox).not.toBeNull();
-  await expect.poll(() => highlight.boundingBox()).toEqual(rowBox);
+  await expect(async () => {
+    const {
+      positioned,
+      boxes: [rowBox, highlightBox],
+    } = await sampleBoxes([row, highlight]);
+    expect(positioned).toBe(true);
+    expect(highlightBox).toEqual(rowBox);
+  }).toPass();
 }
 
 async function firstTextStart(locator: Locator) {
