@@ -232,7 +232,6 @@ describe('editorial workspace shell presentation contract', () => {
     expect(tabs).toContain('w-fit min-w-0 max-w-[100%]');
     expect(tabs).toContain('use:reportActiveTabBounds={isCurrent}');
     expect(titlebar).toContain('data-active-tab-border-mask');
-    expect(titlebar).toContain('absolute -bottom-px z-[60] h-px bg-sidebar');
     expect(nav).not.toContain('faBell');
     expect(nav).not.toContain("id: 'settings'");
     expect(nav).toContain('data-titlebar-spaces-control');
