@@ -628,19 +628,23 @@
               {#if $stats$}
                 <div class="h-px bg-border my-1"></div>
 
-                <!-- Agent slots -->
-                <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
-                  <span class="text-subtle">{m.layout_daemonStatus_agentSlots_label()}</span>
-                  <span class="tabular-nums">
-                    {$stats$.agents}/{$stats$.maxAgents ?? '?'}
-                  </span>
-                </div>
+                <!-- Agent slots (administrator-only; omitted from the collaborator projection) -->
+                {#if $stats$.agents !== undefined}
+                  <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
+                    <span class="text-subtle">{m.layout_daemonStatus_agentSlots_label()}</span>
+                    <span class="tabular-nums">
+                      {$stats$.agents}/{$stats$.maxAgents ?? '?'}
+                    </span>
+                  </div>
+                {/if}
 
-                <!-- Connected clients -->
-                <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
-                  <span class="text-subtle">{m.layout_daemonStatus_wssClients_label()}</span>
-                  <span class="tabular-nums">{$stats$.clients}</span>
-                </div>
+                <!-- Connected clients (administrator-only; omitted from the collaborator projection) -->
+                {#if $stats$.clients !== undefined}
+                  <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
+                    <span class="text-subtle">{m.layout_daemonStatus_wssClients_label()}</span>
+                    <span class="tabular-nums">{$stats$.clients}</span>
+                  </div>
+                {/if}
 
                 <!-- Transport -->
                 <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
