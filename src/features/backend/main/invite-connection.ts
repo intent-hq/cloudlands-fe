@@ -325,8 +325,7 @@ async function dialThroughTunnel(
   const binaryPath = resolveTailcatBinaryPath();
   if (!binaryPath) throw new Error('tailcat binary unavailable; cannot dial the invite tunnel');
   const tunnel = await createTailcatTunnel({
-    // tc addresses are daemon-minted lowercase; normalise like captureFingerprint.
-    tcAddress: tcAddress.trim().toLowerCase(),
+    tcAddress: tcAddress.trim(),
     remotePort: port,
     binaryPath,
     ...(spawn ? { spawn } : {}),
