@@ -491,15 +491,15 @@ interface BackendWindowHooks {
 const defaultWindowHooks: BackendWindowHooks = {
   async openOrFocus(backendId) {
     const mod = (await import('../../../main/window')) as unknown as {
-      openOrFocusWindowsForBackend: (id: string) => void;
+      openOrFocusWindowsForBackend: (id: string) => Promise<void>;
     };
-    mod.openOrFocusWindowsForBackend(backendId);
+    await mod.openOrFocusWindowsForBackend(backendId);
   },
   async ensureLocalWindowBeforeClose(backendId) {
     const mod = (await import('../../../main/window')) as unknown as {
-      ensureLocalWindowBeforeClosingBackend: (id: string) => void;
+      ensureLocalWindowBeforeClosingBackend: (id: string) => Promise<void>;
     };
-    mod.ensureLocalWindowBeforeClosingBackend(backendId);
+    await mod.ensureLocalWindowBeforeClosingBackend(backendId);
   },
   async closeForBackend(backendId) {
     const mod = (await import('../../../main/window')) as unknown as {

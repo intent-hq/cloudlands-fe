@@ -209,6 +209,24 @@ describe('userPreferencesPersistenceSaga', () => {
     expect(mocks.applyLanguagePreference.mock.calls).toEqual([]);
   });
 
+  it.each([true, false])(
+    'hydrates a persisted appearance:reduceMotionOnBattery = %s over the default',
+    async (stored) => {
+      mocks.getJSON.mockImplementation((key: string) =>
+        key === 'appearance:reduceMotionOnBattery' ? stored : undefined,
+      );
+      const dispatch = vi.fn();
+      await runSaga({ dispatch, getState: () => ({}) }, hydrateUserPreferencesWorker).toPromise();
+
+      expect(dispatch.mock.calls).toEqual([[setReduceMotionOnBattery(stored)]]);
+      const hydrated = dispatch.mock.calls.reduce(
+        (state, [action]) => userPreferencesReducer(state, action),
+        initialState,
+      );
+      expect(hydrated.reduceMotionOnBattery).toBe(stored);
+    },
+  );
+
   it('persists an agent font action and restores it in a fresh store', async () => {
     const stored: Record<string, unknown> = {};
     mocks.getJSON.mockImplementation((key: string) => stored[key]);

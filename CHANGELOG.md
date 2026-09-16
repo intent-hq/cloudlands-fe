@@ -4,6 +4,45 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.159.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.159.2...v2.159.3) (2026-09-16)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.63 ([#2505](https://github.com/intent-hq/cloudlands-fe/issues/2505)) ([91e071c](https://github.com/intent-hq/cloudlands-fe/commit/91e071c8fd0ec2c2c7ff33424505748386f71e13))
+
+## [2.159.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.159.1...v2.159.2) (2026-09-16)
+
+
+### 🐛 Bug Fixes
+
+* **main:** start intentd sidecar before daemon-dependent startup steps ([#2500](https://github.com/intent-hq/cloudlands-fe/issues/2500)) ([f979b88](https://github.com/intent-hq/cloudlands-fe/commit/f979b880a25fcdaff2dd1b9a67ae78e755d11eb8))
+
+## [2.159.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.159.0...v2.159.1) (2026-09-16)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.62 ([#2499](https://github.com/intent-hq/cloudlands-fe/issues/2499)) ([44c710c](https://github.com/intent-hq/cloudlands-fe/commit/44c710c844cfd5cc0bca083f78fabc39fced7e66))
+
+## [2.159.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.158.4...v2.159.0) (2026-09-16)
+
+
+### 🚀 Features
+
+* **chat:** soften utility cards and pin response triggers ([#2298](https://github.com/intent-hq/cloudlands-fe/issues/2298)) ([5895e7d](https://github.com/intent-hq/cloudlands-fe/commit/5895e7d1aa9b56e6a68f3ba3c398271261d3df32))
+
+
+### 🐛 Bug Fixes
+
+* await clipboard.writeText in WRITE_CLIPBOARD handler ([#2493](https://github.com/intent-hq/cloudlands-fe/issues/2493)) ([3218d7b](https://github.com/intent-hq/cloudlands-fe/commit/3218d7b466955687d603261c715a0c57c3d43e6b))
+* bump intentd sidecar to v0.9.60 ([#2491](https://github.com/intent-hq/cloudlands-fe/issues/2491)) ([6c793a6](https://github.com/intent-hq/cloudlands-fe/commit/6c793a63b6202cde6e2a7d4db01c14432596e3b8))
+* bump intentd sidecar to v0.9.61 ([#2496](https://github.com/intent-hq/cloudlands-fe/issues/2496)) ([6ee393c](https://github.com/intent-hq/cloudlands-fe/commit/6ee393c0e763c3dc6ec23fa7485c617716f372a4))
+* default reduce motion on battery to off ([#2492](https://github.com/intent-hq/cloudlands-fe/issues/2492)) ([e9eee31](https://github.com/intent-hq/cloudlands-fe/commit/e9eee31acec9c1626445018b85a05afb6b8dbde4))
+* **main:** gate activate-triggered window creation on boot readiness ([#2488](https://github.com/intent-hq/cloudlands-fe/issues/2488)) ([ce83f7b](https://github.com/intent-hq/cloudlands-fe/commit/ce83f7b72d2f5bdf77670a588ffd3f8f8c27eaa7))
+* preserve Tailcat addresses during remote pairing ([#2487](https://github.com/intent-hq/cloudlands-fe/issues/2487)) ([29632d2](https://github.com/intent-hq/cloudlands-fe/commit/29632d27dae3d14d5fb124f5cb5b7c23c10a7580))
+* reduce preview imports and preserve navigation state ([#2456](https://github.com/intent-hq/cloudlands-fe/issues/2456)) ([3ce7b04](https://github.com/intent-hq/cloudlands-fe/commit/3ce7b045c44417f0b91b5775405dbb269bc4bc0e))
+
 ## [2.158.4](https://github.com/intent-hq/cloudlands-fe/compare/v2.158.3...v2.158.4) (2026-09-15)
 
 

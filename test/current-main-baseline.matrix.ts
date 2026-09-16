@@ -3,7 +3,7 @@ export const target = {
   tree: '73d6787675869cd6b95f0329dfbf4b3281781056',
 } as const;
 
-export type Probe = 'chat' | 'sidebar' | 'tabs' | 'panel' | 'chooser' | 'terminal' | 'interaction';
+type Probe = 'chat' | 'sidebar' | 'tabs' | 'panel' | 'chooser' | 'terminal' | 'interaction';
 export type BaselineRow = {
   row: string;
   capability: string;

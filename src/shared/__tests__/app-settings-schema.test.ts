@@ -71,7 +71,7 @@ describe('app settings schema', () => {
       type: 'boolean',
       source: 'local-storage',
       storageKey: 'appearance:reduceMotionOnBattery',
-      defaultValue: true,
+      defaultValue: false,
       apply: { kind: 'redux-action', action: 'userPreferences/setReduceMotionOnBattery' },
     });
   });

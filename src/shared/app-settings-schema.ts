@@ -210,7 +210,7 @@ const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
     type: 'boolean',
     source: 'local-storage',
     storageKey: 'appearance:reduceMotionOnBattery',
-    defaultValue: true,
+    defaultValue: false,
     apply: { kind: 'redux-action', action: 'userPreferences/setReduceMotionOnBattery' },
   },
   {
