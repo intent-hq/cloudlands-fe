@@ -172,6 +172,18 @@ function fakeConsent(decision: 'open' | 'cancel' | null) {
   return { prompt, cancelWaiting };
 }
 
+/**
+ * Renderer notice seam (failure + plaintext warning). Resolving `false` (the
+ * default) is the unavailable-renderer path — the flow falls back to the
+ * native box, which the pre-existing tests below exercise.
+ */
+const showInviteNotice = vi.fn();
+vi.mock('../../../../main/invite-notice', () => ({
+  get showInviteNotice() {
+    return showInviteNotice;
+  },
+}));
+
 const logLines: string[] = [];
 vi.mock('$shared/logger', () => ({
   Logger: class {
@@ -190,6 +202,7 @@ vi.mock('$shared/logger', () => ({
   },
 }));
 
+import { PinMismatchError } from '../../../backend/main/backend-connection';
 import {
   GuestEncryptionUnavailableError,
   GuestStoreCorruptError,
@@ -301,6 +314,7 @@ beforeEach(() => {
   guestAdd.mockResolvedValue({ id: 'guest-id', tokenEncrypted: true });
   openBackendWindow.mockResolvedValue({ id: 'guest-id' });
   showInviteConsent.mockImplementation(() => fakeConsent(null).prompt);
+  showInviteNotice.mockResolvedValue(false);
 });
 
 describe('handleInviteDeepLink', () => {
@@ -1795,6 +1809,356 @@ describe('handleInviteDeepLink — returning guest', () => {
     expect(allLogs).not.toContain(STORED_TOKEN);
     expect(allLogs).not.toContain(ACCEPTED.token);
     expect(allLogs).not.toContain(SECRET);
+  });
+});
+
+// The in-app notice modal (spec "In-app invite failure and plaintext-warning
+// modals"): both one-button boxes render in the renderer; the native box is
+// only the no-window/no-ack fallback. The payload carries bounded codes only.
+describe('handleInviteDeepLink — renderer notice modal', () => {
+  const NOTICE_KEYS = ['requestId', 'kind', 'reason', 'workspaceTitle', 'hostLabel'];
+
+  function noticePayload(index = 0) {
+    return showInviteNotice.mock.calls[index][0] as Record<string, unknown>;
+  }
+
+  it('failure before any prompt (dial failed): notice modal, no native box, no labels yet', async () => {
+    showInviteNotice.mockResolvedValue(true);
+    openInviteConnection.mockRejectedValue(new InviteTransportError('host-unreachable'));
+
+    await handleInviteDeepLink(LINK);
+
+    expect(showInviteNotice).toHaveBeenCalledTimes(1);
+    expect(noticePayload()).toEqual({
+      requestId: expect.any(String),
+      kind: 'failed',
+      reason: 'host-unreachable',
+    });
+    expect(showInviteConsent).not.toHaveBeenCalled();
+    expect(showMessageBox).not.toHaveBeenCalled();
+    expect(close).not.toHaveBeenCalled();
+  });
+
+  it('an expired link at the challenge: notice carries the dialed host and the bounded reason', async () => {
+    showInviteNotice.mockResolvedValue(true);
+    challenge.mockRejectedValue(new InviteRpcError(-32001, { code: 'invite-expired' }));
+
+    await handleInviteDeepLink(LINK);
+
+    expect(noticePayload()).toMatchObject({
+      kind: 'failed',
+      reason: 'expired',
+      hostLabel: '192.168.1.10',
+    });
+    expect(noticePayload().workspaceTitle).toBeUndefined();
+    expect(showInviteConsent).not.toHaveBeenCalled();
+    expect(showMessageBox).not.toHaveBeenCalled();
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it('prove refused while the joining modal is up: the notice is shown before the modal is dismissed (no gap)', async () => {
+    const { prompt } = fakeConsent('open');
+    showInviteConsent.mockReturnValue(prompt);
+    prove.mockRejectedValue(new InviteRpcError(-32602, { code: 'workspace-full' }));
+    const order: string[] = [];
+    prompt.dismiss.mockImplementation((outcome: string) => order.push(`dismiss:${outcome}`));
+    showInviteNotice.mockImplementation(async () => {
+      order.push('notice');
+      return true;
+    });
+
+    await handleInviteDeepLink(LINK);
+
+    expect(order).toEqual(['notice', 'dismiss:failed']);
+    expect(noticePayload()).toEqual({
+      requestId: expect.any(String),
+      kind: 'failed',
+      reason: 'workspace-full',
+      workspaceTitle: CHALLENGE.workspaceTitle,
+      hostLabel: '192.168.1.10',
+    });
+    expect(showMessageBox).not.toHaveBeenCalled();
+    expect(localCalls('github.identityProof.delete')).toEqual([
+      ['github.identityProof.delete', { gistId: PROOF.gistId }],
+    ]);
+    expect(guestAdd).not.toHaveBeenCalled();
+  });
+
+  it('sign-in denied while the sign-in modal waits: notice before dismiss, the device flow is not left running', async () => {
+    signedOutDaemon();
+    const signIn = fakeConsent('open');
+    showInviteConsent.mockReturnValue(signIn.prompt);
+    const order: string[] = [];
+    signIn.prompt.dismiss.mockImplementation((outcome: string) => order.push(`dismiss:${outcome}`));
+    showInviteNotice.mockImplementation(async () => {
+      order.push('notice');
+      return true;
+    });
+
+    const pending = handleInviteDeepLink(LINK);
+    await vi.waitFor(() => expect(openExternal).toHaveBeenCalledTimes(1));
+    emitAuthChanged('denied');
+    await pending;
+
+    expect(order).toEqual(['notice', 'dismiss:failed']);
+    expect(noticePayload()).toMatchObject({
+      kind: 'failed',
+      reason: 'denied',
+      workspaceTitle: CHALLENGE.workspaceTitle,
+      hostLabel: '192.168.1.10',
+    });
+    expect(showMessageBox).not.toHaveBeenCalled();
+    expect(localCalls('github.identityProof.create')).toEqual([]);
+  });
+
+  it('plaintext warning after the proof: shown after the joined dismiss, acknowledged before the window opens', async () => {
+    const { prompt } = fakeConsent('open');
+    showInviteConsent.mockReturnValue(prompt);
+    guestAdd.mockResolvedValue({ id: 'guest-id', tokenEncrypted: false });
+    const order: string[] = [];
+    prompt.dismiss.mockImplementation((outcome: string) => order.push(`dismiss:${outcome}`));
+    let acknowledge!: (value: boolean) => void;
+    showInviteNotice.mockImplementation(() => {
+      order.push('notice');
+      return new Promise<boolean>((resolve) => (acknowledge = resolve));
+    });
+    openBackendWindow.mockImplementation(async () => {
+      order.push('window');
+      return { id: 'guest-id' };
+    });
+
+    const pending = handleInviteDeepLink(LINK);
+    await vi.waitFor(() => expect(showInviteNotice).toHaveBeenCalledTimes(1));
+    expect(openBackendWindow).not.toHaveBeenCalled();
+    acknowledge(true);
+    await pending;
+
+    expect(order).toEqual(['dismiss:joined', 'notice', 'window']);
+    expect(prompt.dismiss).toHaveBeenCalledTimes(1);
+    expect(noticePayload()).toEqual({
+      requestId: expect.any(String),
+      kind: 'plaintext',
+      workspaceTitle: CHALLENGE.workspaceTitle,
+      hostLabel: '192.168.1.10',
+    });
+    expect(showMessageBox).not.toHaveBeenCalled();
+  });
+
+  it('plaintext warning on the returning-guest path: names the host as the confirm prompt did', async () => {
+    guestFindMatching.mockResolvedValue({
+      id: 'guest-id',
+      label: '192.168.1.10',
+      host: '192.168.1.10',
+      hosts: ['192.168.1.10'],
+      port: 8443,
+      fingerprint: 'AA:BB:CC',
+      tcAddress: null,
+      hostname: null,
+      principalId: 'gh:42',
+      login: 'octocat',
+      tokenEncrypted: true,
+      workspaces: [{ id: 'ws-0', title: 'First workspace' }],
+      updatedAt: 1,
+    });
+    guestGetDecryptedToken.mockResolvedValue('stored-guest-token-value');
+    inspect.mockResolvedValue({
+      workspaceId: 'ws-1',
+      workspaceTitle: 'Shared workspace',
+      hostname: 'studio.local',
+      prettyHostname: 'Studio',
+    });
+    accept.mockResolvedValue({ ...CREDENTIAL, token: 'fresh-guest-token-value' });
+    guestAdd.mockResolvedValue({ id: 'guest-id', tokenEncrypted: false });
+    const { prompt } = fakeConsent('open');
+    showInviteConsent.mockReturnValue(prompt);
+    showInviteNotice.mockResolvedValue(true);
+
+    await handleInviteDeepLink(LINK);
+
+    expect(challenge).not.toHaveBeenCalled();
+    expect(prompt.dismiss).toHaveBeenCalledExactlyOnceWith('joined');
+    expect(noticePayload()).toEqual({
+      requestId: expect.any(String),
+      kind: 'plaintext',
+      workspaceTitle: 'Shared workspace',
+      hostLabel: 'Studio',
+    });
+    expect(showMessageBox).not.toHaveBeenCalled();
+    expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
+  });
+
+  it('an encrypted store sends no notice at all', async () => {
+    const { prompt } = fakeConsent('open');
+    showInviteConsent.mockReturnValue(prompt);
+    await handleInviteDeepLink(LINK);
+    expect(showInviteNotice).not.toHaveBeenCalled();
+    expect(prompt.dismiss).toHaveBeenCalledWith('joined');
+  });
+
+  it('renderer unavailable: the native box is the fallback, after the consent modal is dismissed', async () => {
+    const { prompt } = fakeConsent('open');
+    showInviteConsent.mockReturnValue(prompt);
+    prove.mockRejectedValue(new InviteRpcError(-32602, { code: 'workspace-full' }));
+    const order: string[] = [];
+    prompt.dismiss.mockImplementation((outcome: string) => order.push(`dismiss:${outcome}`));
+    showInviteNotice.mockImplementation(async () => {
+      order.push('notice');
+      return false;
+    });
+    showMessageBox.mockImplementation(async () => {
+      order.push('native');
+      return { response: 0 };
+    });
+
+    await handleInviteDeepLink(LINK);
+
+    expect(order).toEqual(['notice', 'dismiss:failed', 'native']);
+    expect(showMessageBox.mock.calls[0][0]).toMatchObject({ type: 'error' });
+  });
+
+  it.each([
+    [
+      'server-authored rpc text',
+      new InviteRpcError(-32602, { code: SECRET, detail: `token=${TOKEN}` }),
+    ],
+    [
+      'a thrown Error with credentials in its text',
+      new Error(`persist failed: secret=${SECRET} token=${TOKEN}`),
+    ],
+    ['a transport error', new InviteTransportError('tunnel-failed')],
+    ['a store refusal', new GuestStoreCorruptError()],
+  ])(
+    'the notice payload carries bounded fields only — never a message or the credentials (%s)',
+    async (_name, error) => {
+      showInviteNotice.mockResolvedValue(true);
+      challenge.mockRejectedValue(error);
+
+      await handleInviteDeepLink(LINK);
+
+      const payload = noticePayload();
+      expect(Object.keys(payload).every((key) => NOTICE_KEYS.includes(key))).toBe(true);
+      expect(payload).not.toHaveProperty('message');
+      expect(payload).not.toHaveProperty('error');
+      const serialized = JSON.stringify(payload);
+      expect(serialized).not.toContain(SECRET);
+      expect(serialized).not.toContain(TOKEN);
+      expect(serialized).not.toContain('persist failed');
+    },
+  );
+
+  /** Every failure class of the gist-proof flow lands on its own bounded reason. */
+  it.each([
+    [
+      'pin mismatch',
+      () => openInviteConnection.mockRejectedValue(new PinMismatchError()),
+      'cert-mismatch',
+    ],
+    [
+      'encryption unavailable',
+      () => guestAdd.mockRejectedValue(new GuestEncryptionUnavailableError()),
+      'encryption-unavailable',
+    ],
+    [
+      'store corrupt',
+      () => guestAdd.mockRejectedValue(new GuestStoreCorruptError()),
+      'store-corrupt',
+    ],
+    [
+      'browser launch failed during the sign-in',
+      () => {
+        signedOutDaemon();
+        openExternal.mockRejectedValue(new Error('no browser'));
+      },
+      'launch-failed',
+    ],
+    [
+      'github.connect refused by the guest daemon',
+      () => {
+        signedOutDaemon();
+        onLocal('github.connect', () => {
+          throw localRefusal('some-daemon-code');
+        });
+      },
+      'sign-in-failed',
+    ],
+    [
+      'a refused verification URL',
+      () => {
+        signedOutDaemon();
+        onLocal('github.connect', () => ({ ...CONNECT, verificationUri: 'https://evil.example/' }));
+      },
+      'sign-in-failed',
+    ],
+    [
+      'the guest daemon cannot reach GitHub for the proof',
+      () =>
+        onLocal('github.identityProof.create', () => {
+          throw localRefusal('github-unreachable');
+        }),
+      'proof-github-unreachable',
+    ],
+    [
+      'an undocumented proof error',
+      () =>
+        onLocal('github.identityProof.create', () => {
+          throw new Error(`gist failed: secret=${SECRET}`);
+        }),
+      'proof-failed',
+    ],
+    [
+      'workspace full',
+      () => prove.mockRejectedValue(new InviteRpcError(-32602, { code: 'workspace-full' })),
+      'workspace-full',
+    ],
+    [
+      'owner self-join',
+      () => prove.mockRejectedValue(new InviteRpcError(-32602, { code: 'owner-self-join' })),
+      'owner-self-join',
+    ],
+    [
+      'the host cannot reach GitHub to read the proof',
+      () => prove.mockRejectedValue(new InviteRpcError(-32602, { code: 'github-unreachable' })),
+      'host-github-unreachable',
+    ],
+    [
+      'proof expired twice (the retry box accepted once)',
+      () => prove.mockRejectedValue(new InviteRpcError(-32602, { code: 'proof-expired' })),
+      'proof-expired',
+    ],
+    [
+      'proof invalid twice (the retry box accepted once)',
+      () => prove.mockRejectedValue(new InviteRpcError(-32602, { code: 'proof-invalid' })),
+      'proof-invalid',
+    ],
+    [
+      'unknown host code',
+      () => challenge.mockRejectedValue(new InviteRpcError(-32602, { code: 'what' })),
+      'generic',
+    ],
+  ])('maps %s onto its bounded reason', async (_name, arrange, reason) => {
+    showInviteConsent.mockImplementation(() => fakeConsent('open').prompt);
+    showInviteNotice.mockResolvedValue(true);
+    arrange();
+    await handleInviteDeepLink(LINK);
+    expect(showInviteNotice).toHaveBeenCalledTimes(1);
+    expect(noticePayload()).toMatchObject({ kind: 'failed', reason });
+  });
+
+  it('the sign-in failure sentences and the proof failure sentences are distinct from the generic one', async () => {
+    showInviteNotice.mockResolvedValue(true);
+    const reasons: string[] = [];
+    for (const status of ['denied', 'expired', 'error'] as const) {
+      signedOutDaemon();
+      showInviteConsent.mockReturnValue(fakeConsent('open').prompt);
+      const pending = handleInviteDeepLink(LINK);
+      await vi.waitFor(() => expect(openExternal).toHaveBeenCalled());
+      openExternal.mockClear();
+      emitAuthChanged(status);
+      await pending;
+      reasons.push(noticePayload(reasons.length).reason as string);
+    }
+    expect(reasons).toEqual(['denied', 'flow-expired', 'sign-in-failed']);
+    expect(showMessageBox).not.toHaveBeenCalled();
   });
 });
 
