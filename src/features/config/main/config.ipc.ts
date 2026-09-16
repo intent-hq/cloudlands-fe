@@ -36,6 +36,7 @@ import { CONFIG_CHANNELS } from '../../../shared/ipc/channels';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
 import { ConfigGetSchema, ConfigSetSchema, ConfigGetAllSchema } from '../../../main/ipc-schemas';
 import {
+  applyLocalDaemonKeyWrite,
   hydrateFromDaemon,
   isDaemonOwnedKey,
   NON_SECRET_DAEMON_KEYS,
@@ -56,6 +57,7 @@ const logger = new Logger('ConfigIPC');
 
 let configManager: ConfigManager | null = null;
 let hydrationPromise: Promise<void> | null = null;
+let trailingHydrationRequested = false;
 let reconnectDisposer: (() => void) | undefined;
 
 function getLocalClient(): JsonRpcClient | undefined {
@@ -99,21 +101,30 @@ async function getAllForBackend(
 
 /**
  * Start hydrating the daemon-owned sub-keys of AppConfig from the LOCAL
- * daemon so the renderer sees canonical values. Fire-and-forget and
- * single-flight: concurrent triggers (startup + reconnect) share one pass,
- * and per-key failures are warn-logged by `hydrateFromDaemon` rather than
- * thrown. FE-local sub-keys stay at their in-memory defaults for the session.
+ * daemon so the renderer sees canonical values. Fire-and-forget,
+ * single-flight with trailing coalesce: triggers (startup + reconnects)
+ * arriving while a pass is in flight collapse into at most ONE follow-up pass
+ * once it settles — a reconnect signals the daemon may have changed, so it
+ * must not be dropped. Per-key failures are warn-logged by
+ * `hydrateFromDaemon` rather than thrown. FE-local sub-keys stay at their
+ * in-memory defaults for the session.
  */
 function startDaemonHydration(): void {
-  if (!configManager || hydrationPromise) return;
+  if (!configManager) return;
+  if (hydrationPromise) {
+    trailingHydrationRequested = true;
+    return;
+  }
   const localClient = getLocalClient();
   if (!localClient) return;
+  trailingHydrationRequested = false;
   hydrationPromise = hydrateFromDaemon(configManager, localClient)
     .catch((err: unknown) => {
       logger.warn('Failed to hydrate config from daemon', err as Error);
     })
     .finally(() => {
       hydrationPromise = null;
+      if (trailingHydrationRequested) startDaemonHydration();
     });
 }
 
@@ -209,9 +220,11 @@ export async function setupConfigIPC() {
             try {
               const backendId = getBackendIdForIpcSender(event.sender);
               await pushDaemonKey(validated.key, validated.value, getBackendClientForId(backendId));
-              // The in-memory ConfigManager mirrors the LOCAL daemon only.
+              // The in-memory ConfigManager mirrors the LOCAL daemon only. The
+              // versioned write also keeps a still-pending startup read of this
+              // key from landing on top of the newer value.
               if (backendId === LOCAL_CONNECTION_ID) {
-                configManager.set(validated.key, validated.value);
+                applyLocalDaemonKeyWrite(configManager, validated.key, validated.value);
               }
               logger.debug('Pushed daemon-owned config change', { key: validated.key });
             } catch (err) {
