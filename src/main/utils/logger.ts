@@ -11,9 +11,9 @@ import { homedir } from 'os';
 import { Logger as BaseLogger } from '../../shared/logger';
 import type { LoggerOptions } from '../../shared/logger';
 
-// Conditionally import electron only if available
+// Conditionally import electron only if available; the IIFE catches its own errors.
 let app: any;
-(async () => {
+void (async () => {
   try {
     const electron = await import('electron');
     app = electron.app;

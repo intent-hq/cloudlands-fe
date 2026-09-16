@@ -59,7 +59,7 @@ export const selectShellTransparencyEnabled = store.createSelector((state) => {
 });
 
 export const selectReduceMotionOnBattery = store.createSelector((state) => {
-  return state.userPreferences?.reduceMotionOnBattery ?? true;
+  return state.userPreferences?.reduceMotionOnBattery ?? false;
 });
 
 export const selectCounterScale = store.createSelector((state) => {

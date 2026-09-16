@@ -91,6 +91,10 @@
     open = isOpen;
     onOpenChange?.(isOpen);
   }
+
+  $effect(() => {
+    if (disabled && open) handleOpenChange(false);
+  });
 </script>
 
 <!-- Wrap in Provider to ensure context is available even when mounted in isolation

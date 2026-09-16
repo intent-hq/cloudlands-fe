@@ -930,7 +930,7 @@ export class NotificationService {
         const existingMain = getMainWindow();
         const setAsMain = !existingMain || existingMain.isDestroyed();
         const { workArea } = screen.getPrimaryDisplay();
-        createWindowForSession({ route, bounds: workArea }, setAsMain);
+        await createWindowForSession({ route, bounds: workArea }, setAsMain);
         logger.info('Notification click opened a new window (no regular window was live)', {
           workspaceId,
           route,

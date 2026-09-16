@@ -324,6 +324,14 @@ const rendererBrowserSafetyBaselineFiles = [
 
 const nodeBuiltinModules = [...new Set(builtinModules.map((name) => name.replace(/^node:/, '')))];
 
+// Electron main-process source globs shared by the main-process-only rule blocks.
+const mainProcessFiles = [
+  'src/main/**/*.ts',
+  'src/features/*/main/**/*.ts',
+  'src/shared/main/**/*.ts',
+  'src/shared/git/**/*.ts',
+];
+
 // Shared options for the renderer browser-safety no-restricted-imports rule;
 // applied at `error` to clean files and `warn` to the baselined files below so
 // new violations in baselined files stay visible while migration proceeds.
@@ -553,12 +561,7 @@ export default [
   // if the spawned process hangs (see: hang report 2026-02-28).
   // Use execAsync (promisified exec) or spawn instead.
   {
-    files: [
-      'src/main/**/*.ts',
-      'src/features/*/main/**/*.ts',
-      'src/shared/main/**/*.ts',
-      'src/shared/git/**/*.ts',
-    ],
+    files: mainProcessFiles,
     rules: {
       'no-restricted-imports': [
         'error',
@@ -573,6 +576,30 @@ export default [
           ],
         },
       ],
+    },
+  },
+  // Type-aware lint for Electron main-process + preload code. An unawaited
+  // promise inside a try/catch silently succeeds: the Electron 42→44 bump made
+  // `clipboard.writeText()` async and the WRITE_CLIPBOARD handler kept
+  // returning `{ success: true }` without observing the write
+  // (cloudlands-fe#2164, fixed in cloudlands-fe#2493). Files are typed against
+  // the main tsconfig and a lint-only preload project: the shipped
+  // src/preload/index.ts is generated and gitignored (so globally ignored above),
+  // and tsconfig.preload.json excludes the tracked template to keep it out of the
+  // build, so tsconfig.preload.lint.json type-checks the template instead. Both
+  // tsconfigs exclude tests, so tests are excluded here too; renderer/Svelte
+  // linting stays syntax-only.
+  {
+    files: [...mainProcessFiles, 'src/preload/**/*.ts'],
+    ignores: ['**/__tests__/**', '**/*.test.ts'],
+    languageOptions: {
+      parserOptions: {
+        project: ['./tsconfig.preload.lint.json', './tsconfig.main.json'],
+        tsconfigRootDir: import.meta.dirname,
+      },
+    },
+    rules: {
+      '@typescript-eslint/no-floating-promises': 'error',
     },
   },
   // Guard raw `dismissedQuestionsMessageId` reads: the dismissal comparison lives

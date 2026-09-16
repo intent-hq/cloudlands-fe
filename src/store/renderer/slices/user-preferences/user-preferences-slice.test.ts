@@ -348,17 +348,17 @@ describe('userPreferencesReducer', () => {
   });
 
   describe('appearance preference actions', () => {
-    it('defaults all appearance preferences to enabled', () => {
+    it('defaults aurora and shell transparency to enabled and reduceMotionOnBattery to disabled', () => {
       expect(initialState.chatAuroraEnabled).toBe(true);
       expect(initialState.shellTransparencyEnabled).toBe(true);
-      expect(initialState.reduceMotionOnBattery).toBe(true);
+      expect(initialState.reduceMotionOnBattery).toBe(false);
     });
 
     it('sets and toggles reduceMotionOnBattery', () => {
-      const disabled = userPreferencesReducer(initialState, setReduceMotionOnBattery(false));
-      const enabled = userPreferencesReducer(disabled, toggleReduceMotionOnBattery());
-      expect(disabled.reduceMotionOnBattery).toBe(false);
+      const enabled = userPreferencesReducer(initialState, setReduceMotionOnBattery(true));
+      const disabled = userPreferencesReducer(enabled, toggleReduceMotionOnBattery());
       expect(enabled.reduceMotionOnBattery).toBe(true);
+      expect(disabled.reduceMotionOnBattery).toBe(false);
     });
 
     it('sets and toggles chatAuroraEnabled', () => {
@@ -440,7 +440,7 @@ describe('userPreferencesReducer', () => {
       expect(selectShowReasoningBlocks.select({} as any)).toBe(false);
     });
 
-    it('selects appearance preferences with enabled fallbacks', () => {
+    it('selects appearance preferences with their default fallbacks', () => {
       expect(
         selectChatAuroraEnabled.select({
           userPreferences: { ...initialState, chatAuroraEnabled: false },
@@ -453,12 +453,12 @@ describe('userPreferencesReducer', () => {
       ).toBe(false);
       expect(
         selectReduceMotionOnBattery.select({
-          userPreferences: { ...initialState, reduceMotionOnBattery: false },
+          userPreferences: { ...initialState, reduceMotionOnBattery: true },
         } as any),
-      ).toBe(false);
+      ).toBe(true);
       expect(selectChatAuroraEnabled.select({} as any)).toBe(true);
       expect(selectShellTransparencyEnabled.select({} as any)).toBe(true);
-      expect(selectReduceMotionOnBattery.select({} as any)).toBe(true);
+      expect(selectReduceMotionOnBattery.select({} as any)).toBe(false);
     });
 
     it('selects font settings from userPreferences', () => {

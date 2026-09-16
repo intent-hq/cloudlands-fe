@@ -192,6 +192,9 @@ export function createBackendSocket(config: BackendConnectionConfig): Duplex {
     }));
     const tunnelAttempt = tunnelRaceAttempt(config);
     if (tunnelAttempt) attempts.push(tunnelAttempt);
+    if (attempts.length === 0 && isTcAddress(config.host ?? '')) {
+      throw new Error('tailcat binary unavailable; cannot connect through the tunnel');
+    }
     if (attempts.length > 1) {
       return raceDuplexSockets(attempts);
     }
@@ -207,18 +210,21 @@ export function createBackendSocket(config: BackendConnectionConfig): Duplex {
 export function describeBackendConfig(config: BackendConnectionConfig): string {
   if (config.transport === 'uds') return `uds:${config.socketPath}`;
   if (config.transport === 'ws') return `ws:${describeBackendUrl(config.wsUrl)}`;
-  // Deliberately omit the token and fingerprint — this string reaches logs.
+  // Tailcat addresses can embed a pre-shared key. Like the token and
+  // fingerprint, they must not reach connection lifecycle logs.
+  const host = isTcAddress(config.host ?? '') ? 'tailcat:REDACTED' : config.host;
   if (config.transport === 'wss') {
     const extra = candidateWssHosts(config).length - 1;
     const suffix = extra > 0 ? ` (+${extra} candidate${extra === 1 ? '' : 's'})` : '';
-    return `wss:${config.host}:${config.port}${suffix}`;
+    return `wss:${host}:${config.port}${suffix}`;
   }
-  return `tcp:${config.host}:${config.port}${config.tls ? ' (tls)' : ''}`;
+  return `tcp:${host}:${config.port}${config.tls ? ' (tls)' : ''}`;
 }
 
 /**
  * Distinct candidate hosts for a `wss` config: the primary `host` first, then
- * the `hosts` extras, trimmed and deduplicated in order. No loopback
+ * the `hosts` extras, trimmed and deduplicated in order. Tailcat addresses
+ * are opaque tunnel endpoints, never DNS candidates. No loopback
  * filtering here — pairing URIs and tests legitimately dial loopback; the
  * legacy-record sanitize lives in the store's `candidateHosts`, which feeds
  * synced records into this config.
@@ -228,7 +234,7 @@ export function candidateWssHosts(config: BackendConnectionConfig): string[] {
   const out: string[] = [];
   for (const raw of [config.host ?? '', ...(config.hosts ?? [])]) {
     const host = raw.trim();
-    if (!host || seen.has(host)) continue;
+    if (!host || isTcAddress(host) || seen.has(host)) continue;
     seen.add(host);
     out.push(host);
   }
@@ -443,7 +449,11 @@ export const TUNNEL_RACE_HOST = 'tailcat-tunnel';
  * weaken it. Exported for unit tests.
  */
 export function tunnelRaceAttempt(config: BackendConnectionConfig): RaceAttempt | null {
-  const { tcAddress, port } = config;
+  const { port } = config;
+  // A manually entered/saved host can itself be the tunnel endpoint. Preserve
+  // its case even if an older record has no separate tcAddress field.
+  const tcAddress =
+    config.tcAddress?.trim() || (isTcAddress(config.host ?? '') ? config.host?.trim() : undefined);
   if (!tcAddress || !port) return null;
   const binaryPath = resolveTailcatBinaryPath();
   if (!binaryPath) {
@@ -801,9 +811,7 @@ export async function captureFingerprint(
     let tunnel: TailcatTunnel;
     try {
       tunnel = await createTailcatTunnel({
-        // Lowercase like `isTcAddress` does for its check: tc addresses are
-        // daemon-minted lowercase, so a hand-typed `TC-…` still dials.
-        tcAddress: target.host.trim().toLowerCase(),
+        tcAddress: target.host.trim(),
         remotePort: target.port,
         binaryPath,
         ...(options.tailcatSpawn ? { spawn: options.tailcatSpawn } : {}),

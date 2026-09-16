@@ -40,6 +40,7 @@
   import { selectAgentSubscriptionLane } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-selectors';
   import { selectAgentSessionsById } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { getAvatarStateForSession } from '$features/agent/components/agent-avatar/avatar-state';
+  import type { TaskProgressItem } from './workspace-task-fallback';
 
   interface Props {
     workspaceId: string;
@@ -55,7 +56,12 @@
       count: number;
       initiallyExpanded?: boolean;
       mode?: 'generic' | 'agents' | 'mixed';
-      agents?: Array<{ id: string; name: string; finished?: boolean }>;
+      agents?: Array<{
+        id: string;
+        name: string;
+        finished?: boolean;
+        taskProgress?: TaskProgressItem[];
+      }>;
     };
     previewContent?: Snippet;
   }

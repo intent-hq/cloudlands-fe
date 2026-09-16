@@ -22,6 +22,8 @@
   import ChatMessageNavigator from '$lib/components/chat/ChatMessageNavigator.svelte';
   import BrowserTabsMenu from '$lib/components/chat/BrowserTabsMenu.svelte';
   import type { ChatNavigationState } from '$lib/components/chat/chat-message-navigation';
+  import TaskProgressControl from '$lib/components/chat/TaskProgressControl.svelte';
+  import type { TaskProgressItem } from '$lib/components/chat/workspace-task-fallback';
   import * as Menu from '$lib/components/ui/menu';
   import AgentViewSettingsDropdown from './AgentViewSettingsDropdown.svelte';
 
@@ -169,6 +171,7 @@
     userMessages: [],
     isLoadingUserMessageIndex: false,
   });
+  let taskProgressItems = $state<TaskProgressItem[]>([]);
 
   onDestroy(() => {
     if (agentCopyTimeoutId) {
@@ -239,6 +242,7 @@
 
 {#snippet agentPrimaryActions()}
   <div class="flex min-w-0 items-center gap-1.5">
+    <TaskProgressControl tasks={taskProgressItems} presentation="checklist" />
     {#if tab.agentId}
       <BrowserTabsMenu {workspaceId} agentId={tab.agentId} />
     {/if}
@@ -334,6 +338,7 @@
           {isPanelFocused}
           {isInitialWorkspaceAgent}
           onNavigationStateChange={(state) => (chatNavigationState = state)}
+          onTaskProgressChange={(tasks) => (taskProgressItems = tasks)}
         />
       </div>
     {/key}

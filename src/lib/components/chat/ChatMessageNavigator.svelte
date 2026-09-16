@@ -4,6 +4,7 @@
   import { Input } from '$lib/components/ui/input';
   import ChatTextIcon from 'phosphor-svelte/lib/ChatTextIcon';
   import { Button } from '$lib/components/ui/button';
+  import { DROPDOWN_SURFACE_CLASS } from '$lib/components/ui/dropdown-surface';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import { Spinner } from '$lib/components/ui/indicators';
   import { cn } from '$lib/utils';
@@ -131,7 +132,7 @@
   function handleTriggerKeydown(event: KeyboardEvent) {
     if (event.key !== 'Enter' && event.key !== ' ') return;
     event.preventDefault();
-    if (!open) handleOpenChange(true);
+    handleOpenChange(!open);
   }
 
   function handleOpenAutoFocus(event: Event) {
@@ -201,6 +202,7 @@
           size="icon-sm"
           aria-label={m.chat_messageNavigator_open_ariaLabel()}
           tooltip={m.chat_messageNavigator_open_ariaLabel()}
+          tooltipDisabled={open}
           tooltipSide="bottom"
           tooltipDelayDuration={300}
           aria-expanded={open}
@@ -232,7 +234,7 @@
         onCloseAutoFocus={handleCloseAutoFocus}
         onFocusOutside={handleFocusOutside}
         data-chat-message-navigator-content={navigatorId}
-        class="z-(--layer-popover) flex min-w-0 max-h-[var(--bits-popover-content-available-height)] w-[28rem] max-w-[min(calc(100vw-var(--space-4)),calc(var(--bits-popover-content-available-width)-var(--space-2)))] flex-col overflow-hidden rounded-(--radius-medium) border border-border bg-popover p-[var(--space-1)] text-popover-foreground shadow-(--elevation-overlay) outline-none"
+        class="{DROPDOWN_SURFACE_CLASS} w-[28rem]"
       >
         <div
           class="flex min-h-0 min-w-0 max-h-full flex-1 flex-col overflow-hidden"

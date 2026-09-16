@@ -29,9 +29,9 @@
  * — first pin-verified `open` wins, losers are terminated — mirroring the
  * JSON-RPC transport's multi-host connect.
  * `forwardPort(remotePort)` resolves with the ephemeral local port of a
- * `net.createServer` on `127.0.0.1`. Each accepted connection allocates a
- * streamId, sends `OPEN`, and relays bytes both ways once `OPEN_OK` arrives
- * (`OPEN_ERR` destroys the local socket; a definitively connection-refused
+ * `net.createServer` on `127.0.0.1`. Each accepted connection joins bounded fair admission, allocates a
+ * streamId, sends `OPEN` when eligible, and relays bytes both ways once `OPEN_OK` arrives
+ * (capacity `OPEN_ERR` waits and retries only before `OPEN_OK`; other rejections destroy the local socket; a definitively connection-refused
  * `OPEN_ERR` additionally drops the whole forward — the daemon-side server is
  * gone — so the next `forwardPort()` recreates it fresh). Backpressure pauses
  * local sockets against `ws.bufferedAmount`; forwards live until explicitly
@@ -227,10 +227,29 @@ export interface TunnelManagerOptions {
   backpressureHighWaterMark?: number;
   /** Cadence of the `bufferedAmount` drain poll while paused. Default 20ms. */
   backpressurePollMs?: number;
+  /** Match daemon admission budgets; independently bounded on older daemons. */
+  maxStreams?: number;
+  maxStreamsPerPort?: number;
+  maxPendingStreams?: number;
+  maxPendingStreamsPerPort?: number;
+  admissionTimeoutMs?: number;
+  admissionRetryMs?: number;
   /** Client-side WebSocket ping cadence. `0` disables it. Default 30s. */
   heartbeatIntervalMs?: number;
   /** Deadline for the pong answering a client heartbeat. Default 10s. */
   heartbeatTimeoutMs?: number;
+}
+
+const DEFAULT_MAX_STREAMS = 256;
+const DEFAULT_MAX_STREAMS_PER_PORT = 32;
+const DEFAULT_MAX_PENDING_STREAMS = 256;
+const DEFAULT_MAX_PENDING_PER_PORT = 64;
+const LOCAL_READ_BUFFER_BYTES = 64 * 1024;
+const MAX_LOCAL_WRITE_BUFFER_BYTES = 1024 * 1024;
+
+/** Only a capacity rejection can safely wait and retry; never retry an opened stream. */
+function isCapacityOpenErr(message: string): boolean {
+  return /^too many concurrent streams(?: for port \d+)? \(max \d+\)$/.test(message);
 }
 
 const DEFAULT_CONNECT_TIMEOUT_MS = 10_000;
@@ -255,9 +274,16 @@ interface StreamState {
   forward: ForwardState;
   /** `OPEN_OK` received; data may flow. */
   opened: boolean;
+  pendingData: Buffer[];
+  pendingBytes: number;
+  localEnded: boolean;
   /** The daemon already ended this stream (`OPEN_ERR`/`CLOSE`) — send no `CLOSE` back. */
   remoteClosed: boolean;
   openTimer: NodeJS.Timeout | null;
+  admissionTimer: NodeJS.Timeout | null;
+  admitted: boolean;
+  retryAtMs: number;
+  retries: number;
   createdAtMs: number;
 }
 
@@ -269,9 +295,17 @@ export interface TunnelDiagnostics {
   streams: Array<{
     streamId: number;
     remotePort: number;
-    state: 'opening' | 'open';
+    state: 'queued' | 'opening' | 'open';
     ageMs: number;
   }>;
+  admission: {
+    active: number;
+    pending: number;
+    maxStreams: number;
+    maxStreamsPerPort: number;
+    maxPendingStreams: number;
+    lastFailure: { remotePort: number; reason: string; waitMs: number; generation: number } | null;
+  };
   heartbeat: {
     enabled: boolean;
     awaitingPong: boolean;
@@ -375,6 +409,16 @@ export class TunnelManager {
   private readonly heartbeatIntervalMs: number;
   private readonly heartbeatTimeoutMs: number;
 
+  private readonly maxStreams: number;
+  private readonly maxStreamsPerPort: number;
+  private readonly maxPendingStreams: number;
+  private readonly maxPendingStreamsPerPort: number;
+  private readonly admissionTimeoutMs: number;
+  private readonly admissionRetryMs: number;
+  private readonly pendingStreams = new Map<number, StreamState[]>();
+  private admissionPoll: NodeJS.Timeout | null = null;
+  private lastAdmissionFailure: TunnelDiagnostics['admission']['lastFailure'] = null;
+  private drainingAdmission = false;
   private ws: TunnelSocketLike | null = null;
   private connectPromise: Promise<void> | null = null;
   /** Sockets still connecting, so a `dispose()` mid-connect can terminate them. */
@@ -393,6 +437,26 @@ export class TunnelManager {
   private disposed = false;
 
   constructor(options: TunnelManagerOptions) {
+    const positive = (value: number, name: string): number => {
+      if (!Number.isSafeInteger(value) || value < 1)
+        throw new Error(`${name} must be a positive integer`);
+      return value;
+    };
+    this.maxStreams = positive(options.maxStreams ?? DEFAULT_MAX_STREAMS, 'maxStreams');
+    this.maxStreamsPerPort = positive(
+      options.maxStreamsPerPort ?? DEFAULT_MAX_STREAMS_PER_PORT,
+      'maxStreamsPerPort',
+    );
+    this.maxPendingStreams = positive(
+      options.maxPendingStreams ?? DEFAULT_MAX_PENDING_STREAMS,
+      'maxPendingStreams',
+    );
+    this.maxPendingStreamsPerPort = positive(
+      options.maxPendingStreamsPerPort ?? DEFAULT_MAX_PENDING_PER_PORT,
+      'maxPendingStreamsPerPort',
+    );
+    this.admissionTimeoutMs = positive(options.admissionTimeoutMs ?? 30_000, 'admissionTimeoutMs');
+    this.admissionRetryMs = positive(options.admissionRetryMs ?? 100, 'admissionRetryMs');
     this.getConfig = options.getConfig;
     this.socketFactory = options.socketFactory ?? createTunnelSocket;
     this.connectTimeoutMs = options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS;
@@ -585,9 +649,17 @@ export class TunnelManager {
       streams: [...this.streams.values()].map((stream) => ({
         streamId: stream.streamId,
         remotePort: stream.forward.remotePort,
-        state: stream.opened ? 'open' : 'opening',
+        state: stream.opened ? 'open' : stream.admitted ? 'opening' : 'queued',
         ageMs: Math.max(0, now - stream.createdAtMs),
       })),
+      admission: {
+        active: this.activeStreamCount(),
+        pending: this.streams.size - this.activeStreamCount(),
+        maxStreams: this.maxStreams,
+        maxStreamsPerPort: this.maxStreamsPerPort,
+        maxPendingStreams: this.maxPendingStreams,
+        lastFailure: this.lastAdmissionFailure,
+      },
       heartbeat: {
         enabled: this.heartbeatIntervalMs > 0,
         awaitingPong: this.heartbeatDeadlineTimer !== null,
@@ -637,7 +709,11 @@ export class TunnelManager {
     await this.ensureTunnel();
     // allowHalfOpen: a client FIN (mapped to mux EOF) must not kill the write
     // side — the remote's response still flows back until its own EOF/CLOSE.
-    const server = net.createServer({ allowHalfOpen: true });
+    const server = net.createServer({
+      allowHalfOpen: true,
+      pauseOnConnect: true,
+      highWaterMark: LOCAL_READ_BUFFER_BYTES,
+    });
     const localPort = await new Promise<number>((resolve, reject) => {
       server.once('error', reject);
       server.listen(0, '127.0.0.1', () => {
@@ -667,47 +743,125 @@ export class TunnelManager {
   }
 
   private handleLocalConnection(forward: ForwardState, socket: net.Socket): void {
-    if (!this.forwards.has(forward.remotePort)) {
+    socket.on('error', () => {});
+    socket.pause();
+    // Retire the old incarnation before registering this new socket. Otherwise
+    // ensureTunnel's CLOSING cleanup would also destroy the fresh queued work.
+    if (this.ws && this.ws.readyState !== WS_OPEN) {
+      this.handleTunnelDrop('replaced non-open socket');
+    }
+    if (this.disposed || this.forwards.get(forward.remotePort) !== forward) {
       socket.destroy();
       return;
     }
-    if (!this.ws || this.ws.readyState !== WS_OPEN) {
-      // The tunnel dropped since this forward opened: reconnect lazily,
-      // holding the accepted socket until the fresh tunnel socket is up.
-      // The held socket needs an 'error' listener NOW — attachStream() only
-      // adds one later, and an unhandled socket 'error' (client reset during
-      // the reconnect window) would crash the main process.
-      socket.on('error', () => {
-        // 'close' (or the reconnect settling) owns the teardown.
-      });
-      socket.pause();
-      this.ensureTunnel().then(
-        () => {
-          if (socket.destroyed) return;
-          if (
-            !this.forwards.has(forward.remotePort) ||
-            !this.ws ||
-            this.ws.readyState !== WS_OPEN
-          ) {
-            socket.destroy();
-            return;
-          }
-          this.attachStream(forward, socket);
-        },
-        (error: unknown) => {
-          logger.warn('lazy tunnel reconnect failed', {
-            remotePort: forward.remotePort,
-            error: error instanceof Error ? error.message : String(error),
-          });
-          socket.destroy();
-        },
-      );
+    const pending = this.streams.size - this.activeStreamCount();
+    if (
+      pending >= this.maxPendingStreams ||
+      (this.pendingStreams.get(forward.remotePort)?.length ?? 0) >= this.maxPendingStreamsPerPort
+    ) {
+      this.recordAdmissionFailure(forward.remotePort, 'admission queue full', 0);
+      socket.destroy();
       return;
     }
     this.attachStream(forward, socket);
+    if (!this.ws || this.ws.readyState !== WS_OPEN) {
+      void this.ensureTunnel().then(
+        () => this.drainAdmission(),
+        () => {
+          for (const stream of [...forward.streams]) {
+            if (!stream.admitted) this.endStream(stream, { sendClose: false });
+          }
+        },
+      );
+    }
   }
 
-  /** Map an accepted local socket to a mux stream and send its `OPEN`. */
+  private activeStreamCount(port?: number): number {
+    let count = 0;
+    for (const stream of this.streams.values()) {
+      if (stream.admitted && (port === undefined || stream.forward.remotePort === port)) count++;
+    }
+    return count;
+  }
+
+  private recordAdmissionFailure(remotePort: number, reason: string, waitMs: number): void {
+    this.lastAdmissionFailure = { remotePort, reason, waitMs, generation: this.tunnelGeneration };
+    logger.warn('tunnel admission failed', {
+      ...this.lastAdmissionFailure,
+      active: this.activeStreamCount(),
+      pending: this.streams.size - this.activeStreamCount(),
+      maxStreams: this.maxStreams,
+      maxStreamsPerPort: this.maxStreamsPerPort,
+    });
+  }
+
+  private queueStream(stream: StreamState): void {
+    const port = stream.forward.remotePort;
+    const queue = this.pendingStreams.get(port) ?? [];
+    queue.push(stream);
+    this.pendingStreams.set(port, queue);
+    if (!this.admissionPoll) {
+      // Poll often enough to honor retryAtMs even with a large configured backoff.
+      this.admissionPoll = setInterval(
+        () => this.drainAdmission(),
+        Math.min(100, this.admissionRetryMs),
+      );
+      this.admissionPoll.unref?.();
+    }
+    this.drainAdmission();
+  }
+
+  /** One admission per port per round; a full port never parks unrelated ports. */
+  private drainAdmission(): void {
+    if (this.drainingAdmission || this.disposed || this.ws?.readyState !== WS_OPEN) return;
+    this.drainingAdmission = true;
+    try {
+      let progress = true;
+      while (progress && this.activeStreamCount() < this.maxStreams) {
+        progress = false;
+        for (const [port, queue] of [...this.pendingStreams]) {
+          if (this.activeStreamCount() >= this.maxStreams) break;
+          const stream = queue[0];
+          if (
+            !stream ||
+            stream.retryAtMs > Date.now() ||
+            this.activeStreamCount(port) >= this.maxStreamsPerPort
+          )
+            continue;
+          queue.shift();
+          this.pendingStreams.delete(port);
+          if (queue.length) this.pendingStreams.set(port, queue);
+          if (stream.socket.destroyed || this.forwards.get(port) !== stream.forward) {
+            this.endStream(stream, { sendClose: false });
+            continue;
+          }
+          stream.admitted = true;
+          stream.remoteClosed = false;
+          stream.openTimer = setTimeout(() => {
+            if (!stream.opened) {
+              this.recordAdmissionFailure(
+                port,
+                'remote open timed out',
+                Date.now() - stream.createdAtMs,
+              );
+              this.endStream(stream, { sendClose: true });
+            }
+          }, this.openTimeoutMs);
+          stream.openTimer.unref?.();
+          this.sendFrame({ type: 'open', streamId: stream.streamId, port });
+          progress = true;
+        }
+      }
+    } finally {
+      this.drainingAdmission = false;
+      if (!this.pendingStreams.size && this.admissionPoll) {
+        clearInterval(this.admissionPoll);
+        this.admissionPoll = null;
+      }
+    }
+  }
+
+  /** Map an accepted local socket to a mux stream and queue its `OPEN`. */
   private attachStream(forward: ForwardState, socket: net.Socket): void {
     const streamId = this.allocStreamId();
     const stream: StreamState = {
@@ -715,8 +869,15 @@ export class TunnelManager {
       socket,
       forward,
       opened: false,
+      pendingData: [],
+      pendingBytes: 0,
+      localEnded: false,
       remoteClosed: false,
       openTimer: null,
+      admissionTimer: null,
+      admitted: false,
+      retryAtMs: 0,
+      retries: 0,
       createdAtMs: Date.now(),
     };
     this.streams.set(streamId, stream);
@@ -728,17 +889,31 @@ export class TunnelManager {
       activeStreams: this.streams.size,
     });
     socket.setNoDelay(true);
-    // Hold local bytes until the daemon confirms the remote connect.
+    // Read while awaiting admission so TCP resets are observed. Application
+    // bytes stay in a bounded buffer until the daemon confirms the connect.
     socket.pause();
-    stream.openTimer = setTimeout(() => {
+    stream.admissionTimer = setTimeout(() => {
       if (!stream.opened) {
-        logger.warn('stream open timed out', { streamId, remotePort: forward.remotePort });
-        this.endStream(stream, { sendClose: true });
+        this.recordAdmissionFailure(
+          forward.remotePort,
+          'admission deadline exceeded',
+          Date.now() - stream.createdAtMs,
+        );
+        this.endStream(stream, { sendClose: stream.admitted });
       }
-    }, this.openTimeoutMs);
-    stream.openTimer.unref?.();
+    }, this.admissionTimeoutMs);
+    stream.admissionTimer.unref?.();
 
     socket.on('data', (chunk: Buffer) => {
+      if (!stream.opened) {
+        stream.pendingData.push(chunk);
+        stream.pendingBytes += chunk.length;
+        // Bound buffering without rejecting valid uploads while OPEN is pending.
+        // Reads are capped by the socket highWaterMark; pause at the threshold
+        // and flush/resume on OPEN_OK. Idle queued clients still observe resets.
+        if (stream.pendingBytes >= LOCAL_READ_BUFFER_BYTES) socket.pause();
+        return;
+      }
       // Respect the daemon's per-frame DATA cap by splitting large reads.
       for (let offset = 0; offset < chunk.length; offset += MAX_DATA_PAYLOAD_BYTES) {
         const payload = chunk.subarray(offset, offset + MAX_DATA_PAYLOAD_BYTES);
@@ -748,7 +923,8 @@ export class TunnelManager {
     });
     socket.on('end', () => {
       // Local half-close: no more client → daemon bytes on this stream.
-      if (!stream.remoteClosed) this.sendFrame({ type: 'eof', streamId });
+      stream.localEnded = true;
+      if (stream.opened && !stream.remoteClosed) this.sendFrame({ type: 'eof', streamId });
     });
     socket.on('error', () => {
       // 'close' follows and owns the teardown.
@@ -758,7 +934,8 @@ export class TunnelManager {
       this.endStream(stream, { sendClose: !stream.remoteClosed });
     });
 
-    this.sendFrame({ type: 'open', streamId, port: forward.remotePort });
+    this.queueStream(stream);
+    if (!socket.destroyed && !this.pausedForBackpressure.has(socket)) socket.resume();
   }
 
   private handleMessage(data: unknown, isBinary: boolean): void {
@@ -786,6 +963,9 @@ export class TunnelManager {
     if (!stream) return;
     switch (frame.type) {
       case 'openOk':
+        if (!stream.admitted || stream.opened) break;
+        if (stream.admissionTimer) clearTimeout(stream.admissionTimer);
+        stream.admissionTimer = null;
         stream.opened = true;
         if (stream.openTimer) clearTimeout(stream.openTimer);
         stream.openTimer = null;
@@ -795,11 +975,41 @@ export class TunnelManager {
           remotePort: stream.forward.remotePort,
           openLatencyMs: Date.now() - stream.createdAtMs,
         });
+        for (const payload of stream.pendingData) {
+          this.sendFrame({ type: 'data', streamId: stream.streamId, payload });
+        }
+        stream.pendingData = [];
+        stream.pendingBytes = 0;
+        if (stream.localEnded) this.sendFrame({ type: 'eof', streamId: stream.streamId });
+        this.applyBackpressure(stream.socket);
         if (!stream.socket.destroyed && !this.pausedForBackpressure.has(stream.socket)) {
           stream.socket.resume();
         }
         break;
       case 'openErr': {
+        if (!stream.opened && stream.admitted && isCapacityOpenErr(frame.message)) {
+          if (stream.openTimer) clearTimeout(stream.openTimer);
+          stream.openTimer = null;
+          stream.admitted = false;
+          stream.remoteClosed = true;
+          stream.retries++;
+          stream.retryAtMs =
+            Date.now() +
+            Math.min(1000, this.admissionRetryMs * 2 ** Math.min(stream.retries - 1, 4));
+          this.recordAdmissionFailure(
+            stream.forward.remotePort,
+            frame.message,
+            Date.now() - stream.createdAtMs,
+          );
+          if (
+            this.streams.size - this.activeStreamCount() > this.maxPendingStreams ||
+            (this.pendingStreams.get(stream.forward.remotePort)?.length ?? 0) >=
+              this.maxPendingStreamsPerPort
+          ) {
+            this.endStream(stream, { sendClose: false });
+          } else this.queueStream(stream);
+          break;
+        }
         // Terminal for a stream that never opened — no CLOSE follows.
         logger.warn('remote open failed', {
           streamId: frame.streamId,
@@ -821,9 +1031,20 @@ export class TunnelManager {
       case 'data':
         // `write()`'s return value is deliberately ignored: the frozen frame
         // contract has no per-stream flow-control window and pausing the
-        // shared WebSocket would stall every stream, so a slow local reader
-        // buffers in its socket — bounded in practice by the daemon-side caps.
-        if (!stream.socket.destroyed) stream.socket.write(frame.payload);
+        // shared WebSocket would stall every stream. Bound the local write
+        // buffer and close only this stream if its reader cannot keep up.
+        if (!stream.opened) {
+          this.endStream(stream, { sendClose: stream.admitted });
+          break;
+        }
+        if (stream.socket.writableLength + frame.payload.length > MAX_LOCAL_WRITE_BUFFER_BYTES) {
+          this.recordAdmissionFailure(
+            stream.forward.remotePort,
+            'local reader byte budget exceeded',
+            Date.now() - stream.createdAtMs,
+          );
+          this.endStream(stream, { sendClose: true });
+        } else if (!stream.socket.destroyed) stream.socket.write(frame.payload);
         break;
       case 'eof':
         // Remote half-close: finish the local write side, keep reading.
@@ -866,6 +1087,16 @@ export class TunnelManager {
   private endStream(stream: StreamState, options: { sendClose: boolean }): void {
     if (!this.streams.delete(stream.streamId)) return;
     stream.forward.streams.delete(stream);
+    stream.pendingData = [];
+    stream.pendingBytes = 0;
+    const queued = this.pendingStreams.get(stream.forward.remotePort);
+    if (queued) {
+      const remaining = queued.filter((entry) => entry !== stream);
+      if (remaining.length) this.pendingStreams.set(stream.forward.remotePort, remaining);
+      else this.pendingStreams.delete(stream.forward.remotePort);
+    }
+    if (stream.admissionTimer) clearTimeout(stream.admissionTimer);
+    stream.admissionTimer = null;
     if (stream.openTimer) clearTimeout(stream.openTimer);
     stream.openTimer = null;
     this.pausedForBackpressure.delete(stream.socket);
@@ -877,8 +1108,10 @@ export class TunnelManager {
       lifetimeMs: Date.now() - stream.createdAtMs,
       remainingStreams: this.streams.size,
     });
-    if (options.sendClose) this.sendFrame({ type: 'close', streamId: stream.streamId });
+    if (options.sendClose && stream.admitted)
+      this.sendFrame({ type: 'close', streamId: stream.streamId });
     if (!stream.socket.destroyed) stream.socket.destroy();
+    this.drainAdmission();
   }
 
   private sendFrame(frame: TunnelFrame): void {
@@ -1004,6 +1237,8 @@ export class TunnelManager {
       streams: this.streams.size,
     });
     this.stopHeartbeat();
+    if (this.admissionPoll) clearInterval(this.admissionPoll);
+    this.admissionPoll = null;
     this.ws = null;
     for (const stream of [...this.streams.values()]) {
       this.endStream(stream, { sendClose: false });
@@ -1015,7 +1250,11 @@ export class TunnelManager {
 
   private teardownForwards(): void {
     this.stopHeartbeat();
+    if (this.admissionPoll) clearInterval(this.admissionPoll);
+    this.admissionPoll = null;
+    this.pendingStreams.clear();
     for (const stream of this.streams.values()) {
+      if (stream.admissionTimer) clearTimeout(stream.admissionTimer);
       if (stream.openTimer) clearTimeout(stream.openTimer);
       stream.openTimer = null;
       if (!stream.socket.destroyed) stream.socket.destroy();
