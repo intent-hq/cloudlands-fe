@@ -54,6 +54,29 @@ import AIBehaviorSidebar from './AIBehaviorSidebar.svelte';
 describe('AIBehaviorSidebar', () => {
   afterEach(cleanup);
 
+  it('moves the current page from a specialist to creation and clears it outside specialists', async () => {
+    const { container, rerender } = render(AIBehaviorSidebar, {
+      activeView: { type: 'specialist', id: 'implementor' },
+      onSelect: vi.fn(),
+    });
+    const current = () => container.querySelectorAll('[aria-current="page"]');
+    expect(current()).toHaveLength(1);
+    expect(current()[0].id).toBe('specialist-implementor');
+    expect(current()[0].getAttribute('data-state')).toBe('active');
+
+    await rerender({ activeView: { type: 'create-specialist' } });
+    expect(current()).toHaveLength(1);
+    expect(current()[0].id).toBe('create-specialist');
+    expect(current()[0].getAttribute('data-state')).toBe('active');
+    expect(
+      container.querySelector('#specialist-implementor')?.getAttribute('data-state'),
+    ).toBeNull();
+
+    await rerender({ isActive: false });
+    expect(current()).toHaveLength(0);
+    expect(container.querySelector('[data-state="active"]')).toBeNull();
+  });
+
   it('does not override the Button focus contract on agent rows', () => {
     const { container } = render(AIBehaviorSidebar, {
       activeView: { type: 'specialist', id: 'implementor' },

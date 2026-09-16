@@ -152,6 +152,7 @@
             variant="ghost"
             type="button"
             onclick={() => onSelect(item.id as SettingsTab)}
+            active={activeTab === item.id}
             aria-current={activeTab === item.id ? 'page' : undefined}
             data-settings-tab={item.id}
             class="h-auto w-full justify-start p-0 text-left type-caption {activeTab === item.id

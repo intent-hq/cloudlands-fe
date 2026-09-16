@@ -69,6 +69,8 @@ describe('SettingsSidebarNav', () => {
     });
     const button = container.querySelector(`[data-settings-tab="${id}"]`)!;
     expect(button.getAttribute('aria-current')).toBe('page');
+    expect(container.querySelectorAll('[aria-current="page"]')).toHaveLength(1);
+    expect(button.getAttribute('data-state')).toBe('active');
     await fireEvent.click(button);
     expect(onSelect).toHaveBeenCalledWith(id);
   });

@@ -74,7 +74,8 @@
     onclick={() => onSelect({ type: 'specialist', id: specialist.id })}
     data-highlight-id={`specialist-${specialist.id}`}
     data-settings-agent-row
-    aria-current={isSelected({ type: 'specialist', id: specialist.id }) ? 'true' : undefined}
+    active={isSelected({ type: 'specialist', id: specialist.id })}
+    aria-current={isSelected({ type: 'specialist', id: specialist.id }) ? 'page' : undefined}
     class="flex h-auto w-full min-w-0 cursor-pointer items-center gap-2.5 rounded-lg !px-2.5 !py-2 text-left type-body transition-colors
       {isSelected({ type: 'specialist', id: specialist.id })
       ? 'bg-muted font-medium text-foreground shadow-xs'
@@ -125,7 +126,8 @@
   onclick={() => onSelect({ type: 'create-specialist' })}
   data-highlight-id="create-specialist"
   data-settings-agent-row
-  aria-current={isSelected({ type: 'create-specialist' }) ? 'true' : undefined}
+  active={isSelected({ type: 'create-specialist' })}
+  aria-current={isSelected({ type: 'create-specialist' }) ? 'page' : undefined}
   class="flex h-auto w-full min-w-0 cursor-pointer items-center gap-2.5 rounded-lg !px-2.5 !py-2 text-left type-body transition-colors
     {isSelected({ type: 'create-specialist' })
     ? 'bg-muted font-medium text-foreground shadow-xs'
