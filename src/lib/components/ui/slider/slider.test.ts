@@ -106,6 +106,31 @@ describe('Slider', () => {
     expect(slider.valueAsNumber).toBe(0);
   });
 
+  it('commits keyboard adjustments before focus leaves without duplicate changes', async () => {
+    const committedValues: number[] = [];
+    const { getByRole } = render(Slider, {
+      props: {
+        'aria-label': 'Memory budget',
+        value: 40,
+        step: 5,
+        onchange: (event) => committedValues.push(event.currentTarget.valueAsNumber),
+      },
+    });
+    const slider = getByRole('slider');
+    slider.focus();
+
+    await fireEvent.keyDown(slider, { key: 'ArrowRight' });
+    expect(committedValues).toEqual([45]);
+    await fireEvent.keyUp(slider, { key: 'ArrowRight' });
+    await fireEvent.keyDown(slider, { key: 'Tab', shiftKey: true });
+    await fireEvent.blur(slider);
+    expect(committedValues).toEqual([45]);
+
+    await fireEvent.keyDown(slider, { key: 'End' });
+    await fireEvent.keyDown(slider, { key: 'ArrowRight' });
+    expect(committedValues).toEqual([45, 100]);
+  });
+
   it('shows a hover preview tooltip and hides it while pressed', async () => {
     vi.useFakeTimers();
     const { container } = render(Slider, {

@@ -210,7 +210,10 @@
     }
     if (next === undefined) return;
     event.preventDefault();
-    dispatchInput(snap(next));
+    const snapped = snap(next);
+    if (snapped === value) return;
+    dispatchInput(snapped);
+    event.currentTarget.dispatchEvent(new Event('change', { bubbles: true }));
   }
 
   function handlePointerDown(event: PointerEvent) {
