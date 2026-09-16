@@ -117,7 +117,7 @@ Import shared transitions from `$lib/motion`; inspect the live motion examples i
 <script lang="ts">
   import { crispOut, springIn } from '$lib/motion';
 </script>
-{#if open}<section in:springIn={{ tier: 'moderate' }} out:crispOut>Content</section>{/if}
+{#if open}<section in:springIn={{ tier: 'moderate' }} out:crispOut={{ tier: 'fast' }}>Content</section>{/if}
 <!-- Use duration-spring-* only for class transitions. -->
 ```
 
@@ -208,7 +208,7 @@ navigation. `scripts/design-token-allowlist.json` caps this file at those two ar
   `--content-measure-{reading,form,wide}` for editorial copy, settings, and broad workspaces.
 - Controls: compact/small/medium/large resolve to 28/28/32/36px. Compact is a density alias, not a
   smaller public control size.
-- Shape and elevation: small/medium/large radii are 5/7/9px. `--elevation-raised` is a quiet
+- Shape and elevation: `--radius-{small,medium,large}` all resolve to 8px. `--elevation-raised` is a quiet
   one-pixel lift; `--elevation-overlay` is reserved for floating overlays.
 - Motion: use `--spring-{fast,moderate,slow}` (80/160/240ms) with the matching
   `--spring-*-ease`, or Tailwind `duration-spring-*` and `ease-spring-*`. Exits use the shorter
