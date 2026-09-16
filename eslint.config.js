@@ -583,14 +583,18 @@ export default [
   // `clipboard.writeText()` async and the WRITE_CLIPBOARD handler kept
   // returning `{ success: true }` without observing the write
   // (cloudlands-fe#2164, fixed in cloudlands-fe#2493). Files are typed against
-  // the main/preload tsconfigs, which exclude tests, so tests are excluded here
-  // too; renderer/Svelte linting stays syntax-only.
+  // the main tsconfig and a lint-only preload project: the shipped
+  // src/preload/index.ts is generated and gitignored (so globally ignored above),
+  // and tsconfig.preload.json excludes the tracked template to keep it out of the
+  // build, so tsconfig.preload.lint.json type-checks the template instead. Both
+  // tsconfigs exclude tests, so tests are excluded here too; renderer/Svelte
+  // linting stays syntax-only.
   {
     files: [...mainProcessFiles, 'src/preload/**/*.ts'],
-    ignores: ['**/__tests__/**', '**/*.test.ts', 'src/preload/index.template.ts'],
+    ignores: ['**/__tests__/**', '**/*.test.ts'],
     languageOptions: {
       parserOptions: {
-        project: ['./tsconfig.main.json', './tsconfig.preload.json'],
+        project: ['./tsconfig.preload.lint.json', './tsconfig.main.json'],
         tsconfigRootDir: import.meta.dirname,
       },
     },
