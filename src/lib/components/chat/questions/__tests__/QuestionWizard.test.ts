@@ -40,6 +40,14 @@ const MULTI: Question = {
   multiSelect: true,
 };
 
+const MULTI_B: Question = {
+  attachmentId: 'tar-ddd444eee555',
+  header: 'Platforms',
+  question: 'Which platforms need the new flow first?',
+  options: [{ label: 'macOS' }, { label: 'Windows' }, { label: 'Linux' }],
+  multiSelect: true,
+};
+
 const LAST: Question = {
   attachmentId: 'tar-eee555fff666',
   header: 'Migration',
@@ -385,6 +393,44 @@ describe('QuestionWizard', () => {
     expect(onComplete.mock.calls[0][0][0].selectedLabels).toEqual(['CLI']);
   });
 
+  it.each([{ ctrlKey: true }, { metaKey: true }])(
+    'Ctrl/Cmd+Enter after Back advances exactly one step over prefilled answers (%o)',
+    async (modifier) => {
+      const { onComplete } = setup([MULTI, MULTI_B, LAST]);
+      await fireEvent.click(screen.getByRole('checkbox', { name: /Desktop app/ }));
+      await fireEvent.click(screen.getByRole('button', { name: /continue/i }));
+      await fireEvent.click(screen.getByRole('checkbox', { name: /macOS/ }));
+      await fireEvent.click(screen.getByRole('button', { name: /continue/i }));
+      expect(screen.getByText('Question 3 of 3')).toBeTruthy();
+      await fireEvent.click(screen.getByRole('button', { name: /back/i }));
+      await fireEvent.click(screen.getByRole('button', { name: /back/i }));
+      expect(screen.getByText('Question 1 of 3')).toBeTruthy();
+
+      const checkbox = screen.getByRole('checkbox', { name: /Desktop app/ });
+      checkbox.focus();
+      await fireEvent.keyDown(checkbox, { key: 'Enter', ...modifier });
+
+      expect(screen.getByText('Question 2 of 3')).toBeTruthy();
+      expect(onComplete).not.toHaveBeenCalled();
+    },
+  );
+
+  it('Enter in the empty Other field submits a checked multi-select answer', async () => {
+    const { onComplete } = setup([MULTI]);
+    const input = screen.getByPlaceholderText('Or type your own answer…');
+
+    await fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onComplete).not.toHaveBeenCalled();
+
+    await fireEvent.click(screen.getByRole('checkbox', { name: /Desktop app/ }));
+    await fireEvent.keyDown(input, { key: 'Enter' });
+
+    expect(onComplete).toHaveBeenCalledTimes(1);
+    expect(onComplete.mock.calls[0][0]).toEqual([
+      { question: MULTI, selectedLabels: ['Desktop app'], freeText: '', skipped: false },
+    ]);
+  });
+
   it('restores focus to the first choice after advancing', async () => {
     setup();
     const firstChoice = screen.getByRole('radio', { name: /OS keychain/i });
@@ -615,6 +661,33 @@ describe('QuestionWizard', () => {
     });
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(onDismiss).not.toHaveBeenCalled();
+  });
+
+  it('keyboard shortcuts cannot answer or advance while the dismissal dialog is open', async () => {
+    const onDismiss = vi.fn();
+    const onComplete = vi.fn<(answers: QuestionAnswer[]) => void>();
+    render(QuestionWizard, { props: { questions: [MULTI, LAST], onDismiss, onComplete } });
+    await fireEvent.click(screen.getByRole('checkbox', { name: /Desktop app/ }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+    const confirm = screen.getByRole('button', { name: 'Dismiss questions' });
+    await waitFor(() => expect(document.activeElement).toBe(confirm));
+
+    await fireEvent.keyDown(confirm, { key: '2' });
+    await fireEvent.keyDown(document, { key: '2' });
+    await fireEvent.keyDown(confirm, { key: 'Enter', ctrlKey: true });
+    await fireEvent.keyDown(document, { key: 'Enter', metaKey: true });
+
+    expect(screen.getByText('Question 1 of 2')).toBeTruthy();
+    expect(screen.getByRole('checkbox', { name: /CLI/ }).getAttribute('aria-checked')).toBe(
+      'false',
+    );
+    expect(onComplete).not.toHaveBeenCalled();
+    expect(onDismiss).not.toHaveBeenCalled();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await fireEvent.keyDown(document, { key: 'Enter', ctrlKey: true });
+    expect(screen.getByText('Question 2 of 2')).toBeTruthy();
   });
 
   it('Dismiss on the Hide-collapsed banner also goes through the confirm dialog', async () => {

@@ -200,6 +200,83 @@ describe('AskUserQuestions', () => {
     expect(view.getByText('Choose a priority')).toBeTruthy();
   });
 
+  it('advances one step per Ctrl+Enter when the next answer is already filled', async () => {
+    const onCurrentIndexChange = vi.fn();
+    const onComplete = vi.fn();
+    const questions = twoQuestions.map((question) => ({ ...question, multiSelect: true }));
+    const view = render(AskUserQuestions, {
+      props: {
+        questions,
+        defaultAnswers: {
+          priority: { questionId: 'priority', selectedIds: ['speed'] },
+          audience: { questionId: 'audience', selectedIds: ['quality'] },
+        },
+        globalKeyboardShortcuts: true,
+        onCurrentIndexChange,
+        onComplete,
+      },
+    });
+
+    await fireEvent.keyDown(view.getByRole('checkbox', { name: /Speed/ }), {
+      key: 'Enter',
+      ctrlKey: true,
+    });
+
+    expect(onCurrentIndexChange).toHaveBeenCalledTimes(1);
+    expect(onCurrentIndexChange).toHaveBeenCalledWith(1);
+    expect(onComplete).not.toHaveBeenCalled();
+  });
+
+  it('ignores global shortcuts dispatched from inside a foreign modal dialog', async () => {
+    const onCurrentIndexChange = vi.fn();
+    render(AskUserQuestions, {
+      props: { questions: twoQuestions, globalKeyboardShortcuts: true, onCurrentIndexChange },
+    });
+    const dialog = document.createElement('div');
+    dialog.setAttribute('role', 'dialog');
+    dialog.setAttribute('aria-modal', 'true');
+    const confirm = document.createElement('button');
+    dialog.appendChild(confirm);
+    document.body.appendChild(dialog);
+    try {
+      confirm.focus();
+      await fireEvent.keyDown(confirm, { key: '1' });
+      expect(onCurrentIndexChange).not.toHaveBeenCalled();
+    } finally {
+      dialog.remove();
+    }
+  });
+
+  it('submits a checked multi-select answer from an empty Other field with otherEnterSubmits', async () => {
+    const onComplete = vi.fn();
+    const view = render(AskUserQuestions, {
+      props: {
+        questions: [
+          {
+            id: 'scope',
+            title: 'Choose a scope',
+            options,
+            multiSelect: true,
+            allowOther: true,
+            otherEnterSubmits: true,
+          },
+        ],
+        onComplete,
+      },
+    });
+    const input = view.getByRole('textbox');
+
+    await fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onComplete).not.toHaveBeenCalled();
+
+    await fireEvent.click(view.getByRole('checkbox', { name: /Speed/ }));
+    await fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onComplete).toHaveBeenCalledTimes(1);
+    expect(onComplete).toHaveBeenCalledWith({
+      scope: expect.objectContaining({ selectedIds: ['speed'] }),
+    });
+  });
+
   it('publishes the ten reference fixtures and valid metadata', () => {
     expect(() => parseUiComponentMetadata(askUserQuestionsMetadata)).not.toThrow();
     expect(askUserQuestionsFixtures.map(({ title }) => title)).toEqual([

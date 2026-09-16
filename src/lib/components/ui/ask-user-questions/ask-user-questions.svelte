@@ -360,8 +360,11 @@
   }
 
   function handleDocumentKeydown(event: KeyboardEvent) {
-    if (!question || disabled || !rootElement || event.isComposing) return;
+    if (!question || disabled || !rootElement || event.isComposing || event.defaultPrevented)
+      return;
     const target = event.target instanceof HTMLElement ? event.target : null;
+    const modal = target?.closest<HTMLElement>('[aria-modal="true"]');
+    if (modal && !modal.contains(rootElement)) return;
     const activeInstance = mountedInstances.find((element) =>
       element.contains(document.activeElement),
     );
@@ -843,7 +846,8 @@
                             (!isMulti || question.otherEnterSubmits)
                           ) {
                             event.preventDefault();
-                            submitOther();
+                            if (isMulti && otherText.trim().length === 0) finishMulti();
+                            else submitOther();
                           }
                         }}
                         onclick={(event) => event.stopPropagation()}

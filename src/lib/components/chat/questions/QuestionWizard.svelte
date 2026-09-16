@@ -277,7 +277,7 @@
       clearOnSkip
       globalKeyboardShortcuts
       restoreFocusOnNavigate
-      disabled={completed}
+      disabled={completed || confirmingDismiss}
       {headerActions}
       skipLabel={m.chat_questionWizard_skip_label()}
       class="max-w-none"
