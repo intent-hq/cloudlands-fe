@@ -23,6 +23,7 @@
   } from '@fortawesome/free-solid-svg-icons';
   import { faNote } from '$lib/icons/faNote';
   import { cn } from '$lib/utils';
+  import { OPTION_LIST_ROW_CLASS } from '$lib/styles/option-list-row';
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
   import { Button } from '$lib/components/ui/button';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
@@ -394,7 +395,7 @@
   <div
     bind:this={popoverRef}
     class={cn(
-      'overflow-hidden',
+      'flex max-h-[min(400px,var(--bits-menu-content-available-height,calc(100dvh_-_1rem)))] flex-col overflow-hidden pb-2',
       embedded
         ? 'w-80'
         : 'rounded-lg border border-border bg-popover text-popover-foreground shadow-lg',
@@ -406,7 +407,7 @@
     data-embedded={embedded ? '' : undefined}
   >
     <!-- Header -->
-    <div class="px-3 py-2">
+    <div class="shrink-0 px-3 py-2">
       <div class="type-body font-medium">{m.chat_contextPicker_context_title()}</div>
       <div class="type-caption text-subtle">
         {m.chat_contextPicker_selectFiles_description()}
@@ -414,7 +415,7 @@
     </div>
 
     <!-- Search input -->
-    <div class="px-2">
+    <div class="shrink-0 px-2">
       <div class="relative">
         <Fa
           icon={faSearch}
@@ -439,7 +440,7 @@
     </div>
 
     <!-- Content area -->
-    <div class="max-h-[280px] min-h-[120px] overflow-y-auto">
+    <div class="mt-1 max-h-[280px] min-h-0 overflow-y-auto px-2">
       {#if showSearchResults}
         <!-- Search results -->
         {#if isSearching}
@@ -466,14 +467,17 @@
                 type="button"
                 variant="plain"
                 onclick={() => handleSelectSearchResult(result)}
-                class="type-body flex w-full items-center gap-2 px-3 py-2
-                         hover:bg-muted/40 cursor-pointer transition-colors text-left"
+                wrapContent={false}
+                class={cn(
+                  OPTION_LIST_ROW_CLASS,
+                  'flex h-auto w-full items-center justify-start gap-2 hover:bg-hover cursor-pointer transition-colors text-left',
+                )}
               >
                 <Fa icon={getIconForType(result.type)} class="h-3.5 w-3.5 text-subtle" />
-                <div class="flex-1 min-w-0">
-                  <div class="truncate font-medium">{result.label}</div>
+                <div class="flex min-w-0 flex-1 flex-col gap-0.5">
+                  <div class="text-sm truncate font-medium">{result.label}</div>
                   {#if result.subtitle || result.description}
-                    <div class="type-caption truncate text-subtle">
+                    <div class="text-xs text-muted-foreground truncate">
                       {result.subtitle || result.description}
                     </div>
                   {/if}
@@ -500,8 +504,10 @@
                   variant="plain"
                   onclick={() => !isCurrentAgent && handleToggleItem(panel.id)}
                   disabled={isCurrentAgent}
+                  wrapContent={false}
                   class={cn(
-                    'type-body flex w-full items-center gap-2 px-3 py-2 transition-colors',
+                    OPTION_LIST_ROW_CLASS,
+                    'flex h-auto w-full items-center justify-start gap-2 transition-colors',
                     isCurrentAgent
                       ? 'opacity-50 cursor-not-allowed'
                       : 'hover:bg-muted/40 cursor-pointer',
@@ -534,8 +540,11 @@
                   type="button"
                   variant="plain"
                   onclick={() => handleToggleSelectionItem(selection.id)}
-                  class="type-body flex w-full items-center gap-2 px-3 py-2
-                           hover:bg-muted/40 cursor-pointer transition-colors"
+                  wrapContent={false}
+                  class={cn(
+                    OPTION_LIST_ROW_CLASS,
+                    'flex h-auto w-full items-center justify-start gap-2 hover:bg-hover cursor-pointer transition-colors',
+                  )}
                 >
                   <Checkbox
                     checked={selection.checked}
