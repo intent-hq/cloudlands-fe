@@ -96,6 +96,7 @@ describe('ChatTranscriptReconciler — thinking blocks', () => {
         {
           id: 'msg-1',
           role: 'assistant',
+          timestamp: '2026-06-27T01:00:00.500Z',
           isStreaming: true,
           contentBlocks: [{ type: 'thinking', id: 'msg-1:0', text: 'Let me ' }],
         },
