@@ -32,6 +32,8 @@ const {
   takeDeferredMarkdownConversion,
   resetDeferredMarkdownConversions,
   editorWorkspaceIds,
+  editorInstances,
+  mockUpdateNoteContent,
 } = vi.hoisted(() => {
   const mockDispatch = vi.fn();
   const mockInvoke = vi.fn();
@@ -49,6 +51,8 @@ const {
     Array<{ promise: Promise<string>; resolve: (html: string) => void }>
   >();
   const editorWorkspaceIds: string[] = [];
+  const editorInstances: any[] = [];
+  const mockUpdateNoteContent = vi.fn();
 
   const deferMarkdownConversion = (markdown: string) => {
     let resolve!: (html: string) => void;
@@ -167,6 +171,8 @@ const {
       deferredMarkdownConversions.clear();
     },
     editorWorkspaceIds,
+    editorInstances,
+    mockUpdateNoteContent,
   };
 });
 
@@ -362,7 +368,7 @@ vi.mock('$store/renderer/slices/workspace-navigation/workspace-navigation-select
 }));
 
 vi.mock('$features/notes/notes-write-service', () => ({
-  updateNoteContent: vi.fn(),
+  updateNoteContent: mockUpdateNoteContent,
   hasPendingNoteContent: vi.fn(() => false),
   flushNoteContent: vi.fn(async () => undefined),
   settleNoteContent: vi.fn(async () => undefined),
@@ -505,6 +511,7 @@ vi.mock('$lib/utils/editor-config', async () => {
         onUpdate: ({ editor }: { editor: { getHTML: () => string } }) => {
           onUpdate(editor.getHTML());
         },
+        onCreate: ({ editor }: { editor: any }) => editorInstances.push(editor),
       };
     },
   };
@@ -544,6 +551,7 @@ describe('NoteWithComments task conversion regression', () => {
     resetNotes();
     resetDeferredMarkdownConversions();
     editorWorkspaceIds.length = 0;
+    editorInstances.length = 0;
 
     vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
       callback(0);
@@ -1275,6 +1283,111 @@ describe('NoteWithComments task conversion regression', () => {
 
     expect(mockApplyExternalUpdateHtml).not.toHaveBeenCalled();
     expect(mockMaybeCreateCommentManagerV2).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    '$a<b$ and $c>d$',
+    '$a<b>c$',
+    String.raw`\(a<b\) and \(c>d\)`,
+    '$$\na<b>c\n$$',
+    String.raw`\[
+a<b>c
+\]`,
+    String.raw`$\text{<img src=x onerror="alert(1)"> & &lt; &#60;}$`,
+    '$a<b$ and $c>d$ <img src=x onerror=alert(1)>',
+  ])('saves the review inequalities and special source unchanged: %s', async (source) => {
+    replaceNotes([createNote('math-note', 'Math note', source, { rev: 4 })]);
+    const view = await renderInitializedNote('math-note', source);
+    await waitFor(() => expect(editorInstances.at(-1)).toBeTruthy());
+    const editor = editorInstances.at(-1);
+    expect(view.container.querySelector('img, script, [onerror]')).toBeNull();
+    editor.commands.insertContentAt(editor.state.doc.content.size - 1, ' edited');
+    await tick();
+    view.unmount();
+    await waitFor(() =>
+      expect(mockUpdateNoteContent).toHaveBeenCalledWith(
+        WORKSPACE_ID,
+        'math-note',
+        source + ' edited',
+        { immediate: true, baseContent: source, baseRev: 4 },
+      ),
+    );
+  });
+
+  it('retains a heading following recovered math through an actual editor save', async () => {
+    const source = 'Intro\n\n<!-- marker -->$x$\n# Heading';
+    replaceNotes([createNote('math-boundary', 'Math boundary', source, { rev: 4 })]);
+    const view = await renderInitializedNote('math-boundary', source);
+    await waitFor(() => expect(editorInstances.at(-1)).toBeTruthy());
+    const editor = editorInstances.at(-1);
+    expect(view.container.querySelector('.ProseMirror h1')?.textContent).toBe('Heading');
+    editor.commands.insertContentAt(editor.state.doc.content.size - 1, ' edited');
+    await tick();
+    view.unmount();
+    await waitFor(() =>
+      expect(mockUpdateNoteContent).toHaveBeenCalledWith(
+        WORKSPACE_ID,
+        'math-boundary',
+        'Intro\n\n$x$\n\n# Heading edited',
+        { immediate: true, baseContent: source, baseRev: 4 },
+      ),
+    );
+  });
+
+  it('sends the original review source through the real note write service', async () => {
+    const service = await vi.importActual<typeof import('$features/notes/notes-write-service')>(
+      '$features/notes/notes-write-service',
+    );
+    const { appClient } = await import('$lib/client');
+    const source = '$a<b$ and $c>d$';
+    const wire = vi.spyOn(appClient.notes, 'setContent').mockResolvedValueOnce({
+      success: true,
+      newContent: source + ' edited',
+      noteRev: 5,
+    });
+    replaceNotes([createNote('math-wire', 'Math wire', source, { rev: 4 })]);
+    const view = await renderInitializedNote('math-wire', source);
+    await waitFor(() => expect(editorInstances.at(-1)).toBeTruthy());
+    const editor = editorInstances.at(-1);
+    vi.mocked(updateNoteContent).mockImplementation(service.updateNoteContent);
+    try {
+      editor.commands.insertContentAt(editor.state.doc.content.size - 1, ' edited');
+      await tick();
+      view.unmount();
+      await waitFor(() =>
+        expect(wire).toHaveBeenCalledWith('math-wire', source + ' edited', 4, WORKSPACE_ID),
+      );
+      await service.settleNoteContent(WORKSPACE_ID, 'math-wire');
+      expect(service.hasPendingNoteContent(WORKSPACE_ID, 'math-wire')).toBe(false);
+    } finally {
+      await service.settleNoteContent(WORKSPACE_ID, 'math-wire');
+      vi.mocked(updateNoteContent).mockImplementation(() => undefined);
+      wire.mockRestore();
+    }
+  });
+
+  it('flushes exact math source before the editor unmounts for another view', async () => {
+    replaceNotes([createNote('math-note', 'Math note', 'Before')]);
+    const view = await renderInitializedNote('math-note', 'Before');
+    await waitFor(() => expect(editorInstances.at(-1)).toBeTruthy());
+    const editor = editorInstances.at(-1);
+
+    editor.commands.setContent(String.raw`<p>Draft $x^2$ and \(y\)</p>`, {
+      emitUpdate: true,
+    });
+    await tick();
+    expect(mockUpdateNoteContent).not.toHaveBeenCalled();
+
+    view.unmount();
+
+    await waitFor(() =>
+      expect(mockUpdateNoteContent).toHaveBeenCalledWith(
+        WORKSPACE_ID,
+        'math-note',
+        String.raw`Draft $x^2$ and \(y\)`,
+        { immediate: true, baseContent: 'Before' },
+      ),
+    );
   });
 
   it('recreates the editor with a new owner when the workspace changes', async () => {

@@ -36,6 +36,28 @@ describe('design token audit', () => {
     expect(audit('undefined')).toBe('');
   });
 
+  it('keeps rendered note preview custom properties backed by canonical tokens', () => {
+    const directory = mkdtempSync(path.join(tmpdir(), 'design-token-audit-'));
+    try {
+      for (const relativePath of [
+        'src/lib/styles/tokens.css',
+        'src/features/layout/tab-types/RenderedNotePreview.svelte',
+      ]) {
+        writeFileSync(
+          path.join(directory, path.basename(relativePath)),
+          readFileSync(path.resolve(process.cwd(), relativePath), 'utf8'),
+        );
+      }
+      const output = execFileSync(process.execPath, [script, 'undefined'], {
+        encoding: 'utf8',
+        env: { ...process.env, DESIGN_TOKEN_AUDIT_SOURCE_ROOT: directory },
+      });
+      expect(output.trim()).toBe('');
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
   it('recognizes the Bits UI Select height without exempting other custom properties', () => {
     const directory = mkdtempSync(path.join(tmpdir(), 'design-token-audit-'));
     try {

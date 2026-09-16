@@ -36,10 +36,10 @@ const mockState = vi.hoisted(() => {
 
   return {
     dispatch: vi.fn(),
-    rawViewEnabled: store(false),
+    noteViewMode: store<'editor' | 'raw' | 'preview'>('editor'),
     spellcheckEnabled: store(true),
     noteFontStyle: store('sans'),
-    scrollPosition: store(0),
+    scrollPositions: store<Record<string, number>>({}),
     initialSpecWriteInProgress: store(false),
     notesState: store({ loading: false, initialized: true }),
     workspace: store({ id: 'ws-1', path: '/tmp/ws-1', branchName: 'main' }),
@@ -101,6 +101,7 @@ vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () =
 vi.mock('$features/notes/notes-write-service', () => ({
   createNote: vi.fn(),
   deleteNote: vi.fn(),
+  updateNoteContent: vi.fn(),
 }));
 vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', () => ({
   selectIsInitialSpecWriteInProgress: () => mockState.initialSpecWriteInProgress,
@@ -122,32 +123,36 @@ vi.mock('$store/renderer/slices/user-preferences/user-preferences-slice', () => 
   toggleSpellcheck: () => ({ type: 'userPreferences/toggleSpellcheck' }),
 }));
 vi.mock('$store/renderer/slices/tab-state/tab-state-selectors', () => ({
-  selectScrollPosition: () => mockState.scrollPosition,
+  selectAllScrollPositions: () => mockState.scrollPositions,
 }));
 vi.mock('$store/renderer/slices/tab-state/tab-state-slice', () => ({
-  saveScrollPosition: () => ({ type: 'tabState/saveScrollPosition' }),
+  saveScrollPosition: (tabId: string, scrollTop: number) => ({
+    type: 'tabState/saveScrollPosition',
+    payload: [tabId, scrollTop],
+  }),
 }));
 vi.mock('$store/renderer/slices/panel-layout/panel-layout-slice', () => ({
   closeTab: () => ({ type: 'panelLayout/closeTab' }),
 }));
 vi.mock('$store/renderer/slices/transient-ui/transient-ui-selectors', () => ({
-  selectIsRawNoteViewEnabled: () => mockState.rawViewEnabled,
+  selectNoteViewMode: () => mockState.noteViewMode,
 }));
 vi.mock('$store/renderer/slices/transient-ui/transient-ui-slice', () => ({
-  toggleRawNoteView: (workspaceId: string, noteId: string) => ({
-    type: 'transientUi/toggleRawNoteView',
-    payload: [workspaceId, noteId],
+  setNoteViewMode: (workspaceId: string, noteId: string, mode: string) => ({
+    type: 'transientUi/setNoteViewMode',
+    payload: [workspaceId, noteId, mode],
   }),
 }));
 
 import NoteTabTypeHeaderHarness from './mocks/NoteTabTypeHeaderHarness.svelte';
 
-describe('NoteTabType raw note view toggle', () => {
+describe('NoteTabType note view modes', () => {
   beforeEach(() => {
     mockState.dispatch.mockClear();
-    mockState.rawViewEnabled.set(false);
+    mockState.noteViewMode.set('editor');
     mockState.spellcheckEnabled.set(true);
     mockState.noteFontStyle.set('sans');
+    mockState.scrollPositions.set({});
     mockState.notesState.set({ loading: false, initialized: true });
     mockState.note.set({ ...mockState.defaultNote });
     mockState.initialSpecWriteInProgress.set(false);
@@ -158,7 +163,7 @@ describe('NoteTabType raw note view toggle', () => {
     vi.restoreAllMocks();
   });
 
-  it('groups the raw view toggle into the panel action menu', async () => {
+  it('switches mutually exclusive note view modes from the panel action menu', async () => {
     render(NoteTabTypeHeaderHarness, {
       props: { tab: { id: 'tab-1', type: 'note', title: 'Note', noteId: 'note-1' } },
     });
@@ -166,22 +171,191 @@ describe('NoteTabType raw note view toggle', () => {
     const trigger = await screen.findByRole('button', { name: 'Panel actions' });
     await fireEvent.click(trigger);
 
-    const toggle = await screen.findByRole('menuitemcheckbox', {
-      name: 'Raw Markdown',
-    });
-    expect(toggle.getAttribute('aria-checked')).toBe('false');
+    expect(
+      (await screen.findByRole('menuitemradio', { name: 'Editor' })).getAttribute('aria-checked'),
+    ).toBe('true');
 
-    await fireEvent.click(toggle);
+    await fireEvent.click(screen.getByRole('menuitemradio', { name: 'Rendered preview' }));
     expect(mockState.dispatch).toHaveBeenCalledWith({
-      type: 'transientUi/toggleRawNoteView',
-      payload: ['ws-1', 'note-1'],
+      type: 'transientUi/setNoteViewMode',
+      payload: ['ws-1', 'note-1', 'preview'],
     });
 
-    mockState.rawViewEnabled.set(true);
+    mockState.noteViewMode.set('preview');
     await waitFor(() => {
-      const enabledToggle = screen.getByRole('menuitemcheckbox', { name: 'Raw Markdown' });
-      expect(enabledToggle.getAttribute('aria-checked')).toBe('true');
+      expect(
+        screen
+          .getByRole('menuitemradio', { name: 'Rendered preview' })
+          .getAttribute('aria-checked'),
+      ).toBe('true');
     });
+
+    await fireEvent.click(screen.getByRole('menuitemradio', { name: 'Raw Markdown' }));
+    expect(mockState.dispatch).toHaveBeenCalledWith({
+      type: 'transientUi/setNoteViewMode',
+      payload: ['ws-1', 'note-1', 'raw'],
+    });
+  });
+
+  it('renders the actual note source as a read-only math preview without persisting it', async () => {
+    const source =
+      String.raw`Inline $x^2$ and display math:
+
+$$\frac{1}{2}$$
+
+- [ ] Read-only task` +
+      '\n\nCode stays literal: `$not-math$`. Costs $5 and $10. Unfinished \\(x + 1';
+    mockState.note.set({ ...mockState.defaultNote, content: source });
+    mockState.noteViewMode.set('preview');
+
+    const { container } = render(NoteTabTypeHeaderHarness, {
+      props: { tab: { id: 'tab-1', type: 'note', title: 'Note', noteId: 'note-1' } },
+    });
+
+    const preview = await screen.findByRole('document', { name: 'Rendered note preview' });
+    await waitFor(() => expect(preview.querySelectorAll('math')).toHaveLength(2));
+    expect(container.querySelector('[data-note-content-state="read-only"]')).toBeTruthy();
+    expect(container.querySelector('.ProseMirror')).toBeNull();
+    expect(container.querySelector('[contenteditable="true"]')).toBeNull();
+    expect(preview.textContent).toContain('$not-math$');
+    expect(preview.textContent).toContain('Costs $5 and $10');
+    expect(preview.textContent).toContain(String.raw`Unfinished \(x + 1`);
+    expect(preview.querySelector<HTMLInputElement>('input[type="checkbox"]')?.disabled).toBe(true);
+    expect(mockState.note.get()?.content).toBe(source);
+    expect(mockState.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: expect.stringMatching(/save|update/i) }),
+    );
+
+    mockState.note.set({
+      ...mockState.defaultNote,
+      content: String.raw`External update \[\sqrt{x}\]`,
+    });
+    await waitFor(() => expect(preview.querySelector('math')).toBeTruthy());
+    expect(preview.textContent).toContain('External update');
+
+    mockState.noteViewMode.set('editor');
+    await waitFor(() => expect(screen.queryByTestId('rendered-note-preview')).toBeNull());
+    expect(screen.getByTestId('mock-component')).toBeTruthy();
+  });
+
+  it('saves preview scroll position to the owning tab when returning to the editor', async () => {
+    mockState.noteViewMode.set('preview');
+    render(NoteTabTypeHeaderHarness, {
+      props: { tab: { id: 'tab-1', type: 'note', title: 'Note', noteId: 'note-1' } },
+    });
+
+    const preview = await screen.findByTestId('rendered-note-preview');
+    preview.scrollTop = 240;
+    mockState.noteViewMode.set('editor');
+
+    await waitFor(() =>
+      expect(mockState.dispatch).toHaveBeenCalledWith({
+        type: 'tabState/saveScrollPosition',
+        payload: ['tab-1', 240],
+      }),
+    );
+  });
+
+  it('keeps a pending restore through delayed preview layout and isolates note navigation', async () => {
+    mockState.noteViewMode.set('preview');
+    mockState.scrollPositions.set({ 'tab-1': 310 });
+    render(NoteTabTypeHeaderHarness, {
+      props: { tab: { id: 'tab-1', type: 'note', title: 'Note', noteId: 'note-1' } },
+    });
+    await screen.findByTestId('rendered-note-preview');
+
+    window.dispatchEvent(
+      new CustomEvent('note:restore-scroll-position', {
+        detail: { noteId: 'note-2', scrollPosition: 600 },
+      }),
+    );
+    mockState.noteViewMode.set('editor');
+
+    await waitFor(() =>
+      expect(mockState.dispatch).toHaveBeenCalledWith({
+        type: 'tabState/saveScrollPosition',
+        payload: ['tab-1', 310],
+      }),
+    );
+    expect(mockState.dispatch).not.toHaveBeenCalledWith({
+      type: 'tabState/saveScrollPosition',
+      payload: ['tab-1', 600],
+    });
+  });
+
+  it('uses a matching navigation restore without leaving listeners after unmount', async () => {
+    mockState.noteViewMode.set('preview');
+    const view = render(NoteTabTypeHeaderHarness, {
+      props: { tab: { id: 'tab-1', type: 'note', title: 'Note', noteId: 'note-1' } },
+    });
+    await screen.findByTestId('rendered-note-preview');
+
+    window.dispatchEvent(
+      new CustomEvent('note:restore-scroll-position', {
+        detail: { noteId: 'note-1', scrollPosition: 275 },
+      }),
+    );
+    view.unmount();
+    expect(mockState.dispatch).toHaveBeenCalledWith({
+      type: 'tabState/saveScrollPosition',
+      payload: ['tab-1', 275],
+    });
+
+    const callback = vi.fn();
+    window.dispatchEvent(new CustomEvent('note:save-scroll-position', { detail: { callback } }));
+    expect(callback).not.toHaveBeenCalled();
+  });
+
+  it('saves and restores independently when a mounted preview retargets across tabs', async () => {
+    mockState.noteViewMode.set('preview');
+    mockState.scrollPositions.set({ 'tab-a': 0, 'tab-b': 320 });
+    const view = render(NoteTabTypeHeaderHarness, {
+      props: { tab: { id: 'tab-a', type: 'note', title: 'Note A', noteId: 'note-a' } },
+    });
+
+    const previewA = await screen.findByTestId('rendered-note-preview');
+    previewA.scrollTop = 145;
+    await fireEvent.scroll(previewA);
+    await view.rerender({
+      tab: { id: 'tab-b', type: 'note', title: 'Note B', noteId: 'note-b' },
+    });
+
+    await waitFor(() =>
+      expect(mockState.dispatch).toHaveBeenCalledWith({
+        type: 'tabState/saveScrollPosition',
+        payload: ['tab-a', 145],
+      }),
+    );
+    const pendingBSave = vi.fn();
+    window.dispatchEvent(
+      new CustomEvent('note:save-scroll-position', { detail: { callback: pendingBSave } }),
+    );
+    await waitFor(() => expect(pendingBSave).toHaveBeenCalledWith(320));
+
+    const previewB = screen.getByTestId('rendered-note-preview');
+    previewB.scrollTop = 80;
+    await fireEvent.scroll(previewB);
+    mockState.scrollPositions.set({ 'tab-a': 145, 'tab-b': 500 });
+    mockState.note.set({ ...mockState.defaultNote, id: 'note-short', content: 'Short note' });
+    await view.rerender({
+      tab: { id: 'tab-short', type: 'note', title: 'Short', noteId: 'note-short' },
+    });
+
+    await waitFor(() =>
+      expect(mockState.dispatch).toHaveBeenCalledWith({
+        type: 'tabState/saveScrollPosition',
+        payload: ['tab-b', 80],
+      }),
+    );
+    expect(mockState.dispatch).not.toHaveBeenCalledWith({
+      type: 'tabState/saveScrollPosition',
+      payload: ['tab-b', 500],
+    });
+    const shortSave = vi.fn();
+    window.dispatchEvent(
+      new CustomEvent('note:save-scroll-position', { detail: { callback: shortSave } }),
+    );
+    expect(shortSave).toHaveBeenCalledWith(0);
   });
 
   it.each([
@@ -213,6 +387,7 @@ describe('NoteTabType raw note view toggle', () => {
   it('labels the initial Spec writing view as read-only', async () => {
     mockState.note.set({ ...mockState.defaultNote, id: 'spec', content: '' });
     mockState.initialSpecWriteInProgress.set(true);
+    mockState.noteViewMode.set('preview');
     const { container } = render(NoteTabTypeHeaderHarness, {
       props: { tab: { id: 'tab-1', type: 'note', title: 'Spec', noteId: 'spec' } },
     });
@@ -224,6 +399,7 @@ describe('NoteTabType raw note view toggle', () => {
           ?.getAttribute('data-note-content-state'),
       ).toBe('read-only'),
     );
+    expect(screen.queryByTestId('rendered-note-preview')).toBeNull();
   });
 
   it('offers font and spellcheck controls in the Display section', async () => {
