@@ -118,6 +118,30 @@ function relaySpawn(relayPort: number, children: RelayChild[], args: string[][])
   };
 }
 
+/**
+ * Fake tailcat child that exits right away without relaying a byte — the
+ * shape of a real client given a tc address it cannot rendezvous on.
+ */
+class DyingChild extends EventEmitter {
+  stdin = new PassThrough();
+  stdout = new PassThrough();
+  stderr = new PassThrough();
+  exitCode: number | null = null;
+  signalCode = null;
+  constructor() {
+    super();
+    setImmediate(() => {
+      this.exitCode = 1;
+      this.emit('exit', 1);
+    });
+  }
+  kill(): boolean {
+    return true;
+  }
+}
+
+const dyingSpawn: TailcatSpawn = () => new DyingChild() as unknown as ChildProcess;
+
 const START = {
   flowId: 'flow_1',
   userCode: 'ABCD-1234',
@@ -235,9 +259,9 @@ describe('openInviteConnection', () => {
     }
   });
 
-  it('rejects pending requests when the connection is closed', async () => {
+  it('rejects pending requests with connection-closed when the connection is closed', async () => {
     daemon.handler = () => new Promise(() => {});
-    const { openInviteConnection } = await import('../invite-connection');
+    const { openInviteConnection, InviteTransportError } = await import('../invite-connection');
     const conn = await openInviteConnection({
       hosts: ['127.0.0.1'],
       port: daemon.port,
@@ -245,18 +269,43 @@ describe('openInviteConnection', () => {
     });
     const waiting = conn.redeemWait('flow_1', 0);
     conn.close();
-    await expect(waiting).rejects.toThrow(/closed/);
-    await expect(conn.redeemStart('x', 'y')).rejects.toThrow(/closed/);
+    const closedError = await waiting.catch((e: unknown) => e);
+    expect(closedError).toBeInstanceOf(InviteTransportError);
+    expect(closedError).toMatchObject({ transportCode: 'connection-closed' });
+    const afterClose = await conn.redeemStart('x', 'y').catch((e: unknown) => e);
+    expect(afterClose).toBeInstanceOf(InviteTransportError);
+    expect(afterClose).toMatchObject({ transportCode: 'connection-closed' });
   });
 
-  it('rejects when every candidate is unreachable', async () => {
-    const { openInviteConnection } = await import('../invite-connection');
-    await expect(
-      openInviteConnection(
-        { hosts: ['127.0.0.1'], port: 1, fingerprint: daemon.fingerprint },
-        { timeoutMs: 3_000 },
-      ),
-    ).rejects.toThrow();
+  it('rejects a redeem request the daemon never answers with host-unreachable', async () => {
+    daemon.handler = () => new Promise(() => {});
+    const { openInviteConnection, InviteTransportError } = await import('../invite-connection');
+    const conn = await openInviteConnection({
+      hosts: ['127.0.0.1'],
+      port: daemon.port,
+      fingerprint: daemon.fingerprint,
+    });
+    try {
+      const err = await conn.redeemWait('flow_1', 200).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(InviteTransportError);
+      expect(err).toMatchObject({ transportCode: 'host-unreachable' });
+    } finally {
+      conn.close();
+    }
+  });
+
+  it('rejects with host-refused when the only candidate refuses the connection', async () => {
+    const { openInviteConnection, InviteTransportError } = await import('../invite-connection');
+    // Port 1 (tcpmux) has no listener on the test host: an immediate ECONNREFUSED.
+    const err = await openInviteConnection(
+      { hosts: ['127.0.0.1'], port: 1, fingerprint: daemon.fingerprint },
+      { timeoutMs: 3_000 },
+    ).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(InviteTransportError);
+    expect(err).toMatchObject({ transportCode: 'host-refused' });
+    // A refused connection is not mistaken for a plain socket error: the
+    // library's ECONNREFUSED text (which names the address) is not carried.
+    expect((err as Error).message).not.toContain('127.0.0.1');
     await expect(
       openInviteConnection({ hosts: [], port: daemon.port, fingerprint: daemon.fingerprint }),
     ).rejects.toThrow(/no host/);
@@ -305,14 +354,14 @@ describe('openInviteConnection', () => {
     });
     await new Promise<void>((res) => blackhole.listen(0, '127.0.0.1', () => res()));
     const port = (blackhole.address() as AddressInfo).port;
-    const { openInviteConnection } = await import('../invite-connection');
+    const { openInviteConnection, InviteTransportError } = await import('../invite-connection');
     try {
-      await expect(
-        openInviteConnection(
-          { hosts: ['127.0.0.1'], port, fingerprint: daemon.fingerprint },
-          { timeoutMs: 500 },
-        ),
-      ).rejects.toThrow(/timed out/);
+      const err = await openInviteConnection(
+        { hosts: ['127.0.0.1'], port, fingerprint: daemon.fingerprint },
+        { timeoutMs: 500 },
+      ).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(InviteTransportError);
+      expect(err).toMatchObject({ transportCode: 'host-unreachable' });
       await vi.waitFor(() => expect(accepted.length).toBe(1), { timeout: 3_000 });
       await vi.waitFor(() => expect(closedCount).toBe(1), { timeout: 3_000 });
     } finally {
@@ -429,6 +478,49 @@ describe('openInviteConnection', () => {
         },
         { timeout: 3_000 },
       );
+    });
+
+    it('rejects with tunnel-failed when the tailcat child exits immediately', async () => {
+      const { openInviteConnection, InviteTransportError } = await import('../invite-connection');
+      const err = await openInviteConnection(
+        { hosts: [], port: daemon.port, fingerprint: daemon.fingerprint, tcAddress: 'tc-bad' },
+        { timeoutMs: 3_000, tailcatSpawn: dyingSpawn },
+      ).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(InviteTransportError);
+      expect(err).toMatchObject({ transportCode: 'tunnel-failed' });
+      expect((err as Error).message).not.toContain('tc-bad');
+    });
+
+    it('rejects with tailcat-unavailable when no tailcat binary can be resolved', async ({
+      skip,
+    }) => {
+      const { resolveTailcatBinaryPath } = await import('../tailcat-tunnel');
+      const override = process.env.TAILCAT_BIN;
+      process.env.TAILCAT_BIN = '/nonexistent/tailcat-for-invite-test';
+      try {
+        // A staged dev binary up the tree would satisfy the probe regardless
+        // of the override; the code path under test needs a truly absent one.
+        if (resolveTailcatBinaryPath() !== null) skip();
+        const { openInviteConnection, InviteTransportError } = await import('../invite-connection');
+        const err = await openInviteConnection(
+          { hosts: [], port: daemon.port, fingerprint: daemon.fingerprint, tcAddress: 'tc-key' },
+          { timeoutMs: 3_000, tailcatSpawn: dyingSpawn },
+        ).catch((e: unknown) => e);
+        expect(err).toBeInstanceOf(InviteTransportError);
+        expect(err).toMatchObject({ transportCode: 'tailcat-unavailable' });
+      } finally {
+        process.env.TAILCAT_BIN = override;
+      }
+    });
+
+    it('a refused direct host falling through to a dead tunnel reports the tunnel failure', async () => {
+      const { openInviteConnection, InviteTransportError } = await import('../invite-connection');
+      const err = await openInviteConnection(
+        { hosts: ['127.0.0.1'], port: 1, fingerprint: daemon.fingerprint, tcAddress: 'tc-bad' },
+        { timeoutMs: 3_000, tailcatSpawn: dyingSpawn },
+      ).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(InviteTransportError);
+      expect(err).toMatchObject({ transportCode: 'tunnel-failed' });
     });
   });
 });
