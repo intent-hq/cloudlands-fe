@@ -135,6 +135,16 @@ export interface RelativeTimeOptions {
   now?: Date;
 }
 
+export interface CompactNumberOptions {
+  /** Maximum digits after the decimal separator; compact units default to one. */
+  maximumFractionDigits?: number;
+}
+
+export interface CurrencyFormatOptions {
+  /** Exact digits after the decimal separator; currency defaults apply when omitted. */
+  fractionDigits?: number;
+}
+
 // ── Factory ─────────────────────────────────────────────────────────────────
 
 /**
@@ -155,6 +165,19 @@ export function createFormatters(getLocale: () => string) {
     return numberFormat(getLocale(), { maximumFractionDigits: 0 }).format(value);
   }
 
+  /** Locale-aware compact number; compact units keep one fractional digit by default. */
+  function formatCompactNumber(value: number, options?: CompactNumberOptions): string {
+    if (!Number.isFinite(value)) return formatInteger(0);
+    const maximumFractionDigits =
+      options?.maximumFractionDigits ?? (Math.abs(value) < 1_000 ? 0 : 1);
+    return numberFormat(getLocale(), {
+      notation: 'compact',
+      compactDisplay: 'short',
+      minimumFractionDigits: 0,
+      maximumFractionDigits,
+    }).format(value);
+  }
+
   /**
    * Locale currency amount for an ISO 4217 code, e.g. 1.5 / "USD" → "$1.50".
    * Sub-unit amounts keep up to 4 fraction digits so small provider-reported
@@ -162,11 +185,23 @@ export function createFormatters(getLocale: () => string) {
    * decimal convention (JPY → "¥100", JOD → 3 digits). Invalid amounts → "";
    * a currency code `Intl` rejects falls back to a plain number plus the code.
    */
-  function formatCurrency(amount: number, currency: string): string {
+  function formatCurrency(
+    amount: number,
+    currency: string,
+    options?: CurrencyFormatOptions,
+  ): string {
     if (!Number.isFinite(amount)) return '';
     const locale = getLocale();
     const subUnit = amount !== 0 && Math.abs(amount) < 1;
-    const digits = subUnit ? { minimumFractionDigits: 2, maximumFractionDigits: 4 } : {};
+    const digits =
+      options?.fractionDigits !== undefined
+        ? {
+            minimumFractionDigits: options.fractionDigits,
+            maximumFractionDigits: options.fractionDigits,
+          }
+        : subUnit
+          ? { minimumFractionDigits: 2, maximumFractionDigits: 4 }
+          : {};
     try {
       return numberFormat(locale, {
         style: 'currency',
@@ -175,8 +210,8 @@ export function createFormatters(getLocale: () => string) {
       }).format(amount);
     } catch {
       const formatted = numberFormat(locale, {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: subUnit ? 4 : 2,
+        minimumFractionDigits: options?.fractionDigits ?? 2,
+        maximumFractionDigits: options?.fractionDigits ?? (subUnit ? 4 : 2),
       }).format(amount);
       return `${formatted} ${currency}`;
     }
@@ -374,6 +409,7 @@ export function createFormatters(getLocale: () => string) {
   return {
     formatNumber,
     formatInteger,
+    formatCompactNumber,
     formatCurrency,
     formatBytesBinary,
     formatRelativeTime,

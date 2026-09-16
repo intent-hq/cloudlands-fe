@@ -712,6 +712,20 @@ describe('LiveWorkspacesClient.getTokenUsage (PROTOCOL §5.23, fake transport)',
           cacheCreationTokens: 1200,
         },
       },
+      byAgentModel: [
+        {
+          agentId: 'agent-123',
+          model: 'opus-4.8',
+          totals: {
+            inputTokens: 12000,
+            outputTokens: 3400,
+            cacheReadTokens: 8000,
+            cacheCreationTokens: 1200,
+          },
+          humanMessages: 3,
+          agentMessages: 4,
+        },
+      ],
       totals: {
         inputTokens: 12000,
         outputTokens: 3400,
@@ -734,6 +748,33 @@ describe('LiveWorkspacesClient.getTokenUsage (PROTOCOL §5.23, fake transport)',
     const client = new LiveWorkspacesClient();
 
     expect(await client.getTokenUsage('ws-abc')).toBeNull();
+  });
+
+  it('rejects a malformed token usage matrix at the wire boundary', async () => {
+    mockedRequest.mockResolvedValueOnce({
+      tokenUsage: {
+        byAgentId: {},
+        totals: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 },
+        byModel: {},
+        byAgentModel: [
+          {
+            agentId: 'agent-a',
+            model: 'model-a',
+            totals: {
+              inputTokens: 0,
+              outputTokens: 0,
+              cacheReadTokens: 0,
+              cacheCreationTokens: 0,
+            },
+            humanMessages: -1,
+            agentMessages: 0,
+          },
+        ],
+        lastScanAt: null,
+      },
+    });
+
+    await expect(new LiveWorkspacesClient().getTokenUsage('ws-abc')).rejects.toThrow();
   });
 
   it('passes provider cost through unchanged when the daemon reports it', async () => {

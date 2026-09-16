@@ -78,6 +78,18 @@ const mocks = vi.hoisted(() => {
     }>,
     // Legacy `Workspace.prNumber`/`prUrl` (pre-`activePullRequest`); unset by default.
     legacyPr: null as { prNumber: number; prUrl: string } | null,
+    tokenUsage: {
+      byAgentId: {},
+      byModel: {},
+      totals: {
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
+      },
+      lastScanAt: null,
+      isStale: false,
+    },
   };
 });
 
@@ -147,6 +159,9 @@ vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', ()
   selectRetiredAgentsLoaded: mocks.selector(false),
   selectRetiredCount: mocks.selector(0),
   selectWorkspaceHasUnreadForegroundAgents: mocks.selector(false),
+}));
+vi.mock('$store/renderer/slices/token-usage/token-usage-selectors', () => ({
+  selectWorkspaceTokenUsage: mocks.selectorFrom(() => mocks.tokenUsage),
 }));
 vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentIsResponding: mocks.selector(false),
@@ -348,6 +363,18 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     mocks.focusedPanelId = 'source-panel';
     mocks.pullRequests = [];
     mocks.legacyPr = null;
+    mocks.tokenUsage = {
+      byAgentId: {},
+      byModel: {},
+      totals: {
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
+      },
+      lastScanAt: null,
+      isStale: false,
+    };
   });
 
   afterEach(() => {
@@ -610,6 +637,54 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     expect(getByRole('button', { name: /Agents.*0 agents total/ })).toBeTruthy();
     expect(container.querySelectorAll('[data-agent-avatar-stack-item]')).toHaveLength(0);
     expect(container.querySelector('[data-agent-avatar-overflow]')).toBeNull();
+  });
+
+  it('opens token usage from the collapsed Agents count without activating the launcher', async () => {
+    mocks.tokenUsage = {
+      byAgentId: {},
+      byModel: {},
+      totals: {
+        inputTokens: 100,
+        outputTokens: 200,
+        cacheReadTokens: 600,
+        cacheCreationTokens: 100,
+      },
+      lastScanAt: 5000,
+      isStale: false,
+    };
+    const Sidebar = (await import('../MultiSelectTabbedSidebar.svelte')).default;
+    const { container, getByTestId } = render(Sidebar, { props: { workspaceId: 'ws-1' } });
+    const agentCard = container.querySelector<HTMLElement>('[data-sidebar-launcher="agents"]')!;
+    const labelRow = agentCard.querySelector<HTMLElement>('[data-sidebar-label-row]')!;
+    const trigger = getByTestId('token-usage-disclosure');
+
+    expect(
+      labelRow.lastElementChild?.closest('[data-testid="workspace-token-usage"]'),
+    ).toBeTruthy();
+    expect(trigger.querySelector('[aria-hidden="true"]')?.textContent).toBe('1K');
+    expect(trigger.textContent).not.toContain('Cached');
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
+
+    mocks.dispatch.mockClear();
+    await fireEvent.pointerDown(trigger);
+    await fireEvent.keyDown(trigger, { key: 'Enter' });
+    await fireEvent.click(trigger);
+
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
+    expect(getByTestId('token-usage-details')).toBeTruthy();
+    expect(
+      mocks.dispatch.mock.calls.some(
+        ([action]) => action.type === 'sidebarNav/setMultiSelectSidebarSelectedTabs',
+      ),
+    ).toBe(false);
+
+    await fireEvent.click(agentCard.querySelector('.launcher-tile-action')!);
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'sidebarNav/setMultiSelectSidebarSelectedTabs',
+        payload: ['ws-1', ['agents']],
+      }),
+    );
   });
 
   it.each([1, 4, 6])('uses the shared logical-start stack at %i-item density', async (count) => {
