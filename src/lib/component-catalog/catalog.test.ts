@@ -71,6 +71,7 @@ describe('static component catalog', () => {
       'rows',
       'screen-states',
       'fields',
+      'subscription-rows',
     ].sort();
     expect(Object.keys(catalogRenderers).sort()).toEqual(rendererIds);
 
@@ -97,6 +98,7 @@ describe('static component catalog', () => {
       'proposal-card',
       'rows',
       'screen-states',
+      'subscription-rows',
     ]);
     expect(
       buildCatalogGroups([
@@ -123,6 +125,7 @@ const exportAliases: Record<string, string> = {
   fields: 'FormRow',
   rows: 'ListRow',
   'screen-states': 'EmptyState',
+  'subscription-rows': 'EventSubscriptionsCard',
   collection: 'ListView',
   confirm: 'confirm',
   notify: 'notify',

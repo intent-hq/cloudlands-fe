@@ -22,6 +22,11 @@
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
   import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
+  import {
+    SUBSCRIPTION_DISCLOSURE_ROW_CLASS,
+    SUBSCRIPTION_ICON_CLASS,
+    SUBSCRIPTION_LEADING_COLUMN_CLASS,
+  } from './subscription-disclosure';
 
   interface Props {
     attribution: PrMonitorWakeAttribution;
@@ -55,23 +60,32 @@
 </script>
 
 <div
-  class="type-body flex items-center gap-1.5 rounded-md {className}"
+  class="{SUBSCRIPTION_DISCLOSURE_ROW_CLASS} rounded-md {className}"
   data-testid="pr-monitor-wake-attribution"
 >
-  <Fa icon={faCodePullRequest} class="h-3 w-3 text-ghost" />
-  <Button
-    type="button"
-    variant="plain"
-    truncateLabel={false}
-    wrapContent={false}
-    class="type-body h-auto! min-w-0 cursor-pointer break-words p-0! text-left font-medium text-foreground hover:underline"
-    data-testid="pr-monitor-wake-chip"
-    title={m.chat_prMonitorWakeAttribution_openPr_tooltip()}
-    onclick={handleOpenPr}
+  <span class={SUBSCRIPTION_LEADING_COLUMN_CLASS} aria-hidden="true">
+    <Fa
+      icon={faCodePullRequest}
+      size={14}
+      class="h-3.5! w-3.5! shrink-0 {SUBSCRIPTION_ICON_CLASS}"
+    />
+  </span>
+  <span
+    class="grid min-w-0 flex-1 grid-cols-[minmax(4rem,max-content)_minmax(0,1fr)] items-baseline gap-1 overflow-hidden whitespace-nowrap"
   >
-    {chipLabel}
-  </Button>
-  <span class="font-normal text-muted-foreground"
-    >{m.chat_prMonitorWakeAttribution_wokeAgent_after()}</span
-  >
+    <Button
+      type="button"
+      variant="plain"
+      class="h-auto! min-w-0 max-w-full cursor-pointer justify-start overflow-hidden whitespace-nowrap p-0! text-left font-normal text-muted-foreground hover:underline"
+      data-testid="pr-monitor-wake-chip"
+      title={m.chat_prMonitorWakeAttribution_openPr_tooltip()}
+      onclick={handleOpenPr}
+    >
+      {chipLabel}
+    </Button>
+    <span
+      class="min-w-0 truncate whitespace-nowrap font-normal text-muted-foreground"
+      data-testid="pr-monitor-wake-status">{m.chat_prMonitorWakeAttribution_wokeAgent_after()}</span
+    >
+  </span>
 </div>

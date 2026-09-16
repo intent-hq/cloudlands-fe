@@ -24,6 +24,8 @@ const RowsCatalogPreview = () => import('./renderers/RowsCatalogPreview.svelte')
 const FieldsCatalogPreview = () => import('./renderers/FieldsCatalogPreview.svelte');
 const ScreenStatesCatalogPreview = () => import('./renderers/ScreenStatesCatalogPreview.svelte');
 const PatternCatalogPreview = () => import('./renderers/PatternCatalogPreview.svelte');
+const SubscriptionRowsCatalogPreview = () =>
+  import('./renderers/SubscriptionRowsCatalogPreview.svelte');
 
 const catalogRendererIds = [
   'accordion',
@@ -84,6 +86,7 @@ const catalogRendererIds = [
   'toggle',
   'toggle-group',
   'tooltip',
+  'subscription-rows',
 ] as const;
 
 export type CatalogRendererId = (typeof catalogRendererIds)[number];
@@ -106,6 +109,7 @@ type CatalogRendererRegistry = {
 
 export const catalogRenderers = {
   'model-picker': ModelPickerCatalogPreview,
+  'subscription-rows': SubscriptionRowsCatalogPreview,
   accordion: NavigationPrimitivesCatalogPreview,
   'action-menu': PatternCatalogPreview,
   'ask-user-questions': AskUserQuestionsCatalogPreview,
