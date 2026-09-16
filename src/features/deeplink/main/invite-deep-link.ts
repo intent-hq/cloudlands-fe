@@ -151,42 +151,38 @@ export async function handleInviteDeepLink(url: string): Promise<void> {
       return;
     }
     // From here the modal stays up in its waiting state and Cancel aborts the
-    // join before any credential is minted — observed across both the browser
-    // launch and the grant wait (a cancel that lands while the launch is still
-    // pending must not be outrun by a grant that settles first), so the
-    // cancel signal is created once and raced first at each step.
-    let cancelledWhileWaiting = false;
-    const cancelSignal = consent.cancelledWhileWaiting.then(() => {
-      cancelledWhileWaiting = true;
-      return null;
-    });
+    // join only until the grant resolves. Cancel and grant are both raced from
+    // the browser launch onwards — whichever settles first decides — so a
+    // grant that lands while the launch is still pending is observed at once
+    // (the point of no return) and a cancel that lands first still aborts,
+    // even if the launch never settles.
+    const cancelSignal = consent.cancelledWhileWaiting.then(() => 'cancelled' as const);
+    const granted = grant.then((credential) => ({ credential }));
+    granted.catch(() => {});
     // The launch is awaited so a refused browser hand-off aborts the flow
     // before any credential is minted into the store; the OS error text is
     // dropped (bounded code only) since it may echo the URL or worse.
     const launch = (async () => {
       try {
         await shell.openExternal(start.verificationUri);
-        return true;
+        return 'launched' as const;
       } catch {
-        return false;
+        return 'launch-failed' as const;
       }
     })();
-    const launched = await Promise.race([cancelSignal, launch]);
-    if (cancelledWhileWaiting) {
+    let outcome = await Promise.race([cancelSignal, granted, launch]);
+    if (outcome === 'launched') {
+      outcome = await Promise.race([cancelSignal, granted]);
+    }
+    if (outcome === 'cancelled') {
       consent.dismiss('cancelled');
       logger.info('User cancelled the invite while waiting for the GitHub grant');
       return;
     }
-    if (!launched) {
+    if (outcome === 'launch-failed') {
       throw new InviteFlowError('verification-launch-failed');
     }
-
-    const credential = await Promise.race([cancelSignal, grant]);
-    if (cancelledWhileWaiting || credential === null) {
-      consent.dismiss('cancelled');
-      logger.info('User cancelled the invite while waiting for the GitHub grant');
-      return;
-    }
+    const { credential } = outcome;
     // Point of no return: the host has minted the credential and consumed a
     // seat. Close the modal now — before the asynchronous store write — so
     // Cancel is neither offered nor honoured while the credential persists.
