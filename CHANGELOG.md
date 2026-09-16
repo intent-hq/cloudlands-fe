@@ -4,6 +4,14 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.161.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.161.0...v2.161.1) (2026-09-16)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.66 ([#2523](https://github.com/intent-hq/cloudlands-fe/issues/2523)) ([479434a](https://github.com/intent-hq/cloudlands-fe/commit/479434ae616a5a21dfcdf6d65e2bd377cb6a138f))
+* **ui:** keep keyboard focus when the menu open-focus frame runs late ([#2520](https://github.com/intent-hq/cloudlands-fe/issues/2520)) ([9333c72](https://github.com/intent-hq/cloudlands-fe/commit/9333c726cbfcb87fc75a45f1ec1b255678a2bda7))
+
 ## [2.161.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.160.0...v2.161.0) (2026-09-16)
 
 
