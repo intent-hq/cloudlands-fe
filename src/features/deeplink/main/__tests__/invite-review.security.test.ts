@@ -120,6 +120,16 @@ describe('review: secret boundary', () => {
     expect(mocks.logs.some((line) => line.includes(token))).toBe(false);
   });
 
+  it('logs an unrecognised error under the bounded kind, never its arbitrary name', async () => {
+    const error = new Error('refused');
+    error.name = `Leaky ${token}`;
+    mocks.add.mockRejectedValueOnce(error);
+    await handleInviteDeepLink(link);
+    const allLogs = mocks.logs.join('\n');
+    expect(allLogs).toContain('"kind":"unknown"');
+    expect(allLogs).not.toContain(token);
+  });
+
   it('keeps a normal cold-start invite token-free at renderer IPC', async () => {
     const send = await replayColdStart(link);
     expect(mocks.open).toHaveBeenCalledOnce();
