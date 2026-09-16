@@ -7,14 +7,38 @@ import {
   join,
   put,
   race,
+  select,
   take,
   takeEvery,
   takeLatest,
 } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
+import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
+import { invoke } from '$shared/generated/ipc-client';
+import { SHELL_CHANNELS, SYSTEM_CHANNELS, WORKSPACE_CHANNELS } from '$shared/ipc/channels';
+import { deserializeDraftAttachments } from '$lib/components/chat/chat-draft-attachments';
+import { takeLatestInContext } from '$store/renderer/utils/context-saga-effects';
+import {
+  LEGACY_ONBOARDING_PROMPT_SESSION_KEY,
+  LEGACY_PROMPT_SESSION_KEY,
+  NEW_WORKSPACE_DRAFT_AGENT_ID,
+  NEW_WORKSPACE_DRAFT_WORKSPACE_ID,
+} from '$lib/components/workspace/initializer/new-workspace-draft';
 import { createLogger } from '$lib/utils/client-logger';
+import { parseGitHubUrl } from '$lib/utils/workspace-validation';
+import { getProviderAvailability } from '$features/providers/provider-availability.client';
+import { runProviderTestPrompt } from '$features/providers/provider-test-prompt.client';
+import { enhancePrompt } from '$lib/client/live/live-prompt-enhancement';
+import { resolveOnboardingModel } from '$features/onboarding/utils/resolve-onboarding-model';
 import { resetOnboarding } from '$store/renderer/slices/onboarding/onboarding-slice';
+import {
+  authCancelled,
+  authCompleted,
+  initializeGitHubAuth,
+  setGitHubAuthError,
+  startGitHubAuth,
+} from '$store/renderer/slices/github-auth/github-auth-slice';
 import {
   getLocalStorageItem,
   getLocalStorageJSON,
@@ -32,8 +56,36 @@ import {
 import {
   cancelWorkspaceInitializerOnboardingFormStateDebounce,
   debounceWorkspaceInitializerOnboardingFormState,
+  clearNewWorkspaceDraftRequested,
+  flushNewWorkspaceDraftRequested,
+  generateWorkspaceSetupScriptRequested,
   hydrateWorkspaceInitializer,
+  listGitHubBranchesCachedRequested,
+  listGitHubBranchesRequested,
+  loadWorkspaceInitializerGitHubBranches,
+  searchWorkspaceInitializerGitHubBranches,
+  setGitHubBranchListing,
+  setGitHubBranchListingError,
+  setGitHubBranchListingLoading,
+  listInitializerSpecialistPreviewsRequested,
+  readWorkspaceInitializerPrefillRequested,
+  createWorkspaceFromInitializerRequested,
+  setInitialAgentReasoningEffortRequested,
+  connectGitHubForInitializerRequested,
+  readWorkspaceInitializerDirectoryStatusRequested,
+  readWorkspaceInitializerPullRequestRequested,
+  readWorkspaceInitializerGitRemoteRequested,
+  readWorkspaceInitializerGitAvailabilityRequested,
+  addWorkspaceInitializerRecentRepositoryRequested,
+  openWorkspaceInitializerExternalUrlRequested,
+  readWorkspaceInitializerProviderAvailabilityRequested,
+  runWorkspaceInitializerProviderTestRequested,
+  enhanceWorkspaceInitializerPromptRequested,
+  resolveWorkspaceInitializerModelRequested,
+  pullWorkspaceInitializerRepositoryRequested,
   removeWorkspaceInitializerRemoteSetup,
+  restoreNewWorkspaceDraftRequested,
+  saveNewWorkspaceDraftRequested,
   setCompactWorkspaceInitializerFormState,
   setWorkspaceInitializerBranchForRepo,
   setWorkspaceInitializerDefaultParentPath,
@@ -44,6 +96,7 @@ import {
   setWorkspaceInitializerRemoteSetups,
   upsertWorkspaceInitializerRemoteSetup,
 } from '../workspace-initializer-slice';
+import type { WorkspaceInitializerPrefill } from '../workspace-initializer-types';
 import type {
   CompactWorkspaceInitializerFormState,
   WorkspaceInitializerAgentSettings,
@@ -66,8 +119,20 @@ const REMOTE_SETUPS_KEY = 'remote-setups';
 const LAST_SUBMITTED_AGENT_KEY = 'workspace-initializer-last-agent';
 const ONBOARDING_PROMPT_SESSION_KEY = 'onboarding-prompt';
 const ONBOARDING_FORM_STATE_DEBOUNCE_MS = 300;
+const NEW_WORKSPACE_DRAFT_DEBOUNCE_MS = 300;
+const BRANCH_LOAD_DEBOUNCE_MS = 150;
+const BRANCH_SEARCH_DEBOUNCE_MS = 100;
+const BRANCH_CACHE_DURATION_MS = 5 * 60 * 1000;
+const githubBranchLoadCache = new Map<
+  string,
+  { branches: string[]; defaultBranch: string; timestamp: number }
+>();
 
 type HydrationGate = { settled: boolean; queued: boolean };
+type DraftPersistenceContext = {
+  restoreFailed: boolean;
+  pending: ReturnType<typeof saveNewWorkspaceDraftRequested> | null;
+};
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -300,6 +365,582 @@ function* watchOnboardingReset() {
   yield* takeEvery(resetOnboarding, resetWorkspaceInitializerWorker);
 }
 
+function removeSessionItem(key: string): void {
+  try {
+    if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem(key);
+  } catch {
+    // Session storage is an optional migration source.
+  }
+}
+
+function readAndRemoveSessionItem(key: string): string | null {
+  try {
+    if (typeof sessionStorage === 'undefined') return null;
+    const value = sessionStorage.getItem(key);
+    if (value !== null) sessionStorage.removeItem(key);
+    return value;
+  } catch {
+    return null;
+  }
+}
+
+function readSessionItem(key: string): string | null {
+  try {
+    return typeof sessionStorage === 'undefined' ? null : sessionStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function readWorkspacePrefill(consume: boolean): WorkspaceInitializerPrefill | null {
+  const raw = readSessionItem('workspace-prefill');
+  if (!raw) return null;
+  if (consume) removeSessionItem('workspace-prefill');
+  try {
+    const value = JSON.parse(raw) as unknown;
+    return isRecord(value) ? (value as WorkspaceInitializerPrefill) : null;
+  } catch {
+    if (!consume) removeSessionItem('workspace-prefill');
+    return null;
+  }
+}
+
+function* readWorkspacePrefillWorker(
+  action: ReturnType<typeof readWorkspaceInitializerPrefillRequested>,
+) {
+  action.promise.catch(() => {});
+  try {
+    let prefill = yield* call(readWorkspacePrefill, action.payload[0]);
+    if (prefill?.githubUrl && !prefill.repoPath) {
+      const parsed = parseGitHubUrl(prefill.githubUrl);
+      const recent = (yield* call(invoke, 'workspace:get-recent-repositories', {})) as {
+        success: boolean;
+        data?: Array<{ path: string; name: string; owner?: string }>;
+      };
+      if (parsed && recent.success && Array.isArray(recent.data)) {
+        const match = recent.data.find(
+          (repo) =>
+            repo.owner?.toLowerCase() === parsed.owner.toLowerCase() &&
+            repo.name.toLowerCase() === parsed.repo.toLowerCase(),
+        );
+        if (match?.path) prefill = { ...prefill, repoPath: match.path };
+      }
+    }
+    yield* put(action.success(prefill));
+  } catch (error) {
+    yield* put(action.failure(error instanceof Error ? error : new Error(String(error))));
+  }
+}
+
+export function* restoreNewWorkspaceDraftWorker(
+  context: DraftPersistenceContext,
+  action: ReturnType<typeof restoreNewWorkspaceDraftRequested>,
+) {
+  action.promise.catch(() => {});
+  const legacyKey =
+    action.payload[0] === 'onboarding'
+      ? LEGACY_ONBOARDING_PROMPT_SESSION_KEY
+      : LEGACY_PROMPT_SESSION_KEY;
+  const legacyPrompt = yield* call(readSessionItem, legacyKey);
+  try {
+    const draft = yield* call(
+      [appClient.drafts, appClient.drafts.get],
+      NEW_WORKSPACE_DRAFT_WORKSPACE_ID,
+      NEW_WORKSPACE_DRAFT_AGENT_ID,
+    );
+    context.restoreFailed = false;
+    if (draft) {
+      yield* call(removeSessionItem, legacyKey);
+      yield* put(
+        action.success({
+          status: 'restored',
+          text: draft.text ?? '',
+          contextItems: draft.attachments?.length
+            ? deserializeDraftAttachments(draft.attachments)
+            : [],
+        }),
+      );
+      return;
+    }
+    yield* call(readAndRemoveSessionItem, legacyKey);
+    if (legacyPrompt) {
+      try {
+        yield* call(
+          [appClient.drafts, appClient.drafts.set],
+          NEW_WORKSPACE_DRAFT_WORKSPACE_ID,
+          NEW_WORKSPACE_DRAFT_AGENT_ID,
+          legacyPrompt,
+          undefined,
+        );
+      } catch (error) {
+        logger.warn('New workspace legacy draft migration failed', { error });
+      }
+      yield* put(action.success({ status: 'restored', text: legacyPrompt, contextItems: [] }));
+    } else {
+      yield* put(action.success({ status: 'empty' }));
+    }
+  } catch (error) {
+    context.restoreFailed = true;
+    logger.warn('New workspace draft restore failed', { error });
+    yield* put(action.success({ status: 'error' }));
+  }
+}
+
+export function* persistNewWorkspaceDraftWorker(
+  context: DraftPersistenceContext,
+  action: ReturnType<typeof saveNewWorkspaceDraftRequested>,
+) {
+  const [text, attachments] = action.payload;
+  if (context.restoreFailed && !text && attachments.length === 0) return;
+  try {
+    yield* call(
+      [appClient.drafts, appClient.drafts.set],
+      NEW_WORKSPACE_DRAFT_WORKSPACE_ID,
+      NEW_WORKSPACE_DRAFT_AGENT_ID,
+      text,
+      attachments.length ? attachments : undefined,
+    );
+  } catch (error) {
+    logger.warn('New workspace draft save failed', { error });
+  }
+}
+
+export function* clearNewWorkspaceDraftWorker() {
+  yield* call(removeSessionItem, LEGACY_PROMPT_SESSION_KEY);
+  yield* call(removeSessionItem, LEGACY_ONBOARDING_PROMPT_SESSION_KEY);
+  try {
+    yield* call(
+      [appClient.drafts, appClient.drafts.clear],
+      NEW_WORKSPACE_DRAFT_WORKSPACE_ID,
+      NEW_WORKSPACE_DRAFT_AGENT_ID,
+    );
+  } catch (error) {
+    logger.warn('New workspace draft clear failed', { error });
+  }
+}
+
+function* saveNewWorkspaceDraftDebouncedWorker(
+  context: DraftPersistenceContext,
+  action: ReturnType<typeof saveNewWorkspaceDraftRequested>,
+) {
+  context.pending = action;
+  yield* delay(NEW_WORKSPACE_DRAFT_DEBOUNCE_MS);
+  if (context.pending !== action) return;
+  context.pending = null;
+  yield* call(persistNewWorkspaceDraftWorker, context, action);
+}
+
+function* flushNewWorkspaceDraftWorker(context: DraftPersistenceContext) {
+  const pending = context.pending;
+  context.pending = null;
+  if (pending) yield* call(persistNewWorkspaceDraftWorker, context, pending);
+}
+
+function* clearNewWorkspaceDraftRequestWorker(context: DraftPersistenceContext) {
+  context.pending = null;
+  yield* call(clearNewWorkspaceDraftWorker);
+}
+
+export function* generateWorkspaceSetupScriptWorker(
+  action: ReturnType<typeof generateWorkspaceSetupScriptRequested>,
+) {
+  action.promise.catch(() => {});
+  try {
+    const result = yield* call(
+      [appClient.setupScripts, appClient.setupScripts.generate],
+      action.payload[0],
+    );
+    yield* put(action.success(result));
+  } catch (error) {
+    action.promise.catch(() => {});
+    yield* put(action.failure(error instanceof Error ? error : new Error(String(error))));
+  }
+}
+
+export function* listInitializerSpecialistPreviewsWorker(
+  action: ReturnType<typeof listInitializerSpecialistPreviewsRequested>,
+) {
+  action.promise.catch(() => {});
+  try {
+    yield* put(
+      action.success(
+        yield* call([appClient.specialists, appClient.specialists.list], action.payload[0]),
+      ),
+    );
+  } catch (error) {
+    action.promise.catch(() => {});
+    yield* put(action.failure(error instanceof Error ? error : new Error(String(error))));
+  }
+}
+
+export function* listGitHubBranchesCachedWorker(
+  action: ReturnType<typeof listGitHubBranchesCachedRequested>,
+) {
+  try {
+    const [owner, repo] = action.payload;
+    yield* put(setGitHubBranchListingLoading(owner, repo, 'cached'));
+    const result = yield* call(
+      [appClient.integrations, appClient.integrations.githubBranchesCached],
+      owner,
+      repo,
+    );
+    yield* put(
+      setGitHubBranchListing(
+        owner,
+        repo,
+        'cached',
+        result.branches,
+        result.defaultBranch ?? '',
+        result.source,
+      ),
+    );
+    yield* put(action.success(result));
+  } catch (error) {
+    const [owner, repo] = action.payload;
+    yield* put(setGitHubBranchListingError(owner, repo, 'cached', String(error)));
+    action.promise.catch(() => {});
+    yield* put(action.failure(error instanceof Error ? error : new Error(String(error))));
+  }
+}
+
+export function* listGitHubBranchesWorker(action: ReturnType<typeof listGitHubBranchesRequested>) {
+  try {
+    const [owner, repo, prefix] = action.payload;
+    const key = prefix ?? '';
+    yield* put(setGitHubBranchListingLoading(owner, repo, key));
+    const result = yield* prefix
+      ? call([appClient.integrations, appClient.integrations.githubBranches], owner, repo, prefix)
+      : call([appClient.integrations, appClient.integrations.githubBranches], owner, repo);
+    yield* put(
+      setGitHubBranchListing(owner, repo, key, result.branches, result.defaultBranch ?? ''),
+    );
+    yield* put(action.success(result));
+  } catch (error) {
+    const [owner, repo, prefix] = action.payload;
+    yield* put(setGitHubBranchListingError(owner, repo, prefix ?? '', String(error)));
+    action.promise.catch(() => {});
+    yield* put(action.failure(error instanceof Error ? error : new Error(String(error))));
+  }
+}
+
+function* loadCachedGitHubBranchesWorker(owner: string, repo: string) {
+  try {
+    const result = yield* call(
+      [appClient.integrations, appClient.integrations.githubBranchesCached],
+      owner,
+      repo,
+    );
+    yield* put(
+      setGitHubBranchListing(
+        owner,
+        repo,
+        'cached',
+        result.branches,
+        result.defaultBranch ?? '',
+        result.source,
+      ),
+    );
+  } catch (error) {
+    yield* put(setGitHubBranchListingError(owner, repo, 'cached', String(error)));
+  }
+}
+
+function* loadWorkspaceInitializerGitHubBranchesWorker(
+  action: ReturnType<typeof loadWorkspaceInitializerGitHubBranches>,
+) {
+  const [owner, repo, forceRefresh, cacheEnabled, networkDelayMs] = action.payload;
+  yield* delay(BRANCH_LOAD_DEBOUNCE_MS);
+  if (networkDelayMs && networkDelayMs > 0) yield* delay(networkDelayMs);
+
+  const cacheKey = JSON.stringify([owner, repo]);
+  if (forceRefresh) githubBranchLoadCache.delete(cacheKey);
+  const cached = githubBranchLoadCache.get(cacheKey);
+  if (
+    cacheEnabled &&
+    !forceRefresh &&
+    cached &&
+    Date.now() - cached.timestamp < BRANCH_CACHE_DURATION_MS
+  ) {
+    yield* put(setGitHubBranchListing(owner, repo, 'cached', [], ''));
+    yield* put(setGitHubBranchListing(owner, repo, '', cached.branches, cached.defaultBranch));
+    return;
+  }
+
+  yield* fork(loadCachedGitHubBranchesWorker, owner, repo);
+  try {
+    const result = yield* call(
+      [appClient.integrations, appClient.integrations.githubBranches],
+      owner,
+      repo,
+    );
+    const defaultBranch = result.defaultBranch ?? '';
+    if (cacheEnabled) {
+      githubBranchLoadCache.set(cacheKey, {
+        branches: result.branches,
+        defaultBranch,
+        timestamp: Date.now(),
+      });
+    }
+    yield* put(setGitHubBranchListing(owner, repo, '', result.branches, defaultBranch));
+  } catch (error) {
+    yield* put(setGitHubBranchListingError(owner, repo, '', String(error)));
+  }
+}
+
+function* searchWorkspaceInitializerGitHubBranchesWorker(
+  action: ReturnType<typeof searchWorkspaceInitializerGitHubBranches>,
+) {
+  const [owner, repo, prefix] = action.payload;
+  if (!prefix) return;
+  yield* delay(BRANCH_SEARCH_DEBOUNCE_MS);
+  try {
+    const result = yield* call(
+      [appClient.integrations, appClient.integrations.githubBranches],
+      owner,
+      repo,
+      prefix,
+    );
+    yield* put(
+      setGitHubBranchListing(owner, repo, prefix, result.branches, result.defaultBranch ?? ''),
+    );
+  } catch (error) {
+    yield* put(setGitHubBranchListingError(owner, repo, prefix, String(error)));
+  }
+}
+
+function* createWorkspaceFromInitializerWorker(
+  action: ReturnType<typeof createWorkspaceFromInitializerRequested>,
+) {
+  action.promise.catch(() => {});
+  try {
+    yield* put(
+      action.success(yield* call([workspaceClient, workspaceClient.create], action.payload[0])),
+    );
+  } catch (error) {
+    yield* put(action.failure(error instanceof Error ? error : new Error(String(error))));
+  }
+}
+
+function* setInitialAgentReasoningEffortWorker(
+  action: ReturnType<typeof setInitialAgentReasoningEffortRequested>,
+) {
+  action.promise.catch(() => {});
+  try {
+    const [agentId, workspaceId, reasoningEffort] = action.payload;
+    const result = yield* call([appClient.agents, appClient.agents.setReasoningEffort], {
+      agentId,
+      workspaceId,
+      reasoningEffort,
+    });
+    if (!result.success) throw new Error(result.error || 'Failed to set reasoning effort');
+    yield* put(action.success(undefined));
+  } catch (error) {
+    yield* put(action.failure(error instanceof Error ? error : new Error(String(error))));
+  }
+}
+
+function* connectGitHubForInitializerWorker(
+  action: ReturnType<typeof connectGitHubForInitializerRequested>,
+) {
+  try {
+    yield* put(initializeGitHubAuth());
+    yield* put(startGitHubAuth());
+    const outcome = yield* race({
+      completed: take(authCompleted),
+      failed: take(setGitHubAuthError),
+      cancelled: take(authCancelled),
+      timeout: delay(5 * 60 * 1000),
+    });
+    if (outcome.completed) {
+      yield* put(action.success(undefined));
+    } else if (outcome.failed) {
+      throw new Error(outcome.failed.payload[0] || 'GitHub authentication failed');
+    } else if (outcome.cancelled) {
+      throw new Error('GitHub authentication cancelled');
+    } else {
+      throw new Error('GitHub authentication timed out');
+    }
+  } catch (error) {
+    yield* put(action.failure(error instanceof Error ? error : new Error(String(error))));
+  }
+}
+
+function* readWorkspaceInitializerDirectoryStatusWorker(
+  action: ReturnType<typeof readWorkspaceInitializerDirectoryStatusRequested>,
+) {
+  action.promise.catch(() => {});
+  try {
+    yield* delay(300);
+    const result = (yield* call(invoke, 'file:getDirectoryStatus', {
+      path: action.payload[0],
+    })) as {
+      success: boolean;
+      data?: {
+        exists: boolean;
+        isDirectory: boolean;
+        isEmpty: boolean;
+        isGitRepo: boolean;
+      };
+    };
+    yield* put(action.success(result.success && result.data ? result.data : null));
+  } catch (error) {
+    yield* put(action.failure(error instanceof Error ? error : new Error(String(error))));
+  }
+}
+
+export function* readWorkspaceInitializerPullRequestWorker(
+  action: ReturnType<typeof readWorkspaceInitializerPullRequestRequested>,
+) {
+  action.promise.catch(() => {});
+  try {
+    const [owner, repo, number] = action.payload;
+    const result = (yield* call(invoke, 'git-tracking:get-pull-request', {
+      owner,
+      repo,
+      number,
+    })) as { success: boolean; data?: { sourceBranch?: string; targetBranch?: string } };
+    yield* put(
+      action.success(
+        result.success && result.data?.sourceBranch
+          ? { sourceBranch: result.data.sourceBranch, targetBranch: result.data.targetBranch }
+          : null,
+      ),
+    );
+  } catch (error) {
+    yield* put(action.failure(error instanceof Error ? error : new Error(String(error))));
+  }
+}
+
+export function* readWorkspaceInitializerGitRemoteWorker(
+  action: ReturnType<typeof readWorkspaceInitializerGitRemoteRequested>,
+) {
+  action.promise.catch(() => {});
+  try {
+    const result = (yield* call(invoke, 'git-tracking:get-remote-url', {
+      repoPath: action.payload[0],
+    })) as { success: boolean; data?: { owner?: string; repo?: string } };
+    yield* put(
+      action.success(
+        result.success && result.data?.owner && result.data.repo
+          ? { owner: result.data.owner, repo: result.data.repo }
+          : null,
+      ),
+    );
+  } catch (error) {
+    yield* put(action.failure(error instanceof Error ? error : new Error(String(error))));
+  }
+}
+
+export function* readWorkspaceInitializerGitAvailabilityWorker(
+  action: ReturnType<typeof readWorkspaceInitializerGitAvailabilityRequested>,
+) {
+  action.promise.catch(() => {});
+  try {
+    const result = (yield* call(invoke, SYSTEM_CHANNELS.CHECK_GIT)) as {
+      success: boolean;
+      data?: { available: boolean | 'unknown'; version?: string };
+    };
+    yield* put(action.success(result.success && result.data ? result.data : null));
+  } catch (error) {
+    yield* put(action.failure(error instanceof Error ? error : new Error(String(error))));
+  }
+}
+
+function* readWorkspaceInitializerProviderAvailabilityWorker(
+  action: ReturnType<typeof readWorkspaceInitializerProviderAvailabilityRequested>,
+) {
+  action.promise.catch(() => {});
+  try {
+    yield* put(action.success(yield* call(getProviderAvailability)));
+  } catch (error) {
+    yield* put(action.failure(error instanceof Error ? error : new Error(String(error))));
+  }
+}
+
+function* runWorkspaceInitializerProviderTestWorker(
+  action: ReturnType<typeof runWorkspaceInitializerProviderTestRequested>,
+) {
+  action.promise.catch(() => {});
+  try {
+    const [, providerId, model] = action.payload;
+    yield* put(
+      action.success(
+        yield* call(runProviderTestPrompt, { providerId, ...(model ? { model } : {}) }),
+      ),
+    );
+  } catch (error) {
+    yield* put(action.failure(error instanceof Error ? error : new Error(String(error))));
+  }
+}
+
+function* enhanceWorkspaceInitializerPromptWorker(
+  action: ReturnType<typeof enhanceWorkspaceInitializerPromptRequested>,
+) {
+  action.promise.catch(() => {});
+  try {
+    yield* put(action.success(yield* call(enhancePrompt, action.payload[1])));
+  } catch (error) {
+    yield* put(action.failure(error instanceof Error ? error : new Error(String(error))));
+  }
+}
+
+function* resolveWorkspaceInitializerModelWorker(
+  action: ReturnType<typeof resolveWorkspaceInitializerModelRequested>,
+) {
+  action.promise.catch(() => {});
+  try {
+    const state = yield* select();
+    const [, model, provider] = action.payload;
+    yield* put(
+      action.success(
+        yield* call(
+          resolveOnboardingModel,
+          state,
+          model ? { model, ...(provider ? { provider } : {}) } : undefined,
+        ),
+      ),
+    );
+  } catch (error) {
+    yield* put(action.failure(error instanceof Error ? error : new Error(String(error))));
+  }
+}
+
+function* pullWorkspaceInitializerRepositoryWorker(
+  action: ReturnType<typeof pullWorkspaceInitializerRepositoryRequested>,
+) {
+  action.promise.catch(() => {});
+  try {
+    const [, repoPath, branchName] = action.payload;
+    yield* put(
+      action.success(yield* call([appClient.git, appClient.git.pull], repoPath, branchName)),
+    );
+  } catch (error) {
+    yield* put(action.failure(error instanceof Error ? error : new Error(String(error))));
+  }
+}
+
+export function* addWorkspaceInitializerRecentRepositoryWorker(
+  action: ReturnType<typeof addWorkspaceInitializerRecentRepositoryRequested>,
+) {
+  try {
+    yield* call(invoke, WORKSPACE_CHANNELS.ADD_RECENT_REPOSITORY, action.payload[0]);
+    yield* put(action.success(undefined));
+  } catch (error) {
+    yield* put(action.failure(error instanceof Error ? error : new Error(String(error))));
+  }
+}
+
+export function* openWorkspaceInitializerExternalUrlWorker(
+  action: ReturnType<typeof openWorkspaceInitializerExternalUrlRequested>,
+) {
+  try {
+    yield* call(invoke, SHELL_CHANNELS.OPEN_EXTERNAL, { url: action.payload[0] });
+    yield* put(action.success(undefined));
+  } catch (error) {
+    yield* put(action.failure(error instanceof Error ? error : new Error(String(error))));
+  }
+}
+
 function* watchWorkspaceInitializerPersistence(gate: HydrationGate) {
   const channel = yield* actionChannel(
     [
@@ -333,9 +974,87 @@ function* watchWorkspaceInitializerPersistence(gate: HydrationGate) {
 /** Unregistered until the S20 middleware cutover. */
 export function* workspaceInitializerSaga() {
   const gate: HydrationGate = { settled: false, queued: false };
+  const draftContext: DraftPersistenceContext = { restoreFailed: true, pending: null };
   const persistenceTask = yield* fork(watchWorkspaceInitializerPersistence, gate);
   yield* fork(watchDebouncedOnboardingForm);
   yield* fork(watchOnboardingReset);
+  yield* takeLatest(
+    saveNewWorkspaceDraftRequested,
+    saveNewWorkspaceDraftDebouncedWorker,
+    draftContext,
+  );
+  yield* takeEvery(flushNewWorkspaceDraftRequested, flushNewWorkspaceDraftWorker, draftContext);
+  yield* takeEvery(
+    clearNewWorkspaceDraftRequested,
+    clearNewWorkspaceDraftRequestWorker,
+    draftContext,
+  );
+  yield* takeEvery(restoreNewWorkspaceDraftRequested, restoreNewWorkspaceDraftWorker, draftContext);
+  yield* takeEvery(generateWorkspaceSetupScriptRequested, generateWorkspaceSetupScriptWorker);
+  yield* takeEvery(
+    listInitializerSpecialistPreviewsRequested,
+    listInitializerSpecialistPreviewsWorker,
+  );
+  yield* takeEvery(listGitHubBranchesCachedRequested, listGitHubBranchesCachedWorker);
+  yield* takeEvery(listGitHubBranchesRequested, listGitHubBranchesWorker);
+  yield* takeLatestInContext(
+    loadWorkspaceInitializerGitHubBranches,
+    (action) => JSON.stringify(action.payload.slice(0, 2)),
+    loadWorkspaceInitializerGitHubBranchesWorker,
+  );
+  yield* takeLatestInContext(
+    searchWorkspaceInitializerGitHubBranches,
+    (action) => JSON.stringify(action.payload.slice(0, 2)),
+    searchWorkspaceInitializerGitHubBranchesWorker,
+  );
+  yield* takeEvery(readWorkspaceInitializerPrefillRequested, readWorkspacePrefillWorker);
+  yield* takeEvery(createWorkspaceFromInitializerRequested, createWorkspaceFromInitializerWorker);
+  yield* takeEvery(setInitialAgentReasoningEffortRequested, setInitialAgentReasoningEffortWorker);
+  yield* takeEvery(connectGitHubForInitializerRequested, connectGitHubForInitializerWorker);
+  yield* takeLatest(
+    readWorkspaceInitializerDirectoryStatusRequested,
+    readWorkspaceInitializerDirectoryStatusWorker,
+  );
+  yield* takeEvery(
+    readWorkspaceInitializerPullRequestRequested,
+    readWorkspaceInitializerPullRequestWorker,
+  );
+  yield* takeEvery(
+    readWorkspaceInitializerGitRemoteRequested,
+    readWorkspaceInitializerGitRemoteWorker,
+  );
+  yield* takeEvery(
+    readWorkspaceInitializerGitAvailabilityRequested,
+    readWorkspaceInitializerGitAvailabilityWorker,
+  );
+  yield* takeEvery(
+    addWorkspaceInitializerRecentRepositoryRequested,
+    addWorkspaceInitializerRecentRepositoryWorker,
+  );
+  yield* takeEvery(
+    openWorkspaceInitializerExternalUrlRequested,
+    openWorkspaceInitializerExternalUrlWorker,
+  );
+  yield* takeEvery(
+    readWorkspaceInitializerProviderAvailabilityRequested,
+    readWorkspaceInitializerProviderAvailabilityWorker,
+  );
+  yield* takeEvery(
+    runWorkspaceInitializerProviderTestRequested,
+    runWorkspaceInitializerProviderTestWorker,
+  );
+  yield* takeEvery(
+    enhanceWorkspaceInitializerPromptRequested,
+    enhanceWorkspaceInitializerPromptWorker,
+  );
+  yield* takeEvery(
+    resolveWorkspaceInitializerModelRequested,
+    resolveWorkspaceInitializerModelWorker,
+  );
+  yield* takeEvery(
+    pullWorkspaceInitializerRepositoryRequested,
+    pullWorkspaceInitializerRepositoryWorker,
+  );
 
   const hydrated = yield* call(hydrateWorkspaceInitializerWorker);
   gate.settled = true;

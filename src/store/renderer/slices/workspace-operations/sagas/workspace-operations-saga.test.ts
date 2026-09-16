@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   deleteWorkspace: vi.fn(),
   cancelDelete: vi.fn(),
   create: vi.fn(),
+  update: vi.fn(),
   navigate: vi.fn(),
   navigateToRoute: vi.fn(),
   getActiveWorkNames: vi.fn(),
@@ -21,6 +22,7 @@ vi.mock('../../workspace/utils/workspace.client', () => ({
     delete: mocks.deleteWorkspace,
     cancelDelete: mocks.cancelDelete,
     create: mocks.create,
+    update: mocks.update,
   },
 }));
 vi.mock('$features/workspace/navigate-away-if-viewing', () => ({
@@ -49,6 +51,7 @@ import {
   initialState as workspaceInitialState,
   replaceWorkspaceList,
   setWorkspaceEntity,
+  updateWorkspaceRequested,
   workspaceReducer,
 } from '../../workspace/workspace-slice';
 import {
@@ -66,6 +69,7 @@ import {
   requestArchiveWorkspace,
   requestDeleteWorkspace,
   requestUnarchiveWorkspace,
+  startPostMergeWorkspaceRequested,
   workspaceOperationsReducer,
 } from '../workspace-operations-slice';
 import { TOAST_COUNTDOWN_CLASS } from '$lib/components/patterns/notify';
@@ -148,7 +152,14 @@ function latestUndo(): (() => void) | undefined {
   return options?.action?.onClick;
 }
 
-function harness(seed: Workspace[], bundledSpecialists: Specialist[] = []) {
+function harness(
+  seed: Workspace[],
+  loopbackSagaDispatchOrSpecialists: boolean | Specialist[] = false,
+) {
+  const loopbackSagaDispatch = loopbackSagaDispatchOrSpecialists === true;
+  const bundledSpecialists = Array.isArray(loopbackSagaDispatchOrSpecialists)
+    ? loopbackSagaDispatchOrSpecialists
+    : [];
   const channel = stdChannel();
   let workspaceState = workspaceInitialState;
   for (const item of seed)
@@ -160,6 +171,7 @@ function harness(seed: Workspace[], bundledSpecialists: Specialist[] = []) {
     workspaceState = workspaceReducer(workspaceState, action);
     operations = workspaceOperationsReducer(operations, action);
     proposalLifecycle = proposalLifecycleReducer(proposalLifecycle, action);
+    if (loopbackSagaDispatch) channel.put(action);
     return action;
   });
   const task = runSaga(
@@ -178,7 +190,7 @@ function harness(seed: Workspace[], bundledSpecialists: Specialist[] = []) {
   );
   const send = (action: Parameters<typeof workspaceOperationsReducer>[1]) => {
     dispatch(action);
-    channel.put(action);
+    if (!loopbackSagaDispatch) channel.put(action);
   };
   return {
     channel,
@@ -199,7 +211,25 @@ describe('workspaceOperationsSaga', () => {
     mocks.getActiveWorkNames.mockResolvedValue(noActiveWork);
     mocks.navigate.mockResolvedValue(undefined);
   });
-  afterEach(() => vi.useRealTimers());
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it('updates a workspace with the exact request and stores the protocol response', async () => {
+    const updated = { ...workspace('ws-1'), title: 'Updated' };
+    mocks.update.mockResolvedValue({ ok: true, data: updated });
+    const run = harness([workspace('ws-1')]);
+    const request = updateWorkspaceRequested('ws-1', { title: 'Updated' });
+
+    run.channel.put(request);
+    await vi.waitFor(() => expect(run.dispatch).toHaveBeenCalledWith(request.success(updated)));
+
+    expect(mocks.update).toHaveBeenCalledWith({ id: 'ws-1', title: 'Updated' });
+    expect(getItem(run.state().workspace.workspaces, 'ws-1')).toEqual(updated);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
 
   it('uses the exact archive wire call and reports a failed result without updating state', async () => {
     mocks.archive
@@ -222,6 +252,59 @@ describe('workspaceOperationsSaga', () => {
     run.task.cancel();
     await run.task.toPromise();
   });
+
+  it('archives before persisting a safe post-merge prefill and opening the create modal', async () => {
+    const sessionStorage = { setItem: vi.fn() };
+    vi.stubGlobal('sessionStorage', sessionStorage);
+    mocks.archive.mockResolvedValue({
+      ok: true,
+      data: workspace('ws-1', WorkspaceStatusEnum.Archived),
+    });
+    const run = harness([workspace('ws-1')], true);
+
+    run.send(startPostMergeWorkspaceRequested('ws-1', '/repo', '/worktrees/ws-1'));
+
+    await vi.waitFor(() => expect(mocks.archive).toHaveBeenCalledExactlyOnceWith('ws-1'));
+    await vi.waitFor(() =>
+      expect(sessionStorage.setItem).toHaveBeenCalledWith(
+        'workspace-prefill',
+        JSON.stringify({ repoPath: '/repo' }),
+      ),
+    );
+    expect(run.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'sidebarNav/setShowCreateModal', payload: [true] }),
+    );
+    run.task.cancel();
+    await run.task.toPromise();
+    vi.unstubAllGlobals();
+  });
+
+  it.each([
+    ['/workspaces/ws-1/repo', '/workspaces/ws-1/repo'],
+    ['/workspaces/.repo-cache/owner/repo', '/worktrees/ws-1'],
+  ])(
+    'does not persist unsafe post-merge repository path %s',
+    async (repositoryPath, worktreePath) => {
+      const sessionStorage = { setItem: vi.fn() };
+      vi.stubGlobal('sessionStorage', sessionStorage);
+      mocks.archive.mockResolvedValue({
+        ok: true,
+        data: workspace('ws-1', WorkspaceStatusEnum.Archived),
+      });
+      const run = harness([workspace('ws-1')], true);
+
+      run.send(startPostMergeWorkspaceRequested('ws-1', repositoryPath, worktreePath));
+
+      await vi.waitFor(() =>
+        expect(run.dispatch).toHaveBeenCalledWith(
+          expect.objectContaining({ type: 'sidebarNav/setShowCreateModal', payload: [true] }),
+        ),
+      );
+      expect(sessionStorage.setItem).not.toHaveBeenCalled();
+      run.task.cancel();
+      await run.task.toPromise();
+    },
+  );
 
   it('archives a repository concurrently with all-settled partial failure accounting', async () => {
     mocks.archive

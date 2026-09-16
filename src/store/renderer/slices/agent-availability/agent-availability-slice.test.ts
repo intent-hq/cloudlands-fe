@@ -2,10 +2,13 @@ import { describe, expect, it } from 'vitest';
 import {
   agentAvailabilityReducer,
   checkAllProvidersComplete,
+  checkAllProvidersRequested,
   checkSingleProviderFailure,
   checkSingleProviderRequested,
   checkSingleProviderSuccess,
   initialState,
+  providerAvailabilitySummaryFailed,
+  providerAvailabilitySummaryLoaded,
   setAllProvidersLoading,
 } from './agent-availability-slice';
 import type { AgentAvailabilityState } from './agent-availability-types';
@@ -88,5 +91,28 @@ describe('agentAvailabilityReducer hasCheckedOnce honesty', () => {
     };
     const next = agentAvailabilityReducer(state, checkAllProvidersComplete());
     expect(next).toBe(state);
+  });
+});
+
+describe('agentAvailabilityReducer aggregate results', () => {
+  it('stores the daemon hidden-provider verdict and clears an old error', () => {
+    const failed = agentAvailabilityReducer(
+      initialState,
+      providerAvailabilitySummaryFailed('transport down'),
+    );
+    const loaded = agentAvailabilityReducer(failed, providerAvailabilitySummaryLoaded(['grok']));
+
+    expect(loaded.hiddenProviderIds).toEqual(['grok']);
+    expect(loaded.availabilityError).toBeNull();
+  });
+
+  it('clears an aggregate error when a new sweep starts', () => {
+    const failed = agentAvailabilityReducer(
+      initialState,
+      providerAvailabilitySummaryFailed('transport down'),
+    );
+    const retried = agentAvailabilityReducer(failed, checkAllProvidersRequested(true));
+
+    expect(retried.availabilityError).toBeNull();
   });
 });

@@ -12,7 +12,7 @@ import {
   selectAvailableEnabledProviderIds,
 } from '../provider-settings/provider-settings-selectors';
 import { resolveDefaultModel } from './model-selection-utils';
-import type { ModelLoadingState } from './model-types';
+import type { AgentModelUpdateOperation, ModelLoadingState } from './model-types';
 import { selectEffectiveDefaultProviderId } from '../provider-catalog/provider-catalog-selectors';
 
 function getEffectiveProviderId(state: any, providerId?: string): string {
@@ -105,6 +105,10 @@ const selectProviderLoadingState = store.createSelector(
   },
 );
 
+export const selectAllProviderLoadingStates = store.createSelector(
+  (state): Record<string, ModelLoadingState> => state.model.loadingState,
+);
+
 export const selectIsLoadingModels = store.createSelector((state, providerId?: string): boolean => {
   return selectProviderLoadingState.select(state, providerId)?.status === 'loading';
 });
@@ -147,6 +151,18 @@ export const selectAllProviderStaleFlags = store.createSelector(
 
     return stale;
   },
+);
+
+const IDLE_AGENT_MODEL_UPDATE: AgentModelUpdateOperation = {
+  status: 'idle',
+  requestId: 0,
+  model: null,
+  error: null,
+};
+
+export const selectAgentModelUpdate = store.createSelector(
+  (state, agentId?: string): AgentModelUpdateOperation =>
+    (agentId ? state.model.agentModelUpdates?.[agentId] : undefined) ?? IDLE_AGENT_MODEL_UPDATE,
 );
 
 /** Select all provider models */

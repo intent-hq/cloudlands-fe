@@ -1,4 +1,6 @@
 import type { LinearIssueResult } from '$features/linear-auth/renderer/linear-auth.client';
+import type { LinearIssueFilter } from '$features/linear-auth/constants';
+import type { Collection } from '@augmentcode/themis/utils/collections/collection-utils';
 
 export type LinearAuthSliceState = {
   /** Whether user is authenticated with Linear via the daemon */
@@ -12,7 +14,11 @@ export type LinearAuthSliceState = {
   /** Error message if any */
   error: string | null;
   /** Cached issues for the current user */
-  issues: LinearIssueResult[];
+  issues: Collection<LinearIssueResult, 'id'>;
   /** Whether issues are being loaded */
   isLoadingIssues: boolean;
+  /** FE-local issue filter persisted by the auth saga. */
+  issueFilter: LinearIssueFilter;
+  /** Whether the persisted issue filter has been hydrated. */
+  issueFilterLoaded: boolean;
 };

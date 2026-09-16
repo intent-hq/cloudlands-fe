@@ -161,6 +161,8 @@ export interface HudCapturedQuestion {
 export interface HudState {
   /** Whether the HUD subscription is running (feed only accumulates then). */
   active: boolean;
+  /** Native/DOM full-screen state for the standalone HUD window. */
+  fullScreen: boolean;
   /** Live feed ring buffer, newest first, capped at HUD_FEED_LIMIT. */
   feed: HudFeedEntry[];
   /** Live attention flags from `workspace:attention-changed`; "none" clears. */
@@ -191,6 +193,7 @@ export const HUD_FEED_LIMIT = 50;
 
 export const initialState: HudState = {
   active: false,
+  fullScreen: false,
   feed: [],
   attentionByWorkspaceId: {},
   displayStatusByWorkspaceId: {},
@@ -210,6 +213,9 @@ export const initialState: HudState = {
 
 export const hudActivated = createAction('hud/activated');
 export const hudDeactivated = createAction('hud/deactivated');
+export const hudFullScreenRequested =
+  createAction<[fullScreen: boolean]>('hud/fullScreenRequested');
+export const hudFullScreenChanged = createAction<[fullScreen: boolean]>('hud/fullScreenChanged');
 export const hudFeedEntryReceived = createAction<[entry: HudFeedEntry]>('hud/feedEntryReceived');
 export const hudAttentionChanged =
   createAction<[workspaceId: string, attention: string, raisedAtTs: string]>(
@@ -316,6 +322,10 @@ export function computeBurnRatePerMin(samples: readonly HudRateHistorySample[]):
 export const hudReducer = createReducer<HudState>(initialState);
 hudReducer.with(hudActivated, () => ({ ...initialState, active: true }));
 hudReducer.with(hudDeactivated, () => initialState);
+hudReducer.with(hudFullScreenChanged, (state, { payload: [fullScreen] }) => ({
+  ...state,
+  fullScreen,
+}));
 hudReducer.with(hudFeedEntryReceived, (state, { payload: [entry] }) => {
   if (!state.active) return state;
   if (state.feed.some((existing) => existing.id === entry.id)) return state;

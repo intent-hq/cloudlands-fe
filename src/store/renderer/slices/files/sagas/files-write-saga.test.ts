@@ -2,6 +2,7 @@ import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { appClient } from '$lib/client';
+import { invoke } from '$lib/electron-bridge';
 import { createFileRequested } from '../../app-layout/app-layout-slice';
 import {
   fileExplorerReducer,
@@ -13,11 +14,18 @@ import { openWorkspaceFile } from '../../workspace-navigation/workspace-navigati
 import { selectFileContentEntry } from '../files-selectors';
 import {
   filesReducer,
+  deleteLegacyFileRequested,
+  downloadLegacyFileRequested,
   loadFileContentSucceeded,
+  openLegacyFileRequested,
+  readLegacyFileRequested,
+  revealLegacyFileRequested,
   saveFileContentFailed,
   saveFileContentRequested,
   saveFileContentSucceeded,
+  saveLegacyFileRequested,
   updateFileContent,
+  writeLegacyFileRequested,
 } from '../files-slice';
 import { FILE_CONTENT_SAVE_DEBOUNCE_MS, filesWriteSaga } from './files-write-saga';
 
@@ -25,6 +33,11 @@ const settle = async () => {
   await Promise.resolve();
   await Promise.resolve();
 };
+
+vi.mock('$lib/electron-bridge', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('$lib/electron-bridge')>();
+  return { ...actual, invoke: vi.fn() };
+});
 
 describe('filesWriteSaga', () => {
   afterEach(() => {
@@ -56,6 +69,53 @@ describe('filesWriteSaga', () => {
     expect(actions).toEqual([
       refreshDirectoryRequested('ws-1', '/repo/src/new.ts'),
       openWorkspaceFile('ws-1', '/repo/src/new.ts'),
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('owns legacy explorer IPC requests and maps their results', async () => {
+    vi.mocked(invoke).mockImplementation(async (channel) => {
+      if (channel === 'file:open') return { success: true, content: 'opened' } as never;
+      if (channel === 'file:read') return { content: 'saved' } as never;
+      if (channel === 'file:download') {
+        return { success: true, data: { filePath: '/tmp/copy.ts' } } as never;
+      }
+      return { success: true } as never;
+    });
+    const channel = stdChannel();
+    const actions: unknown[] = [];
+    const task = runSaga({ channel, dispatch: (action) => actions.push(action) }, filesWriteSaga);
+    const open = openLegacyFileRequested('ws-1', '/repo/a.ts');
+    const save = saveLegacyFileRequested('ws-1', '/repo/a.ts', 'edited');
+    const read = readLegacyFileRequested('/repo/a.ts');
+    const remove = deleteLegacyFileRequested('ws-1', '/repo/a.ts');
+    const write = writeLegacyFileRequested('ws-1', '/repo/a.ts', 'saved');
+    const download = downloadLegacyFileRequested('/repo/a.ts');
+    const reveal = revealLegacyFileRequested('/repo/a.ts');
+
+    for (const action of [open, save, read, remove, write, download, reveal]) {
+      channel.put(action);
+      await settle();
+    }
+
+    expect(vi.mocked(invoke).mock.calls).toEqual([
+      ['file:open', { path: '/repo/a.ts', workspaceId: 'ws-1' }],
+      ['file:save', { filePath: '/repo/a.ts', content: 'edited', workspaceId: 'ws-1' }],
+      ['file:read', { path: '/repo/a.ts' }],
+      ['file:delete', { path: '/repo/a.ts', workspaceId: 'ws-1' }],
+      ['file:write', { path: '/repo/a.ts', content: 'saved', workspaceId: 'ws-1' }],
+      ['file:download', { path: '/repo/a.ts' }],
+      ['shell:showItemInFolder', { path: '/repo/a.ts' }],
+    ]);
+    expect(actions).toEqual([
+      open.success('opened'),
+      save.success(undefined as never),
+      read.success('saved'),
+      remove.success(undefined as never),
+      write.success(undefined as never),
+      download.success({ success: true, filePath: '/tmp/copy.ts' }),
+      reveal.success(undefined as never),
     ]);
     task.cancel();
     await task.toPromise();

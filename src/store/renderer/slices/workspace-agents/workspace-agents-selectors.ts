@@ -4,6 +4,7 @@ import { classifyAgentScope } from '$shared/utils/agent-scope';
 import type { StoreState } from '../../types';
 import { selectAgentSession } from '../agent-session/agent-session-selectors';
 import { emptyWorkspaceAgentState } from './workspace-agents-slice';
+import { getItem } from '@augmentcode/themis/utils/collections/collection-utils';
 
 function getWorkspaceAgentState(state: StoreState, wsId: string) {
   return state.workspaceAgents.byWorkspaceId[wsId] ?? emptyWorkspaceAgentState;
@@ -75,6 +76,20 @@ export const selectAgentsLoaded = store.createSelector((state, wsId: string) => 
 export const selectIsLoadingAgents = store.createSelector((state, wsId: string) => {
   return getWorkspaceAgentState(state, wsId).isLoadingAgents;
 });
+
+export const selectAgentCreationRequest = store.createSelector(
+  (state, wsId: string | undefined, requestId: string | undefined) => {
+    if (!wsId || !requestId) return undefined;
+    return getItem(getWorkspaceAgentState(state, wsId).creationRequests, requestId);
+  },
+);
+
+export const selectAgentRestorationRequest = store.createSelector(
+  (state, wsId: string | undefined, requestId: string | undefined) => {
+    if (!wsId || !requestId) return undefined;
+    return getItem(getWorkspaceAgentState(state, wsId).restorationRequests, requestId);
+  },
+);
 
 /** Daemon-served retired-row count (§5.5 soft retire) for the Retired bin toggle. */
 export const selectRetiredCount = store.createSelector((state, wsId: string) => {

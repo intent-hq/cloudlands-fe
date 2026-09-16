@@ -210,7 +210,7 @@ describe('providerAvailabilitySaga', () => {
     const npx = { resolvedPath: '/usr/bin/npx', version: '10.0.0', versionOk: true };
     mocks.invoke.mockImplementation((channel: string, providerId?: string) => {
       if (channel === 'providers:get-availability') {
-        return Promise.resolve({ success: true, data: { npx } });
+        return Promise.resolve({ success: true, data: { hiddenProviders: ['grok'], npx } });
       }
       return new Promise((resolve) => {
         resolvers.set(providerId!, resolve);
@@ -231,6 +231,10 @@ describe('providerAvailabilitySaga', () => {
       {
         type: 'agentAvailability/setAllProvidersLoading',
         payload: [Object.fromEntries(ids.map((id) => [id, true]))],
+      },
+      {
+        type: 'agentAvailability/providerAvailabilitySummaryLoaded',
+        payload: [['grok']],
       },
       {
         type: 'agentAvailability/setNpxStatus',
@@ -262,6 +266,56 @@ describe('providerAvailabilitySaga', () => {
       type: 'agentAvailability/checkAllProvidersComplete',
       payload: [],
     });
+  });
+
+  it('refreshes models after a requested availability sweep settles', async () => {
+    let emit!: (payload: { status: string }) => void;
+    window.electronAPI = {
+      ...originalElectronApi,
+      on: vi.fn((_channel, handler) => {
+        emit = handler;
+        return 'provider-listener';
+      }),
+      offById: vi.fn(),
+    };
+    mocks.invoke.mockImplementation((channel: string) => {
+      if (channel === 'providers:get-availability') {
+        return Promise.resolve({ success: true, data: { hiddenProviders: [] } });
+      }
+      return Promise.resolve({ success: false });
+    });
+    const channel = stdChannel();
+    const dispatched: Array<{ type: string }> = [];
+    const task = runSaga(
+      {
+        channel,
+        dispatch: (action) => {
+          dispatched.push(action);
+          channel.put(action);
+        },
+        getState: () => ({ agentAvailability: initialState }),
+      },
+      providerAvailabilitySaga,
+    );
+    await settle();
+
+    channel.put(checkAllProvidersRequested(true));
+    await vi.waitFor(() =>
+      expect(dispatched.some((action) => action.type === 'model/reloadModelsForProvider')).toBe(
+        true,
+      ),
+    );
+
+    const completeIndex = dispatched.findIndex(
+      (action) => action.type === 'agentAvailability/checkAllProvidersComplete',
+    );
+    const reloadIndex = dispatched.findIndex(
+      (action) => action.type === 'model/reloadModelsForProvider',
+    );
+    expect(reloadIndex).toBeGreaterThan(completeIndex);
+    task.cancel();
+    await task.toPromise();
+    void emit;
   });
 
   it('discards a stale in-flight probe result superseded by a newer successful check', async () => {

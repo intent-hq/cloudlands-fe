@@ -31,6 +31,18 @@ import type {
 import { m } from '$shared/paraglide/messages.js';
 import { formatInteger, formatNumber } from '$lib/i18n/format';
 import { getPrChipLabel } from '$lib/utils/pr-chip-label';
+import type { WorkspaceMutationState } from './workspace-slice';
+
+const emptyWorkspaceMutation: WorkspaceMutationState = {
+  loading: false,
+  error: null,
+  version: 0,
+};
+
+export const selectWorkspaceMutation = store.createSelector(
+  (state, workspaceId: string, scope: string): WorkspaceMutationState =>
+    state.workspace.mutations[`${workspaceId}:${scope}`] ?? emptyWorkspaceMutation,
+);
 
 export const selectWorkspaceLoading = store.createSelector((state) => {
   return state.workspace.loading;

@@ -60,6 +60,34 @@ import { getLastMeaningfulLine } from '$lib/utils/text-utils';
 import { selectHardwareConsoleKeySlots } from '../hardware-console/hardware-console-selectors';
 
 export const selectHudActive = store.createSelector((state) => state.hud.active);
+export const selectHudFullScreen = store.createSelector((state) => state.hud.fullScreen);
+
+/** Raw workspace collection watched by the HUD saga for newly visible workspaces. */
+export const selectHudWorkspaceCollection = store.createSelector(
+  (state) => state.workspace.workspaces,
+);
+
+export const selectHudConnectionsReady = store.createSelector(
+  (state) => state.connections.hasReceivedList,
+);
+
+export const selectHudAgentDisplayName = store.createSelector(
+  (state, agentId: string): string | undefined => {
+    const sessionName = state.agentSessions.byAgentId[agentId]?.name;
+    if (typeof sessionName === 'string' && sessionName.length > 0) return sessionName;
+    for (const workspace of getItems(state.workspace.workspaces)) {
+      const agents = (workspace.agentSummary as { agents?: unknown } | undefined)?.agents;
+      if (!Array.isArray(agents)) continue;
+      for (const agent of agents) {
+        const candidate = agent as { id?: unknown; name?: unknown };
+        if (candidate.id === agentId && typeof candidate.name === 'string' && candidate.name) {
+          return candidate.name;
+        }
+      }
+    }
+    return undefined;
+  },
+);
 
 export const selectHudFeed = store.createSelector((state) => state.hud.feed);
 

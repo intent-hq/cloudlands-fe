@@ -2,30 +2,90 @@ import { linearAuthClient } from '$features/linear-auth/renderer/linear-auth.cli
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
-import { call, put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
+import { call, put, race, take, takeEvery, takeLatest, type SagaGenerator } from 'typed-redux-saga';
+import type { LinearAuthState } from '$features/linear-auth/types';
+import {
+  LINEAR_ISSUE_FILTER_OPTIONS,
+  type LinearIssueFilter,
+} from '$features/linear-auth/constants';
+import {
+  getLocalStorageItem,
+  getLocalStorageJSON,
+  setLocalStorageJSON,
+} from '../../../utils/safe-local-storage-saga';
 
 import {
   connectLinear,
+  hydrateLinearIssueFilter,
   initializeLinearAuth,
+  initializeLinearIssueFilter,
+  linearIssuesLoaded,
+  linearIssuesLoadSettled,
+  linearIssuesLoadStarted,
+  loadLinearIssuesRequested,
   logoutLinear,
   setLinearAuthState,
   setLinearError,
   setLinearIsAuthenticating,
+  setLinearIssueFilter,
   startLinearAuth,
 } from '../linear-auth-slice';
 
 const logger = createLogger('LinearAuthSaga');
 const LINEAR_TOKEN_SETTING_PATH = 'linear.token';
+const LINEAR_ISSUE_FILTER_STORAGE_KEY = 'legacy-settings:linearIssueFilter';
+const LEGACY_LINEAR_ISSUE_FILTER_STORAGE_KEY = 'linearIssueFilter';
 
-function* probe(): SagaGenerator<void> {
+function isLinearIssueFilter(value: unknown): value is LinearIssueFilter {
+  return LINEAR_ISSUE_FILTER_OPTIONS.some((option) => option.value === value);
+}
+
+function* hydrateIssueFilter(): SagaGenerator<void> {
+  const current = yield* getLocalStorageJSON<LinearIssueFilter>(LINEAR_ISSUE_FILTER_STORAGE_KEY);
+  if (isLinearIssueFilter(current)) {
+    yield* put(hydrateLinearIssueFilter(current));
+    return;
+  }
+  const legacy = yield* getLocalStorageItem(LEGACY_LINEAR_ISSUE_FILTER_STORAGE_KEY);
+  const filter = isLinearIssueFilter(legacy) ? legacy : 'all';
+  yield* put(hydrateLinearIssueFilter(filter));
+  if (isLinearIssueFilter(legacy)) {
+    yield* setLocalStorageJSON(LINEAR_ISSUE_FILTER_STORAGE_KEY, legacy);
+  }
+}
+
+function* persistIssueFilter(action: ReturnType<typeof setLinearIssueFilter>): SagaGenerator<void> {
+  yield* setLocalStorageJSON(LINEAR_ISSUE_FILTER_STORAGE_KEY, action.payload[0]);
+}
+
+function* probe(): SagaGenerator<LinearAuthState | null> {
   try {
     const state: Awaited<ReturnType<typeof linearAuthClient.getAuthState>> = yield* call(
       [linearAuthClient, linearAuthClient.getAuthState],
       true,
     );
     yield* put(setLinearAuthState(state.isAuthenticated, state.requiresDaemonAuth, null));
+    return state;
   } catch (error) {
     logger.error('Failed to initialize Linear auth', error);
+    return null;
+  }
+}
+
+function* loadIssues(action: ReturnType<typeof loadLinearIssuesRequested>): SagaGenerator<void> {
+  yield* put(linearIssuesLoadStarted());
+  try {
+    const state = yield* call(probe);
+    if (!state?.isAuthenticated) return;
+    const issues = yield* call(
+      [linearAuthClient, linearAuthClient.fetchMyIssues],
+      action.payload[0],
+    );
+    yield* put(linearIssuesLoaded(issues));
+  } catch (error) {
+    logger.error('Failed to load Linear issues', error);
+  } finally {
+    yield* put(linearIssuesLoadSettled());
   }
 }
 
@@ -97,16 +157,19 @@ function* startLinearWorker(_action: ReturnType<typeof startLinearAuth>): SagaGe
 }
 
 function* connectLinearWorker(action: ReturnType<typeof connectLinear>): SagaGenerator<void> {
-  yield* call(connect, action.payload[0]);
+  yield* race({ completed: call(connect, action.payload[0]), superseded: take(logoutLinear) });
 }
 
 function* logoutLinearWorker(_action: ReturnType<typeof logoutLinear>): SagaGenerator<void> {
-  yield* call(logout);
+  yield* race({ completed: call(logout), superseded: take(connectLinear) });
 }
 
 export function* linearAuthSaga(): SagaGenerator<void> {
   yield* takeEvery(initializeLinearAuth, initializeLinearWorker);
   yield* takeEvery(startLinearAuth, startLinearWorker);
-  yield* takeEvery(connectLinear, connectLinearWorker);
-  yield* takeEvery(logoutLinear, logoutLinearWorker);
+  yield* takeLatest(connectLinear, connectLinearWorker);
+  yield* takeLatest(logoutLinear, logoutLinearWorker);
+  yield* takeEvery(initializeLinearIssueFilter, hydrateIssueFilter);
+  yield* takeEvery(setLinearIssueFilter, persistIssueFilter);
+  yield* takeLatest(loadLinearIssuesRequested, loadIssues);
 }

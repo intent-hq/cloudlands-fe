@@ -1,5 +1,13 @@
 import type { Collection } from '@augmentcode/themis/utils/collections/collection-utils';
 import type { Note, NoteVersion } from '$shared/types';
+import type { LineAttributionInfo } from '$lib/client/app-client';
+
+export type LineAttributionReadState = {
+  attributions: Record<string, LineAttributionInfo>;
+  loading: boolean;
+  error: string | null;
+  version: number;
+};
 
 export type NoteVersionsState = {
   versions: NoteVersion[];
@@ -28,6 +36,7 @@ export type WorkspaceNotesWorkspaceState = {
   notesVersion: number;
   noteVersions: NoteVersionsState | null;
   readyTasks: ReadyTasksState | null;
+  lineAttributions: Record<string, LineAttributionReadState>;
 };
 
 export type WorkspaceNotesState = {

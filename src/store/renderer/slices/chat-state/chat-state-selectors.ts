@@ -12,6 +12,8 @@ import type {
   TranscriptHydrationStatus,
   TranscriptSnapshotMeta,
   StreamFailureCorrelation,
+  ChatDraftOperation,
+  ChatDraftSnapshot,
 } from './chat-state-types';
 import { hydratedBlockKey } from './chat-state-types';
 
@@ -178,6 +180,36 @@ export const selectPendingQuestionRecovery = store.createSelector(
 /** Per-messageId results of the pending-proposal carrying-message recoveries. */
 export const selectPendingProposalRecovery = store.createSelector(
   (state, agentId: string) => getAgentChatState(state, agentId).pendingProposalRecovery,
+);
+
+export const selectUserMessageIndex = store.createSelector(
+  (state, agentId: string) => getAgentChatState(state, agentId).userMessageIndex,
+);
+
+export const selectQueuedMessageEditOperations = store.createSelector(
+  (state, agentId: string) => state.chatState.queuedMessageEditOperations?.[agentId] ?? {},
+);
+
+const IDLE_DRAFT_LOAD: ChatDraftOperation<ChatDraftSnapshot> = {
+  status: 'idle',
+  requestId: null,
+  data: null,
+  error: null,
+};
+const IDLE_DRAFT_WRITE: ChatDraftOperation<{ ok: true; updatedAt: string }> = {
+  status: 'idle',
+  requestId: null,
+  data: null,
+  error: null,
+};
+export const selectChatDraftOperations = store.createSelector(
+  (state, workspaceId: string, agentId: string) => {
+    const key = `${workspaceId}\u0000${agentId}`;
+    return {
+      load: state.chatState.draftOperations?.loads[key] ?? IDLE_DRAFT_LOAD,
+      write: state.chatState.draftOperations?.writes[key] ?? IDLE_DRAFT_WRITE,
+    };
+  },
 );
 
 /**

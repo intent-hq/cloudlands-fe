@@ -2,7 +2,7 @@ import type { PullRequestInfo, Workspace, WorkspaceDiffSummary } from '$shared/t
 import { WorkspaceStatusEnum } from '$shared/types';
 import { shallowEqual } from 'fast-equals';
 import { workspaceDeleted } from '../workspace-lifecycle/workspace-lifecycle-slice';
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
+import { createAction, createAsyncAction } from '@augmentcode/themis/utils/store/create-action';
 import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import {
   addItem,
@@ -23,6 +23,12 @@ type PendingWorkspaceTitleMutation = {
   token: number;
   optimisticTitle: string;
   previousTitle: string;
+};
+
+export type WorkspaceMutationState = {
+  loading: boolean;
+  error: string | null;
+  version: number;
 };
 
 const defaultWorkspaceRecencyState: WorkspaceRecencyState = {
@@ -62,6 +68,7 @@ export type WorkspaceState = {
    * the store.
    */
   detailHydrated: Record<string, true>;
+  mutations: Record<string, WorkspaceMutationState>;
   recency: WorkspaceRecencyState;
 };
 
@@ -77,6 +84,7 @@ export const initialState: WorkspaceState = {
   pendingCreations: {},
   pendingTitleMutations: {},
   detailHydrated: {},
+  mutations: {},
   recency: defaultWorkspaceRecencyState,
 };
 
@@ -144,6 +152,22 @@ export const setWorkspaceEntity = createAction<
 /** Merge partial changes into an existing workspace entity. No-op if workspace not found. */
 export const updateWorkspaceEntity = createAction<[wsId: string, changes: Partial<Workspace>]>(
   'workspace/updateWorkspaceEntity',
+);
+export const updateWorkspaceRequested = createAsyncAction<
+  [wsId: string, changes: Partial<Workspace>, scope?: string],
+  Workspace
+>('workspace/update', 'workspace/updateRequested');
+export const renameWorkspaceBranchRequested = createAsyncAction<
+  [wsId: string, branch: string],
+  Workspace
+>('workspace/renameBranch', 'workspace/renameBranchRequested');
+export const archiveWorkspaceRequested = createAsyncAction<[wsId: string], void>(
+  'workspace/archive',
+  'workspace/archiveRequested',
+);
+export const unarchiveWorkspaceRequested = createAsyncAction<[wsId: string], void>(
+  'workspace/unarchive',
+  'workspace/unarchiveRequested',
 );
 
 /** Apply queued workspace entity update actions in order. */
@@ -483,6 +507,123 @@ function getWorkspaceById(
 // ---------------------------------------------------------------------------
 
 export const workspaceReducer = createReducer<WorkspaceState>(initialState);
+
+function mutationKey(workspaceId: string, scope: string): string {
+  return `${workspaceId}:${scope}`;
+}
+
+function beginMutation(state: WorkspaceState, workspaceId: string, scope: string): WorkspaceState {
+  const key = mutationKey(workspaceId, scope);
+  const current = state.mutations[key];
+  return {
+    ...state,
+    mutations: {
+      ...state.mutations,
+      [key]: { loading: true, error: null, version: (current?.version ?? 0) + 1 },
+    },
+  };
+}
+
+function settleMutation(
+  state: WorkspaceState,
+  workspaceId: string,
+  scope: string,
+  error: string | null,
+): WorkspaceState {
+  const key = mutationKey(workspaceId, scope);
+  const current = state.mutations[key];
+  return {
+    ...state,
+    mutations: {
+      ...state.mutations,
+      [key]: { loading: false, error, version: current?.version ?? 1 },
+    },
+  };
+}
+
+workspaceReducer.with(updateWorkspaceRequested, (state, { payload: [workspaceId, , scope] }) =>
+  beginMutation(state, workspaceId, scope ?? 'update'),
+);
+workspaceReducer.with(
+  updateWorkspaceRequested.success,
+  (
+    state,
+    {
+      payload: {
+        request: [workspaceId, , scope],
+      },
+    },
+  ) => settleMutation(state, workspaceId, scope ?? 'update', null),
+);
+workspaceReducer.with(
+  updateWorkspaceRequested.failure,
+  (
+    state,
+    {
+      payload: {
+        request: [workspaceId, , scope],
+        error,
+      },
+    },
+  ) => settleMutation(state, workspaceId, scope ?? 'update', error.message),
+);
+workspaceReducer.with(renameWorkspaceBranchRequested, (state, { payload: [workspaceId] }) =>
+  beginMutation(state, workspaceId, 'rename-branch'),
+);
+workspaceReducer.with(
+  renameWorkspaceBranchRequested.success,
+  (
+    state,
+    {
+      payload: {
+        request: [workspaceId],
+      },
+    },
+  ) => settleMutation(state, workspaceId, 'rename-branch', null),
+);
+workspaceReducer.with(
+  renameWorkspaceBranchRequested.failure,
+  (
+    state,
+    {
+      payload: {
+        request: [workspaceId],
+        error,
+      },
+    },
+  ) => settleMutation(state, workspaceId, 'rename-branch', error.message),
+);
+for (const [action, scope] of [
+  [archiveWorkspaceRequested, 'archive'],
+  [unarchiveWorkspaceRequested, 'unarchive'],
+] as const) {
+  workspaceReducer.with(action, (state, { payload: [workspaceId] }) =>
+    beginMutation(state, workspaceId, scope),
+  );
+  workspaceReducer.with(
+    action.success,
+    (
+      state,
+      {
+        payload: {
+          request: [workspaceId],
+        },
+      },
+    ) => settleMutation(state, workspaceId, scope, null),
+  );
+  workspaceReducer.with(
+    action.failure,
+    (
+      state,
+      {
+        payload: {
+          request: [workspaceId],
+          error,
+        },
+      },
+    ) => settleMutation(state, workspaceId, scope, error.message),
+  );
+}
 workspaceReducer.with(setWorkspaceLoading, (state, { payload: [loading] }) => {
   if (state.loading === loading) return state;
   return { ...state, loading };

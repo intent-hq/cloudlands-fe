@@ -10,6 +10,10 @@ const mocks = vi.hoisted(() => ({
   removeQueued: vi.fn(),
   stop: vi.fn(),
   rename: vi.fn(),
+  editQueued: vi.fn(),
+  retry: vi.fn(),
+  clearDraft: vi.fn(),
+  setDraft: vi.fn(),
   toastInfo: vi.fn(),
   toastError: vi.fn(),
   // Retry-on-another-provider (#4455): the per-provider `models.list` catalog
@@ -50,7 +54,10 @@ vi.mock('$lib/client', () => ({
       removeQueued: mocks.removeQueued,
       stop: mocks.stop,
       rename: mocks.rename,
+      editQueued: mocks.editQueued,
+      retry: mocks.retry,
     },
+    drafts: { clear: mocks.clearDraft, set: mocks.setDraft },
   },
 }));
 // Partial mock: the real seq counter drives the guard, but the reconciling
@@ -88,6 +95,10 @@ import { initialState as workspaceInitialState } from '../../workspace/workspace
 import {
   chatQueueProcessingReceived,
   chatQueuedRetryRecordSet,
+  chatQueuedRetryRecordUpdated,
+  clearChatDraftRequested,
+  editQueuedMessageRequested,
+  flushChatDraftRequested,
   chatLastAttemptedMessageSet,
   chatSendFailed,
   initialState as chatInitialState,
@@ -98,6 +109,8 @@ import {
   streamActivityReceived,
   streamStatusReceived,
   transcriptHydrationSettled,
+  retryAgentRequested,
+  saveChatDraftRequested,
 } from '../chat-state-slice';
 import { chatSendSaga } from './chat-send-saga';
 
@@ -178,6 +191,7 @@ function harness(
     channel,
     dispatch,
     task,
+    chat: () => chatState,
     setChat: (
       action:
         ReturnType<typeof chatLastAttemptedMessageSet> | ReturnType<typeof streamStatusReceived>,
@@ -194,6 +208,87 @@ describe('chatSendSaga', () => {
   afterEach(() => {
     vi.clearAllMocks();
     __resetAgentQueueReadServiceForTests();
+  });
+
+  it('edits a queued message through the saga and settles with the daemon result', async () => {
+    const queuedMessage = { id: 'queued-1', content: 'persisted edit' } as QueuedMessage;
+    mocks.editQueued.mockResolvedValue({ success: true, queuedMessage });
+    const { channel, dispatch, task } = harness();
+    const action = editQueuedMessageRequested(AGENT, 'queued-1', 'local edit', true);
+
+    channel.put(action);
+    await expect(action.promise).resolves.toMatchObject({ success: true, queuedMessage });
+
+    expect(mocks.editQueued).toHaveBeenCalledWith(AGENT, 'queued-1', 'local edit', true);
+    expect(dispatch).toHaveBeenCalledWith(
+      chatQueuedRetryRecordUpdated(AGENT, 'queued-1', 'persisted edit'),
+    );
+    task.cancel();
+  });
+
+  it('clears a persisted draft through the saga and exposes completion', async () => {
+    mocks.clearDraft.mockResolvedValue(undefined);
+    const { channel, task } = harness();
+    const action = clearChatDraftRequested(WS, AGENT);
+
+    channel.put(action);
+    await expect(action.promise).resolves.toBeUndefined();
+
+    expect(mocks.clearDraft).toHaveBeenCalledWith(WS, AGENT);
+    task.cancel();
+  });
+
+  it('debounces draft persistence and flushes the latest value immediately', async () => {
+    vi.useFakeTimers();
+    mocks.setDraft.mockResolvedValue({ ok: true, updatedAt: '2026-01-01T00:00:00.000Z' });
+    const { channel, dispatch, task, chat } = harness();
+    const first = saveChatDraftRequested(WS, AGENT, 'first');
+    const latest = saveChatDraftRequested(WS, AGENT, 'latest');
+    const flushed = flushChatDraftRequested(WS, AGENT, 'latest', undefined, 9);
+    first.promise.catch(() => {});
+    latest.promise.catch(() => {});
+
+    channel.put(first);
+    await vi.advanceTimersByTimeAsync(400);
+    channel.put(latest);
+    await vi.advanceTimersByTimeAsync(400);
+    expect(mocks.setDraft).not.toHaveBeenCalled();
+
+    dispatch(flushed);
+    channel.put(flushed);
+    await expect(flushed.promise).resolves.toEqual({
+      ok: true,
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+    expect(mocks.setDraft).toHaveBeenCalledExactlyOnceWith(WS, AGENT, 'latest', undefined);
+    expect(chat().draftOperations.writes[`${WS}\u0000${AGENT}`]).toEqual({
+      status: 'success',
+      requestId: 9,
+      data: { ok: true, updatedAt: '2026-01-01T00:00:00.000Z' },
+      error: null,
+    });
+    task.cancel();
+    vi.useRealTimers();
+  });
+
+  it('redrives an errored agent and reconciles an empty retry to idle', async () => {
+    mocks.retry.mockResolvedValue({ ok: true, redriven: false });
+    const { channel, dispatch, task } = harness(
+      session({ status: AgentStatus.Error, stopReason: 'spawn failed' }),
+    );
+
+    channel.put(retryAgentRequested(AGENT, WS));
+    await settle();
+
+    expect(mocks.retry).toHaveBeenCalledWith(AGENT, WS);
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'agentSessions/updateSession',
+        payload: [AGENT, { status: AgentStatus.RuntimeIdle, stopReason: null }],
+      }),
+    );
+    await vi.waitFor(() => expect(mocks.toastInfo).toHaveBeenCalledOnce());
+    task.cancel();
   });
 
   it.each([

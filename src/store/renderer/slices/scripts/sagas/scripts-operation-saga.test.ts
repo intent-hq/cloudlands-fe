@@ -1,7 +1,13 @@
 import { runSaga, stdChannel, type Task } from 'redux-saga';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ start: vi.fn(), stop: vi.fn(), restart: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  start: vi.fn(),
+  stop: vi.fn(),
+  restart: vi.fn(),
+  remove: vi.fn(),
+  create: vi.fn(),
+}));
 
 vi.mock('$features/scripts/scripts.client', () => ({ scriptsClient: mocks }));
 
@@ -13,6 +19,8 @@ import {
   clearScriptOperations,
   refreshScripts,
   restartScriptRequested,
+  restoreScriptsRequested,
+  scriptCommandFailed,
   scriptOperationFailed,
   scriptOperationSucceeded,
   startScriptRequested,
@@ -33,11 +41,15 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
-function start() {
+function start(state: any = {}) {
   const channel = stdChannel();
   const actions: any[] = [];
   const task = runSaga(
-    { channel, dispatch: (action) => (actions.push(action), channel.put(action), action) },
+    {
+      channel,
+      dispatch: (action) => (actions.push(action), channel.put(action), action),
+      getState: () => state,
+    },
     scriptsOperationSaga,
   );
   return { actions, channel, task };
@@ -54,6 +66,8 @@ describe('scriptsOperationSaga', () => {
     mocks.start.mockResolvedValue({ success: true });
     mocks.stop.mockResolvedValue({ success: true });
     mocks.restart.mockResolvedValue({ success: true });
+    mocks.remove.mockResolvedValue({ success: true });
+    mocks.create.mockResolvedValue({ success: true });
   });
 
   it('runs start, stop, and restart then refreshes canonical state', async () => {
@@ -127,6 +141,89 @@ describe('scriptsOperationSaga', () => {
     pending.resolve({ success: true });
     await settle();
     expect(run.actions.some(({ type }) => type === refreshScripts.type)).toBe(false);
+    await stop(run.task);
+  });
+
+  it('stops restore after a failed remove and reports failure without creating scripts', async () => {
+    mocks.remove.mockResolvedValueOnce({ success: false, error: 'remove rejected' });
+    const run = start({
+      scripts: {
+        byWorkspaceId: {
+          [WS]: {
+            scripts: {
+              first: {
+                id: 'first',
+                name: 'First',
+                command: 'pnpm first',
+                mode: 'command',
+                runtime: { status: 'idle' },
+              },
+              second: {
+                id: 'second',
+                name: 'Second',
+                command: 'pnpm second',
+                mode: 'command',
+                runtime: { status: 'idle' },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    run.channel.put(
+      restoreScriptsRequested(WS, [{ name: 'Replacement', command: 'pnpm new', mode: 'command' }]),
+    );
+    await settle();
+
+    expect(mocks.remove.mock.calls).toEqual([[WS, 'first']]);
+    expect(mocks.create).not.toHaveBeenCalled();
+    expect(run.actions).toEqual([
+      scriptCommandFailed(WS, 'restore', 'remove rejected'),
+      refreshScripts(WS),
+    ]);
+    await stop(run.task);
+  });
+
+  it('stops restore after a failed create and refreshes the partially restored state', async () => {
+    mocks.create
+      .mockResolvedValueOnce({ success: true })
+      .mockResolvedValueOnce({ success: false, error: 'create rejected' });
+    const run = start({
+      scripts: {
+        byWorkspaceId: {
+          [WS]: {
+            scripts: {
+              existing: {
+                id: 'existing',
+                name: 'Existing',
+                command: 'pnpm old',
+                mode: 'command',
+                runtime: { status: 'idle' },
+              },
+            },
+          },
+        },
+      },
+    });
+    const replacements = [
+      { name: 'First', command: 'pnpm first', mode: 'command' as const },
+      { name: 'Second', command: 'pnpm second', mode: 'command' as const },
+      { name: 'Third', command: 'pnpm third', mode: 'command' as const },
+    ];
+
+    run.channel.put(restoreScriptsRequested(WS, replacements));
+    await settle();
+
+    expect(mocks.remove.mock.calls).toEqual([[WS, 'existing']]);
+    expect(mocks.create.mock.calls).toEqual([
+      [WS, replacements[0]],
+      [WS, replacements[1]],
+    ]);
+    expect(run.actions).toEqual([
+      scriptCommandFailed(WS, 'restore', 'create rejected'),
+      refreshScripts(WS),
+    ]);
     await stop(run.task);
   });
 });

@@ -4,6 +4,7 @@ import {
   DEFAULT_WORKSPACE_INITIALIZER_PARENT_PATH,
   hydrateWorkspaceInitializer,
   initialState,
+  loadWorkspaceInitializerGitHubBranches,
   removeWorkspaceInitializerRemoteSetup,
   setCompactWorkspaceInitializerFormState,
   setWorkspaceInitializerPendingGitHubPrefill,
@@ -14,6 +15,7 @@ import {
   setWorkspaceInitializerOnboardingFormState,
   setWorkspaceInitializerRecentRepos,
   setWorkspaceInitializerRemoteSetups,
+  searchWorkspaceInitializerGitHubBranches,
   upsertWorkspaceInitializerRemoteSetup,
   workspaceInitializerReducer,
 } from './workspace-initializer-slice';
@@ -199,6 +201,45 @@ describe('workspaceInitializerReducer', () => {
 
     state = workspaceInitializerReducer(state, clearWorkspaceInitializerPendingGitHubPrefill());
     expect(state.pendingGitHubPrefill).toBeNull();
+  });
+
+  it('marks cached and authoritative GitHub branch loads pending', () => {
+    const state = workspaceInitializerReducer(
+      initialState,
+      loadWorkspaceInitializerGitHubBranches('intent-hq', 'intent'),
+    );
+
+    expect(state.githubBranchListings[JSON.stringify(['intent-hq', 'intent', ''])]).toEqual({
+      branches: [],
+      defaultBranch: '',
+      loading: true,
+      error: null,
+    });
+    expect(state.githubBranchListings[JSON.stringify(['intent-hq', 'intent', 'cached'])]).toEqual({
+      branches: [],
+      defaultBranch: '',
+      loading: true,
+      error: null,
+    });
+  });
+
+  it('marks non-empty GitHub prefix searches pending and ignores an empty prefix', () => {
+    const pending = workspaceInitializerReducer(
+      initialState,
+      searchWorkspaceInitializerGitHubBranches('intent-hq', 'intent', 'feat'),
+    );
+    const unchanged = workspaceInitializerReducer(
+      pending,
+      searchWorkspaceInitializerGitHubBranches('intent-hq', 'intent', ''),
+    );
+
+    expect(pending.githubBranchListings[JSON.stringify(['intent-hq', 'intent', 'feat'])]).toEqual({
+      branches: [],
+      defaultBranch: '',
+      loading: true,
+      error: null,
+    });
+    expect(unchanged).toBe(pending);
   });
 
   it('does not persist a pending GitHub prefill across hydration', () => {

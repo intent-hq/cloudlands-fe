@@ -141,7 +141,7 @@ describe('sentryAuthSaga', () => {
     await run.task.toPromise();
   });
 
-  it('runs overlapping connects independently like the middleware', async () => {
+  it('keeps only the latest overlapping connect result', async () => {
     let resolveFirst!: (value: { success: false; error: string }) => void;
     mocks.saveConfig
       .mockReturnValueOnce(
@@ -156,6 +156,7 @@ describe('sentryAuthSaga', () => {
     await settle();
     run.channel.put(connectSentry('second', 'second-secret'));
     await settle();
+    const latestActions = [...run.dispatched];
     resolveFirst({ success: false, error: 'first rejected' });
     await settle();
 
@@ -166,15 +167,109 @@ describe('sentryAuthSaga', () => {
     expect(run.dispatched).toEqual([
       { type: 'sentryAuth/setError', payload: [null] },
       { type: 'sentryAuth/setConnecting', payload: [true] },
+      { type: 'sentryAuth/setConnecting', payload: [false] },
       { type: 'sentryAuth/setError', payload: [null] },
       { type: 'sentryAuth/setConnecting', payload: [true] },
       { type: 'sentryAuth/setConnected', payload: { organization: 'second' } },
       { type: 'sentryAuth/setLoadingProjects', payload: [true] },
       { type: 'sentryAuth/setProjects', payload: [[]] },
       { type: 'sentryAuth/setLoadingProjects', payload: [false] },
-      { type: 'sentryAuth/setError', payload: ['first rejected'] },
-      { type: 'sentryAuth/setConnecting', payload: [false] },
     ]);
+    expect(run.dispatched).toEqual(latestActions);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('lets logout supersede a pending connect without a stale error', async () => {
+    let resolveConnect!: (value: { success: false; error: string }) => void;
+    mocks.saveConfig.mockReturnValue(
+      new Promise((resolve) => {
+        resolveConnect = resolve;
+      }),
+    );
+    mocks.logout.mockResolvedValue(undefined);
+    const run = harness();
+    run.channel.put(connectSentry('pending', 'pending-secret'));
+    await settle();
+    run.channel.put(logoutSentry());
+    await settle();
+    const logoutActions = [...run.dispatched];
+
+    resolveConnect({ success: false, error: 'stale rejection' });
+    await settle();
+
+    expect(run.dispatched).toEqual([
+      { type: 'sentryAuth/setError', payload: [null] },
+      { type: 'sentryAuth/setConnecting', payload: [true] },
+      { type: 'sentryAuth/setConnecting', payload: [false] },
+      { type: 'sentryAuth/setLoggedOut', payload: [] },
+    ]);
+    expect(run.dispatched).toEqual(logoutActions);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('lets connect supersede a pending logout without publishing logged-out state', async () => {
+    let resolveLogout!: () => void;
+    mocks.logout.mockReturnValue(
+      new Promise<void>((resolve) => {
+        resolveLogout = resolve;
+      }),
+    );
+    mocks.saveConfig.mockResolvedValue({ success: true });
+    mocks.fetchProjects.mockResolvedValue([]);
+    const run = harness();
+    run.channel.put(logoutSentry());
+    await settle();
+    run.channel.put(connectSentry('latest', 'latest-secret'));
+    await settle();
+    const connectActions = [...run.dispatched];
+
+    resolveLogout();
+    await settle();
+
+    expect(run.dispatched).toEqual([
+      { type: 'sentryAuth/setError', payload: [null] },
+      { type: 'sentryAuth/setConnecting', payload: [true] },
+      { type: 'sentryAuth/setConnected', payload: { organization: 'latest' } },
+      { type: 'sentryAuth/setLoadingProjects', payload: [true] },
+      { type: 'sentryAuth/setProjects', payload: [[]] },
+      { type: 'sentryAuth/setLoadingProjects', payload: [false] },
+    ]);
+    expect(run.dispatched).toEqual(connectActions);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('cleans up project loading when logout cancels a post-connect fetch', async () => {
+    let resolveProjects!: (projects: []) => void;
+    mocks.saveConfig.mockResolvedValue({ success: true });
+    mocks.fetchProjects.mockReturnValue(
+      new Promise<[]>((resolve) => {
+        resolveProjects = resolve;
+      }),
+    );
+    mocks.logout.mockResolvedValue(undefined);
+    const run = harness();
+    run.channel.put(connectSentry('pending', 'pending-secret'));
+    await settle();
+    run.channel.put(logoutSentry());
+    await settle();
+    const logoutActions = [...run.dispatched];
+
+    resolveProjects([]);
+    await settle();
+
+    expect(run.dispatched).toEqual([
+      { type: 'sentryAuth/setError', payload: [null] },
+      { type: 'sentryAuth/setConnecting', payload: [true] },
+      { type: 'sentryAuth/setConnected', payload: { organization: 'pending' } },
+      { type: 'sentryAuth/setLoadingProjects', payload: [true] },
+      { type: 'sentryAuth/setLoadingProjects', payload: [false] },
+      { type: 'sentryAuth/setConnecting', payload: [false] },
+      { type: 'sentryAuth/setLoggedOut', payload: [] },
+    ]);
+    expect(run.dispatched).toEqual(logoutActions);
     run.task.cancel();
     await run.task.toPromise();
   });

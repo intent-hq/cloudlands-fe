@@ -18,15 +18,23 @@ import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycl
 import {
   addOptimisticNote,
   applyNoteUpdated,
+  cancelExternalNoteUpdateCoordination,
+  coordinateExternalNoteUpdate,
   createNote,
   deleteNote,
   loadWorkspaceNotesSucceeded,
+  noteContentSavePendingChanged,
   updateNote,
   updateNoteContent,
   updateNoteTitle,
   workspaceNotesReducer,
 } from '../workspace-notes-slice';
-import { NOTE_CONTENT_SAVE_DEBOUNCE_MS, notesWriteSaga } from './notes-write-saga';
+import {
+  EXTERNAL_NOTE_UPDATE_DEBOUNCE_MS,
+  NOTE_CONTENT_SAVE_DEBOUNCE_MS,
+  PENDING_NOTE_SAVE_RECHECK_INTERVAL_MS,
+  notesWriteSaga,
+} from './notes-write-saga';
 
 const WS = 'ws-notes-write';
 const WS2 = 'ws-notes-write-2';
@@ -785,6 +793,138 @@ describe('notesWriteSaga', () => {
     expect(run.getState().byWorkspaceId[WS]?.notes.map[NOTE]).toEqual(snapshot);
     run.task.cancel();
     await run.task.toPromise();
+  });
+
+  it('returns the exact apply decision after the per-note external-update window', async () => {
+    vi.useFakeTimers();
+    const run = harness();
+    const request = coordinateExternalNoteUpdate(WS, NOTE, 41);
+    let settled = false;
+    void request.promise.then(() => {
+      settled = true;
+    });
+
+    run.channel.put(request);
+    await vi.advanceTimersByTimeAsync(EXTERNAL_NOTE_UPDATE_DEBOUNCE_MS - 1);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+
+    await expect(request.promise).resolves.toEqual({
+      decision: 'apply',
+      updateVersion: 41,
+      waitedForPendingSave: false,
+    });
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('supersedes only the older external-update request for the same note', async () => {
+    vi.useFakeTimers();
+    const run = harness([note(), note({ id: NoteId('note-2') })]);
+    const older = coordinateExternalNoteUpdate(WS, NOTE, 1);
+    const newer = coordinateExternalNoteUpdate(WS, NOTE, 2);
+    const otherNote = coordinateExternalNoteUpdate(WS, 'note-2', 3);
+
+    run.channel.put(older);
+    run.channel.put(otherNote);
+    run.channel.put(newer);
+
+    await expect(older.promise).resolves.toEqual({
+      decision: 'superseded',
+      updateVersion: 1,
+      waitedForPendingSave: false,
+    });
+    await vi.advanceTimersByTimeAsync(EXTERNAL_NOTE_UPDATE_DEBOUNCE_MS);
+    await expect(newer.promise).resolves.toEqual({
+      decision: 'apply',
+      updateVersion: 2,
+      waitedForPendingSave: false,
+    });
+    await expect(otherNote.promise).resolves.toEqual({
+      decision: 'apply',
+      updateVersion: 3,
+      waitedForPendingSave: false,
+    });
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('polls pending note saves in the saga and applies once the save settles', async () => {
+    vi.useFakeTimers();
+    const run = harness();
+    const request = coordinateExternalNoteUpdate(WS, NOTE, 9);
+    let settled = false;
+    void request.promise.then(() => {
+      settled = true;
+    });
+
+    run.channel.put(noteContentSavePendingChanged(WS, NOTE, true));
+    run.channel.put(request);
+    await vi.advanceTimersByTimeAsync(EXTERNAL_NOTE_UPDATE_DEBOUNCE_MS);
+    await vi.advanceTimersByTimeAsync(PENDING_NOTE_SAVE_RECHECK_INTERVAL_MS * 2);
+    expect(settled).toBe(false);
+
+    run.channel.put(noteContentSavePendingChanged(WS, NOTE, false));
+    await vi.advanceTimersByTimeAsync(PENDING_NOTE_SAVE_RECHECK_INTERVAL_MS);
+    await expect(request.promise).resolves.toEqual({
+      decision: 'apply',
+      updateVersion: 9,
+      waitedForPendingSave: true,
+    });
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('returns cancelled when its note context explicitly ends', async () => {
+    vi.useFakeTimers();
+    const run = harness();
+    const request = coordinateExternalNoteUpdate(WS, NOTE, 12);
+
+    run.channel.put(request);
+    run.channel.put(cancelExternalNoteUpdateCoordination(WS, NOTE));
+
+    await expect(request.promise).resolves.toEqual({
+      decision: 'cancelled',
+      updateVersion: 12,
+      waitedForPendingSave: false,
+    });
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('cancels pending external-update coordination on workspace teardown', async () => {
+    vi.useFakeTimers();
+    const run = harness();
+    const request = coordinateExternalNoteUpdate(WS, NOTE, 13);
+
+    run.channel.put(noteContentSavePendingChanged(WS, NOTE, true));
+    run.channel.put(request);
+    await vi.advanceTimersByTimeAsync(EXTERNAL_NOTE_UPDATE_DEBOUNCE_MS);
+    run.channel.put(workspaceUnmounted(WS));
+
+    await expect(request.promise).resolves.toEqual({
+      decision: 'cancelled',
+      updateVersion: 13,
+      waitedForPendingSave: true,
+    });
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('settles pending external-update requests when the root note saga tears down', async () => {
+    vi.useFakeTimers();
+    const run = harness();
+    const request = coordinateExternalNoteUpdate(WS, NOTE, 14);
+
+    run.channel.put(request);
+    run.task.cancel();
+    await run.task.toPromise();
+
+    await expect(request.promise).resolves.toEqual({
+      decision: 'cancelled',
+      updateVersion: 14,
+      waitedForPendingSave: false,
+    });
   });
 
   it('cancels a pending content debounce on workspace cleanup', async () => {

@@ -2,14 +2,38 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { runSaga, stdChannel } from 'redux-saga';
 import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 
-const mocks = vi.hoisted(() => ({ update: vi.fn() }));
-vi.mock('$lib/client', () => ({ appClient: { settings: { update: mocks.update } } }));
+const mocks = vi.hoisted(() => ({
+  update: vi.fn(),
+  get: vi.fn(),
+  invoke: vi.fn(),
+  checkPiMcpAdapterInstalled: vi.fn(),
+  installPiMcpAdapter: vi.fn(),
+  toastSuccess: vi.fn(),
+  toastError: vi.fn(),
+}));
+vi.mock('$lib/client', () => ({
+  appClient: { settings: { update: mocks.update, get: mocks.get } },
+}));
+vi.mock('$lib/electron-bridge', () => ({ invoke: mocks.invoke }));
+vi.mock('$features/pi/pi-models.client', () => ({
+  checkPiMcpAdapterInstalled: mocks.checkPiMcpAdapterInstalled,
+  installPiMcpAdapter: mocks.installPiMcpAdapter,
+}));
+vi.mock('svelte-sonner', () => ({
+  toast: { success: mocks.toastSuccess, error: mocks.toastError },
+}));
 
 import { BackendError } from '$lib/client/live/backend-transport-types';
+import { PROVIDERS_CHANNELS } from '$shared/ipc/channels';
 
 import {
   activeProviderPersistRejected,
+  checkPiMcpAdapterRequested,
   enablementPersistRejected,
+  installPiMcpAdapterRequested,
+  loadProviderPathsRequested,
+  providerPathSaved,
+  saveProviderPathRequested,
   setActiveProvider,
   setProviderEnabled,
   toggleProvider,
@@ -197,6 +221,112 @@ describe('providerSettingsSaga', () => {
       [[{ path: 'providers.enabled', value: { codex: true, 'claude-code': true } }]],
     ]);
     expect(dispatch).toHaveBeenCalledWith(enablementPersistRejected('claude-code'));
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('loads configured and discovered provider paths through saga-owned seams', async () => {
+    mocks.get.mockResolvedValue({ value: { codex: '/custom/codex', invalid: 7 } });
+    mocks.invoke.mockResolvedValue({
+      success: true,
+      data: {
+        paths: { codex: '/usr/bin/codex', pi: null },
+        secondaryPaths: { unsloth: '/usr/bin/unsloth' },
+      },
+    });
+    const channel = stdChannel();
+    const dispatch = vi.fn();
+    const task = runSaga({ channel, dispatch, getState: () => state() }, providerSettingsSaga);
+
+    channel.put(loadProviderPathsRequested());
+    await settle();
+
+    expect(mocks.get).toHaveBeenCalledWith('providers.paths');
+    expect(mocks.invoke).toHaveBeenCalledWith(PROVIDERS_CHANNELS.GET_PATHS);
+    expect(dispatch).toHaveBeenCalledWith({
+      type: 'providerSettings/providerPathsLoaded',
+      payload: [
+        { codex: '/custom/codex' },
+        { codex: '/usr/bin/codex' },
+        { unsloth: '/usr/bin/unsloth' },
+      ],
+    });
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('serializes overlapping path saves so full-map writes preserve earlier providers', async () => {
+    let releaseFirst!: (value: unknown) => void;
+    mocks.get
+      .mockResolvedValueOnce({ value: {} })
+      .mockResolvedValueOnce({ value: { codex: '/first/codex' } });
+    mocks.update
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          releaseFirst = resolve;
+        }),
+      )
+      .mockResolvedValueOnce([]);
+    const channel = stdChannel();
+    const dispatch = vi.fn();
+    const task = runSaga({ channel, dispatch, getState: () => state() }, providerSettingsSaga);
+
+    channel.put(saveProviderPathRequested('codex', '/first/codex', 'save-1'));
+    await settle();
+    channel.put(saveProviderPathRequested('claude-code', '/second/claude', 'save-2'));
+    await settle();
+
+    expect(mocks.get).toHaveBeenCalledTimes(1);
+    expect(mocks.update.mock.calls).toEqual([
+      [[{ path: 'providers.paths', value: { codex: '/first/codex' } }]],
+    ]);
+
+    releaseFirst([]);
+    await vi.waitFor(() => expect(mocks.update).toHaveBeenCalledTimes(2));
+    expect(mocks.get).toHaveBeenNthCalledWith(2, 'providers.paths');
+    expect(mocks.update.mock.calls[1]).toEqual([
+      [
+        {
+          path: 'providers.paths',
+          value: { codex: '/first/codex', 'claude-code': '/second/claude' },
+        },
+      ],
+    ]);
+    expect(dispatch).toHaveBeenCalledWith(
+      providerPathSaved('claude-code', '/second/claude', 'save-2'),
+    );
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('checks and installs the Pi adapter outside the component', async () => {
+    mocks.checkPiMcpAdapterInstalled.mockResolvedValue(false);
+    const channel = stdChannel();
+    const dispatch = vi.fn();
+    const task = runSaga({ channel, dispatch, getState: () => state() }, providerSettingsSaga);
+    channel.put(checkPiMcpAdapterRequested());
+    await settle();
+    expect(dispatch).toHaveBeenCalledWith({
+      type: 'providerSettings/piMcpAdapterStatusLoaded',
+      payload: [false],
+    });
+
+    mocks.installPiMcpAdapter.mockResolvedValue({ success: true });
+    mocks.checkPiMcpAdapterInstalled.mockResolvedValue(true);
+    channel.put(installPiMcpAdapterRequested());
+    await settle();
+    await settle();
+
+    expect(mocks.installPiMcpAdapter).toHaveBeenCalledOnce();
+    expect(dispatch).toHaveBeenCalledWith({
+      type: 'providerSettings/piMcpAdapterStatusLoaded',
+      payload: [true],
+    });
+    expect(dispatch).toHaveBeenCalledWith({
+      type: 'providerSettings/piMcpAdapterInstallComplete',
+      payload: [],
+    });
+    await vi.waitFor(() => expect(mocks.toastSuccess).toHaveBeenCalledOnce());
     task.cancel();
     await task.toPromise();
   });

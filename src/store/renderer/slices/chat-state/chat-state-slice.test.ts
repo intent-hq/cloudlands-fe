@@ -42,6 +42,10 @@ import {
   messageBlockHydrationRequested,
   messageBlockHydrated,
   messageBlockHydrationFailed,
+  listUserMessagesRequested,
+  userMessageIndexFailed,
+  userMessageIndexLoaded,
+  editQueuedMessageRequested,
 } from './chat-state-slice';
 import { MAX_HYDRATED_BLOCKS } from './chat-state-types';
 import { markAgentAsViewed } from '../unread-tracking/unread-tracking-slice';
@@ -63,6 +67,8 @@ import {
   selectPendingQuestionRecovery,
   selectPendingProposalRecovery,
   selectTranscriptHydration,
+  selectUserMessageIndex,
+  selectQueuedMessageEditOperations,
 } from './chat-state-selectors';
 import { workspaceDeleted } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import { eventReceived } from '../workspace-events/workspace-events-slice';
@@ -121,6 +127,60 @@ function stateWithModelUnavailable() {
 describe('chatStateReducer', () => {
   it('returns initial state', () => {
     expect(chatStateReducer(undefined, { type: '@@INIT' })).toEqual(initialState);
+  });
+
+  it('tracks the latest queued-message edit outcome for selector consumers', () => {
+    const request = editQueuedMessageRequested(AGENT, 'queued-1', 'updated', false);
+    let state = chatStateReducer(initialState, request);
+    expect(
+      selectQueuedMessageEditOperations.select(asStoreState(state), AGENT)['queued-1'],
+    ).toEqual({
+      status: 'loading',
+      content: 'updated',
+      editing: false,
+      result: null,
+      error: null,
+    });
+
+    state = chatStateReducer(state, request.success({ success: false, error: 'offline' }));
+    expect(
+      selectQueuedMessageEditOperations.select(asStoreState(state), AGENT)['queued-1'],
+    ).toEqual({
+      status: 'success',
+      content: 'updated',
+      editing: false,
+      result: { success: false, error: 'offline' },
+      error: null,
+    });
+  });
+
+  it('keeps cached user-message index data while a refresh loads or fails', () => {
+    const result = {
+      ok: true as const,
+      items: [{ id: 'message-1', preview: 'Prompt', createdAt: '2026-01-01T00:00:00.000Z' }],
+      total: 1,
+    };
+    let state = chatStateReducer(initialState, listUserMessagesRequested(AGENT));
+    expect(selectUserMessageIndex.select(asStoreState(state), AGENT)).toEqual({
+      data: null,
+      loading: true,
+      error: null,
+    });
+
+    state = chatStateReducer(state, userMessageIndexLoaded(AGENT, result));
+    state = chatStateReducer(state, listUserMessagesRequested(AGENT));
+    expect(selectUserMessageIndex.select(asStoreState(state), AGENT)).toEqual({
+      data: result,
+      loading: true,
+      error: null,
+    });
+
+    state = chatStateReducer(state, userMessageIndexFailed(AGENT, 'refresh failed'));
+    expect(selectUserMessageIndex.select(asStoreState(state), AGENT)).toEqual({
+      data: result,
+      loading: false,
+      error: 'refresh failed',
+    });
   });
 
   it('chatInitialized sets agent state (isStreaming/isProcessing now on agent-session)', () => {

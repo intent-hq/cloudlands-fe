@@ -23,6 +23,12 @@ import {
   keychainSyncStateCleared,
   keychainSyncStateReceived,
   keychainSyncStatusReceived,
+  loadKeychainSyncStateRequested,
+  loadSelfPublishedStateRequested,
+  publishSelfRequested,
+  saveConnectionRequested,
+  setKeychainSyncEnabledRequested,
+  unpublishSelfRequested,
   protocolMismatchReceived,
   protocolMismatchModalDismissed,
 } from './connections-slice';
@@ -628,6 +634,122 @@ describe('connectionsReducer', () => {
         keychainSyncStatusReceived({ state: 'active' }),
       );
       expect(next.keychainSync).toBeNull();
+    });
+
+    it('tracks the load request lifecycle', () => {
+      const request = loadKeychainSyncStateRequested();
+      void request.promise.catch(() => {});
+      const loading = connectionsReducer(initialState, request);
+      expect(loading.keychainSyncLoadStatus).toBe('loading');
+      expect(connectionsReducer(loading, request.success(SYNC_STATE)).keychainSyncLoadStatus).toBe(
+        'success',
+      );
+      expect(
+        connectionsReducer(loading, request.failure(new Error('failed'))).keychainSyncLoadStatus,
+      ).toBe('error');
+    });
+
+    it('correlates write results and ignores stale completions', () => {
+      const first = setKeychainSyncEnabledRequested(true, 'sync-1');
+      const second = setKeychainSyncEnabledRequested(false, 'sync-2');
+      void first.promise.catch(() => {});
+      void second.promise.catch(() => {});
+      const firstLoading = connectionsReducer(initialState, first);
+      const secondLoading = connectionsReducer(firstLoading, second);
+      expect(secondLoading.keychainSyncWriteOperation).toMatchObject({
+        requestId: 'sync-2',
+        status: 'loading',
+        version: 2,
+      });
+      expect(connectionsReducer(secondLoading, first.success(SYNC_STATE))).toBe(secondLoading);
+      expect(connectionsReducer(secondLoading, first.failure(new Error('stale')))).toBe(
+        secondLoading,
+      );
+      const settled = connectionsReducer(
+        secondLoading,
+        second.success({ ...SYNC_STATE, enabled: false }),
+      );
+      expect(settled.keychainSyncWriteOperation).toMatchObject({
+        requestId: 'sync-2',
+        status: 'success',
+        result: { enabled: false },
+      });
+      expect(settled.keychainSync?.enabled).toBe(false);
+    });
+  });
+
+  describe('per-id save operations', () => {
+    const params = {
+      update: { id: 'remote-1', label: 'Studio Mac', accent: null },
+    } as const;
+
+    it('keeps the current request loading when an older save settles', () => {
+      const first = saveConnectionRequested(params, 'save-1');
+      const second = saveConnectionRequested(params, 'save-2');
+      void first.promise.catch(() => {});
+      void second.promise.catch(() => {});
+      const firstLoading = connectionsReducer(initialState, first);
+      const secondLoading = connectionsReducer(firstLoading, second);
+      const result = {
+        stage: 'update' as const,
+        result: { status: 'updated' as const, connection: REMOTE },
+      };
+
+      expect(connectionsReducer(secondLoading, first.success(result))).toBe(secondLoading);
+      expect(connectionsReducer(secondLoading, first.failure(new Error('stale')))).toBe(
+        secondLoading,
+      );
+      expect(
+        connectionsReducer(secondLoading, second.success(result)).saveOperations['remote-1'],
+      ).toMatchObject({ requestId: 'save-2', status: 'success', result });
+    });
+  });
+
+  describe('self-publish operations', () => {
+    const SELF_STATE = { published: false, suppressed: true, selfConnectionId: null };
+
+    it('tracks loading, success, and failure for the state read', () => {
+      const request = loadSelfPublishedStateRequested();
+      void request.promise.catch(() => {});
+      const loading = connectionsReducer(initialState, request);
+      expect(loading.selfPublishedStateStatus).toBe('loading');
+      const success = connectionsReducer(loading, request.success(SELF_STATE));
+      expect(success.selfPublishedState).toEqual(SELF_STATE);
+      expect(success.selfPublishedStateStatus).toBe('success');
+      expect(
+        connectionsReducer(loading, request.failure(new Error('failed'))).selfPublishedStateStatus,
+      ).toBe('error');
+    });
+
+    it('tracks publish acknowledgement and error state', () => {
+      const request = publishSelfRequested();
+      void request.promise.catch(() => {});
+      const loading = connectionsReducer(
+        { ...initialState, selfPublishedState: SELF_STATE },
+        request,
+      );
+      expect(loading).toMatchObject({ selfPublishStatus: 'loading', selfPublishVersion: 1 });
+      const success = connectionsReducer(loading, request.success({ connection: LOCAL }));
+      expect(success.selfPublishedState).toMatchObject({ published: true, suppressed: false });
+      expect(success.selfPublishStatus).toBe('success');
+      const failure = connectionsReducer(loading, request.failure(new Error('failed')));
+      expect(failure).toMatchObject({ selfPublishStatus: 'error', selfPublishError: 'failed' });
+    });
+
+    it('tracks unpublish acknowledgement and whether a record was removed', () => {
+      const request = unpublishSelfRequested();
+      void request.promise.catch(() => {});
+      const published = { published: true, suppressed: false, selfConnectionId: LOCAL.id };
+      const loading = connectionsReducer(
+        { ...initialState, selfPublishedState: published },
+        request,
+      );
+      expect(loading).toMatchObject({ selfUnpublishStatus: 'loading', selfUnpublishVersion: 1 });
+      const success = connectionsReducer(loading, request.success({ removed: true }));
+      expect(success.selfPublishedState?.published).toBe(false);
+      expect(success).toMatchObject({ selfUnpublishStatus: 'success', selfUnpublishRemoved: true });
+      const failure = connectionsReducer(loading, request.failure(new Error('failed')));
+      expect(failure).toMatchObject({ selfUnpublishStatus: 'error', selfUnpublishError: 'failed' });
     });
   });
 });

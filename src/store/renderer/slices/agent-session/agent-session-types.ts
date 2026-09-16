@@ -65,6 +65,8 @@ export type AgentSessionLaunchConfig = Omit<UnifiedAgentConfig, 'workspaceId'> &
 };
 
 export interface AgentSessionLaunchOptions {
+  /** Optional UI correlation key for selector-backed creation result handling. */
+  requestId?: string;
   openAgent?: boolean;
   openInAdjacentPanel?: boolean;
   panelId?: string;

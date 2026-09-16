@@ -19,3 +19,7 @@ export const selectHasActiveFeatures = store.createSelector((state): boolean => 
 export const selectFeatureCodeDialogOpen = store.createSelector((state): boolean => {
   return state.featureCodes.dialogOpen;
 });
+
+export const selectFeatureCodeOperation = store.createSelector(
+  (state) => state.featureCodes.operation,
+);

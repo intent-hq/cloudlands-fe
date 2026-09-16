@@ -1,24 +1,42 @@
 import { buffers, channel, type Channel } from 'redux-saga';
-import { call, join, put, race, take, type SagaGenerator } from 'typed-redux-saga';
+import { call, delay, join, put, race, take, type SagaGenerator } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
+import { backendRequest } from '$lib/client/live/backend-transport';
 import { resolveFileBySuffix } from '$lib/services/files/resolve-file-by-suffix';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
 import { updateFileTabPath } from '../../panel-layout/panel-layout-slice';
-import { takeSingleFlightInContext } from '../../../utils/context-saga-effects';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
+import {
+  takeLatestInContext,
+  takeSingleFlightInContext,
+} from '../../../utils/context-saga-effects';
 import {
   loadFileContentFailed,
   loadFileContentRequested,
   loadFileContentSucceeded,
   removeFileContentEntry,
+  resolveWorkspaceMediaFailed,
+  resolveWorkspaceMediaRequested,
+  resolveWorkspaceMediaSucceeded,
+  searchFileNamesFailed,
+  searchFileNamesRequested,
+  searchFileNamesSucceeded,
 } from '../files-slice';
 
 const logger = createLogger('FilesReadSaga');
 
 /** Keeps multi-pane restore responsive without adding an unbounded file.read burst. */
 export const MAX_CONCURRENT_FILE_READS = 4;
+
+function requestFileNames(workspaceId: string, pattern: string, limit: number) {
+  return backendRequest<{ files?: string[] }>('search.fileNames', { workspaceId, pattern, limit });
+}
+
+function statFile(workspaceId: string, path: string) {
+  return backendRequest<{ isFile?: boolean }>('file.stat', { workspaceId, path });
+}
 
 type ReadAction = ReturnType<typeof loadFileContentRequested>;
 type ReadResult =
@@ -181,6 +199,77 @@ function* loadFileContentRequestWorker(
   }
 }
 
+function* searchFileNamesWorker(
+  action: ReturnType<typeof searchFileNamesRequested>,
+): SagaGenerator<void> {
+  const [workspaceId, searchId, pattern, limit, debounceMs] = action.payload;
+  if (!pattern) {
+    yield* put(searchFileNamesSucceeded(workspaceId, searchId, pattern, []));
+    return;
+  }
+  try {
+    if (debounceMs > 0) yield* delay(debounceMs);
+    const response = yield* call(requestFileNames, workspaceId, pattern, limit);
+    yield* put(
+      searchFileNamesSucceeded(
+        workspaceId,
+        searchId,
+        pattern,
+        Array.isArray(response?.files) ? response.files : [],
+      ),
+    );
+  } catch (error) {
+    logger.error('Failed to search file names', error);
+    yield* put(
+      searchFileNamesFailed(
+        workspaceId,
+        searchId,
+        pattern,
+        error instanceof Error ? error.message : String(error),
+      ),
+    );
+  }
+}
+
+function* resolveWorkspaceMediaWorker(
+  action: ReturnType<typeof resolveWorkspaceMediaRequested>,
+): SagaGenerator<void> {
+  const [workspaceId, resolutionId, requestedPath, sourcePath, tabId] = action.payload;
+  try {
+    let exactFile = false;
+    try {
+      const stat = yield* call(statFile, workspaceId, requestedPath);
+      exactFile = stat?.isFile === true;
+    } catch {
+      // Missing exact paths continue into bounded suffix recovery.
+    }
+    if (exactFile || !/\.(?:png|jpe?g|gif|webp|mp4|webm)$/i.test(requestedPath)) {
+      yield* put(
+        resolveWorkspaceMediaSucceeded(workspaceId, resolutionId, requestedPath, requestedPath),
+      );
+      return;
+    }
+    const { candidates, truncated } = yield* call(resolveFileBySuffix, workspaceId, requestedPath);
+    if (!truncated && candidates.length === 1) {
+      yield* put(updateFileTabPath(workspaceId, sourcePath, candidates[0], tabId));
+      return;
+    }
+    yield* put(
+      resolveWorkspaceMediaSucceeded(workspaceId, resolutionId, requestedPath, requestedPath),
+    );
+  } catch (error) {
+    logger.error('Failed to resolve workspace media path', error);
+    yield* put(
+      resolveWorkspaceMediaFailed(
+        workspaceId,
+        resolutionId,
+        requestedPath,
+        error instanceof Error ? error.message : String(error),
+      ),
+    );
+  }
+}
+
 export function* filesReadSaga(): SagaGenerator<void> {
   const generations = new Map<string, number>();
   const requestGenerations = new WeakMap<ReadAction, number>();
@@ -195,6 +284,16 @@ export function* filesReadSaga(): SagaGenerator<void> {
       generations,
       requestGenerations,
       permits,
+    );
+    yield* takeLatestInContext(
+      searchFileNamesRequested,
+      (action) => `${action.payload[0]}:${action.payload[1]}`,
+      searchFileNamesWorker,
+    );
+    yield* takeLatestInContext(
+      resolveWorkspaceMediaRequested,
+      (action) => `${action.payload[0]}:${action.payload[1]}`,
+      resolveWorkspaceMediaWorker,
     );
     yield* join(watcher);
   } finally {

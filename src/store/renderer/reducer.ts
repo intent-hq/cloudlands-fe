@@ -100,8 +100,11 @@ import { setupPromptReducer } from './slices/setup-prompt/setup-prompt-slice';
 import { workspaceTransferReducer } from './slices/workspace-transfer/workspace-transfer-slice';
 import { workspaceImportReducer } from './slices/workspace-import/workspace-import-slice';
 import { workspaceShareReducer } from './slices/workspace-share/workspace-share-slice';
+import { settingsOperationsReducer } from './slices/settings-events/settings-events-slice';
+import { issueSuggestionsReducer } from './slices/issue-suggestions/issue-suggestions-slice';
 
 export const reducers = {
+  issueSuggestions: issueSuggestionsReducer,
   providerSettings: providerSettingsReducer,
   antigravitySetup: antigravitySetupReducer,
   providerCatalog: providerCatalogReducer,
@@ -204,4 +207,5 @@ export const reducers = {
   workspaceTransfer: workspaceTransferReducer,
   workspaceImport: workspaceImportReducer,
   workspaceShare: workspaceShareReducer,
+  settingsOperations: settingsOperationsReducer,
 } as const;

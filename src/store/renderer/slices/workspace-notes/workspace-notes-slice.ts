@@ -1,6 +1,6 @@
 import type { Note, NoteVersion, TaskStatus } from '$shared/types';
 import { isNoteContentStale } from '$shared/utils/note-content';
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
+import { createAction, createAsyncAction } from '@augmentcode/themis/utils/store/create-action';
 import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import {
   addItem,
@@ -12,7 +12,12 @@ import {
 } from '@augmentcode/themis/utils/collections/collection-utils';
 import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
 import { workspaceUnmounted } from '../workspace-lifecycle/workspace-lifecycle-slice';
-import type { WorkspaceNotesWorkspaceState, WorkspaceNotesState } from './workspace-notes-types';
+import type {
+  LineAttributionReadState,
+  WorkspaceNotesWorkspaceState,
+  WorkspaceNotesState,
+} from './workspace-notes-types';
+import type { LineAttributionInfo } from '$lib/client/app-client';
 import { normalizeNoteUpdatePatch } from './workspace-notes-normalization';
 
 export type { WorkspaceNotesWorkspaceState, WorkspaceNotesState };
@@ -32,6 +37,7 @@ export const emptyWorkspaceNotesState: WorkspaceNotesWorkspaceState = {
   notesVersion: 0,
   noteVersions: null,
   readyTasks: null,
+  lineAttributions: {},
 };
 
 export const initialState: WorkspaceNotesState = {
@@ -71,6 +77,43 @@ export const applyNoteUpdated = createAction<[workspaceId: string, noteId: strin
 export const noteEventReceived = createAction<
   [workspaceId: string, noteId: string, eventType: NoteEventType]
 >('workspaceNotes/noteEventReceived');
+export const loadLineAttributionRequested = createAction<[workspaceId: string, noteId: string]>(
+  'workspaceNotes/loadLineAttributionRequested',
+);
+export const lineAttributionLoaded = createAction<
+  [workspaceId: string, noteId: string, attributions: Record<string, LineAttributionInfo>]
+>('workspaceNotes/lineAttributionLoaded');
+export const lineAttributionLoadFailed = createAction<
+  [workspaceId: string, noteId: string, error: string]
+>('workspaceNotes/lineAttributionLoadFailed');
+export const lineAttributionUpdated = createAction<
+  [workspaceId: string, noteId: string, attributions: Record<string, LineAttributionInfo>]
+>('workspaceNotes/lineAttributionUpdated');
+
+export type ExternalNoteUpdateCoordinationResult = {
+  decision: 'apply' | 'superseded' | 'cancelled';
+  updateVersion: number;
+  waitedForPendingSave: boolean;
+};
+
+/** Saga trigger: debounce and defer an editor-facing external update per note. */
+export const coordinateExternalNoteUpdate = createAsyncAction<
+  [workspaceId: string, noteId: string, updateVersion: number],
+  ExternalNoteUpdateCoordinationResult
+>(
+  'workspaceNotes/coordinateExternalNoteUpdateMutation',
+  'workspaceNotes/coordinateExternalNoteUpdateRequested',
+);
+
+/** Cancel editor-facing external-update coordination when its note context ends. */
+export const cancelExternalNoteUpdateCoordination = createAction<
+  [workspaceId: string, noteId: string]
+>('workspaceNotes/cancelExternalNoteUpdateCoordination');
+
+/** Transient write-service signal consumed by the note saga's pending-save gate. */
+export const noteContentSavePendingChanged = createAction<
+  [workspaceId: string, noteId: string, isPending: boolean]
+>('workspaceNotes/noteContentSavePendingChanged');
 
 // ---- New actions from notes.store.svelte.ts migration ----
 
@@ -170,9 +213,15 @@ export const applyNoteVersionsError = createAction<[workspaceId: string, error: 
 );
 
 /** Saga trigger: fetch ready tasks for a workspace */
-export const fetchReadyTasks = createAction<[workspaceId: string]>(
-  'workspaceNotes/fetchReadyTasks',
+/** Saga trigger emitted by daemon events that can change progress-card git status. */
+export const workspaceProgressStatusRefreshRequested = createAction<[workspaceId: string]>(
+  'workspaceNotes/workspaceProgressStatusRefreshRequested',
 );
+
+/** Saga trigger carrying the daemon-owned ready-task ID snapshot. */
+export const workspaceProgressReadyTasksChanged = createAction<
+  [workspaceId: string, readyTaskIds: string[]]
+>('workspaceNotes/workspaceProgressReadyTasksChanged');
 
 /** Apply fetched ready tasks to state */
 export const applyReadyTasks = createAction<[workspaceId: string, tasks: Note[]]>(
@@ -185,6 +234,78 @@ const applyReadyTasksError = createAction<[workspaceId: string, error: string]>(
 );
 
 export const workspaceNotesReducer = createReducer<WorkspaceNotesState>(initialState);
+const emptyLineAttribution: LineAttributionReadState = {
+  attributions: {},
+  loading: false,
+  error: null,
+  version: 0,
+};
+workspaceNotesReducer.with(
+  loadLineAttributionRequested,
+  (state, { payload: [workspaceId, noteId] }) => {
+    const ws = getWorkspaceState(state, workspaceId);
+    const current = ws.lineAttributions[noteId] ?? emptyLineAttribution;
+    return setWorkspaceState(state, workspaceId, {
+      ...ws,
+      lineAttributions: {
+        ...ws.lineAttributions,
+        [noteId]: { ...current, loading: true, error: null },
+      },
+    });
+  },
+);
+workspaceNotesReducer.with(
+  lineAttributionLoaded,
+  (state, { payload: [workspaceId, noteId, attributions] }) => {
+    const ws = getWorkspaceState(state, workspaceId);
+    const current = ws.lineAttributions[noteId] ?? emptyLineAttribution;
+    return setWorkspaceState(state, workspaceId, {
+      ...ws,
+      lineAttributions: {
+        ...ws.lineAttributions,
+        [noteId]: {
+          attributions,
+          loading: false,
+          error: null,
+          version: current.version + 1,
+        },
+      },
+    });
+  },
+);
+workspaceNotesReducer.with(
+  lineAttributionLoadFailed,
+  (state, { payload: [workspaceId, noteId, error] }) => {
+    const ws = getWorkspaceState(state, workspaceId);
+    const current = ws.lineAttributions[noteId] ?? emptyLineAttribution;
+    return setWorkspaceState(state, workspaceId, {
+      ...ws,
+      lineAttributions: {
+        ...ws.lineAttributions,
+        [noteId]: { ...current, loading: false, error },
+      },
+    });
+  },
+);
+workspaceNotesReducer.with(
+  lineAttributionUpdated,
+  (state, { payload: [workspaceId, noteId, attributions] }) => {
+    const ws = getWorkspaceState(state, workspaceId);
+    const current = ws.lineAttributions[noteId] ?? emptyLineAttribution;
+    return setWorkspaceState(state, workspaceId, {
+      ...ws,
+      lineAttributions: {
+        ...ws.lineAttributions,
+        [noteId]: {
+          attributions,
+          loading: false,
+          error: null,
+          version: current.version + 1,
+        },
+      },
+    });
+  },
+);
 workspaceNotesReducer.with(
   clearWorkspaceNotesForWorkspaces,
   (state, { payload: [workspaceIds] }) => {
@@ -420,19 +541,6 @@ workspaceNotesReducer.with(applyNoteVersionsError, (state, { payload: [workspace
       loading: false,
       error,
       noteId: ws.noteVersions?.noteId ?? null,
-    },
-  });
-});
-workspaceNotesReducer.with(fetchReadyTasks, (state, { payload: [workspaceId] }) => {
-  const ws = getWorkspaceState(state, workspaceId);
-  if (ws.readyTasks?.loading) return state; // Already loading, no change
-  return setWorkspaceState(state, workspaceId, {
-    ...ws,
-    readyTasks: {
-      tasks: ws.readyTasks?.tasks ?? [],
-      loading: true,
-      error: null,
-      searched: ws.readyTasks?.searched ?? false,
     },
   });
 });

@@ -1,7 +1,9 @@
-import { call, delay, put, race, take, takeEvery } from 'typed-redux-saga';
+import { call, cancelled, delay, put, race, take, takeEvery } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
+import { invoke } from '$lib/electron-bridge';
 import { createLogger } from '$lib/utils/client-logger';
+import { dispatchWindowEvent } from '$lib/utils/window-events';
 import { stripWorkspacePrefix } from '$lib/utils/file-utils';
 import { m } from '$shared/paraglide/messages.js';
 import { createFileRequested } from '../../app-layout/app-layout-slice';
@@ -15,11 +17,70 @@ import {
   saveFileContentRequested,
   saveFileContentSucceeded,
   updateFileContent,
+  deleteLegacyFileRequested,
+  downloadLegacyFileRequested,
+  openLegacyFileRequested,
+  readLegacyFileRequested,
+  revealLegacyFileRequested,
+  saveLegacyFileRequested,
+  writeLegacyFileRequested,
 } from '../files-slice';
+import type { LegacyFileDownloadResult } from '../files-types';
 
 const logger = createLogger('FilesWriteSaga');
 export const FILE_CONTENT_SAVE_DEBOUNCE_MS = 1500;
 const pendingFileSaves = new Map<string, Promise<void>>();
+
+function invokeLegacyOpen(workspaceId: string, path: string) {
+  return invoke<{ success?: boolean; content?: string; error?: string }>('file:open', {
+    path,
+    workspaceId,
+  });
+}
+
+function invokeLegacySave(workspaceId: string, filePath: string, content: string) {
+  return invoke<{ success?: boolean; error?: string }>('file:save', {
+    filePath,
+    content,
+    workspaceId,
+  });
+}
+
+function invokeLegacyRead(path: string) {
+  return invoke<{ content?: string }>('file:read', { path });
+}
+
+function invokeLegacyDelete(workspaceId: string, path: string) {
+  return invoke<{ success?: boolean; error?: string }>('file:delete', {
+    path,
+    ...(workspaceId ? { workspaceId } : {}),
+  });
+}
+
+function invokeLegacyWrite(workspaceId: string, path: string, content: string) {
+  return invoke('file:write', { path, content, workspaceId });
+}
+
+function invokeLegacyDownload(path: string) {
+  return invoke<{
+    success?: boolean;
+    canceled?: boolean;
+    data?: { filePath?: string };
+    error?: { message?: string };
+  }>('file:download', { path });
+}
+
+function invokeLegacyReveal(path: string) {
+  return invoke('shell:showItemInFolder', { path });
+}
+
+function emitFileDeleted(workspaceId: string, filePath: string) {
+  dispatchWindowEvent('file:changed', { workspaceId, type: 'delete', filePath });
+}
+
+function emitFileCreated(workspaceId: string, filePath: string) {
+  dispatchWindowEvent('file:changed', { workspaceId, type: 'create', filePath });
+}
 
 type SaveRequest = {
   workspaceId: string;
@@ -150,8 +211,144 @@ function* saveFileContentActionWorker(action: SaveAction) {
   }
 }
 
+function toError(error: unknown): Error {
+  return error instanceof Error ? error : new Error(String(error));
+}
+
+function* openLegacyFileWorker(action: ReturnType<typeof openLegacyFileRequested>) {
+  let settled = false;
+  try {
+    const [workspaceId, path] = action.payload;
+    const result = yield* call(invokeLegacyOpen, workspaceId, path);
+    if (!result?.success)
+      throw new Error(result?.error ?? m.fileExplorer_layout_loadFailed_error());
+    yield* put(action.success(result.content ?? ''));
+    settled = true;
+  } catch (error) {
+    yield* put(action.failure(toError(error)));
+    settled = true;
+  } finally {
+    if (!settled && (yield* cancelled()))
+      yield* put(action.failure(new Error('File open cancelled')));
+  }
+}
+
+function* saveLegacyFileWorker(action: ReturnType<typeof saveLegacyFileRequested>) {
+  let settled = false;
+  try {
+    const [workspaceId, filePath, content] = action.payload;
+    const result = yield* call(invokeLegacySave, workspaceId, filePath, content);
+    if (!result?.success)
+      throw new Error(result?.error ?? m.fileExplorer_layout_saveFailed_error());
+    yield* put(action.success(undefined as never));
+    settled = true;
+  } catch (error) {
+    yield* put(action.failure(toError(error)));
+    settled = true;
+  } finally {
+    if (!settled && (yield* cancelled()))
+      yield* put(action.failure(new Error('File save cancelled')));
+  }
+}
+
+function* readLegacyFileWorker(action: ReturnType<typeof readLegacyFileRequested>) {
+  let settled = false;
+  try {
+    const result = yield* call(invokeLegacyRead, action.payload[0]);
+    yield* put(action.success(result?.content ?? ''));
+    settled = true;
+  } catch (error) {
+    yield* put(action.failure(toError(error)));
+    settled = true;
+  } finally {
+    if (!settled && (yield* cancelled()))
+      yield* put(action.failure(new Error('File read cancelled')));
+  }
+}
+
+function* deleteLegacyFileWorker(action: ReturnType<typeof deleteLegacyFileRequested>) {
+  let settled = false;
+  try {
+    const [workspaceId, path] = action.payload;
+    const result = yield* call(invokeLegacyDelete, workspaceId, path);
+    if (!result?.success)
+      throw new Error(result?.error ?? m.fileExplorer_tree_deleteFailed_error());
+    yield* call(emitFileDeleted, workspaceId, path);
+    yield* put(action.success(undefined as never));
+    settled = true;
+  } catch (error) {
+    yield* put(action.failure(toError(error)));
+    settled = true;
+  } finally {
+    if (!settled && (yield* cancelled()))
+      yield* put(action.failure(new Error('File delete cancelled')));
+  }
+}
+
+function* writeLegacyFileWorker(action: ReturnType<typeof writeLegacyFileRequested>) {
+  let settled = false;
+  try {
+    const [workspaceId, path, content] = action.payload;
+    yield* call(invokeLegacyWrite, workspaceId, path, content);
+    yield* call(emitFileCreated, workspaceId, path);
+    yield* put(action.success(undefined as never));
+    settled = true;
+  } catch (error) {
+    yield* put(action.failure(toError(error)));
+    settled = true;
+  } finally {
+    if (!settled && (yield* cancelled()))
+      yield* put(action.failure(new Error('File write cancelled')));
+  }
+}
+
+function* downloadLegacyFileWorker(action: ReturnType<typeof downloadLegacyFileRequested>) {
+  let settled = false;
+  try {
+    const result = yield* call(invokeLegacyDownload, action.payload[0]);
+    const mapped: LegacyFileDownloadResult = {
+      success: result?.success === true,
+      ...(result?.canceled !== undefined ? { canceled: result.canceled } : {}),
+      ...(result?.data?.filePath ? { filePath: result.data.filePath } : {}),
+      ...(result?.error?.message ? { error: result.error.message } : {}),
+    };
+    yield* put(action.success(mapped));
+    settled = true;
+  } catch (error) {
+    yield* put(action.failure(toError(error)));
+    settled = true;
+  } finally {
+    if (!settled && (yield* cancelled())) {
+      yield* put(action.failure(new Error('File download cancelled')));
+    }
+  }
+}
+
+function* revealLegacyFileWorker(action: ReturnType<typeof revealLegacyFileRequested>) {
+  let settled = false;
+  try {
+    yield* call(invokeLegacyReveal, action.payload[0]);
+    yield* put(action.success(undefined as never));
+    settled = true;
+  } catch (error) {
+    yield* put(action.failure(toError(error)));
+    settled = true;
+  } finally {
+    if (!settled && (yield* cancelled())) {
+      yield* put(action.failure(new Error('File reveal cancelled')));
+    }
+  }
+}
+
 export function* filesWriteSaga() {
   yield* takeEvery(createFileRequested, createFileActionWorker);
   yield* takeEvery(updateFileContent, updateFileContentWorker);
   yield* takeEvery(saveFileContentRequested, saveFileContentActionWorker);
+  yield* takeEvery(openLegacyFileRequested, openLegacyFileWorker);
+  yield* takeEvery(saveLegacyFileRequested, saveLegacyFileWorker);
+  yield* takeEvery(readLegacyFileRequested, readLegacyFileWorker);
+  yield* takeEvery(deleteLegacyFileRequested, deleteLegacyFileWorker);
+  yield* takeEvery(writeLegacyFileRequested, writeLegacyFileWorker);
+  yield* takeEvery(downloadLegacyFileRequested, downloadLegacyFileWorker);
+  yield* takeEvery(revealLegacyFileRequested, revealLegacyFileWorker);
 }

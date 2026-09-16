@@ -5,6 +5,8 @@ const mocks = vi.hoisted(() => ({
   get: vi.fn(),
   getConversation: vi.fn(),
   getMessageBlock: vi.fn(),
+  getDraft: vi.fn(),
+  listUserMessages: vi.fn(),
   invoke: vi.fn(() => Promise.resolve()),
 }));
 vi.mock('$lib/client', () => ({
@@ -13,7 +15,9 @@ vi.mock('$lib/client', () => ({
       get: mocks.get,
       getConversation: mocks.getConversation,
       getMessageBlock: mocks.getMessageBlock,
+      listUserMessages: mocks.listUserMessages,
     },
+    drafts: { get: mocks.getDraft },
     chat: {},
   },
 }));
@@ -34,6 +38,8 @@ import {
   chatTranscriptSnapshotApplied,
   chatTranscriptSnapshotRerequested,
   initializeChatRequested,
+  listUserMessagesRequested,
+  loadChatDraftRequested,
   initialState as chatStateInitialState,
   messageBlockHydrationRequested,
   refreshChatTranscriptRequested,
@@ -146,6 +152,47 @@ describe('chatReadSaga (single-transfer hydration)', () => {
   afterEach(() => {
     vi.clearAllMocks();
     clearAllStandingChatSubscriptions();
+  });
+
+  it('loads the protocol-shaped user-message index through the saga', async () => {
+    const result = {
+      ok: true as const,
+      items: [{ id: 'message-1', preview: 'Prompt', createdAt: '2026-01-01T00:00:00.000Z' }],
+      total: 1,
+    };
+    mocks.listUserMessages.mockResolvedValue(result);
+    const run = harness();
+    const action = listUserMessagesRequested(AGENT);
+
+    run.channel.put(action);
+    await settle();
+
+    expect(mocks.listUserMessages).toHaveBeenCalledExactlyOnceWith(AGENT);
+    expect(run.chat().byAgentId[AGENT]?.userMessageIndex).toEqual({
+      data: result,
+      loading: false,
+      error: null,
+    });
+    run.task.cancel();
+  });
+
+  it('loads a persisted draft through the saga', async () => {
+    const draft = { text: 'saved', updatedAt: '2026-01-01T00:00:00.000Z' };
+    mocks.getDraft.mockResolvedValue(draft);
+    const run = harness();
+    const action = loadChatDraftRequested(WS, AGENT, 4);
+
+    run.dispatch(action);
+    await expect(action.promise).resolves.toEqual(draft);
+
+    expect(mocks.getDraft).toHaveBeenCalledExactlyOnceWith(WS, AGENT);
+    expect(run.chat().draftOperations.loads[`${WS}\u0000${AGENT}`]).toEqual({
+      status: 'success',
+      requestId: 4,
+      data: draft,
+      error: null,
+    });
+    run.task.cancel();
   });
 
   it('settles from the standing subscription snapshot without any conversation fetch', async () => {

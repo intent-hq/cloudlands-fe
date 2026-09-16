@@ -15,6 +15,12 @@ import {
   selectHostRequirementsChecking,
   selectHostRequirementsHasCheckedOnce,
   selectNodeRequirement,
+  selectRtkChecking,
+  selectRtkEnabled,
+  selectRtkError,
+  selectRtkRequirement,
+  selectRtkSettingsLoaded,
+  selectRtkUpdating,
 } from './host-requirements-selectors';
 import {
   checkHostRequirementsComplete,
@@ -24,6 +30,13 @@ import {
   hostRequirementsReducer,
   initialState,
   nodeRequirementResolved,
+  rtkCheckStarted,
+  rtkRequirementResolved,
+  rtkSettingLoaded,
+  rtkSettingLoadFailed,
+  rtkUpdateFailed,
+  rtkUpdateStarted,
+  rtkUpdateSucceeded,
 } from './host-requirements-slice';
 import type { HostRequirementsState } from './host-requirements-types';
 
@@ -38,6 +51,12 @@ describe('hostRequirementsReducer', () => {
       git: { checked: false, available: false },
       node: { checked: false, ok: false },
       gh: { checked: false, available: false },
+      rtk: { checked: false, available: false },
+      rtkEnabled: false,
+      rtkSettingsLoaded: false,
+      rtkChecking: false,
+      rtkUpdating: false,
+      rtkError: null,
       checking: false,
       hasCheckedOnce: false,
     });
@@ -94,6 +113,35 @@ describe('hostRequirementsReducer', () => {
     expect(state.hasCheckedOnce).toBe(true);
   });
 
+  it('settles RTK probes and setting hydration', () => {
+    const checking = hostRequirementsReducer(initialState, rtkCheckStarted());
+    expect(checking.rtkChecking).toBe(true);
+    const available = hostRequirementsReducer(checking, rtkRequirementResolved(true));
+    expect(available.rtk).toEqual({ checked: true, available: true });
+    expect(available.rtkChecking).toBe(false);
+    const loaded = hostRequirementsReducer(available, rtkSettingLoaded(true));
+    expect(loaded.rtkEnabled).toBe(true);
+    expect(loaded.rtkSettingsLoaded).toBe(true);
+    expect(loaded.rtkError).toBeNull();
+    const failed = hostRequirementsReducer(loaded, rtkSettingLoadFailed('unavailable'));
+    expect(failed.rtkSettingsLoaded).toBe(true);
+    expect(failed.rtkError).toBe('unavailable');
+  });
+
+  it('settles RTK setting updates on success and failure', () => {
+    const updating = hostRequirementsReducer(initialState, rtkUpdateStarted());
+    expect(updating.rtkUpdating).toBe(true);
+    const succeeded = hostRequirementsReducer(updating, rtkUpdateSucceeded(true));
+    expect(succeeded.rtkEnabled).toBe(true);
+    expect(succeeded.rtkUpdating).toBe(false);
+    expect(succeeded.rtkError).toBeNull();
+    const restarted = hostRequirementsReducer(succeeded, rtkUpdateStarted());
+    const failed = hostRequirementsReducer(restarted, rtkUpdateFailed('save failed'));
+    expect(failed.rtkEnabled).toBe(true);
+    expect(failed.rtkUpdating).toBe(false);
+    expect(failed.rtkError).toBe('save failed');
+  });
+
   it('a fully failed check group still lands terminal (never stuck in loading)', () => {
     let state = hostRequirementsReducer(initialState, checkHostRequirementsStarted());
     state = hostRequirementsReducer(state, gitRequirementResolved(false));
@@ -102,8 +150,14 @@ describe('hostRequirementsReducer', () => {
     state = hostRequirementsReducer(state, checkHostRequirementsComplete());
     expect(state).toEqual({
       git: { checked: true, available: false },
-      node: { checked: true, ok: false },
+      node: { checked: true, ok: false, version: undefined },
       gh: { checked: true, available: false },
+      rtk: { checked: false, available: false },
+      rtkEnabled: false,
+      rtkSettingsLoaded: false,
+      rtkChecking: false,
+      rtkUpdating: false,
+      rtkError: null,
       checking: false,
       hasCheckedOnce: true,
     });
@@ -115,6 +169,12 @@ describe('host-requirements selectors', () => {
     git: { checked: true, available: true, version: '2.43.0' },
     node: { checked: true, ok: true, version: '22.1.0' },
     gh: { checked: true, available: true, version: '2.62.0' },
+    rtk: { checked: true, available: true },
+    rtkEnabled: true,
+    rtkSettingsLoaded: true,
+    rtkChecking: false,
+    rtkUpdating: false,
+    rtkError: null,
     checking: false,
     hasCheckedOnce: true,
   };
@@ -130,6 +190,16 @@ describe('host-requirements selectors', () => {
     expect(selectHostRequirementsHasCheckedOnce.select(storeWith(met))).toBe(true);
     expect(selectHostRequirementsChecking.select(storeWith(initialState))).toBe(false);
     expect(selectHostRequirementsHasCheckedOnce.select(storeWith(initialState))).toBe(false);
+  });
+
+  it('exposes RTK status and operation state', () => {
+    const state = storeWith(met);
+    expect(selectRtkRequirement.select(state)).toEqual(met.rtk);
+    expect(selectRtkEnabled.select(state)).toBe(true);
+    expect(selectRtkSettingsLoaded.select(state)).toBe(true);
+    expect(selectRtkChecking.select(state)).toBe(false);
+    expect(selectRtkUpdating.select(state)).toBe(false);
+    expect(selectRtkError.select(state)).toBeNull();
   });
 
   it('allRequirementsMet requires git available AND node ok', () => {

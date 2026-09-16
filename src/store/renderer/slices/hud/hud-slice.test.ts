@@ -7,6 +7,7 @@ import {
   hudDeactivated,
   hudDisplayStatusChanged,
   hudFeedEntryReceived,
+  hudFullScreenChanged,
   hudGridFilterHydrated,
   hudGridFilterRepoPicked,
   hudGridFilterStatesCleared,
@@ -46,8 +47,16 @@ function activeState(): HudState {
 describe('hud-slice reducer', () => {
   it('starts inactive with an empty feed', () => {
     expect(initialState.active).toBe(false);
+    expect(initialState.fullScreen).toBe(false);
     expect(initialState.feed).toEqual([]);
     expect(initialState.usage).toBeNull();
+  });
+
+  it('tracks full-screen state and resets it on deactivation', () => {
+    let state = hudReducer(activeState(), hudFullScreenChanged(true));
+    expect(state.fullScreen).toBe(true);
+    state = hudReducer(state, hudDeactivated());
+    expect(state.fullScreen).toBe(false);
   });
 
   it('hudActivated resets to a clean active slate (live-only feed, no backfill)', () => {

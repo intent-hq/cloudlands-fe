@@ -27,8 +27,31 @@ export type FileContentSaveOptions = {
   intent?: 'save' | 'restore';
 };
 
+type FileNameSearchEntry = {
+  pattern: string;
+  files: string[];
+  loading: boolean;
+  error: string | null;
+};
+
+type WorkspaceMediaResolutionEntry = {
+  requestedPath: string;
+  resolvedPath: string | null;
+  loading: boolean;
+  error: string | null;
+};
+
+export type LegacyFileDownloadResult = {
+  success: boolean;
+  canceled?: boolean;
+  filePath?: string;
+  error?: string;
+};
+
 export type FilesWorkspaceState = {
   files: Collection<FileContentEntry, 'path'>;
+  fileNameSearches: Record<string, FileNameSearchEntry>;
+  mediaResolutions: Record<string, WorkspaceMediaResolutionEntry>;
 };
 
 export type FilesState = {

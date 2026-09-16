@@ -9,7 +9,7 @@
  * backend reconnect by the provider-models seeder (RESUB-1 idiom — a daemon
  * restart may have changed adapters/catalogs).
  */
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
+import { createAction, createAsyncAction } from '@augmentcode/themis/utils/store/create-action';
 import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import type {
   ProviderModelsCacheEntry,
@@ -49,6 +49,11 @@ export const providerModelsLoaded = createAction<
  * states. The epoch bump invalidates in-flight writes issued before the clear.
  */
 export const providerModelsCacheCleared = createAction('providerModels/providerModelsCacheCleared');
+
+export const loadProviderModelsRequested = createAsyncAction<
+  [providerId: string, forceRefresh?: boolean, debounce?: boolean],
+  ProviderModelsFetchResult
+>('providerModels/loadProviderModels', 'providerModels/loadProviderModelsRequested');
 
 export const providerModelsReducer = createReducer<ProviderModelsState>(initialState);
 
