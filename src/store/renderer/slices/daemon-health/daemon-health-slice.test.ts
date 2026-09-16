@@ -680,6 +680,56 @@ describe('daemonHealthReducer', () => {
       expect(next.hostLocality).toBe('local');
     });
 
+    it('keeps counts and telemetry absent for the collaborator projection (intentd #1934)', () => {
+      // Exactly the guest-safe key set a Collaborator caller receives — no
+      // clients/agents/maxAgents, no process/disk telemetry, no host.hasDisplay.
+      const payload: SystemStatusWirePayload = {
+        running: true,
+        listenMode: 'wss',
+        transports: ['wss'],
+        port: 7777,
+        version: '0.1.0',
+        buildCommit: '0123456789abcdef',
+        protocolVersion: '2.0',
+        fingerprint: 'abc123',
+        hostname: 'studio.local',
+        host: {
+          os: 'macos',
+          arch: 'aarch64',
+          locality: 'remote',
+        },
+      };
+      const state = { ...initialState, polling: true };
+      const receivedAt = '2026-09-16T13:00:00.000Z';
+      const next = daemonHealthReducer(state, systemStatusSuccess(payload, receivedAt, 0));
+
+      expect(next.polling).toBe(false);
+      expect(next.stats).toEqual({
+        listenMode: 'wss',
+        port: 7777,
+        version: '0.1.0',
+        buildCommit: '0123456789abcdef',
+        protocolVersion: '2.0',
+        hostname: 'studio.local',
+        os: 'macos',
+        arch: 'aarch64',
+      });
+      expect(next.stats?.clients).toBeUndefined();
+      expect(next.stats?.agents).toBeUndefined();
+      expect(next.stats?.maxAgents).toBeUndefined();
+      expect(next.stats?.uptimeSeconds).toBeUndefined();
+      expect(next.stats?.cpuPercent).toBeUndefined();
+      expect(next.stats?.memoryBytes).toBeUndefined();
+      expect(next.stats?.workspacesDiskAvailableBytes).toBeUndefined();
+      expect(next.stats?.workspacesDiskTotalBytes).toBeUndefined();
+      // Nothing numeric was coerced from a missing field.
+      for (const value of Object.values(next.stats ?? {})) {
+        expect(Number.isNaN(value)).toBe(false);
+      }
+      expect(next.lastUpdated).toBe(receivedAt);
+      expect(next.hostLocality).toBe('remote');
+    });
+
     it('treats new fields as optional (graceful degradation)', () => {
       const payload: SystemStatusWirePayload = {
         running: true,

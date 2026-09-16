@@ -720,6 +720,69 @@ describe('DaemonStatusIndicator', () => {
     });
   });
 
+  describe('collaborator projection (intentd #1934)', () => {
+    async function openStatusWith(stats: Record<string, unknown>) {
+      mockStoreState = {
+        daemonHealth: {
+          health: 'healthy',
+          stats,
+          lastUpdated: new Date().toISOString(),
+          polling: false,
+        },
+      };
+      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
+      render(DaemonStatusIndicator);
+      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+      await fireEvent.click(screen.getByText(/^Status - /));
+    }
+
+    it('hides the count and telemetry rows when the daemon omits them (guest window)', async () => {
+      // What the slice stores for the guest-safe projection: no clients /
+      // agents / maxAgents, no uptime / CPU / memory / disk.
+      await openStatusWith({
+        listenMode: 'wss',
+        port: 7777,
+        version: '0.1.0',
+        protocolVersion: '2.0',
+        hostname: 'studio.local',
+        os: 'macos',
+        arch: 'aarch64',
+      });
+
+      expect(screen.queryByText('Agent slots')).toBeNull();
+      expect(screen.queryByText('WSS clients')).toBeNull();
+      expect(screen.queryByText('Uptime')).toBeNull();
+      expect(screen.queryByText('CPU')).toBeNull();
+      expect(screen.queryByText('Memory')).toBeNull();
+      expect(screen.queryByText('Workspace disk')).toBeNull();
+      // Nothing rendered "undefined" or "NaN" in place of a missing count.
+      expect(screen.queryByText(/undefined|NaN/)).toBeNull();
+      // The projected rows still render.
+      expect(screen.getByText('Transport')).toBeTruthy();
+      expect(screen.getByText('wss:7777')).toBeTruthy();
+      expect(screen.getByText('Version')).toBeTruthy();
+      expect(screen.getByText('0.1.0')).toBeTruthy();
+    });
+
+    it('renders the count rows when the daemon reports them (administrator window)', async () => {
+      await openStatusWith({
+        clients: 2,
+        agents: 1,
+        maxAgents: 8,
+        listenMode: 'uds',
+        port: null,
+        version: '0.1.0',
+        os: 'macos',
+        arch: 'aarch64',
+      });
+
+      expect(screen.getByText('Agent slots')).toBeTruthy();
+      expect(screen.getByText('1/8')).toBeTruthy();
+      expect(screen.getByText('WSS clients')).toBeTruthy();
+      expect(screen.getByText('2')).toBeTruthy();
+    });
+  });
+
   describe('workspace disk rendering', () => {
     function withDisk(opts: {
       health?: 'healthy' | 'degraded' | 'down';
