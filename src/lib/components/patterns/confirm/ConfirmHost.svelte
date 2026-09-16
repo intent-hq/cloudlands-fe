@@ -47,5 +47,7 @@
 </script>
 
 {#if request}
-  <ConfirmRequestView {request} bind:value {busy} onAccept={accept} onCancel={cancel} />
+  {#key request.id}
+    <ConfirmRequestView {request} bind:value {busy} onAccept={accept} onCancel={cancel} />
+  {/key}
 {/if}

@@ -11,6 +11,31 @@ afterEach(() => {
 });
 
 describe('confirm service', () => {
+  it.each(['confirm', 'prompt'] as const)(
+    'shows and resolves the next queued %s after cancelling the first',
+    async (kind) => {
+      render(ConfirmHost);
+      const enqueue = (title: string) =>
+        kind === 'confirm'
+          ? confirm({ title, confirmLabel: 'Continue' })
+          : prompt({
+              title,
+              confirmLabel: 'Continue',
+              field: { label: 'Name', initialValue: title, required: true },
+            });
+      const first = enqueue('First request');
+      const second = enqueue('Second request');
+
+      await screen.findByRole('dialog', { name: 'First request' });
+      await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+      await expect(first).resolves.toBe(kind === 'confirm' ? false : null);
+
+      expect(await screen.findByRole('dialog', { name: 'Second request' })).toBeTruthy();
+      await fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+      await expect(second).resolves.toBe(kind === 'confirm' ? true : 'Second request');
+    },
+  );
+
   it('queues requests and resolves them in invocation order', async () => {
     render(ConfirmHost);
     const first = confirm({ title: 'First request', confirmLabel: 'Continue' });
