@@ -145,6 +145,14 @@
   // A click can explicitly accept the same branch that was auto-selected.
   // Track that interaction separately from the value echoed by the parent.
   let explicitBranchSelectionRevision = 0;
+  // Keep the original selection intent until an authoritative list succeeds.
+  // Refresh can abort a request after its cached selection was echoed/persisted.
+  let pendingGithubSelection: {
+    autoSelectedBranch: string;
+    valueBeforePaint: string;
+    savedBranchBeforePaint: string;
+    explicitSelectionRevision: number;
+  } | null = null;
   // Using 'any' because this binds to a Svelte Input component, not a native HTMLInputElement
   // The Input component exports focus() and select() methods that we use
   let searchInputElement: any = $state(null);
@@ -385,6 +393,7 @@
 
     // Only refetch if something meaningful changed
     if (needsRefetch) {
+      pendingGithubSelection = null;
       if (currentRepoPath) {
         // Try to load saved branch for this repo if persistence is enabled.
         const savedBranch = getSavedBranchForRepo(currentRepoPath);
@@ -558,14 +567,6 @@
     }
 
     let fetchSucceeded = false;
-    // Cached-first paint state for the GitHub path (`github.branches.listCached`).
-    let cachedListingApplied = false;
-    let cachedAutoSelectedBranch = '';
-    let valueBeforeCachedPaint = '';
-    let explicitSelectionRevisionAtCachedPaint = 0;
-    // Captured before the cached paint: its auto-selection persists via
-    // saveBranchForRepo, so the live saved value is clobbered by then.
-    let savedBranchBeforeCachedPaint = '';
     let freshListingSettled = false;
 
     try {
@@ -640,12 +641,18 @@
           branches = cachedListing.branches;
           defaultBranch = cachedListing.defaultBranch || '';
           isLoading = false;
-          cachedListingApplied = true;
-          savedBranchBeforeCachedPaint = getSavedBranchForRepo(repoPath);
-          valueBeforeCachedPaint = value;
-          explicitSelectionRevisionAtCachedPaint = explicitBranchSelectionRevision;
-          applyGithubBranchSelection();
-          cachedAutoSelectedBranch = internalSelectedBranch;
+          if (!pendingGithubSelection) {
+            const savedBranchBeforePaint = getSavedBranchForRepo(repoPath);
+            const valueBeforePaint = value;
+            const explicitSelectionRevision = explicitBranchSelectionRevision;
+            applyGithubBranchSelection();
+            pendingGithubSelection = {
+              autoSelectedBranch: internalSelectedBranch,
+              valueBeforePaint,
+              savedBranchBeforePaint,
+              explicitSelectionRevision,
+            };
+          }
           notifyBranchesLoaded();
           logger.debug('Rendered cached branches via github.branches.listCached', {
             owner,
@@ -710,17 +717,18 @@
       // For GitHub repos, ensure a valid branch is selected
       // (Local repos already handle this above)
       if (effectiveRepoType === 'github' && branches.length > 0) {
-        if (cachedListingApplied && !valueBeforeCachedPaint) {
+        const cachedSelection = pendingGithubSelection;
+        if (cachedSelection && !cachedSelection.valueBeforePaint) {
           // The clone dialog echoes automatic onchange events into value.
           // Reconcile that provisional value too, but preserve explicit picks
           // (even a click on the same branch) and different external values.
           if (
-            explicitBranchSelectionRevision === explicitSelectionRevisionAtCachedPaint &&
-            (!value || value === cachedAutoSelectedBranch)
+            explicitBranchSelectionRevision === cachedSelection.explicitSelectionRevision &&
+            (!value || value === cachedSelection.autoSelectedBranch)
           ) {
             // Use the saved value captured BEFORE the cached paint — the
             // cached auto-selection persisted itself via saveBranchForRepo.
-            const saved = savedBranchBeforeCachedPaint;
+            const saved = cachedSelection.savedBranchBeforePaint;
             const preferred =
               saved && (branches.includes(saved) || remoteBranches.includes(saved))
                 ? saved
@@ -736,7 +744,10 @@
 
       // Don't export a superseded fetch's branch list to consumers — a newer
       // fetch (e.g. after a repo change) owns the notification.
-      if (fetchSucceeded && !abortController.signal.aborted) notifyBranchesLoaded();
+      if (fetchSucceeded && !abortController.signal.aborted) {
+        pendingGithubSelection = null;
+        notifyBranchesLoaded();
+      }
     } catch (err) {
       // Handle abort errors silently - they're expected when a new fetch starts
       if (err instanceof Error && err.name === 'AbortError') {
