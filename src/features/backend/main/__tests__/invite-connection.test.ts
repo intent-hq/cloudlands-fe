@@ -350,9 +350,37 @@ describe('openInviteConnection', () => {
       try {
         expect(conn.via).toBe('tunnel');
         expect(conn.host).toBe('TC-Key-ABC');
-        expect(args).toEqual([['tc-key-abc', String(daemon.port)]]);
+        expect(args).toEqual([['TC-Key-ABC', String(daemon.port)]]);
         expect(daemon.upgradeUrls).toEqual(['/invite']);
         await expect(conn.redeemStart('inv_1', 's3cret')).resolves.toEqual(START);
+      } finally {
+        conn.close();
+      }
+      await vi.waitFor(() => expect(children.every((c) => c.killed)).toBe(true), {
+        timeout: 3_000,
+      });
+    });
+
+    it('passes the tc address to tailcat byte-for-byte (base64url is case-sensitive)', async () => {
+      daemon.handler = () => ({ result: START });
+      const children: RelayChild[] = [];
+      const args: string[][] = [];
+      const tcAddress =
+        'tcO2FwWCCz0cQ-4LS-CykXcxAP81C7kREV9iftw3EJi5SBsr6EH2FrWCCUw7CJSXjETiP08mBzLNbZq1oMcXwMAlHysI25i6Ifd2FpGQEw';
+      const { openInviteConnection } = await import('../invite-connection');
+      const conn = await openInviteConnection(
+        {
+          hosts: [],
+          port: daemon.port,
+          fingerprint: daemon.fingerprint,
+          tcAddress: ` ${tcAddress} `,
+        },
+        { timeoutMs: 5_000, tailcatSpawn: relaySpawn(daemon.port, children, args) },
+      );
+      try {
+        expect(conn.via).toBe('tunnel');
+        expect(conn.host).toBe(tcAddress);
+        expect(args).toEqual([[tcAddress, String(daemon.port)]]);
       } finally {
         conn.close();
       }
