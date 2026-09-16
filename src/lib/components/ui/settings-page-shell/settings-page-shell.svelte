@@ -110,16 +110,18 @@
     {/if}
   </header>
   <div data-slot="settings-page-content-scroll" class="min-h-0 min-w-0 overflow-auto">
-    <div
-      data-slot="settings-page-content"
-      data-measure={measure}
-      class={cn(
-        'mx-auto w-full min-w-0 space-y-10 px-4 py-6 sm:px-6 sm:py-8',
-        contentMeasureClass,
-        contentClass,
-      )}
-    >
-      {@render children?.()}
+    <div class="settings-measure-wide mx-auto w-full">
+      <div
+        data-slot="settings-page-content"
+        data-measure={measure}
+        class={cn(
+          'w-full min-w-0 space-y-10 px-4 py-6 sm:px-6 sm:py-8',
+          contentMeasureClass,
+          contentClass,
+        )}
+      >
+        {@render children?.()}
+      </div>
     </div>
   </div>
   {#if footer}
