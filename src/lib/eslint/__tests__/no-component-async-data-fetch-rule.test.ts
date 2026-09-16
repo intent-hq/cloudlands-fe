@@ -49,9 +49,11 @@ describe('no-component-async-data-fetch ESLint rule', () => {
         import { loadWebSocketApiStatus } from '$store/renderer/slices/websocket-api/websocket-api-slice';
         import { pollSystemStatus } from '$store/renderer/slices/stats/stats-slice';
         import { selectWebSocketApiEnabled } from '$store/renderer/slices/websocket-api/websocket-api-selectors';
+        import { selectBrowserTabHost } from '$store/renderer/slices/browser-clients/browser-clients-selectors';
         import { store as appStore } from '$store/renderer/store';
 
         const enabled$ = selectWebSocketApiEnabled();
+        const host = selectBrowserTabHost.select(appStore.state, 'client-id');
 
         onMount(() => {
           appStore.dispatch(loadWebSocketApiStatus());

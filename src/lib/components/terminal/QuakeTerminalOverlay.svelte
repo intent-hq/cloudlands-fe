@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Input } from '$lib/components/ui/input';
   /* eslint-disable max-lines */
   /**
    * QuakeTerminalOverlay - A sleek, Quake-style terminal overlay
@@ -46,6 +47,7 @@
   import SetupScriptBanner from './SetupScriptBanner.svelte';
   import ScriptOutputViewer from './ScriptOutputViewer.svelte';
   import TerminalSidebar from './TerminalSidebar.svelte';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import Fa from 'svelte-fa';
   import {
     faPlus,
@@ -57,7 +59,6 @@
     faPlay,
     faStop,
     faRotateRight,
-    faSpinner,
     faTableColumns,
     faArrowUpRightFromSquare,
     faCircle,
@@ -1045,7 +1046,7 @@
               <!-- Script name (editable) -->
               <div class="relative inline-flex min-w-0 items-center">
                 {#if isEditingScriptName}
-                  <input
+                  <Input
                     type="text"
                     data-edit-script-header-name
                     bind:value={editedScriptName}
@@ -1079,8 +1080,8 @@
                   <span class="relative z-10 flex-shrink-0 text-xs font-semibold text-green-500"
                     >$</span
                   >
-                  <input
-                    bind:this={editScriptCommandTextarea}
+                  <Input
+                    bind:ref={editScriptCommandTextarea}
                     bind:value={editedScriptCommand}
                     class="inline-edit-input relative z-10 min-w-0 flex-1 border-0 bg-transparent px-0 font-mono text-xs text-muted-foreground outline-none focus:outline-none! focus:ring-0!"
                     placeholder={/* i18n-ignore (shell command example) */ 'npm run dev'}
@@ -1213,7 +1214,7 @@
               <Fa icon={faTerminal} class="w-3.5 h-3.5 text-muted-foreground/75" />
               <div class="relative inline-flex min-w-0 items-center">
                 {#if isEditingHeaderName}
-                  <input
+                  <Input
                     type="text"
                     data-edit-header-terminal
                     bind:value={headerEditValue}
@@ -1384,7 +1385,7 @@
               <!-- Tab Label (editable) -->
               <div class="relative inline-flex min-w-0 items-center">
                 {#if editingTerminalId === term.id}
-                  <input
+                  <Input
                     type="text"
                     data-edit-terminal={term.id}
                     bind:value={editingValue}
@@ -1465,7 +1466,7 @@
               ></div>
               <div class="relative inline-flex min-w-0 items-center">
                 {#if editingScriptTabId === script.id}
-                  <input
+                  <Input
                     type="text"
                     data-edit-script-tab={script.id}
                     bind:value={editingScriptTabValue}
@@ -1552,7 +1553,7 @@
               disabled={isDetectingScripts}
             >
               {#if isDetectingScripts}
-                <Fa icon={faSpinner} spin size="sm" class="mr-1.5" />
+                <IntentMarkLoader size={14} class="mr-1.5" />
                 {m.terminal_quakeOverlay_detecting_label()}
               {:else}
                 {m.terminal_quakeOverlay_detectScripts_label()}

@@ -7,9 +7,9 @@
   import { faCheck } from '@fortawesome/free-solid-svg-icons';
   import { untrack } from 'svelte';
   import Fa from 'svelte-fa';
-  import { toast } from 'svelte-sonner';
+  import { notify } from '$lib/components/patterns/notify';
   import { m } from '$shared/paraglide/messages.js';
-  import * as Menu from '$lib/components/ui/menu';
+  import { Menu } from '$lib/components/patterns/settings/custom-controls';
   import PathSettingField from './PathSettingField.svelte';
   import { createLogger } from '$lib/utils/client-logger';
   import { store as appStore } from '$store/renderer/store';
@@ -93,10 +93,10 @@
     savePending = false;
     if (state.error) {
       logger.error(`[ProviderPathConfig] Failed to save ${providerId} path:`, state.error);
-      toast.error(m.settings_providerPath_saveError());
+      notify.error(m.settings_providerPath_saveError());
     } else {
       onPathChange?.(state.configuredPath);
-      toast.success(m.settings_providerPath_saved());
+      notify.success(m.settings_providerPath_saved());
       logger.info(`[ProviderPathConfig] Saved ${providerId} path:`, state.configuredPath);
     }
   });
@@ -154,10 +154,10 @@
     <div class="w-80 p-3 space-y-3 overflow-hidden">
       <!-- Header with helpful copy -->
       <div class="space-y-1">
-        <p class="text-sm font-medium text-foreground">
+        <p class="type-body font-medium text-foreground">
           {m.settings_providerPath_header({ name: providerName })}
         </p>
-        <p class="text-xs text-subtle">
+        <p class="type-caption text-subtle">
           {#if npxPackage && resolvedPath}
             {m.settings_providerPath_npxOverrideHint_before({ package: npxPackage })}
             <code class="px-1 py-0.5 bg-muted rounded text-ui">{cliCommand}</code>

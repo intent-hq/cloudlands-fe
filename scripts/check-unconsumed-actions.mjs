@@ -51,6 +51,11 @@ const PATTERN_EFFECTS = new Set([...WILDCARD_EFFECTS, 'takeLatestByContext']);
 // credited.
 const UNCONSUMED_ACTION_EXCEPTIONS = [
   {
+    pattern: /workspace-notes-slice\.ts#cancelExternalNoteUpdateCoordination$/,
+    rationale:
+      'Observed by the isExternalUpdateCancellationForNote predicate (action.type === cancelExternalNoteUpdateCoordination.type) inside waitForExternalUpdateWindow in src/store/renderer/slices/workspace-notes/sagas/notes-write-saga.ts',
+  },
+  {
     pattern: /settings-events-slice\.ts#settingsChanged$/,
     rationale:
       'Observed by the touchesModelResolutionSettings predicate (action.type === settingsChanged.type) feeding actionChannel(triggersSpecialistRefetch, ...) in src/store/renderer/slices/specialists/sagas/specialists-saga.ts',

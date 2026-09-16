@@ -705,7 +705,7 @@ describe('BranchSelector (daemon-backed branch listing, no fabricated fallbacks)
 
     const trigger = container.querySelector('button');
     expect(trigger).toBeTruthy();
-    // The loader appears as soon as the (debounced) fetch is scheduled — it must
+    // The loader appears as soon as the fetch is scheduled — it must
     // cover the debounce delay before git.getBranches is actually called.
     await waitFor(() =>
       expect(trigger!.querySelector('[data-slot="intent-mark-loader"]')).toBeTruthy(),
@@ -715,7 +715,7 @@ describe('BranchSelector (daemon-backed branch listing, no fabricated fallbacks)
       expect(trigger!.querySelector('[data-slot="intent-mark-loader"]')).toBeTruthy();
     }
 
-    // The intent mark replaces the old pulse skeleton and persists while the fetch is in flight.
+    // The loader persists while the fetch is in flight.
     await waitFor(() => expect(mockGetBranches).toHaveBeenCalled());
     expect(trigger!.querySelector('[data-slot="intent-mark-loader"]')).toBeTruthy();
     expect(trigger!.querySelector('.animate-pulse')).toBeNull();
@@ -1427,7 +1427,7 @@ describe('BranchSelector (uncommitted-changes indicator gated on skipIsolation, 
 
   /** The warning status dot (trigger + dropdown notice share the same marker). */
   function uncommittedDot(root: ParentNode) {
-    return root.querySelector('.bg-warning');
+    return root.querySelector('.bg-amber-500');
   }
 
   it('shows the indicator and dropdown notice with uncommitted changes on the current branch', async () => {

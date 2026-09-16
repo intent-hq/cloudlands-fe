@@ -19,8 +19,7 @@
    */
   import { sanitizeCommandForDisplay } from '$shared/utils/sanitize-credentials';
   import { onDestroy } from 'svelte';
-  import { slide } from 'svelte/transition';
-  import { cubicOut } from 'svelte/easing';
+  import { slide } from '$lib/motion';
   import {
     selectIsTerminalOverlayOpenForWorkspace,
     selectTerminalOverlayHeight,
@@ -51,6 +50,7 @@
     faBan,
   } from '@fortawesome/free-solid-svg-icons';
   import { cn } from '$lib/utils';
+  import { Input } from '$lib/components/ui/input';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import Button from '$lib/components/ui/button/button.svelte';
   import { terminalManager } from '$features/terminal/terminal-manager.svelte';
@@ -358,7 +358,7 @@
       class="terminal-panel relative flex flex-col bg-sidebar border-t border-border shadow-2xl w-full"
       class:is-resizing={isResizing}
       style="height: {renderedHeight}vh;"
-      transition:slide={{ axis: 'y', duration: 200, easing: cubicOut }}
+      transition:slide={{ axis: 'y', tier: 'moderate' }}
     >
       <!-- Resize Handle -->
       <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -379,7 +379,7 @@
           <Fa icon={faTerminal} class="w-3.5 h-3.5 opacity-60" />
           <div class="relative inline-flex min-w-0 items-center">
             {#if isEditingHeaderName}
-              <input
+              <Input
                 type="text"
                 data-edit-header-terminal
                 bind:value={headerEditValue}
@@ -477,7 +477,7 @@
             >
               <div class="relative inline-flex min-w-0 items-center">
                 {#if editingTerminalId === term.id}
-                  <input
+                  <Input
                     type="text"
                     data-edit-terminal={term.id}
                     bind:value={editingValue}

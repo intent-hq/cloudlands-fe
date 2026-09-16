@@ -243,7 +243,7 @@ describe('AgentBackendSettings — flush queued messages mode', () => {
 
     render(AgentBackendSettings);
 
-    const trigger = await waitFor(() => screen.getByRole('button', FLUSH_TRIGGER));
+    const trigger = await waitFor(() => screen.getByRole('combobox', FLUSH_TRIGGER));
     expect(trigger.textContent).toContain(m.settings_agentBackend_flushQueuedMessages_all_label());
   });
 
@@ -252,7 +252,7 @@ describe('AgentBackendSettings — flush queued messages mode', () => {
 
     render(AgentBackendSettings);
 
-    const trigger = await waitFor(() => screen.getByRole('button', FLUSH_TRIGGER));
+    const trigger = await waitFor(() => screen.getByRole('combobox', FLUSH_TRIGGER));
     expect(trigger.textContent).toContain(m.settings_agentBackend_flushQueuedMessages_all_label());
   });
 
@@ -262,7 +262,7 @@ describe('AgentBackendSettings — flush queued messages mode', () => {
     render(AgentBackendSettings);
 
     await waitFor(() => {
-      expect(screen.getByRole('button', FLUSH_TRIGGER).textContent).toContain(
+      expect(screen.getByRole('combobox', FLUSH_TRIGGER).textContent).toContain(
         m.settings_agentBackend_flushQueuedMessages_off_label(),
       );
     });
@@ -274,7 +274,7 @@ describe('AgentBackendSettings — flush queued messages mode', () => {
     render(AgentBackendSettings);
 
     await waitFor(() => {
-      expect(screen.getByRole('button', FLUSH_TRIGGER).textContent).toContain(
+      expect(screen.getByRole('combobox', FLUSH_TRIGGER).textContent).toContain(
         m.settings_agentBackend_flushQueuedMessages_systemOnly_label(),
       );
     });
@@ -286,7 +286,7 @@ describe('AgentBackendSettings — flush queued messages mode', () => {
     render(AgentBackendSettings);
 
     await waitFor(() => {
-      expect(screen.getByRole('button', FLUSH_TRIGGER).textContent).toContain(
+      expect(screen.getByRole('combobox', FLUSH_TRIGGER).textContent).toContain(
         m.settings_agentBackend_flushQueuedMessages_off_label(),
       );
     });
@@ -298,7 +298,7 @@ describe('AgentBackendSettings — flush queued messages mode', () => {
 
     render(AgentBackendSettings);
 
-    const trigger = await waitFor(() => screen.getByRole('button', FLUSH_TRIGGER));
+    const trigger = await waitFor(() => screen.getByRole('combobox', FLUSH_TRIGGER));
     trigger.focus();
     await fireEvent.keyDown(trigger, { key: 'Enter' });
     await fireEvent.keyDown(trigger, { key: 'ArrowDown' });
@@ -317,7 +317,7 @@ describe('AgentBackendSettings — flush queued messages mode', () => {
 
     render(AgentBackendSettings);
 
-    const trigger = await waitFor(() => screen.getByRole('button', FLUSH_TRIGGER));
+    const trigger = await waitFor(() => screen.getByRole('combobox', FLUSH_TRIGGER));
     trigger.focus();
     await fireEvent.keyDown(trigger, { key: 'Enter' });
     await fireEvent.keyDown(trigger, { key: 'ArrowDown' });
@@ -335,7 +335,7 @@ describe('AgentBackendSettings — flush queued messages mode', () => {
 
     render(AgentBackendSettings);
 
-    const trigger = await waitFor(() => screen.getByRole('button', FLUSH_TRIGGER));
+    const trigger = await waitFor(() => screen.getByRole('combobox', FLUSH_TRIGGER));
     trigger.focus();
     await fireEvent.keyDown(trigger, { key: 'Enter' });
     await fireEvent.keyDown(trigger, { key: 'ArrowDown' });
@@ -352,7 +352,7 @@ describe('AgentBackendSettings — flush queued messages mode', () => {
 
     render(AgentBackendSettings);
 
-    const trigger = await waitFor(() => screen.getByRole('button', FLUSH_TRIGGER));
+    const trigger = await waitFor(() => screen.getByRole('combobox', FLUSH_TRIGGER));
     trigger.focus();
     await fireEvent.keyDown(trigger, { key: 'Enter' });
     await fireEvent.keyDown(trigger, { key: 'ArrowDown' });
@@ -361,7 +361,7 @@ describe('AgentBackendSettings — flush queued messages mode', () => {
 
     await waitFor(() => {
       expect(screen.getByText(m.settings_agentBackend_saveError())).toBeTruthy();
-      expect(screen.getByRole('button', FLUSH_TRIGGER).textContent).toContain(
+      expect(screen.getByRole('combobox', FLUSH_TRIGGER).textContent).toContain(
         m.settings_agentBackend_flushQueuedMessages_all_label(),
       );
     });
@@ -373,7 +373,7 @@ describe('AgentBackendSettings — flush queued messages mode', () => {
 
     render(AgentBackendSettings);
 
-    const trigger = await waitFor(() => screen.getByRole('button', FLUSH_TRIGGER));
+    const trigger = await waitFor(() => screen.getByRole('combobox', FLUSH_TRIGGER));
     trigger.focus();
     await fireEvent.keyDown(trigger, { key: 'Enter' });
     await fireEvent.keyDown(trigger, { key: 'ArrowDown' });
@@ -382,7 +382,7 @@ describe('AgentBackendSettings — flush queued messages mode', () => {
 
     await waitFor(() => {
       expect(screen.getByText(m.settings_agentBackend_saveError())).toBeTruthy();
-      expect(screen.getByRole('button', FLUSH_TRIGGER).textContent).toContain(
+      expect(screen.getByRole('combobox', FLUSH_TRIGGER).textContent).toContain(
         m.settings_agentBackend_flushQueuedMessages_all_label(),
       );
     });
@@ -395,7 +395,7 @@ describe('AgentBackendSettings — flush queued messages mode', () => {
 
     render(AgentBackendSettings);
 
-    const trigger = await waitFor(() => screen.getByRole('button', FLUSH_TRIGGER));
+    const trigger = await waitFor(() => screen.getByRole('combobox', FLUSH_TRIGGER));
     trigger.focus();
     await fireEvent.keyDown(trigger, { key: 'Enter' });
     await fireEvent.keyDown(trigger, { key: 'ArrowDown' });
@@ -404,7 +404,7 @@ describe('AgentBackendSettings — flush queued messages mode', () => {
 
     await waitFor(() => {
       expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([{ path: FLUSH_PATH, value: 'off' }]);
-      expect(screen.getByRole('button', FLUSH_TRIGGER).textContent).toContain(
+      expect(screen.getByRole('combobox', FLUSH_TRIGGER).textContent).toContain(
         m.settings_agentBackend_flushQueuedMessages_all_label(),
       );
     });

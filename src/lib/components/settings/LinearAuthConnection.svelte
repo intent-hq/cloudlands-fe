@@ -4,7 +4,7 @@
     type LinearIssueFilter,
   } from '$features/linear-auth/constants';
   import LinearIcon from '$lib/components/icons/LinearIcon.svelte';
-  import { Select } from '$lib/components/ui/select';
+  import { Button, Input, Select } from '$lib/components/patterns/settings/custom-controls';
   import { faCheck } from '@fortawesome/free-solid-svg-icons';
   import { onMount } from 'svelte';
   import Fa from 'svelte-fa';
@@ -23,7 +23,6 @@
     logoutLinear,
     setLinearIssueFilter,
   } from '$store/renderer/slices/linear-auth/linear-auth-slice';
-  import Input from '$lib/components/ui/input/input.svelte';
 
   const isAuthenticated$ = selectLinearIsAuthenticated();
   const isAuthenticating$ = selectLinearIsAuthenticating();
@@ -75,51 +74,57 @@
       <div class="flex items-center gap-2">
         <LinearIcon size={14} class="text-ghost" />
         <!-- i18n-ignore (brand name) -->
-        <span class="text-sm text-foreground">Linear</span>
+        <span class="type-body text-foreground">Linear</span>
         {#if $isAuthenticated$}
-          <span class="text-xs text-subtle flex items-center gap-1">
+          <span class="type-caption text-subtle flex items-center gap-1">
             <Fa icon={faCheck} class="w-2.5 h-2.5 text-green-500" />
             {m.settings_connections_connected()}
           </span>
         {/if}
       </div>
-      <p class="text-xs text-subtle pl-6">
+      <p class="type-caption text-subtle pl-6">
         {m.settings_connections_linear_description()}
       </p>
       {#if $error$}
-        <p class="text-xs text-danger pl-6">{$error$}</p>
+        <p class="type-caption text-danger pl-6">{$error$}</p>
       {/if}
     </div>
 
-    <div class="flex items-center gap-2 text-xs">
+    <div class="flex items-center gap-2 type-caption">
       {#if $isAuthenticating$}
         <span class="text-subtle">{m.settings_connections_linear_validatingApiKey()}</span>
       {:else if $isAuthenticated$}
-        <button
+        <Button
+          variant="link"
+          size="compact"
           type="button"
           class="text-muted-foreground hover:text-foreground cursor-pointer transition-colors"
           onclick={handleShowKeyInput}
         >
           {m.settings_connections_linear_replaceKey()}
-        </button>
+        </Button>
         <span class="text-ghost">·</span>
-        <button
+        <Button
+          variant="link"
+          size="compact"
           type="button"
           class="text-muted-foreground hover:text-danger cursor-pointer transition-colors"
           onclick={handleLinearDisconnect}
         >
           {m.settings_connections_disconnect()}
-        </button>
+        </Button>
       {:else if !$requiresDaemonAuth$}
-        <button
+        <Button
+          variant="link"
+          size="compact"
           type="button"
-          class="text-primary hover:text-primary/80 cursor-pointer transition-colors font-medium"
+          class="type-body text-primary hover:text-primary/80 cursor-pointer transition-colors font-medium"
           onclick={handleShowKeyInput}
         >
           {m.settings_connections_connect()}
-        </button>
+        </Button>
       {:else}
-        <span class="text-xs text-subtle">{m.settings_connections_requiresDaemonAuth()}</span>
+        <span class="type-caption text-subtle">{m.settings_connections_requiresDaemonAuth()}</span>
       {/if}
     </div>
   </div>
@@ -131,30 +136,34 @@
           type="password"
           bind:value={apiKeyDraft}
           placeholder={/* i18n-ignore (credential format example) */ 'lin_api_...'}
-          class="h-7 text-xs flex-1"
+          class="h-7 type-caption flex-1"
           aria-label={m.settings_connections_linear_apiKeyAriaLabel()}
           onkeydown={(e) => {
             if (e.key === 'Enter') handleSubmitApiKey();
             if (e.key === 'Escape') handleCancelKeyInput();
           }}
         />
-        <button
+        <Button
+          variant="link"
+          size="compact"
           type="button"
-          class="text-primary hover:text-primary/80 cursor-pointer transition-colors font-medium text-xs"
+          class="type-caption text-primary hover:text-primary/80 cursor-pointer transition-colors font-medium"
           onclick={handleSubmitApiKey}
           disabled={!apiKeyDraft.trim()}
         >
           {m.settings_connections_save()}
-        </button>
-        <button
+        </Button>
+        <Button
+          variant="link"
+          size="compact"
           type="button"
-          class="text-muted-foreground hover:text-foreground cursor-pointer transition-colors text-xs"
+          class="type-caption text-muted-foreground hover:text-foreground cursor-pointer transition-colors"
           onclick={handleCancelKeyInput}
         >
           {m.settings_connections_cancel()}
-        </button>
+        </Button>
       </div>
-      <p class="text-xs text-subtle">
+      <p class="type-caption text-subtle">
         {m.settings_connections_linear_apiKeyStorageNote()}
       </p>
     </div>
@@ -162,16 +171,18 @@
 
   {#if $isAuthenticated$}
     <div class="pl-6 flex items-center gap-3">
-      <span class="text-xs text-subtle shrink-0">{m.settings_connections_linear_showIssues()}</span>
+      <span class="type-caption text-subtle shrink-0"
+        >{m.settings_connections_linear_showIssues()}</span
+      >
       <Select.Root value={$issueFilter$} onchange={handleIssueFilterChange}>
-        <Select.Trigger class="h-7 text-xs w-[180px]">
+        <Select.Trigger class="h-7 type-caption w-[180px]">
           {LINEAR_ISSUE_FILTER_OPTIONS.find((o) => o.value === $issueFilter$)?.label ||
             m.settings_connections_linear_selectPlaceholder()}
         </Select.Trigger>
         <Select.Content>
           {#each LINEAR_ISSUE_FILTER_OPTIONS as option (option.value)}
             <Select.Item value={option.value}>
-              <span class="text-xs">{option.label}</span>
+              <span class="type-caption">{option.label}</span>
             </Select.Item>
           {/each}
         </Select.Content>

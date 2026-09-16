@@ -1,5 +1,9 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
+  import { readable } from 'svelte/store';
   import { Button } from '$lib/components/ui/button';
+  import { FormDialog } from '$lib/components/patterns/confirm';
+  import { Input } from '$lib/components/ui/input';
   import Fa from 'svelte-fa';
   import { faXmark } from '@fortawesome/free-solid-svg-icons';
   import {
@@ -16,16 +20,37 @@
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
 
+  const STATIC_OPERATION = {
+    version: 0,
+    status: 'idle' as const,
+    kind: null,
+    result: null,
+    error: null,
+  };
+
   interface Props {
     open?: boolean;
+    static?: boolean;
+    staticData?: { activeFeatures: string[] };
     onClose?: () => void;
   }
 
-  let { open = $bindable(false), onClose }: Props = $props();
+  let {
+    open = $bindable(false),
+    static: staticPosition = false,
+    staticData,
+    onClose,
+  }: Props = $props();
 
-  const activeFeatures$ = selectActiveFeatures();
-  const hasActiveFeatures$ = selectHasActiveFeatures();
-  const operation$ = selectFeatureCodeOperation();
+  const activeFeatures$ = untrack(() =>
+    staticData ? readable(staticData.activeFeatures) : selectActiveFeatures(),
+  );
+  const hasActiveFeatures$ = untrack(() =>
+    staticData ? readable(staticData.activeFeatures.length > 0) : selectHasActiveFeatures(),
+  );
+  const operation$ = untrack(() =>
+    staticData ? readable(STATIC_OPERATION) : selectFeatureCodeOperation(),
+  );
 
   let inputValue = $state('');
   let inputRef: HTMLInputElement | null = $state(null);
@@ -33,7 +58,13 @@
   let isActivating = $state(false);
   let needsRestart = $state(false);
   let feedbackTimeout: ReturnType<typeof setTimeout> | null = null;
-  let handledOperationVersion = $state(selectFeatureCodeOperation.select(appStore.state).version);
+  let handledOperationVersion = $state(
+    untrack(() =>
+      staticData
+        ? STATIC_OPERATION.version
+        : selectFeatureCodeOperation.select(appStore.state).version,
+    ),
+  );
 
   function clearFeedbackTimeout() {
     if (feedbackTimeout !== null) {
@@ -65,6 +96,7 @@
   }
 
   function confirm() {
+    if (staticData) return;
     if (!inputValue.trim() || isActivating) return;
     clearFeedbackTimeout();
     isActivating = true;
@@ -121,7 +153,7 @@
       clearFeedbackTimeout();
       feedback = null;
       inputValue = '';
-      appStore.dispatch(loadActiveFeaturesRequested());
+      if (!staticData) appStore.dispatch(loadActiveFeaturesRequested());
       requestAnimationFrame(() => {
         inputRef?.focus();
       });
@@ -129,105 +161,88 @@
   });
 
   function restartApp() {
+    if (staticData) return;
     appStore.dispatch(restartForFeatureCodesRequested());
   }
 
   function removeFeature(featureId: string) {
+    if (staticData) return;
     handledOperationVersion = $operation$.version;
     appStore.dispatch(deactivateFeatureRequested(featureId));
   }
 </script>
 
 {#if open}
-  <div
-    class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
-    role="button"
-    tabindex="0"
-    onkeydown={handleKeydown}
-    onclick={close}
+  <FormDialog
+    static={staticPosition}
+    bind:open
+    title={m.modals_featureCode_title()}
+    submitLabel={m.modals_featureCode_activate_label()}
+    cancelLabel={needsRestart
+      ? m.modals_featureCode_close_label()
+      : m.modals_featureCode_cancel_label()}
+    canSubmit={Boolean(inputValue.trim()) && feedback === null}
+    busy={isActivating}
+    initialFocus={inputRef}
+    onSubmit={confirm}
+    onCancel={close}
   >
-    <div
-      class="bg-background border border-border rounded-lg shadow-lg w-full max-w-md overflow-hidden flex flex-col"
-      onclick={(e) => e.stopPropagation()}
-      role="dialog"
-      tabindex="-1"
-      onkeydown={(e) => e.stopPropagation()}
-    >
-      <!-- Header -->
-      <div class="px-6 py-4 border-b border-border flex items-center justify-between">
-        <h2 class="text-lg font-semibold">{m.modals_featureCode_title()}</h2>
-        <Button
-          variant="ghost"
-          size="icon"
-          onclick={close}
-          aria-label={m.modals_featureCode_close_label()}
-        >
-          <Fa icon={faXmark} />
-        </Button>
-      </div>
-
-      <!-- Content -->
-      <div class="p-6">
-        <input
-          bind:this={inputRef}
-          bind:value={inputValue}
-          type="password"
-          placeholder={m.modals_featureCode_code_placeholder()}
-          onkeydown={handleKeydown}
-          class="w-full px-3 py-2 bg-background border border-border rounded text-foreground focus:outline-none focus:border-primary"
-          autocorrect="off"
-          autocapitalize="off"
-          spellcheck="false"
-          disabled={isActivating || feedback !== null}
-        />
-        {#if feedback}
-          <p class="mt-2 text-sm {feedback.color}">{feedback.message}</p>
-        {/if}
-      </div>
-
-      <!-- Active Features -->
-      {#if $hasActiveFeatures$}
-        <div class="px-6 pb-4">
-          <p class="text-xs text-subtle mb-2">{m.modals_featureCode_activeFeatures_label()}</p>
-          <ul class="space-y-1">
-            {#each $activeFeatures$ as featureId}
-              <li
-                class="flex items-center justify-between text-sm text-subtle bg-muted/50 rounded px-2 py-1"
-              >
-                <span>{featureId}</span>
-                <button
-                  class="ml-2 text-muted-foreground hover:text-foreground transition-colors"
-                  onclick={() => removeFeature(featureId)}
-                  title={m.modals_featureCode_remove_tooltip({ featureId })}
-                >
-                  <Fa icon={faXmark} size="xs" />
-                </button>
-              </li>
-            {/each}
-          </ul>
-        </div>
+    <div class="grid gap-2">
+      <Input
+        bind:ref={inputRef}
+        bind:value={inputValue}
+        type="password"
+        placeholder={m.modals_featureCode_code_placeholder()}
+        onkeydown={handleKeydown}
+        disabled={isActivating || feedback !== null}
+      />
+      {#if feedback}
+        <p class="text-sm {feedback.color}">{feedback.message}</p>
       {/if}
-
-      <!-- Footer -->
-      <div class="px-6 py-4 border-t border-border flex justify-end gap-2">
-        <Button variant="ghost" onclick={close}
-          >{needsRestart
-            ? m.modals_featureCode_close_label()
-            : m.modals_featureCode_cancel_label()}</Button
-        >
-        {#if needsRestart}
-          <Button variant="outline" onclick={restartApp}
-            >{m.modals_featureCode_restartNow_label()}</Button
-          >
-        {/if}
-        <Button
-          variant="default"
-          onclick={confirm}
-          disabled={!inputValue.trim() || isActivating || feedback !== null}
-        >
-          {m.modals_featureCode_activate_label()}
-        </Button>
-      </div>
     </div>
-  </div>
+
+    {#if $hasActiveFeatures$}
+      <div>
+        <p class="text-xs text-subtle mb-2">{m.modals_featureCode_activeFeatures_label()}</p>
+        <ul class="space-y-1">
+          {#each $activeFeatures$ as featureId}
+            <li
+              class="flex items-center justify-between text-sm text-subtle bg-muted/50 rounded px-2 py-1"
+            >
+              <span>{featureId}</span>
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                iconOnly
+                onclick={() => removeFeature(featureId)}
+                title={m.modals_featureCode_remove_tooltip({ featureId })}
+              >
+                <Fa icon={faXmark} size="xs" />
+              </Button>
+            </li>
+          {/each}
+        </ul>
+      </div>
+    {/if}
+
+    {#snippet footer()}
+      <Button variant="ghost" onclick={close}
+        >{needsRestart
+          ? m.modals_featureCode_close_label()
+          : m.modals_featureCode_cancel_label()}</Button
+      >
+      {#if needsRestart}
+        <Button variant="outline" onclick={restartApp}
+          >{m.modals_featureCode_restartNow_label()}</Button
+        >
+      {/if}
+      <Button
+        type="submit"
+        variant="primary"
+        disabled={!inputValue.trim() || isActivating || feedback !== null}
+      >
+        {m.modals_featureCode_activate_label()}
+      </Button>
+    {/snippet}
+  </FormDialog>
 {/if}

@@ -42,6 +42,10 @@ vi.mock('$lib/components/patterns/notify', () => ({
   notify: mockToast,
 }));
 
+vi.mock('$lib/components/ui/toast', () => ({
+  toast: mockToast,
+}));
+
 // Mock the lazily-imported qrcode module so QR tests can assert the pairing URI.
 const qrMocks = vi.hoisted(() => ({
   toDataURL: vi.fn().mockResolvedValue('data:image/png;base64,'),
@@ -300,7 +304,11 @@ describe('WebSocketApiSettings', () => {
       expect(mockToast.error).toHaveBeenCalledWith(
         expect.stringContaining('Port 5181 is already in use'),
       );
-      expect(toggle.getAttribute('aria-checked')).toBe('false');
+      expect(
+        screen
+          .getByRole('switch', { name: m.settings_wsApi_enable_label() })
+          .getAttribute('aria-checked'),
+      ).toBe('false');
     });
   });
 
@@ -327,7 +335,11 @@ describe('WebSocketApiSettings', () => {
     // Assert: toast.error was called (daemon rolled back the setting)
     await waitFor(() => {
       expect(mockToast.error).toHaveBeenCalled();
-      expect(toggle.getAttribute('aria-checked')).toBe('false');
+      expect(
+        screen
+          .getByRole('switch', { name: m.settings_wsApi_enable_label() })
+          .getAttribute('aria-checked'),
+      ).toBe('false');
     });
   });
 

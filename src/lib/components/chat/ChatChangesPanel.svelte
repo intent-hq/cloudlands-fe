@@ -211,9 +211,6 @@
     faPlus,
     faMinus,
     faRotateLeft,
-    faSpinner,
-    faCopy,
-    faCheck,
     faLock,
   } from '@fortawesome/free-solid-svg-icons';
   import { faNote } from '$lib/icons/faNote';
@@ -221,10 +218,13 @@
   import InlineDiffItem from './InlineDiffItem.svelte';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import { Button } from '$lib/components/ui/button';
-  import { safeSlide } from '$lib/utils/animations';
+  import { Checkbox } from '$lib/components/ui/checkbox';
+  import CopyButton from '$lib/components/ui/CopyButton.svelte';
+  import { safeDisclosureTransition } from './disclosure-motion';
   import { onDestroy, tick, untrack } from 'svelte';
   import { Virtualizer } from '@pierre/diffs';
   import { Skeleton } from '$lib/components/ui/skeleton';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { PanelFindBar } from '$lib/components/ui/panel-find-bar';
   import {
     selectFoldUnchanged,
@@ -342,8 +342,8 @@
     /** Resolved branch boundary SHA for collapsing multi-commit committed file groups */
     branchBaseCommitSha?: string | null;
     /**
-     * Secondary git root scoping the committed-content fetches (multi git
-     * root tracking, v6.15). Absent → primary-root behavior, byte-identical.
+     * Secondary git root scoping the committed-content fetches through the
+     * `gitRootId` capability. Absent → primary-root behavior, byte-identical.
      */
     gitRootId?: string;
     /**
@@ -2387,19 +2387,6 @@
     });
   });
 
-  // State for copy SHA functionality
-  let copiedSha = $state(false);
-
-  function copyCommitSha() {
-    if (commitInfo?.hash) {
-      navigator.clipboard.writeText(commitInfo.hash);
-      copiedSha = true;
-      setTimeout(() => {
-        copiedSha = false;
-      }, 2000);
-    }
-  }
-
   // Handle opening agent from commit info
   function handleOpenAgentFromCommit(event?: MouseEvent) {
     const agentIdToOpen = commitInfo?.agentId || agentId;
@@ -2566,24 +2553,26 @@
                 <div
                   class="flex items-center gap-0.5 rounded-md border border-border bg-muted/50 p-0.5 -my-1"
                 >
-                  <button
+                  <Button
                     type="button"
+                    variant="plain"
                     class="px-2 py-0.5 text-xs rounded cursor-pointer transition-colors {!groupByCommit
                       ? 'bg-background text-foreground shadow-sm'
                       : 'text-muted-foreground hover:text-foreground'}"
                     onclick={() => (groupByCommit = false)}
                   >
                     {m.chat_changesPanel_combined_label()}
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     type="button"
+                    variant="plain"
                     class="px-2 py-0.5 text-xs rounded cursor-pointer transition-colors {groupByCommit
                       ? 'bg-background text-foreground shadow-sm'
                       : 'text-muted-foreground hover:text-foreground'}"
                     onclick={() => (groupByCommit = true)}
                   >
                     {m.chat_changesPanel_byCommit_label()}
-                  </button>
+                  </Button>
                 </div>
               {/if}
             </div>
@@ -2598,8 +2587,9 @@
                 <div class="mb-2">
                   <div class="sticky top-[31.5px] z-[11] bg-background rounded-md">
                     <div class="flex items-center gap-2 w-full px-3 py-2 rounded-md bg-muted/30">
-                      <button
+                      <Button
                         type="button"
+                        variant="plain"
                         class="flex items-center gap-2 flex-1 min-w-0 text-left cursor-pointer"
                         onclick={() => toggleCommitGroup(group.hash)}
                       >
@@ -2633,7 +2623,7 @@
                         <span class="text-sm font-medium text-foreground truncate flex-1 min-w-0">
                           {group.message.split('\n')[0]}
                         </span>
-                      </button>
+                      </Button>
                       <span class="text-ui text-subtle shrink-0 flex items-center gap-1.5">
                         {#if group.date}
                           <span>{formatRelativeTime(group.date)}</span>
@@ -2649,20 +2639,23 @@
                               })}</span
                         >
                       </span>
-                      <button
+                      <Button
                         type="button"
+                        variant="ghost-light"
+                        size="icon-xs"
+                        iconOnly
                         class="text-ui text-muted-foreground hover:text-foreground transition-colors cursor-pointer shrink-0"
                         onclick={() => handleOpenCommit(group.hash)}
                         title={m.chat_changesPanel_openCommit_title()}
                       >
                         <Fa icon={faArrowUpRightFromSquare} class="w-2.5 h-2.5" />
-                      </button>
+                      </Button>
                     </div>
                   </div>
                   {#if expandedCommits.has(group.hash)}
                     <div
                       class="flex flex-col gap-2 mt-2 mx-2"
-                      transition:safeSlide={{ duration: 150 }}
+                      transition:safeDisclosureTransition={{ tier: 'fast' }}
                     >
                       {#each group.changes as change (getExpandKey(change))}
                         {@render fileCard(change, true)}
@@ -2719,15 +2712,16 @@
       <div class="flex-1 min-w-0 space-y-1">
         <!-- Commit title — clickable if GitHub URL available -->
         {#if hasCommitUrl()}
-          <button
+          <Button
             type="button"
+            variant="link"
             class="text-sm font-medium text-foreground hover:text-accent-foreground hover:underline underline-offset-2 text-left cursor-pointer transition-colors leading-snug"
             onclick={openCommitInBrowser}
             title={m.chat_changesPanel_openOnGitHub_title()}
           >
             {commitInfo?.message?.split('\n')[0] || m.chat_changesPanel_untitledCommit_fallback()}
             <Fa icon={faArrowUpRightFromSquare} class="inline-block w-2.5 h-2.5 ml-1 opacity-40" />
-          </button>
+          </Button>
         {:else}
           <p class="text-sm font-medium text-foreground leading-snug">
             {commitInfo?.message?.split('\n')[0] || m.chat_changesPanel_untitledCommit_fallback()}
@@ -2745,17 +2739,14 @@
           {/if}
           {#if commitInfo?.hash}
             <span class="text-ghost">·</span>
-            <button
-              type="button"
-              class="inline-flex items-center gap-0.5 font-mono hover:text-foreground transition-colors"
-              onclick={copyCommitSha}
-              title={copiedSha
-                ? m.chat_changesPanel_copied_title()
-                : m.chat_changesPanel_copyFullSha_title()}
-            >
+            <span class="inline-flex items-center gap-0.5 font-mono">
               {commitInfo.hash.substring(0, 7)}
-              <Fa icon={copiedSha ? faCheck : faCopy} class="w-2 h-2 opacity-50" />
-            </button>
+              <CopyButton
+                text={commitInfo.hash}
+                label={m.chat_changesPanel_copyFullSha_title()}
+                class="size-5 text-muted-foreground"
+              />
+            </span>
           {/if}
         </div>
 
@@ -2784,8 +2775,9 @@
                 agentSession?.name && agentSession.name !== 'New Workspace Agent'
                   ? agentSession.name
                   : m.chat_shared_agentName_fallback()}
-              <button
+              <Button
                 type="button"
+                variant="plain"
                 class="flex items-center gap-1 text-ui text-muted-foreground hover:text-foreground transition-colors cursor-pointer min-w-0"
                 onclick={(e) => handleOpenAgentFromCommit(e)}
                 title={m.chat_changesPanel_openAgent_title()}
@@ -2794,7 +2786,7 @@
                   <AgentAvatar agentId={displayAgentId ?? undefined} size={14} />
                 </span>
                 <span class="truncate">{agentName}</span>
-              </button>
+              </Button>
             {/if}
             {#if commitInfo?.linkedNoteId && onOpenNote}
               {@const linkedNote = selectNoteById.select(
@@ -2803,15 +2795,16 @@
                 commitInfo.linkedNoteId,
               )}
               {@const noteName = linkedNote?.title || m.chat_changesPanel_note_fallback()}
-              <button
+              <Button
                 type="button"
+                variant="plain"
                 class="flex items-center gap-1 text-ui text-muted-foreground hover:text-foreground transition-colors cursor-pointer min-w-0"
                 onclick={(e) => onOpenNote?.(commitInfo?.linkedNoteId!, e)}
                 title={m.chat_changesPanel_openLinkedNote_title()}
               >
                 <Fa icon={faNote} class="w-2.5 h-2.5 shrink-0" />
                 <span class="truncate">{noteName}</span>
-              </button>
+              </Button>
             {/if}
           </div>
         {/if}
@@ -2849,7 +2842,8 @@
       data-change-sticky-top={stickyTop}
       data-change-search-text={displayPath}
     >
-      <button
+      <Button
+        variant="plain"
         onclick={() => toggleFile(expandKey)}
         class="flex items-center gap-2 flex-1 min-w-0 text-left cursor-pointer shrink"
       >
@@ -2889,9 +2883,9 @@
         {/if}
         <!-- Loading indicator when file is being refreshed -->
         {#if refreshingFiles.has(change.filePath)}
-          <Fa icon={faSpinner} class="w-3 h-3 text-ghost animate-spin shrink-0" />
+          <IntentMarkLoader size={12} class="text-ghost shrink-0" />
         {/if}
-      </button>
+      </Button>
 
       <!-- Action buttons -->
       <div class="absolute right-2 flex items-center gap-px">
@@ -3008,20 +3002,14 @@
             : m.chat_changesPanel_markViewed_title()}
           onclick={(e: MouseEvent) => e.stopPropagation()}
         >
-          <input
-            type="checkbox"
+          <Checkbox
             checked={isViewed}
-            onchange={() => toggleViewed(change.filePath, expandKey)}
-            class="sr-only peer"
+            onCheckedChange={() => toggleViewed(change.filePath, expandKey)}
+            size="sm"
+            ariaLabel={isViewed
+              ? m.chat_changesPanel_markNotViewed_title()
+              : m.chat_changesPanel_markViewed_title()}
           />
-          <span
-            class="w-3.5 h-3.5 rounded border border-muted-foreground/30 flex items-center justify-center
-              peer-checked:bg-primary peer-checked:border-primary transition-colors"
-          >
-            {#if isViewed}
-              <Fa icon={faCheck} class="w-2! h-2! text-primary-foreground" />
-            {/if}
-          </span>
           <span class="text-xs text-subtle">{m.chat_changesPanel_viewed_label()}</span>
         </label>
       </div>
@@ -3031,7 +3019,7 @@
     {#if expandedFiles.has(expandKey)}
       <div
         class="border-t border-border"
-        transition:safeSlide={{ axis: 'y', duration: 200 }}
+        transition:safeDisclosureTransition={{ tier: 'moderate' }}
         use:observeVisibility={expandKey}
       >
         {#if visibleFiles.has(expandKey)}
@@ -3073,7 +3061,7 @@
         {:else}
           <!-- Placeholder while waiting for visibility -->
           <div class="flex items-center justify-center h-[300px] text-subtle">
-            <Fa icon={faSpinner} class="animate-spin mr-2" />
+            <IntentMarkLoader size={16} class="mr-2" />
             {m.chat_changesPanel_loadingDiff_label()}
           </div>
         {/if}

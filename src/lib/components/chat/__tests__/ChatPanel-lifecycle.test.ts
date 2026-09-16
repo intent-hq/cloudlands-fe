@@ -4296,9 +4296,7 @@ describe('ChatPanel mounted lifecycle', () => {
     mocks.agentMessages.set([
       { id: 'm1', role: 'assistant', content: 'hello', timestamp: '2026-01-01T00:00:00.000Z' },
     ]);
-    // The lightweight store mock reads selector-store arguments once, before
-    // EventSubscriptionsCard's effects populate the workspace and agent IDs.
-    mocks.agentSubscriptionUIEntries[':'] = {
+    mocks.agentSubscriptionUIEntries['workspace-a:agent-a'] = {
       subscriptions: [],
       delegationGroups: [],
       agentStatuses: {},

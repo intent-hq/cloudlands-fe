@@ -69,8 +69,19 @@ vi.mock('$lib/utils/client-logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
+const mockToast = vi.hoisted(() => ({
+  error: vi.fn(),
+  success: vi.fn(),
+  info: vi.fn(),
+  custom: vi.fn(),
+}));
+
+vi.mock('$lib/components/ui/toast', () => ({
+  toast: mockToast,
+}));
+
 vi.mock('$lib/components/patterns/notify', () => ({
-  notify: { error: vi.fn(), success: vi.fn(), info: vi.fn(), custom: vi.fn() },
+  notify: mockToast,
 }));
 
 vi.mock('$lib/components/workspace/initializer/BranchSelector.svelte', async () => {
@@ -171,8 +182,6 @@ describe('BranchDisplay', () => {
   });
 
   it('Enter with an invalid branch name shows a toast error and does not call IPC', async () => {
-    const { notify } = await import('$lib/components/patterns/notify');
-
     const { container } = await renderBranchDisplay();
     await fireEvent.click(container.querySelector('button')!);
     await waitFor(() => expect(container.querySelector('input[type="text"]')).toBeTruthy());
@@ -181,7 +190,7 @@ describe('BranchDisplay', () => {
     await fireEvent.input(input, { target: { value: 'bad..name' } });
     await fireEvent.keyDown(input, { key: 'Enter' });
 
-    await waitFor(() => expect(notify.error).toHaveBeenCalled());
+    await waitFor(() => expect(mockToast.error).toHaveBeenCalled());
     expect(mockInvoke).not.toHaveBeenCalled();
     expect(mocks.dispatch).not.toHaveBeenCalledWith(
       expect.objectContaining({ type: 'workspace/updateRequested' }),

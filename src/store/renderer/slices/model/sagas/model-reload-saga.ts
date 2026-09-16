@@ -1,6 +1,7 @@
 import { call, cancelled, delay, put, takeLatest, type SagaGenerator } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
+import { notify } from '$lib/components/patterns/notify';
 import { agentClient } from '$features/agent/agent.client';
 import { reconcileAgentReasoningEffort } from '$features/agent/reasoning-effort';
 import { createLogger } from '$lib/utils/client-logger';
@@ -127,8 +128,7 @@ function* setAgentModelWorker(
     settled = true;
   } catch (error) {
     const failure = error instanceof Error ? error : new Error(String(error));
-    const { toast } = yield* call(() => import('svelte-sonner'));
-    yield* call(toast.error, failure.message, { duration: 6000 });
+    yield* call([notify, notify.error], failure.message, { duration: 6000 });
     yield* put(action.failure(failure));
     settled = true;
   } finally {

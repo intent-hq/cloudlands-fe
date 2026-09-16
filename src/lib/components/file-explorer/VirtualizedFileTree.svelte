@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
+  import { Input } from '$lib/components/ui/input';
   /* eslint-disable max-lines */
   import { onMount, tick, untrack } from 'svelte';
   import { writable } from 'svelte/store';
@@ -1101,8 +1103,8 @@
                 >
                   {@html getFileTypeIconSvg(creatingValue || '')}
                 </span>
-                <input
-                  bind:this={createInputRef}
+                <Input
+                  bind:ref={createInputRef}
                   type="text"
                   bind:value={creatingValue}
                   onblur={saveCreate}
@@ -1169,8 +1171,8 @@
                       {@html getFileTypeIconSvg(node.name)}
                     {/if}
                   </span>
-                  <input
-                    bind:this={editInputRef}
+                  <Input
+                    bind:ref={editInputRef}
                     type="text"
                     bind:value={editingValue}
                     onblur={saveEdit}
@@ -1250,7 +1252,10 @@
               {#if flatNode.agentEdits && flatNode.agentEdits.length > 0 && (node.type === 'file' || !flatNode.isExpanded)}
                 <div class="flex items-center -space-x-1 mr-1 ml-2">
                   {#each flatNode.agentEdits.slice(0, 3) as agentId (agentId)}
-                    <button
+                    <Button
+                      variant="plain"
+                      size="icon-compact"
+                      iconOnly
                       type="button"
                       class="rounded-full overflow-hidden cursor-pointer"
                       title={m.fileExplorer_tree_openAgent_tooltip()}
@@ -1260,7 +1265,7 @@
                       }}
                     >
                       <AgentAvatar {agentId} variant="compact" />
-                    </button>
+                    </Button>
                   {/each}
                 </div>
               {/if}

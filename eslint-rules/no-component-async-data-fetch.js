@@ -271,6 +271,10 @@ function isDomainMemberCall(callee, domainImportNames, domainApiImportNames) {
   const objectName = getObjectHintName(callee.object);
   const rootName = getRootIdentifierName(callee.object);
 
+  if (methodName === 'select' && /^select[A-Z0-9_]/.test(rootName ?? '')) {
+    return false;
+  }
+
   if (
     domainApiImportNames.has(rootName) ||
     DOMAIN_API_OBJECT_NAME_PATTERN.test(objectName ?? '') ||

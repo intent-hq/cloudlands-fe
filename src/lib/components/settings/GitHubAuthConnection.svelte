@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button } from '$lib/components/patterns/settings/custom-controls';
   import { faGithub } from '@fortawesome/free-brands-svg-icons';
   import { faCheck } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
@@ -55,9 +56,9 @@
       <div class="flex items-center gap-2">
         <Fa icon={faGithub} class="w-4 h-4 text-ghost" />
         <!-- i18n-ignore (brand name) -->
-        <span class="text-sm text-foreground">GitHub</span>
+        <span class="type-body text-foreground">GitHub</span>
         {#if $isAuthenticated$}
-          <span class="text-xs text-subtle flex items-center gap-1">
+          <span class="type-caption text-subtle flex items-center gap-1">
             <Fa icon={faCheck} class="w-2.5 h-2.5 text-green-500" />
             {#if $user$}
               @{$user$.login}
@@ -67,43 +68,49 @@
           </span>
         {/if}
       </div>
-      <p class="text-xs text-subtle pl-6">
+      <p class="type-caption text-subtle pl-6">
         {m.settings_connections_github_description()}
       </p>
       {#if $error$}
-        <p class="text-xs text-danger pl-6">{$error$}</p>
+        <p class="type-caption text-danger pl-6">{$error$}</p>
       {/if}
     </div>
 
-    <div class="flex items-center gap-2 text-xs">
+    <div class="flex items-center gap-2 type-caption">
       {#if $isAuthenticating$}
         <span class="text-subtle">{m.settings_connections_github_waitingForAuthorization()}</span>
       {:else if $isAuthenticated$}
-        <button
+        <Button
+          variant="link"
+          size="compact"
           type="button"
           class="text-muted-foreground hover:text-foreground cursor-pointer transition-colors"
           onclick={handleGitHubReconnect}
         >
           {m.settings_connections_reconnect()}
-        </button>
+        </Button>
         <span class="text-ghost">·</span>
-        <button
+        <Button
+          variant="link"
+          size="compact"
           type="button"
           class="text-muted-foreground hover:text-danger cursor-pointer transition-colors"
           onclick={handleGitHubDisconnect}
         >
           {m.settings_connections_disconnect()}
-        </button>
+        </Button>
       {:else if !$requiresDaemonAuth$}
-        <button
+        <Button
+          variant="link"
+          size="compact"
           type="button"
-          class="text-primary hover:text-primary/80 cursor-pointer transition-colors font-medium"
+          class="type-body text-primary hover:text-primary/80 cursor-pointer transition-colors font-medium"
           onclick={handleGitHubConnect}
         >
           {m.settings_connections_connect()}
-        </button>
+        </Button>
       {:else}
-        <span class="text-xs text-subtle">{m.settings_connections_requiresDaemonAuth()}</span>
+        <span class="type-caption text-subtle">{m.settings_connections_requiresDaemonAuth()}</span>
       {/if}
     </div>
   </div>

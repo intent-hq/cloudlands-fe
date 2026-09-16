@@ -2,6 +2,7 @@ import { buffers, channel, type Channel } from 'redux-saga';
 import { actionChannel, all, call, delay, put, take, takeEvery } from 'typed-redux-saga';
 
 import { appClient, type AppSettingChange } from '$lib/client';
+import { notify } from '$lib/components/patterns/notify';
 import { invoke } from '$lib/electron-bridge';
 import { isDaemonErrorResponse } from '$lib/client/live/backend-transport-types';
 import { createLogger } from '$lib/utils/client-logger';
@@ -134,14 +135,12 @@ function* installPiMcpAdapterWorker() {
     }
     yield* call(checkPiMcpAdapterWorker);
     yield* put(piMcpAdapterInstallComplete());
-    const { toast } = yield* call(() => import('svelte-sonner'));
-    yield* call(toast.success, m.settings_providers_piAdapterInstalled());
+    yield* call([notify, notify.success], m.settings_providers_piAdapterInstalled());
   } catch (error) {
     const message = error instanceof Error ? error.message : m.settings_providers_unknownError();
     logger.error('Failed to install pi-mcp-adapter', { error });
     yield* put(piMcpAdapterInstallFailed(message));
-    const { toast } = yield* call(() => import('svelte-sonner'));
-    yield* call(toast.error, m.settings_providers_piAdapterInstallFailed(), {
+    yield* call([notify, notify.error], m.settings_providers_piAdapterInstallFailed(), {
       description: message,
     });
   }

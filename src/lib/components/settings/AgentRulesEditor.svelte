@@ -4,12 +4,14 @@
   import {
     faRotateLeft,
     faCheck,
-    faCircleNotch,
     faCircleExclamation,
     faTriangleExclamation,
   } from '@fortawesome/free-solid-svg-icons';
-  import Button from '$lib/components/ui/button/button.svelte';
-  import Textarea from '$lib/components/ui/textarea/textarea.svelte';
+  import {
+    Button,
+    IntentMarkLoader,
+    Textarea,
+  } from '$lib/components/patterns/settings/custom-controls';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger, formatNumber } from '$lib/i18n/format';
   import { store as appStore } from '$store/renderer/store';
@@ -235,7 +237,7 @@
 
   {#if errorMessage}
     <div
-      class="bg-danger-background/10 border border-danger/20 text-danger px-4 py-2 rounded-md text-sm shrink-0"
+      class="bg-danger-background/10 border border-danger/20 text-danger px-4 py-2 rounded-md type-body shrink-0"
     >
       {errorMessage}
     </div>
@@ -247,7 +249,7 @@
       class="flex items-center gap-2 p-3 bg-danger-background/10 border border-danger/30 rounded-md text-danger shrink-0"
     >
       <Fa icon={faCircleExclamation} class="w-4 h-4 flex-shrink-0" />
-      <span class="text-sm">
+      <span class="type-body">
         {m.settings_agentRules_overLimitCallout({
           max: formatInteger(MAX_RULES_LENGTH),
           excess: formatInteger(excessChars),
@@ -259,7 +261,7 @@
       class="flex items-center gap-2 p-3 bg-warning/10 border border-warning/30 rounded-md text-warning shrink-0"
     >
       <Fa icon={faTriangleExclamation} class="w-4 h-4 flex-shrink-0" />
-      <span class="text-sm">
+      <span class="type-body">
         {m.settings_agentRules_approachingLimit({
           percent: formatNumber(charCountPercentage / 100, {
             style: 'percent',
@@ -274,7 +276,7 @@
     <div
       class="flex items-center justify-center py-16 text-subtle border border-border rounded-lg bg-muted/20 grow"
     >
-      <Fa icon={faCircleNotch} class="w-4 h-4 animate-spin mr-2" />
+      <IntentMarkLoader size={16} class="mr-2" />
       {m.settings_agentRules_loading()}
     </div>
   {:else}
@@ -284,7 +286,7 @@
         oninput={handleContentChange}
         noFocusStyle
         placeholder={m.settings_agentRules_placeholder()}
-        class="text-sm leading-relaxed grow {isOverLimit ? 'border-danger' : ''}"
+        class="type-body leading-relaxed grow {isOverLimit ? 'border-danger' : ''}"
       />
       <!-- Saved indicator -->
       <div

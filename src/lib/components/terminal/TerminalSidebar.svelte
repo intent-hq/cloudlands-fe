@@ -1,4 +1,5 @@
 <script lang="ts">
+  /* eslint-disable max-lines */
   import { flip } from 'svelte/animate';
   import type { ScriptCategory, ScriptMode, ScriptWithState } from '$features/scripts/types';
   import { getScriptStatusKind, isLiveScriptStatus } from '$features/scripts/utils/script-status';
@@ -28,8 +29,10 @@
 
   import AgentAvatarWithState from '$features/agent/components/agent-avatar/AgentAvatarWithState.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
+  import { Input } from '$lib/components/ui/input';
   import { ListContainer, ListItem, ListSection } from '$lib/components/ui/list';
   import { Skeleton } from '$lib/components/ui/skeleton';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { toast, withToastCountdown } from '$lib/components/ui/toast';
   import { useBackgroundAgent } from '$lib/hooks/use-background-agent.svelte';
   import {
@@ -55,7 +58,6 @@
     faPlus,
     faRotateRight,
     faSearch,
-    faSpinner,
     faStop,
     faTerminal,
     faTrash,
@@ -739,7 +741,6 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
     if (!contextMenuPos) return;
     return pushEscapeLayer(() => closeContextMenu());
   });
-  /* eslint-disable @typescript-eslint/no-unused-vars -- template-level vars used by Svelte runtime */
 </script>
 
 <!-- Sidebar Container -->
@@ -808,7 +809,8 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
             <Fa icon={faPlus} size="xs" />
           </Button>
           {#if isAgentDetecting && $_scriptDetectAgentId$}
-            <button
+            <Button
+              variant="plain"
               type="button"
               class="-mt-0.5 -mb-1 flex items-center gap-1 px-1 rounded text-muted-foreground/60 hover:text-muted-foreground transition-colors cursor-pointer shrink-0"
               onclick={(e) => {
@@ -836,17 +838,17 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
                 />
               </div>
               <span class="text-ui">{m.terminal_sidebar_askingAgent_label()}</span>
-            </button>
+            </Button>
           {:else if isAgentDetecting}
             <div class="-mt-0.5 -mb-1 flex items-center gap-1 px-1 text-muted-foreground">
               <!-- a11y-ignore -->
-              <Fa icon={faSpinner} size="xs" class="animate-spin" />
+              <IntentMarkLoader size={12} />
               <span class="text-ui">{m.terminal_sidebar_askingAgent_label()}</span>
             </div>
           {:else if isLocalDetecting}
             <div class="-mt-0.5 -mb-1 flex items-center gap-1 px-1 text-muted-foreground">
               <!-- a11y-ignore -->
-              <Fa icon={faSpinner} size="xs" class="animate-spin" />
+              <IntentMarkLoader size={12} />
               <span class="text-ui">{m.terminal_sidebar_scanningFiles_label()}</span>
             </div>
           {:else if hasScripts}
@@ -903,13 +905,13 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
             class="px-2 py-2 border-b border-border flex flex-col gap-1.5"
             onkeydown={handleAddFormKeydown}
           >
-            <input
+            <Input
               type="text"
               bind:value={newName}
               placeholder={m.terminal_quakeOverlay_name_placeholder()}
               class="w-full text-xs bg-muted/50 border border-border rounded-md px-2 py-1.5 outline-none focus:border-primary/50 focus:bg-background text-foreground placeholder:text-muted-foreground/50 transition-colors"
             />
-            <input
+            <Input
               type="text"
               bind:value={newCommand}
               placeholder={m.terminal_sidebar_command_placeholder()}
@@ -936,7 +938,19 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
         {#if hasScripts}
           <ListContainer spacing="compact" class="py-0.5 px-1.5">
             {#each visibleScripts as script (script.id)}
-              <div animate:flip={{ duration: 200 }} data-script-id={script.id}>
+              <!-- svelte-ignore a11y_no_static_element_interactions -->
+              <div
+                animate:flip={{ duration: 200 }}
+                data-script-id={script.id}
+                onclick={(event) => handleSelectScript(script.id, event)}
+                ondblclick={() => startEditingScript(script.id, script.name)}
+                oncontextmenu={(event) => handleScriptContextMenu(script.id, event)}
+                onkeydown={(event) => {
+                  if (event.key !== 'F2') return;
+                  event.preventDefault();
+                  startEditingScript(script.id, script.name);
+                }}
+              >
                 <ListItem
                   size="sm"
                   class={cn(
@@ -947,9 +961,6 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
                   subtitle={editingScriptId === script.id ? '' : script.command}
                   subtitleClass="leading-none"
                   active={selectedScriptId === script.id}
-                  onclick={(e) => handleSelectScript(script.id, e as MouseEvent)}
-                  ondblclick={() => startEditingScript(script.id, script.name)}
-                  oncontextmenu={(e) => handleScriptContextMenu(script.id, e as MouseEvent)}
                   actions={getScriptActions(script)}
                   actionsVisible="hover"
                   actionsClass="absolute right-0 top-1/2 -translate-y-1/2 bg-background px-1 rounded"
@@ -971,7 +982,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
                         : 'pointer-events-none absolute'}
                     >
                       {#if editingScriptId === script.id}
-                        <input
+                        <Input
                           type="text"
                           data-edit-script={script.id}
                           bind:value={editingScriptName}
@@ -996,7 +1007,8 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
               </div>
             {/each}
             {#if showScriptListToggle}
-              <button
+              <Button
+                variant="ghost-light"
                 type="button"
                 class="w-full text-left px-2 py-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
                 onclick={() => (showAllScripts = !showAllScripts)}
@@ -1004,7 +1016,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
                 {showAllScripts
                   ? m.terminal_sidebar_showLess_label()
                   : m.terminal_sidebar_moreScripts_label({ count: hiddenScriptCount })}
-              </button>
+              </Button>
             {/if}
           </ListContainer>
 
@@ -1025,56 +1037,63 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
                 {#if script}
                   {#if selectedScriptIds.size > 1}
                     <!-- Multi-select actions -->
-                    <button
+                    <Button
+                      variant="ghost-light"
                       type="button"
                       class="w-full text-left px-3 py-1.5 text-sm hover:bg-accent cursor-pointer transition-colors"
                       onclick={() => handleContextMenuAction('startAll')}
                     >
                       {m.terminal_sidebar_startAll_label()}
-                    </button>
-                    <button
+                    </Button>
+                    <Button
+                      variant="ghost-light"
                       type="button"
                       class="w-full text-left px-3 py-1.5 text-sm hover:bg-accent cursor-pointer transition-colors"
                       onclick={() => handleContextMenuAction('stopAll')}
                     >
                       {m.terminal_sidebar_stopAll_label()}
-                    </button>
+                    </Button>
                   {:else}
                     <!-- Single-select actions -->
                     {#if isLiveScriptStatus(script.runtime.status)}
-                      <button
+                      <Button
+                        variant="ghost-light"
                         type="button"
                         class="w-full text-left px-3 py-1.5 text-sm hover:bg-accent cursor-pointer transition-colors"
                         onclick={() => handleContextMenuAction('stop')}
                       >
                         {m.terminal_quakeOverlay_stop_label()}
-                      </button>
-                      <button
+                      </Button>
+                      <Button
+                        variant="ghost-light"
                         type="button"
                         class="w-full text-left px-3 py-1.5 text-sm hover:bg-accent cursor-pointer transition-colors"
                         onclick={() => handleContextMenuAction('restart')}
                       >
                         {m.terminal_quakeOverlay_restart_label()}
-                      </button>
+                      </Button>
                     {:else}
-                      <button
+                      <Button
+                        variant="ghost-light"
                         type="button"
                         class="w-full text-left px-3 py-1.5 text-sm hover:bg-accent cursor-pointer transition-colors"
                         onclick={() => handleContextMenuAction('start')}
                       >
                         {m.terminal_quakeOverlay_start_label()}
-                      </button>
+                      </Button>
                     {/if}
-                    <button
+                    <Button
+                      variant="ghost-light"
                       type="button"
                       class="w-full text-left px-3 py-1.5 text-sm hover:bg-accent cursor-pointer transition-colors"
                       onclick={() => handleContextMenuAction('edit')}
                     >
                       {m.terminal_sidebar_edit_label()}
-                    </button>
+                    </Button>
                   {/if}
                   <div class="border-t border-border my-1"></div>
-                  <button
+                  <Button
+                    variant="plain"
                     type="button"
                     class="w-full text-left px-3 py-1.5 text-sm hover:bg-accent cursor-pointer transition-colors text-danger hover:bg-danger-background/10"
                     onclick={() => handleContextMenuAction('delete')}
@@ -1082,7 +1101,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
                     {selectedScriptIds.size > 1
                       ? m.terminal_sidebar_deleteMany_label({ count: selectedScriptIds.size })
                       : m.terminal_sidebar_delete_label()}
-                  </button>
+                  </Button>
                 {/if}
               {/if}
             </div>

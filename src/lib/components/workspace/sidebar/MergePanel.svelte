@@ -27,19 +27,13 @@
   import { selectSidebarMergeWhenReady } from '$store/renderer/slices/changes/changes-selectors';
   import BranchSelector from '$lib/components/workspace/initializer/BranchSelector.svelte';
   import { Button } from '$lib/components/ui/button';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import Switch from '$lib/components/ui/switch/switch.svelte';
   import Textarea from '$lib/components/ui/textarea/textarea.svelte';
   import Tooltip from '$lib/components/ui/tooltip/Tooltip.svelte';
   import { toast } from '$lib/components/ui/toast';
   import { m } from '$shared/paraglide/messages.js';
-  import {
-    faCheck,
-    faCodeMerge,
-    faEye,
-    faRobot,
-    faSpinner,
-    faStop,
-  } from '@fortawesome/free-solid-svg-icons';
+  import { faCheck, faCodeMerge, faEye, faRobot, faStop } from '@fortawesome/free-solid-svg-icons';
   import { readable, writable } from 'svelte/store';
   import Fa from 'svelte-fa';
   import { store as appStore } from '$store/renderer/store';
@@ -354,22 +348,24 @@
 <!-- Via PR / Via git toggle - only show when there's an open PR -->
 {#if hasOpenPR && hasRemote}
   <div class="flex items-center rounded-md border border-border overflow-hidden w-fit">
-    <button
+    <Button
+      variant="plain"
       class="px-2.5 py-1 text-xs font-medium transition-colors {mergeOptions.viaPR
         ? 'bg-primary text-primary-foreground'
         : 'bg-transparent text-muted-foreground hover:text-foreground hover:bg-muted'}"
       onclick={() => (mergeOptions.viaPR = true)}
     >
       {m.workspace_mergePanel_viaPr_label()}
-    </button>
-    <button
+    </Button>
+    <Button
+      variant="plain"
       class="px-2.5 py-1 text-xs font-medium transition-colors border-l border-border {!mergeOptions.viaPR
         ? 'bg-primary text-primary-foreground'
         : 'bg-transparent text-muted-foreground hover:text-foreground hover:bg-muted'}"
       onclick={() => (mergeOptions.viaPR = false)}
     >
       {m.workspace_mergePanel_viaGit_label()}
-    </button>
+    </Button>
   </div>
 {/if}
 
@@ -427,7 +423,7 @@
         disabled={mergeOptions.mergingPR}
       >
         {#if mergeOptions.mergingPR}
-          <Fa icon={faSpinner} size="xs" class="animate-spin" />
+          <IntentMarkLoader size={12} />
           <span>{m.workspace_mergePanel_mergingOnGithub_label()}</span>
         {:else}
           <Fa icon={faCodeMerge} size="xs" class="opacity-50" />
@@ -574,7 +570,7 @@
         (isGeneratingMerge && $mergeWhenReady$)}
     >
       {#if isMergingToTrunk || (isGeneratingMerge && $mergeWhenReady$)}
-        <Fa icon={faSpinner} size="xs" class="animate-spin" />
+        <IntentMarkLoader size={12} />
         <span
           >{isMergingToTrunk
             ? m.workspace_mergePanel_merging_label()
@@ -599,7 +595,7 @@
             class="rounded-r-none border-r-0"
             onclick={handleStopGeneratingMerge}
           >
-            <Fa icon={faSpinner} size="xs" class="animate-spin" />
+            <IntentMarkLoader size={12} />
             <span class="mr-1">{m.workspace_prCreator_autoFill_label()}</span>
             <Fa icon={faStop} size="xs" />
           </Button>

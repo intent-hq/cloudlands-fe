@@ -5,7 +5,7 @@ import type { MutationResult } from '$lib/client';
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
-import { toast } from 'svelte-sonner';
+import { notify } from '$lib/components/patterns/notify';
 import { enqueueRevBumpingNoteMutation } from '../../workspace-notes/note-mutation-queue';
 import { selectCommentById } from '../comments-selectors';
 import {
@@ -32,7 +32,7 @@ function* addCommentWorker(action: ReturnType<typeof addCommentRequested>): Saga
       : yield* call([appClient.comments, appClient.comments.add], noteId, params);
     if (!result.success) {
       yield* put(removeCommentAction(optimistic.id));
-      toast.error(m.comments_writeService_addFailed_error(), {
+      notify.error(m.comments_writeService_addFailed_error(), {
         description: result.error ?? m.comments_writeService_unknown_error(),
       });
       yield* put(action.success(false));
@@ -68,7 +68,7 @@ function* respondToCommentWorker(
     );
     if (!result.success) {
       yield* put(removeCommentAction(optimistic.id));
-      toast.error(m.comments_writeService_replyFailed_error(), {
+      notify.error(m.comments_writeService_replyFailed_error(), {
         description: result.error ?? m.comments_writeService_unknown_error(),
       });
       yield* put(action.success(false));
@@ -106,7 +106,7 @@ function* deleteCommentWorker(
     );
     if (!result.success) {
       if (snapshot) yield* put(addCommentAction(snapshot));
-      toast.error(m.comments_writeService_deleteFailed_error(), {
+      notify.error(m.comments_writeService_deleteFailed_error(), {
         description: result.error ?? m.comments_writeService_unknown_error(),
       });
       yield* put(action.success({ existed: !!snapshot, success: false }));

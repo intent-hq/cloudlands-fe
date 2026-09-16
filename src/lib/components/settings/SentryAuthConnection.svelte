@@ -13,8 +13,7 @@
   } from '$store/renderer/slices/sentry-auth/sentry-auth-slice';
 
   import SentryIcon from '$lib/components/icons/SentryIcon.svelte';
-  import { Button } from '$lib/components/ui/button';
-  import { Input } from '$lib/components/ui/input';
+  import { Button, Input } from '$lib/components/patterns/settings/custom-controls';
   import { faCheck } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { m } from '$shared/paraglide/messages.js';
@@ -75,9 +74,9 @@
     <div class="flex items-center gap-1">
       <SentryIcon size={17} class="text-ghost" />
       <!-- i18n-ignore (brand name) -->
-      <span class="text-sm text-foreground">Sentry</span>
+      <span class="type-body text-foreground">Sentry</span>
       {#if $isAuthenticated$}
-        <span class="text-xs text-subtle flex items-center gap-1">
+        <span class="type-caption text-subtle flex items-center gap-1">
           <Fa icon={faCheck} class="w-2.5 h-2.5 text-green-500" />
           {#if $organization$}
             {$organization$}
@@ -87,39 +86,45 @@
         </span>
       {/if}
     </div>
-    <p class="text-xs text-subtle pl-6">{m.settings_connections_sentry_description()}</p>
+    <p class="type-caption text-subtle pl-6">{m.settings_connections_sentry_description()}</p>
     {#if $error$}
-      <p class="text-xs text-danger pl-6">{$error$}</p>
+      <p class="type-caption text-danger pl-6">{$error$}</p>
     {/if}
   </div>
 
-  <div class="flex items-center gap-2 text-xs">
+  <div class="flex items-center gap-2 type-caption">
     {#if $storeIsConnecting$ || pendingConnect}
-      <span class="text-subtle">{m.settings_connections_connecting()}</span>
+      <span class="type-caption text-subtle">{m.settings_connections_connecting()}</span>
     {:else if $isAuthenticated$}
-      <button
+      <Button
+        variant="link"
+        size="compact"
         type="button"
         class="text-muted-foreground hover:text-foreground cursor-pointer transition-colors"
         onclick={handleSentryReconnect}
       >
         {m.settings_connections_reconnect()}
-      </button>
+      </Button>
       <span class="text-ghost">·</span>
-      <button
+      <Button
+        variant="link"
+        size="compact"
         type="button"
         class="text-muted-foreground hover:text-danger cursor-pointer transition-colors"
         onclick={handleSentryDisconnect}
       >
         {m.settings_connections_disconnect()}
-      </button>
+      </Button>
     {:else}
-      <button
+      <Button
+        variant="link"
+        size="compact"
         type="button"
-        class="text-primary hover:text-primary/80 cursor-pointer transition-colors font-medium"
+        class="type-body text-primary hover:text-primary/80 cursor-pointer transition-colors font-medium"
         onclick={() => (showConnectForm = true)}
       >
         {m.settings_connections_connect()}
-      </button>
+      </Button>
     {/if}
   </div>
 </div>
@@ -127,7 +132,7 @@
 {#if showConnectForm && !$storeIsConnecting$}
   <div class="space-y-3 rounded-md bg-sidebar p-3">
     <div class="space-y-2">
-      <label for="sentry-org" class="block text-xs font-medium text-foreground">
+      <label for="sentry-org" class="block type-caption font-medium text-foreground">
         {m.settings_connections_sentry_orgSlug_label()}
       </label>
       <Input
@@ -135,15 +140,15 @@
         bind:value={sentryOrg}
         placeholder={m.settings_connections_sentry_orgSlug_placeholder()}
         disabled={$storeIsConnecting$}
-        class="text-sm"
+        class="type-body"
       />
-      <p class="text-xs text-subtle">
+      <p class="type-caption text-subtle">
         {m.settings_connections_sentry_orgSlug_description()}
       </p>
     </div>
 
     <div class="space-y-2">
-      <label for="sentry-token" class="block text-xs font-medium text-foreground">
+      <label for="sentry-token" class="block type-caption font-medium text-foreground">
         {m.settings_connections_sentry_apiToken_label()}
       </label>
       <Input
@@ -152,11 +157,13 @@
         bind:value={sentryToken}
         placeholder={/* i18n-ignore (credential format example) */ 'sntrys_...'}
         disabled={$storeIsConnecting$}
-        class="text-sm"
+        class="type-body"
       />
-      <p class="text-xs text-subtle">
+      <p class="type-caption text-subtle">
         {m.settings_connections_sentry_apiToken_createTokenAt()}{' '}
-        <button
+        <Button
+          variant="link"
+          size="compact"
           type="button"
           onclick={() => {
             handleLink('https://sentry.io/settings/account/api/auth-tokens/', {
@@ -167,7 +174,7 @@
         >
           <!-- i18n-ignore (URL) -->
           sentry.io/settings/account/api/auth-tokens/
-        </button>
+        </Button>
         {' '}{m.settings_connections_sentry_apiToken_withScopes()}
         <!-- i18n-ignore (scope identifiers) -->
         <span class="font-mono text-subtle">org:read, project:read, event:read</span>
