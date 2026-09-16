@@ -36,34 +36,62 @@ describe('queued message reduced motion', () => {
     const onedit = vi.fn().mockResolvedValue({ success: true });
     const first = queued('one', 0);
     const second = queued('two', 1);
-    const view = render(QueuedMessageList, { props: { messages: [first, second], onedit } });
+    const view = render(QueuedMessageList, {
+      props: { messages: [first, second], onedit, editOperations: {} },
+    });
 
-    await fireEvent.dblClick(screen.getAllByTestId('queued-message-content')[0]);
+    await fireEvent.click(screen.getAllByTestId('queued-message-content')[0]);
     const textarea = await waitFor(() => view.container.querySelector('textarea'));
     await waitFor(() => expect(document.activeElement).toBe(textarea));
     await fireEvent.input(textarea!, { target: { value: 'selection text' } });
     textarea!.setSelectionRange(2, 7);
-    await view.rerender({ messages: [second, first], onedit });
+    await view.rerender({ messages: [second, first], onedit, editOperations: {} });
     await waitFor(() => expect(document.activeElement).toBe(textarea));
     expect(textarea!.selectionStart).toBe(2);
     expect(textarea!.selectionEnd).toBe(7);
     expect(animate).not.toHaveBeenCalled();
 
     await fireEvent.keyDown(textarea!, { key: 'Escape' });
+    await view.rerender({
+      messages: [second, first],
+      onedit,
+      editOperations: {
+        one: {
+          status: 'success',
+          content: first.content,
+          editing: false,
+          result: { success: true },
+          error: null,
+        },
+      },
+    });
     await waitFor(() => expect(view.container.querySelector('textarea')).toBeNull());
     expect(animate).not.toHaveBeenCalled();
 
-    await fireEvent.dblClick(screen.getAllByTestId('queued-message-content')[0]);
+    await fireEvent.click(screen.getAllByTestId('queued-message-content')[0]);
     const savedTextarea = await waitFor(() => view.container.querySelector('textarea'));
     await fireEvent.input(savedTextarea!, { target: { value: 'saved' } });
     await fireEvent.keyDown(savedTextarea!, { key: 'Enter' });
+    await view.rerender({
+      messages: [second, first],
+      onedit,
+      editOperations: {
+        two: {
+          status: 'success',
+          content: 'saved',
+          editing: false,
+          result: { success: true },
+          error: null,
+        },
+      },
+    });
     await waitFor(() => expect(view.container.querySelector('textarea')).toBeNull());
     expect(animate).not.toHaveBeenCalled();
 
-    await view.rerender({ messages: [first], onedit });
-    await fireEvent.dblClick(screen.getByTestId('queued-message-content'));
+    await view.rerender({ messages: [first], onedit, editOperations: {} });
+    await fireEvent.click(screen.getByTestId('queued-message-content'));
     await waitFor(() => expect(view.container.querySelector('textarea')).toBeTruthy());
-    await view.rerender({ messages: [], onedit });
+    await view.rerender({ messages: [], onedit, editOperations: {} });
     await waitFor(() => expect(view.container.querySelector('textarea')).toBeNull());
     expect(animate).not.toHaveBeenCalled();
   });

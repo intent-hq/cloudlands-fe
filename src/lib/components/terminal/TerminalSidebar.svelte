@@ -1,19 +1,28 @@
 <script lang="ts">
-  import { Input } from '$lib/components/ui/input';
-  /* eslint-disable max-lines */
-  import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { flip } from 'svelte/animate';
-  import { prefersReducedMotion, spring } from '$lib/motion';
-  import { scriptsClient } from '$features/scripts/scripts.client';
   import type { ScriptCategory, ScriptMode, ScriptWithState } from '$features/scripts/types';
   import { getScriptStatusKind, isLiveScriptStatus } from '$features/scripts/utils/script-status';
 
-  import { selectScriptEntries } from '$store/renderer/slices/scripts/scripts-selectors';
   import {
-    refreshScripts,
-    removeScript,
-    upsertScript,
+    selectScriptEntries,
+    selectWorkspaceScriptCommandOperations,
+  } from '$store/renderer/slices/scripts/scripts-selectors';
+  import {
+    applyScriptDetectionRequested,
+    createScriptRequested,
+    detectScriptsRequested,
+    removeScriptRequested,
+    restartScriptRequested,
+    restoreScriptsRequested,
+    saveScriptsToRepoRequested,
+    startScriptRequested,
+    stopScriptRequested,
+    updateScriptRequested,
   } from '$store/renderer/slices/scripts/scripts-slice';
+  import type {
+    ScriptDefinitionInput,
+    ScriptDetectionChanges,
+  } from '$store/renderer/slices/scripts/scripts-types';
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import { writable } from 'svelte/store';
 
@@ -21,12 +30,11 @@
   import Button from '$lib/components/ui/button/button.svelte';
   import { ListContainer, ListItem, ListSection } from '$lib/components/ui/list';
   import { Skeleton } from '$lib/components/ui/skeleton';
-  import { IntentMarkLoader } from '$lib/components/ui/indicators';
-  import { notify, withToastCountdown } from '$lib/components/patterns/notify';
+  import { toast, withToastCountdown } from '$lib/components/ui/toast';
   import { useBackgroundAgent } from '$lib/hooks/use-background-agent.svelte';
   import {
-    selectExecutorIsRunning,
     selectExecutorAgentId,
+    selectExecutorState,
   } from '$store/renderer/slices/background-agent-executor/background-agent-executor-selectors';
   import {
     selectActiveTerminalId as selectActiveTerminalIdSelector,
@@ -47,6 +55,7 @@
     faPlus,
     faRotateRight,
     faSearch,
+    faSpinner,
     faStop,
     faTerminal,
     faTrash,
@@ -110,7 +119,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
   ]);
   const validModes = new Set(['service', 'command']);
 
-  type DetectFlow = 'idle' | 'local' | 'agent';
+  type DetectFlow = 'idle' | 'local';
 
   let detectFlow = $state<DetectFlow>('idle');
   let showAgentAssist = $state(false);
@@ -122,323 +131,102 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
   let lastClickedScriptId = $state<string | null>(null);
   let pendingScrollScriptId = $state<string | null>(null);
 
-  async function handleDetectionResult(parsed: any): Promise<void> {
-    const snapshot = selectScriptEntries.select(appStore.state, workspaceId).map((s) => {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const { runtime, ...scriptDef } = s;
-      return { ...scriptDef };
-    });
-
+  function scriptDefinition(entry: any): ScriptDefinitionInput | null {
     if (
-      parsed &&
-      typeof parsed === 'object' &&
-      !Array.isArray(parsed) &&
-      ('add' in parsed || 'update' in parsed || 'remove' in parsed)
+      typeof entry?.name !== 'string' ||
+      typeof entry?.command !== 'string' ||
+      !validModes.has(entry.mode)
     ) {
-      let addedCount = 0;
-      let updatedCount = 0;
-      let removedCount = 0;
-      const scriptEntries = selectScriptEntries.select(appStore.state, workspaceId);
-      const autoDetectedIds = new Set(
-        scriptEntries.filter((s) => s.source === 'auto-detected').map((s) => s.id),
-      );
-      const entriesById = new Map(scriptEntries.map((s) => [s.id, s]));
-      // A Set so a script skipped by both the remove and update branches (or
-      // duplicated in the agent output) is reported at most once.
-      const skippedRunning = new Set<string>();
-
-      if (Array.isArray(parsed.remove)) {
-        for (const scriptId of parsed.remove) {
-          if (typeof scriptId === 'string' && autoDetectedIds.has(scriptId)) {
-            // Removing a running script kills its live PTY group daemon-side —
-            // skip it and surface the skip so the user can stop + re-detect.
-            const target = entriesById.get(scriptId);
-            if (target?.runtime?.status === 'running') {
-              skippedRunning.add(target.name);
-              logger.info('Skipping script.remove for running script', {
-                name: target.name,
-                scriptId,
-              });
-              continue;
-            }
-            await scriptsClient.remove(workspaceId, scriptId);
-            appStore.dispatch(removeScript(workspaceId, scriptId));
-            removedCount++;
-          }
-        }
-      }
-
-      if (Array.isArray(parsed.update)) {
-        for (const entry of parsed.update) {
-          if (entry.id && typeof entry.id === 'string' && autoDetectedIds.has(entry.id)) {
-            // The update rides the §5.8 script.create scriptId upsert, which
-            // tears down the live PTY group — never send it for a running row.
-            const target = entriesById.get(entry.id);
-            if (target?.runtime?.status === 'running') {
-              skippedRunning.add(target.name);
-              logger.info('Skipping script.update for running script', {
-                name: target.name,
-                scriptId: entry.id,
-              });
-              continue;
-            }
-            const updates: Record<string, string> = {};
-            if (entry.name) updates.name = entry.name;
-            if (entry.command) updates.command = entry.command;
-            if (entry.mode && validModes.has(entry.mode)) updates.mode = entry.mode;
-            if (entry.category && validCategories.has(entry.category))
-              updates.category = entry.category;
-            const updateResult = await scriptsClient.update(workspaceId, entry.id, updates);
-            if (updateResult.success) updatedCount++;
-          }
-        }
-      }
-
-      if (Array.isArray(parsed.add)) {
-        for (const entry of parsed.add) {
-          if (
-            typeof entry.name === 'string' &&
-            typeof entry.command === 'string' &&
-            validModes.has(entry.mode)
-          ) {
-            const createResult = await scriptsClient.create(workspaceId, {
-              name: entry.name,
-              command: entry.command,
-              mode: entry.mode as ScriptMode,
-              category: (entry.category as ScriptCategory) || 'other',
-              source: 'auto-detected',
-            });
-            if (createResult.success && createResult.data) {
-              appStore.dispatch(upsertScript(workspaceId, createResult.data));
-              addedCount++;
-            }
-          }
-        }
-      }
-
-      appStore.dispatch(refreshScripts(workspaceId));
-
-      const parts: string[] = [];
-      if (addedCount > 0) parts.push(m.terminal_sidebar_detectAdded_part({ count: addedCount }));
-      if (updatedCount > 0)
-        parts.push(m.terminal_sidebar_detectUpdated_part({ count: updatedCount }));
-      if (removedCount > 0)
-        parts.push(m.terminal_sidebar_detectRemoved_part({ count: removedCount }));
-
-      showAgentAssist = selectScriptEntries.select(appStore.state, workspaceId).length === 0;
-
-      if (parts.length > 0) {
-        notify.success(
-          m.terminal_sidebar_scriptsUpdated_success({ changes: parts.join(', ') }),
-          withToastCountdown(
-            {
-              action: {
-                label: m.terminal_sidebar_undo_label(),
-                onClick: async () => {
-                  for (const s of selectScriptEntries.select(appStore.state, workspaceId)) {
-                    await scriptsClient.remove(workspaceId, s.id);
-                  }
-                  for (const s of snapshot) {
-                    await scriptsClient.create(workspaceId, {
-                      name: s.name,
-                      command: s.command,
-                      mode: s.mode,
-                      category: s.category,
-                      source: s.source || 'user',
-                      cwd: s.cwd,
-                      env: s.env,
-                      autoStart: s.autoStart,
-                    });
-                  }
-                  appStore.dispatch(refreshScripts(workspaceId));
-                  notify.success(m.terminal_sidebar_scriptsRestored_success());
-                },
-              },
-              duration: 10000,
-            },
-            { pauseOnHover: false },
-          ),
-        );
-      } else {
-        notify.info(m.terminal_sidebar_noScriptChanges_info());
-      }
-      if (skippedRunning.size > 0) {
-        const skippedNames = [...skippedRunning];
-        notify.warning(
-          skippedNames.length === 1
-            ? m.scripts_detect_skippedRunning_one({ name: skippedNames[0] })
-            : m.scripts_detect_skippedRunning_many({
-                count: skippedNames.length,
-                names: skippedNames.join(', '),
-              }),
-        );
-      }
-      return;
+      return null;
     }
-
-    // Fallback: old flat array format — deduplicate
-    if (Array.isArray(parsed)) {
-      const existingKeys = new Set(
-        selectScriptEntries
-          .select(appStore.state, workspaceId)
-          .map((s) => `${s.name}::${s.command}`),
-      );
-
-      let createdCount = 0;
-      for (const entry of parsed) {
-        if (
-          typeof entry.name === 'string' &&
-          typeof entry.command === 'string' &&
-          validModes.has(entry.mode) &&
-          !existingKeys.has(`${entry.name}::${entry.command}`)
-        ) {
-          const createResult = await scriptsClient.create(workspaceId, {
-            name: entry.name,
-            command: entry.command,
-            mode: entry.mode as ScriptMode,
-            category: (entry.category as ScriptCategory) || 'other',
-            source: 'auto-detected',
-          });
-          if (createResult.success && createResult.data) {
-            appStore.dispatch(upsertScript(workspaceId, createResult.data));
-            createdCount++;
-          }
-        }
-      }
-
-      showAgentAssist = selectScriptEntries.select(appStore.state, workspaceId).length === 0;
-
-      if (createdCount > 0) {
-        notify.success(
-          createdCount === 1
-            ? m.terminal_sidebar_detectedNew_one({ count: createdCount })
-            : m.terminal_sidebar_detectedNew_many({ count: createdCount }),
-        );
-      } else {
-        notify.info(m.terminal_sidebar_noNewScripts_info());
-      }
-      return;
-    }
-
-    // Neither format matched
-    logger.warn('DETECTED_SCRIPTS result is not recognized format');
-    notify.info(m.terminal_sidebar_unexpectedFormat_info());
-    await runLocalDetect({ source: 'fallback' });
+    return {
+      name: entry.name,
+      command: entry.command,
+      mode: entry.mode as ScriptMode,
+      category: validCategories.has(entry.category) ? (entry.category as ScriptCategory) : 'other',
+      source: 'auto-detected',
+    };
   }
 
-  const scriptDetectAgent = useBackgroundAgent('script-detect', {
-    resultTag: 'DETECTED_SCRIPTS',
-    timeout: 90000,
-    onResult: async (result) => {
-      try {
-        const parsed = JSON.parse(result);
-        await handleDetectionResult(parsed);
-      } catch (e) {
-        logger.warn('Failed to parse DETECTED_SCRIPTS result', {
-          error: e instanceof Error ? e.message : String(e),
-        });
-        notify.info(m.terminal_sidebar_agentDetectFailed_info());
-        await runLocalDetect({ source: 'fallback' });
-      }
-    },
-    onError: async () => {
-      // Try to salvage JSON from the agent's raw messages via Redux
-      const currentAgentId = selectExecutorAgentId.select(
-        appStore.state,
-        workspaceId,
-        'script-detect',
+  function normalizeDetectionResult(parsed: any): ScriptDetectionChanges | null {
+    if (Array.isArray(parsed)) {
+      const existing = new Set(
+        selectScriptEntries
+          .select(appStore.state, workspaceId)
+          .map((script) => `${script.name}::${script.command}`),
       );
-      const agentSession = currentAgentId
-        ? selectAgentSession.select(appStore.state, currentAgentId)
-        : undefined;
-      const messages = agentSession?.messages;
-      if (messages && messages.length > 0) {
-        for (let i = messages.length - 1; i >= 0; i--) {
-          const msg = messages[i];
-          const texts: string[] = [];
-          if (msg.contentBlocks) {
-            for (const block of msg.contentBlocks) {
-              if (block.type === 'text' && block.text) texts.push(block.text);
-            }
-          }
-          const content = texts.join('\n');
-
-          // Try extracting JSON from code blocks or raw content
-          const jsonMatch =
-            content.match(/```json?\s*\n?([\s\S]*?)\n?\s*```/) ||
-            content.match(/(\{[\s\S]*?"add"[\s\S]*?\})/);
-          if (jsonMatch) {
-            try {
-              const parsed = JSON.parse(jsonMatch[1].trim());
-              logger.info('Salvaged detection result from raw agent response');
-              await handleDetectionResult(parsed);
-              return;
-            } catch (e) {
-              logger.warn('Failed to parse salvaged JSON', { error: e });
-            }
-          }
-        }
-      }
-
-      logger.warn('Script detection agent failed, falling back to local detection');
-      notify.info(m.terminal_sidebar_agentDetectFailed_info());
-      await runLocalDetect({ source: 'fallback' });
-    },
-  });
-
-  async function runLocalDetect(options: { source?: 'primary' | 'fallback' } = {}) {
-    detectFlow = 'local';
-    try {
-      logger.info('Running local script detection', { source: options.source ?? 'primary' });
-      const result = await scriptsClient.detect(workspaceId);
-      if (!result.success) {
-        // i18n-ignore (internal error, caught and surfaced via extracted toast)
-        throw new Error(result.error || 'Local script detection failed');
-      }
-
-      appStore.dispatch(refreshScripts(workspaceId));
-      // Use the detected count from the IPC response (number of scripts found
-      // in project manifests) rather than the total store count which includes
-      // user-created scripts. Default to 0 so agent assist is shown when the
-      // field is missing.
-      const detectedCount = typeof result.detected === 'number' ? result.detected : 0;
-      showAgentAssist = detectedCount === 0;
-
-      if (detectedCount > 0) {
-        notify.success(
-          detectedCount === 1
-            ? m.terminal_sidebar_detectedFromFiles_one({ count: detectedCount })
-            : m.terminal_sidebar_detectedFromFiles_many({ count: detectedCount }),
-        );
-      } else {
-        notify.info(m.terminal_sidebar_noScriptsLocally_info());
-      }
-      const skippedRunning = result.skippedRunning ?? [];
-      if (skippedRunning.length > 0) {
-        notify.warning(
-          skippedRunning.length === 1
-            ? m.scripts_detect_skippedRunning_one({ name: skippedRunning[0] })
-            : m.scripts_detect_skippedRunning_many({
-                count: skippedRunning.length,
-                names: skippedRunning.join(', '),
-              }),
-        );
-      }
-      logger.info('Local detection complete', {
-        totalScripts: selectScriptEntries.select(appStore.state, workspaceId).length,
-        detectedCount,
-        source: options.source ?? 'primary',
-      });
-    } catch (e) {
-      showAgentAssist = true;
-      logger.error('Local script detection failed', {
-        error: e instanceof Error ? e.message : String(e),
-        source: options.source ?? 'primary',
-      });
-      notify.error(m.terminal_quakeOverlay_detectFailed_error());
-    } finally {
-      detectFlow = 'idle';
+      return {
+        add: parsed
+          .map(scriptDefinition)
+          .filter((entry): entry is ScriptDefinitionInput =>
+            entry ? !existing.has(`${entry.name}::${entry.command}`) : false,
+          ),
+        update: [],
+        remove: [],
+      };
     }
+    if (!parsed || typeof parsed !== 'object') return null;
+    return {
+      add: Array.isArray(parsed.add)
+        ? (parsed.add.map(scriptDefinition).filter(Boolean) as ScriptDefinitionInput[])
+        : [],
+      update: Array.isArray(parsed.update)
+        ? parsed.update.flatMap((entry: any) => {
+            if (typeof entry?.id !== 'string') return [];
+            const updates: Record<string, string> = {};
+            if (typeof entry.name === 'string') updates.name = entry.name;
+            if (typeof entry.command === 'string') updates.command = entry.command;
+            if (validModes.has(entry.mode)) updates.mode = entry.mode;
+            if (validCategories.has(entry.category)) updates.category = entry.category;
+            return [{ id: entry.id, updates }];
+          })
+        : [],
+      remove: Array.isArray(parsed.remove)
+        ? parsed.remove.filter((id: unknown): id is string => typeof id === 'string')
+        : [],
+    };
+  }
+
+  let pendingDetectionSnapshot: ScriptDefinitionInput[] = [];
+
+  function handleDetectionResult(parsed: any): void {
+    const changes = normalizeDetectionResult(parsed);
+    if (!changes) {
+      logger.warn('DETECTED_SCRIPTS result is not recognized format');
+      toast.info(m.terminal_sidebar_unexpectedFormat_info());
+      runLocalDetect({ source: 'fallback' });
+      return;
+    }
+    pendingDetectionSnapshot = selectScriptEntries
+      .select(appStore.state, workspaceId)
+      .map(({ runtime: _runtime, ...script }) => script);
+    appStore.dispatch(applyScriptDetectionRequested(workspaceId, changes));
+  }
+
+  const scriptDetectAgent = useBackgroundAgent('script-detect');
+
+  function handleAgentDetectionResult(result: string) {
+    try {
+      handleDetectionResult(JSON.parse(result));
+    } catch (error) {
+      logger.warn('Failed to parse DETECTED_SCRIPTS result', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      toast.info(m.terminal_sidebar_agentDetectFailed_info());
+      runLocalDetect({ source: 'fallback' });
+    }
+  }
+
+  function handleAgentDetectionError() {
+    logger.warn('Script detection agent failed, falling back to local detection');
+    toast.info(m.terminal_sidebar_agentDetectFailed_info());
+    runLocalDetect({ source: 'fallback' });
+  }
+
+  function runLocalDetect(options: { source?: 'primary' | 'fallback' } = {}) {
+    detectFlow = 'local';
+    logger.info('Running local script detection', { source: options.source ?? 'primary' });
+    appStore.dispatch(detectScriptsRequested(workspaceId));
   }
 
   function buildExistingScriptsContext(): string {
@@ -483,7 +271,8 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
   const _sidebarTerminals = selectTerminalsSelector(workspaceIdStore);
   const _sidebarActiveTerminalId = selectActiveTerminalIdSelector(workspaceIdStore);
   const scriptEntries$ = selectScriptEntries(workspaceIdStore);
-  const _scriptDetectIsRunning$ = selectExecutorIsRunning(workspaceIdStore, 'script-detect');
+  const scriptCommandOperations$ = selectWorkspaceScriptCommandOperations(workspaceIdStore);
+  const scriptDetectState$ = selectExecutorState(workspaceIdStore, 'script-detect');
   const _scriptDetectAgentId$ = selectExecutorAgentId(workspaceIdStore, 'script-detect');
 
   // Derived
@@ -502,11 +291,119 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
     showAllScripts ? $scriptEntries$.length > collapsedScriptLimit : hiddenScriptCount >= 2,
   );
   const effectiveWidth = $derived(collapsed ? COLLAPSED_WIDTH : sidebarWidth);
-  const isDetecting = $derived(detectFlow !== 'idle' || $_scriptDetectIsRunning$);
+  const isAgentDetecting = $derived(
+    $scriptDetectState$.status === 'initializing' || $scriptDetectState$.status === 'running',
+  );
+  const isDetecting = $derived(detectFlow !== 'idle' || isAgentDetecting);
   const isLocalDetecting = $derived(detectFlow === 'local');
-  const isAgentDetecting = $derived(detectFlow === 'agent' || $_scriptDetectIsRunning$);
   const sidebarTerminals = $derived($_sidebarTerminals);
   const activeTerminalId = $derived($_sidebarActiveTerminalId);
+
+  let handledCommandVersions = $state<Record<string, number>>({});
+  let awaitingScriptDetectResult = $state(false);
+
+  $effect(() => {
+    const execution = $scriptDetectState$;
+    if (execution.status === 'initializing' || execution.status === 'running') {
+      awaitingScriptDetectResult = true;
+      return;
+    }
+    if (!awaitingScriptDetectResult) return;
+    if (execution.status === 'success' && execution.result) {
+      awaitingScriptDetectResult = false;
+      handleAgentDetectionResult(execution.result);
+    } else if (execution.status === 'error') {
+      awaitingScriptDetectResult = false;
+      handleAgentDetectionError();
+    } else if (execution.status === 'cancelled') {
+      awaitingScriptDetectResult = false;
+    }
+  });
+
+  $effect(() => {
+    for (const [key, operation] of Object.entries($scriptCommandOperations$)) {
+      if (operation.status === 'loading' || handledCommandVersions[key] === operation.version)
+        continue;
+      handledCommandVersions = { ...handledCommandVersions, [key]: operation.version };
+      if (operation.status === 'error') {
+        if (key === 'detect') {
+          showAgentAssist = true;
+          detectFlow = 'idle';
+          toast.error(m.terminal_quakeOverlay_detectFailed_error());
+        } else if (key === 'save') {
+          saveToRepoStatus = 'idle';
+          toast.error(operation.error || m.terminal_sidebar_saveToRepoFailed_error());
+        } else if (operation.error) {
+          toast.warning(operation.error);
+        }
+        continue;
+      }
+      const result = operation.result;
+      if (!result) continue;
+      if (result.kind === 'create') {
+        onSelectScript?.(result.script.id);
+        newName = '';
+        newCommand = '';
+        newMode = 'command';
+        showAddForm = false;
+      } else if (result.kind === 'remove' && selectedScriptId === result.scriptId) {
+        onSelectScript?.(null);
+      } else if (result.kind === 'save') {
+        saveToRepoStatus = 'saved';
+        setTimeout(() => (saveToRepoStatus = 'idle'), 1500);
+      } else if (result.kind === 'restore') {
+        toast.success(m.terminal_sidebar_scriptsRestored_success());
+      } else if (result.kind === 'detect') {
+        detectFlow = 'idle';
+        showAgentAssist = result.detected === 0;
+        toast.info(
+          result.detected > 0
+            ? result.detected === 1
+              ? m.terminal_sidebar_detectedFromFiles_one({ count: result.detected })
+              : m.terminal_sidebar_detectedFromFiles_many({ count: result.detected })
+            : m.terminal_sidebar_noScriptsLocally_info(),
+        );
+      } else if (result.kind === 'apply') {
+        showAgentAssist = $scriptEntries$.length === 0;
+        const parts: string[] = [];
+        if (result.added) parts.push(m.terminal_sidebar_detectAdded_part({ count: result.added }));
+        if (result.updated)
+          parts.push(m.terminal_sidebar_detectUpdated_part({ count: result.updated }));
+        if (result.removed)
+          parts.push(m.terminal_sidebar_detectRemoved_part({ count: result.removed }));
+        if (parts.length === 0) {
+          toast.info(m.terminal_sidebar_noScriptChanges_info());
+        } else {
+          toast.success(
+            m.terminal_sidebar_scriptsUpdated_success({ changes: parts.join(', ') }),
+            withToastCountdown(
+              {
+                action: {
+                  label: m.terminal_sidebar_undo_label(),
+                  onClick: () =>
+                    appStore.dispatch(
+                      restoreScriptsRequested(workspaceId, pendingDetectionSnapshot),
+                    ),
+                },
+                duration: 10000,
+              },
+              { pauseOnHover: false },
+            ),
+          );
+        }
+      }
+      if ('skippedRunning' in result && result.skippedRunning.length > 0) {
+        toast.warning(
+          result.skippedRunning.length === 1
+            ? m.scripts_detect_skippedRunning_one({ name: result.skippedRunning[0] })
+            : m.scripts_detect_skippedRunning_many({
+                count: result.skippedRunning.length,
+                names: result.skippedRunning.join(', '),
+              }),
+        );
+      }
+    }
+  });
 
   // ---- Sort function ----
   function sortScripts(scripts: ScriptWithState[]): ScriptWithState[] {
@@ -527,7 +424,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
   function getStatusColor(script: ScriptWithState): string {
     const kind = getScriptStatusKind(script.runtime);
     if (kind === 'running' || kind === 'succeeded') return 'bg-green-500';
-    if (kind === 'restarting') return 'bg-warning';
+    if (kind === 'restarting') return 'bg-amber-500';
     if (kind === 'failed') return 'bg-red-500';
     if (kind === 'stopped') return 'bg-muted-foreground/60';
     return 'bg-muted-foreground/40';
@@ -577,97 +474,68 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
     return actions;
   }
 
-  async function handleStart(scriptId: string) {
-    await scriptsClient.start(workspaceId, scriptId);
+  function handleStart(scriptId: string) {
+    appStore.dispatch(startScriptRequested(workspaceId, scriptId));
     onSelectScript?.(scriptId);
     pendingScrollScriptId = scriptId;
   }
 
-  async function handleStop(scriptId: string) {
-    await scriptsClient.stop(workspaceId, scriptId);
+  function handleStop(scriptId: string) {
+    appStore.dispatch(stopScriptRequested(workspaceId, scriptId));
   }
 
-  async function handleRestart(scriptId: string) {
-    await scriptsClient.restart(workspaceId, scriptId);
+  function handleRestart(scriptId: string) {
+    appStore.dispatch(restartScriptRequested(workspaceId, scriptId));
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  async function handleDelete(scriptId: string) {
-    await scriptsClient.remove(workspaceId, scriptId);
-    appStore.dispatch(removeScript(workspaceId, scriptId));
-    if (selectedScriptId === scriptId) {
-      onSelectScript?.(null);
-    }
+  function handleDelete(scriptId: string) {
+    appStore.dispatch(removeScriptRequested(workspaceId, scriptId));
   }
 
-  async function handleDetect() {
+  function handleDetect() {
     if (isDetecting) {
       return;
     }
 
     showAgentAssist = false;
-    await runLocalDetect({ source: 'primary' });
+    runLocalDetect({ source: 'primary' });
   }
 
-  async function handleAgentDetect() {
+  function handleAgentDetect() {
     if (isDetecting) {
       return;
     }
 
     const workspace = $activeWorkspace;
     if (!workspace) {
-      notify.info(m.terminal_sidebar_openWorkspaceFirst_info());
+      toast.info(m.terminal_sidebar_openWorkspaceFirst_info());
       return;
     }
 
     showAgentAssist = false;
-    detectFlow = 'agent';
-
-    try {
-      await scriptDetectAgent.execute(workspace, {
-        message: SCRIPT_DETECT_PROMPT + buildExistingScriptsContext(),
-      });
-    } finally {
-      detectFlow = 'idle';
-    }
-  }
-
-  async function handleAddScript() {
-    if (!newName.trim() || !newCommand.trim()) return;
-    const result = await scriptsClient.create(workspaceId, {
-      name: newName.trim(),
-      command: newCommand.trim(),
-      mode: newMode,
-      source: 'user',
+    awaitingScriptDetectResult = true;
+    scriptDetectAgent.execute(workspace, {
+      message: SCRIPT_DETECT_PROMPT + buildExistingScriptsContext(),
     });
-    if (result.success && result.data) {
-      appStore.dispatch(upsertScript(workspaceId, result.data));
-      onSelectScript?.(result.data.id);
-      newName = '';
-      newCommand = '';
-      newMode = 'command';
-      showAddForm = false;
-    }
   }
 
-  async function handleSaveToRepo() {
+  function handleAddScript() {
+    if (!newName.trim() || !newCommand.trim()) return;
+    appStore.dispatch(
+      createScriptRequested(workspaceId, {
+        name: newName.trim(),
+        command: newCommand.trim(),
+        mode: newMode,
+        source: 'user',
+      }),
+    );
+  }
+
+  function handleSaveToRepo() {
     if (saveToRepoStatus !== 'idle') return;
     saveToRepoStatus = 'saving';
-    try {
-      const result = await scriptsClient.saveToRepo(workspaceId);
-      if (result.success) {
-        saveToRepoStatus = 'saved';
-        setTimeout(() => {
-          saveToRepoStatus = 'idle';
-        }, 1500);
-      } else {
-        notify.error(result.error || m.terminal_sidebar_saveToRepoFailed_error());
-        saveToRepoStatus = 'idle';
-      }
-    } catch {
-      notify.error(m.terminal_sidebar_saveToRepoFailed_error());
-      saveToRepoStatus = 'idle';
-    }
+    appStore.dispatch(saveScriptsToRepoRequested(workspaceId));
   }
 
   function handleSelectScript(scriptId: string, event?: MouseEvent) {
@@ -730,15 +598,14 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
     contextMenuScriptId = null;
   }
 
-  async function handleContextMenuAction(
+  function handleContextMenuAction(
     action: 'start' | 'stop' | 'restart' | 'edit' | 'delete' | 'startAll' | 'stopAll',
   ) {
     if (action === 'delete') {
       // Delete all selected scripts
       const idsToDelete = Array.from(selectedScriptIds);
       for (const id of idsToDelete) {
-        await scriptsClient.remove(workspaceId, id);
-        appStore.dispatch(removeScript(workspaceId, id));
+        appStore.dispatch(removeScriptRequested(workspaceId, id));
         if (selectedScriptId === id) {
           onSelectScript?.(null);
         }
@@ -749,12 +616,12 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
     } else if (action === 'startAll') {
       // Start all selected scripts
       for (const id of selectedScriptIds) {
-        await handleStart(id);
+        handleStart(id);
       }
     } else if (action === 'stopAll') {
       // Stop all selected scripts
       for (const id of selectedScriptIds) {
-        await handleStop(id);
+        handleStop(id);
       }
     } else if (action === 'edit' && contextMenuScriptId) {
       // Edit the right-clicked script
@@ -762,11 +629,11 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
     } else if (contextMenuScriptId) {
       // Start/stop/restart the right-clicked script
       if (action === 'start') {
-        await handleStart(contextMenuScriptId);
+        handleStart(contextMenuScriptId);
       } else if (action === 'stop') {
-        await handleStop(contextMenuScriptId);
+        handleStop(contextMenuScriptId);
       } else if (action === 'restart') {
-        await handleRestart(contextMenuScriptId);
+        handleRestart(contextMenuScriptId);
       }
     }
     closeContextMenu();
@@ -788,13 +655,9 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
 
   function finishEditingScript() {
     if (editingScriptId && editingScriptName.trim()) {
-      void scriptsClient
-        .update(workspaceId, editingScriptId, { name: editingScriptName.trim() })
-        .then((result) => {
-          if (!result.success && result.error) notify.warning(result.error);
-        })
-        .catch((error) => logger.error('Script update failed', error))
-        .finally(() => appStore.dispatch(refreshScripts(workspaceId)));
+      appStore.dispatch(
+        updateScriptRequested(workspaceId, editingScriptId, { name: editingScriptName.trim() }),
+      );
     }
     editingScriptId = null;
     editingScriptName = '';
@@ -945,10 +808,9 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
             <Fa icon={faPlus} size="xs" />
           </Button>
           {#if isAgentDetecting && $_scriptDetectAgentId$}
-            <Button
-              variant="plain"
+            <button
               type="button"
-              class="-mt-0.5 -mb-1 flex items-center gap-1 px-1 rounded text-muted-foreground hover:text-foreground transition-colors cursor-pointer shrink-0"
+              class="-mt-0.5 -mb-1 flex items-center gap-1 px-1 rounded text-muted-foreground/60 hover:text-muted-foreground transition-colors cursor-pointer shrink-0"
               onclick={(e) => {
                 e.stopPropagation();
                 const wsId = $activeWorkspace?.id;
@@ -974,17 +836,17 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
                 />
               </div>
               <span class="text-ui">{m.terminal_sidebar_askingAgent_label()}</span>
-            </Button>
+            </button>
           {:else if isAgentDetecting}
             <div class="-mt-0.5 -mb-1 flex items-center gap-1 px-1 text-muted-foreground">
               <!-- a11y-ignore -->
-              <IntentMarkLoader size={12} />
+              <Fa icon={faSpinner} size="xs" class="animate-spin" />
               <span class="text-ui">{m.terminal_sidebar_askingAgent_label()}</span>
             </div>
           {:else if isLocalDetecting}
             <div class="-mt-0.5 -mb-1 flex items-center gap-1 px-1 text-muted-foreground">
               <!-- a11y-ignore -->
-              <IntentMarkLoader size={12} />
+              <Fa icon={faSpinner} size="xs" class="animate-spin" />
               <span class="text-ui">{m.terminal_sidebar_scanningFiles_label()}</span>
             </div>
           {:else if hasScripts}
@@ -1041,17 +903,17 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
             class="px-2 py-2 border-b border-border flex flex-col gap-1.5"
             onkeydown={handleAddFormKeydown}
           >
-            <Input
+            <input
               type="text"
               bind:value={newName}
               placeholder={m.terminal_quakeOverlay_name_placeholder()}
-              class="w-full text-xs bg-muted/50 border border-border rounded-md px-2 py-1.5 outline-none focus:border-primary-ink/50 focus:bg-background text-foreground placeholder:text-muted-foreground transition-colors"
+              class="w-full text-xs bg-muted/50 border border-border rounded-md px-2 py-1.5 outline-none focus:border-primary/50 focus:bg-background text-foreground placeholder:text-muted-foreground/50 transition-colors"
             />
-            <Input
+            <input
               type="text"
               bind:value={newCommand}
               placeholder={m.terminal_sidebar_command_placeholder()}
-              class="w-full text-xs bg-muted/50 border border-border rounded-md px-2 py-1.5 outline-none focus:border-primary-ink/50 focus:bg-background text-foreground placeholder:text-muted-foreground font-mono transition-colors"
+              class="w-full text-xs bg-muted/50 border border-border rounded-md px-2 py-1.5 outline-none focus:border-primary/50 focus:bg-background text-foreground placeholder:text-muted-foreground/50 font-mono transition-colors"
             />
             <div class="flex items-center gap-1.5 justify-end">
               <Button variant="ghost-light" size="xs" onclick={() => (showAddForm = false)}>
@@ -1072,15 +934,9 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
 
         <!-- Script List -->
         {#if hasScripts}
-          <ListContainer spacing="compact" class="py-1 px-1.5">
+          <ListContainer spacing="compact" class="py-0.5 px-1.5">
             {#each visibleScripts as script (script.id)}
-              <div
-                animate:flip={{
-                  duration: prefersReducedMotion() ? 0 : spring.moderate.settleMs,
-                  easing: spring.moderate.exit.easing,
-                }}
-                data-script-id={script.id}
-              >
+              <div animate:flip={{ duration: 200 }} data-script-id={script.id}>
                 <ListItem
                   size="sm"
                   class={cn(
@@ -1115,7 +971,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
                         : 'pointer-events-none absolute'}
                     >
                       {#if editingScriptId === script.id}
-                        <Input
+                        <input
                           type="text"
                           data-edit-script={script.id}
                           bind:value={editingScriptName}
@@ -1140,8 +996,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
               </div>
             {/each}
             {#if showScriptListToggle}
-              <Button
-                variant="ghost-light"
+              <button
                 type="button"
                 class="w-full text-left px-2 py-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
                 onclick={() => (showAllScripts = !showAllScripts)}
@@ -1149,7 +1004,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
                 {showAllScripts
                   ? m.terminal_sidebar_showLess_label()
                   : m.terminal_sidebar_moreScripts_label({ count: hiddenScriptCount })}
-              </Button>
+              </button>
             {/if}
           </ListContainer>
 
@@ -1170,63 +1025,56 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
                 {#if script}
                   {#if selectedScriptIds.size > 1}
                     <!-- Multi-select actions -->
-                    <Button
-                      variant="ghost-light"
+                    <button
                       type="button"
                       class="w-full text-left px-3 py-1.5 text-sm hover:bg-accent cursor-pointer transition-colors"
                       onclick={() => handleContextMenuAction('startAll')}
                     >
                       {m.terminal_sidebar_startAll_label()}
-                    </Button>
-                    <Button
-                      variant="ghost-light"
+                    </button>
+                    <button
                       type="button"
                       class="w-full text-left px-3 py-1.5 text-sm hover:bg-accent cursor-pointer transition-colors"
                       onclick={() => handleContextMenuAction('stopAll')}
                     >
                       {m.terminal_sidebar_stopAll_label()}
-                    </Button>
+                    </button>
                   {:else}
                     <!-- Single-select actions -->
                     {#if isLiveScriptStatus(script.runtime.status)}
-                      <Button
-                        variant="ghost-light"
+                      <button
                         type="button"
                         class="w-full text-left px-3 py-1.5 text-sm hover:bg-accent cursor-pointer transition-colors"
                         onclick={() => handleContextMenuAction('stop')}
                       >
                         {m.terminal_quakeOverlay_stop_label()}
-                      </Button>
-                      <Button
-                        variant="ghost-light"
+                      </button>
+                      <button
                         type="button"
                         class="w-full text-left px-3 py-1.5 text-sm hover:bg-accent cursor-pointer transition-colors"
                         onclick={() => handleContextMenuAction('restart')}
                       >
                         {m.terminal_quakeOverlay_restart_label()}
-                      </Button>
+                      </button>
                     {:else}
-                      <Button
-                        variant="ghost-light"
+                      <button
                         type="button"
                         class="w-full text-left px-3 py-1.5 text-sm hover:bg-accent cursor-pointer transition-colors"
                         onclick={() => handleContextMenuAction('start')}
                       >
                         {m.terminal_quakeOverlay_start_label()}
-                      </Button>
+                      </button>
                     {/if}
-                    <Button
-                      variant="ghost-light"
+                    <button
                       type="button"
                       class="w-full text-left px-3 py-1.5 text-sm hover:bg-accent cursor-pointer transition-colors"
                       onclick={() => handleContextMenuAction('edit')}
                     >
                       {m.terminal_sidebar_edit_label()}
-                    </Button>
+                    </button>
                   {/if}
                   <div class="border-t border-border my-1"></div>
-                  <Button
-                    variant="plain"
+                  <button
                     type="button"
                     class="w-full text-left px-3 py-1.5 text-sm hover:bg-accent cursor-pointer transition-colors text-danger hover:bg-danger-background/10"
                     onclick={() => handleContextMenuAction('delete')}
@@ -1234,7 +1082,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
                     {selectedScriptIds.size > 1
                       ? m.terminal_sidebar_deleteMany_label({ count: selectedScriptIds.size })
                       : m.terminal_sidebar_delete_label()}
-                  </Button>
+                  </button>
                 {/if}
               {/if}
             </div>

@@ -118,7 +118,12 @@ describe('AgentCard rename editing', () => {
       .map(([action]) => action)
       .filter((action) => action.type === renameAgentSessionRequested.type);
     expect(renameActions).toHaveLength(1);
-    expect(renameActions[0].payload).toEqual([workspaceId, agentId, 'Alpha  Beta  42!']);
+    expect(renameActions[0].payload).toEqual([
+      workspaceId,
+      agentId,
+      'Alpha  Beta  42!',
+      { previousName: 'Original Agent', previousNameExplicitlySet: false },
+    ]);
     expect(onActivate).not.toHaveBeenCalled();
     expect(screen.queryByRole('textbox', { name: 'Rename' })).toBeNull();
   });
@@ -137,7 +142,7 @@ describe('AgentCard rename editing', () => {
     ).toHaveLength(0);
   });
 
-  it('commits blur once and reverts the optimistic name when rename fails', async () => {
+  it('commits blur once and supplies rollback context for saga-owned failure handling', async () => {
     const dispatch = vi.spyOn(appStore, 'dispatch');
     const { input } = await beginRename();
     await fireEvent.input(input, { target: { value: 'Temporary Name' } });
@@ -149,11 +154,12 @@ describe('AgentCard rename editing', () => {
     await waitFor(() =>
       expect(screen.getByTestId('agent-card-name').textContent).toBe('Temporary Name'),
     );
-
-    appStore.dispatch(renameAction.failure(new Error('rename failed')));
-    await waitFor(() =>
-      expect(screen.getByTestId('agent-card-name').textContent).toBe('Original Agent'),
-    );
+    expect(renameAction.payload).toEqual([
+      workspaceId,
+      agentId,
+      'Temporary Name',
+      { previousName: 'Original Agent', previousNameExplicitlySet: false },
+    ]);
     expect(
       dispatch.mock.calls.filter(([action]) => action.type === renameAgentSessionRequested.type),
     ).toHaveLength(1);

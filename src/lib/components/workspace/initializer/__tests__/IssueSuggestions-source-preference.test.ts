@@ -7,7 +7,6 @@
  */
 import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { LAST_SOURCE_STORAGE_KEY } from '../context-source-preference';
 
 const mocks = vi.hoisted(() => {
   const readable = <T>(value: T) => ({
@@ -17,13 +16,42 @@ const mocks = vi.hoisted(() => {
     },
   });
   const selector = <T>(value: T) => Object.assign(() => readable(value), { select: () => value });
-  return { readable, selector };
+  const mutableSelector = <T>(initialValue: T) => {
+    let value = initialValue;
+    const listeners = new Set<(next: T) => void>();
+    return {
+      selector: Object.assign(
+        () => ({
+          subscribe(run: (next: T) => void) {
+            run(value);
+            listeners.add(run);
+            return () => listeners.delete(run);
+          },
+        }),
+        { select: () => value },
+      ),
+      set(next: T) {
+        value = next;
+        for (const listener of listeners) listener(next);
+      },
+    };
+  };
+  return {
+    readable,
+    selector,
+    dispatch: vi.fn(),
+    linearAuthenticated: mutableSelector(false),
+    lastUsedSource: mutableSelector<string | null>(null),
+  };
 });
 
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
-  return createAppStoreMockModule({ state: () => ({ theme: { name: 'dark' } }) });
+  return createAppStoreMockModule({
+    state: () => ({ theme: { name: 'dark' } }),
+    dispatch: mocks.dispatch,
+  });
 });
 
 vi.mock('$store/renderer/slices/github-auth/github-auth-selectors', () => ({
@@ -34,20 +62,54 @@ vi.mock('$store/renderer/slices/github-auth/github-auth-slice', () => ({
   startGitHubAuth: () => ({ type: 'github-auth/start' }),
 }));
 vi.mock('$store/renderer/slices/linear-auth/linear-auth-selectors', () => ({
+  selectLinearIsAuthenticated: mocks.linearAuthenticated.selector,
   selectLinearIsAuthenticating: mocks.selector(false),
 }));
 vi.mock('$store/renderer/slices/linear-auth/linear-auth-slice', () => ({
+  initializeLinearAuth: () => ({ type: 'linear-auth/initialize' }),
   startLinearAuth: () => ({ type: 'linear-auth/start' }),
 }));
 vi.mock('$store/renderer/slices/sentry-auth/sentry-auth-selectors', () => ({
+  selectSentryIsAuthenticated: mocks.selector(false),
   selectSentryIsConnecting: mocks.selector(false),
   selectSentryError: mocks.selector(null),
 }));
 vi.mock('$store/renderer/slices/sentry-auth/sentry-auth-slice', () => ({
   connectSentry: () => ({ type: 'sentry-auth/connect' }),
+  initializeSentryAuth: () => ({ type: 'sentry-auth/initialize' }),
 }));
+vi.mock('$store/renderer/slices/issue-suggestions/issue-suggestions-selectors', () => {
+  const empty = {
+    items: [],
+    nextToken: null,
+    isFetching: false,
+    isLoadingMore: false,
+    error: null,
+    version: 0,
+  };
+  return {
+    selectLinearAssignedSuggestions: mocks.selector({
+      ...empty,
+      items: [
+        {
+          id: 'lin-1',
+          identifier: 'LIN-1',
+          title: 'A linear issue',
+          url: 'https://linear.app/team/issue/LIN-1',
+        },
+      ],
+    }),
+    selectLinearCreatedSuggestions: mocks.selector(empty),
+    selectLinearSearchSuggestions: mocks.selector(empty),
+    selectLastUsedContextSource: mocks.lastUsedSource.selector,
+    selectSentrySuggestions: mocks.selector(empty),
+    selectGitHubIssueSuggestions: mocks.selector(empty),
+    selectGitHubPullRequestSuggestions: mocks.selector(empty),
+    selectGitHubRelatedRepos: mocks.selector(empty),
+    selectGitHubPullRequestDetail: mocks.selector(empty),
+  };
+});
 const linearMocks = vi.hoisted(() => ({
-  getAuthState: vi.fn(async () => ({ isAuthenticated: false })),
   fetchMyIssuesPage: vi.fn(async () => ({ issues: [], nextToken: null })),
   searchIssuesPage: vi.fn(async () => ({ issues: [], nextToken: null })),
 }));
@@ -115,28 +177,17 @@ warmImport(() => import('./mocks/MockComponent.svelte'));
 warmImport(() => import('./mocks/MockTooltipRich.svelte'));
 
 describe('IssueSuggestions source preference + provider ordering', () => {
-  // The global test setup replaces window.localStorage with a non-storing
-  // vi.fn mock; back it with an in-memory store so persistence is observable.
-  let storage: Map<string, string>;
-
   beforeEach(() => {
     vi.useFakeTimers();
-    storage = new Map();
-    vi.mocked(localStorage.getItem).mockImplementation((key) => storage.get(key) ?? null);
-    vi.mocked(localStorage.setItem).mockImplementation((key, value) => {
-      storage.set(key, String(value));
-    });
-    linearMocks.getAuthState.mockResolvedValue({ isAuthenticated: false });
+    mocks.dispatch.mockClear();
+    mocks.linearAuthenticated.set(false);
+    mocks.lastUsedSource.set(null);
     linearMocks.fetchMyIssuesPage.mockResolvedValue({ issues: [], nextToken: null });
   });
 
   afterEach(() => {
     cleanup();
     vi.useRealTimers();
-    // Restore the global test-setup behavior so mocked storage does not leak
-    // into other test files.
-    vi.mocked(localStorage.getItem).mockImplementation(() => null);
-    vi.mocked(localStorage.setItem).mockImplementation(() => undefined);
   });
 
   async function settle(ms = 200): Promise<void> {
@@ -152,8 +203,8 @@ describe('IssueSuggestions source preference + provider ordering', () => {
   });
 
   it('moves a connected provider first once auth resolves, and activates it', async () => {
-    linearMocks.getAuthState.mockResolvedValue({ isAuthenticated: true });
     render(IssueSuggestions, { props: { initiallyExpanded: true } });
+    mocks.linearAuthenticated.set(true);
     await settle();
 
     expect(tabOrder()).toEqual(['Linear', 'GH Issues', 'GH PRs', 'Sentry']);
@@ -161,7 +212,7 @@ describe('IssueSuggestions source preference + provider ordering', () => {
   });
 
   it('persists the source when an item is selected and opens it first on remount', async () => {
-    linearMocks.getAuthState.mockResolvedValue({ isAuthenticated: true });
+    mocks.linearAuthenticated.set(true);
     linearMocks.fetchMyIssuesPage.mockImplementation(async (filter: string) =>
       filter === 'assigned'
         ? { issues: [linearIssue], nextToken: null }
@@ -175,9 +226,13 @@ describe('IssueSuggestions source preference + provider ordering', () => {
     expect(issueButton).toBeTruthy();
     await fireEvent.click(issueButton!);
 
-    expect(storage.get(LAST_SOURCE_STORAGE_KEY)).toBe('linear');
+    expect(mocks.dispatch).toHaveBeenCalledWith({
+      type: 'issueSuggestions/setContextSourcePreference',
+      payload: ['linear'],
+    });
 
     cleanup();
+    mocks.lastUsedSource.set('linear');
     render(IssueSuggestions, { props: { initiallyExpanded: true } });
     await settle();
 
@@ -186,7 +241,7 @@ describe('IssueSuggestions source preference + provider ordering', () => {
   });
 
   it('linear row trigger wrappers carry width-constraining classes so long titles truncate', async () => {
-    linearMocks.getAuthState.mockResolvedValue({ isAuthenticated: true });
+    mocks.linearAuthenticated.set(true);
     linearMocks.fetchMyIssuesPage.mockImplementation(async (filter: string) =>
       filter === 'assigned'
         ? { issues: [linearIssue], nextToken: null }
@@ -216,12 +271,14 @@ describe('IssueSuggestions source preference + provider ordering', () => {
     await settle();
 
     expect(screen.getByPlaceholderText('Search Linear issues...')).toBeTruthy();
-    expect(storage.has(LAST_SOURCE_STORAGE_KEY)).toBe(false);
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'issueSuggestions/setContextSourcePreference' }),
+    );
   });
 
   it('initialSource overrides a different persisted value and stays locked through auth resolution', async () => {
-    storage.set(LAST_SOURCE_STORAGE_KEY, 'linear');
-    linearMocks.getAuthState.mockResolvedValue({ isAuthenticated: true });
+    mocks.lastUsedSource.set('linear');
+    mocks.linearAuthenticated.set(true);
 
     render(IssueSuggestions, { props: { initiallyExpanded: true, initialSource: 'sentry' } });
     await settle();
@@ -230,11 +287,8 @@ describe('IssueSuggestions source preference + provider ordering', () => {
   });
 
   it('does not switch panes mid-search when auth resolves', async () => {
-    linearMocks.getAuthState.mockImplementation(
-      () => new Promise((resolve) => setTimeout(() => resolve({ isAuthenticated: true }), 400)),
-    );
-
     render(IssueSuggestions, { props: { initiallyExpanded: true } });
+    setTimeout(() => mocks.linearAuthenticated.set(true), 400);
     await settle(200);
 
     const input = screen.getByPlaceholderText('Search GitHub issues...');

@@ -2,20 +2,31 @@
   import { onMount } from 'svelte';
   import { writable } from 'svelte/store';
   import Fa from 'svelte-fa';
-  import { invoke } from '$lib/electron-bridge';
   import FileExplorerSidebar from './file-explorer-sidebar.svelte';
   import CodeEditor from '$lib/components/editor/CodeEditor.svelte';
   import * as Breadcrumb from '$lib/components/ui/breadcrumb';
   import { Separator } from '$lib/components/ui/separator';
   import * as Sidebar from '$lib/components/ui/sidebar';
   import { Button } from '$lib/components/ui/button';
-  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { selectEffectiveFileExplorerWorkspacePath } from '$store/renderer/slices/file-explorer/file-explorer-selectors';
-  import { faXmark, faFileAlt, faExclamationCircle } from '@fortawesome/free-solid-svg-icons';
-  import { createLogger } from '$lib/utils/client-logger';
+  import {
+    faXmark,
+    faFileAlt,
+    faExclamationCircle,
+    faSpinner,
+  } from '@fortawesome/free-solid-svg-icons';
   import { m } from '$shared/paraglide/messages.js';
-
-  const logger = createLogger('FileExplorerLayout');
+  import { store as appStore } from '$store/renderer/store';
+  import {
+    loadFileContentRequested,
+    saveFileContentRequested,
+  } from '$store/renderer/slices/files/files-slice';
+  import {
+    selectFileContent,
+    selectFileError,
+    selectFileLoading,
+    selectFileSaving,
+  } from '$store/renderer/slices/files/files-selectors';
 
   interface Props {
     workspaceId?: string;
@@ -36,9 +47,26 @@
   let openFiles = $state<Map<string, { content: string; modified: boolean }>>(new Map());
   // svelte-ignore state_referenced_locally - intentional: prop seeds the initial selection; user selection owns it afterwards
   let selectedFile: string = $state(initialFile || '');
+  const selectedFileStore = writable(selectedFile);
+  const selectedContent$ = selectFileContent(workspaceIdStore, selectedFileStore);
+  const selectedLoading$ = selectFileLoading(workspaceIdStore, selectedFileStore);
+  const selectedSaving$ = selectFileSaving(workspaceIdStore, selectedFileStore);
+  const selectedError$ = selectFileError(workspaceIdStore, selectedFileStore);
   let currentFileContent: string = $state('');
   let isLoading = $state(false);
   let error: string | null = $state(null);
+
+  $effect(() => {
+    selectedFileStore.set(selectedFile);
+    isLoading = $selectedLoading$ || $selectedSaving$;
+    error = $selectedError$;
+    const content = $selectedContent$;
+    if (!selectedFile || content === null) return;
+    const current = openFiles.get(selectedFile);
+    if (current?.modified) return;
+    openFiles.set(selectedFile, { content, modified: false });
+    currentFileContent = content;
+  });
 
   // Get breadcrumb parts from file path
   function getBreadcrumbParts(filePath: string): string[] {
@@ -48,53 +76,23 @@
   }
 
   // Load file content
-  async function loadFile(filePath: string) {
+  function loadFile(filePath: string) {
     if (openFiles.has(filePath)) {
       currentFileContent = openFiles.get(filePath)!.content;
       return;
     }
 
-    isLoading = true;
-    error = null;
-
-    try {
-      const result = (await invoke('file:open', { path: filePath, workspaceId })) as any;
-      if (result?.success) {
-        const fileData = { content: result.content, modified: false };
-        openFiles.set(filePath, fileData);
-        currentFileContent = result.content;
-      } else {
-        error = result?.error || m.fileExplorer_layout_loadFailed_error();
-      }
-    } catch (err) {
-      logger.error('Failed to load file:', err);
-      error = m.fileExplorer_layout_loadFailed_error();
-    } finally {
-      isLoading = false;
-    }
+    appStore.dispatch(loadFileContentRequested(workspaceId, filePath, filePath));
   }
 
   // Save file
-  async function saveFile(filePath: string) {
+  function saveFile(filePath: string) {
     const fileData = openFiles.get(filePath);
     if (!fileData || !fileData.modified) return;
 
-    try {
-      const result = (await invoke('file:save', {
-        filePath,
-        content: fileData.content,
-        workspaceId,
-      })) as any;
-      if (result?.success) {
-        fileData.modified = false;
-        openFiles.set(filePath, fileData);
-      } else {
-        error = result?.error || m.fileExplorer_layout_saveFailed_error();
-      }
-    } catch (err) {
-      logger.error('Failed to save file:', err);
-      error = m.fileExplorer_layout_saveFailed_error();
-    }
+    appStore.dispatch(saveFileContentRequested(workspaceId, filePath, filePath, fileData.content));
+    fileData.modified = false;
+    openFiles.set(filePath, fileData);
   }
 
   // Close file
@@ -110,9 +108,9 @@
   }
 
   // Handle file selection
-  async function handleFileSelect(filePath: string) {
+  function handleFileSelect(filePath: string) {
     selectedFile = filePath;
-    await loadFile(filePath);
+    loadFile(filePath);
   }
 
   // Handle content changes
@@ -286,7 +284,7 @@
         </div>
       {:else if isLoading}
         <div class="flex items-center justify-center h-full">
-          <IntentMarkLoader size={32} class="text-subtle" />
+          <Fa icon={faSpinner} size="lg" class="w-8 h-8 animate-spin text-subtle" />
         </div>
       {:else if selectedFile}
         <CodeEditor

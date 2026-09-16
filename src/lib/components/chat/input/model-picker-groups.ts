@@ -76,11 +76,13 @@ export function buildGroupedModelOptions({
     const isDisabledEffectiveProvider =
       pid === normalizedEffectiveProviderId && !normalizedEnabledProviderIds.has(pid);
     if (!normalizedEnabledProviderIds.has(pid) && !isDisabledEffectiveProvider) continue;
+    const fetchedModels = allProviderModels[pid];
     const rawModels =
-      allProviderModels[pid] ??
-      (isDisabledEffectiveProvider && fallbackModelsMatchEffectiveProvider
-        ? toDropdownOptions(availableModels)
-        : undefined);
+      fetchedModels && fetchedModels.length > 0
+        ? fetchedModels
+        : isDisabledEffectiveProvider && fallbackModelsMatchEffectiveProvider
+          ? toDropdownOptions(availableModels)
+          : fetchedModels;
     // Never list a `default` pseudo-row (older daemons can still serve one);
     // pseudo-rows are kept only when no real rows remain, so the group is
     // never empty (D1).

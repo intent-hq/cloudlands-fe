@@ -18,17 +18,28 @@ export function issueSuggestionRequestKey(
   source: IssueSuggestionSource,
   request: IssueSuggestionRequest,
 ): string {
+  const repos = request.repos?.map(({ owner, repo }) => `${owner}/${repo}`) ?? [];
   if (source === 'github-issues') {
-    return JSON.stringify([source, request.owner ?? '', request.repo ?? '', request.query ?? '']);
+    return JSON.stringify([
+      source,
+      request.owner ?? '',
+      request.repo ?? '',
+      repos,
+      request.query ?? '',
+    ]);
   }
   if (source === 'github-prs') {
     return JSON.stringify([
       source,
       request.owner ?? '',
       request.repo ?? '',
+      repos,
       request.filter ?? 'all',
       request.query ?? '',
     ]);
+  }
+  if (source === 'github-related-repos') {
+    return JSON.stringify([source, request.owner ?? '', request.repo ?? '']);
   }
   if (source === 'github-pr-detail') {
     return JSON.stringify([

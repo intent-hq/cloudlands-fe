@@ -59,6 +59,7 @@ vi.mock('qrcode', () => ({
 const connectionState = vi.hoisted(() => ({
   activeId: 'local',
   emit: () => {},
+  reset: () => {},
   syncState: { supported: true, enabled: true, status: null } as {
     supported: boolean;
     enabled: boolean;
@@ -69,14 +70,49 @@ const connectionState = vi.hoisted(() => ({
 
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMock } = await import('$store/renderer/utils/test-helpers/store-mock');
-  const store = createAppStoreMock({
+  const { settingsOperationsReducer } =
+    await import('$store/renderer/slices/settings-events/settings-events-slice');
+  const { connectionsReducer, keychainSyncStateReceived } =
+    await import('$store/renderer/slices/connections/connections-slice');
+  let store: ReturnType<typeof createAppStoreMock>;
+  store = createAppStoreMock({
     state: () => ({ connections: { windowBackendId: connectionState.activeId } }),
+    reducers: {
+      connections: connectionsReducer,
+      settingsOperations: settingsOperationsReducer,
+    },
     dispatch: (action: { type: string }) => {
       connectionState.dispatched.push(action);
-      return { ...action, promise: Promise.resolve(connectionState.syncState) };
+      const request = action as { type: string; payload: unknown[] };
+      let promise =
+        request.type === 'settings/listRequested'
+          ? mocks.mockSettingsList()
+          : request.type === 'settings/updateRequested'
+            ? mocks.mockSettingsUpdate(request.payload[0])
+            : request.type === 'settings/getServerPairingInfoRequested'
+              ? mocks.mockPairingInfo()
+              : request.type === 'settings/rotateServerTokenRequested'
+                ? mocks.mockRotateToken()
+                : request.type === 'connections/loadSelfPublishedStateRequested'
+                  ? ipcMocks.invoke('connections:self-published-state')
+                  : request.type === 'connections/publishSelfRequested'
+                    ? ipcMocks.invoke('connections:publish-self')
+                    : request.type === 'connections/unpublishSelfRequested'
+                      ? ipcMocks.invoke('connections:unpublish-self')
+                      : request.type === 'connections/refreshSelfRequested'
+                        ? ipcMocks.invoke('connections:refresh-self')
+                        : Promise.resolve(connectionState.syncState);
+      if (request.type === 'connections/loadKeychainSyncStateRequested') {
+        promise = promise.then((result) => {
+          store.dispatch(keychainSyncStateReceived(result));
+          return result;
+        });
+      }
+      return { ...action, promise };
     },
   });
   connectionState.emit = () => store.emitState();
+  connectionState.reset = () => store.resetReducers();
   return { store };
 });
 
@@ -125,7 +161,8 @@ async function renderExpandedSettings() {
 
 describe('WebSocketApiSettings', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    connectionState.reset();
+    vi.resetAllMocks();
     connectionState.activeId = 'local';
     connectionState.syncState = { supported: true, enabled: true, status: null };
     connectionState.dispatched.length = 0;

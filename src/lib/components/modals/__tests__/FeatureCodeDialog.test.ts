@@ -6,33 +6,47 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const featureState = vi.hoisted(() => ({
   activeFeatures: [] as string[],
-}));
-
-const clientMocks = vi.hoisted(() => ({
-  getActiveFeatures: vi.fn(),
-  activateCode: vi.fn(),
-  deactivateFeature: vi.fn(),
-  restartApp: vi.fn(),
+  operation: {
+    version: 0,
+    status: 'idle',
+    kind: null,
+    result: null,
+    error: null,
+  } as {
+    version: number;
+    status: 'idle' | 'loading' | 'success' | 'error';
+    kind: 'load' | 'activate' | 'deactivate' | null;
+    result: 'activated' | 'already_active' | 'invalid' | 'deactivated' | null;
+    error: string | null;
+  },
+  subscribers: new Set<() => void>(),
+  notify() {
+    for (const subscriber of this.subscribers) subscriber();
+  },
 }));
 
 const storeMocks = vi.hoisted(() => ({
   dispatch: vi.fn(),
 }));
 
-vi.mock('$features/feature-codes/renderer/feature-codes.client', () => ({
-  featureCodesClient: clientMocks,
-}));
-
 vi.mock('$store/renderer/slices/feature-codes/feature-codes-selectors', () => {
   const readable = <T>(getter: () => T) => ({
     subscribe(run: (value: T) => void) {
-      run(getter());
-      return () => {};
+      const notify = () => run(getter());
+      notify();
+      featureState.subscribers.add(notify);
+      return () => featureState.subscribers.delete(notify);
     },
   });
   return {
     selectActiveFeatures: vi.fn(() => readable(() => featureState.activeFeatures)),
     selectHasActiveFeatures: vi.fn(() => readable(() => featureState.activeFeatures.length > 0)),
+    selectFeatureCodeOperation: Object.assign(
+      vi.fn(() => readable(() => featureState.operation)),
+      {
+        select: () => featureState.operation,
+      },
+    ),
   };
 });
 
@@ -49,13 +63,10 @@ vi.mock('$store/renderer/store', async () => {
 import FeatureCodeDialog from '../FeatureCodeDialog.svelte';
 import { warmImport } from '../../../../test/warm-import';
 
-const SET_ACTIVE_FEATURES = 'featureCodes/setActiveFeatures';
-
-function getSetActiveFeaturesPayloads() {
-  return storeMocks.dispatch.mock.calls.flatMap(([action]) => {
-    const dispatchedAction = action as { type?: string; payload?: unknown } | undefined;
-    return dispatchedAction?.type === SET_ACTIVE_FEATURES ? [dispatchedAction.payload] : [];
-  });
+function expectDispatched(type: string, payload?: unknown[]) {
+  expect(storeMocks.dispatch).toHaveBeenCalledWith(
+    expect.objectContaining(payload ? { type, payload } : { type }),
+  );
 }
 
 // Pre-warm the component module graph so the cold dynamic import is not
@@ -64,11 +75,13 @@ warmImport(() => import('../FeatureCodeDialog.svelte'));
 
 beforeEach(() => {
   featureState.activeFeatures = [];
-  clientMocks.getActiveFeatures.mockReset();
-  clientMocks.activateCode.mockReset();
-  clientMocks.deactivateFeature.mockReset();
-  clientMocks.restartApp.mockReset();
-  clientMocks.getActiveFeatures.mockResolvedValue([]);
+  featureState.operation = {
+    version: 0,
+    status: 'idle',
+    kind: null,
+    result: null,
+    error: null,
+  };
   storeMocks.dispatch.mockClear();
 });
 
@@ -76,84 +89,93 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe('FeatureCodeDialog direct-client flow', () => {
-  it('refreshes the active-features store from the client when opened', async () => {
-    clientMocks.getActiveFeatures.mockResolvedValue(['cortex']);
-
+describe('FeatureCodeDialog selector-backed flow', () => {
+  it('requests active features when opened', async () => {
     render(FeatureCodeDialog, { props: { open: true } });
-
-    await waitFor(() => expect(getSetActiveFeaturesPayloads()).toEqual([[['cortex']]]));
-    expect(clientMocks.getActiveFeatures).toHaveBeenCalledTimes(1);
+    await waitFor(() => expectDispatched('featureCodes/loadActiveFeaturesRequested'));
   });
 
-  it('activates a code through the client and refreshes the store', async () => {
-    clientMocks.activateCode.mockResolvedValue({ status: 'activated' });
-    clientMocks.getActiveFeatures.mockResolvedValueOnce([]).mockResolvedValueOnce(['new-feature']);
-
+  it('dispatches activation and renders selector-backed success', async () => {
     render(FeatureCodeDialog, { props: { open: true } });
-    await waitFor(() => expect(clientMocks.getActiveFeatures).toHaveBeenCalledTimes(1));
 
     const input = screen.getByPlaceholderText('Enter code...');
     await fireEvent.input(input, { target: { value: 'SECRET' } });
     await fireEvent.click(screen.getByRole('button', { name: 'Activate' }));
 
+    expectDispatched('featureCodes/activateFeatureCodeRequested', ['SECRET']);
+    featureState.operation = {
+      version: 1,
+      status: 'success',
+      kind: 'activate',
+      result: 'activated',
+      error: null,
+    };
+    featureState.notify();
     await waitFor(() => expect(screen.getByText('Feature activated!')).toBeTruthy());
-    expect(clientMocks.activateCode).toHaveBeenCalledWith('SECRET');
-    await waitFor(() => expect(getSetActiveFeaturesPayloads()).toEqual([[[]], [['new-feature']]]));
   });
 
-  it('shows the invalid-code feedback when activation rejects', async () => {
-    clientMocks.activateCode.mockRejectedValue(new Error('invalid code'));
-
+  it('shows invalid-code feedback from selector-backed failure', async () => {
     render(FeatureCodeDialog, { props: { open: true } });
-    await waitFor(() => expect(clientMocks.getActiveFeatures).toHaveBeenCalledTimes(1));
 
     const input = screen.getByPlaceholderText('Enter code...');
     await fireEvent.input(input, { target: { value: 'BAD' } });
     await fireEvent.click(screen.getByRole('button', { name: 'Activate' }));
 
+    expectDispatched('featureCodes/activateFeatureCodeRequested', ['BAD']);
+    featureState.operation = {
+      version: 1,
+      status: 'error',
+      kind: 'activate',
+      result: null,
+      error: 'invalid code',
+    };
+    featureState.notify();
     await waitFor(() => expect(screen.getByText('Invalid code.')).toBeTruthy());
-    expect(getSetActiveFeaturesPayloads()).toEqual([[[]]]);
   });
 
-  it('deactivates a feature through the client and refreshes the store', async () => {
+  it('dispatches deactivation and renders selector-backed success', async () => {
     featureState.activeFeatures = ['cortex'];
-    clientMocks.deactivateFeature.mockResolvedValue({ success: true });
-    clientMocks.getActiveFeatures.mockResolvedValueOnce(['cortex']).mockResolvedValueOnce([]);
 
     render(FeatureCodeDialog, { props: { open: true } });
-    await waitFor(() => expect(clientMocks.getActiveFeatures).toHaveBeenCalledTimes(1));
 
     await fireEvent.click(screen.getByTitle('Remove cortex'));
 
+    expectDispatched('featureCodes/deactivateFeatureRequested', ['cortex']);
+    featureState.operation = {
+      version: 1,
+      status: 'success',
+      kind: 'deactivate',
+      result: 'deactivated',
+      error: null,
+    };
+    featureState.notify();
     await waitFor(() =>
       expect(screen.getByText('Feature deactivated! Restart to apply.')).toBeTruthy(),
     );
-    expect(clientMocks.deactivateFeature).toHaveBeenCalledWith('cortex');
-    await waitFor(() => expect(getSetActiveFeaturesPayloads()).toEqual([[['cortex']], [[]]]));
   });
 
-  it('keeps existing store state when the active-features fetch fails', async () => {
+  it('renders active features exclusively from selector state', async () => {
     featureState.activeFeatures = ['cortex'];
-    clientMocks.getActiveFeatures.mockResolvedValue(null);
 
     render(FeatureCodeDialog, { props: { open: true } });
-
-    await waitFor(() => expect(clientMocks.getActiveFeatures).toHaveBeenCalledTimes(1));
-    expect(getSetActiveFeaturesPayloads()).toEqual([]);
+    expect(screen.getByText('cortex')).toBeTruthy();
+    await waitFor(() => expectDispatched('featureCodes/loadActiveFeaturesRequested'));
   });
 
-  it('still refreshes the store but shows no feedback when deactivation fails', async () => {
+  it('shows no deactivation success feedback when the selector reports failure', async () => {
     featureState.activeFeatures = ['cortex'];
-    clientMocks.deactivateFeature.mockResolvedValue({ success: false });
-    clientMocks.getActiveFeatures.mockResolvedValue(['cortex']);
 
     render(FeatureCodeDialog, { props: { open: true } });
-    await waitFor(() => expect(clientMocks.getActiveFeatures).toHaveBeenCalledTimes(1));
-
     await fireEvent.click(screen.getByTitle('Remove cortex'));
 
-    await waitFor(() => expect(clientMocks.getActiveFeatures).toHaveBeenCalledTimes(2));
+    featureState.operation = {
+      version: 1,
+      status: 'error',
+      kind: 'deactivate',
+      result: null,
+      error: 'failed',
+    };
+    featureState.notify();
     expect(screen.queryByText('Feature deactivated! Restart to apply.')).toBeNull();
   });
 });

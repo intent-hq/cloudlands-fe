@@ -2,6 +2,7 @@
   import QueuedMessageList from '../QueuedMessageList.svelte';
   import { followBottom, type FollowBottomState } from '$lib/utils/smartScroll';
   import type { QueuedMessage } from '$shared/types';
+  import type { ChatQueuedMessageEditOperation } from '$store/renderer/slices/chat-state/chat-state-types';
   import {
     CHAT_SCROLL_END_MARKER_CLASS,
     CHAT_TRANSCRIPT_OVERFLOW_CLASS,
@@ -26,6 +27,7 @@
     saveDelayMs = 0,
   }: Props = $props();
   let removedIds = $state<string[]>([]);
+  let editOperations = $state<Record<string, ChatQueuedMessageEditOperation>>({});
   let following = $state(true);
   let distance = $state(0);
   const compact = $derived(width <= 320);
@@ -54,6 +56,16 @@
     if (!editing && saveDelayMs > 0) {
       await new Promise((resolve) => setTimeout(resolve, saveDelayMs));
     }
+    editOperations = {
+      ...editOperations,
+      [_id]: {
+        status: 'success',
+        content: _content,
+        editing: editing ?? false,
+        result: { success: true },
+        error: null,
+      },
+    };
     return { success: true };
   }
 </script>
@@ -91,6 +103,7 @@
           <div class="relative z-20 mt-6 w-full" data-testid="queued-message-utility-area">
             <QueuedMessageList
               {messages}
+              {editOperations}
               onedit={editMessage}
               onremove={(id) => (removedIds = [...removedIds, id])}
             />

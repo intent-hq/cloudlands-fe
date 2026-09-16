@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, fireEvent, waitFor } from '@testing-library/svelte';
 import type { CommitInfo } from '$features/file-tracking/types';
-import { SYSTEM_CHANNELS } from '$shared/ipc/channels';
 import { warmImport } from '../../../../../test/warm-import';
 
 const mocks = vi.hoisted(() => {
@@ -22,14 +21,49 @@ const mocks = vi.hoisted(() => {
   const loadingOlderCommits = false;
   const postMergeState = { hasRemote: true };
   const gitOps = { isPushing: false };
+  const commitDetailsEntries: any[] = [];
+  const fileReads: Record<string, any> = {};
+  const selectorListeners = new Set<() => void>();
   const selector = <T>(getter: () => T) => {
     const fn = () => ({
       subscribe(run: (v: T) => void) {
-        run(getter());
-        return () => {};
+        const notify = () => run(getter());
+        selectorListeners.add(notify);
+        notify();
+        return () => selectorListeners.delete(notify);
       },
     });
     return Object.assign(fn, { select: () => getter() });
+  };
+  const parameterizedSelector = <T>(getter: (...args: any[]) => T) => {
+    const fn = (...inputs: any[]) => ({
+      subscribe(run: (value: T) => void) {
+        const values = new Array(inputs.length);
+        const ready = new Array(inputs.length).fill(false);
+        const notify = () => {
+          if (ready.every(Boolean)) run(getter(...values));
+        };
+        const unsubscribes = inputs.map((input, index) => {
+          if (input && typeof input.subscribe === 'function') {
+            return input.subscribe((value: unknown) => {
+              values[index] = value;
+              ready[index] = true;
+              notify();
+            });
+          }
+          values[index] = input;
+          ready[index] = true;
+          return () => {};
+        });
+        selectorListeners.add(notify);
+        notify();
+        return () => {
+          selectorListeners.delete(notify);
+          unsubscribes.forEach((unsubscribe) => unsubscribe());
+        };
+      },
+    });
+    return Object.assign(fn, { select: (_state: unknown, ...args: any[]) => getter(...args) });
   };
   return {
     dispatch,
@@ -40,7 +74,11 @@ const mocks = vi.hoisted(() => {
     loadingOlderCommits,
     postMergeState,
     gitOps,
+    commitDetailsEntries,
+    fileReads,
+    notifySelectors: () => selectorListeners.forEach((notify) => notify()),
     selector,
+    parameterizedSelector,
   };
 });
 
@@ -64,9 +102,10 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
 }));
 
 vi.mock('$store/renderer/slices/workspace/workspace-slice', () => ({
-  setWorkspaceEntity: vi.fn((entity: unknown) => ({
-    type: 'workspace/setWorkspaceEntity',
-    payload: entity,
+  updateWorkspaceRequested: vi.fn((...args: unknown[]) => ({
+    type: 'workspace/updateRequested',
+    payload: args,
+    promise: Promise.resolve(mocks.workspaceEntity),
   })),
 }));
 
@@ -90,10 +129,74 @@ vi.mock('$store/renderer/slices/changes/changes-slice', () => ({
 }));
 
 vi.mock('$store/renderer/slices/git/git-slice', () => ({
+  amendCommitMessageRequested: vi.fn((...args: unknown[]) => ({
+    type: 'git/amendCommitMessageRequested',
+    payload: args,
+    promise: Promise.resolve({ success: true }),
+  })),
+  executeAcceptChangesRequested: vi.fn((...args: unknown[]) => ({
+    type: 'git/executeAcceptChangesRequested',
+    payload: args,
+    promise: Promise.resolve({ success: true, steps: [] }),
+  })),
+  loadCommitDetails: vi.fn((wsId: string, commitHash: string) => {
+    const entry = mocks.commitDetailsEntries.find((item) => item.commitHash === commitHash) ?? {
+      commitHash,
+      data: null,
+      loading: true,
+      error: null,
+    };
+    if (!mocks.commitDetailsEntries.includes(entry)) mocks.commitDetailsEntries.push(entry);
+    entry.loading = true;
+    const request = mockCommitDetails(wsId, commitHash);
+    Promise.resolve(request).then((result) => {
+      entry.loading = false;
+      if (result) {
+        entry.data = { ...result, files: result.fileDetails ?? result.files ?? [] };
+      }
+      mocks.notifySelectors();
+    });
+    return { type: 'git/loadCommitDetails', payload: [wsId, commitHash] };
+  }),
   loadGitStatus: vi.fn((wsId: string, force: boolean) => ({
     type: 'git/loadStatus',
     payload: [wsId, force],
   })),
+  readCommitDetailsRequested: vi.fn((wsId: string, commitHash: string) => ({
+    type: 'git/readCommitDetails',
+    payload: [wsId, commitHash],
+    promise: Promise.resolve(mockCommitDetails(wsId, commitHash)).then((result) => ({
+      ...result,
+      files: result?.fileDetails ?? result?.files ?? [],
+    })),
+  })),
+  readGitFileRequested: vi.fn((wsId: string, path: string, ref: string) => {
+    const key = JSON.stringify([wsId, path, ref]);
+    mocks.fileReads[key] = { path, ref, data: null, loading: true, error: null };
+    Promise.resolve(mockShowFile(wsId, path, ref)).then(
+      (result) => {
+        mocks.fileReads[key] = {
+          path,
+          ref,
+          data: result.data ?? '',
+          loading: false,
+          error: null,
+        };
+        mocks.notifySelectors();
+      },
+      (error) => {
+        mocks.fileReads[key] = {
+          path,
+          ref,
+          data: null,
+          loading: false,
+          error: String(error),
+        };
+        mocks.notifySelectors();
+      },
+    );
+    return { type: 'git/readFile', payload: [wsId, path, ref] };
+  }),
   setGitOperationFlag: vi.fn((wsId: string, flag: string, val: boolean) => ({
     type: 'git/setGitOperationFlag',
     payload: [wsId, flag, val],
@@ -103,35 +206,19 @@ vi.mock('$store/renderer/slices/git/git-slice', () => ({
 vi.mock('$store/renderer/slices/git/git-selectors', () => ({
   selectPostMergeState: mocks.selector(() => mocks.postMergeState),
   selectGitOperationFlags: mocks.selector(() => mocks.gitOps),
+  selectCommitDetailsEntries: mocks.selector(() => mocks.commitDetailsEntries),
+  selectGitFileRead: mocks.parameterizedSelector(
+    (wsId, path, ref) => mocks.fileReads[JSON.stringify([wsId, path, ref])],
+  ),
+  selectGitMutationRequest: mocks.parameterizedSelector(() => undefined),
 }));
 
 vi.mock('$store/renderer/slices/terminals/terminals-slice', () => ({
-  addTerminal: vi.fn((...a: unknown[]) => ({ type: 'terminals/addTerminal', payload: a })),
-  openTerminalOverlay: vi.fn((...a: unknown[]) => ({
-    type: 'terminals/openTerminalOverlay',
-    payload: a,
+  createTerminalWithCommandRequested: vi.fn((...args: unknown[]) => ({
+    type: 'terminals/createWithCommandRequested',
+    payload: args,
+    promise: Promise.resolve('terminal-1'),
   })),
-}));
-
-const mockExecute = vi.fn();
-const mockUndoPushed = vi.fn();
-const mockUndoLocal = vi.fn();
-vi.mock('$features/accept-changes/accept-changes.client', () => ({
-  AcceptChangesClient: {
-    execute: mockExecute,
-    undoPushedCommits: mockUndoPushed,
-    undoLocalCommit: mockUndoLocal,
-  },
-}));
-
-const mockWorkspaceUpdate = vi.fn();
-vi.mock('$store/renderer/slices/workspace/utils/workspace.client', () => ({
-  workspaceClient: { update: mockWorkspaceUpdate },
-}));
-
-const mockInvoke = vi.fn();
-vi.mock('$lib/electron-bridge', () => ({
-  invoke: mockInvoke,
 }));
 
 const mockShowFile = vi.hoisted(() => vi.fn());
@@ -248,12 +335,11 @@ warmImport(() => import('../CommitsTimeline.svelte'));
 describe('CommitsTimeline', () => {
   beforeEach(() => {
     mocks.dispatch.mockClear();
-    reduxDispatch.mockClear();
-    mockExecute.mockReset();
-    mockWorkspaceUpdate.mockReset().mockResolvedValue({ ok: true, data: mocks.workspaceEntity });
-    mockInvoke.mockReset();
+    reduxDispatch.mockReset().mockImplementation((action) => action);
     mockShowFile.mockReset();
     mockCommitDetails.mockReset().mockResolvedValue(null);
+    mocks.commitDetailsEntries.splice(0, mocks.commitDetailsEntries.length);
+    for (const key of Object.keys(mocks.fileReads)) delete mocks.fileReads[key];
     mocks.ftCommits.splice(0, mocks.ftCommits.length);
     mocks.workspaceEntity.baseCommitSha = '';
     mocks.postMergeState.hasRemote = true;
@@ -292,7 +378,7 @@ describe('CommitsTimeline', () => {
     void commitRow;
   });
 
-  it('context menu "Set as base commit" dispatches workspaceClient.update + refresh', async () => {
+  it('context menu "Set as base commit" dispatches the saga-owned update + refresh', async () => {
     mocks.ftCommits.push(makeCommit('abc', 'feat: one'));
     const { container } = await renderTimeline();
 
@@ -306,8 +392,11 @@ describe('CommitsTimeline', () => {
     await fireEvent.click(setBaseBtn);
 
     await waitFor(() =>
-      expect(mockWorkspaceUpdate).toHaveBeenCalledWith(
-        expect.objectContaining({ baseCommitSha: 'abc' }),
+      expect(mocks.dispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'workspace/updateRequested',
+          payload: ['ws-1', { baseCommitSha: 'abc' }],
+        }),
       ),
     );
     expect(mocks.dispatch).toHaveBeenCalledWith(
@@ -343,16 +432,17 @@ describe('CommitsTimeline', () => {
     ) as HTMLButtonElement;
     await fireEvent.click(resetBtn);
     await waitFor(() =>
-      expect(mockWorkspaceUpdate).toHaveBeenCalledWith(
-        expect.objectContaining({ baseCommitSha: '' }),
+      expect(mocks.dispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'workspace/updateRequested',
+          payload: ['ws-1', { baseCommitSha: '' }],
+        }),
       ),
     );
   });
 
-  it('handlePushCommits: sets isPushing flag, calls AcceptChangesClient.execute(push), refreshes on success', async () => {
+  it('handlePushCommits dispatches the saga-owned push request', async () => {
     mocks.ftCommits.push(makeCommit('abc', 'feat: one'));
-    mockExecute.mockResolvedValue({ success: true });
-
     const { container } = await renderTimeline();
 
     // Tooltip wraps the Button, so the bits-ui trigger creates an outer button.
@@ -364,38 +454,14 @@ describe('CommitsTimeline', () => {
     expect(pushBtn).toBeDefined();
     await fireEvent.click(pushBtn);
 
-    expect(mocks.dispatch).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: 'git/setGitOperationFlag',
-        payload: ['ws-1', 'isPushing', true],
-      }),
-    );
-    await waitFor(() =>
-      expect(mockExecute).toHaveBeenCalledWith(
-        'ws-1',
-        'push',
-        expect.objectContaining({ upToCommitHash: 'abc' }),
-      ),
-    );
     await waitFor(() =>
       expect(mocks.dispatch).toHaveBeenCalledWith(
         expect.objectContaining({
-          type: 'git/setGitOperationFlag',
-          payload: ['ws-1', 'isPushing', false],
+          type: 'git/executeAcceptChangesRequested',
+          payload: ['ws-1', 'push', expect.objectContaining({ upToCommitHash: 'abc' })],
         }),
       ),
     );
-    expect(
-      reduxDispatch.mock.calls
-        .map(([action]) => action)
-        .filter(
-          (action) =>
-            action.type === 'git/loadStatus' || action.type === 'changes/refreshRequested',
-        ),
-    ).toEqual([
-      { type: 'git/loadStatus', payload: ['ws-1', true] },
-      { type: 'changes/refreshRequested', payload: 'ws-1' },
-    ]);
   });
 
   it('toggleCommitExpanded shows file list for commit when commit has files', async () => {
@@ -495,7 +561,6 @@ describe('CommitsTimeline', () => {
   it('undo-commit resolves file paths via git.commitDetails for metadata-only commits', async () => {
     mocks.ftCommits.push(makeCommit('abc', 'feat: one'));
     mocks.workspaceEntity.baseCommitSha = 'base';
-    mockExecute.mockResolvedValue({ success: true });
     mockCommitDetails.mockResolvedValue({
       hash: 'abc',
       author: 'Test',
@@ -515,12 +580,17 @@ describe('CommitsTimeline', () => {
     await fireEvent.click(undoBtn);
 
     await waitFor(() =>
-      expect(mockExecute).toHaveBeenCalledWith(
-        'ws-1',
-        'undo-commit',
+      expect(mocks.dispatch).toHaveBeenCalledWith(
         expect.objectContaining({
-          upToCommitHash: 'base',
-          undoCommitsMetadata: [expect.objectContaining({ hash: 'abc', files: ['src/a.ts'] })],
+          type: 'git/executeAcceptChangesRequested',
+          payload: [
+            'ws-1',
+            'undo-commit',
+            expect.objectContaining({
+              upToCommitHash: 'base',
+              undoCommitsMetadata: [expect.objectContaining({ hash: 'abc', files: ['src/a.ts'] })],
+            }),
+          ],
         }),
       ),
     );
@@ -543,75 +613,49 @@ describe('CommitsTimeline', () => {
 
   it('saveCommitEdit amends with cwd + workspaceId on the execute-command payload (monorepo#537)', async () => {
     mocks.ftCommits.push(makeCommit('abc', 'feat: one'));
-    mockInvoke.mockResolvedValue({ success: true });
-
     const { container } = await renderTimeline();
     await editCommitMessage(container, 'feat: one', 'feat: better');
 
-    await waitFor(() => expect(mockInvoke).toHaveBeenCalledTimes(1));
-    expect(mockInvoke.mock.calls).toEqual([
-      [
-        SYSTEM_CHANNELS.EXECUTE_COMMAND,
-        {
-          command: "git commit --amend -m 'feat: better'",
-          cwd: '/repo',
-          workspaceId: 'ws-1',
-        },
-      ],
-    ]);
+    await waitFor(() =>
+      expect(mocks.dispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'git/amendCommitMessageRequested',
+          payload: ['ws-1', '/repo', 'feat: better', false],
+        }),
+      ),
+    );
   });
 
   it('saveCommitEdit passes backticks, $(...), and quotes literally via single-quote escaping (monorepo#579)', async () => {
     mocks.ftCommits.push(makeCommit('abc', 'feat: one'));
-    mockInvoke.mockResolvedValue({ success: true });
-
     const { container } = await renderTimeline();
     const hostile =
       'fix: handle `rm -rf /tmp` and $(whoami) with "double" and \'single\' quotes and back\\slash';
     await editCommitMessage(container, 'feat: one', hostile);
 
-    await waitFor(() => expect(mockInvoke).toHaveBeenCalledTimes(1));
-    expect(mockInvoke.mock.calls).toEqual([
-      [
-        SYSTEM_CHANNELS.EXECUTE_COMMAND,
-        {
-          command: `git commit --amend -m 'fix: handle \`rm -rf /tmp\` and $(whoami) with "double" and '\\''single'\\'' quotes and back\\slash'`,
-          cwd: '/repo',
-          workspaceId: 'ws-1',
-        },
-      ],
-    ]);
+    await waitFor(() =>
+      expect(mocks.dispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'git/amendCommitMessageRequested',
+          payload: ['ws-1', '/repo', hostile, false],
+        }),
+      ),
+    );
   });
 
   it('pushed-commit edit carries workspaceId on every execute-command payload, including the upstream fallback (monorepo#537)', async () => {
     mocks.ftCommits.push(makeCommit('abc', 'feat: one', { isPushed: true }));
-    mockInvoke
-      .mockResolvedValueOnce({ success: true }) // amend
-      .mockResolvedValueOnce({
-        success: false,
-        data: { stderr: 'fatal: The current branch feature/branch has no upstream branch\n' },
-      }) // force-push without upstream
-      .mockResolvedValueOnce({ success: true, data: { stdout: 'feature/branch\n' } }) // rev-parse
-      .mockResolvedValueOnce({ success: true }); // set-upstream force-push
-
     const { container } = await renderTimeline();
     await editCommitMessage(container, 'feat: one', 'feat: better');
 
-    await waitFor(() => expect(mockInvoke).toHaveBeenCalledTimes(4));
-    const expectedPayload = (command: string) => ({
-      command,
-      cwd: '/repo',
-      workspaceId: 'ws-1',
-    });
-    expect(mockInvoke.mock.calls).toEqual([
-      [SYSTEM_CHANNELS.EXECUTE_COMMAND, expectedPayload("git commit --amend -m 'feat: better'")],
-      [SYSTEM_CHANNELS.EXECUTE_COMMAND, expectedPayload('git push --force-with-lease')],
-      [SYSTEM_CHANNELS.EXECUTE_COMMAND, expectedPayload('git rev-parse --abbrev-ref HEAD')],
-      [
-        SYSTEM_CHANNELS.EXECUTE_COMMAND,
-        expectedPayload('git push --force-with-lease --set-upstream origin feature/branch'),
-      ],
-    ]);
+    await waitFor(() =>
+      expect(mocks.dispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'git/amendCommitMessageRequested',
+          payload: ['ws-1', '/repo', 'feat: better', true],
+        }),
+      ),
+    );
   });
 
   it('handleCommitFileClick: fetches file contents and dispatches openWorkspaceDiff', async () => {

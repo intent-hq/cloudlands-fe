@@ -103,18 +103,8 @@ vi.mock('$lib/components/ui/tooltip', async () => {
 vi.mock('$lib/components/ui/button/button.svelte', async () => ({
   default: (await import('./mocks/MockButton.svelte')).default,
 }));
-vi.mock('$features/scripts/scripts.client', () => ({
-  scriptsClient: {
-    detect: vi.fn(),
-    start: vi.fn().mockResolvedValue({ success: true }),
-    stop: vi.fn(),
-    restart: vi.fn(),
-    remove: vi.fn(),
-    update: vi.fn(),
-  },
-}));
-vi.mock('$lib/components/patterns/notify', () => ({
-  notify: { success: vi.fn(), info: vi.fn(), error: vi.fn(), warning: vi.fn() },
+vi.mock('$lib/components/ui/toast', () => ({
+  toast: { success: vi.fn(), info: vi.fn(), error: vi.fn(), warning: vi.fn() },
 }));
 vi.mock('$features/terminal/terminal-manager.svelte', () => ({
   terminalManager: { disposeTerminal: vi.fn(), clearTerminal: vi.fn() },
@@ -129,12 +119,12 @@ import {
   setScriptsData,
   setScriptsInitialized,
   appendScriptOutput,
+  startScriptRequested,
 } from '$store/renderer/slices/scripts/scripts-slice';
 import {
   openTerminalOverlay,
   selectScript,
 } from '$store/renderer/slices/terminals/terminals-slice';
-import { scriptsClient } from '$features/scripts/scripts.client';
 import { warmImport } from '../../../../test/warm-import';
 
 const WS_A = 'ws-a' as WorkspaceId;
@@ -243,7 +233,8 @@ describe('QuakeTerminalOverlay scripts persistence (monorepo#1330)', () => {
       { workspaceId: WS_B, scriptId: 'script-1' },
     ]);
 
+    const dispatchSpy = vi.spyOn(appStore, 'dispatch');
     await (component as any).handleScriptAction('start', 'script-1');
-    expect(scriptsClient.start).toHaveBeenCalledWith(WS_B, 'script-1');
+    expect(dispatchSpy).toHaveBeenCalledWith(startScriptRequested(WS_B, 'script-1'));
   });
 });

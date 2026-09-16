@@ -1,6 +1,4 @@
 <script lang="ts">
-  import { Button } from '$lib/components/ui/button';
-  import { Input } from '$lib/components/ui/input';
   /* eslint-disable max-lines */
   import { onMount, tick, untrack } from 'svelte';
   import { writable } from 'svelte/store';
@@ -19,25 +17,29 @@
     faFolderOpen,
     faTrash,
   } from '@fortawesome/free-solid-svg-icons';
-  import { notify } from '$lib/components/patterns/notify';
   import { getFileTypeIconSvg } from '$lib/utils/file-type-icons';
   import LineChangesBadge from '../shared/LineChangesBadge.svelte';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
   import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
-  import { invoke } from '$lib/electron-bridge';
   import { pathsMatch as filePathsMatch } from '$lib/utils/file-utils';
   import { deleteWithUndo } from '$lib/utils/reversible-actions';
   import {
     getPanelLayoutManager,
     hasPanelLayoutManager,
   } from '$features/layout/panel-layout-adapter';
-  import { dispatchWindowEvent } from '$lib/utils/window-events';
   import { selectEffectiveFileExplorerWorkspacePath } from '$store/renderer/slices/file-explorer/file-explorer-selectors';
   import { selectIsWorkspaceHostLocal } from '$store/renderer/slices/workspace/workspace-selectors';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
   import { isCmdClickModifier } from '$shared/utils/link-helpers';
+  import {
+    deleteLegacyFileRequested,
+    downloadLegacyFileRequested,
+    revealLegacyFileRequested,
+    writeLegacyFileRequested,
+  } from '$store/renderer/slices/files/files-slice';
+  import { selectFileContent } from '$store/renderer/slices/files/files-selectors';
 
   // Sentinel path for inline creation node
   const CREATING_SENTINEL_PATH = '__creating_new_file__';
@@ -725,68 +727,31 @@
     contextMenu = null;
   }
 
-  // TODO(redux-remove): explorer file-tree CRUD (delete/read/write-for-undo here, plus
-  // create/rename) stays on the legacy absolute-path `file:*` IPC. The files AppClient
-  // seam is workspace-scoped + relative-path, so migrating these absolute-path,
-  // undo-aware operations is deferred to a dedicated explorer migration; out of scope.
-  async function handleDeleteFile(filePath: string) {
+  function handleDeleteFile(filePath: string) {
     const fileName = filePath.split('/').pop() || m.fileExplorer_tree_file_fallback();
     // Read file content before deleting so we can undo
-    let savedContent = '';
-    try {
-      const result = await invoke<{ content: string }>('file:read', { path: filePath });
-      savedContent = result?.content ?? '';
-    } catch {
-      // If we can't read the file, proceed with delete but undo won't restore content
-    }
+    const savedContent = selectFileContent.select(appStore.state, workspaceId, filePath) ?? '';
 
-    await deleteWithUndo(
+    void deleteWithUndo(
       `"${fileName}"`,
-      async () => {
-        const result = await invoke<{ success: boolean; error?: string }>('file:delete', {
-          path: filePath,
-        });
-        if (!result?.success) {
-          throw new Error(result?.error || m.fileExplorer_tree_deleteFailed_error());
-        }
+      () => {
+        appStore.dispatch(deleteLegacyFileRequested(workspaceId, filePath));
         // Close related panel tabs after successful deletion
         if (workspaceId && hasPanelLayoutManager(workspaceId)) {
           const layoutManager = getPanelLayoutManager(workspaceId);
           layoutManager.closeTabsByType('file', 'filePath', filePath);
         }
-        dispatchWindowEvent('file:changed', { workspaceId, type: 'delete', filePath });
       },
-      async () => {
-        await invoke('file:write', {
-          path: filePath,
-          content: savedContent,
-          workspaceId,
-        });
-        dispatchWindowEvent('file:changed', { workspaceId, type: 'create', filePath });
+      () => {
+        appStore.dispatch(writeLegacyFileRequested(workspaceId, filePath, savedContent));
       },
     );
   }
 
   // Save a copy of a file (or a zip of a folder) via the main process's native
   // save dialog. Workspace-host-local only — the local main process reads the path.
-  async function handleDownload(node: FileNode) {
-    try {
-      const result = await invoke<{
-        success: boolean;
-        canceled?: boolean;
-        data?: { filePath: string };
-        error?: { code: string; message: string };
-      }>('file:download', { path: node.path });
-      if (result?.success && result.data?.filePath) {
-        notify.success(
-          m.fileExplorer_tree_downloadSuccess_toast({ filePath: result.data.filePath }),
-        );
-      } else if (!result?.canceled) {
-        notify.error(result?.error?.message || m.fileExplorer_tree_downloadFailed_error());
-      }
-    } catch {
-      notify.error(m.fileExplorer_tree_downloadFailed_error());
-    }
+  function handleDownload(node: FileNode) {
+    appStore.dispatch(downloadLegacyFileRequested(node.path));
   }
 
   function getBackgroundContextMenuItems(): SidebarMenuEntry[] {
@@ -902,8 +867,8 @@
       items.push({
         id: 'reveal',
         label: m.layout_panelTabBar_revealIn_label({ fileManager: fileManagerName }),
-        onClick: async () => {
-          await invoke('shell:showItemInFolder', { path: node.path });
+        onClick: () => {
+          appStore.dispatch(revealLegacyFileRequested(node.path));
           closeContextMenu();
         },
       });
@@ -1136,8 +1101,8 @@
                 >
                   {@html getFileTypeIconSvg(creatingValue || '')}
                 </span>
-                <Input
-                  bind:ref={createInputRef}
+                <input
+                  bind:this={createInputRef}
                   type="text"
                   bind:value={creatingValue}
                   onblur={saveCreate}
@@ -1155,7 +1120,7 @@
             {@const gitColor =
               node.type === 'directory'
                 ? flatNode.directoryHasChanges
-                  ? 'text-warning-ink'
+                  ? 'text-yellow-700 dark:text-yellow-400'
                   : ''
                 : getGitStatusColor(flatNode.gitStatus?.status)}
             {@const hasChanges =
@@ -1174,12 +1139,12 @@
 
             <!-- svelte-ignore a11y_no_static_element_interactions -->
             <div
-              class="group/file-row relative isolate flex items-center [&>[data-slot=list-item-row]]:min-w-0 [&>[data-slot=list-item-row]]:flex-1 transition-colors duration-spring-moderate ease-spring-moderate motion-reduce:transition-none {isIgnored
-                ? 'text-muted-foreground'
+              class="relative flex items-center transition-colors duration-spring-moderate ease-spring-moderate motion-reduce:transition-none {isIgnored
+                ? 'opacity-50'
                 : ''}"
               class:folder-drop-target={isDropTarget}
               class:inside-drop-target={isInsideDropTarget}
-              style="height: {itemHeight}px; padding-inline: var(--space-1);"
+              style="height: {itemHeight}px; padding-left: {depth * 16}px;"
               data-file-path={node.path}
               ondblclick={(e) => handleDoubleClick(node, e)}
               oncontextmenu={(e) => handleContextMenu(e, node)}
@@ -1188,8 +1153,7 @@
                 <!-- Inline edit mode - matches ListItem sm size styling exactly -->
                 <div
                   class="relative z-10 min-w-0 flex items-center gap-2.5 py-1 rounded-md text-foreground"
-                  style="margin-left: 0.5px; padding-left: {9 +
-                    depth * 16}px; padding-right: 0.5px; width: calc(100% - 0.5px);"
+                  style="margin-left: 0.5px; padding-left: 9px; padding-right: 0.5px; width: calc(100% - 0.5px);"
                 >
                   <span
                     class={`shrink-0 flex items-center justify-center ${node.type === 'directory' ? `opacity-50 ${gitColor}` : `w-4 h-4 [&>svg]:w-full [&>svg]:h-full`}`}
@@ -1205,8 +1169,8 @@
                       {@html getFileTypeIconSvg(node.name)}
                     {/if}
                   </span>
-                  <Input
-                    bind:ref={editInputRef}
+                  <input
+                    bind:this={editInputRef}
                     type="text"
                     bind:value={editingValue}
                     onblur={saveEdit}
@@ -1226,9 +1190,7 @@
                   titleClass={`cursor-text type-body font-normal leading-(--text-body-line-height) ${gitColor}`}
                   onclick={(event) => handleItemClick(flatNode, absoluteIndex, event)}
                   size="sm"
-                  indent={depth}
-                  indentSize={16}
-                  class="flex-1 bg-transparent!"
+                  class="flex-1"
                   actions={onCreateFile
                     ? [
                         {
@@ -1268,9 +1230,7 @@
                   badgeClass={isModified ? 'text-blue-500' : undefined}
                   onclick={(event) => handleItemClick(flatNode, absoluteIndex, event)}
                   size="sm"
-                  indent={depth}
-                  indentSize={16}
-                  class="flex-1 bg-transparent!"
+                  class="flex-1"
                 >
                   {#snippet iconSnippet()}
                     <span class="w-4 h-4 [&>svg]:w-full [&>svg]:h-full">
@@ -1290,7 +1250,7 @@
               {#if flatNode.agentEdits && flatNode.agentEdits.length > 0 && (node.type === 'file' || !flatNode.isExpanded)}
                 <div class="flex items-center -space-x-1 mr-1 ml-2">
                   {#each flatNode.agentEdits.slice(0, 3) as agentId (agentId)}
-                    <Button
+                    <button
                       type="button"
                       class="rounded-full overflow-hidden cursor-pointer"
                       title={m.fileExplorer_tree_openAgent_tooltip()}
@@ -1300,16 +1260,16 @@
                       }}
                     >
                       <AgentAvatar {agentId} variant="compact" />
-                    </Button>
+                    </button>
                   {/each}
                 </div>
               {/if}
               <span
                 aria-hidden="true"
-                class="pointer-events-none absolute -z-10 rounded-(--radius-small) border transition-[inset,border-color,background-color] duration-(--motion-standard) ease-(--ease-standard) motion-reduce:transition-none {editingPath ===
+                class="pointer-events-none absolute z-0 rounded-(--radius-small) border transition-[inset,border-color,background-color] duration-(--motion-standard) ease-(--ease-standard) motion-reduce:transition-none {editingPath ===
                 node.path
-                  ? 'inset-x-1 inset-y-px border-ring/60 bg-background'
-                  : `inset-x-1 inset-y-0.5 border-transparent ${isSelected(node.path) ? 'bg-active' : isFocused ? 'bg-selected' : 'bg-transparent group-hover/file-row:bg-hover'}`}"
+                  ? 'inset-px border-ring/60 bg-background'
+                  : 'inset-x-1 inset-y-0.5 border-transparent bg-transparent'}"
               ></span>
             </div>
           {/if}
@@ -1337,7 +1297,7 @@
 
   /* Visual feedback when dragging files to root level (no specific folder targeted) */
   .file-drop-root {
-    outline: 2px dashed hsl(var(--primary-ink));
+    outline: 2px dashed hsl(var(--primary));
     outline-offset: -2px;
     background-color: hsl(var(--primary) / 0.05);
   }

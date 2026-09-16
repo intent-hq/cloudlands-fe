@@ -37,7 +37,13 @@ vi.mock('$store/renderer/store', () => ({
 vi.mock('$store/renderer/slices/connections/connections-selectors', () => {
   const selector = () => mocks.readable(() => mocks.syncState.value);
   selector.select = () => mocks.syncState.value;
-  return { selectKeychainSyncState: selector };
+  const operationSelector = () =>
+    mocks.readable(() => ({ loadStatus: 'idle', writeStatus: 'idle' }));
+  operationSelector.select = () => ({ loadStatus: 'idle', writeStatus: 'idle' });
+  return {
+    selectKeychainSyncState: selector,
+    selectKeychainSyncOperationState: operationSelector,
+  };
 });
 
 import BackendSyncSettings from './BackendSyncSettings.svelte';
@@ -158,7 +164,7 @@ describe('BackendSyncSettings', () => {
         (a) => a.type === 'connections/setKeychainSyncEnabledRequested',
       );
       expect(action).toBeDefined();
-      expect(action!.payload).toEqual([true]);
+      expect(action!.payload).toEqual([true, expect.any(String)]);
     });
   });
 });

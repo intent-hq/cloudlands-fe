@@ -523,7 +523,24 @@ export function* flushPendingNoteContent(workspaceId: string, noteId: string) {
     if (noteMutationQueue) yield* enqueueMutation(noteMutationQueue, pending, true);
     else yield* call(runMutation, pending);
   } finally {
+    pendingExternalUpdateSaveKeys.delete(key);
     yield* put(noteContentSavePendingChanged(workspaceId, noteId, false));
+  }
+}
+
+/** Wait until every debounced, queued, or in-flight content save is acknowledged. */
+export function* settlePendingNoteContent(workspaceId: string, noteId: string) {
+  const key = noteKey(workspaceId, noteId);
+  yield* call(flushPendingNoteContent, workspaceId, noteId);
+  while (pendingExternalUpdateSaveKeys.has(key)) {
+    yield* take(
+      (action: ObservedAction) =>
+        action.type === noteContentSavePendingChanged.type &&
+        Array.isArray(action.payload) &&
+        action.payload[0] === workspaceId &&
+        action.payload[1] === noteId &&
+        action.payload[2] === false,
+    );
   }
 }
 
@@ -531,12 +548,21 @@ function* handleContentAction(
   queue: Channel<MutationEnvelope>,
   action: ReturnType<typeof updateNoteContent>,
 ) {
-  const [workspaceId, noteId, content, immediate] = action.payload;
-  if (!workspaceId || !noteId || typeof content !== 'string') return;
+  const [workspaceId, noteId, requestedContent, immediateOrOptions] = action.payload;
+  if (!workspaceId || !noteId || typeof requestedContent !== 'string') return;
   const key = noteKey(workspaceId, noteId);
+  const options =
+    typeof immediateOrOptions === 'boolean'
+      ? { immediate: immediateOrOptions }
+      : (immediateOrOptions ?? {});
   if (!draftBaseRev.has(key)) {
-    const baseRev = (yield* selectNoteById.effect(workspaceId, noteId))?.rev;
+    const baseRev = options.baseRev ?? (yield* selectNoteById.effect(workspaceId, noteId))?.rev;
     if (baseRev !== undefined) draftBaseRev.set(key, baseRev);
+  }
+  let content = requestedContent;
+  const newest = (unackedDrafts.get(key) ?? []).at(-1);
+  if (newest && options.baseContent !== undefined && options.baseContent !== newest.content) {
+    content = rebaseText(options.baseContent, newest.content, content);
   }
   yield* put(applyLocalNoteUpdate(workspaceId, noteId, { content }));
   const seq = (latestEditSeq.get(key) ?? 0) + 1;
@@ -547,17 +573,20 @@ function* handleContentAction(
   if (replaced) forgetDraft(key, replaced);
   unackedDrafts.set(key, [...(unackedDrafts.get(key) ?? []), pending]);
   pendingContent.set(key, pending);
+  pendingExternalUpdateSaveKeys.add(key);
   yield* put(noteContentSavePendingChanged(workspaceId, noteId, true));
   try {
-    if (!immediate) yield* delay(NOTE_CONTENT_SAVE_DEBOUNCE_MS);
+    if (!options.immediate) yield* delay(NOTE_CONTENT_SAVE_DEBOUNCE_MS);
     if (pendingContent.get(key) !== pending) return;
     pendingContent.delete(key);
     yield* enqueueMutation(queue, pending, true);
+    pendingExternalUpdateSaveKeys.delete(key);
     yield* put(noteContentSavePendingChanged(workspaceId, noteId, false));
   } finally {
     if ((yield* cancelled()) && pendingContent.get(key) === pending) {
       pendingContent.delete(key);
       forgetDraft(key, pending);
+      pendingExternalUpdateSaveKeys.delete(key);
       yield* put(noteContentSavePendingChanged(workspaceId, noteId, false));
     }
   }

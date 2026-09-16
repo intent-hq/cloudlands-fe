@@ -5,24 +5,23 @@
    * Shows list of Linear issues with search/filter.
    * Handles authentication flow if not authenticated.
    */
-  import {
-    linearAuthClient,
-    type LinearIssueResult,
-  } from '$features/linear-auth/renderer/linear-auth.client';
+  import type { LinearIssueResult } from '$features/linear-auth/renderer/linear-auth.client';
   import LinearIcon from '$lib/components/icons/LinearIcon.svelte';
   import { Input } from '$lib/components/ui/input';
   import { Button } from '$lib/components/ui/button';
-  import { IntentMarkLoader } from '$lib/components/ui/indicators';
-  import { faSearch } from '@fortawesome/free-solid-svg-icons';
+  import { faSpinner, faSearch } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { onMount } from 'svelte';
-  import { createLogger } from '$lib/utils/client-logger';
 
-  import { startLinearAuth } from '$store/renderer/slices/linear-auth/linear-auth-slice';
+  import { loadLinearIssuesRequested } from '$store/renderer/slices/linear-auth/linear-auth-slice';
+  import {
+    selectLinearIsAuthenticated,
+    selectLinearIsAuthenticating,
+    selectLinearIssues,
+    selectLinearIssuesLoading,
+  } from '$store/renderer/slices/linear-auth/linear-auth-selectors';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
-
-  const logger = createLogger('LinearPicker');
 
   interface Props {
     workspaceId: string;
@@ -39,16 +38,16 @@
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   let { workspaceId, onSelect, onClose }: Props = $props();
 
-  let isAuthenticated = $state(false);
-  let issues = $state<LinearIssueResult[]>([]);
-  let isLoading = $state(false);
+  const isAuthenticated$ = selectLinearIsAuthenticated();
+  const isConnecting$ = selectLinearIsAuthenticating();
+  const issues$ = selectLinearIssues();
+  const isLoading$ = selectLinearIssuesLoading();
   let searchQuery = $state('');
-  let isConnecting = $state(false);
 
   const filteredIssues = $derived.by(() => {
-    if (!searchQuery.trim()) return issues;
+    if (!searchQuery.trim()) return $issues$;
     const query = searchQuery.toLowerCase();
-    return issues.filter(
+    return $issues$.filter(
       (issue) =>
         issue.title.toLowerCase().includes(query) ||
         issue.identifier.toLowerCase().includes(query) ||
@@ -56,46 +55,7 @@
     );
   });
 
-  async function loadIssues() {
-    try {
-      // Initialize via Redux (fire-and-forget), then check auth state via client
-      const authState = await linearAuthClient.getAuthState(true);
-      isAuthenticated = authState.isAuthenticated;
-
-      if (!isAuthenticated) {
-        logger.info('Linear not authenticated');
-        return;
-      }
-
-      isLoading = true;
-      const result = await linearAuthClient.fetchMyIssues('all');
-      issues = result;
-      logger.info('Loaded Linear issues', { count: result.length });
-    } catch (error) {
-      logger.error('Failed to load Linear issues', error as Error);
-    } finally {
-      isLoading = false;
-    }
-  }
-
-  async function handleConnect() {
-    isConnecting = true;
-    try {
-      appStore.dispatch(startLinearAuth());
-      // Wait a bit for auth to potentially complete, then re-check
-      // The user will complete OAuth externally, so we poll
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      const authState = await linearAuthClient.getAuthState(true);
-      if (authState.isAuthenticated) {
-        isAuthenticated = true;
-        await loadIssues();
-      }
-    } catch (error) {
-      logger.error('Linear auth failed', error as Error);
-    } finally {
-      isConnecting = false;
-    }
-  }
+  const loadIssues = () => appStore.dispatch(loadLinearIssuesRequested('all'));
 
   function handleSelect(issue: LinearIssueResult) {
     onSelect({
@@ -118,20 +78,20 @@
   });
 </script>
 
-{#if !isAuthenticated}
-  <div class="flex flex-col items-start gap-4 p-8 text-left">
+{#if !$isAuthenticated$}
+  <div class="p-8 flex flex-col items-center gap-4">
     <LinearIcon size={48} class="text-subtle" />
-    <p class="text-left text-sm text-subtle">{m.workspace_linearPicker_connectPrompt_label()}</p>
-    <Button onclick={handleConnect} disabled={isConnecting}>
-      {#if isConnecting}
-        <IntentMarkLoader size={16} class="mr-2" />
+    <p class="text-sm text-subtle text-center">{m.workspace_linearPicker_connectPrompt_label()}</p>
+    <Button onclick={loadIssues} disabled={$isConnecting$}>
+      {#if $isConnecting$}
+        <Fa icon={faSpinner} class="animate-spin mr-2" />
       {/if}
       {m.workspace_linearPicker_connect_label()}
     </Button>
   </div>
-{:else if isLoading}
+{:else if $isLoading$}
   <div class="p-8 flex justify-center">
-    <IntentMarkLoader size={20} class="text-subtle" />
+    <Fa icon={faSpinner} class="animate-spin text-subtle" size="lg" />
   </div>
 {:else}
   <!-- Search -->
@@ -150,13 +110,12 @@
   <!-- Issues list -->
   <div class="max-h-80 overflow-y-auto">
     {#if filteredIssues.length === 0}
-      <div class="p-8 text-left text-sm text-subtle">
+      <div class="p-8 text-center text-subtle text-sm">
         {searchQuery ? 'No matching issues found' : 'No issues found'}
       </div>
     {:else}
       {#each filteredIssues as issue (issue.id)}
-        <Button
-          variant="ghost"
+        <button
           type="button"
           class="w-full text-left px-4 py-2.5 hover:bg-muted/50 transition-colors cursor-pointer flex items-start gap-3 border-b border-border last:border-0"
           onclick={() => handleSelect(issue)}
@@ -173,7 +132,7 @@
             </div>
             <p class="text-sm truncate mt-0.5">{issue.title}</p>
           </div>
-        </Button>
+        </button>
       {/each}
     {/if}
   </div>

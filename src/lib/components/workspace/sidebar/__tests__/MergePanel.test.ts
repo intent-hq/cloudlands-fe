@@ -6,6 +6,7 @@ import { warmImport } from '../../../../../test/warm-import';
 
 const mocks = vi.hoisted(() => {
   const dispatch = vi.fn();
+  const subscribers = new Set<() => void>();
   const workspaceEntity = {
     id: 'ws-1',
     branch: 'feature/branch',
@@ -24,13 +25,28 @@ const mocks = vi.hoisted(() => {
   const selector = <T>(getter: () => T) => {
     const fn = () => ({
       subscribe(run: (v: T) => void) {
-        run(getter());
-        return () => {};
+        const notify = () => run(getter());
+        notify();
+        subscribers.add(notify);
+        return () => subscribers.delete(notify);
       },
     });
     return Object.assign(fn, { select: () => getter() });
   };
-  return { dispatch, workspaceEntity, sidebarChanges, executorState, selector };
+  const gitRequests = {
+    commit: { value: null as any },
+    merge: { value: null as any },
+    mergePr: { value: null as any },
+  };
+  return {
+    dispatch,
+    workspaceEntity,
+    sidebarChanges,
+    executorState,
+    selector,
+    gitRequests,
+    emit: () => subscribers.forEach((subscriber) => subscriber()),
+  };
 });
 
 vi.mock('$store/renderer/store', async () => {
@@ -104,8 +120,30 @@ vi.mock('$store/renderer/slices/background-agent-executor/background-agent-execu
 }));
 
 vi.mock('$store/renderer/slices/git/git-slice', () => ({
+  getGitWorkspaceState: vi.fn(() => ({ mutationRequests: { map: {}, order: [] } })),
   loadGitStatus: vi.fn((...args: unknown[]) => ({ type: 'git/loadStatus', payload: args })),
+  executeAcceptChangesRequested: vi.fn((...args: unknown[]) => ({
+    type: 'git/executeAcceptChangesRequested',
+    payload: args,
+  })),
+  mergePullRequestRequested: vi.fn((...args: unknown[]) => ({
+    type: 'git/mergePullRequestRequested',
+    payload: args,
+  })),
 }));
+
+vi.mock('$store/renderer/slices/git/git-selectors', async () => {
+  const { get } = await import('svelte/store');
+  return {
+    selectGitMutationRequest: (_workspaceId: unknown, operation: any, scope: any) => {
+      const operationValue = get(operation);
+      const scopeValue = get(scope);
+      const request =
+        operationValue === 'merge-pr' ? mocks.gitRequests.mergePr : mocks.gitRequests[scopeValue];
+      return mocks.selector(() => request.value)();
+    },
+  };
+});
 
 vi.mock('$store/renderer/slices/pr-status/pr-status-slice', () => ({
   refreshPRStatusRequested: vi.fn((...args: unknown[]) => ({
@@ -114,11 +152,11 @@ vi.mock('$store/renderer/slices/pr-status/pr-status-slice', () => ({
   })),
 }));
 
-const mockExecute = vi.fn().mockResolvedValue({ success: true, result: { newHeadSha: 'h1' } });
-const mockMergePR = vi.fn().mockResolvedValue({ success: true });
-
-vi.mock('$features/accept-changes/accept-changes.client', () => ({
-  AcceptChangesClient: { execute: mockExecute, mergePR: mockMergePR },
+vi.mock('$store/renderer/slices/pr-status/pr-status-slice', () => ({
+  refreshPRStatusRequested: vi.fn((...args: unknown[]) => ({
+    type: 'prStatus/refreshRequested',
+    payload: args,
+  })),
 }));
 
 vi.mock('$features/git/git-cache', () => ({
@@ -214,47 +252,45 @@ warmImport(() => import('../MergePanel.svelte'));
 describe('MergePanel', () => {
   beforeEach(() => {
     mocks.dispatch.mockClear();
-    mockExecute.mockClear();
-    mockExecute.mockResolvedValue({ success: true, result: { newHeadSha: 'h1' } });
-    mockMergePR.mockClear();
+    mocks.gitRequests.commit.value = null;
+    mocks.gitRequests.merge.value = null;
+    mocks.gitRequests.mergePr.value = null;
     mocks.sidebarChanges.mergeWhenReady = false;
     mocks.executorState.status = 'idle';
     mocks.executorState.agentId = null;
   });
 
-  it('triggerMerge invokes AcceptChangesClient.execute with merge target branch and strategy', async () => {
+  it('triggerMerge dispatches the merge request with target branch and strategy', async () => {
     const { component } = await renderMerge({ targetBranch: 'develop' });
     await (
       component as unknown as { triggerMerge: (opts?: { squash?: boolean }) => void }
     ).triggerMerge({
       squash: true,
     });
-    await waitFor(() => expect(mockExecute).toHaveBeenCalled());
-    expect(mockExecute).toHaveBeenCalledWith(
-      'ws-1',
-      'merge',
-      expect.objectContaining({ targetBranch: 'develop', mergeStrategy: 'squash' }),
-    );
+    expect(mocks.dispatch).toHaveBeenCalledWith({
+      type: 'git/executeAcceptChangesRequested',
+      payload: [
+        'ws-1',
+        'merge',
+        expect.objectContaining({ targetBranch: 'develop', mergeStrategy: 'squash' }),
+      ],
+    });
   });
 
-  it('refreshes Git status before broad Changes data after a successful merge', async () => {
-    const { component } = await renderMerge({ targetBranch: 'develop' });
+  it('handles a successful selector result after dispatching merge', async () => {
+    const { component, onMergeComplete } = await renderMerge({ targetBranch: 'develop' });
     mocks.dispatch.mockClear();
 
     await (component as unknown as { triggerMerge: () => void }).triggerMerge();
-    await waitFor(() => expect(mockExecute).toHaveBeenCalled());
+    mocks.gitRequests.merge.value = {
+      loading: false,
+      error: null,
+      data: { success: true, result: { newHeadSha: 'h1' } },
+      version: 1,
+    };
+    mocks.emit();
 
-    expect(
-      mocks.dispatch.mock.calls
-        .map(([action]) => action)
-        .filter(
-          (action) =>
-            action.type === 'git/loadStatus' || action.type === 'changes/refreshRequested',
-        ),
-    ).toEqual([
-      { type: 'git/loadStatus', payload: ['ws-1', true] },
-      { type: 'changes/refreshRequested', payload: ['ws-1'] },
-    ]);
+    await waitFor(() => expect(onMergeComplete).toHaveBeenCalledOnce());
   });
 
   it('getMergeOptions reflects viaPR and pushAfter defaults based on props', async () => {

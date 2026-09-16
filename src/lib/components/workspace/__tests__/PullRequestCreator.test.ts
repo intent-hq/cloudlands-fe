@@ -8,7 +8,7 @@ import { render, fireEvent, waitFor } from '@testing-library/svelte';
 import { warmImport } from '../../../../test/warm-import';
 
 const mocks = vi.hoisted(() => {
-  const dispatch = vi.fn();
+  const subscribers = new Set<() => void>();
   const workspace: Record<string, unknown> = {
     id: 'ws-1',
     title: 'My Workspace',
@@ -18,19 +18,48 @@ const mocks = vi.hoisted(() => {
   const selector = <T>(getter: () => T) => {
     const fn = () => ({
       subscribe(run: (v: T) => void) {
-        run(getter());
-        return () => {};
+        const notify = () => run(getter());
+        notify();
+        subscribers.add(notify);
+        return () => subscribers.delete(notify);
       },
     });
     return Object.assign(fn, { select: () => getter() });
   };
-  return {
-    dispatch,
+  const state = {
     workspace,
     selector,
-    prepare: vi.fn(),
-    execute: vi.fn(),
+    prepareRequest: { value: null as any },
+    createRequest: { value: null as any },
+    prepareResult: null as any,
+    createResult: null as any,
+    emit: () => subscribers.forEach((subscriber) => subscriber()),
   };
+  const dispatch = vi.fn((action: { type?: string }) => {
+    if (action.type === 'git/prepareAcceptChangesRequested') {
+      queueMicrotask(() => {
+        state.prepareRequest.value = {
+          loading: false,
+          error: null,
+          data: state.prepareResult,
+          version: 1,
+        };
+        state.emit();
+      });
+    } else if (action.type === 'git/createPullRequestRequested') {
+      queueMicrotask(() => {
+        state.createRequest.value = {
+          loading: false,
+          error: null,
+          data: state.createResult,
+          version: 1,
+        };
+        state.emit();
+      });
+    }
+    return action;
+  });
+  return Object.assign(state, { dispatch });
 });
 
 vi.mock('$store/renderer/store', async () => {
@@ -50,8 +79,23 @@ vi.mock('$store/renderer/slices/workspace/workspace-slice', () => ({
   })),
 }));
 
-vi.mock('$features/accept-changes/accept-changes.client', () => ({
-  AcceptChangesClient: { prepare: mocks.prepare, execute: mocks.execute },
+vi.mock('$store/renderer/slices/git/git-selectors', () => ({
+  selectGitMutationRequest: vi.fn((...args: unknown[]) =>
+    (args.length === 3
+      ? mocks.selector(() => mocks.prepareRequest.value)
+      : mocks.selector(() => mocks.createRequest.value))(),
+  ),
+}));
+
+vi.mock('$store/renderer/slices/git/git-slice', () => ({
+  prepareAcceptChangesRequested: vi.fn((...args: unknown[]) => ({
+    type: 'git/prepareAcceptChangesRequested',
+    payload: args,
+  })),
+  createPullRequestRequested: vi.fn((...args: unknown[]) => ({
+    type: 'git/createPullRequestRequested',
+    payload: args,
+  })),
 }));
 
 vi.mock('svelte-fa', async () => {
@@ -83,12 +127,12 @@ warmImport(() => import('../PullRequestCreator.svelte'));
 describe('PullRequestCreator', () => {
   beforeEach(() => {
     mocks.dispatch.mockClear();
-    mocks.prepare.mockReset();
-    mocks.execute.mockReset();
+    mocks.prepareRequest.value = null;
+    mocks.createRequest.value = null;
   });
 
   it('auto-fills from accept-changes.prepare suggestions and creates the PR via accept-changes.execute', async () => {
-    mocks.prepare.mockResolvedValue({
+    mocks.prepareResult = {
       valid: true,
       warnings: [],
       errors: [],
@@ -98,12 +142,12 @@ describe('PullRequestCreator', () => {
       additions: 1,
       deletions: 0,
       files: [],
-    });
-    mocks.execute.mockResolvedValue({
+    };
+    mocks.createResult = {
       success: true,
       steps: [{ id: 'create-pr', name: 'Create PR', status: 'completed' }],
       result: { prNumber: 7, prUrl: 'https://api/pr/7', prHtmlUrl: 'https://gh/pr/7' },
-    });
+    };
 
     const { container, onCreated } = await renderCreator();
     await fireEvent.click(findButton(container, 'Auto-fill & Create')!);
@@ -112,11 +156,13 @@ describe('PullRequestCreator', () => {
       expect(container.textContent).toContain('Pull request created successfully!');
     });
 
-    expect(mocks.prepare).toHaveBeenCalledWith('ws-1', 'create-pr');
-    expect(mocks.execute).toHaveBeenCalledWith('ws-1', 'create-pr', {
-      prTitle: 'Suggested title',
-      prBody: 'Suggested body',
-      targetBranch: 'main',
+    expect(mocks.dispatch).toHaveBeenCalledWith({
+      type: 'git/prepareAcceptChangesRequested',
+      payload: ['ws-1', 'create-pr'],
+    });
+    expect(mocks.dispatch).toHaveBeenCalledWith({
+      type: 'git/createPullRequestRequested',
+      payload: ['ws-1', 'Suggested title', 'Suggested body', 'main'],
     });
     expect(mocks.dispatch).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'workspace/updateWorkspaceEntity' }),
@@ -127,7 +173,7 @@ describe('PullRequestCreator', () => {
   });
 
   it('surfaces the real daemon error when execute reports an in-band failure', async () => {
-    mocks.prepare.mockResolvedValue({
+    mocks.prepareResult = {
       valid: true,
       warnings: [],
       errors: [],
@@ -137,12 +183,12 @@ describe('PullRequestCreator', () => {
       additions: 0,
       deletions: 0,
       files: [],
-    });
-    mocks.execute.mockResolvedValue({
+    };
+    mocks.createResult = {
       success: false,
       steps: [{ id: 'create-pr', name: 'Create PR', status: 'failed', error: 'boom' }],
       error: 'GitHub authentication required',
-    });
+    };
 
     const { container, onCreated } = await renderCreator();
     await fireEvent.click(findButton(container, 'Auto-fill & Create')!);
@@ -152,6 +198,8 @@ describe('PullRequestCreator', () => {
     });
     expect(container.textContent).not.toContain('Pull request created successfully!');
     expect(onCreated).not.toHaveBeenCalled();
-    expect(mocks.dispatch).not.toHaveBeenCalled();
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'workspace/updateWorkspaceEntity' }),
+    );
   });
 });

@@ -9,11 +9,22 @@ export type IssueSuggestionSource =
   | 'sentry'
   | 'github-issues'
   | 'github-prs'
+  | 'github-related-repos'
   | 'github-pr-detail';
 
 export type ContextSource = 'linear' | 'github-issues' | 'github-prs' | 'sentry';
 
 type PullRequestFilter = 'all' | 'assigned' | 'created' | 'review-requested' | 'involves';
+
+export interface GitHubRepoRef {
+  owner: string;
+  repo: string;
+}
+
+export interface GitHubRelatedRepoSuggestion extends GitHubRepoRef {
+  id: string;
+  path?: string;
+}
 
 export interface GitHubIssueSuggestion {
   id: string;
@@ -50,7 +61,11 @@ export interface GitHubPullRequestSuggestion {
 }
 
 export type IssueSuggestion =
-  LinearIssueResult | SentryIssueResult | GitHubIssueSuggestion | GitHubPullRequestSuggestion;
+  | LinearIssueResult
+  | SentryIssueResult
+  | GitHubIssueSuggestion
+  | GitHubPullRequestSuggestion
+  | GitHubRelatedRepoSuggestion;
 
 export interface IssueSuggestionRequest {
   query?: string;
@@ -59,6 +74,7 @@ export interface IssueSuggestionRequest {
   repo?: string;
   filter?: PullRequestFilter;
   number?: number;
+  repos?: GitHubRepoRef[];
 }
 
 export interface IssueSuggestionPageState {

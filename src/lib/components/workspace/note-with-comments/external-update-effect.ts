@@ -1,6 +1,7 @@
 import type { CommentManagerV2 } from '$features/comments/comment-manager-v2';
 import { rebaseText } from '$lib/notes/text-rebase';
 import type { TaskAgentAssociation } from '$store/renderer/slices/task-agent-associations/task-agent-associations-types';
+import type { ExternalNoteUpdateCoordinationResult } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
 
 import { reapplyCommentAnchorsAfterExternalUpdate } from './comment-manager-utils';
 import {
@@ -233,6 +234,7 @@ export function runExternalContentUpdateEffect({
   isDestroyed,
   getEditor,
   getIsInitialized,
+  coordinateExternalUpdate,
   getHasPendingNoteContent,
   stageUnsavedEdits,
   flushNoteContent,
@@ -261,6 +263,8 @@ export function runExternalContentUpdateEffect({
   isDestroyed?: () => boolean;
   getEditor: () => ExternalUpdateEffectEditorLike | null | undefined;
   getIsInitialized: () => boolean;
+  /** Saga-owned external-update coalescing and pending-save reconciliation. */
+  coordinateExternalUpdate?: () => Promise<ExternalNoteUpdateCoordinationResult>;
   /**
    * Whether the write-service still holds an unacknowledged content save for
    * this note (debounced or in flight). While true, Redux may hold refetched
@@ -647,6 +651,19 @@ export function runExternalContentUpdateEffect({
     if (stageUnsavedEdits && canFoldUnsavedEdits()) stageUnsavedEdits();
     return getHasPendingNoteContent?.() ?? false;
   };
+
+  if (coordinateExternalUpdate) {
+    if (stageUnsavedEdits && canFoldUnsavedEdits()) stageUnsavedEdits();
+    return coordinateExternalUpdate().then((coordination) => {
+      if (coordination.decision !== 'apply') return;
+      if (isDestroyed?.()) return;
+      if (dropIfOwnerChanged('coordination')) return;
+      const freshContent = getCurrentNoteContent();
+      const freshLastKnown = getLastKnownContent();
+      if (freshContent === freshLastKnown) return;
+      return applyIncomingContent(freshContent, getCurrentNoteRev?.());
+    });
+  }
 
   // --- Debounce rapid updates ---
   // When an agent is streaming edits, dozens of updates arrive per second.

@@ -6,6 +6,8 @@ import type { AppSelector, StoreState } from '../../types';
 import type {
   GitHubIssueSuggestion,
   GitHubPullRequestSuggestion,
+  GitHubRelatedRepoSuggestion,
+  GitHubRepoRef,
   IssueSuggestion,
   IssueSuggestionPageState,
   IssueSuggestionRequest,
@@ -52,17 +54,33 @@ const selectGitHubPage = <T extends IssueSuggestion>(
 ) => selectPage<T>(state, issueSuggestionRequestKey(source, request));
 
 export const selectGitHubIssueSuggestions = store.createSelector(
-  (state, owner: string, repo: string, query: string) =>
-    selectGitHubPage<GitHubIssueSuggestion>(state, 'github-issues', { owner, repo, query }),
+  (state, owner: string, repo: string, repos: GitHubRepoRef[], query: string) =>
+    selectGitHubPage<GitHubIssueSuggestion>(state, 'github-issues', {
+      owner,
+      repo,
+      repos,
+      query,
+    }),
 );
 export const selectGitHubPullRequestSuggestions = store.createSelector(
-  (state, owner: string, repo: string, filter: IssueSuggestionRequest['filter'], query: string) =>
+  (
+    state,
+    owner: string,
+    repo: string,
+    repos: GitHubRepoRef[],
+    filter: IssueSuggestionRequest['filter'],
+    query: string,
+  ) =>
     selectGitHubPage<GitHubPullRequestSuggestion>(state, 'github-prs', {
       owner,
       repo,
+      repos,
       filter,
       query,
     }),
+);
+export const selectGitHubRelatedRepos = store.createSelector((state, owner: string, repo: string) =>
+  selectGitHubPage<GitHubRelatedRepoSuggestion>(state, 'github-related-repos', { owner, repo }),
 );
 export const selectGitHubPullRequestDetail = store.createSelector(
   (state, owner: string, repo: string, number: number) =>

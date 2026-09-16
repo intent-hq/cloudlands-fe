@@ -31,9 +31,28 @@ vi.mock('$lib/client', () => ({
   },
 }));
 
-vi.mock('$store/renderer/store', () => ({
-  store: { dispatch: mocks.mockDispatch },
-}));
+vi.mock('$store/renderer/store', async () => {
+  const { createAppStoreMock } = await import('$store/renderer/utils/test-helpers/store-mock');
+  const { settingsOperationsReducer } =
+    await import('$store/renderer/slices/settings-events/settings-events-slice');
+  return {
+    store: createAppStoreMock({
+      reducers: { settingsOperations: settingsOperationsReducer },
+      dispatch: (action: { type: string; payload: unknown[] }) => {
+        mocks.mockDispatch(action);
+        const promise =
+          action.type === 'settings/listRequested'
+            ? mocks.mockSettingsList()
+            : action.type === 'settings/getSystemCapabilitiesRequested'
+              ? mocks.mockCapabilities()
+              : action.type === 'settings/updateRequested'
+                ? mocks.mockSettingsUpdate(action.payload[0])
+                : Promise.resolve();
+        return { ...action, promise };
+      },
+    }),
+  };
+});
 
 vi.mock('$store/renderer/slices/workspace-settings/workspace-settings-slice', () => ({
   refreshAutoCommitSettings: () => ({ type: 'workspaceSettings/refreshAutoCommitSettings' }),

@@ -21,6 +21,7 @@ import type {
   ContextSource,
   GitHubIssueSuggestion,
   GitHubPullRequestSuggestion,
+  GitHubRelatedRepoSuggestion,
   IssueSuggestion,
 } from '../issue-suggestions-types';
 
@@ -67,11 +68,23 @@ interface GitHubPullRequestResult {
   targetBranch?: string;
   createdAt?: string;
   updatedAt?: string;
+  owner?: string;
+  repo?: string;
+}
+
+interface GitHubRelatedRepoResult {
+  owner: string;
+  repo: string;
+  path?: string;
 }
 
 interface WireResult {
   success?: boolean;
-  data?: GitHubIssueResult[] | GitHubPullRequestResult[] | GitHubPullRequestResult;
+  data?:
+    | GitHubIssueResult[]
+    | GitHubPullRequestResult[]
+    | GitHubPullRequestResult
+    | GitHubRelatedRepoResult[];
   nextToken?: string | null;
   error?: string;
 }
@@ -129,14 +142,14 @@ function mapPullRequest(
   repo: string,
 ): GitHubPullRequestSuggestion {
   return {
-    id: pr.id ?? `${owner}/${repo}#${pr.number}`,
+    id: pr.id ?? `${pr.owner ?? owner}/${pr.repo ?? repo}#${pr.number}`,
     number: pr.number,
     title: pr.title,
     body: pr.description,
     url: pr.htmlUrl ?? pr.url ?? '',
     state: pr.state,
-    owner,
-    repo,
+    owner: pr.owner ?? owner,
+    repo: pr.repo ?? repo,
     authorLogin: pr.author?.login,
     authorName: pr.author?.name,
     assignees: pr.assignees || [],
@@ -184,28 +197,50 @@ function* fetchPage(action: RequestAction): SagaGenerator<void> {
       const owner = request.owner ?? '';
       const repo = request.repo ?? '';
       const channel =
-        source === 'github-issues'
-          ? 'git-tracking:search-github-issues'
-          : source === 'github-prs'
-            ? 'git-tracking:search-pull-requests'
-            : 'git-tracking:get-pull-request';
+        source === 'github-related-repos'
+          ? 'git-tracking:list-related-repos'
+          : source === 'github-issues'
+            ? 'git-tracking:search-github-issues'
+            : source === 'github-prs'
+              ? 'git-tracking:search-pull-requests'
+              : 'git-tracking:get-pull-request';
       const params =
-        source === 'github-pr-detail'
-          ? { owner, repo, number: request.number }
-          : {
-              owner,
-              repo,
-              options: {
-                state: 'open',
-                per_page: source === 'github-issues' ? 20 : 50,
-                filter: request.filter ?? 'all',
-                ...(request.query ? { query: request.query } : {}),
-                ...(request.nextToken ? { nextToken: request.nextToken } : {}),
-              },
-            };
+        source === 'github-related-repos'
+          ? { owner, repo }
+          : source === 'github-pr-detail'
+            ? { owner, repo, number: request.number }
+            : {
+                owner,
+                repo,
+                options: {
+                  state: 'open',
+                  per_page: source === 'github-issues' ? 20 : 50,
+                  filter: request.filter ?? 'all',
+                  ...(request.repos?.length ? { repos: request.repos } : {}),
+                  ...(request.query ? { query: request.query } : {}),
+                  ...(request.nextToken ? { nextToken: request.nextToken } : {}),
+                },
+              };
       const response = yield* call(invokeGitHub, channel, params);
       if (!response?.success) throw new Error(response?.error ?? 'GitHub request failed');
-      if (source === 'github-issues') {
+      if (source === 'github-related-repos') {
+        const seen = new Set([`${owner}/${repo}`]);
+        items = (Array.isArray(response.data) ? response.data : [])
+          .filter((entry): entry is GitHubRelatedRepoResult => 'owner' in entry && 'repo' in entry)
+          .filter((entry) => {
+            const id = `${entry.owner}/${entry.repo}`;
+            if (seen.has(id)) return false;
+            seen.add(id);
+            return true;
+          })
+          .slice(0, 5)
+          .map<GitHubRelatedRepoSuggestion>((entry) => ({
+            id: `${entry.owner}/${entry.repo}`,
+            owner: entry.owner,
+            repo: entry.repo,
+            path: entry.path,
+          }));
+      } else if (source === 'github-issues') {
         items = (Array.isArray(response.data) ? response.data : []).map((issue) =>
           mapGitHubIssue(issue as GitHubIssueResult),
         );

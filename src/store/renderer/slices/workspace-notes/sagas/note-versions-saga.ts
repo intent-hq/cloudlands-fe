@@ -13,7 +13,6 @@ import {
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
-import { settleRegisteredNoteContent } from '../note-content-settlement';
 import { withPreservedUnmetDependsOn } from '../workspace-notes-normalization';
 import { selectNoteById } from '../workspace-notes-selectors';
 import {
@@ -24,7 +23,7 @@ import {
   restoreNoteVersion,
 } from '../workspace-notes-slice';
 import { toRuntimeNote, toRuntimeNoteVersion } from './note-payload-mappers';
-import { flushPendingNoteContent } from './notes-write-saga';
+import { settlePendingNoteContent } from './notes-write-saga';
 
 const logger = createLogger('NoteVersionsSaga');
 type RestoreAction = ReturnType<typeof restoreNoteVersion>;
@@ -57,11 +56,10 @@ function* fetchVersions(workspaceId: string, noteId: string) {
 }
 
 function* restoreVersion(workspaceId: string, noteId: string, versionId: string) {
-  yield* call(flushPendingNoteContent, workspaceId, noteId);
   // The daemon dispatches requests concurrently, so the restore must not be
-  // issued until every content save the write service holds for this note —
-  // debounced or already in flight — has been acknowledged.
-  yield* call(settleRegisteredNoteContent, workspaceId, noteId);
+  // issued until every saga-owned content save for this note — debounced,
+  // queued, or already in flight — has been acknowledged.
+  yield* call(settlePendingNoteContent, workspaceId, noteId);
   try {
     const result: Awaited<ReturnType<typeof appClient.notes.restoreVersion>> = yield* call(
       [appClient.notes, appClient.notes.restoreVersion],

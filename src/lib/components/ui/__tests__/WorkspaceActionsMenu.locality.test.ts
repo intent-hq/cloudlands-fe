@@ -13,10 +13,18 @@ import { createCollection } from '@augmentcode/themis/utils/collections/collecti
 import type { StoreState } from '$store/renderer/types';
 import type { InstalledEditor } from '$store/renderer/slices/external-editors/external-editors-slice';
 import type { BackendTransportInfo } from '$store/renderer/slices/daemon-health/daemon-health-types';
+import type { GitStatus } from '$shared/types';
+import {
+  gitReducer,
+  initialState as initialGitState,
+  setGitStatusReadError,
+  setGitStatusReadResult,
+} from '$store/renderer/slices/git/git-slice';
 import { toNativePath } from '$lib/utils/path-utils';
 import { warmImport } from '../../../../test/warm-import';
 
 let mockStoreState: Partial<StoreState> = {};
+let mockAppStore: any;
 const mockDispatch = vi.fn();
 const electronBridgeMocks = vi.hoisted(() => ({
   invoke: vi.fn().mockResolvedValue(undefined),
@@ -26,10 +34,11 @@ vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMock } = await import('$store/renderer/utils/test-helpers/store-mock');
   return {
     get store() {
-      return createAppStoreMock({
+      return (mockAppStore ??= createAppStoreMock({
         state: () => mockStoreState,
         dispatch: mockDispatch,
-      });
+        reducers: { git: gitReducer },
+      }));
     },
   };
 });
@@ -69,6 +78,17 @@ const mockEditors: InstalledEditor[] = [
     installed: true,
   },
 ];
+
+const xcodeEditor: InstalledEditor = {
+  id: 'xcode',
+  name: 'Xcode',
+  shortLabel: 'Xcode',
+  appName: 'Xcode',
+  category: 'ide',
+  handlerType: 'xcode',
+  priority: 90,
+  installed: true,
+};
 
 const manyMockEditors: InstalledEditor[] = [
   ...mockEditors,
@@ -130,7 +150,14 @@ function makeState(
     workspace: {
       workspaces: createCollection('id', mockWorkspaces),
     },
+    git: initialGitState,
   } as unknown as Partial<StoreState>;
+}
+
+function settleGitStatus(
+  action: ReturnType<typeof setGitStatusReadResult | typeof setGitStatusReadError>,
+) {
+  mockAppStore.dispatch(action);
 }
 
 async function renderMenu(workspaceId = '') {
@@ -359,5 +386,165 @@ describe('WorkspaceActionsMenu workspace-locality gating (monorepo#2171)', () =>
 
     expect(container.textContent).toContain('Open in Visual Studio Code');
     expect(container.textContent).toContain('Choose app');
+  });
+});
+
+describe('WorkspaceActionsMenu Xcode Git-status ordering', () => {
+  const status: GitStatus = {
+    branch: 'feature',
+    ahead: 0,
+    behind: 0,
+    diverged: false,
+    files: [{ path: 'Sources/App.swift', status: 'M', staged: false }],
+    hasUncommittedChanges: true,
+    hasUntrackedFiles: false,
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockAppStore?.resetReducers();
+    mockStoreState = makeState({ mode: 'sidecar-uds' }, null, [xcodeEditor]);
+    electronBridgeMocks.invoke.mockImplementation((channel: string) =>
+      channel === 'workspace:get'
+        ? Promise.resolve({ success: true, data: { worktreePath: '/repo' } })
+        : Promise.resolve(undefined),
+    );
+  });
+
+  it('opens Xcode with the settled fresh changed files', async () => {
+    const requests: any[] = [];
+    mockDispatch.mockImplementation((action: any) => {
+      if (action?.type === 'git/readStatusRequested') requests.push(action);
+      return action;
+    });
+    const WorkspaceActionsMenu = (
+      await import('$features/workspace/components/WorkspaceActionsMenu.svelte')
+    ).default;
+    render(WorkspaceActionsMenu, {
+      props: {
+        filePath: 'project.xcodeproj',
+        workspaceId: 'ws-local',
+        isDirectory: false,
+        showFileActions: true,
+      },
+    });
+
+    await waitFor(() =>
+      expect(electronBridgeMocks.invoke).toHaveBeenCalledWith('workspace:get', { id: 'ws-local' }),
+    );
+    await fireEvent.click(await screen.findByRole('button', { name: 'Open in Xcode' }));
+    await waitFor(() => expect(requests).toHaveLength(1));
+    expect(requests[0].payload).toEqual(['ws-local', true, expect.any(String)]);
+    settleGitStatus(setGitStatusReadResult('ws-local', requests[0].payload[2], status));
+
+    await waitFor(() =>
+      expect(electronBridgeMocks.invoke).toHaveBeenCalledWith('xcode:open', {
+        folder: '/repo',
+        file: '/repo/project.xcodeproj',
+        changedFiles: ['Sources/App.swift'],
+      }),
+    );
+  });
+
+  it('opens Xcode without cached paths when Git status fails', async () => {
+    const requests: any[] = [];
+    mockDispatch.mockImplementation((action: any) => {
+      if (action?.type === 'git/readStatusRequested') requests.push(action);
+      return action;
+    });
+    const WorkspaceActionsMenu = (
+      await import('$features/workspace/components/WorkspaceActionsMenu.svelte')
+    ).default;
+    render(WorkspaceActionsMenu, {
+      props: {
+        filePath: 'project.xcodeproj',
+        workspaceId: 'ws-local',
+        isDirectory: false,
+        showFileActions: true,
+      },
+    });
+
+    await fireEvent.click(await screen.findByRole('button', { name: 'Open in Xcode' }));
+    await waitFor(() => expect(requests).toHaveLength(1));
+    settleGitStatus(
+      setGitStatusReadError('ws-local', requests[0].payload[2], 'status unavailable'),
+    );
+
+    await waitFor(() =>
+      expect(electronBridgeMocks.invoke).toHaveBeenCalledWith('xcode:open', {
+        folder: '/repo',
+        file: '/repo/project.xcodeproj',
+        changedFiles: undefined,
+      }),
+    );
+  });
+
+  it('ignores an older completion when Xcode is requested again', async () => {
+    const requests: any[] = [];
+    mockDispatch.mockImplementation((action: any) => {
+      if (action?.type === 'git/readStatusRequested') requests.push(action);
+      return action;
+    });
+    const WorkspaceActionsMenu = (
+      await import('$features/workspace/components/WorkspaceActionsMenu.svelte')
+    ).default;
+    render(WorkspaceActionsMenu, {
+      props: {
+        filePath: 'project.xcodeproj',
+        workspaceId: 'ws-local',
+        isDirectory: false,
+        showFileActions: true,
+      },
+    });
+
+    const button = await screen.findByRole('button', { name: 'Open in Xcode' });
+    await fireEvent.click(button);
+    await fireEvent.click(button);
+    await waitFor(() => expect(requests).toHaveLength(2));
+    settleGitStatus(setGitStatusReadResult('ws-local', requests[1].payload[2], status));
+    await waitFor(() =>
+      expect(electronBridgeMocks.invoke).toHaveBeenCalledWith('xcode:open', expect.anything()),
+    );
+    settleGitStatus(
+      setGitStatusReadResult('ws-local', requests[0].payload[2], {
+        ...status,
+        files: [{ path: 'stale.swift', status: 'M', staged: false }],
+      }),
+    );
+    await Promise.resolve();
+
+    expect(electronBridgeMocks.invoke).toHaveBeenCalledTimes(2);
+    expect(electronBridgeMocks.invoke).toHaveBeenLastCalledWith('xcode:open', {
+      folder: '/repo',
+      file: '/repo/project.xcodeproj',
+      changedFiles: ['Sources/App.swift'],
+    });
+  });
+
+  it('does not launch Xcode after the menu unmounts', async () => {
+    const requests: any[] = [];
+    mockDispatch.mockImplementation((action: any) => {
+      if (action?.type === 'git/readStatusRequested') requests.push(action);
+      return action;
+    });
+    const WorkspaceActionsMenu = (
+      await import('$features/workspace/components/WorkspaceActionsMenu.svelte')
+    ).default;
+    const mounted = render(WorkspaceActionsMenu, {
+      props: {
+        filePath: 'project.xcodeproj',
+        workspaceId: 'ws-local',
+        isDirectory: false,
+        showFileActions: true,
+      },
+    });
+
+    await fireEvent.click(await screen.findByRole('button', { name: 'Open in Xcode' }));
+    await waitFor(() => expect(requests).toHaveLength(1));
+    mounted.unmount();
+    settleGitStatus(setGitStatusReadResult('ws-local', requests[0].payload[2], status));
+    await Promise.resolve();
+
+    expect(electronBridgeMocks.invoke).not.toHaveBeenCalledWith('xcode:open', expect.anything());
   });
 });

@@ -34,16 +34,58 @@ const mocks = vi.hoisted(() => {
     executor: { pr: { isExecuting: false, agentId: null } },
     postMerge: { aheadOfTrunk: null, behindTrunk: 0, hasConflicts: false },
   };
+  const commitDetailsEntries: any[] = [];
+  const selectorListeners = new Set<() => void>();
   const selector = <T>(getter: () => T) => {
     const fn = () => ({
       subscribe(run: (v: T) => void) {
-        run(getter());
-        return () => {};
+        const notify = () => run(getter());
+        selectorListeners.add(notify);
+        notify();
+        return () => selectorListeners.delete(notify);
       },
     });
     return Object.assign(fn, { select: () => getter() });
   };
-  return { dispatch, workspaceEntity, state, selector };
+  const parameterizedSelector = <T>(getter: (...args: any[]) => T) => {
+    const fn = (...inputs: any[]) => ({
+      subscribe(run: (value: T) => void) {
+        const values = new Array(inputs.length);
+        const ready = new Array(inputs.length).fill(false);
+        const notify = () => {
+          if (ready.every(Boolean)) run(getter(...values));
+        };
+        const unsubscribes = inputs.map((input, index) => {
+          if (input && typeof input.subscribe === 'function') {
+            return input.subscribe((value: unknown) => {
+              values[index] = value;
+              ready[index] = true;
+              notify();
+            });
+          }
+          values[index] = input;
+          ready[index] = true;
+          return () => {};
+        });
+        selectorListeners.add(notify);
+        notify();
+        return () => {
+          selectorListeners.delete(notify);
+          unsubscribes.forEach((unsubscribe) => unsubscribe());
+        };
+      },
+    });
+    return Object.assign(fn, { select: (_state: unknown, ...args: any[]) => getter(...args) });
+  };
+  return {
+    dispatch,
+    workspaceEntity,
+    state,
+    commitDetailsEntries,
+    notifySelectors: () => selectorListeners.forEach((notify) => notify()),
+    selector,
+    parameterizedSelector,
+  };
 });
 
 vi.mock('$store/renderer/store', async () => {
@@ -125,10 +167,67 @@ vi.mock('$store/renderer/slices/git/git-selectors', () => ({
   selectGitBehind: mocks.selector(() => 0),
   selectPostMergeState: mocks.selector(() => mocks.state.postMerge),
   selectGitOperationFlags: mocks.selector(() => mocks.state.sidebarChanges.gitOperations),
+  selectCommitDetailsEntries: mocks.selector(() => mocks.commitDetailsEntries),
+  selectGitFileRead: mocks.parameterizedSelector(() => undefined),
+  selectGitMutationRequest: mocks.parameterizedSelector(() => undefined),
 }));
 
 vi.mock('$store/renderer/slices/git/git-slice', () => ({
+  addGitRemoteRequested: vi.fn((...args: unknown[]) => ({
+    type: 'git/addRemoteRequested',
+    payload: args,
+    promise: Promise.resolve({}),
+  })),
+  createPullRequestRequested: vi.fn((...args: unknown[]) => ({
+    type: 'git/createPullRequestRequested',
+    payload: args,
+    promise: Promise.resolve({ success: true, steps: [] }),
+  })),
+  executeAcceptChangesRequested: vi.fn((...args: unknown[]) => ({
+    type: 'git/executeAcceptChangesRequested',
+    payload: args,
+    promise: Promise.resolve({ success: true, steps: [] }),
+  })),
+  refreshPullRequestRequested: vi.fn((wsId: string) => ({
+    type: 'git/refreshPullRequestRequested',
+    payload: [wsId],
+    promise: Promise.resolve({ success: true }),
+  })),
+  loadCommitDetails: vi.fn((wsId: string, commitHash: string) => {
+    const entry = mocks.commitDetailsEntries.find((item) => item.commitHash === commitHash) ?? {
+      commitHash,
+      data: null,
+      loading: true,
+      error: null,
+    };
+    if (!mocks.commitDetailsEntries.includes(entry)) mocks.commitDetailsEntries.push(entry);
+    entry.loading = true;
+    const request = mockCommitDetails(wsId, commitHash);
+    Promise.resolve(request).then((result) => {
+      entry.loading = false;
+      if (result) {
+        entry.data = { ...result, files: result.fileDetails ?? result.files ?? [] };
+      }
+      mocks.notifySelectors();
+    });
+    return { type: 'git/loadCommitDetails', payload: [wsId, commitHash] };
+  }),
   loadGitStatus: vi.fn((...args: unknown[]) => ({ type: 'git/loadStatus', payload: args })),
+  pullGitRequested: vi.fn((...args: unknown[]) => ({
+    type: 'git/pull',
+    payload: args,
+    promise: Promise.resolve({ success: true }),
+  })),
+  pushGitRequested: vi.fn((...args: unknown[]) => ({
+    type: 'git/push',
+    payload: args,
+    promise: Promise.resolve({ success: true }),
+  })),
+  readGitFileRequested: vi.fn((...args: unknown[]) => ({
+    type: 'git/readFile',
+    payload: args,
+    promise: Promise.resolve(''),
+  })),
   setGitOperationFlag: vi.fn((...args: unknown[]) => ({
     type: 'git/setGitOperationFlag',
     payload: args,
@@ -147,37 +246,8 @@ vi.mock('$store/renderer/slices/terminals/terminals-slice', () => ({
   openTerminalOverlay: vi.fn((...args: unknown[]) => ({ type: 'terminals/open', payload: args })),
 }));
 
-vi.mock('$store/renderer/slices/workspace/utils/workspace.client', () => ({
-  workspaceClient: {
-    update: vi.fn().mockResolvedValue({ ok: true, data: mocks.workspaceEntity }),
-    updateWorkspace: vi.fn().mockResolvedValue(undefined),
-  },
-}));
-
-const mockCreatePR = vi.fn().mockResolvedValue({ success: true });
-
-vi.mock('$features/accept-changes/background-git-actions.service', () => ({
-  backgroundGitActionsService: {
-    createPR: mockCreatePR,
-    commit: vi.fn().mockResolvedValue({ success: true }),
-  },
-}));
-
-const mockExecute = vi.hoisted(() => vi.fn());
-vi.mock('$features/accept-changes/accept-changes.client', () => ({
-  AcceptChangesClient: { execute: mockExecute },
-}));
-
 vi.mock('$features/git/git-cache', () => ({
   gitCache: { invalidate: vi.fn(), invalidateWorkspace: vi.fn(), set: vi.fn() },
-}));
-
-vi.mock('$features/git/git.client', () => ({
-  gitClient: {
-    fetch: vi.fn().mockResolvedValue({ ok: true }),
-    push: vi.fn().mockResolvedValue({ ok: true }),
-    showFile: vi.fn().mockResolvedValue({ ok: true, data: '' }),
-  },
 }));
 
 // PROTOCOL §5.6 — lazy per-commit file fetch for the metadata-only list payload.
@@ -316,11 +386,9 @@ warmImport(() => import('../PRSection.svelte'));
 
 describe('PRSection', () => {
   beforeEach(() => {
-    mocks.dispatch.mockClear();
-    mockCreatePR.mockClear();
-    mockCreatePR.mockResolvedValue({ success: true });
-    mockExecute.mockReset().mockResolvedValue({ success: true });
+    mocks.dispatch.mockReset().mockImplementation((action) => action);
     mockCommitDetails.mockReset();
+    mocks.commitDetailsEntries.splice(0, mocks.commitDetailsEntries.length);
     mocks.state.githubAuthed = true;
     mocks.state.acceptChanges.prTitle = '';
     mocks.state.acceptChanges.prDescription = '';
@@ -346,7 +414,7 @@ describe('PRSection', () => {
     expect(observed).toEqual(configuredVisualStates);
   });
 
-  it('triggerCreatePR calls backgroundGitActionsService.createPR with provided title and description when authenticated', async () => {
+  it('triggerCreatePR dispatches the saga-owned request with provided content when authenticated', async () => {
     const { component } = await renderPR();
     await (
       component as unknown as {
@@ -364,18 +432,17 @@ describe('PRSection', () => {
       prDescription: 'Details',
     });
 
-    await waitFor(() => expect(mockCreatePR).toHaveBeenCalled());
-    expect(mockCreatePR).toHaveBeenCalledWith(
-      expect.objectContaining({
-        workspaceId: 'ws-1',
-        prTitle: 'Add X',
-        prDescription: 'Details',
-        targetBranch: 'develop',
-      }),
+    await waitFor(() =>
+      expect(mocks.dispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'git/createPullRequestRequested',
+          payload: ['ws-1', 'Add X', 'Details', 'develop', false],
+        }),
+      ),
     );
   });
 
-  it('triggerCreatePR dispatches initializeGitHubAuth when unauthenticated and does NOT call createPR', async () => {
+  it('triggerCreatePR dispatches initializeGitHubAuth when unauthenticated', async () => {
     mocks.state.githubAuthed = false;
     const { component } = await renderPR();
     await (
@@ -388,10 +455,9 @@ describe('PRSection', () => {
         expect.objectContaining({ type: 'githubAuth/initialize' }),
       );
     });
-    expect(mockCreatePR).not.toHaveBeenCalled();
   });
 
-  it('refreshes Git status before broad Changes data after a successful push', async () => {
+  it('dispatches the saga-owned push request with the exact commit boundary', async () => {
     const { container } = await renderPR({
       hasOpenPR: true,
       hasUnpushedCommits: true,
@@ -408,19 +474,14 @@ describe('PRSection', () => {
     });
 
     await fireEvent.click(push);
-    await waitFor(() => expect(mockExecute).toHaveBeenCalled());
-
-    expect(
-      mocks.dispatch.mock.calls
-        .map(([action]) => action)
-        .filter(
-          (action) =>
-            action.type === 'git/loadStatus' || action.type === 'changes/refreshRequested',
-        ),
-    ).toEqual([
-      { type: 'git/loadStatus', payload: ['ws-1', true] },
-      { type: 'changes/refreshRequested', payload: ['ws-1'] },
-    ]);
+    await waitFor(() =>
+      expect(mocks.dispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'git/executeAcceptChangesRequested',
+          payload: ['ws-1', 'push', { targetBranch: 'feature/branch', upToCommitHash: 'abc' }],
+        }),
+      ),
+    );
   });
 
   it('toggles the Connect Remote drawer when the button is clicked', async () => {

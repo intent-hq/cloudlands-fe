@@ -30,6 +30,9 @@
   import { selectHidesAgentLifecycleActions } from '$store/renderer/slices/workspace/workspace-selectors';
   import { writable } from 'svelte/store';
   import { m } from '$shared/paraglide/messages.js';
+  import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
+  import { selectAgentCreationRequest } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
+  import { clearAgentCreationRequest } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 
   interface Props {
     editor: Editor | null;
@@ -73,6 +76,10 @@
   let launchDialogPosition = $state({ x: 0, y: 0 });
   let launchDialogSelection = $state('');
   let launchDialogMessage = $state('');
+  let launchRequestHandled = $state(false);
+  const launchRequestId = globalThis.crypto.randomUUID();
+  // svelte-ignore state_referenced_locally -- workspace is stable for this editor instance.
+  const launchRequest$ = selectAgentCreationRequest(workspace?.id, launchRequestId);
 
   // Link input state
   let showLinkInput = $state(false);
@@ -200,7 +207,7 @@
     showLaunchDialog = true;
   }
 
-  async function handleLaunchSubmit(event: CustomEvent<{ userMessage: string }>) {
+  function handleLaunchSubmit(event: CustomEvent<{ userMessage: string }>) {
     const { userMessage } = event.detail;
 
     if (!workspace?.id) {
@@ -209,6 +216,7 @@
     }
 
     try {
+      launchRequestHandled = false;
       // Create context reference with selected text
       const contextReference: ContextReference = {
         type: 'selection',
@@ -254,28 +262,33 @@
             contextReferences: context, // Contains selection - will be auto-extracted to runtime context
           },
         },
-        { openAgent: true },
+        { openAgent: true, requestId: launchRequestId },
       );
       appStore.dispatch(launchAction);
-      const agentData = await launchAction.promise;
-
-      logger.info('[BubbleMenu] Agent created successfully', {
-        agentId: agentData.id,
-      });
-
-      // Close dialog and CLEAR the message on successful launch
-      showLaunchDialog = false;
-      launchDialogMessage = '';
-
-      // Bubble up result
-      if (agentData.id && onAgentLaunched) {
-        onAgentLaunched(agentData);
-      }
     } catch (error) {
       logger.error('[BubbleMenu] Failed to launch agent:', error);
       // Don't close dialog on error - let user retry
     }
   }
+
+  $effect(() => {
+    const request = $launchRequest$;
+    const wsId = workspace?.id;
+    if (!request || request.loading || !wsId || launchRequestHandled) return;
+    launchRequestHandled = true;
+    if (request.error) {
+      logger.error('[BubbleMenu] Failed to launch agent:', request.error);
+    } else if (request.agentId) {
+      const agentData = selectAgentSession.select(appStore.state, request.agentId);
+      if (agentData) {
+        logger.info('[BubbleMenu] Agent created successfully', { agentId: agentData.id });
+        showLaunchDialog = false;
+        launchDialogMessage = '';
+        onAgentLaunched?.(agentData);
+      }
+    }
+    appStore.dispatch(clearAgentCreationRequest(wsId, request.requestId));
+  });
 
   function handleLaunchDialogClose() {
     // Clear message when user explicitly cancels

@@ -8,19 +8,13 @@ import type { SentryIssueResult } from '$features/sentry-auth/types';
 const sentryState = vi.hoisted(() => ({
   isAuthenticated: false,
   isConnecting: false,
-}));
-
-const clientMocks = vi.hoisted(() => ({
-  fetchIssues: vi.fn(),
+  issues: [] as SentryIssueResult[],
+  issuesLoaded: false,
+  issuesLoading: false,
 }));
 
 const storeMocks = vi.hoisted(() => ({
   dispatch: vi.fn(),
-}));
-
-vi.mock('$features/sentry-auth/renderer/sentry-auth.client', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('$features/sentry-auth/renderer/sentry-auth.client')>()),
-  sentryAuthClient: clientMocks,
 }));
 
 vi.mock('$store/renderer/slices/sentry-auth/sentry-auth-selectors', () => {
@@ -33,6 +27,9 @@ vi.mock('$store/renderer/slices/sentry-auth/sentry-auth-selectors', () => {
   return {
     selectSentryIsAuthenticated: vi.fn(() => readable(() => sentryState.isAuthenticated)),
     selectSentryIsConnecting: vi.fn(() => readable(() => sentryState.isConnecting)),
+    selectSentryIssues: vi.fn(() => readable(() => sentryState.issues)),
+    selectSentryIssuesLoaded: vi.fn(() => readable(() => sentryState.issuesLoaded)),
+    selectSentryIssuesLoading: vi.fn(() => readable(() => sentryState.issuesLoading)),
   };
 });
 
@@ -83,8 +80,9 @@ warmImport(() => import('../SentryPicker.svelte'));
 beforeEach(() => {
   sentryState.isAuthenticated = false;
   sentryState.isConnecting = false;
-  clientMocks.fetchIssues.mockReset();
-  clientMocks.fetchIssues.mockResolvedValue([]);
+  sentryState.issues = [];
+  sentryState.issuesLoaded = false;
+  sentryState.issuesLoading = false;
   storeMocks.dispatch.mockClear();
   baseProps.onSelect = vi.fn();
   baseProps.onClose = vi.fn();
@@ -94,44 +92,49 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe('SentryPicker direct-client fetch', () => {
-  it('shows the connect prompt without fetching when unauthenticated', async () => {
+describe('SentryPicker selector-backed issues', () => {
+  it('shows the connect prompt without requesting issues when unauthenticated', async () => {
     render(SentryPicker, { props: baseProps });
 
     expect(screen.getByText('Connect to Sentry to see your issues')).toBeTruthy();
-    expect(clientMocks.fetchIssues).not.toHaveBeenCalled();
     expect(storeMocks.dispatch).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'sentryAuth/initialize' }),
     );
+    expect(storeMocks.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'sentryAuth/loadIssuesRequested' }),
+    );
   });
 
-  it('fetches issues through the client once when authenticated and renders them', async () => {
+  it('requests issues when authenticated and renders selector results', async () => {
     sentryState.isAuthenticated = true;
-    clientMocks.fetchIssues.mockResolvedValue([
+    sentryState.issuesLoaded = true;
+    sentryState.issues = [
       makeIssue(),
       makeIssue({ id: 'issue-2', shortId: 'PROJ-2', title: 'Timeout in worker' }),
-    ]);
+    ];
 
     render(SentryPicker, { props: baseProps });
 
     await waitFor(() => expect(screen.getByText('PROJ-1')).toBeTruthy());
     expect(screen.getByText('PROJ-2')).toBeTruthy();
-    expect(clientMocks.fetchIssues).toHaveBeenCalledTimes(1);
-    expect(clientMocks.fetchIssues).toHaveBeenCalledWith();
+    expect(storeMocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'sentryAuth/loadIssuesRequested' }),
+    );
   });
 
-  it('renders the empty state when the client resolves no issues', async () => {
+  it('renders the empty state from loaded selector state', async () => {
     sentryState.isAuthenticated = true;
+    sentryState.issuesLoaded = true;
 
     render(SentryPicker, { props: baseProps });
 
     await waitFor(() => expect(screen.getByText('No issues found')).toBeTruthy());
-    expect(clientMocks.fetchIssues).toHaveBeenCalledTimes(1);
   });
 
   it('reports the selected issue with sentry metadata and closes', async () => {
     sentryState.isAuthenticated = true;
-    clientMocks.fetchIssues.mockResolvedValue([makeIssue()]);
+    sentryState.issuesLoaded = true;
+    sentryState.issues = [makeIssue()];
 
     render(SentryPicker, { props: baseProps });
     await waitFor(() => expect(screen.getByText('PROJ-1')).toBeTruthy());

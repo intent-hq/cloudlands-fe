@@ -32,13 +32,17 @@
  */
 import { untrack } from 'svelte';
 
-import type { DraftsClient } from '$lib/client/app-client';
+import type { DraftAttachment, DraftsClient } from '$lib/client/app-client';
 import { getCachedDraft, setCachedDraft } from './chat-draft-cache';
 import { serializeDraftAttachments, deserializeDraftAttachments } from './chat-draft-attachments';
 import type { ContextItem } from './input/context-api';
 
 export interface ChatDraftManagerOptions {
-  drafts: Pick<DraftsClient, 'get' | 'set'>;
+  drafts: {
+    get: DraftsClient['get'];
+    set: DraftsClient['set'];
+    flush?: DraftsClient['set'];
+  };
   workspaceId: () => string | undefined;
   agentId: () => string | undefined;
   active?: () => boolean;
@@ -81,12 +85,12 @@ export interface ChatDraftManager {
 
 /** Delay before pushing restored text into the editor (lets it mount). */
 const HYDRATE_DELAY_MS = 50;
-/** Debounce for persisting the draft to the daemon. */
-const SAVE_DEBOUNCE_MS = 500;
 /** Fallback: release the composer gate if `drafts.get` hasn't settled. */
 const GATE_TIMEOUT_MS = 5000;
 /** Delay before the gate becomes visible as a loading indicator. */
 const GATE_VISIBLE_DELAY_MS = 500;
+/** Delay before persisting the latest composer value. */
+const SAVE_DEBOUNCE_MS = 500;
 
 export function createChatDraftManager(options: ChatDraftManagerOptions): ChatDraftManager {
   let gateActive = $state(false);
@@ -104,9 +108,10 @@ export function createChatDraftManager(options: ChatDraftManagerOptions): ChatDr
   let gateTimeoutId: ReturnType<typeof setTimeout> | null = null;
   let gateVisibleTimeoutId: ReturnType<typeof setTimeout> | null = null;
   let hydrateTimeoutId: ReturnType<typeof setTimeout> | null = null;
+  let saveOperationGeneration = 0;
   let saveTimeoutId: ReturnType<typeof setTimeout> | null = null;
-  // Debounced save awaiting its timer; flushed on pair change and unmount so
-  // the last keystrokes are persisted instead of dropped.
+  // Latest saga-debounced save awaiting persistence; flushed on pair change
+  // and unmount so the last keystrokes are not dropped.
   let pendingSave: (() => void) | null = null;
 
   const clearGateVisible = () => {
@@ -303,8 +308,6 @@ export function createChatDraftManager(options: ChatDraftManagerOptions): ChatDr
     const agentId = options.agentId();
     const gated = gateActive;
     if (!active) {
-      if (saveTimeoutId) clearTimeout(saveTimeoutId);
-      saveTimeoutId = null;
       pendingSave = null;
       return;
     }
@@ -333,9 +336,11 @@ export function createChatDraftManager(options: ChatDraftManagerOptions): ChatDr
     }
 
     const saveKey = `${workspaceId}\u0000${agentId}`;
-    const doSave = () => {
-      saveTimeoutId = null;
-      pendingSave = null;
+    const persist = (
+      write: DraftsClient['set'],
+      persistedAttachments: DraftAttachment[] | undefined,
+    ) => {
+      const operationGeneration = ++saveOperationGeneration;
       // Refresh the switch-back cache synchronously: a flush-at-unmount must
       // be visible to an immediate remount of the same pair, which hydrates
       // from this cache before the wire save settles.
@@ -343,14 +348,10 @@ export function createChatDraftManager(options: ChatDraftManagerOptions): ChatDr
         text: currentValue,
         attachments: currentAttachments,
       });
-      options.drafts
-        .set(
-          workspaceId,
-          agentId,
-          currentValue,
-          currentAttachments.length > 0 ? currentAttachments : undefined,
-        )
+      write(workspaceId, agentId, currentValue, persistedAttachments)
         .then(() => {
+          if (operationGeneration !== saveOperationGeneration) return;
+          pendingSave = null;
           if (!(options.active?.() ?? true)) return;
           // Only track dirty state if this pair is still the current one.
           if (restoreKey === saveKey) {
@@ -364,6 +365,8 @@ export function createChatDraftManager(options: ChatDraftManagerOptions): ChatDr
           }
         })
         .catch((err) => {
+          if (operationGeneration !== saveOperationGeneration) return;
+          pendingSave = null;
           if (!(options.active?.() ?? true)) return;
           // The synchronous cache write above advertised text the daemon
           // never accepted — roll it back to the last persisted state so a
@@ -379,8 +382,12 @@ export function createChatDraftManager(options: ChatDraftManagerOptions): ChatDr
           options.onSaveError?.(err);
         });
     };
-    pendingSave = doSave;
-    saveTimeoutId = setTimeout(doSave, SAVE_DEBOUNCE_MS);
+    const persistedAttachments = currentAttachments.length > 0 ? currentAttachments : undefined;
+    pendingSave = () => persist(options.drafts.flush ?? options.drafts.set, persistedAttachments);
+    saveTimeoutId = setTimeout(() => {
+      saveTimeoutId = null;
+      flushPendingSave();
+    }, SAVE_DEBOUNCE_MS);
   });
 
   // Teardown: flush the pending save (persisting the final keystrokes), then
@@ -419,10 +426,6 @@ export function createChatDraftManager(options: ChatDraftManagerOptions): ChatDr
       // on the daemon) and reflect the cleared state in the switch-back
       // cache and dirty-tracking, so an unmount/rebind before the reactive
       // empty save cannot cache-hydrate the just-sent prompt on reopen.
-      if (saveTimeoutId) {
-        clearTimeout(saveTimeoutId);
-        saveTimeoutId = null;
-      }
       pendingSave = null;
       if (restoreKey !== null) {
         const [workspaceId, agentId] = restoreKey.split('\u0000');

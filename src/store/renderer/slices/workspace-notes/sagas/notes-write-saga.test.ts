@@ -158,6 +158,32 @@ describe('notesWriteSaga', () => {
     await run.task.toPromise();
   });
 
+  it('uses the editor-captured base revision when a refetch landed before staging', async () => {
+    const setContent = vi.spyOn(appClient.notes, 'setContent').mockResolvedValue({
+      success: true,
+      newContent: 'AGENT\nbody local',
+      noteRev: 6,
+    });
+    const run = harness(note({ content: 'AGENT\nbody', rev: 5 }));
+
+    run.channel.put(
+      updateNoteContent(WS, NOTE, 'body local', {
+        immediate: true,
+        baseRev: 4,
+        baseContent: 'body',
+      }),
+    );
+    await settle();
+
+    expect(setContent.mock.calls).toEqual([[NOTE, 'body local', 4, WS]]);
+    expect(run.getState().byWorkspaceId[WS]?.notes.map[NOTE]).toMatchObject({
+      content: 'AGENT\nbody local',
+      rev: 6,
+    });
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
   it('creates with the exact request and reconciles the optimistic note to the canonical note', async () => {
     const created = note({
       id: NoteId('note-created'),

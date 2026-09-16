@@ -164,9 +164,22 @@ export const removeOptimisticNote = createAction<[workspaceId: string, noteId: s
   'workspaceNotes/removeOptimisticNote',
 );
 
-/** Saga trigger: update note content (from user input, will debounce) */
+export interface UpdateNoteContentOptions {
+  immediate?: boolean;
+  /** Revision of the daemon text that the editor draft was derived from. */
+  baseRev?: number;
+  /** Text that the editor draft was derived from. */
+  baseContent?: string;
+}
+
+/** Saga trigger: update note content (from user input, will debounce). */
 export const updateNoteContent = createAction<
-  [workspaceId: string, noteId: string, content: string, immediate?: boolean]
+  [
+    workspaceId: string,
+    noteId: string,
+    content: string,
+    options?: boolean | UpdateNoteContentOptions,
+  ]
 >('workspaceNotes/updateNoteContent');
 
 /** Saga trigger: update note title */

@@ -4,6 +4,7 @@ import { warmImport } from '../../../../../test/warm-import';
 
 const mocks = vi.hoisted(() => {
   const dispatch = vi.fn();
+  const subscribers = new Set<() => void>();
   const workspaceEntity = {
     id: 'ws-1',
     branch: 'feature/branch',
@@ -16,13 +17,24 @@ const mocks = vi.hoisted(() => {
   const selector = <T>(getter: () => T) => {
     const fn = () => ({
       subscribe(run: (v: T) => void) {
-        run(getter());
-        return () => {};
+        const notify = () => run(getter());
+        notify();
+        subscribers.add(notify);
+        return () => subscribers.delete(notify);
       },
     });
     return Object.assign(fn, { select: () => getter() });
   };
-  return { dispatch, workspaceEntity, gitOps, postMerge, selector };
+  return {
+    dispatch,
+    workspaceEntity,
+    gitOps,
+    postMerge,
+    selector,
+    resetRequest: { value: null as any },
+    archiveMutation: { value: { loading: false, error: null, version: 0 } as any },
+    emit: () => subscribers.forEach((subscriber) => subscriber()),
+  };
 });
 
 const reduxDispatch = vi.fn();
@@ -42,6 +54,7 @@ vi.mock('$store/renderer/store', async () => {
 
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceById: mocks.selector(() => mocks.workspaceEntity),
+  selectWorkspaceMutation: mocks.selector(() => mocks.archiveMutation.value),
 }));
 
 vi.mock('$store/renderer/slices/git/git-selectors', () => ({
@@ -55,6 +68,7 @@ vi.mock('$store/renderer/slices/git/git-selectors', () => ({
     }),
     { select: () => mocks.postMerge },
   ),
+  selectGitMutationRequest: mocks.selector(() => mocks.resetRequest.value),
 }));
 
 vi.mock('$store/renderer/slices/git/git-slice', () => ({
@@ -69,6 +83,10 @@ vi.mock('$store/renderer/slices/git/git-slice', () => ({
   setGitOperationFlag: vi.fn((wsId: string, flag: string, val: boolean) => ({
     type: 'git/setGitOperationFlag',
     payload: [wsId, flag, val],
+  })),
+  executeAcceptChangesRequested: vi.fn((...args: unknown[]) => ({
+    type: 'git/executeAcceptChangesRequested',
+    payload: args,
   })),
 }));
 
@@ -90,6 +108,18 @@ vi.mock('$store/renderer/slices/workspace/workspace-slice', () => ({
     payload: entity,
   })),
   loadWorkspacesRequested: vi.fn(() => ({ type: 'workspace/loadWorkspacesRequested' })),
+  archiveWorkspaceRequested: vi.fn((id: string) => ({
+    type: 'workspace/archiveRequested',
+    payload: [id],
+  })),
+  unarchiveWorkspaceRequested: vi.fn((id: string) => ({
+    type: 'workspace/unarchiveRequested',
+    payload: [id],
+  })),
+  updateWorkspaceRequested: vi.fn((...args: unknown[]) => ({
+    type: 'workspace/updateRequested',
+    payload: args,
+  })),
 }));
 
 vi.mock('$store/renderer/slices/sidebar-nav/sidebar-nav-slice', () => ({
@@ -99,20 +129,8 @@ vi.mock('$store/renderer/slices/sidebar-nav/sidebar-nav-slice', () => ({
   })),
 }));
 
-const mockResetToTrunk = vi.fn();
-vi.mock('$features/accept-changes/accept-changes.client', () => ({
-  AcceptChangesClient: { resetToTrunk: mockResetToTrunk },
-}));
-
-const mockWorkspaceUpdate = vi.fn();
-const mockArchive = vi.fn();
-const mockUnarchive = vi.fn();
-vi.mock('$store/renderer/slices/workspace/utils/workspace.client', () => ({
-  workspaceClient: { update: mockWorkspaceUpdate, archive: mockArchive, unarchive: mockUnarchive },
-}));
-
-vi.mock('$lib/components/patterns/notify', () => ({
-  notify: { error: vi.fn(), success: vi.fn(), info: vi.fn(), custom: vi.fn() },
+vi.mock('$lib/components/ui/toast', () => ({
+  toast: { error: vi.fn(), success: vi.fn(), info: vi.fn(), custom: vi.fn() },
 }));
 
 vi.mock('svelte-fa', async () => {
@@ -149,10 +167,8 @@ describe('PostMergeActions', () => {
   beforeEach(() => {
     mocks.dispatch.mockClear();
     reduxDispatch.mockClear();
-    mockResetToTrunk.mockReset();
-    mockWorkspaceUpdate.mockReset().mockResolvedValue({ ok: true, data: mocks.workspaceEntity });
-    mockArchive.mockReset().mockResolvedValue({ ok: true });
-    mockUnarchive.mockReset().mockResolvedValue({ ok: true });
+    mocks.resetRequest.value = null;
+    mocks.archiveMutation.value = { loading: false, error: null, version: 0 };
     mocks.gitOps.isResettingToTrunk = false;
     mocks.workspaceEntity.archived = false;
     mocks.workspaceEntity.repositoryPath = '/repo';
@@ -191,37 +207,30 @@ describe('PostMergeActions', () => {
   });
 
   it('reset success path: updates baseCommitSha, refreshes, and dispatches post-merge cleanup', async () => {
-    mockResetToTrunk.mockResolvedValue({ success: true, result: { newHeadSha: 'new-sha' } });
-
     const { container } = await renderPostMerge();
     const resetBtn = Array.from(container.querySelectorAll('button')).find((b) =>
       b.textContent?.includes('Reset and continue'),
     ) as HTMLButtonElement;
     await fireEvent.click(resetBtn);
 
-    await waitFor(() => expect(mockResetToTrunk).toHaveBeenCalledWith('ws-1'));
-
-    // flag flipped on then off
-    expect(mocks.dispatch).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: 'git/setGitOperationFlag',
-        payload: ['ws-1', 'isResettingToTrunk', true],
-      }),
-    );
-    await waitFor(() =>
-      expect(mocks.dispatch).toHaveBeenCalledWith(
-        expect.objectContaining({
-          type: 'git/setGitOperationFlag',
-          payload: ['ws-1', 'isResettingToTrunk', false],
-        }),
-      ),
-    );
+    expect(mocks.dispatch).toHaveBeenCalledWith({
+      type: 'git/executeAcceptChangesRequested',
+      payload: ['ws-1', 'reset-to-trunk'],
+    });
+    mocks.resetRequest.value = {
+      loading: false,
+      error: null,
+      data: { success: true, result: { newHeadSha: 'new-sha' } },
+      version: 1,
+    };
+    mocks.emit();
 
     // baseCommitSha persisted
     await waitFor(() =>
-      expect(mockWorkspaceUpdate).toHaveBeenCalledWith(
-        expect.objectContaining({ baseCommitSha: 'new-sha' }),
-      ),
+      expect(mocks.dispatch).toHaveBeenCalledWith({
+        type: 'workspace/updateRequested',
+        payload: ['ws-1', { baseCommitSha: 'new-sha' }, 'base-commit'],
+      }),
     );
 
     // refresh dispatches
@@ -256,22 +265,28 @@ describe('PostMergeActions', () => {
   });
 
   it('reset failure path: shows toast error and does not update post-merge', async () => {
-    mockResetToTrunk.mockResolvedValue({ success: false, error: 'boom' });
-    const { notify } = await import('$lib/components/patterns/notify');
+    const { toast } = await import('$lib/components/ui/toast');
 
     const { container } = await renderPostMerge();
     const resetBtn = Array.from(container.querySelectorAll('button')).find((b) =>
       b.textContent?.includes('Reset and continue'),
     ) as HTMLButtonElement;
     await fireEvent.click(resetBtn);
+    mocks.resetRequest.value = {
+      loading: false,
+      error: null,
+      data: { success: false, error: 'boom' },
+      version: 1,
+    };
+    mocks.emit();
 
-    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('boom'));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('boom'));
     expect(mocks.dispatch).not.toHaveBeenCalledWith(
       expect.objectContaining({ type: 'git/setPostMergeState' }),
     );
   });
 
-  it('archive and start new: archives workspace, writes prefill, opens create modal', async () => {
+  it('archive and start new: delegates the workflow to the workspace operations saga', async () => {
     mocks.workspaceEntity.worktreePath = '/worktrees/ws-1';
     const { container } = await renderPostMerge();
     const archiveBtn = Array.from(container.querySelectorAll('button')).find((b) =>
@@ -279,20 +294,11 @@ describe('PostMergeActions', () => {
     ) as HTMLButtonElement;
     await fireEvent.click(archiveBtn);
 
-    await waitFor(() => expect(mockArchive).toHaveBeenCalledWith('ws-1'));
-    expect(mocks.dispatch).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'workspace/loadWorkspacesRequested' }),
-    );
-    await waitFor(() => {
-      const prefill = sessionStorage.getItem('workspace-prefill');
-      expect(prefill).not.toBeNull();
-      expect(JSON.parse(prefill as string)).toEqual({ repoPath: '/repo' });
+    expect(mocks.dispatch).toHaveBeenCalledWith({
+      type: 'workspaceOperations/startPostMergeWorkspaceRequested',
+      payload: ['ws-1', '/repo', '/worktrees/ws-1'],
     });
-    await waitFor(() =>
-      expect(mocks.dispatch).toHaveBeenCalledWith(
-        expect.objectContaining({ type: 'sidebarNav/setShowCreateModal', payload: true }),
-      ),
-    );
+    expect(sessionStorage.getItem('workspace-prefill')).toBeNull();
   });
 
   it('archive and start new: does not prefill a workspace-owned standalone checkout (GitHub pick)', async () => {
@@ -306,12 +312,10 @@ describe('PostMergeActions', () => {
     ) as HTMLButtonElement;
     await fireEvent.click(archiveBtn);
 
-    await waitFor(() => expect(mockArchive).toHaveBeenCalledWith('ws-1'));
-    await waitFor(() =>
-      expect(mocks.dispatch).toHaveBeenCalledWith(
-        expect.objectContaining({ type: 'sidebarNav/setShowCreateModal', payload: true }),
-      ),
-    );
+    expect(mocks.dispatch).toHaveBeenCalledWith({
+      type: 'workspaceOperations/startPostMergeWorkspaceRequested',
+      payload: ['ws-1', '/workspaces/ws-1/repo', '/workspaces/ws-1/repo'],
+    });
     expect(sessionStorage.getItem('workspace-prefill')).toBeNull();
   });
 
@@ -324,12 +328,10 @@ describe('PostMergeActions', () => {
     ) as HTMLButtonElement;
     await fireEvent.click(archiveBtn);
 
-    await waitFor(() => expect(mockArchive).toHaveBeenCalledWith('ws-1'));
-    await waitFor(() =>
-      expect(mocks.dispatch).toHaveBeenCalledWith(
-        expect.objectContaining({ type: 'sidebarNav/setShowCreateModal', payload: true }),
-      ),
-    );
+    expect(mocks.dispatch).toHaveBeenCalledWith({
+      type: 'workspaceOperations/startPostMergeWorkspaceRequested',
+      payload: ['ws-1', '/workspaces/.repo-cache/owner/repo', '/worktrees/ws-1'],
+    });
     expect(sessionStorage.getItem('workspace-prefill')).toBeNull();
   });
 });

@@ -26,8 +26,6 @@
     type CoalescedSpan,
     type IndicatorEntry,
   } from './attribution-span-coalescer';
-  import { listenSync } from '$lib/electron-bridge';
-  import { appClient } from '$lib/client';
   import type { WorkspaceId, NoteId } from '$shared/types';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
 
@@ -35,6 +33,9 @@
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
+  import { selectLineAttribution } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
+  import { loadLineAttributionRequested } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
+  import { onMount } from 'svelte';
 
   interface Props {
     editor: Editor;
@@ -45,8 +46,15 @@
 
   let { editor, workspaceId, noteId, markdown }: Props = $props();
 
-  // Line attribution data loaded from disk
-  let lineAttributions: LineAttributions = $state(new Map());
+  const lineAttribution$ = selectLineAttribution(workspaceId, noteId);
+  const lineAttributions: LineAttributions = $derived(
+    new Map(
+      Object.entries($lineAttribution$.attributions).map(([line, attribution]) => [
+        Number(line),
+        attribution as AttributionInfo,
+      ]),
+    ),
+  );
 
   interface SpanIndicator extends CoalescedSpan {
     opacity: number;
@@ -171,34 +179,6 @@
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
       handleSpanClick(event, span);
-    }
-  }
-
-  /**
-   * Load line attribution data via the daemon (PROTOCOL §5.2.1
-   * `note.lineAttribution.load`). Returns the bare `LineAttributionData |
-   * null` payload; a `null` result means the daemon has not computed
-   * attributions yet, in which case the gutter renders empty.
-   */
-  async function loadAttributions() {
-    try {
-      const data = await appClient.notes.lineAttribution.load(workspaceId, noteId);
-
-      if (data) {
-        // Convert from Record<lineNumber, AttributionInfo> to Map<number, AttributionInfo>
-        const map = new Map<number, AttributionInfo>();
-        for (const [lineNum, attrInfo] of Object.entries(data.attributions)) {
-          map.set(Number(lineNum), attrInfo as AttributionInfo);
-        }
-        lineAttributions = map;
-
-        // Update indicators after loading data
-        updateIndicators();
-      } else {
-        logger.debug('[LineAttributionGutter] No attribution data found');
-      }
-    } catch (error) {
-      logger.debug('[LineAttributionGutter] Failed to load attributions', { error });
     }
   }
 
@@ -408,10 +388,9 @@
     }
   }
 
-  // Load attributions once on mount (untracked to avoid infinite loop)
-  $effect(() => {
+  onMount(() => {
     logger.debug('[LineAttributionGutter] Mounting, loading attributions once');
-    loadAttributions();
+    appStore.dispatch(loadLineAttributionRequested(workspaceId, noteId));
 
     // Update timestamps every minute to keep them fresh
     timestampUpdateInterval = window.setInterval(() => {
@@ -424,6 +403,11 @@
         clearInterval(timestampUpdateInterval);
       }
     };
+  });
+
+  $effect(() => {
+    $lineAttribution$.version;
+    updateIndicators();
   });
 
   // Set up editor listeners (separate effect to avoid re-running on state changes)
@@ -484,46 +468,6 @@
       if (updateTimeout !== null) {
         clearTimeout(updateTimeout);
       }
-    };
-  });
-
-  // Listen for line-attribution:updated events from backend
-  // Use a single listener that checks current noteId/workspaceId at event time
-  $effect(() => {
-    // Capture current values as strings to ensure consistent comparison
-    const currentWorkspaceId = String(workspaceId);
-    const currentNoteId = String(noteId);
-
-    logger.debug('[LineAttributionGutter] Setting up line-attribution:updated listener', {
-      workspaceId: currentWorkspaceId,
-      noteId: currentNoteId,
-    });
-
-    // Use listenSync for synchronous cleanup without race conditions
-    const unsubscribe = listenSync('line-attribution:updated', (event: any) => {
-      // Handle both wrapped and unwrapped payloads
-      const payload = event?.payload || event || {};
-      const eventWorkspaceId = String(payload.workspaceId || '');
-      const eventNoteId = String(payload.noteId || '');
-
-      logger.debug('[LineAttributionGutter] Received line-attribution:updated event', {
-        eventWorkspaceId,
-        eventNoteId,
-        currentWorkspaceId,
-        currentNoteId,
-        match: eventWorkspaceId === currentWorkspaceId && eventNoteId === currentNoteId,
-      });
-
-      // Only reload if it's for this workspace and note (use string comparison)
-      if (eventWorkspaceId === currentWorkspaceId && eventNoteId === currentNoteId) {
-        logger.debug('[LineAttributionGutter] Reloading attributions due to backend update');
-        loadAttributions();
-      }
-    });
-
-    return () => {
-      logger.debug('[LineAttributionGutter] Cleaning up line-attribution:updated listener');
-      unsubscribe();
     };
   });
 </script>

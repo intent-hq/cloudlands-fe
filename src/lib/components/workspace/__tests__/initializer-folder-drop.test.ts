@@ -55,21 +55,30 @@ vi.mock('$app/navigation', () => ({ goto: mocks.goto }));
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
+  const { workspaceInitializerReducer } =
+    await import('$store/renderer/slices/workspace-initializer/workspace-initializer-slice');
   return createAppStoreMockModule({
     state: () => ({ workspaceCreateProgress: { byProgressId: {} } }),
     dispatch: mocks.dispatch,
+    reducers: { workspaceInitializer: workspaceInitializerReducer },
   });
 });
 
-vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors', () => ({
-  selectWorkspaceInitializerHydrated: () => mocks.hydrated$,
-  selectCompactWorkspaceInitializerFormState: () => mocks.compactFormState$,
-  selectWorkspaceInitializerLastSelectedRepo: () => mocks.readable(() => null),
-  selectWorkspaceInitializerLastSubmittedAgent: () => mocks.readable(() => null),
-  selectWorkspaceInitializerRecentRepos: () => mocks.readable(() => []),
-  selectWorkspaceInitializerPendingGitHubPrefill: () => mocks.readable(() => null),
-  selectWorkspaceInitializerDefaultParentPath: () => mocks.readable(() => ''),
-}));
+vi.mock(
+  '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors',
+  async (importOriginal) => ({
+    ...(await importOriginal<
+      typeof import('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors')
+    >()),
+    selectWorkspaceInitializerHydrated: () => mocks.hydrated$,
+    selectCompactWorkspaceInitializerFormState: () => mocks.compactFormState$,
+    selectWorkspaceInitializerLastSelectedRepo: () => mocks.readable(() => null),
+    selectWorkspaceInitializerLastSubmittedAgent: () => mocks.readable(() => null),
+    selectWorkspaceInitializerRecentRepos: () => mocks.readable(() => []),
+    selectWorkspaceInitializerPendingGitHubPrefill: () => mocks.readable(() => null),
+    selectWorkspaceInitializerDefaultParentPath: () => mocks.readable(() => ''),
+  }),
+);
 
 vi.mock('$store/renderer/slices/model/model-selectors', () => ({
   selectAvailableModels: () => mocks.readable(() => []),
@@ -287,6 +296,41 @@ warmImport(() => import('../initializer/__tests__/mocks/MockComponent.svelte'));
 describe('CompactWorkspaceInitializer folder drop (path references, local daemon only)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.dispatch.mockImplementation(
+      (action: {
+        type?: string;
+        payload?: unknown[];
+        success?: (value: unknown) => unknown;
+        failure?: (error: Error) => unknown;
+      }) => {
+        if (action.type === 'workspaceInitializer/readPrefillRequested') {
+          return {
+            promise: Promise.resolve().then(() => {
+              const raw = sessionStorage.getItem(PREFILL_KEY);
+              sessionStorage.removeItem(PREFILL_KEY);
+              return raw ? JSON.parse(raw) : null;
+            }),
+          };
+        } else if (action.type === 'workspaceInitializer/readGitAvailabilityRequested') {
+          return { promise: Promise.resolve({ available: true, version: '2.44.0' }) };
+        } else if (action.type === 'workspaceInitializer/restoreNewWorkspaceDraftRequested') {
+          return { promise: Promise.resolve({ status: 'empty' }) };
+        } else if (action.type === 'workspaceInitializer/createWorkspaceRequested') {
+          return { promise: Promise.resolve(mocks.create(action.payload?.[0])) };
+        } else if (action.type === 'workspaceInitializer/setInitialAgentReasoningEffortRequested') {
+          return {
+            promise: Promise.resolve(
+              mocks.setReasoningEffort({
+                agentId: action.payload?.[0],
+                workspaceId: action.payload?.[1],
+                reasoningEffort: action.payload?.[2],
+              }),
+            ).then(() => undefined),
+          };
+        }
+        return action;
+      },
+    );
     sessionStorage.clear();
     mocks.hydrated$.set(false);
     mocks.compactFormState$.set(null);
@@ -363,6 +407,7 @@ describe('CompactWorkspaceInitializer folder drop (path references, local daemon
   it('submit maps a staged folder into initialAgent.contextReferences', async () => {
     (window as any).electronAPI.getPathForFile = vi.fn(() => '/home/user/projects/my-folder');
     mocks.create.mockResolvedValue({ ok: false, error: 'stop after payload capture' });
+    seedAutoCreatePrefill();
 
     const result = render(CompactWorkspaceInitializer, { props: { isExpanded: true } });
     const folder = new File(['x'], 'my-folder', { type: '' });
@@ -374,7 +419,6 @@ describe('CompactWorkspaceInitializer folder drop (path references, local daemon
       expect(pills(result.container)).toHaveLength(1);
     });
 
-    seedAutoCreatePrefill();
     await (result.component as { applyPrefill: () => Promise<void> }).applyPrefill();
     await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
 
@@ -389,6 +433,7 @@ describe('CompactWorkspaceInitializer folder drop (path references, local daemon
   it('re-dropping the same folder is a no-op (one pill, one reference)', async () => {
     (window as any).electronAPI.getPathForFile = vi.fn(() => '/home/user/projects/my-folder');
     mocks.create.mockResolvedValue({ ok: false, error: 'stop after payload capture' });
+    seedAutoCreatePrefill();
 
     const result = render(CompactWorkspaceInitializer, { props: { isExpanded: true } });
     const folder = new File(['x'], 'my-folder', { type: '' });
@@ -402,7 +447,6 @@ describe('CompactWorkspaceInitializer folder drop (path references, local daemon
       expect(pills(result.container)).toHaveLength(1);
     });
 
-    seedAutoCreatePrefill();
     await (result.component as { applyPrefill: () => Promise<void> }).applyPrefill();
     await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
 
@@ -439,6 +483,7 @@ describe('CompactWorkspaceInitializer folder drop (path references, local daemon
       mimeType: 'text/plain',
     });
     mocks.backendRequest.mockResolvedValue({ success: true });
+    seedAutoCreatePrefill();
 
     const result = render(CompactWorkspaceInitializer, { props: { isExpanded: true } });
     const folder = new File(['x'], 'my-folder', { type: '' });
@@ -454,7 +499,6 @@ describe('CompactWorkspaceInitializer folder drop (path references, local daemon
       expect(pills(result.container)).toHaveLength(2);
     });
 
-    seedAutoCreatePrefill();
     await (result.component as { applyPrefill: () => Promise<void> }).applyPrefill();
     await waitFor(() => expect(mocks.backendRequest).toHaveBeenCalledTimes(1));
 

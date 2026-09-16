@@ -33,18 +33,43 @@ vi.mock('$store/renderer/slices/github-auth/github-auth-slice', () => ({
   startGitHubAuth: () => ({ type: 'github-auth/start' }),
 }));
 vi.mock('$store/renderer/slices/linear-auth/linear-auth-selectors', () => ({
+  selectLinearIsAuthenticated: mocks.selector(false),
   selectLinearIsAuthenticating: mocks.selector(false),
 }));
 vi.mock('$store/renderer/slices/linear-auth/linear-auth-slice', () => ({
+  initializeLinearAuth: () => ({ type: 'linear-auth/initialize' }),
   startLinearAuth: () => ({ type: 'linear-auth/start' }),
 }));
 vi.mock('$store/renderer/slices/sentry-auth/sentry-auth-selectors', () => ({
+  selectSentryIsAuthenticated: mocks.selector(false),
   selectSentryIsConnecting: mocks.selector(false),
   selectSentryError: mocks.selector(null),
 }));
 vi.mock('$store/renderer/slices/sentry-auth/sentry-auth-slice', () => ({
   connectSentry: () => ({ type: 'sentry-auth/connect' }),
+  initializeSentryAuth: () => ({ type: 'sentry-auth/initialize' }),
 }));
+vi.mock('$store/renderer/slices/issue-suggestions/issue-suggestions-selectors', () => {
+  const empty = {
+    items: [],
+    nextToken: null,
+    isFetching: false,
+    isLoadingMore: false,
+    error: null,
+    version: 0,
+  };
+  return {
+    selectLinearAssignedSuggestions: mocks.selector(empty),
+    selectLinearCreatedSuggestions: mocks.selector(empty),
+    selectLinearSearchSuggestions: mocks.selector(empty),
+    selectSentrySuggestions: mocks.selector(empty),
+    selectGitHubIssueSuggestions: mocks.selector(empty),
+    selectGitHubPullRequestSuggestions: mocks.selector(empty),
+    selectGitHubRelatedRepos: mocks.selector(empty),
+    selectGitHubPullRequestDetail: mocks.selector(empty),
+    selectLastUsedContextSource: mocks.selector(null),
+  };
+});
 vi.mock('$features/linear-auth/renderer/linear-auth.client', () => ({
   linearAuthClient: {
     getAuthState: vi.fn(async () => ({ isAuthenticated: false })),

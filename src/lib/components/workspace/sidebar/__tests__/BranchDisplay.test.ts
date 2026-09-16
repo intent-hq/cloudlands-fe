@@ -47,6 +47,7 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
     }),
     { select: () => mocks.workspaceEntity },
   ),
+  selectWorkspaceMutation: mocks.selector(() => ({ loading: false, error: null, version: 0 })),
 }));
 
 vi.mock('$store/renderer/slices/workspace/workspace-slice', () => ({
@@ -54,11 +55,14 @@ vi.mock('$store/renderer/slices/workspace/workspace-slice', () => ({
     type: 'workspace/setWorkspaceEntity',
     payload: args,
   })),
-}));
-
-const mockUpdate = vi.fn().mockResolvedValue({ ok: true, data: mocks.workspaceEntity });
-vi.mock('$store/renderer/slices/workspace/utils/workspace.client', () => ({
-  workspaceClient: { update: mockUpdate },
+  renameWorkspaceBranchRequested: vi.fn((...args: unknown[]) => ({
+    type: 'workspace/renameBranchRequested',
+    payload: args,
+  })),
+  updateWorkspaceRequested: vi.fn((...args: unknown[]) => ({
+    type: 'workspace/updateRequested',
+    payload: args,
+  })),
 }));
 
 vi.mock('$lib/utils/client-logger', () => ({
@@ -119,8 +123,6 @@ warmImport(() => import('../BranchDisplay.svelte'));
 describe('BranchDisplay', () => {
   beforeEach(() => {
     mocks.dispatch.mockClear();
-    mockUpdate.mockClear();
-    mockUpdate.mockResolvedValue({ ok: true, data: mocks.workspaceEntity });
     mockInvoke.mockReset();
     mocks.workspaceEntity.branch = 'feature/branch';
 
@@ -181,7 +183,9 @@ describe('BranchDisplay', () => {
 
     await waitFor(() => expect(notify.error).toHaveBeenCalled());
     expect(mockInvoke).not.toHaveBeenCalled();
-    expect(mockUpdate).not.toHaveBeenCalled();
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'workspace/updateRequested' }),
+    );
   });
 
   it('Escape while editing cancels without calling IPC', async () => {
@@ -197,12 +201,7 @@ describe('BranchDisplay', () => {
     expect(mockInvoke).not.toHaveBeenCalled();
   });
 
-  it('BranchSelector onchange persists baseRef and dispatches setWorkspaceEntity', async () => {
-    mockUpdate.mockResolvedValue({
-      ok: true,
-      data: { ...mocks.workspaceEntity, baseRef: 'develop' },
-    });
-
+  it('BranchSelector onchange dispatches the baseRef update request', async () => {
     const { container } = await renderBranchDisplay({ canChangeTrunk: true });
     const changeBtn = container.querySelector(
       '[data-testid="branch-selector-change"]',
@@ -210,10 +209,10 @@ describe('BranchDisplay', () => {
     await fireEvent.click(changeBtn);
 
     await waitFor(() =>
-      expect(mockUpdate).toHaveBeenCalledWith(expect.objectContaining({ baseRef: 'develop' })),
-    );
-    expect(mocks.dispatch).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'workspace/setWorkspaceEntity' }),
+      expect(mocks.dispatch).toHaveBeenCalledWith({
+        type: 'workspace/updateRequested',
+        payload: ['ws-1', { baseRef: 'develop' }, 'base-ref'],
+      }),
     );
   });
 

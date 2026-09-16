@@ -19,6 +19,8 @@
   } from '$store/renderer/slices/connections/connections-selectors';
   import { forgetConnectionRequested } from '$store/renderer/slices/connections/connections-slice';
   import { store as appStore } from '$store/renderer/store';
+  import { toStore } from 'svelte/store';
+  import { selectForgetConnectionOperation } from '$store/renderer/slices/connections/connections-selectors';
 
   let { localSettingsRequested = $bindable(0) }: { localSettingsRequested?: number } = $props();
 
@@ -36,6 +38,10 @@
   let removeTarget = $state<ConnectionRecord | null>(null);
   let removeError = $state<string | null>(null);
   let removing = $state(false);
+  const removeTargetId$ = toStore(() => removeTarget?.id ?? '');
+  const forgetOperation$ = selectForgetConnectionOperation(removeTargetId$);
+  let handledForgetVersion = $state(0);
+  let pendingForgetRequestId = $state<string | null>(null);
 
   $effect(() => {
     if (localSettingsRequested > 0) {
@@ -64,22 +70,36 @@
     removeDialogOpen = true;
   }
 
-  async function removeDevice(device = removeTarget) {
+  function removeDevice(device = removeTarget) {
     if (!device || removing) return;
     removing = true;
     removeError = null;
-    try {
-      const action = forgetConnectionRequested(device.id);
-      appStore.dispatch(action);
-      await action.promise;
+    handledForgetVersion = $forgetOperation$.version;
+    const request = forgetConnectionRequested(device.id);
+    pendingForgetRequestId = request.payload[1];
+    appStore.dispatch(request);
+  }
+
+  $effect(() => {
+    const operation = $forgetOperation$;
+    if (
+      !pendingForgetRequestId ||
+      operation.requestId !== pendingForgetRequestId ||
+      operation.version <= handledForgetVersion ||
+      operation.status === 'loading'
+    )
+      return;
+    handledForgetVersion = operation.version;
+    pendingForgetRequestId = null;
+    removing = false;
+    if (operation.status === 'success' && removeTarget) {
+      const device = removeTarget;
       if (activeDeviceId === device.id) closePanel();
       removeTarget = null;
-    } catch {
+    } else if (operation.status === 'error') {
       removeError = m.settings_devices_remove_error();
-    } finally {
-      removing = false;
     }
-  }
+  });
 </script>
 
 <div class="space-y-5">
