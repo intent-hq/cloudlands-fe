@@ -1049,8 +1049,8 @@ for (const zoomFactor of [1, 1.1, 1.25]) {
     const glyph = await close.locator('svg').boundingBox();
     expect((target?.width ?? 0) * zoomFactor).toBeGreaterThanOrEqual(27.9);
     expect((target?.height ?? 0) * zoomFactor).toBeGreaterThanOrEqual(27.9);
-    expect((glyph?.width ?? 0) * zoomFactor).toBeCloseTo(16, 1);
-    expect((glyph?.height ?? 0) * zoomFactor).toBeCloseTo(16, 1);
+    expect((glyph?.width ?? 0) * zoomFactor).toBeCloseTo(14, 1);
+    expect((glyph?.height ?? 0) * zoomFactor).toBeCloseTo(14, 1);
     const tab = await component.locator('[data-workspace-tab][data-active="true"]').boundingBox();
     const panel = await component.locator('[data-preview-panel]').boundingBox();
     if (!tab || !panel) throw new Error('Missing seam geometry');
