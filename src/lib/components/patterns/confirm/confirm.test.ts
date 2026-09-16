@@ -98,6 +98,16 @@ describe('confirm service', () => {
     await expect(cancelled).resolves.toBeNull();
   });
 
+  it('names the prompt textbox after the title when the field has no label', async () => {
+    render(ConfirmHost);
+    const accepted = prompt({ title: 'Name', field: { required: true } });
+    const input = await screen.findByRole('textbox', { name: 'Name' });
+    expect((input as HTMLInputElement).labels?.length ?? 0).toBe(0);
+    await fireEvent.input(input, { target: { value: 'Alpha' } });
+    await fireEvent.keyDown(input, { key: 'Enter' });
+    await expect(accepted).resolves.toBe('Alpha');
+  });
+
   it('confirms a destructive action without requiring text input', async () => {
     render(ConfirmHost);
     const result = confirm({

@@ -64,6 +64,7 @@
         bind:value
         type={request.options.field.type ?? 'text'}
         placeholder={request.options.field.placeholder}
+        aria-label={request.options.field.label ? undefined : request.options.title}
       />
     </div>
   </FormDialog>
