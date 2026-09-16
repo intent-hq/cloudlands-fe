@@ -139,7 +139,7 @@
                 >{terminalName}</span
               >
             </Button>
-            <div class="flex shrink-0 items-center" data-surface-actions>
+            <div class="flex shrink-0 items-center gap-0" data-surface-actions>
               <Menu.Root>
                 <Menu.Trigger>
                   {#snippet child({ props })}
@@ -148,7 +148,7 @@
                       variant="ghost"
                       size="icon-compact"
                       iconOnly
-                      class="size-7"
+                      class="size-(--row-action-target-compact)"
                       tooltip={m.ui_openCombo_openInApp_tooltip()}
                       tooltipSide="left"
                     >
@@ -256,54 +256,54 @@
                 <Fa icon={faExclamationTriangle} class="size-3" />
               </span>
             {/if}
-            <div class="flex shrink-0 items-center" data-surface-actions>
-              <Menu.Root>
-                <Menu.Trigger>
-                  {#snippet child({ props })}
-                    <Button
-                      {...props}
-                      variant="ghost"
-                      size="icon-compact"
-                      iconOnly
-                      class="size-7"
-                      tooltip={m.ui_openCombo_openInApp_tooltip()}
-                      tooltipSide="left"
+            <div class="flex shrink-0 items-center gap-0" data-script-actions>
+              <div class="flex shrink-0 items-center" data-surface-actions>
+                <Menu.Root>
+                  <Menu.Trigger>
+                    {#snippet child({ props })}
+                      <Button
+                        {...props}
+                        variant="ghost"
+                        size="icon-compact"
+                        iconOnly
+                        class="size-(--row-action-target-compact)"
+                        tooltip={m.ui_openCombo_openInApp_tooltip()}
+                        tooltipSide="left"
+                      >
+                        <Fa icon={faArrowUpRightFromSquare} class="size-3" />
+                      </Button>
+                    {/snippet}
+                  </Menu.Trigger>
+                  <Menu.Content
+                    align="end"
+                    side="bottom"
+                    preventScroll={false}
+                    aria-label={m.ui_dropdownMenu_ariaLabel()}
+                  >
+                    <Menu.Item
+                      onclick={(event) => {
+                        event.stopPropagation();
+                        openScriptInPanel(script.id, script.name);
+                      }}
                     >
-                      <Fa icon={faArrowUpRightFromSquare} class="size-3" />
-                    </Button>
-                  {/snippet}
-                </Menu.Trigger>
-                <Menu.Content
-                  align="end"
-                  side="bottom"
-                  preventScroll={false}
-                  aria-label={m.ui_dropdownMenu_ariaLabel()}
-                >
-                  <Menu.Item
-                    onclick={(event) => {
-                      event.stopPropagation();
-                      openScriptInPanel(script.id, script.name);
-                    }}
-                  >
-                    {#snippet leading()}<Fa icon={faTableColumns} class="size-3" />{/snippet}
-                    {m.workspace_shell_showInPanel_tooltip()}
-                  </Menu.Item>
-                  <Menu.Item
-                    onclick={(event) => {
-                      event.stopPropagation();
-                      showScriptInOverlay(script.id);
-                    }}
-                  >
-                    {#snippet leading()}<Fa
-                        icon={faWindowMaximize}
-                        class="size-3 rotate-180"
-                      />{/snippet}
-                    {m.workspace_shell_showInBottomBar_tooltip()}
-                  </Menu.Item>
-                </Menu.Content>
-              </Menu.Root>
-            </div>
-            <div class="flex shrink-0 items-center" data-script-actions>
+                      {#snippet leading()}<Fa icon={faTableColumns} class="size-3" />{/snippet}
+                      {m.workspace_shell_showInPanel_tooltip()}
+                    </Menu.Item>
+                    <Menu.Item
+                      onclick={(event) => {
+                        event.stopPropagation();
+                        showScriptInOverlay(script.id);
+                      }}
+                    >
+                      {#snippet leading()}<Fa
+                          icon={faWindowMaximize}
+                          class="size-3 rotate-180"
+                        />{/snippet}
+                      {m.workspace_shell_showInBottomBar_tooltip()}
+                    </Menu.Item>
+                  </Menu.Content>
+                </Menu.Root>
+              </div>
               {#if live}
                 {@const stopLabel = m.terminal_quakeOverlay_stop_label()}
                 {@const restartLabel = m.workspace_devScripts_restart_ariaLabel({
@@ -313,7 +313,7 @@
                   variant="ghost"
                   size="icon-compact"
                   iconOnly
-                  class="size-7 shrink-0 text-danger hover:text-danger active:bg-accent/80"
+                  class="size-(--row-action-target-compact) shrink-0 text-danger hover:text-danger active:bg-accent/80"
                   disabled={operation?.pending ?? false}
                   aria-busy={operation?.pending && operation.action === 'stop' ? true : undefined}
                   aria-label={stopLabel}
@@ -332,7 +332,7 @@
                   variant="ghost"
                   size="icon-compact"
                   iconOnly
-                  class="size-7 shrink-0 active:bg-accent/80"
+                  class="size-(--row-action-target-compact) shrink-0 active:bg-accent/80"
                   disabled={operation?.pending ?? false}
                   aria-busy={operation?.pending && operation.action === 'restart'
                     ? true
@@ -355,7 +355,7 @@
                   variant="ghost"
                   size="icon-compact"
                   iconOnly
-                  class="size-7 shrink-0 active:bg-accent/80"
+                  class="size-(--row-action-target-compact) shrink-0 active:bg-accent/80"
                   disabled={operation?.pending ?? false}
                   aria-busy={operation?.pending || undefined}
                   aria-label={startLabel}
