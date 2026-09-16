@@ -1806,14 +1806,77 @@ describe('DaemonStatusIndicator', () => {
         joinedAt: '2026-09-01T00:00:00.000Z',
       };
 
-      function withGuestSessions(connectedIds: string[], openIds: string[] = ['guest-1']) {
+      function withGuestSessions(
+        connectedIds: string[],
+        openIds: string[] = ['guest-1'],
+        sessions: Array<typeof guestRecord> = [guestRecord],
+      ) {
         return {
           ...DEFAULT_GUEST_SESSIONS,
-          sessions: createCollection('id', [guestRecord]),
+          sessions: createCollection('id', sessions),
           openIds,
           connectedIds,
         };
       }
+
+      it('labels a joined host by its captured hostname, keeping the dialled address secondary', async () => {
+        mockStoreState = {
+          daemonHealth: { ...healthy },
+          connections: withConnections('local'),
+          guestSessions: withGuestSessions(
+            [],
+            [],
+            [
+              { ...guestRecord, label: 'tc.example.ts.net', hostname: 'Clement’s Mac Studio' },
+              { ...guestRecord, id: 'guest-2', label: 'tc2.example.ts.net', hostname: null },
+            ],
+          ),
+        };
+        render(DaemonStatusIndicatorPreloaded);
+        await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+
+        const block = screen.getByTestId('daemon-status-guest-sessions');
+        const captured = within(block)
+          .getByText('Clement’s Mac Studio', { exact: false })
+          .closest('[role="menuitem"]')!;
+        expect(captured.querySelector('[data-guest-address]')?.textContent).toBe(
+          '(tc.example.ts.net)',
+        );
+        // Not yet captured: the address remains the primary label, nothing repeated.
+        const pending = within(block).getByText('tc2.example.ts.net').closest('[role="menuitem"]')!;
+        expect(pending.querySelector('[data-guest-address]')).toBeNull();
+      });
+
+      it('names the host by its captured hostname in the secret-unavailable toast', async () => {
+        mockStoreState = {
+          daemonHealth: { ...healthy },
+          connections: withConnections('local'),
+          guestSessions: withGuestSessions(
+            [],
+            [],
+            [{ ...guestRecord, label: 'tc.example.ts.net', hostname: 'Clement’s Mac Studio' }],
+          ),
+        };
+        mockDispatch.mockImplementation(
+          (action: { type: string; success?: (r: unknown) => void }) => {
+            if (action.type === 'connections/openRequested') {
+              action.success?.({ status: 'secret-unavailable' });
+            }
+            return action;
+          },
+        );
+        render(DaemonStatusIndicatorPreloaded);
+        await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+        const block = screen.getByTestId('daemon-status-guest-sessions');
+        await fireEvent.click(
+          within(block)
+            .getByText('Clement’s Mac Studio', { exact: false })
+            .closest('[role="menuitem"]')!,
+        );
+
+        await vi.waitFor(() => expect(mockToastError).toHaveBeenCalledTimes(1));
+        expect(String(mockToastError.mock.calls[0][0])).toContain('Clement’s Mac Studio');
+      });
 
       it('hides the block when no host has been joined', async () => {
         mockStoreState = { daemonHealth: { ...healthy }, connections: withConnections('local') };
