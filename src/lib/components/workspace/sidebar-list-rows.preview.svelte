@@ -21,7 +21,7 @@
     type AgentSession,
     type Note,
   } from '$shared/types';
-  import { AgentId, WorkspaceId } from '$shared/types/branded-ids';
+  import { AgentId, NoteId, WorkspaceId } from '$shared/types/branded-ids';
   import { store } from '$store/renderer/store';
   import { setSkills } from '$store/renderer/slices/skills/skills-slice';
   import { setServers } from '$store/renderer/slices/mcp-settings/mcp-settings-slice';
@@ -44,19 +44,22 @@
   const timestamp = '2026-09-16T00:00:00.000Z';
   const notes = [
     {
-      id: 'row-plan',
+      id: NoteId('row-plan'),
       title: 'Implementation plan',
       content: '- [ ] [Keyboard navigation](intent://local/task/row-task)',
     },
     {
-      id: 'row-task',
+      id: NoteId('row-task'),
       title: 'Keyboard navigation',
-      parentId: 'row-plan',
-      metadata: { task: { status: 'in_progress' } },
+      parentId: NoteId('row-plan'),
+      metadata: { task: { status: 'in_progress' as const } },
     },
-    { id: 'row-reference', title: 'Reference notes with a deliberately long title for truncation' },
-  ].map((note) => ({
-    workspaceId: LIST_LABELS_WORKSPACE,
+    {
+      id: NoteId('row-reference'),
+      title: 'Reference notes with a deliberately long title for truncation',
+    },
+  ].map<Note>((note) => ({
+    workspaceId: WorkspaceId(LIST_LABELS_WORKSPACE),
     content: '',
     contentType: ContentType.Markdown,
     tags: [],
@@ -66,23 +69,20 @@
     createdAt: timestamp,
     updatedAt: timestamp,
     ...note,
-  })) as Note[];
+  }));
   const agents: AgentSession[] = [
     'Interface reviewer',
     'A deliberately long implementation agent name',
-  ].map(
-    (name, index) =>
-      ({
-        id: AgentId(`sidebar-row-agent-${index}`),
-        workspaceId: WorkspaceId(LIST_LABELS_WORKSPACE),
-        backendSessionId: `sidebar-row-session-${index}`,
-        name,
-        status: AgentStatus.Idle,
-        messages: [],
-        createdAt: timestamp,
-        updatedAt: timestamp,
-      }) as AgentSession,
-  );
+  ].map((name, index): AgentSession => ({
+    id: AgentId(`sidebar-row-agent-${index}`),
+    workspaceId: WorkspaceId(LIST_LABELS_WORKSPACE),
+    backendSessionId: AgentId(`sidebar-row-session-${index}`),
+    name,
+    status: AgentStatus.Idle,
+    messages: [],
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  }));
   let openedNote = $state('');
   let selectedAgentId = $state<string | null>(null);
   let selectedFile = $state('');
@@ -220,6 +220,7 @@
                     type: 'browser',
                     title: 'Interface reference',
                     browserUrl: 'https://example.test/reference',
+                    closable: true,
                   },
                   panelId: 'fixture-panel',
                   active: true,
@@ -231,6 +232,7 @@
                     type: 'browser',
                     title: 'A deliberately long hidden browser page title',
                     browserUrl: 'https://example.test/hidden',
+                    closable: true,
                   },
                   active: false,
                   hidden: true,

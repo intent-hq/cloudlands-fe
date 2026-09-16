@@ -11,9 +11,9 @@ export function initializeIconPreview() {
       [
         {
           id: 'vscode',
-          name: 'Visual Studio Code',
+          name: 'Visual Studio Code', // i18n-ignore (brand name)
           shortLabel: 'VS Code',
-          appName: 'Visual Studio Code',
+          appName: 'Visual Studio Code', // i18n-ignore (OS application brand name)
           category: 'ide',
           handlerType: 'vscode',
           installed: true,

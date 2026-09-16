@@ -49,7 +49,7 @@ describe('resource icon tile source contract', () => {
     const tabs = source('../workspace/multi-select-sidebar-tabs.ts');
 
     expect(sidebar).toMatch(/<ResourceIconTile\s+kind="note"/);
-    expect(sidebar).toContain('<ResourceIconTile kind="changes" variant="emphasized" />');
+    // Collapsed Changes interactions and layout are covered by launcher-geometry.ct.spec.ts.
     expect(sidebar).toContain('variant="standard"');
     expect(sidebar).not.toMatch(/<AgentAvatarWithState[\s\S]{0,180}\bsize=/);
     expect(sidebar).not.toContain('$lib/icons/faNote');
@@ -86,8 +86,7 @@ describe('resource icon tile source contract', () => {
     expect(tabBar).toContain('data-panel-header-leading-surface');
     expect(tabBar).toContain('size={16}');
     expect(tabBar).toContain('width="14"');
-    expect(tabBar).toContain('<KebabIcon class="pointer-events-none size-3.5!" />');
-    expect(tabBar).toContain('<Fa icon={faXmark} size={14} class="size-3.5!" />');
+    // Rendered action ink, hit targets and keyboard routing are covered by agent-header-icons.ct.spec.ts.
     expect(navigator).toContain("import ChatTextIcon from 'phosphor-svelte/lib/ChatTextIcon'");
     expect(navigator).toMatch(/<ChatTextIcon[\s\S]*?size=\{14\}[\s\S]*?mirrored/);
     expect(navigator).toContain('data-chat-message-navigator-chat-icon');

@@ -4,6 +4,50 @@ import { WorkspaceStatus } from '$shared/types';
 import { WorkspaceId } from '$shared/types/branded-ids';
 import WorkspaceSidebarPreview from './workspace-sidebar.preview.svelte';
 
+test('aligns status headings to the leading content inset and preserves keyboard collapse', async ({
+  mount,
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const component = await mount(WorkspaceSidebarPreview, {
+    hooksConfig: { geometrySnapshot: { scene: 'workspace-sidebar', state: 'status-groups' } },
+  });
+  await page.evaluate(() => document.fonts.ready);
+  const toggles = component.locator('[data-status-group-toggle]');
+  await expect(toggles).toHaveCount(4);
+  const positions = () =>
+    toggles.evaluateAll((nodes) =>
+      nodes.map((node) => {
+        const style = getComputedStyle(node);
+        const bounds = node.getBoundingClientRect();
+        return {
+          headingX: node.querySelector('h4')!.getBoundingClientRect().x,
+          contentStart:
+            bounds.x + parseFloat(style.borderLeftWidth) + parseFloat(style.paddingLeft),
+          chevronX: node.querySelector('svg')!.getBoundingClientRect().x,
+          overflow: node.scrollWidth - node.clientWidth,
+        };
+      }),
+    );
+  const initial = await positions();
+  expect(initial.every((row) => Math.abs(row.headingX - row.contentStart) <= 1)).toBe(true);
+  expect(initial.every((row) => row.overflow <= 1 && row.chevronX > row.headingX)).toBe(true);
+  for (const id of ['blocked', 'needs_attention', 'in_progress', 'idle']) {
+    const toggle = component.locator(`[data-status-group-toggle="${id}"]`);
+    const rows = component.locator(`#status-group-${id}`);
+    await toggle.focus();
+    await page.keyboard.press('Enter');
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    await expect(toggle).toBeFocused();
+    await expect(rows).toBeHidden();
+    await page.keyboard.press('Space');
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    await expect(toggle).toBeFocused();
+    await expect(rows).toBeVisible();
+  }
+  expect(await positions()).toEqual(initial);
+});
+
 const timestamp = '2026-08-23T12:00:00.000Z';
 const workspace: Workspace = {
   id: WorkspaceId('preview-workspace-primary'),

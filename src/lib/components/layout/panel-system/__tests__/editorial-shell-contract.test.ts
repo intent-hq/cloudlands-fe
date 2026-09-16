@@ -173,7 +173,7 @@ describe('editorial workspace shell presentation contract', () => {
     expect(sidebar).toContain('data-sidebar-agent={agent.id}');
     expect(launcherMarkup).toContain('itemContent={launcherAgentAvatar}');
     expect(launcherMarkup).toContain('data-sidebar-context={note.id}');
-    expect(launcherMarkup).toContain('data-sidebar-changes-resource');
+    // Launcher action/expansion behavior: MultiSelectTabbedSidebar.open-in.test.ts round-trip.
     expect(launcherMarkup).not.toContain('data-sidebar-change=');
     expect(launcherMarkup).not.toContain('content={`${tab.label}:');
     expect(launcherMarkup).toContain('data-files-open-in');

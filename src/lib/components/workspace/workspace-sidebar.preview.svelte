@@ -3,7 +3,10 @@
   import { PullRequestStatus, WorkspaceStatus } from '$shared/types';
   import { WorkspaceId } from '$shared/types/branded-ids';
   import { definePreview } from '$lib/component-catalog/preview-definition';
-  import { setupSidebarKeySlots } from './workspace-sidebar.preview-fixtures';
+  import {
+    setupSidebarKeySlots,
+    setupSidebarStatusGroups,
+  } from './workspace-sidebar.preview-fixtures';
   import {
     PREVIEW_FIXTURE_IDS,
     PREVIEW_FIXTURE_TIMESTAMPS,
@@ -12,6 +15,7 @@
 
   export interface WorkspaceSidebarPreviewProps {
     loading?: boolean;
+    statusGroups?: boolean;
     width: number;
     workspaces: Workspace[];
     onSelect?: (workspaceId: string) => void;
@@ -82,6 +86,21 @@
     }),
   ];
 
+  const statusWorkspaces = (
+    [
+      ['blocked', 'Waiting for build access'],
+      ['needs_attention', 'Review the sidebar changes'],
+      ['in_progress', 'Polish workspace navigation'],
+      ['idle', 'Plan the next iteration'],
+    ] as const
+  ).map(([displayStatus, title]) =>
+    workspaceFixture({
+      id: WorkspaceId(`preview-status-${displayStatus}`),
+      title,
+      displayStatus,
+    }),
+  );
+
   export const preview = definePreview<WorkspaceSidebarPreviewProps>({
     id: 'workspace-sidebar',
     title: 'Workspace sidebar',
@@ -98,6 +117,10 @@
         props: { width: 360, workspaces: keySlotWorkspaces },
         setup: () => setupSidebarKeySlots(keySlotWorkspaces),
       },
+      'status-groups': {
+        props: { width: 320, workspaces: statusWorkspaces, statusGroups: true },
+        setup: () => setupSidebarStatusGroups(statusWorkspaces),
+      },
     },
   });
 </script>
@@ -106,8 +129,15 @@
   import { m } from '$shared/paraglide/messages.js';
   import SidebarSkeleton from './SidebarSkeleton.svelte';
   import WorkspaceCard from './WorkspaceCard.svelte';
+  import AllWorkspacesCard from '$lib/components/layout/sidebar-nav/cards/AllWorkspacesCard.svelte';
 
-  let { loading = false, width, workspaces, onSelect }: WorkspaceSidebarPreviewProps = $props();
+  let {
+    loading = false,
+    statusGroups = false,
+    width,
+    workspaces,
+    onSelect,
+  }: WorkspaceSidebarPreviewProps = $props();
 </script>
 
 <section
@@ -123,21 +153,28 @@
       {m.layout_sidebarNav_allWorkspaces_title()}
     </div>
     <div class="min-h-0 flex-1 overflow-y-auto py-2" data-workspace-preview-list>
-      {#each workspaces as workspace (workspace.id)}
-        <WorkspaceCard
-          {workspace}
-          isPinned={workspace.id === PREVIEW_FIXTURE_IDS.workspace}
-          isUnread={workspace.id === PREVIEW_FIXTURE_IDS.workspace}
-          onClick={() => onSelect?.(workspace.id)}
-          onTogglePin={() => {}}
-          onMarkAsRead={() => {}}
-          onOpenInNewWindow={() => {}}
-        />
+      {#if statusGroups}
+        <AllWorkspacesCard expanded searchVisible={false} />
       {:else}
-        <p class="px-4 py-8 text-center text-sm text-muted-foreground" data-workspace-preview-empty>
-          {m.layout_allCard_noWorkspaces_label()}
-        </p>
-      {/each}
+        {#each workspaces as workspace (workspace.id)}
+          <WorkspaceCard
+            {workspace}
+            isPinned={workspace.id === PREVIEW_FIXTURE_IDS.workspace}
+            isUnread={workspace.id === PREVIEW_FIXTURE_IDS.workspace}
+            onClick={() => onSelect?.(workspace.id)}
+            onTogglePin={() => {}}
+            onMarkAsRead={() => {}}
+            onOpenInNewWindow={() => {}}
+          />
+        {:else}
+          <p
+            class="px-4 py-8 text-center text-sm text-muted-foreground"
+            data-workspace-preview-empty
+          >
+            {m.layout_allCard_noWorkspaces_label()}
+          </p>
+        {/each}
+      {/if}
     </div>
   {/if}
 </section>

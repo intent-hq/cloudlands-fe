@@ -1,5 +1,8 @@
-import { expect } from '@playwright/experimental-ct-svelte';
-import type { Locator, Page } from '@playwright/test';
+import { expect, type ComponentFixtures } from '@playwright/experimental-ct-svelte';
+
+// Keep locator and page types on the same Playwright version as CT's expect.
+type Page = ReturnType<Awaited<ReturnType<ComponentFixtures['mount']>>['page']>;
+type Locator = ReturnType<Page['locator']>;
 
 export async function assertSidebarListRows(component: Locator, page: Page) {
   await page.evaluate(() => document.fonts.ready);

@@ -155,6 +155,59 @@ for (const { name, width, height, position } of [
     await repoTrigger.click();
     const menu = page.locator('[data-slot="select-content"]');
     await expectViewportBounded(menu);
+    await page.evaluate(() => document.fonts.ready);
+    // Labels may wrap, but every rendered line must remain readable and operable.
+    for (const label of ['Pick a repo', 'New repo', 'Copy local repo']) {
+      const mode = menu.getByRole('button', { name: label, exact: true });
+      await mode.click();
+      if (label === 'Pick a repo') {
+        await expect(menu.getByPlaceholder('owner/repo', { exact: true })).toBeVisible();
+      } else if (label === 'New repo') {
+        await expect(menu.getByPlaceholder('new-project', { exact: true })).toBeVisible();
+      } else {
+        await expect(page.getByTestId('recent-repositories')).toBeVisible();
+      }
+      await expectViewportBounded(menu);
+      await expect
+        .poll(() =>
+          mode.evaluate((element) => {
+            const button = element.getBoundingClientRect();
+            const popup = element.closest('[data-slot="select-content"]')!.getBoundingClientRect();
+            const style = getComputedStyle(element);
+            const content = {
+              left: button.left + parseFloat(style.paddingLeft),
+              right: button.right - parseFloat(style.paddingRight),
+              top: button.top + parseFloat(style.paddingTop),
+              bottom: button.bottom - parseFloat(style.paddingBottom),
+            };
+            const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+            const lines: DOMRect[] = [];
+            while (walker.nextNode()) {
+              const node = walker.currentNode;
+              if (!node.textContent?.trim()) continue;
+              const range = document.createRange();
+              range.selectNodeContents(node);
+              lines.push(...Array.from(range.getClientRects()));
+            }
+            return {
+              hasText: lines.some((line) => line.width > 0 && line.height > 0),
+              contained:
+                button.left >= popup.left &&
+                button.right <= popup.right &&
+                button.top >= popup.top &&
+                button.bottom <= popup.bottom &&
+                lines.every(
+                  (line) =>
+                    line.left >= content.left &&
+                    line.right <= content.right &&
+                    line.top >= content.top &&
+                    line.bottom <= content.bottom,
+                ),
+            };
+          }),
+        )
+        .toEqual({ hasText: true, contained: true });
+    }
     await page
       .getByTestId('recent-repositories')
       .getByRole('button', { name: /^tools/ })

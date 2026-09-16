@@ -10582,15 +10582,15 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:sidebar:si
                   <output aria-label="Sidebar menu selections" class="sr-only">
                     "0"
                 <div class="[&_button[data-sidebar-action=search]]:outline-1 [&_button[data-sidebar-action=search]]:outline-focus-ring [&_button[data-sidebar-action=search]]:outline-offset-2 [&_button[data-sidebar-action=search]]:outline-solid p-3" data-catalog-rendered-state="keyboard-focus">
-                  <div class="flex items-center min-w-0 shrink-0 sidebar-search--header" data-sidebar-search="agents">
+                  <div class="flex items-center min-w-0 shrink-0 sidebar-search--header svelte-<scope>" data-sidebar-search="agents">
                     <span class="inline-flex" id="bits-<id>" tabindex="-1">
                       <div>
                         <button aria-label="Search sidebar" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-3.5 aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent bg-transparent! border-0 border-0! cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast expanded-card-action focus-visible:bg-muted! focus-visible:border-transparent! focus-visible:outline-solid font-inherit font-normal forced-colors:focus-visible:outline forced-colors:hover:outline gap-1.5 group/button hover:bg-muted/50! inline-flex isolate items-center justify-center motion-reduce:transition-none outline-none p-0 p-0! px-0 py-0 relative rounded-(--radius-medium) rounded-md! shadow-none! shrink-0 size-(--control-height-compact) text-foreground transition-colors type-caption whitespace-nowrap" data-delay-duration="300" data-sidebar-action="search" data-slot="button" data-state="closed" data-tooltip-trigger="" type="button">
                           <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                           <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                             <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                              <svg aria-hidden="true" class="shrink-0 size-3.5" data-sidebar-action-icon="search">
-                                <circle>
+                              <svg aria-hidden="true" class="shrink-0 size-3.5" data-sidebar-action-icon="search" role="img">
+                                <rect>
                                 <path>
           <details class="fixture-inspector svelte-<scope> text-muted-foreground text-xs">
             <summary class="svelte-<scope>">
@@ -15633,7 +15633,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:modals:produ
                                 "Stop active work and archive workspace?"
                             <p class="type-body">
                               "This action will stop running work before archiving the workspace."
-                            <div class="min-w-0 pr-8 space-y-4">
+                            <div class="min-w-0 space-y-4">
                               <div class="bg-muted/40 border border-border p-3 rounded-md">
                                 <p class="font-normal text-muted-foreground type-body">
                                   "1 active agent will be stopped"
@@ -16314,7 +16314,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:modals:produ
                                 "Stop active work and delete workspace?"
                             <p class="type-body">
                               "This action will stop running work before permanently deleting the workspace."
-                            <div class="min-w-0 pr-8 space-y-4">
+                            <div class="min-w-0 space-y-4">
                               <div class="bg-muted/40 border border-border p-3 rounded-md">
                                 <p class="font-normal text-muted-foreground type-body">
                                   "2 active agents will be stopped"
@@ -16415,7 +16415,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:modals:produ
                                 "Stop active work and archive workspace?"
                             <p class="type-body">
                               "This action will stop running work before archiving the workspace."
-                            <div class="min-w-0 pr-8 space-y-4">
+                            <div class="min-w-0 space-y-4">
                               <div class="bg-muted/40 border border-border p-3 rounded-md">
                                 <p class="font-normal text-muted-foreground type-body">
                                   "2 active agents will be stopped"
@@ -17755,15 +17755,15 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:popovers:non
                           "intent-hq / cloudlands-fe"
                         <p class="line-clamp-3 min-w-0 mt-1 text-muted-foreground type-caption" data-workspace-hover-card-summary="">
                           "Implementing the approved stacked hover-card polish."
-                    <div class="border-border border-t my-4" data-workspace-hover-card-divider="">
-                    <div class="body-grid gap-4 grid grid-cols-1 items-stretch min-w-0 pb-4 px-5" data-workspace-hover-card-columns="">
+                    <div class="border-border border-t my-3" data-workspace-hover-card-divider="">
+                    <div class="body-grid gap-3 grid grid-cols-1 items-stretch min-w-0 pb-4 px-5" data-workspace-hover-card-columns="">
                       <section aria-label="Pull requests" class="min-w-0 pull-requests" data-workspace-hover-card-pr-column="">
-                        <div aria-label="Pull requests" class="gap-3 grid min-w-0" data-workspace-hover-card-pr-list="" role="list">
-                          <div aria-label="intent-hq/cloudlands-fe #73 Polish workspace hover cards Open ⏳ 1/5 checks running" class="gap-x-2.5 grid grid-cols-[2rem_minmax(0,1fr)_auto_auto] items-center min-w-0" data-pr-identity="intent-hq/cloudlands-fe#73" data-pr-status="open" data-workspace-hover-card-pr-row="" role="listitem">
-                            <svg aria-hidden="true" class="justify-self-center shrink-0 text-success" data-icon="code-pull-request" data-weight="regular" role="img">
+                        <div aria-label="Pull requests" class="gap-2 grid min-w-0" data-workspace-hover-card-pr-list="" role="list">
+                          <div aria-label="intent-hq/cloudlands-fe #73 Polish workspace hover cards Open ⏳ 1/5 checks running" class="gap-x-2 grid grid-cols-[1rem_minmax(0,1fr)_auto_auto] items-center min-w-0" data-pr-identity="intent-hq/cloudlands-fe#73" data-pr-status="open" data-workspace-hover-card-pr-row="" role="listitem">
+                            <svg aria-hidden="true" class="justify-self-start shrink-0 text-success" data-icon="code-pull-request" data-weight="regular" role="img">
                               <rect>
                               <path>
-                            <span class="min-w-0 text-foreground truncate type-body" data-workspace-hover-card-pr-title="">
+                            <span class="min-w-0 text-foreground truncate type-caption" data-workspace-hover-card-pr-title="">
                               "Polish workspace hover cards"
                             <span class="shrink-0 text-muted-foreground type-caption" data-workspace-hover-card-pr-status="">
                               "Open"
