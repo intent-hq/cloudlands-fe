@@ -121,6 +121,36 @@ describe('handleActivate', () => {
     expect(h.deps.createWindow).toHaveBeenCalledTimes(1);
   });
 
+  it('awaits an async createWindow dep: resolves "created" only after the window creator settles', async () => {
+    // The production creators are async (they await the renderer-window gate
+    // in ./renderer-window-gate.ts); handleActivate must not report 'created'
+    // before that promise resolves.
+    const h = makeHarness({ restored: false, backendId: 'remote-4' });
+    h.gate.release();
+    let finishCreate!: () => void;
+    const creating = new Promise<void>((resolve) => (finishCreate = resolve));
+    vi.mocked(h.deps.createWindow).mockImplementationOnce(async (backendId: string) => {
+      await creating;
+      h.windows.push(fakeWindow(`created:${backendId}`));
+    });
+
+    let settled = false;
+    const activation = handleActivate(h.deps).then((outcome) => {
+      settled = true;
+      return outcome;
+    });
+    await flushMicrotasks();
+
+    expect(h.deps.createWindow).toHaveBeenCalledWith('remote-4');
+    expect(settled).toBe(false);
+    expect(h.windows).toHaveLength(0);
+
+    finishCreate();
+    await expect(activation).resolves.toBe('created');
+    expect(settled).toBe(true);
+    expect(h.windows).toHaveLength(1);
+  });
+
   it('release is idempotent and keeps later activations unblocked', async () => {
     const h = makeHarness({ restored: false });
     h.gate.release();

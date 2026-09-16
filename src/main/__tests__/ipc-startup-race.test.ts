@@ -22,11 +22,18 @@
  * 4. Asserts that NONE of the renderer-startup channels are in the secondary
  *    group. If this assertion fails, a race condition has been reintroduced.
  *
- * A second variant of the same race is sequencing rather than placement: a
- * macOS `activate` event during boot must not create a window before the
- * critical section has registered its handlers (e.g. `connections:list`).
- * That path is guarded by `src/main/app-activate.ts` and
- * `./app-activate.test.ts`.
+ * A second variant of the same race is sequencing rather than placement: any
+ * window-creation trigger that fires during boot (macOS `activate`, deep link,
+ * second instance, menu, notification click) must not create a window before
+ * the critical section has registered its handlers (e.g. `connections:list`).
+ * That is guarded by construction: every creator in `src/main/window.ts`
+ * awaits the renderer-window gate in `src/main/renderer-window-gate.ts`, which
+ * the boot flow releases via `markRendererWindowsAllowed()` right after the
+ * critical IPC block (and again from its `finally`). The behavioural cases
+ * live in `./window-sessions-multibackend.test.ts` ("renderer window gate");
+ * this file asserts the release sits at the right place in `index.ts`. The
+ * activate-specific sequencing gate is covered by `src/main/app-activate.ts`
+ * and `./app-activate.test.ts`.
  */
 // @verify-changed-triggers: src/main/index.ts, src/main/**/*.ipc.ts, src/features/**/*.ipc.ts,
 //   src/shared/ipc-registry.ts, src/shared/ipc/channels.ts
@@ -110,6 +117,56 @@ describe('IPC Startup Race Condition', () => {
     expect(authRefresh).toBeGreaterThan(windowCreated);
     expect(authRefresh).toBeGreaterThan(backendHandlers);
     expect(source).not.toContain('await refreshGitHubAuthStatus();');
+  });
+
+  it('releases the renderer-window gate after the last critical IPC registration and before the first window creator, and again from bootFlow.finally', () => {
+    const indexPath = path.join(SRC_ROOT, 'main', 'index.ts');
+    const source = fs.readFileSync(indexPath, 'utf-8');
+
+    const criticalStart = source.indexOf("startupMetrics.start('criticalIPC')");
+    const criticalEnd = source.indexOf("startupMetrics.end('criticalIPC')");
+    expect(criticalStart).toBeGreaterThan(-1);
+    expect(criticalEnd).toBeGreaterThan(criticalStart);
+    const criticalSection = source.slice(criticalStart, criticalEnd);
+
+    // Last active (non-commented) IPC registration inside the critical section.
+    const setupCallRegex = /\b(?:setup\w+IPC|register\w+Handlers)\s*\(/g;
+    let lastRegistration = -1;
+    let match: RegExpExecArray | null;
+    while ((match = setupCallRegex.exec(criticalSection)) !== null) {
+      const lineStart = criticalSection.lastIndexOf('\n', match.index) + 1;
+      const linePrefix = criticalSection.slice(lineStart, match.index).trim();
+      if (linePrefix.startsWith('//')) continue;
+      lastRegistration = criticalStart + match.index;
+    }
+    expect(lastRegistration).toBeGreaterThan(-1);
+
+    const releaseCalls: number[] = [];
+    const releaseRegex = /^[ \t]*markRendererWindowsAllowed\(\);/gm;
+    while ((match = releaseRegex.exec(source)) !== null) {
+      releaseCalls.push(match.index);
+    }
+    expect(releaseCalls).toHaveLength(2);
+
+    // 1) Boot release: after the last critical registration, before the
+    //    critical section ends and before any creator runs.
+    const bootRelease = releaseCalls[0];
+    const firstCreator = Math.min(
+      ...['await restoreAllBackendWindowSessions(', 'await createWindow(']
+        .map((needle) => source.indexOf(needle, criticalEnd))
+        .filter((idx) => idx > -1),
+    );
+    expect(bootRelease).toBeGreaterThan(lastRegistration);
+    expect(bootRelease).toBeLessThan(criticalEnd);
+    expect(firstCreator).toBeGreaterThan(bootRelease);
+
+    // 2) Failure-path release: inside the bootFlow.finally callback, so a boot
+    //    that throws before the window block never leaves a creator hanging.
+    const finallyStart = source.indexOf('bootFlow.finally(');
+    expect(finallyStart).toBeGreaterThan(-1);
+    const finallyEnd = source.indexOf('});', finallyStart);
+    expect(releaseCalls[1]).toBeGreaterThan(finallyStart);
+    expect(releaseCalls[1]).toBeLessThan(finallyEnd);
   });
 
   it('should identify setup functions in critical vs secondary sections', () => {

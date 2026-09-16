@@ -7,7 +7,9 @@
  *   - per-backend save/restore (one backend's save never clobbers another's),
  *   - lazy migration of a legacy top-level array into the `local` bucket,
  *   - `restoreWindowsForBackend` (restore a backend's saved layout, or open a
- *     fresh window) and the open/close-per-backend hooks.
+ *     fresh window) and the open/close-per-backend hooks,
+ *   - the renderer-window gate (`../renderer-window-gate.ts`): no creation
+ *     path constructs a `BrowserWindow` before the boot flow releases it.
  */
 
 import * as fs from 'fs';
@@ -128,6 +130,7 @@ vi.mock('../utils/resolve-app-title', () => ({
   registerWindowTitleListener: mockRegisterWindowTitleListener,
 }));
 
+import type { DeepLinkHandler } from '../../features/deeplink/deep-link-handler';
 import { _resetHudWindowRefForTests, isTrackedHudWindow } from '../hud-window';
 import {
   _resetRendererWindowGateForTests,
@@ -140,6 +143,8 @@ import {
   closeWindowsForBackend,
   clearWindowSessionsSnapshot,
   createWindow,
+  createWindowForDeepLink,
+  createWindowForSession,
   ensureLocalWindowBeforeClosingBackend,
   getWindowSessionsPath,
   getBackendIdForWebContents,
@@ -171,6 +176,11 @@ function seedLiveWindow(
 
 function readMap(): Record<string, WindowSession[]> {
   return JSON.parse(fs.readFileSync(getWindowSessionsPath(), 'utf-8'));
+}
+
+/** Drain every already-queued microtask (and a macrotask turn) without releasing any gate. */
+function flushMicrotasks(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
 describe('multi-backend window sessions', () => {
@@ -1062,6 +1072,111 @@ describe('multi-backend window sessions', () => {
       const live = FakeBrowserWindow.getAllWindows();
       expect(live).toHaveLength(1);
       expect(live[0].webContents.getURL()).toContain('/work/remote');
+    });
+  });
+
+  describe('renderer window gate', () => {
+    const bounds = { x: 100, y: 100, width: 1024, height: 768 };
+    // A non-pair deep link whose action opens a NEW window (not `settings`,
+    // not `create` without newWindow) — the only deep-link branch that
+    // constructs a BrowserWindow.
+    const openDeepLink = 'intent://open?id=workspace_123';
+    const openDeepLinkHandler = {
+      parseDeepLink: () => ({ type: 'open' as const, params: { id: 'workspace_123' } }),
+      handleDeepLink: vi.fn(async () => {}),
+    } as unknown as DeepLinkHandler;
+
+    beforeEach(() => {
+      // The outer beforeEach releases the gate for the rest of the suite; the
+      // cases below start with it closed, as at process start.
+      _resetRendererWindowGateForTests();
+      vi.mocked(setMainWindow).mockClear();
+    });
+
+    it('createWindow constructs nothing until the gate is released, then exactly one window', async () => {
+      const pending = createWindow();
+      await flushMicrotasks();
+      expect(FakeBrowserWindow.instances).toHaveLength(0);
+
+      markRendererWindowsAllowed();
+      await pending;
+
+      expect(FakeBrowserWindow.instances).toHaveLength(1);
+      expect(mockRegisterWindowTitleListener).toHaveBeenCalledTimes(1);
+    });
+
+    it('createWindowForDeepLink (non-pair intent:// URL) waits for the gate, then opens exactly one window', async () => {
+      const pending = createWindowForDeepLink(openDeepLink, openDeepLinkHandler);
+      await flushMicrotasks();
+      expect(FakeBrowserWindow.instances).toHaveLength(0);
+
+      markRendererWindowsAllowed();
+      await pending;
+
+      expect(FakeBrowserWindow.instances).toHaveLength(1);
+      expect(FakeBrowserWindow.instances[0].webContents.getURL()).toContain('deepLink=');
+    });
+
+    it('createWindowForSession waits for the gate, then restores exactly one window', async () => {
+      const pending = createWindowForSession({ route: '/work/r1', bounds }, true, 'remote-1');
+      await flushMicrotasks();
+      expect(FakeBrowserWindow.instances).toHaveLength(0);
+      expect(setMainWindow).not.toHaveBeenCalled();
+
+      markRendererWindowsAllowed();
+      await pending;
+
+      expect(FakeBrowserWindow.instances).toHaveLength(1);
+      expect(FakeBrowserWindow.instances[0].backendId).toBe('remote-1');
+    });
+
+    it('restoreAllBackendWindowSessions constructs nothing while closed, then every saved window', async () => {
+      fs.writeFileSync(
+        getWindowSessionsPath(),
+        JSON.stringify({
+          local: [{ route: '/work/l', bounds }],
+          'remote-1': [
+            { route: '/work/r1a', bounds },
+            { route: '/work/r1b', bounds },
+          ],
+        }),
+        'utf-8',
+      );
+      const connect = vi.fn().mockResolvedValue({});
+
+      const pending = restoreAllBackendWindowSessions('local', connect);
+      await flushMicrotasks();
+      expect(FakeBrowserWindow.instances).toHaveLength(0);
+
+      markRendererWindowsAllowed();
+      await expect(pending).resolves.toBe(true);
+
+      expect(FakeBrowserWindow.instances).toHaveLength(3);
+      expect(FakeBrowserWindow.instances.map((w) => w.backendId)).toEqual([
+        'local',
+        'remote-1',
+        'remote-1',
+      ]);
+    });
+
+    it('two creators waiting concurrently both complete after a single release', async () => {
+      const first = createWindow('local');
+      const second = createWindowForSession({ route: '/work/r1', bounds }, false, 'remote-1');
+      await flushMicrotasks();
+      expect(FakeBrowserWindow.instances).toHaveLength(0);
+
+      markRendererWindowsAllowed();
+      await Promise.all([first, second]);
+
+      expect(FakeBrowserWindow.instances).toHaveLength(2);
+      expect(FakeBrowserWindow.instances.map((w) => w.backendId).sort()).toEqual([
+        'local',
+        'remote-1',
+      ]);
+
+      // The gate stays open: a later creator no longer waits.
+      await createWindow('local');
+      expect(FakeBrowserWindow.instances).toHaveLength(3);
     });
   });
 });
