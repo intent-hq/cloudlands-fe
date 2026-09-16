@@ -2411,9 +2411,10 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:screen:scree
                   <p>
                     "Screen description"
             <div class="flex-1 min-h-0 overflow-y-auto" data-slot="takeover-screen-body">
-              <div class="flex-1 min-h-0 min-w-0 overflow-y-auto p-5" data-slot="screen-body">
-                <p>
-                  "Screen body"
+              <div>
+                <div class="flex-1 min-h-0 min-w-0 overflow-y-auto p-5" data-slot="screen-body">
+                  <p>
+                    "Screen body"
             <footer class="border-border border-t px-5 py-3 shrink-0" data-slot="screen-footer">
               <div class="flex gap-3 items-center justify-between" data-size="default" data-slot="form-actions">
                 <div class="flex items-center" data-slot="form-actions-destructive">
@@ -17122,69 +17123,70 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:modals:produ
                                                   <rect>
                                                   <path>
                                     <div class="flex-1 min-h-0 overflow-y-auto" data-slot="takeover-screen-body">
-                                      <div class="flex-1 min-h-0 min-w-0 overflow-auto p-5 px-6 py-5" data-slot="screen-body">
-                                        <div class="flex gap-3 items-center justify-between mb-3 px-1">
-                                          <label class="cursor-pointer flex font-medium gap-2 items-center text-foreground text-sm">
-                                            <button aria-checked="true" aria-label="Select All" aria-readonly="false" aria-required="false" class="active:bg-active after:-inset-1.5 after:absolute after:content-[''] bg-card border-[1.5px] border-border checkbox-root cursor-pointer data-[state=checked]:bg-primary data-[state=checked]:border-primary data-[state=checked]:hover:bg-primary data-[state=checked]:text-primary-foreground data-[state=indeterminate]:bg-primary data-[state=indeterminate]:border-primary data-[state=indeterminate]:hover:bg-primary data-[state=indeterminate]:text-primary-foreground duration-spring-fast ease-spring-fast focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:outline-offset-2 focus-visible:ring-0 focus-visible:shadow-none h-4 hover:bg-hover hover:border-input inline-flex items-center justify-center motion-reduce:transition-none relative rounded-(--radius-small) shadow-(--elevation-raised) shrink-0 transition-[border-color,background-color,box-shadow,opacity] w-4" data-checkbox-root="" data-state="checked" id="" role="checkbox" type="button">
-                                              <svg aria-hidden="true" class="checkbox-mark size-[75%] svelte-<scope>">
-                                                <path class="drawn svelte-<scope>">
-                                            <span>
-                                              "Select All"
-                                          <span aria-hidden="true" class="tabular-nums text-muted-foreground type-caption">
-                                            "2/2"
-                                        <div aria-label="Agents were interrupted" class="flex flex-col gap-0 isolate max-w-full relative select-none w-72" role="group">
-                                          <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
-                                          <div class="min-w-0" data-slot="sectioned-list">
-                                            <section class="min-w-0">
-                                              <div class="backdrop-blur-sm bg-background/95 font-medium px-3 py-1.5 sticky text-muted-foreground text-xs top-0 z-20">
-                                                "Design system"
-                                              <div aria-label="Design system" aria-multiselectable="true" class="mb-3 min-w-0 overflow-auto" data-slot="list-view" role="listbox">
-                                                <div class="min-w-0 relative">
-                                                  <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
-                                                    <div class="absolute bg-selected" tokens=["--radius-row"]>
-                                                  <div>
-                                                    <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="0" data-slot="list-view-item" role="option" tabindex="0">
-                                                      <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
-                                                        <div class="flex items-center justify-center shrink-0">
-                                                          <span aria-hidden="true" class="bg-primary border-[1.5px] border-primary inline-flex items-center justify-center rounded-(--radius-small) shadow-(--elevation-raised) shrink-0 size-4 text-primary-foreground">
-                                                            <svg class="size-[75%]">
-                                                              <path>
-                                                        <div class="flex-1 min-w-0">
-                                                          <div class="flex gap-2 items-baseline min-w-0">
-                                                            <div class="font-medium! min-w-0 text-foreground truncate type-caption">
-                                                              "Implementor"
-                                                            <div class="shrink-0 text-muted-foreground type-caption">
-                                                              <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="blue" data-size="default" data-slot="badge" data-variant="solid" tokens=["--background","--color-blue-500"]>
-                                                                <span class="rounded-full shrink-0 size-[7px]" data-slot="badge-dot" tokens=["--color-blue-500"]>
-                                                                <span class="[text-box:trim-both_cap_alphabetic]">
-                                                                  "running"
-                                                          <div class="min-w-0 mt-0.5 text-muted-foreground type-caption">
-                                                            "running • interrupted Sep 11, 2026, 12:00 PM"
-                                            <section class="min-w-0">
-                                              <div class="backdrop-blur-sm bg-background/95 font-medium px-3 py-1.5 sticky text-muted-foreground text-xs top-0 z-20">
-                                                "Release prep"
-                                              <div aria-label="Release prep" aria-multiselectable="true" class="mb-3 min-w-0 overflow-auto" data-slot="list-view" role="listbox">
-                                                <div class="min-w-0 relative">
-                                                  <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
-                                                    <div class="absolute bg-selected" tokens=["--radius-row"]>
-                                                  <div>
-                                                    <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="0" data-slot="list-view-item" role="option" tabindex="0">
-                                                      <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
-                                                        <div class="flex items-center justify-center shrink-0">
-                                                          <span aria-hidden="true" class="bg-primary border-[1.5px] border-primary inline-flex items-center justify-center rounded-(--radius-small) shadow-(--elevation-raised) shrink-0 size-4 text-primary-foreground">
-                                                            <svg class="size-[75%]">
-                                                              <path>
-                                                        <div class="flex-1 min-w-0">
-                                                          <div class="flex gap-2 items-baseline min-w-0">
-                                                            <div class="font-medium! min-w-0 text-foreground truncate type-caption">
-                                                              "Reviewer"
-                                                            <div class="shrink-0 text-muted-foreground type-caption">
-                                                              <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="blue" data-size="default" data-slot="badge" data-variant="solid" tokens=["--background","--color-blue-500"]>
-                                                                <span class="rounded-full shrink-0 size-[7px]" data-slot="badge-dot" tokens=["--color-blue-500"]>
-                                                                <span class="[text-box:trim-both_cap_alphabetic]">
-                                                                  "waiting"
-                                                          <div class="min-w-0 mt-0.5 text-muted-foreground type-caption">
-                                                            "waiting • interrupted Sep 11, 2026, 12:00 PM"
+                                      <div>
+                                        <div class="flex-1 min-h-0 min-w-0 overflow-auto p-5 px-6 py-5" data-slot="screen-body">
+                                          <div class="flex gap-3 items-center justify-between mb-3 px-1">
+                                            <label class="cursor-pointer flex font-medium gap-2 items-center text-foreground text-sm">
+                                              <button aria-checked="true" aria-label="Select All" aria-readonly="false" aria-required="false" class="active:bg-active after:-inset-1.5 after:absolute after:content-[''] bg-card border-[1.5px] border-border checkbox-root cursor-pointer data-[state=checked]:bg-primary data-[state=checked]:border-primary data-[state=checked]:hover:bg-primary data-[state=checked]:text-primary-foreground data-[state=indeterminate]:bg-primary data-[state=indeterminate]:border-primary data-[state=indeterminate]:hover:bg-primary data-[state=indeterminate]:text-primary-foreground duration-spring-fast ease-spring-fast focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:outline-offset-2 focus-visible:ring-0 focus-visible:shadow-none h-4 hover:bg-hover hover:border-input inline-flex items-center justify-center motion-reduce:transition-none relative rounded-(--radius-small) shadow-(--elevation-raised) shrink-0 transition-[border-color,background-color,box-shadow,opacity] w-4" data-checkbox-root="" data-state="checked" id="" role="checkbox" type="button">
+                                                <svg aria-hidden="true" class="checkbox-mark size-[75%] svelte-<scope>">
+                                                  <path class="drawn svelte-<scope>">
+                                              <span>
+                                                "Select All"
+                                            <span aria-hidden="true" class="tabular-nums text-muted-foreground type-caption">
+                                              "2/2"
+                                          <div aria-label="Agents were interrupted" class="flex flex-col gap-0 isolate max-w-full relative select-none w-72" role="group">
+                                            <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
+                                            <div class="min-w-0" data-slot="sectioned-list">
+                                              <section class="min-w-0">
+                                                <div class="backdrop-blur-sm bg-background/95 font-medium px-3 py-1.5 sticky text-muted-foreground text-xs top-0 z-20">
+                                                  "Design system"
+                                                <div aria-label="Design system" aria-multiselectable="true" class="mb-3 min-w-0 overflow-auto" data-slot="list-view" role="listbox">
+                                                  <div class="min-w-0 relative">
+                                                    <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
+                                                      <div class="absolute bg-selected" tokens=["--radius-row"]>
+                                                    <div>
+                                                      <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="0" data-slot="list-view-item" role="option" tabindex="0">
+                                                        <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
+                                                          <div class="flex items-center justify-center shrink-0">
+                                                            <span aria-hidden="true" class="bg-primary border-[1.5px] border-primary inline-flex items-center justify-center rounded-(--radius-small) shadow-(--elevation-raised) shrink-0 size-4 text-primary-foreground">
+                                                              <svg class="size-[75%]">
+                                                                <path>
+                                                          <div class="flex-1 min-w-0">
+                                                            <div class="flex gap-2 items-baseline min-w-0">
+                                                              <div class="font-medium! min-w-0 text-foreground truncate type-caption">
+                                                                "Implementor"
+                                                              <div class="shrink-0 text-muted-foreground type-caption">
+                                                                <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="blue" data-size="default" data-slot="badge" data-variant="solid" tokens=["--background","--color-blue-500"]>
+                                                                  <span class="rounded-full shrink-0 size-[7px]" data-slot="badge-dot" tokens=["--color-blue-500"]>
+                                                                  <span class="[text-box:trim-both_cap_alphabetic]">
+                                                                    "running"
+                                                            <div class="min-w-0 mt-0.5 text-muted-foreground type-caption">
+                                                              "running • interrupted Sep 11, 2026, 12:00 PM"
+                                              <section class="min-w-0">
+                                                <div class="backdrop-blur-sm bg-background/95 font-medium px-3 py-1.5 sticky text-muted-foreground text-xs top-0 z-20">
+                                                  "Release prep"
+                                                <div aria-label="Release prep" aria-multiselectable="true" class="mb-3 min-w-0 overflow-auto" data-slot="list-view" role="listbox">
+                                                  <div class="min-w-0 relative">
+                                                    <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
+                                                      <div class="absolute bg-selected" tokens=["--radius-row"]>
+                                                    <div>
+                                                      <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="0" data-slot="list-view-item" role="option" tabindex="0">
+                                                        <div class="flex gap-3 items-center min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
+                                                          <div class="flex items-center justify-center shrink-0">
+                                                            <span aria-hidden="true" class="bg-primary border-[1.5px] border-primary inline-flex items-center justify-center rounded-(--radius-small) shadow-(--elevation-raised) shrink-0 size-4 text-primary-foreground">
+                                                              <svg class="size-[75%]">
+                                                                <path>
+                                                          <div class="flex-1 min-w-0">
+                                                            <div class="flex gap-2 items-baseline min-w-0">
+                                                              <div class="font-medium! min-w-0 text-foreground truncate type-caption">
+                                                                "Reviewer"
+                                                              <div class="shrink-0 text-muted-foreground type-caption">
+                                                                <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="blue" data-size="default" data-slot="badge" data-variant="solid" tokens=["--background","--color-blue-500"]>
+                                                                  <span class="rounded-full shrink-0 size-[7px]" data-slot="badge-dot" tokens=["--color-blue-500"]>
+                                                                  <span class="[text-box:trim-both_cap_alphabetic]">
+                                                                    "waiting"
+                                                            <div class="min-w-0 mt-0.5 text-muted-foreground type-caption">
+                                                              "waiting • interrupted Sep 11, 2026, 12:00 PM"
                                     <footer class="bg-muted/20 border-border border-t px-6 py-4 shrink-0" data-slot="screen-footer">
                                       <div class="flex gap-3 items-center justify-between" data-size="default" data-slot="form-actions">
                                         <div class="flex items-center" data-slot="form-actions-destructive">
@@ -18500,10 +18502,11 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:screen-state
                                 <p>
                                   "Review the repository before continuing."
                           <div class="flex-1 min-h-0 overflow-y-auto" data-slot="takeover-screen-body">
-                            <div class="flex-1 min-h-0 min-w-0 overflow-y-auto p-5" data-slot="screen-body">
-                              <div class="gap-3 grid">
-                                <div class="bg-(--skeleton) h-3 rounded-(--radius-small) skeleton-shimmer svelte-<scope> w-3/4" data-slot="skeleton">
-                                <div class="bg-(--skeleton) h-20 rounded-(--radius-small) skeleton-shimmer svelte-<scope> w-full" data-slot="skeleton">
+                            <div>
+                              <div class="flex-1 min-h-0 min-w-0 overflow-y-auto p-5" data-slot="screen-body">
+                                <div class="gap-3 grid">
+                                  <div class="bg-(--skeleton) h-3 rounded-(--radius-small) skeleton-shimmer svelte-<scope> w-3/4" data-slot="skeleton">
+                                  <div class="bg-(--skeleton) h-20 rounded-(--radius-small) skeleton-shimmer svelte-<scope> w-full" data-slot="skeleton">
                           <footer class="border-border border-t px-5 py-3 shrink-0" data-slot="screen-footer">
                             <div class="flex gap-3 items-center justify-between" data-size="default" data-slot="form-actions">
                               <div class="flex items-center" data-slot="form-actions-destructive">
@@ -18538,10 +18541,11 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:screen-state
                                 <p>
                                   "Review the repository before continuing."
                           <div class="flex-1 min-h-0 overflow-y-auto" data-slot="takeover-screen-body">
-                            <div class="flex-1 min-h-0 min-w-0 overflow-y-auto p-5" data-slot="screen-body">
-                              <div class="gap-3 grid">
-                                <div class="bg-(--skeleton) h-3 rounded-(--radius-small) skeleton-shimmer svelte-<scope> w-3/4" data-slot="skeleton">
-                                <div class="bg-(--skeleton) h-20 rounded-(--radius-small) skeleton-shimmer svelte-<scope> w-full" data-slot="skeleton">
+                            <div>
+                              <div class="flex-1 min-h-0 min-w-0 overflow-y-auto p-5" data-slot="screen-body">
+                                <div class="gap-3 grid">
+                                  <div class="bg-(--skeleton) h-3 rounded-(--radius-small) skeleton-shimmer svelte-<scope> w-3/4" data-slot="skeleton">
+                                  <div class="bg-(--skeleton) h-20 rounded-(--radius-small) skeleton-shimmer svelte-<scope> w-full" data-slot="skeleton">
                           <footer class="border-border border-t px-5 py-3 shrink-0" data-slot="screen-footer">
                             <div class="flex gap-3 items-center justify-between" data-size="default" data-slot="form-actions">
                               <div class="flex items-center" data-slot="form-actions-destructive">

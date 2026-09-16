@@ -67,11 +67,12 @@
     />
     <div
       class="min-h-0 flex-1 overflow-y-auto"
-      use:animatedHeight={true}
       data-slot="takeover-screen-body"
       {...bodyRegionAttributes}
     >
-      <ScreenBody class={bodyClass}>{@render children()}</ScreenBody>
+      <div use:animatedHeight={true}>
+        <ScreenBody class={bodyClass}>{@render children()}</ScreenBody>
+      </div>
     </div>
     <ScreenFooter
       {destructive}
