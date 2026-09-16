@@ -134,6 +134,7 @@ import { attachAppCommandHistoryNavigation } from './app-command-navigation';
 import { attachSwipeHistoryNavigation } from './swipe-navigation';
 import { attachRendererHangMonitor } from './renderer-hang-monitor';
 import { createBootWindowsGate, handleActivate } from './app-activate';
+import { markRendererWindowsAllowed } from './renderer-window-gate';
 import { setupHardwareConsoleMain } from '../features/hardware-console/main/hardware-console.ipc';
 import { setupConsoleOwnerTracking } from '../features/hardware-console/main/console-owner';
 import { requestHardwareConsoleLightingClear } from '../features/hardware-console/main/clear-lighting-shutdown';
@@ -592,8 +593,10 @@ async function saveOpenWindowSessions(): Promise<void> {
 
 // Released once the boot flow below has created its windows (or skipped
 // creating them: second instance, boot failure). `app.on('activate')` waits on
-// it so an early activate never creates a window before the critical IPC
-// handlers exist or duplicates the boot windows (see ./app-activate.ts).
+// it so an early activate never duplicates the boot windows (see
+// ./app-activate.ts). IPC readiness is a separate, central gate: every window
+// creator in ./window.ts awaits ./renderer-window-gate.ts, which the boot flow
+// releases right after the critical IPC block.
 const bootWindowsGate = createBootWindowsGate();
 
 const bootFlow = app.whenReady().then(async () => {
@@ -1596,6 +1599,10 @@ const bootFlow = app.whenReady().then(async () => {
   registerWorkspaceTransferHandlers(); // Workspace transfer relay (wizard steps 3–4)
   registerWorkspaceImportHandlers(); // Import Workspace from File (File menu)
 
+  // Every critical handler a renderer invokes on boot now exists: let the
+  // window creators in ./window.ts proceed (they all await this gate).
+  markRendererWindowsAllowed();
+
   // Hydrate the main-process provider catalog cache (non-blocking): the
   // JSON-RPC client queues the request until the daemon socket connects.
   const { primeProviderCatalog } = await import('./utils/provider-catalog-accessor.js');
@@ -1774,7 +1781,7 @@ const bootFlow = app.whenReady().then(async () => {
           windowBackendId = LOCAL_CONNECTION_ID;
         }
       }
-      createWindow(windowBackendId);
+      await createWindow(windowBackendId);
     }
 
     startupMetrics.end('createWindow');
@@ -1868,9 +1875,13 @@ const bootFlow = app.whenReady().then(async () => {
 });
 
 // Boot threw before reaching the window-creation block: never leave an
-// awaiting activate handler hung. `finally` keeps the rejection observable by
-// the process-level unhandled-rejection handler, as before.
-void bootFlow.finally(() => bootWindowsGate.release());
+// awaiting activate handler or window creator hung. `finally` keeps the
+// rejection observable by the process-level unhandled-rejection handler, as
+// before.
+void bootFlow.finally(() => {
+  bootWindowsGate.release();
+  markRendererWindowsAllowed();
+});
 
 // This window-all-closed handler was duplicated and has been removed.
 // The proper handler is defined below at line 448.
@@ -1943,7 +1954,7 @@ app.on('window-all-closed', async () => {
     if (!proceed) {
       logger.info('window-all-closed quit cancelled; re-opening a window');
       try {
-        createWindow();
+        await createWindow();
       } catch (err) {
         logger.error(
           // i18n-ignore (developer log message)
@@ -2033,13 +2044,15 @@ app.on('open-url', async (event: Electron.Event, url: string) => {
     return;
   }
 
-  // If app is ready and has a main window, create a new window for the deep link
+  // With a live main window, route the deep link now (settings/create go to
+  // that window; other types open a new one — the creator itself awaits the
+  // renderer-window gate). Without one, park the URL for the startup pass so
+  // it can be embedded in the boot window's load URL.
   const mainWindow = getMainWindow();
   if (mainWindow && !mainWindow.isDestroyed()) {
     await createWindowForDeepLink(url, deepLinkHandler);
   } else {
-    // App is not ready yet, store the URL for processing after startup
-    logger.info('App not ready, storing URL for later processing');
+    logger.info('No main window yet, storing URL for later processing');
     await deepLinkHandler.handleDeepLink(url, null);
   }
 });
@@ -2078,6 +2091,8 @@ if (!gotTheLock) {
         // instance is already running, so no parking or window is needed.
         await handlePairDeepLink(deepLinkUrl);
       } else {
+        // Route only when a main window exists to receive/anchor the link;
+        // any new window the creator opens awaits the renderer-window gate.
         const mainWindow = getMainWindow();
         if (mainWindow && !mainWindow.isDestroyed()) {
           await createWindowForDeepLink(deepLinkUrl, deepLinkHandler);
@@ -2100,8 +2115,8 @@ app.on('activate', async () => {
   if (isSecondInstance) return;
 
   // Waits for the boot flow's window creation first, so a first-launch
-  // activate becomes a focus of the boot window rather than a second window
-  // racing the critical IPC registration (see ./app-activate.ts).
+  // activate becomes a focus of the boot window rather than a duplicate; the
+  // IPC-readiness wait lives inside the creators (see ./app-activate.ts).
   await handleActivate<BrowserWindowType>({
     whenBootWindowsReady: () => bootWindowsGate.ready,
     getAllWindows: () => BrowserWindow.getAllWindows(),

@@ -81,6 +81,7 @@ vi.mock('../../shared/logger', () => ({
 
 import type { DeepLinkHandler } from '../../features/deeplink/deep-link-handler';
 import { createWindow, createWindowForDeepLink } from '../window';
+import { markRendererWindowsAllowed } from '../renderer-window-gate';
 import { findIntentUrl } from '../../features/deeplink/utils/find-intent-url';
 import { TC_ADDRESS_WITH_PSK } from '../../test/fixtures/tc-address.fixture';
 
@@ -116,6 +117,7 @@ beforeEach(() => {
   logLines.length = 0;
   handlePairDeepLink.mockResolvedValue(undefined);
   mockGetMainWindow.mockReturnValue(makeMainWindow());
+  markRendererWindowsAllowed();
 });
 
 describe('createWindowForDeepLink pair-link routing', () => {
@@ -160,9 +162,9 @@ describe('createWindow cold-start argv scan', () => {
     process.argv = originalArgv;
   });
 
-  it('never embeds a pair link (or its token) in the renderer load URL', () => {
+  it('never embeds a pair link (or its token) in the renderer load URL', async () => {
     process.argv = ['electron', '.', PAIR_LINK];
-    createWindow();
+    await createWindow();
     expect(mockLoadUrl).toHaveBeenCalledTimes(1);
     const loadedUrl = mockLoadUrl.mock.calls[0][0] as string;
     expect(loadedUrl).not.toContain(TOKEN);
@@ -170,17 +172,17 @@ describe('createWindow cold-start argv scan', () => {
     expect(logLines.join('\n')).not.toContain(TOKEN);
   });
 
-  it('excludes an uppercase pair link from URL embedding too', () => {
+  it('excludes an uppercase pair link from URL embedding too', async () => {
     process.argv = ['electron', '.', PAIR_LINK.toUpperCase()];
-    createWindow();
+    await createWindow();
     const loadedUrl = mockLoadUrl.mock.calls[0][0] as string;
     expect(loadedUrl).not.toContain('deepLink=');
     expect(logLines.join('\n')).not.toContain(TOKEN.toUpperCase());
   });
 
-  it('still embeds non-pair deep links in the load URL', () => {
+  it('still embeds non-pair deep links in the load URL', async () => {
     process.argv = ['electron', '.', 'intent://open?id=workspace_123'];
-    createWindow();
+    await createWindow();
     const loadedUrl = mockLoadUrl.mock.calls[0][0] as string;
     expect(loadedUrl).toContain('deepLink=');
     const encoded = loadedUrl.split('deepLink=')[1];

@@ -5,9 +5,18 @@
  * `src/main/index.ts` awaits several slow steps (sidecar start, settings
  * services) before it registers the backend IPC handlers and creates its own
  * windows. An `activate` that arrives during that wait must not create a
- * window itself: the renderer would boot before handlers such as
- * `connections:list` exist ("No handler registered"), and boot would later
- * create its windows on top of it (duplicates).
+ * window itself, or boot would later create its windows on top of it
+ * (duplicates).
+ *
+ * Two layered gates cover the startup race:
+ * - The renderer-window gate in `./renderer-window-gate.ts` is awaited inside
+ *   every window creator in `./window.ts`, so no renderer boots before the
+ *   critical IPC handlers (e.g. `connections:list`) are registered — that
+ *   invariant is enforced centrally, not here.
+ * - The boot-windows gate (`createBootWindowsGate`) is the sequencing gate
+ *   specific to `activate`: it holds an early activate until boot has decided
+ *   whether to restore/create its own windows, so the activate becomes a focus
+ *   of the boot window rather than a duplicate.
  *
  * This is the second variant of the startup race guarded by
  * `src/main/__tests__/ipc-startup-race.test.ts` (critical vs. deferred IPC
@@ -48,7 +57,7 @@ export interface ActivateDeps<W extends ActivateWindow> {
   focusWindow: (window: W) => void;
   getActiveId: () => Promise<string>;
   restoreSessions: (backendId: string) => Promise<boolean>;
-  createWindow: (backendId: string) => void;
+  createWindow: (backendId: string) => void | Promise<void>;
 }
 
 type ZeroWindowOutcome = 'restored' | 'created';
@@ -91,6 +100,6 @@ async function restoreOrCreateWindow<W extends ActivateWindow>(
   if (await deps.restoreSessions(backendId)) {
     return 'restored';
   }
-  deps.createWindow(backendId);
+  await deps.createWindow(backendId);
   return 'created';
 }

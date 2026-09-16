@@ -18,6 +18,7 @@ import {
   getWindowTitleBarOptions,
 } from '../shared/main/window-appearance';
 import { resolveAppDockIconPath, resolveAppIconPath } from './utils/resolve-app-icon';
+import { whenRendererWindowsAllowed } from './renderer-window-gate';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -121,7 +122,16 @@ function buildWindowOptions(opts: {
   };
 }
 
-function createConfiguredWindow(opts: Parameters<typeof buildWindowOptions>[0]): BrowserWindowType {
+/**
+ * The one seam every renderer window passes through. Awaits the
+ * renderer-window gate first so no renderer boots before the critical IPC
+ * handlers are registered (see ./renderer-window-gate.ts); callers never
+ * re-derive that readiness themselves.
+ */
+async function createConfiguredWindow(
+  opts: Parameters<typeof buildWindowOptions>[0],
+): Promise<BrowserWindowType> {
+  await whenRendererWindowsAllowed();
   const window = new BrowserWindow(buildWindowOptions(opts));
   registerWindowTitleListener(window);
   return window;
@@ -595,11 +605,11 @@ export function loadWindowSessions(backendId: string): WindowSession[] | null {
  * Create a window to restore a saved session.
  * Similar to createWindow() but accepts a specific route and bounds.
  */
-export function createWindowForSession(
+export async function createWindowForSession(
   session: WindowSession,
   setAsMain: boolean,
   backendId: string = LOCAL_CONNECTION_ID,
-): void {
+): Promise<void> {
   const iconPath = resolveIcon(setAsMain);
   // Validate against the display the saved bounds actually land on, not the
   // primary display — otherwise a layout saved on a secondary monitor fails
@@ -609,7 +619,7 @@ export function createWindowForSession(
   const { workArea } = screen.getDisplayMatching(session.bounds);
   const bounds = validateBounds(session.bounds, workArea);
 
-  const window = createConfiguredWindow({ bounds, title: resolveAppTitle(), iconPath });
+  const window = await createConfiguredWindow({ bounds, title: resolveAppTitle(), iconPath });
   // A restored HUD session keeps its saved backend bucket — the HUD is bound
   // to the backend it was opened on, not forced to local. Register it as THE
   // HUD for that backend right away (stamp first — the registry keys off the
@@ -682,7 +692,7 @@ export function createWindowForSession(
  * client is connected, so restored windows load against a live daemon.
  * Consumed by the boot-wide restore and Open-with-saved-sessions paths.
  */
-export function restoreWindowsForBackend(toBackendId: string): void {
+export async function restoreWindowsForBackend(toBackendId: string): Promise<void> {
   const savedSessions = loadWindowSessions(toBackendId);
   if (savedSessions && savedSessions.length > 0) {
     logger.info('Restoring window sessions for backend', {
@@ -690,13 +700,13 @@ export function restoreWindowsForBackend(toBackendId: string): void {
       count: savedSessions.length,
     });
     for (let i = 0; i < savedSessions.length; i++) {
-      createWindowForSession(savedSessions[i], i === 0, toBackendId);
+      await createWindowForSession(savedSessions[i], i === 0, toBackendId);
     }
   } else {
     logger.info('No saved sessions for backend; opening a fresh window', {
       backendId: toBackendId,
     });
-    createWindow(toBackendId);
+    await createWindow(toBackendId);
   }
 }
 
@@ -754,7 +764,7 @@ export async function restoreAllBackendWindowSessions(
     if (!sessions || sessions.length === 0) continue;
     logger.info('Restoring window sessions', { backendId, count: sessions.length });
     for (let i = 0; i < sessions.length; i++) {
-      createWindowForSession(sessions[i], !restoredAny && i === 0, backendId);
+      await createWindowForSession(sessions[i], !restoredAny && i === 0, backendId);
     }
     restoredAny = true;
   }
@@ -762,7 +772,7 @@ export async function restoreAllBackendWindowSessions(
 }
 
 /** Focus a live window for a backend, or add that backend's saved/fresh windows. */
-export function openOrFocusWindowsForBackend(backendId: string): void {
+export async function openOrFocusWindowsForBackend(backendId: string): Promise<void> {
   const existing = BrowserWindow.getAllWindows().find(
     (window) =>
       !window.isDestroyed() && getBackendIdForWebContents(window.webContents) === backendId,
@@ -774,18 +784,18 @@ export function openOrFocusWindowsForBackend(backendId: string): void {
     setMainWindow(existing);
     return;
   }
-  restoreWindowsForBackend(backendId);
+  await restoreWindowsForBackend(backendId);
 }
 
 /** Ensure closing one backend cannot destroy the app's final live window. */
-export function ensureLocalWindowBeforeClosingBackend(backendId: string): void {
+export async function ensureLocalWindowBeforeClosingBackend(backendId: string): Promise<void> {
   const liveWindows = BrowserWindow.getAllWindows().filter((window) => !window.isDestroyed());
   const closesAnyWindow = liveWindows.some((window) => getBackendIdForWindow(window) === backendId);
   const hasSurvivingWindow = liveWindows.some(
     (window) => getBackendIdForWindow(window) !== backendId,
   );
   if (closesAnyWindow && !hasSurvivingWindow) {
-    openOrFocusWindowsForBackend(LOCAL_CONNECTION_ID);
+    await openOrFocusWindowsForBackend(LOCAL_CONNECTION_ID);
   }
 }
 
@@ -801,7 +811,7 @@ export function closeWindowsForBackend(backendId: string): void {
   }
 }
 
-export function createWindow(backendId: string = LOCAL_CONNECTION_ID) {
+export async function createWindow(backendId: string = LOCAL_CONNECTION_ID): Promise<void> {
   const iconPath = resolveIcon(true);
   const { workArea } = screen.getPrimaryDisplay();
 
@@ -854,7 +864,7 @@ export function createWindow(backendId: string = LOCAL_CONNECTION_ID) {
     logger.warn('Failed to load saved window bounds:', err);
   }
 
-  const window = createConfiguredWindow({
+  const window = await createConfiguredWindow({
     bounds: windowBounds,
     title: resolveAppTitle(),
     iconPath,
@@ -930,7 +940,7 @@ export function createWindow(backendId: string = LOCAL_CONNECTION_ID) {
 export async function createWindowForDeepLink(
   deepLinkUrl: string,
   deepLinkHandler: DeepLinkHandler,
-) {
+): Promise<void> {
   logger.info('Creating window for deep link:', { url: scrubToken(deepLinkUrl) });
 
   // Pair links never touch the renderer (no window, no IPC): route straight
@@ -977,7 +987,7 @@ export async function createWindowForDeepLink(
   const bounds = { x: workArea.x, y: workArea.y, width: workArea.width, height: workArea.height };
 
   const iconPath = resolveIcon(false);
-  const newWindow = createConfiguredWindow({ bounds, title: resolveAppTitle(), iconPath });
+  const newWindow = await createConfiguredWindow({ bounds, title: resolveAppTitle(), iconPath });
   stampWindowWithBackend(newWindow);
   forwardRendererConsoleToMainLog(newWindow);
 

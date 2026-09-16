@@ -129,6 +129,10 @@ vi.mock('../utils/resolve-app-title', () => ({
 }));
 
 import { _resetHudWindowRefForTests, isTrackedHudWindow } from '../hud-window';
+import {
+  _resetRendererWindowGateForTests,
+  markRendererWindowsAllowed,
+} from '../renderer-window-gate';
 import { setMainWindow } from '../state';
 import {
   _resetWindowSessionsCacheForTests,
@@ -183,6 +187,8 @@ describe('multi-backend window sessions', () => {
     mockRegisterWindowTitleListener.mockClear();
     _resetWindowSessionsCacheForTests();
     _resetHudWindowRefForTests();
+    _resetRendererWindowGateForTests();
+    markRendererWindowsAllowed();
   });
 
   afterEach(() => {
@@ -268,7 +274,7 @@ describe('multi-backend window sessions', () => {
         local: [{ route: '/work/local', bounds: local.bounds }],
       });
 
-      openOrFocusWindowsForBackend('remote-1');
+      await openOrFocusWindowsForBackend('remote-1');
       const remoteWindows = FakeBrowserWindow.getAllWindows().filter(
         (window) => window.backendId === 'remote-1',
       );
@@ -536,7 +542,7 @@ describe('multi-backend window sessions', () => {
   });
 
   describe('display-aware validation + fullscreen (multi-monitor restore)', () => {
-    it('restores a session onto its own display instead of resetting to primary', () => {
+    it('restores a session onto its own display instead of resetting to primary', async () => {
       // Bounds on a secondary monitor to the right of the primary — they fail
       // the primary-workArea visibility check, so this regresses if validation
       // goes back to screen.getPrimaryDisplay().
@@ -549,14 +555,14 @@ describe('multi-backend window sessions', () => {
         'utf-8',
       );
 
-      restoreWindowsForBackend('local');
+      await restoreWindowsForBackend('local');
 
       const [window] = FakeBrowserWindow.getAllWindows();
       expect(mockGetDisplayMatching).toHaveBeenCalledWith(bounds);
       expect(window.bounds).toEqual(bounds);
     });
 
-    it('falls back to the matched display work area for off-screen bounds', () => {
+    it('falls back to the matched display work area for off-screen bounds', async () => {
       // A disconnected monitor: getDisplayMatching returns the nearest live
       // display, whose work area the saved bounds no longer intersect.
       const nearestWorkArea = { x: 0, y: 0, width: 1920, height: 1080 };
@@ -568,25 +574,25 @@ describe('multi-backend window sessions', () => {
         'utf-8',
       );
 
-      restoreWindowsForBackend('local');
+      await restoreWindowsForBackend('local');
 
       const [window] = FakeBrowserWindow.getAllWindows();
       expect(window.bounds).toEqual(nearestWorkArea);
     });
 
-    it('createWindow keeps legacy saved bounds that land on a secondary display', () => {
+    it('createWindow keeps legacy saved bounds that land on a secondary display', async () => {
       const secondaryWorkArea = { x: 1920, y: 0, width: 2560, height: 1415 };
       mockGetDisplayMatching.mockReturnValue({ workArea: secondaryWorkArea });
       const saved = { x: 2100, y: 50, width: 1400, height: 900 };
       fs.writeFileSync(path.join(tmpDir, 'window-bounds.json'), JSON.stringify(saved), 'utf-8');
 
-      createWindow();
+      await createWindow();
 
       const [window] = FakeBrowserWindow.getAllWindows();
       expect(window.bounds).toEqual(saved);
     });
 
-    it('createWindow falls back to the matched display work area for off-screen legacy bounds', () => {
+    it('createWindow falls back to the matched display work area for off-screen legacy bounds', async () => {
       // Bounds near a since-disconnected secondary display: getDisplayMatching
       // picks the nearest live display, whose work area they no longer
       // intersect. The fallback must land on THAT display's work area, not
@@ -596,7 +602,7 @@ describe('multi-backend window sessions', () => {
       const saved = { x: 99999, y: 99999, width: 1400, height: 900 };
       fs.writeFileSync(path.join(tmpDir, 'window-bounds.json'), JSON.stringify(saved), 'utf-8');
 
-      createWindow();
+      await createWindow();
 
       const [window] = FakeBrowserWindow.getAllWindows();
       expect(window.bounds).toEqual(matchedWorkArea);
@@ -614,7 +620,7 @@ describe('multi-backend window sessions', () => {
       });
     });
 
-    it('restores a fullscreen session via setFullScreen(true)', () => {
+    it('restores a fullscreen session via setFullScreen(true)', async () => {
       const bounds = { x: 1920, y: 0, width: 2560, height: 1440 };
       mockGetDisplayMatching.mockReturnValue({
         workArea: { x: 1920, y: 0, width: 2560, height: 1415 },
@@ -625,14 +631,14 @@ describe('multi-backend window sessions', () => {
         'utf-8',
       );
 
-      restoreWindowsForBackend('local');
+      await restoreWindowsForBackend('local');
 
       const [window] = FakeBrowserWindow.getAllWindows();
       expect(window.setFullScreen).toHaveBeenCalledWith(true);
       expect(window.isFullScreen()).toBe(true);
     });
 
-    it('does not enter fullscreen for legacy sessions without the flag', () => {
+    it('does not enter fullscreen for legacy sessions without the flag', async () => {
       const bounds = { x: 100, y: 100, width: 1024, height: 768 };
       fs.writeFileSync(
         getWindowSessionsPath(),
@@ -640,7 +646,7 @@ describe('multi-backend window sessions', () => {
         'utf-8',
       );
 
-      restoreWindowsForBackend('local');
+      await restoreWindowsForBackend('local');
 
       const [window] = FakeBrowserWindow.getAllWindows();
       expect(window.setFullScreen).not.toHaveBeenCalled();
@@ -657,8 +663,8 @@ describe('multi-backend window sessions', () => {
   });
 
   describe('restoreWindowsForBackend', () => {
-    it('registers the title listener for every fresh and restored window', () => {
-      createWindow();
+    it('registers the title listener for every fresh and restored window', async () => {
+      await createWindow();
       const bounds = { x: 100, y: 100, width: 1024, height: 768 };
       fs.writeFileSync(
         getWindowSessionsPath(),
@@ -666,14 +672,14 @@ describe('multi-backend window sessions', () => {
         'utf-8',
       );
 
-      restoreWindowsForBackend('remote-a');
+      await restoreWindowsForBackend('remote-a');
 
       expect(mockRegisterWindowTitleListener.mock.calls.map(([window]) => window)).toEqual(
         FakeBrowserWindow.getAllWindows(),
       );
     });
 
-    it('stamps restored windows with their saved backend bucket', () => {
+    it('stamps restored windows with their saved backend bucket', async () => {
       const bounds = { x: 100, y: 100, width: 1024, height: 768 };
       fs.writeFileSync(
         getWindowSessionsPath(),
@@ -684,16 +690,16 @@ describe('multi-backend window sessions', () => {
         'utf-8',
       );
 
-      restoreWindowsForBackend('remote-a');
-      restoreWindowsForBackend('remote-b');
+      await restoreWindowsForBackend('remote-a');
+      await restoreWindowsForBackend('remote-b');
 
       const live = FakeBrowserWindow.getAllWindows();
       expect(getBackendIdForWebContents(live[0].webContents as never)).toBe('remote-a');
       expect(getBackendIdForWebContents(live[1].webContents as never)).toBe('remote-b');
     });
 
-    it('stamps a fresh window without a backend id as local', () => {
-      createWindow();
+    it('stamps a fresh window without a backend id as local', async () => {
+      await createWindow();
 
       const [window] = FakeBrowserWindow.getAllWindows();
       expect(getBackendIdForWebContents(window.webContents as never)).toBe('local');
@@ -703,7 +709,7 @@ describe('multi-backend window sessions', () => {
       expect(getBackendIdForWebContents({} as never)).toBe('local');
     });
 
-    it('stamps a restored HUD window with its saved backend bucket (not forced local)', () => {
+    it('stamps a restored HUD window with its saved backend bucket (not forced local)', async () => {
       const bounds = { x: 100, y: 100, width: 1024, height: 768 };
       fs.writeFileSync(
         getWindowSessionsPath(),
@@ -711,13 +717,13 @@ describe('multi-backend window sessions', () => {
         'utf-8',
       );
 
-      restoreWindowsForBackend('remote-a');
+      await restoreWindowsForBackend('remote-a');
 
       const [window] = FakeBrowserWindow.getAllWindows();
       expect(getBackendIdForWebContents(window.webContents as never)).toBe('remote-a');
     });
 
-    it('registers a restored /hud session in the tracked HUD registry', () => {
+    it('registers a restored /hud session in the tracked HUD registry', async () => {
       const bounds = { x: 100, y: 100, width: 1024, height: 768 };
       fs.writeFileSync(
         getWindowSessionsPath(),
@@ -730,7 +736,7 @@ describe('multi-backend window sessions', () => {
         'utf-8',
       );
 
-      restoreWindowsForBackend('remote-a');
+      await restoreWindowsForBackend('remote-a');
 
       // The /hud window is tracked immediately (before its URL loads), so a
       // concurrent open-HUD request cannot create a duplicate during restore;
@@ -743,7 +749,7 @@ describe('multi-backend window sessions', () => {
       expect(isTrackedHudWindow(plain as never)).toBe(false);
     });
 
-    it('restores the incoming backend layout', () => {
+    it('restores the incoming backend layout', async () => {
       const remoteBounds = { x: 100, y: 100, width: 1024, height: 768 };
       fs.writeFileSync(
         getWindowSessionsPath(),
@@ -751,7 +757,7 @@ describe('multi-backend window sessions', () => {
         'utf-8',
       );
 
-      restoreWindowsForBackend('remote-1');
+      await restoreWindowsForBackend('remote-1');
 
       // Exactly one live window restored, loading the incoming backend's route.
       const live = FakeBrowserWindow.getAllWindows();
@@ -759,15 +765,15 @@ describe('multi-backend window sessions', () => {
       expect(live[0].webContents.getURL()).toContain('/work/remote');
     });
 
-    it('opens a single fresh window when the incoming backend has no saved sessions', () => {
-      restoreWindowsForBackend('remote-empty');
+    it('opens a single fresh window when the incoming backend has no saved sessions', async () => {
+      await restoreWindowsForBackend('remote-empty');
 
       const live = FakeBrowserWindow.getAllWindows();
       expect(live).toHaveLength(1);
       expect(live[0].isDestroyed()).toBe(false);
     });
 
-    it('adds saved remote sessions without destroying an existing local window', () => {
+    it('adds saved remote sessions without destroying an existing local window', async () => {
       const bounds = { x: 100, y: 100, width: 1024, height: 768 };
       const local = seedLiveWindow('app://workspaces/work/local', bounds);
       (local as unknown as { backendId: string }).backendId = 'local';
@@ -777,7 +783,7 @@ describe('multi-backend window sessions', () => {
         'utf-8',
       );
 
-      openOrFocusWindowsForBackend('remote-1');
+      await openOrFocusWindowsForBackend('remote-1');
 
       const live = FakeBrowserWindow.getAllWindows();
       expect(local.isDestroyed()).toBe(false);
@@ -785,11 +791,11 @@ describe('multi-backend window sessions', () => {
       expect(getBackendIdForWebContents(live[1].webContents as never)).toBe('remote-1');
     });
 
-    it('focuses an existing backend window instead of restoring duplicates', () => {
+    it('focuses an existing backend window instead of restoring duplicates', async () => {
       const remote = seedLiveWindow('app://workspaces/work/remote');
       (remote as unknown as { backendId: string }).backendId = 'remote-1';
 
-      openOrFocusWindowsForBackend('remote-1');
+      await openOrFocusWindowsForBackend('remote-1');
 
       expect(FakeBrowserWindow.getAllWindows()).toHaveLength(1);
       expect(remote.show).toHaveBeenCalledOnce();
@@ -817,10 +823,10 @@ describe('multi-backend window sessions', () => {
       expect(FakeBrowserWindow.getAllWindows()).toEqual([local]);
     });
 
-    it('opens local before closing the last backend windows', () => {
+    it('opens local before closing the last backend windows', async () => {
       const remote = seedLiveWindow('app://workspaces/work/remote', undefined, 'remote-1');
 
-      ensureLocalWindowBeforeClosingBackend('remote-1');
+      await ensureLocalWindowBeforeClosingBackend('remote-1');
 
       const beforeClose = FakeBrowserWindow.getAllWindows();
       expect(beforeClose).toHaveLength(2);
@@ -831,11 +837,11 @@ describe('multi-backend window sessions', () => {
       expect(FakeBrowserWindow.getAllWindows()).toEqual([beforeClose[1]]);
     });
 
-    it('does not open local when another backend window will survive', () => {
+    it('does not open local when another backend window will survive', async () => {
       const forgotten = seedLiveWindow('app://workspaces/work/a', undefined, 'remote-1');
       const surviving = seedLiveWindow('app://workspaces/work/b', undefined, 'remote-2');
 
-      ensureLocalWindowBeforeClosingBackend('remote-1');
+      await ensureLocalWindowBeforeClosingBackend('remote-1');
       closeWindowsForBackend('remote-1');
 
       expect(forgotten.isDestroyed()).toBe(true);
@@ -856,7 +862,7 @@ describe('multi-backend window sessions', () => {
       await saveWindowSessions('local');
       clearWindowSessionsSnapshot();
       for (const w of FakeBrowserWindow.getAllWindows()) w.destroy();
-      restoreWindowsForBackend('local');
+      await restoreWindowsForBackend('local');
 
       // Both of A's windows are back, including the HUD.
       const live = FakeBrowserWindow.getAllWindows();
@@ -1046,7 +1052,7 @@ describe('multi-backend window sessions', () => {
       await saveWindowSessions('local');
       clearWindowSessionsSnapshot();
       w1.destroy();
-      restoreWindowsForBackend('remote-1');
+      await restoreWindowsForBackend('remote-1');
 
       expect(w1.isDestroyed()).toBe(true);
       const map = readMap();
