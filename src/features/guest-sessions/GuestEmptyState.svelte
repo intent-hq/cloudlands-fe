@@ -11,6 +11,7 @@
   import BulkActionConfirmDialog from '$lib/components/modals/BulkActionConfirmDialog.svelte';
   import { m } from '$shared/paraglide/messages.js';
   import type { GuestSessionRecord } from '$shared/types/guest-sessions';
+  import { formatGuestSessionLabel } from '$lib/utils/connection-label';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import { leaveGuestSessionRequested } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
   import { store as appStore } from '$store/renderer/store';
@@ -34,7 +35,7 @@
       appStore.dispatch(action);
       await action.promise;
     } catch {
-      leaveError = m.settings_guestSessions_leave_error({ name: session.label });
+      leaveError = m.settings_guestSessions_leave_error({ name: formatGuestSessionLabel(session) });
     } finally {
       leaving = false;
     }
@@ -49,7 +50,7 @@
       {m.guestSessions_emptyState_title()}
     </h2>
     <p class="mt-2 text-sm text-muted-foreground">
-      {m.guestSessions_emptyState_description({ host: session.label })}
+      {m.guestSessions_emptyState_description({ host: formatGuestSessionLabel(session) })}
     </p>
     <div class="mt-6 flex flex-wrap items-center justify-center gap-2">
       <Button variant="outline" onclick={() => void navigateToSettings({ tab: 'guest-sessions' })}>
@@ -75,7 +76,9 @@
 <BulkActionConfirmDialog
   bind:open={leaveDialogOpen}
   title={m.settings_guestSessions_leaveConfirm_title()}
-  description={m.settings_guestSessions_leaveConfirm_description({ name: session.label })}
+  description={m.settings_guestSessions_leaveConfirm_description({
+    name: formatGuestSessionLabel(session),
+  })}
   confirmText={m.settings_guestSessions_leave_label()}
   variant="destructive"
   onConfirm={() => leaveHost()}
