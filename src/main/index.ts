@@ -1525,6 +1525,22 @@ const bootFlow = app.whenReady().then(async () => {
   // This significantly improves startup time
   startupMetrics.start('criticalIPC');
 
+  // Start the intentd sidecar daemon (if spawn policy allows). This MUST be the
+  // first daemon-related step of the critical phase: the settings/config
+  // services below issue JSON-RPC requests, and on a cold launch a request
+  // against a not-yet-spawned daemon fails and arms the client's reconnect
+  // backoff, stalling every later request behind it. Starting the sidecar
+  // first also keeps it ahead of registerBackendHandlers() so the daemon is
+  // ready before the first JSON-RPC client connection attempt. Adoption logic
+  // (probe socket first) ensures we don't spawn when an external daemon is
+  // already running.
+  await startIntentdSidecar(process.env, app.isPackaged, process.resourcesPath, process.cwd());
+
+  // Per-process memory sampling → console-output.log, so a debug bundle can
+  // name the process that grew. Started after the daemon so the very first
+  // sample already sees the sidecar and its agent children.
+  startMemoryMonitor();
+
   // Initialize specialists service BEFORE workspace IPC - this is critical!
   // The instruction service calls formatSpecialistsForPrompt(), which needs the
   // specialist file cache initialized.
@@ -1573,19 +1589,9 @@ const bootFlow = app.whenReady().then(async () => {
   setupAutoUpdateIPC(); // Needed for auto-update IPC on startup
   setupReleaseNotesIPC(); // Needed for the Help ▸ Show Release Notes fetch
 
-  // Start the intentd sidecar daemon (if spawn policy allows). This MUST run
-  // before registerBackendHandlers() so the daemon is ready before the first
-  // JSON-RPC client connection attempt. Adoption logic (probe socket first)
-  // ensures we don't spawn when an external daemon is already running.
-  await startIntentdSidecar(process.env, app.isPackaged, process.resourcesPath, process.cwd());
-
-  // Per-process memory sampling → console-output.log, so a debug bundle can
-  // name the process that grew. Started after the daemon so the very first
-  // sample already sees the sidecar and its agent children.
-  startMemoryMonitor();
-
-  // The daemon owns PATH discovery. Seed only after starting/adopting it, and
-  // retry briefly while a newly spawned sidecar creates its socket.
+  // The daemon owns PATH discovery. Seed only after starting/adopting it (at
+  // the top of this phase), and retry briefly while a newly spawned sidecar
+  // creates its socket.
   await seedPathFromHostEnv();
 
   // Fill in the bundled sidecar's build commit on the About box now that the

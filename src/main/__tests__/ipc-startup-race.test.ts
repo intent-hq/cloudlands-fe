@@ -92,6 +92,20 @@ describe('IPC Startup Race Condition', () => {
     expect(hostEnvSeed).toBeGreaterThan(sidecarStart);
   });
 
+  it('starts the sidecar before any daemon-dependent step of the critical phase', () => {
+    const indexPath = path.join(SRC_ROOT, 'main', 'index.ts');
+    const source = fs.readFileSync(indexPath, 'utf-8');
+    const criticalStart = source.indexOf("startupMetrics.start('criticalIPC')");
+    const sidecarStart = source.indexOf('await startIntentdSidecar(');
+    const appSettingsInit = source.indexOf('await initAppSettingsService();');
+    const configSetup = source.indexOf('await setupConfigIPC();');
+
+    expect(criticalStart).toBeGreaterThan(-1);
+    expect(sidecarStart).toBeGreaterThan(criticalStart);
+    expect(appSettingsInit).toBeGreaterThan(sidecarStart);
+    expect(configSetup).toBeGreaterThan(sidecarStart);
+  });
+
   it('defers specialist GitHub auth until handlers and the first window are available', () => {
     const indexPath = path.join(SRC_ROOT, 'main', 'index.ts');
     const source = fs.readFileSync(indexPath, 'utf-8');
