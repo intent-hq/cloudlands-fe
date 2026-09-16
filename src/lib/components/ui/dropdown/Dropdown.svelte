@@ -2,7 +2,12 @@
   import { onMount, onDestroy, tick, type Snippet } from 'svelte';
   import { cn } from '$lib/utils';
   import Fa from 'svelte-fa';
-  import { faCheck, faChevronDown, faChevronRight } from '@fortawesome/free-solid-svg-icons';
+  import {
+    faCheck,
+    faChevronDown,
+    faChevronRight,
+    faSearch,
+  } from '@fortawesome/free-solid-svg-icons';
   import Portal from '../Portal.svelte';
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
@@ -42,6 +47,8 @@
     collisionPadding?: number;
     /** Whether search is enabled */
     searchable?: boolean;
+    /** Opt into the bordered search-input composition with a leading search icon. */
+    searchChrome?: boolean;
     /** Current search text */
     searchValue?: string;
     /** Selection mode */
@@ -96,6 +103,7 @@
     collisionBoundary = null,
     collisionPadding = 8,
     searchable = true,
+    searchChrome = false,
     searchValue = $bindable(''),
     multiple = false,
     disabled = false,
@@ -728,11 +736,19 @@
 
   <!-- Search Input -->
   {#if searchable}
-    <div class={cn('w-full', isPortal && 'shrink-0')}>
+    <div class={cn('w-full', isPortal && 'shrink-0', searchChrome && 'relative p-2')}>
+      {#if searchChrome}
+        <Fa
+          icon={faSearch}
+          class="pointer-events-none absolute left-4.5 top-1/2 -translate-y-1/2 size-3 text-subtle"
+        />
+      {/if}
       <Input
         bind:ref={inputRef}
         type="text"
-        class="w-full bg-transparent px-3 py-2 text-sm placeholder:text-muted-foreground outline-none border-none ring-0 focus:outline-none!"
+        class={searchChrome
+          ? 'pl-7'
+          : 'w-full bg-transparent px-3 py-2 text-sm placeholder:text-muted-foreground outline-none border-none ring-0 focus:outline-none!'}
         {placeholder}
         role="searchbox"
         aria-label={m.ui_dropdown_search_ariaLabel()}

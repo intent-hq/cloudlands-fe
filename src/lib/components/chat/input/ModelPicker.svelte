@@ -1896,6 +1896,7 @@
     variant={variant === 'outline' ? 'outline' : variant === 'default' ? 'default' : 'ghost'}
     size={size === 'xs' ? 'xs' : 'sm'}
     searchable={!hasNoAvailableProvider}
+    searchChrome
     placeholder={m.chat_modelPicker_searchModels_placeholder()}
     class="min-w-0"
     headerClass={providerTabsEnabled ? 'bg-popover! border-b!' : 'border-b-0!'}

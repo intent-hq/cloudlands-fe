@@ -14,6 +14,7 @@ vi.mock('svelte-fa', async () => {
 
 vi.mock('@fortawesome/free-solid-svg-icons', () => ({
   faCheck: { iconName: 'check' },
+  faSearch: { iconName: 'search' },
   faChevronDown: { iconName: 'chevron-down' },
   faChevronRight: { iconName: 'chevron-right' },
 }));
@@ -152,6 +153,40 @@ describe('Dropdown filtered rows', () => {
       expect(screen.getByRole('option', { name: 'Beta' })).toBe(beta);
       await fireEvent.input(search, { target: { value: 'missing' } });
       expect(await screen.findByText('No results for “missing”')).toBeTruthy();
+    },
+  );
+});
+
+describe('Dropdown search chrome', () => {
+  beforeEach(setupDropdownEnv);
+  afterEach(cleanupDropdownEnv);
+
+  it.each([undefined, true])(
+    'preserves search keyboard selection with chrome %s',
+    async (searchChrome) => {
+      const onchange = vi.fn();
+      const { container } = render(Dropdown, {
+        props: {
+          options: [
+            { value: 'a', label: 'Alpha' },
+            { value: 'b', label: 'Beta' },
+          ],
+          portal: false,
+          searchChrome,
+          onchange,
+        },
+      });
+      await fireEvent.click(container.querySelector('button')!);
+      const search = screen.getByRole('searchbox', { name: 'Search options' });
+      expect(document.activeElement).toBe(search);
+      if (searchChrome === undefined) expect(search.classList.contains('border-none')).toBe(true);
+      await fireEvent.input(search, { target: { value: 'Beta' } });
+      await waitFor(() => expect(screen.queryByRole('option', { name: 'Alpha' })).toBeNull());
+      const beta = screen.getByRole('option', { name: 'Beta' });
+      expect(search.getAttribute('aria-activedescendant')).toBe(beta.id);
+      await fireEvent.keyDown(search, { key: 'Enter' });
+      expect(onchange).toHaveBeenCalledWith('b', undefined);
+      expect(screen.queryByRole('searchbox')).toBeNull();
     },
   );
 });
