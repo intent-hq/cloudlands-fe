@@ -11,7 +11,11 @@
  * 2. Show the user code + verification URL (code copied to the clipboard;
  *    "Open GitHub" opens the URL) while the second phase
  *    (`invite.redeem { flowId }`) waits for the grant. This dialog — which
- *    names the workspace and offers Cancel — is the single consent point.
+ *    names the workspace and offers Cancel — is the single consent point. It
+ *    renders in the renderer (`main/invite-consent.ts`, `invite-consent:*`
+ *    channels) and stays up while the grant is awaited, where Cancel still
+ *    aborts the join; with no window or no ack it falls back to the native
+ *    message box so a cold start from a link never hangs.
  * 3. Store the minted credential as a GUEST session — never in the paired
  *    backend registry — and open the daemon's window.
  *
@@ -27,10 +31,12 @@
  * warning and returns; the app never crashes on it.
  */
 import { app, clipboard, dialog, shell, type MessageBoxOptions } from 'electron';
+import { randomUUID } from 'node:crypto';
 
 import { Logger } from '$shared/logger';
 import { m } from '$shared/paraglide/messages.js';
 import { parseInviteUri } from '$shared/utils/invite-uri';
+import { showInviteConsent, type InviteConsentPrompt } from '../../../main/invite-consent';
 import { getMainWindow } from '../../../main/state';
 import * as guestSessionsStore from '../../backend/main/guest-sessions-store';
 import { openBackendWindow } from '../../backend/main/backend.ipc';
@@ -80,6 +86,7 @@ export async function handleInviteDeepLink(url: string): Promise<void> {
   }
   inviteLinkInFlight = true;
   let connection: InviteConnection | null = null;
+  let consent: InviteConsentPrompt | null = null;
   try {
     const parsed = parseInviteUri(url);
     if (!parsed) {
@@ -117,7 +124,25 @@ export async function handleInviteDeepLink(url: string): Promise<void> {
     grant.catch(() => {});
 
     await clipboard.writeText(start.userCode);
-    if (!(await showDeviceCode(start.userCode, start.verificationUri, start.workspaceTitle))) {
+    consent = showInviteConsent({
+      requestId: randomUUID(),
+      userCode: start.userCode,
+      verificationUri: start.verificationUri,
+      workspaceTitle: start.workspaceTitle,
+      hostLabel: connection.host,
+      expiresInMs: start.expiresIn * 1000,
+    });
+    const decision = await consent.decision;
+    if (decision === 'cancel') {
+      consent.dismiss('cancelled');
+      logger.info('User cancelled the invite device flow');
+      return;
+    }
+    // No renderer to show the modal (cold start / no ack): native box.
+    if (
+      decision === null &&
+      !(await showDeviceCode(start.userCode, start.verificationUri, start.workspaceTitle))
+    ) {
       logger.info('User cancelled the invite device flow');
       return;
     }
@@ -130,7 +155,14 @@ export async function handleInviteDeepLink(url: string): Promise<void> {
       throw new InviteFlowError('verification-launch-failed');
     }
 
-    const credential = await grant;
+    // The modal stays up while the grant is awaited; Cancel there aborts the
+    // join before any credential is minted.
+    const credential = await Promise.race([grant, consent.cancelledWhileWaiting.then(() => null)]);
+    if (credential === null) {
+      consent.dismiss('cancelled');
+      logger.info('User cancelled the invite while waiting for the GitHub grant');
+      return;
+    }
     const record = await guestSessionsStore.add({
       label: connection.host,
       host: connection.host,
@@ -149,6 +181,7 @@ export async function handleInviteDeepLink(url: string): Promise<void> {
       via: connection.via,
       tokenEncrypted: record.tokenEncrypted,
     });
+    consent.dismiss('joined');
     if (!record.tokenEncrypted) {
       // Flagged plaintext fallback (spec ruling): the join stands, but the
       // user learns the credential is not protected by OS encryption.
@@ -157,6 +190,7 @@ export async function handleInviteDeepLink(url: string): Promise<void> {
     await openBackendWindow(record.id);
   } catch (error) {
     logger.warn('Invite deep link handling failed', describeErrorForLog(error));
+    consent?.dismiss('failed');
     await showFailure(error);
   } finally {
     connection?.close();
