@@ -27,8 +27,10 @@
   class={cn(menuItem(), 'data-[destructive]:text-foreground', className)}
   {...restProps}
 >
-  <span data-slot="menu-item-leading" class="flex size-4 shrink-0 items-center justify-center">
-    {@render leading?.()}
-  </span>
+  {#if leading}
+    <span data-slot="menu-item-leading" class="flex size-4 shrink-0 items-center justify-center">
+      {@render leading()}
+    </span>
+  {/if}
   {@render children?.()}
 </MenuPrimitive.Item>

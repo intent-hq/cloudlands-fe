@@ -244,9 +244,6 @@ vi.mock('$features/agent/components/agent-avatar/AgentAvatarWithState.svelte', a
 vi.mock('$lib/components/ui/button', async () => ({
   Button: (await import('../../ui/__tests__/mocks/button.svelte')).default,
 }));
-vi.mock('$lib/components/ui/dropdown-menu.svelte', async () => ({
-  default: (await import('../../ui/__tests__/mocks/dropdown-menu.svelte')).default,
-}));
 
 vi.mock('../CreateAgentSection.svelte', async () => ({
   default: (await import('../sidebar/__tests__/mocks/MockSimple.svelte')).default,
@@ -285,7 +282,7 @@ vi.mock('../sidebar', async () => {
 
 warmImport(() => import('../../ui/__tests__/mocks/Fa.svelte'));
 warmImport(() => import('../../ui/__tests__/mocks/button.svelte'));
-warmImport(() => import('../../ui/__tests__/mocks/dropdown-menu.svelte'));
+warmImport(() => import('$lib/components/ui/dropdown-menu.svelte'));
 warmImport(() => import('./mocks/FilesPanel.svelte'));
 warmImport(() => import('./mocks/ContextPanel.svelte'));
 warmImport(() => import('./mocks/WorkspaceAgentsList.svelte'));
@@ -366,12 +363,10 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
         ...view,
         target,
         assertCapability: async () => {
-          await fireEvent.click(target);
-          await waitFor(() =>
-            expect(view.container.querySelector('.dropdown-content')).toBeTruthy(),
-          );
+          // The visual-state helper already activates the real trigger with Enter.
+          await waitFor(() => expect(view.getByRole('menu')).toBeTruthy());
           expect(view.container.querySelector('[data-sidebar-launcher="files"]')).toBeTruthy();
-          expect(view.getByText('Copy path')).toBeTruthy();
+          expect(view.getByRole('menuitem', { name: 'Copy path' })).toBeTruthy();
         },
       };
     });
@@ -389,20 +384,18 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     const glyph = trigger.querySelector('[data-files-open-in] .fa-icon');
 
     expect(glyph?.classList.contains('size-4!')).toBe(true);
-    await fireEvent.pointerDown(trigger);
     await fireEvent.keyDown(trigger, { key: 'Enter' });
-    await fireEvent.keyDown(trigger, { key: ' ' });
     expect(fullCardTrigger?.getAttribute('aria-expanded')).toBe('false');
 
-    await fireEvent.click(trigger);
-    await waitFor(() => expect(container.querySelector('.dropdown-content')).toBeTruthy());
+    await waitFor(() => expect(getByRole('menu')).toBeTruthy());
     expect(container.querySelector('[data-testid="sidebar-launchers"]')).toBeTruthy();
     expect(fullCardTrigger?.getAttribute('aria-expanded')).toBe('false');
     expect(getByText('Other')).toBeTruthy();
     expect(getByText('Copy path')).toBeTruthy();
 
-    await fireEvent.click(getByText('Visual Studio Code'));
+    await fireEvent.click(getByRole('menuitem', { name: 'Visual Studio Code' }));
     await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith('vscode:open', '/tmp/project'));
+    await waitFor(() => expect(document.body.querySelector('[role="menu"]')).toBeNull());
   });
 
   it('lists every workspace PR in the Changes trailing dropdown and opens the clicked one', async () => {

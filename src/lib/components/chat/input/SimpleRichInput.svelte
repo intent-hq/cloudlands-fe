@@ -1694,7 +1694,7 @@
         {selectedModel}
         variant="ghost-light"
         size="xs"
-        triggerClass="px-0 font-medium text-muted-foreground hover:bg-transparent hover:text-foreground [&_svg]:size-4"
+        triggerClass="relative -left-2 font-medium text-muted-foreground hover:bg-hover hover:text-foreground [&_svg]:size-4"
         isLocked={isModelLocked}
         confirmModelChange={confirmModelSwitch}
         deferUpdate={isStreaming}

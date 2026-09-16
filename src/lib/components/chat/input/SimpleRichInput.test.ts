@@ -556,10 +556,6 @@ describe('SimpleRichInput action bar layout', () => {
     const addContext = await screen.findByRole('menuitem', { name: /Add Context/i });
     expect(addContext.getAttribute('aria-haspopup')).toBe('menu');
     expect(screen.getByRole('menuitem', { name: /Attach files/i })).toBeTruthy();
-    const modelPickerClass = screen.getByTestId('model-picker').className;
-    expect(modelPickerClass).toContain('px-0');
-    expect(modelPickerClass).toContain('font-medium');
-    expect(modelPickerClass).toContain('hover:bg-transparent');
     const composer = screen.getByTestId('message-input');
     await fireEvent.mouseEnter(composer);
     expect(composer.getAttribute('data-ring-state')).toBe('hover');

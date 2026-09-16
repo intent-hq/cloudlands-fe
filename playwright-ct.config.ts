@@ -1,4 +1,5 @@
 import { defineConfig, devices } from '@playwright/experimental-ct-svelte';
+import { svelte } from '@sveltejs/vite-plugin-svelte';
 import tailwindcss from '@tailwindcss/postcss';
 import autoprefixer from 'autoprefixer';
 import os from 'os';
@@ -90,6 +91,9 @@ export default defineConfig({
 
     /* Vite configuration for component testing */
     ctViteConfig: {
+      // CT roots Vite in playwright/, outside the app's Svelte config discovery.
+      // Reuse its compiler compatibility so mounted components retain $set.
+      plugins: [svelte({ configFile: resolve(__dirname, 'svelte.config.js') })],
       resolve: {
         alias: [
           { find: '$lib', replacement: resolve(__dirname, './src/lib') },

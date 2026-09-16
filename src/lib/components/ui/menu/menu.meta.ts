@@ -12,6 +12,7 @@ export const menuMetadata = {
   publicImport: '$lib/components/ui/menu',
   legacyImports: ['$lib/components/ui/dropdown-menu.svelte'],
   exports: [
+    'ActionRow',
     'CheckboxGroup',
     'CheckboxItem',
     'CommandItem',

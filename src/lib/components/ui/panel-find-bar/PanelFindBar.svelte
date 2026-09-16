@@ -147,8 +147,9 @@
       type="text"
       {placeholder}
       disabled={disabled || inputDisabled}
+      noFocusStyle
       class={cn(
-        'h-6 w-36 border-0 bg-transparent px-0 py-0 text-sm shadow-none focus-visible:outline focus-visible:-outline-offset-1',
+        'h-6 w-36 border-0 bg-transparent px-0 py-0 text-sm shadow-none',
         'placeholder:text-muted-foreground',
         inputClass,
       )}

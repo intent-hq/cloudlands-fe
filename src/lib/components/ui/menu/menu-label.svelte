@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { IconWeight } from 'phosphor-svelte';
   import { DropdownMenu as MenuPrimitive } from 'bits-ui';
   import type { Snippet } from 'svelte';
   import type { IconDefinition } from '$lib/icons/phosphor-icons';
@@ -12,10 +13,12 @@
     class: className,
     children,
     icon,
+    iconWeight,
     ...restProps
   }: WithoutChildrenOrChild<MenuPrimitive.GroupHeadingProps> & {
     children?: Snippet;
     icon?: IconDefinition;
+    iconWeight?: IconWeight;
   } = $props();
 </script>
 
@@ -29,10 +32,10 @@
   )}
   {...restProps}
 >
-  <span data-slot="menu-item-leading" class="size-4 shrink-0" aria-hidden="true">
-    {#if icon}
-      <Fa {icon} size="xs" class="size-4 text-muted-foreground opacity-70" />
-    {/if}
-  </span>
+  {#if icon}
+    <span data-slot="menu-item-leading" class="size-4 shrink-0" aria-hidden="true">
+      <Fa {icon} weight={iconWeight} size="xs" class="size-4 text-muted-foreground opacity-70" />
+    </span>
+  {/if}
   {@render children?.()}
 </MenuPrimitive.GroupHeading>

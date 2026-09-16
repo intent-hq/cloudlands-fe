@@ -42,6 +42,8 @@
     error?: string | null;
     availableDescription?: string;
     remainingSeconds?: number;
+    onInstall?: () => void;
+    onDownload?: () => void;
   }
 
   interface Props {
@@ -109,10 +111,18 @@
   }
 
   function handleInstall() {
+    if (previewState) {
+      previewState.onInstall?.();
+      return;
+    }
     appStore.dispatch(installUpdate());
   }
 
   function handleDownload() {
+    if (previewState) {
+      previewState.onDownload?.();
+      return;
+    }
     appStore.dispatch(downloadUpdate());
   }
 
@@ -129,30 +139,17 @@
   });
 </script>
 
-<div
-  class="update-toast"
-  class:has-close={status === 'downloaded' || status === 'downloading' || status === 'error'}
->
-  {#if status === 'downloaded' || status === 'downloading' || status === 'error'}
-    <ToastCloseButton onclick={handleClose} ariaLabel={m.ui_updateToast_close_ariaLabel()} />
-  {/if}
+<div class="update-toast">
   {#if status === 'checking'}
     <div class="toast-row">
       <ToastGlyph variant="loading" />
-      <div class="text">
-        <div class="title">{m.ui_updateToast_checking_label()}</div>
-      </div>
+      <div class="title">{m.ui_updateToast_checking_label()}</div>
     </div>
   {:else if status === 'available'}
     <div class="toast-row">
       <ToastGlyph variant="update" />
-      <div class="text flex-1">
-        <div class="title">
-          {m.ui_updateToast_available_label({ version: updateInfo?.version || '' })}
-        </div>
-        <div class="description">
-          {previewState?.availableDescription ?? m.ui_updateToast_readyToDownload_description()}
-        </div>
+      <div class="title">
+        {m.ui_updateToast_available_label({ version: updateInfo?.version || '' })}
       </div>
       <Button
         variant="primary"
@@ -163,23 +160,29 @@
         {m.ui_updateToast_download_label()}
       </Button>
     </div>
+    <div class="description">
+      {previewState?.availableDescription ?? m.ui_updateToast_readyToDownload_description()}
+    </div>
   {:else if status === 'downloading'}
     <div class="toast-downloading">
-      <div class="toast-row items-start">
+      <div class="toast-row">
         <ToastGlyph variant="update" />
-        <div class="text min-w-0 flex-1">
-          <div class="title">
-            {m.ui_updateToast_downloading_label({ version: updateInfo?.version || '' })}
-          </div>
-          <div class="description">
-            {#if progress}{formatSpeed(progress.bytesPerSecond)}{/if}{#if remainingSeconds != null}
-              · {m.ui_updateToast_remainingSeconds_label({
-                seconds: formatInteger(remainingSeconds),
-              })}
-            {/if}
-          </div>
+        <div class="title">
+          {m.ui_updateToast_downloading_label({ version: updateInfo?.version || '' })}
         </div>
         <span class="toast-progress-label">{formatInteger(progressPercent)}%</span>
+        <ToastCloseButton
+          inline
+          onclick={handleClose}
+          ariaLabel={m.ui_updateToast_close_ariaLabel()}
+        />
+      </div>
+      <div class="description">
+        {#if progress}{formatSpeed(progress.bytesPerSecond)}{/if}{#if remainingSeconds != null}
+          · {m.ui_updateToast_remainingSeconds_label({
+            seconds: formatInteger(remainingSeconds),
+          })}
+        {/if}
       </div>
       <div class="progress-bar">
         <div class="progress-fill" style="width: {progressPercent}%"></div>
@@ -194,38 +197,42 @@
       >
         <ConfettiIcon size={16} weight="fill" aria-hidden="true" />
       </div>
-      <div class="text flex-1">
-        <div class="title">{m.ui_updateToast_updateReady_label()}</div>
-        <div class="description">
-          {m.ui_updateToast_readyToInstall_description({ version: updateInfo?.version ?? '' })}
-        </div>
-      </div>
+      <div class="title">{m.ui_updateToast_updateReady_label()}</div>
       <Button variant="primary" size="compact" class="toast-action" onclick={handleInstall}>
-        <ArrowsClockwiseIcon size={16} weight="bold" aria-hidden="true" />
+        <ArrowsClockwiseIcon size={16} weight="regular" aria-hidden="true" />
         {m.ui_updateToast_install_label()}
       </Button>
+      <ToastCloseButton
+        inline
+        onclick={handleClose}
+        ariaLabel={m.ui_updateToast_close_ariaLabel()}
+      />
+    </div>
+    <div class="description">
+      {m.ui_updateToast_readyToInstall_description({ version: updateInfo?.version ?? '' })}
     </div>
   {:else if status === 'not-available'}
     <div class="toast-row">
       <div class="icon-celebrate">
         <ConfettiIcon size={16} weight="fill" aria-hidden="true" />
       </div>
-      <div class="text">
-        <div class="title">{m.ui_updateToast_upToDate_label()}</div>
-        <div class="description">
-          {m.ui_updateToast_runningVersion_description({ version: currentVersion ?? '' })}
-        </div>
-      </div>
+      <div class="title">{m.ui_updateToast_upToDate_label()}</div>
+    </div>
+    <div class="description">
+      {m.ui_updateToast_runningVersion_description({ version: currentVersion ?? '' })}
     </div>
   {:else if status === 'error'}
     <div class="toast-row">
       <ToastGlyph variant="error" />
-      <div class="text flex-1">
-        <div class="title">{m.ui_updateToast_checkFailed_label()}</div>
-        <div class="description">
-          {updateError || m.ui_updateToast_unknown_error()}
-        </div>
-      </div>
+      <div class="title">{m.ui_updateToast_checkFailed_label()}</div>
+      <ToastCloseButton
+        inline
+        onclick={handleClose}
+        ariaLabel={m.ui_updateToast_close_ariaLabel()}
+      />
+    </div>
+    <div class="description">
+      {updateError || m.ui_updateToast_unknown_error()}
     </div>
   {/if}
 </div>
@@ -238,20 +245,24 @@
     overflow: visible;
   }
 
-  .update-toast.has-close {
-    padding-right: 1.5rem;
-  }
-
   .toast-row {
+    --toast-header-height: 1.5rem;
     display: flex;
-    align-items: center;
-    gap: 0.625rem;
+    align-items: flex-start;
+    gap: calc(var(--space-1) * 2.5);
   }
 
-  .toast-downloading {
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
+  .toast-row:has(:global(.toast-action)) {
+    --toast-header-height: var(--toast-action-height, var(--control-height-compact));
+  }
+
+  .toast-row > :global([data-toast-glyph]),
+  .icon-celebrate {
+    margin-top: calc((var(--toast-header-height) - 1rem) / 2);
+  }
+
+  .toast-row :global(.toast-close-btn) {
+    margin-top: calc((var(--toast-header-height) - 1.5rem) / 2);
   }
 
   .icon-celebrate {
@@ -264,14 +275,16 @@
     color: hsl(var(--success));
   }
 
-  .text {
-    min-width: 0;
-  }
-
   .title {
+    flex: 1;
+    min-width: 0;
     font-weight: 500;
     font-size: var(--toast-title-size, 0.8125rem);
     line-height: 1.4;
+    margin-top: max(
+      0px,
+      calc((var(--toast-header-height) - var(--toast-title-size, 0.8125rem) * 1.4) / 2)
+    );
     color: hsl(var(--foreground));
     overflow-wrap: anywhere;
   }
@@ -282,6 +295,7 @@
     line-height: 1.4;
     color: hsl(var(--muted-foreground));
     margin-top: 0.25rem;
+    margin-left: 1.625rem;
     overflow-wrap: anywhere;
   }
 
@@ -291,6 +305,7 @@
     border-radius: var(--radius-full);
     overflow: hidden;
     margin-left: 1.625rem;
+    margin-top: 0.75rem;
   }
 
   .progress-fill {
@@ -301,12 +316,15 @@
   }
 
   .toast-progress-label {
+    flex-shrink: 0;
     color: hsl(var(--muted-foreground));
     font-size: 0.8125rem;
     line-height: 1.4;
+    margin-top: max(0px, calc((var(--toast-header-height) - 0.8125rem * 1.4) / 2));
   }
 
-  :global(.toast-action) {
+  .update-toast :global(.toast-action) {
+    flex-shrink: 0;
     min-height: var(--toast-action-height, var(--control-height-compact));
     border-radius: var(--toast-action-radius, var(--radius));
   }

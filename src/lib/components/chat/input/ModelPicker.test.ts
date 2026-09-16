@@ -41,6 +41,8 @@ vi.mock('@fortawesome/free-solid-svg-icons', () => ({
   faCircleNotch: { iconName: 'circle-notch' },
   faLock: { iconName: 'lock' },
   faPlus: { iconName: 'plus' },
+  faLayerGroup: { iconName: 'layer-group' },
+  faXmark: { iconName: 'xmark' },
   faRotateRight: { iconName: 'rotate-right' },
   faArrowsRotate: { iconName: 'arrows-rotate' },
   faExclamationTriangle: { iconName: 'exclamation-triangle' },
@@ -675,7 +677,6 @@ describe('ModelPicker combined reasoning mode', () => {
     const listbox = screen.getByRole('listbox');
     const popover = listbox.closest('[data-slot="dropdown-content"]') as HTMLElement;
     expect(popover).toBeTruthy();
-    expect(popover.className).toContain('bg-background!');
     expect(popover.contains(screen.getByRole('searchbox', { name: 'Search options' }))).toBe(true);
     const modelOption = await screen.findByRole('option', { name: /GPT-5\.6-Sol/ });
     expect(modelOption.textContent).toContain('Codex model');
@@ -738,6 +739,32 @@ describe('ModelPicker combined reasoning mode', () => {
 
     expect(await screen.findAllByRole('option', { name: /GPT-5\.6-Sol/ })).toHaveLength(1);
     expect((effortTrigger() as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('can change the selected model effort while search hides that model', async () => {
+    const onReasoningChange = vi.fn(() => true);
+    const onModelChange = vi.fn();
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'codex:gpt-5.6-sol',
+        showReasoning: true,
+        reasoningEffort: 'medium',
+        onReasoningChange,
+        onModelChange,
+        portal: false,
+      },
+    });
+
+    await fireEvent.click(screen.getByRole('button'));
+    await screen.findByRole('option', { name: /GPT-5\.6-Sol/ });
+    const search = screen.getByRole('searchbox');
+    await fireEvent.input(search, { target: { value: 'not a model' } });
+    await waitFor(() => expect(screen.queryByRole('option')).toBeNull());
+    await selectEffort(await openEffortSelect(), 'High');
+    await waitFor(() => expect(onReasoningChange).toHaveBeenCalledWith('high'));
+    expect(onModelChange).not.toHaveBeenCalled();
+    expect(applyReasoningEffortMock).not.toHaveBeenCalled();
+    expect((search as HTMLInputElement).value).toBe('not a model');
   });
 
   it('uses applyReasoningEffort when a reasoning level is selected', async () => {
@@ -854,6 +881,28 @@ describe('ModelPicker combined reasoning mode', () => {
     expect(onReasoningChange).not.toHaveBeenCalled();
   });
 
+  it('focuses search through the exported keyboard-shortcut entry point and resets on reopen', async () => {
+    const { component } = render(ModelPicker, {
+      props: {
+        selectedModel: 'codex:gpt-5.6-sol',
+        showReasoning: true,
+        portal: false,
+      },
+    });
+    component.open();
+    const search = await screen.findByRole('searchbox');
+    await waitFor(() => expect(document.activeElement).toBe(search));
+    await fireEvent.input(search, { target: { value: 'missing fixture model' } });
+    expect(screen.queryByRole('option')).toBeNull();
+    await fireEvent.keyDown(search, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
+    component.open();
+    const reopenedSearch = await screen.findByRole('searchbox');
+    await waitFor(() => expect(document.activeElement).toBe(reopenedSearch));
+    expect((reopenedSearch as HTMLInputElement).value).toBe('');
+    expect(await screen.findByRole('option', { name: /GPT-5\.6-Sol/ })).toBeTruthy();
+  });
+
   it('lets the canonical select own keyboard navigation, focus, and Escape', async () => {
     render(ModelPicker, {
       props: {
@@ -904,46 +953,61 @@ describe('ModelPicker combined reasoning mode', () => {
     await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
   });
 
-  it('filters by provider tabs and supports arrow-key navigation', async () => {
-    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(async (providerId) => ({
-      models:
-        providerId === 'codex'
-          ? [{ value: 'codex:gpt-5.6-sol', label: 'GPT-5.6-Sol', description: 'Codex model' }]
-          : [{ value: 'gpt5.4', label: 'GPT 5.4', description: 'Auggie model' }],
-    }));
-    enabledProviderIds$.set(['auggie', 'codex']);
+  it.each([false, true])(
+    'browses one provider with live arrow-key focus (reasoning=%s)',
+    async (showReasoning) => {
+      vi.mocked(getModelsForProviderForLoadingState).mockImplementation(async (providerId) => ({
+        models:
+          providerId === 'codex'
+            ? [{ value: 'codex:gpt-5.6-sol', label: 'GPT-5.6-Sol', description: 'Codex model' }]
+            : [{ value: 'gpt5.4', label: 'GPT 5.4', description: 'Auggie model' }],
+      }));
+      enabledProviderIds$.set(['auggie', 'codex']);
 
-    render(ModelPicker, {
-      props: {
-        selectedModel: 'codex:gpt-5.6-sol',
-        agentId: 'agent-1',
-        workspaceId: 'ws-1',
-        showReasoning: true,
-        portal: false,
-      },
-    });
+      render(ModelPicker, {
+        props: {
+          selectedModel: 'codex:gpt-5.6-sol',
+          agentId: 'agent-1',
+          workspaceId: 'ws-1',
+          showReasoning,
+          portal: false,
+        },
+      });
 
-    await waitFor(() => {
-      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('auggie');
-      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('codex');
-    });
-    await fireEvent.click(screen.getByRole('button'));
+      await waitFor(() => {
+        expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('auggie');
+        expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('codex');
+      });
+      await fireEvent.click(screen.getByRole('button'));
 
-    const codexTab = screen.getByRole('tab', { name: /Codex/ });
-    const providerTabs = screen.getByTestId('model-provider-tabs');
-    expect(providerTabs.parentElement?.className).toContain('bg-popover!');
-    expect(providerTabs.parentElement?.className).toContain('border-b!');
-    expect(codexTab.getAttribute('aria-selected')).toBe('true');
-    expect(await screen.findByRole('option', { name: /GPT-5\.6-Sol/ })).toBeTruthy();
-    expect(screen.queryByRole('option', { name: /GPT 5\.4/ })).toBeNull();
+      const codexTab = screen.getByRole('tab', { name: /Codex/ });
+      const providerTabs = screen.getByTestId('model-provider-tabs');
+      expect(within(providerTabs).getAllByRole('tab')).toHaveLength(2);
+      expect(providerTabs.getAttribute('aria-orientation')).toBe('vertical');
+      expect(codexTab.getAttribute('aria-selected')).toBe('true');
+      expect(await screen.findByRole('option', { name: /GPT-5\.6-Sol/ })).toBeTruthy();
+      expect(screen.queryByRole('option', { name: /GPT 5\.4/ })).toBeNull();
 
-    await fireEvent.keyDown(codexTab, { key: 'ArrowLeft' });
+      await fireEvent.keyDown(codexTab, { key: 'ArrowLeft' });
 
-    const auggieTab = screen.getByRole('tab', { name: /Auggie/ });
-    expect(auggieTab.getAttribute('aria-selected')).toBe('true');
-    expect(await screen.findByRole('option', { name: /GPT 5\.4/ })).toBeTruthy();
-    await waitFor(() => expect(screen.queryByRole('option', { name: /GPT-5\.6-Sol/ })).toBeNull());
-  });
+      const auggieTab = screen.getByRole('tab', { name: /Auggie/ });
+      expect(auggieTab.getAttribute('aria-selected')).toBe('true');
+      expect(document.activeElement).toBe(auggieTab);
+      expect(await screen.findByRole('option', { name: /GPT 5\.4/ })).toBeTruthy();
+      await waitFor(() =>
+        expect(screen.queryByRole('option', { name: /GPT-5\.6-Sol/ })).toBeNull(),
+      );
+      await fireEvent.keyDown(auggieTab, { key: 'ArrowUp' });
+      expect(document.activeElement).toBe(codexTab);
+      expect(codexTab.getAttribute('aria-selected')).toBe('true');
+      await fireEvent.keyDown(codexTab, { key: 'Home' });
+      expect(document.activeElement).toBe(auggieTab);
+      await fireEvent.keyDown(auggieTab, { key: 'End' });
+      expect(document.activeElement).toBe(codexTab);
+      await fireEvent.keyDown(codexTab, { key: 'ArrowDown' });
+      expect(document.activeElement).toBe(auggieTab);
+    },
+  );
 
   it('opens provider settings from the control after the provider tabs', async () => {
     const { navigateToSettings } = await import('$lib/utils/workspace-navigation');
@@ -1021,6 +1085,9 @@ describe('ModelPicker combined reasoning mode', () => {
       });
     });
     expect(refreshButton.hasAttribute('disabled')).toBe(true);
+    expect(refreshButton.getAttribute('aria-busy')).toBe('true');
+    await fireEvent.click(refreshButton);
+    expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledTimes(1);
 
     resolveRefresh({
       models: [{ value: 'codex:gpt-6-codex', label: 'GPT-6 Codex', description: 'Smarter' }],
@@ -1029,6 +1096,44 @@ describe('ModelPicker combined reasoning mode', () => {
     expect(await screen.findByRole('option', { name: /GPT-6 Codex/ })).toBeTruthy();
     await waitFor(() => expect(screen.queryByRole('option', { name: /GPT-5\.6-Sol/ })).toBeNull());
     await waitFor(() => expect(refreshButton.hasAttribute('disabled')).toBe(false));
+  });
+
+  it('keeps the selected model on refresh failure and permits retry', async () => {
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(
+      async (providerId, options) => {
+        if (options?.forceRefresh) throw new Error('Fixture catalog unavailable');
+        return {
+          models:
+            providerId === 'codex' ? [{ value: 'codex:gpt-5.6-sol', label: 'GPT-5.6-Sol' }] : [],
+        };
+      },
+    );
+    enabledProviderIds$.set(['codex']);
+    const onModelChange = vi.fn();
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'codex:gpt-5.6-sol',
+        showReasoning: true,
+        onModelChange,
+        portal: false,
+      },
+    });
+    await fireEvent.click(screen.getByRole('button'));
+    const row = await screen.findByRole('option', { name: /GPT-5\.6-Sol/ });
+    const refresh = screen.getByTestId('model-provider-refresh-button');
+    await fireEvent.click(refresh);
+    await waitFor(() => expect(refresh.getAttribute('aria-busy')).toBe('false'));
+    expect(row.getAttribute('aria-selected')).toBe('true');
+    expect(screen.getAllByText(/Fixture catalog unavailable/).length).toBeGreaterThan(0);
+    expect(onModelChange).not.toHaveBeenCalled();
+    await fireEvent.click(refresh);
+    await waitFor(() =>
+      expect(
+        vi
+          .mocked(getModelsForProviderForLoadingState)
+          .mock.calls.filter(([, options]) => options?.forceRefresh),
+      ).toHaveLength(2),
+    );
   });
 
   it('keeps a force-refreshed provider ahead of overlapping catalog fetches', async () => {
@@ -1147,7 +1252,7 @@ describe('ModelPicker combined reasoning mode', () => {
     expect(screen.getByTestId('model-reasoning-effort-gauge').dataset.gaugeValue).toBe('1');
 
     await fireEvent.click(trigger);
-    expect(screen.getByTestId('model-reasoning-section')).toBeTruthy();
+    expect(await screen.findByTestId('model-reasoning-section')).toBeTruthy();
     const selectTrigger = effortTrigger() as HTMLButtonElement;
     expect(selectTrigger.disabled).toBe(false);
     expect(selectTrigger.getAttribute('aria-expanded')).toBe('false');
@@ -1206,7 +1311,7 @@ describe('ModelPicker combined reasoning mode', () => {
     expect(screen.queryByTestId('model-reasoning-effort-gauge')).toBeNull();
 
     await fireEvent.click(trigger);
-    const selectTrigger = effortTrigger();
+    const selectTrigger = await screen.findByTestId('effort-picker-trigger');
     expect(selectTrigger.textContent?.trim()).toBe('Off');
     expect(selectTrigger.getAttribute('aria-label')).toContain('Off');
     const gauge = screen.getByTestId('effort-gauge');
@@ -1320,6 +1425,7 @@ describe('ModelPicker multi-provider mode', () => {
     await fireEvent.click(screen.getByRole('button'));
 
     expect(await screen.findByRole('option', { name: /GPT 5\.4/ })).toBeTruthy();
+    await fireEvent.click(screen.getByRole('tab', { name: /Codex/ }));
     expect(screen.getByText('Loading OpenAI Codex models…')).toBeTruthy();
     expect(screen.queryByText('No models available')).toBeNull();
 
@@ -1453,9 +1559,11 @@ describe('ModelPicker multi-provider mode', () => {
     await fireEvent.click(screen.getByRole('button'));
 
     expect(await screen.findByRole('option', { name: /Sonnet 4\.6/ })).toBeTruthy();
+    await fireEvent.click(screen.getByRole('tab', { name: /Codex/ }));
     expect(screen.getAllByText(/OpenAI Codex: CLI not found/).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/developers\.openai\.com\/codex/).length).toBeGreaterThan(0);
 
+    await fireEvent.click(screen.getByRole('tab', { name: /Auggie/ }));
     await fireEvent.click(screen.getByRole('option', { name: /Sonnet 4\.6/ }));
 
     expect(onModelChange).toHaveBeenCalledWith('sonnet4.6', {
@@ -1491,8 +1599,8 @@ describe('ModelPicker multi-provider mode', () => {
 
     // Providers with models are unaffected…
     expect(await screen.findByRole('option', { name: /GPT 5\.4/ })).toBeTruthy();
-    // …and the empty-with-warning provider renders a visible warning row
-    // instead of the group vanishing.
+    // …and browsing the empty provider still exposes its warning row.
+    await fireEvent.click(screen.getByRole('tab', { name: /OpenCode/ }));
     expect(screen.getAllByText(/OpenCode: opencode binary not found/).length).toBeGreaterThan(0);
   });
 
@@ -2136,7 +2244,9 @@ describe('ModelPicker availability gating', () => {
     await fireEvent.click(screen.getByRole('button'));
 
     expect(await screen.findByRole('option', { name: /Grok 4/ })).toBeTruthy();
-    expect(screen.getAllByText('Grok Build').length).toBeGreaterThan(0);
+    expect(screen.getByRole('tab', { name: /Grok Build/ }).getAttribute('aria-selected')).toBe(
+      'true',
+    );
 
     // Reset for other tests
     activeProviderId$.set('auggie');
@@ -2310,7 +2420,7 @@ describe('ModelPicker unlocked agent provider handling', () => {
     activeProviderId$.set('auggie');
   });
 
-  it('shows all enabled providers when the agent session provider differs from the active provider', async () => {
+  it('offers every enabled provider when the agent session provider differs from the active provider', async () => {
     enabledProviderIds$.set(['auggie', 'codex']);
     mockAgentSession$.set({ id: 'agent-1', workspaceId: 'ws-1', provider: 'codex' });
 
@@ -2327,7 +2437,8 @@ describe('ModelPicker unlocked agent provider handling', () => {
 
     // The agent's provider is visible…
     expect(await screen.findByRole('option', { name: /GPT-5 Codex/ })).toBeTruthy();
-    // …and so is every other enabled provider — not just the agent's.
+    // …and other enabled providers remain reachable through the rail.
+    await fireEvent.click(screen.getByRole('tab', { name: /Auggie/ }));
     expect(await screen.findByRole('option', { name: /Sonnet 4\.6/ })).toBeTruthy();
   });
 
@@ -2359,6 +2470,7 @@ describe('ModelPicker unlocked agent provider handling', () => {
     await waitFor(() => {
       expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('codex');
     });
+    await fireEvent.click(await screen.findByRole('tab', { name: /Codex/ }));
     expect(await screen.findByRole('option', { name: /GPT-5 Codex/ })).toBeTruthy();
   });
 
@@ -2378,6 +2490,7 @@ describe('ModelPicker unlocked agent provider handling', () => {
     await fireEvent.click(screen.getByRole('button'));
 
     expect(await screen.findByRole('option', { name: /GPT-5 Codex/ })).toBeTruthy();
+    await fireEvent.click(screen.getByRole('tab', { name: /Auggie/ }));
     expect(await screen.findByRole('option', { name: /Sonnet 4\.6/ })).toBeTruthy();
 
     // The agent's provider is enabled, so its models are already covered by the
@@ -2413,7 +2526,7 @@ describe('ModelPicker unlocked agent provider handling', () => {
       return { models: [] };
     });
 
-    await fireEvent.click(screen.getByTitle('Refresh OpenAI Codex models'));
+    await fireEvent.click(screen.getByTestId('model-provider-refresh-button'));
 
     // The refreshed list replaces the group (allProviderModels path); the
     // per-agent snapshot is not used for an enabled provider in unlocked mode.
@@ -2436,11 +2549,12 @@ describe('ModelPicker unlocked agent provider handling', () => {
 
     await fireEvent.click(screen.getByRole('button'));
 
-    // The enabled providers are all listed…
-    expect(await screen.findByRole('option', { name: /Sonnet 4\.6/ })).toBeTruthy();
-    // …and the agent's (now disabled) provider group stays visible so the
-    // currently selected model isn't orphaned.
+    // The current provider can arrive after opening; select its tab once loaded
+    // without requiring a close/reopen or orphaning the selected model.
     expect(await screen.findByRole('option', { name: /GPT-5 Codex/ })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: /Codex/ }).getAttribute('aria-selected')).toBe('true');
+    await fireEvent.click(screen.getByRole('tab', { name: /Auggie/ }));
+    expect(await screen.findByRole('option', { name: /Sonnet 4\.6/ })).toBeTruthy();
   });
 
   it('includes the disabled effective provider in reasoning provider tabs', async () => {
@@ -2500,7 +2614,7 @@ describe('ModelPicker unlocked agent provider handling', () => {
     expect(await screen.findByRole('option', { name: /GPT-6 Codex/ })).toBeTruthy();
   });
 
-  it('shows all enabled providers when providerId is explicitly passed', async () => {
+  it('offers every enabled provider when providerId is explicitly passed', async () => {
     enabledProviderIds$.set(['auggie', 'codex']);
 
     render(ModelPicker, {
@@ -2514,10 +2628,11 @@ describe('ModelPicker unlocked agent provider handling', () => {
     await fireEvent.click(screen.getByRole('button'));
 
     expect(await screen.findByRole('option', { name: /GPT-5 Codex/ })).toBeTruthy();
+    await fireEvent.click(screen.getByRole('tab', { name: /Auggie/ }));
     expect(await screen.findByRole('option', { name: /Sonnet 4\.6/ })).toBeTruthy();
   });
 
-  it('shows all enabled providers when providerId matches the active provider', async () => {
+  it('offers every enabled provider when providerId matches the active provider', async () => {
     enabledProviderIds$.set(['auggie', 'codex']);
     activeProviderId$.set('codex');
     mockModelState.availableModels = [
@@ -2535,6 +2650,7 @@ describe('ModelPicker unlocked agent provider handling', () => {
     await fireEvent.click(screen.getByRole('button'));
 
     expect(await screen.findByRole('option', { name: /GPT-5 Codex/ })).toBeTruthy();
+    await fireEvent.click(screen.getByRole('tab', { name: /Auggie/ }));
     expect(await screen.findByRole('option', { name: /Sonnet 4\.6/ })).toBeTruthy();
   });
 });
@@ -2717,6 +2833,7 @@ describe('ModelPicker global-default vs per-agent dispatch gating', () => {
       expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('codex');
     });
     await fireEvent.click(screen.getByRole('button'));
+    await fireEvent.click(screen.getByRole('tab', { name: /Codex/ }));
     await fireEvent.click(await screen.findByRole('option', { name: /GPT-5 Codex/ }));
     await new Promise((r) => setTimeout(r, 0));
 

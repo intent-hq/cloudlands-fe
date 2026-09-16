@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import axe from 'axe-core';
 import Dropdown from './Dropdown.svelte';
+import DropdownSupplementHarness from '../__tests__/DropdownSupplementHarness.svelte';
 import { dropdownCallerLedger } from './dropdown-caller-ledger';
 import { buildUiComponentInventory } from '../../../../../scripts/ui-component-inventory';
 import { warmImport } from '../../../../test/warm-import';
@@ -298,6 +299,87 @@ describe('Dropdown portal positioning', () => {
 describe('Dropdown compatibility modes', () => {
   beforeEach(setupDropdownEnv);
   afterEach(cleanupDropdownEnv);
+
+  it('opens programmatically with search focus without toggling an already-open menu', async () => {
+    const onopenchange = vi.fn();
+    const { component } = render(Dropdown, {
+      props: { options: [{ value: 'a', label: 'Alpha' }], onopenchange, animate: false },
+    });
+    const trigger = screen.getByRole('button');
+    await component.openAndFocusSearch();
+    const search = screen.getByRole('searchbox');
+    expect(document.activeElement).toBe(search);
+    await fireEvent.input(search, { target: { value: 'Al' } });
+    trigger.focus();
+    await component.openAndFocusSearch();
+    expect(document.activeElement).toBe(search);
+    expect((search as HTMLInputElement).value).toBe('Al');
+    expect(onopenchange).toHaveBeenCalledExactlyOnceWith(true);
+    await fireEvent.keyDown(search, { key: 'Enter' });
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('does not open programmatically when disabled', async () => {
+    const onopenchange = vi.fn();
+    const { component } = render(Dropdown, { props: { disabled: true, onopenchange } });
+    await component.openAndFocusSearch();
+    expect(screen.queryByRole('searchbox')).toBeNull();
+    expect(onopenchange).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])(
+    'lets unconsumed Escape dismiss from supplemental controls (portal=%s)',
+    async (portal) => {
+      render(DropdownSupplementHarness, { props: { portal } });
+      const trigger = screen.getByRole('button', { name: /Alpha/ });
+      await fireEvent.click(trigger);
+      const supplemental = screen.getByRole('button', { name: 'Configure option' });
+      const consumeEscape = (event: KeyboardEvent) => {
+        if (event.key === 'Escape') event.stopPropagation();
+      };
+      supplemental.addEventListener('keydown', consumeEscape, { once: true });
+      supplemental.focus();
+      await fireEvent.keyDown(supplemental, { key: 'Escape' });
+      expect(trigger.getAttribute('aria-expanded')).toBe('true');
+      await fireEvent.keyDown(supplemental, { key: 'ArrowDown' });
+      await fireEvent.keyDown(supplemental, { key: 'Enter' });
+      expect(JSON.parse(screen.getByTestId('supplement-result').textContent!)).toMatchObject({
+        value: 'alpha',
+        changes: 0,
+      });
+      await fireEvent.keyDown(supplemental, { key: 'Escape' });
+      expect(trigger.getAttribute('aria-expanded')).toBe('false');
+      expect(document.activeElement).toBe(trigger);
+    },
+  );
+
+  it.each(['Header action', 'Footer action'])(
+    'does not intercept selection keys from %s',
+    async (name) => {
+      render(DropdownSupplementHarness);
+      const trigger = screen.getByRole('button', { name: /Alpha/ });
+      await fireEvent.click(trigger);
+      const control = screen.getByRole('button', { name });
+      control.focus();
+      for (const key of ['ArrowDown', 'ArrowUp', 'Home', 'End', 'PageDown', 'PageUp', 'Enter']) {
+        expect(await fireEvent.keyDown(control, { key })).toBe(true);
+      }
+      expect(trigger.getAttribute('aria-expanded')).toBe('true');
+      expect(JSON.parse(screen.getByTestId('supplement-result').textContent!)).toMatchObject({
+        value: 'alpha',
+        changes: 0,
+      });
+      await fireEvent.click(control);
+      expect(
+        JSON.parse(screen.getByTestId('slot-actions').textContent!)[
+          name.startsWith('Header') ? 'header' : 'footer'
+        ],
+      ).toBe(1);
+      await fireEvent.keyDown(control, { key: 'Escape' });
+      expect(trigger.getAttribute('aria-expanded')).toBe('false');
+      expect(document.activeElement).toBe(trigger);
+    },
+  );
 
   it.each([false, true])('keeps owned popup interactions inside (portal=%s)', async (portal) => {
     render(Dropdown, { props: { portal, options: [{ value: 'a', label: 'Alpha' }] } });

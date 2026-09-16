@@ -111,6 +111,7 @@
   import { createLogger } from '$lib/utils/client-logger';
   import { preloadDiffHighlighter } from '$lib/utils/diff-highlighter-preloader';
   import { isFocusInEditableElement, KeyboardShortcutManager } from '$lib/utils/keyboardShortcuts';
+  import { registerGlobalSearchShortcuts } from '$lib/utils/global-search-shortcuts';
   import { configureMonacoWorkers } from '$lib/utils/monaco-workers';
   import { hasCapability } from '$lib/utils/platform-capabilities';
   import { dismissSplashElement } from '$features/backend/splash-gate';
@@ -639,15 +640,11 @@
       description: 'Go to Line (Mac)',
       action: openGoToLineAction,
     });
-    // Cmd+Shift+F (Mac) / Ctrl+Shift+F (Win/Linux) -> search
-    register({
-      key: 'f',
-      meta: isMac,
-      ctrl: !isMac,
-      shift: true,
-      shortcutId: 'global.search',
-      description: 'Search in files', // i18n-ignore (shortcut registry metadata, not rendered in UI)
-      action: openSearch,
+    // Mod+F yields to local find; Mod+Shift+F opens global search directly.
+    registerGlobalSearchShortcuts(paletteShortcuts, {
+      isMac,
+      openSearch,
+      resolveBinding: () => getEffectiveShortcut('global.search'),
     });
     // Alt/Option + Z -> toggle word wrap (like VS Code)
     register({

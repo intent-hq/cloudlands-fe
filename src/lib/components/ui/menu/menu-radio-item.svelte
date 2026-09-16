@@ -17,7 +17,6 @@
 </script>
 
 {#snippet radioContent({ checked }: { checked: boolean })}
-  <span data-slot="menu-item-leading" class="size-4 shrink-0" aria-hidden="true"></span>
   {@render children?.()}
   <span
     data-slot="menu-item-indicator"

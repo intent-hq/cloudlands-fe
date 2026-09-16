@@ -174,7 +174,7 @@
     border: none;
   }
 
-  :global(.rich-textarea .rich-textarea-editor) {
+  .rich-textarea :global(.tiptap-container .rich-textarea-editor) {
     padding: 0.75rem 1rem;
   }
 

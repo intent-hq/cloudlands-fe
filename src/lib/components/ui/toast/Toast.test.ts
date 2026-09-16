@@ -81,7 +81,8 @@ describe('Toast', () => {
     expect(screen.getByLabelText(/Notifications/)).toBeTruthy();
 
     toast.info('Third notification', { id: 'third', duration: Number.POSITIVE_INFINITY });
-    expect(await screen.findByText('2 more')).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'Dismiss all 3 notifications' })).toBeTruthy();
+    expect(screen.queryByText(/^\d+ more$/)).toBeNull();
   });
 
   it('keeps stacked toasts collapsed until the stack is hovered', async () => {

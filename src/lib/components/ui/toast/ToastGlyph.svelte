@@ -23,9 +23,9 @@
   {:else if variant === 'info'}
     <InfoIcon size={16} weight="fill" aria-hidden="true" />
   {:else if variant === 'loading'}
-    <CircleNotchIcon size={16} weight="bold" aria-hidden="true" />
+    <CircleNotchIcon size={16} weight="regular" aria-hidden="true" />
   {:else if variant === 'update'}
-    <DownloadSimpleIcon size={16} weight="bold" aria-hidden="true" />
+    <DownloadSimpleIcon size={16} weight="regular" aria-hidden="true" />
   {:else}
     <ChatCircleDotsIcon size={16} aria-hidden="true" />
   {/if}

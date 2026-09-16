@@ -537,7 +537,7 @@
                 onclick={(event) => {
                   event.stopPropagation();
                   onFilesChange?.(filesArr.filter((_, fileIndex) => fileIndex !== index));
-                }}><XIcon size={12} weight="bold" aria-hidden="true" /></Button
+                }}><XIcon size={12} weight="regular" aria-hidden="true" /></Button
               >
             </div>
           {/each}
@@ -654,7 +654,7 @@
                 {#if buttonMode === 'stop'}
                   <span class="size-3 rounded-[3px] bg-current" aria-hidden="true"></span>
                 {:else}
-                  <ArrowUpIcon size={compact ? 15 : 19} weight="bold" aria-hidden="true" />
+                  <ArrowUpIcon size={compact ? 15 : 19} weight="regular" aria-hidden="true" />
                 {/if}
               </span>
             {/key}

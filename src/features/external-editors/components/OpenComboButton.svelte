@@ -326,6 +326,13 @@
     executeAction(currentAction.id);
   }
 
+  function handleInlineKeyDown(event: KeyboardEvent) {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    event.stopPropagation();
+    executeAction(currentAction.id);
+  }
+
   function keepPrimaryActionOutsideDropdown(event: Event) {
     event.stopPropagation();
   }
@@ -382,18 +389,27 @@
       class={inline && children ? 'contents!' : ''}
     >
       {#snippet trigger({ props })}
-        {#if children}
+        {#if inline && children}
+          <!-- A native button is an atomic inline box, which strands punctuation
+               after a wrapped path. This semantic button stays in the text flow. -->
+          <span
+            role="button"
+            tabindex="0"
+            onclick={actions.length > 1 ? undefined : handlePrimaryClick}
+            onkeydown={actions.length > 1 ? undefined : handleInlineKeyDown}
+            {...actions.length > 1 ? props : {}}
+            class="cursor-pointer break-words rounded-sm text-inherit underline decoration-muted-foreground/20 underline-offset-2 hover:decoration-current focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            title={primaryTitle}>{@render children()}</span
+          >
+        {:else if children}
           <!-- With a single action there is no dropdown to show; run it directly. -->
           <Button
             type="button"
-            variant={inline ? 'plain' : 'ghost'}
-            wrapContent={!inline}
             onclick={actions.length > 1 ? undefined : handlePrimaryClick}
-            class={inline
-              ? 'inline h-auto whitespace-normal break-words p-0 align-baseline text-left [font:inherit] text-inherit underline underline-offset-2 decoration-muted-foreground/20 hover:decoration-current focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
-              : 'cursor-pointer'}
-            title={primaryTitle}
             {...actions.length > 1 ? props : {}}
+            variant="ghost"
+            class="cursor-pointer"
+            title={primaryTitle}
           >
             {@render children()}
           </Button>
@@ -411,12 +427,14 @@
         {:else}
           <!-- Full mode: icon + "Open" text + dropdown chevron -->
           <div
-            class="inline-flex gap-px items-stretch rounded-md borderx border-border overflow-hidden"
+            class="inline-flex items-stretch rounded-md border border-border"
+            data-open-combo-control
           >
             <Button
               type="button"
               variant="ghost"
-              class="flex items-center gap-1.5 px-2 py-1 text-xs {bgClass} transition-colors cursor-pointer"
+              size="sm"
+              class="gap-1.5 px-2 {actions.length > 1 ? 'rounded-r-none' : ''} {bgClass}"
               onpointerdown={keepPrimaryActionOutsideDropdown}
               onkeydown={keepPrimaryActionOutsideDropdown}
               onclick={handlePrimaryClick}
@@ -439,7 +457,7 @@
                   class="w-3.5 h-3.5 opacity-60"
                 />
               {/if}
-              <span class="text-subtle"
+              <span class="text-muted-foreground"
                 >{hasOpenCapableAction ? m.ui_openCombo_open_label() : currentAction.label}</span
               >
             </Button>
@@ -448,9 +466,11 @@
                 {...props}
                 type="button"
                 variant="ghost"
-                class="flex items-center h-full min-h-full px-1.5 py-2 {bgClass} border-lx border-border transition-colors cursor-pointer"
+                size="icon-sm"
+                aria-label={m.ui_openCombo_openInApp_tooltip()}
+                class="rounded-l-none border-l border-border {bgClass}"
               >
-                <Fa icon={faChevronDown} class="w-2! h-2! text-ghost" />
+                <Fa icon={faChevronDown} class="size-3! text-muted-foreground" />
               </Button>
             {/if}
           </div>
@@ -458,56 +478,43 @@
       {/snippet}
 
       {#snippet content()}
-        <div class="max-w-60">
+        <div class="w-60 max-w-full">
           {#if headerText}
-            <div class="px-2 py-1.5 text-sm text-subtle">
+            <div class="type-caption px-2 py-1.5 text-subtle">
               {headerText}
             </div>
           {/if}
-          <!-- <div class="w-full h-px bg-border mb-1"></div> -->
           {#each actions as action (action.id)}
-            {#if action.id === 'copy'}
-              <!-- <div class="my-1 w-full h-px bg-border"></div> -->
-            {/if}
-            <Button
-              type="button"
-              variant="ghost"
-              class="flex flex-col w-full px-2 py-1.5 text-sm hover:bg-muted transition-colors text-left cursor-pointer"
-              onclick={() => handleActionClick(action.id)}
-            >
-              <div class="w-full flex items-center gap-2">
+            <Menu.Item onSelect={() => handleActionClick(action.id)} textValue={action.label}>
+              {#snippet leading()}
                 {#if action.iconBase64}
-                  <!-- Use dynamic icon extracted from app bundle -->
-                  <img
-                    src="data:image/png;base64,{action.iconBase64}"
-                    alt={action.label}
-                    class="w-5 h-5"
-                  />
+                  <img src="data:image/png;base64,{action.iconBase64}" alt="" class="size-4" />
                 {:else if action.icon}
                   {@const Icon = action.icon}
                   <Icon size={16} />
                 {:else if action.faIcon}
-                  <Fa icon={action.faIcon} class="w-4 h-4 ml-0.5 mr-0.5 opacity-30" />
+                  <Fa icon={action.faIcon} class="size-4 text-muted-foreground" />
                 {:else}
                   <Fa
                     icon={resolveEditorFallbackIcon(action.category)}
-                    class="w-4 h-4 ml-0.5 mr-0.5 opacity-30"
+                    class="size-4 text-muted-foreground"
                   />
                 {/if}
-                <span class="flex-1">{action.label}</span>
-                {#if action.shortcut}
-                  <span class="text-xs text-subtle">{action.shortcut}</span>
+              {/snippet}
+              <span class="min-w-0 flex-1">
+                <span class="block truncate">{action.label}</span>
+                {#if action.description}
+                  <span class="type-caption block truncate text-subtle" title={action.description}>
+                    {action.description}
+                  </span>
                 {/if}
-              </div>
-              {#if action.description}
-                <div
-                  class="w-full pt-2 pb-1.5 px-0.5 font-mxono whitespace-break-spaces break-words text-xs text-subtle truncate"
-                  title={action.description}
-                >
-                  {action.description}
-                </div>
+              </span>
+              {#if action.shortcut}
+                <kbd class="type-caption ml-4 shrink-0 text-muted-foreground" aria-hidden="true">
+                  {action.shortcut}
+                </kbd>
               {/if}
-            </Button>
+            </Menu.Item>
           {/each}
         </div>
       {/snippet}

@@ -250,8 +250,8 @@ describe('CommandPalette new actions', () => {
     render(CommandPalette, { props: { isOpen: true, workspaceId: 'ws-1', onClose } });
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Agent Chat' }).className).toContain(
-        'bg-foreground/[0.04]',
+      expect(screen.getByRole('button', { name: 'Agent Chat' }).getAttribute('aria-current')).toBe(
+        'true',
       );
     });
 
@@ -367,6 +367,22 @@ describe('CommandPalette new actions', () => {
     }
 
     events.forEach((event, index) => window.removeEventListener(event, listeners[index]));
+  });
+
+  it('keeps current-row state on actionable results through search, arrows, and hover', async () => {
+    render(CommandPalette, { props: { isOpen: true, workspaceId: 'ws-1', onClose: vi.fn() } });
+    const input = screen.getByRole('textbox');
+    await fireEvent.input(input, { target: { value: 'attach' } });
+    const context = await screen.findByRole('button', { name: /Attach context/i });
+    const files = await screen.findByRole('button', { name: /Attach files/i });
+    await fireEvent.pointerMove(context);
+    expect(context.getAttribute('aria-current')).toBe('true');
+    await fireEvent.keyDown(input, { key: 'ArrowDown' });
+    expect(files.getAttribute('aria-current')).toBe('true');
+    expect(context.hasAttribute('aria-current')).toBe(false);
+    await fireEvent.keyDown(input, { key: 'ArrowUp' });
+    expect(context.getAttribute('aria-current')).toBe('true');
+    expect(files.hasAttribute('aria-current')).toBe(false);
   });
 });
 

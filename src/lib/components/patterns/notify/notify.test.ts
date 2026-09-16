@@ -107,6 +107,15 @@ describe('notify', () => {
     expect(sonner.dismiss).toHaveBeenCalledWith('archive:2');
   });
 
+  it('dismisses structured error details through the Sonner callback', async () => {
+    const closeToast = vi.fn();
+    render(NotifyErrorToast, {
+      props: { message: 'Save failed', details: 'Fixture diagnostic', closeToast },
+    });
+    await fireEvent.click(screen.getByRole('button', { name: /Close|Dismiss/i }));
+    expect(closeToast).toHaveBeenCalledOnce();
+  });
+
   it('returns a progress handle that updates and settles the same toast', () => {
     const handle = notify.progress('Uploading');
     handle.update('Uploading 50%');
