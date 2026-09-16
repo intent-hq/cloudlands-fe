@@ -1191,17 +1191,15 @@
   >
     <!-- i18n-ignore -->
     {#snippet trigger({ props }: { props: Record<string, unknown> })}
-      <Tooltip content={m.ui_breadcrumb_more_label()} side="bottom" delayDuration={300}>
-        <Button
-          {...props}
-          variant="ghost-light"
-          size="icon-sm"
-          aria-label={m.ui_breadcrumb_more_label()}
-          data-testid="panel-actions-trigger"
-        >
-          <KebabIcon class="pointer-events-none size-3.5!" />
-        </Button>
-      </Tooltip>
+      <Button
+        {...props}
+        variant="ghost-light"
+        size="icon-sm"
+        aria-label={m.ui_breadcrumb_more_label()}
+        data-testid="panel-actions-trigger"
+      >
+        <KebabIcon class="pointer-events-none size-3.5!" />
+      </Button>
     {/snippet}
     {#snippet content({ close }: { close: () => void })}
       <Menu.Group data-panel-actions-section="display">
