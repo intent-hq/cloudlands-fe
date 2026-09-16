@@ -2,7 +2,7 @@ name: Intent PR Checks
 
 on:
   pull_request:
-    branches: ['main']
+    branches: ['main', 'feat/up-clean-3-shared-controls']
   # Merge-queue runs (intent-hq/monorepo#2893): the queue tests the actual
   # merged tree before it lands on main. The heavy jobs are tiered by event:
   # checks / build-web / test run on BOTH pull_request and merge_group (fast

@@ -16,7 +16,10 @@ for (const scenario of [
       (dark) => document.documentElement.classList.toggle('dark', dark),
       scenario.dark,
     );
-    const root = await mount(Preview, { props: { narrowPane: scenario.narrowPane } });
+    const quickActionDefaultModel = 'codex:codex-preview-balanced';
+    const root = await mount(Preview, {
+      props: { narrowPane: scenario.narrowPane, quickActionDefaultModel },
+    });
     await page.evaluate(() => document.fonts.ready);
     const rows = root.locator('[data-slot="settings-field-row"]');
     await expect(rows).toHaveCount(5);
@@ -62,10 +65,13 @@ for (const scenario of [
     // Real override selection, not a geometry-only mock: inherited selection
     // clears only that action and leaves the general quick-action default alone.
     const commit = root.locator('#background-agent-commit button[aria-haspopup="listbox"]');
+    const defaults = root.getByTestId('defaults-state');
+    await expect(defaults).toContainText(`"defaultModel":"${quickActionDefaultModel}"`);
+    await expect(defaults).toContainText('"commit":"claude-code:claude-code-preview-deep"');
     await commit.click();
     await page.getByRole('option', { name: /Use default quick action model/ }).click();
-    await expect(root.getByTestId('defaults-state')).toContainText('"commit":""');
-    await expect(root.getByTestId('defaults-state')).toContainText('"defaultModel":""');
+    await expect(defaults).toContainText('"commit":""');
+    await expect(defaults).toContainText(`"defaultModel":"${quickActionDefaultModel}"`);
     await commit.click();
     await expect(
       page.getByRole('option', { name: /Use default quick action model/ }),

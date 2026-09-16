@@ -6,6 +6,7 @@ export const settingsMetadata = parsePatternMetadata({
   source: 'src/lib/components/patterns/settings/index.ts',
   publicImport: '$lib/components/patterns/settings',
   exports: [
+    'SettingsControl',
     'SettingsDisclosure',
     'SettingsFieldRow',
     'SettingsForm',

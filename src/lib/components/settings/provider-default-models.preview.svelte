@@ -1,7 +1,10 @@
 <script module lang="ts">
   import { definePreview } from '$lib/component-catalog/preview-definition';
 
-  export const preview = definePreview<{ narrowPane?: boolean }>({
+  export const preview = definePreview<{
+    narrowPane?: boolean;
+    quickActionDefaultModel?: string;
+  }>({
     id: 'provider-default-models',
     title: 'Provider default models',
     defaultState: 'default',
@@ -35,7 +38,10 @@
   import BackgroundAgentSettings from './BackgroundAgentSettings.svelte';
   import { m } from '$shared/paraglide/messages.js';
 
-  let { narrowPane = false }: { narrowPane?: boolean } = $props();
+  let {
+    narrowPane = false,
+    quickActionDefaultModel = '',
+  }: { narrowPane?: boolean; quickActionDefaultModel?: string } = $props();
   // The sandbox/CT root owns the isolated store; no persistence sagas run here.
   const previous = {
     models: selectProviderModels.select(appStore.state),
@@ -49,7 +55,7 @@
   appStore.dispatch(loadDefaultReasoningEffortFromStorage('medium'));
   appStore.dispatch(
     hydrateSettings({
-      defaultModel: '',
+      defaultModel: quickActionDefaultModel,
       typeOverrides: {
         commit: 'claude-code:claude-code-preview-deep',
         pr: '',
