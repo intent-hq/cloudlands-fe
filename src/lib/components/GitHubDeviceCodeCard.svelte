@@ -14,11 +14,21 @@
     verificationUri: string;
     /** Compact layout for tight surfaces like the sidebar banner. */
     compact?: boolean;
+    /**
+     * Override for the "Open GitHub" action. When set, the card does not open
+     * the URL itself — the caller owns the open (e.g. the invite consent modal,
+     * where main opens the allowlisted URL and the modal enters its waiting state).
+     */
+    onOpen?: () => void;
   }
 
-  let { userCode, verificationUri, compact = false }: Props = $props();
+  let { userCode, verificationUri, compact = false, onOpen }: Props = $props();
 
   function handleOpenGitHub() {
+    if (onOpen) {
+      onOpen();
+      return;
+    }
     // GitHub URLs always route to the external browser via the link handler.
     void handleLink(verificationUri, {});
   }
