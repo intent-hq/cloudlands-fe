@@ -336,7 +336,9 @@ daemonHealthReducer.with(
     // A poll that started under a previous connection lifecycle is stale
     // regardless of what it reports — never let it touch this connection.
     if (connectionGeneration !== state.connectionGeneration) return state;
-    // Extract stats payload, treating new fields as optional.
+    // Extract stats payload, treating new fields as optional. Counts and
+    // telemetry are administrator-only (collaborator projection, intentd
+    // #1934) and copied as-is so an omitted field stays absent downstream.
     const stats: DaemonHealthStats = {
       clients: wirePayload.clients,
       agents: wirePayload.agents,
