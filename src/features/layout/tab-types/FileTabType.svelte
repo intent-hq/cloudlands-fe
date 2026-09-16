@@ -18,12 +18,14 @@
     selectFileIsBinary,
     selectFileIsDirty,
     selectFileLastUpdated,
+    selectLegacyFileDeleteOperation,
     selectFileLoading,
     selectFileNotFoundCandidates,
     selectFileSaving,
     selectWorkspaceMediaResolution,
   } from '$store/renderer/slices/files/files-selectors';
   import {
+    clearLegacyFileDeleteOperation,
     loadFileContentRequested,
     deleteLegacyFileRequested,
     removeFileContentEntry,
@@ -94,6 +96,8 @@
   const fileLastUpdatedStore = selectFileLastUpdated(workspaceId, filePathStore);
   // svelte-ignore state_referenced_locally
   const workspaceMediaResolution$ = selectWorkspaceMediaResolution(workspaceId, tab.id);
+  // svelte-ignore state_referenced_locally
+  const fileDeleteOperation$ = selectLegacyFileDeleteOperation(workspaceId, tab.id);
   const fileDiffOptionsStore = writable<{ path: string; staged: boolean } | undefined>(undefined);
   // svelte-ignore state_referenced_locally
   const fileDiffRead$ = selectGitDiffRead(workspaceId, fileDiffOptionsStore);
@@ -143,6 +147,39 @@
   // Track the last processed timestamp to detect new navigation requests
   let lastJumpTimestamp = $state<number | undefined>(undefined);
   let markdownPreview = $state(true); // default to rich text for markdown files
+  let pendingFileDelete = $state.raw<{
+    requestId: string;
+    workspaceId: string;
+    tabId: string;
+    path: string;
+    resolve: () => void;
+    reject: (error: Error) => void;
+  } | null>(null);
+
+  $effect(() => {
+    const pending = pendingFileDelete;
+    const operation = $fileDeleteOperation$;
+    if (
+      !pending ||
+      !operation ||
+      operation.requestId !== pending.requestId ||
+      operation.path !== pending.path ||
+      operation.status === 'loading'
+    ) {
+      return;
+    }
+
+    pendingFileDelete = null;
+    appStore.dispatch(
+      clearLegacyFileDeleteOperation(pending.workspaceId, pending.tabId, pending.requestId),
+    );
+    if (operation.status === 'error') {
+      pending.reject(new Error(operation.error ?? m.ui_workspaceActions_deleteFileFailed_error()));
+      return;
+    }
+    appStore.dispatch(closeTab(pending.workspaceId, pending.tabId));
+    pending.resolve();
+  });
 
   // Extract line from tab.data when tab changes
   // Uses jumpTimestamp to detect changes even when navigating to the same line
@@ -411,25 +448,34 @@
 
   function handleDeleteFile() {
     const absolutePath = fileAbsolutePath;
-    if (!tab.filePath || !workspaceId || !absolutePath) return;
+    if (!tab.filePath || !workspaceId || !absolutePath || pendingFileDelete) return;
 
     const filePath = tab.filePath;
+    const tabId = tab.id;
+    const workspaceIdToDelete = workspaceId;
     const fileName = filePath.split('/').pop() || m.layout_fileTab_file_fallback();
     // Capture current content so we can restore on undo
     const savedContent = selectFileContent.select(appStore.state, workspaceId, filePath) ?? '';
 
     void deleteWithUndo(
       `"${fileName}"`,
-      () => {
-        // Delete action
-        appStore.dispatch(deleteLegacyFileRequested(workspaceId, filePath));
-        // Close the tab
-        appStore.dispatch(closeTab(workspaceId, tab.id));
-      },
+      () =>
+        new Promise<void>((resolve, reject) => {
+          const request = deleteLegacyFileRequested(workspaceIdToDelete, filePath, tabId);
+          pendingFileDelete = {
+            requestId: request.payload[3],
+            workspaceId: workspaceIdToDelete,
+            tabId,
+            path: filePath,
+            resolve,
+            reject,
+          };
+          appStore.dispatch(request);
+        }),
       () => {
         // Undo action — re-create the file with saved content (immediate write).
         appStore.dispatch(
-          saveFileContentRequested(workspaceId, filePath, absolutePath, savedContent),
+          saveFileContentRequested(workspaceIdToDelete, filePath, absolutePath, savedContent),
         );
       },
     );

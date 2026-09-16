@@ -39,38 +39,102 @@ export const settingsChangesReceived = createAction<
   [changes: AppliedSettingChange[], revision?: number]
 >('settings/changesReceived');
 
+type KeyRequest = [operationKey: string | undefined, requestId: number];
+type GetSettingRequest = [path: string, operationKey: string | undefined, requestId: number];
+type UpdateSettingsRequest = [
+  changes: AppSettingChange[],
+  operationKey: string | undefined,
+  requestId: number,
+];
+type GetUserRuleRequest = [ruleType: string, operationKey: string | undefined, requestId: number];
+type UpdateUserRuleRequest = [
+  ruleType: string,
+  content: string,
+  enabled: boolean | undefined,
+  operationKey: string | undefined,
+  requestId: number,
+];
+
+let nextSettingsRequestId = 0;
+const createSettingsRequestId = () => {
+  nextSettingsRequestId += 1;
+  return nextSettingsRequestId;
+};
+
 export const listSettingsRequested = createAsyncAction<
   [operationKey?: string],
+  KeyRequest,
   SettingDefinitionWithValue[]
->('settings/list', 'settings/listRequested');
+>('settings/list', 'settings/listRequested', (operationKey) => [
+  operationKey,
+  createSettingsRequestId(),
+]);
 export const getSettingRequested = createAsyncAction<
   [path: string, operationKey?: string],
+  GetSettingRequest,
   SettingDefinitionWithValue | null
->('settings/get', 'settings/getRequested');
+>('settings/get', 'settings/getRequested', (path, operationKey) => [
+  path,
+  operationKey,
+  createSettingsRequestId(),
+]);
 export const updateSettingsRequested = createAsyncAction<
   [changes: AppSettingChange[], operationKey?: string],
+  UpdateSettingsRequest,
   AppliedSettingChange[]
->('settings/update', 'settings/updateRequested');
+>('settings/update', 'settings/updateRequested', (changes, operationKey) => [
+  changes,
+  operationKey,
+  createSettingsRequestId(),
+]);
 export const getUserRuleRequested = createAsyncAction<
   [ruleType: string, operationKey?: string],
+  GetUserRuleRequest,
   UserRuleState | null
->('settings/getUserRule', 'settings/getUserRuleRequested');
+>('settings/getUserRule', 'settings/getUserRuleRequested', (ruleType, operationKey) => [
+  ruleType,
+  operationKey,
+  createSettingsRequestId(),
+]);
 export const updateUserRuleRequested = createAsyncAction<
   [ruleType: string, content: string, enabled?: boolean, operationKey?: string],
+  UpdateUserRuleRequest,
   MutationResult
->('settings/updateUserRule', 'settings/updateUserRuleRequested');
+>(
+  'settings/updateUserRule',
+  'settings/updateUserRuleRequested',
+  (ruleType, content, enabled, operationKey) => [
+    ruleType,
+    content,
+    enabled,
+    operationKey,
+    createSettingsRequestId(),
+  ],
+);
 export const getServerPairingInfoRequested = createAsyncAction<
   [operationKey?: string],
+  KeyRequest,
   ServerPairingInfo
->('settings/getServerPairingInfo', 'settings/getServerPairingInfoRequested');
+>('settings/getServerPairingInfo', 'settings/getServerPairingInfoRequested', (operationKey) => [
+  operationKey,
+  createSettingsRequestId(),
+]);
 export const rotateServerTokenRequested = createAsyncAction<
   [operationKey?: string],
+  KeyRequest,
   { token: string }
->('settings/rotateServerToken', 'settings/rotateServerTokenRequested');
+>('settings/rotateServerToken', 'settings/rotateServerTokenRequested', (operationKey) => [
+  operationKey,
+  createSettingsRequestId(),
+]);
 export const getSystemCapabilitiesRequested = createAsyncAction<
   [operationKey?: string],
+  KeyRequest,
   SystemCapabilities
->('settings/getSystemCapabilities', 'settings/getSystemCapabilitiesRequested');
+>('settings/getSystemCapabilities', 'settings/getSystemCapabilitiesRequested', (operationKey) => [
+  operationKey,
+  createSettingsRequestId(),
+]);
 
 export type SettingsOperation<T> = {
   status: 'idle' | 'loading' | 'success' | 'error';
@@ -79,15 +143,22 @@ export type SettingsOperation<T> = {
   error: string | null;
 };
 
+type CorrelatedSettingsOperation<T> = SettingsOperation<T> & {
+  requestId: number;
+};
+
 export type SettingsOperationsState = {
-  lists: Record<string, SettingsOperation<Collection<SettingDefinitionWithValue, 'path'>>>;
-  gets: Record<string, SettingsOperation<SettingDefinitionWithValue | null>>;
-  updates: Record<string, SettingsOperation<Collection<AppliedSettingChange, 'path'>>>;
-  ruleReads: Record<string, SettingsOperation<UserRuleState | null>>;
-  ruleWrites: Record<string, SettingsOperation<MutationResult>>;
-  pairingReads: Record<string, SettingsOperation<ServerPairingInfo>>;
-  tokenRotations: Record<string, SettingsOperation<{ token: string }>>;
-  capabilityReads: Record<string, SettingsOperation<SystemCapabilities>>;
+  lists: Record<
+    string,
+    CorrelatedSettingsOperation<Collection<SettingDefinitionWithValue, 'path'>>
+  >;
+  gets: Record<string, CorrelatedSettingsOperation<SettingDefinitionWithValue | null>>;
+  updates: Record<string, CorrelatedSettingsOperation<Collection<AppliedSettingChange, 'path'>>>;
+  ruleReads: Record<string, CorrelatedSettingsOperation<UserRuleState | null>>;
+  ruleWrites: Record<string, CorrelatedSettingsOperation<MutationResult>>;
+  pairingReads: Record<string, CorrelatedSettingsOperation<ServerPairingInfo>>;
+  tokenRotations: Record<string, CorrelatedSettingsOperation<{ token: string }>>;
+  capabilityReads: Record<string, CorrelatedSettingsOperation<SystemCapabilities>>;
 };
 
 export const initialState: SettingsOperationsState = {
@@ -102,199 +173,271 @@ export const initialState: SettingsOperationsState = {
 };
 
 const operationKey = (key?: string) => key ?? 'default';
-const loading = <T>(current?: SettingsOperation<T>): SettingsOperation<T> => ({
+const loading = <T>(
+  current: CorrelatedSettingsOperation<T> | undefined,
+  requestId: number,
+): CorrelatedSettingsOperation<T> => ({
   status: 'loading',
   version: (current?.version ?? 0) + 1,
   data: current?.data ?? null,
   error: null,
+  requestId,
 });
-const success = <T>(current: SettingsOperation<T> | undefined, data: T): SettingsOperation<T> => ({
+const success = <T>(
+  current: CorrelatedSettingsOperation<T>,
+  data: T,
+): CorrelatedSettingsOperation<T> => ({
   status: 'success',
-  version: current?.version ?? 1,
+  version: current.version,
   data,
   error: null,
+  requestId: current.requestId,
 });
 const failure = <T>(
-  current: SettingsOperation<T> | undefined,
+  current: CorrelatedSettingsOperation<T>,
   error: Error,
-): SettingsOperation<T> => ({
+): CorrelatedSettingsOperation<T> => ({
   status: 'error',
-  version: current?.version ?? 1,
-  data: current?.data ?? null,
+  version: current.version,
+  data: current.data,
   error: error.message,
+  requestId: current.requestId,
 });
+const isCurrentRequest = <T>(
+  current: CorrelatedSettingsOperation<T> | undefined,
+  requestId: number,
+): current is CorrelatedSettingsOperation<T> => current?.requestId === requestId;
 
 export const settingsOperationsReducer = createReducer<SettingsOperationsState>(initialState);
 
-settingsOperationsReducer.with(listSettingsRequested, (state, { payload: [key] }) => {
+settingsOperationsReducer.with(listSettingsRequested, (state, { payload: [key, requestId] }) => {
   const id = operationKey(key);
-  return { ...state, lists: { ...state.lists, [id]: loading(state.lists[id]) } };
+  return { ...state, lists: { ...state.lists, [id]: loading(state.lists[id], requestId) } };
 });
 settingsOperationsReducer.with(listSettingsRequested.success, (state, { payload }) => {
   const id = operationKey(payload.request[0]);
+  const current = state.lists[id];
+  if (!isCurrentRequest(current, payload.request[1])) return state;
   return {
     ...state,
     lists: {
       ...state.lists,
-      [id]: success(state.lists[id], createCollection('path', payload.response)),
+      [id]: success(current, createCollection('path', payload.response)),
     },
   };
 });
 settingsOperationsReducer.with(listSettingsRequested.failure, (state, { payload }) => {
   const id = operationKey(payload.request[0]);
-  return { ...state, lists: { ...state.lists, [id]: failure(state.lists[id], payload.error) } };
+  const current = state.lists[id];
+  if (!isCurrentRequest(current, payload.request[1])) return state;
+  return { ...state, lists: { ...state.lists, [id]: failure(current, payload.error) } };
 });
 
-settingsOperationsReducer.with(getSettingRequested, (state, { payload: [, key] }) => {
+settingsOperationsReducer.with(getSettingRequested, (state, { payload: [, key, requestId] }) => {
   const id = operationKey(key);
-  return { ...state, gets: { ...state.gets, [id]: loading(state.gets[id]) } };
+  return { ...state, gets: { ...state.gets, [id]: loading(state.gets[id], requestId) } };
 });
 settingsOperationsReducer.with(getSettingRequested.success, (state, { payload }) => {
   const id = operationKey(payload.request[1]);
-  return { ...state, gets: { ...state.gets, [id]: success(state.gets[id], payload.response) } };
+  const current = state.gets[id];
+  if (!isCurrentRequest(current, payload.request[2])) return state;
+  return { ...state, gets: { ...state.gets, [id]: success(current, payload.response) } };
 });
 settingsOperationsReducer.with(getSettingRequested.failure, (state, { payload }) => {
   const id = operationKey(payload.request[1]);
-  return { ...state, gets: { ...state.gets, [id]: failure(state.gets[id], payload.error) } };
+  const current = state.gets[id];
+  if (!isCurrentRequest(current, payload.request[2])) return state;
+  return { ...state, gets: { ...state.gets, [id]: failure(current, payload.error) } };
 });
 
-settingsOperationsReducer.with(updateSettingsRequested, (state, { payload: [, key] }) => {
-  const id = operationKey(key);
-  return { ...state, updates: { ...state.updates, [id]: loading(state.updates[id]) } };
-});
+settingsOperationsReducer.with(
+  updateSettingsRequested,
+  (state, { payload: [, key, requestId] }) => {
+    const id = operationKey(key);
+    return { ...state, updates: { ...state.updates, [id]: loading(state.updates[id], requestId) } };
+  },
+);
 settingsOperationsReducer.with(updateSettingsRequested.success, (state, { payload }) => {
   const id = operationKey(payload.request[1]);
+  const current = state.updates[id];
+  if (!isCurrentRequest(current, payload.request[2])) return state;
   return {
     ...state,
     updates: {
       ...state.updates,
-      [id]: success(state.updates[id], createCollection('path', payload.response)),
+      [id]: success(current, createCollection('path', payload.response)),
     },
   };
 });
 settingsOperationsReducer.with(updateSettingsRequested.failure, (state, { payload }) => {
   const id = operationKey(payload.request[1]);
+  const current = state.updates[id];
+  if (!isCurrentRequest(current, payload.request[2])) return state;
   return {
     ...state,
-    updates: { ...state.updates, [id]: failure(state.updates[id], payload.error) },
+    updates: { ...state.updates, [id]: failure(current, payload.error) },
   };
 });
 
-settingsOperationsReducer.with(getUserRuleRequested, (state, { payload: [, key] }) => {
+settingsOperationsReducer.with(getUserRuleRequested, (state, { payload: [, key, requestId] }) => {
   const id = operationKey(key);
-  return { ...state, ruleReads: { ...state.ruleReads, [id]: loading(state.ruleReads[id]) } };
+  return {
+    ...state,
+    ruleReads: { ...state.ruleReads, [id]: loading(state.ruleReads[id], requestId) },
+  };
 });
 settingsOperationsReducer.with(getUserRuleRequested.success, (state, { payload }) => {
   const id = operationKey(payload.request[1]);
+  const current = state.ruleReads[id];
+  if (!isCurrentRequest(current, payload.request[2])) return state;
   return {
     ...state,
-    ruleReads: { ...state.ruleReads, [id]: success(state.ruleReads[id], payload.response) },
+    ruleReads: { ...state.ruleReads, [id]: success(current, payload.response) },
   };
 });
 settingsOperationsReducer.with(getUserRuleRequested.failure, (state, { payload }) => {
   const id = operationKey(payload.request[1]);
+  const current = state.ruleReads[id];
+  if (!isCurrentRequest(current, payload.request[2])) return state;
   return {
     ...state,
-    ruleReads: { ...state.ruleReads, [id]: failure(state.ruleReads[id], payload.error) },
+    ruleReads: { ...state.ruleReads, [id]: failure(current, payload.error) },
   };
 });
 
-settingsOperationsReducer.with(updateUserRuleRequested, (state, { payload: [, , , key] }) => {
-  const id = operationKey(key);
-  return { ...state, ruleWrites: { ...state.ruleWrites, [id]: loading(state.ruleWrites[id]) } };
-});
+settingsOperationsReducer.with(
+  updateUserRuleRequested,
+  (state, { payload: [, , , key, requestId] }) => {
+    const id = operationKey(key);
+    return {
+      ...state,
+      ruleWrites: { ...state.ruleWrites, [id]: loading(state.ruleWrites[id], requestId) },
+    };
+  },
+);
 settingsOperationsReducer.with(updateUserRuleRequested.success, (state, { payload }) => {
   const id = operationKey(payload.request[3]);
+  const current = state.ruleWrites[id];
+  if (!isCurrentRequest(current, payload.request[4])) return state;
   return {
     ...state,
-    ruleWrites: { ...state.ruleWrites, [id]: success(state.ruleWrites[id], payload.response) },
+    ruleWrites: { ...state.ruleWrites, [id]: success(current, payload.response) },
   };
 });
 settingsOperationsReducer.with(updateUserRuleRequested.failure, (state, { payload }) => {
   const id = operationKey(payload.request[3]);
+  const current = state.ruleWrites[id];
+  if (!isCurrentRequest(current, payload.request[4])) return state;
   return {
     ...state,
-    ruleWrites: { ...state.ruleWrites, [id]: failure(state.ruleWrites[id], payload.error) },
+    ruleWrites: { ...state.ruleWrites, [id]: failure(current, payload.error) },
   };
 });
 
-settingsOperationsReducer.with(getServerPairingInfoRequested, (state, { payload: [key] }) => {
-  const id = operationKey(key);
-  return {
-    ...state,
-    pairingReads: { ...state.pairingReads, [id]: loading(state.pairingReads[id]) },
-  };
-});
+settingsOperationsReducer.with(
+  getServerPairingInfoRequested,
+  (state, { payload: [key, requestId] }) => {
+    const id = operationKey(key);
+    return {
+      ...state,
+      pairingReads: { ...state.pairingReads, [id]: loading(state.pairingReads[id], requestId) },
+    };
+  },
+);
 settingsOperationsReducer.with(getServerPairingInfoRequested.success, (state, { payload }) => {
   const id = operationKey(payload.request[0]);
+  const current = state.pairingReads[id];
+  if (!isCurrentRequest(current, payload.request[1])) return state;
   return {
     ...state,
     pairingReads: {
       ...state.pairingReads,
-      [id]: success(state.pairingReads[id], payload.response),
+      [id]: success(current, payload.response),
     },
   };
 });
 settingsOperationsReducer.with(getServerPairingInfoRequested.failure, (state, { payload }) => {
   const id = operationKey(payload.request[0]);
+  const current = state.pairingReads[id];
+  if (!isCurrentRequest(current, payload.request[1])) return state;
   return {
     ...state,
-    pairingReads: { ...state.pairingReads, [id]: failure(state.pairingReads[id], payload.error) },
+    pairingReads: { ...state.pairingReads, [id]: failure(current, payload.error) },
   };
 });
 
-settingsOperationsReducer.with(rotateServerTokenRequested, (state, { payload: [key] }) => {
-  const id = operationKey(key);
-  return {
-    ...state,
-    tokenRotations: { ...state.tokenRotations, [id]: loading(state.tokenRotations[id]) },
-  };
-});
+settingsOperationsReducer.with(
+  rotateServerTokenRequested,
+  (state, { payload: [key, requestId] }) => {
+    const id = operationKey(key);
+    return {
+      ...state,
+      tokenRotations: {
+        ...state.tokenRotations,
+        [id]: loading(state.tokenRotations[id], requestId),
+      },
+    };
+  },
+);
 settingsOperationsReducer.with(rotateServerTokenRequested.success, (state, { payload }) => {
   const id = operationKey(payload.request[0]);
+  const current = state.tokenRotations[id];
+  if (!isCurrentRequest(current, payload.request[1])) return state;
   return {
     ...state,
     tokenRotations: {
       ...state.tokenRotations,
-      [id]: success(state.tokenRotations[id], payload.response),
+      [id]: success(current, payload.response),
     },
   };
 });
 settingsOperationsReducer.with(rotateServerTokenRequested.failure, (state, { payload }) => {
   const id = operationKey(payload.request[0]);
+  const current = state.tokenRotations[id];
+  if (!isCurrentRequest(current, payload.request[1])) return state;
   return {
     ...state,
     tokenRotations: {
       ...state.tokenRotations,
-      [id]: failure(state.tokenRotations[id], payload.error),
+      [id]: failure(current, payload.error),
     },
   };
 });
 
-settingsOperationsReducer.with(getSystemCapabilitiesRequested, (state, { payload: [key] }) => {
-  const id = operationKey(key);
-  return {
-    ...state,
-    capabilityReads: { ...state.capabilityReads, [id]: loading(state.capabilityReads[id]) },
-  };
-});
+settingsOperationsReducer.with(
+  getSystemCapabilitiesRequested,
+  (state, { payload: [key, requestId] }) => {
+    const id = operationKey(key);
+    return {
+      ...state,
+      capabilityReads: {
+        ...state.capabilityReads,
+        [id]: loading(state.capabilityReads[id], requestId),
+      },
+    };
+  },
+);
 settingsOperationsReducer.with(getSystemCapabilitiesRequested.success, (state, { payload }) => {
   const id = operationKey(payload.request[0]);
+  const current = state.capabilityReads[id];
+  if (!isCurrentRequest(current, payload.request[1])) return state;
   return {
     ...state,
     capabilityReads: {
       ...state.capabilityReads,
-      [id]: success(state.capabilityReads[id], payload.response),
+      [id]: success(current, payload.response),
     },
   };
 });
 settingsOperationsReducer.with(getSystemCapabilitiesRequested.failure, (state, { payload }) => {
   const id = operationKey(payload.request[0]);
+  const current = state.capabilityReads[id];
+  if (!isCurrentRequest(current, payload.request[1])) return state;
   return {
     ...state,
     capabilityReads: {
       ...state.capabilityReads,
-      [id]: failure(state.capabilityReads[id], payload.error),
+      [id]: failure(current, payload.error),
     },
   };
 });

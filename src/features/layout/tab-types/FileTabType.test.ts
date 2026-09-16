@@ -15,6 +15,8 @@ const {
   flushMockSelectors,
   mockReduxState,
   resetMockReduxState,
+  deleteWithUndoMock,
+  reversibleOutcomes,
 } = vi.hoisted(() => {
   type FileEntry = {
     localContent: string | null;
@@ -29,6 +31,20 @@ const {
 
   type ActiveSelector = { update: () => void };
   const activeSelectors: ActiveSelector[] = [];
+  const reversibleOutcomes: string[] = [];
+  const deleteWithUndoMock = vi.fn(
+    async (_itemName: string, action: () => Promise<void> | void) => {
+      try {
+        await action();
+        reversibleOutcomes.push('success');
+        return true;
+      } catch (error) {
+        reversibleOutcomes.push(`error:${error instanceof Error ? error.message : String(error)}`);
+        return false;
+      }
+    },
+  );
+  let deleteRequestSequence = 0;
 
   const mockReduxState = {
     workspace: {
@@ -42,6 +58,15 @@ const {
       { requestedPath: string; resolvedPath: string | null; loading: boolean; error: string | null }
     >,
     mediaResolutionTargets: {} as Record<string, string>,
+    fileDeleteOperations: {} as Record<
+      string,
+      {
+        requestId: string;
+        path: string;
+        status: 'loading' | 'success' | 'error';
+        error: string | null;
+      }
+    >,
     fileTrackingChanges: [] as unknown[],
     gitDiffReads: {} as Record<string, { data: unknown[]; loading: boolean; error: string | null }>,
     lineWrapping: true,
@@ -68,10 +93,13 @@ const {
     };
     mockReduxState.mediaResolutions = {};
     mockReduxState.mediaResolutionTargets = {};
+    mockReduxState.fileDeleteOperations = {};
     mockReduxState.fileTrackingChanges = [];
     mockReduxState.gitDiffReads = {};
     mockReduxState.lineWrapping = true;
     mockReduxState.diffIndicators = false;
+    reversibleOutcomes.splice(0, reversibleOutcomes.length);
+    deleteRequestSequence = 0;
   }
 
   function applyExternalFileContentToMockState(path: string, content: string) {
@@ -145,7 +173,18 @@ const {
     updateFileContent: makeAction('files/updateFileContent'),
     removeFileContentEntry: makeAction('files/removeFileContentEntry'),
     resolveWorkspaceMediaRequested: makeAction('files/resolveWorkspaceMediaRequested'),
-    deleteLegacyFileRequested: makeAction('files/deleteLegacyFileRequested'),
+    deleteLegacyFileRequested: vi.fn(
+      (workspaceId: string, path: string, tabId?: string, requestId?: string) => ({
+        type: 'files/deleteLegacyFileRequested',
+        payload: [
+          workspaceId,
+          path,
+          tabId,
+          requestId ?? `delete-request-${++deleteRequestSequence}`,
+        ],
+      }),
+    ),
+    clearLegacyFileDeleteOperation: makeAction('files/clearLegacyFileDeleteOperation'),
     loadGitDiffs: makeAction('git/loadDiffs'),
     updateFileTabPath: makeAction('panelLayout/updateFileTabPath'),
   };
@@ -210,6 +249,8 @@ const {
     flushMockSelectors,
     mockReduxState,
     resetMockReduxState,
+    deleteWithUndoMock,
+    reversibleOutcomes,
   };
 });
 
@@ -227,6 +268,8 @@ vi.mock('$lib/client/live/backend-transport', async (importOriginal) => {
   const actual = await importOriginal<typeof import('$lib/client/live/backend-transport')>();
   return { ...actual, backendRequest: vi.fn() };
 });
+
+vi.mock('$lib/utils/reversible-actions', () => ({ deleteWithUndo: deleteWithUndoMock }));
 
 vi.mock('$store/renderer/slices/files/files-selectors', () => ({
   selectFileContent: createMockSelector((_wsId: string, path: string | null | undefined) =>
@@ -257,6 +300,9 @@ vi.mock('$store/renderer/slices/files/files-selectors', () => ({
   ),
   selectWorkspaceMediaResolution: createMockSelector(
     (_wsId: string, resolutionId: string) => mockReduxState.mediaResolutions[resolutionId],
+  ),
+  selectLegacyFileDeleteOperation: createMockSelector(
+    (_wsId: string, tabId: string) => mockReduxState.fileDeleteOperations[tabId],
   ),
 }));
 
@@ -391,6 +437,72 @@ describe('FileTabType Redux integration', () => {
       type: 'uiLayout/toggleDiffIndicators',
       payload: [],
     });
+  });
+
+  async function requestFileDeletion() {
+    renderFileTab();
+    await screen.findByTestId('code-editor');
+    await fireEvent.click(await screen.findByRole('button', { name: 'Panel actions' }));
+    await fireEvent.click(
+      screen.getByRole('menuitem', { name: m.layout_fileTab_deleteFile_tooltip() }),
+    );
+    await waitFor(() => expect(actionMocks.deleteLegacyFileRequested).toHaveBeenCalledTimes(1));
+    return actionMocks.deleteLegacyFileRequested.mock.results[0].value.payload[3] as string;
+  }
+
+  it('closes and records reversible success only after matching deletion success', async () => {
+    const requestId = await requestFileDeletion();
+
+    expect(dispatchMock).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'panelLayout/closeTab' }),
+    );
+    expect(reversibleOutcomes).toEqual([]);
+
+    mockReduxState.fileDeleteOperations[fileTab.id] = {
+      requestId: 'stale-request',
+      path: fileTab.filePath!,
+      status: 'success',
+      error: null,
+    };
+    flushMockSelectors();
+    await Promise.resolve();
+    expect(dispatchMock).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'panelLayout/closeTab' }),
+    );
+    expect(reversibleOutcomes).toEqual([]);
+
+    mockReduxState.fileDeleteOperations[fileTab.id] = {
+      requestId,
+      path: fileTab.filePath!,
+      status: 'success',
+      error: null,
+    };
+    flushMockSelectors();
+
+    await waitFor(() => expect(reversibleOutcomes).toEqual(['success']));
+    expect(dispatchMock).toHaveBeenCalledWith({
+      type: 'panelLayout/closeTab',
+      payload: ['ws-1', fileTab.id],
+    });
+  });
+
+  it('preserves the tab and file state when matching deletion fails', async () => {
+    const originalFile = mockReduxState.files[fileTab.filePath!];
+    const requestId = await requestFileDeletion();
+
+    mockReduxState.fileDeleteOperations[fileTab.id] = {
+      requestId,
+      path: fileTab.filePath!,
+      status: 'error',
+      error: 'permission denied',
+    };
+    flushMockSelectors();
+
+    await waitFor(() => expect(reversibleOutcomes).toEqual(['error:permission denied']));
+    expect(dispatchMock).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'panelLayout/closeTab' }),
+    );
+    expect(mockReduxState.files[fileTab.filePath!]).toBe(originalFile);
   });
 
   it.each([

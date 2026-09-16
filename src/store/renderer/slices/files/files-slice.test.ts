@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { getItem } from '@augmentcode/themis/utils/collections/collection-utils';
 import { workspaceUnmounted } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import {
+  clearLegacyFileDeleteOperation,
+  deleteLegacyFileRequested,
   emptyFilesWorkspaceState,
   filesReducer,
   initialState,
@@ -19,7 +21,12 @@ import {
   searchFileNamesSucceeded,
   updateFileContent,
 } from './files-slice';
-import { selectFileContent, selectFileIsDirty, selectOriginalFileContent } from './files-selectors';
+import {
+  selectFileContent,
+  selectFileIsDirty,
+  selectLegacyFileDeleteOperation,
+  selectOriginalFileContent,
+} from './files-selectors';
 
 const WS_ID = 'ws-1';
 const PATH = 'src/app.ts';
@@ -65,6 +72,53 @@ describe('filesReducer', () => {
       loading: false,
       error: 'offline',
     });
+  });
+
+  it('tracks correlated file deletion settlement and ignores stale results', () => {
+    const first = deleteLegacyFileRequested(WS_ID, PATH, 'tab-1', 'request-1');
+    const latest = deleteLegacyFileRequested(WS_ID, PATH, 'tab-1', 'request-2');
+    first.promise.catch(() => undefined);
+    latest.promise.catch(() => undefined);
+    let state = filesReducer(initialState, first);
+    state = filesReducer(state, latest);
+
+    const stale = filesReducer(state, first.success(undefined));
+    expect(stale).toBe(state);
+    expect(selectLegacyFileDeleteOperation.select({ files: state } as any, WS_ID, 'tab-1')).toEqual(
+      {
+        requestId: 'request-2',
+        path: PATH,
+        status: 'loading',
+        error: null,
+      },
+    );
+
+    const succeeded = filesReducer(state, latest.success(undefined));
+    expect(
+      selectLegacyFileDeleteOperation.select({ files: succeeded } as any, WS_ID, 'tab-1'),
+    ).toEqual({
+      requestId: 'request-2',
+      path: PATH,
+      status: 'success',
+      error: null,
+    });
+
+    state = filesReducer(state, latest.failure(new Error('permission denied')));
+    expect(selectLegacyFileDeleteOperation.select({ files: state } as any, WS_ID, 'tab-1')).toEqual(
+      {
+        requestId: 'request-2',
+        path: PATH,
+        status: 'error',
+        error: 'permission denied',
+      },
+    );
+    expect(filesReducer(state, clearLegacyFileDeleteOperation(WS_ID, 'tab-1', 'request-1'))).toBe(
+      state,
+    );
+    state = filesReducer(state, clearLegacyFileDeleteOperation(WS_ID, 'tab-1', 'request-2'));
+    expect(
+      selectLegacyFileDeleteOperation.select({ files: state } as any, WS_ID, 'tab-1'),
+    ).toBeUndefined();
   });
 
   it('tracks media resolution without accepting stale paths', () => {

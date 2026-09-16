@@ -48,10 +48,18 @@ export type LegacyFileDownloadResult = {
   error?: string;
 };
 
+export type LegacyFileDeleteOperation = {
+  requestId: string;
+  path: string;
+  status: 'loading' | 'success' | 'error';
+  error: string | null;
+};
+
 export type FilesWorkspaceState = {
   files: Collection<FileContentEntry, 'path'>;
   fileNameSearches: Record<string, FileNameSearchEntry>;
   mediaResolutions: Record<string, WorkspaceMediaResolutionEntry>;
+  deleteOperations: Record<string, LegacyFileDeleteOperation>;
 };
 
 export type FilesState = {

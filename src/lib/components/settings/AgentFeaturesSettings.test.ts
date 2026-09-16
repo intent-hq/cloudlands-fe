@@ -65,6 +65,14 @@ const FEATURE_PATHS = [
   'agentFeatures.mcpTools',
 ];
 
+const deferred = <T>() => {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
+};
+
 describe('AgentFeaturesSettings', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -160,6 +168,31 @@ describe('AgentFeaturesSettings', () => {
     });
     expect(mockToast.error).not.toHaveBeenCalled();
     expect(toggle.getAttribute('aria-checked')).toBe('false');
+  });
+
+  it('keeps the latest same-key toggle while an earlier success settles', async () => {
+    const earlier = deferred<Array<{ path: string; value: boolean }>>();
+    const newer = deferred<Array<{ path: string; value: boolean }>>();
+    mocks.mockSettingsUpdate
+      .mockReturnValueOnce(earlier.promise)
+      .mockReturnValueOnce(newer.promise);
+    render(AgentFeaturesSettings);
+
+    const toggle = await screen.findByRole('switch', { name: 'Background hooks' });
+    await waitFor(() => expect(toggle.getAttribute('aria-checked')).toBe('true'));
+    await fireEvent.click(toggle);
+    await fireEvent.click(toggle);
+    await waitFor(() => expect(mocks.mockSettingsUpdate).toHaveBeenCalledTimes(2));
+
+    earlier.resolve([{ path: 'agentFeatures.backgroundHooks', value: false }]);
+    await earlier.promise;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(toggle.getAttribute('aria-checked')).toBe('true');
+    expect(mockToast.error).not.toHaveBeenCalled();
+
+    newer.resolve([{ path: 'agentFeatures.backgroundHooks', value: true }]);
+    await newer.promise;
   });
 
   it('renders a feature off when the daemon reports value false', async () => {

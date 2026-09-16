@@ -41,6 +41,9 @@ function stateWithFiles(entries: FileContentEntry[] = [fileEntry()]) {
     byWorkspaceId: {
       [WS_ID]: {
         files: createCollection<FileContentEntry, 'path'>('path', entries),
+        fileNameSearches: {},
+        mediaResolutions: {},
+        deleteOperations: {},
       },
     },
   };

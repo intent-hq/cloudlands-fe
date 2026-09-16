@@ -36,6 +36,14 @@ const settle = async () => {
   await Promise.resolve();
 };
 
+const deferred = <T>() => {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
+};
+
 describe('settingsOperationsSaga', () => {
   beforeEach(() => vi.clearAllMocks());
 
@@ -56,7 +64,7 @@ describe('settingsOperationsSaga', () => {
     expect(dispatched).toContainEqual(
       expect.objectContaining({
         type: listSettingsRequested.success.type,
-        payload: { request: [], response },
+        payload: { request: [undefined, expect.any(Number)], response },
       }),
     );
     task.cancel();
@@ -80,11 +88,76 @@ describe('settingsOperationsSaga', () => {
     expect(dispatched).toContainEqual(
       expect.objectContaining({
         type: updateSettingsRequested.success.type,
-        payload: { request: [changes], response: changes },
+        payload: { request: [changes, undefined, expect.any(Number)], response: changes },
       }),
     );
     task.cancel();
     await task.toPromise();
+  });
+
+  it('runs same-key updates concurrently and correlates newer-first successes', async () => {
+    const earlierChanges = [{ path: 'server.wsApi.enabled', value: false }];
+    const newerChanges = [{ path: 'server.wsApi.enabled', value: true }];
+    const earlierResult = deferred<typeof earlierChanges>();
+    const newerResult = deferred<typeof newerChanges>();
+    mocks.update
+      .mockReturnValueOnce(earlierResult.promise)
+      .mockReturnValueOnce(newerResult.promise);
+    const input = stdChannel();
+    const dispatched: any[] = [];
+    const task = runSaga(
+      { channel: input, dispatch: (action) => dispatched.push(action) },
+      settingsOperationsSaga,
+    );
+
+    input.put(updateSettingsRequested(earlierChanges, 'same-key'));
+    input.put(updateSettingsRequested(newerChanges, 'same-key'));
+    await settle();
+
+    expect(mocks.update.mock.calls).toEqual([[earlierChanges], [newerChanges]]);
+    newerResult.resolve(newerChanges);
+    await settle();
+    earlierResult.resolve(earlierChanges);
+    await settle();
+
+    const successes = dispatched.filter(
+      (action) => action.type === updateSettingsRequested.success.type,
+    );
+    expect(successes.map((action) => action.payload.response)).toEqual([
+      newerChanges,
+      earlierChanges,
+    ]);
+    expect(successes.map((action) => action.payload.request.at(-1))).toEqual([
+      expect.any(Number),
+      expect.any(Number),
+    ]);
+    expect(successes[0].payload.request.at(-1)).not.toBe(successes[1].payload.request.at(-1));
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('preserves request correlation when cancellation dispatches failure', async () => {
+    const changes = [{ path: 'server.wsApi.enabled', value: true }];
+    mocks.update.mockReturnValue(new Promise(() => {}));
+    const input = stdChannel();
+    const dispatched: any[] = [];
+    const request = updateSettingsRequested(changes, 'cancel-key');
+    void request.promise.catch(() => {});
+    const task = runSaga(
+      { channel: input, dispatch: (action) => dispatched.push(action) },
+      settingsOperationsSaga,
+    );
+
+    input.put(request);
+    await settle();
+    task.cancel();
+    await task.toPromise();
+
+    const failure = dispatched.find(
+      (action) => action.type === updateSettingsRequested.failure.type,
+    );
+    expect(failure.payload.request).toEqual([changes, 'cancel-key', expect.any(Number)]);
+    expect(failure.payload.error).toEqual(new Error('Settings request was cancelled'));
   });
 
   it('owns rules.get and local-only pairing reads', async () => {

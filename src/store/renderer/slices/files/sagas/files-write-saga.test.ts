@@ -89,7 +89,7 @@ describe('filesWriteSaga', () => {
     const open = openLegacyFileRequested('ws-1', '/repo/a.ts');
     const save = saveLegacyFileRequested('ws-1', '/repo/a.ts', 'edited');
     const read = readLegacyFileRequested('/repo/a.ts');
-    const remove = deleteLegacyFileRequested('ws-1', '/repo/a.ts');
+    const remove = deleteLegacyFileRequested('ws-1', '/repo/a.ts', 'tab-1', 'delete-1');
     const write = writeLegacyFileRequested('ws-1', '/repo/a.ts', 'saved');
     const download = downloadLegacyFileRequested('/repo/a.ts');
     const reveal = revealLegacyFileRequested('/repo/a.ts');
@@ -117,6 +117,26 @@ describe('filesWriteSaga', () => {
       download.success({ success: true, filePath: '/tmp/copy.ts' }),
       reveal.success(undefined as never),
     ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('maps a rejected legacy delete response to the matching failure action', async () => {
+    vi.mocked(invoke).mockClear();
+    vi.mocked(invoke).mockResolvedValue({ success: false, error: 'permission denied' } as never);
+    const channel = stdChannel();
+    const actions: unknown[] = [];
+    const task = runSaga({ channel, dispatch: (action) => actions.push(action) }, filesWriteSaga);
+    const remove = deleteLegacyFileRequested('ws-1', '/repo/a.ts', 'tab-1', 'delete-1');
+    remove.promise.catch(() => undefined);
+
+    channel.put(remove);
+    await settle();
+
+    expect(vi.mocked(invoke).mock.calls).toEqual([
+      ['file:delete', { path: '/repo/a.ts', workspaceId: 'ws-1' }],
+    ]);
+    expect(actions).toEqual([remove.failure(new Error('permission denied'))]);
     task.cancel();
     await task.toPromise();
   });

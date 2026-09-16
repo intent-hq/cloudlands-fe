@@ -37,6 +37,7 @@ const emptyWorkspaceMutation: WorkspaceMutationState = {
   loading: false,
   error: null,
   version: 0,
+  requestId: null,
 };
 
 export const selectWorkspaceMutation = store.createSelector(

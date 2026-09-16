@@ -13,13 +13,28 @@ const EMPTY_OPERATION: SettingsOperation<never> = {
 const selectOperation = <T>(
   entries: Record<string, SettingsOperation<T>>,
   key: string,
-): SettingsOperation<T> => entries[key] ?? EMPTY_OPERATION;
+): SettingsOperation<T> => {
+  const operation = entries[key];
+  return operation
+    ? {
+        status: operation.status,
+        version: operation.version,
+        data: operation.data,
+        error: operation.error,
+      }
+    : EMPTY_OPERATION;
+};
 
 const materializeCollectionOperation = <T extends object, K extends keyof T & string>(
   operation: SettingsOperation<Collection<T, K>> | undefined,
 ): SettingsOperation<T[]> =>
   operation
-    ? { ...operation, data: operation.data ? getItems(operation.data) : null }
+    ? {
+        status: operation.status,
+        version: operation.version,
+        data: operation.data ? getItems(operation.data) : null,
+        error: operation.error,
+      }
     : EMPTY_OPERATION;
 
 export const selectSettingsListOperation = store.createSelector((state, key: string) =>

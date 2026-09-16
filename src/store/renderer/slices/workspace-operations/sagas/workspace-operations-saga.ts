@@ -762,7 +762,11 @@ function workspaceUpdateContext(
 }
 
 function workspaceBranchRenameContext(
-  action: ReturnType<typeof renameWorkspaceBranchRequested> | ReturnType<typeof workspaceUnmounted>,
+  action:
+    | ReturnType<typeof renameWorkspaceBranchRequested>
+    | ReturnType<typeof archiveWorkspaceRequested>
+    | ReturnType<typeof unarchiveWorkspaceRequested>
+    | ReturnType<typeof workspaceUnmounted>,
 ) {
   const workspaceId = action.payload[0];
   return action.type === workspaceUnmounted.type

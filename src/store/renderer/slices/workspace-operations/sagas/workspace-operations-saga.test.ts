@@ -86,6 +86,14 @@ const settle = async () => {
   await new Promise((resolve) => setTimeout(resolve, 0));
 };
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((next) => {
+    resolve = next;
+  });
+  return { promise, resolve };
+}
+
 const workspace = (id: string, status = WorkspaceStatusEnum.Active): Workspace =>
   ({
     id,
@@ -227,6 +235,39 @@ describe('workspaceOperationsSaga', () => {
 
     expect(mocks.update).toHaveBeenCalledWith({ id: 'ws-1', title: 'Updated' });
     expect(getItem(run.state().workspace.workspaces, 'ws-1')).toEqual(updated);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('does not let a superseded update cancellation settle the newer mutation', async () => {
+    const firstResult = deferred<{ ok: true; data: Workspace }>();
+    const secondResult = deferred<{ ok: true; data: Workspace }>();
+    mocks.update.mockReturnValueOnce(firstResult.promise).mockReturnValueOnce(secondResult.promise);
+    const run = harness([workspace('ws-1')]);
+    const first = updateWorkspaceRequested('ws-1', { title: 'First' }, 'details', 'request-1');
+    const second = updateWorkspaceRequested('ws-1', { title: 'Second' }, 'details', 'request-2');
+
+    run.send(first);
+    await vi.waitFor(() => expect(mocks.update).toHaveBeenCalledTimes(1));
+    run.send(second);
+    await vi.waitFor(() => expect(mocks.update).toHaveBeenCalledTimes(2));
+
+    expect(run.state().workspace.mutations['ws-1:details']).toMatchObject({
+      loading: true,
+      error: null,
+      version: 2,
+      requestId: 'request-2',
+    });
+
+    const updated = { ...workspace('ws-1'), title: 'Second' };
+    secondResult.resolve({ ok: true, data: updated });
+    await vi.waitFor(() => expect(run.dispatch).toHaveBeenCalledWith(second.success(updated)));
+    expect(run.state().workspace.mutations['ws-1:details']).toMatchObject({
+      loading: false,
+      error: null,
+      version: 2,
+      requestId: 'request-2',
+    });
     run.task.cancel();
     await run.task.toPromise();
   });

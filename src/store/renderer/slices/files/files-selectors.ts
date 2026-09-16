@@ -77,3 +77,8 @@ export const selectWorkspaceMediaResolution = store.createSelector(
   (state, wsId: string, resolutionId: string) =>
     selectFilesWorkspaceState.select(state, wsId).mediaResolutions[resolutionId],
 );
+
+export const selectLegacyFileDeleteOperation = store.createSelector(
+  (state, wsId: string, tabId: string) =>
+    selectFilesWorkspaceState.select(state, wsId).deleteOperations[tabId],
+);

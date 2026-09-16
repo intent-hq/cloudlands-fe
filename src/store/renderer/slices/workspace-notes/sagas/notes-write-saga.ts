@@ -533,14 +533,11 @@ export function* settlePendingNoteContent(workspaceId: string, noteId: string) {
   const key = noteKey(workspaceId, noteId);
   yield* call(flushPendingNoteContent, workspaceId, noteId);
   while (pendingExternalUpdateSaveKeys.has(key)) {
-    yield* take(
-      (action: ObservedAction) =>
-        action.type === noteContentSavePendingChanged.type &&
-        Array.isArray(action.payload) &&
-        action.payload[0] === workspaceId &&
-        action.payload[1] === noteId &&
-        action.payload[2] === false,
-    );
+    const action = yield* take(noteContentSavePendingChanged);
+    const [changedWorkspaceId, changedNoteId, isPending] = action.payload;
+    if (changedWorkspaceId !== workspaceId || changedNoteId !== noteId || isPending) {
+      continue;
+    }
   }
 }
 

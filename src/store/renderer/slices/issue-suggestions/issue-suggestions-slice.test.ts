@@ -121,7 +121,7 @@ describe('issue suggestion selectors', () => {
   it('returns plain items and the request lifecycle state', () => {
     const state = { issueSuggestions: pageState() } as unknown as StoreState;
 
-    expect(selectGitHubIssueSuggestions.select(state, 'acme', 'app', '')).toEqual({
+    expect(selectGitHubIssueSuggestions.select(state, 'acme', 'app', [], '')).toEqual({
       items: [ISSUE],
       nextToken: 'next-page',
       isFetching: false,
@@ -136,7 +136,7 @@ describe('issue suggestion selectors', () => {
       issueSuggestions: emptyIssueSuggestionsState,
     } as unknown as StoreState;
 
-    expect(selectGitHubIssueSuggestions.select(state, 'acme', 'other', '')).toEqual({
+    expect(selectGitHubIssueSuggestions.select(state, 'acme', 'other', [], '')).toEqual({
       items: [],
       nextToken: null,
       isFetching: false,
@@ -165,7 +165,11 @@ describe('issue suggestion selectors', () => {
       },
     } as unknown as StoreState;
 
-    expect(selectGitHubIssueSuggestions.select(state, 'acme', 'other', '').items).toEqual([other]);
-    expect(selectGitHubIssueSuggestions.select(state, 'acme', 'app', '').items).toEqual([ISSUE]);
+    expect(selectGitHubIssueSuggestions.select(state, 'acme', 'other', [], '').items).toEqual([
+      other,
+    ]);
+    expect(selectGitHubIssueSuggestions.select(state, 'acme', 'app', [], '').items).toEqual([
+      ISSUE,
+    ]);
   });
 });
