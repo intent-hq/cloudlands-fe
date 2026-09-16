@@ -5,17 +5,12 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
 import { warmImport } from '../../../../test/warm-import';
 
-vi.mock('svelte-fa', async () => ({
-  default: (await import('../../workspace/sidebar/__tests__/mocks/Fa.svelte')).default,
-}));
-
 // Pre-warm the component module graph so the cold dynamic import is not
 // billed to the first test's timeout (intent-hq/monorepo#1464).
-warmImport(() => import('../../workspace/sidebar/__tests__/mocks/Fa.svelte'));
 warmImport(() => import('../BulkActionConfirmDialog.svelte'));
 
 describe('BulkActionConfirmDialog', () => {
-  it('renders the active-work warning panel with plural agent and hook lines', async () => {
+  it('renders plural agent and hook lines', async () => {
     const BulkActionConfirmDialog = (await import('../BulkActionConfirmDialog.svelte')).default;
 
     render(BulkActionConfirmDialog, {
@@ -63,7 +58,17 @@ describe('BulkActionConfirmDialog', () => {
     expect(screen.queryByText(/active agent/)).toBeNull();
   });
 
-  it('renders no warning panel when there is no active work', async () => {
+  it('renders the open pull request count', async () => {
+    const BulkActionConfirmDialog = (await import('../BulkActionConfirmDialog.svelte')).default;
+
+    render(BulkActionConfirmDialog, {
+      props: { open: true, description: 'Delete all spaces?', openPrCount: 2 },
+    });
+
+    expect(screen.getByText('2 pull requests are still open')).toBeTruthy();
+  });
+
+  it('renders no active-work copy when there is no active work', async () => {
     const BulkActionConfirmDialog = (await import('../BulkActionConfirmDialog.svelte')).default;
 
     render(BulkActionConfirmDialog, {
@@ -98,18 +103,75 @@ describe('BulkActionConfirmDialog', () => {
     expect(onConfirm).toHaveBeenCalledOnce();
   });
 
-  it('uses the canonical icon-free surface and visibly focuses the confirm action', async () => {
+  it('focuses the confirm action when the dialog opens', async () => {
     const BulkActionConfirmDialog = (await import('../BulkActionConfirmDialog.svelte')).default;
 
     render(BulkActionConfirmDialog, {
       props: { open: true, title: 'Archive spaces?', confirmText: 'Archive' },
     });
 
-    const dialog = screen.getByRole('dialog');
     const confirm = screen.getByRole('button', { name: 'Archive' });
     await waitFor(() => expect(document.activeElement).toBe(confirm));
-    expect(confirm.className).toContain('ring-[3px]');
-    expect(dialog.className).toContain('max-w-sm');
-    expect(dialog.querySelector('.svelte-fa')).toBeNull();
+  });
+
+  it('focuses a destructive confirm action by default when the dialog opens', async () => {
+    const BulkActionConfirmDialog = (await import('../BulkActionConfirmDialog.svelte')).default;
+
+    render(BulkActionConfirmDialog, {
+      props: {
+        open: true,
+        title: 'Delete spaces?',
+        confirmText: 'Delete all',
+        variant: 'destructive',
+      },
+    });
+
+    const confirm = screen.getByRole('button', { name: 'Delete all' });
+    await waitFor(() => expect(document.activeElement).toBe(confirm));
+  });
+
+  it('focuses Cancel when opted in and Enter does not confirm the action', async () => {
+    const onConfirm = vi.fn();
+    const BulkActionConfirmDialog = (await import('../BulkActionConfirmDialog.svelte')).default;
+
+    render(BulkActionConfirmDialog, {
+      props: {
+        open: true,
+        title: 'Delete spaces?',
+        confirmText: 'Delete all',
+        variant: 'destructive',
+        initialFocus: 'cancel',
+        onConfirm,
+      },
+    });
+
+    const cancel = screen.getByRole('button', { name: 'Cancel' });
+    await waitFor(() => expect(document.activeElement).toBe(cancel));
+    await fireEvent.keyDown(cancel, { key: 'Enter', code: 'Enter' });
+    await fireEvent.click(cancel);
+
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
+
+  it('disables and marks confirm busy while preflight is pending', async () => {
+    const BulkActionConfirmDialog = (await import('../BulkActionConfirmDialog.svelte')).default;
+
+    render(BulkActionConfirmDialog, {
+      props: { open: true, confirmText: 'Delete all', preflightReady: false },
+    });
+
+    const confirm = screen.getByRole('button', { name: 'Delete all' });
+    expect((confirm as HTMLButtonElement).disabled).toBe(true);
+    expect(confirm.getAttribute('aria-busy')).toBe('true');
+  });
+
+  it('cancels the action from the cancel button', async () => {
+    const onCancel = vi.fn();
+    const BulkActionConfirmDialog = (await import('../BulkActionConfirmDialog.svelte')).default;
+
+    render(BulkActionConfirmDialog, { props: { open: true, onCancel } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(onCancel).toHaveBeenCalledOnce();
   });
 });
