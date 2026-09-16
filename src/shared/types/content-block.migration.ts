@@ -63,6 +63,24 @@ function validateImageBlock(block: Record<string, any>): void {
   const hasThumbnailFlag = block.dataIsThumbnail !== undefined;
   const hasByteCount = block.dataBytes !== undefined;
 
+  // PROTOCOL §5.5 image references retain attachmentId, never inline bytes or
+  // slim metadata. MIME is optional because the attachment registry supplies it.
+  if (Object.prototype.hasOwnProperty.call(block, 'attachmentId')) {
+    if (
+      typeof block.attachmentId !== 'string' ||
+      block.attachmentId.trim().length === 0 ||
+      hasData ||
+      hasTruncationFlag ||
+      hasThumbnailFlag ||
+      hasByteCount ||
+      (block.mimeType !== undefined &&
+        (typeof block.mimeType !== 'string' || !IMAGE_MIME_PATTERN.test(block.mimeType)))
+    ) {
+      throw new Error('Invalid image attachment reference (PROTOCOL §5.5)');
+    }
+    return;
+  }
+
   if (typeof block.mimeType !== 'string' || !IMAGE_MIME_PATTERN.test(block.mimeType)) {
     throw new Error(
       `Invalid image block: required image 'mimeType'. Received: ${JSON.stringify(block)}`,

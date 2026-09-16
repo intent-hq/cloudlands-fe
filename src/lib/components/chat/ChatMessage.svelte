@@ -829,7 +829,8 @@
       $hydratedBlocks$,
     ).filter(
       (block: any) =>
-        block.type === 'image' && ((block.data && block.mimeType) || block.attachmentId),
+        block.type === 'image' &&
+        ((block.data && block.mimeType) || block.attachmentId || block.dataTruncated === true),
     );
   });
 
@@ -900,7 +901,7 @@
     blockId: string;
     openerElement: HTMLButtonElement;
     index: number;
-    thumbnailBlock: ContentBlock & { data: string; mimeType: string };
+    thumbnailBlock: ContentBlock;
   } | null>(null);
 
   function isAttachmentHydrationLoading(blockId: string | undefined): boolean {
@@ -931,9 +932,9 @@
       lightboxOpen = true;
       return;
     }
-    if (!isImageBlock(imageBlock)) return;
     const hydrationMessageId = message?.id ?? messageId;
     if (imageBlock.dataTruncated === true && agentId && hydrationMessageId && imageBlock.id) {
+      if (pendingLightboxHydration?.blockId === imageBlock.id) return;
       pendingLightboxHydration = {
         blockId: imageBlock.id,
         openerElement,
@@ -943,6 +944,7 @@
       appStore.dispatch(messageBlockHydrationRequested(agentId, hydrationMessageId, imageBlock.id));
       return;
     }
+    if (!isImageBlock(imageBlock) || !imageBlock.data) return;
     lightboxImageUrl = `data:${imageBlock.mimeType};base64,${imageBlock.data}`;
     lightboxImageName =
       imageBlock.fileName ||
@@ -986,6 +988,9 @@
       );
     }
     pendingLightboxHydration = null;
+    // Legacy slim images have no thumbnail to fall back to. Keep the tile
+    // actionable for retry rather than opening an empty data URL on failure.
+    if (!isImageBlock(block) || !block.data) return;
     lightboxImageUrl = `data:${block.mimeType};base64,${block.data}`;
     lightboxImageName =
       block.fileName ||
@@ -1643,6 +1648,7 @@
                     <Button
                       type="button"
                       variant="plain"
+                      wrapContent={false}
                       class="relative group/image p-0 border-0 bg-transparent cursor-pointer overflow-hidden w-10 h-10 shrink-0 rounded {isAttachmentHydrationLoading(
                         imageBlock.id,
                       )
