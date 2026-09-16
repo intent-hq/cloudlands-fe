@@ -1,5 +1,13 @@
+<script module lang="ts">
+  export const catalogWidthContext = Symbol('catalog-preview-width');
+  export interface CatalogWidthContext {
+    readonly width: number | undefined;
+    setWidth: (width: number | undefined) => void;
+  }
+</script>
+
 <script lang="ts">
-  import { onMount, type Snippet } from 'svelte';
+  import { onMount, setContext, type Snippet } from 'svelte';
   import CatalogControls from './CatalogControls.svelte';
   import { Input } from '$lib/components/ui/input';
   import { Button } from '$lib/components/ui/button';
@@ -32,6 +40,14 @@
   let systemDark = $state(false);
   let hydrated = $state(false);
   let width = $state<number | undefined>(undefined);
+  setContext<CatalogWidthContext>(catalogWidthContext, {
+    get width() {
+      return hydrated ? (width ?? 720) : undefined;
+    },
+    setWidth(nextWidth) {
+      width = nextWidth;
+    },
+  });
   let density = $state<'default' | 'compact'>('default');
   let radius = $state<'rounded' | 'square'>('rounded');
   let customizeOpen = $state(false);

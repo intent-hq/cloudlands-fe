@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { tick, type Component } from 'svelte';
+  import { getContext, tick, type Component } from 'svelte';
+  import { catalogWidthContext, type CatalogWidthContext } from './CatalogShell.svelte';
   import { m } from '$shared/paraglide/messages.js';
   import CatalogFixtureList from './CatalogFixtureList.svelte';
   import { getCatalogEntry, type CatalogEntry } from './catalog';
@@ -16,7 +17,7 @@
   let {
     slug,
     requestedState,
-    requestedWidth = 720,
+    requestedWidth,
     requestedFit,
   }: {
     slug: string;
@@ -38,7 +39,16 @@
   let stabilityStatus = $state<'waiting' | 'stable' | 'error'>('waiting');
   let stabilityError = $state('');
   let captureMotion = $state<'full' | 'reduced'>('full');
-  const width = $derived(Math.min(1600, Math.max(240, Math.round(requestedWidth))));
+  const shellWidth = getContext<CatalogWidthContext | undefined>(catalogWidthContext);
+  const width = $derived(
+    Math.min(1600, Math.max(240, Math.round(shellWidth?.width ?? requestedWidth ?? 720))),
+  );
+
+  // Route links remain authoritative when their requested width changes; control changes
+  // flow back through the shell context without requiring a route reload.
+  $effect(() => {
+    shellWidth?.setWidth(requestedWidth);
+  });
 
   function describeError(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
