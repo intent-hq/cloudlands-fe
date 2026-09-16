@@ -163,6 +163,9 @@
   // Loading state
   let isStaging = $state(false);
 
+  let unstagedExpanded = $state(true);
+  let stagedExpanded = $state(true);
+
   // Collapsed state for agent groups
   let collapsedAgentGroups = $state(new Set<string>());
 
@@ -630,7 +633,9 @@
 <div>
   <TimelineSection
     title={m.workspace_fileChanges_unstaged_label()}
-    subtitle={m.workspace_fileChanges_new_label()}
+    collapsible
+    expanded={unstagedExpanded}
+    onToggle={() => (unstagedExpanded = !unstagedExpanded)}
     active={hasUnstaged}
     activeColor="bg-warning"
   >
@@ -892,7 +897,9 @@
 <div>
   <TimelineSection
     title={m.workspace_fileChanges_staged_label()}
-    subtitle={m.workspace_fileChanges_approved_label()}
+    collapsible
+    expanded={stagedExpanded}
+    onToggle={() => (stagedExpanded = !stagedExpanded)}
     active={hasStaged}
     activeColor="bg-emerald-500"
   >

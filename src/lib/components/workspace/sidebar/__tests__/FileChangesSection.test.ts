@@ -162,11 +162,6 @@ vi.mock('$lib/components/file-tracking/accept-changes/FileRow.svelte', async () 
   return { default: MockComponent };
 });
 
-vi.mock('$lib/components/ui/Header.svelte', async () => {
-  const { default: MockComponent } = await import('./mocks/MockSimple.svelte');
-  return { default: MockComponent };
-});
-
 vi.mock('$features/agent/components/agent-avatar/AgentAvatar.svelte', async () => {
   const { default: MockComponent } = await import('./mocks/MockSimple.svelte');
   return { default: MockComponent };
@@ -243,6 +238,34 @@ describe('FileChangesSection', () => {
     expect(rows.length).toBe(3);
     const paths = Array.from(rows).map((r) => r.getAttribute('data-file-path'));
     expect(paths).toEqual(expect.arrayContaining(['src/a.ts', 'src/b.ts', 'src/c.ts']));
+  });
+
+  it('independently collapses and expands file sections', async () => {
+    mocks.unstaged.push(makeChange('src/unstaged.ts'));
+    mocks.staged.push(makeChange('src/staged.ts', { stage: ChangeStage.Staged }));
+    const { container, getByRole } = await renderSection();
+    const unstaged = getByRole('button', { name: 'Unstaged' });
+    const staged = getByRole('button', { name: 'Staged' });
+    const file = (path: string) => container.querySelector(`[data-file-path="${path}"]`);
+    expect(file('src/unstaged.ts')).not.toBeNull();
+    expect(file('src/staged.ts')).not.toBeNull();
+    expect(unstaged.getAttribute('aria-expanded')).toBe('true');
+    expect(staged.getAttribute('aria-expanded')).toBe('true');
+
+    await fireEvent.click(unstaged);
+    await waitFor(() => expect(file('src/unstaged.ts')).toBeNull());
+    expect(file('src/staged.ts')).not.toBeNull();
+    expect(unstaged.getAttribute('aria-expanded')).toBe('false');
+    await fireEvent.click(unstaged);
+    await waitFor(() => expect(file('src/unstaged.ts')).not.toBeNull());
+
+    await fireEvent.click(staged);
+    await waitFor(() => expect(file('src/staged.ts')).toBeNull());
+    expect(file('src/unstaged.ts')).not.toBeNull();
+    expect(staged.getAttribute('aria-expanded')).toBe('false');
+    await fireEvent.click(staged);
+    await waitFor(() => expect(file('src/staged.ts')).not.toBeNull());
+    expect(staged.getAttribute('aria-expanded')).toBe('true');
   });
 
   it('renders a path once in each section when it has staged and unstaged changes', async () => {

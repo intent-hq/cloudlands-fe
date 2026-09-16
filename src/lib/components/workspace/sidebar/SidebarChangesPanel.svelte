@@ -1083,17 +1083,17 @@
         {#if !isBrowsingSecondaryRoot}
           <BranchDisplay {workspaceId} {trunkBranch} {repoPath} {repoType} {canChangeTrunk} />
 
-          <div class="flex items-center mb-2 -ml-1 gap-1.25 h-7">
+          <div class="relative flex items-center mb-2 pl-4 h-7">
             <Button
               variant="ghost"
               type="button"
               size="icon-compact"
-              class="p-1 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground disabled:opacity-50 cursor-pointer z-10"
+              class="absolute -left-1 w-5 p-1 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground disabled:opacity-50 cursor-pointer z-10"
               onclick={handleRefreshGitStatus}
               disabled={isRefreshingGitStatus}
               title={m.workspace_sidebarChanges_refreshGitStatus_tooltip()}
             >
-              <Fa icon={faArrowsRotate} class="text-subtle" size={10} />
+              <Fa icon={faArrowsRotate} class="size-3! text-subtle" />
             </Button>
 
             <!-- View All Changes Button -->
@@ -1104,7 +1104,7 @@
                 onclick={handleOpenAllChanges}
                 size="compact"
                 wrapContent={false}
-                class="flex flex-1 justify-start items-center border gap-2 px-2 py-0 text-subtle rounded-sm transition-colors group cursor-pointer min-w-0 {isActive
+                class="flex flex-1 justify-start items-center gap-2 px-0 py-0 text-subtle rounded-sm transition-colors group cursor-pointer min-w-0 {isActive
                   ? 'bg-background text-foreground border-transparent'
                   : 'border-transparent'}
                 "
@@ -1123,7 +1123,7 @@
               </Button>
             {:else}
               <div
-                class="flex flex-1 items-center gap-2 px-2 py-0 h-7 text-subtle rounded-sm transition-colors group cursor-pointer min-w-0"
+                class="flex flex-1 items-center gap-2 px-0 py-0 h-7 text-subtle rounded-sm transition-colors group cursor-pointer min-w-0"
               >
                 <span class="text-ui truncate min-w-0 text-left flex-1"
                   >{m.workspace_sidebarChanges_noChangesYet_label()}</span
@@ -1157,7 +1157,7 @@
 
           <div class="relative flex-1 flex flex-col pb-2 w-full">
             <!-- Vertical timeline line -->
-            <div class="absolute left-1 top-2 bottom-0 w-px bg-border dark:bg-border"></div>
+            <div class="absolute left-[5.5px] top-2 bottom-0 w-px bg-border dark:bg-border"></div>
 
             <FileChangesSection
               {workspaceId}
