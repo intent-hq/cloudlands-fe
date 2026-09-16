@@ -1874,10 +1874,20 @@ const bootFlow = app.whenReady().then(async () => {
   })();
 });
 
-// Boot threw before reaching the window-creation block: never leave an
-// awaiting activate handler or window creator hung. `finally` keeps the
+// Boot threw before reaching the window-creation block: log it, then never
+// leave an awaiting activate handler or window creator hung. This release is
+// deliberately fail-open: a boot error before `registerBackendHandlers()` still
+// lets a renderer open so the app stays reachable, at the cost that the renderer
+// may then hit missing IPC handlers. A fail-closed gate would leave a live
+// process with zero windows and no user-visible signal. `finally` keeps the
 // rejection observable by the process-level unhandled-rejection handler, as
 // before.
+void bootFlow.catch((error: unknown) => {
+  logger.error(
+    'Boot flow rejected before window creation; releasing renderer-window gate fail-open',
+    error instanceof Error ? error : new Error(String(error)),
+  );
+});
 void bootFlow.finally(() => {
   bootWindowsGate.release();
   markRendererWindowsAllowed();

@@ -167,6 +167,16 @@ describe('IPC Startup Race Condition', () => {
     const finallyEnd = source.indexOf('});', finallyStart);
     expect(releaseCalls[1]).toBeGreaterThan(finallyStart);
     expect(releaseCalls[1]).toBeLessThan(finallyEnd);
+
+    // 3) The fail-open release is intentional and must stay observable: a
+    //    rejected boot flow is logged at error level before the gate opens.
+    const catchStart = source.indexOf('bootFlow.catch(');
+    expect(catchStart).toBeGreaterThan(-1);
+    expect(catchStart).toBeLessThan(finallyStart);
+    const catchEnd = source.indexOf('});', catchStart);
+    const errorLog = source.indexOf('logger.error(', catchStart);
+    expect(errorLog).toBeGreaterThan(catchStart);
+    expect(errorLog).toBeLessThan(catchEnd);
   });
 
   it('should identify setup functions in critical vs secondary sections', () => {
