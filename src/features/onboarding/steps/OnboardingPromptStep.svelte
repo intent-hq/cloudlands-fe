@@ -42,7 +42,7 @@
     REFERENCE_IMAGE_MAX_BYTES,
   } from '$lib/components/chat/input/image-context-items';
   import { splitDroppedItems } from '$lib/utils/drop-split';
-  import { menuItem } from '$lib/components/ui/menu';
+  import { ActionRow } from '$lib/components/ui/menu';
   import { isRemoteBackend } from '$lib/components/chat/input/attachment-placement';
   import { shouldTreatAsNewRepo } from '$features/onboarding/utils/treat-as-new-repo';
   import { DEFAULT_NEW_WORKSPACE_SPECIALIST_ID } from '$lib/constants/specialists';
@@ -592,42 +592,47 @@
             <div class="absolute left-0 right-0 top-[52px] px-4 pointer-events-none">
               <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
               <div
-                class="flex flex-col gap-0.75 pointer-events-auto"
+                class="flex flex-col pointer-events-auto"
                 role="listbox"
                 aria-label={m.onboarding_promptStep_promptSuggestions_ariaLabel()}
               >
+                <!-- Inline starter suggestions use tighter spacing than standalone menu rows. -->
                 {#each visibleSuggestions.slice(0, 4) as suggestion, i (suggestion)}
                   <div class="contents" in:fly={{ tier: 'moderate', axis: 'x', distance: -6 }}>
-                    <Button
-                      variant="ghost"
-                      type="button"
+                    <ActionRow
                       role="option"
                       id="suggestion-{i}"
                       aria-selected={focusedSuggestionIndex === i}
-                      class={`${menuItem()} text-sm cursor-pointer truncate gap-1.5 ${focusedSuggestionIndex === i ? 'text-foreground' : 'text-muted-foreground/50 hover:text-muted-foreground/70'}`}
+                      selected={focusedSuggestionIndex === i}
+                      class={`min-h-6 py-0.5 text-sm cursor-pointer gap-1.5 ${focusedSuggestionIndex === i ? 'text-foreground' : 'text-muted-foreground/50 hover:text-muted-foreground/70'}`}
                       onclick={() => onPromptSelect(suggestion)}
                     >
-                      <Fa
-                        icon={faArrowRight}
-                        size={12}
-                        class={focusedSuggestionIndex === i ? 'opacity-100' : 'opacity-60'}
-                      />
-                      {suggestion}
-                    </Button>
+                      {#snippet leading()}
+                        <Fa
+                          icon={faArrowRight}
+                          size={12}
+                          class={focusedSuggestionIndex === i ? 'opacity-100' : 'opacity-60'}
+                        />
+                      {/snippet}
+                      {#snippet title()}<span class="block truncate">{suggestion}</span>{/snippet}
+                    </ActionRow>
                   </div>
                 {/each}
-                <Button
-                  variant="ghost"
-                  type="button"
+                <ActionRow
                   role="option"
                   id="suggestion-shuffle"
                   aria-selected={focusedSuggestionIndex === visibleSuggestions.slice(0, 4).length}
-                  class={`${menuItem()} mt-0.75 inline-flex text-xs cursor-pointer gap-1.5 ${focusedSuggestionIndex === visibleSuggestions.slice(0, 4).length ? 'text-foreground' : 'text-muted-foreground/30 hover:text-muted-foreground/70'}`}
+                  selected={focusedSuggestionIndex === visibleSuggestions.slice(0, 4).length}
+                  class={`min-h-6 py-0.5 text-xs cursor-pointer gap-1.5 ${focusedSuggestionIndex === visibleSuggestions.slice(0, 4).length ? 'text-foreground' : 'text-muted-foreground/30 hover:text-muted-foreground/70'}`}
                   onclick={onShuffleSuggestions}
                 >
-                  <Fa icon={faArrowsRotate} size={12} />
-                  <span></span>
-                </Button>
+                  {#snippet leading()}<Fa icon={faArrowsRotate} size={12} />{/snippet}
+                  {#snippet title()}
+                    <span class="sr-only"
+                      >{m.onboarding_promptStep_shuffleSuggestions_ariaLabel()}</span
+                    >
+                  {/snippet}
+                </ActionRow>
               </div>
             </div>
           {/if}
@@ -814,9 +819,11 @@
             in:fly={{ tier: 'moderate', distance: 10 }}
           >
             <Button
-              variant="ghost"
+              variant="plain"
               type="button"
-              class="flex min-h-8 min-w-0 max-w-full flex-wrap items-center gap-y-1 text-left text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+              truncateLabel={false}
+              labelClass="flex-wrap"
+              class="flex h-auto min-h-8 min-w-0 max-w-full flex-wrap items-center gap-y-1 text-left text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
               onclick={() => onShowSetupScriptChange(!showSetupScript)}
             >
               <span>{m.onboarding_promptStep_setupEnvWith_before()}</span>

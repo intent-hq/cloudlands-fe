@@ -176,7 +176,7 @@ describe('DaemonStatusIndicator', () => {
 
       await fireEvent.click(trigger);
       expect(screen.getByRole('menuitem', { name: 'Status - Healthy' })).toBeTruthy();
-      expect(screen.getByRole('button', { name: 'Connect another device' })).toBeTruthy();
+      expect(screen.getByRole('menuitem', { name: 'Connect another device' })).toBeTruthy();
     });
 
     it('dispatches pollSystemStatus when dropdown opens ($effect at line 72)', async () => {
@@ -1657,7 +1657,7 @@ describe('DaemonStatusIndicator', () => {
       const menu = screen.getByText('Manage devices').closest('[role="menu"]')!;
       expect(
         within(menu as HTMLElement)
-          .getAllByRole('button')
+          .getAllByRole('menuitem')
           .at(-1)?.textContent,
       ).toContain('Manage devices');
     });
@@ -1742,6 +1742,23 @@ describe('DaemonStatusIndicator', () => {
       await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
       await fireEvent.click(screen.getByText('Manage devices'));
       expect(mockNavigateToSettings).toHaveBeenCalledWith({ tab: 'devices' });
+    });
+
+    it('activates the final devices menu item with Enter and closes the menu', async () => {
+      mockStoreState = { daemonHealth: { ...healthy }, connections: withConnections('local') };
+      render(DaemonStatusIndicatorPreloaded);
+      const trigger = screen.getByRole('button', { name: 'intentd: healthy' });
+      await fireEvent.click(trigger);
+      const manage = screen.getByRole('menuitem', { name: 'Manage devices' });
+      manage.focus();
+      await fireEvent.keyDown(manage, { key: 'Enter' });
+      await vi.waitFor(() =>
+        expect(mockNavigateToSettings).toHaveBeenCalledWith({ tab: 'devices' }),
+      );
+      expect(trigger.getAttribute('aria-expanded')).toBe('false');
+      expect(
+        mockDispatch.mock.calls.some(([action]) => action.type === 'connections/openRequested'),
+      ).toBe(false);
     });
 
     it('offers to connect another device when no remote is saved', async () => {
@@ -1934,8 +1951,8 @@ describe('DaemonStatusIndicator', () => {
 
       const trigger = screen.getByRole('button', { name: 'intentd: healthy' });
       expect(trigger.textContent?.trim()).toBe('');
-      // Dot-only trigger keeps the original fixed width.
-      expect(trigger.classList.contains('w-6')).toBe(true);
+      await fireEvent.click(trigger);
+      expect(trigger.getAttribute('aria-expanded')).toBe('true');
     });
 
     it('shows no label when connections have not loaded yet', async () => {

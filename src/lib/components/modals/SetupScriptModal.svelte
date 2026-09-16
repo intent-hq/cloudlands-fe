@@ -87,7 +87,10 @@
   function handleFocusIn(event: FocusEvent) {
     const target = event.target;
     escapeKeydownBehavior =
-      target instanceof HTMLElement && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')
+      target instanceof HTMLElement &&
+      (target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.closest('.monaco-editor') !== null)
         ? 'ignore'
         : 'close';
   }
@@ -102,7 +105,7 @@
   onfocusin={handleFocusIn}
   enterKey="ignore"
   modEnter="ignore"
-  class="max-w-6xl"
+  class="max-w-6xl grid-cols-1 [&>form]:min-w-0 [&>form]:grid-cols-1"
   onSubmit={handleDone}
   onCancel={handleCancel}
 >
@@ -121,6 +124,7 @@
         bind:scriptNameSource={localScriptNameSource}
         bind:isCustomScript={localIsCustomScript}
         contentOnly={true}
+        contentClass="h-[min(34rem,calc(100dvh-12rem))] min-h-80"
       />
     {/await}
   {/if}

@@ -155,6 +155,9 @@
   const protocolMismatchModal$ = selectProtocolMismatchModal();
 
   let dropdownOpen = $state(false);
+  let menuBody = $state<HTMLDivElement | null>(null);
+  // Align the details surface to the parent menu, not its inset first row.
+  const menuAnchor = $derived(menuBody?.closest<HTMLElement>('[data-slot="menu-content"]') ?? null);
   let liveUptimeSeconds = $state<number | undefined>(undefined);
   let stopUnslothDialogOpen = $state(false);
 
@@ -478,10 +481,9 @@
     <Button
       {...props}
       variant="ghost-light"
-      class={cn(
-        'flex items-center justify-center h-6 hover:bg-muted/50 rounded transition-colors cursor-pointer',
-        currentRemoteName ? 'gap-1.5 px-1.5' : 'w-6',
-      )}
+      size={currentRemoteName ? 'compact' : 'icon-compact'}
+      wrapContent={false}
+      class={cn('hover:bg-muted/50 rounded', currentRemoteName && 'gap-1.5 px-1.5')}
       aria-label={triggerAriaLabel}
     >
       {#if currentRemoteName}
@@ -503,12 +505,18 @@
       between the 224px floor and a 320px cap. At the cap the Connection
       row's min-w-0 truncate takes over instead of widening the menu.
     -->
-    <div class="min-w-56 w-max max-w-80">
+    <div bind:this={menuBody} class="min-w-56 w-max max-w-80">
       <Menu.Sub>
         <Menu.SubTrigger class="w-full cursor-pointer text-xs px-3 py-1.5">
           {detailsStatusLabel}
         </Menu.SubTrigger>
-        <Menu.SubContent side="left" align="start" class="min-w-56 w-max max-w-80 px-0">
+        <Menu.SubContent
+          side="left"
+          align="start"
+          customAnchor={menuAnchor}
+          collisionPadding={8}
+          class="min-w-56 w-max max-w-80 px-0"
+        >
           <Header class="px-3 pt-1.5 pb-1" size={6}>{m.layout_daemonStatus_header()}</Header>
 
           {#if $health$ === 'down'}
@@ -558,7 +566,7 @@
                 <!-- Agent slots -->
                 <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
                   <span class="text-subtle">{m.layout_daemonStatus_agentSlots_label()}</span>
-                  <span class="font-mono">
+                  <span class="tabular-nums">
                     {$stats$.agents}/{$stats$.maxAgents ?? '?'}
                   </span>
                 </div>
@@ -566,14 +574,14 @@
                 <!-- Connected clients -->
                 <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
                   <span class="text-subtle">{m.layout_daemonStatus_wssClients_label()}</span>
-                  <span class="font-mono">{$stats$.clients}</span>
+                  <span class="tabular-nums">{$stats$.clients}</span>
                 </div>
 
                 <!-- Transport -->
                 <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
                   <span class="text-subtle shrink-0">{m.layout_daemonStatus_transport_label()}</span
                   >
-                  <span class="font-mono text-xs min-w-0 truncate">
+                  <span class="text-xs min-w-0 truncate">
                     {$stats$.listenMode}{$stats$.port ? `:${$stats$.port}` : ''}
                   </span>
                 </div>
@@ -604,7 +612,7 @@
                           >
                             <Fa icon={faTriangleExclamation} />
                           </span>
-                          <span class="font-mono text-xs min-w-0 truncate" title={$stats$.version}
+                          <span class="text-xs min-w-0 truncate" title={$stats$.version}
                             >{$stats$.version}</span
                           >
                         </span>
@@ -615,7 +623,7 @@
                       <span class="text-subtle shrink-0"
                         >{m.layout_daemonStatus_version_label()}</span
                       >
-                      <span class="font-mono text-xs min-w-0 truncate" title={$stats$.version}
+                      <span class="text-xs min-w-0 truncate" title={$stats$.version}
                         >{$stats$.version}</span
                       >
                     </div>
@@ -626,7 +634,7 @@
                 {#if $stats$.protocolVersion !== undefined}
                   <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
                     <span class="text-subtle">{m.layout_daemonStatus_protocol_label()}</span>
-                    <span class="font-mono text-xs">{$stats$.protocolVersion}</span>
+                    <span class="text-xs">{$stats$.protocolVersion}</span>
                   </div>
                 {/if}
 
@@ -634,7 +642,7 @@
                 {#if liveUptimeSeconds !== undefined}
                   <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
                     <span class="text-subtle">{m.layout_daemonStatus_uptime_label()}</span>
-                    <span class="font-mono text-xs" aria-live="off"
+                    <span class="tabular-nums text-xs" aria-live="off"
                       >{formatUptime(liveUptimeSeconds)}</span
                     >
                   </div>
@@ -644,7 +652,7 @@
                 {#if $stats$.cpuPercent !== undefined}
                   <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
                     <span class="text-subtle">{m.layout_daemonStatus_cpu_label()}</span>
-                    <span class="font-mono text-xs" aria-live="off"
+                    <span class="tabular-nums text-xs" aria-live="off"
                       >{formatCpu($stats$.cpuPercent)}</span
                     >
                   </div>
@@ -654,7 +662,7 @@
                 {#if $stats$.memoryBytes !== undefined}
                   <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
                     <span class="text-subtle">{m.layout_daemonStatus_memory_label()}</span>
-                    <span class="font-mono text-xs" aria-live="off"
+                    <span class="tabular-nums text-xs" aria-live="off"
                       >{formatMemory($stats$.memoryBytes)}</span
                     >
                   </div>
@@ -684,7 +692,8 @@
                           >
                             <Fa icon={faTriangleExclamation} />
                           </span>
-                          <span class="font-mono text-xs" aria-live="off">{workspaceDiskValue}</span
+                          <span class="tabular-nums text-xs" aria-live="off"
+                            >{workspaceDiskValue}</span
                           >
                         </span>
                       </div>
@@ -692,7 +701,7 @@
                   {:else}
                     <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
                       <span class="text-subtle">{m.layout_daemonStatus_workspaceDisk_label()}</span>
-                      <span class="font-mono text-xs" aria-live="off">{workspaceDiskValue}</span>
+                      <span class="tabular-nums text-xs" aria-live="off">{workspaceDiskValue}</span>
                     </div>
                   {/if}
                 {/if}
@@ -700,8 +709,7 @@
                 <!-- Host OS/Arch -->
                 <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
                   <span class="text-subtle shrink-0">{m.layout_daemonStatus_host_label()}</span>
-                  <span class="font-mono text-xs min-w-0 truncate">{$stats$.os}/{$stats$.arch}</span
-                  >
+                  <span class="text-xs min-w-0 truncate">{$stats$.os}/{$stats$.arch}</span>
                 </div>
 
                 <!-- FE connection mode -->
@@ -711,7 +719,7 @@
                     <span class="text-subtle shrink-0"
                       >{m.layout_daemonStatus_connection_label()}</span
                     >
-                    <span class="font-mono text-xs min-w-0 truncate" title={transportLabel}
+                    <span class="text-xs min-w-0 truncate" title={transportLabel}
                       >{transportLabel}</span
                     >
                   </div>
@@ -721,7 +729,7 @@
                       >{m.layout_daemonStatus_connection_label()}</span
                     >
                     <!-- i18n-ignore (transport mode identifier) -->
-                    <span class="font-mono text-xs text-subtle">unknown</span>
+                    <span class="text-xs text-subtle">unknown</span>
                   </div>
                 {/if}
               {:else}
@@ -747,7 +755,7 @@
                       {#snippet content()}
                         <span>{$unslothStatus$.repoId}</span>
                       {/snippet}
-                      <span class="font-mono text-xs truncate max-w-32">{unslothModelLabel}</span>
+                      <span class="text-xs truncate max-w-32">{unslothModelLabel}</span>
                     </Tooltip>
                   </div>
                 {/if}
@@ -758,7 +766,7 @@
                     <span class="text-subtle">{m.layout_daemonStatus_phase_label()}</span>
                     <span
                       class={cn(
-                        'font-mono text-xs',
+                        'text-xs',
                         $unslothStatus$.phase === 'ready' ? 'text-green-500' : 'text-warning-ink',
                       )}
                     >
@@ -771,7 +779,7 @@
                 {#if $unslothStatus$.port !== undefined}
                   <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
                     <span class="text-subtle">{m.layout_daemonStatus_port_label()}</span>
-                    <span class="font-mono text-xs">{$unslothStatus$.port}</span>
+                    <span class="tabular-nums text-xs">{$unslothStatus$.port}</span>
                   </div>
                 {/if}
 
@@ -779,7 +787,7 @@
                 {#if $unslothStatus$.uptimeSecs !== undefined}
                   <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
                     <span class="text-subtle">{m.layout_daemonStatus_uptime_label()}</span>
-                    <span class="font-mono text-xs" aria-live="off"
+                    <span class="tabular-nums text-xs" aria-live="off"
                       >{formatUptime($unslothStatus$.uptimeSecs)}</span
                     >
                   </div>
@@ -789,7 +797,7 @@
                 {#if $unslothStatus$.cpuPercent !== undefined}
                   <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
                     <span class="text-subtle">{m.layout_daemonStatus_cpu_label()}</span>
-                    <span class="font-mono text-xs" aria-live="off"
+                    <span class="tabular-nums text-xs" aria-live="off"
                       >{formatCpu($unslothStatus$.cpuPercent)}</span
                     >
                   </div>
@@ -799,7 +807,7 @@
                 {#if $unslothStatus$.memoryBytes !== undefined}
                   <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
                     <span class="text-subtle">{m.layout_daemonStatus_memory_label()}</span>
-                    <span class="font-mono text-xs" aria-live="off"
+                    <span class="tabular-nums text-xs" aria-live="off"
                       >{formatMemory($unslothStatus$.memoryBytes)}</span
                     >
                   </div>
@@ -809,7 +817,7 @@
                 {#if $unslothStatus$.attachedAgentCount !== undefined}
                   <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
                     <span class="text-subtle">{m.layout_daemonStatus_attachedAgents_label()}</span>
-                    <span class="font-mono text-xs">{$unslothStatus$.attachedAgentCount}</span>
+                    <span class="tabular-nums text-xs">{$unslothStatus$.attachedAgentCount}</span>
                   </div>
                 {/if}
 
@@ -847,20 +855,22 @@
               class="w-full cursor-pointer text-xs px-2 py-1.5"
               onSelect={() => handleOpenConnection(conn.id)}
             >
-              {#if !conn.isLocal && accent !== null}
-                <span
-                  class={cn('size-2 shrink-0 rounded-full', CONNECTION_ACCENT_CLASSES[accent])}
-                  aria-hidden="true"
-                  data-connection-accent={accent}
-                ></span>
-              {/if}
-              <DeviceIcon record={conn} size={16} class="text-foreground" />
+              {#snippet leading()}
+                <DeviceIcon record={conn} size={16} class="text-foreground" />
+              {/snippet}
               <span class="min-w-0 flex-1 truncate">
                 {conn.isLocal
                   ? m.layout_daemonStatus_localConnection_label()
                   : formatConnectionLabel(conn)}
               </span>
               <span class="flex items-center gap-1.5 shrink-0">
+                {#if !conn.isLocal && accent !== null}
+                  <span
+                    class={cn('size-2 shrink-0 rounded-full', CONNECTION_ACCENT_CLASSES[accent])}
+                    aria-hidden="true"
+                    data-connection-accent={accent}
+                  ></span>
+                {/if}
                 {#if ($certWarningsById$[conn.id]?.length ?? 0) > 0}
                   {@const certWarningHosts = $certWarningsById$[conn.id]
                     .map((w) => w.host)
@@ -922,16 +932,14 @@
             </Menu.Item>
           {/each}
         {/if}
-        <Button
-          variant="ghost-light"
-          class="w-full text-left text-xs hover:bg-muted/50 rounded px-2 py-1.5 transition-colors cursor-pointer flex items-center gap-2"
-          onclick={openDevicesSettings}
-        >
-          <span class="text-subtle"><Fa icon={faPlus} /></span>
+        <Menu.Item class="w-full cursor-pointer text-xs px-2 py-1.5" onSelect={openDevicesSettings}>
+          {#snippet leading()}
+            <span class="text-subtle"><Fa icon={faPlus} /></span>
+          {/snippet}
           {hasSavedRemoteConnections
             ? m.layout_daemonStatus_manageDevices_action()
             : m.layout_daemonStatus_connectAnotherDevice_action()}
-        </Button>
+        </Menu.Item>
       </div>
     </div>
   {/snippet}

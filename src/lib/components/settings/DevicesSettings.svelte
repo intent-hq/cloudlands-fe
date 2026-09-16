@@ -86,7 +86,7 @@
     getText={(device) => device.label}
     status={$loaded$ ? 'ready' : 'loading'}
     ariaLabel={m.settings_devices_title()}
-    class="overflow-visible rounded-xl bg-card"
+    class="overflow-visible rounded-xl bg-card [&>div>div[aria-hidden=true]]:hidden"
   >
     {#snippet row({ item: device })}
       <DeviceRow

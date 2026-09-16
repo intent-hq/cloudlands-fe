@@ -410,6 +410,7 @@
     <SettingsForm
       schema={enabledSchema}
       embedded
+      compact={false}
       descriptions={{ 'mcp-servers-enabled': mcpDescription }}
     />
   </div>
@@ -427,6 +428,7 @@
         <SettingsForm
           schema={configuredSchema}
           embedded
+          compact={false}
           custom={defineSettingsCustomControls({
             'mcp-configured-servers': configuredServersControl,
           })}
@@ -739,24 +741,19 @@
         <Button
           variant="ghost"
           type="button"
-          class="w-full flex items-center justify-between py-4 hover:bg-muted/30 transition-colors cursor-pointer"
+          class="w-full justify-start text-left"
+          aria-expanded={showAdvanced}
           onclick={handleToggleAdvanced}
         >
-          <div class="text-left">
-            <p class="type-body font-medium text-foreground">
-              {m.settings_mcpServers_advancedTitle()}
-            </p>
-            <p class="type-body text-subtle">
-              {m.settings_mcpServers_advancedDescription_before()}
-              <!-- i18n-ignore (config key) -->
-              <code class="bg-muted px-1 py-0.5 rounded type-caption">mcp.servers</code>
-              {m.settings_mcpServers_advancedDescription_after()}
-            </p>
-          </div>
-          <span
-            class="text-subtle type-caption transition-transform {showAdvanced ? 'rotate-90' : ''}"
-            >▶</span
-          >
+          {m.settings_mcpServers_advancedTitle()}
+          {#snippet trailingIcon()}
+            <span
+              aria-hidden="true"
+              class="text-subtle type-caption transition-transform duration-spring-fast ease-spring-fast motion-reduce:transition-none {showAdvanced
+                ? 'rotate-90'
+                : ''}">▶</span
+            >
+          {/snippet}
         </Button>
 
         {#if showAdvanced}

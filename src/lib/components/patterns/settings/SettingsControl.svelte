@@ -8,9 +8,11 @@
   let {
     entry,
     context,
+    compact = true,
   }: {
     entry: Exclude<SettingEntry, { kind: 'custom' }>;
     context: SettingsControlContext;
+    compact?: boolean;
   } = $props();
   let storeValue = $state<unknown>();
   $effect(() => {
@@ -28,10 +30,15 @@
   }
 </script>
 
-<div data-settings-control-kind={entry.kind} class="min-w-0">
+<div
+  data-settings-control-kind={entry.kind}
+  class="min-w-0"
+  class:grid={!compact && entry.kind === 'switch'}
+>
   {#if entry.kind === 'switch'}
     <Switch
       id={context.controlId}
+      size={entry.size}
       checked={Boolean(current)}
       onCheckedChange={update}
       disabled={context.disabled}
