@@ -70,7 +70,7 @@
     settings: `<script lang="ts">\n  import { defineSettings, SettingsForm } from '$lib/components/patterns/settings';\n  const schema = defineSettings({ sections: [{ id: 'display', title: 'Display', entries }] });\n<\/script>\n<SettingsForm {schema} />`,
     confirm: `<script lang="ts">\n  import { confirm, ConfirmHost } from '$lib/components/patterns/confirm';\n  const remove = () => confirm({ title: 'Remove item?', destructive: true });\n<\/script>\n<Button onclick={remove}>Remove</Button>\n<ConfirmHost />`,
     collection: `<ListView {items} getKey={(item) => item.id}>\n  {#snippet row({ item })}\n    <ListItem title={item.name} selected={selectedKeys.includes(item.id)} onclick={() => toggle(item.id)} actions={actions(item)} />\n  {/snippet}\n</ListView>`,
-    cardInset: `<script lang="ts">\n  import { ListRow, ListView } from '$lib/components/patterns/collection';\n  import { EmptyState } from '$lib/components/patterns/screen';\n  import * as Card from '$lib/components/ui/card';\n<\/script>\n<Card.Root>\n  <Card.Header><Card.Title>Workspace activity</Card.Title></Card.Header>\n  <Card.Content flush>\n    <ListView {items} getKey={(item) => item.id}>\n      {#snippet row({ item })}<ListRow inset>{#snippet title()}{item.name}{/snippet}</ListRow>{/snippet}\n    </ListView>\n    <EmptyState inset density="compact" {description} contentClass="max-w-none text-left" />\n  </Card.Content>\n</Card.Root>`,
+    cardInset: `<script lang="ts">\n  import { ListRow, ListView } from '$lib/components/patterns/collection';\n  import { EmptyState } from '$lib/components/patterns/screen';\n  import * as Card from '$lib/components/ui/card';\n<\/script>\n<Card.Root>\n  <Card.Header><Card.Title>Workspace activity</Card.Title></Card.Header>\n  <Card.Content class="py-0 first:pt-0">\n    <ListView {items} getKey={(item) => item.id} class="rounded-md [--radius-row:var(--radius-md)]">\n      {#snippet row({ item })}<ListRow class="rounded-md px-0">{#snippet title()}{item.name}{/snippet}</ListRow>{/snippet}\n    </ListView>\n    <EmptyState density="compact" {description} class="min-h-0 px-0 py-4" contentClass="max-w-none text-left" />\n  </Card.Content>\n</Card.Root>`,
     takeover: `<TakeoverScreen {title} {description} {primary}>\n  <p>Step content can change height without rebuilding the shell.</p>\n</TakeoverScreen>`,
     form: `<Form onSubmit={validate}>\n  <FormField label="Project name" error={nameError}>{#snippet control(props)}<Input {...props} bind:value={name} />{/snippet}</FormField>\n  <FormActions {primary} />\n</Form>`,
   };
@@ -185,32 +185,32 @@
 
   <RecipeSection
     title="Card with nested list and empty state"
-    description="Flush the card content, then apply the shared inset to each nested row and state."
+    description="Keep the list inside the card content inset, with matching rounded rows and symmetric empty-state padding."
     source={sources.cardInset}
   >
     <Card.Root data-inset-recipe class="max-w-xl">
       <Card.Header>
         <Card.Title><span data-inset-edge="card-title">Workspace activity</span></Card.Title>
       </Card.Header>
-      <Card.Content flush>
+      <Card.Content class="py-0 first:pt-0">
         <ListView
           items={rows.slice(0, 2)}
           getKey={(item) => item.id}
           getText={(item) => item.name}
           ariaLabel="Active workspace resources"
+          class="rounded-md [--radius-row:var(--radius-md)]"
         >
           {#snippet row({ item })}
-            <ListRow inset>
+            <ListRow class="rounded-md px-0">
               {#snippet title()}<span data-inset-edge="list-row">{item.name}</span>{/snippet}
               {#snippet description()}{item.detail}{/snippet}
             </ListRow>
           {/snippet}
         </ListView>
         <EmptyState
-          inset
           density="compact"
           description={nestedEmptyMessage}
-          class="min-h-32 justify-start border-t border-border"
+          class="min-h-0 px-0 py-4"
           contentClass="max-w-none text-left"
         />
       </Card.Content>

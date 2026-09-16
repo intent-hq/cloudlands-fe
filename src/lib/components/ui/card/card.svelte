@@ -53,7 +53,7 @@
   data-interactive={interactive || undefined}
   {inert}
   class={cn(
-    'flex min-w-0 flex-col overflow-hidden rounded-(--radius-large) text-card-foreground',
+    'flex min-w-0 flex-col overflow-hidden rounded-md text-card-foreground',
     outlined
       ? group
         ? 'border border-border bg-transparent'
