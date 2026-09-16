@@ -2,16 +2,15 @@
   /**
    * In-app quit confirmation dialog (replaces the native message box when a
    * renderer window is available). Shows, before quitting/restarting:
-   * agents that will be interrupted and agent-owned browser tabs that will be
-   * disconnected — each section only when non-empty. The primary button is
+   * a summary of affected agents and browsers, grouped into workspace rows. The primary button is
    * always "Quit"; Escape/backdrop/X = cancel.
    */
   import { FormDialog } from '$lib/components/patterns/confirm';
-  import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
-  import WorkspaceStatusIcon from '$lib/components/workspace/WorkspaceStatusIcon.svelte';
+  import AgentAvatarStack from '$features/agent/components/agent-avatar/AgentAvatarStack.svelte';
+  import * as Dialog from '$lib/components/ui/dialog';
+  import { ListRow } from '$lib/components/patterns/collection';
   import type {
     QuitAgentSummary,
-    QuitBrowserTabSummary,
     QuitConfirmationShowPayload,
   } from '$shared/ipc/quit-confirmation';
   import { m } from '$shared/paraglide/messages.js';
@@ -37,14 +36,24 @@
   const interrupted = $derived(payload?.interrupted ?? []);
   const disruptedTabs = $derived(payload?.disruptedBrowserTabs ?? []);
 
+  const agentCount = $derived(
+    interrupted.length === 1
+      ? m.quitConfirmation_modal_agents_one({ count: interrupted.length })
+      : m.quitConfirmation_modal_agents_many({ count: interrupted.length }),
+  );
+  const browserCount = $derived(
+    disruptedTabs.length === 1
+      ? m.quitConfirmation_modal_browsers_one({ count: disruptedTabs.length })
+      : m.quitConfirmation_modal_browsers_many({ count: disruptedTabs.length }),
+  );
+
   const workspaces = $derived.by(() => {
     const groups = new Map<
       string,
       {
         key: string;
         name: string;
-        agents: { agent: QuitAgentSummary; interrupted: boolean }[];
-        tabs: QuitBrowserTabSummary[];
+        agents: QuitAgentSummary[];
       }
     >();
     function group(workspaceId?: string, workspaceName?: string) {
@@ -61,7 +70,6 @@
             workspaceName ||
             (workspaceId ? m.workspace_links_untitled_label() : m.workspace_links_other_label()),
           agents: [],
-          tabs: [],
         };
         groups.set(key, value);
       } else if (workspaceName) {
@@ -71,7 +79,7 @@
     }
     const agents = interrupted;
     for (const agent of interrupted)
-      group(agent.workspaceId, agent.workspaceName).agents.push({ agent, interrupted: true });
+      group(agent.workspaceId, agent.workspaceName).agents.push(agent);
     for (const tab of disruptedTabs) {
       const owner = agents.find((agent) => agent.agentId === tab.ownerAgentId);
       const workspaceId = tab.workspaceId ?? owner?.workspaceId;
@@ -79,7 +87,7 @@
         !tab.workspaceId || tab.workspaceId === owner?.workspaceId
           ? owner?.workspaceName
           : undefined;
-      group(workspaceId, workspaceName).tabs.push(tab);
+      group(workspaceId, workspaceName);
     }
     return [...groups.values()];
   });
@@ -97,9 +105,7 @@
     static={staticPosition}
     role="alertdialog"
     title={m.quitConfirmation_modal_quit_title()}
-    description={m.quitConfirmation_modal_quit_description()}
     titleId={dialogTitleId}
-    descriptionId={dialogDescriptionId}
     submitLabel={m.quitConfirmation_modal_quitButton_label()}
     cancelLabel={m.quitConfirmation_modal_cancelButton_label()}
     submitVariant="destructive"
@@ -108,48 +114,34 @@
     onSubmit={() => respond(true)}
     onCancel={() => respond(false)}
   >
-    <div class="flex-1 space-y-3 overflow-auto">
-      {#each workspaces as workspace (workspace.key)}
-        <section aria-label={workspace.name} class="space-y-1">
-          <h3 class="flex min-w-0 items-center gap-2 px-2 py-1.5">
-            <WorkspaceStatusIcon status="idle" size={14} decorative />
-            <span class="type-body min-w-0 truncate font-normal text-foreground"
-              >{workspace.name}</span
-            >
-          </h3>
-          <ul class="space-y-1 pl-7 pr-2">
-            {#each workspace.agents as { agent } (agent.agentId)}
-              <li class="flex min-w-0 items-center gap-2 py-1">
-                <span class="shrink-0"
-                  ><AgentAvatar agentId={agent.agentId} variant="compact" /></span
-                >
-                <span
-                  class="type-body min-w-0 flex-1 truncate text-foreground"
-                  title={agent.agentName}>{agent.agentName}</span
-                >
-                <span
-                  class="type-caption shrink-0 text-muted-foreground"
-                  title={m.quitConfirmation_modal_interruptedSection_description()}
-                >
-                  {m.quitConfirmation_modal_interruptedSection_title()}
-                </span>
-              </li>
-            {/each}
-            {#each workspace.tabs as tab (tab.tabId)}
-              <li
-                class="min-w-0 py-1 text-muted-foreground"
-                title={m.quitConfirmation_modal_browsersSection_description()}
-              >
-                <div class="type-body truncate">
-                  {tab.title || tab.url || m.quitConfirmation_modal_untitledTab_label()}
-                </div>
-                {#if tab.title && tab.url}<div class="type-caption truncate">{tab.url}</div>{/if}
-                <div class="type-caption">{m.quitConfirmation_modal_browsersSection_title()}</div>
-              </li>
-            {/each}
-          </ul>
-        </section>
-      {/each}
+    <div class="flex-1 space-y-4 overflow-auto">
+      <Dialog.Description id={dialogDescriptionId}>
+        {#if interrupted.length && disruptedTabs.length}
+          {m.quitConfirmation_modal_summary_both({ agents: agentCount, browsers: browserCount })}
+        {:else}
+          {m.quitConfirmation_modal_summary({
+            count: interrupted.length ? agentCount : browserCount,
+          })}
+        {/if}
+      </Dialog.Description>
+      <ul class="space-y-1">
+        {#each workspaces as workspace (workspace.key)}
+          <li aria-label={workspace.name}>
+            <ListRow>
+              {#snippet title()}{workspace.name}{/snippet}
+              {#snippet trailing()}
+                <AgentAvatarStack
+                  items={workspace.agents.map((agent) => ({
+                    key: agent.agentId,
+                    agentId: agent.agentId,
+                  }))}
+                  variant="standard"
+                />
+              {/snippet}
+            </ListRow>
+          </li>
+        {/each}
+      </ul>
     </div>
   </FormDialog>
 {/if}

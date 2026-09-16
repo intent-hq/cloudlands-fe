@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
 import { warmImport } from '../../../../test/warm-import';
 import type { QuitConfirmationShowPayload } from '$shared/ipc/quit-confirmation';
@@ -41,8 +41,8 @@ describe('QuitConfirmationModal', () => {
     render(QuitConfirmationModal, { props: { open: true, payload: FULL_PAYLOAD, onRespond } });
 
     expect(await screen.findByRole('alertdialog', { name: 'Quit Intent?' })).toBeTruthy();
-    expect(screen.getAllByText('Local Agent').length).toBeGreaterThan(0);
-    expect(screen.getByText('Docs page')).toBeTruthy();
+    expect(screen.queryByText('Local Agent')).toBeNull();
+    expect(screen.queryByText('Docs page')).toBeNull();
 
     await fireEvent.click(screen.getByRole('button', { name: 'Quit' }));
 
@@ -57,7 +57,7 @@ describe('QuitConfirmationModal', () => {
 
     expect(await screen.findByRole('alertdialog', { name: 'Quit Intent?' })).toBeTruthy();
     expect(screen.queryByText('Local Agent')).toBeNull();
-    expect(screen.getByText('Docs page')).toBeTruthy();
+    expect(screen.queryByText('Docs page')).toBeNull();
 
     await fireEvent.click(screen.getByRole('button', { name: 'Quit' }));
 
@@ -85,17 +85,16 @@ describe('QuitConfirmationModal', () => {
         },
       },
     });
-    const groups = await screen.findAllByRole('region', { name: 'Alpha' });
+    const groups = await screen.findAllByRole('listitem', { name: 'Alpha' });
     expect(groups).toHaveLength(2);
-    const first = within(groups[0]);
-    expect(first.getByText('Local Agent')).toBeTruthy();
-    expect(first.getByText('Remote Agent')).toBeTruthy();
-    expect(first.getByText('Docs page')).toBeTruthy();
-    expect(first.queryByText('Second workspace agent')).toBeNull();
-    expect(within(groups[1]).getByText('Second workspace agent')).toBeTruthy();
-    expect(
-      within(screen.getByRole('region', { name: 'Other' })).getByText('Unassigned Agent'),
-    ).toBeTruthy();
+    const agentIds = (row: HTMLElement) =>
+      Array.from(row.querySelectorAll('[data-agent-avatar-stack-agent-id]'), (avatar) =>
+        avatar.getAttribute('data-agent-avatar-stack-agent-id'),
+      );
+    expect(agentIds(groups[0])).toEqual(['a1', 'a2']);
+    expect(agentIds(groups[1])).toEqual(['a4']);
+    expect(agentIds(screen.getByRole('listitem', { name: 'Other' }))).toEqual(['a3']);
+    expect(screen.queryByText('Docs page')).toBeNull();
   });
 
   it('keeps tabs-only workspaces and quit behavior when there are no agents', async () => {
@@ -108,7 +107,6 @@ describe('QuitConfirmationModal', () => {
         payload: {
           requestId: 'tabs-only',
           interrupted: [],
-          interrupted: [...FULL_PAYLOAD.interrupted],
           disruptedBrowserTabs: [
             {
               tabId: 'tab',
@@ -120,11 +118,43 @@ describe('QuitConfirmationModal', () => {
         },
       },
     });
-    expect(await screen.findByText('https://example.com')).toBeTruthy();
-    expect(screen.queryByRole('region', { name: 'Other' })).toBeNull();
+    expect(await screen.findByRole('listitem', { name: 'Untitled' })).toBeTruthy();
+    expect(screen.queryByText('https://example.com')).toBeNull();
+    expect(screen.queryByRole('listitem', { name: 'Other' })).toBeNull();
     await fireEvent.click(screen.getByRole('button', { name: 'Quit' }));
     expect(onRespond).toHaveBeenCalledExactlyOnceWith(true);
   });
+
+  it.each([
+    [1, 0, '1 agent will stop'],
+    [3, 0, '3 agents will stop'],
+    [0, 1, '1 browser will stop'],
+    [0, 2, '2 browsers will stop'],
+    [1, 1, '1 agent and 1 browser will stop'],
+    [3, 2, '3 agents and 2 browsers will stop'],
+  ])(
+    'describes affected counts for %i agents and %i browsers',
+    async (agents, browsers, summary) => {
+      const QuitConfirmationModal = (await import('../QuitConfirmationModal.svelte')).default;
+      render(QuitConfirmationModal, {
+        props: {
+          open: true,
+          payload: {
+            requestId: 'counts',
+            interrupted: Array.from({ length: agents }, (_, i) => ({
+              ...FULL_PAYLOAD.interrupted[0],
+              agentId: `a${i}`,
+            })),
+            disruptedBrowserTabs: Array.from({ length: browsers }, (_, i) => ({
+              ...FULL_PAYLOAD.disruptedBrowserTabs[0],
+              tabId: `t${i}`,
+            })),
+          },
+        },
+      });
+      expect(await screen.findByRole('alertdialog', { description: summary })).toBeTruthy();
+    },
+  );
 
   it('responds false on Cancel', async () => {
     const onRespond = vi.fn();
