@@ -146,19 +146,39 @@ export async function handleInviteDeepLink(url: string): Promise<void> {
       logger.info('User cancelled the invite device flow');
       return;
     }
+    // From here the modal stays up in its waiting state and Cancel aborts the
+    // join before any credential is minted — observed across both the browser
+    // launch and the grant wait (a cancel that lands while the launch is still
+    // pending must not be outrun by a grant that settles first), so the
+    // cancel signal is created once and raced first at each step.
+    let cancelledWhileWaiting = false;
+    const cancelSignal = consent.cancelledWhileWaiting.then(() => {
+      cancelledWhileWaiting = true;
+      return null;
+    });
     // The launch is awaited so a refused browser hand-off aborts the flow
     // before any credential is minted into the store; the OS error text is
     // dropped (bounded code only) since it may echo the URL or worse.
-    try {
-      await shell.openExternal(start.verificationUri);
-    } catch {
+    const launch = (async () => {
+      try {
+        await shell.openExternal(start.verificationUri);
+        return true;
+      } catch {
+        return false;
+      }
+    })();
+    const launched = await Promise.race([cancelSignal, launch]);
+    if (cancelledWhileWaiting) {
+      consent.dismiss('cancelled');
+      logger.info('User cancelled the invite while waiting for the GitHub grant');
+      return;
+    }
+    if (!launched) {
       throw new InviteFlowError('verification-launch-failed');
     }
 
-    // The modal stays up while the grant is awaited; Cancel there aborts the
-    // join before any credential is minted.
-    const credential = await Promise.race([grant, consent.cancelledWhileWaiting.then(() => null)]);
-    if (credential === null) {
+    const credential = await Promise.race([cancelSignal, grant]);
+    if (cancelledWhileWaiting || credential === null) {
       consent.dismiss('cancelled');
       logger.info('User cancelled the invite while waiting for the GitHub grant');
       return;
