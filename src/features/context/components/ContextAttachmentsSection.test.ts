@@ -1,7 +1,9 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import ContextImagesSection from './ContextImagesSection.svelte';
-import type { ContextImage } from '$store/renderer/slices/context/context-types';
+import ContextAttachmentsSection from './ContextAttachmentsSection.svelte';
+import type { ContextAttachment } from '$store/renderer/slices/context/context-types';
+import { store as appStore } from '$store/renderer/store';
+import { openWorkspaceAttachment } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
 
 const backendRequest = vi.hoisted(() => vi.fn());
 vi.mock('$lib/client/live/backend-transport', async (importOriginal) => ({
@@ -10,16 +12,79 @@ vi.mock('$lib/client/live/backend-transport', async (importOriginal) => ({
 }));
 
 beforeEach(() => backendRequest.mockReset());
-afterEach(cleanup);
-const image: ContextImage = {
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
+const image: ContextAttachment = {
   id: 'one',
   name: 'landscape.png',
   block: { type: 'image', mimeType: 'image/png', data: 'aW1hZ2U=' },
 };
 
 describe('context image grid interactions', () => {
+  it.each([
+    ['brief.pdf', 'application/pdf'],
+    ['walkthrough.mp4', 'video/mp4'],
+    ['archive.zip', 'application/zip'],
+  ])('opens %s through the existing workspace attachment action', async (name, mimeType) => {
+    const dispatch = vi.fn();
+    vi.spyOn(appStore, 'dispatch', 'get').mockReturnValue(dispatch);
+    render(ContextAttachmentsSection, {
+      workspaceId: 'one',
+      attachments: [
+        {
+          id: 'file',
+          name,
+          block: { type: 'file', attachmentId: 'att-file', fileName: name, mimeType },
+        },
+      ],
+    });
+    await fireEvent.click(screen.getByRole('button', { name: `Open ${name}` }));
+    expect(dispatch).toHaveBeenCalledExactlyOnceWith(
+      openWorkspaceAttachment('one', 'att-file', name),
+    );
+    expect(backendRequest).not.toHaveBeenCalled();
+  });
+
+  it.each(['placing', 'failed'] as const)(
+    'keeps a %s file visible but unavailable until placed',
+    async (placementStatus) => {
+      const dispatch = vi.fn();
+      vi.spyOn(appStore, 'dispatch', 'get').mockReturnValue(dispatch);
+      const file = {
+        id: 'file',
+        name: 'report.pdf',
+        block: { type: 'file' as const, fileName: 'report.pdf', mimeType: 'application/pdf' },
+      };
+      const view = render(ContextAttachmentsSection, {
+        workspaceId: 'one',
+        attachments: [{ ...file, placementStatus }],
+      });
+      const button = screen.getByRole('button', { name: /report.pdf/ }) as HTMLButtonElement;
+      expect(button.disabled).toBe(true);
+      expect(button.getAttribute('aria-busy')).toBe(String(placementStatus === 'placing'));
+      await view.rerender({
+        workspaceId: 'one',
+        attachments: [
+          {
+            ...file,
+            placementStatus: 'placed',
+            block: { ...file.block, attachmentId: 'att-file' },
+          },
+        ],
+      });
+      await fireEvent.click(screen.getByRole('button', { name: 'Open report.pdf' }));
+      expect(dispatch).toHaveBeenCalledExactlyOnceWith(
+        openWorkspaceAttachment('one', 'att-file', 'report.pdf'),
+      );
+      await view.rerender({ workspaceId: 'one', attachments: [] });
+      expect(screen.queryByRole('region')).toBeNull();
+    },
+  );
+
   it('collapses and expands the image section', async () => {
-    render(ContextImagesSection, { images: [image], workspaceId: 'one' });
+    render(ContextAttachmentsSection, { attachments: [image], workspaceId: 'one' });
     const toggle = screen.getByRole('button', { expanded: true });
     await fireEvent.click(toggle);
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
@@ -29,14 +94,14 @@ describe('context image grid interactions', () => {
   });
 
   it('opens the shared lightbox from a thumbnail', async () => {
-    render(ContextImagesSection, { images: [image], workspaceId: 'one' });
+    render(ContextAttachmentsSection, { attachments: [image], workspaceId: 'one' });
     await fireEvent.click(screen.getByRole('button', { name: /view landscape.png full size/i }));
     await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy());
   });
 
   it('hides the section after its last image is removed', async () => {
-    const view = render(ContextImagesSection, { images: [image], workspaceId: 'one' });
-    await view.rerender({ images: [], workspaceId: 'one' });
+    const view = render(ContextAttachmentsSection, { attachments: [image], workspaceId: 'one' });
+    await view.rerender({ attachments: [], workspaceId: 'one' });
     expect(screen.queryByRole('region')).toBeNull();
   });
 
@@ -52,9 +117,9 @@ describe('context image grid interactions', () => {
       path: '.intent/attachments/drawing #1.png',
       exists: true,
     });
-    render(ContextImagesSection, {
+    render(ContextAttachmentsSection, {
       workspaceId: 'one',
-      images: [
+      attachments: [
         {
           id: 'placed',
           name: 'drawing #1.png',
@@ -85,9 +150,9 @@ describe('context image grid interactions', () => {
       path: '.intent/attachments/missing.png',
       exists: false,
     });
-    render(ContextImagesSection, {
+    render(ContextAttachmentsSection, {
       workspaceId: 'one',
-      images: [
+      attachments: [
         {
           id: 'missing',
           name: 'missing.png',

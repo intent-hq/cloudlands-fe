@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { ContextImage } from '$store/renderer/slices/context/context-types';
+  import type { ContextAttachment } from '$store/renderer/slices/context/context-types';
   import { Button } from '$lib/components/ui/button';
   import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
   import {
@@ -16,7 +16,7 @@
     name,
     onHydrate,
   }: {
-    image: ContextImage;
+    image: ContextAttachment;
     workspaceId: string;
     name: string;
     onHydrate?: () => void;

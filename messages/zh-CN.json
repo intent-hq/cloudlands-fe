@@ -6234,5 +6234,6 @@
   "sandbox_subscriptionRows_expanded_label": "已展开",
   "sandbox_subscriptionRows_static_label": "静态",
   "chat_monitoredPrs_details_lastChangeAt": "最后变更时间：{time}",
-  "context_images_title_label": "图片"
+  "context_attachments_uploading_ariaLabel": "正在上传 {name}…",
+  "context_attachments_title_label": "附件"
 }

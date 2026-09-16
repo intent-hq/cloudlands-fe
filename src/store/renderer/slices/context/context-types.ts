@@ -8,13 +8,14 @@ import type { Collection } from '@augmentcode/themis/utils/collections/collectio
 import type { ContextItem } from '$features/context/types';
 import type { ContentBlock } from '$shared/types';
 
-/** Presentation of an existing draft or user-message image; never stored separately. */
-export interface ContextImage {
+/** Presentation of an existing draft or user-message attachment; never stored separately. */
+export interface ContextAttachment {
   id: string;
   name?: string;
   block: ContentBlock;
   agentId?: string;
   messageId?: string;
+  placementStatus?: 'placing' | 'failed' | 'placed';
   hydrationStatus?: 'loading' | 'loaded' | 'error';
 }
 

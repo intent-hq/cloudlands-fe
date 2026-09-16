@@ -6234,5 +6234,6 @@
   "sandbox_subscriptionRows_expanded_label": "expandido",
   "sandbox_subscriptionRows_static_label": "estático",
   "chat_monitoredPrs_details_lastChangeAt": "Último cambio: {time}",
-  "context_images_title_label": "Imágenes"
+  "context_attachments_uploading_ariaLabel": "Subiendo {name}…",
+  "context_attachments_title_label": "Archivos adjuntos"
 }

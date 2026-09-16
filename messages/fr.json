@@ -6234,5 +6234,6 @@
   "sandbox_subscriptionRows_expanded_label": "développé",
   "sandbox_subscriptionRows_static_label": "statique",
   "chat_monitoredPrs_details_lastChangeAt": "Dernière modification : {time}",
-  "context_images_title_label": "Images"
+  "context_attachments_uploading_ariaLabel": "Envoi de {name}…",
+  "context_attachments_title_label": "Pièces jointes"
 }

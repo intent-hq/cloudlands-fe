@@ -6234,5 +6234,6 @@
   "sandbox_subscriptionRows_expanded_label": "展開",
   "sandbox_subscriptionRows_static_label": "固定",
   "chat_monitoredPrs_details_lastChangeAt": "最終変更日時: {time}",
-  "context_images_title_label": "画像"
+  "context_attachments_uploading_ariaLabel": "{name} をアップロード中…",
+  "context_attachments_title_label": "添付ファイル"
 }
