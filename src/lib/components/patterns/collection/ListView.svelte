@@ -85,6 +85,19 @@
   );
 
   $effect(() => {
+    if (!viewport || !isVirtualized) return;
+    const element = viewport;
+    const measure = () => {
+      viewportHeight = element.clientHeight;
+    };
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  });
+
+  $effect(() => {
     if (!content || status !== 'ready' || items.length === 0) {
       hover = null;
       return;
@@ -207,7 +220,6 @@
   function handleScroll() {
     if (!viewport) return;
     scrollTop = viewport.scrollTop;
-    viewportHeight = viewport.clientHeight;
     hover?.measure();
   }
 </script>
