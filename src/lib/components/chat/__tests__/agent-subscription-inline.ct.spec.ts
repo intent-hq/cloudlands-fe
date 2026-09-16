@@ -3,11 +3,108 @@ import AgentSubscriptionInlineHost from './AgentSubscriptionInlineHost.svelte';
 
 const toolKinds = ['file', 'terminal', 'tool'] as const;
 
+test.beforeEach(async ({ page }) => {
+  // Load the bundled face before the avatar stack caches canvas text measurements.
+  const fontsLoaded = await page.evaluate(async () => {
+    const faces = await Promise.all(
+      ['400 15px "Inter Variable"', '500 12px "Inter Variable"'].map((font) =>
+        document.fonts.load(font),
+      ),
+    );
+    return faces.every(
+      (loaded) => loaded.length > 0 && loaded.every((face) => face.status === 'loaded'),
+    );
+  });
+  expect(fontsLoaded).toBe(true);
+});
+
 test.afterEach(async ({ page }) => {
   await page.locator('#root').evaluate(async (root) => {
     if (root.childElementCount > 0) await window.playwrightUnmount(root);
   });
 });
+
+async function expectSubscriptionScreenshot(component: Locator, name: string, ratio: number) {
+  try {
+    await expect(component).toHaveScreenshot(name, { maxDiffPixelRatio: ratio });
+  } finally {
+    const typography = await component.evaluate((root) => {
+      const selectors = {
+        summary: '[data-testid="one-shot-summary-title"]',
+        preview: '[data-testid="agent-card-preview"]',
+        overflow: '[data-agent-avatar-overflow]',
+        stack: '[data-agent-avatar-stack]',
+      };
+      return {
+        fontStatus: document.fonts.status,
+        fontUiToken: getComputedStyle(root).getPropertyValue('--font-ui'),
+        interBodyReady: document.fonts.check('400 15px "Inter Variable"'),
+        interOverflowReady: document.fonts.check('500 12px "Inter Variable"'),
+        samples: Object.fromEntries(
+          Object.entries(selectors).map(([key, selector]) => {
+            const element = root.querySelector(selector);
+            if (!element) return [key, null];
+            const style = getComputedStyle(element);
+            const { x, y, width, height } = element.getBoundingClientRect();
+            return [
+              key,
+              {
+                fontFamily: style.fontFamily,
+                fontSize: style.fontSize,
+                fontWeight: style.fontWeight,
+                lineHeight: style.lineHeight,
+                letterSpacing: style.letterSpacing,
+                box: { x, y, width, height },
+              },
+            ];
+          }),
+        ),
+      };
+    });
+    const renderedFonts: Record<
+      string,
+      { fonts: { familyName: string; isCustomFont: boolean }[] }
+    > = {};
+    const page = component.page();
+    const cdp = await page.context().newCDPSession(page);
+    try {
+      await cdp.send('DOM.enable');
+      await cdp.send('CSS.enable');
+      const { root } = await cdp.send('DOM.getDocument');
+      for (const selector of [
+        '[data-testid="one-shot-summary-title"]',
+        '[data-testid="agent-card-preview"]',
+        '[data-agent-avatar-overflow]',
+      ]) {
+        const { nodeId } = await cdp.send('DOM.querySelector', {
+          nodeId: root.nodeId,
+          selector: `[data-testid="subscription-inline-host"] ${selector}`,
+        });
+        if (nodeId) {
+          renderedFonts[selector] = await cdp.send('CSS.getPlatformFontsForNode', { nodeId });
+        }
+      }
+    } finally {
+      await cdp.detach();
+    }
+    await test.info().attach(`${name}-typography`, {
+      body: JSON.stringify({ ...typography, renderedFonts }, null, 2),
+      contentType: 'application/json',
+    });
+    await test.info().attach(`${name}-render`, {
+      body: await component.screenshot({ animations: 'disabled' }),
+      contentType: 'image/png',
+    });
+    const fonts = Object.values(renderedFonts).flatMap((entry) => entry.fonts);
+    expect(fonts.length).toBeGreaterThan(0);
+    for (const font of fonts) {
+      expect(font).toMatchObject({
+        familyName: expect.stringMatching(/^Inter(?: Variable)?$/),
+        isCustomFont: true,
+      });
+    }
+  }
+}
 
 async function measure(component: Locator, page: Page) {
   await expect(component.getByTestId('agent-card-preview')).toBeVisible();
@@ -691,21 +788,17 @@ test('centers the finished summary and gives completed avatars a muted semantic 
   }
 });
 
-test('screenshots the finished summary and completed participant treatment', async ({
-  mount,
-  page,
-}) => {
-  /* The host fixture pins agent timestamps to 2026-08-15, but the compact
-     relative-time label ("2d", "2w", …) is computed from the real clock, so
-     the rendered text — and the screenshot — drifts as calendar time moves
-     past the fixture dates. Pin the clock 2 days after the fixture timestamps
-     to match the committed baselines. */
-  await page.clock.setFixedTime(new Date('2026-08-17T12:05:00.000Z'));
-  const component = await mount(AgentSubscriptionInlineHost, {
-    props: { mode: 'agents', agentCount: 7, finishedCount: 2, initiallyExpanded: true },
-  });
-  for (const theme of ['light', 'dark'] as const) {
-    for (const zoom of [1, 2]) {
+for (const theme of ['light', 'dark'] as const) {
+  for (const zoom of [1, 2]) {
+    test(`screenshots the finished summary and completed participant treatment (${theme}, ${zoom * 100}%)`, async ({
+      mount,
+      page,
+    }) => {
+      // Pin relative-time labels two days after the fixture timestamps.
+      await page.clock.setFixedTime(new Date('2026-08-17T12:05:00.000Z'));
+      const component = await mount(AgentSubscriptionInlineHost, {
+        props: { mode: 'agents', agentCount: 7, finishedCount: 2, initiallyExpanded: true },
+      });
       await component.update({
         props: {
           mode: 'agents',
@@ -726,13 +819,14 @@ test('screenshots the finished summary and completed participant treatment', asy
         await finishedSummary.click();
       }
       await expect(component.getByTestId('finished-agent-list')).toBeVisible();
-      await expect(component).toHaveScreenshot(
+      await expectSubscriptionScreenshot(
+        component,
         `finished-participants-${theme}-${zoom === 1 ? '100' : '200'}.png`,
-        { maxDiffPixelRatio: 0.02 },
+        0.02,
       );
-    }
+    });
   }
-});
+}
 
 test('renders exactly one promoted Waiting disclosure in agent-only mode', async ({ mount }) => {
   const component = await mount(AgentSubscriptionInlineHost, { props: { mode: 'agents' } });
@@ -1294,13 +1388,15 @@ for (const [agentStateScenario, expected] of canonicalAgentStateCases) {
   });
 }
 
-test('screenshots participant cutouts over varied parent backgrounds', async ({ mount }) => {
-  const component = await mount(AgentSubscriptionInlineHost, {
-    props: { mode: 'agents', agentCount: 6, width: 420, initiallyExpanded: false },
-  });
-  for (const theme of ['light', 'dark'] as const) {
-    for (const parentBackground of ['background', 'muted', 'accent'] as const) {
-      for (const zoom of [1, 2]) {
+for (const theme of ['light', 'dark'] as const) {
+  for (const parentBackground of ['background', 'muted', 'accent'] as const) {
+    for (const zoom of [1, 2]) {
+      test(`screenshots participant cutouts over varied parent backgrounds (${theme}, ${parentBackground}, ${zoom * 100}%)`, async ({
+        mount,
+      }) => {
+        const component = await mount(AgentSubscriptionInlineHost, {
+          props: { mode: 'agents', agentCount: 6, width: 420, initiallyExpanded: false },
+        });
         await component.update({
           props: {
             mode: 'agents',
@@ -1317,11 +1413,12 @@ test('screenshots participant cutouts over varied parent backgrounds', async ({ 
         if ((await summary.getAttribute('aria-expanded')) === 'true') await summary.click();
         await expect.poll(() => stack.locator('[data-agent-avatar-with-state]').count()).toBe(3);
         await expect(stack.locator('[data-agent-avatar-overflow]')).toHaveText('+3');
-        await expect(component).toHaveScreenshot(
+        await expectSubscriptionScreenshot(
+          component,
           `participant-stack-${theme}-${parentBackground}-${zoom === 1 ? '100' : '200'}.png`,
-          { maxDiffPixelRatio: 0.012 },
+          0.012,
         );
-      }
+      });
     }
   }
-});
+}

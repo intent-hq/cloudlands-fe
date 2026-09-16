@@ -39,6 +39,8 @@
     workspaceId: string;
     agentId: string;
     compact?: boolean;
+    /** The surrounding transcript/preview owns the complete gap before this card. */
+    suppressTopGap?: boolean;
     /** Whether the owning chat is active, independent of disclosure state. */
     isActive?: boolean;
     visible?: boolean;
@@ -56,6 +58,7 @@
     workspaceId,
     agentId,
     compact = false,
+    suppressTopGap = false,
     isActive = true,
     visible = $bindable(false),
     isolatedPreview,
@@ -175,7 +178,7 @@
 </script>
 
 <div
-  class="w-full min-w-0 max-w-full {compact ? 'mt-6' : 'mt-8'}"
+  class="w-full min-w-0 max-w-full {suppressTopGap ? 'mt-0' : 'mt-6'}"
   class:hidden={!hasSubscriptions}
   data-testid="subscription-utility-area"
   data-has-subscriptions={hasSubscriptions}

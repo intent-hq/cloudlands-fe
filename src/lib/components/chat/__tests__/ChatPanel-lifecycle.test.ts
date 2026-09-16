@@ -59,6 +59,7 @@ const mocks = vi.hoisted(() => {
     resizeDisconnect: vi.fn(),
     resizeConstructor: vi.fn(),
     agentMessages: mutableReadable<unknown[]>([]),
+    agentHistoryMessages: mutableReadable<unknown[]>([]),
     agentSession: mutableReadable<unknown>(null),
     agentSessionIsStreaming: mutableReadable(false),
     pendingProposalRecovery: mutableReadable<
@@ -144,7 +145,7 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
     select: () => false,
   }),
   selectAgentMessages: Object.assign(() => mocks.agentMessages, { select: () => [] }),
-  selectAgentHistoryMessages: mocks.selector([]),
+  selectAgentHistoryMessages: Object.assign(() => mocks.agentHistoryMessages, { select: () => [] }),
   selectHistorySegmentMeta: mocks.selector({
     gapToTail: false,
     oldestReached: false,
@@ -243,7 +244,8 @@ vi.mock('$store/renderer/slices/transient-ui/transient-ui-selectors', () => ({
 vi.mock('$features/layout/panel-layout-adapter', () => ({
   getPanelLayoutManager: () => ({ getPanelIds: () => [], getPanel: () => null }),
 }));
-vi.mock('$lib/utils/smartScroll', () => ({
+vi.mock('$lib/utils/smartScroll', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$lib/utils/smartScroll')>()),
   animateScrollTo: mocks.animateScrollTo,
   followToBottom: vi.fn(),
   followBottom: (
@@ -680,6 +682,7 @@ beforeEach(() => {
     return action;
   });
   mocks.agentMessages.set([]);
+  mocks.agentHistoryMessages.set([]);
   mocks.agentSession.set(null);
   mocks.agentSessionIsStreaming.set(false);
   mocks.pendingProposalRecovery.set(undefined);
@@ -718,6 +721,185 @@ afterEach(() => {
 });
 
 describe('ChatPanel mounted lifecycle', () => {
+  it.each([
+    { type: 'event_notification', eventCount: 1, eventTypes: ['file:changed'] },
+    { type: 'agent_message', fromAgentId: 'agent-sender', fromAgentName: 'Reviewer' },
+    { type: 'hook_wake', hookId: 'hook-1', hookName: 'Build watch', reason: 'dispatched' },
+    { type: 'pr_monitor_wake', repo: 'intent-hq/intent', prNumber: 42 },
+  ])('makes $type turn sources eligible for the production pinned tracker', async (metadata) => {
+    const { createPinnedPromptController } = await import('../pinned-prompt');
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentMessages.set([
+      {
+        id: 'trigger',
+        role: 'user',
+        content: 'A new result arrived',
+        metadata,
+        timestamp: '2026-01-01T00:00:00.000Z',
+      },
+      {
+        id: 'response',
+        role: 'assistant',
+        content: 'Reviewing the result',
+        timestamp: '2026-01-01T00:00:01.000Z',
+      },
+    ]);
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+    await tick();
+    const source = view.container.querySelector<HTMLElement>('[data-pinned-prompt-id="trigger"]')!;
+    const turn = source.closest<HTMLElement>('[data-conversation-turn]')!;
+    const scroll = source.closest<HTMLElement>('.overflow-y-auto')!;
+    source.getBoundingClientRect = () => ({ bottom: -10 }) as DOMRect;
+    turn.getBoundingClientRect = () => ({ bottom: 500 }) as DOMRect;
+    scroll.getBoundingClientRect = () => ({ top: 0 }) as DOMRect;
+    expect(createPinnedPromptController().update(scroll, true)?.id).toBe('trigger');
+  });
+
+  it('keeps an automated pinned source current and reachable through history, virtualization, and reactivation', async () => {
+    MockChatIntersectionObserver.instances = [];
+    vi.stubGlobal('IntersectionObserver', MockChatIntersectionObserver);
+    mocks.draftGet.mockResolvedValue(null);
+    const initialWake = {
+      id: 'automated-wake',
+      role: 'user',
+      contentBlocks: [{ type: 'text', text: 'first wake summary' }],
+      metadata: {
+        type: 'hook_wake',
+        hookId: 'hook-1',
+        hookName: 'Build watch',
+        reason: 'dispatched',
+      },
+      timestamp: '2026-01-01T00:04:00.000Z',
+    };
+    const tail = Array.from({ length: 24 }, (_, index) => [
+      {
+        id: index === 4 ? initialWake.id : `user-${index}`,
+        role: 'user',
+        contentBlocks: [
+          { type: 'text', text: index === 4 ? 'first wake summary' : `question ${index}` },
+        ],
+        metadata: index === 4 ? initialWake.metadata : undefined,
+        timestamp: `2026-01-01T00:${String(index).padStart(2, '0')}:00.000Z`,
+      },
+      {
+        id: `assistant-${index}`,
+        role: 'assistant',
+        contentBlocks: [{ type: 'text', text: `answer ${index}` }],
+        timestamp: `2026-01-01T00:${String(index).padStart(2, '0')}:30.000Z`,
+      },
+    ]).flat();
+    const initialHistory = [
+      {
+        id: 'history-user',
+        role: 'user',
+        contentBlocks: [{ type: 'text', text: 'earlier question' }],
+        timestamp: '2025-12-31T23:59:00.000Z',
+      },
+      {
+        id: 'history-assistant',
+        role: 'assistant',
+        contentBlocks: [{ type: 'text', text: 'earlier answer' }],
+        timestamp: '2025-12-31T23:59:30.000Z',
+      },
+    ];
+    mocks.agentHistoryMessages.set(initialHistory);
+    mocks.agentMessages.set(tail);
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a', isActive: true },
+    });
+    await tick();
+    await tick();
+
+    const scroll = screen.getByTestId('chat-transcript-scroll-viewport');
+    const source = view.container.querySelector<HTMLElement>(
+      '[data-pinned-prompt-id="automated-wake"]',
+    )!;
+    const turn = source.closest<HTMLElement>('[data-conversation-turn]')!;
+    const lazyShell = source.querySelector<HTMLElement>('[data-lazy-turn-key="automated-wake"]')!;
+    expect(lazyShell.getAttribute('data-lazy-visible')).toBe('false');
+    flushFrame();
+    const sizeObserverCallback = mocks.resizeConstructor.mock.calls.at(-1)?.[0] as
+      ResizeObserverCallback | undefined;
+    sizeObserverCallback?.(
+      [{ target: scroll, contentRect: { height: 600 } }] as unknown as ResizeObserverEntry[],
+      {} as ResizeObserver,
+    );
+    await tick();
+    expect(mocks.pinnedPromptOptions?.enabled).toBe(true);
+
+    scroll.getBoundingClientRect = () => ({ top: 100, height: 500 }) as DOMRect;
+    source.getBoundingClientRect = () => ({ bottom: 90 }) as DOMRect;
+    const sourceTurnRect = vi.fn(() => ({ top: 80, bottom: 500, height: 420 }) as DOMRect);
+    turn.getBoundingClientRect = sourceTurnRect;
+    scroll.dispatchEvent(new Event('scroll'));
+    flushFrame();
+    await tick();
+    const overlay = screen.getByTestId('pinned-user-prompt');
+    expect(overlay.getAttribute('title')).toContain('first wake summary');
+
+    const replacement = {
+      ...initialWake,
+      contentBlocks: [{ type: 'text', text: 'updated wake summary' }],
+    };
+    mocks.agentMessages.set(
+      tail.map((message) => (message.id === replacement.id ? replacement : message)),
+    );
+    await tick();
+    flushFrame();
+    await tick();
+    expect(screen.getByTestId('pinned-user-prompt').getAttribute('title')).toContain(
+      'updated wake summary',
+    );
+
+    mocks.agentHistoryMessages.set([
+      {
+        id: 'older-user',
+        role: 'user',
+        contentBlocks: [{ type: 'text', text: 'older question' }],
+        timestamp: '2025-12-31T23:58:00.000Z',
+      },
+      {
+        id: 'older-assistant',
+        role: 'assistant',
+        contentBlocks: [{ type: 'text', text: 'older answer' }],
+        timestamp: '2025-12-31T23:58:30.000Z',
+      },
+      ...initialHistory,
+    ]);
+    await tick();
+    flushFrame();
+    await tick();
+    expect(view.container.querySelector('[data-pinned-prompt-id="automated-wake"]')).toBe(source);
+    expect(source.querySelector('[data-lazy-turn-key="automated-wake"]')).toBe(lazyShell);
+
+    await view.rerender({
+      workspace: workspace('workspace-a'),
+      agentId: 'agent-a',
+      isActive: false,
+    });
+    await tick();
+    expect(screen.queryByTestId('pinned-user-prompt')).toBeNull();
+
+    await view.rerender({
+      workspace: workspace('workspace-a'),
+      agentId: 'agent-a',
+      isActive: true,
+    });
+    await tick();
+    scroll.dispatchEvent(new Event('scroll'));
+    flushFrame();
+    await tick();
+    sourceTurnRect.mockClear();
+    mocks.animateScrollTo.mockClear();
+    await fireEvent.click(screen.getByTestId('pinned-user-prompt'));
+    expect(sourceTurnRect).toHaveBeenCalledOnce();
+    expect(mocks.animateScrollTo).toHaveBeenCalledOnce();
+    expect(mocks.animateScrollTo.mock.calls[0][0]()).toBe(scroll);
+    expect(screen.queryByTestId('pinned-user-prompt')).toBeNull();
+  });
+
   it('consumes a targeted browser capture and includes its image and context in the next send', async () => {
     mocks.draftGet.mockResolvedValue(null);
     mocks.pendingBrowserCaptures.set([

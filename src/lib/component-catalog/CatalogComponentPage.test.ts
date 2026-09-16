@@ -9,6 +9,13 @@ import { getCatalogEntry } from './catalog';
 afterEach(cleanup);
 
 describe('catalog component docs page', () => {
+  it('operates the lazily loaded component preview', async () => {
+    render(CatalogComponentPage, { props: { entry: getCatalogEntry('button')! } });
+    const button = await screen.findByRole('button', { name: '1. Primary' }, { timeout: 10_000 });
+    await fireEvent.click(button);
+    expect(screen.getByLabelText('Button click count').textContent).toBe('1');
+  });
+
   it.each(['button', 'select', 'dialog'])('shows import-only guidance for %s', async (slug) => {
     render(CatalogComponentPage, {
       props: { entry: { ...getCatalogEntry(slug)!, usage: undefined } },

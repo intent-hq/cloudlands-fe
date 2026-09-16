@@ -12,6 +12,13 @@ import {
 
 const entry = getCatalogEntry('chat-polish')!;
 
+async function renderReadyPreview() {
+  const view = render(CatalogFixtureList, { props: { entry } });
+  await screen.findByRole('slider', { name: 'Panel width' }, { timeout: 20_000 });
+  await screen.findByTestId('chat-polish-preview', {}, { timeout: 20_000 });
+  return view;
+}
+
 describe('ChatPolishGeometryControls', () => {
   beforeAll(() => appStore.init());
   afterEach(() => {
@@ -22,7 +29,7 @@ describe('ChatPolishGeometryControls', () => {
   });
 
   it('exposes named keyboard controls and updates every scoped custom property', async () => {
-    const view = render(CatalogFixtureList, { props: { entry } });
+    const view = await renderReadyPreview();
     const workbench = screen.getByTestId('chat-polish-workbench');
     const sidebar = screen.getByTestId('chat-polish-sidebar');
     const examples = screen.getByTestId('chat-polish-examples');
@@ -66,7 +73,7 @@ describe('ChatPolishGeometryControls', () => {
   });
 
   it('keeps live changes unsaved until Save, then reloads and clears them on Reset', async () => {
-    const first = render(CatalogFixtureList, { props: { entry } });
+    const first = await renderReadyPreview();
     const width = screen.getByRole('slider', { name: 'Panel width' });
     const operationalGap = screen.getByRole('slider', { name: 'Operational row gap' });
     await fireEvent.input(width, { target: { value: '640' } });
@@ -90,7 +97,7 @@ describe('ChatPolishGeometryControls', () => {
     first.unmount();
 
     vi.mocked(localStorage.getItem).mockReturnValue(stored);
-    render(CatalogFixtureList, { props: { entry } });
+    await renderReadyPreview();
     await waitFor(() => {
       expect((screen.getByRole('slider', { name: 'Panel width' }) as HTMLInputElement).value).toBe(
         '640',
@@ -116,7 +123,7 @@ describe('ChatPolishGeometryControls', () => {
   });
 
   it('keeps live preview changes and reports save and reset storage failures', async () => {
-    render(CatalogFixtureList, { props: { entry } });
+    await renderReadyPreview();
     const width = screen.getByRole('slider', { name: 'Panel width' });
     await fireEvent.input(width, { target: { value: '680' } });
     vi.mocked(localStorage.setItem).mockImplementation(() => {

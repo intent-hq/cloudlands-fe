@@ -4,9 +4,6 @@
   import { commonProps, type CatalogEntry } from './catalog';
   import { getCatalogComponentName } from './catalog-export';
   import { getCatalogRenderer } from './catalog-renderers';
-  import ChatPolishGeometryControls from './ChatPolishGeometryControls.svelte';
-  import ChatPolishCatalogPreview from './renderers/ChatPolishCatalogPreview.svelte';
-  import ProposalCatalogPreview from './renderers/ProposalCatalogPreview.svelte';
   import {
     defaultChatPolishGeometry,
     type ChatPolishGeometry,
@@ -16,6 +13,19 @@
   let tab = $state('preview');
   let chatPolishGeometry = $state<ChatPolishGeometry>({ ...defaultChatPolishGeometry });
   const renderer = $derived(getCatalogRenderer(entry.slug));
+  const proposalPreview = $derived(
+    entry.slug === 'proposal-card'
+      ? import('./renderers/ProposalCatalogPreview.svelte')
+      : undefined,
+  );
+  const chatPreview = $derived(
+    entry.slug === 'chat-polish'
+      ? import('./renderers/ChatPolishCatalogPreview.svelte')
+      : undefined,
+  );
+  const chatControls = $derived(
+    entry.slug === 'chat-polish' ? import('./ChatPolishGeometryControls.svelte') : undefined,
+  );
   const fixtures = $derived(
     entry.slug === 'chat-polish' ? entry.fixtures.slice(0, 1) : entry.fixtures,
   );
@@ -48,16 +58,24 @@
     style={entry.slug === 'chat-polish' ? chatPolishStyle : undefined}
   >
     {#if entry.slug === 'proposal-card'}
-      <ProposalCatalogPreview {fixture} />
+      {#await proposalPreview then module}
+        {#if module}{@const Preview = module.default}<Preview {fixture} />{/if}
+      {:catch error}<p role="alert">{String(error)}</p>{/await}
     {:else if entry.slug === 'chat-polish'}
-      <ChatPolishCatalogPreview
-        {fixture}
-        compact={chatPolishGeometry.compact}
-        stickySimulation={chatPolishGeometry.stickySimulation}
-      />
-    {:else if renderer}
-      {@const Preview = renderer.component}
-      <Preview componentId={renderer.id} {fixture} />
+      {#await chatPreview then module}
+        {#if module}{@const Preview = module.default}<Preview
+            {fixture}
+            compact={chatPolishGeometry.compact}
+            stickySimulation={chatPolishGeometry.stickySimulation}
+          />{/if}
+      {:catch error}<p role="alert">{String(error)}</p>{/await}
+    {:else}
+      {#await renderer then loaded}
+        {#if loaded}{@const Preview = loaded.component}<Preview
+            componentId={loaded.id}
+            {fixture}
+          />{/if}
+      {:catch error}<p role="alert">{String(error)}</p>{/await}
     {/if}
   </div>
 {/snippet}
@@ -103,7 +121,11 @@
       <Tabs.Content value="preview">
         {#if entry.slug === 'chat-polish'}
           <div class="chat-polish-layout" data-testid="chat-polish-layout">
-            <ChatPolishGeometryControls bind:geometry={chatPolishGeometry} />
+            {#await chatControls then module}
+              {#if module}{@const Controls = module.default}<Controls
+                  bind:geometry={chatPolishGeometry}
+                />{/if}
+            {:catch error}<p role="alert">{String(error)}</p>{/await}
             {@render preview(fixtures[0])}
           </div>
         {:else}

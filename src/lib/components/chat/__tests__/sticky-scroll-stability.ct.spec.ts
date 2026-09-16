@@ -1,5 +1,6 @@
 import { expect, test, type Locator, type Page } from '@playwright/experimental-ct-svelte';
 import StickyScrollStabilityHost from './StickyScrollStabilityHost.svelte';
+import type { AgentMessage } from '$shared/types';
 
 async function settle(page: Page) {
   await page.evaluate(
@@ -40,6 +41,105 @@ async function geometry(scroll: Locator, anchor: Locator, source: Locator) {
     [await anchor.elementHandle(), await source.elementHandle()],
   );
 }
+
+test('pins automated triggers without shifting the transcript and returns to each source', async ({
+  mount,
+  page,
+}, testInfo) => {
+  const turnMessages = [
+    {
+      id: 'event',
+      role: 'user',
+      contentBlocks: [{ type: 'text', text: '[WORKSPACE EVENTS]' }],
+      metadata: {
+        type: 'event_notification',
+        eventCount: 1,
+        eventTypes: ['agent:idle'],
+        events: [
+          {
+            type: 'agent:idle',
+            data: { agentName: 'Layout verifier' },
+            timestamp: '2026-09-10T00:00:00Z',
+          },
+        ],
+      },
+    },
+    {
+      id: 'hook',
+      role: 'user',
+      contentBlocks: [
+        {
+          type: 'text',
+          text: '[Background hook "Build watch"] Checks passed; continue the review.',
+        },
+      ],
+    },
+    {
+      id: 'agent',
+      role: 'user',
+      contentBlocks: [{ type: 'text', text: 'The audit is ready for the next pass.' }],
+      metadata: { type: 'agent_message', fromAgentId: 'agent-reviewer', fromAgentName: 'Reviewer' },
+    },
+    {
+      id: 'human',
+      role: 'user',
+      contentBlocks: [{ type: 'text', text: 'Please verify the follow-up.' }],
+    },
+    {
+      id: 'pr',
+      role: 'user',
+      contentBlocks: [{ type: 'text', text: '[PR monitor intent-hq/intent#42] Checks passed.' }],
+    },
+  ] as AgentMessage[];
+  const config = { turnMessages, width: 320, responseHeight: 600 };
+  const component = await mount(StickyScrollStabilityHost, { props: config });
+  const scroll = component.getByTestId('sticky-scroll');
+  const pinned = component.getByTestId('pinned-user-prompt');
+  const measurements = [];
+  const labels = [
+    'Layout verifier',
+    'Build watch',
+    'Reviewer',
+    'Please verify',
+    'intent-hq/intent #42',
+  ];
+
+  for (let index = 0; index < turnMessages.length; index++) {
+    const source = component.getByTestId(`source-${index}`);
+    const anchor = component.getByTestId(`anchor-${index}`);
+    const entry = await transitionPoint(scroll, source);
+    await scroll.evaluate((node, top) => node.scrollTo(0, top), entry - 4);
+    await settle(page);
+    await expect(pinned).toHaveCount(0);
+    const before = await geometry(scroll, anchor, source);
+    await scroll.evaluate((node, top) => node.scrollTo(0, top), entry);
+    await expect(pinned).toBeVisible();
+    await expect(pinned).toHaveAttribute('title', new RegExp(labels[index]));
+    const after = await geometry(scroll, anchor, source);
+    measurements.push({ trigger: turnMessages[index].id, before, after });
+    expect(after.scrollHeight).toBe(before.scrollHeight);
+    expect(after.sourceHeight).toBe(before.sourceHeight);
+    expect(after.anchorDocumentTop).toBeCloseTo(before.anchorDocumentTop, 1);
+    expect(after.scrollTop).toBeCloseTo(entry, 1);
+    const bounds = (await pinned.boundingBox())!;
+    expect(bounds.width).toBeLessThanOrEqual(320);
+    expect(bounds.height).toBeLessThan(60);
+    if (index === 0) {
+      await component.update({ props: { ...config, streamGrowth: 90 } });
+      await settle(page);
+      expect((await geometry(scroll, anchor, source)).scrollTop).toBeCloseTo(entry, 1);
+      await component.screenshot({ path: testInfo.outputPath('sticky-subscription.png') });
+    }
+    if (index % 2 === 0) await pinned.press('Enter');
+    else await pinned.click();
+    await expect(pinned).toHaveCount(0);
+    await expect(source).toBeInViewport();
+  }
+  await testInfo.attach('sticky-trigger-geometry', {
+    body: JSON.stringify(measurements, null, 2),
+    contentType: 'application/json',
+  });
+});
 
 for (const config of [
   { width: 720, zoom: 1 },

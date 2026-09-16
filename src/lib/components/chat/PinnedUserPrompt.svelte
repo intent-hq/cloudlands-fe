@@ -4,15 +4,18 @@
   import { USER_MESSAGE_SURFACE_CLASS, USER_MESSAGE_TEXT_CLASS } from './user-message-surface';
   import { SUBSCRIPTION_CARD_SURFACE_CLASS } from './subscription-disclosure';
   import { Button } from '$lib/components/ui/button';
+  import Fa from 'svelte-fa';
+  import type { IconDefinition } from '@fortawesome/fontawesome-svg-core';
 
   interface Props {
     text: string;
     surface?: 'user' | 'subscription';
+    icon?: IconDefinition;
     workspace?: Workspace | null;
     onActivate: () => void;
   }
 
-  let { text, surface = 'user', workspace: _workspace = null, onActivate }: Props = $props();
+  let { text, icon, surface = 'user', workspace: _workspace = null, onActivate }: Props = $props();
   const descriptionId = $props.id();
 </script>
 
@@ -36,11 +39,18 @@
   aria-describedby={descriptionId}
   title={text}
 >
-  <span
-    data-testid="pinned-user-prompt-text"
-    class="block min-w-0 truncate whitespace-nowrap {USER_MESSAGE_TEXT_CLASS}"
-  >
-    {text}
+  <span class="flex min-w-0 items-center gap-2">
+    {#if icon}
+      <span class="shrink-0 text-muted-foreground" aria-hidden="true">
+        <Fa {icon} size={16} />
+      </span>
+    {/if}
+    <span
+      data-testid="pinned-user-prompt-text"
+      class="block min-w-0 truncate whitespace-nowrap {USER_MESSAGE_TEXT_CLASS}"
+    >
+      {text}
+    </span>
   </span>
   <span id={descriptionId} class="sr-only">{text}</span>
 </Button>

@@ -444,23 +444,33 @@ describe('EmbeddedBrowser', () => {
       await waitFor(() => expect(identity.textContent?.trim()).toBe('Local report'));
     });
 
-    it('keeps the webview source current across full and in-page navigation', async () => {
-      const onNavigate = vi.fn();
-      const { container } = renderPage({ onNavigate });
-      const webview = container.querySelector('webview')!;
-      const navigate = new Event('did-navigate');
-      Object.defineProperty(navigate, 'url', { value: 'https://next.test/docs' });
-      webview.dispatchEvent(navigate);
-      await waitFor(() => expect(webview.getAttribute('src')).toBe('https://next.test/docs'));
-      expect(onNavigate).toHaveBeenLastCalledWith('https://next.test/docs');
-
-      const inPage = new Event('did-navigate-in-page');
-      Object.defineProperty(inPage, 'url', { value: 'https://next.test/docs#api' });
-      Object.defineProperty(inPage, 'isMainFrame', { value: true });
-      webview.dispatchEvent(inPage);
-      await waitFor(() => expect(webview.getAttribute('src')).toBe('https://next.test/docs#api'));
-      expect(onNavigate).toHaveBeenLastCalledWith('https://next.test/docs#api');
-    });
+    it.each(['did-navigate', 'did-navigate-in-page'])(
+      'persists %s without issuing another guest navigation',
+      async (eventName) => {
+        const onNavigate = vi.fn();
+        const { container, getByRole, rerender } = renderPage({ onNavigate });
+        const webview = container.querySelector('webview')!;
+        const sourceWrites: MutationRecord[] = [];
+        const observer = new MutationObserver((records) => sourceWrites.push(...records));
+        observer.observe(webview, { attributes: true, attributeFilter: ['src'] });
+        const loadURL = vi.fn().mockResolvedValue(undefined);
+        Object.assign(webview, { loadURL });
+        const navigate = new Event(eventName);
+        Object.defineProperty(navigate, 'isMainFrame', { value: true });
+        Object.defineProperty(navigate, 'url', { value: 'https://next.test/docs' });
+        webview.dispatchEvent(navigate);
+        await waitFor(() => expect(onNavigate).toHaveBeenCalledWith('https://next.test/docs'));
+        await rerender({ url: 'https://next.test/docs' });
+        await fireEvent.click(getByRole('button', { name: 'Edit browser address' }));
+        expect((getByRole('textbox', { name: 'Browser address' }) as HTMLInputElement).value).toBe(
+          'https://next.test/docs',
+        );
+        observer.disconnect();
+        expect(sourceWrites).toHaveLength(0);
+        expect(loadURL).not.toHaveBeenCalled();
+        expect(container.querySelector('webview')).toBe(webview);
+      },
+    );
 
     // intent#4767: iframe history changes must not replace the tab's URL or src.
     it.each(['about:blank', 'https://iframe.test/widget#section'])(
@@ -487,7 +497,8 @@ describe('EmbeddedBrowser', () => {
           }),
         );
         expect(onNavigate).toHaveBeenCalledExactlyOnceWith(`${mainUrl}#next`);
-        expect(webview.getAttribute('src')).toBe(`${mainUrl}#next`);
+        // Guest navigation must not be mirrored back as another application navigation.
+        expect(webview.getAttribute('src')).toBe(mainUrl);
       },
     );
 
@@ -497,6 +508,7 @@ describe('EmbeddedBrowser', () => {
         const onNavigate = vi.fn();
         const { container } = renderPage({ onNavigate });
         const webview = container.querySelector('webview')!;
+        const initialSrc = webview.getAttribute('src');
 
         await fireEvent(
           webview,
@@ -504,7 +516,7 @@ describe('EmbeddedBrowser', () => {
         );
 
         expect(onNavigate).toHaveBeenCalledExactlyOnceWith('about:blank');
-        expect(webview.getAttribute('src')).toBe('about:blank');
+        expect(webview.getAttribute('src')).toBe(initialSrc);
       },
     );
 

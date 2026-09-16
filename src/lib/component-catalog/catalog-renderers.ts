@@ -1,23 +1,28 @@
-import ModelPickerCatalogPreview from './renderers/ModelPickerCatalogPreview.svelte';
+const ModelPickerCatalogPreview = () => import('./renderers/ModelPickerCatalogPreview.svelte');
 import type { Component } from 'svelte';
 import type { UiComponentFixture } from '$lib/components/ui/component-metadata';
-import MessageComposerCatalogPreview from './renderers/MessageComposerCatalogPreview.svelte';
-import AskUserQuestionsCatalogPreview from './renderers/AskUserQuestionsCatalogPreview.svelte';
-import BasicCatalogPreview from './renderers/BasicCatalogPreview.svelte';
-import ChoiceCatalogPreview from './renderers/ChoiceCatalogPreview.svelte';
-import ChoiceGroupCatalogPreview from './renderers/ChoiceGroupCatalogPreview.svelte';
-import ContentFieldCatalogPreview from './renderers/ContentFieldCatalogPreview.svelte';
-import NavigationHelpCatalogPreview from './renderers/NavigationHelpCatalogPreview.svelte';
-import NavigationPrimitivesCatalogPreview from './renderers/NavigationPrimitivesCatalogPreview.svelte';
-import OverlayCatalogPreview from './renderers/OverlayCatalogPreview.svelte';
-import ProximityHighlightCatalogPreview from './renderers/ProximityHighlightCatalogPreview.svelte';
-import SettingsCatalogPreview from './renderers/SettingsCatalogPreview.svelte';
-import ToastCatalogPreview from './renderers/ToastCatalogPreview.svelte';
-import ModalCatalogPreview from './renderers/ModalCatalogPreview.svelte';
-import PopoversCatalogPreview from './renderers/PopoversCatalogPreview.svelte';
-import RowsCatalogPreview from './renderers/RowsCatalogPreview.svelte';
-import FieldsCatalogPreview from './renderers/FieldsCatalogPreview.svelte';
-import ScreenStatesCatalogPreview from './renderers/ScreenStatesCatalogPreview.svelte';
+const MessageComposerCatalogPreview = () =>
+  import('./renderers/MessageComposerCatalogPreview.svelte');
+const AskUserQuestionsCatalogPreview = () =>
+  import('./renderers/AskUserQuestionsCatalogPreview.svelte');
+const BasicCatalogPreview = () => import('./renderers/BasicCatalogPreview.svelte');
+const ChoiceCatalogPreview = () => import('./renderers/ChoiceCatalogPreview.svelte');
+const ChoiceGroupCatalogPreview = () => import('./renderers/ChoiceGroupCatalogPreview.svelte');
+const ContentFieldCatalogPreview = () => import('./renderers/ContentFieldCatalogPreview.svelte');
+const NavigationHelpCatalogPreview = () =>
+  import('./renderers/NavigationHelpCatalogPreview.svelte');
+const NavigationPrimitivesCatalogPreview = () =>
+  import('./renderers/NavigationPrimitivesCatalogPreview.svelte');
+const OverlayCatalogPreview = () => import('./renderers/OverlayCatalogPreview.svelte');
+const ProximityHighlightCatalogPreview = () =>
+  import('./renderers/ProximityHighlightCatalogPreview.svelte');
+const SettingsCatalogPreview = () => import('./renderers/SettingsCatalogPreview.svelte');
+const ToastCatalogPreview = () => import('./renderers/ToastCatalogPreview.svelte');
+const ModalCatalogPreview = () => import('./renderers/ModalCatalogPreview.svelte');
+const PopoversCatalogPreview = () => import('./renderers/PopoversCatalogPreview.svelte');
+const RowsCatalogPreview = () => import('./renderers/RowsCatalogPreview.svelte');
+const FieldsCatalogPreview = () => import('./renderers/FieldsCatalogPreview.svelte');
+const ScreenStatesCatalogPreview = () => import('./renderers/ScreenStatesCatalogPreview.svelte');
 
 const catalogRendererIds = [
   'accordion',
@@ -80,9 +85,11 @@ export interface CatalogRendererProps {
   fixture: UiComponentFixture;
 }
 
-type CatalogRenderer<K extends CatalogRendererId> = Component<{
-  componentId: K;
-  fixture: UiComponentFixture;
+type CatalogRenderer<K extends CatalogRendererId> = () => Promise<{
+  default: Component<{
+    componentId: K;
+    fixture: UiComponentFixture;
+  }>;
 }>;
 
 type CatalogRendererRegistry = {
@@ -143,13 +150,14 @@ export const catalogRenderers = {
   tooltip: NavigationHelpCatalogPreview,
 } satisfies CatalogRendererRegistry;
 
-export function getCatalogRenderer(
+export async function getCatalogRenderer(
   id: string,
-): { id: CatalogRendererId; component: Component<CatalogRendererProps> } | undefined {
+): Promise<{ id: CatalogRendererId; component: Component<CatalogRendererProps> } | undefined> {
   if (!catalogRendererIds.includes(id as CatalogRendererId)) return undefined;
   const rendererId = id as CatalogRendererId;
   return {
     id: rendererId,
-    component: catalogRenderers[rendererId] as unknown as Component<CatalogRendererProps>,
+    component: (await catalogRenderers[rendererId]())
+      .default as unknown as Component<CatalogRendererProps>,
   };
 }

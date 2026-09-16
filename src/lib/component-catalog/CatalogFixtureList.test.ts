@@ -13,10 +13,16 @@ afterEach(() => {
   document.documentElement.className = '';
 });
 
-function renderEntry(slug: string) {
+async function renderEntry(slug: string) {
   const entry = getCatalogEntry(slug);
   expect(entry).toBeDefined();
-  return render(CatalogFixtureList, { props: { entry: entry! } });
+  const rendered = render(CatalogFixtureList, { props: { entry: entry! } });
+  // The first lazy family import also runs through Vite's test transform pipeline.
+  await waitFor(
+    () => expect(rendered.container.querySelector('[data-catalog-preview] > *')).not.toBeNull(),
+    { timeout: 10_000 },
+  );
+  return rendered;
 }
 
 describe('CatalogFixtureList real previews', () => {
@@ -37,7 +43,7 @@ describe('CatalogFixtureList real previews', () => {
   });
 
   it('mounts and operates the canonical Button renderer', async () => {
-    const { container } = renderEntry('button');
+    const { container } = await renderEntry('button');
 
     expect(container.querySelectorAll('[data-catalog-preview="button"]')).toHaveLength(3);
     await fireEvent.click(screen.getByRole('button', { name: '1. Primary' }));
@@ -74,8 +80,8 @@ describe('CatalogFixtureList real previews', () => {
     );
   });
 
-  it('distinguishes transient ButtonGroup activity from selection', () => {
-    const { container } = renderEntry('button-group');
+  it('distinguishes transient ButtonGroup activity from selection', async () => {
+    const { container } = await renderEntry('button-group');
 
     const preview = container.querySelector('[data-catalog-preview="button-group"]');
     expect(preview).not.toBeNull();
@@ -89,18 +95,18 @@ describe('CatalogFixtureList real previews', () => {
     ).toBe(true);
   });
 
-  it('keeps machine-readable fixture state out of the visual preview', () => {
-    const checkboxRender = renderEntry('checkbox');
+  it('keeps machine-readable fixture state out of the visual preview', async () => {
+    const checkboxRender = await renderEntry('checkbox');
     expect(screen.getByText('Selection required').className).toContain('text-danger');
     checkboxRender.unmount();
 
-    const toggleGroupRender = renderEntry('toggle-group');
+    const toggleGroupRender = await renderEntry('toggle-group');
     expect(screen.getByLabelText('Display mode value').className).toContain('sr-only');
     toggleGroupRender.unmount();
   });
 
-  it('renders one-line Radio and selected Checkbox group row fixtures', () => {
-    const radioRender = renderEntry('radio-group');
+  it('renders one-line Radio and selected Checkbox group row fixtures', async () => {
+    const radioRender = await renderEntry('radio-group');
     const oneLineRadios = screen.getByRole('radiogroup', { name: 'One-line delivery speed' });
     expect(within(oneLineRadios).getAllByRole('radio')).toHaveLength(3);
     expect(
@@ -109,7 +115,7 @@ describe('CatalogFixtureList real previews', () => {
     expect(oneLineRadios.textContent).not.toContain('Balanced delivery');
     radioRender.unmount();
 
-    const checkboxRender = renderEntry('checkbox-group');
+    const checkboxRender = await renderEntry('checkbox-group');
     const selectedRows = screen.getByRole('group', { name: 'One-line notifications' });
     expect(within(selectedRows).getAllByRole('checkbox')).toHaveLength(3);
     expect(
@@ -119,8 +125,8 @@ describe('CatalogFixtureList real previews', () => {
     checkboxRender.unmount();
   });
 
-  it('renders truthful Combobox open, multi-select, size, and long-list states', () => {
-    const { container } = renderEntry('combobox');
+  it('renders truthful Combobox open, multi-select, size, and long-list states', async () => {
+    const { container } = await renderEntry('combobox');
 
     const open = screen.getByRole('combobox', { name: 'Open catalog combobox' });
     expect(open.getAttribute('aria-expanded')).toBe('true');
@@ -151,8 +157,8 @@ describe('CatalogFixtureList real previews', () => {
     expect(longState?.querySelector('.overflow-y-auto')).not.toBeNull();
   });
 
-  it('renders truthful Select open, size, and long-list states', () => {
-    const { container } = renderEntry('select');
+  it('renders truthful Select open, size, and long-list states', async () => {
+    const { container } = await renderEntry('select');
 
     const open = screen.getByRole('button', { name: 'Open catalog select' });
     expect(open.getAttribute('aria-expanded')).toBe('true');
@@ -189,7 +195,7 @@ describe('CatalogFixtureList real previews', () => {
   });
 
   it('opens and dismisses the canonical Dialog preview', async () => {
-    const { container } = renderEntry('dialog');
+    const { container } = await renderEntry('dialog');
     const trigger = screen.getByRole('button', { name: 'Open catalog dialog' });
 
     await fireEvent.click(trigger);
@@ -203,7 +209,7 @@ describe('CatalogFixtureList real previews', () => {
   });
 
   it('mounts Dialog and Tooltip capture fixtures open and preserves trigger focus on close', async () => {
-    const dialogRender = renderEntry('dialog');
+    const dialogRender = await renderEntry('dialog');
     const dialogTrigger = screen.getByRole('button', { name: 'Open-state dialog trigger' });
     await waitFor(() =>
       expect(screen.getByRole('dialog', { name: 'Catalog dialog open state' })).toBeTruthy(),
@@ -221,7 +227,7 @@ describe('CatalogFixtureList real previews', () => {
       unobserve() {}
       disconnect() {}
     };
-    const tooltipRender = renderEntry('tooltip');
+    const tooltipRender = await renderEntry('tooltip');
     const tooltipFixture = tooltipRender.container.querySelector(
       '[data-catalog-fixture-id="tooltip-open-state"]',
     );
@@ -239,13 +245,13 @@ describe('CatalogFixtureList real previews', () => {
     window.ResizeObserver = originalResizeObserver;
   });
 
-  it('renders all thirteen Toast catalog states', () => {
-    const { container } = renderEntry('toast');
+  it('renders all thirteen Toast catalog states', async () => {
+    const { container } = await renderEntry('toast');
     expect(container.querySelectorAll('[data-toast-preview]')).toHaveLength(13);
   });
 
   it('operates the canonical Menu, Sheet, and Accordion previews', async () => {
-    const menuRender = renderEntry('menu');
+    const menuRender = await renderEntry('menu');
     const menuTrigger = screen.getByRole('button', { name: 'Open catalog menu' });
     menuTrigger.focus();
     await fireEvent.keyDown(menuTrigger, { key: 'ArrowDown' });
@@ -255,7 +261,7 @@ describe('CatalogFixtureList real previews', () => {
     await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
     menuRender.unmount();
 
-    const sheetRender = renderEntry('sheet');
+    const sheetRender = await renderEntry('sheet');
     const sheetTrigger = screen.getByRole('button', { name: 'Open catalog sheet' });
     await fireEvent.click(sheetTrigger);
     const sheet = screen.getByRole('dialog', { name: 'Catalog sheet' });
@@ -264,7 +270,7 @@ describe('CatalogFixtureList real previews', () => {
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Catalog sheet' })).toBeNull());
     sheetRender.unmount();
 
-    renderEntry('accordion');
+    await renderEntry('accordion');
     const details = screen.getByRole('button', { name: 'Details' });
     expect(details.getAttribute('aria-expanded')).toBe('true');
     await fireEvent.click(details);
@@ -275,7 +281,7 @@ describe('CatalogFixtureList real previews', () => {
   });
 
   it('keeps Sidebar navigation operable from its collapsed state', async () => {
-    const { container } = renderEntry('sidebar');
+    const { container } = await renderEntry('sidebar');
     const sidebar = container.querySelector('[data-slot="sidebar"][data-state]');
 
     expect(sidebar?.getAttribute('data-state')).toBe('collapsed');
@@ -290,31 +296,31 @@ describe('CatalogFixtureList real previews', () => {
   });
 
   it('mounts and operates the canonical Settings Slider and FileInput previews', async () => {
-    const sliderRender = renderEntry('slider');
+    const sliderRender = await renderEntry('slider');
     const slider = screen.getByRole('slider', { name: 'Catalog volume' });
     await fireEvent.input(slider, { target: { value: '52' } });
     expect(screen.getByLabelText('Catalog slider value').textContent).toBe('52');
     expect(screen.getByLabelText('Catalog slider value').className).toContain('sr-only');
     sliderRender.unmount();
 
-    const fileRender = renderEntry('file-input');
+    const fileRender = await renderEntry('file-input');
     const input = fileRender.container.querySelector('#catalog-theme-file') as HTMLInputElement;
     const file = new File(['{}'], 'catalog-theme.json', { type: 'application/json' });
     await fireEvent.change(input, { target: { files: [file] } });
     expect(screen.getAllByRole('status')[0].textContent).toContain('catalog-theme.json');
   });
 
-  it('mounts each canonical Settings presentation pattern', () => {
-    const page = renderEntry('settings-page-shell');
+  it('mounts each canonical Settings presentation pattern', async () => {
+    const page = await renderEntry('settings-page-shell');
     expect(screen.getByRole('region', { name: 'Editorial Settings shell' })).toBeTruthy();
     expect(screen.getByRole('region', { name: 'Busy Settings shell' })).toBeTruthy();
     expect(screen.getByRole('region', { name: 'Editorial Settings shell general' })).toBeTruthy();
     expect(screen.getByRole('region', { name: 'Busy Settings shell general' })).toBeTruthy();
     page.unmount();
-    const section = renderEntry('settings-section');
+    const section = await renderEntry('settings-section');
     expect(screen.getByRole('region', { name: 'Notifications' })).toBeTruthy();
     section.unmount();
-    renderEntry('settings-field-row');
+    await renderEntry('settings-field-row');
     expect(screen.getByLabelText('Notification volume')).toBeTruthy();
   });
 });
