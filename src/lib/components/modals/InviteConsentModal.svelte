@@ -5,7 +5,9 @@
    * Shows the device code + verification URL and explains why the sign-in is
    * needed and what the host learns. "Open GitHub" reports `open` and keeps the
    * dialog up in a waiting state until main dismisses it; Escape / backdrop /
-   * × / Cancel report `cancel` (also allowed while waiting — it aborts the join).
+   * × / Cancel report `cancel` (also allowed while waiting — it aborts the join
+   * until the grant resolves, when main dismisses the dialog and Cancel is no
+   * longer offered).
    */
   import { Button } from '$lib/components/ui/button';
   import Fa from 'svelte-fa';
