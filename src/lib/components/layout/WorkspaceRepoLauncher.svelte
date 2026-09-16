@@ -20,13 +20,13 @@
     variant="ghost"
     size="icon"
     iconOnly
-    class="size-8 shrink-0 border-transparent text-foreground hover:border-transparent hover:bg-transparent hover:text-foreground active:bg-muted focus-visible:border-foreground focus-visible:bg-muted focus-visible:outline-0 focus-visible:outline-offset-0 focus-visible:ring-0 [&_svg]:size-4!"
+    class="size-8 shrink-0 border-transparent text-foreground hover:border-transparent hover:bg-transparent hover:text-foreground active:bg-muted focus-visible:border-foreground focus-visible:bg-muted focus-visible:outline-0 focus-visible:outline-offset-0 focus-visible:ring-0 [&_svg]:size-3.5!"
     onclick={openNewWorkspace}
     aria-label={m.menu_new_workspace()}
     tooltip={m.menu_new_workspace()}
     tooltipSide="bottom"
   >
-    <FaWrapper icon={faPlus} size={16} class="pointer-events-none size-4!" />
+    <FaWrapper icon={faPlus} size={14} class="pointer-events-none size-3.5!" />
   </Button>
 </div>
 

@@ -1072,7 +1072,7 @@
               })}
               data-workspace-tab-close
             >
-              <Fa icon={faXmark} class="size-4!" />
+              <Fa icon={faXmark} class="size-3.5!" />
             </Button>
           </div>
         {:else}
@@ -1138,7 +1138,7 @@
               aria-label={m.layout_workspaceTabStrip_close_ariaLabel({ name: workspaceId })}
               data-workspace-tab-close
             >
-              <Fa icon={faXmark} class="size-4!" />
+              <Fa icon={faXmark} class="size-3.5!" />
             </Button>
           </div>
         {/if}
