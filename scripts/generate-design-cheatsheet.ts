@@ -199,14 +199,26 @@ ${sections.join('\n')}\n`;
   return format(markdown, { parser: 'markdown' });
 }
 
+/** The companion doc lives in the monorepo; a standalone checkout has no `docs/fe/`. */
+export const monorepoDocsDir = path.dirname(cheatsheetPath);
+
 export async function runDesignCheatsheetGenerator(
   mode: 'write' | 'check',
   target = cheatsheetPath,
 ): Promise<{ exitCode: number; message: string }> {
   const generated = await generateDesignCheatsheet();
   if (mode === 'check') {
-    const committed = fs.existsSync(target) ? fs.readFileSync(target, 'utf8') : '';
-    return committed === generated
+    if (!fs.existsSync(target)) {
+      return {
+        exitCode: 1,
+        message:
+          `Design-system cheatsheet is missing at ${target}. It is a monorepo artifact ` +
+          '(docs/fe/) that a standalone cloudlands-fe checkout cannot produce or verify; ' +
+          'run `pnpm exec tsx scripts/generate-design-cheatsheet.ts` from a monorepo ' +
+          'checkout and commit the result there.',
+      };
+    }
+    return fs.readFileSync(target, 'utf8') === generated
       ? { exitCode: 0, message: 'Design-system cheatsheet is current.' }
       : {
           exitCode: 1,
