@@ -704,6 +704,26 @@ describe('daemonHealthReducer', () => {
       // typed literal lives in a check-covered module so a re-required wire
       // field fails `pnpm run check`, not only this runtime test.
       const payload = collaboratorSystemStatusProjection;
+      // COLLABORATOR_STATUS_FIELDS / COLLABORATOR_STATUS_HOST_FIELDS @ 60de0618.
+      expect(Object.keys(payload).sort()).toEqual(
+        [
+          'running',
+          'listenMode',
+          'port',
+          'version',
+          'buildCommit',
+          'protocolVersion',
+          'fingerprint',
+          'localIps',
+          'tcAddress',
+          'hostname',
+          'prettyHostname',
+          'host',
+        ].sort(),
+      );
+      expect(Object.keys(payload.host).sort()).toEqual(
+        ['os', 'arch', 'locality', 'deviceKind', 'hardwareModel'].sort(),
+      );
       expect(payload).not.toHaveProperty('transports');
       expect(payload).not.toHaveProperty('clients');
       expect(payload).not.toHaveProperty('agents');
