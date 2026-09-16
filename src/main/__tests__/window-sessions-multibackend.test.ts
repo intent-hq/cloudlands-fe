@@ -70,6 +70,7 @@ const { FakeBrowserWindow, mockRegisterWindowTitleListener } = vi.hoisted(() => 
     }
     loadURL(url: string) {
       this.url = url;
+      return Promise.resolve();
     }
     setURLForTest(url: string) {
       this.url = url;

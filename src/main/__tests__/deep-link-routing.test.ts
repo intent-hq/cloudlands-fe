@@ -11,7 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
  */
 
 const mockBrowserWindowCtor = vi.fn();
-const mockLoadUrl = vi.fn();
+const mockLoadUrl = vi.fn(() => Promise.resolve());
 const mockGetPrimaryDisplay = vi.fn(() => ({
   workArea: { x: 0, y: 0, width: 1440, height: 900 },
 }));

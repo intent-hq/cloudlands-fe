@@ -59,8 +59,10 @@ describe('no-direct-reduced-motion-query under the real eslint.config.js', () =>
     'src/lib/utils/generated/probe.ts',
     'src/lib/components/generated/Probe.svelte',
     'src/features/example/probe.ts',
-    'src/main/probe.ts',
-    'src/preload/probe.ts',
+    // Main-process and preload sources are linted type-aware against the real
+    // tsconfig projects, so their probes must be paths those projects contain.
+    'src/main/index.ts',
+    'src/preload/index.template.ts',
     'src/shared/probe.ts',
     'src/routes/probe.ts',
     'src/lib/utils/reduced-motion-helpers/probe.ts',

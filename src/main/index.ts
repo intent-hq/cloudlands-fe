@@ -703,10 +703,11 @@ const bootFlow = app.whenReady().then(async () => {
   const showAboutDialog = (): void => {
     const options = buildAboutDialogOptions(aboutPanelInfo);
     const mainWindow = getMainWindow();
+    // The dialog result is not needed; fire-and-forget.
     if (mainWindow && !mainWindow.isDestroyed()) {
-      dialog.showMessageBox(mainWindow, options);
+      void dialog.showMessageBox(mainWindow, options);
     } else {
-      dialog.showMessageBox(options);
+      void dialog.showMessageBox(options);
     }
   };
 
@@ -946,7 +947,8 @@ const bootFlow = app.whenReady().then(async () => {
     );
   };
 
-  // Function to rebuild and set the application menu
+  // Function to rebuild and set the application menu. Callers fire-and-forget
+  // (`void rebuildMenu()`): the only await, in buildFileMenu, catches internally.
   const rebuildMenu = async () => {
     // Check if focused window is in a workspace (for enabling/disabling tab menu items)
     const inWorkspace = isFocusedWindowInWorkspace();
@@ -1086,13 +1088,13 @@ const bootFlow = app.whenReady().then(async () => {
             const result = await installIntentCli();
             if (result?.success) {
               if (mainWindow && !mainWindow.isDestroyed()) {
-                dialog.showMessageBox(mainWindow, {
+                await dialog.showMessageBox(mainWindow, {
                   type: 'info',
                   title: m.dialog_cli_install_title(),
                   message: result.message || m.dialog_cli_install_success(),
                 });
               } else {
-                dialog.showMessageBox({
+                await dialog.showMessageBox({
                   type: 'info',
                   title: m.dialog_cli_install_title(),
                   message: result.message || m.dialog_cli_install_success(),
@@ -1290,13 +1292,13 @@ const bootFlow = app.whenReady().then(async () => {
                 const result = await installIntentCli();
                 if (result?.success) {
                   if (mainWindow && !mainWindow.isDestroyed()) {
-                    dialog.showMessageBox(mainWindow, {
+                    await dialog.showMessageBox(mainWindow, {
                       type: 'info',
                       title: m.dialog_cli_install_title(),
                       message: result.message || m.dialog_cli_install_success(),
                     });
                   } else {
-                    dialog.showMessageBox({
+                    await dialog.showMessageBox({
                       type: 'info',
                       title: m.dialog_cli_install_title(),
                       message: result.message || m.dialog_cli_install_success(),
@@ -1438,7 +1440,7 @@ const bootFlow = app.whenReady().then(async () => {
   };
 
   // Build initial menu (workspaces may not be loaded yet, will update later)
-  rebuildMenu();
+  void rebuildMenu();
 
   // Rebuild menu when a window gains focus to refresh recent workspaces
   let menuRebuildTimeout: NodeJS.Timeout | null = null;
@@ -1448,7 +1450,7 @@ const bootFlow = app.whenReady().then(async () => {
       clearTimeout(menuRebuildTimeout);
     }
     menuRebuildTimeout = setTimeout(() => {
-      rebuildMenu();
+      void rebuildMenu();
       menuRebuildTimeout = null;
     }, 1000);
   });
@@ -1458,20 +1460,20 @@ const bootFlow = app.whenReady().then(async () => {
   // panel's localized credits are re-applied for the same reason.
   app.on('main-locale-changed', () => {
     applyAboutPanelOptions();
-    rebuildMenu();
+    void rebuildMenu();
   });
 
   // Rebuild menu when the active backend changes (backend switch or boot
   // restore of a remote) — the Help ▸ Sample intentd Process item is gated on
   // win32 + local sidecar (#1889)
   app.on('backend-connection-changed', () => {
-    rebuildMenu();
+    void rebuildMenu();
   });
 
   // Rebuild menu when connection records change (add/forget/rename/hostname
   // capture) so window entries pick up fresh backend labels
   app.on('connections-changed', () => {
-    rebuildMenu();
+    void rebuildMenu();
   });
 
   // Rebuild menu when workspace state changes (enables/disables tab menu items)
@@ -1484,7 +1486,7 @@ const bootFlow = app.whenReady().then(async () => {
         error: error instanceof Error ? error.message : String(error),
       });
     }
-    rebuildMenu();
+    void rebuildMenu();
   });
 
   // Set up custom protocol handler for production builds
@@ -1511,7 +1513,9 @@ const bootFlow = app.whenReady().then(async () => {
   if (process.env.NODE_ENV === 'development') {
     // Export handler info after a delay to ensure all handlers are registered
     setTimeout(() => {
-      exportHandlerDebugInfo();
+      exportHandlerDebugInfo().catch((error: unknown) =>
+        logger.error('Failed to export IPC handler debug info:', error as Error),
+      );
 
       // Get debug info and force save
       const debugInfo = ipcDebugTracker.getDebugInfo();
@@ -1575,7 +1579,11 @@ const bootFlow = app.whenReady().then(async () => {
   setupGrokIPC(); // Needed for grok:get-models
   setupUnslothIPC(); // Needed for unsloth:get-models
   setupAntigravityIPC(); // Needed for antigravity:get-models
-  setupFeatureCodesIPC(); // Feature codes for gating experimental features
+  // Feature codes for gating experimental features; registers handlers after an
+  // async service init, so it is not awaited on the startup critical path.
+  setupFeatureCodesIPC().catch((error: unknown) =>
+    logger.error('Failed to set up feature codes IPC:', error as Error),
+  );
   setupProviderAvailabilityIPC(); // Needed for providers:get-availability
   setupEventsIPC(); // Needed for events:query
   registerSetupScriptsHandlers(); // Needed for onboarding setup scripts
@@ -1877,7 +1885,7 @@ const bootFlow = app.whenReady().then(async () => {
 
     // Final metrics summary after all async operations
     setTimeout(() => startupMetrics.logSummary(), 2000);
-  })();
+  })().catch((error: unknown) => logger.error('Post-window setup failed:', error as Error));
 });
 
 // Boot threw before reaching the window-creation block: log it, then never
