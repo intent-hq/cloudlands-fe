@@ -119,7 +119,7 @@
                   variant="ghost"
                   size="icon-sm"
                   iconOnly
-                  class="absolute right-3 top-3 text-muted-foreground"
+                  class="absolute right-6 top-[calc(1.5rem+var(--text-title-line-height)/2)] -translate-y-1/2 text-muted-foreground"
                 >
                   <svg aria-hidden="true" viewBox="0 0 16 16" fill="none">
                     <path d="M3 3l10 10M13 3L3 13" stroke="currentColor" stroke-width="1.5" />
