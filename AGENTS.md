@@ -545,8 +545,10 @@ is roughly 10× the cost of a jsdom test and the CT job is sharded and time-boxe
   share ordered state.
 - **A pass-on-retry fails the required CT lane** (`--fail-on-flaky-tests`). Fix the flake
   or, if it needs more time, tag the individual test
-  `{ tag: '@quarantine' }` — never a whole file. The CT job is merge-queue-only, so a
-  pass-on-retry ejects the PR from the queue rather than reddening a PR check.
+  `{ tag: '@quarantine' }` — never a whole file. The CT job runs on every merge-queue
+  entry, and on `pull_request` only when the diff touches a CT-contract path (the one
+  list in `scripts/ct-contract-paths.mjs`, shared with `verify:changed`), so on most PRs
+  a pass-on-retry ejects the PR from the queue rather than reddening a PR check.
   Quarantined tests still run on every queue entry as an advisory (non-blocking) step on
   shard 1 and must carry an open tracking issue and an owner; quarantine is temporary,
   not a parking lot — remove the tag in the PR that fixes the flake.
