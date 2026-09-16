@@ -168,6 +168,15 @@ export interface AgentMessage {
   // Streaming state
   isStreaming?: boolean;
   streamingComplete?: boolean;
+  // Renderer-local, never on the wire: the renderer wrote this row's terminal
+  // state without the §7.1 stream delivering it — the firehose placeholder on
+  // a covered agent (created on any firehose event with no in-flight row, so
+  // it may still be `isStreaming`), a firehose terminal on an existing row, or
+  // the close-time / retained-row `settleStreaming` normalize. Absent means
+  // daemon-canonical (or still streaming under the §7.1 stream). Cleared by
+  // construction when a §7.1 snapshot/delta replaces the row by id (transcript
+  // rows never carry it) and by dedup when a canonical row merges into it.
+  provisional?: true;
 
   // Metadata
   metadata?: MessageMetadata;

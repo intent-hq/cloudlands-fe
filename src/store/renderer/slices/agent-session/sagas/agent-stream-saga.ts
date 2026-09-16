@@ -170,10 +170,16 @@ function* applyStreamPayload(payload: AgentStreamUpdatePayload): SagaGenerator<v
     assistantMessageId,
   );
 
+  // Every settle below is the firehose's, not the §7.1 terminal frame's, so
+  // the row is marked `provisional` until the transcript replaces it by id.
   if (eventType === 'error' || eventType === 'timeout') {
     if (existing) {
       yield* put(
-        updateMessage(agentId, existing.id, { isStreaming: false, streamingComplete: true }),
+        updateMessage(agentId, existing.id, {
+          isStreaming: false,
+          streamingComplete: true,
+          provisional: true,
+        }),
       );
     }
     yield* call(clearSessionStreaming, agentId, eventType);
@@ -206,6 +212,7 @@ function* applyStreamPayload(payload: AgentStreamUpdatePayload): SagaGenerator<v
       timestamp: new Date(payload.timestamp ?? Date.now()).toISOString(),
       isStreaming: eventType !== 'complete',
       streamingComplete: eventType === 'complete',
+      provisional: true,
       ...(metadata ? { metadata } : {}),
     };
     yield* put(addMessage(agentId, placeholder));
@@ -216,7 +223,11 @@ function* applyStreamPayload(payload: AgentStreamUpdatePayload): SagaGenerator<v
 
   const nextBlocks = resolveStreamContentBlocks(existing.contentBlocks, undefined, eventType);
   if (eventType === 'complete') {
-    const updates: Partial<AgentMessage> = { isStreaming: false, streamingComplete: true };
+    const updates: Partial<AgentMessage> = {
+      isStreaming: false,
+      streamingComplete: true,
+      provisional: true,
+    };
     if (nextBlocks && nextBlocks !== existing.contentBlocks) updates.contentBlocks = nextBlocks;
     const metadata = finalizedMetadata(payload);
     if (metadata) updates.metadata = { ...existing.metadata, ...metadata };

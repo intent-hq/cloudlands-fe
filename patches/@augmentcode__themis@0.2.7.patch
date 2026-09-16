@@ -1,5 +1,5 @@
 diff --git a/dist/utils/sagas/selector-channel-effects.js b/dist/utils/sagas/selector-channel-effects.js
-index ffed23fec556ede4180544eb989e9edc5b267dfe..10199f688291dc3b7573368e8e5482a3ffa20e88 100644
+index ffed23fec556ede4180544eb989e9edc5b267dfe..52ebf21a61909d898030a1135a1da4aa70b4a747 100644
 --- a/dist/utils/sagas/selector-channel-effects.js
 +++ b/dist/utils/sagas/selector-channel-effects.js
 @@ -1,7 +1,7 @@
@@ -24,7 +24,28 @@ index ffed23fec556ede4180544eb989e9edc5b267dfe..10199f688291dc3b7573368e8e5482a3
  	return eventChannel((emitter) => {
  		const cachedSelector = createCachedSelector(selectorFunc, { lockUpdatesPredicate: (state) => state[INTERNAL_STORE_UTILITY_DOMAIN]?.updatesLocked === true });
  		let prevValue = null;
-@@ -79,7 +85,7 @@ function* createChannelFromSelector(selector, ...args) {
+@@ -63,11 +69,18 @@ function* createChannelFromSelector(selector, ...args) {
+ 			try {
+ 				const payload = cachedSelector(reduxStore.getState(), ...args);
+ 				if (shallowEqual(prevValue, payload)) return;
++				// Patched (pnpm patchedDependencies): record the comparison baseline
++				// before emitting. A worker that dispatches synchronously re-enters this
++				// subscriber while emitter() is still on the stack; with the baseline
++				// updated afterwards that re-entry compared against the stale value and
++				// delivered the same transition twice. Retire once fixed upstream:
++				// https://github.com/augmentcode/themis/issues/21
++				const prevPayload = prevValue;
++				prevValue = payload;
+ 				emitter({
+ 					payload,
+-					prevPayload: prevValue
++					prevPayload
+ 				});
+-				prevValue = payload;
+ 			} catch (e) {
+ 				reportRuntimeError?.({
+ 					error: e,
+@@ -79,7 +92,7 @@ function* createChannelFromSelector(selector, ...args) {
  		const unsubscribe = reduxStore.subscribe(emitCurrentValue);
  		emitCurrentValue();
  		return unsubscribe;

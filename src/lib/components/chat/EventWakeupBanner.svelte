@@ -42,6 +42,7 @@
   import { store as appStore } from '$store/renderer/store';
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { findSourcePanelId } from '$lib/utils/workspace-navigation';
+  import PinnedUserPrompt from './PinnedUserPrompt.svelte';
 
   interface EventData {
     type: string;
@@ -77,6 +78,8 @@
     showAgentCards?: boolean;
     /** Optional workspace for scoping AgentCard subscriptions (prevents cross-workspace bleed) */
     workspace?: Workspace | null;
+    /** Render only the compact pinned summary; activation returns to the source card. */
+    onPinnedActivate?: () => void;
   }
 
   let {
@@ -89,6 +92,7 @@
     showSummary = true,
     showAgentCards = true,
     workspace = null,
+    onPinnedActivate,
   }: Props = $props();
 
   const componentId = $props.id();
@@ -422,7 +426,9 @@
   }
 </script>
 
-{#if asDivider}
+{#if onPinnedActivate}
+  <PinnedUserPrompt text={friendlySummary} icon={faBell} onActivate={onPinnedActivate} />
+{:else if asDivider}
   <!-- Transcript disclosure - can show summary, agent cards, or both. -->
   <div
     class="event-wakeup-banner group/banner {SUBSCRIPTION_CARD_CONTAINMENT_CLASS} {embedded

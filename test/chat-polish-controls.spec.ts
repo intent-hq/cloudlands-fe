@@ -59,6 +59,50 @@ test('opens directly to one long conversation with no scenario gallery', async (
   expect(await page.evaluate(() => document.documentElement.scrollHeight)).toBeGreaterThan(3000);
 });
 
+test('separates prose from human bubbles and spaces human, queued, and notification cards evenly', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 1000 });
+  await openSandbox(page);
+  await page.evaluate(async () => {
+    await document.fonts.ready;
+  });
+  // Message-entry motion can still be running after fonts and network requests settle.
+  // Check the final layout, not an intermediate animation frame.
+  await expect
+    .poll(() =>
+      page.getByTestId('chat-polish-conversation').evaluate((root) => {
+        const surfaces = [...root.querySelectorAll('[data-testid="user-message-surface"]')];
+        const cards = surfaces.filter((node) =>
+          node.querySelector('[data-testid="agent-message-attribution"]'),
+        );
+        const prose = [...root.querySelectorAll('[data-message-content-block="text"]')].find(
+          (node) => node.textContent?.includes('I am checking the final responsive state'),
+        )!;
+        const wake = root.querySelector('[data-testid="event-wakeup-card"]')!;
+        const subscriptions = root.querySelector('[data-testid="event-subscriptions-card"]')!;
+        const human = surfaces.find((node) => node.textContent?.includes('Queue this follow-up'))!;
+        const queued = surfaces.find((node) =>
+          node.textContent?.includes('Verify the queued handoff'),
+        )!;
+        const humanProse = [...root.querySelectorAll('[data-message-content-block="text"]')].find(
+          (node) => node.textContent?.includes('The shared response rhythm'),
+        )!;
+        const gap = (before: Element, after: Element) =>
+          after.getBoundingClientRect().top - before.getBoundingClientRect().bottom;
+        return [
+          gap(humanProse, human),
+          gap(human, queued),
+          gap(prose, cards[0]),
+          gap(cards[0], cards[1]),
+          gap(cards[1], wake),
+          gap(wake, subscriptions),
+        ];
+      }),
+    )
+    .toEqual([24, 16, 24, 16, 16, 16]);
+});
+
 for (const zoom of [1, 2]) {
   test(`updates every visible operational seam immediately at ${zoom * 100}%`, async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });

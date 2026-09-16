@@ -5,7 +5,6 @@ import NeutralBorderContractHost from './NeutralBorderContractHost.svelte';
 type Edge = 'top' | 'right';
 
 const probes = [
-  ['subscription', '[data-testid="event-subscriptions-card"]', 'top'],
   ['launcher', '[data-sidebar-launcher="browser"]', 'top'],
   ['popover', '[data-slot="menu-content"]', 'top'],
   ['dialog', '[data-slot="dialog-content"]', 'top'],
@@ -13,6 +12,7 @@ const probes = [
 ] as const satisfies ReadonlyArray<readonly [string, string, Edge]>;
 
 const borderlessProbes = [
+  ['subscription', '[data-testid="event-subscriptions-card"]', 'top'],
   ['panel', '.panel', 'top'],
   ['chat', '[data-testid="pinned-user-prompt"]', 'top'],
 ] as const satisfies ReadonlyArray<readonly [string, string, Edge]>;

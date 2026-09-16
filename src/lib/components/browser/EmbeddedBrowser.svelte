@@ -9,7 +9,7 @@
    * - Loading indicator
    * - Error handling
    */
-  import { onMount, tick } from 'svelte';
+  import { onMount, tick, untrack } from 'svelte';
   import { createLogger } from '$lib/utils/client-logger';
   import { Button } from '$lib/components/ui/button';
   import { toast } from '$lib/components/ui/toast';
@@ -1039,11 +1039,15 @@
     Workaround for Electron bug #43314: Hide webview during URL switch.
     When isRecreatingWebview is true, the webview is removed from DOM.
     When it becomes false, a fresh webview is created with the new URL.
+    Read src only when mounting: reflecting did-navigate/in-page back into
+    Electron's src attribute issues a second navigation and reloads SPA pages.
+    Electron maintains its own live src attribute for guest recreation on reparenting.
+    Explicit navigation uses loadURL; a newly mounted guest reads the latest URL.
   -->
   <webview
     bind:this={webviewRef}
     class="w-full h-full border-none"
-    src={currentWebviewUrl}
+    src={untrack(() => currentWebviewUrl)}
     partition={BROWSER_PANEL_PARTITION}
     allowpopups
     use:reportTabBounds={tabId}

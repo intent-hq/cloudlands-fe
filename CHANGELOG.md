@@ -4,6 +4,36 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.158.4](https://github.com/intent-hq/cloudlands-fe/compare/v2.158.3...v2.158.4) (2026-09-15)
+
+
+### 🐛 Bug Fixes
+
+* merge navigator.getBattery() into the Electron battery source ([#2484](https://github.com/intent-hq/cloudlands-fe/issues/2484)) ([cc4762b](https://github.com/intent-hq/cloudlands-fe/commit/cc4762be004478649cfc98996338db3c7a67c889))
+
+## [2.158.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.158.2...v2.158.3) (2026-09-15)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.59 ([#2480](https://github.com/intent-hq/cloudlands-fe/issues/2480)) ([288ed4d](https://github.com/intent-hq/cloudlands-fe/commit/288ed4de098e4819ca3034197944daf2f080fcc1))
+
+## [2.158.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.158.1...v2.158.2) (2026-09-15)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.58 ([#2477](https://github.com/intent-hq/cloudlands-fe/issues/2477)) ([501765d](https://github.com/intent-hq/cloudlands-fe/commit/501765d659ba36c0dbf1cc2b66f580221a34d90c))
+
+## [2.158.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.158.0...v2.158.1) (2026-09-15)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.57 ([#2476](https://github.com/intent-hq/cloudlands-fe/issues/2476)) ([6faa028](https://github.com/intent-hq/cloudlands-fe/commit/6faa02858c1db1e3da93b96d665dc5ca4d25c186))
+* record the selector baseline before emitting in Themis selector channels ([#2472](https://github.com/intent-hq/cloudlands-fe/issues/2472)) ([b08fd84](https://github.com/intent-hq/cloudlands-fe/commit/b08fd8436fd6f853b63ce3b1e68b2d3c22f7d310))
+* render an absent threads.unresolved as unknown, not zero ([#2473](https://github.com/intent-hq/cloudlands-fe/issues/2473)) ([1cdbc93](https://github.com/intent-hq/cloudlands-fe/commit/1cdbc937cf7266f37f156f2e60e07bb7dbb2690c))
+
 ## [2.158.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.157.0...v2.158.0) (2026-09-15)
 
 

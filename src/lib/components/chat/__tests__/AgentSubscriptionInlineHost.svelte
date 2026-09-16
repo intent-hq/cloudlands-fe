@@ -216,6 +216,8 @@
   class:dark={theme === 'dark'}
   style:width="{width}px"
   style:zoom
+  style:--font-ui="'Inter Variable', sans-serif"
+  style:font-family="var(--font-ui)"
   data-testid="subscription-inline-host"
 >
   <div

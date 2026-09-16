@@ -101,20 +101,6 @@ async function renderCard(agentId: string, compact = false) {
   return screen.getByTestId('event-subscriptions-card');
 }
 
-function rect(top: number, height: number): DOMRect {
-  return {
-    x: 0,
-    y: top,
-    left: 0,
-    right: 320,
-    top,
-    bottom: top + height,
-    width: 320,
-    height,
-    toJSON: () => ({}),
-  } as DOMRect;
-}
-
 describe('EventSubscriptionsCard', () => {
   it('renders a lone agent row directly without a header or card chevron', async () => {
     const card = await renderCard('agents');
@@ -133,11 +119,6 @@ describe('EventSubscriptionsCard', () => {
   ])('renders a lone %s row directly without a header or card chevron', async (agentId, testId) => {
     const card = await renderCard(agentId);
     expect(card.parentElement?.classList.contains('hidden')).toBe(false);
-    expect(card.className).toContain('rounded-lg');
-    expect(card.className).toContain('border');
-    expect(card.className).toContain('border-border');
-    expect(card.className).toContain('bg-card/80');
-    expect(card.className).toContain('shadow-sm');
     expect(screen.getByTestId(testId)).toBeTruthy();
     expect(screen.queryByTestId('event-subscriptions-outer-header')).toBeNull();
     expect(screen.queryByTestId('event-subscriptions-summary')).toBeNull();
@@ -306,24 +287,5 @@ describe('EventSubscriptionsCard', () => {
     expect(card.parentElement?.classList.contains('hidden')).toBe(true);
     expect(card.parentElement?.getAttribute('data-has-subscriptions')).toBe('false');
     expect(screen.queryByTestId('event-subscriptions-outer-header')).toBeNull();
-  });
-
-  it.each([
-    [false, 'mt-8', 32],
-    [true, 'mt-6', 24],
-  ])('owns a non-collapsing transparent top gap (compact=%s)', async (compact, token, gap) => {
-    const card = await renderCard('agents', compact);
-    const utility = card.parentElement!;
-    const predecessor = document.createElement('div');
-    predecessor.dataset.conversationLayer = compact ? 'reasoning' : 'agent-prose';
-    utility.before(predecessor);
-
-    predecessor.getBoundingClientRect = () => rect(100, 20);
-    utility.getBoundingClientRect = () => rect(120 + gap, 80);
-    card.getBoundingClientRect = () => rect(120 + gap, 76);
-
-    expect(utility.classList.contains(token)).toBe(true);
-    expect(utility.className).not.toMatch(/bg-|pt-|min-h-/);
-    expect(card.getBoundingClientRect().top - predecessor.getBoundingClientRect().bottom).toBe(gap);
   });
 });

@@ -480,9 +480,13 @@ function claimsLiveness(message: AgentMessage): boolean {
   return message.isStreaming === true || message.streamingComplete === false;
 }
 
-/** The same row with its streaming flags settled; content untouched. */
+/**
+ * The same row with its streaming flags settled; content untouched. The
+ * settle is the renderer's, not a §7.1 terminal delivery, so the row is
+ * `provisional` until a snapshot/delta replaces it by id.
+ */
 function settleStreaming(message: AgentMessage): AgentMessage {
-  return { ...message, isStreaming: false, streamingComplete: true };
+  return { ...message, isStreaming: false, streamingComplete: true, provisional: true };
 }
 
 /**
@@ -660,18 +664,18 @@ const resumeAnchors = new Map<string, string>();
 
 /**
  * The newest fully-persisted message id, or undefined when none exists.
- * Partial rows (still streaming) and hollow assistant rows (no content
- * blocks) are skipped: the covered-path terminal placeholder the stream saga
- * adds on `complete` is empty-content and `streamingComplete: true`, but the
- * §7.1 reconcile has not replaced it yet — anchoring on it would make the
- * reopen skip that message's daemon-canonical contents. Anchoring one row
- * earlier only refetches more, never less.
+ * Partial rows (still streaming) and `provisional` rows are skipped: a
+ * provisional row was settled by the renderer (covered-path terminal
+ * placeholder, firehose-settled row, close-time normalize) and the §7.1
+ * reconcile has not replaced it yet — anchoring on it would make the reopen
+ * skip that message's daemon-canonical contents. Anchoring one row earlier
+ * only refetches more, never less.
  */
 function newestPersistedMessageId(messages: AgentMessage[]): string | undefined {
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     const message = messages[i];
     if (message.isStreaming === true || message.streamingComplete === false) continue;
-    if (message.role === 'assistant' && (message.contentBlocks?.length ?? 0) === 0) continue;
+    if (message.provisional === true) continue;
     if (typeof message.id === 'string' && message.id.length > 0) return message.id;
   }
   return undefined;

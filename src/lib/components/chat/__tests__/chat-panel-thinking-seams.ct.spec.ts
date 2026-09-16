@@ -108,7 +108,7 @@ for (const theme of ['light', 'dark'] as const) {
               thinkingWrapper.getBoundingClientRect().top - element.getBoundingClientRect().bottom
             );
           }, assistantId);
-          expect(gap, `${eventId}>Thinking`).toBeCloseTo(32 * zoom, 1);
+          expect(gap, `${eventId}>Thinking`).toBeCloseTo(24 * zoom, 1);
         }
 
         const eventBoundary = await component
@@ -122,8 +122,8 @@ for (const theme of ['light', 'dark'] as const) {
               bottom: thinking.getBoundingClientRect().top - event.getBoundingClientRect().bottom,
             };
           });
-        expect(eventBoundary.top).toBeCloseTo(32 * zoom, 1);
-        expect(eventBoundary.bottom).toBeCloseTo(32 * zoom, 1);
+        expect(eventBoundary.top).toBeCloseTo(24 * zoom, 1);
+        expect(eventBoundary.bottom).toBeCloseTo(24 * zoom, 1);
         expect(eventBoundary.top).toBeCloseTo(eventBoundary.bottom, 1);
 
         for (const [messageId, topLevelTypes, topLevelGaps] of [

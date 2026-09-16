@@ -1,6 +1,10 @@
 <script lang="ts">
   import { onDestroy, onMount, tick } from 'svelte';
   import type { UiComponentFixture } from '$lib/components/ui/component-metadata';
+  import {
+    SUBSCRIPTION_CARD_CONTAINMENT_CLASS,
+    SUBSCRIPTION_CARD_SURFACE_CLASS,
+  } from '$lib/components/chat/subscription-disclosure';
   import EventSubscriptionsCard from '$lib/components/chat/EventSubscriptionsCard.svelte';
   import DelegationGroupSection from '$lib/components/chat/DelegationGroupSection.svelte';
   import AgentMessageAttributionHeader from '$lib/components/chat/AgentMessageAttributionHeader.svelte';
@@ -205,7 +209,7 @@
       {#each ['collapsed', 'expanded'] as state}
         <article>
           {@render caption('Agent message attribution', state as 'collapsed' | 'expanded')}
-          <div class="header-surface">
+          <div class="{SUBSCRIPTION_CARD_CONTAINMENT_CLASS} {SUBSCRIPTION_CARD_SURFACE_CLASS}">
             <AgentMessageAttributionHeader
               attribution={{
                 fromAgentId: `sender-${state}`,
@@ -223,7 +227,7 @@
         </article>
         <article>
           {@render caption('Automated wake card header', state as 'collapsed' | 'expanded')}
-          <div class="header-surface">
+          <div class="{SUBSCRIPTION_CARD_CONTAINMENT_CLASS} {SUBSCRIPTION_CARD_SURFACE_CLASS}">
             <AutomatedWakeCardHeader
               presentation={hookPresentation}
               expanded={state === 'expanded'}
@@ -250,13 +254,13 @@
       {/each}
       <article>
         {@render caption('Hook wake attribution', 'static')}
-        <div class="header-surface">
+        <div class="{SUBSCRIPTION_CARD_CONTAINMENT_CLASS} {SUBSCRIPTION_CARD_SURFACE_CLASS}">
           <HookWakeAttributionHeader attribution={hookPresentation.attribution} />
         </div>
       </article>
       <article>
         {@render caption('PR monitor wake attribution', 'static')}
-        <div class="header-surface">
+        <div class="{SUBSCRIPTION_CARD_CONTAINMENT_CLASS} {SUBSCRIPTION_CARD_SURFACE_CLASS}">
           <PrMonitorWakeAttributionHeader
             attribution={{
               monitorId: 'header-pr',
@@ -281,7 +285,7 @@
       </article>
       <article>
         {@render caption('Agent message header at 280px', 'collapsed')}
-        <div class="header-surface">
+        <div class="{SUBSCRIPTION_CARD_CONTAINMENT_CLASS} {SUBSCRIPTION_CARD_SURFACE_CLASS}">
           <AgentMessageAttributionHeader
             attribution={{
               fromAgentId: 'narrow-sender',
@@ -322,13 +326,6 @@
   }
   article :global([data-testid='subscription-utility-area']) {
     margin-top: 0;
-  }
-  .header-surface {
-    min-width: 0;
-    overflow: hidden;
-    border: 1px solid hsl(var(--border));
-    border-radius: var(--radius-large);
-    background: hsl(var(--card));
   }
   .narrow-grid {
     display: grid;

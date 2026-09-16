@@ -759,7 +759,6 @@ describe('ChatMessage agent-to-agent sender attribution', () => {
     for (const token of USER_MESSAGE_SURFACE_CLASS.split(' ')) {
       expect(surface.classList.contains(token)).toBe(true);
     }
-    expect(surface.className).not.toContain(SUBSCRIPTION_CARD_SURFACE_CLASS);
 
     await rerender({
       message: userMessage(),

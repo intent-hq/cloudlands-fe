@@ -1485,6 +1485,56 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
       const reopened = closeThenReopen(agentA, agentB, sub);
       expect(reopened.options).toBeUndefined();
     });
+
+    // The anchor scan keys on the row's `provisional` flag, not on empty
+    // content: a firehose `complete` settling a row that already streamed
+    // text keeps that text but is still renderer-settled, so the reopen must
+    // still anchor one row earlier.
+    it('skips a renderer-settled row that carries content when it is the newest row at close', () => {
+      const agentA = 'agent-sub-provisional-content-a';
+      const agentB = 'agent-sub-provisional-content-b';
+      seedSession(agentA);
+      seedSession(agentB);
+      const sub = openChat(agentA);
+      hydrate(sub, [
+        makeMessage('u-1', 'read the file', { role: 'user' }),
+        makeMessage('m-1', 'reading it now'),
+        makeMessage(PLACEHOLDER_ID, 'streamed so far', { isStreaming: true }),
+      ]);
+
+      completeNewAssistantTurn(agentA);
+      const rows = selectAgentMessages.select(appStore.state, agentA);
+      expect(rows.map((m) => m.id)).toEqual(['u-1', 'm-1', PLACEHOLDER_ID]);
+      expect(rows[2]).toMatchObject({
+        contentBlocks: [{ type: 'text', id: `${PLACEHOLDER_ID}:0`, text: 'streamed so far' }],
+        isStreaming: false,
+        streamingComplete: true,
+        provisional: true,
+      });
+
+      const reopened = closeThenReopen(agentA, agentB, sub);
+      expect(reopened.options).toEqual({ sinceMessageId: 'm-1' });
+    });
+
+    // Conversely, a daemon-delivered assistant row with no content blocks is
+    // canonical (never flagged), so it IS a valid anchor.
+    it('anchors on an unflagged empty-content assistant row delivered by the transcript', () => {
+      const agentA = 'agent-sub-canonical-empty-a';
+      const agentB = 'agent-sub-canonical-empty-b';
+      seedSession(agentA);
+      seedSession(agentB);
+      const sub = openChat(agentA);
+      hydrate(sub, [
+        makeMessage('u-1', 'read the file', { role: 'user' }),
+        makeMessage('m-empty', '', { contentBlocks: [] }),
+      ]);
+      const rows = selectAgentMessages.select(appStore.state, agentA);
+      expect(rows.map((m) => m.id)).toEqual(['u-1', 'm-empty']);
+      expect(rows[1].provisional).toBeUndefined();
+
+      const reopened = closeThenReopen(agentA, agentB, sub);
+      expect(reopened.options).toEqual({ sinceMessageId: 'm-empty' });
+    });
   });
 
   // Out-of-view chat, in-flight turn: the legacy `agent:*` firehose keeps
@@ -1971,8 +2021,14 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
         .find((message) => message.id === STALE);
       expect(stale?.isStreaming).toBe(false);
       expect(stale?.streamingComplete).toBe(true);
+      // Settled by the renderer, not by a §7.1 delivery of the row itself.
+      expect(stale?.provisional).toBe(true);
       // Flags only — the frozen content is never rewritten.
       expect(stale?.contentBlocks?.[0]).toMatchObject({ text: 'frozen at block 152' });
+      // The canonical page rows never carry the marker.
+      expect(
+        selectAgentMessages.select(appStore.state, agentId).find((message) => message.id === PRIOR),
+      ).not.toHaveProperty('provisional');
     });
 
     // A dropped or held snapshot is the failure mode behind a panel stuck on a
@@ -2064,8 +2120,28 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
       .find((m) => m.id === 'partial-a');
     expect(partial?.isStreaming).toBe(false);
     expect(partial?.streamingComplete).toBe(true);
+    // The renderer settled the row, not a §7.1 terminal delivery.
+    expect(partial?.provisional).toBe(true);
     // Content untouched — only the flags normalize.
     expect(partial?.contentBlocks?.[0]).toMatchObject({ text: 'streamed so far' });
+
+    // Re-view A: the reopened subscription's §7.1 snapshot covers the same
+    // id, so the canonical row replaces the provisional one outright.
+    appStore.dispatch(markAgentAsViewed(agentA));
+    const reopened = [...fakeSubscriptions].reverse().find((s) => s.agentId === agentA);
+    expect(reopened).toBeDefined();
+    reopened!.handler({
+      ...transcript([makeMessage('partial-a', 'streamed so far, then finished')]),
+      fromSnapshot: true,
+    });
+
+    const canonical = selectAgentMessages
+      .select(appStore.state, agentA)
+      .find((m) => m.id === 'partial-a');
+    expect(canonical?.contentBlocks?.[0]).toMatchObject({
+      text: 'streamed so far, then finished',
+    });
+    expect(canonical).not.toHaveProperty('provisional');
   });
 
   it('tears down all subscriptions when the chat closes (clearCurrentlyViewedAgent)', () => {
