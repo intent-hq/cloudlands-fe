@@ -69,6 +69,67 @@ afterEach(() => {
 });
 
 describe('TaskProgressControl', () => {
+  it.each([
+    ['status-stack', 'ArrowDown'],
+    ['status-stack', 'PageDown'],
+    ['checklist', 'ArrowDown'],
+    ['checklist', 'PageDown'],
+  ] as const)(
+    'retains early %s %s entry until the scroll region mounts',
+    async (presentation, key) => {
+      render(TaskProgressControl, { props: { tasks, presentation } });
+      const trigger = screen.getByTestId('task-progress-trigger');
+      trigger.focus();
+      // Deliver input before Svelte flushes the opening portal, not after a test wait.
+      trigger.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }),
+      );
+      trigger.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+      await tick();
+      await waitFor(() =>
+        expect(document.activeElement).toBe(screen.getByTestId('task-progress-scroll-region')),
+      );
+    },
+  );
+
+  it.each(['ArrowDown', 'PageDown'])(
+    'cancels pending %s entry on close without replaying it',
+    async (key) => {
+      render(TaskProgressControl, { props: { tasks } });
+      const trigger = screen.getByTestId('task-progress-trigger');
+      const outside = document.createElement('button');
+      document.body.append(outside);
+      trigger.focus();
+      for (const input of ['Enter', key, 'Enter']) {
+        trigger.dispatchEvent(
+          new KeyboardEvent('keydown', { key: input, bubbles: true, cancelable: true }),
+        );
+      }
+      outside.focus();
+      await tick();
+      expect(screen.queryByRole('dialog')).toBeNull();
+      expect(document.activeElement).toBe(outside);
+      trigger.focus();
+      await fireEvent.keyDown(trigger, { key: 'Enter' });
+      await screen.findByRole('dialog', { name: 'Agent tasks' });
+      expect(document.activeElement).toBe(trigger);
+      outside.remove();
+    },
+  );
+
+  it('drops pending keyboard entry when the task control unmounts', async () => {
+    const component = render(TaskProgressControl, { props: { tasks } });
+    const trigger = screen.getByTestId('task-progress-trigger');
+    trigger.focus();
+    for (const key of ['Enter', 'ArrowDown']) {
+      trigger.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+    }
+    component.unmount();
+    await tick();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(document.activeElement).toBe(document.body);
+  });
+
   it('shows compact progress and reveals one flat task list only after activation', async () => {
     render(TaskProgressControl, { props: { tasks } });
     const trigger = screen.getByTestId('task-progress-trigger');

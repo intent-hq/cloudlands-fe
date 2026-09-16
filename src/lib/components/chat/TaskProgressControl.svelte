@@ -32,6 +32,7 @@
   let triggerElement: HTMLButtonElement | null = $state(null);
   let contentElement: HTMLElement | null = $state(null);
   let scrollRegionElement: HTMLDivElement | null = $state(null);
+  let pendingScrollFocus = $state(false);
   let collisionBoundary: Element[] = $state([]);
   let preserveOutsideFocusOnClose = $state(false);
   let suppressTooltipAfterOutsideDismissal = $state(false);
@@ -72,6 +73,7 @@
   $effect(() => {
     if (tasks.length === 0) {
       open = false;
+      pendingScrollFocus = false;
       resetTooltipSuppression();
     }
     const nextTaskStates = new Map(
@@ -117,6 +119,12 @@
 
   onDestroy(() => {
     clearTimeout(announcementTimer);
+    pendingScrollFocus = false;
+  });
+
+  $effect(() => {
+    if (!open) pendingScrollFocus = false;
+    focusPendingScrollRegion();
   });
 
   function statusLabel(status: TaskProgressStatus): string {
@@ -142,6 +150,7 @@
   function handleOpenChange(nextOpen: boolean) {
     open = nextOpen;
     if (!nextOpen) {
+      pendingScrollFocus = false;
       outsideDismissalPointerId = null;
       return;
     }
@@ -208,7 +217,8 @@
     }
     if ((event.key === 'ArrowDown' || event.key === 'PageDown') && open) {
       event.preventDefault();
-      scrollRegionElement?.focus();
+      pendingScrollFocus = true;
+      focusPendingScrollRegion();
       return;
     }
     if (event.key !== 'Enter' && event.key !== ' ') return;
@@ -224,9 +234,27 @@
     handleOpenChange(false);
   }
 
-  function handleCloseAutoFocus(event: Event) {
-    if (!preserveOutsideFocusOnClose) return;
+  function focusPendingScrollRegion() {
+    if (!open || !pendingScrollFocus || !scrollRegionElement) return;
+    scrollRegionElement.focus({ preventScroll: true });
+    // Keep the intent until the portalled region can actually receive focus.
+    if (scrollRegionElement.ownerDocument.activeElement === scrollRegionElement) {
+      pendingScrollFocus = false;
+    }
+  }
+
+  function handleOpenAutoFocus(event: Event) {
     event.preventDefault();
+    focusPendingScrollRegion();
+  }
+
+  function handleCloseAutoFocus(event: Event) {
+    event.preventDefault();
+    // A focus-scope remount is not a dismissal and must not consume pending entry.
+    if (open) return;
+    pendingScrollFocus = false;
+    // Remounting replaces the primitive's pre-focus memory; restore explicitly.
+    if (!preserveOutsideFocusOnClose) triggerElement?.focus({ preventScroll: true });
     preserveOutsideFocusOnClose = false;
   }
 </script>
@@ -371,7 +399,7 @@
         {collisionBoundary}
         collisionPadding={8}
         trapFocus={false}
-        onOpenAutoFocus={(event) => event.preventDefault()}
+        onOpenAutoFocus={handleOpenAutoFocus}
         onCloseAutoFocus={handleCloseAutoFocus}
         onFocusOutside={handleFocusOutside}
         class="{DROPDOWN_SURFACE_CLASS} type-caption w-72"

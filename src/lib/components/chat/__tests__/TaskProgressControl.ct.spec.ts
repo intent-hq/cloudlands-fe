@@ -12,6 +12,152 @@ const tasks = [
   { id: 'review', title: 'Review the result', status: 'review_required' },
 ] as const;
 
+const overflowTasks = Array.from({ length: 20 }, (_, index) => ({
+  id: `comparison-${index}`,
+  title: `Comparison task ${index + 1}`,
+  status: 'pending' as const,
+}));
+
+for (const presentation of ['status-stack', 'checklist'] as const) {
+  for (const entryKey of ['ArrowDown', 'PageDown']) {
+    test(`${presentation} retains rapid ${entryKey} entry through opening and restores focus`, async ({
+      mount,
+      page,
+    }) => {
+      const component = await mount(TaskProgressControlHost, {
+        props: { tasks: overflowTasks, presentation },
+      });
+      const trigger = component.getByTestId('task-progress-trigger');
+      const popover = page.getByTestId('task-progress-popover');
+      const region = page.getByTestId('task-progress-scroll-region');
+      const lastRow = page.getByTestId('task-progress-row').last();
+
+      await trigger.focus();
+      await page.keyboard.press('Space');
+      await expect(popover).toBeVisible();
+      await page.keyboard.press(entryKey);
+      await popover.evaluate(async (node) => {
+        await Promise.all(node.getAnimations().map((animation) => animation.finished));
+      });
+      await expect(region).toBeFocused();
+      await expect(region).toHaveAccessibleName('Agent tasks');
+      await expect(page.getByRole('tooltip')).toHaveCount(0);
+      await page.keyboard.press('ArrowDown');
+      await expect.poll(() => region.evaluate((node) => node.scrollTop)).toBeGreaterThan(0);
+      const arrowScroll = await region.evaluate((node) => node.scrollTop);
+      const halfPage = await region.evaluate((node) => node.clientHeight / 2);
+      await page.keyboard.press('PageDown');
+      await expect
+        .poll(() => region.evaluate((node) => node.scrollTop))
+        .toBeGreaterThan(arrowScroll + halfPage);
+      await page.keyboard.press('End');
+      await expect(lastRow).toBeInViewport({ ratio: 1 });
+      await page.keyboard.press('Home');
+      await expect.poll(() => region.evaluate((node) => node.scrollTop)).toBe(0);
+      await page.keyboard.press('Escape');
+      await expect(popover).toBeHidden();
+      await expect(trigger).toBeFocused();
+    });
+  }
+
+  test(`${presentation} allows native Shift+Tab out of the portalled region`, async ({
+    mount,
+    page,
+  }) => {
+    const component = await mount(TaskProgressControlHost, {
+      props: { tasks: overflowTasks, presentation },
+    });
+    const trigger = component.getByTestId('task-progress-trigger');
+    const popover = page.getByTestId('task-progress-popover');
+    await trigger.focus();
+    await page.keyboard.press('Enter');
+    await expect(popover).toBeVisible();
+    await page.keyboard.press('ArrowDown');
+    await expect(page.getByTestId('task-progress-scroll-region')).toBeFocused();
+    await page.keyboard.press('Shift+Tab');
+    await expect(popover).toBeHidden();
+    await expect(component.getByTestId('after-trigger')).toBeFocused();
+    await page.keyboard.press('Shift+Tab');
+    await expect(trigger).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(popover).toBeVisible();
+    await page.keyboard.press('Shift+Tab');
+    await expect(popover).toBeHidden();
+    await expect(component.getByTestId('before-trigger')).toBeFocused();
+  });
+
+  test(`${presentation} restores the trigger on immediate Escape after keyboard entry`, async ({
+    mount,
+    page,
+  }) => {
+    const component = await mount(TaskProgressControlHost, {
+      props: { tasks: overflowTasks, presentation },
+    });
+    const trigger = component.getByTestId('task-progress-trigger');
+    const popover = page.getByTestId('task-progress-popover');
+    await trigger.focus();
+    await page.keyboard.press('Enter');
+    await expect(popover).toBeVisible();
+    await page.keyboard.press('PageDown');
+    await page.keyboard.press('Escape');
+    await expect(popover).toBeHidden();
+    await expect(trigger).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(popover).toBeVisible();
+    await popover.evaluate(async (node) => {
+      await Promise.all(node.getAnimations().map((animation) => animation.finished));
+    });
+    await expect(trigger).toBeFocused();
+  });
+
+  test(`${presentation} preserves outside pointer focus after keyboard entry`, async ({
+    mount,
+    page,
+  }) => {
+    const component = await mount(TaskProgressControlHost, {
+      props: { tasks: overflowTasks, presentation },
+    });
+    const trigger = component.getByTestId('task-progress-trigger');
+    const popover = page.getByTestId('task-progress-popover');
+    const region = page.getByTestId('task-progress-scroll-region');
+    const outside = component.getByTestId('before-trigger');
+    await trigger.click();
+    await expect(popover).toBeVisible();
+    await page.keyboard.press('ArrowDown');
+    await expect(region).toBeFocused();
+    await page.getByTestId('task-progress-row').first().click();
+    await expect(popover).toBeVisible();
+    await region.hover();
+    await page.mouse.wheel(0, 300);
+    await expect.poll(() => region.evaluate((node) => node.scrollTop)).toBeGreaterThan(0);
+    await outside.click();
+    await expect(popover).toBeHidden();
+    await expect(outside).toBeFocused();
+    await expect(page.getByRole('tooltip')).toHaveCount(0);
+  });
+}
+
+for (const exitKey of ['Tab', 'Shift+Tab']) {
+  test(`keeps native ${exitKey} dismissal from a non-overflowing trigger`, async ({
+    mount,
+    page,
+  }) => {
+    const component = await mount(TaskProgressControlHost, { props: { tasks: [tasks[0]] } });
+    const trigger = component.getByTestId('task-progress-trigger');
+    const popover = page.getByTestId('task-progress-popover');
+    await trigger.focus();
+    await page.keyboard.press('Enter');
+    await expect(popover).toBeVisible();
+    const region = page.getByTestId('task-progress-scroll-region');
+    expect(await region.evaluate((node) => node.scrollHeight - node.clientHeight)).toBe(0);
+    await page.keyboard.press(exitKey);
+    await expect(popover).toBeHidden();
+    await expect(
+      component.getByTestId(exitKey === 'Tab' ? 'after-trigger' : 'before-trigger'),
+    ).toBeFocused();
+  });
+}
+
 async function expectSharedDropdownSurface(surface: Locator, reducedMotion: boolean) {
   const contract = await surface.evaluate((node) => {
     const probe = document.createElement('span');
