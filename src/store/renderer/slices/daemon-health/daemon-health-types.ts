@@ -35,15 +35,26 @@ export interface DaemonStatusCheckFailure {
  * system.status wire payload shape (intentd control.rs §5.7, §12.3).
  * New fields (maxAgents, version, uptimeSeconds) are optional for graceful
  * degradation when the daemon lacks them.
+ *
+ * A Collaborator caller receives the guest-safe projection (intentd #1934):
+ * only `running`, `listenMode`, `transports`, `port`, `version`,
+ * `buildCommit`, `protocolVersion`, `fingerprint`, `localIps`, `tcAddress`,
+ * `hostname`, `prettyHostname` and `host.{os, arch, locality, deviceKind,
+ * hardwareModel}`. Daemon-global counts (`clients`, `agents`, `maxAgents`),
+ * process/disk telemetry and `host.hasDisplay` are administrator-only and
+ * therefore optional here — consumers derive row visibility from field
+ * presence, never from a guest flag.
  */
 export interface SystemStatusWirePayload {
   running: boolean;
   listenMode: string;
   transports: string[];
   port?: number | null;
-  clients: number;
-  agents: number;
-  /** New in PR #244, may be missing on older daemons. */
+  /** Administrator-only: omitted from the collaborator projection. */
+  clients?: number;
+  /** Administrator-only: omitted from the collaborator projection. */
+  agents?: number;
+  /** New in PR #244, may be missing on older daemons. Administrator-only. */
   maxAgents?: number;
   /** New in PR #244, may be missing on older daemons. */
   version?: string;
@@ -66,7 +77,8 @@ export interface SystemStatusWirePayload {
   host: {
     os: string;
     arch: string;
-    hasDisplay: boolean;
+    /** Administrator-only: omitted from the collaborator projection. */
+    hasDisplay?: boolean;
     locality: 'local' | 'remote';
   };
 }
@@ -145,8 +157,10 @@ export interface BackendTransportInfo {
  * Stats payload exposed by selectors for the health dropdown menu.
  */
 export interface DaemonHealthStats {
-  clients: number;
-  agents: number;
+  /** Absent when the daemon omits it (collaborator projection, intentd #1934). */
+  clients?: number;
+  /** Absent when the daemon omits it (collaborator projection, intentd #1934). */
+  agents?: number;
   maxAgents?: number;
   listenMode: string;
   port?: number | null;
