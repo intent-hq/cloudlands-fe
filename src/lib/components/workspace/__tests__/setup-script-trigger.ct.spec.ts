@@ -10,6 +10,11 @@ for (const width of [420, 900]) {
     const component = await mount(Preview, { props: { compact: true } });
     const trigger = component.getByRole('button', { name: /Set up dev environment with/ });
     await expect(trigger).toBeVisible();
+    // Observe startup autofocus before testing trigger keyboard focus.
+    const prompt = component.locator(
+      '[contenteditable="true"][role="textbox"][aria-label="Prompt"]',
+    );
+    await expect(prompt).toBeFocused();
     await trigger.focus();
     await expect(trigger).toBeFocused();
     await trigger.press('Enter');
@@ -41,11 +46,13 @@ for (const width of [420, 900]) {
       };
     });
     const prefix = trigger.getByText('Set up dev environment with', { exact: true });
+    const suffix = trigger.getByText('script', { exact: true });
     const prefixBox = (await prefix.boundingBox())!;
     const pillBox = (await pill.boundingBox())!;
+    const suffixBox = (await suffix.boundingBox())!;
     expect(Math.abs(prefixBox.x - row.left)).toBeLessThanOrEqual(1);
     expect(row.scrollWidth).toBeLessThanOrEqual(row.clientWidth + 1);
-    for (const part of [prefix, pill, trigger.getByText('script', { exact: true })]) {
+    for (const part of [prefix, pill, suffix]) {
       const box = (await part.boundingBox())!;
       expect(box.x).toBeGreaterThanOrEqual(row.left - 1);
       expect(box.x + box.width).toBeLessThanOrEqual(row.right + 1);
@@ -56,8 +63,9 @@ for (const width of [420, 900]) {
       ).toBeLessThanOrEqual(1);
     }
     if (width === 420) {
-      expect(pillBox.y).toBeGreaterThanOrEqual(prefixBox.y + prefixBox.height);
-      expect(Math.abs(pillBox.x - row.left)).toBeLessThanOrEqual(1);
+      expect(suffixBox.y).toBeGreaterThanOrEqual(prefixBox.y + prefixBox.height);
+      expect(suffixBox.y).toBeGreaterThanOrEqual(pillBox.y + pillBox.height);
+      expect(Math.abs(suffixBox.x - row.left)).toBeLessThanOrEqual(1);
     } else {
       expect(pillBox.y).toBeLessThan(prefixBox.y + prefixBox.height);
     }

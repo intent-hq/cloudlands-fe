@@ -24,12 +24,19 @@ for (const theme of ['light', 'dark'] as const) {
       await expect(control).toHaveCSS('border-width', '1px');
     }
     await expect(ordinary).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+    const restingShadow = await editable.evaluate((e) => getComputedStyle(e).boxShadow);
     await editable.hover();
     await expect(editable).toHaveCSS('background-color', background);
-    await root.getByRole('button', { name: 'Focus setting', exact: true }).click();
+    const focusButton = root.getByRole('button', { name: 'Focus setting', exact: true });
+    await focusButton.focus();
+    await focusButton.press('Enter');
     await expect(editable).toBeFocused();
     await expect(editable).toHaveCSS('background-color', background);
-    await expect(editable).toHaveCSS('outline-style', 'solid');
+    // Caret-bearing entries keep their surface without an outer focus box.
+    await expect(editable).toHaveCSS('outline-style', 'none');
+    await expect(editable).toHaveCSS('box-shadow', restingShadow);
+    const textColor = await editable.evaluate((e) => getComputedStyle(e).color);
+    await expect(editable).toHaveCSS('caret-color', textColor);
     await editable.fill('Updated settings');
     await expect(root.getByTestId('textarea-events')).toHaveText('Updated settings');
     await expect(root.getByTestId('textarea-events')).toHaveAttribute(

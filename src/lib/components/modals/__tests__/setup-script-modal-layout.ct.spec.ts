@@ -105,11 +105,16 @@ test('keeps editor Escape local, discards cancelled edits, and applies Done', as
   await mount(SetupScriptModalPreview);
   const saved = page.getByTestId('saved-script');
   const initial = await saved.textContent();
+  // Monaco resolves its platform from the browser UA, not the Playwright host OS.
+  const selectAll = await page.evaluate(() =>
+    navigator.userAgent.includes('Macintosh') ? 'Meta+A' : 'Control+A',
+  );
   let dialog = page.getByRole('dialog');
   await expect(dialog.locator('.monaco-editor')).toBeVisible();
   const input = dialog.getByRole('textbox', { name: 'Editor content' });
   await input.focus();
-  await input.press('ControlOrMeta+A');
+  await expect(input).toBeFocused();
+  await input.press(selectAll);
   await page.keyboard.type('echo fixture-edited');
   await input.press('Escape');
   await expect(dialog).toBeVisible();
@@ -119,7 +124,8 @@ test('keeps editor Escape local, discards cancelled edits, and applies Done', as
   dialog = page.getByRole('dialog');
   await expect(dialog.locator('.monaco-editor')).toBeVisible();
   await dialog.getByRole('textbox', { name: 'Editor content' }).focus();
-  await page.keyboard.press('ControlOrMeta+A');
+  await expect(dialog.getByRole('textbox', { name: 'Editor content' })).toBeFocused();
+  await page.keyboard.press(selectAll);
   await page.keyboard.type('echo fixture-saved');
   await dialog.getByRole('button', { name: /Save.*Done/i }).click();
   await expect(dialog).toHaveCount(0);
