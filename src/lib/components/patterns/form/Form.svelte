@@ -43,6 +43,17 @@
     if (event.key !== 'Enter' || event.isComposing || event.defaultPrevented || isBusy) return;
     const target = event.target as HTMLElement;
     const multiline = target instanceof HTMLTextAreaElement || target.isContentEditable;
+    // Native controls and composite widgets own their Enter activation, even when
+    // implicit submission is disabled. Check ancestors for nested button/link content.
+    const interactive = target.closest(
+      'button, a[href], select, summary, [role="button"], [role="link"], [role="checkbox"], [role="radio"], [role="switch"], [role="tab"], [role="menuitem"], [role="option"], [role="combobox"], [role="slider"]',
+    );
+    if (interactive && form.contains(interactive)) return;
+    if (
+      target instanceof HTMLInputElement &&
+      !['text', 'search', 'email', 'url', 'tel', 'password', 'number'].includes(target.type)
+    )
+      return;
     const modified = event.metaKey || event.ctrlKey;
     const shouldSubmit = modified ? modEnter === 'submit' : !multiline && enterKey === 'submit';
     if (shouldSubmit) {

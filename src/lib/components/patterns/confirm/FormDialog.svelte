@@ -111,6 +111,7 @@
     closeDisabled={isBusy}
     {showCloseButton}
     {closeLabel}
+    {escapeKeydownBehavior}
     onOpenAutoFocus={handleOpenAutoFocus}
     {onfocusin}
     onkeydown={(event) => {
