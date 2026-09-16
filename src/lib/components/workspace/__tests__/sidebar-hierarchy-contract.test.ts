@@ -96,7 +96,8 @@ describe('workspace sidebar hierarchy presentation contract', () => {
     expect(sharedProgress).toContain('segment.visualState');
     expect(progress).toContain('content={taskListTooltip}');
     expect(progress).toContain('bg-secondary!');
-    expect(progress).toContain('overflow-x-hidden overflow-y-auto px-2 pt-2');
+    expect(progress).toContain('overflow-x-hidden overflow-y-auto px-2 py-1');
+    expect(progress).not.toMatch(/\bp[tb]-\d/);
     expect(progress).toContain('onclick={() => specNoteId && onTaskClick?.(specNoteId)}');
     expect(progress).toContain('onclick={() => onTaskClick?.(task.note.id as string)}');
     expect(progress).toContain('TASK_STATUS_INDICATOR_CLASSES[status]');

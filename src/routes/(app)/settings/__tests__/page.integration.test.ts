@@ -636,12 +636,13 @@ describe('settings tab route and focus behavior', () => {
     await fireEvent.click(implementor);
 
     expect(screen.getByTestId('ai-behavior-view').textContent).toContain('specialist:implementor');
-    expect(implementor.getAttribute('aria-current')).toBe('true');
+    expect(implementor.getAttribute('aria-current')).toBe('page');
 
     await fireEvent.click(createSpecialist);
 
     expect(screen.getByTestId('ai-behavior-view').textContent).toContain('create-specialist');
-    expect(createSpecialist.getAttribute('aria-current')).toBe('true');
+    expect(createSpecialist.getAttribute('aria-current')).toBe('page');
+    expect(implementor.hasAttribute('aria-current')).toBe(false);
   });
 
   it('activates a specialist after navigating between settings tabs', async () => {
@@ -653,7 +654,7 @@ describe('settings tab route and focus behavior', () => {
 
     expect(
       within(navigation).getByRole('button', { name: 'Implementor' }).getAttribute('aria-current'),
-    ).toBe('true');
+    ).toBe('page');
     expect(screen.getByTestId('ai-behavior-view').textContent).toContain('specialist:implementor');
     expect(window.location.search).toBe('?tab=specialists&specialist=implementor');
     expect(window.location.hash).toBe('#specialist-implementor');
