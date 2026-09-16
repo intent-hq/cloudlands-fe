@@ -104,7 +104,7 @@
     <Tooltip.Content side="top" class="text-xs">
       <p>{displayName}</p>
       {#if attentionRequest}
-        <p class={attentionRequest.kind === 'blocker' ? 'text-red-500' : 'text-warning-ink'}>
+        <p class="line-clamp-3">
           {attentionRequest.kind === 'blocker'
             ? m.chat_agentCard_attentionBlocker_label()
             : m.chat_agentCard_attentionDiscussion_label()}{#if attentionRequest.reason}

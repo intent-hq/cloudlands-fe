@@ -40,7 +40,7 @@
     data-surface-level={surface}
     data-overlay-surface
     class={cn(
-      'tooltip-motion overlay-surface type-caption z-(--layer-tooltip) w-fit text-balance bg-foreground px-2 py-1 text-background [&_kbd]:text-background/70',
+      'tooltip-motion overlay-surface type-caption z-(--layer-tooltip) w-fit max-w-xs whitespace-pre-wrap text-balance bg-foreground px-2 py-1 text-background [&_kbd]:text-background/70',
       className,
     )}
     onFocusOutside={() => {}}
@@ -59,7 +59,7 @@
       {sideOffset}
       {side}
       class={cn(
-        'tooltip-motion overlay-surface type-caption z-(--layer-tooltip) w-fit text-balance bg-foreground px-2 py-1 text-background [&_kbd]:text-background/70',
+        'tooltip-motion overlay-surface type-caption z-(--layer-tooltip) w-fit max-w-xs whitespace-pre-wrap text-balance bg-foreground px-2 py-1 text-background [&_kbd]:text-background/70',
         className,
       )}
       onFocusOutside={() => {}}
