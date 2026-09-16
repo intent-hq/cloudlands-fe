@@ -700,6 +700,7 @@
               e.stopPropagation();
               (props.onclick as ((event: MouseEvent) => void) | undefined)?.(e);
             }}
+            wrapContent={false}
             class="specialist-trigger"
           >
             <AgentAvatar
@@ -709,14 +710,11 @@
               icon={currentSpecialistInfo?.icon}
             />
             <div class="flex flex-col min-w-0 flex-1">
-              <span class="font-medium text-foreground text-sm leading-tight"
-                >{specialistDisplayLabel}</span
+              <span class="type-caption font-medium! text-foreground">{specialistDisplayLabel}</span
               >
-              <span class="text-xs text-subtle leading-tight truncate"
-                >{specialistDisplayDescription}</span
-              >
+              <span class="type-caption text-subtle truncate">{specialistDisplayDescription}</span>
             </div>
-            <Fa icon={faChevronDown} class="text-ghost h-2.5! w-2.5! shrink-0" />
+            <Fa icon={faChevronDown} class="text-ghost size-3! shrink-0" />
           </Button>
         {/snippet}
 
@@ -725,6 +723,7 @@
             <!-- General (blank) option -->
             <Button
               variant="ghost"
+              wrapContent={false}
               type="button"
               class="specialist-option {selectedSpecialist === null ||
               (selectedSpecialist && isTeamRoleId(selectedSpecialist))
@@ -734,10 +733,10 @@
             >
               <AgentAvatar agentId="blank" variant="standard" />
               <div class="flex flex-col min-w-0">
-                <span class="font-medium text-foreground text-sm"
+                <span class="type-caption font-medium! text-foreground"
                   >{m.workspace_initialAgentPicker_general_label()}</span
                 >
-                <span class="text-xs text-subtle"
+                <span class="type-caption text-subtle"
                   >{m.workspace_initialAgentPicker_noSpecializedBehavior_description()}</span
                 >
               </div>
@@ -749,6 +748,7 @@
               {#each customSpecialists as specialist (specialist.id)}
                 <Button
                   variant="ghost"
+                  wrapContent={false}
                   type="button"
                   class="specialist-option {selectedSpecialist === specialist.id
                     ? 'specialist-option-selected'
@@ -762,8 +762,8 @@
                     icon={specialist.icon}
                   />
                   <div class="flex flex-col min-w-0">
-                    <span class="font-medium text-foreground text-sm">{specialist.name}</span>
-                    <span class="text-xs text-subtle truncate">{specialist.description}</span>
+                    <span class="type-caption font-medium! text-foreground">{specialist.name}</span>
+                    <span class="type-caption text-subtle truncate">{specialist.description}</span>
                   </div>
                 </Button>
               {/each}
@@ -772,12 +772,14 @@
             <!-- Create new specialist link -->
             <Button
               variant="ghost"
+              wrapContent={false}
               type="button"
-              class="sticky bottom-0 border-t border-border bg-background px-4 gap-3 py-1 z-10 w-full flex items-center text-subtle cursor-pointer"
+              class="specialist-option sticky bottom-0 border-t! border-border bg-background! z-10 text-subtle"
               onclick={openSpecialistSettings}
             >
-              <Fa icon={faPlus} class="ml-0.5 mr-0.5 opacity-60" size={10} />
-              <span class="text-sm">{m.workspace_initialAgentPicker_manageSpecialists_label()}</span
+              <Fa icon={faPlus} class="size-3! opacity-60" />
+              <span class="type-caption"
+                >{m.workspace_initialAgentPicker_manageSpecialists_label()}</span
               >
             </Button>
           </div>
@@ -935,10 +937,13 @@
 
   :global(.specialist-trigger) {
     display: flex;
+    justify-content: flex-start;
+    height: auto;
+    min-height: var(--control-height-medium);
     align-items: center;
-    gap: 0.5rem;
+    gap: 0.75rem;
     width: 100%;
-    padding: 0.375rem 0.5rem;
+    padding: 0.5rem 0.75rem;
     border: 1px solid var(--color-border);
     border-radius: var(--radius-md);
     background: var(--color-background);
@@ -958,8 +963,11 @@
 
   :global(.specialist-option) {
     display: flex;
+    justify-content: flex-start;
+    height: auto;
+    min-height: var(--control-height-medium);
     align-items: center;
-    gap: 0.5rem;
+    gap: 0.75rem;
     width: 100%;
     padding: 0.5rem 0.75rem;
     border: none;
