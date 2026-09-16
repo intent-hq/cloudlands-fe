@@ -597,6 +597,48 @@ describe('handleInviteDeepLink — renderer consent modal', () => {
     expect(openBackendWindow).not.toHaveBeenCalled();
   });
 
+  it('cancel while the browser launch is still pending: a grant that settles first is still not stored', async () => {
+    const { prompt, cancelWaiting } = fakeConsent('open');
+    showInviteConsent.mockReturnValue(prompt);
+    let finishLaunch!: () => void;
+    openExternal.mockReturnValue(new Promise<void>((resolve) => (finishLaunch = resolve)));
+    let grantCredential!: (value: typeof CREDENTIAL) => void;
+    redeemWait.mockReturnValue(new Promise((resolve) => (grantCredential = resolve)));
+
+    const pending = handleInviteDeepLink(LINK);
+    await vi.waitFor(() => expect(openExternal).toHaveBeenCalledTimes(1));
+    cancelWaiting();
+    grantCredential(CREDENTIAL);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    finishLaunch();
+    await pending;
+
+    expect(prompt.dismiss).toHaveBeenCalledTimes(1);
+    expect(prompt.dismiss).toHaveBeenCalledWith('cancelled');
+    expect(guestAdd).not.toHaveBeenCalled();
+    expect(openBackendWindow).not.toHaveBeenCalled();
+    expect(showMessageBox).not.toHaveBeenCalled();
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it('cancel while a browser launch never settles: aborts and closes the connection', async () => {
+    const { prompt, cancelWaiting } = fakeConsent('open');
+    showInviteConsent.mockReturnValue(prompt);
+    openExternal.mockReturnValue(new Promise<void>(() => {}));
+    redeemWait.mockReturnValue(new Promise(() => {}));
+
+    const pending = handleInviteDeepLink(LINK);
+    await vi.waitFor(() => expect(openExternal).toHaveBeenCalledTimes(1));
+    expect(close).not.toHaveBeenCalled();
+    cancelWaiting();
+    await pending;
+
+    expect(prompt.dismiss).toHaveBeenCalledWith('cancelled');
+    expect(guestAdd).not.toHaveBeenCalled();
+    expect(openBackendWindow).not.toHaveBeenCalled();
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
   it('no renderer (null decision): the native device-code box is the fallback and the join completes', async () => {
     showInviteConsent.mockReturnValue(fakeConsent(null).prompt);
 
