@@ -57,15 +57,20 @@ export function installInviteNoticeService(newHandlers: InviteNoticeHandlers): (
   const showListenerId = api.on(INVITE_NOTICE_CHANNELS.SHOW, (payload: unknown) => {
     const show = payload as InviteNoticeShowPayload | undefined;
     if (!show || typeof show.requestId !== 'string') {
-      logger.warn('Ignoring malformed invite-notice show payload', { payload });
+      // Bounded logging: never echo the payload itself.
+      logger.warn('Ignoring malformed invite-notice show payload', { code: 'malformed-payload' });
       return;
     }
     activeRequestId = show.requestId;
     // Ack immediately: main only waits a short window for it before falling
     // back to the native dialog. Never gate it on the modal rendering.
     const ack: InviteNoticeAckPayload = { requestId: show.requestId };
-    void api.invoke(INVITE_NOTICE_CHANNELS.ACK, ack).catch((error) => {
-      logger.warn('Failed to ack invite-notice request', { error });
+    void api.invoke(INVITE_NOTICE_CHANNELS.ACK, ack).catch(() => {
+      logger.warn('Failed to ack invite-notice request', {
+        code: 'ack-rejected',
+        requestId: show.requestId,
+        kind: show.kind,
+      });
     });
     logger.info('Invite-notice request received', { requestId: show.requestId, kind: show.kind });
     handlers?.onShow(show);
@@ -102,7 +107,7 @@ export function acknowledgeInviteNotice(): void {
   activeRequestId = null;
   logger.info('Sending invite-notice acknowledgement', { requestId });
   const response: InviteNoticeResponsePayload = { requestId };
-  void api.invoke(INVITE_NOTICE_CHANNELS.RESPONSE, response).catch((error) => {
-    logger.error('Failed to send invite-notice response', { error });
+  void api.invoke(INVITE_NOTICE_CHANNELS.RESPONSE, response).catch(() => {
+    logger.error('Failed to send invite-notice response', { code: 'response-rejected', requestId });
   });
 }
