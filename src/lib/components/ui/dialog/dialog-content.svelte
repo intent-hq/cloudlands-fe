@@ -25,7 +25,7 @@
     class: className,
     portalProps,
     container = null,
-    size = 'sm',
+    size = 'default',
     forceMount = false,
     showCloseButton = true,
     closeDisabled = false,
@@ -41,7 +41,7 @@
   }: WithoutChildrenOrChild<DialogPrimitive.ContentProps> & {
     portalProps?: DialogPrimitive.PortalProps;
     container?: HTMLElement | null;
-    size?: 'sm' | 'lg';
+    size?: 'sm' | 'default' | 'lg';
     showCloseButton?: boolean;
     closeDisabled?: boolean;
     closeLabel?: string;
@@ -97,8 +97,12 @@
           class={cn(
             staticPosition() ? 'relative mx-auto' : container ? 'absolute' : 'fixed',
             !staticPosition() && 'left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2',
-            'dialog-editorial-content overlay-surface z-[var(--layer-modal)] grid w-[calc(100%-2rem)] overflow-y-auto overscroll-contain p-6 text-popover-foreground outline-none motion-reduce:animate-none motion-reduce:transition-none',
+            'dialog-editorial-content overlay-surface z-[var(--layer-modal)] grid w-full overflow-y-auto overscroll-contain p-6 text-popover-foreground outline-none motion-reduce:animate-none motion-reduce:transition-none',
+            size === 'sm' && 'min-w-[min(--spacing(90),calc(100%-2rem),calc(100vw-2rem))]',
             size === 'sm' && (density === 'compact' ? 'max-w-90' : 'max-w-100'),
+            size === 'default' &&
+              'min-w-[min(--spacing(105),calc(100%-2rem),calc(100vw-2rem))] max-w-110',
+            size === 'lg' && 'min-w-[min(--spacing(120),calc(100%-2rem),calc(100vw-2rem))]',
             size === 'lg' && (density === 'compact' ? 'max-w-120' : 'max-w-135'),
             surfaceClasses(surface),
             className,
@@ -146,6 +150,7 @@
 
 <style>
   :global(.dialog-editorial-content) {
+    width: min(100% - 2rem, 100vw - 2rem);
     max-height: calc(100dvh - 2rem);
   }
 </style>
