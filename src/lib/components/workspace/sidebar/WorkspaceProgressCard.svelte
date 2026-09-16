@@ -1148,14 +1148,14 @@
           {:else if $workspace && currentStatusMessage}
             <Button
               variant="plain"
-              class="type-body relative z-10 w-full cursor-text whitespace-pre-wrap break-words rounded border-none bg-transparent py-0.5 text-left text-muted-foreground
+              truncateLabel={false}
+              labelClass="line-clamp-3"
+              class="type-body relative z-10 h-auto w-full cursor-text whitespace-pre-wrap break-words rounded border-none bg-transparent py-0.5 text-left text-muted-foreground
                      transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none leading-snug hover:text-foreground
                      focus-visible:outline focus-visible:outline-1 focus-visible:outline-ring focus-visible:outline-offset-[-1px]
                      disabled:cursor-default disabled:opacity-50"
               onclick={startEditingStatusMessage}
-              title={currentStatusMessage
-                ? m.workspace_sidebarHeader_editStatus_tooltip()
-                : m.workspace_sidebarHeader_addStatus_tooltip()}
+              title={currentStatusMessage}
               aria-label={currentStatusMessage
                 ? m.workspace_sidebarHeader_editStatus_ariaLabel()
                 : m.workspace_sidebarHeader_addStatus_ariaLabel()}

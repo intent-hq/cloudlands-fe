@@ -523,19 +523,19 @@
     {:else if workspace}
       <Button
         variant="ghost"
-        class="type-body cursor-pointer rounded border-none bg-transparent py-0.5 text-left text-muted-foreground {!currentStatusMessage
+        truncateLabel={false}
+        labelClass="line-clamp-3"
+        class="type-body h-auto cursor-pointer rounded border-none bg-transparent py-0.5 text-left text-muted-foreground {!currentStatusMessage
           ? 'italic text-ghost'
           : ''}
-               max-w-full overflow-hidden line-clamp-2 break-words whitespace-normal
+               max-w-full break-words whitespace-pre-wrap
                transition-all duration-150 leading-snug
                hover:text-foreground hover:opacity-80
                focus-visible:outline focus-visible:outline-1
                focus-visible:outline-ring focus-visible:outline-offset-[-1px]
                disabled:cursor-default disabled:opacity-50"
         onclick={startEditingStatusMessage}
-        title={currentStatusMessage
-          ? m.workspace_sidebarHeader_editStatus_tooltip()
-          : m.workspace_sidebarHeader_addStatus_tooltip()}
+        title={currentStatusMessage || m.workspace_sidebarHeader_addStatus_tooltip()}
         aria-label={currentStatusMessage
           ? m.workspace_sidebarHeader_editStatus_ariaLabel()
           : m.workspace_sidebarHeader_addStatus_ariaLabel()}
