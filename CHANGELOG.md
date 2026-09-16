@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.161.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.161.1...v2.161.2) (2026-09-16)
+
+
+### 🐛 Bug Fixes
+
+* **workspace:** Honor clone defaults beyond the first branch page ([#2525](https://github.com/intent-hq/cloudlands-fe/issues/2525)) ([61d4426](https://github.com/intent-hq/cloudlands-fe/commit/61d4426aba57b45700ed461caa8804f4d6913571))
+
 ## [2.161.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.161.0...v2.161.1) (2026-09-16)
 
 
