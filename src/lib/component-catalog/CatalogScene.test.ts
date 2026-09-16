@@ -226,13 +226,19 @@ describe('CatalogScene', () => {
   });
 
   it('falls back to the interactive fixture for an unavailable named state', async () => {
-    render(CatalogScene, { props: { slug: 'button', requestedState: 'missing' } });
+    const { container } = render(CatalogScene, {
+      props: { slug: 'button', requestedState: 'missing' },
+    });
 
     expect(await screen.findByText(/No named state “missing” for this component/)).not.toBeNull();
     await waitFor(() =>
       expect(screen.getByTestId('catalog-scene').dataset.previewReady).toBe('true'),
     );
     expect(screen.getByTestId('catalog-scene').dataset.previewState).toBe('missing');
+    await waitFor(
+      () => expect(container.querySelector('[data-catalog-renderer-fixture]')).not.toBeNull(),
+      { timeout: 10_000 },
+    );
     expect(screen.getByRole('button', { name: '1. Primary' })).not.toBeNull();
   });
 
