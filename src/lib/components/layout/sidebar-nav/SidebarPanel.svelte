@@ -311,6 +311,7 @@
                 >
                   <Button
                     variant="ghost"
+                    size="icon"
                     type="button"
                     class="flex h-8 w-8 cursor-pointer items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-muted/50 hover:text-foreground focus-visible:bg-muted/50 focus-visible:text-foreground"
                     onclick={() => appStore.dispatch(setShowCreateModal(true))}
@@ -330,6 +331,7 @@
                       >
                         <Button
                           variant="ghost"
+                          size="icon"
                           {...props}
                           type="button"
                           class="flex h-8 w-8 cursor-pointer items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-muted/50 hover:text-foreground focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:bg-muted/50 focus-visible:text-foreground data-[state=open]:bg-muted/50 data-[state=open]:text-foreground"
@@ -384,6 +386,7 @@
                 >
                   <Button
                     variant="ghost"
+                    size="icon"
                     class="w-8 h-8 flex items-center justify-center rounded-md outline-none transition-colors cursor-pointer focus-visible:bg-muted/50 focus-visible:text-foreground {searchVisible
                       ? 'text-foreground bg-muted/50'
                       : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'}"
