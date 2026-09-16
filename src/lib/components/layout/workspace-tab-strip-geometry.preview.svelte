@@ -189,7 +189,7 @@
   .active-tab-mask {
     position: absolute;
     bottom: -2px;
-    height: 3px;
+    height: 4px;
     background: hsl(var(--sidebar));
     pointer-events: none;
   }
