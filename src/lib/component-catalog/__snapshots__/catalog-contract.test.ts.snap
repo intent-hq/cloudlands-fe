@@ -1425,205 +1425,205 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:confirm:conf
   <div>
     <div data-catalog-renderer-fixture="confirm-service" data-pattern-contract="confirm">
       <section data-catalog-rendered-state="confirm">
+        <div class="absolute bg-black/40 dark:bg-black/80 inset-0 motion-reduce:animate-none motion-reduce:transition-none z-[var(--layer-modal)]" data-dialog-overlay="" data-slot="dialog-overlay" data-state="open" data-static-position="true" id="bits-<id>">
+        <div aria-describedby="bits-<id>" aria-labelledby="bits-<id>" aria-modal="true" class="bg-surface-3 dialog-editorial-content grid max-w-110 motion-reduce:animate-none motion-reduce:transition-none mx-auto outline-none overflow-y-auto overlay-surface overscroll-contain p-6 relative shadow-surface-3 text-popover-foreground w-full z-[var(--layer-modal)]" data-dialog-content="" data-overlay-surface="true" data-size="default" data-slot="dialog-content" data-state="open" data-static-position="true" data-surface-level="3" id="bits-<id>" role="dialog" tabindex="-1">
+          <form class="gap-4 grid" data-slot="form">
+            <fieldset class="contents">
+              <div class="flex flex-col gap-1.5 mb-4 min-w-0 pr-8" data-slot="dialog-header">
+                <div aria-level="2" class="font-bold text-foreground type-title" data-dialog-title="" data-slot="dialog-title" data-state="open" id="bits-<id>" role="heading">
+                  "Confirm service"
+                <div class="break-words text-muted-foreground type-caption" data-dialog-description="" data-slot="dialog-description" data-state="open" id="bits-<id>">
+                  "Review and confirm this catalog action."
+              <div class="flex gap-2 items-center justify-end mt-6" data-slot="dialog-footer">
+                <div class="flex gap-3 items-center justify-between" data-size="default" data-slot="form-actions">
+                  <div class="flex items-center" data-slot="form-actions-destructive">
+                  <div class="flex gap-2 items-center ml-auto" data-slot="form-actions-end">
+                    <div>
+                      <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) hover:text-foreground inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-muted-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                        <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                        <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                          <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                            "Cancel"
+                    <div>
+                      <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-secondary-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="submit">
+                        <span aria-hidden="true" class="absolute bg-secondary duration-spring-fast ease-spring-fast group-active/button:brightness-90 group-active/button:shadow-none group-hover/button:brightness-95 inset-0 motion-reduce:transition-none pointer-events-none shadow-(--elevation-raised) transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                        <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                          <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                            "Confirm"
+          <div>
+            <button aria-label="Close dialog" class="-translate-y-1/2 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-4 absolute aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 right-6 rounded-(--radius-medium) shrink-0 size-(--control-height-small) text-muted-foreground top-[calc(1.5rem+var(--text-title-line-height)/2)] transition-[color,opacity] type-caption whitespace-nowrap" data-dialog-close="" data-slot="button" data-state="open" id="bits-<id>" tabindex="0" type="button">
+              <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+              <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                  <svg aria-hidden="true">
+                    <path>
       <section data-catalog-rendered-state="prompt">
+        <div class="absolute bg-black/40 dark:bg-black/80 inset-0 motion-reduce:animate-none motion-reduce:transition-none z-[var(--layer-modal)]" data-dialog-overlay="" data-slot="dialog-overlay" data-state="open" data-static-position="true" id="bits-<id>">
+        <div aria-describedby="bits-<id>" aria-labelledby="bits-<id>" aria-modal="true" class="bg-surface-3 dialog-editorial-content grid max-w-110 motion-reduce:animate-none motion-reduce:transition-none mx-auto outline-none overflow-y-auto overlay-surface overscroll-contain p-6 relative shadow-surface-3 text-popover-foreground w-full z-[var(--layer-modal)]" data-dialog-content="" data-overlay-surface="true" data-size="default" data-slot="dialog-content" data-state="open" data-static-position="true" data-surface-level="3" id="bits-<id>" role="dialog" tabindex="-1">
+          <form class="gap-4 grid" data-slot="form">
+            <fieldset class="contents">
+              <div class="flex flex-col gap-1.5 mb-4 min-w-0 pr-8" data-slot="dialog-header">
+                <div aria-level="2" class="font-bold text-foreground type-title" data-dialog-title="" data-slot="dialog-title" data-state="open" id="bits-<id>" role="heading">
+                  "Confirm service"
+                <div class="break-words text-muted-foreground type-caption" data-dialog-description="" data-slot="dialog-description" data-state="open" id="bits-<id>">
+                  "Review and confirm this catalog action."
+              <div class="flex gap-2 items-center justify-end mt-6" data-slot="dialog-footer">
+                <div class="flex gap-3 items-center justify-between" data-size="default" data-slot="form-actions">
+                  <div class="flex items-center" data-slot="form-actions-destructive">
+                  <div class="flex gap-2 items-center ml-auto" data-slot="form-actions-end">
+                    <div>
+                      <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) hover:text-foreground inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-muted-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                        <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                        <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                          <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                            "Cancel"
+                    <div>
+                      <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-secondary-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="submit">
+                        <span aria-hidden="true" class="absolute bg-secondary duration-spring-fast ease-spring-fast group-active/button:brightness-90 group-active/button:shadow-none group-hover/button:brightness-95 inset-0 motion-reduce:transition-none pointer-events-none shadow-(--elevation-raised) transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                        <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                          <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                            "Confirm"
+          <div>
+            <button aria-label="Close dialog" class="-translate-y-1/2 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-4 absolute aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 right-6 rounded-(--radius-medium) shrink-0 size-(--control-height-small) text-muted-foreground top-[calc(1.5rem+var(--text-title-line-height)/2)] transition-[color,opacity] type-caption whitespace-nowrap" data-dialog-close="" data-slot="button" data-state="open" id="bits-<id>" tabindex="0" type="button">
+              <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+              <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                  <svg aria-hidden="true">
+                    <path>
       <section data-catalog-rendered-state="alert">
+        <div class="absolute bg-black/40 dark:bg-black/80 inset-0 motion-reduce:animate-none motion-reduce:transition-none z-[var(--layer-modal)]" data-dialog-overlay="" data-slot="dialog-overlay" data-state="open" data-static-position="true" id="bits-<id>">
+        <div aria-describedby="bits-<id>" aria-labelledby="bits-<id>" aria-modal="true" class="bg-surface-3 dialog-editorial-content grid max-w-110 motion-reduce:animate-none motion-reduce:transition-none mx-auto outline-none overflow-y-auto overlay-surface overscroll-contain p-6 relative shadow-surface-3 text-popover-foreground w-full z-[var(--layer-modal)]" data-dialog-content="" data-overlay-surface="true" data-size="default" data-slot="dialog-content" data-state="open" data-static-position="true" data-surface-level="3" id="bits-<id>" role="dialog" tabindex="-1">
+          <form class="gap-4 grid" data-slot="form">
+            <fieldset class="contents">
+              <div class="flex flex-col gap-1.5 mb-4 min-w-0 pr-8" data-slot="dialog-header">
+                <div aria-level="2" class="font-bold text-foreground type-title" data-dialog-title="" data-slot="dialog-title" data-state="open" id="bits-<id>" role="heading">
+                  "Confirm service"
+                <div class="break-words text-muted-foreground type-caption" data-dialog-description="" data-slot="dialog-description" data-state="open" id="bits-<id>">
+                  "Review and confirm this catalog action."
+              <div class="flex gap-2 items-center justify-end mt-6" data-slot="dialog-footer">
+                <div class="flex gap-3 items-center justify-between" data-size="default" data-slot="form-actions">
+                  <div class="flex items-center" data-slot="form-actions-destructive">
+                  <div class="flex gap-2 items-center ml-auto" data-slot="form-actions-end">
+                    <div>
+                      <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-secondary-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="submit">
+                        <span aria-hidden="true" class="absolute bg-secondary duration-spring-fast ease-spring-fast group-active/button:brightness-90 group-active/button:shadow-none group-hover/button:brightness-95 inset-0 motion-reduce:transition-none pointer-events-none shadow-(--elevation-raised) transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                        <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                          <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                            "Confirm"
+          <div>
+            <button aria-label="Close dialog" class="-translate-y-1/2 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-4 absolute aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 right-6 rounded-(--radius-medium) shrink-0 size-(--control-height-small) text-muted-foreground top-[calc(1.5rem+var(--text-title-line-height)/2)] transition-[color,opacity] type-caption whitespace-nowrap" data-dialog-close="" data-slot="button" data-state="open" id="bits-<id>" tabindex="0" type="button">
+              <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+              <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                  <svg aria-hidden="true">
+                    <path>
       <section data-catalog-rendered-state="queued">
+        <div class="absolute bg-black/40 dark:bg-black/80 inset-0 motion-reduce:animate-none motion-reduce:transition-none z-[var(--layer-modal)]" data-dialog-overlay="" data-slot="dialog-overlay" data-state="open" data-static-position="true" id="bits-<id>">
+        <div aria-describedby="bits-<id>" aria-labelledby="bits-<id>" aria-modal="true" class="bg-surface-3 dialog-editorial-content grid max-w-110 motion-reduce:animate-none motion-reduce:transition-none mx-auto outline-none overflow-y-auto overlay-surface overscroll-contain p-6 relative shadow-surface-3 text-popover-foreground w-full z-[var(--layer-modal)]" data-dialog-content="" data-overlay-surface="true" data-size="default" data-slot="dialog-content" data-state="open" data-static-position="true" data-surface-level="3" id="bits-<id>" role="dialog" tabindex="-1">
+          <form class="gap-4 grid" data-slot="form">
+            <fieldset class="contents">
+              <div class="flex flex-col gap-1.5 mb-4 min-w-0 pr-8" data-slot="dialog-header">
+                <div aria-level="2" class="font-bold text-foreground type-title" data-dialog-title="" data-slot="dialog-title" data-state="open" id="bits-<id>" role="heading">
+                  "Confirm service"
+                <div class="break-words text-muted-foreground type-caption" data-dialog-description="" data-slot="dialog-description" data-state="open" id="bits-<id>">
+                  "Review and confirm this catalog action."
+              <div class="flex gap-2 items-center justify-end mt-6" data-slot="dialog-footer">
+                <div class="flex gap-3 items-center justify-between" data-size="default" data-slot="form-actions">
+                  <div class="flex items-center" data-slot="form-actions-destructive">
+                  <div class="flex gap-2 items-center ml-auto" data-slot="form-actions-end">
+                    <div>
+                      <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) hover:text-foreground inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-muted-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                        <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                        <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                          <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                            "Cancel"
+                    <div>
+                      <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-secondary-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="submit">
+                        <span aria-hidden="true" class="absolute bg-secondary duration-spring-fast ease-spring-fast group-active/button:brightness-90 group-active/button:shadow-none group-hover/button:brightness-95 inset-0 motion-reduce:transition-none pointer-events-none shadow-(--elevation-raised) transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                        <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                          <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                            "Confirm"
+          <div>
+            <button aria-label="Close dialog" class="-translate-y-1/2 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-4 absolute aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 right-6 rounded-(--radius-medium) shrink-0 size-(--control-height-small) text-muted-foreground top-[calc(1.5rem+var(--text-title-line-height)/2)] transition-[color,opacity] type-caption whitespace-nowrap" data-dialog-close="" data-slot="button" data-state="open" id="bits-<id>" tabindex="0" type="button">
+              <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+              <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                  <svg aria-hidden="true">
+                    <path>
       <section data-catalog-rendered-state="busy">
+        <div class="absolute bg-black/40 dark:bg-black/80 inset-0 motion-reduce:animate-none motion-reduce:transition-none z-[var(--layer-modal)]" data-dialog-overlay="" data-slot="dialog-overlay" data-state="open" data-static-position="true" id="bits-<id>">
+        <div aria-describedby="bits-<id>" aria-labelledby="bits-<id>" aria-modal="true" class="bg-surface-3 dialog-editorial-content grid max-w-110 motion-reduce:animate-none motion-reduce:transition-none mx-auto outline-none overflow-y-auto overlay-surface overscroll-contain p-6 relative shadow-surface-3 text-popover-foreground w-full z-[var(--layer-modal)]" data-dialog-content="" data-overlay-surface="true" data-size="default" data-slot="dialog-content" data-state="open" data-static-position="true" data-surface-level="3" id="bits-<id>" role="dialog" tabindex="-1">
+          <form aria-busy="true" class="gap-4 grid" data-slot="form">
+            <fieldset aria-busy="true" class="contents" disabled="">
+              <div class="flex flex-col gap-1.5 mb-4 min-w-0 pr-8" data-slot="dialog-header">
+                <div aria-level="2" class="font-bold text-foreground type-title" data-dialog-title="" data-slot="dialog-title" data-state="open" id="bits-<id>" role="heading">
+                  "Confirm service"
+                <div class="break-words text-muted-foreground type-caption" data-dialog-description="" data-slot="dialog-description" data-state="open" id="bits-<id>">
+                  "Review and confirm this catalog action."
+              <div class="flex gap-2 items-center justify-end mt-6" data-slot="dialog-footer">
+                <div class="flex gap-3 items-center justify-between" data-size="default" data-slot="form-actions">
+                  <div class="flex items-center" data-slot="form-actions-destructive">
+                  <div class="flex gap-2 items-center ml-auto" data-slot="form-actions-end">
+                    <div>
+                      <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) hover:text-foreground inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-muted-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" disabled="" type="button">
+                        <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                        <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                          <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                            "Cancel"
+                    <div>
+                      <button aria-busy="true" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-secondary-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" disabled="" type="submit">
+                        <span aria-hidden="true" class="absolute bg-secondary duration-spring-fast ease-spring-fast group-active/button:brightness-90 group-active/button:shadow-none group-hover/button:brightness-95 inset-0 motion-reduce:transition-none pointer-events-none shadow-(--elevation-raised) transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                        <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none opacity-0 relative" data-slot="button-content">
+                          <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                            "Confirm"
+                        <span aria-hidden="true" class="absolute flex inset-0 items-center justify-center pointer-events-none" data-slot="button-spinner">
+                          <svg aria-label="Loading" class="intent-mark-loader size-4! svelte-<scope>" data-motion-state="playing" data-playing="true" data-slot="intent-mark-loader" data-variant="bloom" role="status">
+                            <g aria-hidden="true" data-mark-layer="bloom">
+                              <path class="svelte-<scope>" data-mark-arm="0">
+                              <path class="svelte-<scope>" data-mark-arm="1">
+                              <path class="svelte-<scope>" data-mark-arm="2">
+                              <path class="svelte-<scope>" data-mark-arm="3">
+                              <path class="svelte-<scope>" data-mark-arm="4">
+          <div>
+            <button aria-label="Close dialog" class="-translate-y-1/2 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-4 absolute aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 right-6 rounded-(--radius-medium) shrink-0 size-(--control-height-small) text-muted-foreground top-[calc(1.5rem+var(--text-title-line-height)/2)] transition-[color,opacity] type-caption whitespace-nowrap" data-dialog-close="" data-slot="button" data-state="open" disabled="" id="bits-<id>" tabindex="0" type="button">
+              <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+              <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                  <svg aria-hidden="true">
+                    <path>
       <section data-catalog-rendered-state="reduced-motion">
-  <div class="bg-black/40 dark:bg-black/80 fixed inset-0 motion-reduce:animate-none motion-reduce:transition-none z-[var(--layer-modal)]" data-dialog-overlay="" data-slot="dialog-overlay" data-state="open" id="bits-<id>">
-  <div aria-describedby="bits-<id>" aria-labelledby="bits-<id>" aria-modal="true" class="-translate-x-1/2 -translate-y-1/2 bg-surface-3 dialog-editorial-content fixed grid left-1/2 max-w-110 motion-reduce:animate-none motion-reduce:transition-none outline-none overflow-y-auto overlay-surface overscroll-contain p-6 shadow-surface-3 text-popover-foreground top-1/2 w-full z-[var(--layer-modal)]" data-dialog-content="" data-overlay-surface="true" data-size="default" data-slot="dialog-content" data-state="open" data-surface-level="3" id="bits-<id>" role="dialog" tabindex="-1">
-    <form class="gap-4 grid" data-slot="form">
-      <fieldset class="contents">
-        <div class="flex flex-col gap-1.5 mb-4 min-w-0 pr-8" data-slot="dialog-header">
-          <div aria-level="2" class="font-bold text-foreground type-title" data-dialog-title="" data-slot="dialog-title" data-state="open" id="bits-<id>" role="heading">
-            "Confirm service"
-          <div class="break-words text-muted-foreground type-caption" data-dialog-description="" data-slot="dialog-description" data-state="open" id="bits-<id>">
-            "Review and confirm this catalog action."
-        <div class="flex gap-2 items-center justify-end mt-6" data-slot="dialog-footer">
-          <div class="flex gap-3 items-center justify-between" data-size="default" data-slot="form-actions">
-            <div class="flex items-center" data-slot="form-actions-destructive">
-            <div class="flex gap-2 items-center ml-auto" data-slot="form-actions-end">
-              <div>
-                <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) hover:text-foreground inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-muted-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
-                  <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
-                  <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
-                    <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                      "Cancel"
-              <div>
-                <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-secondary-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="submit">
-                  <span aria-hidden="true" class="absolute bg-secondary duration-spring-fast ease-spring-fast group-active/button:brightness-90 group-active/button:shadow-none group-hover/button:brightness-95 inset-0 motion-reduce:transition-none pointer-events-none shadow-(--elevation-raised) transition-[box-shadow,background-color,filter]" data-slot="button-surface">
-                  <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
-                    <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                      "Confirm"
-    <div>
-      <button aria-label="Close dialog" class="-translate-y-1/2 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-4 absolute aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 right-6 rounded-(--radius-medium) shrink-0 size-(--control-height-small) text-muted-foreground top-[calc(1.5rem+var(--text-title-line-height)/2)] transition-[color,opacity] type-caption whitespace-nowrap" data-dialog-close="" data-slot="button" data-state="open" id="bits-<id>" tabindex="0" type="button">
-        <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
-        <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
-          <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-            <svg aria-hidden="true">
-              <path>
-  <div class="bg-black/40 dark:bg-black/80 fixed inset-0 motion-reduce:animate-none motion-reduce:transition-none z-[var(--layer-modal)]" data-dialog-overlay="" data-slot="dialog-overlay" data-state="open" id="bits-<id>">
-  <div aria-describedby="bits-<id>" aria-labelledby="bits-<id>" aria-modal="true" class="-translate-x-1/2 -translate-y-1/2 bg-surface-3 dialog-editorial-content fixed grid left-1/2 max-w-110 motion-reduce:animate-none motion-reduce:transition-none outline-none overflow-y-auto overlay-surface overscroll-contain p-6 shadow-surface-3 text-popover-foreground top-1/2 w-full z-[var(--layer-modal)]" data-dialog-content="" data-overlay-surface="true" data-size="default" data-slot="dialog-content" data-state="open" data-surface-level="3" id="bits-<id>" role="dialog" tabindex="-1">
-    <form class="gap-4 grid" data-slot="form">
-      <fieldset class="contents">
-        <div class="flex flex-col gap-1.5 mb-4 min-w-0 pr-8" data-slot="dialog-header">
-          <div aria-level="2" class="font-bold text-foreground type-title" data-dialog-title="" data-slot="dialog-title" data-state="open" id="bits-<id>" role="heading">
-            "Confirm service"
-          <div class="break-words text-muted-foreground type-caption" data-dialog-description="" data-slot="dialog-description" data-state="open" id="bits-<id>">
-            "Review and confirm this catalog action."
-        <div class="flex gap-2 items-center justify-end mt-6" data-slot="dialog-footer">
-          <div class="flex gap-3 items-center justify-between" data-size="default" data-slot="form-actions">
-            <div class="flex items-center" data-slot="form-actions-destructive">
-            <div class="flex gap-2 items-center ml-auto" data-slot="form-actions-end">
-              <div>
-                <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) hover:text-foreground inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-muted-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
-                  <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
-                  <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
-                    <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                      "Cancel"
-              <div>
-                <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-secondary-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="submit">
-                  <span aria-hidden="true" class="absolute bg-secondary duration-spring-fast ease-spring-fast group-active/button:brightness-90 group-active/button:shadow-none group-hover/button:brightness-95 inset-0 motion-reduce:transition-none pointer-events-none shadow-(--elevation-raised) transition-[box-shadow,background-color,filter]" data-slot="button-surface">
-                  <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
-                    <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                      "Confirm"
-    <div>
-      <button aria-label="Close dialog" class="-translate-y-1/2 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-4 absolute aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 right-6 rounded-(--radius-medium) shrink-0 size-(--control-height-small) text-muted-foreground top-[calc(1.5rem+var(--text-title-line-height)/2)] transition-[color,opacity] type-caption whitespace-nowrap" data-dialog-close="" data-slot="button" data-state="open" id="bits-<id>" tabindex="0" type="button">
-        <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
-        <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
-          <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-            <svg aria-hidden="true">
-              <path>
-  <div class="bg-black/40 dark:bg-black/80 fixed inset-0 motion-reduce:animate-none motion-reduce:transition-none z-[var(--layer-modal)]" data-dialog-overlay="" data-slot="dialog-overlay" data-state="open" id="bits-<id>">
-  <div aria-describedby="bits-<id>" aria-labelledby="bits-<id>" aria-modal="true" class="-translate-x-1/2 -translate-y-1/2 bg-surface-3 dialog-editorial-content fixed grid left-1/2 max-w-110 motion-reduce:animate-none motion-reduce:transition-none outline-none overflow-y-auto overlay-surface overscroll-contain p-6 shadow-surface-3 text-popover-foreground top-1/2 w-full z-[var(--layer-modal)]" data-dialog-content="" data-overlay-surface="true" data-size="default" data-slot="dialog-content" data-state="open" data-surface-level="3" id="bits-<id>" role="dialog" tabindex="-1">
-    <form class="gap-4 grid" data-slot="form">
-      <fieldset class="contents">
-        <div class="flex flex-col gap-1.5 mb-4 min-w-0 pr-8" data-slot="dialog-header">
-          <div aria-level="2" class="font-bold text-foreground type-title" data-dialog-title="" data-slot="dialog-title" data-state="open" id="bits-<id>" role="heading">
-            "Confirm service"
-          <div class="break-words text-muted-foreground type-caption" data-dialog-description="" data-slot="dialog-description" data-state="open" id="bits-<id>">
-            "Review and confirm this catalog action."
-        <div class="flex gap-2 items-center justify-end mt-6" data-slot="dialog-footer">
-          <div class="flex gap-3 items-center justify-between" data-size="default" data-slot="form-actions">
-            <div class="flex items-center" data-slot="form-actions-destructive">
-            <div class="flex gap-2 items-center ml-auto" data-slot="form-actions-end">
-              <div>
-                <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-secondary-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="submit">
-                  <span aria-hidden="true" class="absolute bg-secondary duration-spring-fast ease-spring-fast group-active/button:brightness-90 group-active/button:shadow-none group-hover/button:brightness-95 inset-0 motion-reduce:transition-none pointer-events-none shadow-(--elevation-raised) transition-[box-shadow,background-color,filter]" data-slot="button-surface">
-                  <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
-                    <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                      "Confirm"
-    <div>
-      <button aria-label="Close dialog" class="-translate-y-1/2 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-4 absolute aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 right-6 rounded-(--radius-medium) shrink-0 size-(--control-height-small) text-muted-foreground top-[calc(1.5rem+var(--text-title-line-height)/2)] transition-[color,opacity] type-caption whitespace-nowrap" data-dialog-close="" data-slot="button" data-state="open" id="bits-<id>" tabindex="0" type="button">
-        <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
-        <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
-          <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-            <svg aria-hidden="true">
-              <path>
-  <div class="bg-black/40 dark:bg-black/80 fixed inset-0 motion-reduce:animate-none motion-reduce:transition-none z-[var(--layer-modal)]" data-dialog-overlay="" data-slot="dialog-overlay" data-state="open" id="bits-<id>">
-  <div aria-describedby="bits-<id>" aria-labelledby="bits-<id>" aria-modal="true" class="-translate-x-1/2 -translate-y-1/2 bg-surface-3 dialog-editorial-content fixed grid left-1/2 max-w-110 motion-reduce:animate-none motion-reduce:transition-none outline-none overflow-y-auto overlay-surface overscroll-contain p-6 shadow-surface-3 text-popover-foreground top-1/2 w-full z-[var(--layer-modal)]" data-dialog-content="" data-overlay-surface="true" data-size="default" data-slot="dialog-content" data-state="open" data-surface-level="3" id="bits-<id>" role="dialog" tabindex="-1">
-    <form class="gap-4 grid" data-slot="form">
-      <fieldset class="contents">
-        <div class="flex flex-col gap-1.5 mb-4 min-w-0 pr-8" data-slot="dialog-header">
-          <div aria-level="2" class="font-bold text-foreground type-title" data-dialog-title="" data-slot="dialog-title" data-state="open" id="bits-<id>" role="heading">
-            "Confirm service"
-          <div class="break-words text-muted-foreground type-caption" data-dialog-description="" data-slot="dialog-description" data-state="open" id="bits-<id>">
-            "Review and confirm this catalog action."
-        <div class="flex gap-2 items-center justify-end mt-6" data-slot="dialog-footer">
-          <div class="flex gap-3 items-center justify-between" data-size="default" data-slot="form-actions">
-            <div class="flex items-center" data-slot="form-actions-destructive">
-            <div class="flex gap-2 items-center ml-auto" data-slot="form-actions-end">
-              <div>
-                <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) hover:text-foreground inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-muted-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
-                  <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
-                  <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
-                    <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                      "Cancel"
-              <div>
-                <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-secondary-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="submit">
-                  <span aria-hidden="true" class="absolute bg-secondary duration-spring-fast ease-spring-fast group-active/button:brightness-90 group-active/button:shadow-none group-hover/button:brightness-95 inset-0 motion-reduce:transition-none pointer-events-none shadow-(--elevation-raised) transition-[box-shadow,background-color,filter]" data-slot="button-surface">
-                  <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
-                    <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                      "Confirm"
-    <div>
-      <button aria-label="Close dialog" class="-translate-y-1/2 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-4 absolute aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 right-6 rounded-(--radius-medium) shrink-0 size-(--control-height-small) text-muted-foreground top-[calc(1.5rem+var(--text-title-line-height)/2)] transition-[color,opacity] type-caption whitespace-nowrap" data-dialog-close="" data-slot="button" data-state="open" id="bits-<id>" tabindex="0" type="button">
-        <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
-        <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
-          <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-            <svg aria-hidden="true">
-              <path>
-  <div class="bg-black/40 dark:bg-black/80 fixed inset-0 motion-reduce:animate-none motion-reduce:transition-none z-[var(--layer-modal)]" data-dialog-overlay="" data-slot="dialog-overlay" data-state="open" id="bits-<id>">
-  <div aria-describedby="bits-<id>" aria-labelledby="bits-<id>" aria-modal="true" class="-translate-x-1/2 -translate-y-1/2 bg-surface-3 dialog-editorial-content fixed grid left-1/2 max-w-110 motion-reduce:animate-none motion-reduce:transition-none outline-none overflow-y-auto overlay-surface overscroll-contain p-6 shadow-surface-3 text-popover-foreground top-1/2 w-full z-[var(--layer-modal)]" data-dialog-content="" data-overlay-surface="true" data-size="default" data-slot="dialog-content" data-state="open" data-surface-level="3" id="bits-<id>" role="dialog" tabindex="-1">
-    <form aria-busy="true" class="gap-4 grid" data-slot="form">
-      <fieldset aria-busy="true" class="contents" disabled="">
-        <div class="flex flex-col gap-1.5 mb-4 min-w-0 pr-8" data-slot="dialog-header">
-          <div aria-level="2" class="font-bold text-foreground type-title" data-dialog-title="" data-slot="dialog-title" data-state="open" id="bits-<id>" role="heading">
-            "Confirm service"
-          <div class="break-words text-muted-foreground type-caption" data-dialog-description="" data-slot="dialog-description" data-state="open" id="bits-<id>">
-            "Review and confirm this catalog action."
-        <div class="flex gap-2 items-center justify-end mt-6" data-slot="dialog-footer">
-          <div class="flex gap-3 items-center justify-between" data-size="default" data-slot="form-actions">
-            <div class="flex items-center" data-slot="form-actions-destructive">
-            <div class="flex gap-2 items-center ml-auto" data-slot="form-actions-end">
-              <div>
-                <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) hover:text-foreground inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-muted-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" disabled="" type="button">
-                  <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
-                  <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
-                    <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                      "Cancel"
-              <div>
-                <button aria-busy="true" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-secondary-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" disabled="" type="submit">
-                  <span aria-hidden="true" class="absolute bg-secondary duration-spring-fast ease-spring-fast group-active/button:brightness-90 group-active/button:shadow-none group-hover/button:brightness-95 inset-0 motion-reduce:transition-none pointer-events-none shadow-(--elevation-raised) transition-[box-shadow,background-color,filter]" data-slot="button-surface">
-                  <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none opacity-0 relative" data-slot="button-content">
-                    <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                      "Confirm"
-                  <span aria-hidden="true" class="absolute flex inset-0 items-center justify-center pointer-events-none" data-slot="button-spinner">
-                    <svg aria-label="Loading" class="intent-mark-loader size-4! svelte-<scope>" data-motion-state="playing" data-playing="true" data-slot="intent-mark-loader" data-variant="bloom" role="status">
-                      <g aria-hidden="true" data-mark-layer="bloom">
-                        <path class="svelte-<scope>" data-mark-arm="0">
-                        <path class="svelte-<scope>" data-mark-arm="1">
-                        <path class="svelte-<scope>" data-mark-arm="2">
-                        <path class="svelte-<scope>" data-mark-arm="3">
-                        <path class="svelte-<scope>" data-mark-arm="4">
-    <div>
-      <button aria-label="Close dialog" class="-translate-y-1/2 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-4 absolute aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 right-6 rounded-(--radius-medium) shrink-0 size-(--control-height-small) text-muted-foreground top-[calc(1.5rem+var(--text-title-line-height)/2)] transition-[color,opacity] type-caption whitespace-nowrap" data-dialog-close="" data-slot="button" data-state="open" disabled="" id="bits-<id>" tabindex="0" type="button">
-        <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
-        <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
-          <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-            <svg aria-hidden="true">
-              <path>
-  <div class="bg-black/40 dark:bg-black/80 fixed inset-0 motion-reduce:animate-none motion-reduce:transition-none z-[var(--layer-modal)]" data-dialog-overlay="" data-slot="dialog-overlay" data-state="open" id="bits-<id>">
-  <div aria-describedby="bits-<id>" aria-labelledby="bits-<id>" aria-modal="true" class="-translate-x-1/2 -translate-y-1/2 bg-surface-3 dialog-editorial-content fixed grid left-1/2 max-w-110 motion-reduce:animate-none motion-reduce:transition-none outline-none overflow-y-auto overlay-surface overscroll-contain p-6 shadow-surface-3 text-popover-foreground top-1/2 w-full z-[var(--layer-modal)]" data-dialog-content="" data-overlay-surface="true" data-size="default" data-slot="dialog-content" data-state="open" data-surface-level="3" id="bits-<id>" role="dialog" tabindex="-1">
-    <form class="gap-4 grid" data-slot="form">
-      <fieldset class="contents">
-        <div class="flex flex-col gap-1.5 mb-4 min-w-0 pr-8" data-slot="dialog-header">
-          <div aria-level="2" class="font-bold text-foreground type-title" data-dialog-title="" data-slot="dialog-title" data-state="open" id="bits-<id>" role="heading">
-            "Confirm service"
-          <div class="break-words text-muted-foreground type-caption" data-dialog-description="" data-slot="dialog-description" data-state="open" id="bits-<id>">
-            "Review and confirm this catalog action."
-        <div class="flex gap-2 items-center justify-end mt-6" data-slot="dialog-footer">
-          <div class="flex gap-3 items-center justify-between" data-size="default" data-slot="form-actions">
-            <div class="flex items-center" data-slot="form-actions-destructive">
-            <div class="flex gap-2 items-center ml-auto" data-slot="form-actions-end">
-              <div>
-                <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) hover:text-foreground inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-muted-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
-                  <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
-                  <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
-                    <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                      "Cancel"
-              <div>
-                <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-secondary-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="submit">
-                  <span aria-hidden="true" class="absolute bg-secondary duration-spring-fast ease-spring-fast group-active/button:brightness-90 group-active/button:shadow-none group-hover/button:brightness-95 inset-0 motion-reduce:transition-none pointer-events-none shadow-(--elevation-raised) transition-[box-shadow,background-color,filter]" data-slot="button-surface">
-                  <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
-                    <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                      "Confirm"
-    <div>
-      <button aria-label="Close dialog" class="-translate-y-1/2 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-4 absolute aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 right-6 rounded-(--radius-medium) shrink-0 size-(--control-height-small) text-muted-foreground top-[calc(1.5rem+var(--text-title-line-height)/2)] transition-[color,opacity] type-caption whitespace-nowrap" data-dialog-close="" data-slot="button" data-state="open" id="bits-<id>" tabindex="0" type="button">
-        <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
-        <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
-          <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-            <svg aria-hidden="true">
-              <path>",
+        <div class="absolute bg-black/40 dark:bg-black/80 inset-0 motion-reduce:animate-none motion-reduce:transition-none z-[var(--layer-modal)]" data-dialog-overlay="" data-slot="dialog-overlay" data-state="open" data-static-position="true" id="bits-<id>">
+        <div aria-describedby="bits-<id>" aria-labelledby="bits-<id>" aria-modal="true" class="bg-surface-3 dialog-editorial-content grid max-w-110 motion-reduce:animate-none motion-reduce:transition-none mx-auto outline-none overflow-y-auto overlay-surface overscroll-contain p-6 relative shadow-surface-3 text-popover-foreground w-full z-[var(--layer-modal)]" data-dialog-content="" data-overlay-surface="true" data-size="default" data-slot="dialog-content" data-state="open" data-static-position="true" data-surface-level="3" id="bits-<id>" role="dialog" tabindex="-1">
+          <form class="gap-4 grid" data-slot="form">
+            <fieldset class="contents">
+              <div class="flex flex-col gap-1.5 mb-4 min-w-0 pr-8" data-slot="dialog-header">
+                <div aria-level="2" class="font-bold text-foreground type-title" data-dialog-title="" data-slot="dialog-title" data-state="open" id="bits-<id>" role="heading">
+                  "Confirm service"
+                <div class="break-words text-muted-foreground type-caption" data-dialog-description="" data-slot="dialog-description" data-state="open" id="bits-<id>">
+                  "Review and confirm this catalog action."
+              <div class="flex gap-2 items-center justify-end mt-6" data-slot="dialog-footer">
+                <div class="flex gap-3 items-center justify-between" data-size="default" data-slot="form-actions">
+                  <div class="flex items-center" data-slot="form-actions-destructive">
+                  <div class="flex gap-2 items-center ml-auto" data-slot="form-actions-end">
+                    <div>
+                      <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) hover:text-foreground inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-muted-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                        <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                        <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                          <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                            "Cancel"
+                    <div>
+                      <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-secondary-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="submit">
+                        <span aria-hidden="true" class="absolute bg-secondary duration-spring-fast ease-spring-fast group-active/button:brightness-90 group-active/button:shadow-none group-hover/button:brightness-95 inset-0 motion-reduce:transition-none pointer-events-none shadow-(--elevation-raised) transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                        <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                          <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                            "Confirm"
+          <div>
+            <button aria-label="Close dialog" class="-translate-y-1/2 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-4 absolute aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 right-6 rounded-(--radius-medium) shrink-0 size-(--control-height-small) text-muted-foreground top-[calc(1.5rem+var(--text-title-line-height)/2)] transition-[color,opacity] type-caption whitespace-nowrap" data-dialog-close="" data-slot="button" data-state="open" id="bits-<id>" tabindex="0" type="button">
+              <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+              <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                  <svg aria-hidden="true">
+                    <path>",
 }
 `;
 
@@ -1637,79 +1637,79 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:confirm:dest
   <div>
     <div data-catalog-renderer-fixture="destructive-confirm" data-pattern-contract="confirm">
       <section data-catalog-rendered-state="default">
+        <div class="absolute bg-black/40 dark:bg-black/80 inset-0 motion-reduce:animate-none motion-reduce:transition-none z-[var(--layer-modal)]" data-dialog-overlay="" data-slot="dialog-overlay" data-state="open" data-static-position="true" id="bits-<id>">
+        <div aria-describedby="bits-<id>" aria-labelledby="bits-<id>" aria-modal="true" class="bg-surface-3 dialog-editorial-content grid max-w-110 motion-reduce:animate-none motion-reduce:transition-none mx-auto outline-none overflow-y-auto overlay-surface overscroll-contain p-6 relative shadow-surface-3 text-popover-foreground w-full z-[var(--layer-modal)]" data-dialog-content="" data-overlay-surface="true" data-size="default" data-slot="dialog-content" data-state="open" data-static-position="true" data-surface-level="3" id="bits-<id>" role="dialog" tabindex="-1">
+          <form class="gap-4 grid" data-slot="form">
+            <fieldset class="contents">
+              <div class="flex flex-col gap-1.5 mb-4 min-w-0 pr-8" data-slot="dialog-header">
+                <div aria-level="2" class="font-bold text-foreground type-title" data-dialog-title="" data-slot="dialog-title" data-state="open" id="bits-<id>" role="heading">
+                  "Remove workspace"
+                <div class="break-words text-muted-foreground type-caption" data-dialog-description="" data-slot="dialog-description" data-state="open" id="bits-<id>">
+                  "This action cannot be undone."
+              <div class="flex gap-2 items-center justify-end mt-6" data-slot="dialog-footer">
+                <div class="flex gap-3 items-center justify-between" data-size="default" data-slot="form-actions">
+                  <div class="flex items-center" data-slot="form-actions-destructive">
+                  <div class="flex gap-2 items-center ml-auto" data-slot="form-actions-end">
+                    <div>
+                      <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) hover:text-foreground inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-muted-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                        <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                        <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                          <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                            "Cancel"
+                    <div>
+                      <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-danger border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast focus-visible:-outline-offset-1 focus-visible:outline font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-danger-background transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="submit">
+                        <span aria-hidden="true" class="absolute bg-danger duration-spring-fast ease-spring-fast group-active/button:brightness-90 group-active/button:shadow-none group-hover/button:brightness-95 inset-0 motion-reduce:transition-none pointer-events-none shadow-(--elevation-raised) transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                        <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                          <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                            "Remove workspace"
+          <div>
+            <button aria-label="Close dialog" class="-translate-y-1/2 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-4 absolute aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 right-6 rounded-(--radius-medium) shrink-0 size-(--control-height-small) text-muted-foreground top-[calc(1.5rem+var(--text-title-line-height)/2)] transition-[color,opacity] type-caption whitespace-nowrap" data-dialog-close="" data-slot="button" data-state="open" id="bits-<id>" tabindex="0" type="button">
+              <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+              <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                  <svg aria-hidden="true">
+                    <path>
       <section data-catalog-rendered-state="busy">
-  <div class="bg-black/40 dark:bg-black/80 fixed inset-0 motion-reduce:animate-none motion-reduce:transition-none z-[var(--layer-modal)]" data-dialog-overlay="" data-slot="dialog-overlay" data-state="open" id="bits-<id>">
-  <div aria-describedby="bits-<id>" aria-labelledby="bits-<id>" aria-modal="true" class="-translate-x-1/2 -translate-y-1/2 bg-surface-3 dialog-editorial-content fixed grid left-1/2 max-w-110 motion-reduce:animate-none motion-reduce:transition-none outline-none overflow-y-auto overlay-surface overscroll-contain p-6 shadow-surface-3 text-popover-foreground top-1/2 w-full z-[var(--layer-modal)]" data-dialog-content="" data-overlay-surface="true" data-size="default" data-slot="dialog-content" data-state="open" data-surface-level="3" id="bits-<id>" role="dialog" tabindex="-1">
-    <form class="gap-4 grid" data-slot="form">
-      <fieldset class="contents">
-        <div class="flex flex-col gap-1.5 mb-4 min-w-0 pr-8" data-slot="dialog-header">
-          <div aria-level="2" class="font-bold text-foreground type-title" data-dialog-title="" data-slot="dialog-title" data-state="open" id="bits-<id>" role="heading">
-            "Remove workspace"
-          <div class="break-words text-muted-foreground type-caption" data-dialog-description="" data-slot="dialog-description" data-state="open" id="bits-<id>">
-            "This action cannot be undone."
-        <div class="flex gap-2 items-center justify-end mt-6" data-slot="dialog-footer">
-          <div class="flex gap-3 items-center justify-between" data-size="default" data-slot="form-actions">
-            <div class="flex items-center" data-slot="form-actions-destructive">
-            <div class="flex gap-2 items-center ml-auto" data-slot="form-actions-end">
-              <div>
-                <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) hover:text-foreground inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-muted-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
-                  <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
-                  <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
-                    <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                      "Cancel"
-              <div>
-                <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-danger border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast focus-visible:-outline-offset-1 focus-visible:outline font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-danger-background transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="submit">
-                  <span aria-hidden="true" class="absolute bg-danger duration-spring-fast ease-spring-fast group-active/button:brightness-90 group-active/button:shadow-none group-hover/button:brightness-95 inset-0 motion-reduce:transition-none pointer-events-none shadow-(--elevation-raised) transition-[box-shadow,background-color,filter]" data-slot="button-surface">
-                  <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
-                    <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                      "Remove workspace"
-    <div>
-      <button aria-label="Close dialog" class="-translate-y-1/2 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-4 absolute aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 right-6 rounded-(--radius-medium) shrink-0 size-(--control-height-small) text-muted-foreground top-[calc(1.5rem+var(--text-title-line-height)/2)] transition-[color,opacity] type-caption whitespace-nowrap" data-dialog-close="" data-slot="button" data-state="open" id="bits-<id>" tabindex="0" type="button">
-        <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
-        <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
-          <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-            <svg aria-hidden="true">
-              <path>
-  <div class="bg-black/40 dark:bg-black/80 fixed inset-0 motion-reduce:animate-none motion-reduce:transition-none z-[var(--layer-modal)]" data-dialog-overlay="" data-slot="dialog-overlay" data-state="open" id="bits-<id>">
-  <div aria-describedby="bits-<id>" aria-labelledby="bits-<id>" aria-modal="true" class="-translate-x-1/2 -translate-y-1/2 bg-surface-3 dialog-editorial-content fixed grid left-1/2 max-w-110 motion-reduce:animate-none motion-reduce:transition-none outline-none overflow-y-auto overlay-surface overscroll-contain p-6 shadow-surface-3 text-popover-foreground top-1/2 w-full z-[var(--layer-modal)]" data-dialog-content="" data-overlay-surface="true" data-size="default" data-slot="dialog-content" data-state="open" data-surface-level="3" id="bits-<id>" role="dialog" tabindex="-1">
-    <form aria-busy="true" class="gap-4 grid" data-slot="form">
-      <fieldset aria-busy="true" class="contents" disabled="">
-        <div class="flex flex-col gap-1.5 mb-4 min-w-0 pr-8" data-slot="dialog-header">
-          <div aria-level="2" class="font-bold text-foreground type-title" data-dialog-title="" data-slot="dialog-title" data-state="open" id="bits-<id>" role="heading">
-            "Remove workspace"
-          <div class="break-words text-muted-foreground type-caption" data-dialog-description="" data-slot="dialog-description" data-state="open" id="bits-<id>">
-            "This action cannot be undone."
-        <div class="flex gap-2 items-center justify-end mt-6" data-slot="dialog-footer">
-          <div class="flex gap-3 items-center justify-between" data-size="default" data-slot="form-actions">
-            <div class="flex items-center" data-slot="form-actions-destructive">
-            <div class="flex gap-2 items-center ml-auto" data-slot="form-actions-end">
-              <div>
-                <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) hover:text-foreground inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-muted-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" disabled="" type="button">
-                  <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
-                  <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
-                    <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                      "Cancel"
-              <div>
-                <button aria-busy="true" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-danger border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast focus-visible:-outline-offset-1 focus-visible:outline font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-danger-background transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" disabled="" type="submit">
-                  <span aria-hidden="true" class="absolute bg-danger duration-spring-fast ease-spring-fast group-active/button:brightness-90 group-active/button:shadow-none group-hover/button:brightness-95 inset-0 motion-reduce:transition-none pointer-events-none shadow-(--elevation-raised) transition-[box-shadow,background-color,filter]" data-slot="button-surface">
-                  <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none opacity-0 relative" data-slot="button-content">
-                    <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                      "Remove workspace"
-                  <span aria-hidden="true" class="absolute flex inset-0 items-center justify-center pointer-events-none" data-slot="button-spinner">
-                    <svg aria-label="Loading" class="intent-mark-loader size-4! svelte-<scope>" data-motion-state="playing" data-playing="true" data-slot="intent-mark-loader" data-variant="bloom" role="status">
-                      <g aria-hidden="true" data-mark-layer="bloom">
-                        <path class="svelte-<scope>" data-mark-arm="0">
-                        <path class="svelte-<scope>" data-mark-arm="1">
-                        <path class="svelte-<scope>" data-mark-arm="2">
-                        <path class="svelte-<scope>" data-mark-arm="3">
-                        <path class="svelte-<scope>" data-mark-arm="4">
-    <div>
-      <button aria-label="Close dialog" class="-translate-y-1/2 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-4 absolute aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 right-6 rounded-(--radius-medium) shrink-0 size-(--control-height-small) text-muted-foreground top-[calc(1.5rem+var(--text-title-line-height)/2)] transition-[color,opacity] type-caption whitespace-nowrap" data-dialog-close="" data-slot="button" data-state="open" disabled="" id="bits-<id>" tabindex="0" type="button">
-        <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
-        <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
-          <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-            <svg aria-hidden="true">
-              <path>",
+        <div class="absolute bg-black/40 dark:bg-black/80 inset-0 motion-reduce:animate-none motion-reduce:transition-none z-[var(--layer-modal)]" data-dialog-overlay="" data-slot="dialog-overlay" data-state="open" data-static-position="true" id="bits-<id>">
+        <div aria-describedby="bits-<id>" aria-labelledby="bits-<id>" aria-modal="true" class="bg-surface-3 dialog-editorial-content grid max-w-110 motion-reduce:animate-none motion-reduce:transition-none mx-auto outline-none overflow-y-auto overlay-surface overscroll-contain p-6 relative shadow-surface-3 text-popover-foreground w-full z-[var(--layer-modal)]" data-dialog-content="" data-overlay-surface="true" data-size="default" data-slot="dialog-content" data-state="open" data-static-position="true" data-surface-level="3" id="bits-<id>" role="dialog" tabindex="-1">
+          <form aria-busy="true" class="gap-4 grid" data-slot="form">
+            <fieldset aria-busy="true" class="contents" disabled="">
+              <div class="flex flex-col gap-1.5 mb-4 min-w-0 pr-8" data-slot="dialog-header">
+                <div aria-level="2" class="font-bold text-foreground type-title" data-dialog-title="" data-slot="dialog-title" data-state="open" id="bits-<id>" role="heading">
+                  "Remove workspace"
+                <div class="break-words text-muted-foreground type-caption" data-dialog-description="" data-slot="dialog-description" data-state="open" id="bits-<id>">
+                  "This action cannot be undone."
+              <div class="flex gap-2 items-center justify-end mt-6" data-slot="dialog-footer">
+                <div class="flex gap-3 items-center justify-between" data-size="default" data-slot="form-actions">
+                  <div class="flex items-center" data-slot="form-actions-destructive">
+                  <div class="flex gap-2 items-center ml-auto" data-slot="form-actions-end">
+                    <div>
+                      <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) hover:text-foreground inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-muted-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" disabled="" type="button">
+                        <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                        <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                          <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                            "Cancel"
+                    <div>
+                      <button aria-busy="true" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-danger border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast focus-visible:-outline-offset-1 focus-visible:outline font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-danger-background transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" disabled="" type="submit">
+                        <span aria-hidden="true" class="absolute bg-danger duration-spring-fast ease-spring-fast group-active/button:brightness-90 group-active/button:shadow-none group-hover/button:brightness-95 inset-0 motion-reduce:transition-none pointer-events-none shadow-(--elevation-raised) transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                        <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none opacity-0 relative" data-slot="button-content">
+                          <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                            "Remove workspace"
+                        <span aria-hidden="true" class="absolute flex inset-0 items-center justify-center pointer-events-none" data-slot="button-spinner">
+                          <svg aria-label="Loading" class="intent-mark-loader size-4! svelte-<scope>" data-motion-state="playing" data-playing="true" data-slot="intent-mark-loader" data-variant="bloom" role="status">
+                            <g aria-hidden="true" data-mark-layer="bloom">
+                              <path class="svelte-<scope>" data-mark-arm="0">
+                              <path class="svelte-<scope>" data-mark-arm="1">
+                              <path class="svelte-<scope>" data-mark-arm="2">
+                              <path class="svelte-<scope>" data-mark-arm="3">
+                              <path class="svelte-<scope>" data-mark-arm="4">
+          <div>
+            <button aria-label="Close dialog" class="-translate-y-1/2 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-4 absolute aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 right-6 rounded-(--radius-medium) shrink-0 size-(--control-height-small) text-muted-foreground top-[calc(1.5rem+var(--text-title-line-height)/2)] transition-[color,opacity] type-caption whitespace-nowrap" data-dialog-close="" data-slot="button" data-state="open" disabled="" id="bits-<id>" tabindex="0" type="button">
+              <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+              <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                  <svg aria-hidden="true">
+                    <path>",
 }
 `;
 
@@ -1724,112 +1724,112 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:confirm:form
   <div>
     <div data-catalog-renderer-fixture="form-dialog" data-pattern-contract="confirm">
       <section data-catalog-rendered-state="default">
+        <div class="absolute bg-black/40 dark:bg-black/80 inset-0 motion-reduce:animate-none motion-reduce:transition-none z-[var(--layer-modal)]" data-dialog-overlay="" data-slot="dialog-overlay" data-state="open" data-static-position="true" id="bits-<id>">
+        <div aria-describedby="bits-<id>" aria-labelledby="bits-<id>" aria-modal="true" class="bg-surface-3 dialog-editorial-content grid max-w-110 motion-reduce:animate-none motion-reduce:transition-none mx-auto outline-none overflow-y-auto overlay-surface overscroll-contain p-6 relative shadow-surface-3 text-popover-foreground w-full z-[var(--layer-modal)]" data-dialog-content="" data-overlay-surface="true" data-size="default" data-slot="dialog-content" data-state="open" data-static-position="true" data-surface-level="3" id="bits-<id>" role="dialog" tabindex="-1">
+          <form class="gap-4 grid" data-slot="form">
+            <fieldset class="contents">
+              <div class="flex flex-col gap-1.5 mb-4 min-w-0 pr-8" data-slot="dialog-header">
+                <div aria-level="2" class="font-bold text-foreground type-title" data-dialog-title="" data-slot="dialog-title" data-state="open" id="bits-<id>" role="heading">
+                  "Form dialog"
+                <div class="break-words text-muted-foreground type-caption" data-dialog-description="" data-slot="dialog-description" data-state="open" id="bits-<id>">
+                  "Review and confirm this catalog action."
+              <div class="flex gap-2 items-center justify-end mt-6" data-slot="dialog-footer">
+                <div class="flex gap-3 items-center justify-between" data-size="default" data-slot="form-actions">
+                  <div class="flex items-center" data-slot="form-actions-destructive">
+                  <div class="flex gap-2 items-center ml-auto" data-slot="form-actions-end">
+                    <div>
+                      <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) hover:text-foreground inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-muted-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                        <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                        <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                          <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                            "Cancel"
+                    <div>
+                      <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-secondary-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="submit">
+                        <span aria-hidden="true" class="absolute bg-secondary duration-spring-fast ease-spring-fast group-active/button:brightness-90 group-active/button:shadow-none group-hover/button:brightness-95 inset-0 motion-reduce:transition-none pointer-events-none shadow-(--elevation-raised) transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                        <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                          <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                            "Confirm"
+          <div>
+            <button aria-label="Close dialog" class="-translate-y-1/2 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-4 absolute aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 right-6 rounded-(--radius-medium) shrink-0 size-(--control-height-small) text-muted-foreground top-[calc(1.5rem+var(--text-title-line-height)/2)] transition-[color,opacity] type-caption whitespace-nowrap" data-dialog-close="" data-slot="button" data-state="open" id="bits-<id>" tabindex="0" type="button">
+              <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+              <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                  <svg aria-hidden="true">
+                    <path>
       <section data-catalog-rendered-state="busy">
+        <div class="absolute bg-black/40 dark:bg-black/80 inset-0 motion-reduce:animate-none motion-reduce:transition-none z-[var(--layer-modal)]" data-dialog-overlay="" data-slot="dialog-overlay" data-state="open" data-static-position="true" id="bits-<id>">
+        <div aria-describedby="bits-<id>" aria-labelledby="bits-<id>" aria-modal="true" class="bg-surface-3 dialog-editorial-content grid max-w-110 motion-reduce:animate-none motion-reduce:transition-none mx-auto outline-none overflow-y-auto overlay-surface overscroll-contain p-6 relative shadow-surface-3 text-popover-foreground w-full z-[var(--layer-modal)]" data-dialog-content="" data-overlay-surface="true" data-size="default" data-slot="dialog-content" data-state="open" data-static-position="true" data-surface-level="3" id="bits-<id>" role="dialog" tabindex="-1">
+          <form aria-busy="true" class="gap-4 grid" data-slot="form">
+            <fieldset aria-busy="true" class="contents" disabled="">
+              <div class="flex flex-col gap-1.5 mb-4 min-w-0 pr-8" data-slot="dialog-header">
+                <div aria-level="2" class="font-bold text-foreground type-title" data-dialog-title="" data-slot="dialog-title" data-state="open" id="bits-<id>" role="heading">
+                  "Form dialog"
+                <div class="break-words text-muted-foreground type-caption" data-dialog-description="" data-slot="dialog-description" data-state="open" id="bits-<id>">
+                  "Review and confirm this catalog action."
+              <div class="flex gap-2 items-center justify-end mt-6" data-slot="dialog-footer">
+                <div class="flex gap-3 items-center justify-between" data-size="default" data-slot="form-actions">
+                  <div class="flex items-center" data-slot="form-actions-destructive">
+                  <div class="flex gap-2 items-center ml-auto" data-slot="form-actions-end">
+                    <div>
+                      <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) hover:text-foreground inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-muted-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" disabled="" type="button">
+                        <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                        <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                          <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                            "Cancel"
+                    <div>
+                      <button aria-busy="true" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-secondary-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" disabled="" type="submit">
+                        <span aria-hidden="true" class="absolute bg-secondary duration-spring-fast ease-spring-fast group-active/button:brightness-90 group-active/button:shadow-none group-hover/button:brightness-95 inset-0 motion-reduce:transition-none pointer-events-none shadow-(--elevation-raised) transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                        <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none opacity-0 relative" data-slot="button-content">
+                          <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                            "Confirm"
+                        <span aria-hidden="true" class="absolute flex inset-0 items-center justify-center pointer-events-none" data-slot="button-spinner">
+                          <svg aria-label="Loading" class="intent-mark-loader size-4! svelte-<scope>" data-motion-state="playing" data-playing="true" data-slot="intent-mark-loader" data-variant="bloom" role="status">
+                            <g aria-hidden="true" data-mark-layer="bloom">
+                              <path class="svelte-<scope>" data-mark-arm="0">
+                              <path class="svelte-<scope>" data-mark-arm="1">
+                              <path class="svelte-<scope>" data-mark-arm="2">
+                              <path class="svelte-<scope>" data-mark-arm="3">
+                              <path class="svelte-<scope>" data-mark-arm="4">
+          <div>
+            <button aria-label="Close dialog" class="-translate-y-1/2 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-4 absolute aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 right-6 rounded-(--radius-medium) shrink-0 size-(--control-height-small) text-muted-foreground top-[calc(1.5rem+var(--text-title-line-height)/2)] transition-[color,opacity] type-caption whitespace-nowrap" data-dialog-close="" data-slot="button" data-state="open" disabled="" id="bits-<id>" tabindex="0" type="button">
+              <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+              <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                  <svg aria-hidden="true">
+                    <path>
       <section data-catalog-rendered-state="invalid">
-  <div class="bg-black/40 dark:bg-black/80 fixed inset-0 motion-reduce:animate-none motion-reduce:transition-none z-[var(--layer-modal)]" data-dialog-overlay="" data-slot="dialog-overlay" data-state="open" id="bits-<id>">
-  <div aria-describedby="bits-<id>" aria-labelledby="bits-<id>" aria-modal="true" class="-translate-x-1/2 -translate-y-1/2 bg-surface-3 dialog-editorial-content fixed grid left-1/2 max-w-110 motion-reduce:animate-none motion-reduce:transition-none outline-none overflow-y-auto overlay-surface overscroll-contain p-6 shadow-surface-3 text-popover-foreground top-1/2 w-full z-[var(--layer-modal)]" data-dialog-content="" data-overlay-surface="true" data-size="default" data-slot="dialog-content" data-state="open" data-surface-level="3" id="bits-<id>" role="dialog" tabindex="-1">
-    <form class="gap-4 grid" data-slot="form">
-      <fieldset class="contents">
-        <div class="flex flex-col gap-1.5 mb-4 min-w-0 pr-8" data-slot="dialog-header">
-          <div aria-level="2" class="font-bold text-foreground type-title" data-dialog-title="" data-slot="dialog-title" data-state="open" id="bits-<id>" role="heading">
-            "Form dialog"
-          <div class="break-words text-muted-foreground type-caption" data-dialog-description="" data-slot="dialog-description" data-state="open" id="bits-<id>">
-            "Review and confirm this catalog action."
-        <div class="flex gap-2 items-center justify-end mt-6" data-slot="dialog-footer">
-          <div class="flex gap-3 items-center justify-between" data-size="default" data-slot="form-actions">
-            <div class="flex items-center" data-slot="form-actions-destructive">
-            <div class="flex gap-2 items-center ml-auto" data-slot="form-actions-end">
-              <div>
-                <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) hover:text-foreground inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-muted-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
-                  <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
-                  <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
-                    <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                      "Cancel"
-              <div>
-                <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-secondary-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="submit">
-                  <span aria-hidden="true" class="absolute bg-secondary duration-spring-fast ease-spring-fast group-active/button:brightness-90 group-active/button:shadow-none group-hover/button:brightness-95 inset-0 motion-reduce:transition-none pointer-events-none shadow-(--elevation-raised) transition-[box-shadow,background-color,filter]" data-slot="button-surface">
-                  <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
-                    <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                      "Confirm"
-    <div>
-      <button aria-label="Close dialog" class="-translate-y-1/2 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-4 absolute aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 right-6 rounded-(--radius-medium) shrink-0 size-(--control-height-small) text-muted-foreground top-[calc(1.5rem+var(--text-title-line-height)/2)] transition-[color,opacity] type-caption whitespace-nowrap" data-dialog-close="" data-slot="button" data-state="open" id="bits-<id>" tabindex="0" type="button">
-        <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
-        <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
-          <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-            <svg aria-hidden="true">
-              <path>
-  <div class="bg-black/40 dark:bg-black/80 fixed inset-0 motion-reduce:animate-none motion-reduce:transition-none z-[var(--layer-modal)]" data-dialog-overlay="" data-slot="dialog-overlay" data-state="open" id="bits-<id>">
-  <div aria-describedby="bits-<id>" aria-labelledby="bits-<id>" aria-modal="true" class="-translate-x-1/2 -translate-y-1/2 bg-surface-3 dialog-editorial-content fixed grid left-1/2 max-w-110 motion-reduce:animate-none motion-reduce:transition-none outline-none overflow-y-auto overlay-surface overscroll-contain p-6 shadow-surface-3 text-popover-foreground top-1/2 w-full z-[var(--layer-modal)]" data-dialog-content="" data-overlay-surface="true" data-size="default" data-slot="dialog-content" data-state="open" data-surface-level="3" id="bits-<id>" role="dialog" tabindex="-1">
-    <form aria-busy="true" class="gap-4 grid" data-slot="form">
-      <fieldset aria-busy="true" class="contents" disabled="">
-        <div class="flex flex-col gap-1.5 mb-4 min-w-0 pr-8" data-slot="dialog-header">
-          <div aria-level="2" class="font-bold text-foreground type-title" data-dialog-title="" data-slot="dialog-title" data-state="open" id="bits-<id>" role="heading">
-            "Form dialog"
-          <div class="break-words text-muted-foreground type-caption" data-dialog-description="" data-slot="dialog-description" data-state="open" id="bits-<id>">
-            "Review and confirm this catalog action."
-        <div class="flex gap-2 items-center justify-end mt-6" data-slot="dialog-footer">
-          <div class="flex gap-3 items-center justify-between" data-size="default" data-slot="form-actions">
-            <div class="flex items-center" data-slot="form-actions-destructive">
-            <div class="flex gap-2 items-center ml-auto" data-slot="form-actions-end">
-              <div>
-                <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) hover:text-foreground inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-muted-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" disabled="" type="button">
-                  <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
-                  <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
-                    <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                      "Cancel"
-              <div>
-                <button aria-busy="true" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-secondary-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" disabled="" type="submit">
-                  <span aria-hidden="true" class="absolute bg-secondary duration-spring-fast ease-spring-fast group-active/button:brightness-90 group-active/button:shadow-none group-hover/button:brightness-95 inset-0 motion-reduce:transition-none pointer-events-none shadow-(--elevation-raised) transition-[box-shadow,background-color,filter]" data-slot="button-surface">
-                  <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none opacity-0 relative" data-slot="button-content">
-                    <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                      "Confirm"
-                  <span aria-hidden="true" class="absolute flex inset-0 items-center justify-center pointer-events-none" data-slot="button-spinner">
-                    <svg aria-label="Loading" class="intent-mark-loader size-4! svelte-<scope>" data-motion-state="playing" data-playing="true" data-slot="intent-mark-loader" data-variant="bloom" role="status">
-                      <g aria-hidden="true" data-mark-layer="bloom">
-                        <path class="svelte-<scope>" data-mark-arm="0">
-                        <path class="svelte-<scope>" data-mark-arm="1">
-                        <path class="svelte-<scope>" data-mark-arm="2">
-                        <path class="svelte-<scope>" data-mark-arm="3">
-                        <path class="svelte-<scope>" data-mark-arm="4">
-    <div>
-      <button aria-label="Close dialog" class="-translate-y-1/2 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-4 absolute aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 right-6 rounded-(--radius-medium) shrink-0 size-(--control-height-small) text-muted-foreground top-[calc(1.5rem+var(--text-title-line-height)/2)] transition-[color,opacity] type-caption whitespace-nowrap" data-dialog-close="" data-slot="button" data-state="open" disabled="" id="bits-<id>" tabindex="0" type="button">
-        <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
-        <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
-          <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-            <svg aria-hidden="true">
-              <path>
-  <div class="bg-black/40 dark:bg-black/80 fixed inset-0 motion-reduce:animate-none motion-reduce:transition-none z-[var(--layer-modal)]" data-dialog-overlay="" data-slot="dialog-overlay" data-state="open" id="bits-<id>">
-  <div aria-describedby="bits-<id>" aria-labelledby="bits-<id>" aria-modal="true" class="-translate-x-1/2 -translate-y-1/2 bg-surface-3 dialog-editorial-content fixed grid left-1/2 max-w-110 motion-reduce:animate-none motion-reduce:transition-none outline-none overflow-y-auto overlay-surface overscroll-contain p-6 shadow-surface-3 text-popover-foreground top-1/2 w-full z-[var(--layer-modal)]" data-dialog-content="" data-overlay-surface="true" data-size="default" data-slot="dialog-content" data-state="open" data-surface-level="3" id="bits-<id>" role="dialog" tabindex="-1">
-    <form class="gap-4 grid" data-slot="form">
-      <fieldset class="contents">
-        <div class="flex flex-col gap-1.5 mb-4 min-w-0 pr-8" data-slot="dialog-header">
-          <div aria-level="2" class="font-bold text-foreground type-title" data-dialog-title="" data-slot="dialog-title" data-state="open" id="bits-<id>" role="heading">
-            "Form dialog"
-          <div class="break-words text-muted-foreground type-caption" data-dialog-description="" data-slot="dialog-description" data-state="open" id="bits-<id>">
-            "Review and confirm this catalog action."
-        <div class="flex gap-2 items-center justify-end mt-6" data-slot="dialog-footer">
-          <div class="flex gap-3 items-center justify-between" data-size="default" data-slot="form-actions">
-            <div class="flex items-center" data-slot="form-actions-destructive">
-            <div class="flex gap-2 items-center ml-auto" data-slot="form-actions-end">
-              <div>
-                <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) hover:text-foreground inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-muted-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
-                  <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
-                  <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
-                    <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                      "Cancel"
-              <div>
-                <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-secondary-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" disabled="" type="submit">
-                  <span aria-hidden="true" class="absolute bg-secondary duration-spring-fast ease-spring-fast group-active/button:brightness-90 group-active/button:shadow-none group-hover/button:brightness-95 inset-0 motion-reduce:transition-none pointer-events-none shadow-(--elevation-raised) transition-[box-shadow,background-color,filter]" data-slot="button-surface">
-                  <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
-                    <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                      "Confirm"
-    <div>
-      <button aria-label="Close dialog" class="-translate-y-1/2 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-4 absolute aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 right-6 rounded-(--radius-medium) shrink-0 size-(--control-height-small) text-muted-foreground top-[calc(1.5rem+var(--text-title-line-height)/2)] transition-[color,opacity] type-caption whitespace-nowrap" data-dialog-close="" data-slot="button" data-state="open" id="bits-<id>" tabindex="0" type="button">
-        <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
-        <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
-          <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-            <svg aria-hidden="true">
-              <path>",
+        <div class="absolute bg-black/40 dark:bg-black/80 inset-0 motion-reduce:animate-none motion-reduce:transition-none z-[var(--layer-modal)]" data-dialog-overlay="" data-slot="dialog-overlay" data-state="open" data-static-position="true" id="bits-<id>">
+        <div aria-describedby="bits-<id>" aria-labelledby="bits-<id>" aria-modal="true" class="bg-surface-3 dialog-editorial-content grid max-w-110 motion-reduce:animate-none motion-reduce:transition-none mx-auto outline-none overflow-y-auto overlay-surface overscroll-contain p-6 relative shadow-surface-3 text-popover-foreground w-full z-[var(--layer-modal)]" data-dialog-content="" data-overlay-surface="true" data-size="default" data-slot="dialog-content" data-state="open" data-static-position="true" data-surface-level="3" id="bits-<id>" role="dialog" tabindex="-1">
+          <form class="gap-4 grid" data-slot="form">
+            <fieldset class="contents">
+              <div class="flex flex-col gap-1.5 mb-4 min-w-0 pr-8" data-slot="dialog-header">
+                <div aria-level="2" class="font-bold text-foreground type-title" data-dialog-title="" data-slot="dialog-title" data-state="open" id="bits-<id>" role="heading">
+                  "Form dialog"
+                <div class="break-words text-muted-foreground type-caption" data-dialog-description="" data-slot="dialog-description" data-state="open" id="bits-<id>">
+                  "Review and confirm this catalog action."
+              <div class="flex gap-2 items-center justify-end mt-6" data-slot="dialog-footer">
+                <div class="flex gap-3 items-center justify-between" data-size="default" data-slot="form-actions">
+                  <div class="flex items-center" data-slot="form-actions-destructive">
+                  <div class="flex gap-2 items-center ml-auto" data-slot="form-actions-end">
+                    <div>
+                      <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) hover:text-foreground inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-muted-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                        <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                        <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                          <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                            "Cancel"
+                    <div>
+                      <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-secondary-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" disabled="" type="submit">
+                        <span aria-hidden="true" class="absolute bg-secondary duration-spring-fast ease-spring-fast group-active/button:brightness-90 group-active/button:shadow-none group-hover/button:brightness-95 inset-0 motion-reduce:transition-none pointer-events-none shadow-(--elevation-raised) transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                        <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                          <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                            "Confirm"
+          <div>
+            <button aria-label="Close dialog" class="-translate-y-1/2 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-4 absolute aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 right-6 rounded-(--radius-medium) shrink-0 size-(--control-height-small) text-muted-foreground top-[calc(1.5rem+var(--text-title-line-height)/2)] transition-[color,opacity] type-caption whitespace-nowrap" data-dialog-close="" data-slot="button" data-state="open" id="bits-<id>" tabindex="0" type="button">
+              <span aria-hidden="true" class="absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+              <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                  <svg aria-hidden="true">
+                    <path>",
 }
 `;
 

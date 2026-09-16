@@ -10,8 +10,9 @@ import { canonicalPatternManifest } from '$lib/components/patterns/manifest';
 import type { UiComponentFixture } from '$lib/components/ui/component-metadata';
 import { canonicalComponentManifest } from '$lib/components/ui/manifest';
 import CatalogFixtureList from './CatalogFixtureList.svelte';
-import CatalogPatternContract from './CatalogPatternContract.test.svelte';
+import PatternCatalogPreview from './renderers/PatternCatalogPreview.svelte';
 import { getCatalogEntry } from './catalog';
+import type { CatalogRendererId } from './catalog-renderers';
 import { waitForCaptureStability } from './capture-stability';
 import '../../app.css';
 
@@ -162,8 +163,8 @@ function stableDom(root: Element): string {
 
 function renderCase(testCase: ContractCase) {
   if (testCase.kind === 'pattern') {
-    return render(CatalogPatternContract, {
-      props: { patternId: testCase.id, fixture: testCase.fixture },
+    return render(PatternCatalogPreview, {
+      props: { componentId: testCase.id as CatalogRendererId, fixture: testCase.fixture },
     });
   }
   const entry = getCatalogEntry(testCase.id);

@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { afterEach, expect, it, vi } from 'vitest';
 import { catalogEntries, getCatalogEntry } from './catalog';
 import { buildCatalogNavigation, getCatalogSystemSlug } from './catalog-navigation';
@@ -11,6 +11,7 @@ const route = vi.hoisted(() => ({
 }));
 vi.mock('$app/state', () => ({ page: route }));
 afterEach(cleanup);
+const previewReadyWait = { timeout: 10_000 };
 
 it('groups discovery levels while preserving existing destinations', () => {
   const groups = buildCatalogNavigation(catalogEntries);
@@ -81,24 +82,37 @@ it.each([
 });
 
 it.each([
-  ['notify', 'Notify'],
-  ['confirm', 'Confirm'],
-  ['settings', 'Settings'],
-  ['collection', 'Collection'],
-  ['screen', 'Screen'],
-  ['action-menu', 'Action Menu'],
-  ['form', 'Form'],
-])('renders the documented %s pattern URL through the dynamic route', async (slug, name) => {
-  route.params.slug = slug;
-  route.url = new URL(`http://localhost/sandbox/${slug}`);
-  render(CatalogRoute);
-  expect(await screen.findByRole('heading', { level: 1, name })).toBeTruthy();
-  expect(screen.queryByText('Fixture not found')).toBeNull();
-  const groups = buildCatalogNavigation(catalogEntries);
-  expect(groups.find(({ name: groupName }) => groupName === 'Patterns')?.entries).toContainEqual(
-    expect.objectContaining({ slug, href: `/sandbox/${slug}` }),
-  );
-});
+  ['notify', 'Notify', '[data-toast-layout]'],
+  ['confirm', 'Confirm', '[role="dialog"]'],
+  ['settings', 'Settings', '[data-slot="settings-page"]'],
+  ['collection', 'Collection', '[data-slot="list-view"]'],
+  ['screen', 'Screen', '[data-slot="screen"]'],
+  ['action-menu', 'Action Menu', 'button[aria-haspopup="menu"]'],
+  ['form', 'Form', 'form'],
+])(
+  'renders the documented %s pattern URL with a real preview through the dynamic route',
+  async (slug, name, landmark) => {
+    route.params.slug = slug;
+    route.url = new URL(`http://localhost/sandbox/${slug}`);
+    const { container } = render(CatalogRoute);
+    expect(await screen.findByRole('heading', { level: 1, name })).toBeTruthy();
+    expect(screen.queryByText('Fixture not found')).toBeNull();
+    const groups = buildCatalogNavigation(catalogEntries);
+    expect(groups.find(({ name: groupName }) => groupName === 'Patterns')?.entries).toContainEqual(
+      expect.objectContaining({ slug, href: `/sandbox/${slug}` }),
+    );
+
+    const previews = await waitFor(() => {
+      const regions = [...container.querySelectorAll(`[data-catalog-preview="${slug}"]`)];
+      expect(regions.length).toBeGreaterThan(0);
+      for (const region of regions) expect(region.childElementCount).toBeGreaterThan(0);
+      return regions;
+    }, previewReadyWait);
+    expect(getCatalogEntry(slug)?.fixtures).toHaveLength(previews.length);
+    for (const preview of previews) expect(preview.querySelector(landmark)).not.toBeNull();
+  },
+  15_000,
+);
 
 it('resolves the legacy spinner URL to the loading indicator without dropping its query', async () => {
   expect(getCatalogEntry('spinner')).toBe(getCatalogEntry('loading-indicator'));

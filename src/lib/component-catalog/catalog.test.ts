@@ -64,6 +64,7 @@ describe('static component catalog', () => {
   it('registers exactly one real preview renderer for every canonical fixture', () => {
     const rendererIds = [
       ...canonicalComponentManifest.map(({ id }) => id),
+      ...canonicalPatternManifest.map(({ id }) => id),
       'modals',
       'model-picker',
       'popovers',
@@ -73,7 +74,7 @@ describe('static component catalog', () => {
     ].sort();
     expect(Object.keys(catalogRenderers).sort()).toEqual(rendererIds);
 
-    for (const component of canonicalComponentManifest) {
+    for (const component of [...canonicalComponentManifest, ...canonicalPatternManifest]) {
       expect(catalogRenderers[component.id], component.id).toBeDefined();
       for (const fixture of component.fixtures) {
         expect(catalogRenderers[component.id], `${component.id}/${fixture.id}`).toBeDefined();

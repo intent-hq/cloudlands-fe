@@ -9,9 +9,9 @@
   import NotifyErrorToast from '$lib/components/patterns/notify/NotifyErrorToast.svelte';
   import ScreenHarness from '$lib/components/patterns/screen/ScreenHarness.svelte';
   import SettingsHarness from '$lib/components/patterns/settings/SettingsHarness.svelte';
-  import type { UiComponentFixture } from '$lib/components/ui/component-metadata';
+  import type { CatalogRendererProps } from '../catalog-renderers';
 
-  let { patternId, fixture }: { patternId: string; fixture: UiComponentFixture } = $props();
+  let { componentId, fixture }: CatalogRendererProps = $props();
 
   function screenState(
     state: string,
@@ -35,15 +35,15 @@
   }
 </script>
 
-<div data-pattern-contract={patternId} data-catalog-renderer-fixture={fixture.id}>
+<div data-pattern-contract={componentId} data-catalog-renderer-fixture={fixture.id}>
   {#each fixture.states as state}
     <section data-catalog-rendered-state={state}>
-      {#if patternId === 'action-menu'}
+      {#if componentId === 'action-menu'}
         <ActionMenuHarness
           bar={state === 'action-bar' || state === 'overflow'}
           context={state === 'context-menu'}
         />
-      {:else if patternId === 'collection'}
+      {:else if componentId === 'collection'}
         {#if state === 'card-inset'}
           <CardInsetContractHarness />
         {:else if state === 'empty' || state === 'loading' || state === 'error'}
@@ -51,10 +51,11 @@
         {:else}
           <CollectionHarness />
         {/if}
-      {:else if patternId === 'confirm'}
+      {:else if componentId === 'confirm'}
         {#if fixture.id === 'destructive-confirm'}
           <DestructiveConfirm
             open
+            static
             title="Remove workspace"
             description="This action cannot be undone."
             confirmLabel="Remove workspace"
@@ -64,6 +65,7 @@
         {:else}
           <FormDialog
             open
+            static
             title={fixture.title}
             description="Review and confirm this catalog action."
             busy={state === 'busy'}
@@ -72,16 +74,16 @@
             onSubmit={() => undefined}
           />
         {/if}
-      {:else if patternId === 'form'}
+      {:else if componentId === 'form'}
         <FormHarness error={state === 'error' ? undefined : ''} busy={state === 'submitting'} />
-      {:else if patternId === 'notify'}
+      {:else if componentId === 'notify'}
         <NotifyErrorToast
           message={`${state} notification`}
           details="Deterministic catalog details"
         />
-      {:else if patternId === 'screen'}
+      {:else if componentId === 'screen'}
         <ScreenHarness state={screenState(state)} />
-      {:else if patternId === 'settings'}
+      {:else if componentId === 'settings'}
         <SettingsHarness searchQuery={state === 'filtered' ? 'choice' : ''} />
       {/if}
     </section>
