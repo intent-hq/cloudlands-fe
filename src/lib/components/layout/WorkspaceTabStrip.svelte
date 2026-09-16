@@ -385,7 +385,9 @@
       const titlebar = node.closest<HTMLElement>('.window-title-bar');
       const titlebarRect = titlebar?.getBoundingClientRect() ?? null;
       const titlebarScale =
-        titlebar && titlebarRect ? titlebarRect.width / titlebar.offsetWidth : 1;
+        titlebar?.offsetWidth && titlebarRect?.width
+          ? titlebarRect.width / titlebar.offsetWidth
+          : 1;
       const stripRect = strip?.getBoundingClientRect() ?? null;
       let scrollDelta = 0;
       let scrollTarget: number | null = null;
@@ -1048,7 +1050,10 @@
                     >
                       <WorkspaceStatusIcon status={workspaceStatusState} size={14} decorative />
                     </span>
-                    <span class="size-5 shrink-0" data-workspace-tab-close-space aria-hidden="true"
+                    <span
+                      class="size-(--control-height-compact) shrink-0"
+                      data-workspace-tab-close-space
+                      aria-hidden="true"
                     ></span>
                   </span>
                 </Button>
@@ -1058,7 +1063,7 @@
               variant="plain"
               type="button"
               class={cn(
-                'absolute right-1 z-10 flex size-5 shrink-0 cursor-pointer items-center justify-center rounded text-subtle outline-none! transition-opacity hover:bg-muted hover:text-foreground focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:text-foreground focus-visible:opacity-100 forced-colors:focus-visible:text-[HighlightText]',
+                'absolute right-1 z-10 flex size-(--control-height-compact) shrink-0 cursor-pointer items-center justify-center rounded text-subtle outline-none! transition-opacity hover:bg-muted hover:text-foreground focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:text-foreground focus-visible:opacity-100 forced-colors:focus-visible:text-[HighlightText]',
                 isCurrent ? 'opacity-70' : 'opacity-0 group-hover/workspace-tab:opacity-100',
               )}
               onclick={(event) => closeWorkspace(workspaceId, event)}
@@ -1067,7 +1072,7 @@
               })}
               data-workspace-tab-close
             >
-              <Fa icon={faXmark} size="xs" />
+              <Fa icon={faXmark} class="size-4!" />
             </Button>
           </div>
         {:else}
@@ -1128,12 +1133,12 @@
               size="icon-compact"
               iconOnly
               type="button"
-              class="absolute right-1 z-10 flex size-5 shrink-0 cursor-pointer items-center justify-center rounded text-subtle opacity-70 outline-none! hover:bg-muted hover:text-foreground focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:text-foreground forced-colors:focus-visible:text-[HighlightText]"
+              class="absolute right-1 z-10 flex size-(--control-height-compact) shrink-0 cursor-pointer items-center justify-center rounded text-subtle opacity-70 outline-none! hover:bg-muted hover:text-foreground focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:text-foreground forced-colors:focus-visible:text-[HighlightText]"
               onclick={(event) => closeWorkspace(workspaceId, event)}
               aria-label={m.layout_workspaceTabStrip_close_ariaLabel({ name: workspaceId })}
               data-workspace-tab-close
             >
-              <Fa icon={faXmark} size="xs" />
+              <Fa icon={faXmark} class="size-4!" />
             </Button>
           </div>
         {/if}

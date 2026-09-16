@@ -267,7 +267,7 @@
     </div>
     {#if activeTabBounds}
       <div
-        class="pointer-events-none absolute -bottom-0.5 z-[60] h-0.5 bg-sidebar motion-reduce:transition-none"
+        class="pointer-events-none absolute -bottom-0.5 z-[60] h-[3px] bg-sidebar motion-reduce:transition-none"
         style:left={`${activeTabBounds.left}px`}
         style:width={`${activeTabBounds.width}px`}
         style:mask-image={getWorkspaceTabBorderMaskImage(activeTabBounds)}

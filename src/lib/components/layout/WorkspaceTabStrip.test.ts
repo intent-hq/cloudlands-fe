@@ -374,7 +374,6 @@ describe('WorkspaceTabStrip', () => {
     expect(cluster.className).not.toMatch(/(?:^|\s)w-14(?:\s|$)/);
     expect(controls.className).toContain('ml-auto');
     expect(controls.lastElementChild).toBe(closeSpace);
-    expect(closeSpace.className).toContain('size-5');
     expect(title.className).toContain('min-w-0');
     expect(title.className).toContain('flex-1');
     expect(title.nextElementSibling).toBe(controls);

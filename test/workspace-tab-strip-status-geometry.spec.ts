@@ -593,7 +593,7 @@ test('keeps titles, statuses, and close controls disjoint at 160px and constrain
     expect(titleBox.x + titleBox.width).toBeLessThanOrEqual(statusBox.x + 0.5);
     expect(statusBox.x + statusBox.width).toBeLessThanOrEqual(closeBox.x + 0.5);
     expect(closeBox.x + closeBox.width).toBeLessThanOrEqual(activeBox.x + activeBox.width + 0.5);
-    expect(titleBox.width).toBeCloseTo(activeBox.width - 58 * scale, 0);
+    expect(titleBox.width).toBeCloseTo(activeBox.width - 66 * scale, 0);
     await expect(active).toHaveAttribute('data-active', 'true');
     await expect(inactive).toHaveAttribute('data-active', 'false');
     await expect(active.locator('[role="tab"]')).toHaveAttribute(
