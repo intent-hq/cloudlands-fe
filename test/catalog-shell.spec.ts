@@ -421,7 +421,7 @@ async function captureChoiceLongListInitialState(page: Page, slug: 'combobox' | 
 
 async function exerciseCanonicalPreview(page: Page, slug: (typeof catalogSlugs)[number]) {
   if (slug === 'badge') {
-    await expect(page.locator('[data-slot="badge"]').first()).toContainText('Default badge');
+    await expect(page.locator('[data-slot="badge"]').first()).toContainText('Neutral: Draft');
   } else if (slug === 'button') {
     const button = page.getByRole('button', { name: '1. Primary', exact: true });
     await button.click();
@@ -475,7 +475,7 @@ async function exerciseCanonicalPreview(page: Page, slug: (typeof catalogSlugs)[
     await expect(defaultState.getByLabel('Combobox value', { exact: true })).toContainText('grace');
   } else if (slug === 'select') {
     const defaultState = page.locator('[data-catalog-rendered-state~="closed"]');
-    const trigger = defaultState.getByRole('button', { name: 'Catalog select' });
+    const trigger = defaultState.getByRole('combobox', { name: 'Catalog select' });
     await trigger.click();
     await defaultState.getByRole('option', { name: 'Banana' }).click();
     await expect(page.getByLabel('Select value')).toHaveText('banana');
