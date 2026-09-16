@@ -234,6 +234,26 @@ describe('GuestSessionsSettings', () => {
     ).toBe('true');
   });
 
+  it('labels a joined host by its captured hostname and keeps the dialled address as secondary text', () => {
+    mocks.sessions = [
+      { ...guest, label: 'tc.example.ts.net', hostname: 'Clement’s Mac Studio' },
+      { ...guest, id: 'guest-2', label: 'tc2.example.ts.net', hostname: null },
+    ];
+    render(GuestSessionsSettings);
+    const joined = screen.getByTestId('guest-sessions-joined');
+    const captured = joined.querySelector('[data-session-id="guest-1"]') as HTMLElement;
+    const pending = joined.querySelector('[data-session-id="guest-2"]') as HTMLElement;
+
+    // Hostname captured: it is the primary label; the address moves to the
+    // secondary line rather than disappearing.
+    expect(within(captured).getByText('Clement’s Mac Studio')).toBeTruthy();
+    expect(captured.querySelector('[data-guest-address]')?.textContent).toBe('tc.example.ts.net');
+    expect(within(captured).getByRole('list', { name: /Clement’s Mac Studio/ })).toBeTruthy();
+    // Not yet captured: the address stays the primary label, with nothing to repeat.
+    expect(within(pending).getByText('tc2.example.ts.net')).toBeTruthy();
+    expect(pending.querySelector('[data-guest-address]')).toBeNull();
+  });
+
   it('nests the joined workspaces under their host, each with its own Leave', () => {
     mocks.sessions = [guest, { ...guest, id: 'guest-2', label: 'desk.local', workspaces: [] }];
     render(GuestSessionsSettings);
@@ -373,7 +393,12 @@ describe('GuestSessionsSettings', () => {
     });
 
     it('Leave host: retry leaves A again, never the cancelled B', async () => {
-      const second: GuestSessionRecord = { ...guest, id: 'guest-2', label: 'second.local' };
+      const second: GuestSessionRecord = {
+        ...guest,
+        id: 'guest-2',
+        label: 'second.local',
+        hostname: 'second.local',
+      };
       mocks.sessions = [guest, second];
       const leaveA = pendingAction('guestSessions/leaveRequested', ['guest-1']);
       mocks.leave.mockImplementationOnce(() => leaveA.action);
