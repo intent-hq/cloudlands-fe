@@ -81,10 +81,8 @@
     onopenchange?: (open: boolean) => void;
     /** Custom trigger snippet */
     trigger?: Snippet<[{ open: boolean; value: string | string[] | undefined }]>;
-    /** Custom item rendering */
+    /** Non-interactive option content; supplemental controls belong in header or footer. */
     item?: Snippet<[DropdownItemProps]>;
-    /** Supplemental controls rendered after, never inside, the option button. */
-    itemAfter?: Snippet<[DropdownItemProps]>;
     /** Custom group header rendering */
     groupHeader?: Snippet<[DropdownGroupProps]>;
     /** Header content (e.g., description text) */
@@ -125,7 +123,6 @@
     onopenchange,
     trigger,
     item,
-    itemAfter,
     groupHeader,
     header,
     footer,
@@ -525,9 +522,7 @@
     // Composed controls own selection keys; an unconsumed Escape dismisses this layer.
     if (
       e.target instanceof Element &&
-      e.target.closest(
-        '[data-dropdown-item-after], [data-dropdown-header], [data-dropdown-footer]',
-      ) &&
+      e.target.closest('[data-dropdown-header], [data-dropdown-footer]') &&
       (e.key !== 'Escape' || e.defaultPrevented)
     )
       return;
@@ -1004,16 +999,6 @@
           {/if}
         {/if}
       </Button>
-
-      {#if itemAfter}
-        <div data-dropdown-item-after>
-          {@render itemAfter({
-            option,
-            selected: isSelected(option.value),
-            highlighted: isHighlighted,
-          })}
-        </div>
-      {/if}
 
       <!-- Submenu (rendered in portal for proper positioning) -->
       {#if option.type === 'submenu' && option.children?.length && openSubmenu === option.value}
