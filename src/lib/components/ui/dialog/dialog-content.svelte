@@ -93,16 +93,14 @@
           {role}
           data-slot="dialog-content"
           data-overlay-surface
+          data-size={size}
           data-static-position={staticPosition() || undefined}
           class={cn(
             staticPosition() ? 'relative mx-auto' : container ? 'absolute' : 'fixed',
             !staticPosition() && 'left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2',
             'dialog-editorial-content overlay-surface z-[var(--layer-modal)] grid w-full overflow-y-auto overscroll-contain p-6 text-popover-foreground outline-none motion-reduce:animate-none motion-reduce:transition-none',
-            size === 'sm' && 'min-w-[min(--spacing(90),calc(100%-2rem),calc(100vw-2rem))]',
             size === 'sm' && (density === 'compact' ? 'max-w-90' : 'max-w-100'),
-            size === 'default' &&
-              'min-w-[min(--spacing(105),calc(100%-2rem),calc(100vw-2rem))] max-w-110',
-            size === 'lg' && 'min-w-[min(--spacing(120),calc(100%-2rem),calc(100vw-2rem))]',
+            size === 'default' && 'max-w-110',
             size === 'lg' && (density === 'compact' ? 'max-w-120' : 'max-w-135'),
             surfaceClasses(surface),
             className,
@@ -150,7 +148,17 @@
 
 <style>
   :global(.dialog-editorial-content) {
+    --dialog-content-min-width: 26.25rem;
     width: min(100% - 2rem, 100vw - 2rem);
+    min-width: min(var(--dialog-content-min-width), 100% - 2rem, 100vw - 2rem);
     max-height: calc(100dvh - 2rem);
+  }
+
+  :global(.dialog-editorial-content[data-size='sm']) {
+    --dialog-content-min-width: 22.5rem;
+  }
+
+  :global(.dialog-editorial-content[data-size='lg']) {
+    --dialog-content-min-width: 30rem;
   }
 </style>

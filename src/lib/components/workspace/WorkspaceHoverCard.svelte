@@ -469,7 +469,6 @@
                 >
                   <Fa
                     icon={pr.statusIcon}
-                    fixedWidth
                     class="size-4 shrink-0 justify-self-center {pr.foregroundClass}"
                   />
                   <span
