@@ -25,6 +25,7 @@
     className = '',
     handleClassName = '',
     showHandleIndicator = false,
+    resizable = true,
     active = true,
 
     // Width props (for horizontal orientation)
@@ -91,6 +92,8 @@
     className?: string;
     handleClassName?: string;
     showHandleIndicator?: boolean;
+    /** Remove the interactive handle without changing controlled or persisted sizing. */
+    resizable?: boolean;
     active?: boolean;
 
     // Width props (for horizontal orientation)
@@ -915,7 +918,7 @@
     <!-- Resize handle -->
     <!-- svelte-ignore a11y_no_noninteractive_tabindex a11y_no_noninteractive_element_interactions -->
 
-    {#if !doSkipResize}
+    {#if resizable && !doSkipResize}
       <Button
         variant="ghost"
         type="button"
@@ -944,7 +947,7 @@
       ? ''
       : `height: ${actualHeight}px; min-height: ${minHeight}px; max-height: ${maxHeight}px;`}
   >
-    {#if !doSkipResize}
+    {#if resizable && !doSkipResize}
       <!-- Resize handle -->
       <Button
         variant="ghost"

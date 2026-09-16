@@ -428,7 +428,6 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     const label = launcher.querySelector<HTMLElement>('[data-sidebar-launcher-label]')!;
     const dropdown = launcher.querySelector<HTMLElement>('[data-sidebar-pr-dropdown]')!;
     const trigger = launcher.querySelector<HTMLButtonElement>('[data-sidebar-pr-trigger]')!;
-    const resource = container.querySelector<HTMLElement>('[data-sidebar-changes-resource]');
 
     expect(label.textContent).toBe('Changes');
     expect(label.nextElementSibling).toBe(dropdown);
@@ -446,11 +445,6 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     // The menu content is portaled, so a closed menu renders no rows anywhere.
     expect(document.body.querySelector('[data-sidebar-pr-link]')).toBeNull();
     expect(launcher.textContent).not.toContain('1,373');
-    expect(
-      resource
-        ?.querySelector('[data-resource-icon-tile]')
-        ?.getAttribute('data-resource-icon-variant'),
-    ).toBe('emphasized');
 
     await fireEvent.click(trigger);
     await waitFor(() => expect(trigger.getAttribute('aria-expanded')).toBe('true'));
@@ -555,7 +549,15 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
 
     expect(container.querySelector('[data-sidebar-pr-trigger]')).toBeNull();
     expect(document.body.querySelector('[data-sidebar-pr-link]')).toBeNull();
-    expect(container.querySelector('[data-sidebar-changes-resource]')).not.toBeNull();
+    await fireEvent.click(
+      container.querySelector<HTMLButtonElement>(
+        '[data-sidebar-launcher="changes"] .launcher-tile-action',
+      )!,
+    );
+    expect(mocks.dispatch).toHaveBeenCalledWith({
+      type: 'sidebarNav/setMultiSelectSidebarSelectedTabs',
+      payload: ['ws-1', ['changes']],
+    });
   });
 
   it.each([

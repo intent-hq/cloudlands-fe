@@ -16,7 +16,7 @@
   import { performanceMonitor } from '$lib/utils/performance';
   import { invoke } from '$lib/electron-bridge';
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
-  import { menuItem } from '$lib/components/ui/menu';
+  import { ActionRow, menuItem } from '$lib/components/ui/menu';
   import { getRecentRepos } from '$lib/utils/workspace-utils';
   import { WORKSPACE_CHANNELS } from '$shared/ipc/channels';
   import type { KnownRepo } from '$shared/types/known-repo';
@@ -1479,11 +1479,12 @@
       </div>
     </Select.Trigger>
     <Select.Content
-      class="max-w-[500px] min-w-[400px]! max-h-[600px] overflow-hidden flex flex-col"
+      class="w-[400px] min-w-0 max-h-[min(600px,calc(var(--bits-select-content-available-height,100dvh)-8px))] overflow-hidden flex flex-col"
+      wrapperClass="flex flex-col"
       portal
     >
       <!-- Header -->
-      <div class="px-4 pt-2 pb-3">
+      <div class="shrink-0 px-4 pt-2 pb-3">
         <h2 class="text-base font-semibold text-foreground">
           {m.workspace_repoSelector_whichRepo_label()}
         </h2>
@@ -1493,12 +1494,13 @@
       </div>
 
       <!-- Tab bar -->
-      <div class="flex gap-0 mx-3 mb-3 bg-sidebar rounded-lg p-1">
+      <div class="flex shrink-0 gap-0 mx-3 mb-3 bg-sidebar rounded-lg p-1">
         {#each [{ id: 'github' as TabId, label: m.workspace_repoSelector_pickARepo_tab() }, { id: 'local' as TabId, label: m.workspace_repoSelector_copyLocalRepo_tab() }, { id: 'new' as TabId, label: m.workspace_repoSelector_newRepo_tab() }, ...($remoteWorkspacesEnabled$ ? [{ id: 'remote' as TabId, label: m.workspace_repoSelector_remoteServer_tab() }] : [])] as tab}
           <Button
             variant="ghost"
             type="button"
-            class="flex-1 px-3 py-1.5 text-sm whitespace-nowrap rounded-md cursor-pointer transition-all {activeTab ===
+            truncateLabel={false}
+            class="flex-1 min-w-0 h-auto min-h-(--control-height-medium) px-2 py-1.5 text-sm whitespace-normal rounded-md cursor-pointer transition-all {activeTab ===
             tab.id
               ? 'bg-background font-medium text-foreground shadow-sm'
               : 'text-muted-foreground hover:text-foreground'}"
@@ -1510,7 +1512,7 @@
       </div>
 
       <!-- Input section - changes based on tab -->
-      <div class="px-3 mb-3">
+      <div class="shrink-0 px-3 mb-3">
         {#if activeTab === 'local'}
           <!-- Local repo: folder picker button -->
           <Button
@@ -1542,7 +1544,7 @@
               oninput={(e) => handleGitHubInputChange(e.currentTarget.value)}
               onpaste={handleGitHubPaste}
               onkeydown={handleGitHubInputKeydown}
-              class="bg-sidebar border-none px-1 py-2.5! h-auto"
+              class="min-w-0 bg-sidebar border-none px-1 py-2.5! h-auto text-sm"
               noFocusStyle
               role="combobox"
               aria-autocomplete="list"
@@ -1809,8 +1811,8 @@
 
       <!-- Recent repos section - only show for local and github tabs when there are repos -->
       {#if activeTab !== 'new' && activeTab !== 'remote' && (isLoading || filteredRepos().length > 0)}
-        <div class="overflow-y-auto flex-1 px-4 pb-3 pt-2">
-          <Header size={6} class="mb-1">{m.workspace_repoSelector_recent_label()}</Header>
+        <div class="min-h-16 overflow-y-auto flex-1 px-4 pb-3 pt-2">
+          <Header size={5} class="mb-2">{m.workspace_repoSelector_recent_label()}</Header>
           {#if isLoading && recentRepos.length === 0}
             <div class="space-y-1">
               {#each [1, 2, 3] as { }}
@@ -1821,43 +1823,43 @@
               {/each}
             </div>
           {:else}
-            <div class="">
+            <div class="-mx-2" data-testid="recent-repositories">
               {#each filteredRepos() as repo, index (repo.path || repo.name)}
                 {@const label = getRecentRepoLabel(repo)}
                 {@const tooltip = getRecentRepoTooltip(repo)}
                 {#snippet repoRow()}
-                  <Button
-                    variant="ghost"
-                    type="button"
-                    class="w-full flex items-center gap-2 py-1.5 text-left hover:bg-muted/50 rounded-md px-2 pl-3 -mx-2 transition-colors cursor-pointer {index ===
-                    highlightedIndex
-                      ? 'bg-accent/20'
-                      : ''}"
+                  <ActionRow
+                    selected={index === highlightedIndex}
+                    class="cursor-pointer"
                     onclick={() => handleSelectRepo(repo)}
                   >
-                    {#if label.ownerPrefix}
-                      <GitHubAvatar
-                        identity={label.ownerPrefix}
-                        alt={label.ownerPrefix}
-                        class="w-4 h-4 rounded-full shrink-0"
-                      />
-                    {:else}
-                      <Fa
-                        icon={repo.type === 'github' ? faGithub : faFolder}
-                        class="text-subtle shrink-0 opacity-50"
-                        size={12}
-                      />
-                    {/if}
-                    <span class="text-sm text-foreground truncate">
+                    {#snippet leading()}
                       {#if label.ownerPrefix}
-                        <span class="text-subtle mr-1">{label.ownerPrefix} /</span>
+                        <GitHubAvatar identity={label.ownerPrefix} class="size-4 rounded-full">
+                          {#snippet fallback()}
+                            <Fa icon={faGithub} class="text-subtle opacity-50" size={12} />
+                          {/snippet}
+                        </GitHubAvatar>
+                      {:else}
+                        <Fa
+                          icon={repo.type === 'github' ? faGithub : faFolder}
+                          class="text-subtle opacity-50"
+                          size={12}
+                        />
                       {/if}
-                      {label.primary}
-                      {#if label.suffix}
-                        <span class="text-subtle ml-1">({label.suffix})</span>
-                      {/if}
-                    </span>
-                  </Button>
+                    {/snippet}
+                    {#snippet title()}
+                      <span class="block truncate">
+                        {#if label.ownerPrefix}
+                          <span class="text-subtle mr-1">{label.ownerPrefix} /</span>
+                        {/if}
+                        {label.primary}
+                        {#if label.suffix}
+                          <span class="text-subtle ml-1">({label.suffix})</span>
+                        {/if}
+                      </span>
+                    {/snippet}
+                  </ActionRow>
                 {/snippet}
                 {#if tooltip}
                   <Tooltip content={tooltip} delayDuration={300} side="bottom" class="flex w-full">

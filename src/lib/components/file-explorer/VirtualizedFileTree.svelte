@@ -9,8 +9,9 @@
     FlattenedFileNode,
   } from '$store/renderer/slices/file-explorer/file-explorer-types';
   import { ListItem } from '$lib/components/ui/list';
+  import CaretDownIcon from 'phosphor-svelte/lib/CaretDownIcon';
+  import CaretRightIcon from 'phosphor-svelte/lib/CaretRightIcon';
   import {
-    faChevronDown,
     faPlus,
     faArrowUpRightFromSquare,
     faDownload,
@@ -22,7 +23,6 @@
   import { getFileTypeIconSvg } from '$lib/utils/file-type-icons';
   import LineChangesBadge from '../shared/LineChangesBadge.svelte';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
-  import Fa from 'svelte-fa';
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
   import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
   import { invoke } from '$lib/electron-bridge';
@@ -1119,6 +1119,7 @@
           {@const absoluteIndex = startIndex + i}
           {@const node = flatNode.node}
           {@const depth = flatNode.depth}
+          {@const DisclosureIcon = flatNode.isExpanded ? CaretDownIcon : CaretRightIcon}
 
           {#if node.path === CREATING_SENTINEL_PATH}
             <!-- Inline file creation input -->
@@ -1142,7 +1143,7 @@
                   onblur={saveCreate}
                   onkeydown={handleCreateKeydown}
                   placeholder={m.fileExplorer_tree_filename_placeholder()}
-                  class="flex-1 text-sm leading-tight bg-transparent border-none outline-none! ring-0! focus:ring-0! focus:outline-none! focus-visible:ring-0! focus-visible:outline-none! min-w-0"
+                  class="flex-1 type-body font-normal bg-transparent border-none outline-none! ring-0! focus:ring-0! focus:outline-none! focus-visible:ring-0! focus-visible:outline-none! min-w-0"
                   onclick={(e) => e.stopPropagation()}
                 />
               </div>
@@ -1194,7 +1195,12 @@
                     class={`shrink-0 flex items-center justify-center ${node.type === 'directory' ? `opacity-50 ${gitColor}` : `w-4 h-4 [&>svg]:w-full [&>svg]:h-full`}`}
                   >
                     {#if node.type === 'directory'}
-                      <Fa icon={faChevronDown} size="12" />
+                      <DisclosureIcon
+                        size={12}
+                        weight="regular"
+                        mirrored={false}
+                        aria-hidden="true"
+                      />
                     {:else}
                       {@html getFileTypeIconSvg(node.name)}
                     {/if}
@@ -1205,7 +1211,7 @@
                     bind:value={editingValue}
                     onblur={saveEdit}
                     onkeydown={handleEditKeydown}
-                    class="inline-edit-input relative z-10 min-w-0 flex-1 border-none bg-transparent text-sm leading-tight outline-none! ring-0! focus:outline-none! focus:ring-0! focus-visible:outline-none! focus-visible:ring-0!"
+                    class="inline-edit-input relative z-10 min-w-0 flex-1 border-none bg-transparent type-body font-normal outline-none! ring-0! focus:outline-none! focus:ring-0! focus-visible:outline-none! focus-visible:ring-0!"
                     onclick={(e) => e.stopPropagation()}
                   />
                 </div>
@@ -1214,10 +1220,10 @@
                   active={isSelected(node.path)}
                   selected={isFocused}
                   tabindex={-1}
-                  icon={faChevronDown}
-                  iconClass={`opacity-50 [&>svg]:w-2! [&>svg]:mr-1! ${gitColor} transition-transform duration-150 ${flatNode.isExpanded ? '' : 'rotate-90'}`}
+                  aria-expanded={flatNode.isExpanded}
+                  iconClass={`-ml-1 mr-1 w-3 text-muted-foreground ${gitColor}`}
                   title={displayName}
-                  titleClass={`cursor-text ${gitColor}`}
+                  titleClass={`cursor-text type-body font-normal leading-(--text-body-line-height) ${gitColor}`}
                   onclick={(event) => handleItemClick(flatNode, absoluteIndex, event)}
                   size="sm"
                   indent={depth}
@@ -1237,7 +1243,19 @@
                       ]
                     : []}
                   actionsVisible="hover"
-                />
+                >
+                  {#snippet iconSnippet()}
+                    <!-- Extend into the row inset, keeping labels and hit areas unchanged. -->
+                    <DisclosureIcon
+                      size={12}
+                      weight="regular"
+                      mirrored={false}
+                      class="shrink-0"
+                      aria-hidden="true"
+                      data-file-tree-disclosure
+                    />
+                  {/snippet}
+                </ListItem>
               {:else}
                 <ListItem
                   active={isSelected(node.path)}
@@ -1245,7 +1263,7 @@
                   tabindex={-1}
                   iconClass={gitColor}
                   title={displayName}
-                  titleClass={`cursor-text ${gitColor}`}
+                  titleClass={`cursor-text type-body font-normal leading-(--text-body-line-height) ${gitColor}`}
                   badge={isModified ? '•' : undefined}
                   badgeClass={isModified ? 'text-blue-500' : undefined}
                   onclick={(event) => handleItemClick(flatNode, absoluteIndex, event)}

@@ -55,7 +55,7 @@
             ></span>
             <span class="min-w-0 flex-1 opacity-60">
               <span
-                class="block truncate text-sm font-medium text-muted-foreground"
+                class="block truncate type-body font-normal text-muted-foreground"
                 title={entry.tab.title}>{entry.tab.title}</span
               >
             </span>
@@ -83,7 +83,7 @@
             ></span>
             <span class="min-w-0 flex-1">
               <span
-                class="block truncate text-sm font-medium text-foreground"
+                class="block truncate type-body font-normal text-foreground"
                 title={entry.tab.title}>{entry.tab.title}</span
               >
             </span>

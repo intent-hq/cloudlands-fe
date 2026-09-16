@@ -8,16 +8,14 @@ import { describe, expect, it } from 'vitest';
 const source = (file: string) => readFileSync(resolve(__dirname, `../${file}`), 'utf8');
 
 describe('panel resize rendering', () => {
-  it('provides a persisted outer right-edge handle for regular panel layouts', () => {
+  it('preserves canvas width persistence and resize plumbing for regular panel layouts', () => {
     const layout = source('PanelLayout.svelte');
     const canvas = source('PanelCanvasFrame.svelte');
     const container = source('PanelContainer.svelte');
 
-    // Canvas width is persisted via Redux `canvasWidth`; the outer edge remains
-    // the only control that changes the total canvas width.
+    // Removing the outer interaction must not change stored canvas sizing.
     expect(canvas).toContain('storageKey={null}');
     expect(canvas).toContain('side="left"');
-    expect(canvas).toContain('handleClassName="panel-canvas-resize-handle"');
     expect(layout).toContain('panelOuterResizeCommittedWidth ?? $panelCanvasWidth$');
     expect(layout).toContain('getPanelPreferredWidths(');
     expect(layout).toContain('scrollContainer={panelWorkspaceInset}');

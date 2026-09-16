@@ -1111,11 +1111,14 @@
         <img src={faviconUrl} alt="" class="size-5 shrink-0 rounded-sm" data-browser-page-favicon />
       {/if}
 
-      <div class="relative flex h-8 min-w-0 flex-1 items-center rounded-md bg-background px-2">
+      <div
+        class="relative flex h-8 min-w-0 flex-1 items-center rounded-md bg-background"
+        data-browser-address-surface
+      >
         {#if isEditingUrl}
           <form
             onsubmit={handleFormSubmit}
-            class="relative z-10 flex h-full min-w-0 flex-1 items-center"
+            class="relative z-10 flex h-full min-w-0 flex-1 items-center px-2"
           >
             <Input
               bind:this={urlInputRef}
@@ -1135,9 +1138,9 @@
         {:else}
           <Button
             type="button"
-            variant="ghost"
+            variant="plain"
             size="sm"
-            class="relative z-10 flex h-full min-w-0 flex-1 cursor-text items-center gap-1.5 rounded-sm text-left outline-none focus-visible:ring-1 focus-visible:ring-focus-ring"
+            class="relative z-10 flex h-full min-w-0 flex-1 cursor-text items-center gap-1.5 rounded-md px-5 text-left outline-none hover:bg-hover active:bg-active focus-visible:ring-1 focus-visible:ring-focus-ring"
             onclick={() => void focusUrlInput()}
             aria-label={m.browser_embedded_editAddress_ariaLabel()}
           >

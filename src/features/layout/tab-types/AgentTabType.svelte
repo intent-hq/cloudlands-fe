@@ -265,12 +265,14 @@
   {#if agentTaskNoteId}
     <Menu.CommandItem
       icon={faNote}
+      iconWeight="regular"
       label={m.layout_agentTab_goToTaskNote_tooltip()}
       onclick={(event) => handleGoToTaskNote(event)}
     />
   {/if}
   <Menu.CommandItem
     icon={agentCopyFeedback ? faCheck : faCopy}
+    iconWeight="regular"
     label={agentCopyFeedback || m.layout_agentTab_copyConversation_tooltip()}
     onclick={handleCopyAgentConversation}
     disabled={agentMessages.length === 0}
@@ -278,12 +280,14 @@
   {#if canReplaceAgent}
     <Menu.CommandItem
       icon={faRightLeft}
+      iconWeight="regular"
       label={m.layout_agentTab_replaceAgent_tooltip()}
       onclick={() => (replaceAgentModalOpen = true)}
     />
   {/if}
   <Menu.CommandItem
     icon={faTrash}
+    iconWeight="regular"
     label={m.layout_agentTab_deleteAgent_tooltip()}
     onclick={handleDeleteAgent}
     disabled={isAgentDeleting}
@@ -294,6 +298,7 @@
     {#if agentSpecialistName}
       <Menu.CommandItem
         icon={faUserTie}
+        iconWeight="regular"
         label={m.chat_agentCard_menu_specialist_label({ name: agentSpecialistName })}
         disabled
       />
@@ -301,6 +306,7 @@
     {#if harnessVersion}
       <Menu.CommandItem
         icon={faCircleInfo}
+        iconWeight="regular"
         label={m.chat_agentCard_menu_harnessVersion_label({ version: harnessVersion })}
         onclick={() => (harnessModalOpen = true)}
       />

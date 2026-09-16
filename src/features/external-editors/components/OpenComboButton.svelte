@@ -407,8 +407,12 @@
             type="button"
             onclick={actions.length > 1 ? undefined : handlePrimaryClick}
             {...actions.length > 1 ? props : {}}
-            variant="ghost"
-            class="cursor-pointer"
+            variant={variant === 'sidebar' ? 'plain' : 'ghost'}
+            size={variant === 'sidebar' ? 'icon-sm' : undefined}
+            wrapContent={variant !== 'sidebar'}
+            class={variant === 'sidebar'
+              ? 'cursor-pointer text-muted-foreground hover:text-foreground focus-visible:text-foreground'
+              : 'cursor-pointer'}
             title={primaryTitle}
           >
             {@render children()}

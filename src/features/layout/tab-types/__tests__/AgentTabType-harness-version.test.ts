@@ -190,6 +190,9 @@ describe('AgentTabType harness version panel-actions menu item', () => {
     // Enabled, plain command item (no flyout).
     expect(menuItem!.getAttribute('aria-disabled')).not.toBe('true');
     expect(menuItem!.getAttribute('aria-haspopup')).not.toBe('menu');
+    const actionIcons = screen.getByRole('menu').querySelectorAll('svg[data-icon]');
+    expect(actionIcons.length).toBeGreaterThan(0);
+    for (const icon of actionIcons) expect(icon.getAttribute('data-weight')).toBe('regular');
 
     await fireEvent.click(menuItem!);
 

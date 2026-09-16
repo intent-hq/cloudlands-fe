@@ -23,6 +23,7 @@
     scenarios: SidebarPrDropdownScenario[];
     /** Render a single scenario inside a launcher-like footer with the live dropdown. */
     live?: boolean;
+    onOpenExternal?: (payload: unknown) => void;
   }
 
   function pr(number: number, overrides: Partial<PullRequestInfo> = {}): PullRequestInfo {
@@ -313,6 +314,9 @@
       'live-many': {
         props: { scenarios: scenarios.filter((item) => item.key === 'many'), live: true },
       },
+      'live-long': {
+        props: { scenarios: scenarios.filter((item) => item.key === 'long-title'), live: true },
+      },
     },
   });
 </script>
@@ -322,8 +326,17 @@
   import { faCodePullRequest } from '@fortawesome/free-solid-svg-icons';
   import SidebarPrDropdown from './SidebarPrDropdown.svelte';
   import SidebarPrList from './SidebarPrList.svelte';
+  import { onDestroy } from 'svelte';
+  import { overrideMockIpcHandler } from '$shared/ipc-mock-router';
 
-  let { scenarios: items, live = false }: SidebarPrDropdownPreviewProps = $props();
+  let { scenarios: items, live = false, onOpenExternal }: SidebarPrDropdownPreviewProps = $props();
+  onDestroy(
+    // eslint-disable-next-line intent/no-component-async-data-fetch -- Fixture-only mock registration, not a domain fetch; intercepts external navigation and restores on teardown.
+    overrideMockIpcHandler('shell:openExternal', (payload) => {
+      onOpenExternal?.(payload);
+      return { success: true };
+    }),
+  );
 </script>
 
 <section class="grid gap-5" data-sidebar-pr-dropdown-preview>

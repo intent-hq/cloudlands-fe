@@ -600,6 +600,7 @@
                     active={selectedFile === result.path}
                     selected={searchSelectedIndex === i}
                     title={result.name}
+                    titleClass="type-body font-normal leading-(--text-body-line-height)"
                     subtitle={result.relativePath}
                     onclick={(event) => {
                       selectedFile = result.path;

@@ -985,7 +985,7 @@
             contentClass="border-0!"
             contentContainerClass="p-0! space-y-0!"
             showArrow={false}
-            class="h-5 min-w-0 shrink cursor-copy items-center justify-start overflow-hidden rounded-sm border-none bg-transparent p-0 text-left font-inherit font-medium text-muted-foreground outline-none transition-colors hover:underline focus:outline-none focus-visible:outline-none"
+            class="h-5 min-w-0 shrink cursor-copy items-center justify-start overflow-hidden rounded-sm border-none bg-transparent p-0 text-left font-inherit font-normal text-muted-foreground outline-none transition-colors hover:underline focus:outline-none focus-visible:outline-none"
             bind:open={branchTooltipOpen}
             onOpenChange={handleBranchTooltipOpenChange}
             disableCloseOnTriggerClick

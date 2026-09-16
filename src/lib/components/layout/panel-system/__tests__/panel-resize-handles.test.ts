@@ -20,6 +20,41 @@ afterEach(() => {
 });
 
 describe('editorial panel resize handles', () => {
+  it.each([
+    {
+      direction: 'horizontal' as const,
+      previous: 'ArrowLeft',
+      next: 'ArrowRight',
+      ignored: 'ArrowUp',
+    },
+    {
+      direction: 'vertical' as const,
+      previous: 'ArrowUp',
+      next: 'ArrowDown',
+      ignored: 'ArrowLeft',
+    },
+  ])(
+    'commits keyboard resize only along the $direction axis',
+    async ({ direction, previous, next, ignored }) => {
+      const calls: (string | number)[] = [];
+      const view = render(PanelSplitHandle, {
+        props: {
+          direction,
+          onResizeStart: () => calls.push('start'),
+          onResize: (delta) => calls.push(delta),
+          onResizeEnd: () => calls.push('end'),
+        },
+      });
+      const handle = view.getByRole('button', { name: 'Resize panel' });
+      await fireEvent.keyDown(handle, { key: previous });
+      await fireEvent.keyDown(handle, { key: next, shiftKey: true });
+      await fireEvent.keyDown(handle, { key: ignored });
+      await fireEvent.keyDown(handle, { key: next, metaKey: true });
+      expect(calls).toEqual(['start', -10, 'end', 'start', 20, 'end']);
+      expect(document.body.classList.contains('panel-resizing')).toBe(false);
+    },
+  );
+
   const tabDataTransfer = {
     types: ['application/x-panel-tab'],
     getData: () => JSON.stringify({ tabId: 'tab', panelId: 'source' }),

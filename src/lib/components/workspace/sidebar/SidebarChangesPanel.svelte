@@ -62,10 +62,8 @@
 
   import { syncWorkspaceSettings } from '$store/renderer/slices/workspace-settings/workspace-settings-slice';
   import { logger } from '$lib/utils/client-logger';
-  import { faArrowsRotate } from '@fortawesome/free-solid-svg-icons';
-  import { onMount, untrack } from 'svelte';
+  import { onMount, untrack, type Snippet } from 'svelte';
   import { writable } from 'svelte/store';
-  import Fa from 'svelte-fa';
   import {
     constructPrUrl as constructPrUrlUtil,
     computeTotalStats,
@@ -80,6 +78,7 @@
   } from '$store/renderer/slices/git-roots/git-roots-selectors';
   import GitRootBrowser from './GitRootBrowser.svelte';
   import BranchDisplay from './BranchDisplay.svelte';
+  import ChangesRefreshAction from './ChangesRefreshAction.svelte';
   import CommitDrawer from './CommitDrawer.svelte';
   import CommitsTimeline from './CommitsTimeline.svelte';
   import MergePanel from './MergePanel.svelte';
@@ -103,6 +102,8 @@
     onOpenCodeReview?: () => void;
     openPanelTabs?: PanelTab[];
     activePanelTab?: PanelTab | null;
+    /** Mount the selected root's existing refresh control in the sidebar header. */
+    onRefreshActionChange?: (action: Snippet | undefined) => void;
   }
 
   let {
@@ -117,7 +118,14 @@
     onOpenCodeReview,
     openPanelTabs = [],
     activePanelTab,
+    onRefreshActionChange,
   }: Props = $props();
+
+  let secondaryRefreshAction = $state<Snippet>();
+  $effect(() => {
+    onRefreshActionChange?.(refreshAction);
+    return () => onRefreshActionChange?.(undefined);
+  });
 
   const workspaceIdStore = writable('');
   $effect(() => {
@@ -705,6 +713,14 @@
     if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
       return;
     }
+    // Summary controls own their native button and picker keyboard interactions.
+    if (
+      target.closest(
+        '[data-branch-summary], [data-changes-summary-count], [data-testid="git-root-selector"]',
+      )
+    ) {
+      return;
+    }
 
     const fileCount = allFilesFlat.length;
     if (fileCount === 0) return;
@@ -1024,6 +1040,14 @@
   });
 </script>
 
+{#snippet refreshAction()}
+  {#if isBrowsingSecondaryRoot}
+    {@render secondaryRefreshAction?.()}
+  {:else if hasLoadedForWorkspace}
+    <ChangesRefreshAction disabled={isRefreshingGitStatus} onclick={handleRefreshGitStatus} />
+  {/if}
+{/snippet}
+
 <div class="flex flex-col h-full flex-1 min-h-0 max-h-full">
   <div class="flex-1 flex flex-col min-h-0">
     {#if !hasLoadedForWorkspace}
@@ -1059,6 +1083,9 @@
         <GitRootBrowser
           {workspaceId}
           onSelectedRootChange={(entry) => (selectedSecondaryRoot = entry)}
+          onRefreshActionChange={onRefreshActionChange
+            ? (action) => (secondaryRefreshAction = action)
+            : undefined}
         />
 
         {#if isBrowsingSecondaryRoot}
@@ -1083,18 +1110,10 @@
         {#if !isBrowsingSecondaryRoot}
           <BranchDisplay {workspaceId} {trunkBranch} {repoPath} {repoType} {canChangeTrunk} />
 
-          <div class="relative flex items-center mb-2 pl-4 h-7">
-            <Button
-              variant="ghost"
-              type="button"
-              size="icon-compact"
-              class="absolute -left-1 w-5 p-1 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground disabled:opacity-50 cursor-pointer z-10"
-              onclick={handleRefreshGitStatus}
-              disabled={isRefreshingGitStatus}
-              title={m.workspace_sidebarChanges_refreshGitStatus_tooltip()}
-            >
-              <Fa icon={faArrowsRotate} class="size-3! text-subtle" />
-            </Button>
+          <div class="relative flex items-center mb-2 h-7" data-changes-summary-count>
+            {#if !onRefreshActionChange}
+              {@render refreshAction()}
+            {/if}
 
             <!-- View All Changes Button -->
             {#if hasAnyChanges}

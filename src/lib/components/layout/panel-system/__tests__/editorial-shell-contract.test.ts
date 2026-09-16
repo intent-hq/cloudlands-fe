@@ -61,9 +61,7 @@ describe('editorial workspace shell presentation contract', () => {
     expect(panel).toContain('min-width: 0');
     expect(panel).not.toContain('min-width: 30em');
     expect(panel).toContain('box-shadow: var(--elevation-raised)');
-    expect(panel).toMatch(
-      /\.panel\[data-empty-panel-shell='true'\]:not\(\[data-focus-border-visible='true'\]\)\s*\{\s*border-width: 0;/,
-    );
+    // Focus-invariant border and child geometry are exercised in panel-shell-corners.ct.spec.ts.
     expect(panel).toMatch(/\.panel\[data-empty-panel-shell='true'\]\s*\{\s*box-shadow: none;/);
     expect(panel).not.toMatch(/\.panel\[data-empty-panel-shell='true'\]\s*\{\s*border-width: 0;/);
     expect(panel).not.toContain('.panel:focus-visible');

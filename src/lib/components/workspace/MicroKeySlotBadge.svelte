@@ -85,8 +85,9 @@
      (identical visual to the toast surfaces); hover states ride the square. -->
 <Button
   variant="ghost"
+  size="icon"
   type="button"
-  class="micro-key-slot-badge shrink-0 cursor-pointer a11y-ignore"
+  class="micro-key-slot-badge size-4 shrink-0 cursor-pointer a11y-ignore"
   aria-label={m.workspace_microKeyBadge_ariaLabel({ number: formatInteger(slot + 1) })}
   title={m.workspace_microKeyBadge_tooltip({ number: formatInteger(slot + 1) })}
   onclick={handleClick}

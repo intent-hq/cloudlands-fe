@@ -541,7 +541,7 @@
                   bind:value={editingValue}
                   onblur={saveEdit}
                   onkeydown={handleEditKeydown}
-                  class="inline-edit-input relative z-10 min-w-0 flex-1 border-none px-0 bg-transparent text-sm outline-none ring-0 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0"
+                  class="inline-edit-input relative z-10 min-w-0 flex-1 border-none px-0 bg-transparent type-body font-normal outline-none ring-0 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0"
                   onclick={(e) => e.stopPropagation()}
                 />
               </div>
@@ -550,9 +550,9 @@
               {@const activeAgents = getActiveAgentsForNote(note)}
               <div class="relative flex w-full min-w-0 flex-1 items-center gap-1">
                 <ListItem
-                  iconClass="w-(--row-icon-box-regular) text-ghost"
+                  iconClass="relative w-(--row-icon-box-regular) text-ghost"
                   title={getNoteTitle(note)}
-                  titleClass="cursor-text"
+                  titleClass="cursor-text type-body font-normal leading-(--text-body-line-height)"
                   active={selectedNoteId === note.id}
                   indent={depth}
                   {indentSize}
@@ -568,13 +568,13 @@
                       status={hasChildrenStatus || (note.metadata!.task!.status as TaskStatus)}
                       size={14}
                     />
+                    {#if isUnread}
+                      <span
+                        class="absolute top-0 right-0 w-1.5 h-1.5 bg-background border border-muted-foreground/50 rounded-full"
+                        title={m.workspace_notesPanel_unreadChanges_tooltip()}
+                      ></span>
+                    {/if}
                   {/snippet}
-                  {#if isUnread}
-                    <span
-                      class="absolute top-0 -left-1 w-1.5 h-1.5 bg-background border border-muted-foreground/50 rounded-full"
-                      title={m.workspace_notesPanel_unreadChanges_tooltip()}
-                    ></span>
-                  {/if}
                 </ListItem>
 
                 <!-- Show active agents working on this note -->
@@ -615,9 +615,9 @@
               {@const inProgressOffset = circumference * (1 - inProgressPctNorm)}
               <div class="relative flex w-full min-w-0 flex-1">
                 <ListItem
-                  iconClass="w-(--row-icon-box-regular) text-ghost"
+                  iconClass="relative w-(--row-icon-box-regular) text-ghost"
                   title={getNoteTitle(note)}
-                  titleClass="cursor-text"
+                  titleClass="cursor-text type-body font-normal leading-(--text-body-line-height)"
                   active={selectedNoteId === note.id}
                   indent={depth}
                   {indentSize}
@@ -686,22 +686,22 @@
                         {/if}
                       </svg>
                     </div>
+                    {#if isUnread}
+                      <span
+                        class="absolute top-0 right-0 w-1.5 h-1.5 bg-background border border-muted-foreground/50 rounded-full"
+                        title={m.workspace_notesPanel_unreadChanges_tooltip()}
+                      ></span>
+                    {/if}
                   {/snippet}
-                  {#if isUnread}
-                    <span
-                      class="absolute top-0 -left-1 w-1.5 h-1.5 bg-background border border-muted-foreground/50 rounded-full"
-                      title={m.workspace_notesPanel_unreadChanges_tooltip()}
-                    ></span>
-                  {/if}
                 </ListItem>
               </div>
             {:else}
               {@const activeAgents = getActiveAgentsForNote(note)}
               <div class="relative flex w-full min-w-0 flex-1 items-center gap-1">
                 <ListItem
-                  iconClass="w-(--row-icon-box-regular)"
+                  iconClass="relative w-(--row-icon-box-regular)"
                   title={getNoteTitle(note)}
-                  titleClass="cursor-text"
+                  titleClass="cursor-text type-body font-normal leading-(--text-body-line-height)"
                   active={selectedNoteId === note.id}
                   indent={depth}
                   {indentSize}
@@ -714,13 +714,13 @@
                 >
                   {#snippet iconSnippet()}
                     <ResourceIconTile kind="note" />
+                    {#if isUnread}
+                      <span
+                        class="absolute top-0 right-0 w-1.5 h-1.5 bg-background border border-muted-foreground/50 rounded-full"
+                        title={m.workspace_notesPanel_unreadChanges_tooltip()}
+                      ></span>
+                    {/if}
                   {/snippet}
-                  {#if isUnread}
-                    <span
-                      class="absolute top-0 -left-1 w-1.5 h-1.5 bg-background border border-muted-foreground/50 rounded-full"
-                      title={m.workspace_notesPanel_unreadChanges_tooltip()}
-                    ></span>
-                  {/if}
                 </ListItem>
 
                 <!-- Show active agents working on this note -->
@@ -798,7 +798,7 @@
 
   /* Off-screen rows skip style/layout/paint; the intrinsic size matches the 36px
      ListItem row so scrollHeight stays stable before a row is first rendered. The
-     clip margin keeps the focus ring, unread dot and inline-edit outline
+     clip margin keeps the focus ring and inline-edit outline
      (-inset-x-2) visible outside the row box under paint containment. */
   .note-row {
     content-visibility: auto;

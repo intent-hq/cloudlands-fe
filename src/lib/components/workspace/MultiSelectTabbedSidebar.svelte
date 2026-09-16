@@ -66,7 +66,7 @@
   import { selectPrMonitors } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
   import { spring, type ImmediateMotionConfig as TransitionConfig } from '$lib/motion';
 
-  import { onDestroy, onMount, tick } from 'svelte';
+  import { onDestroy, onMount, tick, type Snippet } from 'svelte';
   import { writable } from 'svelte/store';
   import Fa from 'svelte-fa';
   import CreateAgentSection from './CreateAgentSection.svelte';
@@ -150,6 +150,8 @@
     onAcceptChanges,
     class: className,
   }: Props = $props();
+
+  let changesRefreshAction = $state<Snippet>();
 
   // Reactive writable store that mirrors workspaceId so Redux selectors
   // re-evaluate whenever the prop changes (called at component init time).
@@ -844,7 +846,17 @@
 
   $effect(() => {
     if (isLauncherOverview) return;
-    return pushEscapeLayer(() => dismissExpandedCard(true));
+    return pushEscapeLayer(() => {
+      // Let the Changes editor/pickers cancel before dismissing their containing card.
+      if (
+        sidebarElement?.querySelector(
+          '[data-branch-summary] input:not([readonly]), [data-branch-summary] [role="combobox"][aria-expanded="true"], [data-testid="git-root-selector"] [aria-expanded="true"]',
+        )
+      ) {
+        return false;
+      }
+      dismissExpandedCard(true);
+    });
   });
 
   $effect(() => {
@@ -1001,8 +1013,15 @@
                               label={m.menu_new_terminal()}
                               onclick={createTerminal}
                             />
-                          {:else if tabId === 'changes' && workspacePrRows.length > 0}
-                            <SidebarPrDropdown rows={workspacePrRows} {workspaceId} side="bottom" />
+                          {:else if tabId === 'changes'}
+                            {@render changesRefreshAction?.()}
+                            {#if workspacePrRows.length > 0}
+                              <SidebarPrDropdown
+                                rows={workspacePrRows}
+                                {workspaceId}
+                                side="bottom"
+                              />
+                            {/if}
                           {/if}
                           <SidebarHeaderAction
                             icon="close"
@@ -1011,9 +1030,11 @@
                           />
                         </span>
                       </h6>
-                      {#if tabId !== 'agents' && tabId !== 'shell'}
+                      {#if tabId !== 'agents'}
                         <p
-                          class="text-ui text-subtle mt-0.5 leading-snug transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none"
+                          class="{tabId === 'files'
+                            ? 'type-body'
+                            : 'text-ui'} text-subtle mt-0.5 leading-snug transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none"
                         >
                           {#if tabId === 'context' && $workspace?.isRemote}
                             {tab.description}
@@ -1054,9 +1075,9 @@
                                 >/{$fileExplorerWorkspacePath
                                   .split(/[/\\]/)
                                   .slice(-2)
-                                  .join('/')}</span
+                                  .join('/')}.</span
                               >
-                            </OpenComboButton>.
+                            </OpenComboButton>
                           {:else}
                             {tab.description}
                           {/if}
@@ -1125,6 +1146,7 @@
                           <div class="w-full flex-1">
                             <SidebarChangesPanel
                               {workspaceId}
+                              onRefreshActionChange={(action) => (changesRefreshAction = action)}
                               activeFilePath={effectiveActiveFilePath}
                               activeFileStaged={effectiveActiveFileStaged}
                               isAllChangesViewActive={effectiveIsAllChangesViewActive}
@@ -1347,14 +1369,6 @@
                           <span aria-hidden="true">+{launcherNoteOverflowCount}</span>
                         </Button>
                       {/if}
-                    {:else if tab.id === 'changes'}
-                      <span
-                        class="pointer-events-none flex size-9 shrink-0 items-center justify-center"
-                        data-sidebar-changes-resource
-                        data-launcher-leading-item="true"
-                      >
-                        <ResourceIconTile kind="changes" variant="emphasized" />
-                      </span>
                     {/if}
                   </div>
                   <div
@@ -1395,10 +1409,7 @@
                           side="top"
                           variant="sidebar"
                         >
-                          <span
-                            class="inline-flex size-7 cursor-pointer items-center justify-center rounded text-muted-foreground transition-colors hover:bg-background/70 hover:text-foreground focus-visible:text-foreground"
-                            data-files-open-in
-                          >
+                          <span class="inline-flex items-center justify-center" data-files-open-in>
                             <Fa icon={faArrowUpRightFromSquare} class="size-4!" />
                             <span class="sr-only">{m.ui_openCombo_openInApp_tooltip()}</span>
                           </span>

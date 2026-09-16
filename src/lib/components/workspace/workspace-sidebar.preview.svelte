@@ -3,6 +3,7 @@
   import { PullRequestStatus, WorkspaceStatus } from '$shared/types';
   import { WorkspaceId } from '$shared/types/branded-ids';
   import { definePreview } from '$lib/component-catalog/preview-definition';
+  import { setupSidebarKeySlots } from './workspace-sidebar.preview-fixtures';
   import {
     PREVIEW_FIXTURE_IDS,
     PREVIEW_FIXTURE_TIMESTAMPS,
@@ -13,6 +14,7 @@
     loading?: boolean;
     width: number;
     workspaces: Workspace[];
+    onSelect?: (workspaceId: string) => void;
   }
 
   const workspaceFixture = definePreviewFixture<Workspace>({
@@ -70,6 +72,16 @@
     pullRequests: [pr(47, { status: PullRequestStatus.Merged }), pr(48)],
   });
 
+  const keySlotWorkspaces = [
+    busyWorkspace,
+    reviewWorkspace,
+    workspaceFixture({
+      id: WorkspaceId(`${PREVIEW_FIXTURE_IDS.workspace}-waiting`),
+      title: 'Waiting for a long-running fixture check to finish before review',
+      waiting: true,
+    }),
+  ];
+
   export const preview = definePreview<WorkspaceSidebarPreviewProps>({
     id: 'workspace-sidebar',
     title: 'Workspace sidebar',
@@ -82,6 +94,10 @@
         props: { width: 420, workspaces: [longWorkspace, busyWorkspace, reviewWorkspace] },
       },
       narrow: { props: { width: 248, workspaces: [longWorkspace, busyWorkspace] } },
+      'key-slots': {
+        props: { width: 360, workspaces: keySlotWorkspaces },
+        setup: () => setupSidebarKeySlots(keySlotWorkspaces),
+      },
     },
   });
 </script>
@@ -91,7 +107,7 @@
   import SidebarSkeleton from './SidebarSkeleton.svelte';
   import WorkspaceCard from './WorkspaceCard.svelte';
 
-  let { loading = false, width, workspaces }: WorkspaceSidebarPreviewProps = $props();
+  let { loading = false, width, workspaces, onSelect }: WorkspaceSidebarPreviewProps = $props();
 </script>
 
 <section
@@ -112,7 +128,7 @@
           {workspace}
           isPinned={workspace.id === PREVIEW_FIXTURE_IDS.workspace}
           isUnread={workspace.id === PREVIEW_FIXTURE_IDS.workspace}
-          onClick={() => {}}
+          onClick={() => onSelect?.(workspace.id)}
           onTogglePin={() => {}}
           onMarkAsRead={() => {}}
           onOpenInNewWindow={() => {}}

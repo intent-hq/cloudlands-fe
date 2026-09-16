@@ -7,7 +7,7 @@ const state = (component: Locator) => component.getByTestId('mod-w-state');
 function measureGeometry(component: Locator) {
   return component.evaluate(() => {
     const inset = document.querySelector<HTMLElement>('[data-testid="panel-workspace-inset"]')!;
-    const canvas = inset.querySelector('.panel-canvas-resize-handle')?.parentElement as HTMLElement;
+    const canvas = inset.querySelector('.panel-canvas-frame') as HTMLElement;
     const panels = [...document.querySelectorAll<HTMLElement>('[data-panel-id]')];
     const track = document.querySelector<HTMLElement>('.panel-navigator-track');
     const thumb = document.querySelector<HTMLElement>('[data-panel-navigator-thumb]');

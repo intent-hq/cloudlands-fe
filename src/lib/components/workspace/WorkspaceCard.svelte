@@ -637,8 +637,12 @@
     ></Button>
 
     <div class="relative z-10 flex shrink-0 items-center gap-1.5">
-      {#if $microConnected$ && $workspaceKeySlot$ !== null}
-        <MicroKeySlotBadge workspaceId={workspace.id} slot={$workspaceKeySlot$} />
+      {#if $microConnected$}
+        <span class="flex size-4 shrink-0 items-center justify-center">
+          {#if $workspaceKeySlot$ !== null}
+            <MicroKeySlotBadge workspaceId={workspace.id} slot={$workspaceKeySlot$} />
+          {/if}
+        </span>
       {/if}
       <Tooltip content={workspaceStatusPresentation.tooltip} side="bottom" sideOffset={4}>
         <WorkspaceStatusIcon status={workspaceStatusState} size={14} decorative />
