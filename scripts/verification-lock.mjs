@@ -22,8 +22,14 @@ import { join } from 'node:path';
 export const HELD_LOCK_ENV = 'INTENT_VERIFICATION_LOCK_HELD';
 export const DEFAULT_CT_PORT = 3100;
 
+/**
+ * Blank (empty or whitespace-only) CT_PORT is unset: playwright-ct.config.ts
+ * derives its `ctPort` and `ctCacheDir` with the same rule (playwright/ct-port.ts),
+ * so a blank value cannot yield lock `ct-0` next to the default port and cache.
+ */
 export function ctPort(env = process.env) {
-  return env.CT_PORT ? Number(env.CT_PORT) : DEFAULT_CT_PORT;
+  const raw = env.CT_PORT?.trim();
+  return raw ? Number(raw) : DEFAULT_CT_PORT;
 }
 
 export function ctLockKey(env = process.env) {

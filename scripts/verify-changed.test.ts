@@ -1123,6 +1123,9 @@ describe('expensive-check coordination', () => {
   it('uses per-kind keys and bounded default waits', () => {
     expect(verificationLockKey(testCheck('ct', 'ct'), {})).toBe('ct-3100');
     expect(verificationLockKey(testCheck('ct', 'ct'), { CT_PORT: '03101' })).toBe('ct-3101');
+    expect(verificationLockKey(testCheck('ct', 'ct'), { CT_PORT: ' 3102 ' })).toBe('ct-3102');
+    expect(verificationLockKey(testCheck('ct', 'ct'), { CT_PORT: '' })).toBe('ct-3100');
+    expect(verificationLockKey(testCheck('ct', 'ct'), { CT_PORT: ' ' })).toBe('ct-3100');
     expect(verificationLockKey(testCheck('vitest', 'vitest-full'), {})).toBe('vitest-full');
     expect(verificationLockKey(testCheck('tsc', null), {})).toBeNull();
     expect(lockTimeout('ct-3100', undefined)).toBe(240_000);
