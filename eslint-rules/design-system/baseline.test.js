@@ -57,7 +57,12 @@ describe('design-system ESLint baseline', () => {
   it('does not add entries relative to the CI base revision', () => {
     const comparison = readComparisonBaseline({ cwd: root });
     if (!comparison) return;
-    expect(() => assertBaselineOnlyShrinks(comparison.baseline, baseline)).not.toThrow();
+    // An unreadable base rule set treats every rule as pre-existing (zero-debt).
+    const baseRules = comparison.rules ?? ruleNames;
+    const newRules = ruleNames.filter((rule) => !baseRules.includes(rule));
+    expect(() =>
+      assertBaselineOnlyShrinks(comparison.baseline, baseline, { newRules }),
+    ).not.toThrow();
   });
 
   // Full-source ESLint takes ~47s alone on the shared host, but exceeded 120s
