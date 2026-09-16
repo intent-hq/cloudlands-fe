@@ -28,7 +28,13 @@
     resolveEditorIcon,
   } from '$lib/components/shared/icons/editor-icon';
   import { invoke } from '$lib/electron-bridge';
-  import { appClient } from '$lib/client';
+  import { readGitStatusRequested } from '$store/renderer/slices/git/git-slice';
+  import { selectGitStatusReadOperation } from '$store/renderer/slices/git/git-selectors';
+  import {
+    deleteLegacyFileRequested,
+    writeLegacyFileRequested,
+  } from '$store/renderer/slices/files/files-slice';
+  import { selectFileContent } from '$store/renderer/slices/files/files-selectors';
   import { fetchEditors } from '$store/renderer/slices/external-editors/external-editors-slice';
   import { selectInstalledEditorsFiltered } from '$store/renderer/slices/external-editors/external-editors-selectors';
   import { selectIsWorkspaceHostLocal } from '$store/renderer/slices/workspace/workspace-selectors';
@@ -51,8 +57,8 @@
   import { onMount } from 'svelte';
   import { writable } from 'svelte/store';
   import Fa from 'svelte-fa';
-  import { notify } from '$lib/components/patterns/notify';
-  import { withToastCountdown } from '$lib/components/patterns/notify';
+  import { toast } from 'svelte-sonner';
+  import { withToastCountdown } from '$lib/components/ui/toast';
   import { Button } from '$lib/components/ui/button';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import * as Menu from '$lib/components/ui/menu';
@@ -122,6 +128,7 @@
   });
 
   const installedEditors$ = selectInstalledEditorsFiltered(workspaceIdStore);
+  const gitStatusReadOperation$ = selectGitStatusReadOperation(workspaceIdStore);
 
   // Editors arrive priority-sorted; expose every installed editor and rely on
   // "Choose app" for applications that are not installed or enabled.
@@ -141,6 +148,12 @@
   let resolvedPath: string = $state('');
   let resolvedFolderPath: string = $state('');
   let isDeletingFile = $state(false);
+  let pendingXcodeOpen = $state<{
+    requestId: string;
+    path: string;
+    folderPath: string;
+    isDirectory: boolean;
+  } | null>(null);
 
   // Fetch installed editors when component mounts
   onMount(() => {
@@ -267,7 +280,7 @@
     } catch (error) {
       logger.error('Failed to open in VSCode:', error);
       // i18n-ignore (brand name)
-      notify.error(
+      toast.error(
         error instanceof Error
           ? error.message
           : m.ui_workspaceActions_openFailed_error({ name: 'VS Code' }),
@@ -298,7 +311,7 @@
     } catch (error) {
       logger.error('Failed to open in JetBrains:', error);
       // i18n-ignore (brand name)
-      notify.error(
+      toast.error(
         error instanceof Error
           ? error.message
           : m.ui_workspaceActions_openFailed_error({ name: 'JetBrains' }),
@@ -306,46 +319,68 @@
     }
   }
 
-  async function openInXcode() {
+  function openInXcode() {
     if (!resolvedPath) {
       logger.warn('[WorkspaceActionsMenu] No resolved path for Xcode');
       return;
     }
+    const request = {
+      path: resolvedPath,
+      folderPath: resolvedFolderPath,
+      isDirectory,
+    };
+    if (workspaceId && resolvedFolderPath) {
+      const statusRequest = readGitStatusRequested(workspaceId, true);
+      pendingXcodeOpen = { ...request, requestId: statusRequest.payload[2] };
+      appStore.dispatch(statusRequest);
+      return;
+    }
+    void launchXcode(request, []);
+  }
+
+  $effect(() => {
+    const pending = pendingXcodeOpen;
+    const operation = $gitStatusReadOperation$;
+    if (!pending || operation.requestId !== pending.requestId) return;
+    if (operation.status === 'idle' || operation.status === 'loading') return;
+
+    pendingXcodeOpen = null;
+    const changedFiles =
+      operation.status === 'success'
+        ? (operation.result?.files.map((file) => file.path) ?? [])
+        : [];
+    if (operation.status === 'error') {
+      logger.debug('[WorkspaceActionsMenu] Could not get changed files for Xcode', operation.error);
+    } else {
+      logger.info('[WorkspaceActionsMenu] Found changed files for Xcode', {
+        count: changedFiles.length,
+      });
+    }
+    void launchXcode(pending, changedFiles);
+  });
+
+  async function launchXcode(
+    request: { path: string; folderPath: string; isDirectory: boolean },
+    changedFiles: string[],
+  ) {
     try {
-      // Fetch changed files to help find the right Xcode project in monorepos.
-      // Daemon-backed read (`git.status`, PROTOCOL §5.6) via the appClient seam.
-      let changedFiles: string[] = [];
-      if (workspaceId && resolvedFolderPath) {
-        try {
-          const status = await appClient.git.status(workspaceId);
-          if (status?.files) {
-            changedFiles = status.files.map((f) => f.path);
-            logger.info('[WorkspaceActionsMenu] Found changed files for Xcode', {
-              count: changedFiles.length,
-            });
-          }
-        } catch (err) {
-          // Non-fatal - we can still open Xcode without changed files
-          logger.debug('[WorkspaceActionsMenu] Could not get changed files for Xcode', err);
-        }
-      }
+      const { path, folderPath, isDirectory: requestIsDirectory } = request;
 
       // If we have a resolved folder path, open the workspace folder with the file
       // Otherwise just open the file/folder
-      let pathToOpen: string | { folder: string; file?: string; changedFiles?: string[] } =
-        resolvedPath;
+      let pathToOpen: string | { folder: string; file?: string; changedFiles?: string[] } = path;
 
-      if (resolvedFolderPath && !isDirectory) {
+      if (folderPath && !requestIsDirectory) {
         // For files with a workspace folder, pass both folder and file
         pathToOpen = {
-          folder: resolvedFolderPath,
-          file: resolvedPath,
+          folder: folderPath,
+          file: path,
           changedFiles: changedFiles.length > 0 ? changedFiles : undefined,
         };
-      } else if (resolvedFolderPath) {
+      } else if (folderPath) {
         // For directories, just open the workspace folder with changed files for smart detection
         pathToOpen = {
-          folder: resolvedFolderPath,
+          folder: folderPath,
           changedFiles: changedFiles.length > 0 ? changedFiles : undefined,
         };
       }
@@ -355,7 +390,7 @@
     } catch (error) {
       logger.error('Failed to open in Xcode:', error);
       // i18n-ignore (brand name)
-      notify.error(
+      toast.error(
         error instanceof Error
           ? error.message
           : m.ui_workspaceActions_openFailed_error({ name: 'Xcode' }),
@@ -424,7 +459,7 @@
       onClose?.();
     } catch (error) {
       logger.error(`[WorkspaceActionsMenu] Failed to open in ${editor.appName}:`, error);
-      notify.error(
+      toast.error(
         error instanceof Error
           ? error.message
           : m.ui_workspaceActions_openFailed_error({ name: editor.appName }),
@@ -463,7 +498,7 @@
         // i18n-ignore (IPC sentinel string from the main process, not UI copy)
         if (result?.error !== 'No application selected') {
           logger.error('Failed to open with other app:', result?.error);
-          notify.error(result?.error || m.ui_workspaceActions_openOtherFailed_error());
+          toast.error(result?.error || m.ui_workspaceActions_openOtherFailed_error());
         }
         return;
       }
@@ -471,7 +506,7 @@
       onClose?.();
     } catch (error) {
       logger.error('Failed to open with other app:', error);
-      notify.error(
+      toast.error(
         error instanceof Error ? error.message : m.ui_workspaceActions_openOtherFailed_error(),
       );
     }
@@ -530,7 +565,7 @@
     }
   }
 
-  async function handleDeleteFile() {
+  function handleDeleteFile() {
     if (!workspaceId || !resolvedPath || isDeletingFile) return;
 
     isDeletingFile = true;
@@ -539,63 +574,39 @@
       const pathToDelete = resolvedPath;
 
       // Read file content before deleting so we can undo
-      let savedContent = '';
-      try {
-        const readResult = await invoke<{
-          success: boolean;
-          data: { content: string; isBinary?: boolean };
-        }>('file:read', { path: pathToDelete, workspaceId });
-        savedContent = readResult?.data?.content ?? '';
-      } catch {
-        // If we can't read the file, proceed with delete but undo won't restore content
-      }
+      const savedContent = selectFileContent.select(appStore.state, workspaceId, filePath) ?? '';
+      appStore.dispatch(deleteLegacyFileRequested(workspaceId, pathToDelete));
+      onFileDeleted?.();
+      onClose?.();
 
-      const result = await invoke<{ success: boolean; error?: string }>('file:delete', {
-        path: pathToDelete,
-        workspaceId,
-      });
-
-      if (result?.success) {
-        onFileDeleted?.();
-        onClose?.();
-
-        const toastId = notify.warning(
-          m.ui_workspaceActions_deletedFile_label({ name: fileName }),
-          withToastCountdown({
-            duration: 15000,
-            action: {
-              label: m.ui_workspaceActions_undo_label(),
-              onClick: async () => {
-                try {
-                  await invoke('file:write', {
-                    path: pathToDelete,
-                    content: savedContent,
-                    workspaceId,
-                  });
-                  dispatchWindowEvent('file:changed', {
-                    workspaceId,
-                    type: 'create',
-                    filePath: pathToDelete,
-                  });
-                  notify.dismiss(toastId);
-                } catch (err) {
-                  logger.error('[WorkspaceActionsMenu] Failed to restore file', err);
-                  notify.error(m.ui_workspaceActions_restoreFileFailed_error());
-                }
-              },
+      const toastId = toast.warning(
+        m.ui_workspaceActions_deletedFile_label({ name: fileName }),
+        withToastCountdown({
+          duration: 15000,
+          action: {
+            label: m.ui_workspaceActions_undo_label(),
+            onClick: () => {
+              try {
+                appStore.dispatch(
+                  writeLegacyFileRequested(workspaceId, pathToDelete, savedContent),
+                );
+                dispatchWindowEvent('file:changed', {
+                  workspaceId,
+                  type: 'create',
+                  filePath: pathToDelete,
+                });
+                toast.dismiss(toastId);
+              } catch (err) {
+                logger.error('[WorkspaceActionsMenu] Failed to restore file', err);
+                toast.error(m.ui_workspaceActions_restoreFileFailed_error());
+              }
             },
-          }),
-        );
-      } else {
-        notify.error(
-          m.ui_workspaceActions_deleteFileFailedDetail_error({
-            error: result?.error || m.ui_workspaceActions_unknown_error(),
-          }),
-        );
-      }
+          },
+        }),
+      );
     } catch (err) {
       logger.error('[WorkspaceActionsMenu] Error deleting file', err);
-      notify.error(m.ui_workspaceActions_deleteFileFailed_error());
+      toast.error(m.ui_workspaceActions_deleteFileFailed_error());
     } finally {
       isDeletingFile = false;
     }

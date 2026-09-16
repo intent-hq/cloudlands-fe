@@ -215,6 +215,11 @@ import {
 } from '$features/workspace/navigate-away-if-viewing';
 import { restoreWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
 import { applyNoteFromEvent } from '$features/notes/notes-read-service';
+import {
+  lineAttributionUpdated,
+  workspaceProgressReadyTasksChanged,
+  workspaceProgressStatusRefreshRequested,
+} from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
 import { applyCommentFromEvent } from '$features/comments/comments-read-service';
 import {
   ensureAgentSession,
@@ -3175,18 +3180,41 @@ function relayLegacyIpcEvent(type: string, event: WorkspaceEvent, workspaceId: s
       emitMockIpcEvent('agent:idle', event);
       return;
     case 'task:ready-tasks-changed':
+      if (Array.isArray(data.readyTaskIds)) {
+        appStore.dispatch(
+          workspaceProgressReadyTasksChanged(
+            workspaceId,
+            data.readyTaskIds.filter((id): id is string => typeof id === 'string'),
+          ),
+        );
+      }
       emitMockIpcEvent('task:ready-tasks-changed', event);
       return;
     case 'git:commit':
     case 'git:pull':
     case 'changes:git-status':
+      appStore.dispatch(workspaceProgressStatusRefreshRequested(workspaceId));
       emitMockIpcEvent('git:status-changed', { workspaceId });
       return;
     case 'changes:tracked':
+      appStore.dispatch(workspaceProgressStatusRefreshRequested(workspaceId));
       emitMockIpcEvent('git:status-changed', { workspaceId });
       emitMockIpcEvent('file-tracking:changes-updated', { workspaceId });
       return;
     case 'line-attribution:updated':
+      if (
+        typeof data.noteId === 'string' &&
+        data.attributions &&
+        typeof data.attributions === 'object'
+      ) {
+        appStore.dispatch(
+          lineAttributionUpdated(
+            workspaceId,
+            data.noteId,
+            data.attributions as Parameters<typeof lineAttributionUpdated>[2],
+          ),
+        );
+      }
       emitMockIpcEvent('line-attribution:updated', {
         workspaceId,
         noteId: data.noteId,
@@ -3194,6 +3222,20 @@ function relayLegacyIpcEvent(type: string, event: WorkspaceEvent, workspaceId: s
       });
       return;
     case 'workspace:updated':
+      {
+        const changes =
+          data.changes && typeof data.changes === 'object'
+            ? (data.changes as Record<string, unknown>)
+            : data;
+        if (
+          'activePullRequest' in changes ||
+          'prStatus' in changes ||
+          'prNumber' in changes ||
+          'pullRequests' in changes
+        ) {
+          appStore.dispatch(workspaceProgressStatusRefreshRequested(workspaceId));
+        }
+      }
       emitMockIpcEvent('workspace:updated', { workspaceId, changes: data });
       return;
   }

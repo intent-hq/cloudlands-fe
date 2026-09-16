@@ -30,6 +30,9 @@ const testState = vi.hoisted(() => {
     batchedGitBranchBaseDiffMock: vi.fn(),
     dedupedShowFileMock: vi.fn(),
     originalContentStore: createReadable<string | null>(null),
+    gitDiffReadStore: createReadable<
+      { data: unknown[]; loading: boolean; error: string | null } | undefined
+    >(undefined),
     activeWorkspaceStore: createReadable({ id: 'ws-1', worktreePath: '/repo' }),
   };
 });
@@ -56,6 +59,17 @@ vi.mock('$store/renderer/slices/files/files-selectors', () => ({
       select: vi.fn(() => testState.originalContentStore.value),
     },
   ),
+}));
+
+vi.mock('$store/renderer/slices/git/git-selectors', () => ({
+  selectGitDiffRead: vi.fn(() => testState.gitDiffReadStore),
+}));
+
+vi.mock('$store/renderer/slices/git/git-slice', () => ({
+  loadGitDiffs: (workspaceId: string, options: unknown) => ({
+    type: 'git/loadDiffs',
+    payload: [workspaceId, options],
+  }),
 }));
 
 vi.mock('$lib/electron-bridge', () => ({
@@ -106,6 +120,7 @@ function createChange(overrides: Partial<TrackedChange> = {}): TrackedChange {
 beforeEach(() => {
   vi.clearAllMocks();
   testState.originalContentStore.set(null);
+  testState.gitDiffReadStore.set(undefined);
   testState.invokeMock.mockResolvedValue({ success: true, data: { content: 'disk content' } });
   testState.batchedGitDiffMock.mockResolvedValue(undefined);
   testState.batchedGitBranchBaseDiffMock.mockResolvedValue(undefined);
@@ -130,6 +145,45 @@ describe('TrackedChangeDiffViewer content loading regressions', () => {
       expect.objectContaining({ type: 'files/loadFileContentRequested' }),
     );
     expect(testState.batchedGitDiffMock).not.toHaveBeenCalled();
+  });
+
+  it('renders committed hunks from the keyed Redux git-diff result', async () => {
+    render(TrackedChangeDiffViewer, {
+      props: {
+        change: createChange({ stage: ChangeStage.Committed, commitHash: 'abc123' }),
+        workspaceId: 'ws-1',
+      },
+    });
+
+    await waitFor(() =>
+      expect(testState.dispatchMock).toHaveBeenCalledWith({
+        type: 'git/loadDiffs',
+        payload: ['ws-1', { commitHash: 'abc123', path: 'src/app.ts' }],
+      }),
+    );
+
+    testState.gitDiffReadStore.set({
+      data: [
+        {
+          file: 'src/app.ts',
+          chunks: [
+            {
+              oldStart: 1,
+              oldLines: 1,
+              newStart: 1,
+              newLines: 1,
+              lines: [{ type: 'Addition', content: 'const ready = true;\n' }],
+            },
+          ],
+        },
+      ],
+      loading: false,
+      error: null,
+    });
+
+    await waitFor(() =>
+      expect(screen.getByTestId('patch').textContent).toContain('+const ready = true;'),
+    );
   });
 
   it('renders a gitlink (submodule) pseudo-diff from hunk lines without show-file/file:read (#1739)', async () => {

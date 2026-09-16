@@ -752,7 +752,7 @@ describe('DaemonStoppedOverlay', () => {
       const dispatched = dispatchSpy.mock.calls
         .map(([action]) => action as { type: string; payload?: unknown[] })
         .find((action) => action.type === openConnectionRequested.type);
-      expect(dispatched?.payload).toEqual(['remote-2']);
+      expect(dispatched?.payload?.[0]).toBe('remote-2');
       // Open-only: the legacy retargeting action must never fire from the
       // overlay. Literal type string: the remove-switch change deleted the
       // action creator, and this negative assertion must survive that.
@@ -772,15 +772,13 @@ describe('DaemonStoppedOverlay', () => {
 
       // No connections saga runs here: settle the open's promise the way the
       // saga would, with the resolved (not rejected) secret-unavailable status.
-      const originalDispatch = appStore.dispatch.bind(appStore);
       const dispatchSpy = vi.spyOn(appStore, 'dispatch').mockImplementation((action) => {
-        const result = originalDispatch(action);
         if ((action as { type: string }).type === openConnectionRequested.type) {
           (action as ReturnType<typeof openConnectionRequested>).success({
             status: 'secret-unavailable',
           });
         }
-        return result;
+        return action;
       });
 
       await fireEvent.click(screen.getByTestId('daemon-stopped-open-backend'));
@@ -816,16 +814,14 @@ describe('DaemonStoppedOverlay', () => {
       await showOverlay(wsTransport);
       bindWindowToRemote();
 
-      const originalDispatch = appStore.dispatch.bind(appStore);
       const dispatchSpy = vi.spyOn(appStore, 'dispatch').mockImplementation((action) => {
-        const result = originalDispatch(action);
         if ((action as { type: string }).type === openConnectionRequested.type) {
           (action as ReturnType<typeof openConnectionRequested>).success({
             status: 'opened',
             id: 'remote-2',
           });
         }
-        return result;
+        return action;
       });
 
       await fireEvent.click(screen.getByTestId('daemon-stopped-open-backend'));

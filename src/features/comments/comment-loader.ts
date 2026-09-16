@@ -11,7 +11,6 @@ export interface CommentLoaderOptions {
   useMockData?: boolean;
   mockComments?: NoteComment[];
 }
-
 /**
  * Load comments from IPC
  *
@@ -131,27 +130,4 @@ function getDefaultMockComments(): NoteComment[] {
       reactions: {},
     },
   ];
-}
-
-/**
- * Resolve a comment via IPC
- */
-export async function resolveComment(
-  workspaceId: string,
-  commentId: string,
-  noteId: string = 'spec',
-): Promise<boolean> {
-  try {
-    const result = await commentsClient.updateStatus({
-      workspaceId,
-      noteId,
-      commentId,
-      status: 'resolved',
-    });
-
-    return result.ok;
-  } catch (error) {
-    logger.error('[CommentLoader] Failed to resolve comment:', error);
-    return false;
-  }
 }

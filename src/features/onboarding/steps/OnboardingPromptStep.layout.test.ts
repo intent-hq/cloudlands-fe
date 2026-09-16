@@ -5,6 +5,11 @@ import type { ComponentProps } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { m } from '$shared/paraglide/messages.js';
 
+vi.mock('$store/renderer/store', async () => {
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
+  return createAppStoreMockModule({ state: {} });
+});
 vi.mock('$store/renderer/slices/specialists/specialists-selectors', async () => {
   const { readable } = await import('svelte/store');
   return { selectSpecialists: () => readable([]) };
@@ -17,6 +22,18 @@ vi.mock('$store/renderer/slices/provider-settings/provider-settings-selectors', 
   const { readable } = await import('svelte/store');
   return { selectActiveProviderId: () => readable('auggie') };
 });
+vi.mock(
+  '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors',
+  async () => {
+    const { readable } = await import('svelte/store');
+    const idle = { status: 'idle', version: 0, data: null, error: null } as const;
+    return {
+      selectWorkspaceInitializerSpecialistPreviews: Object.assign(() => readable(idle), {
+        select: () => idle,
+      }),
+    };
+  },
+);
 vi.mock('$lib/client', () => ({
   appClient: { specialists: { list: vi.fn(async () => []) } },
 }));

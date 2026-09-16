@@ -17,8 +17,7 @@ import type {
   PrepareAcceptResponse,
   ExecuteAcceptRequest,
   AcceptChangesResult,
-  MergeStrategy,
-  UndoCommitMetadata,
+  AcceptChangesExecuteOptions,
 } from './types';
 
 /** Convert a thrown transport/daemon error into a failed AcceptChangesResult. */
@@ -97,22 +96,7 @@ export class AcceptChangesClient {
   static async execute(
     workspaceId: WorkspaceId,
     action: AcceptAction,
-    options?: {
-      files?: string[];
-      commitMessage?: string;
-      prTitle?: string;
-      prBody?: string;
-      targetBranch?: string;
-      mergeStrategy?: MergeStrategy;
-      upToCommitHash?: string;
-      /** Metadata about commits being undone, used to restore attributions */
-      undoCommitsMetadata?: UndoCommitMetadata[];
-      stageUnstaged?: boolean;
-      pushAfterCommit?: boolean;
-      createPRAfterPush?: boolean;
-      rebaseFirst?: boolean;
-      localOnly?: boolean;
-    },
+    options?: AcceptChangesExecuteOptions,
   ): Promise<AcceptChangesResult> {
     const request: ExecuteAcceptRequest = {
       workspaceId,
