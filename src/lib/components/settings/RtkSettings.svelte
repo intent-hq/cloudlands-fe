@@ -152,7 +152,7 @@
               get: () => rtkEnabled,
               set: handleToggle,
               error: () => settingsError || undefined,
-              disabled: () => !rtkAvailable,
+              disabled: () => !rtkAvailable || updating,
             },
           ],
         },

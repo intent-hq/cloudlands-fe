@@ -104,6 +104,38 @@ describe('RtkSettings', () => {
     });
   });
 
+  it('disables repeat toggles until the pending value is saved', async () => {
+    mocks.mockSettingsGet.mockResolvedValue({ path: 'rtk.enabled', value: false });
+    mocks.mockInvoke.mockResolvedValue({ data: { available: true } });
+    let finishSave!: () => void;
+    let persistedValue = false;
+    mocks.mockSettingsUpdate.mockImplementation(
+      (changes: { path: string; value: boolean }[]) =>
+        new Promise<void>((resolve) => {
+          finishSave = () => {
+            persistedValue = changes[0].value;
+            resolve();
+          };
+        }),
+    );
+
+    render(RtkSettings);
+
+    const toggle = await screen.findByRole('switch');
+    await fireEvent.click(toggle);
+    expect(toggle.getAttribute('aria-checked')).toBe('true');
+    expect(toggle.hasAttribute('disabled')).toBe(true);
+
+    await fireEvent.click(toggle);
+    expect(mocks.mockSettingsUpdate).toHaveBeenCalledTimes(1);
+    expect(toggle.getAttribute('aria-checked')).toBe('true');
+
+    finishSave();
+    await waitFor(() => expect(toggle.hasAttribute('disabled')).toBe(false));
+    expect(persistedValue).toBe(true);
+    expect(toggle.getAttribute('aria-checked')).toBe(String(persistedValue));
+  });
+
   it('toggles from enabled to disabled', async () => {
     mocks.mockSettingsGet.mockResolvedValue({ path: 'rtk.enabled', value: true });
     mocks.mockInvoke.mockResolvedValue({ data: { available: true } });
