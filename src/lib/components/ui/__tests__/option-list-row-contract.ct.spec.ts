@@ -115,9 +115,9 @@ for (const theme of ['light', 'dark'] as const) {
       await trigger.focus();
       await trigger.press('ArrowDown');
       const menu = page.getByRole('menu');
-      // The menu takes keyboard focus one frame after opening; wait for it
-      // before navigating so the End key is handled by the menu.
-      await expect.poll(() => menu.evaluate((node) => node.matches(':focus-within'))).toBe(true);
+      // A keyboard open settles with the first enabled item focused; wait for
+      // that before navigating so the End key is handled by the menu.
+      await expect(page.getByRole('menuitem', { name: 'Apple' })).toBeFocused();
       await page.keyboard.press('End');
       await page.keyboard.press('ArrowUp');
       const row = page.getByRole('menuitemradio', { name: 'Comfortable' });

@@ -1,5 +1,6 @@
 // @ui-invariant-exempt: caller-ledger assertions read only the hand-maintained menu.meta array, and vitest related already runs this suite via the direct menu.meta import
 import { afterEach, describe, expect, it } from 'vitest';
+import { tick } from 'svelte';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import MenuTestHarness from './MenuTestHarness.svelte';
 import LegacyMenuHarness from './LegacyMenuHarness.svelte';
@@ -88,6 +89,22 @@ describe('Menu keyboard and focus behavior', () => {
     });
     await fireEvent.keyDown(apple, { key: 'ArrowDown' });
     await waitFor(() => expect(highlight.getAttribute('data-active-index')).toBe('1'));
+  });
+
+  it('does not reset keyboard focus that already moved inside the menu when the open-focus frame runs', async () => {
+    render(MenuTestHarness);
+    await openMenu();
+    const apple = screen.getByRole('menuitem', { name: 'Apple' });
+    const banana = screen.getByRole('menuitem', { name: 'Banana' });
+    // Keyboard navigation moves focus before the deferred open-focus frame fires.
+    banana.focus();
+    expect(document.activeElement).toBe(banana);
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    await tick();
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    await tick();
+    expect(document.activeElement).toBe(banana);
+    expect(document.activeElement).not.toBe(apple);
   });
 
   it('dismisses with Escape and restores focus to the trigger', async () => {
