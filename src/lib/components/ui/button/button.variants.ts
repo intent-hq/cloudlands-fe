@@ -28,6 +28,7 @@ export const buttonCompatibilityAliases = [
   { prop: 'size', alias: 'icon-xs', replacement: 'icon-compact' },
 ] as const;
 
+// All sizes and states share the medium radius; surfaces inherit the same curve.
 export const buttonVariants = tv({
   base: 'type-caption group/button relative isolate inline-flex shrink-0 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-(--radius-medium) border-0 bg-transparent font-normal transition-[color,opacity] duration-spring-fast ease-spring-fast disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-invalid:ring-1 aria-invalid:ring-danger motion-reduce:transition-none [&_svg]:pointer-events-none [&_svg]:shrink-0',
   variants: {

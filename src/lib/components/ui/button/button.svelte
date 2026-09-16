@@ -57,7 +57,7 @@
   );
   const surfaceClass = $derived(
     cn(
-      'pointer-events-none absolute inset-px transition-[box-shadow,background-color,filter] duration-spring-fast ease-spring-fast motion-reduce:transition-none',
+      'pointer-events-none absolute inset-0 transition-[box-shadow,background-color,filter] duration-spring-fast ease-spring-fast motion-reduce:transition-none',
       (active ? activeButtonSurfaceVariants : buttonSurfaceVariants)[variant],
     ),
   );

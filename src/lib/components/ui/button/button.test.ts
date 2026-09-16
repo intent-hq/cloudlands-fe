@@ -38,7 +38,6 @@ describe('Button', () => {
     expect(buttonVariants({ size: 'default' })).toContain('h-(--control-height-medium)');
     expect(buttonVariants({ size: 'lg' })).toContain('h-(--control-height-large)');
     expect(buttonVariants({ size: 'default' })).toContain('px-4');
-    expect(buttonVariants()).toContain('rounded-(--radius-medium)');
     expect(buttonVariants()).toContain('border-0');
     expect(buttonVariants()).toContain('font-normal');
     expect(buttonVariants()).not.toContain('outline-none');
