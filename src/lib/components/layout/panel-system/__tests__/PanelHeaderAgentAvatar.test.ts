@@ -49,7 +49,7 @@ vi.mock('$store/renderer/slices/hud/hud-selectors', () => ({
   selectHudAgentHasPendingQuestion: () => state.hasQuestion.readable,
 }));
 vi.mock('$lib/components/chat/questions/wizard-gate', () => ({
-  deriveWizardPendingQuestions: () => null,
+  deriveAgentHasPendingQuestion: () => false,
 }));
 vi.mock('$features/agent/components/agent-avatar/AgentAvatar.svelte', async () => ({
   default: (await import('$lib/components/workspace/__tests__/mocks/MockAgentAvatar.svelte'))

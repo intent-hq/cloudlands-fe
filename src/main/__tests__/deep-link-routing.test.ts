@@ -82,9 +82,10 @@ vi.mock('../../shared/logger', () => ({
 import type { DeepLinkHandler } from '../../features/deeplink/deep-link-handler';
 import { createWindow, createWindowForDeepLink } from '../window';
 import { findIntentUrl } from '../../features/deeplink/utils/find-intent-url';
+import { TC_ADDRESS_WITH_PSK } from '../../test/fixtures/tc-address.fixture';
 
 const TOKEN = 'super-secret-token-value';
-const PAIR_LINK = `intent://pair?v=1&host=192.168.1.10&port=8443&fp=AA:BB:CC&token=${TOKEN}`;
+const PAIR_LINK = `intent://pair?v=1&host=192.168.1.10&port=8443&fp=AA:BB:CC&token=${TOKEN}&tc=${TC_ADDRESS_WITH_PSK}`;
 
 function makeMainWindow() {
   return {
@@ -127,9 +128,10 @@ describe('createWindowForDeepLink pair-link routing', () => {
     expect(mainWindow.webContents.send).not.toHaveBeenCalled();
   });
 
-  it('never logs the pair token', async () => {
+  it('never logs pairing credentials', async () => {
     await createWindowForDeepLink(PAIR_LINK, makeHandler());
     expect(logLines.join('\n')).not.toContain(TOKEN);
+    expect(logLines.join('\n')).not.toContain(TC_ADDRESS_WITH_PSK);
   });
 
   it('still sends settings links to the existing window over IPC', async () => {

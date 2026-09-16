@@ -179,7 +179,7 @@
     }
   }
 
-  @media (prefers-reduced-motion: reduce) {
+  @container style(--motion-reduced: 1) {
     .spinner-tile {
       animation: none;
       opacity: 1;

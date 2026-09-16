@@ -2,8 +2,10 @@
   Sequential Agent Q&A wizard rendered in the composer slot as a quiet,
   transparent form with outlined controls. Walks
   the pending questions one at a time; choose-one advances on selection,
-  multi-select keeps a Next button, Enter in the free-form field advances,
-  Skip clears + advances, Back returns with the previous answer pre-selected.
+  multi-select keeps a Next button, Enter in the free-form field (an
+  auto-growing, user-resizable textarea; Shift+Enter inserts a newline)
+  advances, Skip clears + advances, Back returns with the previous answer
+  pre-selected.
   Hide collapses the well to a compact re-expandable banner (the host owns
   the collapse flag and its persistence). With a
   `draftKey` the in-progress answers + current step persist to localStorage
@@ -40,6 +42,7 @@
   } from '@fortawesome/free-solid-svg-icons';
   import { fade } from 'svelte/transition';
   import Button from '$lib/components/ui/button/button.svelte';
+  import { prefersReducedMotion } from '$lib/utils/reduced-motion';
   import DismissQuestionsConfirmDialog from './DismissQuestionsConfirmDialog.svelte';
   import { m } from '$shared/paraglide/messages.js';
   import {
@@ -129,12 +132,10 @@
   // options + free text together).
   const optionsLocked = $derived(!isMulti && draft.text.length > 0);
 
-  // Motion: snappy 150ms step transitions, none under prefers-reduced-motion.
-  const stepDuration =
-    typeof window !== 'undefined' &&
-    window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches
-      ? 0
-      : 150;
+  // Motion: snappy 150ms step transitions, none under reduced motion. Read
+  // per transition (not once at mount) so a battery/AC or OS preference flip
+  // after mount applies to the next step without a remount.
+  const stepDuration = () => (prefersReducedMotion() ? 0 : 150);
 
   // ── Draft persistence (only when `draftKey` is set) ────────────────────
   // Saves are debounced so typing does not write every keystroke; the
@@ -251,11 +252,58 @@
     idx = Math.max(idx - 1, 0);
   }
 
+  // Enter submits; Shift+Enter falls through to the textarea's native newline
+  // insertion, and an IME-composition Enter only commits the composition.
   function handleKeydown(e: KeyboardEvent) {
-    if (e.key !== 'Enter') return;
+    if (e.key !== 'Enter' || e.shiftKey || e.isComposing) return;
     e.preventDefault();
     handleNext();
   }
+
+  // ── Free-text field auto-grow ──────────────────────────────────────────
+  // The textarea starts one line tall and grows with its content up to
+  // TEXT_FIELD_MAX_LINES, after which it scrolls. A manual drag on the resize
+  // handle wins for the rest of the step: the field remounts per step
+  // ({#key idx}), which resets the latch.
+  const TEXT_FIELD_MAX_LINES = 6;
+  let textField = $state<HTMLTextAreaElement | undefined>(undefined);
+  let fittedHeight = 0;
+  let manuallyResized = false;
+
+  function fitTextField() {
+    const el = textField;
+    if (!el || manuallyResized) return;
+    el.style.height = 'auto';
+    // No layout (jsdom) — leave the CSS `rows` height in place.
+    if (el.scrollHeight === 0) return;
+    const lineHeight = parseFloat(getComputedStyle(el).lineHeight);
+    const cap = Number.isFinite(lineHeight) ? lineHeight * TEXT_FIELD_MAX_LINES : Infinity;
+    el.style.height = `${Math.min(el.scrollHeight, cap)}px`;
+    fittedHeight = el.offsetHeight;
+  }
+
+  $effect(() => {
+    const el = textField;
+    if (!el) return;
+    manuallyResized = false;
+    fitTextField();
+    if (typeof ResizeObserver === 'undefined') return;
+    let lastWidth = el.offsetWidth;
+    // A height that differs from the last fit came from the user's drag; a
+    // width change (panel resize) rewraps the text, so refit.
+    const observer = new ResizeObserver(() => {
+      if (Math.abs(el.offsetHeight - fittedHeight) > 1) {
+        manuallyResized = true;
+        return;
+      }
+      if (el.offsetWidth !== lastWidth) {
+        lastWidth = el.offsetWidth;
+        fitTextField();
+      }
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  });
 </script>
 
 <div
@@ -329,7 +377,7 @@
     </div>
 
     {#key idx}
-      <div in:fade={{ duration: stepDuration }}>
+      <div in:fade={{ duration: stepDuration() }}>
         <div class="flex flex-col gap-4 px-3 pt-3 pb-3 sm:px-4">
           <h2 class="type-title font-medium text-foreground">{current.question}</h2>
 
@@ -383,19 +431,22 @@
           </div>
 
           <div
-            class="flex items-center rounded-(--radius-medium) border border-input bg-transparent px-3 py-2 focus-within:border-ring"
+            class="flex items-start rounded-(--radius-medium) border border-input bg-transparent px-3 py-2 focus-within:border-ring"
           >
-            <input
+            <textarea
+              bind:this={textField}
               bind:value={draft.text}
+              rows="1"
               oninput={() => {
                 draft.skipped = false;
                 if (!isMulti && draft.text.length > 0) draft.sel = [];
+                fitTextField();
               }}
               onkeydown={handleKeydown}
               aria-label={m.chat_questionWizard_ownAnswer_ariaLabel()}
               placeholder={m.chat_questionWizard_ownAnswer_placeholder()}
-              class="type-body flex-1 border-none! bg-transparent font-[inherit] text-foreground outline-none! ring-0! focus:outline-none! focus:ring-0! focus-visible:outline-none! focus-visible:ring-0!"
-            />
+              class="type-body block w-full min-w-0 min-h-[1lh] resize-y overflow-y-auto border-none! bg-transparent p-0 font-[inherit] text-foreground outline-none! ring-0! focus:outline-none! focus:ring-0! focus-visible:outline-none! focus-visible:ring-0!"
+            ></textarea>
           </div>
         </div>
 

@@ -53,7 +53,7 @@
     height: 15px;
     line-height: 15px;
   }
-  @media (prefers-reduced-motion: reduce) {
+  @container style(--motion-reduced: 1) {
     .hud-agent-line-slide {
       transition: none;
     }

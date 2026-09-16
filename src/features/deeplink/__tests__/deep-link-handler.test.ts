@@ -34,9 +34,11 @@ vi.mock('../../../shared/logger', () => ({
 
 import type { BrowserWindow } from 'electron';
 import { DeepLinkHandler } from '../deep-link-handler';
+import { scrubToken } from '../utils/scrub-token';
+import { TC_ADDRESS_WITH_PSK } from '../../../test/fixtures/tc-address.fixture';
 
 const TOKEN = 'super-secret-token-value';
-const PAIR_LINK = `intent://pair?v=1&host=192.168.1.10&port=8443&fp=AA:BB:CC&token=${TOKEN}`;
+const PAIR_LINK = `intent://pair?v=1&host=192.168.1.10&port=8443&fp=AA:BB:CC&token=${TOKEN}&tc=${TC_ADDRESS_WITH_PSK}`;
 
 function makeWindow() {
   return {
@@ -94,12 +96,49 @@ describe('DeepLinkHandler pair-link routing', () => {
     expect(handlePairDeepLink).not.toHaveBeenCalled();
   });
 
-  it('never logs the pair token across park, process, and parse paths', async () => {
+  it('never logs pairing credentials across park, process, and parse paths', async () => {
     const handler = new DeepLinkHandler();
     await handler.handleDeepLink(PAIR_LINK, null);
     await handler.processPendingUrl(asBrowserWindow(makeWindow()));
     handler.parseDeepLink(PAIR_LINK);
     const allLogs = logLines.join('\n');
     expect(allLogs).not.toContain(TOKEN);
+    expect(allLogs).not.toContain(TC_ADDRESS_WITH_PSK);
+  });
+
+  it('does not log the raw URL input carried by a parsing exception', () => {
+    const handler = new DeepLinkHandler();
+    expect(handler.parseDeepLink(`intent://pair:invalid?tc=${TC_ADDRESS_WITH_PSK}`)).toBeNull();
+    expect(logLines.join('\n')).not.toContain(TC_ADDRESS_WITH_PSK);
+  });
+});
+
+describe('pairing diagnostic scrubbing', () => {
+  it.each([
+    PAIR_LINK,
+    PAIR_LINK.replace('intent://pair', 'INTENT://PAIR'),
+    `intent://pair?%74oken=${TOKEN}&%74c=${TC_ADDRESS_WITH_PSK}`,
+    `intent://pair?host=${TC_ADDRESS_WITH_PSK}&token=${TOKEN}`,
+  ])('redacts complete pairing links in free-form text', (link) => {
+    const scrubbed = scrubToken(`failed for "${link}"; retry later`);
+    expect(scrubbed).not.toContain(TOKEN);
+    expect(scrubbed).not.toContain(TC_ADDRESS_WITH_PSK);
+    expect(scrubbed).toContain('retry later');
+  });
+
+  it('retains standalone token protection and redacts tc query fields', () => {
+    const scrubbed = scrubToken(`token=${TOKEN}&tc=${TC_ADDRESS_WITH_PSK} retry later`);
+    expect(scrubbed).not.toContain(TOKEN);
+    expect(scrubbed).not.toContain(TC_ADDRESS_WITH_PSK);
+    expect(scrubbed).toContain('token=REDACTED');
+    expect(scrubToken('intent://settings?section=general')).toBe(
+      'intent://settings?section=general',
+    );
+  });
+
+  it('redacts a bare Tailcat address echoed by an error', () => {
+    expect(scrubToken(`Connection to ${TC_ADDRESS_WITH_PSK} failed`)).not.toContain(
+      TC_ADDRESS_WITH_PSK,
+    );
   });
 });

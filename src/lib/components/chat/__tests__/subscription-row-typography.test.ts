@@ -67,6 +67,7 @@ vi.mock('$store/renderer/slices/hud/hud-selectors', () => ({
   selectHudAgentHasPendingQuestion: () => readable(false),
 }));
 vi.mock('$lib/components/chat/questions/wizard-gate', () => ({
+  deriveAgentHasPendingQuestion: () => false,
   deriveWizardPendingQuestions: () => null,
 }));
 vi.mock('$store/renderer/slices/changes/changes-selectors', () => ({

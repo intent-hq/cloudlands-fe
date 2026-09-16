@@ -1,4 +1,5 @@
 import { USER_MESSAGE_SURFACE_CLASS, USER_MESSAGE_TEXT_CLASS } from './user-message-surface';
+import { prefersReducedMotion } from '$lib/utils/reduced-motion';
 import { followToBottom } from '$lib/utils/smartScroll';
 
 export const MESSAGE_SEND_TRANSITION_DURATION_MS = 280;
@@ -29,10 +30,6 @@ interface AnimateMessageSendOptions {
   followBottom?: boolean;
   reducedMotion?: boolean;
   signal?: AbortSignal;
-}
-
-function prefersReducedMotion(): boolean {
-  return window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
 }
 
 export function captureMessageSendOrigin(composer: HTMLElement): MessageSendOrigin {

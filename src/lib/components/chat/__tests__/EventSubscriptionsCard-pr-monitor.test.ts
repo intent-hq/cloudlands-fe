@@ -199,32 +199,42 @@ describe('Chief PR-monitor subscription ownership', () => {
     expect(backendUnsubscribe).toHaveBeenCalledExactlyOnceWith(`pr-sub-${CHIEF_WORKSPACE_ID}`);
   });
 
-  it('releases an inactive Chief card and reloads its snapshot on reactivation', async () => {
-    vi.mocked(backendRequest).mockResolvedValue({ monitors: [monitor()] });
-    const view = render(EventSubscriptionsCard, {
-      workspaceId: CHIEF_WORKSPACE_ID,
-      agentId: AGENT,
-      isActive: true,
-    });
-    await waitFor(() => expect(screen.getByTestId('monitored-pr-chip')).toBeTruthy());
-    await view.rerender({ workspaceId: CHIEF_WORKSPACE_ID, agentId: AGENT, isActive: false });
-    expect(backendUnsubscribe).toHaveBeenCalledExactlyOnceWith(`pr-sub-${CHIEF_WORKSPACE_ID}`);
+  it.each([false, true])(
+    'releases and reloads a Chief card with suppressTopGap=%s',
+    async (suppressTopGap) => {
+      vi.mocked(backendRequest).mockResolvedValue({ monitors: [monitor()] });
+      const view = render(EventSubscriptionsCard, {
+        workspaceId: CHIEF_WORKSPACE_ID,
+        agentId: AGENT,
+        isActive: true,
+        suppressTopGap,
+      });
+      await waitFor(() => expect(screen.getByTestId('monitored-pr-chip')).toBeTruthy());
+      // The initial seed and post-subscribe-ack reconciliation each read the snapshot.
+      await waitFor(() => expect(backendRequest).toHaveBeenCalledTimes(2));
+      await view.rerender({ suppressTopGap: !suppressTopGap });
+      expect(backendRequest).toHaveBeenCalledTimes(2);
+      expect(backendSubscribe).toHaveBeenCalledTimes(1);
+      expect(backendUnsubscribe).not.toHaveBeenCalled();
+      await view.rerender({ workspaceId: CHIEF_WORKSPACE_ID, agentId: AGENT, isActive: false });
+      expect(backendUnsubscribe).toHaveBeenCalledExactlyOnceWith(`pr-sub-${CHIEF_WORKSPACE_ID}`);
 
-    vi.mocked(backendRequest).mockClear().mockResolvedValue({ monitors: [] });
-    await view.rerender({ workspaceId: CHIEF_WORKSPACE_ID, agentId: AGENT, isActive: true });
-    await waitFor(() => expect(screen.queryByTestId('monitored-pr-chip')).toBeNull());
-    expect(backendRequest).toHaveBeenLastCalledWith('prMonitor.list', {
-      workspaceId: CHIEF_WORKSPACE_ID,
-    });
-    expect(backendSubscribe).toHaveBeenCalledTimes(2);
-    expect(backendSubscribe).toHaveBeenLastCalledWith({
-      eventTypes: ['prMonitor:*'],
-      workspaceId: CHIEF_WORKSPACE_ID,
-    });
-    view.unmount();
-    expect(backendUnsubscribe).toHaveBeenCalledTimes(2);
-    expect(appStore.state.tabState.currentTabId).toBeNull();
-  });
+      vi.mocked(backendRequest).mockClear().mockResolvedValue({ monitors: [] });
+      await view.rerender({ workspaceId: CHIEF_WORKSPACE_ID, agentId: AGENT, isActive: true });
+      await waitFor(() => expect(screen.queryByTestId('monitored-pr-chip')).toBeNull());
+      expect(backendRequest).toHaveBeenLastCalledWith('prMonitor.list', {
+        workspaceId: CHIEF_WORKSPACE_ID,
+      });
+      expect(backendSubscribe).toHaveBeenCalledTimes(2);
+      expect(backendSubscribe).toHaveBeenLastCalledWith({
+        eventTypes: ['prMonitor:*'],
+        workspaceId: CHIEF_WORKSPACE_ID,
+      });
+      view.unmount();
+      expect(backendUnsubscribe).toHaveBeenCalledTimes(2);
+      expect(appStore.state.tabState.currentTabId).toBeNull();
+    },
+  );
 
   it('keeps the selected-tab lease but disposes a retained inactive card after switching away', async () => {
     appStore.dispatch(openWorkspaceTab(OTHER_WORKSPACE));

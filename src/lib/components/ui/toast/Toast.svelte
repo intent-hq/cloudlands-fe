@@ -270,7 +270,7 @@
     animation-play-state: paused;
   }
 
-  @media (prefers-reduced-motion: reduce) {
+  @container style(--motion-reduced: 1) {
     :global(
       [data-sonner-toaster] [data-sonner-toast].toast-countdown:not([data-swipe-out='true'])
     ) {

@@ -81,7 +81,7 @@
   outline: none;
 }
 
-@media (prefers-reduced-motion: reduce) {
+@container style(--motion-reduced: 1) {
   .app-resize-handle::before {
     transition: none;
   }

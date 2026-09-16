@@ -1324,7 +1324,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
 </div>
 
 <style>
-  @media (prefers-reduced-motion: reduce) {
+  @container style(--motion-reduced: 1) {
     [data-script-rename-decoration] {
       transition-duration: 0s !important;
     }

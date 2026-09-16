@@ -372,6 +372,37 @@ describe('BrowserWebSocketTransport', () => {
     transport.dispose();
   });
 
+  it.each(['close', 'timeout'])(
+    'replays startup work after an initial connect %s',
+    async (failure) => {
+      vi.useFakeTimers();
+      const { transport, socket } = createHarness({ connectTimeoutMs: 100, reconnectDelayMs: 100 });
+      const recovered = vi.fn(() => transport.request('workspace.list', {}));
+      transport.onReconnected(recovered);
+      const failed = transport
+        .request('workspace.list', {})
+        .catch((error: BackendError) => error.code);
+      if (failure === 'close') socket().drop();
+      else await vi.advanceTimersByTimeAsync(100);
+      expect(await failed).toBe('TRANSPORT_ERROR');
+      expect(recovered).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(100);
+      socket().open();
+      await flush();
+      expect(recovered).toHaveBeenCalledOnce();
+      expect(socket().lastFrame()).toEqual({
+        jsonrpc: '2.0',
+        id: 2,
+        method: 'workspace.list',
+        params: {},
+      });
+      socket().receive({ jsonrpc: '2.0', id: 2, result: { workspaces: [] } });
+      await expect(recovered.mock.results[0].value).resolves.toEqual({ workspaces: [] });
+      transport.dispose();
+    },
+  );
+
   it('queues requests behind an armed backoff timer instead of connecting immediately', async () => {
     vi.useFakeTimers();
     const { transport, sockets, socket } = createHarness({

@@ -140,7 +140,8 @@ describe('streaming pulse under prefers-reduced-motion', () => {
   let frameId = 0;
   let nowMs = 0;
   let reducedMotion = false;
-  let mediaChange: (() => void) | undefined;
+  let mediaListener: ((event: { matches: boolean }) => void) | undefined;
+  const mediaChange = () => mediaListener?.({ matches: reducedMotion });
   const mediaListeners = { add: vi.fn(), remove: vi.fn() };
 
   function advanceFrames(count: number): void {
@@ -165,7 +166,7 @@ describe('streaming pulse under prefers-reduced-motion', () => {
     frameId = 0;
     nowMs += 10_007;
     reducedMotion = false;
-    mediaChange = undefined;
+    mediaListener = undefined;
     mediaListeners.add.mockClear();
     mediaListeners.remove.mockClear();
     vi.spyOn(performance, 'now').mockImplementation(() => nowMs);
@@ -187,9 +188,9 @@ describe('streaming pulse under prefers-reduced-motion', () => {
         get matches() {
           return reducedMotion;
         },
-        addEventListener: (_event: string, callback: () => void) => {
+        addEventListener: (_event: string, callback: (event: { matches: boolean }) => void) => {
           mediaListeners.add(callback);
-          mediaChange = callback;
+          mediaListener = callback;
         },
         removeEventListener: mediaListeners.remove,
       })),
@@ -228,12 +229,12 @@ describe('streaming pulse under prefers-reduced-motion', () => {
     expect(countOpacityWrites(node, 60)).toBe(0);
 
     reducedMotion = false;
-    mediaChange!();
+    mediaChange();
     expect(node.style.opacity).not.toBe('');
     expect(countOpacityWrites(node, 60)).toBeGreaterThan(5);
 
     reducedMotion = true;
-    mediaChange!();
+    mediaChange();
     expect(node.style.opacity).toBe('');
     expect(frameCallbacks.size).toBe(0);
     expect(countOpacityWrites(node, 60)).toBe(0);
@@ -241,7 +242,7 @@ describe('streaming pulse under prefers-reduced-motion', () => {
     action.destroy!();
     expect(node.hasAttribute('data-streaming-pulse')).toBe(false);
     reducedMotion = false;
-    mediaChange!();
+    mediaChange();
     expect(node.style.opacity).toBe('');
     expect(frameCallbacks.size).toBe(0);
   });

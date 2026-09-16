@@ -2,11 +2,9 @@
   /**
    * In-app quit confirmation dialog (replaces the native message box when a
    * renderer window is available). Shows, before quitting/restarting:
-   * agents that will be interrupted, agents that keep running, and
-   * agent-owned browser tabs that will be disconnected — each section only
-   * when non-empty. The primary button mirrors the native copy branching:
-   * "Quit" when anything is interrupted/disrupted, "Close" when only
-   * keep-running agents are listed. Escape/backdrop/X = cancel.
+   * agents that will be interrupted and agent-owned browser tabs that will be
+   * disconnected — each section only when non-empty. The primary button is
+   * always "Quit"; Escape/backdrop/X = cancel.
    */
   import { Button } from '$lib/components/ui/button';
   import Fa from 'svelte-fa';
@@ -39,10 +37,7 @@
   });
 
   const interrupted = $derived(payload?.interrupted ?? []);
-  const keepRunning = $derived(payload?.keepRunning ?? []);
   const disruptedTabs = $derived(payload?.disruptedBrowserTabs ?? []);
-  /** Only keep-running agents → non-destructive "Close" framing. */
-  const closeOnly = $derived(interrupted.length === 0 && disruptedTabs.length === 0);
 
   function respond(proceed: boolean) {
     if (!open) return;
@@ -87,14 +82,10 @@
             </div>
             <div>
               <h2 id={dialogTitleId} class="text-lg font-semibold leading-6">
-                {closeOnly
-                  ? m.quitConfirmation_modal_close_title()
-                  : m.quitConfirmation_modal_quit_title()}
+                {m.quitConfirmation_modal_quit_title()}
               </h2>
               <p class="mt-1 text-sm text-subtle">
-                {closeOnly
-                  ? m.quitConfirmation_modal_close_description()
-                  : m.quitConfirmation_modal_quit_description()}
+                {m.quitConfirmation_modal_quit_description()}
               </p>
             </div>
           </div>
@@ -120,27 +111,6 @@
               </p>
               <ul class="space-y-1 pl-2">
                 {#each interrupted as agent (agent.agentId)}
-                  <li class="text-sm text-foreground truncate">
-                    {agent.agentName}
-                    {#if agent.workspaceName}
-                      <span class="text-xs text-subtle">— {agent.workspaceName}</span>
-                    {/if}
-                  </li>
-                {/each}
-              </ul>
-            </section>
-          {/if}
-
-          {#if keepRunning.length > 0}
-            <section class="space-y-2">
-              <h3 class="text-sm font-medium text-foreground">
-                {m.quitConfirmation_modal_keepRunningSection_title()}
-              </h3>
-              <p class="text-xs text-subtle">
-                {m.quitConfirmation_modal_keepRunningSection_description()}
-              </p>
-              <ul class="space-y-1 pl-2">
-                {#each keepRunning as agent (agent.agentId)}
                   <li class="text-sm text-foreground truncate">
                     {agent.agentName}
                     {#if agent.workspaceName}
@@ -180,14 +150,8 @@
           <Button variant="outline" onclick={() => respond(false)}>
             {m.quitConfirmation_modal_cancelButton_label()}
           </Button>
-          <Button
-            variant={closeOnly ? 'default' : 'destructive'}
-            class="sm:min-w-[8rem]"
-            onclick={() => respond(true)}
-          >
-            {closeOnly
-              ? m.quitConfirmation_modal_closeButton_label()
-              : m.quitConfirmation_modal_quitButton_label()}
+          <Button variant="destructive" class="sm:min-w-[8rem]" onclick={() => respond(true)}>
+            {m.quitConfirmation_modal_quitButton_label()}
           </Button>
         </div>
       </div>

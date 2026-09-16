@@ -178,7 +178,7 @@ describe('PanelDragPreview', () => {
     expect(sourceText).toContain('background: hsl(var(--card) / 0.42)');
     expect(sourceText).toContain('border: 1px solid hsl(var(--border))');
     expect(sourceText).toContain('pointer-events: none');
-    expect(sourceText).toContain('@media (prefers-reduced-motion: no-preference)');
+    expect(sourceText).toContain('@container not style(--motion-reduced: 1)');
     expect(sourceText).toContain('@media (forced-colors: active)');
     expect(sourceText).toContain('outline: 2px solid CanvasText');
     expect(sourceText).not.toContain('var(--primary)');

@@ -17,10 +17,20 @@
     children: Snippet<[workspaceId: string, active: boolean]>;
   } = $props();
 
-  let retention = $state(createWorkspaceSurfaceRetentionState());
+  let retention = $state(
+    untrack(() =>
+      reconcileWorkspaceSurfaces(createWorkspaceSurfaceRetentionState(), {
+        activeWorkspaceId,
+        openWorkspaceIds,
+        workspaceEntityIds,
+      }),
+    ),
+  );
   let surfacesRef = $state.raw<HTMLDivElement | null>(null);
 
-  $effect(() => {
+  // Reconcile before updating visibility so a cold destination joins the same
+  // render pass instead of leaving every existing surface hidden until an effect.
+  $effect.pre(() => {
     const current = untrack(() => retention);
     const next = reconcileWorkspaceSurfaces(current, {
       activeWorkspaceId,

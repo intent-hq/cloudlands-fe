@@ -9,7 +9,7 @@
    * - Loading indicator
    * - Error handling
    */
-  import { onMount, tick } from 'svelte';
+  import { onMount, tick, untrack } from 'svelte';
   import { createLogger } from '$lib/utils/client-logger';
   import { Button } from '$lib/components/ui/button';
   import { toast } from '$lib/components/ui/toast';
@@ -38,8 +38,6 @@
     isValidBrowserUrl,
     normalizeBrowserAddressInput,
   } from './embedded-browser-url-validation';
-  import { navigateToAgent } from '$lib/utils/workspace-navigation';
-  import InlineAgentAvatar from '$lib/components/chat/InlineAgentAvatar.svelte';
   import Fa from 'svelte-fa';
   import {
     faArrowLeft,
@@ -89,8 +87,6 @@
     isActive?: boolean;
     /** Agent owning this tab (monorepo#2857); absent for unowned (user) tabs. */
     ownerAgentId?: string;
-    /** Resolved display name of the owning agent for the toolbar chip. */
-    ownerAgentName?: string;
     /** Persisted viewport mode for this tab; legacy tabs default to fit. */
     viewport?: BrowserTabViewport;
     onViewportChange?: (viewport: BrowserTabViewport) => void;
@@ -109,7 +105,6 @@
     isFocused = false,
     isActive = true,
     ownerAgentId,
-    ownerAgentName,
     viewport = { mode: 'fit' },
     onViewportChange,
   }: Props = $props();
@@ -592,7 +587,9 @@
       updateNavigationState();
     });
 
-    addWebviewListener('did-navigate-in-page', (e: any) => {
+    addWebviewListener('did-navigate-in-page', (e: { url: string; isMainFrame: boolean }) => {
+      // Iframe history changes must not replace the tab URL or webview src (intent#4767).
+      if (!e.isMainFrame) return;
       currentWebviewUrl = e.url;
       displayUrl = e.url;
       isSecure = e.url?.startsWith('https://');
@@ -1042,11 +1039,15 @@
     Workaround for Electron bug #43314: Hide webview during URL switch.
     When isRecreatingWebview is true, the webview is removed from DOM.
     When it becomes false, a fresh webview is created with the new URL.
+    Read src only when mounting: reflecting did-navigate/in-page back into
+    Electron's src attribute issues a second navigation and reloads SPA pages.
+    Electron maintains its own live src attribute for guest recreation on reparenting.
+    Explicit navigation uses loadURL; a newly mounted guest reads the latest URL.
   -->
   <webview
     bind:this={webviewRef}
     class="w-full h-full border-none"
-    src={currentWebviewUrl}
+    src={untrack(() => currentWebviewUrl)}
     partition={BROWSER_PANEL_PARTITION}
     allowpopups
     use:reportTabBounds={tabId}
@@ -1104,15 +1105,7 @@
 
     <!-- Page identity / editable address -->
     <div class="flex min-w-0 flex-1 items-center gap-2">
-      {#if ownerAgentId}
-        <span data-browser-owner-chip={ownerAgentId} class="flex shrink-0">
-          <InlineAgentAvatar
-            agentId={ownerAgentId}
-            agentName={ownerAgentName}
-            onclick={() => void navigateToAgent(ownerAgentId)}
-          />
-        </span>
-      {:else if faviconUrl}
+      {#if faviconUrl}
         <img src={faviconUrl} alt="" class="size-5 shrink-0 rounded-sm" data-browser-page-favicon />
       {/if}
 
@@ -1138,7 +1131,7 @@
         {:else}
           <button
             type="button"
-            class="relative z-10 flex h-full min-w-0 flex-1 cursor-text items-center gap-1.5 rounded-sm text-left outline-none hover:bg-muted/30 focus-visible:ring-1 focus-visible:ring-ring"
+            class="relative z-10 flex h-full min-w-0 flex-1 cursor-text items-center gap-1.5 rounded-sm text-left outline-none focus-visible:ring-1 focus-visible:ring-ring"
             onclick={() => void focusUrlInput()}
             aria-label={m.browser_embedded_editAddress_ariaLabel()}
           >

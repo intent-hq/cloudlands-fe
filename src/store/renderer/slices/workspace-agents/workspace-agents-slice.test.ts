@@ -377,6 +377,25 @@ describe('workspace-agents selectors', () => {
     );
   });
 
+  it('ignores retired foreground unread until the session is restored (§5.5 soft retire)', () => {
+    const stateFor = (sessions: AgentSession[]) =>
+      mockState(workspaceAgentsReducer(initialState, setAgents(WS_1, sessions)), sessions);
+    const readActive = { ...mockAgent('agent-active'), hasUnread: false };
+    const unreadRetired = {
+      ...mockAgent('agent-retired'),
+      hasUnread: true,
+      retiredAt: '2026-03-19T01:00:00.000Z',
+    };
+    const unreadRestored = { ...unreadRetired, retiredAt: undefined };
+
+    expect(
+      selectWorkspaceHasUnreadForegroundAgents.select(stateFor([readActive, unreadRetired]), WS_1),
+    ).toBe(false);
+    expect(
+      selectWorkspaceHasUnreadForegroundAgents.select(stateFor([readActive, unreadRestored]), WS_1),
+    ).toBe(true);
+  });
+
   it('resolves the primary agent with the newest valid user-message timestamp', () => {
     const older = {
       ...mockAgent('agent-older'),

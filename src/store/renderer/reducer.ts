@@ -14,6 +14,7 @@ import { noteReadTrackingReducer } from './slices/note-read-tracking/note-read-t
 import { multiPanelContextReducer } from './slices/multi-panel-context/multi-panel-context-slice';
 import { permissionReducer } from './slices/permission/permission-slice';
 import { pipReducer } from './slices/pip/pip-slice';
+import { powerReducer } from './slices/power/power-slice';
 import { featureCodesReducer } from './slices/feature-codes/feature-codes-slice';
 import { globalModalsReducer } from './slices/global-modals/global-modals-slice';
 import { knownReposReducer } from './slices/known-repos/known-repos-slice';
@@ -116,6 +117,7 @@ export const reducers = {
   deepLinks: deepLinksReducer,
   model: modelReducer,
   pip: pipReducer,
+  power: powerReducer,
   specialists: specialistsReducer,
   systemStatus: systemStatusReducer,
   transientUi: transientUiReducer,

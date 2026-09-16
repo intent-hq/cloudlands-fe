@@ -207,10 +207,16 @@ import { lifecycleReadSaga } from '$store/renderer/slices/workspace-lifecycle/sa
 import {
   bulkUpsertSessions,
   clearAllSessions,
+  replaceMessages,
   setProcessQueueHint,
   updateSession,
   upsertSession,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
+import type { AgentStreamUpdatePayload } from '$store/renderer/slices/workspace-agents/workspace-agents-stream-slice';
+import {
+  clearAllStandingChatSubscriptions,
+  markStandingChatSubscription,
+} from '$features/agent/utils/chat-subscription-registry';
 import type { StoredAgentSession } from '$store/renderer/slices/agent-session/agent-session-types';
 import { selectAgentIsResponding } from '$store/renderer/slices/agent-session/agent-session-selectors';
 import { selectEnabledProviderIds } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
@@ -343,6 +349,54 @@ function inheritedPropertyDescriptor(target: object, key: PropertyKey): Property
     prototype = Object.getPrototypeOf(prototype);
   }
   throw new Error(`Missing inherited property descriptor for ${String(key)}`);
+}
+
+/**
+ * Capture every `agentStreamUpdateReceived` the bridge dispatches. The
+ * firehose is BOOKKEEPING-ONLY (transcript content comes from the standing
+ * chat.subscribe stream), so no captured payload may carry `contentBlocks`.
+ * Call `restoreDispatch()` in `afterEach` so the override never leaks.
+ */
+const capturedStreamUpdates: AgentStreamUpdatePayload[] = [];
+function captureStreamUpdates(): void {
+  capturedStreamUpdates.length = 0;
+  const realDispatch = inheritedPropertyDescriptor(appStore, 'dispatch').get!.call(appStore);
+  Object.defineProperty(appStore, 'dispatch', {
+    get() {
+      return (action: { type?: string; payload?: unknown[] }) => {
+        if (action?.type === 'workspaceAgents/agentStreamUpdateReceived') {
+          capturedStreamUpdates.push(action.payload![0] as AgentStreamUpdatePayload);
+        }
+        return realDispatch(action);
+      };
+    },
+    configurable: true,
+  });
+}
+function restoreDispatch(): void {
+  Object.defineProperty(appStore, 'dispatch', inheritedPropertyDescriptor(appStore, 'dispatch'));
+}
+function expectNoContentOnStreamDispatches(): void {
+  expect(capturedStreamUpdates.length).toBeGreaterThan(0);
+  for (const payload of capturedStreamUpdates) {
+    expect(payload).not.toHaveProperty('contentBlocks');
+  }
+}
+
+/** Seed the assistant row exactly as the standing chat.subscribe stream leaves it (§7.1). */
+function seedSubscriptionOwnedAssistant(messageId: string, contentBlocks: unknown[]): void {
+  appStore.dispatch(
+    replaceMessages(AGENT, [
+      {
+        id: messageId,
+        role: 'assistant',
+        timestamp: '2026-01-02T00:00:00.000Z',
+        isStreaming: true,
+        streamingComplete: false,
+        contentBlocks,
+      } as unknown as AgentMessage,
+    ]),
+  );
 }
 
 beforeAll(() => {
@@ -742,16 +796,25 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → t
     __resetDaemonEventsBridgeForTests();
     capturedHandlers.length = 0;
     seedSession({ isStreaming: true, status: AgentStatus.Active });
+    // The chat panel holds the standing chat.subscribe registration (§7.1):
+    // the subscription owns the row's CONTENT, the firehose only bookkeeping.
+    markStandingChatSubscription(AGENT);
+    captureStreamUpdates();
   });
 
-  afterEach(() => vi.clearAllMocks());
+  afterEach(() => {
+    restoreDispatch();
+    clearAllStandingChatSubscriptions();
+    vi.clearAllMocks();
+  });
 
-  it('accumulates agent:stream:chunk into a live assistant message and finalizes on stream:end + idle', async () => {
+  it('agent:stream:chunk never writes text — the subscription-owned row is untouched and stream:end + idle finalize it', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
+    seedSubscriptionOwnedAssistant(MESSAGE_ID, [
+      { type: 'text', id: `${MESSAGE_ID}:0`, text: 'Hello' },
+    ]);
 
-    // Two consecutive text chunks at the same blockIndex must coalesce into a
-    // single text block, mirroring the BE's Transcript.push_text behaviour.
     handler(
       notification('agent:stream:chunk', {
         agentId: AGENT,
@@ -763,16 +826,6 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → t
         streamId: STREAM_ID,
       }),
     );
-
-    let assistantMessages = readAssistantMessages();
-    expect(assistantMessages).toHaveLength(1);
-    expect(assistantMessages[0].id).toBe(MESSAGE_ID);
-    expect(assistantMessages[0].isStreaming).toBe(true);
-    expect(assistantMessages[0].contentBlocks?.[0]).toMatchObject({
-      type: 'text',
-      text: 'Hello ',
-    });
-
     handler(
       notification('agent:stream:chunk', {
         agentId: AGENT,
@@ -785,12 +838,16 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → t
       }),
     );
 
-    assistantMessages = readAssistantMessages();
+    // Bookkeeping-only: no chunk dispatch carries blocks, so the row keeps
+    // exactly the text the §7.1 stream last wrote (no firehose-built "Hello world").
+    expectNoContentOnStreamDispatches();
+    let assistantMessages = readAssistantMessages();
     expect(assistantMessages).toHaveLength(1);
-    expect(assistantMessages[0].contentBlocks?.[0]).toMatchObject({
-      type: 'text',
-      text: 'Hello world',
-    });
+    expect(assistantMessages[0].id).toBe(MESSAGE_ID);
+    expect(assistantMessages[0].isStreaming).toBe(true);
+    expect(assistantMessages[0].contentBlocks).toEqual([
+      { type: 'text', id: `${MESSAGE_ID}:0`, text: 'Hello' },
+    ]);
     expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(true);
 
     handler(notification('agent:stream:end', { agentId: AGENT, streamId: STREAM_ID }));
@@ -815,6 +872,9 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → t
     expect(assistantMessages).toHaveLength(1);
     expect(assistantMessages[0].isStreaming).toBe(false);
     expect(assistantMessages[0].streamingComplete).toBe(true);
+    expect(assistantMessages[0].contentBlocks).toEqual([
+      { type: 'text', id: `${MESSAGE_ID}:0`, text: 'Hello' },
+    ]);
 
     handler(
       notification('agent:idle', {
@@ -827,23 +887,16 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → t
     );
 
     expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(false);
+    expectNoContentOnStreamDispatches();
   });
 
-  it('renders agent:tool:call as tool_use + tool_result blocks after the tool completes', async () => {
+  it('agent:tool:call ticks never write tool_use / tool_result blocks — only the status hint and the terminal flags land', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
+    seedSubscriptionOwnedAssistant(MESSAGE_ID, [
+      { type: 'text', id: `${MESSAGE_ID}:0`, text: 'Looking' },
+    ]);
 
-    handler(
-      notification('agent:stream:chunk', {
-        agentId: AGENT,
-        content: 'Looking',
-        messageId: MESSAGE_ID,
-        blockIndex: 0,
-        blockId: `${MESSAGE_ID}:0`,
-        blockType: 'text',
-        streamId: STREAM_ID,
-      }),
-    );
     handler(
       notification('agent:tool:call', {
         agentId: AGENT,
@@ -857,15 +910,6 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → t
         blockId: `${MESSAGE_ID}:1`,
       }),
     );
-
-    let blocks = readAssistantMessages()[0]?.contentBlocks ?? [];
-    expect(blocks.map((b) => b.type)).toEqual(['text', 'tool_use']);
-    expect(blocks[1]).toMatchObject({
-      type: 'tool_use',
-      toolCallId: 't1',
-      name: 'Read',
-    });
-
     handler(
       notification('agent:tool:call', {
         agentId: AGENT,
@@ -881,9 +925,13 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → t
       }),
     );
 
-    blocks = readAssistantMessages()[0]?.contentBlocks ?? [];
-    expect(blocks.map((b) => b.type)).toEqual(['text', 'tool_use', 'tool_result']);
-    expect(blocks[2]).toMatchObject({ type: 'tool_result', tool_use_id: 't1', output: 'ok' });
+    // The §7.1 stream delivers tool_use/tool_result; the firehose tick must
+    // not synthesize either onto the row.
+    expectNoContentOnStreamDispatches();
+    expect(readAssistantMessages()[0]?.contentBlocks).toEqual([
+      { type: 'text', id: `${MESSAGE_ID}:0`, text: 'Looking' },
+    ]);
+    expect(readStatusEvents().map((e) => e.phase)).toEqual(['tool-call', 'tool-waiting']);
 
     handler(notification('agent:stream:end', { agentId: AGENT, streamId: STREAM_ID }));
     handler(
@@ -979,13 +1027,14 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → t
   // fields default to empty (`toolName: ""`, `toolKind: "other"`, `input: null`)
   // — only `status` (and sometimes `output`) is authoritative on updates.
   // Mirroring the daemon-side `record_tool` (crates/intent-services/agent_session.rs),
-  // which only patches `metadata.status` on repeated `toolCallId`s, the FE
-  // bridge must preserve the initial name/input/toolKind so the classifier
-  // keeps rendering a rich label instead of falling through to the generic
-  // "Run" row (bug 19).
-  it('preserves the initial name/input/toolKind when a tool_call_update event omits them', async () => {
+  // which only patches `metadata.status` on repeated `toolCallId`s, the bridge
+  // recognises the progress-only ticks as the SAME tool: the status hint
+  // opens once on `started` and closes once on `completed` — no duplicate
+  // "Calling tool" entries and no content written to the row (bug 19).
+  it('recognises progress-only tool_call_update ticks as the same tool — one status-hint open/close, no row writes', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
+    seedSubscriptionOwnedAssistant(MESSAGE_ID, []);
 
     handler(
       notification('agent:tool:call', {
@@ -1034,20 +1083,9 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → t
       }),
     );
 
-    const blocks = readAssistantMessages()[0]?.contentBlocks ?? [];
-    expect(blocks.map((b) => b.type)).toEqual(['tool_use', 'tool_result']);
-    expect(blocks[0]).toMatchObject({
-      type: 'tool_use',
-      toolCallId: 't1',
-      name: 'Read',
-      input: { path: 'src/lib.rs' },
-      metadata: { toolKind: 'file', status: 'completed' },
-    });
-    expect(blocks[1]).toMatchObject({
-      type: 'tool_result',
-      tool_use_id: 't1',
-      output: 'ok',
-    });
+    expectNoContentOnStreamDispatches();
+    expect(readAssistantMessages()[0]?.contentBlocks).toEqual([]);
+    expect(readStatusEvents().map((e) => e.phase)).toEqual(['tool-call', 'tool-waiting']);
   });
 
   it('does not duplicate the assistant message when getConversation hydration follows the live stream', async () => {
@@ -1103,6 +1141,9 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → t
   it('agent:failed finalizes the in-flight stream and clears the spinner', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
+    seedSubscriptionOwnedAssistant(MESSAGE_ID, [
+      { type: 'text', id: `${MESSAGE_ID}:0`, text: 'Working' },
+    ]);
 
     handler(
       notification('agent:stream:chunk', {
@@ -1128,7 +1169,11 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → t
     expect(assistant).toBeDefined();
     expect(assistant.isStreaming).toBe(false);
     expect(assistant.streamingComplete).toBe(true);
+    expect(assistant.contentBlocks).toEqual([
+      { type: 'text', id: `${MESSAGE_ID}:0`, text: 'Working' },
+    ]);
     expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(false);
+    expectNoContentOnStreamDispatches();
   });
 
   it("emits status hint transitions: 'Streaming response…' on first chunk → 'Calling tool' on tool:call started → 'Awaiting tool response' on tool:call completed → 'Streaming response…' on next chunk → cleared on stream:end/idle", async () => {
@@ -1759,9 +1804,16 @@ describe('daemonEventsBridge (spontaneous streams — agent:stream:start opens t
     capturedHandlers.length = 0;
     // A wake turn starts from a fully idle session — no send set any flags.
     seedSession({ status: AgentStatus.Idle, isStreaming: false, isProcessing: false });
+    // The chat panel holds the standing chat.subscribe registration (§7.1).
+    markStandingChatSubscription(AGENT);
+    captureStreamUpdates();
   });
 
-  afterEach(() => vi.clearAllMocks());
+  afterEach(() => {
+    restoreDispatch();
+    clearAllStandingChatSubscriptions();
+    vi.clearAllMocks();
+  });
 
   function streamStart(handler: (n: { method: string; params?: unknown }) => void): void {
     handler(
@@ -1791,18 +1843,24 @@ describe('daemonEventsBridge (spontaneous streams — agent:stream:start opens t
     const userMessages = (session?.messages ?? []).filter((m) => m.role === 'user');
     expect(userMessages).toHaveLength(0);
 
-    // The in-flight assistant placeholder exists under the wake messageId.
+    // The in-flight assistant placeholder exists under the wake messageId —
+    // EMPTY content: the §7.1 stream fills it and replaces it by id.
     const assistantMessages = readAssistantMessages();
     expect(assistantMessages).toHaveLength(1);
     expect(assistantMessages[0].id).toBe(WAKE_MESSAGE_ID);
     expect(assistantMessages[0].isStreaming).toBe(true);
+    expect(assistantMessages[0].contentBlocks).toEqual([]);
+    expectNoContentOnStreamDispatches();
   });
 
-  it('grows the wake turn live on subsequent chunks and finalizes on stream:end + idle', async () => {
+  it('chunks after the wake start never write content — the subscription fills the wake row; stream:end + idle finalize it', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
 
     streamStart(handler);
+    seedSubscriptionOwnedAssistant(WAKE_MESSAGE_ID, [
+      { type: 'text', id: `${WAKE_MESSAGE_ID}:0`, text: 'Waking up: child finished.' },
+    ]);
     handler(
       notification('agent:stream:chunk', {
         agentId: AGENT,
@@ -1826,13 +1884,13 @@ describe('daemonEventsBridge (spontaneous streams — agent:stream:start opens t
       }),
     );
 
+    expectNoContentOnStreamDispatches();
     let assistantMessages = readAssistantMessages();
     expect(assistantMessages).toHaveLength(1);
     expect(assistantMessages[0].id).toBe(WAKE_MESSAGE_ID);
-    expect(assistantMessages[0].contentBlocks?.[0]).toMatchObject({
-      type: 'text',
-      text: 'Waking up: child finished.',
-    });
+    expect(assistantMessages[0].contentBlocks).toEqual([
+      { type: 'text', id: `${WAKE_MESSAGE_ID}:0`, text: 'Waking up: child finished.' },
+    ]);
     expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(true);
 
     handler(
@@ -1859,6 +1917,9 @@ describe('daemonEventsBridge (spontaneous streams — agent:stream:start opens t
     expect(assistantMessages).toHaveLength(1);
     expect(assistantMessages[0].isStreaming).toBe(false);
     expect(assistantMessages[0].streamingComplete).toBe(true);
+    expect(assistantMessages[0].contentBlocks).toEqual([
+      { type: 'text', id: `${WAKE_MESSAGE_ID}:0`, text: 'Waking up: child finished.' },
+    ]);
     expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(false);
   });
 
@@ -1867,6 +1928,9 @@ describe('daemonEventsBridge (spontaneous streams — agent:stream:start opens t
     const handler = capturedHandlers[0]!;
 
     streamStart(handler);
+    seedSubscriptionOwnedAssistant(WAKE_MESSAGE_ID, [
+      { type: 'text', id: `${WAKE_MESSAGE_ID}:0`, text: 'Partial wake…' },
+    ]);
     handler(
       notification('agent:stream:chunk', {
         agentId: AGENT,
@@ -1889,10 +1953,9 @@ describe('daemonEventsBridge (spontaneous streams — agent:stream:start opens t
 
     const assistantMessages = readAssistantMessages();
     expect(assistantMessages).toHaveLength(1);
-    expect(assistantMessages[0].contentBlocks?.[0]).toMatchObject({
-      type: 'text',
-      text: 'Partial wake…',
-    });
+    expect(assistantMessages[0].contentBlocks).toEqual([
+      { type: 'text', id: `${WAKE_MESSAGE_ID}:0`, text: 'Partial wake…' },
+    ]);
     expect(assistantMessages[0].metadata).toMatchObject({
       interrupted: true,
       stopReason: 'interrupted',
@@ -1900,13 +1963,15 @@ describe('daemonEventsBridge (spontaneous streams — agent:stream:start opens t
     expect(shouldShowStoppedIndicator({ message: assistantMessages[0], isStreaming: false })).toBe(
       true,
     );
+    expectNoContentOnStreamDispatches();
   });
 
   it('finalizes a stale prior-turn accumulator (old message stops streaming) and primes a fresh slot under the wake messageId', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
 
-    // A previous turn left chunks in the accumulator (no stream:end arrived).
+    // A previous turn left chunks in the accumulator (no stream:end arrived);
+    // the §7.1 stream had written that turn's row.
     handler(
       notification('agent:stream:chunk', {
         agentId: AGENT,
@@ -1918,6 +1983,9 @@ describe('daemonEventsBridge (spontaneous streams — agent:stream:start opens t
         streamId: STREAM_ID,
       }),
     );
+    seedSubscriptionOwnedAssistant(MESSAGE_ID, [
+      { type: 'text', id: `${MESSAGE_ID}:0`, text: 'old turn' },
+    ]);
 
     streamStart(handler);
     handler(
@@ -1932,9 +2000,12 @@ describe('daemonEventsBridge (spontaneous streams — agent:stream:start opens t
       }),
     );
 
+    // The fresh slot is an empty placeholder under the wake messageId; the
+    // chunk that followed wrote no content into it.
     const wakeMessage = readAssistantMessages().find((m) => m.id === WAKE_MESSAGE_ID);
     expect(wakeMessage).toBeDefined();
-    expect(wakeMessage!.contentBlocks?.[0]).toMatchObject({ type: 'text', text: 'fresh wake' });
+    expect(wakeMessage!.isStreaming).toBe(true);
+    expect(wakeMessage!.contentBlocks).toEqual([]);
 
     // The stale prior-turn message is finalized as-is (mirrors stream:end's
     // different-turn path) instead of staying isStreaming until reconcile.
@@ -1942,7 +2013,10 @@ describe('daemonEventsBridge (spontaneous streams — agent:stream:start opens t
     expect(oldMessage).toBeDefined();
     expect(oldMessage!.isStreaming).toBe(false);
     expect(oldMessage!.streamingComplete).toBe(true);
-    expect(oldMessage!.contentBlocks?.[0]).toMatchObject({ type: 'text', text: 'old turn' });
+    expect(oldMessage!.contentBlocks).toEqual([
+      { type: 'text', id: `${MESSAGE_ID}:0`, text: 'old turn' },
+    ]);
+    expectNoContentOnStreamDispatches();
   });
 
   it('a duplicate agent:stream:start for the same messageId is a no-op (no mid-turn statusEvents/timer reset)', async () => {
@@ -1958,6 +2032,9 @@ describe('daemonEventsBridge (spontaneous streams — agent:stream:start opens t
         timestamp: 1000,
       }),
     );
+    seedSubscriptionOwnedAssistant(WAKE_MESSAGE_ID, [
+      { type: 'text', id: `${WAKE_MESSAGE_ID}:0`, text: 'Waking…' },
+    ]);
     handler(
       notification('agent:stream:chunk', {
         agentId: AGENT,
@@ -1975,17 +2052,16 @@ describe('daemonEventsBridge (spontaneous streams — agent:stream:start opens t
     // At-least-once delivery (e.g. across a reconnect) replays the start event.
     streamStart(handler);
 
-    // Busy state stays open, streamed content survives, and the mid-turn
-    // status/timer state is NOT wiped by a second chatSendStarted.
+    // Busy state stays open, the subscription-written content survives, and
+    // the mid-turn status/timer state is NOT wiped by a second chatSendStarted.
     expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(true);
     expect(readStatusEvents()).toEqual(statusEventsBefore);
     const assistantMessages = readAssistantMessages();
     expect(assistantMessages).toHaveLength(1);
     expect(assistantMessages[0].id).toBe(WAKE_MESSAGE_ID);
-    expect(assistantMessages[0].contentBlocks?.[0]).toMatchObject({
-      type: 'text',
-      text: 'Waking…',
-    });
+    expect(assistantMessages[0].contentBlocks).toEqual([
+      { type: 'text', id: `${WAKE_MESSAGE_ID}:0`, text: 'Waking…' },
+    ]);
   });
 
   it('ignores malformed agent:stream:start payloads (missing agentId or missing/empty messageId)', async () => {
@@ -2410,12 +2486,40 @@ describe('daemonEventsBridge (interrupt regression — interrupted deltas stay v
     __resetDaemonEventsBridgeForTests();
     capturedHandlers.length = 0;
     seedSession({ isStreaming: true, status: AgentStatus.Active });
+    // The chat panel holds the standing chat.subscribe registration (§7.1).
+    markStandingChatSubscription(AGENT);
+    captureStreamUpdates();
   });
 
-  afterEach(() => vi.clearAllMocks());
+  afterEach(() => {
+    restoreDispatch();
+    clearAllStandingChatSubscriptions();
+    vi.clearAllMocks();
+  });
 
-  /** Stream two text chunks + a completed tool call into the bridge. */
+  /** The in-flight row exactly as the §7.1 stream wrote it for the partial turn. */
+  const PARTIAL_TURN_BLOCKS = [
+    { type: 'text', id: `${MESSAGE_ID}:0`, text: 'Partial ' },
+    {
+      type: 'tool_use',
+      id: `${MESSAGE_ID}:1`,
+      name: 'Read',
+      toolCallId: 't-int',
+      input: { path: 'src/lib.rs' },
+      metadata: { toolKind: 'file', status: 'completed' },
+    },
+    { type: 'tool_result', id: `${MESSAGE_ID}:2`, tool_use_id: 't-int', output: 'ok' },
+    { type: 'text', id: `${MESSAGE_ID}:3`, text: 'answer' },
+  ];
+
+  /**
+   * Stream two text chunks + a completed tool call into the bridge while the
+   * standing subscription writes the same partial turn into the row. The
+   * firehose ticks are bookkeeping-only; the seeded blocks are the content
+   * whose survival the interrupt paths below are asserted on.
+   */
   function streamPartialTurn(handler: (n: { method: string; params?: unknown }) => void): void {
+    seedSubscriptionOwnedAssistant(MESSAGE_ID, PARTIAL_TURN_BLOCKS);
     handler(
       notification('agent:stream:chunk', {
         agentId: AGENT,
@@ -2456,10 +2560,8 @@ describe('daemonEventsBridge (interrupt regression — interrupted deltas stay v
 
   const expectPartialBlocksIntact = (message: AgentMessage | undefined): void => {
     expect(message).toBeDefined();
-    const blocks = message!.contentBlocks ?? [];
-    expect(blocks.map((b) => b.type)).toEqual(['text', 'tool_use', 'tool_result', 'text']);
-    expect(blocks[0]).toMatchObject({ type: 'text', text: 'Partial ' });
-    expect(blocks[3]).toMatchObject({ type: 'text', text: 'answer' });
+    expect(message!.contentBlocks).toEqual(PARTIAL_TURN_BLOCKS);
+    expectNoContentOnStreamDispatches();
   };
 
   it('user stop mid-stream: terminal stream:end + idle(reason=interrupted) finalize in place — streamed deltas stay visible', async () => {
@@ -2657,7 +2759,9 @@ describe('daemonEventsBridge (interrupt regression — interrupted deltas stay v
     await primeBridge();
     const handler = capturedHandlers[0]!;
 
-    // Only a thinking block streamed before the stop.
+    // Only a thinking block streamed before the stop (the §7.1 stream wrote it).
+    const thinkingBlocks = [{ type: 'thinking', id: `${MESSAGE_ID}:0`, thinking: 'planning…' }];
+    seedSubscriptionOwnedAssistant(MESSAGE_ID, thinkingBlocks);
     handler(
       notification('agent:stream:chunk', {
         agentId: AGENT,
@@ -2680,7 +2784,8 @@ describe('daemonEventsBridge (interrupt regression — interrupted deltas stay v
 
     const assistantMessages = readAssistantMessages();
     expect(assistantMessages).toHaveLength(1);
-    expect(assistantMessages[0].contentBlocks?.map((b) => b.type)).toEqual(['thinking']);
+    expect(assistantMessages[0].contentBlocks).toEqual(thinkingBlocks);
+    expectNoContentOnStreamDispatches();
     expect(assistantMessages[0].metadata).toMatchObject({
       interrupted: true,
       stopReason: 'interrupted',
@@ -2885,15 +2990,14 @@ describe('daemonEventsBridge (interrupt regression — interrupted deltas stay v
       }),
     );
 
+    // Turn 2 opens as an EMPTY streaming placeholder the §7.1 stream fills by
+    // id; the interrupted partial under the old id is untouched.
     const assistantMessages = readAssistantMessages();
     expect(assistantMessages.map((m) => m.id)).toEqual([MESSAGE_ID, nextMessageId]);
     expectPartialBlocksIntact(assistantMessages[0]);
     expect(assistantMessages[0].isStreaming).toBe(false);
     expect(assistantMessages[1].isStreaming).toBe(true);
-    expect(assistantMessages[1].contentBlocks?.[0]).toMatchObject({
-      type: 'text',
-      text: 'New turn',
-    });
+    expect(assistantMessages[1].contentBlocks).toEqual([]);
   });
 });
 
@@ -2917,11 +3021,22 @@ describe('daemonEventsBridge (abnormal finishReason on agent:stream:end)', () =>
     __resetDaemonEventsBridgeForTests();
     capturedHandlers.length = 0;
     seedSession({ isStreaming: true, status: AgentStatus.Active });
+    // The chat panel holds the standing chat.subscribe registration (§7.1).
+    markStandingChatSubscription(AGENT);
+    captureStreamUpdates();
   });
 
-  afterEach(() => vi.clearAllMocks());
+  afterEach(() => {
+    restoreDispatch();
+    clearAllStandingChatSubscriptions();
+    vi.clearAllMocks();
+  });
 
+  const PARTIAL_ANSWER_BLOCKS = [{ type: 'text', id: `${MESSAGE_ID}:0`, text: 'Partial answer' }];
+
+  /** A text chunk on the firehose while the §7.1 stream writes the same text into the row. */
   function streamTextChunk(handler: (n: { method: string; params?: unknown }) => void): void {
+    seedSubscriptionOwnedAssistant(MESSAGE_ID, PARTIAL_ANSWER_BLOCKS);
     handler(
       notification('agent:stream:chunk', {
         agentId: AGENT,
@@ -2953,10 +3068,8 @@ describe('daemonEventsBridge (abnormal finishReason on agent:stream:end)', () =>
 
       const assistantMessages = readAssistantMessages();
       expect(assistantMessages).toHaveLength(1);
-      expect(assistantMessages[0].contentBlocks?.[0]).toMatchObject({
-        type: 'text',
-        text: 'Partial answer',
-      });
+      expect(assistantMessages[0].contentBlocks).toEqual(PARTIAL_ANSWER_BLOCKS);
+      expectNoContentOnStreamDispatches();
       expect(assistantMessages[0].isStreaming).toBe(false);
       expect(assistantMessages[0].streamingComplete).toBe(true);
       expect(assistantMessages[0].metadata).toMatchObject({ finishReason });
@@ -3075,13 +3188,26 @@ describe('daemonEventsBridge (Agent Q&A live delivery — trailingBlocks on agen
     __resetDaemonEventsBridgeForTests();
     capturedHandlers.length = 0;
     seedSession({ isStreaming: true, status: AgentStatus.Active });
+    // The chat panel holds the standing chat.subscribe registration (§7.1).
+    markStandingChatSubscription(AGENT);
+    captureStreamUpdates();
   });
 
-  afterEach(() => vi.clearAllMocks());
+  afterEach(() => {
+    restoreDispatch();
+    clearAllStandingChatSubscriptions();
+    vi.clearAllMocks();
+  });
 
-  it('appends trailingBlocks to the streamed turn on stream:end and the wizard derivation goes live (no refetch)', async () => {
+  // Delivery of the drained question block itself is the §7.1 reconciler's
+  // job and is covered in live-chat-client.test.ts ("renders
+  // daemon-synthesized standalone resource blocks verbatim"); these tests
+  // only pin what the bridge leaves behind for that reconcile to replace.
+  it('trailingBlocks on stream:end never ride the bridge — the row finalizes with exactly the subscription-owned text', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
+    const streamedText = { type: 'text', id: `${MESSAGE_ID}:0`, text: 'Before I proceed:' };
+    seedSubscriptionOwnedAssistant(MESSAGE_ID, [streamedText]);
 
     handler(
       notification('agent:stream:chunk', {
@@ -3103,26 +3229,27 @@ describe('daemonEventsBridge (Agent Q&A live delivery — trailingBlocks on agen
       }),
     );
 
+    // Bookkeeping-only: the row finalizes with exactly the subscription's
+    // text — no firehose-appended resource block, and nothing pends yet.
+    expectNoContentOnStreamDispatches();
     const assistantMessages = readAssistantMessages();
     expect(assistantMessages).toHaveLength(1);
     expect(assistantMessages[0].id).toBe(MESSAGE_ID);
     expect(assistantMessages[0].isStreaming).toBe(false);
-    expect(assistantMessages[0].contentBlocks?.map((b) => b.type)).toEqual(['text', 'resource']);
-
-    // The wizard derivation reads the finalized transcript directly — the
-    // questions pend LIVE off the stream:end delivery, no reconcile needed.
-    const pending = derivePendingQuestions(readSession()?.messages ?? [], false);
-    expect(pending).not.toBeNull();
-    expect(pending!.messageId).toBe(MESSAGE_ID);
-    expect(pending!.questions.map((q) => q.header)).toEqual(['Auth method']);
+    expect(assistantMessages[0].streamingComplete).toBe(true);
+    expect(assistantMessages[0].contentBlocks).toEqual([streamedText]);
+    expect(derivePendingQuestions(readSession()?.messages ?? [], false)).toBeNull();
   });
 
-  it('pre-first-token question turn: trailingBlocks with NO local stream state finalize a question-only placeholder', async () => {
+  it('pre-first-token question turn: trailingBlocks with NO local stream state finalize an EMPTY placeholder under the turn id', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
 
     // A turn whose ONLY content is questions: no chunk/tool events ever fire,
-    // so the accumulator is empty when the terminal stream:end lands.
+    // so the accumulator is empty when the terminal stream:end lands. The
+    // transcript-bearing terminal must NOT early-return: it finalizes a
+    // placeholder under the turn's messageId (no content — that is the
+    // reconcile's job).
     handler(
       notification('agent:stream:end', {
         agentId: AGENT,
@@ -3132,19 +3259,17 @@ describe('daemonEventsBridge (Agent Q&A live delivery — trailingBlocks on agen
       }),
     );
 
+    expectNoContentOnStreamDispatches();
     const assistantMessages = readAssistantMessages();
     expect(assistantMessages).toHaveLength(1);
     expect(assistantMessages[0].id).toBe(MESSAGE_ID);
     expect(assistantMessages[0].isStreaming).toBe(false);
     expect(assistantMessages[0].streamingComplete).toBe(true);
-    expect(assistantMessages[0].contentBlocks?.map((b) => b.type)).toEqual(['resource']);
-
-    const pending = derivePendingQuestions(readSession()?.messages ?? [], false);
-    expect(pending).not.toBeNull();
-    expect(pending!.questions).toHaveLength(1);
+    expect(assistantMessages[0].contentBlocks).toEqual([]);
+    expect(derivePendingQuestions(readSession()?.messages ?? [], false)).toBeNull();
   });
 
-  it('is idempotent against a later reconcile delivering the same canonical blocks (no duplicates)', async () => {
+  it('the hydration merge collapses the empty placeholder into the same-id canonical row (no duplicates)', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
 
@@ -3168,36 +3293,40 @@ describe('daemonEventsBridge (Agent Q&A live delivery — trailingBlocks on agen
       }),
     );
 
-    // Simulate the chat-read-service hydration reconcile: the persisted row
-    // carries the SAME canonical trailing block under the SAME message id.
-    // The live-finalized assistant row is KEPT in the incoming list so this
-    // exercises the upsert-path dedupe (same-id collapse), not a constructed
-    // end state.
+    // The live path left an EMPTY finalized placeholder under the turn's id.
     const session = readSession()!;
+    const placeholder = readAssistantMessages();
+    expect(placeholder).toHaveLength(1);
+    expect(placeholder[0].id).toBe(MESSAGE_ID);
+    expect(placeholder[0].contentBlocks).toEqual([]);
+
+    // Model the chat-read-service hydration merge (its STALE-HYDRATION MERGE
+    // GUARD): the fetched canonical rows come FIRST and the store rows the
+    // live stream appended during the read follow — so the bridge's
+    // placeholder rides INTO the upsert payload under the SAME id, and the
+    // store's dedup on ingest must collapse the pair with the fetched copy
+    // winning. Two rows, or a row with the placeholder's empty content,
+    // means the same-id collapse regressed.
+    const canonicalRow = {
+      id: MESSAGE_ID,
+      role: 'assistant',
+      timestamp: '2026-01-02T00:00:01.000Z',
+      contentBlocks: [{ type: 'text', id: `${MESSAGE_ID}:0`, text: 'Question:' }, questionBlock()],
+    } as unknown as AgentMessage;
     appStore.dispatch(
       bulkUpsertSessions([
         {
           ...session,
           isStreaming: false,
           status: AgentStatus.Idle,
-          messages: [
-            ...(session.messages ?? []),
-            {
-              id: MESSAGE_ID,
-              role: 'assistant',
-              timestamp: '2026-01-02T00:00:01.000Z',
-              contentBlocks: [
-                { type: 'text', id: `${MESSAGE_ID}:0`, text: 'Question:' },
-                questionBlock(),
-              ],
-            } as unknown as AgentMessage,
-          ],
+          messages: [canonicalRow, ...(session.messages ?? [])],
         },
       ]),
     );
 
     const assistantMessages = readAssistantMessages();
     expect(assistantMessages).toHaveLength(1);
+    expect(assistantMessages[0].id).toBe(MESSAGE_ID);
     expect(assistantMessages[0].contentBlocks?.map((b) => b.type)).toEqual(['text', 'resource']);
 
     const pending = derivePendingQuestions(readSession()?.messages ?? [], false);
@@ -3207,7 +3336,7 @@ describe('daemonEventsBridge (Agent Q&A live delivery — trailingBlocks on agen
     expect(pending!.questions).toHaveLength(1);
   });
 
-  it('duplicate trailingBlocks entries for the same canonical nonce collapse to one block', async () => {
+  it('trailingBlocks are never dispatched as content — duplicate entries have nothing to collapse on the bridge side', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
 
@@ -3220,9 +3349,16 @@ describe('daemonEventsBridge (Agent Q&A live delivery — trailingBlocks on agen
       }),
     );
 
+    expect(capturedStreamUpdates).toHaveLength(1);
+    expect(capturedStreamUpdates[0]).toMatchObject({
+      agentId: AGENT,
+      eventType: 'complete',
+      assistantMessageId: MESSAGE_ID,
+    });
+    expectNoContentOnStreamDispatches();
     const assistantMessages = readAssistantMessages();
     expect(assistantMessages).toHaveLength(1);
-    expect(assistantMessages[0].contentBlocks?.map((b) => b.type)).toEqual(['resource']);
+    expect(assistantMessages[0].contentBlocks).toEqual([]);
   });
 
   it('messageId-mismatch stream:end: the stale accumulated turn finalizes WITHOUT the stopReason — only the event messageId gets the interrupted metadata', async () => {
@@ -3657,9 +3793,13 @@ describe('daemonEventsBridge (fan-out scope gate — subscriptionId-aware delive
     __resetDaemonEventsBridgeForTests();
     capturedHandlers.length = 0;
     seedSession({ isStreaming: true, status: AgentStatus.Active });
+    captureStreamUpdates();
   });
 
-  afterEach(() => vi.clearAllMocks());
+  afterEach(() => {
+    restoreDispatch();
+    vi.clearAllMocks();
+  });
 
   it('applies a chunk exactly once when the daemon fans the same chunk out across N subscriptions on the socket', async () => {
     // Mock backendRequest resolves events.subscribe with `{ subscriptionId: "sub-1" }`
@@ -3670,8 +3810,7 @@ describe('daemonEventsBridge (fan-out scope gate — subscriptionId-aware delive
     // to an overlapping `agent:*` filter, the chunk is delivered three times to
     // the socket-level notification handler — once tagged "sub-1" (ours), once
     // "sub-foreign-a", once "sub-foreign-b". Without the scope gate the bridge
-    // would `priorText + content` three times and echo as "TodayTodayToday" —
-    // the symptom this fix targets.
+    // would process (and dispatch bookkeeping for) the chunk three times.
     await primeBridge();
     const handler = capturedHandlers[0]!;
 
@@ -3689,11 +3828,11 @@ describe('daemonEventsBridge (fan-out scope gate — subscriptionId-aware delive
     handler(notificationWithSub('agent:stream:chunk', data, 'sub-foreign-a'));
     handler(notificationWithSub('agent:stream:chunk', data, 'sub-foreign-b'));
 
-    const assistantMessages = readAssistantMessages();
-    expect(assistantMessages).toHaveLength(1);
-    expect(assistantMessages[0].contentBlocks?.[0]).toMatchObject({
-      type: 'text',
-      text: 'Today',
+    expect(capturedStreamUpdates).toHaveLength(1);
+    expect(capturedStreamUpdates[0]).toMatchObject({
+      agentId: AGENT,
+      eventType: 'chunk',
+      assistantMessageId: MESSAGE_ID,
     });
   });
 
@@ -3719,6 +3858,7 @@ describe('daemonEventsBridge (fan-out scope gate — subscriptionId-aware delive
       ),
     );
 
+    expect(capturedStreamUpdates).toHaveLength(0);
     expect(readAssistantMessages()).toHaveLength(0);
   });
 
@@ -3740,11 +3880,11 @@ describe('daemonEventsBridge (fan-out scope gate — subscriptionId-aware delive
       }),
     );
 
-    const assistantMessages = readAssistantMessages();
-    expect(assistantMessages).toHaveLength(1);
-    expect(assistantMessages[0].contentBlocks?.[0]).toMatchObject({
-      type: 'text',
-      text: 'Legacy ok',
+    expect(capturedStreamUpdates).toHaveLength(1);
+    expect(capturedStreamUpdates[0]).toMatchObject({
+      agentId: AGENT,
+      eventType: 'chunk',
+      assistantMessageId: MESSAGE_ID,
     });
   });
 

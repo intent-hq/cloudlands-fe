@@ -1772,7 +1772,7 @@
     }
   }
 
-  @media (prefers-reduced-motion: reduce) {
+  @container style(--motion-reduced: 1) {
     .tiptap-container :global(.prompt-trailing-hint[data-state='enhanced']) {
       animation: none;
     }

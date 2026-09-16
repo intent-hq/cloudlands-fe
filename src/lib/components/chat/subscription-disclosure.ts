@@ -5,8 +5,7 @@ export const SUBSCRIPTION_ICON_CLASS = 'text-muted-foreground! opacity-100';
 export const SUBSCRIPTION_ACTION_ICON_CLASS = 'text-ghost opacity-60';
 export const SUBSCRIPTION_CARD_CONTAINMENT_CLASS =
   'w-full min-w-0 max-w-full overflow-hidden font-family-child';
-export const SUBSCRIPTION_CARD_SURFACE_CLASS =
-  'rounded-lg border border-border bg-card/80 shadow-sm';
+export const SUBSCRIPTION_CARD_SURFACE_CLASS = 'rounded-lg bg-sidebar';
 export const EVENT_WAKEUP_IN_THREAD_SPACING_CLASS = 'mt-8';
 export const SUBSCRIPTION_IN_THREAD_CARD_SPACING_CLASS = 'mt-5';
 export const SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS = 'type-body font-normal text-muted-foreground!'; // i18n-ignore (Tailwind class constants)

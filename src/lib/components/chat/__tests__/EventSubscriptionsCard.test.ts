@@ -35,20 +35,6 @@ async function renderCard(agentId: string, compact = false) {
   return screen.getByTestId('event-subscriptions-card');
 }
 
-function rect(top: number, height: number): DOMRect {
-  return {
-    x: 0,
-    y: top,
-    left: 0,
-    right: 320,
-    top,
-    bottom: top + height,
-    width: 320,
-    height,
-    toJSON: () => ({}),
-  } as DOMRect;
-}
-
 describe('EventSubscriptionsCard', () => {
   it('promotes the agent cohort header and omits the outer header for an agent-only card', async () => {
     const card = await renderCard('agents');
@@ -62,16 +48,20 @@ describe('EventSubscriptionsCard', () => {
   it.each([
     ['hooks', 'mock-hook-event-section'],
     ['prs', 'mock-pr-event-section'],
-  ])('shows one bounded card for a %s-only subscription', async (agentId, testId) => {
+  ])('toggles a %s-only subscription without removing its card', async (agentId, testId) => {
     const card = await renderCard(agentId);
-    expect(card.parentElement?.classList.contains('hidden')).toBe(false);
-    expect(card.className).toContain('rounded-lg');
-    expect(card.className).toContain('border');
-    expect(card.className).toContain('border-border');
-    expect(card.className).toContain('bg-card/80');
-    expect(card.className).toContain('shadow-sm');
-    expect(screen.getByTestId(testId)).toBeTruthy();
-    expect(screen.getByText('Subscribed to 1 event')).toBeTruthy();
+    const toggle = screen.getByRole('button', { name: 'Subscribed to 1 event' });
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(card.contains(screen.getByTestId(testId))).toBe(true);
+
+    await fireEvent.click(toggle);
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    await waitFor(() => expect(screen.queryByTestId(testId)).toBeNull());
+    expect(card.isConnected).toBe(true);
+
+    await fireEvent.click(toggle);
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    await waitFor(() => expect(card.contains(screen.getByTestId(testId))).toBe(true));
   });
 
   it('composes all event categories without nested cards', async () => {
@@ -153,24 +143,5 @@ describe('EventSubscriptionsCard', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Subscribed to 1 event' }));
     await waitFor(() => expect(screen.queryByTestId('event-subscriptions-body')).toBeNull());
     expect(screen.getByTestId('mock-browser-tabs-section')).toBeTruthy();
-  });
-
-  it.each([
-    [false, 'mt-8', 32],
-    [true, 'mt-6', 24],
-  ])('owns a non-collapsing transparent top gap (compact=%s)', async (compact, token, gap) => {
-    const card = await renderCard('agents', compact);
-    const utility = card.parentElement!;
-    const predecessor = document.createElement('div');
-    predecessor.dataset.conversationLayer = compact ? 'reasoning' : 'agent-prose';
-    utility.before(predecessor);
-
-    predecessor.getBoundingClientRect = () => rect(100, 20);
-    utility.getBoundingClientRect = () => rect(120 + gap, 80);
-    card.getBoundingClientRect = () => rect(120 + gap, 76);
-
-    expect(utility.classList.contains(token)).toBe(true);
-    expect(utility.className).not.toMatch(/bg-|pt-|min-h-/);
-    expect(card.getBoundingClientRect().top - predecessor.getBoundingClientRect().bottom).toBe(gap);
   });
 });

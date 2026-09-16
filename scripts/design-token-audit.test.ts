@@ -113,6 +113,69 @@ describe('design token audit', () => {
     }
   });
 
+  it('recognizes Svelte style directive custom-property definitions without exempting other properties', () => {
+    const directory = mkdtempSync(path.join(tmpdir(), 'design-token-audit-'));
+    try {
+      writeFileSync(
+        path.join(directory, 'Scene.svelte'),
+        [
+          '<script lang="ts">',
+          '  let { scale } = $props();',
+          '  const hint = \'style:--fixture-script-string="1"\';',
+          '</script>',
+          '',
+          '<!-- Example: style:--fixture-comment="1" -->',
+          '<div',
+          '  class="scene"',
+          '  style:--fixture-scale={scale}',
+          '  style:--fixture-quoted="1.5"',
+          '  title="style:--fixture-attribute-value=1"',
+          '>',
+          '  Example style:--fixture-text="1" {hint}',
+          '  <span style:--fixture-inline={scale} style:color="red">label</span>',
+          '</div>',
+        ].join('\n'),
+      );
+      writeFileSync(
+        path.join(directory, 'strings.ts'),
+        "export const example = 'style:--fixture-ts-string={value}';",
+      );
+      writeFileSync(
+        path.join(directory, 'Node.svelte'),
+        [
+          '<style>',
+          '  .label {',
+          '    transform: scale(var(--fixture-scale));',
+          '    opacity: var(--fixture-quoted);',
+          '    line-height: var(--fixture-inline);',
+          '    gap: var(--fixture-other);',
+          '    margin: var(--fixture-comment);',
+          '    padding: var(--fixture-text);',
+          '    top: var(--fixture-attribute-value);',
+          '    left: var(--fixture-script-string);',
+          '    right: var(--fixture-ts-string);',
+          '  }',
+          '</style>',
+        ].join('\n'),
+      );
+      const output = execFileSync(process.execPath, [script, 'undefined'], {
+        encoding: 'utf8',
+        env: { ...process.env, DESIGN_TOKEN_AUDIT_SOURCE_ROOT: directory },
+      });
+      expect(output).not.toContain('--fixture-scale');
+      expect(output).not.toContain('--fixture-quoted');
+      expect(output).not.toContain('--fixture-inline');
+      expect(output).toContain('--fixture-other');
+      expect(output).toContain('--fixture-comment');
+      expect(output).toContain('--fixture-text');
+      expect(output).toContain('--fixture-attribute-value');
+      expect(output).toContain('--fixture-script-string');
+      expect(output).toContain('--fixture-ts-string');
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
   it('ignores negative assertions without accepting dynamic definitions or positive assertions', () => {
     const directory = mkdtempSync(path.join(tmpdir(), 'design-token-audit-'));
     try {

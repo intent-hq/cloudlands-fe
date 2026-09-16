@@ -130,9 +130,10 @@ describe('configured app Store', () => {
     }
   });
 
-  // Regression coverage for the patched @augmentcode/themis tracking-proxy cache
-  // (patches/@augmentcode__themis@0.2.4.patch): cached proxies must keep recording
-  // accessed paths on every recompute, and path keys must not collide.
+  // Regression coverage for the @augmentcode/themis tracking-proxy cache (formerly
+  // patches/@augmentcode__themis@0.2.4.patch, now upstream — augmentcode/themis#15):
+  // cached proxies must keep recording accessed paths on every recompute, and path
+  // keys must not collide.
   describe('patched selector-core tracking proxy cache', () => {
     it('memoizes and recomputes correctly across repeated selects through cached tracking proxies', async () => {
       const { createCachedSelector } =

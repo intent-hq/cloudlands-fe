@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, untrack, type Snippet } from 'svelte';
   import { cn } from '$lib/utils';
+  import { onReducedMotionChange, prefersReducedMotion } from '$lib/utils/reduced-motion';
   import {
     clampSurfaceGeometry,
     interpolateSurfaceGeometry,
@@ -68,7 +69,7 @@
   );
 
   function isReducedMotion() {
-    return reducedMotion || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    return reducedMotion || prefersReducedMotion();
   }
 
   function easeOutCubic(progress: number) {
@@ -251,11 +252,9 @@
   });
 
   onMount(() => {
-    const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
-    const updateMotionPreference = () => (reducedMotion = mediaQuery.matches);
     const fontsReady = document.fonts?.ready;
-    updateMotionPreference();
-    mediaQuery.addEventListener('change', updateMotionPreference);
+    reducedMotion = prefersReducedMotion();
+    const stopWatchingMotion = onReducedMotionChange((reduced) => (reducedMotion = reduced));
 
     resizeObserver = new ResizeObserver(scheduleMeasure);
     if (rootRef) resizeObserver.observe(rootRef);
@@ -265,7 +264,7 @@
     fontsReady?.then(scheduleMeasure);
 
     return () => {
-      mediaQuery.removeEventListener('change', updateMotionPreference);
+      stopWatchingMotion();
       resizeObserver?.disconnect();
       resizeObserver = null;
       if (surfaceAnimationFrame !== null) cancelAnimationFrame(surfaceAnimationFrame);

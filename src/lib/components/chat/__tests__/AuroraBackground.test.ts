@@ -128,6 +128,7 @@ describe('AuroraBackground cleanup', () => {
     document.documentElement.toggleAttribute('data-window-blurred', originalWindowBlurred);
     getContextSpy.mockRestore();
     getComputedStyleSpy.mockRestore();
+    vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
 
@@ -228,26 +229,70 @@ describe('AuroraBackground cleanup', () => {
 
   it('updates every shader color after live theme and semantic token changes', async () => {
     render(AuroraBackground);
+    flushRafCallbacks();
     mockGL.gl.uniform3f.mockClear();
 
     computedAuroraColor = 'rgb(173, 197, 116)';
     document.documentElement.classList.toggle('dark');
-    await vi.waitFor(() => expect(mockGL.gl.uniform3f).toHaveBeenCalledTimes(3));
+    await Promise.resolve();
+    flushRafCallbacks();
+    expect(mockGL.gl.uniform3f).toHaveBeenCalledTimes(3);
     const dark = [173 / 255, 197 / 255, 116 / 255];
     expect(uniformColors()).toEqual([dark, dark, dark]);
 
     mockGL.gl.uniform3f.mockClear();
     computedAuroraColor = 'rgb(227, 180, 31)';
     window.dispatchEvent(new CustomEvent('theme-changed'));
+    flushRafCallbacks();
     const liveTheme = [227 / 255, 180 / 255, 31 / 255];
     expect(uniformColors()).toEqual([liveTheme, liveTheme, liveTheme]);
 
     mockGL.gl.uniform3f.mockClear();
     computedAuroraColor = 'rgb(91, 122, 219)';
     document.documentElement.style.setProperty('--agent-avatar-surface-active', '225 63% 61%');
-    await vi.waitFor(() => expect(mockGL.gl.uniform3f).toHaveBeenCalledTimes(3));
+    await Promise.resolve();
+    flushRafCallbacks();
+    expect(mockGL.gl.uniform3f).toHaveBeenCalledTimes(3);
     const customToken = [91 / 255, 122 / 255, 219 / 255];
     expect(uniformColors()).toEqual([customToken, customToken, customToken]);
+  });
+
+  it('coalesces theme notifications without reading styles during a DOM update burst', async () => {
+    render(AuroraBackground);
+    flushRafCallbacks();
+    getComputedStyleSpy.mockClear();
+    mockGL.gl.uniform3f.mockClear();
+
+    for (let update = 0; update < 20; update += 1) {
+      window.dispatchEvent(new CustomEvent('theme-changed'));
+    }
+    computedAuroraColor = 'rgb(91, 122, 219)';
+    document.documentElement.classList.toggle('dark');
+    await Promise.resolve();
+
+    expect(getComputedStyleSpy).not.toHaveBeenCalled();
+    expect(mockGL.gl.uniform3f).not.toHaveBeenCalled();
+    flushRafCallbacks();
+    expect(getComputedStyleSpy).toHaveBeenCalledTimes(1);
+    const expected = [91 / 255, 122 / 255, 219 / 255];
+    expect(uniformColors()).toEqual([expected, expected, expected]);
+    expect(mockGL.gl.uniform3f).toHaveBeenCalledTimes(3);
+  });
+
+  it('cancels deferred mount geometry and theme reads on unmount', () => {
+    const widthReads = vi.spyOn(HTMLCanvasElement.prototype, 'clientWidth', 'get');
+    const heightReads = vi.spyOn(HTMLCanvasElement.prototype, 'clientHeight', 'get');
+    const { unmount } = render(AuroraBackground);
+    window.dispatchEvent(new CustomEvent('theme-changed'));
+    unmount();
+    flushRafCallbacks();
+
+    expect(widthReads).not.toHaveBeenCalled();
+    expect(heightReads).not.toHaveBeenCalled();
+    expect(getComputedStyleSpy).not.toHaveBeenCalled();
+    expect(mockGL.gl.viewport).not.toHaveBeenCalled();
+    widthReads.mockRestore();
+    heightReads.mockRestore();
   });
 
   it('does not draw an unrelated fallback while the semantic color is unresolved', async () => {
@@ -259,7 +304,9 @@ describe('AuroraBackground cleanup', () => {
 
     computedAuroraColor = 'rgb(202, 213, 91)';
     document.documentElement.style.setProperty('--agent-avatar-surface-active', '67 72% 60%');
-    await vi.waitFor(() => expect(mockGL.gl.uniform3f).toHaveBeenCalledTimes(3));
+    await Promise.resolve();
+    flushRafCallbacks();
+    expect(mockGL.gl.uniform3f).toHaveBeenCalledTimes(3);
   });
 
   it('keeps drawing throttled to the 30 fps budget', () => {
@@ -367,8 +414,8 @@ describe('AuroraBackground cleanup', () => {
       .mockReturnValue(0);
     render(AuroraBackground);
 
-    expect(clientWidth).toHaveBeenCalledTimes(1);
-    expect(clientHeight).toHaveBeenCalledTimes(1);
+    expect(clientWidth).not.toHaveBeenCalled();
+    expect(clientHeight).not.toHaveBeenCalled();
     flushRafCallbacks();
     expect(clientWidth).toHaveBeenCalledTimes(1);
     expect(clientHeight).toHaveBeenCalledTimes(1);

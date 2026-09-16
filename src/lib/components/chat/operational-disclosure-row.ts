@@ -1,4 +1,5 @@
 import { safeSlide } from '$lib/utils/animations';
+import { prefersReducedMotion } from '$lib/utils/reduced-motion';
 
 /** Shared presentation contract for quiet, collapsible operational chat rows. */
 export const OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS =
@@ -55,10 +56,7 @@ export const CHAT_OPERATIONAL_CHEVRON_CLASS =
   'h-[16px]! w-[16px]! shrink-0 opacity-60 transition-transform duration-[var(--motion-fast)] motion-reduce:transition-none';
 
 export function safeOperationalDetailsTransition(node: Element) {
-  const reduced =
-    typeof window !== 'undefined' &&
-    window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-  return safeSlide(node, { axis: 'y', duration: reduced ? 0 : 150 });
+  return safeSlide(node, { axis: 'y', duration: prefersReducedMotion() ? 0 : 150 });
 }
 
 interface OperationalClusterBlock {

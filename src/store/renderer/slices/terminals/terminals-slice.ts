@@ -223,6 +223,10 @@ export const createTerminalRequested = createAction<[wsId: string]>(
   'terminals/createTerminalRequested',
 );
 
+export const createPanelTerminalRequested = createAction<[wsId: string, panelId?: string]>(
+  'terminals/createPanelTerminalRequested',
+);
+
 /**
  * Fan-out trigger dispatched by the workspaceMounted fan-out
  * (`lifecycle-ipc-read-service`) so a workspace first-opened after boot

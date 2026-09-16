@@ -159,9 +159,11 @@ export function createTailcatTunnel(options: CreateTailcatTunnelOptions): Promis
       child = spawn(binaryPath, [tcAddress, String(remotePort)], {
         stdio: ['pipe', 'pipe', 'pipe'],
       });
-    } catch (error) {
-      logger.warn('tailcat spawn failed', { error: String(error) });
-      socket.destroy(error instanceof Error ? error : new Error(String(error)));
+    } catch {
+      // Spawn errors may echo argv, including the address's pre-shared key.
+      // Close the loopback connection without forwarding the raw error.
+      logger.warn('tailcat spawn failed');
+      socket.destroy();
       return;
     }
     children.add(child);
@@ -173,8 +175,8 @@ export function createTailcatTunnel(options: CreateTailcatTunnelOptions): Promis
       killWithEscalation(child);
       socket.destroy();
     };
-    child.on('error', (error: Error) => {
-      logger.warn('tailcat child error', { error: error.message });
+    child.on('error', () => {
+      logger.warn('tailcat child error');
       teardown();
     });
     child.on('exit', teardown);
@@ -183,9 +185,9 @@ export function createTailcatTunnel(options: CreateTailcatTunnelOptions): Promis
       // 'close' follows and runs teardown; the handler only prevents an
       // uncaught 'error' from the local loopback socket.
     });
-    child.stderr?.on('data', (chunk: Buffer) => {
-      logger.debug('tailcat stderr', { output: chunk.toString().trimEnd() });
-    });
+    // Drain without logging: stderr can contain addresses or decoded keys,
+    // potentially split across chunks. Per-chunk redaction is not safe.
+    child.stderr?.resume();
     // stdio is always ['pipe','pipe','pipe'] (TailcatSpawn), so stdin/stdout
     // exist; guard anyway rather than assert.
     if (!child.stdin || !child.stdout) {
@@ -284,14 +286,9 @@ export function createTunneledSocket(options: CreateTunneledSocketOptions): Dupl
   const connectTimer = setTimeout(() => {
     if (facade.destroyed) return;
     logger.debug('tailcat tunnel candidate did not connect within the bound', {
-      tcAddress: options.tcAddress,
       connectTimeoutMs,
     });
-    facade.destroy(
-      new Error(
-        `tailcat tunnel to ${options.tcAddress} did not connect within ${connectTimeoutMs}ms`,
-      ),
-    );
+    facade.destroy(new Error(`tailcat tunnel did not connect within ${connectTimeoutMs}ms`));
   }, connectTimeoutMs);
   connectTimer.unref?.();
   createTailcatTunnel(options)

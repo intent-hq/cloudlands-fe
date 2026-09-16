@@ -1,3 +1,4 @@
+import { TC_ADDRESS } from '../../../test/fixtures/tc-address.fixture';
 /**
  * Unit tests for the connection-target resolver and the loopback WebSocket
  * transport (framing adapter + integration with the shared JSON-RPC client).
@@ -9,6 +10,7 @@
  */
 import type { ChildProcess } from 'node:child_process';
 import crypto from 'node:crypto';
+import dns from 'node:dns';
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import https from 'node:https';
@@ -1130,6 +1132,16 @@ describe('normalizeFingerprint', () => {
 });
 
 describe('candidateWssHosts', () => {
+  it('keeps Tailcat addresses out of DNS while retaining ordinary tc-prefixed hosts', () => {
+    expect(
+      candidateWssHosts({
+        transport: 'wss',
+        host: TC_ADDRESS,
+        hosts: [TC_ADDRESS, 'tcp-server.local', 'tc-printer', '192.168.1.10'],
+      }),
+    ).toEqual(['tcp-server.local', 'tc-printer', '192.168.1.10']);
+  });
+
   it('keeps the primary host first and deduplicates the extras', () => {
     expect(
       candidateWssHosts({
@@ -1488,7 +1500,11 @@ describe('tunnelRaceAttempt (tailcat tunnel candidate)', () => {
     // tmp never find resources/tailcat.
     const spy = vi.spyOn(process, 'cwd').mockReturnValue(os.tmpdir());
     try {
-      expect(tunnelRaceAttempt({ ...wssConfig, tcAddress: 'tc.example.ts.net' })).toBeNull();
+      expect(tunnelRaceAttempt({ ...wssConfig, tcAddress: TC_ADDRESS })).toBeNull();
+      // A tunnel-only record must fail locally, not resolve the blob as DNS.
+      expect(() => createBackendSocket({ ...wssConfig, host: TC_ADDRESS })).toThrow(
+        'tailcat binary unavailable',
+      );
     } finally {
       spy.mockRestore();
     }
@@ -1498,7 +1514,7 @@ describe('tunnelRaceAttempt (tailcat tunnel candidate)', () => {
     // Any existing file satisfies the TAILCAT_BIN existence probe; the
     // attempt is not dialed in this test.
     vi.stubEnv('TAILCAT_BIN', __filename);
-    const attempt = tunnelRaceAttempt({ ...wssConfig, tcAddress: 'tc.example.ts.net' });
+    const attempt = tunnelRaceAttempt({ ...wssConfig, tcAddress: TC_ADDRESS });
     expect(attempt).not.toBeNull();
     expect(attempt!.host).toBe(TUNNEL_RACE_HOST);
     expect(attempt!.via).toBe('tunnel');
@@ -1521,7 +1537,7 @@ describe('tunnel candidate connect bound in the wss race', () => {
     const refused = new FakeCandidate();
     const hangingInner = new FakeCandidate();
     const tunnel = createTunneledSocket({
-      tcAddress: 'tc.example.ts.net',
+      tcAddress: TC_ADDRESS,
       remotePort: 5181,
       binaryPath: '/fake/tailcat',
       spawn: () => new EventEmitter() as unknown as ChildProcess,
@@ -1569,7 +1585,7 @@ describe('tunnel candidate connect bound in the wss race', () => {
         port: refusedPort,
         token: 'c'.repeat(64),
         fingerprint: 'AA:BB',
-        tcAddress: 'tc.example.ts.net',
+        tcAddress: TC_ADDRESS,
       });
       try {
         const failed = new Promise<Error>((res) => socket.once('error', (e: Error) => res(e)));
@@ -1627,11 +1643,71 @@ describe('captureFingerprint through the tailcat tunnel (tc-address host)', () =
     vi.unstubAllEnvs();
   });
 
+  it.skipIf(process.platform === 'win32').each([undefined, TC_ADDRESS])(
+    'reopens a saved Tailcat host without DNS and preserves spawn bytes (tcAddress: %s)',
+    async (tcAddress) => {
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tailcat-reconnect-'));
+      const script = path.join(tmpDir, 'tailcat');
+      const argsFile = path.join(tmpDir, 'args.jsonl');
+      fs.writeFileSync(
+        script,
+        `#!${process.execPath}
+const fs = require('node:fs');
+const net = require('node:net');
+fs.appendFileSync(${JSON.stringify(argsFile)}, JSON.stringify(process.argv.slice(2)) + '\\n');
+const socket = net.connect(Number(process.argv[3]), '127.0.0.1');
+process.stdin.pipe(socket).pipe(process.stdout);
+socket.on('error', () => process.exit(1));
+`,
+        { mode: 0o755 },
+      );
+      vi.stubEnv('TAILCAT_BIN', script);
+      const lookup = vi.spyOn(dns, 'lookup');
+      try {
+        const config = {
+          transport: 'wss' as const,
+          host: TC_ADDRESS,
+          port: daemon.port,
+          token: TOKEN,
+          fingerprint: daemon.fingerprint,
+          tcAddress,
+        };
+        for (let attempt = 0; attempt < 2; attempt++) {
+          const socket = createBackendSocket(config);
+          try {
+            await new Promise<void>((resolve, reject) => {
+              socket.once('connect', resolve);
+              socket.once('error', reject);
+            });
+          } finally {
+            socket.destroy();
+          }
+        }
+        expect(
+          fs
+            .readFileSync(argsFile, 'utf8')
+            .trim()
+            .split('\n')
+            .map((line) => JSON.parse(line)),
+        ).toEqual([
+          [TC_ADDRESS, String(daemon.port)],
+          [TC_ADDRESS, String(daemon.port)],
+        ]);
+        // Node may call lookup for numeric loopback too; no opaque address
+        // may reach the resolver, including a lowercased version of it.
+        expect(lookup.mock.calls.map(([host]) => host)).toEqual(['127.0.0.1', '127.0.0.1']);
+      } finally {
+        lookup.mockRestore();
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+      }
+    },
+  );
+
   it('fails structured (connect-failed) when the tailcat binary is unavailable', async () => {
     vi.stubEnv('TAILCAT_BIN', path.join(os.tmpdir(), 'definitely-missing-tailcat'));
     const spy = vi.spyOn(process, 'cwd').mockReturnValue(os.tmpdir());
     try {
-      const result = await captureFingerprint({ host: 'tc-key-abc', port: daemon.port });
+      const result = await captureFingerprint({ host: TC_ADDRESS, port: daemon.port });
       expect(result).toEqual({
         ok: false,
         code: 'connect-failed',
@@ -1642,13 +1718,13 @@ describe('captureFingerprint through the tailcat tunnel (tc-address host)', () =
     }
   });
 
-  it('captures via the loopback forwarder, lowercases the dialed tc address, and closes the tunnel', async () => {
+  it('captures via the loopback forwarder, preserves the dialed tc address, and closes the tunnel', async () => {
     vi.stubEnv('TAILCAT_BIN', __filename);
     const children: FakeRelayChild[] = [];
     const spawnArgs: string[][] = [];
     const result = await captureFingerprint(
-      // Hand-typed uppercase form: the dial must normalize it.
-      { host: '  TC-KEY-ABC  ', port: daemon.port, token: TOKEN },
+      // Trim paste whitespace without changing the case-sensitive payload.
+      { host: `  ${TC_ADDRESS}  `, port: daemon.port, token: TOKEN },
       {
         tailcatSpawn: (_command, args) => {
           spawnArgs.push(args);
@@ -1664,9 +1740,9 @@ describe('captureFingerprint through the tailcat tunnel (tc-address host)', () =
       connected: true,
       tokenValid: true,
     });
-    // The forwarder spawned exactly one relay with the normalized address and
+    // The forwarder spawned exactly one relay with the exact address and
     // the daemon's port, and the finally-block teardown killed it.
-    expect(spawnArgs).toEqual([['tc-key-abc', String(daemon.port)]]);
+    expect(spawnArgs).toEqual([[TC_ADDRESS, String(daemon.port)]]);
     expect(children).toHaveLength(1);
     expect(children[0].killed).toBe(true);
   });
@@ -1677,7 +1753,7 @@ describe('captureFingerprint through the tailcat tunnel (tc-address host)', () =
     const before = daemon.decryptedBytes;
     const wrong = Array.from({ length: 32 }, () => 'FF').join(':');
     const result = await captureFingerprint(
-      { host: 'tc-key-abc', port: daemon.port, token: TOKEN, expectedFingerprint: wrong },
+      { host: TC_ADDRESS, port: daemon.port, token: TOKEN, expectedFingerprint: wrong },
       {
         tailcatSpawn: () => new FakeRelayChild(daemon.port) as unknown as ChildProcess,
       },

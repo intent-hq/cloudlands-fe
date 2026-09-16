@@ -1,7 +1,8 @@
 /**
  * Sequential Q&A wizard (pixel mock t2 interaction logic): choose-one
  * advances or completes on selection, multi-select toggles and keeps
- * Next, Enter in the free-form field advances, Skip clears + advances, Back
+ * Next, Enter in the free-form textarea advances while Shift+Enter keeps
+ * typing a newline, Skip clears + advances, Back
  * returns with the previous answer pre-selected, Hide collapses to the
  * banner, Dismiss is gated behind a confirmation dialog, and Send on the
  * last typed answer hands back the full answers array. With a `draftKey`,
@@ -15,6 +16,7 @@ import QuestionWizard, { type QuestionAnswer } from '../QuestionWizard.svelte';
 import { createNullableMessageSource } from './nullable-message-source.svelte';
 import { wizardDraftKey } from '../wizard-draft-storage';
 import type { Question } from '$shared/types/question-resource';
+import { REDUCE_MOTION_ATTRIBUTE } from '$lib/utils/reduced-motion';
 
 const SINGLE: Question = {
   attachmentId: 'tar-aaa111bbb222',
@@ -176,6 +178,35 @@ describe('QuestionWizard', () => {
     expect(onComplete).not.toHaveBeenCalled();
   });
 
+  it('re-reads the reduced-motion flag per step so battery/AC flips apply without remount', async () => {
+    const root = document.documentElement;
+    const animate = vi.spyOn(Element.prototype, 'animate');
+    try {
+      setup([SINGLE, MULTI, LAST]);
+      animate.mockClear();
+
+      // Mounted on AC, then switched to battery: the next step must not animate.
+      root.setAttribute(REDUCE_MOTION_ATTRIBUTE, '');
+      await fireEvent.click(screen.getByText('OS keychain'));
+      expect(screen.getByText('2 of 3')).toBeTruthy();
+      expect(animate).not.toHaveBeenCalled();
+
+      // Plugged back in: the following step animates at full duration again.
+      root.removeAttribute(REDUCE_MOTION_ATTRIBUTE);
+      await fireEvent.click(screen.getByRole('button', { name: /skip/i }));
+      expect(screen.getByText('3 of 3')).toBeTruthy();
+      await waitFor(() => {
+        const durations = animate.mock.calls.map(([, options]) =>
+          typeof options === 'number' ? options : options?.duration,
+        );
+        expect(durations).toContain(150);
+      });
+    } finally {
+      root.removeAttribute(REDUCE_MOTION_ATTRIBUTE);
+      animate.mockRestore();
+    }
+  });
+
   it('single-select final question completes on one click with the exact full payload', async () => {
     const { onComplete } = setup([SINGLE, LAST]);
     await fireEvent.click(screen.getByText('OS keychain'));
@@ -275,7 +306,7 @@ describe('QuestionWizard', () => {
     expect(screen.getByText('2 of 3')).toBeTruthy();
     await fireEvent.click(screen.getByRole('button', { name: /back/i }));
     expect(
-      (screen.getByPlaceholderText('Or type your own answer…') as HTMLInputElement).value,
+      (screen.getByPlaceholderText('Or type your own answer…') as HTMLTextAreaElement).value,
     ).toBe('');
   });
 
@@ -285,6 +316,56 @@ describe('QuestionWizard', () => {
     await fireEvent.input(input, { target: { value: 'Redis' } });
     await fireEvent.keyDown(input, { key: 'Enter' });
     expect(screen.getByText('2 of 3')).toBeTruthy();
+  });
+
+  it('renders the free-form field as a single-row textarea that wraps and resizes', () => {
+    setup();
+    const input = screen.getByPlaceholderText('Or type your own answer…') as HTMLTextAreaElement;
+    expect(input.tagName).toBe('TEXTAREA');
+    expect(input.rows).toBe(1);
+    expect(input.getAttribute('aria-label')).toBe('Type your own answer');
+    expect(input.className).toContain('resize-y');
+    expect(input.parentElement?.className).not.toContain('items-center');
+  });
+
+  it('Shift+Enter keeps the step and lets the field hold a newline', async () => {
+    const { onComplete } = setup();
+    const input = screen.getByPlaceholderText('Or type your own answer…') as HTMLTextAreaElement;
+    await fireEvent.input(input, { target: { value: 'first line' } });
+    const shiftEnter = await fireEvent.keyDown(input, { key: 'Enter', shiftKey: true });
+    // Not prevented → the browser inserts the newline natively.
+    expect(shiftEnter).toBe(true);
+    await fireEvent.input(input, { target: { value: 'first line\nsecond line' } });
+
+    expect(screen.getByText('1 of 3')).toBeTruthy();
+    expect(input.value).toBe('first line\nsecond line');
+    expect(onComplete).not.toHaveBeenCalled();
+  });
+
+  it('Enter during IME composition does not advance', async () => {
+    setup();
+    const input = screen.getByPlaceholderText('Or type your own answer…');
+    await fireEvent.input(input, { target: { value: 'にほん' } });
+    const composing = await fireEvent.keyDown(input, { key: 'Enter', isComposing: true });
+    expect(composing).toBe(true);
+    expect(screen.getByText('1 of 3')).toBeTruthy();
+  });
+
+  it('plain Enter after a Shift+Enter newline advances with the newline preserved', async () => {
+    const { onComplete } = setup([SINGLE, LAST]);
+    const input = screen.getByPlaceholderText('Or type your own answer…');
+    await fireEvent.input(input, { target: { value: '  first line\nsecond line  ' } });
+    const plainEnter = await fireEvent.keyDown(input, { key: 'Enter' });
+    expect(plainEnter).toBe(false);
+    expect(screen.getByText('2 of 2')).toBeTruthy();
+
+    await fireEvent.click(screen.getByText('Migrate silently'));
+    expect(onComplete.mock.calls[0][0][0]).toEqual({
+      question: SINGLE,
+      selectedLabels: [],
+      freeText: 'first line\nsecond line',
+      skipped: false,
+    });
   });
 
   it('Enter explicitly submits an exact typed answer on the only question', async () => {
@@ -616,7 +697,7 @@ describe('QuestionWizard draft persistence', () => {
     const option = screen.getByText('Desktop app').closest('button') as HTMLButtonElement;
     expect(option.getAttribute('aria-pressed')).toBe('true');
     expect(
-      (screen.getByPlaceholderText('Or type your own answer…') as HTMLInputElement).value,
+      (screen.getByPlaceholderText('Or type your own answer…') as HTMLTextAreaElement).value,
     ).toBe('Also the API');
 
     await fireEvent.click(screen.getByRole('button', { name: /next/i }));
@@ -671,7 +752,7 @@ describe('QuestionWizard draft persistence', () => {
       props: { questions: [LAST], draftKey: KEY, onDismiss: vi.fn(async () => {}) },
     });
     expect(
-      (screen.getByPlaceholderText('Or type your own answer…') as HTMLInputElement).value,
+      (screen.getByPlaceholderText('Or type your own answer…') as HTMLTextAreaElement).value,
     ).toBe('draft');
 
     await fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));

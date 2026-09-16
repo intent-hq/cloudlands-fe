@@ -2,9 +2,11 @@
   import { faArrowRight, faPencil } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import type { SuggestedPrompt } from '$shared/types';
+  import type { WorkspaceId } from '$shared/types/branded-ids';
   import { fade } from 'svelte/transition';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import { m } from '$shared/paraglide/messages.js';
+  import { handleLink } from '$features/navigation/link-handler';
   import {
     CHAT_OPERATIONAL_ICON_CLASS,
     CHAT_OPERATIONAL_LEADING_CLASS,
@@ -12,6 +14,11 @@
     OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS,
     OPERATIONAL_ROW_TONE_CLASS,
   } from './operational-disclosure-row';
+  import {
+    promptLinkRoutingUrl,
+    promptVisibleText,
+    splitPromptMarkdownLinks,
+  } from './suggested-prompt-markdown-links';
 
   interface Props {
     /** Array of suggested prompts to display */
@@ -28,9 +35,18 @@
      * chats are visible at once — matches the shortcut's runtime gating.
      */
     showShortcutHints?: boolean;
+    /** Workspace the prompts belong to; routes markdown-link clicks like chat links. */
+    workspaceId?: WorkspaceId;
   }
 
-  let { prompts, onSelect, onEdit, compact = false, showShortcutHints = false }: Props = $props();
+  let {
+    prompts,
+    onSelect,
+    onEdit,
+    compact = false,
+    showShortcutHints = false,
+    workspaceId,
+  }: Props = $props();
 
   const isMac =
     typeof navigator !== 'undefined' && navigator.platform.toUpperCase().includes('MAC');
@@ -53,6 +69,21 @@
     }
   }
 
+  // Markdown links inside a prompt open like chat links instead of selecting the row.
+  function handleLinkClick(event: MouseEvent, url: string) {
+    event.preventDefault();
+    event.stopPropagation();
+    void handleLink(url, { workspaceId, event });
+  }
+
+  function handleLinkKeyDown(event: KeyboardEvent, url: string) {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      event.stopPropagation();
+      void handleLink(url, { workspaceId, event });
+    }
+  }
+
   // Only the first 3 prompts get keyboard shortcut hints
   function hasShortcutHint(index: number): boolean {
     return index < 3;
@@ -71,13 +102,16 @@
       data-compact={compact}
     >
       {#each prompts as prompt, index (`prompt-${index}`)}
+        {@const parts = splitPromptMarkdownLinks(prompt)}
+        {@const leadingText = parts[0]?.type === 'text' ? parts[0].content : ''}
+        <!-- The row is a presentational mouse target; the send control is the text span so
+             the anchors are not presentational descendants of a button (ARIA). -->
         <div
-          role="button"
-          tabindex="0"
-          class="{OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS} {OPERATIONAL_ROW_TONE_CLASS} group flex cursor-pointer items-center gap-[var(--operational-leading-gap)] rounded-sm border border-transparent bg-transparent px-1.5 py-0.5 text-left transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+          role="presentation"
+          class="{OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS} {OPERATIONAL_ROW_TONE_CLASS} group flex cursor-pointer items-center gap-[var(--operational-leading-gap)] rounded-sm border border-transparent bg-transparent px-1.5 py-0.5 text-left transition-colors hover:text-foreground has-[[data-suggested-prompt-text]:focus-visible]:outline-2 has-[[data-suggested-prompt-text]:focus-visible]:outline-offset-2 has-[[data-suggested-prompt-text]:focus-visible]:outline-ring"
           data-typography-role="body"
+          data-suggested-prompt-row
           onclick={() => handleClick(prompt)}
-          onkeydown={(e) => handleKeyDown(e, prompt)}
         >
           <span
             class="{CHAT_OPERATIONAL_LEADING_CLASS} mt-px self-start"
@@ -85,7 +119,24 @@
           >
             <Fa icon={faArrowRight} size={16} class={CHAT_OPERATIONAL_ICON_CLASS} />
           </span>
-          <span class="min-w-0 flex-1 text-pretty" data-suggested-prompt-label>{prompt}</span>
+          <span class="min-w-0 flex-1 text-pretty" data-suggested-prompt-label
+            ><span
+              role="button"
+              tabindex="0"
+              aria-label={promptVisibleText(prompt)}
+              class="focus-visible:outline-none"
+              data-suggested-prompt-text
+              onkeydown={(e) => handleKeyDown(e, prompt)}>{leadingText}</span
+            >{#each parts.slice(leadingText ? 1 : 0) as part, partIndex (partIndex)}{#if part.type === 'link'}{@const url =
+                  promptLinkRoutingUrl(part.url)}<a
+                  href={url}
+                  title={url}
+                  class="cursor-pointer underline underline-offset-2 hover:opacity-80"
+                  data-suggested-prompt-link
+                  onclick={(e) => handleLinkClick(e, url)}
+                  onkeydown={(e) => handleLinkKeyDown(e, url)}>{part.label}</a
+                >{:else}{part.content}{/if}{/each}</span
+          >
           {#if onEdit}
             <Tooltip side="top" delayDuration={300}>
               {#snippet trigger()}

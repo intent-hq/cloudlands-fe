@@ -28,6 +28,7 @@ import './panel-layout-bridge-seeder';
 import './auto-update-bridge-seeder';
 import './release-notes-bridge-seeder';
 import './window-state-bridge-seeder';
+import './power-bridge-seeder';
 import './browser-ipc-bridge-seeder';
 import './native-dialog-bridge-seeder';
 import './voice-local-bridge-seeder';

@@ -1,5 +1,6 @@
 import type { AnimationConfig } from 'svelte/animate';
 import { cubicOut } from 'svelte/easing';
+import { prefersReducedMotion } from '$lib/utils/reduced-motion';
 
 interface PanelReorderAnimationParams {
   duration?: number;
@@ -29,7 +30,7 @@ export function animatePanelPreviewPositions(
   fromPositions: ReadonlyMap<string, DOMRect>,
   duration = 140,
 ): void {
-  if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+  if (prefersReducedMotion()) return;
   root.querySelectorAll<HTMLElement>(PREVIEW_PANEL_SELECTOR).forEach((element) => {
     const panelId = getPanelPositionId(element);
     const from = panelId ? fromPositions.get(panelId) : null;

@@ -64,6 +64,7 @@ vi.mock('$shared/logger', () => ({
 }));
 
 import { handlePairDeepLink, routePairLinkFromOs } from '../pair-deep-link';
+import { TC_ADDRESS_WITH_PSK } from '../../../../test/fixtures/tc-address.fixture';
 
 const TOKEN = 'super-secret-token-value';
 const LINK = `intent://pair?v=1&host=192.168.1.10&port=8443&fp=AA:BB:CC&token=${TOKEN}`;
@@ -144,6 +145,15 @@ describe('handlePairDeepLink', () => {
     const allLogs = logLines.join('\n');
     expect(allLogs).not.toContain(TOKEN);
     expect(allLogs).toContain('token=REDACTED');
+  });
+
+  it('scrubs a complete pairing link echoed by a downstream error', async () => {
+    const link = `${LINK}&tc=${TC_ADDRESS_WITH_PSK}`;
+    add.mockRejectedValue(new Error(`Unable to connect using ${link}`));
+    await expect(handlePairDeepLink(link)).resolves.toBeUndefined();
+    expect(add).toHaveBeenCalledWith(expect.objectContaining({ tcAddress: TC_ADDRESS_WITH_PSK }));
+    expect(logLines.join('\n')).not.toContain(TOKEN);
+    expect(logLines.join('\n')).not.toContain(TC_ADDRESS_WITH_PSK);
   });
 
   it('fails soft when openBackendWindow rejects', async () => {

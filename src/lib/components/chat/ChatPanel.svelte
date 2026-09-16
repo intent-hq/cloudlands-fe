@@ -159,6 +159,7 @@
     browserCaptureToContextItems,
   } from './browser-capture-context';
   import { createFileDropTarget } from '$lib/utils/file-drop';
+  import { prefersReducedMotion } from '$lib/utils/reduced-motion';
   import type { DropSplit } from '$lib/utils/drop-split';
   import { getPanelFileDropContext } from '$lib/components/layout/panel-system/panel-file-drop-context.svelte';
   import { createChatDraftManager } from './chat-panel-draft.svelte';
@@ -263,11 +264,13 @@
     type UserMessageNavigationItem,
   } from './chat-message-navigation';
   import { parseSuggestedPromptsFromContentBlocks } from '$lib/utils/messageParser';
-  import { getQueueInfo, isBatchedDeliverySeam, stripDequeueWaitNote } from '$lib/utils/queue-info';
+  import { isBatchedDeliverySeam } from '$lib/utils/queue-info';
+  import { isEventWakeMessage } from './event-wake-summary';
   import {
     eventCardAssistantMarginClass,
     isAttentionQuestionAnswerSeam,
   } from './attention-flow-spacing';
+  import { getSubscriptionCardSeam, isChatCardMessage } from './subscription-card-spacing';
   import {
     captureMessageSendOrigin,
     createMessageSendLaunchBubble,
@@ -275,7 +278,7 @@
   import { createPendingSendTransitions } from './pending-send-transitions';
 
   import LazyTurn from './LazyTurn.svelte';
-  import PinnedUserPrompt from './PinnedUserPrompt.svelte';
+  import PinnedTurnPrompt from './PinnedTurnPrompt.svelte';
   import {
     attachPinnedPromptMessage,
     trackPinnedPrompt,
@@ -921,20 +924,6 @@
     const turn = source?.closest<HTMLElement>('[data-conversation-turn]');
     setPinnedPrompt(null);
     if (turn) smoothScrollTo(turn, 'start');
-  }
-
-  function getPinnedPromptText(message: AgentMessage): string {
-    const extracted = extractAllContent(message);
-    const text = getQueueInfo(message.metadata) ? stripDequeueWaitNote(extracted) : extracted;
-    if (text.trim()) return text.trim();
-    const attachment = message.contentBlocks?.find(
-      (block) => block.type === 'image' || block.type === 'file',
-    );
-    if (attachment?.type === 'file' && attachment.fileName) return attachment.fileName;
-    if (attachment?.type === 'image') {
-      return m.chat_chatMessage_attachedImage_fallback({ number: '1' });
-    }
-    return m.chat_shared_context_fallback();
   }
 
   // CRITICAL: Destruction flag to prevent async callbacks from accessing reactive state after destruction.
@@ -1766,14 +1755,6 @@
    */
   function isAutomatedMessage(message: AgentMessage): boolean {
     return isAutomatedChatMessage(message);
-  }
-
-  function isEventWakeMessage(message?: AgentMessage): boolean {
-    if (!message) return false;
-    return (
-      message.metadata?.type === 'event_notification' ||
-      extractAllContent(message).trim().startsWith('[WORKSPACE EVENTS]')
-    );
   }
 
   // Initialize input history from existing chat messages
@@ -3898,7 +3879,7 @@
       targetScrollTop = scrollContainer.scrollTop + (elementRect.bottom - containerRect.bottom) + 1;
     }
 
-    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+    if (prefersReducedMotion()) {
       scrollContainer.scrollTop = targetScrollTop;
       return;
     }
@@ -4283,7 +4264,7 @@
       scrollContainer.clientHeight,
       scrollContainer.scrollHeight,
     );
-    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+    if (prefersReducedMotion()) {
       scrollContainer.scrollTop = entryScrollTop;
     } else {
       smoothScrollToPosition(entryScrollTop);
@@ -5298,7 +5279,7 @@
     if (!isActive) return;
     const container = scrollContainer;
     if (!container) return;
-    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+    if (prefersReducedMotion()) {
       shouldFollowBottom = true;
       followToBottom(container);
       return;
@@ -5575,8 +5556,8 @@
           data-testid="pinned-prompt-overlay-lane"
         >
           <div class={isChiefWorkspace ? 'mx-1 sm:mx-2' : ''}>
-            <PinnedUserPrompt
-              text={getPinnedPromptText(pinnedPrompt.message)}
+            <PinnedTurnPrompt
+              message={pinnedPrompt.message}
               {workspace}
               onActivate={handlePinnedPromptClick}
             />
@@ -6153,8 +6134,30 @@
                   {@const nextTurnHasUserMessage = Boolean(
                     nextTurn?.userMessage && !nextTurnIsEventNotification,
                   )}
+                  {@const currentIsChatCard = isChatCardMessage(turn.userMessage)}
+                  {@const nextIsChatCard = isChatCardMessage(nextTurn?.userMessage)}
+                  {@const subscriptionCardSeam = getSubscriptionCardSeam(
+                    currentIsChatCard &&
+                      turn.assistantMessages.length === 0 &&
+                      turn.noticeMessages.length === 0,
+                    nextIsChatCard,
+                  )}
                   {@const isLastTurnInConversation =
                     globalTurnIndexMap.get(turnKey) === globalTurnIndexMap.size - 1}
+                  {@const showPendingAssistantStatus =
+                    groupIndex === groupedMessages.length - 1 &&
+                    turnIndex === turns.length - 1 &&
+                    turn.assistantMessages.length === 0 &&
+                    shouldShowPendingAssistantStatus({
+                      isStreaming: $agentSessionIsStreaming$,
+                      isProcessing: $agentIsResponding$,
+                      error: effectiveError,
+                      modelUnavailable: $chatModelUnavailable$,
+                    })}
+                  {@const hasTurnBody =
+                    turn.assistantMessages.length > 0 ||
+                    turn.noticeMessages.length > 0 ||
+                    showPendingAssistantStatus}
                   {@const compactOperationalTurnBoundary = hasOperationalAssistantTurnBoundary(
                     turn,
                     nextTurn,
@@ -6172,7 +6175,7 @@
                     !attentionQuestionAnswerTurnSeam && isBatchedDeliverySeam(turn, nextTurn)}
                   <!-- Seam BEFORE this turn: the same batch test against the
                        previous rendered turn (crossing group boundaries like
-                       nextTurn). When true, the preceding h-2 gap owns the
+                       nextTurn). When true, the preceding gap owns the
                        seam and this turn's rows drop their own top margins. -->
                   {@const prevTurn =
                     turns[turnIndex - 1] ??
@@ -6182,6 +6185,7 @@
                     !isAttentionQuestionAnswerSeam(prevTurn, turn) &&
                     isBatchedDeliverySeam(prevTurn, turn),
                   )}
+                  {@const cardSpacingOwnedBefore = Boolean(prevTurn && currentIsChatCard)}
                   <!-- Conversation turn container - constrains sticky behavior -->
                   <!-- Fallback chain mirrors the row render order below. Edge case:
                        a user message with metadata.type === 'event_notification' but
@@ -6213,7 +6217,7 @@
                         data-message-index={globalIndex}
                         class="message-nav-target relative z-10 {eventCardAssistantMarginClass(
                           message,
-                          turn.assistantMessages.length > 0,
+                          turn.assistantMessages.length > 0 || showPendingAssistantStatus,
                         )}"
                         use:attachPinnedPromptMessage={message}
                         transition:safeSlide={{ axis: 'y', duration: 200 }}
@@ -6232,7 +6236,7 @@
                           {messageText}
                           asDivider={true}
                           compact={isCompactMode}
-                          suppressTopGap={batchedSeamBefore}
+                          suppressTopGap={batchedSeamBefore || cardSpacingOwnedBefore}
                           showAgentCards={!isDelegatedBackgroundTaskAgent}
                           {workspace}
                         />
@@ -6253,14 +6257,18 @@
                       <div
                         data-message-id={message.id}
                         data-message-role="user"
-                        data-pinnable-user-prompt={!isAutomatedMessage(message) ? '' : undefined}
                         data-pinned-prompt-id={message.id}
                         data-send-app-message-id={message.appMessageId}
                         data-message-index={globalIndex}
                         class="message-nav-target relative z-20"
-                        class:mb-0={batchedDeliveryTurnSeam}
-                        class:mb-5={!batchedDeliveryTurnSeam && isAutomatedMessage(message)}
-                        class:mb-7={!batchedDeliveryTurnSeam && !isAutomatedMessage(message)}
+                        class:mb-0={batchedDeliveryTurnSeam || (currentIsChatCard && !hasTurnBody)}
+                        class:mb-6={!batchedDeliveryTurnSeam && currentIsChatCard && hasTurnBody}
+                        class:mb-5={!batchedDeliveryTurnSeam &&
+                          !currentIsChatCard &&
+                          isAutomatedMessage(message)}
+                        class:mb-7={!batchedDeliveryTurnSeam &&
+                          !currentIsChatCard &&
+                          !isAutomatedMessage(message)}
                         class:invisible={pendingSendMessageIds.has(
                           String(message.appMessageId ?? ''),
                         )}
@@ -6268,6 +6276,7 @@
                       >
                         <LazyTurn
                           turnKey={message.id}
+                          {isActive}
                           scrollRoot={scrollContainer}
                           heightCache={lazyTurnHeightCache}
                           hydrationController={messageHydrationPolicy}
@@ -6292,7 +6301,8 @@
                                   hydratedInputModel}
                                 onScrollToPrevious={() => scrollToPreviousUserMessage(message.id)}
                                 backendSessionId={auggieSessionId}
-                                suppressAutomatedWakeTopSpacing={batchedSeamBefore}
+                                suppressAutomatedWakeTopSpacing={batchedSeamBefore ||
+                                  cardSpacingOwnedBefore}
                               />
                             </div>
                           {/snippet}
@@ -6316,7 +6326,7 @@
                     {/each}
 
                     <!-- Show status when active but no assistant message yet, or when there's an error/modelUnavailable -->
-                    {#if groupIndex === groupedMessages.length - 1 && turnIndex === turns.length - 1 && turn.assistantMessages.length === 0 && shouldShowPendingAssistantStatus( { isStreaming: $agentSessionIsStreaming$, isProcessing: $agentIsResponding$, error: effectiveError, modelUnavailable: $chatModelUnavailable$ } )}
+                    {#if showPendingAssistantStatus}
                       <div class={isCompactMode ? 'mb-2' : 'mb-8'}>
                         <StreamingStatus
                           isStreaming={$agentSessionIsStreaming$}
@@ -6367,6 +6377,7 @@
                       {@const globalIndex = getMessageIndex(message.id)}
                       <LazyTurn
                         turnKey={message.id}
+                        {isActive}
                         scrollRoot={scrollContainer}
                         heightCache={lazyTurnHeightCache}
                         hydrationController={messageHydrationPolicy}
@@ -6438,7 +6449,7 @@
                             class="w-full"
                             class:mb-1={!compactNextMessageBoundary &&
                               !(isLastAssistant && compactOperationalTurnBoundary) &&
-                              !(isLastAssistant && nextTurnHasUserMessage)}
+                              !(isLastAssistant && (nextTurnHasUserMessage || nextIsChatCard))}
                             data-after-assistant-message={message.id}
                           >
                             <ChatFileChangesSummary
@@ -6475,6 +6486,7 @@
                       zeroToolSeam={zeroOperationalTurnBoundary}
                       batchedDeliverySeam={batchedDeliveryTurnSeam}
                       attentionQuestionAnswerSeam={attentionQuestionAnswerTurnSeam}
+                      {subscriptionCardSeam}
                     />
                   {/if}
                   <!-- Turn-boundary divider placement: the anchor is this turn's
@@ -6542,6 +6554,7 @@
               onEdit={handleEditSuggestedPrompt}
               compact={isCompactMode}
               showShortcutHints={isChatFocused}
+              workspaceId={workspace?.id}
             />
           </div>
         {/if}
@@ -6854,7 +6867,7 @@
     animation: lock-confirmation-fade 1.5s ease-out forwards;
   }
 
-  @media (prefers-reduced-motion: reduce) {
+  @container style(--motion-reduced: 1) {
     .lock-confirmation {
       animation: none;
       opacity: 0.9;
@@ -6939,7 +6952,7 @@
     }
   }
 
-  @media (prefers-reduced-motion: reduce) {
+  @container style(--motion-reduced: 1) {
     :global(.conversation-column *),
     .conversation-composer {
       scroll-behavior: auto;

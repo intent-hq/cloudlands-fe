@@ -28,6 +28,7 @@
   import McpServersSettings from '$lib/components/settings/McpServersSettings.svelte';
   import BackgroundAgentSettings from '$lib/components/settings/BackgroundAgentSettings.svelte';
   import ColorThemeSettings from '$lib/components/settings/ColorThemeSettings.svelte';
+  import ReduceMotionOnBatterySettings from '$lib/components/settings/ReduceMotionOnBatterySettings.svelte';
   import NotificationSettings from '$lib/components/settings/NotificationSettings.svelte';
   import RtkSettings from '$lib/components/settings/RtkSettings.svelte';
   import HardwareConsoleSettings from '$lib/components/settings/HardwareConsoleSettings.svelte';
@@ -755,6 +756,14 @@
                     ariaLabel={m.settings_appearance_translucentWindow_label()}
                   />
                 </div>
+              </section>
+              <section
+                id="reduce-motion-on-battery"
+                data-highlight-id="reduce-motion-on-battery"
+                use:highlightTarget
+                class="px-6 py-5"
+              >
+                <ReduceMotionOnBatterySettings />
               </section>
             </div>
           </div>

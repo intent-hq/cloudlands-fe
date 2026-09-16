@@ -66,6 +66,7 @@ import {
 import { browserTabRegistrySaga } from './slices/panel-layout/sagas/browser-tab-registry-saga';
 import { panelLayoutSaga } from './slices/panel-layout/sagas/panel-layout-saga';
 import { permissionResponseSaga } from './slices/permission/sagas/permission-response-saga';
+import { powerSaga } from './slices/power/sagas/power-saga';
 import { proposalLifecycleSaga } from './slices/proposal-lifecycle/sagas/proposal-lifecycle-saga';
 import { providerSettingsSaga } from './slices/provider-settings/sagas/provider-settings-saga';
 import { antigravitySetupSaga } from './slices/antigravity-setup/sagas/antigravity-setup-saga';
@@ -87,6 +88,7 @@ import { workspaceLoadSaga } from './slices/workspace-lifecycle/sagas/workspace-
 import { workspaceReconnectSaga } from './slices/workspace-lifecycle/sagas/workspace-reconnect-saga';
 import { taskAgentAssociationsSaga } from './slices/task-agent-associations/sagas/task-agent-associations-saga';
 import { terminalCommandsSaga } from './slices/terminals/sagas/terminal-commands-saga';
+import { terminalCreationSaga } from './slices/terminals/sagas/terminal-creation-saga';
 import { terminalPersistenceSaga } from './slices/terminals/sagas/terminal-persistence-saga';
 import { themeSaga } from './slices/theme/sagas/theme-saga';
 import { uiLayoutPersistenceSaga } from './slices/ui-layout/sagas/ui-layout-persistence-saga';
@@ -180,6 +182,7 @@ export const sagas = [
   hardwareConsoleSaga,
   voiceSettingsSaga,
   themeSaga,
+  powerSaga,
   autoUpdateSaga,
   specialistsSaga,
   proposalLifecycleSaga,
@@ -207,6 +210,7 @@ export const sagas = [
   browserPersistenceSaga,
   browserClientsSaga,
   fileContentPruneSaga,
+  terminalCreationSaga,
   terminalPersistenceSaga,
   terminalCommandsSaga,
   externalEditorsPersistenceSaga,

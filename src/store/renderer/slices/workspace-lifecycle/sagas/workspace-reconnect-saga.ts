@@ -1,8 +1,10 @@
 import { buffers, eventChannel, type EventChannel } from 'redux-saga';
-import { put, take, type SagaGenerator } from 'typed-redux-saga';
+import { put, select, take, type SagaGenerator } from 'typed-redux-saga';
 
 import { onBackendReconnected } from '$lib/client/live/backend-transport';
-import { backendReconnected } from '../workspace-lifecycle-slice';
+import { selectCurrentWorkspaceTabId } from '../../tab-state/tab-state-selectors';
+import { selectWorkspaceLoadState } from '../workspace-lifecycle-selectors';
+import { backendReconnected, workspaceLoadRequested } from '../workspace-lifecycle-slice';
 
 function createReconnectChannel(): EventChannel<true> {
   return eventChannel<true>((emit) => onBackendReconnected(() => emit(true)), buffers.sliding(1));
@@ -19,6 +21,15 @@ export function* workspaceReconnectSaga(): SagaGenerator<void> {
     while (true) {
       yield* take(channel);
       yield* put(backendReconnected());
+      const workspaceId = yield* select(selectCurrentWorkspaceTabId.select);
+      if (!workspaceId) continue;
+      const load = yield* select(selectWorkspaceLoadState.select, workspaceId);
+      // A failed initial open has no live session to invalidate. Retry the
+      // selected tab, including a cached view whose open failed, through the
+      // existing load owner so concurrent loads remain single-flight.
+      if (load.status === 'error' || load.status === 'cached-ready') {
+        yield* put(workspaceLoadRequested(workspaceId));
+      }
     }
   } finally {
     channel.close();

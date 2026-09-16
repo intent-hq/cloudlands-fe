@@ -344,7 +344,7 @@ for (const theme of ['light', 'dark'] as const) {
         await component.getByTestId('sticky-scroll').evaluate((node) => node.scrollTo(0, 330));
         await expect(component.getByTestId('pinned-user-prompt')).toBeVisible();
 
-        const styles = await component.evaluate((root) => {
+        const styles = await component.evaluate((root, theme) => {
           const style = (selector: string, pseudo?: string) =>
             getComputedStyle(root.querySelector(selector) as Element, pseudo);
           const resolveToken = (token: string, property: 'backgroundColor' | 'color') => {
@@ -357,6 +357,7 @@ for (const theme of ['light', 'dark'] as const) {
           };
           return {
             surface: resolveToken('--sidebar', 'backgroundColor'),
+            themeSurface: resolveToken(`--theme-${theme}-sidebar`, 'backgroundColor'),
             surfaceForeground: resolveToken('--secondary-foreground', 'color'),
             ordinaryBackground: style('[data-testid="sent-card"]').backgroundColor,
             ordinaryBorderWidth: style('[data-testid="sent-card"]').borderTopWidth,
@@ -375,12 +376,13 @@ for (const theme of ['light', 'dark'] as const) {
               .backgroundColor,
             selectionText: style('[data-testid="pinned-user-prompt-text"]', '::selection').color,
           };
-        });
+        }, theme);
 
+        expect(styles.surface).toBe(styles.themeSurface);
         expect(styles.ordinaryBackground).toBe(styles.surface);
         expect(styles.pinnedBackground).toBe(styles.surface);
-        expect(styles.attributedBackground).not.toBe(styles.surface);
-        expect(styles.eventBackground).not.toBe(styles.surface);
+        expect(styles.attributedBackground).toBe(styles.surface);
+        expect(styles.eventBackground).toBe(styles.surface);
         expect(styles.ordinaryBorderWidth).toBe('0px');
         expect(styles.pinnedBorderWidth).toBe('0px');
         expect(styles.ordinaryText).toBe(styles.surfaceForeground);

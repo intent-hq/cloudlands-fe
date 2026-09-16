@@ -16,6 +16,7 @@
   import { Tooltip } from '$lib/components/ui/tooltip';
   import { Button } from '$lib/components/ui/button';
   import { cn } from '$lib/utils';
+  import { watchReducedMotion } from '$lib/utils/reduced-motion.svelte';
   import { selectActiveTab } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
 
@@ -59,7 +60,7 @@
   let { workspaceId }: Props = $props();
   let activeTabBounds = $state<WorkspaceTabBorderMaskBounds | null>(null);
   let activeTabTracking = $state(false);
-  let prefersReducedMotion = $state(false);
+  const reducedMotion = watchReducedMotion();
   const routedWorkspaceId = $derived(
     page.url.pathname.startsWith('/workspace/') && page.params.id !== 'new'
       ? (page.params.id ?? null)
@@ -148,16 +149,7 @@
   // Get focused tab info
   const focusedTab = $derived($focusedTab$ ?? null);
 
-  onMount(() => {
-    const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
-    const updateMotionPreference = () => (prefersReducedMotion = motionQuery.matches);
-    updateMotionPreference();
-    motionQuery.addEventListener('change', updateMotionPreference);
-
-    return () => {
-      motionQuery.removeEventListener('change', updateMotionPreference);
-    };
-  });
+  onMount(() => reducedMotion.cleanup);
   // Build display text for the search bar - show focused tab title and workspace
   const displayText = $derived.by(() => {
     if (focusedTab?.title && workspace?.title) {
@@ -171,13 +163,6 @@
     }
     return '';
   });
-
-  // i18n-ignore (development instance identifier supplied by the launcher)
-  const devTitleText = $derived(
-    import.meta.env.DEV && import.meta.env.VITE_DEV_NAME
-      ? `${displayText || 'Intent'} · [${import.meta.env.VITE_DEV_NAME}]`
-      : '',
-  );
 
   // Update the native window title when displayText changes
   $effect(() => {
@@ -278,15 +263,6 @@
 
     <!-- Right column: global status and settings -->
     <div class="app-no-drag flex items-center justify-end pr-4 gap-1">
-      {#if devTitleText}
-        <span
-          class="max-w-[min(45vw,40rem)] truncate px-2 text-xs text-muted-foreground"
-          title={devTitleText}
-          data-dev-instance-title
-        >
-          {devTitleText}
-        </span>
-      {/if}
       {@render titlebarUtilities(true)}
     </div>
     {#if activeTabBounds}
@@ -295,7 +271,7 @@
         style:left={`${activeTabBounds.left}px`}
         style:width={`${activeTabBounds.width}px`}
         style:mask-image={getWorkspaceTabBorderMaskImage(activeTabBounds)}
-        style:transition={activeTabTracking || prefersReducedMotion
+        style:transition={activeTabTracking || reducedMotion.current
           ? 'none'
           : `left ${WORKSPACE_TAB_MOTION_DURATION_MS}ms ${WORKSPACE_TAB_MOTION_EASING}, width ${WORKSPACE_TAB_MOTION_DURATION_MS}ms ${WORKSPACE_TAB_MOTION_EASING}`}
         data-active-tab-border-mask
