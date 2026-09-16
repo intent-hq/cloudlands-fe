@@ -1110,7 +1110,7 @@
             <Button
               variant="plain"
               type="button"
-              class="absolute -inset-x-px inset-y-0 flex h-auto w-auto min-w-0 cursor-pointer items-center rounded-[inherit] border-0 px-3 pr-8 !px-3 !pr-8 text-left forced-colors:focus-visible:text-[HighlightText]"
+              class="absolute -inset-x-px inset-y-0 flex h-auto w-auto min-w-0 cursor-pointer items-center rounded-[inherit] border-0 px-3 pr-10 !px-3 !pr-10 text-left forced-colors:focus-visible:text-[HighlightText]"
               onclick={(event) => void openWorkspace(workspaceId, event.detail === 0)}
               onkeydown={(event) => handleTabKeydown(event, workspaceId)}
               role="tab"
