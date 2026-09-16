@@ -3760,6 +3760,7 @@
   "inviteConsent_modal_waiting_label": "Waiting for GitHub…",
   "inviteConsent_modal_cancelButton_label": "Cancel",
   "inviteConsent_modal_dismiss_ariaLabel": "Close invite dialog",
+  "inviteNotice_modal_context": "“{workspaceTitle}” on {hostLabel}",
   "modals_message_close_ariaLabel": "Close message dialog",
   "modals_newSpace_title": "New Workspace",
   "modals_pullConflict_title": "Pull Failed",

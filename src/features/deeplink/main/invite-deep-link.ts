@@ -23,6 +23,11 @@
  *    and open the daemon's window; a store failure after the grant surfaces
  *    as a failure, never as a cancellation.
  *
+ * The two one-button notices — the failure at any step and the plaintext
+ * credential warning — render the same way (`main/invite-notice.ts`,
+ * `invite-notice:*` channels) with the native box as the no-window/no-ack
+ * fallback; the renderer only ever receives a bounded reason code.
+ *
  * Security posture mirrors the pair flow: the invite secret and the minted
  * token are never logged — failures are logged as bounded error kinds and
  * codes, never as free-form message text (a server or encryption error
@@ -41,7 +46,11 @@ import { Logger } from '$shared/logger';
 import { m } from '$shared/paraglide/messages.js';
 import { parseInviteUri } from '$shared/utils/invite-uri';
 import { showInviteConsent, type InviteConsentPrompt } from '../../../main/invite-consent';
+import { showInviteNotice } from '../../../main/invite-notice';
 import { getMainWindow } from '../../../main/state';
+import type { InviteConsentOutcome } from '$shared/ipc/invite-consent';
+import type { InviteFailureReason, InviteNoticeShowPayload } from '$shared/ipc/invite-notice';
+import { describeInviteFailureReason } from '$shared/utils/invite-failure-text';
 import * as guestSessionsStore from '../../backend/main/guest-sessions-store';
 import { openBackendWindow } from '../../backend/main/backend.ipc';
 import { PinMismatchError } from '../../backend/main/backend-connection';
@@ -81,7 +90,7 @@ let inviteLinkInFlight = false;
 /**
  * Handle an `intent://invite?...` deep link end to end. Resolves once the
  * flow completes (window opened, dialog cancelled, or link rejected); never
- * rejects — failures are logged (scrubbed) and surfaced in a native dialog.
+ * rejects — failures are logged (scrubbed) and surfaced in a notice dialog.
  */
 export async function handleInviteDeepLink(url: string): Promise<void> {
   if (inviteLinkInFlight) {
@@ -91,6 +100,9 @@ export async function handleInviteDeepLink(url: string): Promise<void> {
   inviteLinkInFlight = true;
   let connection: InviteConnection | null = null;
   let consent: InviteConsentPrompt | null = null;
+  // Display labels for the notices, filled in as the flow learns them.
+  let hostLabel: string | undefined;
+  let workspaceTitle: string | undefined;
   try {
     const parsed = parseInviteUri(url);
     if (!parsed) {
@@ -116,7 +128,9 @@ export async function handleInviteDeepLink(url: string): Promise<void> {
     }
 
     connection = await openInviteConnection({ hosts, port, fingerprint, tcAddress });
+    hostLabel = connection.host;
     const start = await connection.redeemStart(inviteId, secret);
+    workspaceTitle = start.workspaceTitle;
     // Refuse before the URL is shown or opened: the dialog would otherwise
     // display (and "Open GitHub" launch) whatever the server sent.
     if (!isAllowedVerificationUri(start.verificationUri)) {
@@ -207,15 +221,20 @@ export async function handleInviteDeepLink(url: string): Promise<void> {
     });
     if (!record.tokenEncrypted) {
       // Flagged plaintext fallback (spec ruling): the join stands, but the
-      // user learns the credential is not protected by OS encryption.
-      await showPlaintextWarning();
+      // user learns the credential is not protected by OS encryption —
+      // acknowledged before the window opens. The consent modal is already
+      // dismissed `joined`, so there is no modal to hand off from.
+      await showPlaintextWarning({ kind: 'plaintext', workspaceTitle, hostLabel });
     }
     await openBackendWindow(record.id);
   } catch (error) {
     logger.warn('Invite deep link handling failed', describeErrorForLog(error));
-    // A no-op once the modal was dismissed `joined`; the failure box still shows.
-    consent?.dismiss('failed');
-    await showFailure(error);
+    // The handoff dismiss is a no-op once the modal was dismissed `joined`;
+    // the failure notice still shows.
+    await showFailure(
+      { kind: 'failed', reason: classifyInviteFailure(error), workspaceTitle, hostLabel },
+      { consent, outcome: 'failed' },
+    );
   } finally {
     connection?.close();
     inviteLinkInFlight = false;
@@ -295,12 +314,40 @@ async function showDeviceCode(
   return response === 0;
 }
 
+/** The consent modal to close once the notice is on screen, with its outcome. */
+interface ConsentHandoff {
+  consent: InviteConsentPrompt | null;
+  outcome: InviteConsentOutcome;
+}
+
+/**
+ * Show a notice in the renderer, falling back to the given native box when the
+ * renderer path is unavailable. With a handoff, the notice is sent BEFORE the
+ * consent modal is dismissed so the renderer swaps one modal for the other
+ * without a frame of bare window in between; on the fallback path the dismiss
+ * still precedes the native box. Resolves once the user has acknowledged
+ * either surface.
+ */
+async function showNotice(
+  payload: Omit<InviteNoticeShowPayload, 'requestId'>,
+  handoff: ConsentHandoff | null,
+  nativeOptions: MessageBoxOptions,
+): Promise<void> {
+  const acknowledged = showInviteNotice({ requestId: randomUUID(), ...payload });
+  handoff?.consent?.dismiss(handoff.outcome);
+  if (await acknowledged) return;
+  await showDialog(nativeOptions);
+}
+
 /**
  * Warn that the credential was stored in plaintext because OS encryption is
- * unavailable on this machine (flagged fallback); the join itself stands.
+ * unavailable on this machine (flagged fallback); the join itself stands. The
+ * consent modal was already dismissed `joined` at the grant, so no handoff.
  */
-async function showPlaintextWarning(): Promise<void> {
-  await showDialog({
+async function showPlaintextWarning(
+  payload: Omit<InviteNoticeShowPayload, 'requestId'>,
+): Promise<void> {
+  await showNotice(payload, null, {
     type: 'warning',
     title: m.deeplink_invitePlaintext_title(),
     message: m.deeplink_invitePlaintext_message(),
@@ -310,68 +357,55 @@ async function showPlaintextWarning(): Promise<void> {
 }
 
 /**
- * Map a failure onto one user-facing sentence: transport failures route on
+ * Map a failure onto its bounded reason: transport failures route on
  * `InviteTransportError.transportCode`, redeem refusals on `error.data.code`.
+ * The reason is what crosses to the renderer — never the error's text.
  */
-function describeInviteFailure(error: unknown): string {
-  if (error instanceof PinMismatchError) return m.deeplink_inviteError_certMismatch();
-  if (error instanceof InviteTransportError) return describeTransportFailure(error);
+function classifyInviteFailure(error: unknown): InviteFailureReason {
+  if (error instanceof PinMismatchError) return 'cert-mismatch';
+  if (error instanceof InviteTransportError) return error.transportCode;
   if (error instanceof guestSessionsStore.GuestEncryptionUnavailableError) {
-    return m.deeplink_inviteError_encryptionUnavailable();
+    return 'encryption-unavailable';
   }
-  if (error instanceof guestSessionsStore.GuestStoreCorruptError) {
-    return m.deeplink_inviteError_storeCorrupt();
-  }
+  if (error instanceof guestSessionsStore.GuestStoreCorruptError) return 'store-corrupt';
   if (error instanceof InviteFlowError && error.flowCode === 'verification-launch-failed') {
-    return m.deeplink_inviteError_launchFailed();
+    return 'launch-failed';
   }
   const code = error instanceof InviteRpcError ? error.inviteCode : null;
   switch (code) {
     case 'invite-expired':
-      return m.deeplink_inviteError_expired();
+      return 'expired';
     case 'invite-revoked':
-      return m.deeplink_inviteError_revoked();
+      return 'revoked';
     case 'invite-redeemed':
-      return m.deeplink_inviteError_redeemed();
+      return 'redeemed';
     case 'invite-pin-mismatch':
-      return m.deeplink_inviteError_pinMismatch();
+      return 'pin-mismatch';
     case 'invite-flow-denied':
-      return m.deeplink_inviteError_denied();
+      return 'denied';
     case 'invite-flow-expired':
-      return m.deeplink_inviteError_flowExpired();
+      return 'flow-expired';
     case 'workspace-full':
-      return m.deeplink_inviteError_workspaceFull();
+      return 'workspace-full';
     default:
-      return m.deeplink_inviteError_generic();
+      return 'generic';
   }
 }
 
-/** One sentence per transport code — which of the distinct causes stopped the dial. */
-function describeTransportFailure(error: InviteTransportError): string {
-  switch (error.transportCode) {
-    case 'tailcat-unavailable':
-      return m.deeplink_inviteError_tailcatUnavailable();
-    case 'tunnel-failed':
-      return m.deeplink_inviteError_tunnelFailed();
-    case 'host-unreachable':
-      return m.deeplink_inviteError_hostUnreachable();
-    case 'host-refused':
-      return m.deeplink_inviteError_hostRefused();
-    case 'connection-closed':
-      return m.deeplink_inviteError_connectionClosed();
-  }
-}
-
-async function showFailure(error: unknown): Promise<void> {
+async function showFailure(
+  payload: Omit<InviteNoticeShowPayload, 'requestId'> & { reason: InviteFailureReason },
+  handoff: ConsentHandoff,
+): Promise<void> {
   try {
-    await showDialog({
+    await showNotice(payload, handoff, {
       type: 'error',
       title: m.deeplink_inviteFailed_title(),
-      message: describeInviteFailure(error),
+      message: describeInviteFailureReason(payload.reason),
       buttons: [m.deeplink_inviteFailed_ok_button()],
       defaultId: 0,
     });
   } catch (dialogError) {
+    handoff.consent?.dismiss(handoff.outcome);
     logger.warn('Could not show invite failure dialog', describeErrorForLog(dialogError));
   }
 }

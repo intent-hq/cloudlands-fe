@@ -3760,6 +3760,7 @@
   "inviteConsent_modal_waiting_label": "GitHub 응답 대기 중…",
   "inviteConsent_modal_cancelButton_label": "취소",
   "inviteConsent_modal_dismiss_ariaLabel": "초대 대화 상자 닫기",
+  "inviteNotice_modal_context": "{hostLabel}의 “{workspaceTitle}”",
   "modals_message_close_ariaLabel": "메시지 대화 상자 닫기",
   "modals_newSpace_title": "새 작업 공간",
   "modals_pullConflict_title": "풀 실패",

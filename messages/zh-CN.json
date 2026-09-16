@@ -3760,6 +3760,7 @@
   "inviteConsent_modal_waiting_label": "正在等待 GitHub…",
   "inviteConsent_modal_cancelButton_label": "取消",
   "inviteConsent_modal_dismiss_ariaLabel": "关闭邀请对话框",
+  "inviteNotice_modal_context": "{hostLabel} 上的“{workspaceTitle}”",
   "modals_message_close_ariaLabel": "关闭消息对话框",
   "modals_newSpace_title": "新工作区",
   "modals_pullConflict_title": "拉取失败",
