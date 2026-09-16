@@ -38,6 +38,8 @@
   } from './directory-picker-view';
 
   const uid = $props.id();
+  const pickerRowClass =
+    'flex h-8 w-full cursor-pointer items-center justify-start gap-2 rounded-md px-2 py-1 text-left hover:bg-hover';
 
   interface Props {
     open: boolean;
@@ -393,7 +395,9 @@
     </header>
 
     <div class="flex min-h-0 flex-1">
-      <aside class="hidden w-44 shrink-0 border-r border-border bg-muted/15 px-2 py-3 sm:block">
+      <aside
+        class="hidden w-44 shrink-0 overflow-y-auto border-r border-border bg-muted/15 px-3 py-3 sm:block"
+      >
         <h3 class="mb-1 px-2 text-xs font-semibold text-muted-foreground">
           {m.onboarding_dirPicker_favorites_label()}
         </h3>
@@ -404,7 +408,8 @@
               variant="ghost-light"
               size="sm"
               class={cn(
-                'flex w-full justify-start gap-2 px-2 text-left text-xs',
+                menuItem(),
+                pickerRowClass,
                 activeFavoriteId === favorite.id && 'bg-selected text-foreground',
               )}
               aria-current={activeFavoriteId === favorite.id ? 'location' : undefined}
@@ -506,7 +511,7 @@
           id={listboxId}
           bind:this={listContainerRef}
           tabindex="0"
-          class="min-h-0 flex-1 overflow-y-auto py-1"
+          class="min-h-0 flex-1 overflow-y-auto px-3 pt-1 pb-3"
           role="listbox"
           aria-label={m.onboarding_dirPicker_contents_ariaLabel()}
           aria-activedescendant={activeOptionId}
@@ -540,7 +545,7 @@
               data-state-kind="empty"
             />
           {:else}
-            <ul role="presentation">
+            <ul role="presentation" class="space-y-0.5">
               {#each visibleEntries as entry, index (entry.path)}
                 {@const isFocused = index === focusedIndex}
                 {@const isSelected =
@@ -563,9 +568,9 @@
                     data-picker-index={index}
                     class={cn(
                       menuItem(),
-                      'flex h-8 w-full items-center gap-2.5 px-4 text-left transition-colors',
+                      pickerRowClass,
                       entry.isDirectory || mode === 'file'
-                        ? 'cursor-default'
+                        ? undefined
                         : 'cursor-not-allowed text-ghost',
                       isSelected || (mode === 'directory' && !selectedFolderEntry && isFocused)
                         ? 'bg-selected'
