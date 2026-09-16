@@ -22,6 +22,7 @@
     handleHistoryNavigateIpc,
   } from '$lib/utils/history-navigation';
   import { isElectronPlatform } from '$lib/utils/platform-capabilities';
+  import { pauseWindowAnimations } from '$lib/actions/pause-window-animations';
 
   let { children }: { children?: Snippet } = $props();
 
@@ -45,6 +46,7 @@
     const handleWindowFocus = () => setWindowBlurred(false);
 
     setWindowBlurred(!document.hasFocus());
+    const windowAnimations = pauseWindowAnimations(document.documentElement);
     const electronApi = window.electronAPI;
     const usesNativeWindowFocus = isElectronPlatform();
     let windowFocusListenerId: string | undefined;
@@ -71,6 +73,7 @@
     );
 
     return () => {
+      windowAnimations.destroy();
       if (windowFocusListenerId) {
         // eslint-disable-next-line intent/no-component-async-data-fetch -- paired native window listener cleanup
         electronApi.offById('window:focus', windowFocusListenerId);

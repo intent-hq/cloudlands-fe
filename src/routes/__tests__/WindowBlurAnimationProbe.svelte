@@ -1,5 +1,12 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
+  import { pauseWindowAnimations } from '$lib/actions/pause-window-animations';
   import '../../app.css';
+
+  onMount(() => {
+    const animations = pauseWindowAnimations(document.documentElement);
+    return () => animations.destroy();
+  });
 </script>
 
 <div data-testid="ambient-animation-probe"></div>
