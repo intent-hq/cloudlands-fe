@@ -169,7 +169,7 @@ win:
   # and dropped signDlls (only the executable is signed by default).
   signtoolOptions:
     sign: scripts/windows-sign.cjs
-    publisherName: 'Clement Pang'
+    publisherName: 'SHV Labs'
     signingHashAlgorithms: [sha256]
   target:
     - target: nsis

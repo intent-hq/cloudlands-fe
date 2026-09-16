@@ -20,9 +20,10 @@ name: Manual Signed Build
 #     one installer never pulls the rest; no mac .zip archive and no
 #     .blockmap files (both are auto-updater material, dead weight in manual
 #     builds); 7-day retention
-#   - the Windows leg gains integrated DigiCert signing (release-alpha's
-#     Windows leg is still unsigned; the signing steps come from
-#     intent-manual-windows-build.yml)
+#   - the Windows leg's integrated DigiCert signing (same steps as
+#     release-alpha.yml build-windows, originally from
+#     intent-manual-windows-build.yml) is gated on the sign input instead of
+#     being mandatory
 #   - an optional intentd_ref input: empty (default) fetches the pinned
 #     intentd release exactly like release-alpha.yml; non-empty builds the
 #     intentd sidecar from source at that intent-hq/intentd git ref
@@ -431,10 +432,9 @@ jobs:
           rm -f "$RUNNER_TEMP/certificate.p12"
           rm -f "$RUNNER_TEMP/keychain-helper.provisionprofile"
 
-  # Copied from release-alpha.yml build-windows, plus the integrated DigiCert
-  # signing steps from intent-manual-windows-build.yml gated on the `sign`
-  # input (release-alpha's Windows leg is still unsigned; integrated signing
-  # there is a tracked follow-up).
+  # Copied from release-alpha.yml build-windows, with the integrated DigiCert
+  # signing steps (mandatory there) gated on the `sign` input here; unsigned
+  # manual builds skip the gate, so the secrets never reach their process env.
   build-windows:
     if: ${{ inputs.build_windows }}
     # gh-windows-16x: org hosted runner (16-core/64 GB, runner group 1, same

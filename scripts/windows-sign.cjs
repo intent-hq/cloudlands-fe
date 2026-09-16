@@ -1,6 +1,7 @@
 // Custom Windows sign hook for electron-builder.
 // Uses DigiCert smctl when INTENT_WINDOWS_ENABLE_INTEGRATED_SIGNING=true.
-// Silently skips signing for local dev builds.
+// Silently skips signing for local dev builds. Signs the main app exe, the
+// NSIS installer and the portable exe; see shouldSign for the selection rule.
 //
 // This file MUST be .cjs — package.json has "type": "module" and electron-builder
 // loads this via require(). A .js extension would fail with "require is not defined".
@@ -12,6 +13,40 @@ const { execFileSync } = require('child_process');
 const path = require('path');
 
 let loggedSkip = false;
+
+// electron-builder's unpacked app dir: win-unpacked, win-arm64-unpacked, win-ia32-unpacked.
+const UNPACKED_DIR = /^win(?:-[a-z0-9_]+)?-unpacked$/i;
+// `${version}` as electron-builder expands it: the package.json semver verbatim, with
+// optional prerelease (-manual.123) and build metadata (+build.1) as set-version.cjs allows.
+const VERSION = String.raw`\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?`;
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// Decide whether electron-builder handed us a shipped executable rather than a
+// bundled helper or NSIS internal. Sign:
+//   - the main app exe, which is the only exe directly inside win-unpacked
+//   - the NSIS installer  `${productName}.Setup.${version}.exe` (nsis.artifactName)
+//   - the portable exe    `${productName}.${version}.exe`       (portable.artifactName)
+// Skip everything else: helpers nested deeper in the tree (pagent.exe,
+// winpty-agent.exe, resources/elevate.exe, intentd.exe) and the NSIS
+// uninstaller stub electron-builder writes to the output dir as
+// `<installer>.__uninstaller.exe`.
+function shouldSign(filePath, productName) {
+  const resolved = path.resolve(filePath);
+  const fileName = path.basename(resolved);
+  if (!/\.exe$/i.test(fileName) || fileName.includes('__uninstaller')) {
+    return false;
+  }
+  if (UNPACKED_DIR.test(path.basename(path.dirname(resolved)))) {
+    return true;
+  }
+  const name = productName ? escapeRegExp(productName) : '[^\\\\/]+?';
+  return new RegExp(`^${name}\\.(?:Setup\\.)?${VERSION}\\.exe$`).test(fileName);
+}
+
+exports.shouldSign = shouldSign;
 
 exports.default = async function sign(configuration) {
   if (!configuration.path) {
@@ -42,19 +77,9 @@ exports.default = async function sign(configuration) {
   const filePath = path.resolve(configuration.path);
   const fileName = path.basename(filePath);
 
-  // Only sign the main app exe and the NSIS installer.
-  // Skip bundled third-party helpers (e.g. pagent.exe, winpty-agent.exe) and
-  // NSIS build artifacts (elevate.exe, __uninstaller-*).
-  //
-  // Heuristic: sign if the file is directly in win-unpacked (main app) or
-  // contains "Setup" in the name (NSIS installer). Everything else is a
-  // helper/dependency nested deeper in the tree.
-  const isMainApp =
-    filePath.includes('win-unpacked') && path.dirname(filePath).endsWith('win-unpacked');
-  const isInstaller = fileName.includes('Setup');
-
-  if (!isMainApp && !isInstaller) {
-    console.log(`[windows-sign] Skipping (not installer or main exe): ${fileName}`);
+  // configuration.name is electron-builder's productName.
+  if (!shouldSign(filePath, configuration.name)) {
+    console.log(`[windows-sign] Skipping (not installer, portable or main exe): ${fileName}`);
     return;
   }
 

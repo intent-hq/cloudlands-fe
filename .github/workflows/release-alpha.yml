@@ -360,10 +360,12 @@ jobs:
           rm -f "$RUNNER_TEMP/certificate.p12"
           rm -f "$RUNNER_TEMP/keychain-helper.provisionprofile"
 
-  # Unsigned Windows build: INTENT_WINDOWS_ENABLE_INTEGRATED_SIGNING is
-  # deliberately not set, so scripts/windows-sign.cjs skips silently
-  # (integrated DigiCert signing is a tracked follow-up). Modeled on
-  # intent-manual-windows-build.yml.
+  # Signed Windows build: integrated DigiCert signing is mandatory here — the
+  # credential gate fails the job when any signing secret/variable is missing,
+  # and INTENT_WINDOWS_ENABLE_INTEGRATED_SIGNING=true makes
+  # scripts/windows-sign.cjs sign the NSIS installer, the portable exe and the
+  # main app exe (intent-hq/intent#1296). Signing steps ported from
+  # intent-manual-windows-build.yml, minus its opt-in input.
   build-windows:
     needs: resolve
     # gh-windows-16x: org hosted runner (16-core/64 GB, runner group 1, same
@@ -438,6 +440,50 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: PATH="/c/Windows/System32:$PATH" node scripts/fetch-sidecar.cjs
 
+      # ── DigiCert signing setup (official action; pattern from ────────────
+      # ── intent-manual-windows-build.yml, unconditional here) ─────────────
+      # Fail fast, before the (slow) build, when any signing credential is
+      # absent: a release must never fall back to an unsigned installer.
+      - name: Check integrated signing configuration
+        shell: bash
+        run: |
+          missing=""
+          for name in INTENT_WINDOWS_SM_HOST INTENT_WINDOWS_SM_KEYPAIR_ALIAS INTENT_WINDOWS_SM_API_KEY INTENT_WINDOWS_SM_CLIENT_CERT_FILE_B64 INTENT_WINDOWS_SM_CLIENT_CERT_PASSWORD; do
+            if [ -z "${!name}" ]; then
+              missing="${missing:+$missing, }${name}"
+            fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Integrated Windows signing is mandatory in the release pipeline but these repository secrets/variables are unset: $missing (secrets: INTENT_WINDOWS_SM_API_KEY, INTENT_WINDOWS_SM_CLIENT_CERT_FILE_B64, INTENT_WINDOWS_SM_CLIENT_CERT_PASSWORD; variables: INTENT_WINDOWS_SM_HOST, INTENT_WINDOWS_SM_KEYPAIR_ALIAS)"
+            exit 1
+          fi
+        env:
+          INTENT_WINDOWS_SM_HOST: ${{ vars.INTENT_WINDOWS_SM_HOST }}
+          INTENT_WINDOWS_SM_KEYPAIR_ALIAS: ${{ vars.INTENT_WINDOWS_SM_KEYPAIR_ALIAS }}
+          INTENT_WINDOWS_SM_API_KEY: ${{ secrets.INTENT_WINDOWS_SM_API_KEY }}
+          INTENT_WINDOWS_SM_CLIENT_CERT_FILE_B64: ${{ secrets.INTENT_WINDOWS_SM_CLIENT_CERT_FILE_B64 }}
+          INTENT_WINDOWS_SM_CLIENT_CERT_PASSWORD: ${{ secrets.INTENT_WINDOWS_SM_CLIENT_CERT_PASSWORD }}
+
+      # The decoded cert lives in the per-run temp dir; a D: scratch drive
+      # (used by an older GH-hosted variant of this job) isn't guaranteed on
+      # every runner image. Shredded by the always() cleanup step below.
+      - name: Decode DigiCert client certificate
+        shell: bash
+        env:
+          INTENT_WINDOWS_SM_CLIENT_CERT_FILE_B64: ${{ secrets.INTENT_WINDOWS_SM_CLIENT_CERT_FILE_B64 }}
+        run: |
+          echo "$INTENT_WINDOWS_SM_CLIENT_CERT_FILE_B64" | base64 --decode > "$RUNNER_TEMP/Certificate_pkcs12.p12"
+
+      - name: Setup DigiCert Software Trust Manager
+        uses: digicert/code-signing-software-trust-action@v1
+        with:
+          simple-signing-mode: true
+        env:
+          SM_HOST: ${{ vars.INTENT_WINDOWS_SM_HOST }}
+          SM_API_KEY: ${{ secrets.INTENT_WINDOWS_SM_API_KEY }}
+          SM_CLIENT_CERT_FILE: ${{ runner.temp }}\Certificate_pkcs12.p12
+          SM_CLIENT_CERT_PASSWORD: ${{ secrets.INTENT_WINDOWS_SM_CLIENT_CERT_PASSWORD }}
+
       # Drop build output left by a previous run so the artifact upload
       # can't pick up stale files (no-op on this ephemeral hosted runner;
       # kept for parity with the macOS and Linux jobs).
@@ -475,6 +521,15 @@ jobs:
           # detects the pre-staged binary and leaves it in place.
           INTENTD_BIN: ${{ github.workspace }}\resources\sidecar\intentd.exe
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Signing env for scripts/windows-sign.cjs (smctl via the SM_* vars
+          # the DigiCert action expects). Always set: the gate above already
+          # failed the job if any of these is empty.
+          INTENT_WINDOWS_ENABLE_INTEGRATED_SIGNING: 'true'
+          INTENT_WINDOWS_SM_KEYPAIR_ALIAS: ${{ vars.INTENT_WINDOWS_SM_KEYPAIR_ALIAS }}
+          SM_HOST: ${{ vars.INTENT_WINDOWS_SM_HOST }}
+          SM_API_KEY: ${{ secrets.INTENT_WINDOWS_SM_API_KEY }}
+          SM_CLIENT_CERT_FILE: ${{ runner.temp }}\Certificate_pkcs12.p12
+          SM_CLIENT_CERT_PASSWORD: ${{ secrets.INTENT_WINDOWS_SM_CLIENT_CERT_PASSWORD }}
         run: |
           pnpm run dist:win
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -484,6 +539,109 @@ jobs:
         run: |
           echo "Built artifacts:"
           find dist-electron -maxdepth 1 -type f \( -name "*.exe" -o -name "*.blockmap" -o -name "latest.yml" \) -exec ls -lh {} \;
+
+      # ── Post-build validation ────────────────────────────────────────────
+      # electron-builder hashes the installer for the auto-updater feed after
+      # the sign hook has run; if that ordering ever regressed, the stale
+      # sha512 would make every updater download fail its integrity check,
+      # so verify the feed against the bytes we are about to publish. Both
+      # artifact names are pinned by electron-builder.yml (nsis.artifactName
+      # / portable.artifactName) with the version resolve verified against
+      # package.json. Parsed by line rather than with a YAML library: js-yaml
+      # is not resolvable from the project root under pnpm's isolated linker,
+      # and electron-builder's latest.yml is a flat document whose top-level
+      # path/sha512 mirror the single NSIS entry under files (the portable
+      # exe is not an updater artifact and never appears in the feed).
+      - name: Validate latest.yml matches signed installer
+        id: latest_yml_check
+        shell: bash
+        env:
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const path = require('path');
+          const crypto = require('crypto');
+
+          const distDir = 'dist-electron';
+          const installerName = `Intent.Setup.${process.env.VERSION}.exe`;
+          const portableName = `Intent.${process.env.VERSION}.exe`;
+          for (const name of [installerName, portableName]) {
+            if (!fs.existsSync(path.join(distDir, name))) {
+              throw new Error(`Expected artifact is missing: ${distDir}/${name}`);
+            }
+          }
+
+          const latest = fs.readFileSync(path.join(distDir, 'latest.yml'), 'utf8');
+          const unquote = (value) => value.replace(/^(['"])(.*)\1$/, '$2');
+          const topLevel = (key) => {
+            const match = latest.match(new RegExp(`^${key}:[ \\t]*(.+?)[ \\t]*\\r?$`, 'm'));
+            return match ? unquote(match[1]) : '';
+          };
+          const entries = [...latest.matchAll(/^ {2}- url:[ \t]*(.+?)[ \t]*\r?\n[ \t]+sha512:[ \t]*(.+?)[ \t]*\r?$/gm)]
+            .map(([, url, sha512]) => ({ url: unquote(url), sha512: unquote(sha512) }));
+
+          const feedPath = topLevel('path');
+          if (feedPath !== installerName) {
+            throw new Error(`latest.yml path is "${feedPath}", expected "${installerName}"`);
+          }
+          const entry = entries.find((e) => e.url === installerName);
+          if (!entry) throw new Error(`latest.yml has no files entry for ${installerName}`);
+
+          const installerPath = path.join(distDir, installerName);
+          const actualSha512 = crypto.createHash('sha512').update(fs.readFileSync(installerPath)).digest('base64');
+          console.log(`Installer:         ${installerName}`);
+          console.log(`latest.yml sha512: ${entry.sha512}`);
+          console.log(`Actual sha512:     ${actualSha512}`);
+          if (entry.sha512 !== actualSha512 || topLevel('sha512') !== actualSha512) {
+            throw new Error('latest.yml sha512 does not match the signed installer.');
+          }
+          console.log('✅ Hash match confirmed.');
+
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `installer_path=${installerPath}\n`);
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `portable_path=${path.join(distDir, portableName)}\n`);
+          NODE
+
+      # shell: powershell for the same reason as the build step:
+      # Get-AuthenticodeSignature ships with Windows PowerShell 5.1
+      # (Microsoft.PowerShell.Security), so this needs no pwsh. Checks both
+      # shipped executables — the NSIS installer and the portable exe — for a
+      # Valid signature whose signer CN is win.signtoolOptions.publisherName
+      # from electron-builder.yml (read from the file so the two can't
+      # drift). The `<installer>.__uninstaller.exe` stub electron-builder
+      # leaves in dist-electron is an NSIS internal the hook skips; it is not
+      # published, so it is not checked.
+      - name: Verify Authenticode signatures
+        shell: powershell
+        env:
+          INSTALLER_PATH: ${{ steps.latest_yml_check.outputs.installer_path }}
+          PORTABLE_PATH: ${{ steps.latest_yml_check.outputs.portable_path }}
+        run: |
+          $config = Get-Content -Raw electron-builder.yml
+          if ($config -notmatch '(?m)^\s*publisherName:\s*[''"]?([^''"\r\n]+?)[''"]?\s*$') {
+            throw 'win.signtoolOptions.publisherName not found in electron-builder.yml'
+          }
+          $expectedCn = $Matches[1]
+          $failed = $false
+          foreach ($file in @($env:INSTALLER_PATH, $env:PORTABLE_PATH)) {
+            $sig = Get-AuthenticodeSignature -FilePath $file
+            $cn = ''
+            if ($sig.SignerCertificate) {
+              $cn = $sig.SignerCertificate.GetNameInfo([System.Security.Cryptography.X509Certificates.X509NameType]::SimpleName, $false)
+            }
+            Write-Host "$file"
+            Write-Host "  Status:  $($sig.Status)"
+            Write-Host "  Subject: $($sig.SignerCertificate.Subject)"
+            if ($sig.Status -ne 'Valid') {
+              Write-Host "::error::${file}: Authenticode signature is not valid ($($sig.Status))"
+              $failed = $true
+            } elseif ($cn -ne $expectedCn) {
+              Write-Host "::error::${file}: signer CN '$cn' does not match publisherName '$expectedCn'"
+              $failed = $true
+            }
+          }
+          if ($failed) { exit 1 }
+          Write-Host "✅ Both executables carry a valid Authenticode signature from CN=$expectedCn."
 
       - name: Upload Windows release assets
         uses: actions/upload-artifact@v7
@@ -496,6 +654,14 @@ jobs:
           # Consumed only by the same-run publish job; 1 day caps quota usage.
           retention-days: 1
           if-no-files-found: error
+
+      # Shred the decoded DigiCert client certificate so no signing material
+      # outlives the job (runs on failure and cancellation too); a no-op on
+      # this ephemeral hosted runner, kept for parity with build-macos.
+      - name: Clean up DigiCert client certificate
+        if: always()
+        shell: bash
+        run: rm -f "$RUNNER_TEMP/Certificate_pkcs12.p12"
 
   build-linux:
     needs: resolve
@@ -1067,7 +1233,7 @@ jobs:
             echo ""
             echo "### Download URLs"
             echo "- [Apple Silicon Mac (DMG)]($ALPHA_URL/$(encode "$DMG_FILE"))"
-            echo "- [Windows x64 installer (EXE, unsigned)]($ALPHA_URL/$(encode "$EXE_FILE"))"
+            echo "- [Windows x64 installer (EXE)]($ALPHA_URL/$(encode "$EXE_FILE"))"
             echo "- [Linux x64 (AppImage)]($ALPHA_URL/$(encode "$APPIMAGE_X64"))"
             echo "- [Linux arm64 (AppImage)]($ALPHA_URL/$(encode "$APPIMAGE_ARM64"))"
             echo "- Auto-updater feeds: [latest-mac.yml]($ALPHA_URL/latest-mac.yml), [latest.yml]($ALPHA_URL/latest.yml), [latest-linux.yml]($ALPHA_URL/latest-linux.yml), [latest-linux-arm64.yml]($ALPHA_URL/latest-linux-arm64.yml)"
