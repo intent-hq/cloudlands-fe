@@ -557,7 +557,7 @@
                   indent={depth}
                   {indentSize}
                   badge={isCollapsed && hasChildren ? childNotes.length : undefined}
-                  badgeClass="text-ui px-1 py-0"
+                  badgeClass="type-caption font-normal tabular-nums text-muted-foreground px-1 py-0"
                   onclick={(event) => onOpenNote?.(note.id, event)}
                   onkeydown={(event) =>
                     handleModifiedEnter(event, (keyEvent) => onOpenNote?.(note.id, keyEvent))}
@@ -622,7 +622,7 @@
                   indent={depth}
                   {indentSize}
                   badge={isCollapsed && hasChildren ? childNotes.length : undefined}
-                  badgeClass="text-ui px-1 py-0"
+                  badgeClass="type-caption font-normal tabular-nums text-muted-foreground px-1 py-0"
                   onclick={(event) => onOpenNote?.(note.id, event)}
                   onkeydown={(event) =>
                     handleModifiedEnter(event, (keyEvent) => onOpenNote?.(note.id, keyEvent))}
@@ -706,7 +706,7 @@
                   indent={depth}
                   {indentSize}
                   badge={isCollapsed && hasChildren ? childNotes.length : undefined}
-                  badgeClass="text-ui px-1 py-0"
+                  badgeClass="type-caption font-normal tabular-nums text-muted-foreground px-1 py-0"
                   onclick={(event) => onOpenNote?.(note.id, event)}
                   onkeydown={(event) =>
                     handleModifiedEnter(event, (keyEvent) => onOpenNote?.(note.id, keyEvent))}

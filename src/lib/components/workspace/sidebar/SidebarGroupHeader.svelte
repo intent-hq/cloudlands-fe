@@ -24,7 +24,7 @@
 >
   <span class="min-w-0 flex-1 truncate text-left">{title}</span>
   {#if meta}
-    <span class="shrink-0 text-xs font-normal text-muted-foreground">{meta}</span>
+    <span class="shrink-0 type-caption font-normal tabular-nums text-muted-foreground">{meta}</span>
   {/if}
   <Fa
     icon={faChevronDown}
