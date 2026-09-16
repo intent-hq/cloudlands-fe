@@ -1066,8 +1066,13 @@ for (const zoomFactor of [1, 1.1, 1.25]) {
       .raw()
       .toBuffer({ resolveWithObject: true });
     const reference = [...data.subarray(data.length - info.channels, data.length)];
+    // The counter-scaled mask ends on a fractional device row at zoom 1.25 and
+    // its antialiased edge quantizes the (identical) sidebar colour by one
+    // unit; a visible seam line differs from the reference by far more.
     for (let offset = 0; offset < data.length; offset += info.channels) {
-      expect([...data.subarray(offset, offset + info.channels)]).toEqual(reference);
+      const pixel = [...data.subarray(offset, offset + info.channels)];
+      const delta = Math.max(...pixel.map((value, index) => Math.abs(value - reference[index])));
+      expect(delta, `pixel ${offset / info.channels} = ${pixel.join(',')}`).toBeLessThanOrEqual(1);
     }
   });
 }

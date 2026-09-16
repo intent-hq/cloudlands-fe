@@ -115,6 +115,9 @@ for (const theme of ['light', 'dark'] as const) {
       await trigger.focus();
       await trigger.press('ArrowDown');
       const menu = page.getByRole('menu');
+      // The menu takes keyboard focus one frame after opening; wait for it
+      // before navigating so the End key is handled by the menu.
+      await expect.poll(() => menu.evaluate((node) => node.matches(':focus-within'))).toBe(true);
       await page.keyboard.press('End');
       await page.keyboard.press('ArrowUp');
       const row = page.getByRole('menuitemradio', { name: 'Comfortable' });
@@ -161,7 +164,7 @@ for (const theme of ['light', 'dark'] as const) {
       await reduceMotion(page);
       const component = await mount(SelectHarness, { props: { portal: true } });
       await expect(page.locator('#splash')).toHaveCount(0);
-      const trigger = component.getByRole('button', { name: 'Choose fruit' });
+      const trigger = component.getByRole('combobox', { name: 'Choose fruit' });
       await trigger.press('Enter');
       const listbox = page.getByRole('listbox');
       const viewport = page.locator('[data-select-viewport]');

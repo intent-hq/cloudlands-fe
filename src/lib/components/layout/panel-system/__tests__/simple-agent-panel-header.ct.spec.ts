@@ -55,12 +55,18 @@ test('shows only the current agent identity across root, delegated, single, stac
 
         const nameGeometry = await identity
           .getByRole('button', { name: currentName })
-          .evaluate((element) => ({
-            clientWidth: element.clientWidth,
-            scrollWidth: element.scrollWidth,
-            overflow: getComputedStyle(element).overflow,
-            textOverflow: getComputedStyle(element).textOverflow,
-          }));
+          .evaluate((element) => {
+            // Button truncates its text inside the `button-label` slot; measure
+            // the element that actually clips the name.
+            const text =
+              element.querySelector<HTMLElement>('[data-slot="button-label"]') ?? element;
+            return {
+              clientWidth: text.clientWidth,
+              scrollWidth: text.scrollWidth,
+              overflow: getComputedStyle(text).overflow,
+              textOverflow: getComputedStyle(text).textOverflow,
+            };
+          });
         expect(nameGeometry.overflow).toBe('hidden');
         expect(nameGeometry.textOverflow).toBe('ellipsis');
         if (width === 240)
