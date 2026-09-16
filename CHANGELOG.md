@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.161.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.160.0...v2.161.0) (2026-09-16)
+
+
+### 🚀 Features
+
+* **ui:** standardize shared controls and product layouts ([#2441](https://github.com/intent-hq/cloudlands-fe/issues/2441)) ([b64bd68](https://github.com/intent-hq/cloudlands-fe/commit/b64bd682e1dd11ffb5a4a7f09c6b81bde3f854b7))
+
 ## [2.160.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.159.4...v2.160.0) (2026-09-16)
 
 
