@@ -14,6 +14,24 @@ import type {
 } from '../../shared/ipc/invite-consent';
 import { resetInviteConsentStateForTests, showInviteConsent } from '../invite-consent';
 
+const logLines: string[] = [];
+vi.mock('../../shared/logger', () => ({
+  Logger: class {
+    debug(...args: unknown[]) {
+      logLines.push(JSON.stringify(args));
+    }
+    info(...args: unknown[]) {
+      logLines.push(JSON.stringify(args));
+    }
+    warn(...args: unknown[]) {
+      logLines.push(JSON.stringify(args));
+    }
+    error(...args: unknown[]) {
+      logLines.push(JSON.stringify(args));
+    }
+  },
+}));
+
 const PAYLOAD: InviteConsentShowPayload = {
   requestId: 'req-1',
   userCode: 'ABCD-1234',
@@ -62,6 +80,7 @@ function dismissesSent(send: ReturnType<typeof vi.fn>): InviteConsentDismissPayl
 
 beforeEach(() => {
   resetInviteConsentStateForTests();
+  logLines.length = 0;
 });
 
 afterEach(() => {
@@ -178,6 +197,25 @@ describe('showInviteConsent — fallback to the native dialog', () => {
     const prompt = showInviteConsent(PAYLOAD, { getParentWindow: () => window });
     await expect(prompt.decision).resolves.toBeNull();
   });
+
+  it.each([
+    ['an Error', (marker: string) => new Error(`render frame disposed ${marker}`)],
+    ['a non-Error value', (marker: string) => `disposed ${marker}`],
+  ])(
+    'keeps the text of %s thrown by webContents.send out of the log line',
+    async (_name, makeThrown) => {
+      const marker = 'untrusted-send-failure-marker';
+      const { window, send } = makeWindow();
+      send.mockImplementation(() => {
+        throw makeThrown(marker);
+      });
+      const prompt = showInviteConsent(PAYLOAD, { getParentWindow: () => window });
+      await expect(prompt.decision).resolves.toBeNull();
+
+      expect(logLines.some((line) => line.includes('renderer-send-failed'))).toBe(true);
+      expect(logLines.some((line) => line.includes(marker))).toBe(false);
+    },
+  );
 
   it('resolves null when the renderer dies before acking', async () => {
     const { window, emitRendererGone } = makeWindow();

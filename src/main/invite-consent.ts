@@ -231,9 +231,12 @@ export function showInviteConsent(
   const decision = (async (): Promise<InviteConsentAction | null> => {
     try {
       contents.send(INVITE_CONSENT_CHANNELS.SHOW, payload);
-    } catch (error) {
+    } catch {
+      // Bounded fields only: the throw's text is Electron/library-authored
+      // free-form text and stays out of the invite flow's logs.
       logger.warn('Failed to send invite consent to renderer; using native dialog', {
-        error: error instanceof Error ? error.message : String(error),
+        requestId: payload.requestId,
+        code: 'renderer-send-failed',
       });
       abandon();
       return null;
