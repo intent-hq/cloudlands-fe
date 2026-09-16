@@ -139,6 +139,9 @@ export interface MutationResult {
    * paths never set it.
    */
   queuedMessage?: QueuedMessage;
+  /** sendQueuedMessageNow may restore the entry instead of delivering it (§5.5). */
+  queued?: boolean;
+  quarantined?: boolean;
   /**
    * Turn-correlation id (PROTOCOL §5.5/§6.6, monorepo#1022) surfaced when the
    * daemon returns one by the seam mutations that extract it: `queueMessage`

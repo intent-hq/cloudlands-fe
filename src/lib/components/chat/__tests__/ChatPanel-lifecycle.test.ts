@@ -3,6 +3,9 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Workspace } from '$shared/types';
+import { KeyboardShortcutManager } from '$lib/utils/keyboardShortcuts';
+import { registerGlobalSearchShortcuts } from '$lib/utils/global-search-shortcuts';
+import { resolveShortcut } from '$lib/utils/shortcut-bindings';
 import {
   animateScrollTo as animateScrollToUtil,
   followToBottom as scrollToBottomUtil,
@@ -730,6 +733,145 @@ afterEach(() => {
   Reflect.deleteProperty(globalThis.CSS, 'highlights');
   vi.useRealTimers();
   vi.unstubAllGlobals();
+});
+
+describe.each([
+  ['macOS', 'MacIntel', { metaKey: true, ctrlKey: false }],
+  ['Windows/Linux', 'Win32', { metaKey: false, ctrlKey: true }],
+] as const)('ChatPanel find routing on %s', (_label, platform, mod) => {
+  let manager: KeyboardShortcutManager;
+  const openGlobalSearch = vi.fn();
+
+  function press(init: KeyboardEventInit = {}, target: EventTarget = document.body) {
+    const event = new KeyboardEvent('keydown', {
+      key: 'f',
+      code: 'KeyF',
+      ...mod,
+      bubbles: true,
+      cancelable: true,
+      ...init,
+    });
+    target.dispatchEvent(event);
+    return event;
+  }
+
+  beforeEach(() => {
+    vi.spyOn(navigator, 'platform', 'get').mockReturnValue(platform);
+    mocks.draftGet.mockResolvedValue(null);
+    manager = new KeyboardShortcutManager();
+    registerGlobalSearchShortcuts(manager, {
+      isMac: platform === 'MacIntel',
+      resolveBinding: () => resolveShortcut('global.search', {}),
+      openSearch: openGlobalSearch,
+    });
+    manager.attach();
+  });
+
+  afterEach(() => {
+    manager.destroy();
+    vi.restoreAllMocks();
+  });
+
+  it('opens and refocuses local search, preserves its query, and closes with Escape', async () => {
+    render(ChatPanel, {
+      props: {
+        workspace: workspace('workspace-a'),
+        agentId: 'agent-a',
+        isActive: true,
+        isPanelFocused: true,
+      },
+    });
+    await tick();
+    expect(press().defaultPrevented).toBe(true);
+    await tick();
+    await tick();
+    const input = screen.getByRole('search').querySelector('input')!;
+    expect(document.activeElement).toBe(input);
+    await fireEvent.input(input, { target: { value: 'needle' } });
+    press();
+    await tick();
+    await tick();
+    expect(input.value).toBe('needle');
+    expect(input.selectionStart).toBe(0);
+    expect(input.selectionEnd).toBe(6);
+    expect(openGlobalSearch).not.toHaveBeenCalled();
+    await fireEvent.keyDown(input, { key: 'Escape' });
+    expect(screen.queryByRole('search')).toBeNull();
+  });
+
+  it('routes to the newly focused chat and ignores the retained inactive chat', async () => {
+    const currentWorkspace = workspace('workspace-a');
+    const first = render(ChatPanel, {
+      props: { workspace: currentWorkspace, agentId: 'agent-a', isPanelFocused: true },
+    });
+    const second = render(ChatPanel, {
+      props: { workspace: currentWorkspace, agentId: 'agent-b', isPanelFocused: false },
+    });
+    await tick();
+    press();
+    await tick();
+    expect(first.container.querySelector('[role="search"]')).not.toBeNull();
+    expect(second.container.querySelector('[role="search"]')).toBeNull();
+    await fireEvent.keyDown(first.container.querySelector('[role="search"] input')!, {
+      key: 'Escape',
+    });
+    await first.rerender({
+      workspace: currentWorkspace,
+      agentId: 'agent-a',
+      isPanelFocused: true,
+      isActive: false,
+    });
+    await second.rerender({
+      workspace: currentWorkspace,
+      agentId: 'agent-b',
+      isPanelFocused: true,
+    });
+    press();
+    await tick();
+    expect(first.container.querySelector('[role="search"]')).toBeNull();
+    expect(second.container.querySelector('[role="search"]')).not.toBeNull();
+    expect(openGlobalSearch).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { isActive: true, isPanelFocused: false },
+    { isActive: false, isPanelFocused: true },
+  ])('falls back when chat cannot own find: %o', async (ownership) => {
+    render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a', ...ownership },
+    });
+    await tick();
+    press();
+    await tick();
+    expect(screen.queryByRole('search')).toBeNull();
+    expect(openGlobalSearch).toHaveBeenCalledOnce();
+  });
+
+  it('does not steal global, wrong-platform, extra-modifier, or already-owned chords', async () => {
+    render(ChatPanel, {
+      props: {
+        workspace: workspace('workspace-a'),
+        agentId: 'agent-a',
+        isPanelFocused: true,
+      },
+    });
+    await tick();
+    press({ shiftKey: true });
+    expect(openGlobalSearch).toHaveBeenCalledOnce();
+    for (const init of [
+      { altKey: true },
+      { metaKey: true, ctrlKey: true },
+      { metaKey: !mod.metaKey, ctrlKey: !mod.ctrlKey },
+    ]) {
+      expect(press(init).defaultPrevented).toBe(false);
+    }
+    const localFind = (event: KeyboardEvent) => event.preventDefault();
+    document.body.addEventListener('keydown', localFind, { once: true });
+    press();
+    await tick();
+    expect(screen.queryByRole('search')).toBeNull();
+    expect(openGlobalSearch).toHaveBeenCalledOnce();
+  });
 });
 
 describe('ChatPanel mounted lifecycle', () => {

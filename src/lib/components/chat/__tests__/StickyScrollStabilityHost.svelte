@@ -106,7 +106,6 @@
                   >['metadata']}
                   asDivider={true}
                   suppressTopGap={true}
-                  showAgentCards={false}
                 />
               {:else}
                 <ChatMessage {message} readOnly={true} suppressAutomatedWakeTopSpacing={true} />

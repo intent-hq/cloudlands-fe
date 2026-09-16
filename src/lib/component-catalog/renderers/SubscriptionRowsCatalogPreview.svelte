@@ -217,7 +217,6 @@
                 rawName: 'Catalog builder',
                 kind: 'agent',
               }}
-              preview="Sent a detailed subscription-row review"
               expanded={state === 'expanded'}
               controlsId={`agent-header-${state}`}
               specialist="implementor"
@@ -293,7 +292,6 @@
               rawName: 'Agent with a long display name',
               kind: 'agent',
             }}
-            preview="A long message preview that demonstrates single-line truncation at the minimum width"
             expanded={false}
             controlsId="narrow-agent-header"
             ontoggle={() => {}}

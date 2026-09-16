@@ -289,7 +289,7 @@
   summaryTitle={accessibleSummary}
   onclick={toggle}
   {detailsId}
-  previewClass={OPERATIONAL_GROUP_CONTENT_CLASS}
+  previewClass={`${OPERATIONAL_GROUP_CONTENT_CLASS} pt-[var(--space-2)]`}
   detailsClass={groupContentClass}
   {previewTransition}
   detailsTransition={safeDisclosureTransition}

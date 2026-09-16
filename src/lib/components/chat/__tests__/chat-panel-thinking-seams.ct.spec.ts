@@ -46,7 +46,7 @@ const eventPairs = [
 
 for (const theme of ['light', 'dark'] as const) {
   for (const zoom of [1, 2]) {
-    test(`keeps 16px above the detached live Thinking row in ${theme} at ${zoom * 100}%`, async ({
+    test(`keeps 20px above the detached live Thinking row in ${theme} at ${zoom * 100}%`, async ({
       mount,
     }) => {
       const component = await mount(ChatPanelOperationalGeometryHost, {
@@ -71,8 +71,8 @@ for (const theme of ['light', 'dark'] as const) {
         };
       });
 
-      expect(geometry.topGap).toBeCloseTo(16 * zoom, 1);
-      expect(geometry.rowMarginTop).toBe('8px');
+      expect(geometry.topGap).toBeCloseTo(20 * zoom, 1);
+      expect(geometry.rowMarginTop).toBe('12px');
       expect(geometry.wrapperPaddingTop).toBe('4px');
       expect(geometry.wrapperPaddingBottom).toBe('0px');
       expect(geometry.wrapperMarginBottom).toBe('64px');

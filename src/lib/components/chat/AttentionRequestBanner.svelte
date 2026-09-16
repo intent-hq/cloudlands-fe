@@ -2,9 +2,9 @@
   /**
    * AttentionRequestBanner Component
    *
-   * Conversation-footer row shown when the current agent has a pending
-   * attention request (requestDiscussion / reportBlocker). Renders alongside
-   * the existing waiting/completed treatments (AgentSubscriptions) and
+   * Composer card shown when the current agent has a pending
+   * attention request (requestDiscussion / reportBlocker). Sits above the
+   * response prompt and queued messages, and
    * retires automatically when the daemon clears the session fields on the
    * user's next response — a user-origin delivery (sendMessage,
    * sendQueuedMessageNow, editAndRegenerate, drained user-origin queue
@@ -36,15 +36,15 @@
 
 {#if $attentionRequest$}
   <div
-    class="mt-6 w-full font-family-child"
+    class="mb-2 w-full max-w-[520px] min-w-0 rounded-(--radius-large) border border-border bg-card font-family-child"
     data-testid="attention-request-banner"
     transition:safeDisclosureTransition={{ tier: 'moderate' }}
   >
-    <div class="flex flex-col gap-1 px-3 py-1.5 text-sm">
+    <div class="flex min-w-0 flex-col gap-1 px-3 py-2.5 type-caption">
       <div class="flex items-start justify-between gap-3" data-testid="attention-request-header">
         <span
           class="flex min-w-0 items-start gap-2 {$attentionRequest$.kind === 'blocker'
-            ? 'text-red-500'
+            ? 'text-danger'
             : 'text-warning-ink'}"
         >
           <Fa
@@ -66,7 +66,7 @@
       </div>
       {#if $attentionRequest$.reason}
         <span
-          class="break-words whitespace-pre-wrap text-subtle"
+          class="max-h-32 overflow-y-auto break-words whitespace-pre-wrap text-subtle"
           data-testid="attention-request-reason"
         >
           {$attentionRequest$.reason}

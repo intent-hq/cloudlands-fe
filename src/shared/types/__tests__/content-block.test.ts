@@ -363,6 +363,31 @@ describe('Type Guards', () => {
 });
 
 describe('Strict Intake Utilities (AUDIT-P1-5)', () => {
+  describe('image attachment references (PROTOCOL §5.5)', () => {
+    const reference = { type: 'image', id: 'user:1', attachmentId: 'att-image' };
+
+    it.each([{}, { mimeType: 'image/png' }])(
+      'preserves a reference with optional MIME metadata %j',
+      (metadata) => {
+        const block = { ...reference, ...metadata };
+        expect(migrateFromLegacy(block)).toEqual(block);
+        expect(block).not.toHaveProperty('data');
+      },
+    );
+
+    it.each([
+      ...[undefined, null, '', ' ', 7].map((attachmentId) => ({ attachmentId })),
+      ...[undefined, null, '', 'AAAA'].map((data) => ({ data })),
+      { dataTruncated: true, dataBytes: 8192 },
+      { dataIsThumbnail: true },
+      { dataBytes: 0 },
+      { mimeType: 7 },
+      { mimeType: 'application/octet-stream' },
+    ])('rejects malformed or mixed reference arms %j', (fields) => {
+      expect(() => migrateFromLegacy({ ...reference, mimeType: 'image/png', ...fields })).toThrow();
+    });
+  });
+
   it('migrateFromLegacy passes canonical PROTOCOL §7 text blocks through unchanged', () => {
     const canonical = { type: 'text', text: 'hello' };
     const migrated = migrateFromLegacy(canonical);

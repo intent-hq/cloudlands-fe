@@ -28,9 +28,18 @@
     isCompleted?: boolean;
     /** Optional activation used when the avatar represents a navigation target. */
     onclick?: (event: MouseEvent) => void;
+    /** Override the navigation label when a pinned avatar returns to its source. */
+    activationLabel?: string;
   }
 
-  let { agentId, agentName, workspace = null, isCompleted = false, onclick }: Props = $props();
+  let {
+    agentId,
+    agentName,
+    workspace = null,
+    isCompleted = false,
+    onclick,
+    activationLabel,
+  }: Props = $props();
 
   // svelte-ignore state_referenced_locally -- selector readables are init-time only; instances are keyed by agentId.
   const permissionCount = selectPendingCount(agentId);
@@ -84,9 +93,8 @@
       class="inline-agent-avatar-trigger transition-colors hover:bg-muted/40 focus-visible:bg-muted/60 focus-visible:outline-none"
       {onclick}
       data-testid="inline-agent-avatar-trigger"
-      aria-label={onclick
-        ? m.chat_msgAttribution_openAgent_title({ name: displayName })
-        : undefined}
+      aria-label={activationLabel ??
+        (onclick ? m.chat_msgAttribution_openAgent_title({ name: displayName }) : undefined)}
     >
       <div
         class="inline-agent-avatar-ring relative ring-1 ring-card"
