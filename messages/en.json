@@ -3789,6 +3789,7 @@
   "inviteConsent_modal_joining_label": "Joining…",
   "inviteConsent_modal_joinButton_label": "Join",
   "inviteConsent_modal_dismiss_ariaLabel": "Close invite dialog",
+  "inviteNotice_modal_context": "“{workspaceTitle}” on {hostLabel}",
   "modals_message_close_ariaLabel": "Close message dialog",
   "modals_newSpace_title": "New Workspace",
   "modals_pullConflict_title": "Pull Failed",
