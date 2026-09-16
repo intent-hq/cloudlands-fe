@@ -79,3 +79,40 @@ it.each([
   if (slug === 'sizes') expect(screen.queryByRole('table')).toBeNull();
   if (slug === 'typography') expect(screen.getAllByRole('row')).toHaveLength(6);
 });
+
+it.each([
+  ['notify', 'Notify'],
+  ['confirm', 'Confirm'],
+  ['settings', 'Settings'],
+  ['collection', 'Collection'],
+  ['screen', 'Screen'],
+  ['action-menu', 'Action Menu'],
+  ['form', 'Form'],
+])('renders the documented %s pattern URL through the dynamic route', async (slug, name) => {
+  route.params.slug = slug;
+  route.url = new URL(`http://localhost/sandbox/${slug}`);
+  render(CatalogRoute);
+  expect(await screen.findByRole('heading', { level: 1, name })).toBeTruthy();
+  expect(screen.queryByText('Fixture not found')).toBeNull();
+  const groups = buildCatalogNavigation(catalogEntries);
+  expect(groups.find(({ name: groupName }) => groupName === 'Patterns')?.entries).toContainEqual(
+    expect.objectContaining({ slug, href: `/sandbox/${slug}` }),
+  );
+});
+
+it('resolves the legacy spinner URL to the loading indicator without dropping its query', async () => {
+  expect(getCatalogEntry('spinner')).toBe(getCatalogEntry('loading-indicator'));
+  expect(catalogEntries.some(({ slug }) => slug === 'spinner')).toBe(false);
+  route.params.slug = 'spinner';
+  route.url = new URL('http://localhost/sandbox/spinner?theme=dark&width=420');
+  render(CatalogRoute);
+  expect(
+    await screen.findByRole(
+      'heading',
+      { level: 1, name: 'Loading indicator' },
+      { timeout: 10_000 },
+    ),
+  ).toBeTruthy();
+  expect(screen.queryByText('Fixture not found')).toBeNull();
+  expect(route.url.search).toBe('?theme=dark&width=420');
+});

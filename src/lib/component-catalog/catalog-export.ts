@@ -39,6 +39,7 @@ export function getCatalogComponentName(entry: Pick<CatalogEntry, 'slug' | 'expo
     .join('');
   return (
     entry.exports?.find((name) => name === canonicalName) ??
+    entry.exports?.find((name) => name.toLowerCase() === canonicalName.toLowerCase()) ??
     entry.exports?.find((name) => /^[A-Z]/.test(name) && !componentParts.has(name)) ??
     canonicalName
   );

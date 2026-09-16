@@ -1,3 +1,4 @@
+import { canonicalPatternManifest } from '$lib/components/patterns/manifest';
 import { buttonMetadata } from '$lib/components/ui/button';
 import type {
   UiComponentCategory,
@@ -243,8 +244,39 @@ const componentEntries: CatalogEntry[] = canonicalComponentManifest.map((compone
   props: componentProps[component.id] ?? commonProps,
 }));
 
+const patternPrimaryExports: Record<string, string> = {
+  collection: 'ListView',
+  settings: 'SettingsForm',
+};
+
+const patternEntries: CatalogEntry[] = canonicalPatternManifest.map((pattern) => {
+  const primary = patternPrimaryExports[pattern.id];
+  return {
+    slug: pattern.id,
+    name: displayName(pattern.id),
+    description: pattern.useWhen[0],
+    category: 'pattern',
+    source: pattern.source,
+    fixtures: pattern.fixtures,
+    publicImport: pattern.publicImport,
+    exports: primary
+      ? [primary, ...pattern.exports.filter((name) => name !== primary)]
+      : pattern.exports,
+    props: commonProps,
+  };
+});
+
+export const legacyCatalogSlugs: Readonly<Record<string, string>> = {
+  spinner: 'loading-indicator',
+};
+
+export function resolveCatalogSlug(slug: string): string {
+  return legacyCatalogSlugs[slug] ?? slug;
+}
+
 export const catalogEntries: CatalogEntry[] = [
   ...componentEntries,
+  ...patternEntries,
   {
     slug: 'model-picker',
     name: 'Model picker',
@@ -268,9 +300,9 @@ export const catalogEntries: CatalogEntry[] = [
     name: m.sandbox_chatPolish_title(),
     description: m.sandbox_chatPolish_description(),
     category: 'product',
-    source: 'src/lib/components/chat',
-    publicImport: '$lib/components/chat',
+    source: 'src/lib/components/chat/ChatMessage.svelte',
     exports: ['ChatMessage'],
+    usage: "import ChatMessage from '$lib/components/chat/ChatMessage.svelte';",
     props: commonProps,
     fixtures: [
       {
@@ -524,9 +556,9 @@ export const catalogEntries: CatalogEntry[] = [
     name: 'Proposal Card',
     description: 'Static proposal presentation contracts without application state or daemon data.',
     category: 'product',
-    source: 'src/lib/components/chat/proposals',
-    publicImport: '$lib/components/chat/proposals',
+    source: 'src/lib/components/chat/proposals/ProposalCard.svelte',
     exports: ['ProposalCard'],
+    usage: "import ProposalCard from '$lib/components/chat/proposals/ProposalCard.svelte';",
     props: commonProps,
     fixtures: [
       {
@@ -556,5 +588,6 @@ export const catalogEntries: CatalogEntry[] = [
 ].sort((left, right) => left.slug.localeCompare(right.slug));
 
 export function getCatalogEntry(slug: string): CatalogEntry | undefined {
-  return catalogEntries.find((entry) => entry.slug === slug);
+  const canonicalSlug = resolveCatalogSlug(slug);
+  return catalogEntries.find((entry) => entry.slug === canonicalSlug);
 }
