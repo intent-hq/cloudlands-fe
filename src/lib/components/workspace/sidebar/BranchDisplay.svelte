@@ -168,11 +168,11 @@
 <div
   class="grid grid-cols-[minmax(0,auto)_minmax(1rem,1fr)_auto] items-start gap-x-1 text-subtle text-xs mt-1 mb-2"
 >
-  <p class="branch-label col-start-1 row-start-1 pl-4 text-subtle leading-snug text-ui">
+  <p class="branch-label col-start-1 row-start-1 text-subtle leading-snug type-caption">
     {m.workspace_sidebarChanges_codeLivesIn_label()}
   </p>
   <p
-    class="branch-label col-start-3 row-start-1 justify-self-end text-right text-subtle leading-snug text-ui"
+    class="branch-label col-start-3 row-start-1 justify-self-end text-right text-subtle leading-snug type-caption"
   >
     {m.workspace_sidebarChanges_mergedInto_label()}
   </p>
