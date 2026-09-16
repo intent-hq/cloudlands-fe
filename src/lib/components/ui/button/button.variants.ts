@@ -128,6 +128,7 @@ type ButtonBaseProps = WithElementRef<HTMLButtonAttributes> &
     children?: Snippet;
     onclick?: (event: MouseEvent) => void;
     tooltip?: string;
+    tooltipDisabled?: boolean;
     tooltipShortcut?: string;
     tooltipSide?: 'top' | 'right' | 'bottom' | 'left';
     tooltipAlign?: 'start' | 'center' | 'end';

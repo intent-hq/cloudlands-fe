@@ -35,6 +35,7 @@
     "src/lib/components/ui/CollapsiblePanel.svelte": { "palette": 0, "arbitrary": 2 },
     "src/lib/components/ui/copy-input/copy-input.svelte": { "palette": 0, "arbitrary": 1 },
     "src/lib/components/ui/dialog/dialog-content.svelte": { "palette": 0, "arbitrary": 2 },
+    "src/lib/components/ui/dropdown-surface.ts": { "palette": 0, "arbitrary": 2 },
     "src/lib/components/ui/dropdown/Dropdown.svelte": { "palette": 0, "arbitrary": 2 },
     "src/lib/components/ui/EditableName.svelte": { "palette": 0, "arbitrary": 1 },
     "src/lib/components/ui/file-input/file-input.test.ts": { "palette": 0, "arbitrary": 2 },

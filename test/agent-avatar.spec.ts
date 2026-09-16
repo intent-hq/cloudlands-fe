@@ -8,6 +8,10 @@ import {
   agentAvatarGeometry,
   agentAvatarVariants,
 } from '../src/features/agent/components/agent-avatar/avatar-size';
+import {
+  agentAvatarCatalogIdentities,
+  agentAvatarCatalogStates,
+} from '../src/features/agent/components/agent-avatar/agent-avatar.catalog';
 
 // Each test mounts a fresh host; report every contract failure independently.
 test.describe.configure({ mode: 'default', timeout: 120_000 });
@@ -187,7 +191,7 @@ function colorDistance(first: Rgba, second: Rgba): number {
 }
 
 // Avatar palette batch (96e48a0b): failures are red; completed glyphs use semantic ink.
-type SurfaceFamily = 'neutral' | 'completed' | 'failed' | 'attention' | 'active' | 'waiting';
+type SurfaceFamily = 'neutral' | 'completed' | 'attention' | 'failed' | 'active' | 'waiting';
 
 const surfaceFamilyByState = {
   running: 'active',
@@ -206,16 +210,16 @@ const expectedSurfaceByTheme = {
   light: {
     neutral: [225, 223, 222, 255],
     completed: [220, 229, 224, 255],
-    failed: [228, 88, 88, 255],
     attention: [255, 162, 64, 255],
+    failed: [228, 88, 88, 255],
     active: [209, 226, 78, 255],
     waiting: [196, 167, 242, 255],
   },
   dark: {
     neutral: [192, 206, 198, 255],
     completed: [53, 70, 60, 255],
-    failed: [239, 118, 118, 255],
     attention: [255, 181, 102, 255],
+    failed: [239, 118, 118, 255],
     active: [222, 237, 110, 255],
     waiting: [176, 150, 232, 255],
   },
@@ -224,10 +228,18 @@ const expectedSurfaceByTheme = {
 test('renders every vector and state without provider or status overlays', async ({ page }) => {
   await mountAvatarHost(page);
   const catalog = page.locator('[data-agent-avatar-catalog]');
+  const expectedCatalogStateCount =
+    agentAvatarCatalogIdentities.length * agentAvatarCatalogStates.length;
+  expect(agentAvatarCatalogIdentities).toHaveLength(13);
+  expect(agentAvatarCatalogStates).toHaveLength(11);
+  expect(expectedCatalogStateCount).toBe(143);
   await expect(page.locator('[data-catalog-avatar-design]')).toHaveCount(13);
   await expect(
     catalog.locator('.agent-avatar-catalog-states [data-agent-avatar-with-state]'),
-  ).toHaveCount(143); // Catalog inventory: 13 designs × 11 states (including responding; 96e48a0b).
+  ).toHaveCount(expectedCatalogStateCount);
+  await expect(
+    catalog.locator('.agent-avatar-catalog-states [data-avatar-state="idle"]'),
+  ).toHaveCount(13);
   const avatarSurfaces = page.locator(
     '[data-agent-avatar-with-state], [data-agent-message-leading-identity]',
   );
@@ -243,7 +255,7 @@ test('renders every vector and state without provider or status overlays', async
     page.locator('[data-testid="agent-message-chevron-column"] [data-icon]'),
   ).toHaveCount(7);
   await expect(catalog.locator('.agent-avatar-catalog-states [data-agent-avatar]')).toHaveCount(
-    143,
+    expectedCatalogStateCount,
   );
 });
 
@@ -514,6 +526,7 @@ test('resolves opaque, separated semantic state tokens in light and dark modes',
     expect(backgrounds.size).toBe(familyColors.length);
     for (const [index, first] of familyColors.entries()) {
       for (const second of familyColors.slice(index + 1)) {
+        expect(colorDistance(first, second)).toBeGreaterThan(8);
         // Avatar palette batch (96e48a0b) uses muted neutral beside pale completed green.
         if (
           theme === 'light' &&
@@ -533,7 +546,7 @@ test('resolves opaque, separated semantic state tokens in light and dark modes',
   }
 });
 
-test('keeps every SVG shape on its semantic state foreground across color modes', async ({
+test("keeps every SVG path and circle on the state's opaque foreground in each color mode", async ({
   page,
 }) => {
   await mountAvatarHost(page);
@@ -565,13 +578,10 @@ test('keeps every SVG shape on its semantic state foreground across color modes'
       for (const presentation of presentations) {
         expect(presentation.opacity).toBe('1');
         if (mode !== 'forced-colors') {
-          const expected =
-            presentation.state === 'completed'
-              ? mode === 'dark'
-                ? 'rgb(212, 226, 216)'
-                : 'rgb(42, 81, 64)'
-              : 'rgb(0, 0, 0)';
-          expect(presentation.color).toBe(expected);
+          const completedForeground = mode === 'light' ? 'rgb(42, 81, 64)' : 'rgb(212, 226, 216)';
+          expect(presentation.color).toBe(
+            presentation.state === 'completed' ? completedForeground : 'rgb(0, 0, 0)',
+          );
         }
         for (const shape of presentation.shapes) {
           for (const paint of [shape.fill, shape.stroke]) {
@@ -661,6 +671,7 @@ test('matches each theme palette in the catalog at 20px and 200%', async ({ page
       document.documentElement.classList.toggle('dark', selectedTheme === 'dark');
       document.documentElement.classList.toggle('light', selectedTheme === 'light');
     }, theme);
+    await page.waitForTimeout(50);
     expect(await catalogPalettePng(states, 1)).toMatchSnapshot(
       `agent-avatar-theme-palette-${theme}-20px.png`,
     );

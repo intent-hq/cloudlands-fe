@@ -9,6 +9,7 @@ import { viteHarnessCacheDir } from './vite-harness-cache.mjs';
 const require = createRequire(import.meta.url);
 const systemChrome = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const artifactDir = path.resolve('test-results/catalog-artifacts');
+const catalogReadyTimeout = 90_000;
 const catalogSlugs = [
   'badge',
   'breadcrumb',
@@ -82,7 +83,8 @@ async function readDesktopBridge(page: Page) {
 let server: ViteDevServer;
 let baseUrl: string;
 
-test.beforeAll(async () => {
+test.beforeAll(async ({ browser }) => {
+  test.setTimeout(120_000);
   mkdirSync(artifactDir, { recursive: true });
   server = await createServer({
     cacheDir: viteHarnessCacheDir('catalog-shell'),
@@ -91,6 +93,32 @@ test.beforeAll(async () => {
   await server.listen();
   baseUrl = server.resolvedUrls?.local[0] ?? '';
   expect(baseUrl).not.toBe('');
+  await expect
+    .poll(
+      async () => {
+        try {
+          const response = await fetch(`${baseUrl}sandbox`, {
+            signal: AbortSignal.timeout(10_000),
+          });
+          await response.arrayBuffer();
+          return response.status;
+        } catch {
+          return 0;
+        }
+      },
+      { timeout: 90_000, intervals: [100, 250, 500, 1_000] },
+    )
+    .toBe(200);
+  const readinessPage = await browser.newPage();
+  try {
+    await readinessPage.goto(`${baseUrl}sandbox`, {
+      waitUntil: 'domcontentloaded',
+      timeout: catalogReadyTimeout,
+    });
+    await expectCatalogIntroductionReady(readinessPage);
+  } finally {
+    await readinessPage.close();
+  }
 });
 
 test.afterAll(async () => {
@@ -121,12 +149,12 @@ for (const viewport of [
     async ({ page }) => {
       test.setTimeout(120_000);
       await page.setViewportSize(viewport);
-      await page.goto(`${baseUrl}sandbox`, { waitUntil: 'networkidle' });
+      await page.goto(`${baseUrl}sandbox`, { waitUntil: 'domcontentloaded' });
+      await expectCatalogShellReady(page);
       const faviconUrl = await page.locator('link[rel="icon"]').evaluate((link) => {
         return (link as HTMLLinkElement).href;
       });
       expect((await page.request.get(faviconUrl)).status()).toBe(200);
-      await expect(page.getByTestId('catalog-shell')).toBeVisible();
 
       await assertIntroduction(page);
       await captureIntroductionArtifacts(page, viewport.name);
@@ -141,10 +169,11 @@ for (const viewport of [
       test.setTimeout(120_000);
       await page.setViewportSize(viewport);
 
-      await page.goto(`${baseUrl}sandbox/${slug}`, { waitUntil: 'networkidle' });
+      await page.goto(`${baseUrl}sandbox/${slug}`, { waitUntil: 'domcontentloaded' });
+      await expectCatalogShellReady(page);
       const previews = page.locator(`[data-catalog-preview="${slug}"]`);
-      // CSR hydration can finish after networkidle on a cold module graph.
-      await expect(previews.first()).toBeVisible({ timeout: 30_000 });
+      // CSR hydration can finish well after the shell mounts on a cold module graph.
+      await expect(previews.first()).toBeVisible({ timeout: catalogReadyTimeout });
       const previewCount = await previews.count();
       expect(previewCount).toBeGreaterThan(0);
       for (let index = 0; index < previewCount; index += 1) {
@@ -153,7 +182,7 @@ for (const viewport of [
         ).toBeVisible();
         await expect(
           previews.nth(index).locator('[data-catalog-rendered-state]').first(),
-        ).toBeAttached();
+        ).toBeAttached({ timeout: catalogReadyTimeout });
       }
       if (viewport.name === 'compact' && (slug === 'combobox' || slug === 'select')) {
         await assertChoiceLongListGeometry(page, slug);
@@ -198,7 +227,8 @@ test('200% zoom uses DPR2 device metrics and keeps the catalog contained', async
     screenHeight: physicalHeight,
   });
   try {
-    await page.goto(`${baseUrl}sandbox`, { waitUntil: 'networkidle' });
+    await page.goto(`${baseUrl}sandbox`, { waitUntil: 'domcontentloaded' });
+    await expectCatalogIntroductionReady(page);
     const heading = page.getByRole('heading', { name: 'Intent design system', exact: true });
     const intro = page.getByTestId('catalog-introduction').locator('header > p').last();
     await expect(heading).toBeVisible();
@@ -316,7 +346,8 @@ async function readShellFontEvidence(page: Page) {
 }
 
 async function captureKeyboardFocusEvidence(page: Page) {
-  await page.goto(`${baseUrl}sandbox/button`, { waitUntil: 'networkidle' });
+  await page.goto(`${baseUrl}sandbox/button`, { waitUntil: 'domcontentloaded' });
+  await expectCatalogShellReady(page);
   await setCatalogTheme(page, 'dark');
   const control = page.getByRole('button', { name: '1. Primary', exact: true });
   // The later Wave 11 focus port replaced the legacy border/shadow ring with an outline.
@@ -604,7 +635,7 @@ async function exerciseCanonicalPreview(page: Page, slug: (typeof catalogSlugs)[
 
 // Wave 11 batch 5a (388bffff) retired the home gallery, search, group filter and hash anchors.
 async function assertIntroduction(page: Page) {
-  await expect(page.getByTestId('catalog-introduction')).toBeVisible();
+  await expectCatalogIntroductionReady(page);
   await expect(
     page.getByRole('navigation', { name: 'Component catalog', exact: true }),
   ).toBeVisible();
@@ -615,14 +646,29 @@ async function assertIntroduction(page: Page) {
   const dialog = page.getByRole('main').locator('a[href="/sandbox/dialog"]');
   await dialog.focus();
   await dialog.press('Enter');
-  await expect(page).toHaveURL(/\/sandbox\/dialog(?:\?|$)/, { timeout: 30_000 });
+  await expect(page).toHaveURL(/\/sandbox\/dialog(?:\?|$)/, { timeout: catalogReadyTimeout });
   await expect(page.locator('[data-catalog-preview="dialog"]').first()).toBeVisible({
-    timeout: 30_000,
+    timeout: catalogReadyTimeout,
   });
-  await page.reload({ waitUntil: 'networkidle' });
-  await expect(page.locator('[data-catalog-preview="dialog"]').first()).toBeVisible();
-  await page.goto(`${baseUrl}sandbox`, { waitUntil: 'networkidle' });
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await expectCatalogShellReady(page);
+  await expect(page.locator('[data-catalog-preview="dialog"]').first()).toBeVisible({
+    timeout: catalogReadyTimeout,
+  });
+  await page.goto(`${baseUrl}sandbox`, { waitUntil: 'domcontentloaded' });
+  await expectCatalogIntroductionReady(page);
   await assertNoPageOverflow(page);
+}
+
+async function expectCatalogIntroductionReady(page: Page) {
+  await expectCatalogShellReady(page);
+  await expect(page.getByTestId('catalog-introduction')).toBeVisible({
+    timeout: catalogReadyTimeout,
+  });
+}
+
+async function expectCatalogShellReady(page: Page) {
+  await expect(page.getByTestId('catalog-shell')).toBeVisible({ timeout: catalogReadyTimeout });
 }
 
 async function assertNoPageOverflow(page: Page) {

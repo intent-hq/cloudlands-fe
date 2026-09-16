@@ -654,7 +654,11 @@ export async function createWindowForSession(
   }
 
   const route = session.route === '/' ? DEFAULT_WINDOW_ROUTE : session.route;
-  window.loadURL(buildLoadUrl(route));
+  window
+    .loadURL(buildLoadUrl(route))
+    .catch((error: unknown) =>
+      logger.error('Failed to load session-restored window URL:', error as Error),
+    );
 
   // Save bounds on resize/move (updates the main window bounds file for backward compat)
   let saveBoundsTimeout: NodeJS.Timeout | null = null;
@@ -922,7 +926,9 @@ export async function createWindow(backendId: string = LOCAL_CONNECTION_ID): Pro
     }
   }
 
-  window.loadURL(loadUrl);
+  window
+    .loadURL(loadUrl)
+    .catch((error: unknown) => logger.error('Failed to load main window URL:', error as Error));
 
   window.on('closed', () => {
     setMainWindow(null);
@@ -992,7 +998,11 @@ export async function createWindowForDeepLink(
   forwardRendererConsoleToMainLog(newWindow);
 
   const encodedAction = encodeURIComponent(JSON.stringify(action));
-  newWindow.loadURL(buildLoadUrl(`${DEFAULT_WINDOW_ROUTE}?deepLink=${encodedAction}`));
+  newWindow
+    .loadURL(buildLoadUrl(`${DEFAULT_WINDOW_ROUTE}?deepLink=${encodedAction}`))
+    .catch((error: unknown) =>
+      logger.error('Failed to load deep-link window URL:', error as Error),
+    );
   newWindow.focus();
 
   logger.info('New window created for deep link:', { action: action.type });
