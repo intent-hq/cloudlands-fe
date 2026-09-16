@@ -96,6 +96,7 @@ const mocks = vi.hoisted(() => {
     animateMessageSend: vi.fn(),
     createMessageSendLaunchBubble: vi.fn(),
     pendingQuestions: null as { messageId: string; questions: unknown[] } | null,
+    agentSubscriptionUIEntries: {} as Record<string, unknown>,
     // Latched divider viewing session (Redux, mutated by tests): non-null
     // while the session is live; null after a stop-looking boundary's
     // endDividerSession.
@@ -127,7 +128,10 @@ vi.mock('$store/renderer/store', async () => {
   // Shallow-dedup emits like the production selector stream, so a test that
   // toggles store state proves the component anchors on the right selector.
   return createAppStoreMockModule({
-    state: () => mocks.storeState,
+    state: () => ({
+      ...(mocks.storeState as Record<string, unknown>),
+      agentSubscriptionUI: { entries: mocks.agentSubscriptionUIEntries },
+    }),
     dispatch: mocks.dispatch,
     dedupeEmits: true,
   });
@@ -141,6 +145,7 @@ vi.mock('$lib/client', () => ({
 vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentAttentionRequest: mocks.selector(null),
   selectAgentSession: Object.assign(() => mocks.agentSession, { select: () => null }),
+  selectAgentSessionsById: mocks.selector({}),
   selectAgentSessionIsStreaming: Object.assign(() => mocks.agentSessionIsStreaming, {
     select: () => false,
   }),
@@ -673,6 +678,9 @@ beforeEach(() => {
   mocks.draftSet.mockResolvedValue({ ok: true, updatedAt: '2026-01-01T00:00:00.000Z' });
   mocks.listUserMessages.mockResolvedValue({ ok: true, items: [], total: 0 });
   for (const key of Object.keys(mocks.chatDrafts)) delete mocks.chatDrafts[key];
+  for (const key of Object.keys(mocks.agentSubscriptionUIEntries)) {
+    delete mocks.agentSubscriptionUIEntries[key];
+  }
   mocks.dispatch.mockImplementation((action) => {
     if (action?.type !== 'transientUi/setChatDraft') return action;
     const [workspaceId, agentId, draft] = action.payload as [string, string, string];
@@ -3818,6 +3826,16 @@ describe('ChatPanel mounted lifecycle', () => {
     mocks.agentMessages.set([
       { id: 'm1', role: 'assistant', content: 'hello', timestamp: '2026-01-01T00:00:00.000Z' },
     ]);
+    // The lightweight store mock reads selector-store arguments once, before
+    // EventSubscriptionsCard's effects populate the workspace and agent IDs.
+    mocks.agentSubscriptionUIEntries[':'] = {
+      subscriptions: [],
+      delegationGroups: [],
+      agentStatuses: {},
+      waitingState: 'idle',
+      wokenUpInfo: null,
+      snapshotStatus: 'ready',
+    };
     const view = render(ChatPanel, {
       props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
     });

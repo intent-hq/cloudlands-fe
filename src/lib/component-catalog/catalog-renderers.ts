@@ -5,6 +5,7 @@ const loadChoice = () => import('./renderers/ChoiceCatalogPreview.svelte');
 const loadContentField = () => import('./renderers/ContentFieldCatalogPreview.svelte');
 const loadNavigationHelp = () => import('./renderers/NavigationHelpCatalogPreview.svelte');
 const loadOverlay = () => import('./renderers/OverlayCatalogPreview.svelte');
+const loadSubscriptionRows = () => import('./renderers/SubscriptionRowsCatalogPreview.svelte');
 const loadSettings = () => import('./renderers/SettingsCatalogPreview.svelte');
 
 export const catalogRendererIds = [
@@ -37,6 +38,7 @@ export const catalogRendererIds = [
   'toggle',
   'toggle-group',
   'tooltip',
+  'subscription-rows',
 ] as const;
 
 export type CatalogRendererId = (typeof catalogRendererIds)[number];
@@ -58,6 +60,7 @@ type CatalogRendererRegistry = {
 };
 
 export const catalogRenderers = {
+  'subscription-rows': loadSubscriptionRows,
   badge: loadBasic,
   breadcrumb: loadNavigationHelp,
   button: loadBasic,

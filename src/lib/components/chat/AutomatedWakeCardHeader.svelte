@@ -27,6 +27,7 @@
     SUBSCRIPTION_DISCLOSURE_ROW_CLASS,
     SUBSCRIPTION_ICON_BUTTON_CLASS,
     SUBSCRIPTION_ICON_CLASS,
+    SUBSCRIPTION_LEADING_COLUMN_CLASS,
   } from './subscription-disclosure';
 
   interface Props {
@@ -79,18 +80,20 @@
   data-wake-state={presentation.state}
   onclick={handleRowClick}
 >
-  <Fa
-    icon={presentation.kind === 'hook' ? faBolt : faCodePullRequest}
-    size={16}
-    class="{SUBSCRIPTION_CHEVRON_SIZE_CLASS} mt-1 shrink-0 self-start {SUBSCRIPTION_ICON_CLASS}"
-  />
+  <span class={SUBSCRIPTION_LEADING_COLUMN_CLASS} aria-hidden="true">
+    <Fa
+      icon={presentation.kind === 'hook' ? faBolt : faCodePullRequest}
+      size={14}
+      class="h-3.5! w-3.5! shrink-0 {SUBSCRIPTION_ICON_CLASS}"
+    />
+  </span>
   <span
-    class="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-1 text-left"
+    class="grid min-w-0 flex-1 grid-cols-[minmax(4rem,max-content)_minmax(0,1fr)] items-baseline gap-1 overflow-hidden whitespace-nowrap text-left"
     data-testid="automated-wake-text-lane"
   >
     {#if presentation.kind === 'hook'}
       <span
-        class="min-w-0 max-w-full break-words"
+        class="min-w-0 max-w-full truncate text-muted-foreground"
         title={presentation.attribution.rawName}
         data-testid="automated-wake-primary-label"
       >
@@ -101,18 +104,18 @@
       <Button
         type="button"
         variant="plain"
-        class="h-auto min-w-0 max-w-full justify-start whitespace-normal break-words text-left font-inherit text-muted-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        class="h-auto min-w-0 max-w-full justify-start overflow-hidden whitespace-nowrap text-left font-inherit text-muted-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         data-testid="pr-monitor-wake-chip"
         title={m.chat_prMonitorWakeAttribution_openPrWithLabel_tooltip({ label: chipLabel })}
         onclick={openPr}
       >
-        <span class="min-w-0 break-words">
+        <span class="min-w-0 truncate">
           {chipLabel}
         </span>
       </Button>
     {/if}
     <span
-      class="type-body min-w-0 max-w-full break-words font-normal text-muted-foreground"
+      class="type-body min-w-0 truncate whitespace-nowrap font-normal text-muted-foreground"
       data-testid="wake-status"
       title={statusLabel}
     >
@@ -121,7 +124,7 @@
   </span>
   <button
     type="button"
-    class="inline-flex h-6 w-6 shrink-0 self-start items-center justify-center rounded {SUBSCRIPTION_ICON_BUTTON_CLASS} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    class="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded {SUBSCRIPTION_ICON_BUTTON_CLASS} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     aria-expanded={expanded}
     aria-controls={controlsId}
     aria-label={expanded
