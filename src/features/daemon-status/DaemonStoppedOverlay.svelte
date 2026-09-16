@@ -362,7 +362,9 @@
 
         <p id="daemon-stopped-description" class="mt-2 text-sm text-muted-foreground">
           {#if isGuestRevoked && $guestSession$}
-            {m.daemonStatus_overlay_guestRevoked_description({ host: $guestSession$.label })}
+            {m.daemonStatus_overlay_guestRevoked_description({
+              host: formatGuestSessionLabel($guestSession$),
+            })}
           {:else if isAuthRejected && $authRejected$}
             {$authRejected$.statusCode === 403
               ? m.daemonStatus_overlay_authRejectedDisabled_description({
