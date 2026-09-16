@@ -7,6 +7,7 @@
   let lastAction = $state('');
   const messages = Array.from({ length: 12 }, (_, i) => ({
     id: `queue-${i}`,
+    // i18n-ignore (test-only component fixture content)
     content: `Queued message ${i + 1}`,
     queuedAt: '2026-01-01T00:00:00.000Z',
     position: i,
