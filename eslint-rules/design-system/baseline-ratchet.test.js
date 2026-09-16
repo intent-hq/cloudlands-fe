@@ -159,4 +159,41 @@ export const designSystemRules = {
       'Design-system baseline entries and counts may only shrink',
     );
   });
+
+  it('rejects a per-file count-to-file downgrade while other counted files remain', () => {
+    const rule = 'no-arbitrary-motion-or-color';
+    const counted = {
+      [rule]: [
+        { owner: 'ui', reason: 'Legacy colors', counts: { 'src/A.svelte': 3, 'src/B.svelte': 1 } },
+      ],
+    };
+    const mixedDowngrade = {
+      [rule]: [
+        { owner: 'ui', reason: 'Legacy colors', counts: { 'src/A.svelte': 3 } },
+        { owner: 'ui', reason: 'Legacy colors', files: ['src/B.svelte'] },
+      ],
+    };
+    const mixedNewFile = {
+      [rule]: [
+        { owner: 'ui', reason: 'Legacy colors', counts: { 'src/A.svelte': 3, 'src/B.svelte': 1 } },
+        { owner: 'ui', reason: 'Legacy colors', files: ['src/C.svelte'] },
+      ],
+    };
+    const mixedConverted = {
+      [rule]: [
+        { owner: 'ui', reason: 'Legacy colors', counts: { 'src/A.svelte': 3, 'src/B.svelte': 1 } },
+      ],
+    };
+
+    expect(findBaselineGrowth(counted, mixedDowngrade)).toEqual({
+      [rule]: [{ file: 'src/B.svelte', previous: 1, current: 'uncounted' }],
+    });
+    expect(() => assertBaselineOnlyShrinks(counted, mixedDowngrade)).toThrow(
+      'Design-system baseline entries and counts may only shrink',
+    );
+    expect(findBaselineGrowth(counted, mixedNewFile)).toEqual({
+      [rule]: [{ file: 'src/C.svelte', previous: 0, current: 'uncounted' }],
+    });
+    expect(findBaselineGrowth(mixedDowngrade, mixedConverted)).toEqual({});
+  });
 });

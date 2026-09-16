@@ -13,6 +13,29 @@ export function baselineCounts(entries = []) {
   return Object.assign({}, ...entries.map((entry) => entry.counts ?? {}));
 }
 
+/**
+ * Per-file exemption for one rule: the allowed violation count, or `'uncounted'` for a
+ * file exemption (which also wins when a file appears in both representations).
+ */
+function exemptionsByFile(entries = []) {
+  const exemptions = new Map();
+  for (const entry of entries) {
+    if (typeof entry === 'string') {
+      exemptions.set(entry, 'uncounted');
+      continue;
+    }
+    for (const file of entry.files ?? []) exemptions.set(file, 'uncounted');
+    for (const [file, count] of Object.entries(entry.counts ?? {})) {
+      if (exemptions.get(file) !== 'uncounted') exemptions.set(file, count);
+    }
+  }
+  return exemptions;
+}
+
+function compareFiles([a], [b]) {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
 /** Rule names registered in a design-system `index.js` source. */
 export function parseRegisteredRules(source) {
   return [...source.matchAll(/^\s*'([a-z][a-z0-9-]*)':\s*[A-Za-z_$][\w$]*,?$/gm)].map(
@@ -33,37 +56,34 @@ export function findBaselineGrowth(base, current, { newRules = [] } = {}) {
       if (added.length) growth[rule] = added;
       continue;
     }
-    const currentCounts = baselineCounts(entries);
-    const previousCounts = baselineCounts(base[rule]);
-    if (currentCounts) {
-      if (previousCounts) {
-        const increased = Object.entries(currentCounts)
-          .filter(([file, count]) => count > (previousCounts[file] ?? 0))
-          .map(([file, count]) => ({ file, previous: previousCounts[file] ?? 0, current: count }));
-        if (increased.length) growth[rule] = increased;
-        continue;
-      }
-      // File exemptions may convert to counted violations, but only for the files
-      // that were already exempt.
-      const previous = new Set(baselineFiles(base[rule]));
-      const converted = Object.entries(currentCounts)
-        .filter(([file]) => !previous.has(file))
-        .map(([file, count]) => ({ file, previous: 0, current: count }));
-      if (converted.length) growth[rule] = converted;
+    const previousExemptions = exemptionsByFile(base[rule]);
+    const currentExemptions = exemptionsByFile(entries);
+    const counted = [...previousExemptions.values(), ...currentExemptions.values()].some(
+      (exemption) => exemption !== 'uncounted',
+    );
+    if (!counted) {
+      const added = [...currentExemptions.keys()]
+        .filter((file) => !previousExemptions.has(file))
+        .sort();
+      if (added.length) growth[rule] = added;
       continue;
     }
-    if (previousCounts) {
-      // Dropping the per-file cap is growth, not a rewrite.
-      growth[rule] = [...baselineFiles(entries)]
-        .sort()
-        .map((file) => ({ file, previous: previousCounts[file] ?? 0, current: 'uncounted' }));
-      continue;
-    }
-    const previous = new Set(baselineFiles(base[rule]));
-    const added = baselineFiles(entries)
-      .filter((file) => !previous.has(file))
-      .sort();
-    if (added.length) growth[rule] = added;
+    // Compared per file: a file exemption may convert to a counted one, but dropping a
+    // per-file cap (or adding an uncounted file) is growth even while other counts remain.
+    const grown = [...currentExemptions]
+      .filter(([file, exemption]) => {
+        const before = previousExemptions.get(file);
+        if (before === 'uncounted') return false;
+        if (exemption === 'uncounted') return true;
+        return exemption > (before ?? 0);
+      })
+      .sort(compareFiles)
+      .map(([file, exemption]) => ({
+        file,
+        previous: previousExemptions.get(file) ?? 0,
+        current: exemption,
+      }));
+    if (grown.length) growth[rule] = grown;
   }
   return growth;
 }
