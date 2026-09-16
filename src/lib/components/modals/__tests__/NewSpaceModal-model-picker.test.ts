@@ -346,7 +346,7 @@ describe('NewSpaceModal model-picker composition', () => {
       reasoningTrigger.getAttribute('aria-controls')!,
     )!;
     expect(reasoningListbox.getAttribute('role')).toBe('listbox');
-    expect(reasoningListbox.getAttribute('tabindex')).toBe('0');
+    expect(reasoningListbox.getAttribute('tabindex')).toBe('-1');
     await fireEvent.pointerUp(within(reasoningListbox).getByRole('option', { name: 'High' }), {
       pointerType: 'mouse',
     });

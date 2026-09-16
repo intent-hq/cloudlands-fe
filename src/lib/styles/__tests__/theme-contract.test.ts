@@ -546,10 +546,8 @@ describe('theme color contract', () => {
     'applies the contrast-safe %s theme ring as the keyboard focus color',
     (mode) => {
       const css = fs.readFileSync(path.resolve(process.cwd(), 'src/lib/styles/tokens.css'), 'utf8');
-      const applied = resolveTokenValue(
-        css,
-        tokenValue(css, 'focus-ring').replace(/^var\(--ring\)$/, `var(--theme-${mode}-ring)`),
-      );
+      expect(tokenValue(css, 'focus-ring')).toBe('var(--ring)');
+      const applied = resolveTokenValue(css, tokenValue(css, `theme-${mode}-ring`));
       const values = tokenValues(css, mode);
       expect(applied).toBe(values.ring);
       for (const surface of ['background', 'card', 'popover', 'sidebar'] as const) {
