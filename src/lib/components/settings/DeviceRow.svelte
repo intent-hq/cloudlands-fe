@@ -87,6 +87,7 @@
   let cloudRemovalPending = $state(false);
   let cloudRemovalConfirmed = $state(false);
   let busy = $state<'update' | 'test' | null>(null);
+  let daemonUpdating = $state(false);
   let feedbackOperation = $state<'update' | 'test' | null>(null);
   let feedback = $state<{ kind: 'success' | 'error' | 'progress'; message: string } | null>(null);
   let connectionError = $state(false);
@@ -161,7 +162,16 @@
       ? [{ id: 'connect', label: m.settings_devices_connect_label(), icon: faPlug }]
       : []),
     ...(canUpdateDaemon
-      ? [{ id: 'update', label: m.layout_daemonStatus_update_action(), icon: faArrowsRotate }]
+      ? [
+          {
+            id: 'update',
+            label: daemonUpdating
+              ? m.settings_devices_updating_label()
+              : m.layout_daemonStatus_update_action(),
+            icon: faArrowsRotate,
+            disabled: daemonUpdating,
+          },
+        ]
       : []),
     ...(!device.isLocal
       ? [
@@ -243,6 +253,8 @@
   }
 
   async function requestDaemonUpdate() {
+    if (daemonUpdating) return;
+    daemonUpdating = true;
     try {
       const action = updateBackendRequested(device.id);
       appStore.dispatch(action);
@@ -250,6 +262,8 @@
     } catch {
       // Outcomes (success and every failure mode) surface as saga-owned
       // toasts; nothing more to do here.
+    } finally {
+      daemonUpdating = false;
     }
   }
 

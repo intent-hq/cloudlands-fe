@@ -33,6 +33,7 @@ const lifecycle = vi.hoisted(() => ({ events: [] as Array<{ type: string; seq: n
 const rpc = vi.hoisted(() => ({
   handler: (async () => ({})) as (method: string) => Promise<unknown>,
   calls: [] as string[],
+  payloads: [] as Array<[string, unknown]>,
 }));
 
 vi.mock('../json-rpc-client', () => {
@@ -70,8 +71,9 @@ vi.mock('../json-rpc-client', () => {
     dispose(): void {
       lifecycle.events.push({ type: 'dispose', seq: this.id });
     }
-    request = vi.fn(async (method: string) => {
+    request = vi.fn(async (method: string, params?: unknown) => {
       rpc.calls.push(method);
+      rpc.payloads.push([method, params]);
       return rpc.handler(method);
     });
     registerMethod(): () => void {
@@ -316,6 +318,7 @@ beforeEach(() => {
   lifecycle.events = [];
   rpc.handler = async () => ({});
   rpc.calls = [];
+  rpc.payloads = [];
   // Sensible defaults; individual tests override.
   store.getActiveId.mockResolvedValue('local');
   store.list.mockResolvedValue([LOCAL, REMOTE]);
@@ -980,6 +983,16 @@ describe('connections:* IPC handlers', () => {
   });
 
   it('connections:update-backend routes system.requestUpdate to the pooled client', async () => {
+    let accepted = false;
+    rpc.handler = async (method) => {
+      if (method === 'system.status')
+        return { version: accepted ? '0.1.0' : '0.0.1', exactUpdateSupported: true };
+      if (method === 'system.requestUpdate') {
+        accepted = true;
+        return { ok: true, targetVersion: '0.1.0' };
+      }
+      return {};
+    };
     const { mod } = await loadModule();
     const remote = (await mod.connectBackendClient('remote-1')) as unknown as { status: string };
     remote.status = 'connected';
@@ -987,8 +1000,41 @@ describe('connections:* IPC handlers', () => {
     const handler = findHandler('connections:update-backend');
     expect(handler).toBeDefined();
 
-    await expect(handler!({}, { id: 'remote-1' })).resolves.toEqual({ ok: true });
-    expect(rpc.calls).toContain('system.requestUpdate');
+    await expect(
+      handler!({}, { id: 'remote-1', targetVersion: '99.0.0', url: 'https://attacker/asset' }),
+    ).resolves.toEqual({ ok: true });
+    expect(rpc.payloads.filter(([method]) => method === 'system.requestUpdate')).toEqual([
+      ['system.requestUpdate', { targetVersion: '0.1.0' }],
+    ]);
+  });
+
+  it('coalesces simultaneous update requests for one device', async () => {
+    let finish: (value: unknown) => void = () => {};
+    const current = new Promise((resolve) => {
+      finish = resolve;
+    });
+    let accepted = false;
+    rpc.handler = async (method) => {
+      if (method === 'system.status')
+        return accepted ? current : { version: '0.0.1', exactUpdateSupported: true };
+      if (method === 'system.requestUpdate') {
+        accepted = true;
+        return { ok: true, targetVersion: '0.1.0' };
+      }
+      return {};
+    };
+    const { mod } = await loadModule();
+    const remote = (await mod.connectBackendClient('remote-1')) as unknown as { status: string };
+    remote.status = 'connected';
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:update-backend')!;
+    const first = handler({}, { id: 'remote-1' });
+    const second = handler({}, { id: 'remote-1' });
+    await vi.waitFor(() =>
+      expect(rpc.calls.filter((method) => method === 'system.requestUpdate')).toHaveLength(1),
+    );
+    finish({ version: '0.1.0' });
+    await expect(Promise.all([first, second])).resolves.toEqual([{ ok: true }, { ok: true }]);
   });
 
   it('connections:update-backend rejects the local id as unsupported in sidecar/unknown mode', async () => {
@@ -1096,6 +1142,7 @@ describe('connections:* IPC handlers', () => {
       if (method === 'system.requestUpdate') {
         throw new JsonRpcError({ code: -32601, message: 'Method not found' });
       }
+      if (method === 'system.status') return { version: '0.0.1', exactUpdateSupported: true };
       return {};
     };
     const { mod } = await loadModule();
@@ -1114,6 +1161,7 @@ describe('connections:* IPC handlers', () => {
       if (method === 'system.requestUpdate') {
         throw new JsonRpcError({ code: -32000, message: 'daemon is not sitter-supervised' });
       }
+      if (method === 'system.status') return { version: '0.0.1', exactUpdateSupported: true };
       return {};
     };
     const { mod } = await loadModule();
@@ -1133,6 +1181,8 @@ describe('connections:* IPC handlers', () => {
   describe('daemonUpdateDisconnectedAt marker on backend:status', () => {
     type FakeClient = { status: string; emit(event: string, arg?: unknown): void };
     const MARKER = 'daemonUpdateDisconnectedAt';
+    const pendingOperations: Promise<unknown>[] = [];
+    const testClients: FakeClient[] = [];
     const T0 = new Date('2026-01-01T00:00:00Z').getTime();
 
     /** Remote-1 window + connected pooled client + handlers, ready to update. */
@@ -1143,7 +1193,34 @@ describe('connections:* IPC handlers', () => {
       const remote = (await mod.connectBackendClient('remote-1')) as unknown as FakeClient;
       remote.status = 'connected';
       mod.registerBackendHandlers();
-      const update = findHandler('connections:update-backend')!;
+      const handler = findHandler('connections:update-backend')!;
+      const previous = rpc.handler;
+      let onAccepted: (() => void) | undefined;
+      rpc.handler = async (method) => {
+        if (method === 'system.status')
+          return {
+            version: '0.0.1',
+            exactUpdateSupported: true,
+            targetUpdate: { targetVersion: '0.1.0', state: 'installing' },
+          };
+        const result = await previous(method);
+        if (method === 'system.requestUpdate') {
+          onAccepted?.();
+          return { ok: true, targetVersion: '0.1.0' };
+        }
+        return result;
+      };
+      // Observe acceptance separately: the production IPC now remains pending
+      // through restart. Each test drives drops while that operation is live.
+      const update = async (event: unknown, params: unknown) => {
+        const accepted = new Promise<{ ok: true }>((resolve) => {
+          onAccepted = () => resolve({ ok: true });
+        });
+        const result = handler(event, params);
+        pendingOperations.push(result);
+        return Promise.race([accepted, result]);
+      };
+      testClients.push(remote);
       const getStatus = findHandler('backend:get-status')!;
       const payloadsOf = (send: ReturnType<typeof vi.fn>) => () =>
         send.mock.calls
@@ -1163,11 +1240,15 @@ describe('connections:* IPC handlers', () => {
     }
 
     beforeEach(() => {
-      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
       vi.setSystemTime(T0);
     });
 
-    afterEach(() => {
+    afterEach(async () => {
+      rpc.handler = async () => ({ version: '0.1.0', exactUpdateSupported: true });
+      for (const client of testClients.splice(0)) client.status = 'connected';
+      await vi.advanceTimersByTimeAsync(1000);
+      await Promise.all(pendingOperations.splice(0));
       vi.useRealTimers();
     });
 

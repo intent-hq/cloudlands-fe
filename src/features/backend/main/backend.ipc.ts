@@ -52,6 +52,7 @@ import {
 } from './client-identity';
 import { formatTransportInfo } from './transport-info';
 import { readPinnedVersion } from './intentd-version-pin';
+import { updateDaemonToPin } from './exact-daemon-update';
 import {
   getLocalDaemonProtocolVersion,
   getSidecarRunLog,
@@ -721,8 +722,9 @@ export function getLocalBackendClient(): JsonRpcClient {
 
 /**
  * Ask one connected backend's daemon to self-update via
- * `system.requestUpdate` (the daemon signals its serve-mode sitter, which
- * installs the newer version and restarts the daemon). Returns a structured
+ * `system.requestUpdate`. Remotes install the main-owned bundle pin and this
+ * promise settles after version confirmation or failure; adopted local daemons
+ * keep the channel-update path. Returns a structured
  * {@link UpdateBackendResult} instead of throwing for daemon-side failures so
  * the renderer can toast a specific message:
  *   - local id in sidecar/unknown mode, or over a non-UDS transport →
@@ -735,7 +737,17 @@ export function getLocalBackendClient(): JsonRpcClient {
  *   - JSON-RPC -32601 → 'unsupported' (daemon too old to know the method);
  *   - any other daemon/transport error → 'failed' with the error message.
  */
-async function requestBackendUpdate(id: string): Promise<UpdateBackendResult> {
+const backendUpdateRequests = new Map<string, Promise<UpdateBackendResult>>();
+
+function requestBackendUpdate(id: string): Promise<UpdateBackendResult> {
+  const pending = backendUpdateRequests.get(id);
+  if (pending) return pending;
+  const request = performBackendUpdate(id).finally(() => backendUpdateRequests.delete(id));
+  backendUpdateRequests.set(id, request);
+  return request;
+}
+
+async function performBackendUpdate(id: string): Promise<UpdateBackendResult> {
   if (id === LOCAL_CONNECTION_ID) {
     // Same predicate as captureLocalUpdateSupported: only an adopted
     // `external` daemon over UDS is self-updatable. External mode is also set
@@ -754,6 +766,23 @@ async function requestBackendUpdate(id: string): Promise<UpdateBackendResult> {
     return { ok: false, reason: 'not-connected' };
   }
   try {
+    if (id !== LOCAL_CONNECTION_ID) {
+      try {
+        return await updateDaemonToPin(
+          target,
+          readPinnedVersion({
+            isPackaged: app.isPackaged,
+            resourcesPath: process.resourcesPath,
+          }),
+          () => {
+            pendingDaemonUpdates.set(id, Date.now());
+          },
+          () => backendClients.get(id) === target,
+        );
+      } finally {
+        clearPendingDaemonUpdate(id);
+      }
+    }
     await target.request('system.requestUpdate');
     pendingDaemonUpdates.set(id, Date.now());
     pendingDaemonUpdateDrops.delete(id);
@@ -1415,7 +1444,7 @@ function extractTcAddress(result: unknown): string | null {
 
 /**
  * Capture whether a freshly-connected remote's daemon supports self-update
- * (`updateSupported` from `system.status`) and persist it on the connection
+ * (`exactUpdateSupported` from `system.status`) and persist it on the connection
  * record, following the `captureRemoteHostname` capture pattern. Runs on
  * every (re)connect hello so a daemon upgrade/downgrade (or a supervision
  * change) refreshes the stored flag; the renderer gates the Update affordance
@@ -1446,7 +1475,13 @@ async function captureRemoteUpdateSupported(id: string): Promise<void> {
     // protects against a stale capture after the client is disposed.
     const client = getBackendClientForId(id);
     const result = await client.request('system.status');
-    const supported = extractUpdateSupported(result);
+    const supported =
+      result &&
+      typeof result === 'object' &&
+      'exactUpdateSupported' in result &&
+      typeof result.exactUpdateSupported === 'boolean'
+        ? result.exactUpdateSupported
+        : null;
     const tcAddress = extractTcAddress(result);
     // Loopback entries are only reachable from the backend itself (the
     // daemon's pairing surfaces filter them the same way); an empty list
@@ -2805,9 +2840,9 @@ function registerConnectionsHandlers(): void {
   );
 
   // Ask one connected remote backend's daemon to self-update: route
-  // `system.requestUpdate` to that backend's pooled client. The daemon signals
-  // its serve-mode sitter (SIGUSR1), which installs the newer version and
-  // gracefully restarts the daemon — the client then reconnects on its own.
+  // `system.requestUpdate` to that backend's pooled client with the main-owned
+  // bundle pin. Capability detection prevents older daemons from ignoring the
+  // target. Adopted local daemons retain their existing channel-update path.
   // The result is structured (never a thrown daemon error) so the renderer can
   // toast a specific message per failure mode: local/method-unknown daemons →
   // 'unsupported', no live client → 'not-connected', a structured daemon error
