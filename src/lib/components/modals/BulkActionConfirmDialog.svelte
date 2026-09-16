@@ -53,19 +53,18 @@
   bind:open
   static={staticPosition}
   {title}
-  {description}
   confirmLabel={confirmText}
   destructive={variant === 'destructive'}
-  class="max-w-sm"
   onConfirm={handleConfirm}
   onCancel={close}
 >
   {#snippet details()}
     <div class="space-y-4">
+      {#if description}<p class="type-body">{description}</p>{/if}
       {#if hasActiveWork}
-        <div class="space-y-1 rounded-md border border-border bg-muted/40 p-3">
+        <div class="space-y-4 rounded-md border border-border bg-muted/40 p-3">
           {#if activeAgentCount > 0}
-            <p class="text-sm font-medium text-foreground">
+            <p class="type-body text-muted-foreground font-normal">
               {activeAgentCount === 1
                 ? m.modals_deleteWarning_agentsStopped_one({
                     count: formatInteger(activeAgentCount),
@@ -76,7 +75,7 @@
             </p>
           {/if}
           {#if activeHookCount > 0}
-            <p class="text-sm font-medium text-foreground">
+            <p class="type-body text-muted-foreground font-normal">
               {activeHookCount === 1
                 ? m.modals_deleteWarning_hooksCancelled_one({
                     count: formatInteger(activeHookCount),

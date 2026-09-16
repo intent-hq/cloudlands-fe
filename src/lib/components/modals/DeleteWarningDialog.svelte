@@ -99,9 +99,6 @@
   bind:open
   static={staticPosition}
   title={isArchive ? m.modals_archiveWarning_title() : m.modals_deleteWarning_title()}
-  description={isArchive
-    ? m.modals_archiveWarning_description()
-    : m.modals_deleteWarning_description()}
   confirmLabel={isArchive
     ? m.modals_archiveWarning_confirm_label()
     : m.modals_deleteWarning_confirm_label()}
@@ -113,11 +110,14 @@
   onCancel={close}
 >
   {#snippet details()}
+    <p class="type-body">
+      {isArchive ? m.modals_archiveWarning_description() : m.modals_deleteWarning_description()}
+    </p>
     <div class="min-w-0 space-y-4 pr-8">
       {#if agents.length > 0 || hookNames.length > 0 || openPrs.length > 0 || hasLocalChanges}
         <div class="rounded-md border border-border bg-muted/40 p-3">
           {#if agents.length > 0}
-            <p class="type-body font-medium text-foreground">
+            <p class="type-body text-muted-foreground font-normal">
               {agents.length === 1
                 ? m.modals_deleteWarning_agentsStopped_one({
                     count: formatInteger(agents.length),
@@ -148,7 +148,7 @@
             </ul>
           {/if}
           {#if hookNames.length > 0}
-            <p class="type-body font-medium text-foreground" class:mt-3={agents.length > 0}>
+            <p class="type-body text-muted-foreground font-normal" class:mt-4={agents.length > 0}>
               {hookNames.length === 1
                 ? m.modals_deleteWarning_hooksCancelled_one({
                     count: formatInteger(hookNames.length),
@@ -172,8 +172,8 @@
           {/if}
           {#if openPrs.length > 0}
             <p
-              class="type-body font-medium text-foreground"
-              class:mt-3={agents.length > 0 || hookNames.length > 0}
+              class="type-body text-muted-foreground font-normal"
+              class:mt-4={agents.length > 0 || hookNames.length > 0}
             >
               {openPrs.length === 1
                 ? m.modals_deleteWarning_openPrs_one({
@@ -228,7 +228,7 @@
           {#if hasLocalChanges}
             <p
               class="type-caption text-muted-foreground"
-              class:mt-3={agents.length > 0 || hookNames.length > 0 || openPrs.length > 0}
+              class:mt-4={agents.length > 0 || hookNames.length > 0 || openPrs.length > 0}
             >
               {isArchive
                 ? m.modals_archiveWarning_localChanges_description()

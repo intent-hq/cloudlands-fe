@@ -29,8 +29,12 @@ describe('MessageDialog', () => {
 
     render(MessageDialog, { props: { ...PROPS, onSelect } });
 
-    expect(await screen.findByRole('alertdialog', { name: 'File Already Exists' })).toBeTruthy();
-    expect(screen.getByText(PROPS.message)).toBeTruthy();
+    expect(
+      await screen.findByRole('alertdialog', {
+        name: 'File Already Exists',
+        description: PROPS.message,
+      }),
+    ).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Skip' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Rename' })).toBeTruthy();
 

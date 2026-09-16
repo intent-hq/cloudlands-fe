@@ -22,9 +22,7 @@
 <FormDialog
   static={staticPosition}
   {open}
-  class="max-w-sm"
   title={m.workspace_drivingClient_setPrimaryDialog_title()}
-  description={m.workspace_drivingClient_setPrimaryDialog_description({ host: currentHost })}
   closeLabel={m.workspace_drivingClient_setPrimaryDialog_close_ariaLabel()}
   cancelLabel={m.workspace_drivingClient_setPrimaryDialog_cancel_label()}
   submitLabel={m.workspace_drivingClient_setPrimaryDialog_confirm_label()}
@@ -32,4 +30,8 @@
   focusSubmit
   onSubmit={() => onConfirm?.()}
   {onCancel}
-/>
+>
+  <p class="type-body">
+    {m.workspace_drivingClient_setPrimaryDialog_description({ host: currentHost })}
+  </p>
+</FormDialog>

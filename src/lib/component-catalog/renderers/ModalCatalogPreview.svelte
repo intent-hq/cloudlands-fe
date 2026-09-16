@@ -139,7 +139,7 @@
             <span class="mt-0.5 text-danger"><Fa icon={faCircleExclamation} /></span>
             <div class="grid gap-1.5">
               <Dialog.Title>Review this change</Dialog.Title>
-              <Dialog.Description
+              <Dialog.Description class="sr-only"
                 >Check the affected workspace before continuing.</Dialog.Description
               >
             </div>
@@ -152,7 +152,7 @@
               >{state === 'destructive' ? 'Delete workspace?' : 'Edit workspace'}</Dialog.Title
             >
             {#if state !== 'no-description'}
-              <Dialog.Description>
+              <Dialog.Description class="sr-only">
                 {state === 'invalid'
                   ? 'Resolve the validation error before saving.'
                   : 'Update the workspace details and save your changes.'}
@@ -215,7 +215,6 @@
         kind: 'confirm',
         options: {
           title: 'Delete workspace?',
-          description: 'Remove the local workspace and its files.',
           destructive: true,
           confirmLabel: 'Delete workspace',
         },
@@ -239,7 +238,7 @@
       static
       request={{
         kind: 'alert',
-        options: { title: 'Workspace ready', description: 'Your workspace is ready to open.' },
+        options: { title: 'Workspace ready' },
       }}
       onAccept={() => {}}
       onCancel={() => {}}
@@ -307,46 +306,38 @@
       open
       static
       title="Delete workspace?"
-      description="This action cannot be undone."
       confirmLabel="Delete workspace"
       onConfirm={() => {}}
-    />
+    >
+      {#snippet details()}
+        <p class="type-body">This action cannot be undone.</p>
+      {/snippet}
+    </DestructiveConfirm>
   {:else if state === 'destructive-confirm-busy'}
     <DestructiveConfirm
       open
       static
       busy
       title="Deleting workspace"
-      description="Local workspace data is being removed."
       confirmLabel="Delete workspace"
       onConfirm={() => {}}
-    />
+    >
+      {#snippet details()}
+        <p class="type-body">Local workspace data is being removed.</p>
+      {/snippet}
+    </DestructiveConfirm>
   {:else if state === 'form-dialog-default'}
-    <FormDialog
-      open
-      static
-      title="Save workspace"
-      description="Review the workspace details before saving."
-      onSubmit={() => {}}
-    />
+    <FormDialog open static title="Save workspace" onSubmit={() => {}}>
+      <p class="type-body">Review the workspace details before saving.</p>
+    </FormDialog>
   {:else if state === 'form-dialog-busy'}
-    <FormDialog
-      open
-      static
-      busy
-      title="Saving workspace"
-      description="Your changes are being saved."
-      onSubmit={() => {}}
-    />
+    <FormDialog open static busy title="Saving workspace" onSubmit={() => {}}>
+      <p class="type-body">Your changes are being saved.</p>
+    </FormDialog>
   {:else if state === 'form-dialog-invalid'}
-    <FormDialog
-      open
-      static
-      canSubmit={false}
-      title="Save workspace"
-      description="A workspace name is required."
-      onSubmit={() => {}}
-    />
+    <FormDialog open static canSubmit={false} title="Save workspace" onSubmit={() => {}}>
+      <p class="type-body">A workspace name is required.</p>
+    </FormDialog>
   {:else if state === 'input-dialog'}
     <InputDialog
       open
@@ -453,7 +444,7 @@
             <Input id={`${uid}-branch`} value="design-system" />
           </div>
           <div class="rounded-md border border-border p-3">
-            <p class="text-sm font-medium">Implementor</p>
+            <p class="type-body text-muted-foreground font-normal">Implementor</p>
             <p class="text-xs text-muted-foreground">OpenAI · GPT-5.6 · High reasoning</p>
           </div>
           <Button variant="outline">Setup script: pnpm install</Button>
@@ -470,7 +461,7 @@
     >
       {#snippet editor(value, onChange)}
         <div class="grid gap-3">
-          <p class="text-sm font-medium">Frontend setup</p>
+          <p class="type-body text-muted-foreground font-normal">Frontend setup</p>
           <Textarea
             aria-label="Setup script"
             {value}
@@ -530,12 +521,14 @@
   data-catalog-rendered-state={fixture.states.join(' ')}
 >
   {#if fixture.id === 'primitive-dialog-matrix'}
-    <section class="grid gap-3" aria-labelledby="dialog-primitive-title">
-      <h2 id="dialog-primitive-title" class="text-base font-medium">Dialog primitive</h2>
+    <section class="grid gap-4" aria-labelledby="dialog-primitive-title">
+      <h2 id="dialog-primitive-title" class="type-body text-muted-foreground font-normal">
+        Dialog primitive
+      </h2>
       <div class="modal-preview-grid">
         {#each primitiveStates as [state, label] (state)}
           <article class="grid min-w-0 content-start gap-2" data-modal-preview={state}>
-            <h3 class="text-xs font-medium text-muted-foreground">{label}</h3>
+            <h3 class="type-caption text-muted-foreground font-normal">{label}</h3>
             <div class="relative min-h-88 overflow-hidden rounded-md bg-muted/40 py-4">
               {#if state === 'compact-density'}
                 <SizeProvider size="compact">{@render preview(state)}</SizeProvider>
@@ -548,12 +541,14 @@
       </div>
     </section>
   {:else}
-    <section class="grid gap-3" aria-labelledby="product-modals-title">
-      <h2 id="product-modals-title" class="text-base font-medium">Product modals</h2>
+    <section class="grid gap-4" aria-labelledby="product-modals-title">
+      <h2 id="product-modals-title" class="type-body text-muted-foreground font-normal">
+        Product modals
+      </h2>
       <div class="modal-preview-grid">
         {#each productStates as [state, label] (state)}
           <article class="grid min-w-0 content-start gap-2" data-modal-preview={state}>
-            <h3 class="text-xs font-medium text-muted-foreground">{label}</h3>
+            <h3 class="type-caption text-muted-foreground font-normal">{label}</h3>
             <div
               class:legacy-static-frame={state === 'import-workspace-modal' ||
                 state === 'transfer-workspace-modal'}

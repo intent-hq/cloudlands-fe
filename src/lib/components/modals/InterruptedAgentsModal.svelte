@@ -151,10 +151,6 @@
   </h2>
 {/snippet}
 
-{#snippet takeoverDescription()}
-  <p id={dialogDescriptionId}>{m.modals_interruptedAgents_description()}</p>
-{/snippet}
-
 {#snippet takeoverLeading()}
   <div
     class="flex size-10 items-center justify-center rounded-full bg-warning/20 text-warning-ink ring-1 ring-warning/20"
@@ -176,7 +172,7 @@
 {/snippet}
 
 {#snippet takeoverBody()}
-  <div class="mb-3 flex items-center justify-between gap-3 px-1">
+  <div class="mb-4 flex items-center justify-between gap-3 px-1">
     <label class="flex cursor-pointer items-center gap-2 text-sm font-medium text-foreground">
       <Checkbox
         checked={allSelected}
@@ -196,8 +192,14 @@
     aria-label={m.modals_interruptedAgents_title()}
     class="gap-0"
   >
-    <SectionedList sections={agentsByWorkspace()} getKey={(group) => group.workspaceId}>
-      {#snippet header(group)}{group.workspaceName}{/snippet}
+    <SectionedList
+      sections={agentsByWorkspace()}
+      getKey={(group) => group.workspaceId}
+      class="space-y-4"
+    >
+      {#snippet header(group)}<span class="type-caption text-muted-foreground font-normal"
+          >{group.workspaceName}</span
+        >{/snippet}
       {#snippet children(group)}
         <ListView
           items={group.agents}
@@ -207,7 +209,6 @@
           selectedKeys={[...checkedAgents]}
           onSelectedKeysChange={(keys) => (checkedAgents = new Set(keys.map(String)))}
           ariaLabel={group.workspaceName}
-          class="mb-3"
         >
           {#snippet row({ item: agent, selected })}
             <ListRow>
@@ -290,7 +291,6 @@
         <TakeoverScreen
           bind:ref={dialogEl}
           title={takeoverTitle}
-          description={takeoverDescription}
           leading={takeoverLeading}
           actions={takeoverActions}
           primary={takeoverPrimary}
@@ -308,6 +308,7 @@
           tabindex={-1}
           onkeydown={handleKeydown}
         >
+          <p id={dialogDescriptionId} class="sr-only">{m.modals_interruptedAgents_description()}</p>
           {@render takeoverBody()}
         </TakeoverScreen>
       </div>

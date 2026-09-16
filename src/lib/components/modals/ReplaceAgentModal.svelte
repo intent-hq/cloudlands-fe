@@ -68,10 +68,9 @@
     <div class="space-y-4 p-5 pr-12">
       <Dialog.Header class="gap-2 pr-0">
         <Dialog.Title>{m.modals_replaceAgent_title()}</Dialog.Title>
-        <Dialog.Description class="leading-5">
-          {m.modals_replaceAgent_description({ name: agentName })}
-        </Dialog.Description>
       </Dialog.Header>
+
+      <p class="type-body">{m.modals_replaceAgent_description({ name: agentName })}</p>
 
       <Textarea
         bind:value={text}

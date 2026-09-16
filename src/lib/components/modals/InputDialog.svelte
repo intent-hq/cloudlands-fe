@@ -48,7 +48,6 @@
   bind:open
   static={staticPosition}
   {title}
-  {description}
   submitLabel={confirmLabel}
   submitVariant="primary"
   {cancelLabel}
@@ -57,5 +56,6 @@
   onSubmit={confirm}
   onCancel={close}
 >
+  {#if description}<p class="type-body">{description}</p>{/if}
   <Input bind:ref={inputRef} bind:value={inputValue} type="text" {placeholder} />
 </FormDialog>

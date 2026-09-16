@@ -1,4 +1,5 @@
 <script lang="ts">
+  import * as Dialog from '$lib/components/ui/dialog';
   import { Button } from '$lib/components/ui/button';
   import { FormDialog } from '$lib/components/patterns/confirm';
 
@@ -36,12 +37,14 @@
   static={staticPosition}
   role="alertdialog"
   {title}
-  description={message}
   dismissOnInteractOutside={false}
   focusContent
   onSubmit={() => select(buttons.length - 1)}
   onCancel={() => select(cancelIndex)}
 >
+  <Dialog.Description class="sr-only">{message}</Dialog.Description>
+  <p class="type-body">{message}</p>
+
   {#snippet footer()}
     {#each buttons as label, index (index)}
       <Button

@@ -211,11 +211,6 @@
           <Dialog.Title class="text-lg font-semibold">
             {m.modals_pullConflict_title()}
           </Dialog.Title>
-          {#if branchName}
-            <p class="text-sm text-subtle mt-0.5">
-              {m.modals_pullConflict_branch_label({ branchName })}
-            </p>
-          {/if}
         </div>
       </div>
       <Dialog.Close
@@ -228,9 +223,12 @@
 
     <!-- Content -->
     <div class="p-6">
-      <Dialog.Description class="text-sm text-subtle mb-4">
+      {#if branchName}
+        <p class="type-body mb-4">{m.modals_pullConflict_branch_label({ branchName })}</p>
+      {/if}
+      <p class="type-body mb-4">
         {m.modals_pullConflict_description()}
-      </Dialog.Description>
+      </p>
       {#if error}
         <div
           class="bg-danger-background/10 py-2.5 px-3.5 text-sm text-danger whitespace-pre-wrap break-words max-h-32 overflow-auto"
@@ -241,9 +239,11 @@
     </div>
 
     <!-- Footer -->
-    <div class="px-6 py-4 border-t border-border flex flex-col gap-3">
+    <div class="px-6 py-4 border-t border-border flex flex-col gap-4">
       <div class="grid grid-cols-2 gap-2 items-center">
-        <p class="text-xs select-none">{m.modals_pullConflict_resolveInApp_label()}</p>
+        <p class="type-caption text-muted-foreground font-normal select-none">
+          {m.modals_pullConflict_resolveInApp_label()}
+        </p>
         <!-- Open in dropdown (combined IDEs and terminals) -->
         {#if $installedEditors$.length > 0}
           <DropdownMenu bind:open={dropdownOpen} align="start" portal={true}>
@@ -295,7 +295,9 @@
       </div>
       <div class="grid grid-cols-2 gap-2 items-center">
         <Tooltip content={m.modals_pullConflict_createWorkspace_tooltip()}>
-          <span class="text-xs inline-block">{m.modals_pullConflict_letIntentHandle_label()}</span>
+          <span class="type-caption text-muted-foreground font-normal inline-block"
+            >{m.modals_pullConflict_letIntentHandle_label()}</span
+          >
         </Tooltip>
         <!-- Create workspace action -->
         <Button
