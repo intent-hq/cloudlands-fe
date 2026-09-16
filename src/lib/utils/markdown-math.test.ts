@@ -93,6 +93,57 @@ a<b>c
   );
 
   it.each([
+    ['<!-- marker -->$x$\n# Heading', 'h1', 'Heading'],
+    ['<!-- marker -->$x$\n- item', 'ul li', 'item'],
+    ['<br>$x$\n# Heading', 'h1', 'Heading'],
+    ['<!-- marker -->$x$\n```text\ncode\n```', 'pre code', 'code'],
+  ])('preserves paragraph boundaries for %s', async (source, selector, text) => {
+    for (const renderMath of [false, true]) {
+      const container = containerFor(
+        await processMarkdownToHTML(source, { renderMath, skipIfHTML: false }),
+      );
+      expect(container.querySelector(selector)?.textContent?.trim()).toBe(text);
+    }
+  });
+
+  it.each([
+    ['<!-- marker -->$x$\n> quotation', 'blockquote', 'quotation'],
+    ['<sub>2</sub> $x$\n1. ordered', 'ol li', 'ordered'],
+    ['<!-- marker -->$x$\n~~~text\ncode\n~~~', 'pre code', 'code'],
+    ['<!-- marker -->$x$\n---', 'hr', ''],
+    ['<!-- marker -->$x$\na | b\n--- | ---\nc | d', 'table th', 'a'],
+  ])('retains neighboring Markdown block structure for %s', async (source, selector, text) => {
+    const container = containerFor(
+      await processMarkdownToHTML(source, { renderMath: true, skipIfHTML: false }),
+    );
+    expect(container.querySelector(selector)?.textContent?.trim()).toBe(text);
+  });
+
+  it('keeps multiline math paragraphs together and stops at registered display blocks', async () => {
+    const source =
+      '<!--anchor:cmt-boundary:start-->$a<b$ and $c>d$\ncontinued $e<f$<!--anchor:cmt-boundary:end-->\n$$g<h$$';
+    const container = containerFor(
+      await processMarkdownToHTML(source, { renderMath: true, skipIfHTML: false }),
+    );
+    expect(container.querySelectorAll('p')).toHaveLength(1);
+    expect(container.querySelector('p')?.querySelectorAll('.math-inline')).toHaveLength(3);
+    expect(container.querySelectorAll('.math-display')).toHaveLength(1);
+    expect(container.querySelectorAll('[data-anchor-id]')).toHaveLength(2);
+    expect(processHTMLToMarkdown(container.innerHTML)).toBe(source.replace('\n$$', () => '\n\n$$'));
+  });
+
+  it('stops math recovery before registered task blocks', async () => {
+    const source = '<!-- marker -->$x$\n@@@task\n# Task heading\nTask body\n@@@';
+    const container = containerFor(
+      await processMarkdownToHTML(source, { renderMath: true, skipIfHTML: false }),
+    );
+    expect(
+      container.querySelector<HTMLInputElement>('[data-type="task-block"] input')?.disabled,
+    ).toBe(true);
+    expect(container.querySelector('p')?.textContent).not.toContain('@@@task');
+  });
+
+  it.each([
     ['$x^2$', false],
     ['$2x$', false],
     [String.raw`\(x^2\)`, false],

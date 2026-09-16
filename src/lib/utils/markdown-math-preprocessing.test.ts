@@ -73,6 +73,19 @@ describe('math source through preprocessing and worker dispatch', () => {
         }),
       ).toBe(large);
       expect(requests).toHaveLength(1);
+
+      const blockSource = `${filler}\n\n<!--anchor:cmt-block:start-->$a<b$<!--anchor:cmt-block:end-->\n# Following heading\n\`\`\`text\n$not-math$\n\`\`\``;
+      const blocks = document.createElement('div');
+      blocks.innerHTML = await processMarkdownToHTML(blockSource, {
+        renderMath,
+        preserveAnchors: true,
+        skipIfHTML: false,
+      });
+      expect(requests).toHaveLength(2);
+      expect(blocks.querySelector('h1')?.textContent).toBe('Following heading');
+      expect(blocks.querySelector('pre code')?.textContent?.trim()).toBe('$not-math$');
+      expect(blocks.querySelectorAll('.katex')).toHaveLength(renderMath ? 1 : 0);
+      expect(blocks.querySelectorAll('[data-anchor-id]')).toHaveLength(2);
     },
   );
 });

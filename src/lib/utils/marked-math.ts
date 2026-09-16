@@ -1,5 +1,5 @@
 import { renderToString } from 'katex';
-import type { Marked } from 'marked';
+import { Lexer, type Marked } from 'marked';
 
 export const MAX_MATH_SOURCE_LENGTH = 4096;
 
@@ -173,8 +173,31 @@ export function addMathSupport(markedInstance: Marked, renderEnabled: boolean): 
           // Marked otherwise treats a leading comment or inline tag as a raw HTML
           // block and never visits the math tokens, leaving their source as HTML.
           if (!/^(?: {0,3})(?:<!--|<br\s*\/?>|<\/?(?:sub|sup)>)/i.test(src)) return;
-          const raw = /^(?:[^\n]+(?:\n|$))+/.exec(src)?.[0];
+          // Use the same paragraph grammar and extension clipping as Marked's
+          // block lexer, so recovering math cannot swallow subsequent blocks.
+          const { pedantic, gfm, extensions } = this.lexer.options;
+          const rules = Lexer.rules.block[pedantic ? 'pedantic' : gfm ? 'gfm' : 'normal'];
+          let end = src.length;
+          const afterFirstCharacter = src.slice(1);
+          const blockStarts = extensions?.startBlock ?? [];
+          for (const start of blockStarts) {
+            const index = start.call(this, afterFirstCharacter);
+            if (typeof index === 'number' && index >= 0) end = Math.min(end, index + 1);
+          }
+          let raw = rules.paragraph.exec(src.slice(0, end))?.[0];
           if (!raw) return;
+          // Some registered hints (task blocks) only recognize a current line,
+          // rather than searching ahead. Consult those hints at line boundaries
+          // too, without duplicating their block-opening syntax here.
+          const lines = raw.split('\n');
+          let offset = lines[0].length + 1;
+          for (const line of lines.slice(1)) {
+            if (blockStarts.some((start) => start.call(this, `${line}\n`) === 0)) {
+              raw = raw.slice(0, offset);
+              break;
+            }
+            offset += line.length + 1;
+          }
           const tokens = this.lexer.inlineTokens(raw.trimEnd());
           if (!tokens.some((token) => token.type === 'mathInline')) return;
           return { type: 'mathHtmlParagraph', raw, tokens };

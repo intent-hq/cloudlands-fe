@@ -1314,6 +1314,26 @@ a<b>c
     );
   });
 
+  it('retains a heading following recovered math through an actual editor save', async () => {
+    const source = 'Intro\n\n<!-- marker -->$x$\n# Heading';
+    replaceNotes([createNote('math-boundary', 'Math boundary', source, { rev: 4 })]);
+    const view = await renderInitializedNote('math-boundary', source);
+    await waitFor(() => expect(editorInstances.at(-1)).toBeTruthy());
+    const editor = editorInstances.at(-1);
+    expect(view.container.querySelector('.ProseMirror h1')?.textContent).toBe('Heading');
+    editor.commands.insertContentAt(editor.state.doc.content.size - 1, ' edited');
+    await tick();
+    view.unmount();
+    await waitFor(() =>
+      expect(mockUpdateNoteContent).toHaveBeenCalledWith(
+        WORKSPACE_ID,
+        'math-boundary',
+        'Intro\n\n$x$\n\n# Heading edited',
+        { immediate: true, baseContent: source, baseRev: 4 },
+      ),
+    );
+  });
+
   it('sends the original review source through the real note write service', async () => {
     const service = await vi.importActual<typeof import('$features/notes/notes-write-service')>(
       '$features/notes/notes-write-service',
