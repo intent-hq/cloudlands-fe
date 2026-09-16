@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.159.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.159.1...v2.159.2) (2026-09-16)
+
+
+### 🐛 Bug Fixes
+
+* **main:** start intentd sidecar before daemon-dependent startup steps ([#2500](https://github.com/intent-hq/cloudlands-fe/issues/2500)) ([f979b88](https://github.com/intent-hq/cloudlands-fe/commit/f979b880a25fcdaff2dd1b9a67ae78e755d11eb8))
+
 ## [2.159.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.159.0...v2.159.1) (2026-09-16)
 
 
