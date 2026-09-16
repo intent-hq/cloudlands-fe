@@ -4,9 +4,14 @@ import autoprefixer from 'autoprefixer';
 import os from 'os';
 import { resolve } from 'path';
 import { fileURLToPath } from 'url';
+import { resolveCtCacheDir } from './playwright/ct-cache-dir';
 import { resolveCtWorkers } from './playwright/ct-workers';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
+
+// Read CT_PORT once so the component server port and the bundle cache dir
+// below cannot drift apart.
+const ctPortEnv = process.env.CT_PORT;
 
 // Bound local workers on the shared daemon host (the vitest precedent is
 // intent-hq/monorepo#545). Playwright's default of 50% of cores means 16
@@ -86,7 +91,14 @@ export default defineConfig({
     /* Port to use for Playwright component endpoint. CT_PORT overrides the
        default for CI shards on the shared self-hosted host, where a fixed
        port would collide across co-tenant runner slots. */
-    ctPort: process.env.CT_PORT ? Number(process.env.CT_PORT) : 3100,
+    ctPort: ctPortEnv ? Number(ctPortEnv) : 3100,
+
+    /* Key the generated component registry/bundle cache by the same port.
+       CT_PORT isolated the server and the ct-<CT_PORT> lock but not
+       playwright/.cache, so two concurrent runs in one checkout on distinct
+       ports overwrote each other's bundle (cloudlands-fe PR #2441, Wave 8).
+       Unset CT_PORT keeps Playwright's default playwright/.cache. */
+    ctCacheDir: resolveCtCacheDir({ env: { CT_PORT: ctPortEnv } }),
 
     /* Vite configuration for component testing */
     ctViteConfig: {

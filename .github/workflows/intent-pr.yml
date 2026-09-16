@@ -924,7 +924,9 @@ jobs:
         # needs an 8 GB heap while Rollup renders chunks — but ONLY here.
         # Playwright CT has no standalone build command, so this uses
         # --only-changed=HEAD: dependency population runs the Vite build
-        # (and caches the bundle under playwright/.cache) during test
+        # (and caches the bundle under the port-keyed playwright/.cache-<CT_PORT>,
+        # shared with the test step below because both read the same CT_PORT
+        # from GITHUB_ENV) during test
         # loading, before the changed-file filter applies; on a fresh CI
         # checkout `git diff HEAD` is empty, so zero tests are selected and
         # --pass-with-no-tests exits green without running any. Caveat:

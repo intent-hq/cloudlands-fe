@@ -255,7 +255,9 @@ corepack pnpm run test:ct -- src/features/agent/components/agent-avatar/__tests_
 The CT harness defaults to port 3100 (the `CT_PORT` env var overrides it). A run holds
 the host-wide `ct-<CT_PORT>` lock, so a second run on an occupied port waits for the
 first instead of reusing its server; set a free `CT_PORT` to run concurrently (see
-[Verification](#verification)). The run exits with Playwright's
+[Verification](#verification)). The port also keys the generated bundle cache
+(`playwright/.cache-<CT_PORT>`; bare `playwright/.cache` when unset), so per-port runs are
+isolated for server, lock, and cache — including within one worktree. The run exits with Playwright's
 status as soon as the tests finish — the HTML report is written to `playwright-report/`
 but never served automatically. To browse it after the run, opt in from an interactive
 terminal with `CT_HTML_REPORT=open` (or `-- --open-report`); `node
@@ -390,8 +392,9 @@ edited it, and only CI caught it).
 
 Only checks that genuinely conflict use host-wide locks, held for one check at a time:
 Playwright CT uses `ct-<CT_PORT>` (default `ct-3100`) and the full Vitest fallback uses
-`vitest-full`. CT runs on different ports can proceed concurrently; Svelte and TypeScript
-checks do not lock. The default waits are 240 seconds for CT and 120 seconds for full
+`vitest-full`. CT runs on different ports can proceed concurrently — even within one
+worktree, since the port keys the component server, the lock, and the
+`playwright/.cache-<CT_PORT>` bundle cache; Svelte and TypeScript checks do not lock. The default waits are 240 seconds for CT and 120 seconds for full
 Vitest. `VERIFY_CHANGED_LOCK_TIMEOUT_MS` overrides either wait but remains capped at
 300000 ms, and the command never stops the process that owns a lock. Direct
 `pnpm run test:ct` runs hold the same `ct-<CT_PORT>` lock (`scripts/verification-lock.mjs`),
