@@ -4,6 +4,20 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.160.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.159.4...v2.160.0) (2026-09-16)
+
+
+### 🚀 Features
+
+* integrate hardened agent task progress surfaces ([#2074](https://github.com/intent-hq/cloudlands-fe/issues/2074)) ([8f962a1](https://github.com/intent-hq/cloudlands-fe/commit/8f962a1e4374f414925d76d76517b4ca845e4fcd))
+* render math in chat and workspace note previews ([#2253](https://github.com/intent-hq/cloudlands-fe/issues/2253)) ([8162b44](https://github.com/intent-hq/cloudlands-fe/commit/8162b442ebb9718a43ab21c7eb4c8f8719678cf4))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.65 ([#2512](https://github.com/intent-hq/cloudlands-fe/issues/2512)) ([b93ea20](https://github.com/intent-hq/cloudlands-fe/commit/b93ea20d61ec0feaf48b56e218bf3efeebaa5daa))
+* queue preview tunnel admission and recover capacity failures ([#2457](https://github.com/intent-hq/cloudlands-fe/issues/2457)) ([b5a76f4](https://github.com/intent-hq/cloudlands-fe/commit/b5a76f4253feea3740deb092136fae2e11d7bf31))
+
 ## [2.159.4](https://github.com/intent-hq/cloudlands-fe/compare/v2.159.3...v2.159.4) (2026-09-16)
 
 
