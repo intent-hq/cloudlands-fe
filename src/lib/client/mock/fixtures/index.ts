@@ -244,7 +244,7 @@ export const mockUserPreferences: UserPreferencesState = {
   showReasoningBlocks: false,
   chatAuroraEnabled: true,
   shellTransparencyEnabled: true,
-  reduceMotionOnBattery: true,
+  reduceMotionOnBattery: false,
   agentFontStyle: 'sans',
   noteFontStyle: 'sans',
   codeFontFamily: 'JetBrains Mono',

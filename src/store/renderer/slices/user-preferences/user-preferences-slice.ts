@@ -106,7 +106,7 @@ export const initialState: UserPreferencesState = {
   showReasoningBlocks: false,
   chatAuroraEnabled: true,
   shellTransparencyEnabled: true,
-  reduceMotionOnBattery: true,
+  reduceMotionOnBattery: false,
   ...fontSettingsInitialState,
   ...notificationSettingsInitialState,
   activityLogPresets: [],

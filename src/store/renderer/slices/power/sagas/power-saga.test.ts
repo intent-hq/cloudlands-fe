@@ -43,8 +43,15 @@ const settle = async () => {
 
 const hasRootAttribute = () => document.documentElement.hasAttribute(REDUCE_MOTION_ATTRIBUTE);
 
-function createHarness() {
-  let state = { power: powerInitialState, userPreferences: userPreferencesInitialState };
+function createHarness(options: { reduceMotionOnBattery?: boolean } = {}) {
+  let state = {
+    power: powerInitialState,
+    userPreferences: {
+      ...userPreferencesInitialState,
+      reduceMotionOnBattery:
+        options.reduceMotionOnBattery ?? userPreferencesInitialState.reduceMotionOnBattery,
+    },
+  };
   const channel = stdChannel();
   const listeners = new Set<() => void>();
   const dispatch = vi.fn((action: any) => {
@@ -96,9 +103,9 @@ describe('powerSaga', () => {
     await task.toPromise();
   });
 
-  it('sets data-reduce-motion when the battery source reports on-battery and clears it on AC', async () => {
+  it('sets data-reduce-motion when the battery source reports on-battery with the preference on and clears it on AC', async () => {
     mocks.read.mockResolvedValue(true);
-    const { task, getState } = createHarness();
+    const { task, getState } = createHarness({ reduceMotionOnBattery: true });
     await settle();
     expect(getState().power.onBattery).toBe(true);
     expect(hasRootAttribute()).toBe(true);
@@ -115,19 +122,21 @@ describe('powerSaga', () => {
     await task.toPromise();
   });
 
-  it('honors the preference: on battery with reduceMotionOnBattery off leaves the attribute absent', async () => {
+  it('leaves the attribute absent on battery with default preferences and applies it once the preference is turned on', async () => {
     mocks.read.mockResolvedValue(true);
-    const { dispatch, task } = createHarness();
+    const { dispatch, task, getState } = createHarness();
+    await settle();
+    expect(getState().power.onBattery).toBe(true);
+    expect(getState().userPreferences.reduceMotionOnBattery).toBe(false);
+    expect(hasRootAttribute()).toBe(false);
+
+    dispatch(setReduceMotionOnBattery(true));
     await settle();
     expect(hasRootAttribute()).toBe(true);
 
     dispatch(setReduceMotionOnBattery(false));
     await settle();
     expect(hasRootAttribute()).toBe(false);
-
-    dispatch(setReduceMotionOnBattery(true));
-    await settle();
-    expect(hasRootAttribute()).toBe(true);
     task.cancel();
     await task.toPromise();
   });
@@ -145,7 +154,7 @@ describe('powerSaga', () => {
 
   it('unsubscribes from the battery source and clears the attribute on cancellation', async () => {
     mocks.read.mockResolvedValue(true);
-    const { task } = createHarness();
+    const { task } = createHarness({ reduceMotionOnBattery: true });
     await settle();
     expect(mocks.listeners.size).toBe(1);
     expect(hasRootAttribute()).toBe(true);
