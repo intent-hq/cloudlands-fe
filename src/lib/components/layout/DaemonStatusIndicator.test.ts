@@ -2139,29 +2139,14 @@ describe('DaemonStatusIndicator', () => {
       });
 
       it('hides the daemon-global count rows on a guest window fed the collaborator projection (intentd #1934)', async () => {
-        // End to end: the exact guest-safe `system.status` projection goes through
-        // the real reducer chain and renders in a guest window (windowBackendId
-        // matches a guest session). Before the presence guards this showed
-        // "Agent slots /?" and an empty "WSS clients" row.
+        // End to end: the exact guest-safe `system.status` projection (typed
+        // literal in daemon-health.test-fixtures.ts, covered by `pnpm run check`)
+        // goes through the real reducer chain and renders in a guest window
+        // (windowBackendId matches a guest session). Before the presence guards
+        // this showed "Agent slots /?" and an empty "WSS clients" row.
         const s = await import('$store/renderer/slices/daemon-health/daemon-health-slice');
-        type WirePayload =
-          import('$store/renderer/slices/daemon-health/daemon-health-types').SystemStatusWirePayload;
-        const projected: WirePayload = {
-          running: true,
-          listenMode: 'both',
-          transports: ['uds', 'tcp'],
-          port: 5180,
-          version: '0.0.0-test',
-          buildCommit: '0123456789abcdef',
-          protocolVersion: 'test',
-          fingerprint: 'AB:CD',
-          hostname: 'studio.local',
-          host: {
-            os: 'linux',
-            arch: 'x86_64',
-            locality: 'remote',
-          },
-        };
+        const { collaboratorSystemStatusProjection: projected } =
+          await import('$store/renderer/slices/daemon-health/daemon-health.test-fixtures');
         const connected = s.daemonHealthReducer(
           s.initialState,
           s.connectionStatusChanged('connected', { mode: 'external-ws' }),
@@ -2186,7 +2171,7 @@ describe('DaemonStatusIndicator', () => {
         expect(screen.queryByText('Agent slots')).toBeNull();
         expect(screen.queryByText('WSS clients')).toBeNull();
         expect(screen.queryByText(/undefined|NaN/)).toBeNull();
-        expect(screen.getByText('0.0.0-test')).toBeTruthy();
+        expect(screen.getByText(projected.version!)).toBeTruthy();
       });
 
       it('names the host by its captured hostname in the secret-unavailable toast', async () => {

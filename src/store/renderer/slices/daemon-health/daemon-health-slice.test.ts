@@ -31,6 +31,7 @@ import {
   agentMemoryUsageSucceeded,
   agentMemoryUsageFailed,
 } from './daemon-health-slice';
+import { collaboratorSystemStatusProjection } from './daemon-health.test-fixtures';
 import type {
   AgentMemoryUsageWirePayload,
   BackendTransportInfo,
@@ -699,38 +700,29 @@ describe('daemonHealthReducer', () => {
     });
 
     it('keeps counts and telemetry absent for the collaborator projection (intentd #1934)', () => {
-      // Exactly the guest-safe key set a Collaborator caller receives — no
-      // clients/agents/maxAgents, no process/disk telemetry, no host.hasDisplay.
-      const payload: SystemStatusWirePayload = {
-        running: true,
-        listenMode: 'wss',
-        transports: ['wss'],
-        port: 7777,
-        version: '0.1.0',
-        buildCommit: '0123456789abcdef',
-        protocolVersion: '2.0',
-        fingerprint: 'abc123',
-        hostname: 'studio.local',
-        host: {
-          os: 'macos',
-          arch: 'aarch64',
-          locality: 'remote',
-        },
-      };
+      // Exactly the guest-safe key set a Collaborator caller receives — the
+      // typed literal lives in a check-covered module so a re-required wire
+      // field fails `pnpm run check`, not only this runtime test.
+      const payload = collaboratorSystemStatusProjection;
+      expect(payload).not.toHaveProperty('transports');
+      expect(payload).not.toHaveProperty('clients');
+      expect(payload).not.toHaveProperty('agents');
+      expect(payload).not.toHaveProperty('maxAgents');
+      expect(payload.host).not.toHaveProperty('hasDisplay');
       const state = { ...initialState, polling: true };
       const receivedAt = '2026-09-16T13:00:00.000Z';
       const next = daemonHealthReducer(state, systemStatusSuccess(payload, receivedAt, 0));
 
       expect(next.polling).toBe(false);
       expect(next.stats).toEqual({
-        listenMode: 'wss',
-        port: 7777,
-        version: '0.1.0',
-        buildCommit: '0123456789abcdef',
-        protocolVersion: '2.0',
-        hostname: 'studio.local',
-        os: 'macos',
-        arch: 'aarch64',
+        listenMode: payload.listenMode,
+        port: payload.port,
+        version: payload.version,
+        buildCommit: payload.buildCommit,
+        protocolVersion: payload.protocolVersion,
+        hostname: payload.hostname,
+        os: payload.host.os,
+        arch: payload.host.arch,
       });
       expect(next.stats?.clients).toBeUndefined();
       expect(next.stats?.agents).toBeUndefined();

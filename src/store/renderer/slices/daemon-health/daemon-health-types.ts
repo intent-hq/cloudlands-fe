@@ -36,19 +36,22 @@ export interface DaemonStatusCheckFailure {
  * New fields (maxAgents, version, uptimeSeconds) are optional for graceful
  * degradation when the daemon lacks them.
  *
- * A Collaborator caller receives the guest-safe projection (intentd #1934):
- * only `running`, `listenMode`, `transports`, `port`, `version`,
- * `buildCommit`, `protocolVersion`, `fingerprint`, `localIps`, `tcAddress`,
- * `hostname`, `prettyHostname` and `host.{os, arch, locality, deviceKind,
- * hardwareModel}`. Daemon-global counts (`clients`, `agents`, `maxAgents`),
- * process/disk telemetry and `host.hasDisplay` are administrator-only and
- * therefore optional here — consumers derive row visibility from field
- * presence, never from a guest flag.
+ * A Collaborator caller receives the guest-safe projection (intentd #1934,
+ * `control::collaborator_status_json`): only `running`, `listenMode`, `port`,
+ * `version`, `buildCommit`, `protocolVersion`, `fingerprint`, `localIps`,
+ * `tcAddress`, `hostname`, `prettyHostname` and `host.{os, arch, locality,
+ * deviceKind, hardwareModel}`. `transports`, daemon-global counts (`clients`,
+ * `agents`, `maxAgents`), process/disk telemetry and `host.hasDisplay` are
+ * administrator-only and therefore optional here — consumers derive row
+ * visibility from field presence, never from a guest flag. The exact
+ * projected key set is pinned as a typed literal in
+ * `daemon-health.test-fixtures.ts` (covered by `pnpm run check`).
  */
 export interface SystemStatusWirePayload {
   running: boolean;
   listenMode: string;
-  transports: string[];
+  /** Administrator-only: omitted from the collaborator projection. */
+  transports?: string[];
   port?: number | null;
   /** Administrator-only: omitted from the collaborator projection. */
   clients?: number;
