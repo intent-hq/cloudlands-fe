@@ -2,9 +2,20 @@
  * @vitest-environment jsdom
  *
  * Renderer invite-notice service: show → immediate ack + modal open,
- * acknowledgement invoke (exact payload, once), dismiss closes.
+ * acknowledgement invoke (exact payload, once), dismiss closes, and the
+ * bounded-logging rule (reason codes only; never the payload or reject value).
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const loggerMocks = vi.hoisted(() => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }));
+vi.mock('$shared/logger', () => ({
+  Logger: class MockLogger {
+    info = loggerMocks.info;
+    warn = loggerMocks.warn;
+    error = loggerMocks.error;
+  },
+}));
+
 import { acknowledgeInviteNotice, installInviteNoticeService } from '../invite-notice-service';
 import { INVITE_NOTICE_CHANNELS } from '$shared/ipc/channels';
 import type { InviteNoticeShowPayload } from '$shared/ipc/invite-notice';
@@ -34,6 +45,8 @@ describe('invite-notice-service', () => {
   beforeEach(() => {
     invoke = (window as any).electronAPI.invoke;
     invoke.mockClear();
+    loggerMocks.warn.mockClear();
+    loggerMocks.error.mockClear();
     // Drain handlers registered by previous installs (test-setup persists them).
     getHandlers(INVITE_NOTICE_CHANNELS.SHOW).length = 0;
     getHandlers(INVITE_NOTICE_CHANNELS.DISMISS).length = 0;
@@ -88,12 +101,49 @@ describe('invite-notice-service', () => {
     expect(onDismiss).not.toHaveBeenCalled();
   });
 
-  it('ignores malformed show payloads without acking', () => {
-    emit(INVITE_NOTICE_CHANNELS.SHOW, { nope: true });
+  it('ignores malformed show payloads without acking and logs only a bounded code', () => {
+    const leak = 'super-secret-junk';
+    emit(INVITE_NOTICE_CHANNELS.SHOW, { nope: true, leak });
     emit(INVITE_NOTICE_CHANNELS.SHOW, undefined);
 
     expect(invoke).not.toHaveBeenCalled();
     expect(onShow).not.toHaveBeenCalled();
+    expect(loggerMocks.warn).toHaveBeenCalledTimes(2);
+    for (const call of loggerMocks.warn.mock.calls) {
+      expect(call[1]).toEqual({ code: 'malformed-payload' });
+      expect(JSON.stringify(call)).not.toContain(leak);
+    }
+  });
+
+  it('an ack reject logs only a bounded code plus requestId and kind', async () => {
+    const rejectText = 'raw-ipc-failure-text';
+    invoke.mockRejectedValueOnce(rejectText);
+
+    emit(INVITE_NOTICE_CHANNELS.SHOW, SHOW_PAYLOAD);
+    await vi.waitFor(() => expect(loggerMocks.warn).toHaveBeenCalledOnce());
+
+    expect(loggerMocks.warn.mock.calls[0][1]).toEqual({
+      code: 'ack-rejected',
+      requestId: 'req-1',
+      kind: 'failed',
+    });
+    expect(JSON.stringify(loggerMocks.warn.mock.calls)).not.toContain(rejectText);
+    expect(onShow).toHaveBeenCalledExactlyOnceWith(SHOW_PAYLOAD);
+  });
+
+  it('a response reject logs only a bounded code plus requestId', async () => {
+    emit(INVITE_NOTICE_CHANNELS.SHOW, SHOW_PAYLOAD);
+    const rejectText = 'raw-response-failure-text';
+    invoke.mockRejectedValueOnce(new Error(rejectText));
+
+    acknowledgeInviteNotice();
+    await vi.waitFor(() => expect(loggerMocks.error).toHaveBeenCalledOnce());
+
+    expect(loggerMocks.error.mock.calls[0][1]).toEqual({
+      code: 'response-rejected',
+      requestId: 'req-1',
+    });
+    expect(JSON.stringify(loggerMocks.error.mock.calls)).not.toContain(rejectText);
   });
 
   it('a later show supersedes the previous request', () => {
