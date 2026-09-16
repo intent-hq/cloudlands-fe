@@ -82,6 +82,30 @@ vi.mock('../../../../main/state', () => ({
   getMainWindow: () => null,
 }));
 
+/**
+ * Renderer consent seam. `fakeConsent(null)` (the default) is the
+ * unavailable-renderer path — the flow falls back to the native device-code
+ * box, which the pre-existing tests below exercise.
+ */
+const showInviteConsent = vi.fn();
+vi.mock('../../../../main/invite-consent', () => ({
+  get showInviteConsent() {
+    return showInviteConsent;
+  },
+}));
+
+function fakeConsent(decision: 'open' | 'cancel' | null) {
+  let cancelWaiting!: () => void;
+  const prompt = {
+    decision: Promise.resolve(decision),
+    cancelledWhileWaiting: new Promise<void>((resolve) => {
+      cancelWaiting = resolve;
+    }),
+    dismiss: vi.fn(),
+  };
+  return { prompt, cancelWaiting };
+}
+
 const logLines: string[] = [];
 vi.mock('$shared/logger', () => ({
   Logger: class {
@@ -138,6 +162,7 @@ beforeEach(() => {
   logLines.length = 0;
   appIsReady.mockReturnValue(true);
   showMessageBox.mockResolvedValue({ response: 0 });
+  openExternal.mockResolvedValue(undefined);
   openInviteConnection.mockResolvedValue({
     host: '192.168.1.10',
     via: 'direct',
@@ -149,6 +174,7 @@ beforeEach(() => {
   redeemWait.mockResolvedValue(CREDENTIAL);
   guestAdd.mockResolvedValue({ id: 'guest-id', tokenEncrypted: true });
   openBackendWindow.mockResolvedValue({ id: 'guest-id' });
+  showInviteConsent.mockImplementation(() => fakeConsent(null).prompt);
 });
 
 describe('handleInviteDeepLink', () => {
@@ -467,6 +493,165 @@ describe('handleInviteDeepLink', () => {
     await handleInviteDeepLink(LINK);
     await handleInviteDeepLink(LINK);
     expect(guestAdd).toHaveBeenCalledTimes(2);
+  });
+});
+
+// The in-app consent modal (spec "In-app invite consent dialog"): the device
+// code is shown in the renderer; the native box is only the no-window/no-ack
+// fallback. The secret and the minted token never enter the show payload.
+describe('handleInviteDeepLink — renderer consent modal', () => {
+  it('renderer happy path: show → open → grant → dismiss joined, no native box', async () => {
+    const { prompt } = fakeConsent('open');
+    showInviteConsent.mockReturnValue(prompt);
+
+    await handleInviteDeepLink(`${LINK}&tc=ts.example:443`);
+
+    expect(showInviteConsent).toHaveBeenCalledTimes(1);
+    const payload = showInviteConsent.mock.calls[0][0];
+    expect(payload).toEqual({
+      requestId: expect.any(String),
+      userCode: START.userCode,
+      verificationUri: START.verificationUri,
+      workspaceTitle: START.workspaceTitle,
+      hostLabel: '192.168.1.10',
+      expiresInMs: START.expiresIn * 1000,
+    });
+    expect(JSON.stringify(payload)).not.toContain(SECRET);
+    expect(clipboardWriteText).toHaveBeenCalledWith(START.userCode);
+    expect(openExternal).toHaveBeenCalledWith(START.verificationUri);
+    expect(guestAdd).toHaveBeenCalledWith(expect.objectContaining({ token: TOKEN }));
+    expect(prompt.dismiss).toHaveBeenCalledTimes(1);
+    expect(prompt.dismiss).toHaveBeenCalledWith('joined');
+    expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
+    expect(showMessageBox).not.toHaveBeenCalled();
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it('dismisses joined before the plaintext warning and the window open', async () => {
+    const { prompt } = fakeConsent('open');
+    showInviteConsent.mockReturnValue(prompt);
+    guestAdd.mockResolvedValue({ id: 'guest-id', tokenEncrypted: false });
+    const order: string[] = [];
+    prompt.dismiss.mockImplementation((outcome: string) => order.push(`dismiss:${outcome}`));
+    showMessageBox.mockImplementation(async () => {
+      order.push('warning');
+      return { response: 0 };
+    });
+    openBackendWindow.mockImplementation(async () => {
+      order.push('window');
+      return { id: 'guest-id' };
+    });
+    await handleInviteDeepLink(LINK);
+    expect(order).toEqual(['dismiss:joined', 'warning', 'window']);
+  });
+
+  it('cancel before open: dismiss cancelled, nothing opened or stored, connection closed', async () => {
+    const { prompt } = fakeConsent('cancel');
+    showInviteConsent.mockReturnValue(prompt);
+    redeemWait.mockReturnValue(new Promise(() => {}));
+
+    await handleInviteDeepLink(LINK);
+
+    expect(prompt.dismiss).toHaveBeenCalledTimes(1);
+    expect(prompt.dismiss).toHaveBeenCalledWith('cancelled');
+    expect(openExternal).not.toHaveBeenCalled();
+    expect(guestAdd).not.toHaveBeenCalled();
+    expect(openBackendWindow).not.toHaveBeenCalled();
+    expect(showMessageBox).not.toHaveBeenCalled();
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it('cancel during the grant wait: aborts without storing a credential or opening a window', async () => {
+    const { prompt, cancelWaiting } = fakeConsent('open');
+    showInviteConsent.mockReturnValue(prompt);
+    redeemWait.mockReturnValue(new Promise(() => {}));
+
+    const pending = handleInviteDeepLink(LINK);
+    await vi.waitFor(() => expect(openExternal).toHaveBeenCalledTimes(1));
+    expect(close).not.toHaveBeenCalled();
+    cancelWaiting();
+    await pending;
+
+    expect(prompt.dismiss).toHaveBeenCalledTimes(1);
+    expect(prompt.dismiss).toHaveBeenCalledWith('cancelled');
+    expect(guestAdd).not.toHaveBeenCalled();
+    expect(openBackendWindow).not.toHaveBeenCalled();
+    expect(showMessageBox).not.toHaveBeenCalled();
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it('a grant that only arrives after cancel is dropped (no late credential)', async () => {
+    const { prompt, cancelWaiting } = fakeConsent('open');
+    showInviteConsent.mockReturnValue(prompt);
+    let grantCredential!: (value: typeof CREDENTIAL) => void;
+    redeemWait.mockReturnValue(new Promise((resolve) => (grantCredential = resolve)));
+
+    const pending = handleInviteDeepLink(LINK);
+    await vi.waitFor(() => expect(openExternal).toHaveBeenCalledTimes(1));
+    cancelWaiting();
+    await pending;
+    grantCredential(CREDENTIAL);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(guestAdd).not.toHaveBeenCalled();
+    expect(openBackendWindow).not.toHaveBeenCalled();
+  });
+
+  it('no renderer (null decision): the native device-code box is the fallback and the join completes', async () => {
+    showInviteConsent.mockReturnValue(fakeConsent(null).prompt);
+
+    await handleInviteDeepLink(LINK);
+
+    expect(showInviteConsent).toHaveBeenCalledTimes(1);
+    expect(showMessageBox).toHaveBeenCalledTimes(1);
+    expect(showMessageBox.mock.calls[0][0]).toMatchObject({
+      type: 'info',
+      message: expect.stringContaining(START.userCode),
+    });
+    expect(openExternal).toHaveBeenCalledWith(START.verificationUri);
+    expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
+  });
+
+  it('launch failure after open: dismiss failed, then the failure box; nothing stored', async () => {
+    const { prompt } = fakeConsent('open');
+    showInviteConsent.mockReturnValue(prompt);
+    openExternal.mockRejectedValue(new Error('no browser'));
+    const order: string[] = [];
+    prompt.dismiss.mockImplementation((outcome: string) => order.push(`dismiss:${outcome}`));
+    showMessageBox.mockImplementation(async () => {
+      order.push('failure-box');
+      return { response: 0 };
+    });
+
+    await handleInviteDeepLink(LINK);
+
+    expect(order).toEqual(['dismiss:failed', 'failure-box']);
+    expect(showMessageBox.mock.calls[0][0]).toMatchObject({ type: 'error' });
+    expect(guestAdd).not.toHaveBeenCalled();
+    expect(openBackendWindow).not.toHaveBeenCalled();
+    expect(logLines.join('\n')).toContain('verification-launch-failed');
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it('grant refusal during the wait: dismiss failed before the failure box', async () => {
+    const { prompt } = fakeConsent('open');
+    showInviteConsent.mockReturnValue(prompt);
+    redeemWait.mockRejectedValue(new InviteRpcError(-32002, { code: 'invite-flow-denied' }));
+
+    await handleInviteDeepLink(LINK);
+
+    expect(prompt.dismiss).toHaveBeenCalledTimes(1);
+    expect(prompt.dismiss).toHaveBeenCalledWith('failed');
+    expect(showMessageBox).toHaveBeenCalledTimes(1);
+    expect(showMessageBox.mock.calls[0][0]).toMatchObject({ type: 'error' });
+    expect(guestAdd).not.toHaveBeenCalled();
+  });
+
+  it('a refused verification URL never reaches the modal', async () => {
+    redeemStart.mockResolvedValue({ ...START, verificationUri: 'http://github.com/login/device' });
+    await handleInviteDeepLink(LINK);
+    expect(showInviteConsent).not.toHaveBeenCalled();
+    expect(showMessageBox.mock.calls[0][0]).toMatchObject({ type: 'error' });
   });
 });
 
