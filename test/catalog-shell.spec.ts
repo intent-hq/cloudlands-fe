@@ -44,6 +44,41 @@ const catalogSlugs = [
 
 test.use(existsSync(systemChrome) ? { channel: 'chrome' } : {});
 
+/**
+ * Shared guard for every catalog route: the page must render without runtime errors
+ * and without a leaked desktop bridge. Set up before navigation, asserted at teardown.
+ */
+const catalogTest = test.extend<{ catalogRuntimeGuard: void }>({
+  catalogRuntimeGuard: [
+    async ({ page }, use) => {
+      const consoleErrors: string[] = [];
+      const pageErrors: string[] = [];
+      page.on('console', (message: ConsoleMessage) => {
+        if (message.type() === 'error') consoleErrors.push(message.text());
+      });
+      page.on('pageerror', (error) => pageErrors.push(error.message));
+      await page.addInitScript(() => {
+        delete (window as Window & { electronAPI?: unknown }).electronAPI;
+      });
+      await use();
+      expect(await readDesktopBridge(page)).toEqual({ type: 'undefined', keys: [] });
+      expect(consoleErrors).toEqual([]);
+      expect(pageErrors).toEqual([]);
+    },
+    { auto: true },
+  ],
+});
+
+async function readDesktopBridge(page: Page) {
+  return page.evaluate(() => {
+    const value = (window as Window & { electronAPI?: unknown }).electronAPI;
+    return {
+      type: typeof value,
+      keys: value && typeof value === 'object' ? Object.keys(value) : [],
+    };
+  });
+}
+
 let server: ViteDevServer;
 let baseUrl: string;
 
@@ -81,46 +116,28 @@ for (const viewport of [
   { name: 'desktop', width: 1440, height: 1000 },
   { name: 'compact', width: 390, height: 844 },
 ] as const) {
-  test(`${viewport.name} renders every canonical preview without a desktop bridge`, async ({
-    page,
-  }) => {
-    test.setTimeout(120_000);
-    const consoleErrors: string[] = [];
-    const pageErrors: string[] = [];
-    page.on('console', (message: ConsoleMessage) => {
-      if (message.type() === 'error') consoleErrors.push(message.text());
-    });
-    page.on('pageerror', (error) => pageErrors.push(error.message));
-    await page.addInitScript(() => {
-      delete (window as Window & { electronAPI?: unknown }).electronAPI;
-    });
-    await page.setViewportSize(viewport);
-    await page.goto(`${baseUrl}sandbox`, { waitUntil: 'networkidle' });
-    const faviconUrl = await page.locator('link[rel="icon"]').evaluate((link) => {
-      return (link as HTMLLinkElement).href;
-    });
-    expect((await page.request.get(faviconUrl)).status()).toBe(200);
-    await expect(page.getByTestId('catalog-shell')).toBeVisible();
+  catalogTest(
+    `${viewport.name} renders every canonical preview without a desktop bridge`,
+    async ({ page }) => {
+      test.setTimeout(120_000);
+      await page.setViewportSize(viewport);
+      await page.goto(`${baseUrl}sandbox`, { waitUntil: 'networkidle' });
+      const faviconUrl = await page.locator('link[rel="icon"]').evaluate((link) => {
+        return (link as HTMLLinkElement).href;
+      });
+      expect((await page.request.get(faviconUrl)).status()).toBe(200);
+      await expect(page.getByTestId('catalog-shell')).toBeVisible();
 
-    await assertIntroduction(page);
-    await captureIntroductionArtifacts(page, viewport.name);
+      await assertIntroduction(page);
+      await captureIntroductionArtifacts(page, viewport.name);
 
-    if (viewport.name === 'desktop') await captureKeyboardFocusEvidence(page);
+      if (viewport.name === 'desktop') await captureKeyboardFocusEvidence(page);
 
-    const bridge = await page.evaluate(() => {
-      const value = (window as Window & { electronAPI?: unknown }).electronAPI;
-      return {
-        type: typeof value,
-        keys: value && typeof value === 'object' ? Object.keys(value) : [],
-      };
-    });
-    expect(bridge).toEqual({ type: 'undefined', keys: [] });
-    expect(consoleErrors).toEqual([]);
-    expect(pageErrors).toEqual([]);
-    expect((await page.screenshot({ fullPage: true })).byteLength).toBeGreaterThan(10_000);
-  });
+      expect((await page.screenshot({ fullPage: true })).byteLength).toBeGreaterThan(10_000);
+    },
+  );
   for (const slug of catalogSlugs) {
-    test(`${viewport.name} exercises ${slug} on its component route`, async ({ page }) => {
+    catalogTest(`${viewport.name} exercises ${slug} on its component route`, async ({ page }) => {
       test.setTimeout(120_000);
       await page.setViewportSize(viewport);
 
@@ -305,25 +322,61 @@ async function captureKeyboardFocusEvidence(page: Page) {
   // The later Wave 11 focus port replaced the legacy border/shadow ring with an outline.
   for (const reduced of [false, true]) {
     await setReducedMotion(page, reduced);
+    await control.blur();
+    await expect(control).not.toBeFocused();
+    const resting = await readFocusIndicator(control);
     await control.focus();
     await page.keyboard.press('Tab');
     await page.keyboard.press('Shift+Tab');
     await expect(control).toBeFocused();
-    const indicator = await control.evaluate((element) => {
-      const style = getComputedStyle(element);
-      return {
-        visible: element.matches(':focus-visible'),
-        width: parseFloat(style.outlineWidth),
-        style: style.outlineStyle,
-      };
-    });
+    const indicator = await readFocusIndicator(control);
     expect(indicator.visible).toBe(true);
     expect(indicator.width).toBeGreaterThanOrEqual(1);
     expect(indicator.style).toBe('solid');
+    // WCAG 2.4.11/1.4.11: the indicator must be a visible change with ≥3:1 contrast
+    // against the surface it sits on (the outline is offset outside the control).
+    expect(indicator.color).not.toBe(resting.color);
+    expect(colorAlpha(indicator.color)).toBeGreaterThan(0);
+    expect(contrastRatio(indicator.adjacentBackground, indicator.color)).toBeGreaterThanOrEqual(3);
     await page.screenshot({
       path: path.join(artifactDir, `keyboard-focus-button-${reduced ? 'reduced' : 'full'}.png`),
     });
   }
+}
+
+/** Outline tuple plus the nearest painted background the offset outline sits on. */
+async function readFocusIndicator(control: Locator) {
+  return control.evaluate((element) => {
+    const alpha = (color: string) => {
+      const channels = color.match(/[0-9.]+/g) ?? [];
+      return channels.length >= 4 ? Number(channels[3]) : 1;
+    };
+    const style = getComputedStyle(element);
+    let adjacentBackground = 'rgb(0, 0, 0)';
+    for (
+      let node = parseFloat(style.outlineOffset) > 0 ? element.parentElement : element;
+      node;
+      node = node.parentElement
+    ) {
+      const background = getComputedStyle(node).backgroundColor;
+      if (alpha(background) > 0) {
+        adjacentBackground = background;
+        break;
+      }
+    }
+    return {
+      visible: element.matches(':focus-visible'),
+      width: parseFloat(style.outlineWidth),
+      style: style.outlineStyle,
+      color: style.outlineColor,
+      adjacentBackground,
+    };
+  });
+}
+
+function colorAlpha(color: string): number {
+  const channels = color.match(/[0-9.]+/g) ?? [];
+  return channels.length >= 4 ? Number(channels[3]) : 1;
 }
 
 function pngDimensions(png: Buffer) {
