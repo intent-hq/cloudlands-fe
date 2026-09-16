@@ -3806,6 +3806,7 @@
   "inviteConsent_modal_joining_label": "Connexion en cours…",
   "inviteConsent_modal_joinButton_label": "Rejoindre",
   "inviteConsent_modal_dismiss_ariaLabel": "Fermer la boîte de dialogue d'invitation",
+  "inviteNotice_modal_context": "« {workspaceTitle} » sur {hostLabel}",
   "modals_message_close_ariaLabel": "Fermer la boîte de dialogue de message",
   "modals_newSpace_title": "Nouvel espace de travail",
   "modals_pullConflict_title": "Échec du pull",

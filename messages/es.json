@@ -3806,6 +3806,7 @@
   "inviteConsent_modal_joining_label": "Uniéndose…",
   "inviteConsent_modal_joinButton_label": "Unirse",
   "inviteConsent_modal_dismiss_ariaLabel": "Cerrar el diálogo de invitación",
+  "inviteNotice_modal_context": "«{workspaceTitle}» en {hostLabel}",
   "modals_message_close_ariaLabel": "Cerrar diálogo de mensaje",
   "modals_newSpace_title": "Nuevo espacio de trabajo",
   "modals_pullConflict_title": "Error en el pull",

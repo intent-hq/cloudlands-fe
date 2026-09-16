@@ -3806,6 +3806,7 @@
   "inviteConsent_modal_joining_label": "正在加入…",
   "inviteConsent_modal_joinButton_label": "加入",
   "inviteConsent_modal_dismiss_ariaLabel": "關閉邀請對話方塊",
+  "inviteNotice_modal_context": "{hostLabel} 上的「{workspaceTitle}」",
   "modals_message_close_ariaLabel": "關閉訊息對話方塊",
   "modals_newSpace_title": "新工作區",
   "modals_pullConflict_title": "拉取失敗",
