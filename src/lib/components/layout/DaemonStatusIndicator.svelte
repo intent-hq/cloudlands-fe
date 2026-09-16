@@ -72,7 +72,11 @@
   // Re-exported for existing importers; the implementation lives in the
   // dependency-light util so non-layout consumers (e.g. Settings → Devices)
   // can share it without importing this component.
-  import { formatConnectionLabel } from '$lib/utils/connection-label';
+  import {
+    formatConnectionLabel,
+    formatGuestSessionAddress,
+    formatGuestSessionLabel,
+  } from '$lib/utils/connection-label';
   export { formatConnectionLabel };
 </script>
 
@@ -470,7 +474,11 @@
       if (result.status === 'secret-unavailable') {
         const guest = $guestSessions$.find((session) => session.id === id);
         if (guest) {
-          toast.error(m.layout_daemonStatus_guestSecretUnavailable_error({ label: guest.label }));
+          toast.error(
+            m.layout_daemonStatus_guestSecretUnavailable_error({
+              label: formatGuestSessionLabel(guest),
+            }),
+          );
           void navigateToSettings({ tab: 'guest-sessions' });
           return;
         }
@@ -1041,12 +1049,22 @@
             {@const isCurrent = session.id === $currentConnectionId$}
             {@const open = $guestOpenIds$.includes(session.id)}
             {@const connected = open && $guestConnectedIds$.includes(session.id)}
+            {@const guestAddress = formatGuestSessionAddress(session)}
             <Menu.Item
               class="w-full cursor-pointer text-xs px-2 py-1.5"
               onSelect={() => handleOpenConnection(session.id)}
             >
               <span class="text-foreground shrink-0" aria-hidden="true"><Fa icon={faUsers} /></span>
-              <span class="min-w-0 flex-1 truncate">{session.label}</span>
+              <span class="min-w-0 flex-1 truncate">
+                {formatGuestSessionLabel(session)}
+                <!-- Mirrors the remote-connection `hostname (host:port)` shape:
+                     the dialled tc address / host stays visible once the
+                     captured machine name takes over as the primary label. -->
+                {#if guestAddress !== null}
+                  <span class="text-subtle" data-guest-address={guestAddress}>({guestAddress})</span
+                  >
+                {/if}
+              </span>
               <span class="flex items-center gap-1.5 shrink-0">
                 <!-- Status only for a host with a window (pooled client); a
                      joined host that was never opened has no status. -->
