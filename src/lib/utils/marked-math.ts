@@ -35,7 +35,7 @@ function escapeText(value: string): string {
 function renderMath(token: MathToken, enabled: boolean): string {
   if (!enabled || token.literalOnly || token.text.length > MAX_MATH_SOURCE_LENGTH) {
     const literal = escapeText(token.source);
-    return token.displayMode ? `<p>${literal}</p>\n` : literal;
+    return token.displayMode ? `<p>${literal.replace(/\n/g, '<br>')}</p>\n` : literal;
   }
 
   try {
@@ -126,9 +126,63 @@ function displayToken(src: string): MathToken | undefined {
   };
 }
 
+function inlineToken(src: string): MathToken | undefined {
+  return misplacedDisplayToken(src) ?? inlineDollarToken(src) ?? inlineParenthesisToken(src);
+}
+
+/** Protect original TeX before HTML-like text is escaped, using the parser's token rules. */
+export function protectMathSource(content: string, protect: (source: string) => string): string {
+  const candidates = /\\.|\$/g;
+  const parts: string[] = [];
+  let copiedThrough = 0;
+  let lineEnd = -1;
+  let blockStart = 0;
+  let candidate: RegExpExecArray | null;
+  while ((candidate = candidates.exec(content))) {
+    const start = candidate.index;
+    const src = content.slice(start);
+    if (start > lineEnd) {
+      const lineStart = content.lastIndexOf('\n', start - 1) + 1;
+      const newline = content.indexOf('\n', start);
+      lineEnd = newline < 0 ? content.length : newline;
+      // Account for Markdown containers that the block lexer removes before
+      // invoking displayToken. Keep those prefixes in the protected raw source.
+      const prefix =
+        /^(?: {0,3}>[ \t]?)*(?: {0,3}(?:[-+*]|\d+[.)])[ \t]+)? {0,3}/.exec(
+          content.slice(lineStart),
+        )?.[0] ?? '';
+      blockStart = lineStart + prefix.length;
+    }
+    const token = (start === blockStart ? displayToken(src) : undefined) ?? inlineToken(src);
+    if (!token) continue;
+    parts.push(content.slice(copiedThrough, start), protect(token.raw));
+    copiedThrough = start + token.raw.length;
+    candidates.lastIndex = copiedThrough;
+  }
+  parts.push(content.slice(copiedThrough));
+  return parts.join('');
+}
+
 export function addMathSupport(markedInstance: Marked, renderEnabled: boolean): void {
   markedInstance.use({
     extensions: [
+      {
+        name: 'mathHtmlParagraph',
+        level: 'block',
+        tokenizer(src) {
+          // Marked otherwise treats a leading comment or inline tag as a raw HTML
+          // block and never visits the math tokens, leaving their source as HTML.
+          if (!/^(?: {0,3})(?:<!--|<br\s*\/?>|<\/?(?:sub|sup)>)/i.test(src)) return;
+          const raw = /^(?:[^\n]+(?:\n|$))+/.exec(src)?.[0];
+          if (!raw) return;
+          const tokens = this.lexer.inlineTokens(raw.trimEnd());
+          if (!tokens.some((token) => token.type === 'mathInline')) return;
+          return { type: 'mathHtmlParagraph', raw, tokens };
+        },
+        renderer(token) {
+          return `<p>${this.parser.parseInline(token.tokens ?? [])}</p>\n`;
+        },
+      },
       {
         name: 'mathDisplay',
         level: 'block',
@@ -140,11 +194,7 @@ export function addMathSupport(markedInstance: Marked, renderEnabled: boolean): 
         name: 'mathInline',
         level: 'inline',
         start: (src) => src.search(/\$|\\[([]/),
-        tokenizer(src) {
-          return (
-            misplacedDisplayToken(src) ?? inlineDollarToken(src) ?? inlineParenthesisToken(src)
-          );
-        },
+        tokenizer: inlineToken,
         renderer: (token) => renderMath(token as MathToken, renderEnabled),
       },
     ],

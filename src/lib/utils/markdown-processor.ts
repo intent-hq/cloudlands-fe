@@ -15,7 +15,7 @@ import { NotesPrimitivesSerializer } from './notes-primitives-serializer';
 import type { MarkdownWorkerResponse } from './markdown-worker';
 import { decodeDiffContent } from './diff-patch-utils';
 import { parseFilePathLineSuffix } from '$shared/utils/link-helpers';
-import { MAX_MATH_SOURCE_LENGTH, renderKatexToString } from './marked-math';
+import { MAX_MATH_SOURCE_LENGTH, protectMathSource, renderKatexToString } from './marked-math';
 
 const logger = new Logger('MarkdownProcessor');
 const primitivesSerializer = new NotesPrimitivesSerializer();
@@ -268,24 +268,37 @@ const ANCHOR_COMMENT_REGEX = /<!--\s*anchor:([^:]+):([^-]+)\s*-->/g;
  */
 function escapeHtmlTags(content: string): string {
   // Step 1: Extract code blocks to preserve their content
-  const codeBlocks: string[] = [];
+  // Choose a namespace absent from the input: user text cannot forge a reference,
+  // and restoring a protected source cannot introduce another placeholder.
+  let prefix = '__MARKDOWN_SOURCE_';
+  while (content.includes(prefix)) prefix += '_';
+  const protectedSources: string[] = [];
+  const protect = (source: string) => {
+    const index = protectedSources.push(source) - 1;
+    return `${prefix}${index}__`;
+  };
+  const restore = (source: string) =>
+    source.replace(
+      new RegExp(`${prefix}(\\d+)__`, 'g'),
+      (_match, index) => protectedSources[parseInt(index, 10)],
+    );
   let processedContent = content;
 
   // Extract fenced code blocks first (they can contain backticks)
   // Match: ```lang\ncode\n``` or ```\ncode\n```
   processedContent = processedContent.replace(/```[\s\S]*?```/g, (match) => {
-    const index = codeBlocks.length;
-    codeBlocks.push(match);
-    return `__CODE_BLOCK_${index}__`;
+    return protect(match);
   });
 
   // Extract inline code (single backticks)
   // Match: `code` but not `` (empty)
   processedContent = processedContent.replace(/`([^`]+)`/g, (match) => {
-    const index = codeBlocks.length;
-    codeBlocks.push(match);
-    return `__CODE_BLOCK_${index}__`;
+    return protect(match);
   });
+
+  // Math must reach its tokenizer byte-for-byte in both literal and rendered modes.
+  // Keep placeholders until tag escaping finishes, including tags spanning formulas.
+  processedContent = protectMathSource(processedContent, (source) => protect(restore(source)));
 
   // Step 2: Escape HTML tags in the remaining text
   // Match potential HTML tags: <tagname>, </tagname>, <tagname />, <tagname attr="value">
@@ -304,10 +317,9 @@ function escapeHtmlTags(content: string): string {
     },
   );
 
-  // Step 3: Restore code blocks
-  processedContent = processedContent.replace(/__CODE_BLOCK_(\d+)__/g, (_match, index) => {
-    return codeBlocks[parseInt(index, 10)];
-  });
+  // Step 3: Restore code and TeX before parsing; neither markers nor decoded
+  // entities cross the parser/worker boundary.
+  processedContent = restore(processedContent);
 
   return processedContent;
 }
@@ -1218,6 +1230,8 @@ export function processHTMLToMarkdown(
           result += `**${processInlineContent(childEl)}**`;
         } else if (childEl.tagName === 'EM' || childEl.tagName === 'I') {
           result += `*${processInlineContent(childEl)}*`;
+        } else if (childEl.tagName === 'BR') {
+          result += '\n';
         } else if (childEl.tagName === 'CODE') {
           result += `\`${childEl.textContent || ''}\``;
         } else if (mathSource) {

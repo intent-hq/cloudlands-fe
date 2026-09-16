@@ -10,6 +10,7 @@ import {
   clearMarkdownCache,
   processHTMLToMarkdown,
   processMarkdownToHTML,
+  processMarkdownForDisplay,
 } from './markdown-processor';
 import { processMarkdownWorkerRequest } from './markdown-worker';
 
@@ -20,6 +21,77 @@ function containerFor(html: string): HTMLDivElement {
 }
 
 describe('markdown math rendering', () => {
+  it.each([false, true])('preserves review inequalities with renderMath=%s', async (renderMath) => {
+    const markdown = '$a<b$ and $c>d$';
+    const html = await processMarkdownToHTML(markdown, { renderMath });
+    const container = containerFor(html);
+    if (renderMath) {
+      expect
+        .soft(Array.from(container.querySelectorAll('annotation'), (node) => node.textContent))
+        .toEqual(['a<b', 'c>d']);
+      expect.soft(container.querySelector('.katex-error')).toBeNull();
+    } else {
+      expect.soft(container.textContent?.trim()).toBe(markdown);
+    }
+    expect(processHTMLToMarkdown(html)).toBe(markdown);
+  });
+
+  it.each([
+    '$a<b>c$',
+    String.raw`\(a<b\) and \(c>d\)`,
+    '$$a<b>c$$',
+    '$$\na<b>c\n$$',
+    String.raw`\[
+a<b>c
+\]`,
+    String.raw`$\text{<tag attr="quoted"> & &lt; &#60; </tag>}$`,
+    '$a<`b`>c$',
+    '$a&lt;b$ and $c&gt;d$',
+  ])('preserves original special characters in %s', async (markdown) => {
+    for (const renderMath of [false, true]) {
+      const html = await processMarkdownToHTML(markdown, { renderMath, skipIfHTML: false });
+      expect(processHTMLToMarkdown(html)).toBe(markdown);
+      expect(containerFor(html).querySelector('tag, script, img, [onerror]')).toBeNull();
+    }
+    expect(processHTMLToMarkdown(await processMarkdownForDisplay(markdown))).toBe(markdown);
+  });
+
+  it('cannot forge protected sources or leak nested code placeholders', async () => {
+    const markdown =
+      'x__CODE_BLOCK_0__y x__MARKDOWN_SOURCE_0__y x__MARKDOWN_SOURCE__1__y ' +
+      '`<img src=x onerror=alert(1)>` $a<`b`>c$';
+    const html = await processMarkdownToHTML(markdown, { renderMath: true, skipIfHTML: false });
+    expect(processHTMLToMarkdown(html)).toBe(markdown);
+    expect(containerFor(html).querySelector('img')).toBeNull();
+  });
+
+  it.each([false, true])(
+    'retains adjacent HTML policy with math enabled=%s',
+    async (renderMath) => {
+      const source = '$a<b$ and $c>d$ <img src=x onerror=alert(1)> <sub>2</sub><sup>3</sup><br>';
+      const container = containerFor(
+        await processMarkdownToHTML(source, { renderMath, skipIfHTML: false }),
+      );
+      expect(container.querySelector('img, script, [onerror]')).toBeNull();
+      expect(container.textContent).toContain('<img src=x onerror=alert(1)>');
+      expect(container.querySelector('sub')?.textContent).toBe('2');
+      expect(container.querySelector('sup')?.textContent).toBe('3');
+      expect(container.querySelector('br')).toBeTruthy();
+    },
+  );
+
+  it.each(['> $$\n> a<b>c\n> $$', '- $$\n  a<b>c\n  $$'])(
+    'preserves display TeX recognized inside a Markdown container: %s',
+    async (source) => {
+      const html = await processMarkdownToHTML(source, { renderMath: true });
+      const container = containerFor(html);
+      expect(container.querySelector('annotation')?.textContent?.trim()).toBe('a<b>c');
+      expect(container.querySelector('[data-math-source]')?.getAttribute('data-math-source')).toBe(
+        '$$\na<b>c\n$$',
+      );
+    },
+  );
+
   it.each([
     ['$x^2$', false],
     ['$2x$', false],

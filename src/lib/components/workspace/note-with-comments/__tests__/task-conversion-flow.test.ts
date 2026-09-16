@@ -1285,6 +1285,67 @@ describe('NoteWithComments task conversion regression', () => {
     expect(mockMaybeCreateCommentManagerV2).not.toHaveBeenCalled();
   });
 
+  it.each([
+    '$a<b$ and $c>d$',
+    '$a<b>c$',
+    String.raw`\(a<b\) and \(c>d\)`,
+    '$$\na<b>c\n$$',
+    String.raw`\[
+a<b>c
+\]`,
+    String.raw`$\text{<img src=x onerror="alert(1)"> & &lt; &#60;}$`,
+    '$a<b$ and $c>d$ <img src=x onerror=alert(1)>',
+  ])('saves the review inequalities and special source unchanged: %s', async (source) => {
+    replaceNotes([createNote('math-note', 'Math note', source, { rev: 4 })]);
+    const view = await renderInitializedNote('math-note', source);
+    await waitFor(() => expect(editorInstances.at(-1)).toBeTruthy());
+    const editor = editorInstances.at(-1);
+    expect(view.container.querySelector('img, script, [onerror]')).toBeNull();
+    editor.commands.insertContentAt(editor.state.doc.content.size - 1, ' edited');
+    await tick();
+    view.unmount();
+    await waitFor(() =>
+      expect(mockUpdateNoteContent).toHaveBeenCalledWith(
+        WORKSPACE_ID,
+        'math-note',
+        source + ' edited',
+        { immediate: true, baseContent: source, baseRev: 4 },
+      ),
+    );
+  });
+
+  it('sends the original review source through the real note write service', async () => {
+    const service = await vi.importActual<typeof import('$features/notes/notes-write-service')>(
+      '$features/notes/notes-write-service',
+    );
+    const { appClient } = await import('$lib/client');
+    const source = '$a<b$ and $c>d$';
+    const wire = vi.spyOn(appClient.notes, 'setContent').mockResolvedValueOnce({
+      success: true,
+      newContent: source + ' edited',
+      noteRev: 5,
+    });
+    replaceNotes([createNote('math-wire', 'Math wire', source, { rev: 4 })]);
+    const view = await renderInitializedNote('math-wire', source);
+    await waitFor(() => expect(editorInstances.at(-1)).toBeTruthy());
+    const editor = editorInstances.at(-1);
+    vi.mocked(updateNoteContent).mockImplementation(service.updateNoteContent);
+    try {
+      editor.commands.insertContentAt(editor.state.doc.content.size - 1, ' edited');
+      await tick();
+      view.unmount();
+      await waitFor(() =>
+        expect(wire).toHaveBeenCalledWith('math-wire', source + ' edited', 4, WORKSPACE_ID),
+      );
+      await service.settleNoteContent(WORKSPACE_ID, 'math-wire');
+      expect(service.hasPendingNoteContent(WORKSPACE_ID, 'math-wire')).toBe(false);
+    } finally {
+      await service.settleNoteContent(WORKSPACE_ID, 'math-wire');
+      vi.mocked(updateNoteContent).mockImplementation(() => undefined);
+      wire.mockRestore();
+    }
+  });
+
   it('flushes exact math source before the editor unmounts for another view', async () => {
     replaceNotes([createNote('math-note', 'Math note', 'Before')]);
     const view = await renderInitializedNote('math-note', 'Before');
