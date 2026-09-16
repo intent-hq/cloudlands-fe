@@ -71,6 +71,7 @@ vi.mock('../../../backend/main/invite-connection', async () => {
   );
   return {
     InviteRpcError: actual.InviteRpcError,
+    InviteTransportError: actual.InviteTransportError,
     get openInviteConnection() {
       return openInviteConnection;
     },
@@ -103,7 +104,11 @@ import {
   GuestEncryptionUnavailableError,
   GuestStoreCorruptError,
 } from '../../../backend/main/guest-sessions-store';
-import { InviteRpcError } from '../../../backend/main/invite-connection';
+import {
+  InviteRpcError,
+  InviteTransportError,
+  type InviteTransportCode,
+} from '../../../backend/main/invite-connection';
 import { handleInviteDeepLink, routeInviteLinkFromOs } from '../invite-deep-link';
 
 const SECRET = 'invite-secret-value-xyz';
@@ -361,6 +366,66 @@ describe('handleInviteDeepLink', () => {
     await expect(handleInviteDeepLink(LINK)).resolves.toBeUndefined();
     const genericDialog = showMessageBox.mock.calls.at(-1)?.[0] as { message: string };
     expect(genericDialog.message).not.toBe(fullDialog.message);
+  });
+
+  // Transport failures (spec "Round-4 field test"): each bounded code gets
+  // its own sentence and reaches the log as the code, never as the socket
+  // library's text.
+  const TRANSPORT_CODES: InviteTransportCode[] = [
+    'tailcat-unavailable',
+    'tunnel-failed',
+    'host-unreachable',
+    'host-refused',
+    'connection-closed',
+  ];
+
+  it.each(TRANSPORT_CODES)(
+    'transport failure %s while dialing: failure dialog, code logged, nothing stored',
+    async (code) => {
+      openInviteConnection.mockRejectedValue(new InviteTransportError(code));
+      await expect(handleInviteDeepLink(LINK)).resolves.toBeUndefined();
+      // Failure dialog only — the dial failed before any consent point.
+      expect(showMessageBox).toHaveBeenCalledTimes(1);
+      expect(showMessageBox.mock.calls[0][0]).toMatchObject({ type: 'error' });
+      expect(redeemStart).not.toHaveBeenCalled();
+      expect(guestAdd).not.toHaveBeenCalled();
+      expect(openBackendWindow).not.toHaveBeenCalled();
+      const allLogs = logLines.join('\n');
+      expect(allLogs).toContain(`"transportCode":"${code}"`);
+      expect(allLogs).not.toContain(SECRET);
+    },
+  );
+
+  it('every transport code gets a distinct sentence, none of them the generic one', async () => {
+    const messages = new Map<string, string>();
+    for (const code of TRANSPORT_CODES) {
+      openInviteConnection.mockRejectedValue(new InviteTransportError(code));
+      await handleInviteDeepLink(LINK);
+      const dialog = showMessageBox.mock.calls.at(-1)?.[0] as { message: string };
+      messages.set(code, dialog.message);
+    }
+    // An unknown redeem refusal still gets the generic sentence.
+    openInviteConnection.mockResolvedValue({
+      host: '192.168.1.10',
+      via: 'direct',
+      redeemStart,
+      redeemWait,
+      close,
+    });
+    redeemStart.mockRejectedValue(new InviteRpcError(-32602, { code: 'some-unknown-code' }));
+    await handleInviteDeepLink(LINK);
+    const generic = (showMessageBox.mock.calls.at(-1)?.[0] as { message: string }).message;
+
+    expect(new Set(messages.values()).size).toBe(TRANSPORT_CODES.length);
+    for (const message of messages.values()) expect(message).not.toBe(generic);
+  });
+
+  it('a connection lost mid-redeem surfaces as connection-closed, not as the generic sentence', async () => {
+    redeemWait.mockRejectedValue(new InviteTransportError('connection-closed'));
+    await expect(handleInviteDeepLink(LINK)).resolves.toBeUndefined();
+    expect(guestAdd).not.toHaveBeenCalled();
+    expect(showMessageBox.mock.calls.at(-1)?.[0]).toMatchObject({ type: 'error' });
+    expect(logLines.join('\n')).toContain('"transportCode":"connection-closed"');
   });
 
   it('phase-2 rejection (denied) after opening GitHub: failure dialog, nothing stored', async () => {
