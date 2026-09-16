@@ -5,8 +5,11 @@
   import { Button } from '$lib/components/ui/button';
   import * as Menu from '$lib/components/ui/menu';
   import * as ToggleGroup from '$lib/components/ui/toggle-group';
-  import { selectIsRawNoteViewEnabled } from '$store/renderer/slices/transient-ui/transient-ui-selectors';
-  import { toggleRawNoteView } from '$store/renderer/slices/transient-ui/transient-ui-slice';
+  import { selectNoteViewMode } from '$store/renderer/slices/transient-ui/transient-ui-selectors';
+  import {
+    setNoteViewMode,
+    type NoteViewMode,
+  } from '$store/renderer/slices/transient-ui/transient-ui-slice';
   import {
     selectNoteFontStyle,
     selectSpellcheckEnabled,
@@ -34,7 +37,7 @@
   const noteIdStore = writable('');
   $effect(() => workspaceIdStore.set(workspaceId));
   $effect(() => noteIdStore.set(noteId));
-  const rawNoteViewEnabled = selectIsRawNoteViewEnabled(workspaceIdStore, noteIdStore);
+  const noteViewMode = selectNoteViewMode(workspaceIdStore, noteIdStore);
 
   let open = $state(false);
   const fontOptionClass =
@@ -43,6 +46,11 @@
   function setFontStyle(value: string) {
     if (value !== 'sans' && value !== 'serif' && value !== 'monospace') return;
     appStore.dispatch(setNoteFontStyle(value as NoteFontStyle));
+  }
+
+  function selectViewMode(value: string) {
+    if (value !== 'editor' && value !== 'preview' && value !== 'raw') return;
+    appStore.dispatch(setNoteViewMode(workspaceId, noteId, value as NoteViewMode));
   }
 </script>
 
@@ -77,13 +85,26 @@
   >
     {m.ui_viewSettings_spellcheck_label()}
   </Menu.CheckboxItem>
-  <Menu.CheckboxItem
-    checked={$rawNoteViewEnabled}
-    closeOnSelect={false}
-    onCheckedChange={() => appStore.dispatch(toggleRawNoteView(workspaceId, noteId))}
+  <div
+    role="group"
+    aria-label={m.ui_viewSettings_noteViewMode_label()}
+    data-menu-stacked-content="note-view-mode"
   >
-    {m.ui_viewSettings_rawMarkdown_label()}
-  </Menu.CheckboxItem>
+    <div class="type-caption px-2 pb-1 pt-1.5 font-medium text-muted-foreground">
+      {m.ui_viewSettings_noteViewMode_label()}
+    </div>
+    <Menu.RadioGroup value={$noteViewMode} onValueChange={selectViewMode}>
+      <Menu.RadioItem value="editor" closeOnSelect={false}>
+        {m.ui_viewSettings_editor_label()}
+      </Menu.RadioItem>
+      <Menu.RadioItem value="preview" closeOnSelect={false}>
+        {m.ui_viewSettings_renderedPreview_label()}
+      </Menu.RadioItem>
+      <Menu.RadioItem value="raw" closeOnSelect={false}>
+        {m.ui_viewSettings_rawMarkdown_label()}
+      </Menu.RadioItem>
+    </Menu.RadioGroup>
+  </div>
 {:else}
   <Menu.Root bind:open>
     <Menu.Trigger>
@@ -153,14 +174,22 @@
       >
         {m.ui_viewSettings_spellcheck_label()}
       </Menu.CheckboxItem>
-      <Menu.CheckboxItem
-        checked={$rawNoteViewEnabled}
-        closeOnSelect={false}
-        onCheckedChange={() => appStore.dispatch(toggleRawNoteView(workspaceId, noteId))}
-        class="data-[state=checked]:bg-transparent"
-      >
-        {m.ui_viewSettings_rawMarkdown_label()}
-      </Menu.CheckboxItem>
+      <section aria-label={m.ui_viewSettings_noteViewMode_label()}>
+        <div class="type-caption px-2 pb-1 font-medium text-muted-foreground">
+          {m.ui_viewSettings_noteViewMode_label()}
+        </div>
+        <Menu.RadioGroup value={$noteViewMode} onValueChange={selectViewMode}>
+          <Menu.RadioItem value="editor" closeOnSelect={false}>
+            {m.ui_viewSettings_editor_label()}
+          </Menu.RadioItem>
+          <Menu.RadioItem value="preview" closeOnSelect={false}>
+            {m.ui_viewSettings_renderedPreview_label()}
+          </Menu.RadioItem>
+          <Menu.RadioItem value="raw" closeOnSelect={false}>
+            {m.ui_viewSettings_rawMarkdown_label()}
+          </Menu.RadioItem>
+        </Menu.RadioGroup>
+      </section>
     </Menu.Content>
   </Menu.Root>
 {/if}
