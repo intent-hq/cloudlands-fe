@@ -317,6 +317,7 @@
           <div class="flex-1 rounded px-1 py-1">
             <TipTapEditor
               bind:this={replyEditor}
+              editorClassName="pt-2! pb-4!"
               value={replyValue}
               placeholder={m.tiptap_commentThread_reply_placeholder()}
               minHeight={32}

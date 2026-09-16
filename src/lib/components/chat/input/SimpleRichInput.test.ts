@@ -1379,7 +1379,6 @@ describe('SimpleRichInput automatic composer geometry', () => {
     renderInPanel(720);
     const composer = screen.getByTestId('message-input');
     const editor = screen.getByTestId('tiptap-editor');
-    const editorWrapper = composer.querySelector('.editor-wrapper');
     Object.defineProperty(composer, 'offsetHeight', { configurable: true, value: 80 });
 
     const resizeHandle = screen.getByRole('button', { name: /Resize input area/ });
@@ -1397,7 +1396,6 @@ describe('SimpleRichInput automatic composer geometry', () => {
     expect(composer.getAttribute('style')).not.toContain('min-height');
     expect(composer.className).toContain('transition-[border-color,background-color,box-shadow]');
     expect(composer.className).not.toContain('box-shadow,min-height');
-    expect(editorWrapper?.className).toContain('pt-1');
   });
 
   it('affirms idle and focused geometry in every required visual state', async () => {
@@ -1415,7 +1413,6 @@ describe('SimpleRichInput automatic composer geometry', () => {
       });
       expect(editor.getAttribute('placeholder')).toBe('Ask anything');
       expect(editorWrapper?.classList.contains('placeholder-hidden')).toBe(true);
-      expect(editorWrapper?.className).toContain('pt-1');
 
       return {
         ...view,
@@ -1427,7 +1424,6 @@ describe('SimpleRichInput automatic composer geometry', () => {
           await waitFor(() => {
             expect(composer.getAttribute('style')).toContain(`min-height: ${activeHeight}px`);
           });
-          expect(editorWrapper?.className).toContain('pt-1');
           expect(composer.className).toContain('motion-reduce:transition-none');
         },
       };

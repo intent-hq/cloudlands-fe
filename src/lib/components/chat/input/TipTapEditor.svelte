@@ -1646,7 +1646,7 @@
   .tiptap-container :global(.tiptap-editor) {
     min-height: var(--tt-min-height, 80px);
     height: 100%;
-    padding: 0.5rem 1rem 1rem;
+    padding: 0.25rem 1rem 0.5rem;
     outline: none;
     font-family: var(--font-ui);
     font-size: var(--text-body-size);

@@ -2,16 +2,19 @@
   import SimpleRichInput from './SimpleRichInput.svelte';
   import QueuedMessageList from '../QueuedMessageList.svelte';
 
-  let { streaming = false }: { streaming?: boolean } = $props();
+  let { streaming = false, queueCount = 12 }: { streaming?: boolean; queueCount?: number } =
+    $props();
   let value = $state('');
   let lastAction = $state('');
-  const messages = Array.from({ length: 12 }, (_, i) => ({
-    id: `queue-${i}`,
-    // i18n-ignore (test-only component fixture content)
-    content: `Queued message ${i + 1}`,
-    queuedAt: '2026-01-01T00:00:00.000Z',
-    position: i,
-  }));
+  const messages = $derived(
+    Array.from({ length: queueCount }, (_, i) => ({
+      id: `queue-${i}`,
+      // i18n-ignore (test-only component fixture content)
+      content: `Queued message ${i + 1}`,
+      queuedAt: '2026-01-01T00:00:00.000Z',
+      position: i,
+    })),
+  );
 </script>
 
 <div class="group/panel" style="height: 240px; width: 360px;">
@@ -24,7 +27,9 @@
     onstop={() => (lastAction = 'stopped')}
   >
     {#snippet queueRegion()}
-      <QueuedMessageList {messages} />
+      {#if messages.length > 0}
+        <QueuedMessageList {messages} />
+      {/if}
     {/snippet}
   </SimpleRichInput>
 </div>

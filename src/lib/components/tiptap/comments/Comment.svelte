@@ -309,6 +309,7 @@
       {#if useExternalEditing}
         <TipTapEditor
           bind:this={externalEditEditor}
+          editorClassName="pt-2! pb-4!"
           value={externalEditHTML ?? ''}
           placeholder={m.tiptap_comment_edit_placeholder()}
           minHeight={60}
@@ -319,6 +320,7 @@
       {:else}
         <TipTapEditor
           bind:this={internalEditEditor}
+          editorClassName="pt-2! pb-4!"
           value={internalEditHTML}
           placeholder={m.tiptap_comment_edit_placeholder()}
           minHeight={60}

@@ -1533,7 +1533,7 @@
 
   {#if queueRegion}
     <div
-      class="min-h-0 shrink overflow-y-auto overscroll-contain pb-1"
+      class="min-h-0 shrink overflow-y-auto overscroll-contain has-[>_*]:pb-1"
       style:max-height="{(containerHeight ?? maxAutoHeight) / 2}px"
       data-chat-input-queue-region
     >
@@ -1603,7 +1603,7 @@
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
-    class="editor-wrapper relative min-h-6 cursor-text pt-1 {isAutoExpand
+    class="editor-wrapper relative min-h-6 cursor-text {isAutoExpand
       ? 'flex-1 overflow-y-auto'
       : 'flex-1 overflow-hidden'} {editMode ? 'pr-5' : ''}"
     class:placeholder-hidden={!showPlaceholder}
