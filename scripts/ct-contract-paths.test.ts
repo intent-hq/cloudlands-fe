@@ -40,6 +40,8 @@ function gitRepository() {
   git(root, 'config', 'user.name', 'ct-contract-paths test');
   git(root, 'config', 'user.email', 'ct-contract-paths@example.invalid');
   git(root, 'config', 'commit.gpgsign', 'false');
+  git(root, 'config', 'core.quotePath', 'true');
+  git(root, 'config', 'diff.renames', 'true');
   commitFile(root, 'src/base.ts');
   commitFile(root, 'src/lib/styles/tokens.css', ':root { --a: 1; }');
   return root;
@@ -90,12 +92,16 @@ describe('isCtContractPath', () => {
     expect(isCtContractPath(file)).toBe(false);
   });
 
-  it('agrees with the exported path list', () => {
-    expect(CT_CONTRACT_PATHS).toEqual(
-      expect.arrayContaining(['src/app.css', 'src/lib/styles/**', 'playwright/**']),
-    );
-    for (const entry of CT_CONTRACT_PATHS)
-      expect(isCtContractPath(entry.replace(/\*\*$/, 'any/file.css'))).toBe(true);
+  it('exports exactly the seven paths the CT harness depends on', () => {
+    expect([...CT_CONTRACT_PATHS].sort()).toEqual([
+      'package.json',
+      'playwright-ct.config.ts',
+      'playwright/**',
+      'pnpm-lock.yaml',
+      'scripts/run-ct-tests.mjs',
+      'src/app.css',
+      'src/lib/styles/**',
+    ]);
   });
 });
 
@@ -181,6 +187,34 @@ describe('--diff against a git repository', () => {
     git(root, 'rm', '-q', 'src/lib/styles/tokens.css');
     git(root, 'commit', '-q', '-m', 'remove tokens');
     expect(runCli(root, '--diff', 'main', 'deleted').stdout).toBe('ct_required=true\n');
+  });
+
+  it('keeps non-ASCII paths verbatim instead of the quoted form git prints by default', () => {
+    const root = gitRepository();
+    branch(root, 'unicode', 'src/lib/styles/thème.css');
+    expect(changedFiles('main', 'unicode', { cwd: root })).toEqual(['src/lib/styles/thème.css']);
+    expect(runCli(root, '--diff', 'main', 'unicode')).toEqual({
+      status: 0,
+      stdout: 'ct_required=true\n',
+      stderr: '',
+    });
+  });
+
+  it('reports both sides of a rename so a contract file moved away still requires CT', () => {
+    const root = gitRepository();
+    branch(root, 'renamed');
+    git(root, 'mv', 'src/lib/styles/tokens.css', 'src/moved.css');
+    git(root, 'commit', '-q', '-m', 'move tokens');
+    expect(git(root, 'diff', '--name-status', '-M', 'main', 'renamed')).toMatch(/^R100\t/);
+    expect(changedFiles('main', 'renamed', { cwd: root }).sort()).toEqual([
+      'src/lib/styles/tokens.css',
+      'src/moved.css',
+    ]);
+    expect(runCli(root, '--diff', 'main', 'renamed')).toEqual({
+      status: 0,
+      stdout: 'ct_required=true\n',
+      stderr: '',
+    });
   });
 
   it('exits 0 with ct_required=true when git cannot resolve the refs', () => {

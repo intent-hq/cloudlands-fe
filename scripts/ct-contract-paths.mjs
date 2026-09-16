@@ -46,14 +46,21 @@ export function ctRequired(files) {
   return files.some(isCtContractPath);
 }
 
+// `-z` keeps paths verbatim (no `core.quotePath` escaping of non-ASCII names) and
+// `--no-renames` reports a rename as delete + add, so a contract file moved out of
+// the list still surfaces on its old path.
 export function changedFiles(base, head, { cwd = process.cwd() } = {}) {
-  return execFileSync('git', ['diff', '--name-only', '--diff-filter=ACMRD', base, head], {
-    cwd,
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'pipe'],
-    maxBuffer: 64 * 1024 * 1024,
-  })
-    .split('\n')
+  return execFileSync(
+    'git',
+    ['diff', '--name-only', '-z', '--no-renames', '--diff-filter=ACMD', base, head],
+    {
+      cwd,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      maxBuffer: 64 * 1024 * 1024,
+    },
+  )
+    .split('\0')
     .filter(Boolean);
 }
 
