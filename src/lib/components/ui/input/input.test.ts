@@ -83,6 +83,15 @@ describe('Input', () => {
     );
   });
 
+  it('keeps the global keyboard-focus outline by default', () => {
+    const { getByRole } = render(Input, { props: { 'aria-label': 'Plain field' } });
+    const input = getByRole('textbox', { name: 'Plain field' });
+    input.focus();
+    expect(document.activeElement).toBe(input);
+    expect(input.className).not.toMatch(/(?:^|\s)(?:focus-visible:)?outline-none(?:\s|$)/);
+    expect(input.className).not.toMatch(/(?:^|\s)focus-visible:!shadow-none(?:\s|$)/);
+  });
+
   it('lets noFocusStyle opt out of the focus ring via utilities', () => {
     const { getByRole } = render(Input, {
       props: { 'aria-label': 'Composite field', noFocusStyle: true },

@@ -30,6 +30,24 @@ describe('Textarea', () => {
     expect(textarea.className).toContain('read-only:text-muted-foreground');
   });
 
+  it('keeps the global keyboard-focus outline by default', () => {
+    const { getByRole } = render(Textarea, { props: { 'aria-label': 'Plain notes' } });
+    const textarea = getByRole('textbox', { name: 'Plain notes' });
+    textarea.focus();
+    expect(document.activeElement).toBe(textarea);
+    expect(textarea.className).not.toMatch(/(?:^|\s)(?:focus-visible:)?outline-none(?:\s|$)/);
+    expect(textarea.className).not.toMatch(/(?:^|\s)focus-visible:!shadow-none(?:\s|$)/);
+  });
+
+  it('lets noFocusStyle opt out of the focus ring via utilities', () => {
+    const { getByRole } = render(Textarea, {
+      props: { 'aria-label': 'Composite notes', noFocusStyle: true },
+    });
+    const classes = getByRole('textbox', { name: 'Composite notes' }).className.split(/\s+/);
+    expect(classes).toContain('focus-visible:outline-none');
+    expect(classes).toContain('focus-visible:!shadow-none');
+  });
+
   it('uses a contrast-validated invalid border without an outer ring', () => {
     const { getByRole } = render(TextareaHarness);
     const textarea = getByRole('textbox', { name: 'Workspace summary' });

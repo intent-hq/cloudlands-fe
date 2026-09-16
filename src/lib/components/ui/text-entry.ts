@@ -2,7 +2,7 @@ import type { UiSize } from '$lib/components/ui/size-context';
 
 const forcedStateClasses = 'data-[state=hover]:bg-hover';
 
-export const textEntryControlClasses = `border-border bg-transparent shadow-none transition-[background-color,border-color,box-shadow,color] duration-(--spring-fast) hover:bg-hover focus-visible:outline-none ${forcedStateClasses} read-only:text-muted-foreground disabled:cursor-not-allowed disabled:bg-transparent disabled:opacity-60 disabled:hover:bg-transparent aria-invalid:border-danger motion-reduce:transition-none`;
+export const textEntryControlClasses = `border-border bg-transparent shadow-none transition-[background-color,border-color,box-shadow,color] duration-(--spring-fast) hover:bg-hover ${forcedStateClasses} read-only:text-muted-foreground disabled:cursor-not-allowed disabled:bg-transparent disabled:opacity-60 disabled:hover:bg-transparent aria-invalid:border-danger motion-reduce:transition-none`;
 
 export const textEntryGroupClasses = `border-border bg-transparent shadow-none outline-none transition-[background-color,border-color,box-shadow,color] duration-(--spring-fast) hover:bg-hover focus-within:outline-none focus-within:ring-0 ${forcedStateClasses} data-[disabled=true]:pointer-events-none data-[disabled=true]:bg-transparent data-[disabled=true]:opacity-60 data-[disabled=true]:hover:bg-transparent data-[invalid=true]:border-danger motion-reduce:transition-none`;
 
