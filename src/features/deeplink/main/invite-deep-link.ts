@@ -51,6 +51,11 @@
  *    registry — and open the daemon's window; a store failure after the
  *    grant surfaces as a failure, never as a cancellation.
  *
+ * The two one-button notices — the failure at any step and the plaintext
+ * credential warning — render the same way (`main/invite-notice.ts`,
+ * `invite-notice:*` channels) with the native box as the no-window/no-ack
+ * fallback; the renderer only ever receives a bounded reason code.
+ *
  * Security posture mirrors the pair flow: the invite secret and the minted
  * token are never logged — failures are logged as bounded error kinds and
  * codes, never as free-form message text (a server or encryption error
@@ -65,12 +70,19 @@
 import { app, clipboard, dialog, shell, type MessageBoxOptions } from 'electron';
 import { randomUUID } from 'node:crypto';
 
-import type { InviteConsentShowPayload, InviteSignInReason } from '$shared/ipc/invite-consent';
+import type {
+  InviteConsentOutcome,
+  InviteConsentShowPayload,
+  InviteSignInReason,
+} from '$shared/ipc/invite-consent';
+import type { InviteFailureReason, InviteNoticeShowPayload } from '$shared/ipc/invite-notice';
 import { Logger } from '$shared/logger';
 import { m } from '$shared/paraglide/messages.js';
 import { isTcAddress } from '$shared/tc-address';
+import { describeInviteFailureReason } from '$shared/utils/invite-failure-text';
 import { parseInviteUri } from '$shared/utils/invite-uri';
 import { showInviteConsent, type InviteConsentPrompt } from '../../../main/invite-consent';
+import { showInviteNotice } from '../../../main/invite-notice';
 import { getMainWindow } from '../../../main/state';
 import * as guestSessionsStore from '../../backend/main/guest-sessions-store';
 import {
@@ -114,6 +126,14 @@ interface PromptLabels {
   workspaceTitle: string;
   hostLabel: string;
 }
+
+/**
+ * Display labels of the notices, filled in as the flow learns them: the
+ * dialed address once the connection is up, then the prompt labels once the
+ * host has described the invite. Whatever is known at the time of a failure
+ * is what the notice shows.
+ */
+type NoticeLabels = Partial<PromptLabels>;
 
 /**
  * Why the returning-guest path did not complete the join, as a bounded code
@@ -233,7 +253,7 @@ let inviteLinkInFlight = false;
 /**
  * Handle an `intent://invite?...` deep link end to end. Resolves once the
  * flow completes (window opened, dialog cancelled, or link rejected); never
- * rejects — failures are logged (scrubbed) and surfaced in a native dialog.
+ * rejects — failures are logged (scrubbed) and surfaced in a notice dialog.
  */
 export async function handleInviteDeepLink(url: string): Promise<void> {
   if (inviteLinkInFlight) {
@@ -243,6 +263,8 @@ export async function handleInviteDeepLink(url: string): Promise<void> {
   inviteLinkInFlight = true;
   let connection: InviteConnection | null = null;
   const prompts = createConsentPrompts();
+  // Display labels for the notices, filled in as the flow learns them.
+  const labels: NoticeLabels = {};
   try {
     const parsed = parseInviteUri(url);
     if (!parsed) {
@@ -269,17 +291,21 @@ export async function handleInviteDeepLink(url: string): Promise<void> {
 
     const envelope: InviteEnvelope = { hosts, port, fingerprint, tcAddress, inviteId, secret };
     connection = await openInviteConnection({ hosts, port, fingerprint, tcAddress });
-    const returning = await joinAsReturningGuest(connection, envelope, prompts);
+    labels.hostLabel = connection.host;
+    const returning = await joinAsReturningGuest(connection, envelope, prompts, labels);
     if (returning.kind === 'handled') return;
     logger.info('No usable stored credential for this host; proving identity through GitHub', {
       reason: returning.reason,
     });
-    await joinWithIdentityProof(connection, envelope, prompts);
+    await joinWithIdentityProof(connection, envelope, prompts, labels);
   } catch (error) {
     logger.warn('Invite deep link handling failed', describeErrorForLog(error));
-    // A no-op once the modal was dismissed `joined`; the failure box still shows.
-    prompts.current()?.dismiss('failed');
-    await showFailure(error);
+    // The handoff dismiss is a no-op once the modal was dismissed `joined`;
+    // the failure notice still shows.
+    await showFailure(
+      { kind: 'failed', reason: classifyInviteFailure(error), ...labels },
+      { consent: prompts.current(), outcome: 'failed' },
+    );
   } finally {
     connection?.close();
     inviteLinkInFlight = false;
@@ -312,6 +338,7 @@ async function joinWithIdentityProof(
   connection: InviteConnection,
   envelope: InviteEnvelope,
   prompts: ConsentPrompts,
+  noticeLabels: NoticeLabels,
 ): Promise<void> {
   const { inviteId, secret } = envelope;
   const client = getBackendClient();
@@ -320,6 +347,7 @@ async function joinWithIdentityProof(
     hostLabel: hostLabelFor(connection, challenge),
     workspaceTitle: nonBlank(challenge.workspaceTitle) ?? m.workspace_links_untitled_label(),
   };
+  Object.assign(noticeLabels, labels);
 
   let login = await readLocalLogin(client);
   let signInReason: InviteSignInReason | null = login === null ? 'not-connected' : null;
@@ -476,8 +504,13 @@ async function proveIdentity(
   // seat. Close the modal now — before the asynchronous store write — so
   // Cancel is neither offered nor honoured while the credential persists.
   consent?.dismiss('joined');
-  await storeCredentialAndOpen(connection, envelope, credential, challenge.workspaceTitle, () =>
-    deleteProof(client, proof.gistId),
+  await storeCredentialAndOpen(
+    connection,
+    envelope,
+    credential,
+    challenge.workspaceTitle,
+    labels,
+    () => deleteProof(client, proof.gistId),
   );
   return { kind: 'joined' };
 }
@@ -735,6 +768,7 @@ async function joinAsReturningGuest(
   connection: InviteConnection,
   envelope: InviteEnvelope,
   prompts: ConsentPrompts,
+  noticeLabels: NoticeLabels,
 ): Promise<ReturningOutcome> {
   const { hosts, port, fingerprint, inviteId, secret } = envelope;
   // The winning candidate (a direct host, or the tc address standing in as
@@ -774,6 +808,7 @@ async function joinAsReturningGuest(
 
   const hostLabel = hostLabelFor(connection, inspection);
   const workspaceTitle = nonBlank(inspection.workspaceTitle) ?? m.workspace_links_untitled_label();
+  Object.assign(noticeLabels, { hostLabel, workspaceTitle });
   const consent = prompts.show({
     requestId: randomUUID(),
     mode: 'confirm',
@@ -825,7 +860,10 @@ async function joinAsReturningGuest(
   // Point of no return, as for the proof: the host has committed the join.
   // Close the modal before the store write.
   consent.dismiss('joined');
-  await storeCredentialAndOpen(connection, envelope, credential, inspection.workspaceTitle);
+  await storeCredentialAndOpen(connection, envelope, credential, inspection.workspaceTitle, {
+    hostLabel,
+    workspaceTitle,
+  });
   return { kind: 'handled' };
 }
 
@@ -833,16 +871,18 @@ async function joinAsReturningGuest(
  * Persist the minted credential as a GUEST session (the store upserts by
  * daemon identity: a returning guest's record keeps its id, takes the fresh
  * token, and gains the workspace) and open the daemon's window. A store
- * failure here surfaces as a failure, never as a cancellation. `afterStore`
- * runs once the write settled either way (the proof gist's cleanup: it must
- * not delay or fail the join, and the gist outliving a failed write by a
- * moment is harmless — the nonce is spent).
+ * failure here surfaces as a failure, never as a cancellation. `labels` are
+ * the display labels the plaintext notice shows; `afterStore` runs once the
+ * write settled either way (the proof gist's cleanup: it must not delay or
+ * fail the join, and the gist outliving a failed write by a moment is
+ * harmless — the nonce is spent).
  */
 async function storeCredentialAndOpen(
   connection: InviteConnection,
   envelope: Pick<InviteEnvelope, 'hosts' | 'port' | 'fingerprint' | 'tcAddress'>,
   credential: { token: string; principalId: string; login: string; workspaceId: string },
   workspaceTitle: string,
+  labels: PromptLabels,
   afterStore?: () => Promise<void>,
 ): Promise<void> {
   let record: Awaited<ReturnType<typeof guestSessionsStore.add>>;
@@ -870,8 +910,10 @@ async function storeCredentialAndOpen(
   });
   if (!record.tokenEncrypted) {
     // Flagged plaintext fallback (spec ruling): the join stands, but the
-    // user learns the credential is not protected by OS encryption.
-    await showPlaintextWarning();
+    // user learns the credential is not protected by OS encryption —
+    // acknowledged before the window opens. The consent modal is already
+    // dismissed `joined`, so there is no modal to hand off from.
+    await showPlaintextWarning({ kind: 'plaintext', ...labels });
   }
   await openBackendWindow(record.id);
 }
@@ -1001,12 +1043,40 @@ async function showProofRefusedRetry(code: ProofRefusalCode): Promise<boolean> {
   return response === 0;
 }
 
+/** The consent modal to close once the notice is on screen, with its outcome. */
+interface ConsentHandoff {
+  consent: InviteConsentPrompt | null;
+  outcome: InviteConsentOutcome;
+}
+
+/**
+ * Show a notice in the renderer, falling back to the given native box when the
+ * renderer path is unavailable. With a handoff, the notice is sent BEFORE the
+ * consent modal is dismissed so the renderer swaps one modal for the other
+ * without a frame of bare window in between; on the fallback path the dismiss
+ * still precedes the native box. Resolves once the user has acknowledged
+ * either surface.
+ */
+async function showNotice(
+  payload: Omit<InviteNoticeShowPayload, 'requestId'>,
+  handoff: ConsentHandoff | null,
+  nativeOptions: MessageBoxOptions,
+): Promise<void> {
+  const acknowledged = showInviteNotice({ requestId: randomUUID(), ...payload });
+  handoff?.consent?.dismiss(handoff.outcome);
+  if (await acknowledged) return;
+  await showDialog(nativeOptions);
+}
+
 /**
  * Warn that the credential was stored in plaintext because OS encryption is
- * unavailable on this machine (flagged fallback); the join itself stands.
+ * unavailable on this machine (flagged fallback); the join itself stands. The
+ * consent modal was already dismissed `joined` at the grant, so no handoff.
  */
-async function showPlaintextWarning(): Promise<void> {
-  await showDialog({
+async function showPlaintextWarning(
+  payload: Omit<InviteNoticeShowPayload, 'requestId'>,
+): Promise<void> {
+  await showNotice(payload, null, {
     type: 'warning',
     title: m.deeplink_invitePlaintext_title(),
     message: m.deeplink_invitePlaintext_message(),
@@ -1016,102 +1086,89 @@ async function showPlaintextWarning(): Promise<void> {
 }
 
 /**
- * Map a failure onto one user-facing sentence: transport failures route on
+ * Map a failure onto its bounded reason: transport failures route on
  * `InviteTransportError.transportCode`, host refusals on `error.data.code`,
  * the guest daemon's proof refusals on `IdentityProofError.proofCode`, and
- * the guest's own sign-in on `InviteFlowError.flowCode`.
+ * the guest's own sign-in on `InviteFlowError.flowCode`. The reason is what
+ * crosses to the renderer — never the error's text.
  */
-function describeInviteFailure(error: unknown): string {
-  if (error instanceof PinMismatchError) return m.deeplink_inviteError_certMismatch();
-  if (error instanceof InviteTransportError) return describeTransportFailure(error);
+function classifyInviteFailure(error: unknown): InviteFailureReason {
+  if (error instanceof PinMismatchError) return 'cert-mismatch';
+  if (error instanceof InviteTransportError) return error.transportCode;
   if (error instanceof guestSessionsStore.GuestEncryptionUnavailableError) {
-    return m.deeplink_inviteError_encryptionUnavailable();
+    return 'encryption-unavailable';
   }
-  if (error instanceof guestSessionsStore.GuestStoreCorruptError) {
-    return m.deeplink_inviteError_storeCorrupt();
-  }
-  if (error instanceof InviteFlowError) return describeFlowFailure(error);
-  if (error instanceof IdentityProofError) return describeProofFailure(error);
+  if (error instanceof guestSessionsStore.GuestStoreCorruptError) return 'store-corrupt';
+  if (error instanceof InviteFlowError) return classifyFlowFailure(error);
+  if (error instanceof IdentityProofError) return classifyProofFailure(error);
   const code = error instanceof InviteRpcError ? error.inviteCode : null;
   switch (code) {
     case 'invite-expired':
-      return m.deeplink_inviteError_expired();
+      return 'expired';
     case 'invite-revoked':
-      return m.deeplink_inviteError_revoked();
+      return 'revoked';
     case 'invite-redeemed':
-      return m.deeplink_inviteError_redeemed();
+      return 'redeemed';
     case 'invite-pin-mismatch':
-      return m.deeplink_inviteError_pinMismatch();
+      return 'pin-mismatch';
     case 'proof-invalid':
-      return m.deeplink_inviteError_proofInvalid();
+      return 'proof-invalid';
     case 'proof-expired':
-      return m.deeplink_inviteError_proofExpired();
+      return 'proof-expired';
     case 'github-unreachable':
-      return m.deeplink_inviteError_hostGithubUnreachable();
+      return 'host-github-unreachable';
     case 'workspace-full':
-      return m.deeplink_inviteError_workspaceFull();
+      return 'workspace-full';
     case 'owner-self-join':
-      return m.deeplink_inviteError_ownerSelfJoin();
+      return 'owner-self-join';
     default:
-      return m.deeplink_inviteError_generic();
+      return 'generic';
   }
 }
 
-/** One sentence per local flow code — how the guest's own sign-in step ended. */
-function describeFlowFailure(error: InviteFlowError): string {
+/** One reason per local flow code — how the guest's own sign-in step ended. */
+function classifyFlowFailure(error: InviteFlowError): InviteFailureReason {
   switch (error.flowCode) {
     case 'verification-launch-failed':
-      return m.deeplink_inviteError_launchFailed();
+      return 'launch-failed';
     case 'sign-in-denied':
-      return m.deeplink_inviteError_denied();
+      return 'denied';
     case 'sign-in-expired':
-      return m.deeplink_inviteError_flowExpired();
+      return 'flow-expired';
     case 'sign-in-failed':
     case 'invalid-verification-uri':
-      return m.deeplink_inviteError_signInFailed();
+      return 'sign-in-failed';
   }
 }
 
-/** One sentence per proof code — why the guest's own daemon could not publish the proof. */
-function describeProofFailure(error: IdentityProofError): string {
+/** One reason per proof code — why the guest's own daemon could not publish the proof. */
+function classifyProofFailure(error: IdentityProofError): InviteFailureReason {
   switch (error.proofCode) {
     case 'github-not-connected':
-      return m.deeplink_inviteError_proofNotConnected();
+      return 'proof-not-connected';
     case 'github-scope-missing':
-      return m.deeplink_inviteError_proofScopeMissing();
+      return 'proof-scope-missing';
     case 'github-unreachable':
-      return m.deeplink_inviteError_proofGithubUnreachable();
+      return 'proof-github-unreachable';
     case null:
-      return m.deeplink_inviteError_proofFailed();
+      return 'proof-failed';
   }
 }
 
-/** One sentence per transport code — which of the distinct causes stopped the dial. */
-function describeTransportFailure(error: InviteTransportError): string {
-  switch (error.transportCode) {
-    case 'tailcat-unavailable':
-      return m.deeplink_inviteError_tailcatUnavailable();
-    case 'tunnel-failed':
-      return m.deeplink_inviteError_tunnelFailed();
-    case 'host-unreachable':
-      return m.deeplink_inviteError_hostUnreachable();
-    case 'host-refused':
-      return m.deeplink_inviteError_hostRefused();
-    case 'connection-closed':
-      return m.deeplink_inviteError_connectionClosed();
-  }
-}
-
-async function showFailure(error: unknown): Promise<void> {
+async function showFailure(
+  payload: Omit<InviteNoticeShowPayload, 'requestId'> & { reason: InviteFailureReason },
+  handoff: ConsentHandoff,
+): Promise<void> {
   try {
-    await showDialog({
+    await showNotice(payload, handoff, {
       type: 'error',
       title: m.deeplink_inviteFailed_title(),
-      message: describeInviteFailure(error),
+      message: describeInviteFailureReason(payload.reason),
       buttons: [m.deeplink_inviteFailed_ok_button()],
       defaultId: 0,
     });
   } catch (dialogError) {
+    handoff.consent?.dismiss(handoff.outcome);
     logger.warn('Could not show invite failure dialog', describeErrorForLog(dialogError));
   }
 }
