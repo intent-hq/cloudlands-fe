@@ -7,7 +7,20 @@ const RULE_ID = 'intent/no-direct-reduced-motion-query';
 
 // The actual eslint.config.js (vitest runs from the package root), so the matrix
 // below proves what `pnpm run lint` enforces rather than a copy that can drift.
-const eslint = new ESLint({ cwd: process.cwd() });
+// The main/preload block is type-aware; the override below drops the TS project
+// so synthetic probes never build a TypeScript Program (slow and flaky on the
+// memory-capped CI runner). The reduced-motion rule is syntax-only, so the
+// matrix still proves its coverage.
+const eslint = new ESLint({
+  cwd: process.cwd(),
+  overrideConfig: [
+    {
+      files: ['**/*'],
+      languageOptions: { parserOptions: { project: false, projectService: false } },
+      rules: { '@typescript-eslint/no-floating-promises': 'off' },
+    },
+  ],
+});
 
 const DIRECT_QUERY_SCRIPT =
   "export const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;";
@@ -59,10 +72,8 @@ describe('no-direct-reduced-motion-query under the real eslint.config.js', () =>
     'src/lib/utils/generated/probe.ts',
     'src/lib/components/generated/Probe.svelte',
     'src/features/example/probe.ts',
-    // Main-process and preload sources are linted type-aware against the real
-    // tsconfig projects, so their probes must be paths those projects contain.
-    'src/main/index.ts',
-    'src/preload/index.template.ts',
+    'src/main/probe.ts',
+    'src/preload/probe.ts',
     'src/shared/probe.ts',
     'src/routes/probe.ts',
     'src/lib/utils/reduced-motion-helpers/probe.ts',
