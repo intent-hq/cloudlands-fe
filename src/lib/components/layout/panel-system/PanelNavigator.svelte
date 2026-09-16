@@ -195,7 +195,7 @@
         <Button
           variant="ghost"
           type="button"
-          class="panel-navigator-segment group pointer-events-auto absolute inset-y-0 z-10 min-w-0 border-0 bg-transparent p-1 text-muted-foreground focus-visible:outline-none"
+          class="panel-navigator-segment group pointer-events-auto absolute inset-y-0 z-10 h-auto min-w-0 border-0 bg-transparent p-1 text-muted-foreground focus-visible:outline-none"
           style="left: {segment.start * 100}%; width: {segment.size * 100}%;"
           aria-label={panel.title}
           aria-current={active ? 'page' : undefined}
