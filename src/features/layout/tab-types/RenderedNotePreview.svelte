@@ -79,7 +79,10 @@
     pendingScrollPosition = null;
   }
 
-  $effect(() => {
+  // Runs before the DOM updates so the teardown reads the outgoing note's
+  // scrollTop before the incoming content shrinks the container and the
+  // browser clamps the position (a synchronously rendered short note).
+  $effect.pre(() => {
     const activeIdentity = { workspaceId, noteId, scrollKey };
     const saveScrollPosition = untrack(() => onScrollPositionSave);
 
