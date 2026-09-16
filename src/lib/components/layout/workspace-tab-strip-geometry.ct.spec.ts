@@ -1034,3 +1034,31 @@ test('settles tab lifecycle changes immediately with reduced motion', async ({ m
     .click();
   await expect(tab).toHaveCount(0);
 });
+
+for (const zoomFactor of [1, 1.1, 1.25]) {
+  test(`active tab covers the panel seam at zoom ${zoomFactor}`, async ({ mount, page }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    const component = await mount(WorkspaceTabStripGeometryPreview, {
+      props: { activeWorkspaceId: 'geometry-alpha', zoomFactor },
+    });
+    await expectMaskAttachedToActiveTab(component);
+    const tab = await component.locator('[data-workspace-tab][data-active="true"]').boundingBox();
+    const panel = await component.locator('[data-preview-panel]').boundingBox();
+    if (!tab || !panel) throw new Error('Missing seam geometry');
+    expect(Math.abs(tab.y + tab.height - panel.y)).toBeLessThan(0.1);
+    const clip = {
+      x: Math.ceil(tab.x + 8),
+      y: Math.floor(panel.y - 2),
+      width: Math.floor(tab.width - 16),
+      height: 6,
+    };
+    const { data, info } = await sharp(await page.screenshot({ clip }))
+      .removeAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    const reference = [...data.subarray(data.length - info.channels, data.length)];
+    for (let offset = 0; offset < data.length; offset += info.channels) {
+      expect([...data.subarray(offset, offset + info.channels)]).toEqual(reference);
+    }
+  });
+}

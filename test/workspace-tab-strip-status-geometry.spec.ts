@@ -380,9 +380,9 @@ async function expectNormalActiveShape(
     box(trailingFlare),
   ]);
   const tabBottom = tabBox.y + tabBox.height;
-  // 8b092e33 aligns the extracted stroke with the seam using a 2px SVG inset.
-  expect(leadingFlareBox.y + leadingFlareBox.height).toBeCloseTo(tabBottom - 2 * zoom, 1);
-  expect(trailingFlareBox.y + trailingFlareBox.height).toBeCloseTo(tabBottom - 2 * zoom, 1);
+  // The flare reaches through the panel border immediately below the tab.
+  expect(leadingFlareBox.y + leadingFlareBox.height).toBeCloseTo(tabBottom + zoom, 1);
+  expect(trailingFlareBox.y + trailingFlareBox.height).toBeCloseTo(tabBottom + zoom, 1);
   if (assertHeight) expect(tabBox.height).toBeCloseTo(32 * zoom, 0);
   return radii;
 }
@@ -899,8 +899,8 @@ test('drag keeps one horizontal real tab and drops it at the invisible reserved 
   });
   expect(dragged.x).toBeCloseTo(origin.x + dragX - startX, 1);
   expect(dragged.y).toBeCloseTo(origin.y, 1);
-  expect(leadingFlare.y + leadingFlare.height).toBeCloseTo(origin.y + origin.height - 2, 1);
-  expect(trailingFlare.y + trailingFlare.height).toBeCloseTo(origin.y + origin.height - 2, 1);
+  expect(leadingFlare.y + leadingFlare.height).toBeCloseTo(origin.y + origin.height + 1, 1);
+  expect(trailingFlare.y + trailingFlare.height).toBeCloseTo(origin.y + origin.height + 1, 1);
   expect(
     await page
       .locator('[data-workspace-tab-motion]')

@@ -6,6 +6,7 @@
     initialOpenWorkspaceIds?: string[];
     interactive?: boolean;
     sidebarPanelOpen?: boolean;
+    zoomFactor?: number;
   }
 
   const ids = ['geometry-alpha', 'geometry-beta', 'geometry-gamma'];
@@ -17,6 +18,8 @@
     states: {
       default: { props: {} },
       'first-tab': { props: { activeWorkspaceId: ids[0] } },
+      'zoom-110': { props: { activeWorkspaceId: ids[0], zoomFactor: 1.1 } },
+      'zoom-125': { props: { activeWorkspaceId: ids[0], zoomFactor: 1.25 } },
       'middle-tab': { props: { activeWorkspaceId: ids[1] } },
       'open-close': { props: { initialOpenWorkspaceIds: ids.slice(0, 2), interactive: true } },
       'sidebar-closed': { props: { activeWorkspaceId: ids[0], sidebarPanelOpen: false } },
@@ -45,6 +48,7 @@
     getWorkspaceTabLeadingInsetPx,
     getWorkspaceTabScrollerMarginLeftPx,
     WINDOW_TITLEBAR_HEIGHT_PX,
+    getCounterScaledTitlebarHeight,
     WORKSPACE_TAB_MOTION_DURATION_MS,
     WORKSPACE_TAB_MOTION_EASING,
     type WorkspaceTabBorderMaskBounds,
@@ -57,6 +61,7 @@
     initialOpenWorkspaceIds = ids,
     interactive = false,
     sidebarPanelOpen = true,
+    zoomFactor = 1,
   }: WorkspaceTabStripGeometryPreviewProps = $props();
   let activeTabBounds = $state<WorkspaceTabBorderMaskBounds | null>(null);
   let activeTabTracking = $state(false);
@@ -98,10 +103,16 @@
 
 <div
   class="window-title-bar-wrapper"
-  style:height="{WINDOW_TITLEBAR_HEIGHT_PX}px"
+  style:height="{getCounterScaledTitlebarHeight(zoomFactor)}px"
   data-titlebar-geometry-root
 >
-  <div class="window-title-bar" style:height="{WINDOW_TITLEBAR_HEIGHT_PX}px">
+  <div
+    class="window-title-bar"
+    style:height="{WINDOW_TITLEBAR_HEIGHT_PX}px"
+    style:transform="scale({1 / zoomFactor})"
+    style:transform-origin="top left"
+    style:width="{100 * zoomFactor}%"
+  >
     <div class={TITLEBAR_LEFT_DRAG_SURFACE_CLASS} data-titlebar-left-drag-surface>
       <div class="fixed-controls">
         <span class="preview-logo" data-preview-logo>
@@ -177,8 +188,8 @@
 
   .active-tab-mask {
     position: absolute;
-    bottom: -1px;
-    height: 1px;
+    bottom: -2px;
+    height: 2px;
     background: hsl(var(--sidebar));
     pointer-events: none;
   }

@@ -382,7 +382,10 @@
       clampQueued = false;
       if (!active) return;
       const tabRect = node.getBoundingClientRect();
-      const titlebarRect = node.closest('.window-title-bar')?.getBoundingClientRect() ?? null;
+      const titlebar = node.closest<HTMLElement>('.window-title-bar');
+      const titlebarRect = titlebar?.getBoundingClientRect() ?? null;
+      const titlebarScale =
+        titlebar && titlebarRect ? titlebarRect.width / titlebar.offsetWidth : 1;
       const stripRect = strip?.getBoundingClientRect() ?? null;
       let scrollDelta = 0;
       let scrollTarget: number | null = null;
@@ -414,9 +417,9 @@
         if (scrollTarget === null) {
           emitActiveTabBounds(
             getClippedWorkspaceTabBorderMaskBounds(
-              tabRect,
-              stripRect,
-              titlebarRect.left,
+              { left: tabRect.left / titlebarScale, right: tabRect.right / titlebarScale },
+              { left: stripRect.left / titlebarScale, right: stripRect.right / titlebarScale },
+              titlebarRect.left / titlebarScale,
               fadeEdges,
             ),
             { sync },
@@ -429,9 +432,12 @@
         if (!movedTitlebarRect || !movedStripRect) return;
         emitActiveTabBounds(
           getClippedWorkspaceTabBorderMaskBounds(
-            movedTabRect,
-            movedStripRect,
-            movedTitlebarRect.left,
+            { left: movedTabRect.left / titlebarScale, right: movedTabRect.right / titlebarScale },
+            {
+              left: movedStripRect.left / titlebarScale,
+              right: movedStripRect.right / titlebarScale,
+            },
+            movedTitlebarRect.left / titlebarScale,
             strip
               ? getWorkspaceTabScrollFadeState(
                   strip.scrollLeft,
