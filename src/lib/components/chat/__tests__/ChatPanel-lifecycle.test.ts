@@ -2,6 +2,10 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  transientUiReducer,
+  initialState as initialTransientUi,
+} from '$store/renderer/slices/transient-ui/transient-ui-slice';
 import type { Workspace } from '$shared/types';
 import {
   animateScrollTo as animateScrollToUtil,
@@ -55,6 +59,7 @@ const mocks = vi.hoisted(() => {
     listenSync: vi.fn(),
     ipcListenerCleanups: [] as Array<ReturnType<typeof vi.fn>>,
     chatDrafts: {} as Record<string, string>,
+    transientUi: { byWorkspaceId: {} } as unknown,
     resizeObserve: vi.fn(),
     resizeDisconnect: vi.fn(),
     resizeConstructor: vi.fn(),
@@ -131,6 +136,7 @@ vi.mock('$store/renderer/store', async () => {
     state: () => ({
       ...(mocks.storeState as Record<string, unknown>),
       agentSubscriptionUI: { entries: mocks.agentSubscriptionUIEntries },
+      transientUi: mocks.transientUi,
     }),
     dispatch: mocks.dispatch,
     dedupeEmits: true,
@@ -244,7 +250,10 @@ vi.mock('$store/renderer/slices/multi-panel-context/multi-panel-context-selector
 vi.mock('$store/renderer/slices/workspace-navigation/workspace-navigation-selectors', () => ({
   selectWorkspaceNavigationMainPanel: mocks.selector({ type: 'empty' }),
 }));
-vi.mock('$store/renderer/slices/transient-ui/transient-ui-selectors', () => ({
+vi.mock('$store/renderer/slices/transient-ui/transient-ui-selectors', async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import('$store/renderer/slices/transient-ui/transient-ui-selectors')
+  >()),
   selectChatDraft: {
     select: (_state: unknown, workspaceId: string, agentId: string) =>
       mocks.chatDrafts[`${workspaceId}::${agentId}`] ?? '',
@@ -685,7 +694,15 @@ beforeEach(() => {
   for (const key of Object.keys(mocks.agentSubscriptionUIEntries)) {
     delete mocks.agentSubscriptionUIEntries[key];
   }
+  mocks.transientUi = initialTransientUi;
   mocks.dispatch.mockImplementation((action) => {
+    if (action?.type === 'transientUi/setComposerContextItems') {
+      mocks.transientUi = transientUiReducer(
+        mocks.transientUi as typeof initialTransientUi,
+        action,
+      );
+      (appStore as unknown as { emitState(): void }).emitState();
+    }
     if (action?.type !== 'transientUi/setChatDraft') return action;
     const [workspaceId, agentId, draft] = action.payload as [string, string, string];
     const key = `${workspaceId}::${agentId}`;

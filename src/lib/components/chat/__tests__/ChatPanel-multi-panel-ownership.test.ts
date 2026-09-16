@@ -166,6 +166,7 @@ vi.mock('$store/renderer/slices/workspace-navigation/workspace-navigation-select
   selectWorkspaceNavigationMainPanel: testState.selector({ type: 'empty' }),
 }));
 vi.mock('$store/renderer/slices/transient-ui/transient-ui-selectors', () => ({
+  selectComposerContextItems: testState.selector([]),
   selectChatDraft: { select: vi.fn(() => '') },
 }));
 vi.mock('$store/renderer/slices/task-agent-associations/task-agent-associations-selectors', () => ({

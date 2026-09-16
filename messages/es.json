@@ -6233,5 +6233,6 @@
   "sandbox_subscriptionRows_collapsed_label": "contraído",
   "sandbox_subscriptionRows_expanded_label": "expandido",
   "sandbox_subscriptionRows_static_label": "estático",
-  "chat_monitoredPrs_details_lastChangeAt": "Último cambio: {time}"
+  "chat_monitoredPrs_details_lastChangeAt": "Último cambio: {time}",
+  "context_images_title_label": "Imágenes"
 }

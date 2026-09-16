@@ -6,6 +6,17 @@
 
 import type { Collection } from '@augmentcode/themis/utils/collections/collection-utils';
 import type { ContextItem } from '$features/context/types';
+import type { ContentBlock } from '$shared/types';
+
+/** Presentation of an existing draft or user-message image; never stored separately. */
+export interface ContextImage {
+  id: string;
+  name?: string;
+  block: ContentBlock;
+  agentId?: string;
+  messageId?: string;
+  hydrationStatus?: 'loading' | 'loaded' | 'error';
+}
 
 export type ContextWorkspaceState = {
   items: Collection<ContextItem, 'id'>;

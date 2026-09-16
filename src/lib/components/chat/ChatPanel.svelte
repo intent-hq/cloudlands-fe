@@ -36,6 +36,8 @@
    * - onChatUpdate: Callback for chat state updates
    */
 
+  import { selectComposerContextItems } from '$store/renderer/slices/transient-ui/transient-ui-selectors';
+  import { setComposerContextItems } from '$store/renderer/slices/transient-ui/transient-ui-slice';
   import { onMount, onDestroy, untrack, tick } from 'svelte';
   import { deepEqual } from 'fast-equals';
   import { writable } from 'svelte/store';
@@ -1696,8 +1698,33 @@
     armPendingSearch(work);
   });
 
-  // Context items for the input
-  let contextItems = $state<ContextItem[]>([]);
+  // The composer and Context sidebar share one canonical attachment collection.
+  const composerContext$ = selectComposerContextItems(workspaceIdStore, agentIdStore);
+  let contextFiles = $state.raw<Record<string, File>>({});
+  const contextItems = $derived(
+    $composerContext$.map((item) => ({ ...item, file: contextFiles[item.id] })),
+  );
+
+  // Selector readables coalesce emissions; send/restore must see a same-tick edit.
+  function getContextItems(): ContextItem[] {
+    return selectComposerContextItems
+      .select(appStore.state, workspace?.id ?? '', agentId ?? '')
+      .map((item) => ({ ...item, file: contextFiles[item.id] }));
+  }
+
+  function setContextItems(items: ContextItem[]) {
+    contextFiles = Object.fromEntries(
+      items.flatMap((item) => (item.file ? [[item.id, item.file]] : [])),
+    );
+    if (!workspace?.id || !agentId) return;
+    appStore.dispatch(
+      setComposerContextItems(
+        workspace.id,
+        agentId,
+        items.map(({ file: _file, ...item }) => item),
+      ),
+    );
+  }
 
   // Input value
   let inputValue = $state(
@@ -1801,8 +1828,11 @@
     agentId: () => agentId,
     inputValue: () => inputValue,
     setInputValue: (text) => (inputValue = text),
-    contextItems: () => contextItems,
-    setContextItems: (items) => (contextItems = items),
+    contextItems: () => {
+      void $composerContext$;
+      return getContextItems();
+    },
+    setContextItems,
     applyEditorContent: (text) => inputComponent?.setContent?.(text),
     onSaveError: (err) => {
       logger.warn('[ChatPanel] Failed to save draft', { error: String(err) });
@@ -1818,11 +1848,12 @@
     if (targeted.length === 0) return;
 
     untrack(() => {
-      const existingIds = new Set(contextItems.map((item) => item.id));
+      const currentItems = getContextItems();
+      const existingIds = new Set(currentItems.map((item) => item.id));
       const additions = targeted
         .flatMap(browserCaptureToContextItems)
         .filter((item) => !existingIds.has(item.id));
-      if (additions.length > 0) contextItems = [...contextItems, ...additions];
+      if (additions.length > 0) setContextItems([...currentItems, ...additions]);
     });
     for (const capture of targeted) {
       appStore.dispatch(clearBrowserElementCapture(workspaceId, capture.id));
@@ -4843,7 +4874,7 @@
       // Once this send owns the empty state, that stale response must not
       // restore the just-sent prompt into the editor.
       draftManager.invalidatePendingRestore();
-      contextItems = [];
+      setContextItems([]);
       inputValue = '';
       inputComponent?.clear();
       commitDraftWrite('');
@@ -4908,7 +4939,7 @@
     }
     flushPendingDraftWrite();
 
-    const allContextItems = [...contextItems, ...inlineImageItems, ...mentionContextItems];
+    const allContextItems = [...getContextItems(), ...inlineImageItems, ...mentionContextItems];
     const workspaceContextStr = buildWorkspaceContextString(allContextItems);
     const noteIds = currentMainPanelContext?.noteId ? [currentMainPanelContext.noteId] : undefined;
 
@@ -5147,7 +5178,7 @@
 
     logger.info('Force submit triggered', { agentId });
 
-    const allContextItems = [...contextItems, ...inlineImageItems, ...mentionContextItems];
+    const allContextItems = [...getContextItems(), ...inlineImageItems, ...mentionContextItems];
     const workspaceContextStr = buildWorkspaceContextString(allContextItems);
     const noteIds = currentMainPanelContext?.noteId ? [currentMainPanelContext.noteId] : undefined;
 
@@ -6728,7 +6759,7 @@
               {/if}
               <SimpleRichInput
                 bind:this={inputComponent}
-                bind:contextItems
+                bind:contextItems={() => contextItems, setContextItems}
                 bind:value={inputValue}
                 onvaluechange={(value) => {
                   scheduleDraftWrite(value);

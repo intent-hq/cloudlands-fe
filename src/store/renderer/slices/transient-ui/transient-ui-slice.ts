@@ -2,12 +2,18 @@ import { createAction } from '@augmentcode/themis/utils/store/create-action';
 import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
 import { workspaceUnmounted } from '../workspace-lifecycle/workspace-lifecycle-slice';
+import {
+  createCollection,
+  type Collection,
+} from '@augmentcode/themis/utils/collections/collection-utils';
+import type { ComposerContextItem } from './transient-ui-types';
 
 export type SidebarTabId = 'notes' | 'changes' | 'files' | 'agents' | 'terminals' | 'browser';
 export type NoteViewMode = 'editor' | 'raw' | 'preview';
 
 export interface TransientUiWorkspaceState {
   chatDrafts: Record<string, string>;
+  composerContextByAgentId: Record<string, Collection<ComposerContextItem, 'id'>>;
   noteViewModeByNoteId: Record<string, Exclude<NoteViewMode, 'editor'>>;
   sidebarActiveTab: SidebarTabId;
   viewedFiles: Record<string, string>;
@@ -21,6 +27,7 @@ export interface TransientUiState {
 function createEmptyWorkspaceTransientUiState(): TransientUiWorkspaceState {
   return {
     chatDrafts: {},
+    composerContextByAgentId: {},
     noteViewModeByNoteId: {},
     sidebarActiveTab: 'notes',
     viewedFiles: {},
@@ -60,8 +67,27 @@ export const setChatDraft = createAction<[workspaceId: string, agentId: string, 
 export const clearChatDraft = createAction<[workspaceId: string, agentId: string]>(
   'transientUi/clearChatDraft',
 );
+export const setComposerContextItems = createAction<
+  [workspaceId: string, agentId: string, items: ComposerContextItem[]]
+>('transientUi/setComposerContextItems');
 
 export const transientUiReducer = createReducer<TransientUiState>(initialState);
+transientUiReducer.with(
+  setComposerContextItems,
+  (state, { payload: [workspaceId, agentId, items] }) =>
+    updateWorkspaceState(state, workspaceId, (workspaceState) => {
+      const current = workspaceState.composerContextByAgentId[agentId];
+      if (!current && items.length === 0) return workspaceState;
+      const composerContextByAgentId = { ...workspaceState.composerContextByAgentId };
+      if (items.length === 0) delete composerContextByAgentId[agentId];
+      else
+        composerContextByAgentId[agentId] = createCollection<ComposerContextItem, 'id'>(
+          'id',
+          items,
+        );
+      return { ...workspaceState, composerContextByAgentId };
+    }),
+);
 transientUiReducer.with(setViewedFiles, (state, { payload: [workspaceId, viewedFiles] }) =>
   updateWorkspaceState(state, workspaceId, (workspaceState) => ({
     ...workspaceState,

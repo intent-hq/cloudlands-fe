@@ -1,0 +1,68 @@
+{
+  "grid": {
+    "320": {
+      "probes": {
+        "data-slot=button": {
+          "fontSize": 13,
+          "fontWeight": 400,
+          "gap": 6,
+          "height": 79.33,
+          "lineHeight": 18,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 0,
+          "paddingRight": 0,
+          "width": 79.33,
+          "x": 33,
+          "y": 73
+        },
+        "data-slot=button#2": {
+          "fontSize": 13,
+          "fontWeight": 400,
+          "gap": 6,
+          "height": 79.33,
+          "lineHeight": 18,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 0,
+          "paddingRight": 0,
+          "width": 79.33,
+          "x": 120.33,
+          "y": 73
+        },
+        "data-slot=button#3": {
+          "fontSize": 13,
+          "fontWeight": 400,
+          "gap": 6,
+          "height": 79.34,
+          "lineHeight": 18,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 0,
+          "paddingRight": 0,
+          "width": 79.34,
+          "x": 207.66,
+          "y": 73
+        },
+        "data-slot=button#4": {
+          "fontSize": 13,
+          "fontWeight": 400,
+          "gap": 6,
+          "height": 79.33,
+          "lineHeight": 18,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 0,
+          "paddingRight": 0,
+          "width": 79.33,
+          "x": 33,
+          "y": 160.34
+        }
+      },
+      "root": {
+        "height": 272.67,
+        "width": 320
+      }
+    }
+  }
+}

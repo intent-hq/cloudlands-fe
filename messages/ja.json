@@ -6233,5 +6233,6 @@
   "sandbox_subscriptionRows_collapsed_label": "折りたたみ",
   "sandbox_subscriptionRows_expanded_label": "展開",
   "sandbox_subscriptionRows_static_label": "固定",
-  "chat_monitoredPrs_details_lastChangeAt": "最終変更日時: {time}"
+  "chat_monitoredPrs_details_lastChangeAt": "最終変更日時: {time}",
+  "context_images_title_label": "画像"
 }

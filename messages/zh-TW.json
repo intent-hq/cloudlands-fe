@@ -6233,5 +6233,6 @@
   "sandbox_subscriptionRows_collapsed_label": "已收合",
   "sandbox_subscriptionRows_expanded_label": "已展開",
   "sandbox_subscriptionRows_static_label": "靜態",
-  "chat_monitoredPrs_details_lastChangeAt": "上次變更時間：{time}"
+  "chat_monitoredPrs_details_lastChangeAt": "上次變更時間：{time}",
+  "context_images_title_label": "圖片"
 }

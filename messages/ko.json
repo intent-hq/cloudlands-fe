@@ -6233,5 +6233,6 @@
   "sandbox_subscriptionRows_collapsed_label": "접힘",
   "sandbox_subscriptionRows_expanded_label": "펼침",
   "sandbox_subscriptionRows_static_label": "고정",
-  "chat_monitoredPrs_details_lastChangeAt": "마지막 변경 시각: {time}"
+  "chat_monitoredPrs_details_lastChangeAt": "마지막 변경 시각: {time}",
+  "context_images_title_label": "이미지"
 }
