@@ -82,7 +82,7 @@ test-harness-report.json
 *.temp
 .cache
 # Port-keyed Playwright CT bundle caches (playwright/.cache-<CT_PORT>, see
-# playwright/ct-cache-dir.ts). Must stay ignored: CI's "Build CT bundle" step
+# playwright/ct-port.ts). Must stay ignored: CI's "Build CT bundle" step
 # runs --only-changed=HEAD, which scans untracked non-ignored files.
 playwright/.cache-*
 .eslintcache
