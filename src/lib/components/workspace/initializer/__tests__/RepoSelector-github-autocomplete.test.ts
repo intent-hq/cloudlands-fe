@@ -440,7 +440,7 @@ describe('RepoSelector trigger avatar', () => {
 
     const trigger = container.querySelector('button')!;
     expect(triggerAvatar(container)!.getAttribute('aria-hidden')).toBe('true');
-    expect(within(container).getByRole('button', { name: 'intent-hq/intent' })).toBe(trigger);
+    expect(within(container).getByRole('combobox', { name: 'intent-hq/intent' })).toBe(trigger);
   });
 
   it('drops a confirmed pick when the value prop moves to another repo', async () => {

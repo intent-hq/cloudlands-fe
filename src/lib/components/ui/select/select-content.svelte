@@ -53,7 +53,7 @@
         id={select.listboxId}
         role="listbox"
         aria-labelledby={select.triggerId}
-        tabindex="0"
+        tabindex="-1"
       >
         <ListHighlight />
         {@render children?.()}

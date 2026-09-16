@@ -184,7 +184,7 @@ describe('Settings migration', () => {
     const recorder = installDispatchRecorder();
     renderAppBehavior();
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Select update channel' }));
+    await fireEvent.click(screen.getByRole('combobox', { name: 'Select update channel' }));
     await fireEvent.pointerUp(await screen.findByRole('option', { name: 'Beta' }), {
       button: 0,
       pointerType: 'mouse',
@@ -204,7 +204,7 @@ describe('Settings migration', () => {
     const recorder = installDispatchRecorder();
     renderAppBehavior();
 
-    const trigger = screen.getByRole('button', { name: 'Select update channel' });
+    const trigger = screen.getByRole('combobox', { name: 'Select update channel' });
     trigger.focus();
     expect(document.activeElement).toBe(trigger);
     await fireEvent.click(trigger);
@@ -225,7 +225,7 @@ describe('Settings migration', () => {
     renderGeneral();
 
     await fireEvent.click(screen.getByRole('button', { name: 'General' }));
-    await fireEvent.click(screen.getByRole('button', { name: 'Select update channel' }));
+    await fireEvent.click(screen.getByRole('combobox', { name: 'Select update channel' }));
     await fireEvent.pointerUp(await screen.findByRole('option', { name: 'Disabled' }), {
       button: 0,
       pointerType: 'mouse',

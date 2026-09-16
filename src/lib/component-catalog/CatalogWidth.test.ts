@@ -30,7 +30,7 @@ it('updates a named scene and URL when the shell width control changes without r
   await waitFor(() => expect(screen.getByTestId('catalog-scene-focus').style.width).toBe('680px'));
 
   const scene = screen.getByTestId('catalog-scene');
-  const widthControl = screen.getByRole('button', { name: 'Preview', exact: true });
+  const widthControl = screen.getByRole('combobox', { name: 'Preview', exact: true });
   await fireEvent.keyDown(widthControl, { key: 'Enter' });
   await fireEvent.keyDown(widthControl, { key: 'Home' });
   await fireEvent.keyDown(widthControl, { key: 'ArrowDown' });

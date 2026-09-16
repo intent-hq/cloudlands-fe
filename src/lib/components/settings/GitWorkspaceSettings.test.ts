@@ -335,7 +335,7 @@ describe('GitWorkspaceSettings — default shell select', () => {
     mocks.mockSettingsList.mockResolvedValue([...baseSettings]);
     render(GitWorkspaceSettings);
 
-    const trigger = await waitFor(() => screen.getByRole('button', SHELL_TRIGGER));
+    const trigger = await waitFor(() => screen.getByRole('combobox', SHELL_TRIGGER));
     expect(trigger.textContent).toContain(m.settings_gitWorkspace_shell_autoDetect());
   });
 
@@ -343,7 +343,7 @@ describe('GitWorkspaceSettings — default shell select', () => {
     mocks.mockSettingsList.mockResolvedValue(withShell('/opt/homebrew/bin/nu'));
     render(GitWorkspaceSettings);
 
-    const trigger = await waitFor(() => screen.getByRole('button', SHELL_TRIGGER));
+    const trigger = await waitFor(() => screen.getByRole('combobox', SHELL_TRIGGER));
     expect(trigger.textContent).toContain('/opt/homebrew/bin/nu');
   });
 
@@ -351,7 +351,7 @@ describe('GitWorkspaceSettings — default shell select', () => {
     mocks.mockSettingsList.mockResolvedValue([...baseSettings]);
     render(GitWorkspaceSettings);
 
-    const trigger = await waitFor(() => screen.getByRole('button', SHELL_TRIGGER));
+    const trigger = await waitFor(() => screen.getByRole('combobox', SHELL_TRIGGER));
     trigger.focus();
     await fireEvent.keyDown(trigger, { key: 'Enter' });
     await fireEvent.keyDown(trigger, { key: 'ArrowDown' });
@@ -369,7 +369,7 @@ describe('GitWorkspaceSettings — default shell select', () => {
     mocks.mockSettingsList.mockResolvedValue(withShell('/bin/zsh'));
     const { component } = render(GitWorkspaceSettings);
 
-    await waitFor(() => screen.getByRole('button', SHELL_TRIGGER));
+    await waitFor(() => screen.getByRole('combobox', SHELL_TRIGGER));
 
     component.resetToDefaults();
 

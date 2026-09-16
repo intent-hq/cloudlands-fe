@@ -192,7 +192,7 @@ describe('CatalogShell root inline style ownership', () => {
   }
 
   async function chooseColorTheme(name: string) {
-    const trigger = screen.getByRole('button', { name: 'Color theme' });
+    const trigger = screen.getByRole('combobox', { name: 'Color theme' });
     await fireEvent.keyDown(trigger, { key: 'Enter' });
     const options = screen.getAllByRole('option');
     const highlighted = options.findIndex((option) => option.hasAttribute('data-highlighted'));

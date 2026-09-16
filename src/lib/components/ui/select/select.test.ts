@@ -11,20 +11,23 @@ vi.mock('svelte-fa', async () => {
 describe('Select', () => {
   afterEach(cleanup);
 
-  it('exposes button/listbox semantics and supports keyboard selection with focus restoration', async () => {
+  it('exposes combobox/listbox semantics and supports keyboard selection with focus restoration', async () => {
     render(SelectHarness);
-    const trigger = screen.getByRole('button', { name: 'Choose fruit' });
+    const trigger = screen.getByRole('combobox', { name: 'Choose fruit' });
     expect(trigger.textContent).toContain('Apple');
     expect(trigger.textContent).not.toContain('apple');
+    expect(trigger.getAttribute('aria-haspopup')).toBe('listbox');
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
+    expect(trigger.hasAttribute('aria-activedescendant')).toBe(false);
 
     trigger.focus();
     await fireEvent.keyDown(trigger, { key: 'Enter' });
     const listbox = screen.getByRole('listbox', { name: 'Choose fruit' });
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
     expect(trigger.getAttribute('aria-controls')).toBe(listbox.id);
     expect(listbox.getAttribute('aria-labelledby')).toBe(trigger.id);
-    expect(trigger.hasAttribute('aria-activedescendant')).toBe(false);
     expect(listbox.getAttribute('data-select-viewport')).not.toBeNull();
-    expect(listbox.getAttribute('tabindex')).toBe('0');
+    expect(listbox.getAttribute('tabindex')).toBe('-1');
     expect(screen.getByRole('option', { name: 'Apple' }).getAttribute('aria-selected')).toBe(
       'true',
     );
@@ -43,19 +46,53 @@ describe('Select', () => {
     expect(document.activeElement).toBe(trigger);
   });
 
+  it('references the highlighted option from the focused trigger while arrowing', async () => {
+    render(SelectHarness);
+    const trigger = screen.getByRole('combobox', { name: 'Choose fruit' });
+    trigger.focus();
+    await fireEvent.keyDown(trigger, { key: 'Enter' });
+
+    const apple = screen.getByRole('option', { name: 'Apple' });
+    await waitFor(() => expect(apple.getAttribute('data-highlighted')).not.toBeNull());
+    expect(trigger.getAttribute('aria-activedescendant')).toBe(apple.id);
+
+    await fireEvent.keyDown(trigger, { key: 'ArrowDown' });
+    const banana = screen.getByRole('option', { name: 'Banana' });
+    await waitFor(() => expect(banana.getAttribute('data-highlighted')).not.toBeNull());
+    expect(banana.id).not.toBe('');
+    expect(document.activeElement).toBe(trigger);
+    expect(trigger.getAttribute('aria-activedescendant')).toBe(banana.id);
+
+    await fireEvent.keyDown(trigger, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
+    expect(trigger.hasAttribute('aria-activedescendant')).toBe(false);
+  });
+
   it('honours a consumer trigger id for external labels and listbox labelling', async () => {
     render(SelectHarness, { props: { consumerId: 'fruit-select' } });
     const trigger = screen.getByLabelText('Fruit');
     expect(trigger.id).toBe('fruit-select');
+    expect(screen.getByRole('combobox', { name: 'Fruit' })).toBe(trigger);
+    expect(trigger.hasAttribute('aria-label')).toBe(false);
 
     await fireEvent.keyDown(trigger, { key: 'Enter' });
     const listbox = screen.getByRole('listbox', { name: 'Fruit' });
     expect(listbox.getAttribute('aria-labelledby')).toBe('fruit-select');
   });
 
+  it('names an unlabelled combobox from its visible content and follows the selection', async () => {
+    render(SelectHarness, { props: { unlabelled: true } });
+    const trigger = await screen.findByRole('combobox', { name: 'Apple' });
+
+    trigger.focus();
+    await fireEvent.keyDown(trigger, { key: 'b' });
+    await waitFor(() => expect(screen.getByTestId('select-value').textContent).toBe('banana'));
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Banana' })).toBe(trigger));
+  });
+
   it('supports closed-state typeahead and controlled invalid/disabled states', async () => {
     const { unmount } = render(SelectHarness, { props: { invalid: true } });
-    const trigger = screen.getByRole('button', { name: 'Choose fruit' });
+    const trigger = screen.getByRole('combobox', { name: 'Choose fruit' });
     expect(trigger.getAttribute('aria-invalid')).toBe('true');
     expect(trigger.className.split(/\s+/)).toContain('aria-invalid:border-danger');
     expect(trigger.className.split(/\s+/)).toContain('aria-invalid:ring-1');
@@ -71,13 +108,13 @@ describe('Select', () => {
 
     render(SelectHarness, { props: { disabled: true } });
     expect(
-      (screen.getByRole('button', { name: 'Choose fruit' }) as HTMLButtonElement).disabled,
+      (screen.getByRole('combobox', { name: 'Choose fruit' }) as HTMLButtonElement).disabled,
     ).toBe(true);
   });
 
   it('supports portalled content and outside dismissal', async () => {
     const { container } = render(SelectHarness, { props: { portal: true } });
-    const trigger = screen.getByRole('button', { name: 'Choose fruit' });
+    const trigger = screen.getByRole('combobox', { name: 'Choose fruit' });
     await fireEvent.keyDown(trigger, { key: 'Enter' });
 
     const listbox = screen.getByRole('listbox');
@@ -88,7 +125,7 @@ describe('Select', () => {
 
   it('opens long content without changing its accessible option name', async () => {
     render(SelectHarness);
-    const trigger = screen.getByRole('button', { name: 'Choose fruit' });
+    const trigger = screen.getByRole('combobox', { name: 'Choose fruit' });
     expect(trigger.closest('[data-slot="select-root"]')).toBeTruthy();
     await fireEvent.keyDown(trigger, { key: 'Enter' });
     const longOption = screen.getByRole('option', { name: /very long cherry/ });

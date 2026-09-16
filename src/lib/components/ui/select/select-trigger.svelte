@@ -18,6 +18,7 @@
     child,
     onclick,
     id,
+    ref = $bindable(null),
     ...restProps
   }: Props = $props();
 
@@ -30,6 +31,32 @@
   }>('canonical-select');
   untrack(() => select.registerTriggerId(id));
   $effect(() => select.registerTriggerId(id));
+
+  let hasNativeLabel = $state(false);
+  $effect(() => {
+    const triggerId = select.triggerId;
+    hasNativeLabel = Array.from(document.querySelectorAll('label[for]')).some(
+      (label) => (label as HTMLLabelElement).htmlFor === triggerId,
+    );
+  });
+  const needsContentLabel = $derived(
+    !restProps['aria-label'] && !restProps['aria-labelledby'] && !hasNativeLabel,
+  );
+  let contentLabel = $state<string | undefined>();
+  $effect(() => {
+    const element = ref;
+    if (!needsContentLabel || !element) {
+      contentLabel = undefined;
+      return;
+    }
+    const update = () => {
+      contentLabel = element.textContent?.trim() || undefined;
+    };
+    update();
+    const observer = new MutationObserver(update);
+    observer.observe(element, { childList: true, characterData: true, subtree: true });
+    return () => observer.disconnect();
+  });
   const variantClasses = {
     default:
       'border border-border bg-transparent shadow-none hover:border-input hover:bg-hover px-3',
@@ -56,29 +83,40 @@
     onclick?.(event);
   }
 
-  function withoutActiveDescendant(props: Record<string, unknown>) {
-    const { 'aria-activedescendant': _activeDescendant, ...sanitizedProps } = props;
-    return sanitizedProps;
+  function comboboxProps(props: Record<string, unknown>): Record<string, unknown> {
+    const {
+      'aria-activedescendant': activeDescendant,
+      'aria-label': ariaLabel,
+      ...triggerProps
+    } = props;
+    return {
+      ...triggerProps,
+      role: 'combobox',
+      'aria-label': typeof ariaLabel === 'string' ? ariaLabel : contentLabel,
+      'aria-activedescendant':
+        select.open && typeof activeDescendant === 'string' ? activeDescendant : undefined,
+    };
   }
 </script>
 
 <SelectPrimitive.Trigger
   {...restProps}
+  bind:ref
   id={select.triggerId}
   aria-controls={select.open ? select.listboxId : undefined}
   class={triggerClass}
   aria-invalid={select.invalid || undefined}
   onclick={handleClick}
-  child={sanitizedTrigger}
+  child={comboboxTrigger}
 ></SelectPrimitive.Trigger>
 
 <!-- i18n-ignore (snippet parameter type annotation, not UI text) -->
-{#snippet sanitizedTrigger({ props }: { props: Record<string, unknown> })}
-  {@const sanitizedProps = withoutActiveDescendant(props)}
+{#snippet comboboxTrigger({ props }: { props: Record<string, unknown> })}
+  {@const triggerProps = comboboxProps(props)}
   {#if child}
-    {@render child({ props: sanitizedProps })}
+    {@render child({ props: triggerProps })}
   {:else}
-    <Button {...sanitizedProps} variant={buttonVariant} active={select.open} class={triggerClass}>
+    <Button {...triggerProps} variant={buttonVariant} active={select.open} class={triggerClass}>
       {@render children?.()}
       {#if variant === 'default'}
         <Fa

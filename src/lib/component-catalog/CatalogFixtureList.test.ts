@@ -160,7 +160,7 @@ describe('CatalogFixtureList real previews', () => {
   it('renders truthful Select open, size, and long-list states', async () => {
     const { container } = await renderEntry('select');
 
-    const open = screen.getByRole('button', { name: 'Open catalog select' });
+    const open = screen.getByRole('combobox', { name: 'Open catalog select' });
     expect(open.getAttribute('aria-expanded')).toBe('true');
     expect(open.textContent).toContain('Apple');
     const openState = container.querySelector('[data-catalog-state="select-open"]');
@@ -174,20 +174,20 @@ describe('CatalogFixtureList real previews', () => {
     ).toContain('Apple');
     expect(screen.getByLabelText('Select value').className).toContain('sr-only');
 
-    expect(screen.getByRole('button', { name: 'Compact catalog select' }).className).toContain(
+    expect(screen.getByRole('combobox', { name: 'Compact catalog select' }).className).toContain(
       'h-(--control-height-small)',
     );
-    expect(screen.getByRole('button', { name: 'Compact catalog select' }).textContent).toContain(
+    expect(screen.getByRole('combobox', { name: 'Compact catalog select' }).textContent).toContain(
       'Apple',
     );
-    expect(screen.getByRole('button', { name: 'Medium catalog select' }).className).toContain(
+    expect(screen.getByRole('combobox', { name: 'Medium catalog select' }).className).toContain(
       'h-(--control-height-medium)',
     );
-    expect(screen.getByRole('button', { name: 'Large catalog select' }).className).toContain(
+    expect(screen.getByRole('combobox', { name: 'Large catalog select' }).className).toContain(
       'h-(--control-height-large)',
     );
 
-    const longList = screen.getByRole('button', { name: 'Long-list catalog select' });
+    const longList = screen.getByRole('combobox', { name: 'Long-list catalog select' });
     expect(longList.getAttribute('aria-expanded')).toBe('true');
     const longState = container.querySelector('[data-catalog-state="select-long-list"]');
     expect(within(longState as HTMLElement).getAllByRole('option')).toHaveLength(18);

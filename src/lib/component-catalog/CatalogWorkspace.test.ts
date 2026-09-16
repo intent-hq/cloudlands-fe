@@ -77,7 +77,7 @@ describe('catalog workspace', () => {
     vi.mocked(localStorage.setItem).mockClear();
     const first = render(CatalogShell);
     expect(first.container.querySelector('[data-catalog-control="theme"]')).not.toBeNull();
-    const colorThemeTrigger = screen.getByRole('button', { name: 'Color theme' });
+    const colorThemeTrigger = screen.getByRole('combobox', { name: 'Color theme' });
     await fireEvent.keyDown(colorThemeTrigger, { key: 'Enter' });
     await fireEvent.keyDown(colorThemeTrigger, { key: 'ArrowDown' });
     await fireEvent.keyDown(colorThemeTrigger, { key: 'Enter' });
