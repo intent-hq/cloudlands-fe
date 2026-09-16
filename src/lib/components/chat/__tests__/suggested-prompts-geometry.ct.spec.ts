@@ -91,7 +91,7 @@ for (const scenario of scenarios) {
       rowOpacity: '1',
       hintOpacity: '1',
     });
-    expect(surfaceMarginTop).toBe('16px');
+    expect(surfaceMarginTop).toBe('0px');
     expect(shortGeometry.lineCount).toBe(1);
     expect(wrappedGeometry.lineCount).toBeGreaterThan(1);
     expect(wrappedGeometry.labelColor).toBe(toolColor);

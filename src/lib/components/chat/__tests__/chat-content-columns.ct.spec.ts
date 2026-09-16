@@ -183,21 +183,15 @@ for (const { width, expectedLeftInset, expectedComposerInset, label } of transcr
       'padding-bottom',
       expectedComposerInset,
     );
-    await expect(component.locator('.tiptap-editor.regular-composer-content-inset')).toHaveCSS(
-      'padding-left',
-      '0px',
-    );
-    await expect(component.locator('.tiptap-editor.regular-composer-content-inset')).toHaveCSS(
-      'padding-right',
-      '0px',
-    );
+    await expect(component.locator('.tiptap-editor')).toHaveCSS('padding-left', '14px');
+    await expect(component.locator('.tiptap-editor')).toHaveCSS('padding-right', '8px');
     await expect(component.locator('[data-chat-input-action-bar]')).toHaveCSS(
       'padding-left',
-      '0px',
+      '14px',
     );
     await expect(component.locator('[data-chat-input-action-bar]')).toHaveCSS(
       'padding-right',
-      '0px',
+      '8px',
     );
 
     if (width < 640) {
@@ -218,7 +212,7 @@ for (const { width, expectedLeftInset, expectedComposerInset, label } of transcr
       const viewport = component.getByTestId('chat-transcript-scroll-viewport');
       await viewport.hover();
       const delta = await viewport.evaluate((node) => {
-        const prompt = node.querySelector<HTMLElement>('[data-pinnable-user-prompt]');
+        const prompt = node.querySelector<HTMLElement>('[data-pinned-prompt-id]');
         const turn = prompt?.closest('[data-conversation-turn]');
         if (!prompt || !turn) throw new Error('Expected a user turn in the transcript');
         return (

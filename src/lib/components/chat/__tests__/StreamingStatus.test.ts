@@ -221,7 +221,7 @@ describe('StreamingStatus rendered UI', () => {
     expect(copyButton).toBeTruthy();
     expect(copyButton.className).toContain('text-muted-foreground');
     expect(copyButton.className).toContain('absolute');
-    expect(copyButton.className).toContain('top-3');
+    expect(copyButton.className).toContain('top-2');
     expect(copyButton.className).toContain('-translate-y-1/2');
     expect(copyButton.getAttribute('data-variant')).toBe('ghost-light');
     expect(copyButton.getAttribute('data-size')).toBe('icon-sm');

@@ -1479,15 +1479,12 @@
 <div
   bind:this={containerRef}
   class={cn(
-    'relative rich-input-container flex flex-col overflow-hidden rounded-(--radius-large) p-2 text-card-foreground transition-[box-shadow,color,min-height] duration-spring-fast ease-spring-fast motion-reduce:transition-none',
+    'relative rich-input-container flex flex-col overflow-hidden rounded-(--radius-large) border-0 p-2 text-card-foreground transition-[box-shadow,color,min-height] duration-spring-fast ease-spring-fast motion-reduce:transition-none',
     surfaceClasses(2, 2),
     isAutoExpand
       ? 'transition-[border-color,background-color,box-shadow,min-height]'
       : 'transition-[border-color,background-color,box-shadow]',
-    edgeDocked ? 'border-0 px-0' : 'border border-transparent',
-    {
-      'border-primary-ink border-dashed': isDragging,
-    },
+    edgeDocked && 'px-0',
   )}
   style={composerStyle}
   ondragenter={externalDropTarget ? undefined : handleDragEnter}
@@ -1507,7 +1504,7 @@
   <!-- Drop zone overlay -->
   {#if isDragging}
     <div
-      class="absolute inset-0 bg-primary/5 z-20 flex items-center justify-center pointer-events-none"
+      class="absolute inset-0 z-20 flex items-center justify-center rounded-(--radius-large) border border-dashed border-primary-ink bg-primary/5 pointer-events-none"
     >
       <div class="flex flex-col items-start gap-2 text-left text-primary-ink">
         <Fa icon={faPaperclip} class="w-6 h-6" />
