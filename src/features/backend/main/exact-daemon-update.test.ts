@@ -13,21 +13,24 @@ function client() {
 afterEach(() => vi.useRealTimers());
 
 describe('exact daemon updates', () => {
-  it('sends the precise target and succeeds only after the daemon reports that version', async () => {
-    const rpc = client();
-    rpc.request
-      .mockResolvedValueOnce({ version: '1.0.0', exactUpdateSupported: true })
-      .mockResolvedValueOnce({ ok: true, targetVersion: '1.2.0' })
-      .mockResolvedValueOnce({ version: '1.2.0', exactUpdateSupported: true });
-    const mark = vi.fn();
-    await expect(updateDaemonToPin(rpc, '1.2.0', mark)).resolves.toEqual({ ok: true });
-    expect(rpc.request.mock.calls).toEqual([
-      ['system.status'],
-      ['system.requestUpdate', { targetVersion: '1.2.0' }],
-      ['system.status'],
-    ]);
-    expect(mark).toHaveBeenCalledOnce();
-  });
+  it.each(['1.2.0', 'v1.2.0', '1.2.0+build.7', 'v1.2.0+build.7'])(
+    'sends the precise target and confirms equivalent reported version %s',
+    async (version) => {
+      const rpc = client();
+      rpc.request
+        .mockResolvedValueOnce({ version: '1.0.0', exactUpdateSupported: true })
+        .mockResolvedValueOnce({ ok: true, targetVersion: '1.2.0' })
+        .mockResolvedValueOnce({ version, exactUpdateSupported: true });
+      const mark = vi.fn();
+      await expect(updateDaemonToPin(rpc, '1.2.0', mark)).resolves.toEqual({ ok: true });
+      expect(rpc.request.mock.calls).toEqual([
+        ['system.status'],
+        ['system.requestUpdate', { targetVersion: '1.2.0' }],
+        ['system.status'],
+      ]);
+      expect(mark).toHaveBeenCalledOnce();
+    },
+  );
 
   it.each([undefined, false, 'true', 1])(
     'never sends a mutation without boolean capability: %s',
@@ -91,21 +94,28 @@ describe('exact daemon updates', () => {
   });
 
   it('rejects an unacknowledged target and a reconnected version mismatch', async () => {
-    for (const response of [{ ok: true }, { ok: true, targetVersion: '1.3.0' }]) {
+    for (const response of [
+      { ok: true },
+      { ok: true, targetVersion: '1.3.0' },
+      { ok: true, targetVersion: 'v1.2.0' },
+      { ok: true, targetVersion: '1.2.0+build.7' },
+    ]) {
       const rpc = client();
       rpc.request
         .mockResolvedValueOnce({ version: '1.0.0', exactUpdateSupported: true })
         .mockResolvedValueOnce(response);
       await expect(updateDaemonToPin(rpc, '1.2.0', vi.fn())).rejects.toThrow(/acknowledge/);
     }
-    const rpc = client();
-    rpc.request
-      .mockResolvedValueOnce({ version: '1.0.0', exactUpdateSupported: true })
-      .mockResolvedValueOnce({ ok: true, targetVersion: '1.2.0' })
-      .mockResolvedValueOnce({ version: '1.3.0' });
-    await expect(updateDaemonToPin(rpc, '1.2.0', vi.fn())).rejects.toThrow(
-      /without the requested version/,
-    );
+    for (const version of ['1.3.0', 'v1.2.1+build.7', '1.2.0-rc.1', 'v1.2.0-rc.2+build.7']) {
+      const rpc = client();
+      rpc.request
+        .mockResolvedValueOnce({ version: '1.0.0', exactUpdateSupported: true })
+        .mockResolvedValueOnce({ ok: true, targetVersion: '1.2.0' })
+        .mockResolvedValueOnce({ version });
+      await expect(updateDaemonToPin(rpc, '1.2.0', vi.fn())).rejects.toThrow(
+        /without the requested version/,
+      );
+    }
   });
 
   it('waits through install and reconnect, keeping update progress active', async () => {

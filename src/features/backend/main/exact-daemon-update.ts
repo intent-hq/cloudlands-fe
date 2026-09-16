@@ -55,7 +55,8 @@ export async function updateDaemonToPin(
         await new Promise((resolve) => setTimeout(resolve, 1000));
         continue;
       }
-      if (current.version === targetVersion) return { ok: true };
+      if (compareToPinnedVersion(current.version ?? '', targetVersion) === 'equal')
+        return { ok: true };
       const update = current.targetUpdate;
       if (!update || update.targetVersion !== targetVersion) {
         if (acceptanceError) throw acceptanceError;
