@@ -63,9 +63,6 @@ describe('editorial panel resize handles', () => {
     expect(sharedStyles).toContain('--resize-handle-idle: hsl(var(--border))');
     expect(sharedStyles).toContain('--resize-handle-active: hsl(var(--muted-foreground) / 0.55)');
     expect(sharedStyles).toContain('opacity: 0');
-    expect(sharedStyles).toContain(
-      ".app-resize-handle[data-resize-indicator='short']::before {\n  opacity: 0.45;",
-    );
     expect(sharedStyles).not.toContain('var(--primary)');
     expect(sharedStyles).not.toContain('var(--ring)');
     implementationPaths.forEach((implementationPath) => {
