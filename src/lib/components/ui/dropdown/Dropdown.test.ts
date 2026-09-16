@@ -360,6 +360,56 @@ describe('Dropdown compatibility modes', () => {
     expect(options[0].dataset.highlighted).toBe('true');
   });
 
+  it.each([false, true])(
+    'selects the hovered option past disabled rows and submenu triggers (grouped: %s)',
+    async (grouped) => {
+      const onchange = vi.fn();
+      const options = [
+        { value: 'disabled', label: 'Disabled', disabled: true },
+        { value: 'a', label: 'Alpha' },
+        {
+          value: 'more',
+          label: 'More',
+          type: 'submenu' as const,
+          children: [{ value: 'child', label: 'Child' }],
+        },
+        { value: 'b', label: 'Beta' },
+        { value: 'c', label: 'Gamma' },
+      ];
+      render(Dropdown, {
+        props: {
+          ...(grouped ? { groups: [{ key: 'letters', label: 'Letters', options }] } : { options }),
+          multiple: true,
+          onchange,
+          portal: false,
+        },
+      });
+      await fireEvent.click(screen.getByRole('button'));
+      const search = screen.getByRole('searchbox');
+      search.focus();
+      const listbox = screen.getByRole('listbox');
+      listbox.getBoundingClientRect = () => rect(0, 0, 200, 150);
+      screen.getAllByRole('option').forEach((row, index) => {
+        row.getBoundingClientRect = () => rect(0, index * 30, 200, 30);
+      });
+
+      await fireEvent.pointerMove(listbox, { clientX: 10, clientY: 45 });
+      await waitFor(() =>
+        expect(screen.getByRole('option', { name: 'Alpha' }).dataset.highlighted).toBe('true'),
+      );
+      await fireEvent.keyDown(search, { key: 'Enter' });
+      expect(onchange).toHaveBeenLastCalledWith(['a'], undefined);
+
+      await fireEvent.pointerMove(listbox, { clientX: 10, clientY: 105 });
+      await waitFor(() =>
+        expect(screen.getByRole('option', { name: 'Beta' }).dataset.highlighted).toBe('true'),
+      );
+      await fireEvent.keyDown(search, { key: 'Enter' });
+      expect(onchange).toHaveBeenLastCalledWith(['a', 'b'], undefined);
+      expect(document.activeElement).toBe(search);
+    },
+  );
+
   it('searches grouped options by both the display label and search label', async () => {
     const { container } = render(Dropdown, {
       props: {

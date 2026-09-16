@@ -191,17 +191,16 @@
       .filter((group) => group.options.length > 0);
   });
 
-  // Flat list of selectable options (for keyboard navigation indexing)
-  const selectableOptions = $derived.by(() => {
-    if (groups.length > 0) {
-      return filteredGroups.flatMap((g) =>
-        g.options.filter((o) => o.type !== 'separator' && o.type !== 'submenu' && !o.disabled),
-      );
-    }
-    return filteredOptions.filter(
-      (o) => o.type !== 'separator' && o.type !== 'submenu' && !o.disabled,
-    );
-  });
+  // ListHighlight includes submenu triggers, but Enter selects only leaf options.
+  const hoverOptions = $derived(
+    (groups.length > 0 ? filteredGroups.flatMap((g) => g.options) : filteredOptions).filter(
+      (option) => option.type !== 'separator' && !option.disabled,
+    ),
+  );
+  const selectableOptions = $derived(hoverOptions.filter((option) => option.type !== 'submenu'));
+  const hoverIndex = $derived(
+    hoverOptions.findIndex((option) => option === selectableOptions[highlightedIndex]),
+  );
 
   /** Find the index in selectableOptions that matches value or defaultHighlightValue */
   function findHighlightIndex(): number {
@@ -771,9 +770,13 @@
     )}
   >
     <ListHighlight
-      activeIndex={highlightedIndex >= 0 ? highlightedIndex : null}
+      activeIndex={hoverIndex >= 0 ? hoverIndex : null}
       onactiveindexchange={(index) => {
-        if (index !== null) highlightedIndex = index;
+        if (index !== null) {
+          highlightedIndex = selectableOptions.findIndex(
+            (option) => option === hoverOptions[index],
+          );
+        }
       }}
     />
     {#if groups.length > 0}
@@ -867,6 +870,7 @@
         id={optionIndex >= 0 ? `${uid}-option-${optionIndex}` : undefined}
         onclick={(e) => handleSelect(option, e)}
         disabled={option.disabled}
+        data-disabled={option.disabled ? '' : undefined}
         data-highlighted={isHighlighted ? 'true' : undefined}
         data-menu-item
         style="scroll-margin-top: var(--control-height-medium)"
