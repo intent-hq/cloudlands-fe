@@ -1247,7 +1247,7 @@ export function setupSystemIPC() {
       SystemWriteClipboardSchema,
       async (_event, validated) => {
         try {
-          clipboard.writeText(validated.text);
+          await clipboard.writeText(validated.text);
           return { success: true };
         } catch (error) {
           logger.error('Failed to write clipboard', { error });
