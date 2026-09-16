@@ -105,11 +105,11 @@ describe('config IPC startup hydration', () => {
     });
     await flush();
 
-    // Startup is not gated on the daemon round-trip: the first settings.get is
-    // still unanswered, yet setup has resolved with every handler registered
-    // and the in-memory defaults served.
+    // Startup is not gated on the daemon round-trip: all three settings.get
+    // reads are in flight (parallel) and unanswered, yet setup has resolved
+    // with every handler registered and the in-memory defaults served.
     expect(resolved).toBe(true);
-    expect(pending).toHaveLength(1);
+    expect(pending).toHaveLength(3);
     expect(mocks.handlers.has(CONFIG_CHANNELS.GET)).toBe(true);
     expect(mocks.handlers.has(CONFIG_CHANNELS.SET)).toBe(true);
     expect(mocks.handlers.has(CONFIG_CHANNELS.GET_ALL)).toBe(true);

@@ -60,22 +60,36 @@ async function daemonUpdate(
 
 /**
  * Hydrate ConfigManager's non-secret daemon-owned sub-keys from the daemon.
- * Secrets are skipped so plaintext never enters `ConfigManager`.
+ * Secrets are skipped so plaintext never enters `ConfigManager`. Never
+ * rejects: failures are warn-logged and leave the affected keys at their
+ * current values.
  */
 export async function hydrateFromDaemon(
   configManager: ConfigManager,
   client?: SettingsClient,
 ): Promise<void> {
-  for (const path of NON_SECRET_DAEMON_KEYS) {
-    try {
-      const value = await readDaemonKey(path, client);
-      if (value !== undefined && value !== null) {
-        configManager.set(path, value as never);
-      }
-    } catch (error) {
-      logger.warn(`Failed to hydrate ${path} from daemon`, error as Error);
-    }
+  // Resolve the client once up front so the fan-out shares it.
+  let resolved: SettingsClient;
+  try {
+    resolved = await resolveClient(client);
+  } catch (error) {
+    logger.warn('Failed to hydrate config from daemon: no backend client', error as Error);
+    return;
   }
+  // Fetch every key in parallel: one slow or failing read must not delay or
+  // skip the others, and per-key failures stay independent.
+  await Promise.allSettled(
+    NON_SECRET_DAEMON_KEYS.map(async (path) => {
+      try {
+        const value = await readDaemonKey(path, resolved);
+        if (value !== undefined && value !== null) {
+          configManager.set(path, value as never);
+        }
+      } catch (error) {
+        logger.warn(`Failed to hydrate ${path} from daemon`, error as Error);
+      }
+    }),
+  );
 }
 
 export function isDaemonOwnedKey(path: string): boolean {
