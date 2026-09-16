@@ -244,7 +244,8 @@ export async function routeInviteLinkFromOs(
  * library-authored free-form text that may carry the invite secret or the
  * minted token — and so is anything on the error beyond a known code
  * (`InviteRpcError.inviteCode` is already reduced to the documented set;
- * `transportCode` / `flowCode` / `code` below are local literals).
+ * `transportCode` / `flowCode` / `code` below are local literals). Anything
+ * else is logged as `unknown` — `Error.name` is arbitrary, writable text.
  */
 function describeErrorForLog(error: unknown): Record<string, unknown> {
   if (error instanceof PinMismatchError) return { kind: 'pin-mismatch' };
@@ -261,7 +262,7 @@ function describeErrorForLog(error: unknown): Record<string, unknown> {
   if (error instanceof guestSessionsStore.GuestEncryptionUnavailableError) {
     return { kind: 'store', code: error.code };
   }
-  return { kind: error instanceof Error ? error.name : typeof error };
+  return { kind: 'unknown' };
 }
 
 async function showDialog(options: MessageBoxOptions): Promise<number> {
