@@ -906,17 +906,12 @@ export class TunnelManager {
 
     socket.on('data', (chunk: Buffer) => {
       if (!stream.opened) {
-        if (stream.pendingBytes + chunk.length > LOCAL_READ_BUFFER_BYTES) {
-          this.recordAdmissionFailure(
-            forward.remotePort,
-            'pre-admission byte budget exceeded',
-            Date.now() - stream.createdAtMs,
-          );
-          this.endStream(stream, { sendClose: stream.admitted });
-        } else {
-          stream.pendingData.push(chunk);
-          stream.pendingBytes += chunk.length;
-        }
+        stream.pendingData.push(chunk);
+        stream.pendingBytes += chunk.length;
+        // Bound buffering without rejecting valid uploads while OPEN is pending.
+        // Reads are capped by the socket highWaterMark; pause at the threshold
+        // and flush/resume on OPEN_OK. Idle queued clients still observe resets.
+        if (stream.pendingBytes >= LOCAL_READ_BUFFER_BYTES) socket.pause();
         return;
       }
       // Respect the daemon's per-frame DATA cap by splitting large reads.

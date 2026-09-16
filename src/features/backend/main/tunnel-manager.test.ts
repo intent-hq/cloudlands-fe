@@ -384,24 +384,41 @@ describe('TunnelManager', () => {
     ]);
   });
 
-  it('bounds pre-admission bytes and releases an overflowing queue slot', async () => {
-    const { manager, created } = makeManager({ daemon: false, maxStreams: 1 });
-    onCleanup(() => manager.dispose());
-    const port = await manager.forwardPort(10001);
-    const active = await connectClient(port);
-    onCleanup(() => active.destroy());
-    const queued = await connectClient(port);
-    onCleanup(() => queued.destroy());
-    await waitFor(() => manager.getDiagnostics().admission.pending === 1);
-    const closed = waitForClose(queued);
-    queued.write(Buffer.alloc(128 * 1024));
-    await closed;
-    expect(manager.getDiagnostics().admission.pending).toBe(0);
-    expect(manager.getDiagnostics().admission.lastFailure?.reason).toBe(
-      'pre-admission byte budget exceeded',
-    );
-    expect(created[0].sent.map((f) => f.type)).toEqual(['open']);
-  });
+  it.each([false, true])(
+    'preserves a large upload across delayed OPEN_OK (queued=%s)',
+    async (queued) => {
+      const { manager, created } = makeManager({ daemon: false, maxStreams: 1 });
+      onCleanup(() => manager.dispose());
+      const port = await manager.forwardPort(10001);
+      if (queued) {
+        const active = await connectClient(port);
+        onCleanup(() => active.destroy());
+      }
+      const client = await connectClient(port);
+      onCleanup(() => client.destroy());
+      const payload = Buffer.alloc(1024 * 1024);
+      for (let i = 0; i < payload.length; i++) payload[i] = i % 251;
+      client.end(payload);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      const ws = created[0];
+      expect(client.destroyed).toBe(false);
+      expect(ws.sent.map((f) => f.type)).toEqual(['open']);
+      expect(manager.getDiagnostics().streams).toHaveLength(queued ? 2 : 1);
+      if (queued) {
+        ws.deliver({ type: 'close', streamId: ws.sent[0].streamId });
+        await waitFor(() => ws.sent.filter((f) => f.type === 'open').length === 2);
+      }
+      const id = ws.sent.filter((f) => f.type === 'open').at(-1)!.streamId;
+      ws.deliver({ type: 'openOk', streamId: id });
+      await waitFor(() => ws.sent.some((f) => f.type === 'eof' && f.streamId === id));
+      const frames = ws.sent.filter((f) => f.streamId === id);
+      expect(Buffer.concat(frames.flatMap((f) => (f.type === 'data' ? [f.payload] : [])))).toEqual(
+        payload,
+      );
+      expect(frames.at(-1)?.type).toBe('eof');
+      expect(manager.getDiagnostics().admission.lastFailure).toBeNull();
+    },
+  );
 
   it('serves queued ports round-robin instead of draining a busy port first', async () => {
     const { manager, created } = makeManager({
