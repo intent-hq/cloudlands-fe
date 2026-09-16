@@ -244,6 +244,30 @@ export function registerMockIpcHandler(channel: string, handler: MockIpcInvokeHa
   invokeHandlers.set(channel, handler);
 }
 
+/**
+ * Temporarily override a handler. Dispose in reverse registration order per channel.
+ * Repeated disposal is harmless; an out-of-order disposal throws without changing state.
+ */
+export function overrideMockIpcHandler(
+  channel: string,
+  handler: MockIpcInvokeHandler,
+): MockIpcUnsubscribe {
+  const previous = invokeHandlers.get(channel);
+  // Give each scope its own identity even when nested scopes use the same handler.
+  const scoped: MockIpcInvokeHandler = (...args) => handler(...args);
+  invokeHandlers.set(channel, scoped);
+  let disposed = false;
+  return () => {
+    if (disposed) return;
+    if (invokeHandlers.get(channel) !== scoped) {
+      throw new Error(`Mock IPC overrides for '${channel}' must be disposed in reverse order`);
+    }
+    if (previous) invokeHandlers.set(channel, previous);
+    else invokeHandlers.delete(channel);
+    disposed = true;
+  };
+}
+
 /** Remove a previously registered invoke handler. */
 export function unregisterMockIpcHandler(channel: string): void {
   invokeHandlers.delete(channel);
