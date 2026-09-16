@@ -142,6 +142,9 @@
   let githubSearchBranches: string[] = $state([]);
   // Guards out-of-order prefix-search responses (only the latest wins).
   let githubSearchRequestId = 0;
+  // A click can explicitly accept the same branch that was auto-selected.
+  // Track that interaction separately from the value echoed by the parent.
+  let explicitBranchSelectionRevision = 0;
   // Using 'any' because this binds to a Svelte Input component, not a native HTMLInputElement
   // The Input component exports focus() and select() methods that we use
   let searchInputElement: any = $state(null);
@@ -558,6 +561,8 @@
     // Cached-first paint state for the GitHub path (`github.branches.listCached`).
     let cachedListingApplied = false;
     let cachedAutoSelectedBranch = '';
+    let valueBeforeCachedPaint = '';
+    let explicitSelectionRevisionAtCachedPaint = 0;
     // Captured before the cached paint: its auto-selection persists via
     // saveBranchForRepo, so the live saved value is clobbered by then.
     let savedBranchBeforeCachedPaint = '';
@@ -637,6 +642,8 @@
           isLoading = false;
           cachedListingApplied = true;
           savedBranchBeforeCachedPaint = getSavedBranchForRepo(repoPath);
+          valueBeforeCachedPaint = value;
+          explicitSelectionRevisionAtCachedPaint = explicitBranchSelectionRevision;
           applyGithubBranchSelection();
           cachedAutoSelectedBranch = internalSelectedBranch;
           notifyBranchesLoaded();
@@ -703,20 +710,14 @@
       // For GitHub repos, ensure a valid branch is selected
       // (Local repos already handle this above)
       if (effectiveRepoType === 'github' && branches.length > 0) {
-        if (cachedListingApplied && !value) {
-          // Reconcile the cached-first selection against the authoritative
-          // list. A selection the user made after the cached paint is kept
-          // unless it vanished; an auto-selected one re-runs the documented
-          // saved → default → first order (a stale cache may have lacked the
-          // saved branch). setInternalBranch fires onchange and persists —
-          // never leave a vanished branch selected.
-          if (internalSelectedBranch && internalSelectedBranch !== cachedAutoSelectedBranch) {
-            if (!branches.includes(internalSelectedBranch)) {
-              setInternalBranch(
-                defaultBranch && branches.includes(defaultBranch) ? defaultBranch : branches[0],
-              );
-            }
-          } else {
+        if (cachedListingApplied && !valueBeforeCachedPaint) {
+          // The clone dialog echoes automatic onchange events into value.
+          // Reconcile that provisional value too, but preserve explicit picks
+          // (even a click on the same branch) and different external values.
+          if (
+            explicitBranchSelectionRevision === explicitSelectionRevisionAtCachedPaint &&
+            (!value || value === cachedAutoSelectedBranch)
+          ) {
             // Use the saved value captured BEFORE the cached paint — the
             // cached auto-selection persisted itself via saveBranchForRepo.
             const saved = savedBranchBeforeCachedPaint;
@@ -1003,6 +1004,7 @@
    * Fetches branch status for the selected branch.
    */
   function selectBranch(branch: string, keepSkipIsolation = false) {
+    explicitBranchSelectionRevision++;
     internalSelectedBranch = branch;
     clearSearch();
     try {

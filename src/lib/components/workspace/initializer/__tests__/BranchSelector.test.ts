@@ -360,6 +360,80 @@ describe('BranchSelector (cached-first GitHub load, github.branches.listCached Â
     githubUrl: 'https://github.com/octo/intent',
   };
 
+  it.each([
+    { cachedDefault: undefined, freshDefault: 'main' },
+    { cachedDefault: 'aaa-feature', freshDefault: 'main' },
+    { cachedDefault: undefined, freshDefault: 'trunk' },
+  ])(
+    'reconciles a parent-echoed cached default $cachedDefault to $freshDefault',
+    async ({ cachedDefault, freshDefault }) => {
+      debugFlags.enableFormPersistence = true;
+      const branches = ['aaa-feature', freshDefault];
+      mockGithubBranchesCached.mockResolvedValue({
+        cached: true,
+        branches,
+        defaultBranch: cachedDefault,
+      });
+      const fresh = deferred<{ branches: string[]; defaultBranch: string }>();
+      mockGithubBranches.mockReturnValue(fresh.promise);
+      const onchange = vi.fn();
+      const onBranchesLoaded = vi.fn();
+      const { rerender } = render(BranchSelector, {
+        props: { ...githubProps, onchange, onBranchesLoaded },
+      });
+
+      await waitFor(() => expect(onchange).toHaveBeenCalled());
+      expect(onchange.mock.lastCall![0].detail.branch).toBe('aaa-feature');
+      // The clone dialog feeds every onchange back into value, including
+      // automatic selections. A nonempty value is not proof of user intent.
+      await rerender({ value: onchange.mock.lastCall![0].detail.branch });
+
+      fresh.resolve({ branches, defaultBranch: freshDefault });
+      await waitFor(() =>
+        expect(onBranchesLoaded).toHaveBeenLastCalledWith(
+          expect.objectContaining({ defaultBranch: freshDefault }),
+        ),
+      );
+      expect(onchange.mock.lastCall![0].detail.branch).toBe(freshDefault);
+      expect(savedBranchByRepo[githubProps.repoPath]).toBe(freshDefault);
+    },
+  );
+
+  it.each(['aaa-feature', 'release'])(
+    'preserves an explicit choice of %s while the fresh default loads',
+    async (pickedBranch) => {
+      const branches = ['aaa-feature', 'main', 'release'];
+      mockGithubBranchesCached.mockResolvedValue({ cached: true, branches });
+      const fresh = deferred<{ branches: string[]; defaultBranch: string }>();
+      mockGithubBranches.mockReturnValue(fresh.promise);
+      const onchange = vi.fn();
+      const onBranchesLoaded = vi.fn();
+      const { container, rerender } = render(BranchSelector, {
+        props: { ...githubProps, onchange, onBranchesLoaded },
+      });
+
+      await waitFor(() => expect(onchange).toHaveBeenCalled());
+      await rerender({ value: onchange.mock.lastCall![0].detail.branch });
+      await openDropdown(container);
+      // The selected branch also appears in the trigger; choose the menu's
+      // button, which is portaled outside the render container.
+      const choices = await screen.findAllByRole('button', { name: pickedBranch, exact: true });
+      const choice = choices.find((button) => !container.contains(button));
+      expect(choice).toBeTruthy();
+      await fireEvent.click(choice!);
+      expect(onchange.mock.lastCall![0].detail.branch).toBe(pickedBranch);
+      await rerender({ value: onchange.mock.lastCall![0].detail.branch });
+
+      fresh.resolve({ branches, defaultBranch: 'main' });
+      await waitFor(() =>
+        expect(onBranchesLoaded).toHaveBeenLastCalledWith(
+          expect.objectContaining({ defaultBranch: 'main' }),
+        ),
+      );
+      expect(onchange.mock.lastCall![0].detail.branch).toBe(pickedBranch);
+    },
+  );
+
   it('warm cache: renders cached branches and selects the default before the fresh list arrives', async () => {
     mockGithubBranchesCached.mockResolvedValue({
       cached: true,
@@ -384,6 +458,27 @@ describe('BranchSelector (cached-first GitHub load, github.branches.listCached Â
     await openDropdown(container);
     await waitFor(() => expect(screen.getByText('extra')).toBeTruthy());
     expect(onchange).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves an explicit value supplied before the cached paint', async () => {
+    const branches = ['aaa-feature', 'main', 'release'];
+    mockGithubBranchesCached.mockResolvedValue({ cached: true, branches });
+    const fresh = deferred<{ branches: string[]; defaultBranch: string }>();
+    mockGithubBranches.mockReturnValue(fresh.promise);
+    const onchange = vi.fn();
+    const onBranchesLoaded = vi.fn();
+    render(BranchSelector, {
+      props: { ...githubProps, value: 'release', onchange, onBranchesLoaded },
+    });
+
+    await waitFor(() => expect(onchange).toHaveBeenCalled());
+    fresh.resolve({ branches, defaultBranch: 'main' });
+    await waitFor(() =>
+      expect(onBranchesLoaded).toHaveBeenLastCalledWith(
+        expect.objectContaining({ defaultBranch: 'main' }),
+      ),
+    );
+    expect(onchange.mock.lastCall![0].detail.branch).toBe('release');
   });
 
   it('ls-remote fallback: a cache miss with populated branches paints before the fresh list arrives', async () => {
@@ -513,13 +608,14 @@ describe('BranchSelector (cached-first GitHub load, github.branches.listCached Â
     const fresh = deferred<{ branches: string[]; defaultBranch?: string }>();
     mockGithubBranches.mockReturnValue(fresh.promise);
     const onchange = vi.fn();
-    render(BranchSelector, { props: { ...githubProps, onchange } });
+    const { rerender } = render(BranchSelector, { props: { ...githubProps, onchange } });
 
     // Cached paint: saved branch not in the cached list â†’ default selected
     // (and persisted, overwriting the saved map entry).
     await waitFor(() => expect(onchange).toHaveBeenCalled());
     expect(onchange.mock.calls[0][0].detail).toEqual({ branch: 'dev' });
     expect(savedBranchByRepo['octo/intent']).toBe('dev');
+    await rerender({ value: onchange.mock.lastCall![0].detail.branch });
 
     fresh.resolve({ branches: ['dev', 'feat/x', 'feat/saved'], defaultBranch: 'dev' });
     await waitFor(() => expect(onchange).toHaveBeenCalledTimes(2));
