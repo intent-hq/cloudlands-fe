@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, readFile, realpath, rm, symlink, writeFile } from 'node
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { build, createServer } from 'vite';
+import { build, createServer, normalizePath } from 'vite';
 import { compactParaglideDevPlugin } from './vite-plugin-paraglide-dev.mjs';
 
 const cleanups = [];
@@ -80,15 +80,16 @@ describe('generated Paraglide dev payload', () => {
     await writeFile(generatedFile, message);
     await writeFile(path.join(root, 'authored.ts'), 'export const value: number = 42;');
     const server = await serve(root, generatedRoot);
-    const origin = server.resolvedUrls.local[0];
-    const response = await fetch(`${origin}generated/message.js`);
-    expect(response.status).toBe(200);
-    const served = await response.text();
+    const generatedUrl = `/@fs/${normalizePath(generatedFile)}`;
+    const response = await server.transformRequest(generatedUrl);
+    const served = response.code;
     expect(Buffer.byteLength(served)).toBeLessThan(500);
     expect((await loadModule(served)).greeting('Ada', 'fr')).toBe('Bonjour Ada');
     expect(await readFile(generatedFile, 'utf8')).toBe(message);
 
-    const authored = await server.transformRequest('/authored.ts');
+    const authored = await server.transformRequest(
+      `/@fs/${normalizePath(path.join(root, 'authored.ts'))}`,
+    );
     expect(authored.map.sourcesContent).toContain('export const value: number = 42;');
 
     await writeFile(
@@ -109,7 +110,7 @@ describe('generated Paraglide dev payload', () => {
 
     await writeFile(generatedFile, message.replace('Bonjour ', 'Salut '));
     server.moduleGraph.onFileChange(generatedFile);
-    const edited = await (await fetch(`${origin}generated/message.js`)).text();
+    const edited = (await server.transformRequest(generatedUrl)).code;
     expect((await loadModule(edited)).greeting('Ada', 'fr')).toBe('Salut Ada');
   });
 

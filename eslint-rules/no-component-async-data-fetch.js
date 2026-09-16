@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const MESSAGE =
-  'Svelte components must not fetch or load async domain data directly. Dispatch through the configured Store instance (store.dispatch(action)) and read the result through Redux selectors instead; keep API/client/provider calls in sagas or service layers, not components.';
+  'Svelte components must not perform domain side effects directly. Dispatch through the configured Store instance (store.dispatch(action)) and read results through Redux selectors; keep client/IPC/network/storage/subscription/polling work in sagas or approved infrastructure adapters.';
 
 const SAFE_AWAITED_IDENTIFIER_NAMES = new Set(['tick', 'settled', 'sleep', 'delay']);
 
@@ -26,6 +26,7 @@ const DOMAIN_API_OBJECT_NAME_PATTERN = /(?:api|client|provider|repository|reposi
 const DOMAIN_DATA_OBJECT_NAME_PATTERN = /(?:service|source|sources|system|electronAPI|ipc)$/i;
 const DOMAIN_LOADER_NAME_PATTERN =
   /^(?:fetch|load|get|list|read|query|search|request|invoke)(?:[A-Z0-9_]|$)/;
+const DOMAIN_TIMER_NAME_PATTERN = /^(?:debounce|poll|retry)[A-Z0-9_]/;
 const LOCAL_IMPORT_SOURCE_PATTERN = /^(?:\.{1,2}\/|\$lib\/|\$features\/|\$shared\/)/;
 const STORE_IMPORT_SOURCE_PATTERN = /^(?:\$lib\/store\/|\$store\/)/;
 const WRAPPER_IMPORT_SOURCE_PATTERN =
@@ -216,6 +217,51 @@ function isGlobalFetchCall(node) {
   return rootName === 'window' || rootName === 'globalThis' || rootName === 'self';
 }
 
+function isDirectStorageCall(node) {
+  const callee = unwrapExpression(node.callee);
+  if (callee?.type !== 'MemberExpression') return false;
+  const rootName = getRootIdentifierName(callee.object);
+  return rootName === 'localStorage' || rootName === 'sessionStorage';
+}
+
+function isReduxActionDispatchArgument(node, reduxActionImportNames) {
+  const parent = unwrapExpression(node.parent);
+  const callee = unwrapExpression(node.callee);
+  return (
+    callee?.type === 'Identifier' &&
+    reduxActionImportNames.has(callee.name) &&
+    parent?.type === 'CallExpression' &&
+    parent.arguments.includes(node) &&
+    getStaticPropertyName(parent.callee) === 'dispatch'
+  );
+}
+
+function isDirectDomainSubscriptionOrTimer(node, domainImportNames, domainApiImportNames) {
+  const callee = unwrapExpression(node.callee);
+  if (callee?.type === 'Identifier') {
+    return callee.name === 'listenSync' || DOMAIN_TIMER_NAME_PATTERN.test(callee.name);
+  }
+  if (callee?.type !== 'MemberExpression') return false;
+  const methodName = getStaticPropertyName(callee);
+  const objectName = getObjectHintName(callee.object);
+  const rootName = getRootIdentifierName(callee.object);
+  if (methodName === 'on' && objectName === 'electronAPI') return true;
+  if (['addListener', 'listenSync', 'once', 'subscribe'].includes(methodName)) {
+    return (
+      domainImportNames.has(rootName) ||
+      domainApiImportNames.has(rootName) ||
+      /(?:api|client|provider|repository|service|subscription)$/i.test(objectName ?? '')
+    );
+  }
+  return Boolean(
+    methodName &&
+    DOMAIN_TIMER_NAME_PATTERN.test(methodName) &&
+    (domainImportNames.has(rootName) ||
+      domainApiImportNames.has(rootName) ||
+      /(?:api|client|provider|repository|service|subscription)$/i.test(objectName ?? '')),
+  );
+}
+
 function isDomainMemberCall(callee, domainImportNames, domainApiImportNames) {
   if (callee.type !== 'MemberExpression') {
     return false;
@@ -324,14 +370,16 @@ export default {
     const domainImportNames = new Set();
     const domainApiImportNames = new Set();
     const asyncWrapperImportNames = new Set();
+    const reduxActionImportNames = new Set();
 
     return {
       ImportDeclaration(node) {
         const source = node.source.value;
         const isDomainSource = isDomainImportSource(source);
         const isAsyncWrapperSource = isAsyncWrapperImportSource(context, source);
+        const isStoreSource = isStoreImportSource(source);
 
-        if (!isDomainSource && !isAsyncWrapperSource) return;
+        if (!isDomainSource && !isAsyncWrapperSource && !isStoreSource) return;
 
         for (const specifier of node.specifiers) {
           if (specifier.importKind === 'type') {
@@ -346,6 +394,10 @@ export default {
             asyncWrapperImportNames.add(specifier.local.name);
           }
 
+          if (isStoreSource) {
+            reduxActionImportNames.add(specifier.local.name);
+          }
+
           if (DOMAIN_API_IMPORT_SOURCE_PATTERN.test(source)) {
             domainApiImportNames.add(specifier.local.name);
           }
@@ -357,8 +409,14 @@ export default {
           return;
         }
 
+        if (isReduxActionDispatchArgument(node, reduxActionImportNames)) {
+          return;
+        }
+
         if (
           isGlobalFetchCall(node) ||
+          isDirectStorageCall(node) ||
+          isDirectDomainSubscriptionOrTimer(node, domainImportNames, domainApiImportNames) ||
           isImportedAsyncWrapperCall(node.callee, asyncWrapperImportNames) ||
           isDomainDataCall(node, domainImportNames, domainApiImportNames)
         ) {

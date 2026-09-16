@@ -1,7 +1,571 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { pathToFileURL } from 'node:url';
+import typescriptParser from '@typescript-eslint/parser';
+import { parseForESLint } from 'svelte-eslint-parser';
 import ts from 'typescript';
+
+// `--report` emits the complete site inventory (including path, signature,
+// classification, intended owner, and retained-UI rationale). Update this reviewed
+// snapshot only after inspecting that report; the default command fails closed.
+const REVIEWED_INVENTORY_DIGEST =
+  '5a8e282380e88f50e6b3b54b10b487f26c28542af253160f5e3d3f853cbf6cc4';
+const REVIEWED_INVENTORY_COUNTS = {
+  'approved lifecycle seam :: async-subscription': 2,
+  'approved lifecycle seam :: client-ipc': 2,
+  'approved lifecycle seam :: dom-subscription': 11,
+  'approved lifecycle seam :: ipc': 4,
+  'approved lifecycle seam :: timer': 6,
+  'component-local UI behavior :: dom-subscription': 316,
+  'component-local UI behavior :: timer': 287,
+  'infrastructure adapter :: async-subscription': 13,
+  'infrastructure adapter :: client-ipc': 335,
+  'infrastructure adapter :: dom-subscription': 3,
+  'infrastructure adapter :: ipc': 83,
+  'infrastructure adapter :: ipc-registration': 139,
+  'infrastructure adapter :: service-factory': 5,
+  'infrastructure adapter :: timer': 52,
+  'saga-owned business logic :: async-subscription': 52,
+  'saga-owned business logic :: client-ipc': 340,
+  'saga-owned business logic :: debounce-retry-poll': 16,
+  'saga-owned business logic :: dom-subscription': 149,
+  'saga-owned business logic :: ipc': 129,
+  'saga-owned business logic :: ipc-registration': 1,
+  'saga-owned business logic :: network': 4,
+  'saga-owned business logic :: storage': 85,
+  'saga-owned business logic :: timer': 328,
+};
+
+const INVENTORY_EXCLUDED_PATH_PARTS = [
+  '/__mocks__/',
+  '/__tests__/',
+  '/component-catalog/',
+  '/generated/',
+  '/main/',
+  '/tests/',
+];
+
+const INFRASTRUCTURE_PATH_PATTERNS = [
+  /\.client\.[cm]?[jt]s$/,
+  /(?:^|\/)client\//,
+  /(?:^|\/)(?:browser-)?(?:websocket|electron-ipc|backend)-transport\.[cm]?[jt]s$/,
+  /(?:^|\/)seeders\//,
+  /(?:^|\/)middlewares\//,
+  /src\/lib\/electron-bridge\.ts$/,
+  /src\/store\/renderer\/utils\/(?:backend-scoped-storage|backend-storage-namespace|ipc-channel|safe-local-storage-saga)\.ts$/,
+  /src\/store\/utils\/store-guard-middleware\.ts$/,
+];
+
+const LIFECYCLE_PATHS = new Set([
+  'src/routes/+layout.svelte',
+  'src/routes/(app)/+layout.svelte',
+  'src/store/renderer/app-store-lifecycle.ts',
+  'src/store/renderer/configured-store.ts',
+  'src/store/renderer/mock-bootstrap.ts',
+]);
+
+const SIDE_EFFECT_IMPORT_PATTERN =
+  /(?:^|[./-])(?:api|backend-request|client|electron-bridge|ipc|repository|sdk)(?:[./-]|$)/i;
+const DOMAIN_IMPORT_SOURCE_PATTERN =
+  /(?:^\$store\/|(?:^|[./$-])(?:api|apis|client|clients|provider|providers|service|services|repository|repositories|sdk|ipc|slice|slices|poll|retry|debounce)(?:[./$-]|$))/i;
+const CLIENT_ROOT_PATTERN = /^(?:appClient|backendClient|client|electronAPI|ipc)$/i;
+const TIMER_NAMES = new Set(['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval']);
+const SUBSCRIPTION_METHODS = new Set(['addListener', 'listenSync', 'once', 'subscribe']);
+const DOM_SUBSCRIPTION_METHODS = new Set(['addEventListener', 'removeEventListener']);
+const DIRECT_DOMAIN_EFFECT_CUE_PATTERN =
+  /\b(?:appClient|backendRequest|electronAPI|fetch|indexedDB|invoke|localStorage|onSave|sessionStorage)\b/;
+const DOMAIN_TIMER_CUE_PATTERN =
+  /\b(?:backendRequest|fetch|invoke|onSave|handleRefresh|save|persist|refresh|load|poll|retry|debounce)\s*\(|\b(?:save|persist|refresh|fetch|load|poll|retry|debounce)[A-Z0-9_][A-Za-z0-9_]*\s*\(|\b[A-Za-z0-9_]+(?:Save|Persist|Refresh|Fetch|Load|Poll|Retry|Debounce)[A-Za-z0-9_]*\s*\(|\b(?:appClient|backendRequest|electronAPI|fetch|indexedDB|invoke|localStorage|sessionStorage)\b|\b(?:[A-Za-z0-9_]+(?:Save|Persist|Refresh|Fetch|Load|Poll|Retry|Debounce|Auth)|(?:auth|save|persist|refresh|fetch|load|poll|retry|debounce))(?:Timeout|Timer|Interval)\b|\b[A-Z0-9_]*(?:SAVE|PERSIST|REFRESH|FETCH|LOAD|POLL|RETRY|DEBOUNCE|AUTH)_(?:TIMEOUT|TIMER|INTERVAL)(?:_MS)?\b/;
+
+function isProductionRendererFile(filePath) {
+  if (!isRendererSource(filePath)) return false;
+  if (INVENTORY_EXCLUDED_PATH_PARTS.some((part) => filePath.includes(part))) return false;
+  if (/(?:\.test|\.spec|\.generated)\.[^.]+$/.test(filePath)) return false;
+  if (filePath.includes('/routes/(app)/test-') || filePath.includes('/routes/observability/')) {
+    return false;
+  }
+  return /\.(?:[cm]?[jt]s|svelte)$/.test(filePath);
+}
+
+function isSideEffectImportSource(source) {
+  return (
+    SIDE_EFFECT_IMPORT_PATTERN.test(source) && !/(?:^|[/.-])client-logger(?:[/.-]|$)/i.test(source)
+  );
+}
+
+function isDomainImportSource(source) {
+  return typeof source === 'string' && DOMAIN_IMPORT_SOURCE_PATTERN.test(source);
+}
+
+function rootIdentifier(node) {
+  let current = node;
+  while (
+    current &&
+    (ts.isPropertyAccessExpression(current) || ts.isElementAccessExpression(current))
+  ) {
+    current = current.expression;
+  }
+  return current && ts.isIdentifier(current) ? current.text : undefined;
+}
+
+function staticCalleeName(expression) {
+  if (ts.isIdentifier(expression)) return expression.text;
+  if (ts.isPropertyAccessExpression(expression)) return expression.name.text;
+  if (
+    ts.isElementAccessExpression(expression) &&
+    ts.isStringLiteral(expression.argumentExpression)
+  ) {
+    return expression.argumentExpression.text;
+  }
+  return undefined;
+}
+
+function normalizeSignature(text) {
+  const normalized = text.replace(/\s+/g, ' ').trim();
+  if (normalized.length <= 200) return normalized;
+  const digest = crypto.createHash('sha256').update(normalized).digest('hex').slice(0, 12);
+  return `${normalized.slice(0, 180)}…#${digest}`;
+}
+
+function targetSagaForPath(filePath) {
+  const routes = [
+    [
+      /settings|preference|provider|mcp/i,
+      'src/store/renderer/slices/settings-events/sagas/settings-hydration-saga.ts',
+    ],
+    [/auth|connection/i, 'src/store/renderer/slices/connections/sagas/connections-saga.ts'],
+    [/git|change|commit|pull-request|pr-/i, 'src/store/renderer/slices/git/sagas/git-read-saga.ts'],
+    [/file|editor|search|mention/i, 'src/store/renderer/slices/files/sagas/files-read-saga.ts'],
+    [
+      /onboarding|initializer/i,
+      'src/store/renderer/slices/workspace-initializer/sagas/workspace-initializer-saga.ts',
+    ],
+    [/chat/i, 'src/store/renderer/slices/chat-state/sagas/chat-read-saga.ts'],
+    [/agent/i, 'src/store/renderer/slices/agent-session/sagas/agent-mutation-saga.ts'],
+    [
+      /note|comment|tiptap/i,
+      'src/store/renderer/slices/workspace-notes/sagas/workspace-notes-saga.ts',
+    ],
+    [/terminal|script/i, 'src/store/renderer/slices/terminals/sagas/terminal-persistence-saga.ts'],
+    [/browser|websocket/i, 'src/store/renderer/slices/app-layout/sagas/browser-ipc-saga.ts'],
+    [
+      /hardware-console/i,
+      'src/store/renderer/slices/hardware-console/sagas/hardware-console-device-saga.ts',
+    ],
+    [/voice/i, 'src/store/renderer/slices/voice-settings/sagas/voice-settings-saga.ts'],
+    [/release-notes/i, 'src/store/renderer/slices/release-notes/sagas/release-notes-saga.ts'],
+    [/auto-update/i, 'src/store/renderer/slices/auto-update/sagas/auto-update-saga.ts'],
+    [
+      /background-hook/i,
+      'src/store/renderer/slices/background-hooks/sagas/background-hooks-saga.ts',
+    ],
+    [/notification/i, 'src/store/renderer/slices/notifications/sagas/notifications-saga.ts'],
+    [/daemon|backend/i, 'src/store/renderer/slices/daemon-health/sagas/daemon-health-saga.ts'],
+    [/context/i, 'src/store/renderer/slices/context/sagas/context-saga.ts'],
+    [/stats|token/i, 'src/store/renderer/slices/stats/sagas/stats-read-saga.ts'],
+    [/workspace/i, 'src/store/renderer/slices/workspace-lifecycle/sagas/lifecycle-read-saga.ts'],
+    [
+      /layout|panel|navigation|theme|window/i,
+      'src/store/renderer/slices/app-layout/sagas/app-layout-navigation-saga.ts',
+    ],
+  ];
+  return (
+    routes.find(([pattern]) => pattern.test(filePath))?.[1] ??
+    'src/store/renderer/slices/workspace-operations/sagas/workspace-operations-saga.ts'
+  );
+}
+
+function classifyInventorySite(filePath, kind, { domainTimer = false } = {}) {
+  if (filePath.includes('/sagas/') || /-saga\.[cm]?[jt]s$/.test(filePath)) {
+    return {
+      classification: 'saga-owned business logic',
+      owner: filePath,
+      rationale: 'The owning saga provides cancellation and ordering for this domain effect.',
+    };
+  }
+  if (INFRASTRUCTURE_PATH_PATTERNS.some((pattern) => pattern.test(filePath))) {
+    return {
+      classification: 'infrastructure adapter',
+      owner: filePath,
+      rationale: 'This module is a reviewed transport, storage, middleware, or IPC adapter seam.',
+    };
+  }
+  if (LIFECYCLE_PATHS.has(filePath)) {
+    return {
+      classification: 'approved lifecycle seam',
+      owner: filePath,
+      rationale: 'This seam starts, stops, or connects root-owned renderer infrastructure.',
+    };
+  }
+  if (kind === 'dom-subscription' && filePath.endsWith('.svelte')) {
+    return {
+      classification: 'component-local UI behavior',
+      owner: filePath,
+      rationale: 'The listener binds to and is cleaned up with this component’s rendered DOM.',
+    };
+  }
+  if (kind === 'timer' && filePath.endsWith('.svelte') && !domainTimer) {
+    return {
+      classification: 'component-local UI behavior',
+      owner: filePath,
+      rationale:
+        'This call only schedules or cleans up transient presentation state for the component.',
+    };
+  }
+  return {
+    classification: 'saga-owned business logic',
+    owner: targetSagaForPath(filePath),
+    rationale: `Migrate this ${kind} site to the named slice saga; the current direct call is staged legacy.`,
+  };
+}
+
+function containsName(text, names) {
+  return [...names].some((name) => {
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp(`\\b${escaped}\\b`).test(text);
+  });
+}
+
+function classifyCall({
+  calleeName,
+  rootName,
+  calleeText,
+  callText,
+  sideEffectImports,
+  domainFunctionNames = new Set(),
+  domainImportNames = new Set(),
+  isSagaFile = false,
+}) {
+  if (calleeName === 'fetch') return { kind: 'network' };
+  if (calleeName === 'backendRequest') return { kind: 'client-ipc' };
+  if (calleeName && TIMER_NAMES.has(calleeName)) {
+    return {
+      kind: 'timer',
+      domainTimer:
+        DOMAIN_TIMER_CUE_PATTERN.test(callText) || containsName(callText, domainFunctionNames),
+    };
+  }
+  const domainRoot =
+    rootName &&
+    (CLIENT_ROOT_PATTERN.test(rootName) ||
+      sideEffectImports.has(rootName) ||
+      domainImportNames.has(rootName));
+  const domainCallee =
+    calleeName &&
+    (sideEffectImports.has(calleeName) ||
+      domainImportNames.has(calleeName) ||
+      domainFunctionNames.has(calleeName));
+  if (
+    calleeName &&
+    /^(?:debounce|retry|poll)(?:[A-Z0-9_]|$)/.test(calleeName) &&
+    (domainRoot || domainCallee || isSagaFile || calleeName === 'debounce')
+  ) {
+    return { kind: 'debounce-retry-poll' };
+  }
+  if (calleeName && DOM_SUBSCRIPTION_METHODS.has(calleeName)) {
+    return { kind: 'dom-subscription' };
+  }
+  if (
+    (calleeName && SUBSCRIPTION_METHODS.has(calleeName)) ||
+    (calleeName === 'on' && calleeText.includes('electronAPI'))
+  ) {
+    return { kind: 'async-subscription' };
+  }
+  if (calleeName === 'invoke' || calleeName === 'send') return { kind: 'ipc' };
+  if (
+    calleeName &&
+    ['getItem', 'setItem', 'removeItem', 'clear'].includes(calleeName) &&
+    ['indexedDB', 'localStorage', 'sessionStorage'].includes(rootName ?? '')
+  ) {
+    return { kind: 'storage' };
+  }
+  if (rootName === 'indexedDB') return { kind: 'storage' };
+  if (calleeName && ['registerMockIpcHandler', 'addMockIpcListener'].includes(calleeName)) {
+    return { kind: 'ipc-registration' };
+  }
+  if (
+    (rootName && (CLIENT_ROOT_PATTERN.test(rootName) || sideEffectImports.has(rootName))) ||
+    (!rootName && calleeName && sideEffectImports.has(calleeName))
+  ) {
+    return { kind: 'client-ipc' };
+  }
+  return null;
+}
+
+function detectTypeScriptSideEffectSites(file) {
+  const sites = [];
+  const source = ts.createSourceFile(file.path, file.content, ts.ScriptTarget.Latest, true);
+  const sideEffectImports = new Set();
+  const domainImportNames = new Set();
+  for (const statement of source.statements) {
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) {
+      continue;
+    }
+    const sourceText = statement.moduleSpecifier.text;
+    if (!isSideEffectImportSource(sourceText) && !isDomainImportSource(sourceText)) continue;
+    const clause = statement.importClause;
+    if (!clause || clause.isTypeOnly) continue;
+    const target = isSideEffectImportSource(sourceText) ? sideEffectImports : domainImportNames;
+    if (clause.name) target.add(clause.name.text);
+    const bindings = clause.namedBindings;
+    if (bindings && ts.isNamespaceImport(bindings)) target.add(bindings.name.text);
+    if (bindings && ts.isNamedImports(bindings)) {
+      for (const item of bindings.elements) {
+        if (!item.isTypeOnly) target.add(item.name.text);
+      }
+    }
+  }
+  const addSite = (node, kind, metadata = {}) => {
+    const line = source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1;
+    const signature = normalizeSignature(node.getText(source));
+    sites.push({
+      kind,
+      line,
+      signature,
+      ...classifyInventorySite(file.path, kind, metadata),
+    });
+  };
+  const visit = (node) => {
+    if (
+      (ts.isFunctionDeclaration(node) || ts.isVariableDeclaration(node)) &&
+      node.name &&
+      ts.isIdentifier(node.name) &&
+      /^create[A-Za-z0-9_]*(?:Service|Middleware|ReduxBridge)$/.test(node.name.text)
+    ) {
+      addSite(node.name, 'service-factory');
+    }
+    if (ts.isCallExpression(node)) {
+      const callee = node.expression;
+      const result = classifyCall({
+        calleeName: staticCalleeName(callee),
+        rootName: rootIdentifier(callee),
+        calleeText: callee.getText(source),
+        callText: node.getText(source),
+        sideEffectImports,
+        domainImportNames,
+        isSagaFile: file.path.includes('/sagas/') || /-saga\.[cm]?[jt]s$/.test(file.path),
+      });
+      if (result) addSite(node, result.kind, result);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return sites;
+}
+
+function unwrapEstree(node) {
+  let current = node;
+  while (
+    current &&
+    ['ChainExpression', 'TSAsExpression', 'TSTypeAssertion', 'TSNonNullExpression'].includes(
+      current.type,
+    )
+  ) {
+    current = current.expression;
+  }
+  return current;
+}
+
+function estreeStaticPropertyName(node) {
+  const current = unwrapEstree(node);
+  if (current?.type !== 'MemberExpression') return null;
+  const property = unwrapEstree(current.property);
+  if (!current.computed && property?.type === 'Identifier') return property.name;
+  if (property?.type === 'Literal' && typeof property.value === 'string') return property.value;
+  return null;
+}
+
+function estreeCalleeName(node) {
+  const current = unwrapEstree(node);
+  if (current?.type === 'Identifier') return current.name;
+  return estreeStaticPropertyName(current);
+}
+
+function estreeRootIdentifier(node) {
+  let current = unwrapEstree(node);
+  while (current?.type === 'MemberExpression') current = unwrapEstree(current.object);
+  return current?.type === 'Identifier' ? current.name : undefined;
+}
+
+function detectSvelteSideEffectSites(file) {
+  const { ast, visitorKeys } = parseForESLint(file.content, {
+    filePath: file.path,
+    parser: typescriptParser,
+  });
+  const sites = [];
+  const sideEffectImports = new Set();
+  const domainImportNames = new Set();
+  const text = (node) => file.content.slice(node.range[0], node.range[1]);
+  const nodes = [];
+  const collectNodes = (node) => {
+    nodes.push(node);
+    for (const key of visitorKeys[node.type] ?? []) {
+      const child = node[key];
+      if (Array.isArray(child)) child.forEach((entry) => entry && collectNodes(entry));
+      else if (child) collectNodes(child);
+    }
+  };
+  collectNodes(ast);
+  for (const node of nodes) {
+    if (
+      node.type === 'ImportDeclaration' &&
+      (isSideEffectImportSource(node.source.value) || isDomainImportSource(node.source.value))
+    ) {
+      const target = isSideEffectImportSource(node.source.value)
+        ? sideEffectImports
+        : domainImportNames;
+      for (const specifier of node.specifiers) {
+        if (specifier.importKind !== 'type') target.add(specifier.local.name);
+      }
+    }
+  }
+  const functionBodies = new Map();
+  for (const node of nodes) {
+    if (node.type === 'FunctionDeclaration' && node.id) {
+      functionBodies.set(node.id.name, text(node.body));
+    } else if (
+      node.type === 'VariableDeclarator' &&
+      node.id.type === 'Identifier' &&
+      ['ArrowFunctionExpression', 'FunctionExpression'].includes(node.init?.type)
+    ) {
+      functionBodies.set(node.id.name, text(node.init.body));
+    }
+  }
+  const domainFunctionNames = new Set(
+    [...functionBodies.keys()].filter((name) =>
+      /^(?:debounce|retry|poll)(?:[A-Z0-9_]|$)/.test(name),
+    ),
+  );
+  let discoveredDomainFunction = true;
+  while (discoveredDomainFunction) {
+    discoveredDomainFunction = false;
+    for (const [name, body] of functionBodies) {
+      if (
+        !domainFunctionNames.has(name) &&
+        (DIRECT_DOMAIN_EFFECT_CUE_PATTERN.test(body) ||
+          containsName(body, sideEffectImports) ||
+          containsName(body, domainFunctionNames))
+      ) {
+        domainFunctionNames.add(name);
+        discoveredDomainFunction = true;
+      }
+    }
+  }
+  const addSite = (node, kind, metadata = {}) => {
+    const signature = normalizeSignature(text(node));
+    sites.push({
+      kind,
+      line: node.loc.start.line,
+      signature,
+      ...classifyInventorySite(file.path, kind, metadata),
+    });
+  };
+  const visit = (node) => {
+    if (
+      ((node.type === 'FunctionDeclaration' && node.id) || node.type === 'VariableDeclarator') &&
+      node.id?.type === 'Identifier' &&
+      /^create[A-Za-z0-9_]*(?:Service|Middleware|ReduxBridge)$/.test(node.id.name)
+    ) {
+      addSite(node.id, 'service-factory');
+    }
+    if (node.type === 'CallExpression') {
+      const callee = unwrapEstree(node.callee);
+      const result = classifyCall({
+        calleeName: estreeCalleeName(callee),
+        rootName: estreeRootIdentifier(callee),
+        calleeText: text(callee),
+        callText: text(node),
+        sideEffectImports,
+        domainFunctionNames,
+        domainImportNames,
+        isSagaFile: file.path.includes('/sagas/') || /-saga\.[cm]?[jt]s$/.test(file.path),
+      });
+      if (result) addSite(node, result.kind, result);
+    }
+    for (const key of visitorKeys[node.type] ?? []) {
+      const child = node[key];
+      if (Array.isArray(child)) child.forEach((entry) => entry && visit(entry));
+      else if (child) visit(child);
+    }
+  };
+  visit(ast);
+  return sites;
+}
+
+function detectSideEffectSites(file) {
+  return file.path.endsWith('.svelte')
+    ? detectSvelteSideEffectSites(file)
+    : detectTypeScriptSideEffectSites(file);
+}
+
+export function buildRendererSideEffectInventory(files) {
+  const grouped = new Map();
+  for (const original of files) {
+    const file = { ...original, path: normalize(original.path) };
+    if (!isProductionRendererFile(file.path)) continue;
+    for (const site of detectSideEffectSites(file)) {
+      const key = [
+        file.path,
+        site.kind,
+        site.signature,
+        site.classification,
+        site.owner,
+        site.rationale,
+      ].join('\u0000');
+      const existing = grouped.get(key);
+      if (existing) {
+        existing.count += 1;
+        existing.lines.push(site.line);
+      } else {
+        grouped.set(key, { path: file.path, ...site, count: 1, lines: [site.line] });
+      }
+    }
+  }
+  return [...grouped.values()].sort((a, b) =>
+    `${a.path}\u0000${a.kind}\u0000${a.signature}`.localeCompare(
+      `${b.path}\u0000${b.kind}\u0000${b.signature}`,
+    ),
+  );
+}
+
+function inventoryDigest(inventory) {
+  const stable = inventory.map(({ line: _line, lines: _lines, ...entry }) => entry);
+  return crypto.createHash('sha256').update(JSON.stringify(stable)).digest('hex');
+}
+
+function inventoryCounts(inventory) {
+  const counts = {};
+  for (const site of inventory) {
+    const key = `${site.classification} :: ${site.kind}`;
+    counts[key] = (counts[key] ?? 0) + site.count;
+  }
+  return Object.fromEntries(Object.entries(counts).sort(([a], [b]) => a.localeCompare(b)));
+}
+
+export function rendererSideEffectInventorySnapshot(files) {
+  const inventory = buildRendererSideEffectInventory(files);
+  return { digest: inventoryDigest(inventory), counts: inventoryCounts(inventory), inventory };
+}
+
+export function findRendererSideEffectInventoryViolations(
+  files,
+  expected = { digest: REVIEWED_INVENTORY_DIGEST, counts: REVIEWED_INVENTORY_COUNTS },
+) {
+  const snapshot = rendererSideEffectInventorySnapshot(files);
+  const violations = [];
+  if (snapshot.digest !== expected.digest) {
+    violations.push(
+      `renderer side-effect inventory changed (expected ${expected.digest}, received ${snapshot.digest}); run this checker with --report and review ownership before updating the baseline`,
+    );
+  }
+  if (JSON.stringify(snapshot.counts) !== JSON.stringify(expected.counts)) {
+    violations.push(
+      `renderer side-effect ownership counts changed: ${JSON.stringify(snapshot.counts)}`,
+    );
+  }
+  return violations;
+}
 
 const APPROVED_MIDDLEWARE = new Map([
   ['src/store/utils/store-guard-middleware.ts', 'createStoreGuardMiddleware'],
@@ -530,13 +1094,13 @@ export function findRendererSideEffectBoundaryViolations(files) {
   return violations;
 }
 
-function collectTypeScriptFiles(rootDir) {
+function collectRendererSourceFiles(rootDir) {
   const files = [];
   const visit = (directory) => {
     for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
       const absolute = path.join(directory, entry.name);
       if (entry.isDirectory()) visit(absolute);
-      else if (entry.name.endsWith('.ts')) {
+      else if (/\.(?:[cm]?[jt]s|svelte)$/.test(entry.name)) {
         files.push({
           path: normalize(path.relative(process.cwd(), absolute)),
           content: fs.readFileSync(absolute, 'utf8'),
@@ -549,9 +1113,16 @@ function collectTypeScriptFiles(rootDir) {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const violations = findRendererSideEffectBoundaryViolations(
-    collectTypeScriptFiles(path.resolve('src')),
-  );
+  const files = collectRendererSourceFiles(path.resolve('src'));
+  const snapshot = rendererSideEffectInventorySnapshot(files);
+  if (process.argv.includes('--report')) {
+    console.log(JSON.stringify(snapshot, null, 2));
+    process.exit(0);
+  }
+  const violations = [
+    ...findRendererSideEffectBoundaryViolations(files),
+    ...findRendererSideEffectInventoryViolations(files),
+  ];
   if (violations.length > 0) {
     console.error(
       ['Renderer side-effect boundary violations:', ...violations.map((v) => `- ${v}`)].join('\n'),
