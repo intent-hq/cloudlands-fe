@@ -47,5 +47,5 @@ export const uiComponentGuardrails = {
     'relative:src/lib/components/ui/tooltip/Tooltip.svelte': 2,
     'relative:src/lib/components/ui/tooltip/index.ts': 1,
   },
-  rawControls: { button: 615, input: 83, select: 0, textarea: 11 },
+  rawControls: { button: 617, input: 83, select: 0, textarea: 11 },
 } as const;
