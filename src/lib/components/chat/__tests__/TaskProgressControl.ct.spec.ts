@@ -478,3 +478,36 @@ test('contains mixed-direction long lists at narrow collision boundaries across 
     }
   }
 });
+
+test('reaches the final row of an overflowed task list using only the keyboard', async ({
+  mount,
+  page,
+}) => {
+  const longTasks = Array.from({ length: 20 }, (_, index) => ({
+    id: `task-${index}`,
+    title: `Task ${index}`,
+    status: 'pending' as const,
+  }));
+  const component = await mount(TaskProgressControlHost, { props: { tasks: longTasks } });
+  const trigger = component.getByTestId('task-progress-trigger');
+  const popover = page.getByTestId('task-progress-popover');
+  const scrollRegion = page.getByTestId('task-progress-scroll-region');
+  const lastRow = page.getByTestId('task-progress-row').last();
+
+  await trigger.focus();
+  await trigger.press('Enter');
+  await expect(popover).toBeVisible();
+  await expect(trigger).toBeFocused();
+  await expect(lastRow).not.toBeInViewport();
+
+  await page.keyboard.press('ArrowDown');
+  await expect(scrollRegion).toBeFocused();
+  await expect(popover).toBeVisible();
+
+  await page.keyboard.press('End');
+  await expect(lastRow).toBeInViewport();
+
+  await page.keyboard.press('Escape');
+  await expect(popover).toBeHidden();
+  await expect(trigger).toBeFocused();
+});

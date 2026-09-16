@@ -31,6 +31,7 @@
   let open = $state(false);
   let triggerElement: HTMLButtonElement | null = $state(null);
   let contentElement: HTMLElement | null = $state(null);
+  let scrollRegionElement: HTMLDivElement | null = $state(null);
   let collisionBoundary: Element[] = $state([]);
   let preserveOutsideFocusOnClose = $state(false);
   let suppressTooltipAfterOutsideDismissal = $state(false);
@@ -205,6 +206,11 @@
       handleOpenChange(false);
       return;
     }
+    if ((event.key === 'ArrowDown' || event.key === 'PageDown') && open) {
+      event.preventDefault();
+      scrollRegionElement?.focus();
+      return;
+    }
     if (event.key !== 'Enter' && event.key !== ' ') return;
     event.preventDefault();
     handleOpenChange(!open);
@@ -371,8 +377,12 @@
         class="{DROPDOWN_SURFACE_CLASS} type-caption w-72"
         data-testid="task-progress-popover"
       >
+        <!-- svelte-ignore a11y_no_noninteractive_tabindex -- keyboard-scrollable region, see WAI-ARIA APG scrollable-region-focusable pattern -->
         <div
-          class="min-h-0 min-w-0 max-h-64 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain"
+          bind:this={scrollRegionElement}
+          tabindex={0}
+          aria-label={m.chat_taskProgress_list_ariaLabel()}
+          class="min-h-0 min-w-0 max-h-64 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain outline-none focus-visible:ring-2 focus-visible:ring-ring"
           data-testid="task-progress-scroll-region"
         >
           <ul class="min-w-0" data-testid="task-progress-list">
