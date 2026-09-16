@@ -487,35 +487,26 @@
             )}
           >
             {#if editingNoteId === note.id}
-              <!-- Inline edit mode - matches ListItem sm size styling with active state -->
-              {@const leftIndent = depth * Math.round((indentSize * 16) / 22)}
+              <!-- Match the ListItem title and icon columns while editing. -->
+              {@const leftIndent = depth * indentSize}
               <div
                 class="relative z-10 flex items-center gap-2 rounded-md px-2 py-0.5 text-foreground"
                 style="margin-left: {leftIndent}px; width: calc(100% - {leftIndent}px);"
               >
-                {#if note?.metadata?.task?.status}
-                  <TaskStatusIcon
-                    status={hasChildrenStatus || (note.metadata!.task!.status as TaskStatus)}
-                    size={14}
-                  />
-                {:else if hasTasks}
-                  {@const size = 14}
-                  {@const strokeWidth = 2.5}
-                  {@const radius = (size - strokeWidth) / 2}
-                  {@const circumference = 2 * Math.PI * radius}
-                  {@const completedPctNorm = taskStats.completed / taskStats.total}
-                  {@const completedOffset = circumference * (1 - completedPctNorm)}
-                  <svg width={size} height={size} class="transform -rotate-90 shrink-0">
-                    <circle
-                      cx={size / 2}
-                      cy={size / 2}
-                      r={radius}
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width={strokeWidth}
-                      class="text-ghost"
+                <div class="flex w-(--row-icon-box-regular) shrink-0 items-center justify-center">
+                  {#if note?.metadata?.task?.status}
+                    <TaskStatusIcon
+                      status={hasChildrenStatus || (note.metadata!.task!.status as TaskStatus)}
+                      size={14}
                     />
-                    {#if taskStats.completed > 0}
+                  {:else if hasTasks}
+                    {@const size = 14}
+                    {@const strokeWidth = 2.5}
+                    {@const radius = (size - strokeWidth) / 2}
+                    {@const circumference = 2 * Math.PI * radius}
+                    {@const completedPctNorm = taskStats.completed / taskStats.total}
+                    {@const completedOffset = circumference * (1 - completedPctNorm)}
+                    <svg width={size} height={size} class="transform -rotate-90 shrink-0">
                       <circle
                         cx={size / 2}
                         cy={size / 2}
@@ -523,23 +514,34 @@
                         fill="none"
                         stroke="currentColor"
                         stroke-width={strokeWidth}
-                        stroke-dasharray={circumference}
-                        stroke-dashoffset={completedOffset}
-                        stroke-linecap="round"
-                        class="text-emerald-500"
+                        class="text-ghost"
                       />
-                    {/if}
-                  </svg>
-                {:else}
-                  <ResourceIconTile kind="note" />
-                {/if}
+                      {#if taskStats.completed > 0}
+                        <circle
+                          cx={size / 2}
+                          cy={size / 2}
+                          r={radius}
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width={strokeWidth}
+                          stroke-dasharray={circumference}
+                          stroke-dashoffset={completedOffset}
+                          stroke-linecap="round"
+                          class="text-emerald-500"
+                        />
+                      {/if}
+                    </svg>
+                  {:else}
+                    <ResourceIconTile kind="note" />
+                  {/if}
+                </div>
                 <Input
                   bind:ref={editInputRef}
                   type="text"
                   bind:value={editingValue}
                   onblur={saveEdit}
                   onkeydown={handleEditKeydown}
-                  class="inline-edit-input relative z-10 min-w-0 flex-1 border-none bg-transparent text-sm outline-none ring-0 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0"
+                  class="inline-edit-input relative z-10 min-w-0 flex-1 border-none px-0 bg-transparent text-sm outline-none ring-0 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0"
                   onclick={(e) => e.stopPropagation()}
                 />
               </div>
@@ -548,7 +550,7 @@
               {@const activeAgents = getActiveAgentsForNote(note)}
               <div class="relative flex w-full min-w-0 flex-1 items-center gap-1">
                 <ListItem
-                  iconClass="text-ghost"
+                  iconClass="w-(--row-icon-box-regular) text-ghost"
                   title={getNoteTitle(note)}
                   titleClass="cursor-text"
                   active={selectedNoteId === note.id}
@@ -613,7 +615,7 @@
               {@const inProgressOffset = circumference * (1 - inProgressPctNorm)}
               <div class="relative flex w-full min-w-0 flex-1">
                 <ListItem
-                  iconClass="text-ghost"
+                  iconClass="w-(--row-icon-box-regular) text-ghost"
                   title={getNoteTitle(note)}
                   titleClass="cursor-text"
                   active={selectedNoteId === note.id}
@@ -697,6 +699,7 @@
               {@const activeAgents = getActiveAgentsForNote(note)}
               <div class="relative flex w-full min-w-0 flex-1 items-center gap-1">
                 <ListItem
+                  iconClass="w-(--row-icon-box-regular)"
                   title={getNoteTitle(note)}
                   titleClass="cursor-text"
                   active={selectedNoteId === note.id}
