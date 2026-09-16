@@ -608,7 +608,7 @@ describe('handleInviteDeepLink — renderer consent modal', () => {
     expect(openBackendWindow).not.toHaveBeenCalled();
   });
 
-  it('cancel while the browser launch is still pending: a grant that settles first is still not stored', async () => {
+  it('cancel while the browser launch is still pending: a grant right behind it is not stored', async () => {
     const { prompt, cancelWaiting } = fakeConsent('open');
     showInviteConsent.mockReturnValue(prompt);
     let finishLaunch!: () => void;
@@ -668,6 +668,8 @@ describe('handleInviteDeepLink — renderer consent modal', () => {
   it('launch failure after open: dismiss failed, then the failure box; nothing stored', async () => {
     const { prompt } = fakeConsent('open');
     showInviteConsent.mockReturnValue(prompt);
+    // The grant cannot have resolved yet when the browser never opened.
+    redeemWait.mockReturnValue(new Promise(() => {}));
     openExternal.mockRejectedValue(new Error('no browser'));
     const order: string[] = [];
     prompt.dismiss.mockImplementation((outcome: string) => order.push(`dismiss:${outcome}`));
@@ -812,6 +814,63 @@ describe('handleInviteDeepLink — cancel after the grant is a no-op', () => {
     expect(guestAdd).not.toHaveBeenCalled();
     expect(openBackendWindow).not.toHaveBeenCalled();
     expect(logLines.join('\n')).not.toContain('cancel-after-grant');
+  });
+
+  it('grant resolves while the browser launch is still pending: dismissed joined at once, a later cancel is a no-op', async () => {
+    let finishLaunch!: () => void;
+    openExternal.mockReturnValue(new Promise<void>((resolve) => (finishLaunch = resolve)));
+    let grantCredential!: (value: typeof CREDENTIAL) => void;
+    redeemWait.mockReturnValue(new Promise((resolve) => (grantCredential = resolve)));
+
+    const pending = handleInviteDeepLink(LINK);
+    await vi.waitFor(() =>
+      expect(send).toHaveBeenCalledWith('invite-consent:show', expect.anything()),
+    );
+    const { requestId } = send.mock.calls[0][1] as { requestId: string };
+    await registeredIpcHandlers.get('invite-consent:ack')!({}, { requestId });
+    const response = registeredIpcHandlers.get('invite-consent:response')!;
+    await response({}, { requestId, action: 'open' });
+    await vi.waitFor(() => expect(openExternal).toHaveBeenCalledTimes(1));
+
+    grantCredential(CREDENTIAL);
+    // The grant, not the launch, is the point of no return: the modal leaves
+    // its waiting state before the browser hand-off ever settles.
+    await vi.waitFor(() => expect(dismissesSent()).toEqual([{ requestId, outcome: 'joined' }]));
+    await response({}, { requestId, action: 'cancel' });
+    finishLaunch();
+    await pending;
+
+    expect(guestAdd).toHaveBeenCalledTimes(1);
+    expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
+    expect(dismissesSent()).toEqual([{ requestId, outcome: 'joined' }]);
+    expect(showMessageBox).not.toHaveBeenCalled();
+    const allLogs = logLines.join('\n');
+    expect(allLogs).toContain('cancel-after-grant');
+    expect(allLogs).not.toContain('User cancelled');
+  });
+
+  it('cancel before the grant while the launch never settles still aborts', async () => {
+    openExternal.mockReturnValue(new Promise<void>(() => {}));
+    let grantCredential!: (value: typeof CREDENTIAL) => void;
+    redeemWait.mockReturnValue(new Promise((resolve) => (grantCredential = resolve)));
+
+    const pending = handleInviteDeepLink(LINK);
+    await vi.waitFor(() =>
+      expect(send).toHaveBeenCalledWith('invite-consent:show', expect.anything()),
+    );
+    const { requestId } = send.mock.calls[0][1] as { requestId: string };
+    await registeredIpcHandlers.get('invite-consent:ack')!({}, { requestId });
+    const response = registeredIpcHandlers.get('invite-consent:response')!;
+    await response({}, { requestId, action: 'open' });
+    await vi.waitFor(() => expect(openExternal).toHaveBeenCalledTimes(1));
+    await response({}, { requestId, action: 'cancel' });
+    grantCredential(CREDENTIAL);
+    await pending;
+
+    expect(dismissesSent()).toEqual([{ requestId, outcome: 'cancelled' }]);
+    expect(guestAdd).not.toHaveBeenCalled();
+    expect(openBackendWindow).not.toHaveBeenCalled();
+    expect(close).toHaveBeenCalledTimes(1);
   });
 });
 
