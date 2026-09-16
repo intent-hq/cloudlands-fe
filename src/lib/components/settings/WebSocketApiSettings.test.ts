@@ -1116,6 +1116,28 @@ describe('WebSocketApiSettings', () => {
     };
     const LOCAL_NETWORK = () => m.settings_wsApi_localNetworkAccess_label();
 
+    /**
+     * Wait for a WebSocket API toggle-ON to fully settle: the API section is
+     * rendered (enabled flipped) AND the main toggle is re-enabled, which only
+     * happens once the post-enable default/publish chain has finished. A
+     * "no default write" assertion made before this point can pass
+     * prematurely, before the default had a chance to run.
+     */
+    async function awaitEnableSettled() {
+      await waitFor(() =>
+        expect(screen.getByRole('switch', { name: LOCAL_NETWORK() })).toBeTruthy(),
+      );
+      await waitFor(() =>
+        expect(
+          (
+            screen.getByRole('switch', {
+              name: m.settings_wsApi_enable_label(),
+            }) as HTMLButtonElement
+          ).disabled,
+        ).toBe(false),
+      );
+    }
+
     function settingsRows(opts: {
       enabled?: boolean;
       bindAddress?: string[] | null;
@@ -1471,8 +1493,8 @@ describe('WebSocketApiSettings', () => {
 
     it('turning the WebSocket API off clears the sticky Listen targets state', async () => {
       // Sticky-open on loopback-only, then WSS OFF → ON: the enable path
-      // applies the 0.0.0.0 default as usual; when that write fails (bind set
-      // stays loopback-only), the section must not reopen from a stale flag.
+      // applies the tunnel default as usual (bind set stays loopback-only);
+      // the section must not reopen from a stale flag.
       mocks.mockSettingsList.mockResolvedValue(
         settingsRows({ bindAddress: ['0.0.0.0'], tunnel: { enabled: false, only: false } }),
       );
@@ -1513,16 +1535,16 @@ describe('WebSocketApiSettings', () => {
       await fireEvent.click(screen.getByRole('switch', { name: m.settings_wsApi_enable_label() }));
       await waitFor(() => expect(screen.queryByRole('checkbox')).toBeNull());
 
-      // WSS ON: the loopback-only default is attempted and fails, so the
-      // persisted bind set stays loopback-only.
+      // WSS ON: the loopback-only default enables the tunnel and leaves the
+      // persisted bind set loopback-only.
       mocks.mockSettingsUpdate.mockResolvedValueOnce([
         { path: 'server.wsApi.enabled', value: true },
       ]);
-      mocks.mockSettingsUpdate.mockRejectedValueOnce(new Error('bind failed'));
+      mocks.mockSettingsUpdate.mockResolvedValueOnce([]);
       await fireEvent.click(screen.getByRole('switch', { name: m.settings_wsApi_enable_label() }));
       await waitFor(() => {
         expect(mocks.mockSettingsUpdate).toHaveBeenLastCalledWith([
-          { path: 'server.bindAddress', value: ['0.0.0.0'] },
+          { path: 'server.tunnel.enabled', value: true },
         ]);
       });
       await waitFor(() =>
@@ -1587,7 +1609,7 @@ describe('WebSocketApiSettings', () => {
       });
     });
 
-    it('first enable from a loopback-only daemon defaults bindAddress to [0.0.0.0] with the tunnel untouched', async () => {
+    it('enable from a loopback-only daemon defaults the tunnel on and leaves bindAddress untouched', async () => {
       mocks.mockSettingsList.mockResolvedValue(
         settingsRows({
           enabled: false,
@@ -1602,49 +1624,53 @@ describe('WebSocketApiSettings', () => {
         { path: 'server.wsApi.enabled', value: true },
       ]);
       mocks.mockSettingsUpdate.mockResolvedValueOnce([]);
-      // Post-enable re-sync still reports loopback-only; the re-sync after the
-      // default write reports the widened bind set.
+      // Post-enable re-sync still reports the tunnel off; the re-sync after
+      // the default write reports it on (bind set still loopback-only).
       mocks.mockSettingsList.mockResolvedValueOnce(
         settingsRows({ bindAddress: ['127.0.0.1'], tunnel: { enabled: false, only: false } }),
       );
       mocks.mockSettingsList.mockResolvedValue(
-        settingsRows({ bindAddress: ['0.0.0.0'], tunnel: { enabled: false, only: false } }),
+        settingsRows({ bindAddress: ['127.0.0.1'], tunnel: { enabled: true, only: false } }),
       );
-      mocks.mockPairingInfo.mockResolvedValue(PAIRING);
+      mocks.mockPairingInfo.mockResolvedValueOnce(PAIRING);
+      mocks.mockPairingInfo.mockResolvedValue({ ...PAIRING, tcAddress: 'tc-key-abc' });
       await fireEvent.click(screen.getByRole('switch'));
 
       await waitFor(() => {
+        expect(mocks.mockSettingsUpdate).toHaveBeenCalledTimes(2);
         expect(mocks.mockSettingsUpdate).toHaveBeenNthCalledWith(1, [
           { path: 'server.wsApi.enabled', value: true },
         ]);
         expect(mocks.mockSettingsUpdate).toHaveBeenNthCalledWith(2, [
-          { path: 'server.bindAddress', value: ['0.0.0.0'] },
+          { path: 'server.tunnel.enabled', value: true },
         ]);
       });
-      // The bind change rebinds listeners → pairing info is re-fetched.
+      expect(mocks.mockSettingsUpdate).not.toHaveBeenCalledWith(
+        expect.arrayContaining([expect.objectContaining({ path: 'server.bindAddress' })]),
+      );
+      // The tunnel came up → pairing info is re-fetched for the tc address.
       await waitFor(() => expect(mocks.mockPairingInfo).toHaveBeenCalledTimes(2));
       await waitFor(() =>
         expect(
-          screen.getByRole('switch', { name: LOCAL_NETWORK() }).getAttribute('aria-checked'),
+          screen
+            .getByRole('switch', { name: m.settings_tunnel_enable_label() })
+            .getAttribute('aria-checked'),
         ).toBe('true'),
       );
+      expect(screen.getByText('tc-key-abc')).toBeTruthy();
       expect(
-        (
-          screen.getByRole('checkbox', {
-            name: m.settings_listenTargets_allInterfaces_label(),
-          }) as HTMLInputElement
-        ).checked,
-      ).toBe(true);
-      expect(
-        screen
-          .getByRole('switch', { name: m.settings_tunnel_enable_label() })
-          .getAttribute('aria-checked'),
+        screen.getByRole('switch', { name: LOCAL_NETWORK() }).getAttribute('aria-checked'),
       ).toBe('false');
+      expect(screen.queryByRole('checkbox')).toBeNull();
     });
 
-    it('first enable leaves a bindAddress already customized beyond loopback alone', async () => {
+    it('enable leaves a bindAddress already customized beyond loopback alone (no tunnel default)', async () => {
       mocks.mockSettingsList.mockResolvedValue(
-        settingsRows({ enabled: false, bindAddress: ['192.168.1.2'] }),
+        settingsRows({
+          enabled: false,
+          bindAddress: ['192.168.1.2'],
+          tunnel: { enabled: false, only: false },
+        }),
       );
       render(WebSocketApiSettings);
       await waitFor(() => expect(screen.getByRole('switch')).toBeTruthy());
@@ -1652,18 +1678,110 @@ describe('WebSocketApiSettings', () => {
       mocks.mockSettingsUpdate.mockResolvedValueOnce([
         { path: 'server.wsApi.enabled', value: true },
       ]);
-      mocks.mockSettingsList.mockResolvedValue(settingsRows({ bindAddress: ['192.168.1.2'] }));
+      mocks.mockSettingsList.mockResolvedValue(
+        settingsRows({ bindAddress: ['192.168.1.2'], tunnel: { enabled: false, only: false } }),
+      );
       mocks.mockPairingInfo.mockResolvedValue(PAIRING);
       await fireEvent.click(screen.getByRole('switch', { name: m.settings_wsApi_enable_label() }));
 
+      await awaitEnableSettled();
       await waitFor(() => expect(screen.getByRole('checkbox', { name: '10.0.0.5' })).toBeTruthy());
       expect(mocks.mockSettingsUpdate).toHaveBeenCalledTimes(1);
       expect(mocks.mockSettingsUpdate).not.toHaveBeenCalledWith(
         expect.arrayContaining([expect.objectContaining({ path: 'server.bindAddress' })]),
       );
+      expect(mocks.mockSettingsUpdate).not.toHaveBeenCalledWith(
+        expect.arrayContaining([expect.objectContaining({ path: 'server.tunnel.enabled' })]),
+      );
+      expect(
+        screen
+          .getByRole('switch', { name: m.settings_tunnel_enable_label() })
+          .getAttribute('aria-checked'),
+      ).toBe('false');
     });
 
-    it('a failed first-enable default surfaces a toast without rolling back the WebSocket API toggle', async () => {
+    it('enable with the tunnel already on applies no default', async () => {
+      mocks.mockSettingsList.mockResolvedValue(
+        settingsRows({
+          enabled: false,
+          bindAddress: ['127.0.0.1'],
+          tunnel: { enabled: true, only: false },
+        }),
+      );
+      render(WebSocketApiSettings);
+      await waitFor(() => expect(screen.getByRole('switch')).toBeTruthy());
+
+      mocks.mockSettingsUpdate.mockResolvedValueOnce([
+        { path: 'server.wsApi.enabled', value: true },
+      ]);
+      mocks.mockSettingsList.mockResolvedValue(
+        settingsRows({ bindAddress: ['127.0.0.1'], tunnel: { enabled: true, only: false } }),
+      );
+      mocks.mockPairingInfo.mockResolvedValue({ ...PAIRING, tcAddress: 'tc-key-abc' });
+      await fireEvent.click(screen.getByRole('switch', { name: m.settings_wsApi_enable_label() }));
+
+      await awaitEnableSettled();
+      expect(mocks.mockSettingsUpdate).toHaveBeenCalledTimes(1);
+      expect(
+        screen
+          .getByRole('switch', { name: m.settings_tunnel_enable_label() })
+          .getAttribute('aria-checked'),
+      ).toBe('true');
+      expect(
+        screen.getByRole('switch', { name: LOCAL_NETWORK() }).getAttribute('aria-checked'),
+      ).toBe('false');
+    });
+
+    it('enable with tunnel-only persisted but the tunnel off still defaults the tunnel on', async () => {
+      // server.tunnel.only=true is consistent with the tunnel default (the
+      // write is tunnel.enabled=true, not a bind widening), so the loopback
+      // default still applies; the re-sync lands on the tunnel-only posture.
+      mocks.mockSettingsList.mockResolvedValue(
+        settingsRows({
+          enabled: false,
+          bindAddress: ['127.0.0.1'],
+          tunnel: { enabled: false, only: true },
+        }),
+      );
+      render(WebSocketApiSettings);
+      await waitFor(() => expect(screen.getByRole('switch')).toBeTruthy());
+
+      mocks.mockSettingsUpdate.mockResolvedValueOnce([
+        { path: 'server.wsApi.enabled', value: true },
+      ]);
+      mocks.mockSettingsUpdate.mockResolvedValueOnce([]);
+      mocks.mockSettingsList.mockResolvedValueOnce(
+        settingsRows({ bindAddress: ['127.0.0.1'], tunnel: { enabled: false, only: true } }),
+      );
+      mocks.mockSettingsList.mockResolvedValue(
+        settingsRows({ bindAddress: ['127.0.0.1'], tunnel: { enabled: true, only: true } }),
+      );
+      mocks.mockPairingInfo.mockResolvedValueOnce(PAIRING);
+      mocks.mockPairingInfo.mockResolvedValue({ ...PAIRING, tcAddress: 'tc-key-abc' });
+      await fireEvent.click(screen.getByRole('switch', { name: m.settings_wsApi_enable_label() }));
+
+      await awaitEnableSettled();
+      expect(mocks.mockSettingsUpdate).toHaveBeenCalledTimes(2);
+      expect(mocks.mockSettingsUpdate).toHaveBeenNthCalledWith(2, [
+        { path: 'server.tunnel.enabled', value: true },
+      ]);
+      expect(mocks.mockSettingsUpdate).not.toHaveBeenCalledWith(
+        expect.arrayContaining([expect.objectContaining({ path: 'server.bindAddress' })]),
+      );
+      expect(mocks.mockSettingsUpdate).not.toHaveBeenCalledWith(
+        expect.arrayContaining([expect.objectContaining({ path: 'server.tunnel.only' })]),
+      );
+      expect(
+        screen
+          .getByRole('switch', { name: m.settings_tunnel_enable_label() })
+          .getAttribute('aria-checked'),
+      ).toBe('true');
+      expect(
+        screen.getByRole('switch', { name: LOCAL_NETWORK() }).getAttribute('aria-checked'),
+      ).toBe('false');
+    });
+
+    it('enable on a daemon without server.tunnel.* applies no default and never widens the bind set', async () => {
       mocks.mockSettingsList.mockResolvedValue(
         settingsRows({ enabled: false, bindAddress: ['127.0.0.1'] }),
       );
@@ -1673,17 +1791,56 @@ describe('WebSocketApiSettings', () => {
       mocks.mockSettingsUpdate.mockResolvedValueOnce([
         { path: 'server.wsApi.enabled', value: true },
       ]);
-      mocks.mockSettingsUpdate.mockRejectedValueOnce(new Error('daemon says no'));
       mocks.mockSettingsList.mockResolvedValue(settingsRows({ bindAddress: ['127.0.0.1'] }));
+      mocks.mockPairingInfo.mockResolvedValue(PAIRING);
+      await fireEvent.click(screen.getByRole('switch', { name: m.settings_wsApi_enable_label() }));
+
+      await awaitEnableSettled();
+      expect(mocks.mockSettingsUpdate).toHaveBeenCalledTimes(1);
+      expect(mocks.mockSettingsUpdate).not.toHaveBeenCalledWith(
+        expect.arrayContaining([expect.objectContaining({ path: 'server.bindAddress' })]),
+      );
+      expect(screen.queryByRole('switch', { name: m.settings_tunnel_enable_label() })).toBeNull();
+      expect(
+        screen.getByRole('switch', { name: LOCAL_NETWORK() }).getAttribute('aria-checked'),
+      ).toBe('false');
+    });
+
+    it('a failed enable default surfaces a toast without rolling back the WebSocket API toggle', async () => {
+      mocks.mockSettingsList.mockResolvedValue(
+        settingsRows({
+          enabled: false,
+          bindAddress: ['127.0.0.1'],
+          tunnel: { enabled: false, only: false },
+        }),
+      );
+      render(WebSocketApiSettings);
+      await waitFor(() => expect(screen.getByRole('switch')).toBeTruthy());
+
+      mocks.mockSettingsUpdate.mockResolvedValueOnce([
+        { path: 'server.wsApi.enabled', value: true },
+      ]);
+      mocks.mockSettingsUpdate.mockRejectedValueOnce(new Error('daemon says no'));
+      mocks.mockSettingsList.mockResolvedValue(
+        settingsRows({ bindAddress: ['127.0.0.1'], tunnel: { enabled: false, only: false } }),
+      );
       mocks.mockPairingInfo.mockResolvedValue(PAIRING);
       await fireEvent.click(screen.getByRole('switch'));
 
       await waitFor(() => expect(mockToast.error).toHaveBeenCalled());
+      expect(mocks.mockSettingsUpdate).toHaveBeenLastCalledWith([
+        { path: 'server.tunnel.enabled', value: true },
+      ]);
       expect(
         screen
           .getByRole('switch', { name: m.settings_wsApi_enable_label() })
           .getAttribute('aria-checked'),
       ).toBe('true');
+      expect(
+        screen
+          .getByRole('switch', { name: m.settings_tunnel_enable_label() })
+          .getAttribute('aria-checked'),
+      ).toBe('false');
     });
 
     it('hides the toggle and the Listen targets selector on daemons that do not report server.bindAddress', async () => {
@@ -1737,7 +1894,7 @@ describe('WebSocketApiSettings', () => {
       });
     });
 
-    it('first enable skips the 0.0.0.0 default when tunnel-only is persisted', async () => {
+    it('enable applies no default when tunnel-only is persisted with the tunnel on', async () => {
       mocks.mockSettingsList.mockResolvedValue(
         settingsRows({
           enabled: false,
@@ -1757,12 +1914,13 @@ describe('WebSocketApiSettings', () => {
       mocks.mockPairingInfo.mockResolvedValue({ ...PAIRING, tcAddress: 'tc-key-abc' });
       await fireEvent.click(screen.getByRole('switch', { name: m.settings_wsApi_enable_label() }));
 
-      await waitFor(() =>
-        expect(screen.getByRole('switch', { name: LOCAL_NETWORK() })).toBeTruthy(),
-      );
+      await awaitEnableSettled();
       expect(mocks.mockSettingsUpdate).toHaveBeenCalledTimes(1);
       expect(mocks.mockSettingsUpdate).not.toHaveBeenCalledWith(
         expect.arrayContaining([expect.objectContaining({ path: 'server.bindAddress' })]),
+      );
+      expect(mocks.mockSettingsUpdate).not.toHaveBeenCalledWith(
+        expect.arrayContaining([expect.objectContaining({ path: 'server.tunnel.enabled' })]),
       );
       expect(
         screen.getByRole('switch', { name: LOCAL_NETWORK() }).getAttribute('aria-checked'),

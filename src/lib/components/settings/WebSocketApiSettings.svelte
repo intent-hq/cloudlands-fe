@@ -322,25 +322,33 @@
 
   /**
    * Loopback-only enable default: the daemon binds loopback only out of the
-   * box, so turning the WebSocket API on from that state widens the bind set
-   * to all interfaces (Local Network Access ON). This applies on EVERY enable
-   * from loopback-only, not just the first — an explicit Local Network Access
-   * OFF followed by disable/enable re-applies the default by design.
-   * A bindAddress the user already customized beyond loopback is left alone,
-   * the tunnel is untouched, and a persisted tunnel-only posture is respected
-   * (writing 0.0.0.0 there would contradict tunnel.only=true). Runs under
-   * listenSaving so the LNA/tunnel toggles cannot issue a concurrent
-   * bindAddress write.
+   * box, so turning the WebSocket API on from that state enables the Tailcat
+   * tunnel (`server.tunnel.enabled=true`) and leaves the bind set alone —
+   * loopback stays the only direct listener (Local Network Access OFF) and
+   * other devices reach this machine through the tunnel. This applies on
+   * EVERY enable from loopback-only with the tunnel off, not just the first —
+   * an explicit tunnel OFF followed by disable/enable re-applies the default
+   * by design.
+   * A bindAddress the user already customized beyond loopback and an already
+   * enabled tunnel are left alone. On daemons predating `server.tunnel.*` no
+   * default applies at all (the bind set is never widened to 0.0.0.0).
+   * A persisted `server.tunnel.only=true` with the tunnel off does not block
+   * the default — enabling the tunnel is consistent with it, and the re-sync
+   * lands on the tunnel-only posture. `server.tunnel.only` itself is not
+   * written: the loopback-only bind already refuses direct LAN connections,
+   * and tunnel-only is a lock-down the daemon rejects from a direct TCP
+   * caller, so it stays an explicit choice. Runs under listenSaving so the
+   * LNA/tunnel toggles cannot issue a concurrent listen-target write.
    * Fail-soft: a failure surfaces a toast and never rolls back the toggle.
    */
-  async function maybeDefaultLocalNetworkAccess() {
-    if (!bindAddressSupported || localNetworkEnabled || tunnelOnly || listenSaving) return;
+  async function maybeDefaultTunnel() {
+    if (!tunnelSupported || tunnelEnabled || localNetworkEnabled || listenSaving) return;
     listenSaving = true;
     try {
-      await appClient.settings.update([{ path: 'server.bindAddress', value: [ALL_INTERFACES] }]);
-      bindIps = [ALL_INTERFACES];
+      await appClient.settings.update([{ path: 'server.tunnel.enabled', value: true }]);
+      tunnelEnabled = true;
       refreshSelfEntry();
-      // The bound listeners changed — refresh the pairing info (port/IPs).
+      // The tunnel came up — refresh the pairing info (tc address).
       await loadStatus();
     } catch (error) {
       toast.error(
@@ -383,7 +391,7 @@
       enabled = checked;
       if (checked) {
         await loadStatus();
-        await maybeDefaultLocalNetworkAccess();
+        await maybeDefaultTunnel();
         await maybeAutoPublish();
       } else {
         localNetworkOpen = false;
