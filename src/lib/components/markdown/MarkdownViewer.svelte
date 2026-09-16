@@ -1,4 +1,6 @@
 <script lang="ts">
+  import './markdown-math.css';
+  import { classifyMarkdownContent } from '$lib/utils/markdown-content-complexity';
   import { mount, onDestroy, unmount } from 'svelte';
   import { logger } from '$lib/utils/client-logger';
   import { processMarkdownToHTML } from '$lib/utils/markdown-processor';
@@ -74,64 +76,17 @@
       : content,
   );
 
-  // PERF: Detect content complexity to choose rendering strategy
-  // - Simple: plain text, no markdown - render as <p>
-  // - Static: has markdown - render the processed HTML directly (no TipTap)
-  //
-  // Read-only rendering never needs a live ProseMirror view: the markdown
-  // processor already emits final HTML for task lists (read-only checkboxes),
-  // tables, images, and intent:// links, and the container click/keydown
-  // handlers below provide the interactivity.
-
-  // Patterns that need markdown processing (rendered as processed static HTML)
-  const needsProcessingPatterns = [
-    /^\s*[-*]\s*\[[ x]\]/m, // Task lists (rendered read-only)
-    // i18n-ignore (scanner false positive: backticks in regex literal confuse the string tracker)
-    /```/, // Code blocks (triple backticks)
-    /`[^`]+`/, // Inline code (single backticks)
-    /\|.*\|/, // Tables
-    /\[.*\]\(.*\)/, // Links
-    /!\[.*\]\(.*\)/, // Images
-    /<[a-z][\s\S]*>/i, // HTML tags
-    /^#{1,6}\s/m, // Headers
-    /^\s*>\s/m, // Blockquotes
-    /\*\*[^*]+\*\*/, // Bold (double asterisks)
-    /\*[^*]+\*/, // Italic (single asterisks)
-    /_[^_]+_/, // Italic (underscores)
-    /~~[^~]+~~/, // Strikethrough
-    /^[-*_]{3,}\s*$/m, // Horizontal rules
-    /^\s*[-*+]\s/m, // Unordered lists
-    /^\s*\d+\.\s/m, // Ordered lists
-    // @-mentions and bare file paths that injectMentionSpans converts to mention chips
-    /@note\//, // @note/... mentions
-    /@context\[/, // @context[...] mentions
-    /@\//, // @/absolute/path mentions
-    /@[A-Za-z0-9._-]+\/[^\s]*\.[A-Za-z0-9]+/, // @relative/path/file.ext mentions
-    /@[A-Za-z0-9._-]+\.[A-Za-z0-9]+/, // @file.ext mentions
-    /@auggie-personality-/, // @auggie-personality-* persona mentions
-    /intent:\/\//, // intent:// protocol URLs
-    /\b[A-Za-z0-9][A-Za-z0-9._-]+\.(?:json|js|ts|tsx|jsx|md|mdx|yaml|yml|svelte|html|css|scss|py|go|rs|rb|java|kt|swift|m|mm|hpp|h|hh|c|cc|cpp|sh|toml|lock|ini|conf|txt|csv|sql)\b/, // bare filenames like file.ext
-    /\b[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)+\.(?:json|js|ts|tsx|jsx|md|mdx|yaml|yml|svelte|html|css|scss|py|go|rs|rb|java|kt|swift|m|mm|hpp|h|hh|c|cc|cpp|sh|toml|lock|ini|conf|txt|csv|sql)\b/, // bare paths like dir/file.ext
-  ];
-
-  const contentComplexity = $derived.by(() => {
-    if (!markdownContent) return 'simple';
-    // Check if needs markdown processing
-    if (needsProcessingPatterns.some((pattern) => pattern.test(markdownContent))) {
-      return 'static';
-    }
-    return 'simple';
-  });
+  const contentComplexity = $derived(classifyMarkdownContent(markdownContent));
 
   // Track static content element for click handling
   let staticContentElement: HTMLElement | null = $state(null);
-
   let processedContent = $state('');
   let lastProcessedContent = '';
   // The rendered HTML also depends on workspaceId (short-form intent://local/file/
   // image links resolve against it), so it participates in the memoization guard
   let lastProcessedWorkspaceId: string | undefined;
   let lastRenderRichFencesAsCode = false;
+  let lastRenderMath = false;
 
   // PERF: Track streaming state to throttle re-renders during streaming
   let isCurrentlyStreaming = false;
@@ -149,7 +104,8 @@
     if (
       markdown === lastProcessedContent &&
       workspaceId === lastProcessedWorkspaceId &&
-      renderRichFencesAsCode === lastRenderRichFencesAsCode
+      renderRichFencesAsCode === lastRenderRichFencesAsCode &&
+      lastRenderMath
     ) {
       return;
     }
@@ -159,6 +115,7 @@
       lastProcessedContent = '';
       lastProcessedWorkspaceId = workspaceId;
       lastRenderRichFencesAsCode = renderRichFencesAsCode;
+      lastRenderMath = true;
       return;
     }
 
@@ -170,12 +127,14 @@
         taskBlockRenderMode,
         workspaceId,
         renderRichFencesAsCode,
+        renderMath: true,
         workspaceFileVersion,
       });
       processedContent = html;
       lastProcessedContent = markdown;
       lastProcessedWorkspaceId = workspaceId;
       lastRenderRichFencesAsCode = renderRichFencesAsCode;
+      lastRenderMath = true;
       // Note: Scroll management is handled by the parent component via followBottom action
     } catch (error) {
       logger.error('Failed to process markdown:', error);
@@ -187,6 +146,7 @@
       processedContent = `<p>${escaped}</p>`;
       lastProcessedContent = markdown;
       lastProcessedWorkspaceId = workspaceId;
+      lastRenderMath = true;
     }
   }
 
@@ -196,7 +156,8 @@
     if (
       markdown === lastProcessedContent &&
       workspaceId === lastProcessedWorkspaceId &&
-      renderRichFencesAsCode === lastRenderRichFencesAsCode
+      renderRichFencesAsCode === lastRenderRichFencesAsCode &&
+      !lastRenderMath
     ) {
       return;
     }
@@ -205,6 +166,7 @@
       lastProcessedContent = '';
       lastProcessedWorkspaceId = workspaceId;
       lastRenderRichFencesAsCode = renderRichFencesAsCode;
+      lastRenderMath = false;
       if (streamingContentElement) {
         streamingContentElement.innerHTML = '';
       }
@@ -219,11 +181,13 @@
         taskBlockRenderMode,
         workspaceId,
         renderRichFencesAsCode,
+        renderMath: false,
         workspaceFileVersion,
       });
       lastProcessedContent = markdown;
       lastProcessedWorkspaceId = workspaceId;
       lastRenderRichFencesAsCode = renderRichFencesAsCode;
+      lastRenderMath = false;
       processedContent = html;
 
       // PERF: During streaming, update innerHTML directly to avoid re-rendering
@@ -243,6 +207,7 @@
       }
       lastProcessedContent = markdown;
       lastProcessedWorkspaceId = workspaceId;
+      lastRenderMath = false;
     }
   }
 
