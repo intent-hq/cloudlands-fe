@@ -1628,6 +1628,8 @@
           <!-- New repo: parent folder + folder name -->
           <Button
             type="button"
+            variant="plain"
+            wrapContent={false}
             class="w-full flex items-center gap-3 mb-2 text-left cursor-pointer"
             onclick={handleSelectNewRepoParent}
           >
@@ -1635,7 +1637,7 @@
               >{m.workspace_repoSelector_parentFolder_label()}</span
             >
             <span
-              class="flex-1 text-sm px-3 py-2.5 bg-sidebar rounded-lg flex items-center justify-between {newRepoParentPath
+              class="flex-1 min-w-0 text-sm h-(--control-height-medium) px-3 bg-sidebar rounded-(--radius-medium) flex items-center justify-between {newRepoParentPath
                 ? 'text-foreground'
                 : 'text-subtle'} truncate"
             >
