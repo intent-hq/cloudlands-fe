@@ -66,6 +66,7 @@
   import { DAEMON_UPDATING_COUNTDOWN_MS } from './DaemonUpdatingOverlay.svelte';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
+  import { formatGuestSessionLabel } from '$lib/utils/connection-label';
 
   const health$ = selectDaemonHealth();
   const updateDisconnectedAt$ = selectDaemonUpdateDisconnectedAt();
@@ -225,7 +226,9 @@
       appStore.dispatch(action);
       await action.promise;
     } catch {
-      guestLeaveError = m.settings_guestSessions_leave_error({ name: session.label });
+      guestLeaveError = m.settings_guestSessions_leave_error({
+        name: formatGuestSessionLabel(session),
+      });
     } finally {
       guestLeaving = false;
     }
