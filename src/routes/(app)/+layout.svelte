@@ -154,6 +154,12 @@
   } from '$features/quit-confirmation/quit-confirmation-service';
   import QuitConfirmationModal from '$lib/components/modals/QuitConfirmationModal.svelte';
   import type { QuitConfirmationShowPayload } from '$shared/ipc/quit-confirmation';
+  import {
+    installInviteConsentService,
+    respondToInviteConsent,
+  } from '$features/invite-consent/invite-consent-service';
+  import InviteConsentModal from '$lib/components/modals/InviteConsentModal.svelte';
+  import type { InviteConsentShowPayload } from '$shared/ipc/invite-consent';
   import type { InterruptedAgent } from '$lib/client/app-client';
   import { LiveAppClient } from '$lib/client/live/live-app-client';
   import { workspaceIdFromRoute } from '$lib/utils/workspace-route-context';
@@ -239,6 +245,10 @@
   // Quit confirmation modal state (main-process quit/restart interception)
   let showQuitConfirmationModal = $state(false);
   let quitConfirmationPayload = $state<QuitConfirmationShowPayload | null>(null);
+
+  // Invite consent modal state (main-process intent://invite GitHub identity prompt)
+  let showInviteConsentModal = $state(false);
+  let inviteConsentPayload = $state<InviteConsentShowPayload | null>(null);
 
   // The root route is a minimal empty state and fresh windows boot at
   // /workspace/new, which renders onboarding. Gate boot (and legacy `/`)
@@ -352,6 +362,18 @@
       onDismiss: () => {
         showQuitConfirmationModal = false;
         quitConfirmationPayload = null;
+      },
+    });
+
+    // Initialize invite-consent service (in-app modal for the invite GitHub identity check)
+    const disposeInviteConsent = installInviteConsentService({
+      onShow: (payload) => {
+        inviteConsentPayload = payload;
+        showInviteConsentModal = true;
+      },
+      onDismiss: () => {
+        showInviteConsentModal = false;
+        inviteConsentPayload = null;
       },
     });
 
@@ -837,6 +859,7 @@
       window.removeEventListener('keydown', handleBrowserNavigation);
       disposeInterruptedAgents();
       disposeQuitConfirmation();
+      disposeInviteConsent();
     };
   });
 
@@ -1129,6 +1152,16 @@
     onRespond={(proceed) => {
       quitConfirmationPayload = null;
       respondToQuitConfirmation(proceed);
+    }}
+  />
+
+  <!-- Invite Consent Modal (shown when main runs an intent://invite GitHub identity check) -->
+  <InviteConsentModal
+    bind:open={showInviteConsentModal}
+    payload={inviteConsentPayload}
+    onRespond={(action) => {
+      if (action === 'cancel') inviteConsentPayload = null;
+      respondToInviteConsent(action);
     }}
   />
 
