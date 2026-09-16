@@ -22,7 +22,7 @@ const PAYLOAD: InviteConsentShowPayload = {
   expiresInMs: 900_000,
 };
 
-const DIALOG_NAME = 'Join Alpha';
+const DIALOG_NAME = 'Join “Alpha” on host.example';
 
 // Pre-warm the component module graph so the cold dynamic import is not
 // billed to the first test's timeout (intent-hq/monorepo#1464).
@@ -41,7 +41,6 @@ describe('InviteConsentModal', () => {
 
     const dialogEl = await screen.findByRole('alertdialog', { name: DIALOG_NAME });
     expect(dialogEl.getAttribute('aria-modal')).toBe('true');
-    expect(dialogEl.textContent).toContain('host.example');
     expect(screen.getByText('ABCD-1234')).toBeTruthy();
     expect(screen.getByText('https://github.com/login/device')).toBeTruthy();
     expect(screen.queryByRole('status')).toBeNull();
