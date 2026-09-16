@@ -24,11 +24,18 @@
  * hydration-cache pattern used by workspace-settings.service.ts and
  * notification.service.ts.
  *
+ * Hydration is NON-BLOCKING: `initAppSettingsService()` resolves as soon as
+ * the listeners are attached and the fetch has been started, never on a
+ * daemon round-trip. It runs in the `criticalIPC` phase of main/index.ts
+ * ahead of window creation, and a freshly spawned sidecar can take seconds
+ * to open its socket — awaiting the fetch there gated the first window on
+ * the JSON-RPC reconnect backoff.
+ *
  * A failed per-path fetch leaves that cache UN-hydrated (never cached as
  * `''`): a later `initAppSettingsService()` call retries the missing paths,
  * and an armed `status` listener re-runs hydration on the client's next
- * `connected` transition (the init-before-sidecar boot order means the
- * first attempt can race the daemon socket, see main/index.ts).
+ * `connected` transition (the first attempt can still race the socket of a
+ * sidecar that was just spawned, see main/index.ts).
  *
  * Saved settings refresh in-session: the service owns ONE long-lived
  * LOCAL-backend `events.subscribe(['settings:changed'])` subscription (§6.5, same
@@ -317,16 +324,20 @@ function attachSettingsListeners(): Promise<void> {
 }
 
 /**
- * Hydrate the branchPrefix / worktreesLocation / sshKeyPath caches from the
- * daemon. Safe to call repeatedly; sync getters keep returning the
- * empty-string default until this resolves. Paths that failed to hydrate
- * stay un-hydrated, so a later call (or the armed connected-retry) fetches
- * them again instead of serving a permanently cached failure.
+ * Attach the listeners and START hydrating the branchPrefix /
+ * worktreesLocation / sshKeyPath caches from the daemon. Resolves once the
+ * fetch is in flight — it does NOT wait for the daemon round-trip, so window
+ * creation is never gated on daemon latency or availability. Safe to call
+ * repeatedly (concurrent calls share one hydration); sync getters keep
+ * returning the empty-string default until the values arrive. Paths that
+ * failed to hydrate stay un-hydrated, so a later call (or the armed
+ * connected-retry) fetches them again instead of serving a permanently
+ * cached failure.
  */
 export async function initAppSettingsService(): Promise<void> {
   const subscribed = attachSettingsListeners();
   if (allHydrated()) return;
-  if (hydrationPromise) return hydrationPromise;
+  if (hydrationPromise) return;
   hydrationPromise = (async () => {
     // Subscribe-before-fetch (never rejects — failures arm the retries):
     // changes landing during the initial fetch arrive as deltas.
@@ -341,10 +352,14 @@ export async function initAppSettingsService(): Promise<void> {
     } else {
       armStatusRetry();
     }
-  })().finally(() => {
-    hydrationPromise = null;
-  });
-  return hydrationPromise;
+  })()
+    .catch((error: unknown) => {
+      logger.warn('App settings hydration failed', { error: (error as Error).message });
+      armStatusRetry();
+    })
+    .finally(() => {
+      hydrationPromise = null;
+    });
 }
 
 /**

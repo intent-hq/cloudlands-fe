@@ -17,6 +17,15 @@
  * that backend has no live client) and local-pinned for hydration /
  * `persistConfig` (the in-memory ConfigManager mirrors the LOCAL daemon's
  * values only).
+ *
+ * Hydration is NON-BLOCKING: `setupConfigIPC()` registers the handlers and
+ * resolves as soon as the daemon fetch has been started. It runs in the
+ * `criticalIPC` phase of main/index.ts ahead of window creation, and a
+ * freshly spawned sidecar can take seconds to open its socket — awaiting the
+ * fetch there gated the first window on the JSON-RPC reconnect backoff.
+ * `ConfigManager` serves in-memory defaults until the values arrive, and the
+ * hydration re-runs on every local-backend reconnect (which also fires after
+ * a failed first dial) so a cold-start miss is retried once the daemon is up.
  */
 
 import { ipcMain } from 'electron';
@@ -38,6 +47,7 @@ import {
   getBackendClientForId,
   getBackendIdForIpcSender,
   getLocalBackendClient,
+  onBackendReconnected,
 } from '../../backend/main/backend.ipc';
 import type { JsonRpcClient } from '../../backend/main/json-rpc-client';
 import { LOCAL_CONNECTION_ID } from '../../backend/main/connections-store';
@@ -45,6 +55,8 @@ import { LOCAL_CONNECTION_ID } from '../../backend/main/connections-store';
 const logger = new Logger('ConfigIPC');
 
 let configManager: ConfigManager | null = null;
+let hydrationPromise: Promise<void> | null = null;
+let reconnectDisposer: (() => void) | undefined;
 
 function getLocalClient(): JsonRpcClient | undefined {
   try {
@@ -86,6 +98,26 @@ async function getAllForBackend(
 }
 
 /**
+ * Start hydrating the daemon-owned sub-keys of AppConfig from the LOCAL
+ * daemon so the renderer sees canonical values. Fire-and-forget and
+ * single-flight: concurrent triggers (startup + reconnect) share one pass,
+ * and per-key failures are warn-logged by `hydrateFromDaemon` rather than
+ * thrown. FE-local sub-keys stay at their in-memory defaults for the session.
+ */
+function startDaemonHydration(): void {
+  if (!configManager || hydrationPromise) return;
+  const localClient = getLocalClient();
+  if (!localClient) return;
+  hydrationPromise = hydrateFromDaemon(configManager, localClient)
+    .catch((err: unknown) => {
+      logger.warn('Failed to hydrate config from daemon', err as Error);
+    })
+    .finally(() => {
+      hydrationPromise = null;
+    });
+}
+
+/**
  * Get the shared ConfigManager instance
  */
 export function getConfigManager(): ConfigManager | null {
@@ -116,16 +148,19 @@ export async function setupConfigIPC() {
   if (!configManager) {
     configManager = new ConfigManager();
 
-    // Hydrate the daemon-owned sub-keys of AppConfig from the daemon so the
-    // renderer sees canonical values. FE-local sub-keys stay at their in-memory
-    // defaults for the session.
     try {
-      const localClient = getLocalClient();
-      if (localClient) await hydrateFromDaemon(configManager, localClient);
+      // In-memory only — no I/O, resolves immediately.
       await configManager.initialize();
     } catch (err) {
       logger.error('Failed to initialize ConfigManager', err as Error);
     }
+
+    // Kick off the daemon fetch WITHOUT awaiting it (see the module doc), and
+    // re-run it whenever the local backend (re)connects: on a cold launch the
+    // first pass can race the socket of a sidecar that was just spawned.
+    startDaemonHydration();
+    reconnectDisposer?.();
+    reconnectDisposer = onBackendReconnected(startDaemonHydration, LOCAL_CONNECTION_ID);
   }
 
   // Read a namespaced key (e.g., "shortcuts" or "appearance.theme")
