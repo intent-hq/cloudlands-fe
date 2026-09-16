@@ -76,7 +76,7 @@
     <Button
       type="button"
       variant="plain"
-      class="h-auto! min-w-0 max-w-full cursor-pointer justify-start overflow-hidden whitespace-nowrap p-0! text-left font-normal text-muted-foreground hover:underline"
+      class="type-body h-auto! min-w-0 max-w-full cursor-pointer justify-start truncate p-0! text-left font-normal text-muted-foreground hover:underline"
       data-testid="pr-monitor-wake-chip"
       title={m.chat_prMonitorWakeAttribution_openPr_tooltip()}
       onclick={handleOpenPr}
