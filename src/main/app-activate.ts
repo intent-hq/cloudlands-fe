@@ -16,6 +16,10 @@
  * `handleActivate` waits for the boot gate, then re-evaluates the live window
  * set: focus an existing window when there is one; otherwise (a post-boot dock
  * click with every window closed) restore saved sessions or create a window.
+ * The zero-window branch is single-flight: it awaits `getActiveId()` and
+ * `restoreSessions()` before any window exists, so concurrent activations that
+ * all observed zero windows share one restore/create instead of each creating
+ * a window.
  */
 
 export interface ActivateWindow {
@@ -47,9 +51,14 @@ export interface ActivateDeps<W extends ActivateWindow> {
   createWindow: (backendId: string) => void;
 }
 
+type ZeroWindowOutcome = 'restored' | 'created';
+
+/** The in-flight zero-window restore/create shared by concurrent activations. */
+let pendingZeroWindowActivation: Promise<ZeroWindowOutcome> | null = null;
+
 export async function handleActivate<W extends ActivateWindow>(
   deps: ActivateDeps<W>,
-): Promise<'focused' | 'restored' | 'created'> {
+): Promise<'focused' | ZeroWindowOutcome> {
   await deps.whenBootWindowsReady();
 
   const liveWindows = deps.getAllWindows().filter((w) => !w.isDestroyed());
@@ -61,10 +70,23 @@ export async function handleActivate<W extends ActivateWindow>(
     return 'focused';
   }
 
-  // No windows at all — restore every backend's saved sessions (same
-  // multi-bucket restore as boot) or create a new one. The active backend
-  // restores first and provides the main window, so a dock-click reopen never
-  // keys everything to the hard-coded local default.
+  // No windows at all — single-flight the restore/create so activations that
+  // race past the gate together do not each create a window.
+  if (!pendingZeroWindowActivation) {
+    pendingZeroWindowActivation = restoreOrCreateWindow(deps).finally(() => {
+      pendingZeroWindowActivation = null;
+    });
+  }
+  return pendingZeroWindowActivation;
+}
+
+// Restore every backend's saved sessions (same multi-bucket restore as boot)
+// or create a new window. The active backend restores first and provides the
+// main window, so a dock-click reopen never keys everything to the hard-coded
+// local default.
+async function restoreOrCreateWindow<W extends ActivateWindow>(
+  deps: ActivateDeps<W>,
+): Promise<ZeroWindowOutcome> {
   const backendId = await deps.getActiveId();
   if (await deps.restoreSessions(backendId)) {
     return 'restored';

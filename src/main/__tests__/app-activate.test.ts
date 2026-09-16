@@ -130,4 +130,39 @@ describe('handleActivate', () => {
     await expect(handleActivate(h.deps)).resolves.toBe('focused');
     expect(h.deps.createWindow).toHaveBeenCalledTimes(1);
   });
+
+  it('concurrent post-boot activations with zero windows create exactly one window', async () => {
+    const h = makeHarness({ restored: false, backendId: 'remote-3' });
+    h.gate.release();
+
+    // Every activation passes the gate and observes zero windows before the
+    // first one has finished awaiting getActiveId()/restoreSessions().
+    const outcomes = await Promise.all(Array.from({ length: 5 }, () => handleActivate(h.deps)));
+
+    expect(outcomes).toEqual(['created', 'created', 'created', 'created', 'created']);
+    expect(h.deps.getActiveId).toHaveBeenCalledTimes(1);
+    expect(h.deps.restoreSessions).toHaveBeenCalledTimes(1);
+    expect(h.deps.createWindow).toHaveBeenCalledTimes(1);
+    expect(h.deps.createWindow).toHaveBeenCalledWith('remote-3');
+    expect(h.windows).toHaveLength(1);
+
+    // Once settled, a later activation sees the created window and focuses it.
+    await expect(handleActivate(h.deps)).resolves.toBe('focused');
+    expect(h.deps.createWindow).toHaveBeenCalledTimes(1);
+  });
+
+  it('a failed restore rejects every concurrent activation and does not wedge later ones', async () => {
+    const h = makeHarness({ restored: false });
+    h.gate.release();
+    vi.mocked(h.deps.restoreSessions).mockRejectedValueOnce(new Error('session store unreadable'));
+
+    const results = await Promise.allSettled([handleActivate(h.deps), handleActivate(h.deps)]);
+    expect(results.map((r) => r.status)).toEqual(['rejected', 'rejected']);
+    expect(h.deps.restoreSessions).toHaveBeenCalledTimes(1);
+    expect(h.deps.createWindow).not.toHaveBeenCalled();
+
+    await expect(handleActivate(h.deps)).resolves.toBe('created');
+    expect(h.deps.restoreSessions).toHaveBeenCalledTimes(2);
+    expect(h.deps.createWindow).toHaveBeenCalledTimes(1);
+  });
 });
