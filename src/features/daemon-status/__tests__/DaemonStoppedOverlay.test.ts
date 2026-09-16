@@ -1119,6 +1119,30 @@ describe('DaemonStoppedOverlay', () => {
       expect(screen.getByTestId('daemon-stopped-guest-leave')).toBeTruthy();
     });
 
+    it('falls back to the stored address when no hostname has been captured yet', async () => {
+      render(DaemonStoppedOverlay);
+      await showOverlay(wsTransport);
+      dispatchAndFlush(
+        connectionsListReceived({
+          connections: [LOCAL, GUEST_CONNECTION],
+          activeId: GUEST.id,
+          windowBackendId: GUEST.id,
+        }),
+      );
+      dispatchAndFlush(
+        guestSessionsListReceived({
+          sessions: [{ ...GUEST, hostname: null }],
+          openIds: [],
+          connectedIds: [],
+        }),
+      );
+      rejectAuth();
+
+      const description = document.getElementById('daemon-stopped-description')!.textContent!;
+      expect(description).toContain('tc.example.ts.net');
+      expect(description).not.toContain('Clement’s Mac Studio');
+    });
+
     it('keeps the re-pair state for a rejected owner backend that is not a guest session', async () => {
       render(DaemonStoppedOverlay);
       await showOverlay(wsTransport);
