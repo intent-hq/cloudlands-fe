@@ -2,8 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
  * Behavior tests for the `intent://invite` deep-link join flow
- * (features/deeplink/main/invite-deep-link.ts): confirm → dial `/invite`
- * with the pin → device code shown → credential stored as a GUEST session
+ * (features/deeplink/main/invite-deep-link.ts): dial `/invite` with the pin
+ * (no fingerprint confirmation) → device code shown → credential stored as a GUEST session
  * (never a paired backend) → window opened; malformed links are rejected
  * fail-soft, the secret and the minted token never reach a log line, and a
  * redeem error maps onto a failure dialog instead of a crash.
@@ -147,7 +147,7 @@ beforeEach(() => {
 });
 
 describe('handleInviteDeepLink', () => {
-  it('happy path: confirm → dial with pin → redeem → store GUEST session → open window', async () => {
+  it('happy path: dial with pin → redeem → store GUEST session → open window', async () => {
     await handleInviteDeepLink(`${LINK}&tc=ts.example:443`);
 
     expect(openInviteConnection).toHaveBeenCalledWith({
@@ -162,8 +162,12 @@ describe('handleInviteDeepLink', () => {
 
     expect(clipboardWriteText).toHaveBeenCalledWith(START.userCode);
     expect(openExternal).toHaveBeenCalledWith(START.verificationUri);
-    // Confirm dialog + device-code dialog; no failure dialog.
-    expect(showMessageBox).toHaveBeenCalledTimes(2);
+    // Device-code dialog only: no fingerprint confirmation, no failure dialog.
+    expect(showMessageBox).toHaveBeenCalledTimes(1);
+    expect(showMessageBox.mock.calls[0][0]).toMatchObject({
+      type: 'info',
+      message: expect.stringContaining(START.workspaceTitle),
+    });
 
     expect(guestAdd).toHaveBeenCalledWith({
       label: '192.168.1.10',
@@ -181,20 +185,26 @@ describe('handleInviteDeepLink', () => {
     expect(close).toHaveBeenCalledTimes(1);
   });
 
-  it('dialing happens only after the user confirms; cancel dials nothing', async () => {
-    showMessageBox.mockResolvedValueOnce({ response: 1 });
+  it('no dialog is shown before the device-code dialog (the single consent point)', async () => {
+    const order: string[] = [];
+    openInviteConnection.mockImplementation(async () => {
+      order.push('dial');
+      return { host: '192.168.1.10', via: 'direct', redeemStart, redeemWait, close };
+    });
+    showMessageBox.mockImplementation(async () => {
+      order.push('dialog');
+      return { response: 0 };
+    });
     await handleInviteDeepLink(LINK);
-    expect(openInviteConnection).not.toHaveBeenCalled();
-    expect(redeemStart).not.toHaveBeenCalled();
-    expect(guestAdd).not.toHaveBeenCalled();
-    expect(openBackendWindow).not.toHaveBeenCalled();
+    expect(order).toEqual(['dial', 'dialog']);
   });
 
-  it('cancelling the device-code dialog stores nothing and closes the connection', async () => {
-    showMessageBox.mockResolvedValueOnce({ response: 0 }).mockResolvedValueOnce({ response: 1 });
+  it('cancelling the device-code dialog aborts: no credential minted, connection closed', async () => {
+    showMessageBox.mockResolvedValueOnce({ response: 1 });
     redeemWait.mockReturnValue(new Promise(() => {}));
     await handleInviteDeepLink(LINK);
     expect(redeemStart).toHaveBeenCalledTimes(1);
+    expect(showMessageBox).toHaveBeenCalledTimes(1);
     expect(openExternal).not.toHaveBeenCalled();
     expect(guestAdd).not.toHaveBeenCalled();
     expect(openBackendWindow).not.toHaveBeenCalled();
@@ -231,9 +241,6 @@ describe('handleInviteDeepLink', () => {
     await handleInviteDeepLink(
       `intent://invite?v=1&host=&port=8443&fp=AA:BB:CC&inviteId=inv-1&secret=${SECRET}&tc=tc-key-abc`,
     );
-    expect(showMessageBox.mock.calls[0][0]).toMatchObject({
-      message: expect.stringContaining('tc-key-abc:8443'),
-    });
     expect(openInviteConnection).toHaveBeenCalledWith({
       hosts: [],
       port: 8443,
@@ -269,10 +276,9 @@ describe('handleInviteDeepLink', () => {
       expect(openExternal).not.toHaveBeenCalled();
       expect(redeemWait).not.toHaveBeenCalled();
       expect(guestAdd).not.toHaveBeenCalled();
-      // Confirm + failure dialog only — the device-code dialog never showed
-      // the URL.
-      expect(showMessageBox).toHaveBeenCalledTimes(2);
-      expect(showMessageBox.mock.calls[1][0]).toMatchObject({ type: 'error' });
+      // Failure dialog only — the device-code dialog never showed the URL.
+      expect(showMessageBox).toHaveBeenCalledTimes(1);
+      expect(showMessageBox.mock.calls[0][0]).toMatchObject({ type: 'error' });
       const allLogs = logLines.join('\n');
       expect(allLogs).toContain('invalid-verification-uri');
       expect(allLogs).not.toContain(verificationUri);
@@ -293,9 +299,9 @@ describe('handleInviteDeepLink', () => {
   it('warns when the credential had to be stored in plaintext, then still opens the window', async () => {
     guestAdd.mockResolvedValue({ id: 'guest-id', tokenEncrypted: false });
     await handleInviteDeepLink(LINK);
-    // Confirm + device code + plaintext warning.
-    expect(showMessageBox).toHaveBeenCalledTimes(3);
-    expect(showMessageBox.mock.calls[2][0]).toMatchObject({ type: 'warning' });
+    // Device code + plaintext warning.
+    expect(showMessageBox).toHaveBeenCalledTimes(2);
+    expect(showMessageBox.mock.calls[1][0]).toMatchObject({ type: 'warning' });
     expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
   });
 
@@ -326,9 +332,9 @@ describe('handleInviteDeepLink', () => {
   it('redeem error: shows a failure dialog, stores nothing, fails soft', async () => {
     redeemStart.mockRejectedValue(new InviteRpcError(-32001, { code: 'invite-expired' }));
     await expect(handleInviteDeepLink(LINK)).resolves.toBeUndefined();
-    // Confirm + failure dialog.
-    expect(showMessageBox).toHaveBeenCalledTimes(2);
-    expect(showMessageBox.mock.calls[1][0]).toMatchObject({ type: 'error' });
+    // Failure dialog only.
+    expect(showMessageBox).toHaveBeenCalledTimes(1);
+    expect(showMessageBox.mock.calls[0][0]).toMatchObject({ type: 'error' });
     expect(guestAdd).not.toHaveBeenCalled();
     expect(openBackendWindow).not.toHaveBeenCalled();
     expect(close).toHaveBeenCalledTimes(1);
@@ -362,8 +368,8 @@ describe('handleInviteDeepLink', () => {
     await expect(handleInviteDeepLink(LINK)).resolves.toBeUndefined();
     expect(openExternal).toHaveBeenCalledTimes(1);
     expect(guestAdd).not.toHaveBeenCalled();
-    expect(showMessageBox).toHaveBeenCalledTimes(3);
-    expect(showMessageBox.mock.calls[2][0]).toMatchObject({ type: 'error' });
+    expect(showMessageBox).toHaveBeenCalledTimes(2);
+    expect(showMessageBox.mock.calls[1][0]).toMatchObject({ type: 'error' });
   });
 
   it('never logs the secret or the minted token, including when a step throws', async () => {
@@ -384,7 +390,8 @@ describe('handleInviteDeepLink', () => {
     const first = handleInviteDeepLink(LINK);
     const second = handleInviteDeepLink(LINK);
     await second;
-    expect(showMessageBox).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(showMessageBox).toHaveBeenCalledTimes(1));
+    expect(openInviteConnection).toHaveBeenCalledTimes(1);
     resolveDialog({ response: 0 });
     await first;
     expect(guestAdd).toHaveBeenCalledTimes(1);
