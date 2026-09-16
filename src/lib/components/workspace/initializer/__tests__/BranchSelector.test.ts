@@ -360,6 +360,51 @@ describe('BranchSelector (cached-first GitHub load, github.branches.listCached Â
     githubUrl: 'https://github.com/octo/intent',
   };
 
+  it.each(['main', 'trunk'])(
+    'selects the reported default %s outside the first page, including a component cache hit',
+    async (defaultBranch) => {
+      debugFlags.enableBranchCaching = true;
+      mockGithubBranchesCached.mockResolvedValue({ cached: false, branches: [] });
+      mockGithubBranches.mockResolvedValue({ branches: ['app-review', 'feat/x'], defaultBranch });
+      const onchange = vi.fn();
+      const { rerender } = render(BranchSelector, { props: { ...githubProps, onchange } });
+
+      await waitFor(() => expect(onchange).toHaveBeenCalledTimes(1));
+      expect(onchange.mock.lastCall![0].detail.branch).toBe(defaultBranch);
+      // Revisit the repository with no incoming selection: the component's
+      // cache holds a page, not the complete set of branches either.
+      await rerender({ repoPath: '', githubUrl: undefined });
+      await rerender(githubProps);
+      await waitFor(() => expect(onchange).toHaveBeenCalledTimes(2));
+      expect(onchange.mock.lastCall![0].detail.branch).toBe(defaultBranch);
+      expect(mockGithubBranches).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('reconciles an echoed app-review selection to main outside the fresh first page', async () => {
+    debugFlags.enableFormPersistence = true;
+    mockGithubBranchesCached.mockResolvedValue({ cached: true, branches: ['app-review'] });
+    const fresh = deferred<{ branches: string[]; defaultBranch: string }>();
+    mockGithubBranches.mockReturnValue(fresh.promise);
+    const onchange = vi.fn();
+    const onBranchesLoaded = vi.fn();
+    const { rerender } = render(BranchSelector, {
+      props: { ...githubProps, onchange, onBranchesLoaded },
+    });
+
+    await waitFor(() => expect(onchange).toHaveBeenCalledTimes(1));
+    expect(onchange.mock.lastCall![0].detail.branch).toBe('app-review');
+    await rerender({ value: 'app-review' });
+    fresh.resolve({ branches: ['app-review', 'feat/x'], defaultBranch: 'main' });
+    await waitFor(() =>
+      expect(onBranchesLoaded).toHaveBeenLastCalledWith(
+        expect.objectContaining({ defaultBranch: 'main' }),
+      ),
+    );
+    expect(onchange.mock.lastCall![0].detail.branch).toBe('main');
+    expect(savedBranchByRepo[githubProps.repoPath]).toBe('main');
+  });
+
   it.each([
     { cachedDefault: undefined, freshDefault: 'main' },
     { cachedDefault: 'aaa-feature', freshDefault: 'main' },

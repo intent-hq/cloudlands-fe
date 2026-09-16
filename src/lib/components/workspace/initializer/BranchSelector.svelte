@@ -463,8 +463,9 @@
     ) {
       // Saved branch exists (in local or remote branches), use it
       setInternalBranch(savedBranchForRepo);
-    } else if (defaultBranch && branches.includes(defaultBranch)) {
-      // Fall back to default branch
+    } else if (defaultBranch) {
+      // The repo metadata is authoritative even when the default is outside
+      // the first page returned by github.branches.list.
       setInternalBranch(defaultBranch);
     } else {
       // Last resort: use first available branch
@@ -492,49 +493,6 @@
     // Debug logging to diagnose branch fetching issues
     logger.debug('fetchBranches called', { repoPath, repoType, githubUrl });
     performanceMonitor.start(`fetchBranches-${repoPath}`, { repoType, githubUrl });
-
-    // Check cache first (if caching is enabled)
-    if (debugConfig.get('enableBranchCaching')) {
-      const cached = branchCache.get(repoPath);
-      if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
-        branches = cached.branches;
-        remoteBranches = cached.remoteBranches || [];
-        defaultBranch = cached.default;
-        currentBranch = cached.current || '';
-
-        // Set internal state from cache - always ensure a valid branch is selected
-        // If value prop is provided, trust it (e.g., for remote branches like origin/...)
-        if (value) {
-          // Value prop is the source of truth - don't override it
-          setInternalBranch(value);
-        } else {
-          // Look up saved branch for THIS repo from Redux (not from stale selectedBranch)
-          const savedBranchForRepo = getSavedBranchForRepo(repoPath);
-          if (
-            savedBranchForRepo &&
-            (branches.includes(savedBranchForRepo) || remoteBranches.includes(savedBranchForRepo))
-          ) {
-            // Saved branch exists (in local or remote branches), use it
-            setInternalBranch(savedBranchForRepo);
-          } else if (currentBranch && branches.includes(currentBranch)) {
-            // Fall back to current branch
-            setInternalBranch(currentBranch);
-          } else if (defaultBranch && branches.includes(defaultBranch)) {
-            // Fall back to default branch
-            setInternalBranch(defaultBranch);
-          } else if (branches.length > 0) {
-            // Last resort: use first available branch
-            setInternalBranch(branches[0]);
-          }
-        }
-        notifyBranchesLoaded();
-        isLoading = false;
-        return;
-      }
-    }
-
-    isLoading = true;
-    error = null;
 
     // Defensive check: detect if repoPath looks like a GitHub shorthand (owner/repo)
     // This handles cases where the form state was restored but repoType/githubUrl weren't properly set
@@ -565,6 +523,52 @@
         });
       }
     }
+
+    // Check cache first (if caching is enabled)
+    if (debugConfig.get('enableBranchCaching')) {
+      const cached = branchCache.get(repoPath);
+      if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+        branches = cached.branches;
+        remoteBranches = cached.remoteBranches || [];
+        defaultBranch = cached.default;
+        currentBranch = cached.current || '';
+
+        // Set internal state from cache - always ensure a valid branch is selected
+        // GitHub cache entries are pages too; use the same metadata default.
+        // If value prop is provided, trust it (e.g., for remote branches like origin/...)
+        if (effectiveRepoType === 'github') {
+          applyGithubBranchSelection();
+        } else if (value) {
+          // Value prop is the source of truth - don't override it
+          setInternalBranch(value);
+        } else {
+          // Look up saved branch for THIS repo from Redux (not from stale selectedBranch)
+          const savedBranchForRepo = getSavedBranchForRepo(repoPath);
+          if (
+            savedBranchForRepo &&
+            (branches.includes(savedBranchForRepo) || remoteBranches.includes(savedBranchForRepo))
+          ) {
+            // Saved branch exists (in local or remote branches), use it
+            setInternalBranch(savedBranchForRepo);
+          } else if (currentBranch && branches.includes(currentBranch)) {
+            // Fall back to current branch
+            setInternalBranch(currentBranch);
+          } else if (defaultBranch && branches.includes(defaultBranch)) {
+            // Fall back to default branch
+            setInternalBranch(defaultBranch);
+          } else if (branches.length > 0) {
+            // Last resort: use first available branch
+            setInternalBranch(branches[0]);
+          }
+        }
+        notifyBranchesLoaded();
+        isLoading = false;
+        return;
+      }
+    }
+
+    isLoading = true;
+    error = null;
 
     let fetchSucceeded = false;
     let freshListingSettled = false;
@@ -732,9 +736,7 @@
             const preferred =
               saved && (branches.includes(saved) || remoteBranches.includes(saved))
                 ? saved
-                : defaultBranch && branches.includes(defaultBranch)
-                  ? defaultBranch
-                  : branches[0];
+                : defaultBranch || branches[0];
             if (internalSelectedBranch !== preferred) setInternalBranch(preferred);
           }
         } else {
