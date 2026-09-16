@@ -74,10 +74,18 @@
     } else if (entry.panelId) {
       const manager = getPanelLayoutManager(workspaceId);
       manager.setActiveTab(entry.tab.id, entry.panelId);
+      navigated = true;
       manager.focusPanel(entry.panelId);
     }
   }
   let menuOpen = $state(false);
+  let navigated = false;
+
+  function handleCloseAutoFocus(event: Event) {
+    if (!navigated) return;
+    event.preventDefault();
+    navigated = false;
+  }
   const hiddenCount = $derived(entries.filter((entry) => entry.hidden).length);
   type PendingClose = { kind: 'tab'; entry: BrowserTabEntry } | { kind: 'hidden' };
 
@@ -178,7 +186,12 @@
         </Button>
       {/snippet}
     </Menu.Trigger>
-    <Menu.Content align="end" side="bottom" class="min-w-52 max-w-80">
+    <Menu.Content
+      align="end"
+      side="bottom"
+      class="min-w-52 max-w-80"
+      onCloseAutoFocus={handleCloseAutoFocus}
+    >
       {#each entries as entry (entry.tab.id)}
         {@const label = tabLabel(entry)}
         <Menu.Item

@@ -124,7 +124,7 @@ afterEach(() => {
   agentState.running = false;
   mockState.browserClients = undefined;
   dispatchMock.mockClear();
-  focusPanelMock.mockClear();
+  focusPanelMock.mockReset();
   setActiveTabMock.mockClear();
   layoutState.panels = {};
   layoutState.hiddenTabs = [];
@@ -201,6 +201,7 @@ describe('BrowserTabsMenu', () => {
   it('marks hidden tabs as dimmed and reveals them away from the conversation panel', async () => {
     seedLayout(1, 1);
     renderMenu();
+    screen.getByTestId('browser-tabs-trigger').focus();
     await fireEvent.click(screen.getByTestId('browser-tabs-trigger'));
 
     const hidden = screen
@@ -219,17 +220,49 @@ describe('BrowserTabsMenu', () => {
       avoidPanelId: 'chat',
     });
     expect(focusPanelMock).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByTestId('browser-tabs-trigger')),
+    );
   });
 
-  it('activates and focuses visible tabs through the panel layout manager', async () => {
+  it('keeps browser panel focus after selecting a visible tab and restores trigger focus on later dismissal', async () => {
     seedLayout(1);
-    renderMenu();
-
-    await fireEvent.click(screen.getByTestId('browser-tabs-trigger'));
+    const { container } = renderMenu();
+    const browserPanel = document.createElement('button');
+    container.append(browserPanel);
+    focusPanelMock.mockImplementation(() => browserPanel.focus());
+    const trigger = screen.getByTestId('browser-tabs-trigger');
+    trigger.focus();
+    const triggerFocus = vi.fn();
+    trigger.addEventListener('focus', triggerFocus);
+    await fireEvent.click(trigger);
     await fireEvent.click(await screen.findByTestId('browser-tabs-menu-item'));
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
     expect(setActiveTabMock).toHaveBeenCalledWith('visible-1', 'browser');
     expect(focusPanelMock).toHaveBeenCalledWith('browser');
+    expect(document.activeElement).toBe(browserPanel);
+    expect(triggerFocus).not.toHaveBeenCalled();
     expect(dispatchMock).not.toHaveBeenCalled();
+
+    trigger.focus();
+    await fireEvent.click(trigger);
+    const item = await screen.findByTestId('browser-tabs-menu-item');
+    item.focus();
+    await fireEvent.keyDown(item, { key: 'Escape' });
+    await waitFor(() => expect(document.activeElement).toBe(trigger));
+  });
+
+  it('restores trigger focus when dismissed without selecting a tab', async () => {
+    seedLayout(1);
+    renderMenu();
+    const trigger = screen.getByTestId('browser-tabs-trigger');
+    trigger.focus();
+    await fireEvent.click(trigger);
+    const item = await screen.findByTestId('browser-tabs-menu-item');
+    item.focus();
+    await fireEvent.keyDown(item, { key: 'Escape' });
+    await waitFor(() => expect(document.activeElement).toBe(trigger));
+    expect(focusPanelMock).not.toHaveBeenCalled();
   });
 });
 
