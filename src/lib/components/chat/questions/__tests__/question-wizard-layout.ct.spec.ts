@@ -55,6 +55,30 @@ for (const width of [280, 960]) {
       1,
     );
     if (width === 960) expect(rowBox!.height).toBeLessThanOrEqual(48);
+    await hide.click();
+    await expect(card).toHaveCount(0);
+    const expand = component.getByRole('button', { name: /Click to expand/i });
+    const [expandBox, collapsedDismissBox] = await Promise.all([
+      expand.boundingBox(),
+      dismiss.boundingBox(),
+    ]);
+    expect(expandBox!.y + expandBox!.height / 2).toBeCloseTo(
+      collapsedDismissBox!.y + collapsedDismissBox!.height / 2,
+      0,
+    );
+    expect(expandBox!.x + expandBox!.width).toBeLessThanOrEqual(collapsedDismissBox!.x);
+    await expect(expand.locator('button, a, input')).toHaveCount(0);
+    await expand.focus();
+    await page.keyboard.press('Tab');
+    await expect(dismiss).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('dialog')).toBeVisible();
+    await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(card).toHaveCount(0);
+    await expand.focus();
+    await page.keyboard.press('Enter');
+    await expect(card).toBeVisible();
     await row.focus();
     await page.keyboard.press('Enter');
     await expect(component.getByTestId('question-result')).toContainText(
@@ -71,6 +95,9 @@ for (const theme of ['light', 'dark']) {
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.evaluate((value) => (document.documentElement.className = value), theme);
     const component = await mount(QuestionPreview, { props: { multiSelect: true } });
+    const card = component.getByTestId('question-wizard-card');
+    await expect(card).toHaveCSS('box-shadow', 'none');
+    await expect(card).toHaveCSS('border-top-width', '1px');
     const row = component.getByRole('checkbox').first();
     await row.focus();
     // Programmatic focus can retain pointer modality from CT mounting. Exercise

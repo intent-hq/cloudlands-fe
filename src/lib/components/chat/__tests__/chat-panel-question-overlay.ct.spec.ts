@@ -41,18 +41,19 @@ async function toggleBeforeSettling(button: Locator) {
   });
 }
 
-for (const { width, height, reducedMotion } of [
+for (const { width, height, reducedMotion, theme = 'light' } of [
   { width: 720, height: 640, reducedMotion: 'reduce' as const },
-  { width: 280, height: 320, reducedMotion: 'reduce' as const },
+  { width: 280, height: 320, reducedMotion: 'reduce' as const, theme: 'dark' as const },
   { width: 720, height: 640, reducedMotion: 'no-preference' as const },
+  { width: 720, height: 640, reducedMotion: 'reduce' as const, theme: 'dark' as const },
 ]) {
-  test(`centers the question over an inert composer inside ${width}x${height} with ${reducedMotion} motion`, async ({
+  test(`centers a single-boundary question and keeps collapsed actions inline inside ${width}x${height} in ${theme} with ${reducedMotion} motion`, async ({
     mount,
     page,
   }) => {
     await page.emulateMedia({ reducedMotion });
     const component = await mount(ChatPanelComposerGeometryHost, {
-      props: { width, height, questions: true },
+      props: { width, height, theme, questions: true },
     });
     const card = component.getByTestId('question-wizard-card');
     const composer = component.getByTestId('question-composer-input');
@@ -77,6 +78,31 @@ for (const { width, height, reducedMotion } of [
       const panel = node.closest('.chat-panel-container')!.getBoundingClientRect();
       const behind = parent.querySelector('[data-testid="question-composer-input"]')!;
       const input = behind.getBoundingClientRect();
+      const probe = document.createElement('span');
+      probe.style.borderColor = 'hsl(var(--border))';
+      node.append(probe);
+      const neutralBorder = getComputedStyle(probe).borderTopColor;
+      probe.remove();
+      const paint = [
+        node,
+        node.parentElement!,
+        node.closest('[data-question-wizard]')!,
+        node.closest('[data-testid="question-wizard-slot"]')!,
+        parent,
+      ].map((element) => {
+        const style = getComputedStyle(element);
+        return {
+          borders: [
+            style.borderTopWidth,
+            style.borderRightWidth,
+            style.borderBottomWidth,
+            style.borderLeftWidth,
+          ],
+          color: style.borderTopColor,
+          shadow: style.boxShadow,
+          outline: style.outlineStyle,
+        };
+      });
       return {
         width: box.width,
         center: box.x + box.width / 2,
@@ -90,6 +116,8 @@ for (const { width, height, reducedMotion } of [
         outerBorder: getComputedStyle(node.closest('[data-question-wizard]')!).borderTopWidth,
         cardBorder: getComputedStyle(node).borderTopWidth,
         overflow: node.scrollWidth - node.clientWidth,
+        neutralBorder,
+        paint,
       };
     });
     expect(geometry.width).toBeLessThanOrEqual(640);
@@ -102,6 +130,13 @@ for (const { width, height, reducedMotion } of [
     expect(geometry.outerBorder).toBe('0px');
     expect(geometry.cardBorder).toBe('1px');
     expect(geometry.overflow).toBeLessThanOrEqual(1);
+    expect(geometry.paint[0].borders).toEqual(['1px', '1px', '1px', '1px']);
+    expect(geometry.paint[0].color).toBe(geometry.neutralBorder);
+    for (const [index, paint] of geometry.paint.entries()) {
+      expect(paint.shadow).toBe('none');
+      expect(paint.outline).toBe('none');
+      if (index > 0) expect(paint.borders).toEqual(['0px', '0px', '0px', '0px']);
+    }
     await editor.evaluate((node: HTMLElement) => node.focus());
     await expect(editor).not.toBeFocused();
     await component.getByRole('checkbox').first().focus();
@@ -123,12 +158,39 @@ for (const { width, height, reducedMotion } of [
     await editor.pressSequentially('Draft survives expansion.');
     const expand = component.getByRole('button', { name: /Click to expand/i });
     await expect(expand).toHaveAttribute('aria-expanded', 'false');
+    const dismiss = component.getByRole('button', { name: 'Dismiss', exact: true });
+    const [barBox, expandBox, dismissBox, titleBox, hintBox, countBox] = await Promise.all(
+      [
+        component.locator('[data-question-state="collapsed"]'),
+        expand,
+        dismiss,
+        expand.getByText(/^Agent has questions$/i),
+        expand.getByText(/Click to expand/i),
+        expand.getByText('1', { exact: true }),
+      ].map((locator) => locator.boundingBox()),
+    );
+    for (const box of [dismissBox, titleBox, hintBox, countBox]) {
+      expect(box!.y + box!.height / 2).toBeCloseTo(expandBox!.y + expandBox!.height / 2, 0);
+      expect(box!.width).toBeGreaterThan(0);
+      expect(box!.x).toBeGreaterThanOrEqual(barBox!.x);
+      expect(box!.x + box!.width).toBeLessThanOrEqual(barBox!.x + barBox!.width);
+    }
+    expect(expandBox!.x + expandBox!.width).toBeLessThanOrEqual(dismissBox!.x);
+    expect(barBox!.height).toBeLessThanOrEqual(48);
     await expand.hover();
     expect(
       await expand
         .locator('[data-slot="button-surface"]')
         .evaluate((node) => getComputedStyle(node).backgroundColor),
     ).toBe('rgba(0, 0, 0, 0)');
+    await expand.focus();
+    await page.keyboard.press('Tab');
+    await expect(dismiss).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('dialog')).toBeVisible();
+    await expect(card).toHaveCount(0);
+    await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
     await toggleWithMotion(expand, reducedMotion === 'reduce');
     await expect(component.getByRole('checkbox').first()).toHaveAttribute('aria-checked', 'true');
     await expect(component.getByRole('checkbox').first()).toBeFocused();

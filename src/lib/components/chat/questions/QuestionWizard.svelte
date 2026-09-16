@@ -280,29 +280,29 @@
     <div
       bind:this={collapsedElement}
       data-question-state="collapsed"
-      class="w-full min-w-0 rounded-(--radius-large) border border-border bg-card"
+      class="flex w-full min-w-0 items-center rounded-(--radius-large) border border-border bg-card"
       in:enterState={false}
       out:exitState
     >
       <Button
         variant="plain"
         wrapContent={false}
-        class="h-auto w-full min-w-0 flex-wrap justify-start px-3 py-2.5 text-left sm:px-4"
+        class="h-auto min-w-0 flex-1 justify-start gap-2 px-3 py-2.5 text-left sm:px-4"
         aria-expanded={false}
         onclick={() => onToggleCollapsed?.(false)}
       >
-        <span class="flex min-w-0 grow basis-48 items-center gap-1">
-          <span class="whitespace-normal type-caption font-medium text-foreground"
+        <span class="flex min-w-0 flex-1 items-center gap-1">
+          <span class="truncate type-caption font-medium text-foreground"
             >{m.chat_questionWizard_title()}</span
           >
           <span class="shrink-0 type-caption text-muted-foreground">{questions.length}</span>
         </span>
-        <span class="min-w-0 whitespace-normal type-caption text-muted-foreground">
+        <span class="min-w-0 max-w-[40%] truncate type-caption text-muted-foreground">
           {m.chat_questionWizard_clickToExpand_label()}
         </span>
       </Button>
       {#if onDismiss}
-        <div class="flex items-center px-1 pb-1 sm:px-2">
+        <div class="shrink-0 pr-1 sm:pr-2">
           {@render dismissAction()}
         </div>
       {/if}
@@ -336,7 +336,7 @@
         restoreFocusOnNavigate
         disabled={completed || confirmingDismiss || collapsed}
         {footerActions}
-        class="max-w-none max-h-[var(--question-max-height,60dvh)] overflow-y-auto bg-popover shadow-lg"
+        class="max-w-none max-h-[var(--question-max-height,60dvh)] overflow-y-auto bg-popover [box-shadow:none]!"
         skipLabel={m.chat_questionWizard_skip_label()}
         size="compact"
         data-testid="question-wizard-card"
