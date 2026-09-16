@@ -5,7 +5,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   transientUiReducer,
   initialState as initialTransientUi,
+  setComposerContextItems,
 } from '$store/renderer/slices/transient-ui/transient-ui-slice';
+import { selectComposerContextItems } from '$store/renderer/slices/transient-ui/transient-ui-selectors';
 import type { Workspace } from '$shared/types';
 import {
   animateScrollTo as animateScrollToUtil,
@@ -60,6 +62,7 @@ const mocks = vi.hoisted(() => {
     ipcListenerCleanups: [] as Array<ReturnType<typeof vi.fn>>,
     chatDrafts: {} as Record<string, string>,
     transientUi: { byWorkspaceId: {} } as unknown,
+    deferComposerEmits: false,
     resizeObserve: vi.fn(),
     resizeDisconnect: vi.fn(),
     resizeConstructor: vi.fn(),
@@ -695,13 +698,16 @@ beforeEach(() => {
     delete mocks.agentSubscriptionUIEntries[key];
   }
   mocks.transientUi = initialTransientUi;
+  mocks.deferComposerEmits = false;
   mocks.dispatch.mockImplementation((action) => {
     if (action?.type === 'transientUi/setComposerContextItems') {
       mocks.transientUi = transientUiReducer(
         mocks.transientUi as typeof initialTransientUi,
         action,
       );
-      (appStore as unknown as { emitState(): void }).emitState();
+      if (!mocks.deferComposerEmits) {
+        (appStore as unknown as { emitState(): void }).emitState();
+      }
     }
     if (action?.type !== 'transientUi/setChatDraft') return action;
     const [workspaceId, agentId, draft] = action.payload as [string, string, string];
@@ -750,6 +756,36 @@ afterEach(() => {
 });
 
 describe('ChatPanel mounted lifecycle', () => {
+  it('preserves consecutive attachment edits before selector emissions catch up', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.transientUi = transientUiReducer(
+      initialTransientUi,
+      setComposerContextItems('workspace-a', 'agent-a', [
+        {
+          id: 'first',
+          type: 'file',
+          label: 'first.png',
+          imageData: 'YQ==',
+          imageMimeType: 'image/png',
+        },
+        {
+          id: 'second',
+          type: 'file',
+          label: 'second.png',
+          imageData: 'Yg==',
+          imageMimeType: 'image/png',
+        },
+      ]),
+    );
+    render(ChatPanel, { props: { workspace: workspace('workspace-a'), agentId: 'agent-a' } });
+    await tick();
+    // Redux commits synchronously, while the production readable coalesces emissions.
+    mocks.deferComposerEmits = true;
+    await fireEvent.click(screen.getByTestId('mock-context-first'));
+    await fireEvent.click(screen.getByTestId('mock-context-second'));
+    expect(selectComposerContextItems.select(appStore.state, 'workspace-a', 'agent-a')).toEqual([]);
+  });
+
   it.each([
     { type: 'event_notification', eventCount: 1, eventTypes: ['file:changed'] },
     { type: 'agent_message', fromAgentId: 'agent-sender', fromAgentName: 'Reviewer' },

@@ -1705,8 +1705,10 @@
     $composerContext$.map((item) => ({ ...item, file: contextFiles[item.id] })),
   );
 
-  // Selector readables coalesce emissions; send/restore must see a same-tick edit.
+  // Track readable emissions for rendering, but read Redux synchronously so consecutive
+  // input edits and send/restore see changes before the next coalesced emission.
   function getContextItems(): ContextItem[] {
+    void $composerContext$;
     return selectComposerContextItems
       .select(appStore.state, workspace?.id ?? '', agentId ?? '')
       .map((item) => ({ ...item, file: contextFiles[item.id] }));
@@ -1828,10 +1830,7 @@
     agentId: () => agentId,
     inputValue: () => inputValue,
     setInputValue: (text) => (inputValue = text),
-    contextItems: () => {
-      void $composerContext$;
-      return getContextItems();
-    },
+    contextItems: getContextItems,
     setContextItems,
     applyEditorContent: (text) => inputComponent?.setContent?.(text),
     onSaveError: (err) => {
@@ -6759,7 +6758,7 @@
               {/if}
               <SimpleRichInput
                 bind:this={inputComponent}
-                bind:contextItems={() => contextItems, setContextItems}
+                bind:contextItems={getContextItems, setContextItems}
                 bind:value={inputValue}
                 onvaluechange={(value) => {
                   scheduleDraftWrite(value);
