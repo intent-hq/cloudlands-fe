@@ -1905,7 +1905,7 @@
       triggerClass,
     )}
     contentClass={cn(
-      'max-w-[calc(100vw-32px)] bg-background! text-foreground!',
+      'max-w-[calc(100vw-32px)] bg-background! text-foreground! [--selected:var(--muted)]',
       showReasoning ? 'w-85 h-90 min-h-0 max-h-90 flex flex-col' : 'w-[332px]',
     )}
     contentMaxHeight={showReasoning ? 360 : undefined}
@@ -2082,7 +2082,7 @@
           </div>
           {#if selected}
             <span class={OPTION_LIST_END_SLOT_CLASS}>
-              <Fa icon={faCheck} class="text-xs text-primary-ink shrink-0" />
+              <Fa icon={faCheck} class="size-4 text-primary-ink shrink-0" />
             </span>
           {/if}
         {/if}
