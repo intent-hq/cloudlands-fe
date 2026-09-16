@@ -1,6 +1,7 @@
 <script lang="ts">
   import Fa from 'svelte-fa';
-  import { faCheck, faCircle, faListCheck, faSpinner } from '@fortawesome/free-solid-svg-icons';
+  import { faCheck, faCircle, faListCheck } from '@fortawesome/free-solid-svg-icons';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { formatInteger } from '$lib/i18n/format';
   import type { PlanEntry, PlanEntryStatus } from '$shared/types';
   import { m } from '$shared/paraglide/messages.js';
@@ -62,11 +63,7 @@
             {#if entry.status === 'completed'}
               <Fa icon={faCheck} size={14} class={CHAT_OPERATIONAL_ICON_CLASS} />
             {:else if entry.status === 'in_progress'}
-              <Fa
-                icon={faSpinner}
-                size={14}
-                class="{CHAT_OPERATIONAL_ICON_CLASS} animate-spin motion-reduce:animate-none"
-              />
+              <IntentMarkLoader size={12} class={CHAT_OPERATIONAL_ICON_CLASS} />
             {:else}
               <Fa icon={faCircle} size={7} class="h-2! w-2! shrink-0 opacity-50" />
             {/if}

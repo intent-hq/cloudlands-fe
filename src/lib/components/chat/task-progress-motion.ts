@@ -16,5 +16,5 @@ export function taskProgressRowTransition(
   _params?: undefined,
   options: { direction?: 'in' | 'out' | 'both' } = {},
 ) {
-  return safeDisclosureTransition(node, { duration: 160, y: -2 }, options);
+  return safeDisclosureTransition(node, { tier: 'moderate', y: -2 }, options);
 }

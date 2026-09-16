@@ -236,8 +236,12 @@ describe('TaskProgressControl', () => {
       'running',
     ]);
     expect(
-      icons.map((icon) => icon.querySelector<HTMLElement>('[data-icon]')?.dataset.icon),
-    ).toEqual(['check', 'circle', 'clock', 'spinner']);
+      icons.map(
+        (icon) =>
+          icon.querySelector<HTMLElement>('[data-icon]')?.dataset.icon ??
+          icon.querySelector<HTMLElement>('[data-slot="intent-mark-loader"]')?.dataset.slot,
+      ),
+    ).toEqual(['check', 'circle', 'clock', 'intent-mark-loader']);
     expect(
       icons.every(
         (icon) =>
@@ -265,8 +269,8 @@ describe('TaskProgressControl', () => {
       stackItems.map((item) => item.style.zIndex || item.className.match(/z-[0-9]+/)?.[0]),
     ).toEqual(['z-0', '1', '2', '6', '5']);
     expect(icons[0].dataset.completedCount).toBe('2');
-    expect(icons.at(-1)?.innerHTML).toContain('motion-safe:animate-spin');
-    expect(icons.at(-1)?.innerHTML).toContain('motion-reduce:animate-none');
+    expect(icons.at(-1)?.querySelector('[data-slot="intent-mark-loader"]')).not.toBeNull();
+    expect(icons.at(-1)?.innerHTML).not.toContain('animate-spin');
     const overflow = screen.getByTestId('task-progress-overflow-indicator');
     expect(overflow.dataset.overflowCount).toBe('3');
     const trigger = screen.getByTestId('task-progress-trigger');

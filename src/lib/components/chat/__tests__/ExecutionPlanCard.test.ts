@@ -35,7 +35,7 @@ describe('ExecutionPlanCard', () => {
       'pending',
     ]);
     expect(rows[0].querySelector('[data-icon="check"]')).toBeTruthy();
-    expect(rows[1].querySelector('[data-icon="spinner"]')).toBeTruthy();
+    expect(rows[1].querySelector('[data-slot="intent-mark-loader"]')).toBeTruthy();
     expect(rows[2].querySelector('[data-icon="circle"]')).toBeTruthy();
     expect(rows[0].textContent).toContain('Completed:');
     expect(rows[1].textContent).toContain('Current:');
@@ -91,15 +91,12 @@ describe('ExecutionPlanCard', () => {
     expect(content.className).toContain('whitespace-normal');
   });
 
-  it('disables current-step animation when reduced motion is requested', async () => {
+  it('renders the current step with the motion-aware loader instead of a spun glyph', async () => {
     await renderCard();
 
-    const spinner = screen
-      .getByRole('listitem', { current: 'step' })
-      .querySelector('[data-icon="spinner"]');
-    expect(spinner?.className.baseVal ?? spinner?.getAttribute('class')).toContain(
-      'motion-reduce:animate-none',
-    );
+    const current = screen.getByRole('listitem', { current: 'step' });
+    expect(current.querySelector('[data-slot="intent-mark-loader"]')).toBeTruthy();
+    expect(current.querySelector('.animate-spin')).toBeNull();
   });
 
   it('does not show an empty plan card', async () => {

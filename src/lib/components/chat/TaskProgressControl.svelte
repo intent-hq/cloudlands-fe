@@ -11,9 +11,9 @@
     faEllipsis,
     faEye,
     faListCheck,
-    faSpinner,
     faTriangleExclamation,
   } from '@fortawesome/free-solid-svg-icons';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import ShimmerOverlay from '$lib/components/ui/ShimmerOverlay.svelte';
   import { DROPDOWN_SURFACE_CLASS } from '$lib/components/ui/dropdown-surface';
   import { TooltipShortcut } from '$lib/components/ui/tooltip';
@@ -139,7 +139,6 @@
 
   function statusIcon(status: TaskProgressStatus) {
     if (status === 'completed') return faCheck;
-    if (status === 'running') return faSpinner;
     if (status === 'waiting') return faClock;
     if (status === 'discussion_needed') return faCircleQuestion;
     if (status === 'blocked') return faTriangleExclamation;
@@ -272,13 +271,15 @@
     data-task-status={status}
     data-completed-count={completedCount}
   >
-    <Fa
-      icon={statusIcon(status)}
-      size={status === 'pending' ? 6 : 8}
-      class="{status === 'pending' ? 'size-1.5!' : 'size-2!'} {status === 'running'
-        ? 'motion-safe:animate-spin motion-reduce:animate-none'
-        : ''}"
-    />
+    {#if status === 'running'}
+      <IntentMarkLoader size={8} class="size-2!" />
+    {:else}
+      <Fa
+        icon={statusIcon(status)}
+        size={status === 'pending' ? 6 : 8}
+        class={status === 'pending' ? 'size-1.5!' : 'size-2!'}
+      />
+    {/if}
   </span>
 {/snippet}
 
