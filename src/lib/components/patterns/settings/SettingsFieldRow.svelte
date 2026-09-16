@@ -141,7 +141,7 @@
     class={cn(
       'w-full min-w-0 max-w-full',
       !controlOnly && !compact && 'md:grid md:min-h-(--control-height-medium) md:content-center',
-      controlOnly ? 'md:justify-self-stretch' : 'md:w-auto md:justify-self-end',
+      controlOnly || compact ? 'md:justify-self-stretch' : 'md:w-auto md:justify-self-end',
       disabled && 'opacity-60',
     )}
     data-field-control

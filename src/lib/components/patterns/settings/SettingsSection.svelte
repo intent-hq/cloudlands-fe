@@ -51,7 +51,7 @@
     </p>{/if}
   <div
     data-slot="settings-section-content"
-    class="mt-4 min-w-0 divide-y divide-border rounded-(--radius-medium) bg-card px-3 sm:px-4"
+    class="mt-4 min-w-0 divide-y divide-border rounded-(--radius-medium) bg-card"
   >
     {@render children?.()}
   </div>

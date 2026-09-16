@@ -45,6 +45,7 @@
     {@const error = resolveSetting(entry.error, undefined)}
     {@const status = resolveSetting(entry.status, undefined)}
     <SettingsFieldRow
+      compact
       id={entry.id}
       label={entry.label}
       description={entry.description}

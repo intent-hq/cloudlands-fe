@@ -108,10 +108,10 @@
     </output>
   </div>
 
-  <label class="motion-control" data-testid="catalog-motion-control">
-    <Switch bind:checked={reducedMotion} size="sm" ariaLabel="Reduce motion" />
-    <span>Reduce motion</span>
-  </label>
+  <div class="control-set" data-testid="catalog-motion-control">
+    <span id="catalog-motion-label" class="control-label">Reduce motion</span>
+    <Switch bind:checked={reducedMotion} size="sm" ariaLabelledby="catalog-motion-label" />
+  </div>
 
   <div class="control-set">
     <span id="catalog-size-label" class="control-label">Size</span>
@@ -184,18 +184,10 @@
     display: grid;
     min-width: 0;
     gap: 0.375rem;
+    justify-items: start;
   }
 
-  .motion-control {
-    display: flex;
-    flex: none;
-    align-items: center;
-    justify-content: space-between;
-    gap: calc(var(--control-height-compact) / 4);
-  }
-
-  .control-label,
-  .motion-control {
+  .control-label {
     font-size: var(--text-caption-size);
     color: hsl(var(--muted-foreground));
   }
