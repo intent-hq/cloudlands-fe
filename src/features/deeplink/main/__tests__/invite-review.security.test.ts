@@ -147,6 +147,8 @@ describe('review: secret boundary', () => {
   );
 
   it('aborts before storing or opening when the OS refuses to launch the verification URL', async () => {
+    // The grant cannot have resolved yet when the browser never opened.
+    mocks.wait.mockReturnValue(new Promise(() => {}));
     vi.mocked(shell.openExternal).mockRejectedValueOnce(new Error(`launch refused for ${token}`));
     await handleInviteDeepLink(link);
     expect(mocks.add).not.toHaveBeenCalled();
