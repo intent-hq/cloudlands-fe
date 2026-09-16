@@ -48,7 +48,9 @@ export const uiComponentGuardrails = {
   patternAdoption: {
     // Baseline the 11 existing dialogs; none is a branch-introduced form-dialog candidate.
     formDialog: 11,
-    listView: 31,
+    // 33 = the 31 surfaces baselined at 388bffff2 plus main's #2074 ExecutionPlanCard.svelte
+    // and TaskProgressControl.svelte, which landed before this ratchet existed.
+    listView: 33,
     screen: 9,
     settingsForm: 1,
   },
