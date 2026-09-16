@@ -18,11 +18,24 @@ export function renderKatexToString(text: string, displayMode: boolean): string 
 type MathToken = {
   type: 'mathInline' | 'mathDisplay';
   raw: string;
+  /** TeX handed to KaTeX: the delimited source without comment anchors. */
   text: string;
   source: string;
   displayMode: boolean;
   literalOnly?: boolean;
 };
+
+// Same shape the Markdown processor and worker recognize as a note comment anchor.
+const ANCHOR_COMMENT_PATTERN = /<!--\s*anchor:[^:]+:[^-]+\s*-->/g;
+const ANCHOR_END_COMMENT_PATTERN = /^<!--\s*anchor:[^:]+:end\s*-->$/;
+
+function stripAnchors(value: string): string {
+  return value.replace(ANCHOR_COMMENT_PATTERN, '');
+}
+
+function isOrdinaryComment(raw: string): boolean {
+  return raw.startsWith('<!--') && stripAnchors(raw) !== '';
+}
 
 function escapeAttribute(value: string): string {
   return value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
@@ -32,9 +45,20 @@ function escapeText(value: string): string {
   return escapeAttribute(value).replace(/>/g, '&gt;');
 }
 
+/** Escape a literal source while keeping its comment anchors as markup. */
+function escapeLiteralSource(source: string): string {
+  let result = '';
+  let copiedThrough = 0;
+  for (const anchor of source.matchAll(ANCHOR_COMMENT_PATTERN)) {
+    result += escapeText(source.slice(copiedThrough, anchor.index)) + anchor[0];
+    copiedThrough = anchor.index + anchor[0].length;
+  }
+  return result + escapeText(source.slice(copiedThrough));
+}
+
 function renderMath(token: MathToken, enabled: boolean): string {
   if (!enabled || token.literalOnly || token.text.length > MAX_MATH_SOURCE_LENGTH) {
-    const literal = escapeText(token.source);
+    const literal = escapeLiteralSource(token.source);
     return token.displayMode ? `<p>${literal.replace(/\n/g, '<br>')}</p>\n` : literal;
   }
 
@@ -43,9 +67,15 @@ function renderMath(token: MathToken, enabled: boolean): string {
     const tag = token.displayMode ? 'div' : 'span';
     const className = token.displayMode ? 'math-display' : 'math-inline';
     const newline = token.displayMode ? '\n' : '';
-    return `<${tag} class="${className}" data-math-source="${escapeAttribute(token.source)}">${rendered}</${tag}>${newline}`;
+    // Anchors cannot live inside the rendered wrapper (it must hold exactly the
+    // KaTeX output), so they bracket it: start anchors before, end anchors after.
+    const anchors = Array.from(token.source.matchAll(ANCHOR_COMMENT_PATTERN), (m) => m[0]);
+    const before = anchors.filter((anchor) => !ANCHOR_END_COMMENT_PATTERN.test(anchor)).join('');
+    const after = anchors.filter((anchor) => ANCHOR_END_COMMENT_PATTERN.test(anchor)).join('');
+    const source = escapeAttribute(stripAnchors(token.source));
+    return `${before}<${tag} class="${className}" data-math-source="${source}">${rendered}</${tag}>${after}${newline}`;
   } catch {
-    return escapeText(token.source);
+    return escapeLiteralSource(token.source);
   }
 }
 
@@ -53,11 +83,18 @@ function inlineDollarToken(src: string): MathToken | undefined {
   if (src.startsWith('$$')) return undefined;
   const match = /^\$((?:\\.|[^\\$\n])+?)\$/.exec(src);
   if (!match) return undefined;
-  const text = match[1];
+  const text = stripAnchors(match[1]);
   if (/^\s|\s$/.test(text) || /^[\d.,]+$/.test(text)) return undefined;
   const next = src[match[0].length];
   if (next && /\d/.test(next)) return undefined;
-  return { type: 'mathInline', raw: match[0], text, source: match[0], displayMode: false };
+  return {
+    type: 'mathInline',
+    raw: match[0],
+    text,
+    source: match[0],
+    displayMode: false,
+    literalOnly: !text,
+  };
 }
 
 function misplacedDisplayToken(src: string): MathToken | undefined {
@@ -88,13 +125,14 @@ function inlineParenthesisToken(src: string): MathToken | undefined {
         }
       : undefined;
   }
+  const text = stripAnchors(match[1]);
   return {
     type: 'mathInline',
     raw: match[0],
-    text: match[1],
+    text,
     source: match[0],
     displayMode: false,
-    literalOnly: !match[1].trim(),
+    literalOnly: !text.trim(),
   };
 }
 
@@ -116,13 +154,14 @@ function displayToken(src: string): MathToken | undefined {
     };
   }
   const source = match[0].trimEnd().slice(match[1].length);
+  const text = stripAnchors(match[2]);
   return {
     type: 'mathDisplay',
     raw: match[0],
-    text: match[2],
+    text,
     source,
     displayMode: true,
-    literalOnly: !match[2].trim(),
+    literalOnly: !text.trim(),
   };
 }
 
@@ -198,7 +237,12 @@ export function addMathSupport(markedInstance: Marked, renderEnabled: boolean): 
             }
             offset += line.length + 1;
           }
-          const tokens = this.lexer.inlineTokens(raw.trimEnd());
+          // Ordinary comments never survive sanitization, and one sitting beside
+          // text containing "<" makes DOMPurify drop the whole paragraph as
+          // suspected mXSS. Keep only comment anchors, which become elements.
+          const tokens = this.lexer
+            .inlineTokens(raw.trimEnd())
+            .filter((token) => !(token.type === 'html' && isOrdinaryComment(token.raw)));
           if (!tokens.some((token) => token.type === 'mathInline')) return;
           return { type: 'mathHtmlParagraph', raw, tokens };
         },

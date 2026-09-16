@@ -3,6 +3,7 @@
  */
 import { Editor } from '@tiptap/core';
 import { describe, expect, it } from 'vitest';
+import { CommentAnchor } from '$lib/components/tiptap/CommentAnchor';
 import { createEditorConfig } from './editor-config';
 import { sanitizeMarkdownHTML } from './html-sanitizer';
 import { MAX_MATH_SOURCE_LENGTH } from './marked-math';
@@ -18,6 +19,35 @@ function containerFor(html: string): HTMLDivElement {
   const container = document.createElement('div');
   container.innerHTML = html;
   return container;
+}
+
+/** Load HTML the way an editable note does, including its comment anchor nodes. */
+function loadEditableNote(html: string): Editor {
+  const config = createEditorConfig({
+    element: document.createElement('div'),
+    content: html,
+    editable: true,
+    onUpdate: () => {},
+    useMarkdown: true,
+    workspace: { id: 'math-note-test' },
+    enableMentions: false,
+  });
+  return new Editor({ ...config, extensions: [...config.extensions, CommentAnchor] });
+}
+
+/** Main-thread HTML plus the worker pipeline's HTML after the same sanitization. */
+async function mainAndWorkerHtml(markdown: string, renderMath: boolean): Promise<string[]> {
+  const main = await processMarkdownToHTML(markdown, { renderMath, skipIfHTML: false });
+  const worker = await processMarkdownWorkerRequest({
+    id: 1,
+    markdown,
+    pipeline: { preserveAnchors: true, renderMath },
+  });
+  expect(worker.error).toBeNull();
+  return [
+    main,
+    sanitizeMarkdownHTML(worker.html ?? '', undefined, { preserveKatexLayoutStyles: renderMath }),
+  ];
 }
 
 describe('markdown math rendering', () => {
@@ -130,6 +160,80 @@ a<b>c
     expect(container.querySelectorAll('.math-display')).toHaveLength(1);
     expect(container.querySelectorAll('[data-anchor-id]')).toHaveLength(2);
     expect(processHTMLToMarkdown(container.innerHTML)).toBe(source.replace('\n$$', () => '\n\n$$'));
+  });
+
+  it.each([false, true])(
+    'keeps a comment-prefixed math paragraph between blocks with renderMath=%s',
+    async (renderMath) => {
+      const source = '# Title\n\n<!-- marker -->$a<b$ and $c>d$\n\nTail\n\n- item';
+      for (const html of await mainAndWorkerHtml(source, renderMath)) {
+        const container = containerFor(html);
+        expect(container.querySelector('h1')?.textContent).toBe('Title');
+        expect(container.querySelector('li')?.textContent?.trim()).toBe('item');
+        const paragraphs = Array.from(container.querySelectorAll(':scope > p'));
+        expect(paragraphs).toHaveLength(2);
+        expect(paragraphs[1].textContent?.trim()).toBe('Tail');
+        if (renderMath) {
+          expect(
+            Array.from(paragraphs[0].querySelectorAll('annotation'), (node) => node.textContent),
+          ).toEqual(['a<b', 'c>d']);
+        } else {
+          expect(paragraphs[0].textContent?.trim()).toBe('$a<b$ and $c>d$');
+        }
+        expect(processHTMLToMarkdown(html)).toBe(source.replace('<!-- marker -->', ''));
+      }
+    },
+  );
+
+  it('preserves comment-prefixed equations through an editable note load, edit, and save', async () => {
+    const source = 'Intro\n\n<!-- marker -->$a<b$ and $c>d$\n\nTail';
+    const editor = loadEditableNote(await processMarkdownToHTML(source));
+
+    expect(processHTMLToMarkdown(editor.getHTML())).toBe('Intro\n\n$a<b$ and $c>d$\n\nTail');
+    editor.chain().focus('end').insertContent(' edited').run();
+    expect(processHTMLToMarkdown(editor.getHTML())).toBe('Intro\n\n$a<b$ and $c>d$\n\nTail edited');
+    editor.destroy();
+  });
+
+  it.each([
+    ['$<!--anchor:cmt-1:start-->x^2<!--anchor:cmt-1:end-->$', 'x^2', '$x^2$'],
+    ['$a + <!--anchor:cmt-2:start-->b<!--anchor:cmt-2:end--> + c$', 'a + b + c', '$a + b + c$'],
+    ['$$\n<!--anchor:cmt-3:start-->a<b<!--anchor:cmt-3:end-->\n$$', 'a<b', '$$\na<b\n$$'],
+  ])('keeps comment anchors out of the equation for %s', async (source, tex, mathSource) => {
+    for (const html of await mainAndWorkerHtml(source, false)) {
+      const container = containerFor(html);
+      expect(container.querySelectorAll('[data-anchor-id]')).toHaveLength(2);
+      expect(container.querySelector('.katex')).toBeNull();
+      expect(container.textContent?.replace(/\s+/g, '')).toBe(mathSource.replace(/\s+/g, ''));
+      expect(processHTMLToMarkdown(html)).toBe(source);
+    }
+    for (const html of await mainAndWorkerHtml(source, true)) {
+      const container = containerFor(html);
+      expect(container.querySelectorAll('[data-anchor-id]')).toHaveLength(2);
+      expect(container.querySelector('annotation')?.textContent?.trim()).toBe(tex);
+      expect(container.querySelector('.katex-error')).toBeNull();
+      expect(container.textContent).not.toContain('anchor:');
+      expect(container.querySelector('[data-math-source]')?.getAttribute('data-math-source')).toBe(
+        mathSource,
+      );
+      // Read-only rendering brackets the equation with its anchors instead of
+      // splitting the typeset TeX, so both survive a conversion back to Markdown.
+      const roundTrip = processHTMLToMarkdown(html);
+      expect(roundTrip.match(/<!--anchor:[^>]+-->/g)).toEqual(source.match(/<!--anchor:[^>]+-->/g));
+      expect(roundTrip.replace(/<!--anchor:[^>]+-->/g, '').trim()).toBe(mathSource);
+    }
+  });
+
+  it('preserves anchors inside an equation through an editable note load, edit, and save', async () => {
+    const source = 'Before $<!--anchor:cmt-1:start-->x^2<!--anchor:cmt-1:end-->$ after';
+    const editor = loadEditableNote(await processMarkdownToHTML(source));
+
+    expect(editor.getHTML()).not.toContain('anchor:');
+    expect(containerFor(editor.getHTML()).querySelectorAll('[data-anchor-id]')).toHaveLength(2);
+    expect(processHTMLToMarkdown(editor.getHTML())).toBe(source);
+    editor.chain().focus('end').insertContent(' edited').run();
+    expect(processHTMLToMarkdown(editor.getHTML())).toBe(`${source} edited`);
+    editor.destroy();
   });
 
   it('stops math recovery before registered task blocks', async () => {
