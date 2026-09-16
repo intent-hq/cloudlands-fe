@@ -90,11 +90,11 @@
             </div>
             <div>
               <h2 id={dialogTitleId} class="text-lg font-semibold leading-6">
-                {m.inviteConsent_modal_title({ workspaceTitle: payload.workspaceTitle })}
+                {m.inviteConsent_modal_title({
+                  workspaceTitle: payload.workspaceTitle,
+                  hostLabel: payload.hostLabel,
+                })}
               </h2>
-              <p class="mt-1 text-sm text-subtle">
-                {m.inviteConsent_modal_description({ hostLabel: payload.hostLabel })}
-              </p>
             </div>
           </div>
           <Button
@@ -109,9 +109,30 @@
         </div>
 
         <div id={dialogDescriptionId} class="flex-1 overflow-auto px-6 py-5 space-y-5">
-          <p class="text-sm text-foreground">
-            {m.inviteConsent_modal_hostLearns_description()}
-          </p>
+          <section class="space-y-1">
+            <h3 class="text-sm font-medium text-foreground">
+              {m.inviteConsent_modal_why_title()}
+            </h3>
+            <p class="text-xs text-subtle">
+              {m.inviteConsent_modal_why_description()}
+            </p>
+          </section>
+          <section class="space-y-1">
+            <h3 class="text-sm font-medium text-foreground">
+              {m.inviteConsent_modal_hostLearns_title()}
+            </h3>
+            <p class="text-xs text-subtle">
+              {m.inviteConsent_modal_hostLearns_description()}
+            </p>
+          </section>
+          <section class="space-y-1">
+            <h3 class="text-sm font-medium text-foreground">
+              {m.inviteConsent_modal_stored_title()}
+            </h3>
+            <p class="text-xs text-subtle">
+              {m.inviteConsent_modal_stored_description()}
+            </p>
+          </section>
           <GitHubDeviceCodeCard
             userCode={payload.userCode}
             verificationUri={payload.verificationUri}
