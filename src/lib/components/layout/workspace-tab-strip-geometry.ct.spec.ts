@@ -1072,7 +1072,9 @@ for (const zoomFactor of [1, 1.1, 1.25]) {
     for (let offset = 0; offset < data.length; offset += info.channels) {
       const pixel = [...data.subarray(offset, offset + info.channels)];
       const delta = Math.max(...pixel.map((value, index) => Math.abs(value - reference[index])));
-      expect(delta, `pixel ${offset / info.channels} = ${pixel.join(',')}`).toBeLessThanOrEqual(1);
+      expect(delta, `pixel ${offset / info.channels} = ${pixel.join(',')}`).toBeLessThanOrEqual(
+        zoomFactor === 1.25 ? 1 : 0,
+      );
     }
   });
 }
