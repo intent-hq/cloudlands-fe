@@ -60,6 +60,15 @@ export default defineConfig(async () => {
       testTimeout: isCI ? 60_000 : 30_000,
       hookTimeout: isCI ? 60_000 : 30_000,
       teardownTimeout: 10000,
+      // Pin typescript-eslint's single-run inference off in every worker so the
+      // ESLint rule tests behave the same locally and on CI (cloudlands-fe#2506).
+      // typescript-estree's `inferSingleRun` turns single-run mode on under
+      // `CI=true` and then builds its TypeScript Program from the files on disk,
+      // so a type-aware `lintText` probe whose content differs from the on-disk
+      // file is typed against the disk file and type-aware rules cannot fire —
+      // a deterministic CI-only failure of tests that pass locally. `'false'`
+      // matches the local default (a watch Program over the probe's own text).
+      env: { TSESTREE_SINGLE_RUN: 'false' },
       exclude: [
         '**/node_modules/**',
         '**/dist/**',

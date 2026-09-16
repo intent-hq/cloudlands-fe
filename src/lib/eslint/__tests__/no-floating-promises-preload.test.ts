@@ -17,6 +17,8 @@ const LINT_PROJECT = 'tsconfig.preload.lint.json';
 // so a `lintText` probe whose content differs from the on-disk template is typed
 // against the disk file and cannot report the rule (deterministic CI failure).
 // The rule firing on disk is proven by the CLI probe recorded in the PR.
+// vitest.config.ts now pins TSESTREE_SINGLE_RUN=false for every worker, so a
+// future type-aware `lintText` probe can rely on that pin instead (#2506).
 const PRELOAD_TEMPLATE = 'src/preload/index.template.ts';
 
 const eslint = new ESLint({ cwd: process.cwd() });
