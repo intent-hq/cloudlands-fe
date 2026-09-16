@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.161.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.161.2...v2.161.3) (2026-09-16)
+
+
+### 🐛 Bug Fixes
+
+* throttle streaming Markdown and preserve DOM ownership ([#2527](https://github.com/intent-hq/cloudlands-fe/issues/2527)) ([a541a48](https://github.com/intent-hq/cloudlands-fe/commit/a541a48111f96f0370b95763d273b96f20ed7ab2))
+
 ## [2.161.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.161.1...v2.161.2) (2026-09-16)
 
 
