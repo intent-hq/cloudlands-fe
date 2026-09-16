@@ -1,14 +1,19 @@
 <script module lang="ts">
   import { definePreview } from '$lib/component-catalog/preview-definition';
   import { store as appStore } from '$store/renderer/store';
-  import { keychainSyncStateReceived } from '$store/renderer/slices/connections/connections-slice';
+  import {
+    keychainSyncStateCleared,
+    keychainSyncStateReceived,
+  } from '$store/renderer/slices/connections/connections-slice';
   import { selectKeychainSyncState } from '$store/renderer/slices/connections/connections-selectors';
 
   function setup(supported: boolean) {
     const previous = selectKeychainSyncState.select(appStore.state);
     appStore.dispatch(keychainSyncStateReceived({ supported, enabled: supported, status: null }));
     return () => {
-      if (previous) appStore.dispatch(keychainSyncStateReceived(previous));
+      appStore.dispatch(
+        previous === null ? keychainSyncStateCleared() : keychainSyncStateReceived(previous),
+      );
     };
   }
 
