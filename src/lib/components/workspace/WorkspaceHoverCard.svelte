@@ -469,23 +469,23 @@
                 >
                   <Fa
                     icon={pr.statusIcon}
-                    size={18}
-                    class="shrink-0 justify-self-center {pr.foregroundClass}"
+                    fixedWidth
+                    class="size-4 shrink-0 justify-self-center {pr.foregroundClass}"
                   />
                   <span
-                    class="type-body min-w-0 truncate text-foreground"
+                    class="text-sm min-w-0 truncate text-foreground"
                     data-workspace-hover-card-pr-title
                   >
                     {pr.title || m.workspace_hoverCard_pullRequest_label()}
                   </span>
                   <span
-                    class="type-caption shrink-0 text-muted-foreground"
+                    class="text-xs shrink-0 text-muted-foreground"
                     data-workspace-hover-card-pr-status
                   >
                     {pr.accessibleStateLabel}
                   </span>
                   <span
-                    class="type-caption shrink-0 text-muted-foreground"
+                    class="text-xs shrink-0 text-muted-foreground"
                     data-workspace-hover-card-pr-number>#{pr.number}</span
                   >
                 </div>
