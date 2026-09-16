@@ -70,6 +70,9 @@ describe('isCtContractPath', () => {
     'playwright/index.ts',
     'playwright/app-stubs/stores.ts',
     'scripts/run-ct-tests.mjs',
+    'src/lib/component-catalog/capture-stability.ts',
+    'src/lib/component-catalog/geometry-probe.ts',
+    'src/lib/component-catalog/preview-definition.ts',
     'package.json',
     'pnpm-lock.yaml',
     './src/app.css',
@@ -82,6 +85,9 @@ describe('isCtContractPath', () => {
     'src/lib/example.ts',
     'src/lib/styles-legacy/tokens.css',
     'src/app.css.map',
+    'src/lib/component-catalog/catalog.ts',
+    'src/lib/component-catalog/geometry-probe.test.ts',
+    'src/lib/component-catalog/nested/preview-definition.ts',
     'playwright.config.ts',
     'scripts/verify-changed.mjs',
     'scripts/ct-contract-paths.mjs',
@@ -92,7 +98,7 @@ describe('isCtContractPath', () => {
     expect(isCtContractPath(file)).toBe(false);
   });
 
-  it('exports exactly the seven paths the CT harness depends on', () => {
+  it('exports exactly the ten paths the CT harness depends on', () => {
     expect([...CT_CONTRACT_PATHS].sort()).toEqual([
       'package.json',
       'playwright-ct.config.ts',
@@ -100,6 +106,9 @@ describe('isCtContractPath', () => {
       'pnpm-lock.yaml',
       'scripts/run-ct-tests.mjs',
       'src/app.css',
+      'src/lib/component-catalog/capture-stability.ts',
+      'src/lib/component-catalog/geometry-probe.ts',
+      'src/lib/component-catalog/preview-definition.ts',
       'src/lib/styles/**',
     ]);
   });

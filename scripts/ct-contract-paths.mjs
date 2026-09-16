@@ -7,8 +7,10 @@ import { fileURLToPath } from 'node:url';
 // The one list of repo-relative paths whose change requires the full Playwright
 // component suite: the stylesheet/token contract that `playwright/index.ts`
 // mounts (`src/app.css` imports `$lib/styles/*.css`), the CT harness itself, and
-// the dependency manifests (a Playwright/Svelte/Tailwind bump is a CT-contract
-// change). `scripts/verify-changed.mjs` selects the local `ct-full` check from it
+// the mount-harness helpers `playwright/index.ts` imports directly (the rest of
+// `src/lib/component-catalog/` is ordinary component code), and the dependency
+// manifests (a Playwright/Svelte/Tailwind bump is a CT-contract change).
+// `scripts/verify-changed.mjs` selects the local `ct-full` check from it
 // and the `pull_request` workflow decides whether to run `test-ct` from the same
 // list, via `node scripts/ct-contract-paths.mjs --diff <base> <head>`.
 // cloudlands-fe#2441 rewrote `tokens.css`, `app.css` and `run-ct-tests.mjs` with
@@ -17,6 +19,9 @@ export const CT_CONTRACT_FILES = Object.freeze([
   'src/app.css',
   'playwright-ct.config.ts',
   'scripts/run-ct-tests.mjs',
+  'src/lib/component-catalog/capture-stability.ts',
+  'src/lib/component-catalog/geometry-probe.ts',
+  'src/lib/component-catalog/preview-definition.ts',
   'package.json',
   'pnpm-lock.yaml',
 ]);

@@ -362,6 +362,10 @@ describe('verification planning', () => {
       'scripts/run-ct-tests.mjs': '',
       'playwright-ct.config.ts': '',
       'playwright/index.ts': '',
+      'src/lib/component-catalog/capture-stability.ts': '',
+      'src/lib/component-catalog/geometry-probe.ts': '',
+      'src/lib/component-catalog/preview-definition.ts': '',
+      'src/lib/component-catalog/catalog.ts': '',
       'src/foo.test.ts': '',
       'src/lib/example.ts': '',
     });
@@ -374,13 +378,21 @@ describe('verification planning', () => {
       'scripts/run-ct-tests.mjs',
       'playwright-ct.config.ts',
       'playwright/index.ts',
+      'src/lib/component-catalog/capture-stability.ts',
+      'src/lib/component-catalog/geometry-probe.ts',
+      'src/lib/component-catalog/preview-definition.ts',
       'package.json',
       'pnpm-lock.yaml',
     ]) {
       expect(ids([file]), file).toContain('ct-full');
       expect(ids([file]), file).not.toContain('ct-related');
     }
-    for (const file of ['src/foo.test.ts', 'src/lib/example.ts', 'scripts/verify-changed.mjs']) {
+    for (const file of [
+      'src/foo.test.ts',
+      'src/lib/example.ts',
+      'src/lib/component-catalog/catalog.ts',
+      'scripts/verify-changed.mjs',
+    ]) {
       expect(ids([file]), file).not.toContain('ct-full');
       expect(ids([file]), file).not.toContain('ct-related');
     }
