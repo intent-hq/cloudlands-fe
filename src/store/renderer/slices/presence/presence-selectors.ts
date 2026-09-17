@@ -207,6 +207,15 @@ export const selectOwnPresenceReportKey = store.createSelector((state) =>
 export const selectPresenceLiveTyping = store.createSelector((state) => state.presence.liveTyping);
 
 /**
+ * The viewer's own principal id, or `null` until the daemon reports it.
+ * @public consumed by `ChatPanel.svelte` on `fix/multiplayer-message-author-avatars`
+ * (#2546); keep exported even while unused on this branch.
+ */
+export const selectPresenceOwnPrincipalId = store.createSelector(
+  (state) => state.presence.ownPrincipalId,
+);
+
+/**
  * `${workspaceId}:${memberCount}` for every open workspace tab that is
  * shared — the saga's signal to (re)read `workspace.members.list`: a tab
  * opening, or the daemon's `workspace:updated` moving a membership count,
