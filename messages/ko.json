@@ -5744,6 +5744,7 @@
   "deeplink_inviteConfirm_join_button": "참여",
   "deeplink_inviteProve_detail": "Intent는 비공개 gist로 호스트에 GitHub 신원을 증명하고 곧바로 삭제합니다. 호스트는 내 GitHub 사용자 이름, 계정 ID, 표시 이름, 아바타를 알게 됩니다.",
   "deeplink_inviteProofExpired_message": "신원 증명이 너무 오래 걸려 호스트가 더 이상 받아들이지 않습니다. 새 증명으로 다시 시도할까요?",
+  "deeplink_inviteProofInvalid_message": "호스트가 이 증명으로는 GitHub 신원을 확인할 수 없었습니다. 새 증명으로 다시 시도할까요?",
   "deeplink_inviteProofExpired_retry_button": "다시 시도",
   "deeplink_inviteFailed_title": "워크스페이스에 참여할 수 없습니다",
   "deeplink_inviteFailed_ok_button": "확인",

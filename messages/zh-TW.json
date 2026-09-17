@@ -5744,6 +5744,7 @@
   "deeplink_inviteConfirm_join_button": "加入",
   "deeplink_inviteProve_detail": "Intent 透過一個私密 gist 向主機證明你的 GitHub 身分，並在之後立即刪除。主機將得知你的 GitHub 使用者名稱、帳號 ID、顯示名稱和頭像。",
   "deeplink_inviteProofExpired_message": "身分證明耗時過久，主機已不再接受。要使用新的證明重試嗎？",
+  "deeplink_inviteProofInvalid_message": "主機無法透過此證明驗證你的 GitHub 身分。要使用新的證明重試嗎？",
   "deeplink_inviteProofExpired_retry_button": "重試",
   "deeplink_inviteFailed_title": "無法加入工作區",
   "deeplink_inviteFailed_ok_button": "好",
