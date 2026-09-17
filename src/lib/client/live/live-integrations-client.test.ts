@@ -157,25 +157,31 @@ describe('LiveIntegrationsClient (fake transport)', () => {
 describe('LiveIntegrationsClient.githubBranches (github.branches.list + github.repos.get, §5.27)', () => {
   afterEach(() => vi.clearAllMocks());
 
-  it("lists remote branch names and the repo's default branch", async () => {
-    // PROTOCOL §5.27: { branches: string[], nextToken? } and { repo: GithubRepo | null }.
-    mockedRequest
-      .mockResolvedValueOnce({ branches: ['main', 'feat/x'], nextToken: null })
-      .mockResolvedValueOnce({ repo: { name: 'intent', defaultBranch: 'main' } });
-    const client = new LiveIntegrationsClient();
+  it.each([
+    { branches: ['main', 'feat/x'], nextToken: null },
+    { branches: ['app-review', 'feat/x'], nextToken: 'opaque-next-page' },
+  ])(
+    "lists a page $branches and the repo's independent default branch",
+    async ({ branches, nextToken }) => {
+      // PROTOCOL §5.27: { branches: string[], nextToken? } and { repo: GithubRepo | null }.
+      mockedRequest
+        .mockResolvedValueOnce({ branches, nextToken })
+        .mockResolvedValueOnce({ repo: { owner: 'octo', name: 'intent', defaultBranch: 'main' } });
+      const client = new LiveIntegrationsClient();
 
-    const listing = await client.githubBranches('octo', 'intent');
+      const listing = await client.githubBranches('octo', 'intent');
 
-    expect(mockedRequest).toHaveBeenNthCalledWith(1, 'github.branches.list', {
-      owner: 'octo',
-      repo: 'intent',
-    });
-    expect(mockedRequest).toHaveBeenNthCalledWith(2, 'github.repos.get', {
-      owner: 'octo',
-      repo: 'intent',
-    });
-    expect(listing).toEqual({ branches: ['main', 'feat/x'], defaultBranch: 'main' });
-  });
+      expect(mockedRequest).toHaveBeenNthCalledWith(1, 'github.branches.list', {
+        owner: 'octo',
+        repo: 'intent',
+      });
+      expect(mockedRequest).toHaveBeenNthCalledWith(2, 'github.repos.get', {
+        owner: 'octo',
+        repo: 'intent',
+      });
+      expect(listing).toEqual({ branches, defaultBranch: 'main' });
+    },
+  );
 
   it('issues the branch-list and default-branch requests concurrently (both REST-backed)', async () => {
     // Neither response has settled yet — both requests must already be on the

@@ -435,6 +435,28 @@ describe('HudHeader master-volume slider', () => {
     expect(slider.closest('.app-drag-region')).toBe(screen.getByTestId('hud-header'));
   });
 
+  it('marks the whole sound group no-drag so pointer travel onto the slider keeps it mounted', async () => {
+    // Same mechanism as #1907: the global rule only exempts interactive
+    // elements, so the group's own box (flex gap + slider wrapper) would stay
+    // draggable and Electron would dispatch mouseleave — unmounting the
+    // slider — as soon as the pointer left the button. The group opts out as
+    // a whole via the global .app-no-drag class while the header itself
+    // remains the drag region.
+    render(HudHeader, { props: { nowMs: NOW_MS } });
+    const group = screen.getByTestId('hud-header-sound-group');
+    const header = screen.getByTestId('hud-header');
+
+    expect(group.classList.contains('app-no-drag')).toBe(true);
+    expect(header.classList.contains('app-no-drag')).toBe(false);
+    expect(header.classList.contains('app-drag-region')).toBe(true);
+
+    await fireEvent.mouseEnter(group);
+    flushSync();
+    const slider = screen.getByTestId('hud-header-volume-slider');
+    expect(slider.closest('.app-no-drag')).toBe(group);
+    expect(screen.getByTestId('hud-header-sound-btn').closest('.app-no-drag')).toBe(group);
+  });
+
   it('dragging updates the shared master volume live and persists it', async () => {
     render(HudHeader, { props: { nowMs: NOW_MS } });
 

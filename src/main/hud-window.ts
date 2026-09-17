@@ -51,10 +51,21 @@ const trackedHudWindows = new Map<string, BrowserWindow>();
  * Track a newly created HUD window as THE HUD for its backend. The window
  * must already be stamped (`stampWindowWithBackend`) — the registry keys off
  * the stamp. Cleared automatically when the window closes.
+ *
+ * Also disables background throttling: Electron's macOS same-app occlusion
+ * heuristic can report a visible but unfocused HUD as hidden, which throttles
+ * its timers and stops painting its takeover entry animations. Applying the
+ * policy here — the one seam every HUD construction path passes through —
+ * keeps the HUD renderer at full cadence regardless of reported visibility.
+ * The IPC-open and session-restore paths register before `loadURL`; the
+ * window.open popup path registers from `did-create-window`, which Electron
+ * emits after it has already called `loadURL` on the popup, but still
+ * synchronously at creation and before any paint that matters.
  */
 export function registerHudWindow(window: BrowserWindow): void {
   const backendId = getBackendIdForWindow(window);
   trackedHudWindows.set(backendId, window);
+  window.webContents.setBackgroundThrottling(false);
   window.on('closed', () => {
     if (trackedHudWindows.get(backendId) === window) trackedHudWindows.delete(backendId);
   });

@@ -12,6 +12,7 @@ import {
   settleNoteContent,
   updateNoteContent,
 } from '$features/notes/notes-write-service';
+import { restoreNoteVersion } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
 
 const {
   mockDispatch,
@@ -322,6 +323,9 @@ vi.mock('$store/renderer/configured-store', () => ({
 vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () => ({
   selectNoteById: Object.assign(() => currentNoteReadable, {
     select: (_state: any, _workspaceId: string, noteId: string) => getNoteById(noteId),
+    effect: function* (_workspaceId: string, noteId: string) {
+      return getNoteById(noteId);
+    },
   }),
   selectNewlyCreatedNoteId: {
     select: () => null,
@@ -374,20 +378,24 @@ vi.mock('$features/notes/notes-write-service', () => ({
   settleNoteContent: vi.fn(async () => undefined),
 }));
 
-vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-slice', () => ({
-  restoreNoteVersion: vi.fn((workspaceId: string, noteId: string, versionId: string) => ({
-    type: 'workspaceNotes/restoreNoteVersion',
-    payload: { workspaceId, noteId, versionId },
-  })),
-  applyLocalNoteUpdate: vi.fn((workspaceId: string, noteId: string, update: Partial<Note>) => ({
-    type: 'workspaceNotes/applyLocalNoteUpdate',
-    payload: { workspaceId, noteId, update },
-  })),
-  clearNewlyCreatedNoteId: vi.fn((workspaceId: string) => ({
-    type: 'workspaceNotes/clearNewlyCreatedNoteId',
-    payload: { workspaceId },
-  })),
-}));
+// Real action creators (incl. `restoreNoteVersion`) so a test can run the
+// REAL version-restore saga, whose action channel matches on them.
+vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-slice', async () => {
+  const actual = await vi.importActual<
+    typeof import('$store/renderer/slices/workspace-notes/workspace-notes-slice')
+  >('$store/renderer/slices/workspace-notes/workspace-notes-slice');
+  return {
+    ...actual,
+    applyLocalNoteUpdate: vi.fn((workspaceId: string, noteId: string, update: Partial<Note>) => ({
+      type: 'workspaceNotes/applyLocalNoteUpdate',
+      payload: { workspaceId, noteId, update },
+    })),
+    clearNewlyCreatedNoteId: vi.fn((workspaceId: string) => ({
+      type: 'workspaceNotes/clearNewlyCreatedNoteId',
+      payload: { workspaceId },
+    })),
+  };
+});
 
 vi.mock('$store/renderer/slices/transient-ui/transient-ui-selectors', () => ({
   selectIsRawNoteViewEnabled: () => constantReadable(false),
@@ -1174,10 +1182,7 @@ describe('NoteWithComments task conversion regression', () => {
       resolveSettled();
       await restore;
 
-      expect(mockDispatch).toHaveBeenCalledWith({
-        type: 'workspaceNotes/restoreNoteVersion',
-        payload: { workspaceId: 'ws-1', noteId: 'spec', versionId: 'version-1' },
-      });
+      expect(mockDispatch).toHaveBeenCalledWith(restoreNoteVersion('ws-1', 'spec', 'version-1'));
     } finally {
       // The suite's beforeEach only clears call history; a failure before
       // `pending` is reset would otherwise leak a stuck pending flag into
@@ -1243,10 +1248,7 @@ describe('NoteWithComments task conversion regression', () => {
       resolveSave(saveResult);
       await restore;
       expect(service.hasPendingNoteContent('ws-1', 'spec')).toBe(false);
-      expect(mockDispatch).toHaveBeenCalledWith({
-        type: 'workspaceNotes/restoreNoteVersion',
-        payload: { workspaceId: 'ws-1', noteId: 'spec', versionId: 'version-1' },
-      });
+      expect(mockDispatch).toHaveBeenCalledWith(restoreNoteVersion('ws-1', 'spec', 'version-1'));
     } finally {
       resolveSave(saveResult);
       await vi.advanceTimersByTimeAsync(0);
@@ -1259,6 +1261,165 @@ describe('NoteWithComments task conversion regression', () => {
       wire.mockRestore();
     }
   });
+
+  // Regression (intent-hq/intent#4887, real component + REAL write service +
+  // REAL version-restore saga): a keystroke typed while the restore awaits the
+  // in-flight save's settle sits on the component's own debounce, invisible to
+  // settleNoteContent. The restore used to be dispatched the moment the first
+  // save acked, and that keystroke was then either dropped (fast restore
+  // reply: the restored text applied before its save fired) or merged onto the
+  // restored text (slow reply: its save sent after the restore RPC). It must
+  // reach the daemon as its own pre-restore version instead, exactly like the
+  // typing that preceded the click, and the restored version must be the
+  // final document either way.
+  it.each([
+    ['fast', true],
+    ['slow', false],
+  ])(
+    'saves a keystroke typed while the restore awaits settle, then applies the restored version (%s restore reply)',
+    async (_reply, restoreRepliesAtOnce) => {
+      const service = await vi.importActual<typeof import('$features/notes/notes-write-service')>(
+        '$features/notes/notes-write-service',
+      );
+      const { appClient } = await import('$lib/client');
+      const { runSaga, stdChannel } = await import('redux-saga');
+      const { noteVersionsSaga } =
+        await import('$store/renderer/slices/workspace-notes/sagas/note-versions-saga');
+      const rpcs: string[] = [];
+      let resolveFirst: ((value: unknown) => void) | undefined;
+      let resolveSecond: ((value: unknown) => void) | undefined;
+      let resolveRestore: ((value: unknown) => void) | undefined;
+      const wire = vi
+        .spyOn(appClient.notes, 'setContent')
+        .mockImplementationOnce((_id, content) => {
+          rpcs.push(`setContent:${content}`);
+          return new Promise((resolve) => {
+            resolveFirst = resolve;
+          }) as never;
+        })
+        .mockImplementationOnce((_id, content) => {
+          rpcs.push(`setContent:${content}`);
+          return new Promise((resolve) => {
+            resolveSecond = resolve;
+          }) as never;
+        });
+      const restored = createNote('spec', 'A', 'restored body', { rev: 9 });
+      const restoreReply = { success: true, note: restored };
+      const restoreRpc = vi.spyOn(appClient.notes, 'restoreVersion').mockImplementation(() => {
+        rpcs.push('restoreVersion');
+        return new Promise((resolve) => {
+          resolveRestore = resolve;
+          if (restoreRepliesAtOnce) resolve(restoreReply);
+        }) as never;
+      });
+      const listVersions = vi.spyOn(appClient.notes, 'listVersions').mockResolvedValue([]);
+      replaceNotes([createNote('spec', 'A', 'note A', { rev: 4 })]);
+      const view = await renderInitializedNote('spec', 'note A');
+      const editor = (view.container.querySelector('.ProseMirror') as any).editor;
+      await waitFor(() => expect(editor.getText()).toBe('note A'));
+      vi.useFakeTimers();
+      await vi.advanceTimersByTimeAsync(1200);
+      vi.mocked(hasPendingNoteContent).mockImplementation(service.hasPendingNoteContent);
+      vi.mocked(updateNoteContent).mockImplementation(service.updateNoteContent);
+      vi.mocked(flushNoteContent).mockImplementation(service.flushNoteContent);
+      vi.mocked(settleNoteContent).mockImplementation(service.settleNoteContent);
+      // The store the component and write service dispatch into also feeds
+      // the real saga, and the saga's own puts land back in the same store.
+      const channel = stdChannel();
+      mockDispatch.mockImplementation((action: any) => {
+        if (action.type === 'workspaceNotes/applyLocalNoteUpdate') {
+          const { noteId, update } = action.payload;
+          replaceNotes([{ ...getNoteById(noteId), ...update }]);
+        } else if (action.type === 'workspaceNotes/applyNoteUpdated') {
+          const [, , note] = action.payload;
+          replaceNotes([note]);
+        }
+        channel.put(action);
+        return action;
+      });
+      const saga = runSaga(
+        { channel, dispatch: mockDispatch, getState: () => mockSelectorStore.state },
+        noteVersionsSaga,
+      );
+      const restoreDispatched = () =>
+        mockDispatch.mock.calls.some(
+          ([action]) => action?.type === 'workspaceNotes/restoreNoteVersion',
+        );
+      const firstResult = { success: true, newContent: 'note A local', noteRev: 5 };
+      const secondResult = { success: true, newContent: 'note A local more', noteRev: 6 };
+      try {
+        editor.commands.insertContentAt(editor.state.doc.content.size - 1, ' local');
+        await vi.advanceTimersByTimeAsync(1801);
+        expect(wire).toHaveBeenCalledWith('spec', 'note A local', 4, 'ws-1');
+        mockDispatch.mockClear();
+
+        const restore = versionHistory.props!.onRestore!('version-1');
+        await tick();
+        await vi.advanceTimersByTimeAsync(0);
+        expect(restoreDispatched()).toBe(false);
+
+        // Typed while the restore awaits the first save's ack: on the
+        // component debounce only, not in the write-service.
+        editor.commands.insertContentAt(editor.state.doc.content.size - 1, ' more');
+        resolveFirst!(firstResult);
+        await vi.advanceTimersByTimeAsync(0);
+
+        expect(wire).toHaveBeenCalledTimes(2);
+        expect(wire.mock.calls[1]).toEqual(['spec', 'note A local more', 5, 'ws-1']);
+        expect(service.hasPendingNoteContent('ws-1', 'spec')).toBe(true);
+        expect(restoreDispatched()).toBe(false);
+        expect(restoreRpc).not.toHaveBeenCalled();
+
+        resolveSecond!(secondResult);
+        await restore;
+        expect(service.hasPendingNoteContent('ws-1', 'spec')).toBe(false);
+        expect(mockDispatch).toHaveBeenCalledWith(restoreNoteVersion('ws-1', 'spec', 'version-1'));
+        await vi.advanceTimersByTimeAsync(0);
+        // Both drafts became daemon versions, in typing order, before the
+        // restore RPC — so the restored version is the newest one on the daemon.
+        expect(rpcs).toEqual([
+          'setContent:note A local',
+          'setContent:note A local more',
+          'restoreVersion',
+        ]);
+        expect(restoreRpc).toHaveBeenCalledWith('ws-1', 'spec', 'version-1');
+
+        if (!restoreRepliesAtOnce) {
+          // The component's save debounce elapses while the reply is
+          // outstanding: nothing of the keystroke is left to send after it.
+          await vi.advanceTimersByTimeAsync(3000);
+          expect(wire).toHaveBeenCalledTimes(2);
+          expect(editor.getText()).toBe('note A local more');
+          resolveRestore!(restoreReply);
+        }
+        await tick();
+        await vi.advanceTimersByTimeAsync(3000);
+
+        expect(editor.getText()).toBe('restored body');
+        expect(getNoteById('spec')).toMatchObject({ content: 'restored body', rev: 9 });
+        expect(listVersions).toHaveBeenCalledWith('ws-1', 'spec');
+        // No stale save follows the restore in either path.
+        expect(wire).toHaveBeenCalledTimes(2);
+        expect(service.hasPendingNoteContent('ws-1', 'spec')).toBe(false);
+      } finally {
+        resolveFirst?.(firstResult);
+        resolveSecond?.(secondResult);
+        resolveRestore?.(restoreReply);
+        await vi.advanceTimersByTimeAsync(0);
+        await service.settleNoteContent('ws-1', 'spec');
+        saga.cancel();
+        await saga.toPromise();
+        vi.mocked(hasPendingNoteContent).mockImplementation(() => false);
+        vi.mocked(updateNoteContent).mockImplementation(() => undefined);
+        vi.mocked(flushNoteContent).mockImplementation(async () => undefined);
+        vi.mocked(settleNoteContent).mockImplementation(async () => undefined);
+        mockDispatch.mockImplementation((action: any) => action);
+        wire.mockRestore();
+        restoreRpc.mockRestore();
+        listVersions.mockRestore();
+      }
+    },
+  );
 
   it('does not apply a pending note conversion after unmount', async () => {
     const view = await renderInitializedNote();
