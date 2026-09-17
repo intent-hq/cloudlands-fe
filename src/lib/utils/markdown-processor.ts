@@ -458,6 +458,107 @@ function processWsBlocks(content: string): string {
   return processedContent;
 }
 
+// Stands in for an empty paragraph while serializing; the HTML parser never
+// yields a NUL in text content, so it cannot collide with note content.
+const EMPTY_PARAGRAPH_MARKER = '\u0000';
+const EMPTY_PARAGRAPH_MARKER_REGEX = /\u0000/g;
+
+const FENCE_OPEN_REGEX = /^ {0,3}(`{3,}|~{3,})/;
+const TASK_BLOCK_OPEN_REGEX = /^@@@tasks?(?:[ \t]|$)/;
+const TASK_BLOCK_CLOSE_REGEX = /^@@@\s*$/;
+const LIST_ITEM_REGEX = /^ {0,3}(?:[-*+]|\d+[.)])\s/;
+const INDENTED_LINE_REGEX = /^(?: {2,}|\t)/;
+
+/**
+ * Turn blank lines beyond the paragraph separator back into empty paragraphs.
+ *
+ * The editor serializes each empty paragraph as one extra blank line (see
+ * `processHTMLToMarkdown`), so a run of k blank lines between two blocks stands
+ * for k-1 empty paragraphs, a leading run of k for k, and a trailing run of k
+ * for k-1. Each becomes a `<p></p>` HTML block that marked passes through.
+ * Blank lines inside fenced code, `@@@task` blocks, between two list items and
+ * before an indented line keep their markdown meaning and are left alone.
+ */
+function expandBlankLinesToEmptyParagraphs(markdown: string): string {
+  const lines = markdown.split('\n');
+  // A trailing newline yields one empty split entry that is not a blank line.
+  if (lines.length > 1 && lines[lines.length - 1] === '') lines.pop();
+
+  const out: string[] = [];
+  let fence: { char: string; length: number } | null = null;
+  let inTaskBlock = false;
+  let pendingBlank: string[] = [];
+  let sawContent = false;
+  let previousLine = '';
+
+  const pushEmptyParagraphs = (count: number): void => {
+    for (let i = 0; i < count; i++) out.push('<p></p>', '');
+  };
+
+  const flushBlankRun = (nextLine: string | undefined): void => {
+    const count = pendingBlank.length;
+    if (count === 0) return;
+    if (!sawContent) {
+      pushEmptyParagraphs(count);
+    } else if (nextLine === undefined) {
+      out.push('');
+      pushEmptyParagraphs(count - 1);
+    } else if (
+      count >= 2 &&
+      !INDENTED_LINE_REGEX.test(nextLine) &&
+      !(LIST_ITEM_REGEX.test(previousLine) && LIST_ITEM_REGEX.test(nextLine))
+    ) {
+      out.push('');
+      pushEmptyParagraphs(count - 1);
+    } else {
+      out.push(...pendingBlank);
+    }
+    pendingBlank = [];
+  };
+
+  for (const line of lines) {
+    if (fence) {
+      out.push(line);
+      const closeMatch = FENCE_OPEN_REGEX.exec(line);
+      if (
+        closeMatch &&
+        closeMatch[1][0] === fence.char &&
+        closeMatch[1].length >= fence.length &&
+        line.slice(closeMatch[0].length).trim() === ''
+      ) {
+        fence = null;
+      }
+      previousLine = line;
+      continue;
+    }
+    if (inTaskBlock) {
+      out.push(line);
+      if (TASK_BLOCK_CLOSE_REGEX.test(line)) inTaskBlock = false;
+      previousLine = line;
+      continue;
+    }
+    if (line.trim() === '') {
+      pendingBlank.push(line);
+      continue;
+    }
+
+    flushBlankRun(line);
+    sawContent = true;
+    out.push(line);
+    previousLine = line;
+
+    const openMatch = FENCE_OPEN_REGEX.exec(line);
+    if (openMatch) {
+      fence = { char: openMatch[1][0], length: openMatch[1].length };
+    } else if (TASK_BLOCK_OPEN_REGEX.test(line)) {
+      inTaskBlock = true;
+    }
+  }
+  flushBlankRun(undefined);
+
+  return out.join('\n');
+}
+
 /**
  * Process markdown content to HTML with Tiptap task list support
  *
@@ -588,6 +689,8 @@ export async function processMarkdownToHTML(
         });
       }
     }
+    // Runs before the worker/main-thread fork so both paths see the same input.
+    processedContent = expandBlankLinesToEmptyParagraphs(processedContent);
     const t2 = isLargeContent ? performance.now() : 0;
 
     // --- Worker pipeline (normalize → legacy syntax → marked.parse → anchor conversion) ---
@@ -1567,7 +1670,9 @@ export function processHTMLToMarkdown(
       const name = el.getAttribute('data-name') || '';
       return src ? `![${name}](${src})\n\n` : '';
     } else if (el.tagName === 'P') {
-      return `${processInlineContent(el)}\n\n`;
+      const inline = processInlineContent(el);
+      if (inline.trim() === '') return EMPTY_PARAGRAPH_MARKER;
+      return `${inline}\n\n`;
     } else if (el.tagName === 'H1') {
       return `# ${processInlineContent(el)}\n\n`;
     } else if (el.tagName === 'H2') {
@@ -1914,9 +2019,19 @@ export function processHTMLToMarkdown(
     return '';
   };
 
+  let trailingEmptyParagraphs = 0;
+  let blockBeforeTrailingEmpties: string | null = null;
+
   // Process all child nodes (these are top-level nodes)
   for (const child of Array.from(div.childNodes)) {
     const nodeResult = processNode(child, true); // Pass true for isTopLevel
+    if (nodeResult === EMPTY_PARAGRAPH_MARKER) {
+      trailingEmptyParagraphs++;
+    } else if (nodeResult.trim() !== '') {
+      trailingEmptyParagraphs = 0;
+      blockBeforeTrailingEmpties =
+        child.nodeType === Node.ELEMENT_NODE ? (child as Element).tagName : null;
+    }
     // Debug: Log each node being processed
     if (child.nodeType === Node.ELEMENT_NODE) {
       const el = child as Element;
@@ -1942,8 +2057,23 @@ export function processHTMLToMarkdown(
     markdown += nodeResult;
   }
 
-  // Clean up extra newlines
-  markdown = markdown.replace(/\n{3,}/g, '\n\n').trim();
+  // The editor's TrailingNode appends one empty paragraph after any non-paragraph
+  // last block and re-adds it on load, so that single one is not content.
+  if (
+    trailingEmptyParagraphs === 1 &&
+    blockBeforeTrailingEmpties !== null &&
+    blockBeforeTrailingEmpties !== 'P'
+  ) {
+    const markerIndex = markdown.lastIndexOf(EMPTY_PARAGRAPH_MARKER);
+    markdown = markdown.slice(0, markerIndex) + markdown.slice(markerIndex + 1);
+  }
+
+  // Clean up extra newlines, then let each empty paragraph add one blank line
+  // beyond the paragraph separator (the inverse of expandBlankLinesToEmptyParagraphs).
+  markdown = markdown
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+    .replace(EMPTY_PARAGRAPH_MARKER_REGEX, '\n');
 
   logger.debug('[markdown-processor] processHTMLToMarkdown OUTPUT:', {
     markdownLength: markdown.length,
