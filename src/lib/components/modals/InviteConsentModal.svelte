@@ -2,17 +2,26 @@
   /**
    * In-app GitHub identity consent dialog for an `intent://invite` join
    * (replaces the native message box when a renderer window is available).
-   * Shows the device code + verification URL and explains why the sign-in is
-   * needed and what the host learns. "Open GitHub" reports `open` and keeps the
-   * dialog up in a waiting state until main dismisses it; Escape / backdrop /
-   * × / Cancel report `cancel` (also allowed while waiting — it aborts the join
-   * until the grant resolves, when main dismisses the dialog and Cancel is no
-   * longer offered).
+   *
+   * `mode: "device-code"` (first join on the host): shows the device code +
+   * verification URL and explains why the sign-in is needed and what the host
+   * learns. "Open GitHub" reports `open` and keeps the dialog up in a waiting
+   * state until main dismisses it.
+   *
+   * `mode: "confirm"` (returning guest with a stored credential): no code or
+   * URL — an identity line names the login the host already knows, the "what
+   * the host learns" section stays, "why sign in" is hidden, and the primary
+   * "Join" button reports `open`, keeping the dialog up in a brief joining
+   * state until main dismisses it.
+   *
+   * In both modes Escape / backdrop / × / Cancel report `cancel` (also allowed
+   * while waiting — it aborts the join until the grant resolves, when main
+   * dismisses the dialog and Cancel is no longer offered).
    */
   import { Button } from '$lib/components/ui/button';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import Fa from 'svelte-fa';
-  import { faShieldHalved, faXmark } from '@fortawesome/free-solid-svg-icons';
+  import { faShieldHalved, faUser, faXmark } from '@fortawesome/free-solid-svg-icons';
   import Portal from '$lib/components/ui/Portal.svelte';
   import GitHubDeviceCodeCard from '$lib/components/GitHubDeviceCodeCard.svelte';
   import type { InviteConsentAction, InviteConsentShowPayload } from '$shared/ipc/invite-consent';
@@ -34,6 +43,7 @@
   // The request that has been sent `open`; keyed by id so a new payload resets it.
   let openedRequestId = $state<string | null>(null);
   const waiting = $derived(payload !== null && openedRequestId === payload.requestId);
+  const confirmMode = $derived(payload?.mode === 'confirm');
 
   // Move focus into the dialog on open (ARIA alertdialog pattern) so Escape
   // reaches the keydown handler immediately.
@@ -112,14 +122,21 @@
         </div>
 
         <div id={dialogDescriptionId} class="flex-1 overflow-auto px-6 py-5 space-y-5">
-          <section class="space-y-1">
-            <h3 class="text-sm font-medium text-foreground">
-              {m.inviteConsent_modal_why_title()}
-            </h3>
-            <p class="text-xs text-subtle">
-              {m.inviteConsent_modal_why_description()}
-            </p>
-          </section>
+          {#if payload.mode === 'confirm'}
+            <div class="flex items-center gap-2 text-sm text-foreground">
+              <Fa icon={faUser} class="shrink-0 text-subtle" />
+              <span>{m.inviteConsent_modal_signedInAs_label({ login: `@${payload.login}` })}</span>
+            </div>
+          {:else}
+            <section class="space-y-1">
+              <h3 class="text-sm font-medium text-foreground">
+                {m.inviteConsent_modal_why_title()}
+              </h3>
+              <p class="text-xs text-subtle">
+                {m.inviteConsent_modal_why_description()}
+              </p>
+            </section>
+          {/if}
           <section class="space-y-1">
             <h3 class="text-sm font-medium text-foreground">
               {m.inviteConsent_modal_hostLearns_title()}
@@ -128,15 +145,21 @@
               {m.inviteConsent_modal_hostLearns_description()}
             </p>
           </section>
-          <GitHubDeviceCodeCard
-            userCode={payload.userCode}
-            verificationUri={payload.verificationUri}
-            onOpen={handleOpen}
-          />
+          {#if payload.mode === 'device-code'}
+            <GitHubDeviceCodeCard
+              userCode={payload.userCode}
+              verificationUri={payload.verificationUri}
+              onOpen={handleOpen}
+            />
+          {/if}
           {#if waiting}
             <div class="flex items-center gap-2 text-sm text-subtle">
               <IntentMarkLoader size={14} class="shrink-0" />
-              <span>{m.inviteConsent_modal_waiting_label()}</span>
+              <span>
+                {confirmMode
+                  ? m.inviteConsent_modal_joining_label()
+                  : m.inviteConsent_modal_waiting_label()}
+              </span>
             </div>
           {/if}
         </div>
@@ -147,6 +170,11 @@
           <Button variant="outline" onclick={cancel}>
             {m.inviteConsent_modal_cancelButton_label()}
           </Button>
+          {#if confirmMode}
+            <Button onclick={handleOpen} disabled={waiting}>
+              {m.inviteConsent_modal_joinButton_label()}
+            </Button>
+          {/if}
         </div>
       </div>
     </div>

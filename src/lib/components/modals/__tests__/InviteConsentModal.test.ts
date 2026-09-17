@@ -15,11 +15,20 @@ vi.mock('$features/navigation/link-handler', () => ({ handleLink }));
 
 const PAYLOAD: InviteConsentShowPayload = {
   requestId: 'req-1',
+  mode: 'device-code',
   userCode: 'ABCD-1234',
   verificationUri: 'https://github.com/login/device',
   workspaceTitle: 'Alpha',
   hostLabel: 'host.example',
   expiresInMs: 900_000,
+};
+
+const CONFIRM_PAYLOAD: InviteConsentShowPayload = {
+  requestId: 'req-2',
+  mode: 'confirm',
+  login: 'octocat',
+  workspaceTitle: 'Alpha',
+  hostLabel: 'host.example',
 };
 
 const DIALOG_NAME = 'Join “Alpha” on host.example';
@@ -149,6 +158,48 @@ describe('InviteConsentModal', () => {
     expect(screen.queryByRole('status')).toBeNull();
     await fireEvent.keyDown(document.body, { key: 'Escape' });
     expect(onRespond.mock.calls).toEqual([['open']]);
+  });
+
+  // Returning guest (confirm mode): no device code or URL, the stored identity
+  // is named, "Why sign in?" is hidden, and Join is the primary action that
+  // keeps the dialog up until main dismisses it.
+  it('confirm mode: names the stored identity, hides the device flow, and Join reports open once', async () => {
+    const onRespond = vi.fn();
+    const InviteConsentModal = await loadModal();
+
+    render(InviteConsentModal, {
+      props: { open: true, payload: CONFIRM_PAYLOAD, onRespond },
+    });
+
+    await screen.findByRole('alertdialog', { name: DIALOG_NAME });
+    expect(screen.getByText('Signed in on this host as @octocat')).toBeTruthy();
+    expect(screen.getByText('What the host learns')).toBeTruthy();
+    expect(screen.queryByText('Why sign in?')).toBeNull();
+    expect(screen.queryByText('ABCD-1234')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Open GitHub' })).toBeNull();
+    expect(screen.queryByRole('status')).toBeNull();
+
+    const joinButton = screen.getByRole('button', { name: 'Join' });
+    await fireEvent.click(joinButton);
+    await fireEvent.click(joinButton);
+
+    expect(onRespond).toHaveBeenCalledExactlyOnceWith('open');
+    expect(handleLink).not.toHaveBeenCalled();
+    expect(screen.getByRole('alertdialog', { name: DIALOG_NAME })).toBeTruthy();
+    expect(screen.getByRole('status')).toBeTruthy();
+  });
+
+  it('confirm mode: Cancel and Escape report cancel without joining', async () => {
+    const onRespond = vi.fn();
+    const InviteConsentModal = await loadModal();
+
+    render(InviteConsentModal, {
+      props: { open: true, payload: CONFIRM_PAYLOAD, onRespond },
+    });
+    await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(onRespond).toHaveBeenCalledExactlyOnceWith('cancel');
+    expect(screen.queryByRole('alertdialog')).toBeNull();
   });
 
   it('renders nothing when closed or without payload', async () => {
