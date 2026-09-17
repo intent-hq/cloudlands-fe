@@ -263,6 +263,9 @@ vi.mock('../sidebar/WorkspaceProgressCard.svelte', async () => ({
 vi.mock('../WorkspaceTerminalDock.svelte', async () => ({
   default: (await import('../sidebar/__tests__/mocks/MockSimple.svelte')).default,
 }));
+vi.mock('../WorkspaceShellList.svelte', async () => ({
+  default: (await import('../sidebar/__tests__/mocks/MockSimple.svelte')).default,
+}));
 vi.mock('../SidebarBrowserLauncher.svelte', async () => ({
   default: (await import('../sidebar/__tests__/mocks/MockSimple.svelte')).default,
 }));
@@ -1426,5 +1429,25 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
 
     expect(second.container.querySelector('.sidebar-expanded-card')).not.toBeNull();
     expect(second.container.querySelector('[data-expanded-agent="agent-1"]')).not.toBeNull();
+  });
+
+  it('describes the expanded Shells card but leaves the Agents card without prose', async () => {
+    const { TAB_DEFINITIONS } = await import('../multi-select-sidebar-tabs');
+    const shellDescription = TAB_DEFINITIONS.find((tab) => tab.id === 'shell')!.description;
+    const agentsDescription = TAB_DEFINITIONS.find((tab) => tab.id === 'agents')!.description;
+    const Sidebar = (await import('../MultiSelectTabbedSidebar.svelte')).default;
+
+    mocks.selectedTabs = ['shell'];
+    const shell = render(Sidebar, { props: { workspaceId: 'ws-1' } });
+    const shellCard = shell.container.querySelector<HTMLElement>('.sidebar-expanded-card')!;
+    expect(within(shellCard).getByText(shellDescription)).toBeTruthy();
+
+    cleanup();
+    mocks.agents = [makeAgent('agent-1')];
+    mocks.selectedTabs = ['agents'];
+    const agents = render(Sidebar, { props: { workspaceId: 'ws-1' } });
+    const agentsCard = agents.container.querySelector<HTMLElement>('.sidebar-expanded-card')!;
+    expect(within(agentsCard).queryByText(agentsDescription)).toBeNull();
+    expect(within(agentsCard).queryByText(shellDescription)).toBeNull();
   });
 });

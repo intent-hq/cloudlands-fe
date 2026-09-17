@@ -5,7 +5,7 @@
     width?: number;
     fontSize?: number;
     mode?: 'local' | 'remote' | 'web';
-    surface?: 'files' | 'collapsed' | 'embedded' | 'inline';
+    surface?: 'files' | 'collapsed' | 'embedded' | 'inline' | 'setup-card';
   }
   export const preview = definePreview<Props>({
     id: 'files-open-menu',
@@ -19,6 +19,7 @@
       web: { props: { mode: 'web' } },
       embedded: { props: { surface: 'embedded' } },
       inline: { props: { surface: 'inline' } },
+      'setup-card': { props: { surface: 'setup-card' } },
       collapsed: { props: { surface: 'collapsed' } },
       'collapsed-narrow': { props: { surface: 'collapsed', width: 248 } },
     },
@@ -65,6 +66,25 @@
         <OpenComboButton filePath={FILES_MENU_PATH} workspaceId={FILES_MENU_WORKSPACE} embedded />
       </Menu.Content>
     </Menu.Root>
+  {:else if surface === 'setup-card'}
+    <!-- Mirrors the WorkspaceSetupCard worktree-path trigger props (sidebar variant, text children). -->
+    <!-- i18n-ignore (synthetic onboarding-style inline prose) -->
+    <p class="type-body p-4 leading-snug">
+      Created an isolated copy at
+      <OpenComboButton
+        filePath={FILES_MENU_PATH}
+        workspaceId={FILES_MENU_WORKSPACE}
+        isDirectory={true}
+        variant="sidebar"
+        compact
+        class="inline"
+      >
+        <span
+          class="underline underline-offset-2 cursor-pointer hover:text-foreground transition-colors whitespace-nowrap"
+          data-setup-card-path>~/worktrees/sample-project</span
+        >
+      </OpenComboButton>.
+    </p>
   {:else}
     <!-- i18n-ignore (synthetic onboarding-style inline prose) -->
     <p class="type-body p-4 leading-snug">

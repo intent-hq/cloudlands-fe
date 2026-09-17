@@ -95,6 +95,48 @@ for (const scenario of ['local', 'clone'] as const) {
   });
 }
 
+for (const { locale, fragments } of [
+  { locale: 'en', fragments: 5 },
+  // German appends a trailing verb after the branch, so every plain-text boundary is exercised.
+  { locale: 'de', fragments: 6 },
+] as const) {
+  test(`remote sentence keeps word-sized gaps between plain text and pickers (${locale})`, async ({
+    mount,
+    page,
+  }) => {
+    await page.setViewportSize({ width: 960, height: 480 });
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await mount(Pickers, { props: { scenario: 'remote', locale } });
+    const fixture = page.getByTestId('initializer-pickers-fixture');
+    await page.evaluate(() => document.fonts.ready);
+    const textBounds = await fixture.evaluate((element) => {
+      const walker = document.createTreeWalker(element.firstElementChild!, NodeFilter.SHOW_TEXT);
+      const bounds: { text: string; left: number; right: number }[] = [];
+      while (walker.nextNode()) {
+        const node = walker.currentNode;
+        if (!node.textContent?.trim() || node.parentElement?.closest('[aria-hidden=true]'))
+          continue;
+        const range = document.createRange();
+        range.selectNodeContents(node);
+        const { x, right } = range.getBoundingClientRect();
+        bounds.push({ text: node.textContent.trim(), left: x, right });
+      }
+      return bounds;
+    });
+    expect(textBounds.length).toBeGreaterThanOrEqual(fragments);
+    for (let index = 1; index < fragments; index += 1) {
+      const gap = textBounds[index].left - textBounds[index - 1].right;
+      expect(
+        gap,
+        `${textBounds[index - 1].text} → ${textBounds[index].text}`,
+      ).toBeGreaterThanOrEqual(5);
+      expect(gap, `${textBounds[index - 1].text} → ${textBounds[index].text}`).toBeLessThanOrEqual(
+        7,
+      );
+    }
+  });
+}
+
 for (const scenario of ['clone', 'long', 'remote'] as const) {
   test(`${scenario} sentence wraps inside a narrow form without losing picker access`, async ({
     mount,

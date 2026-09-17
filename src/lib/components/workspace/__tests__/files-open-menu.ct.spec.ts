@@ -1,6 +1,10 @@
 import { expect, test } from '@playwright/experimental-ct-svelte';
 import FilesOpenMenuPreview from '../files-open-menu.preview.svelte';
-import { measureCollapsedFilesTrigger, measureInlinePath } from './files-open-menu.assertions';
+import {
+  measureCollapsedFilesTrigger,
+  measureInlinePath,
+  measureTextTrigger,
+} from './files-open-menu.assertions';
 
 test('Files menu has aligned icon and label slots for different label lengths', async ({
   mount,
@@ -181,6 +185,24 @@ test('onboarding-style inline trigger retains inherited type and keyboard menu i
   await expect(page.getByRole('menu')).toBeVisible();
   await page.keyboard.press('Home');
   await expect(page.getByRole('menuitem').first()).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(trigger).toBeFocused();
+});
+
+test('setup-card sidebar text trigger sizes to its path label instead of an icon box', async ({
+  mount,
+  page,
+}) => {
+  const component = await mount(FilesOpenMenuPreview, { props: { surface: 'setup-card' } });
+  const trigger = component.locator('p').getByRole('button');
+  await page.evaluate(() => document.fonts.ready);
+  const metrics = await trigger.evaluate(measureTextTrigger);
+  expect(metrics.textWidth).toBeGreaterThan(28);
+  expect(metrics.width).toBeGreaterThanOrEqual(metrics.textWidth);
+  expect(metrics.labelOverflow).toBeLessThanOrEqual(1);
+  expect(metrics.scrollOverflow).toBeLessThanOrEqual(1);
+  await trigger.click();
+  await expect(page.getByRole('menu')).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(trigger).toBeFocused();
 });

@@ -447,6 +447,13 @@ jobs:
       - name: Prettier check
         run: pnpm run format:check
       - name: Svelte check
+        # svelte-check holds the whole renderer program in one process and
+        # already needs 3.6–4 GB of heap at the shared-controls base (it OOMs
+        # locally at 3584 MB and passes at 4096), so the job-wide 4 GB cap left
+        # no headroom and cloudlands-fe#2533 tipped it over. Both runner
+        # classes (tinybox, gh-linux-8x) have ample RAM for this cap.
+        env:
+          NODE_OPTIONS: '--max-old-space-size=8192'
         run: pnpm run check
       - name: Type check (renderer)
         run: pnpm run type-check

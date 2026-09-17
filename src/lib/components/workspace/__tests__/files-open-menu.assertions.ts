@@ -41,6 +41,24 @@ export function measureInlinePath(paragraph: Element) {
   };
 }
 
+/** Measure a text-children trigger against its label so a fixed icon box cannot hide overflow. */
+export function measureTextTrigger(trigger: Element) {
+  const bounds = trigger.getBoundingClientRect();
+  const label = trigger.querySelector<HTMLElement>('[data-setup-card-path]')!;
+  const labelBounds = label.getBoundingClientRect();
+  const range = document.createRange();
+  range.selectNodeContents(label);
+  const text = range.getBoundingClientRect();
+  return {
+    width: bounds.width,
+    height: bounds.height,
+    labelWidth: labelBounds.width,
+    textWidth: text.width,
+    labelOverflow: Math.max(0, text.right - bounds.right, bounds.left - text.left),
+    scrollOverflow: trigger.scrollWidth - trigger.clientWidth,
+  };
+}
+
 /** Inspect every trigger layer so a second nested hover surface cannot hide. */
 export function measureCollapsedFilesTrigger(element: Element) {
   const bounds = element.getBoundingClientRect();

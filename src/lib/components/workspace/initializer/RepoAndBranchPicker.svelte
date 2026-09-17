@@ -425,8 +425,11 @@
       showTriggerChevron={isMetadataPresentation}
       triggerChevronClass={metadataChevronClass}
     />
+    <!-- Plain spans have no picker padding; pr-1/px-1/pl-1 keep the word gaps matching the picker sentences. -->
     {#if workOnRemoteParts[1]}
-      <span class="text-sm text-subtle whitespace-nowrap shrink-0">{workOnRemoteParts[1]}</span>
+      <span class="text-sm text-subtle whitespace-nowrap shrink-0 pr-1">
+        {workOnRemoteParts[1]}
+      </span>
     {/if}
     <span
       class="text-xs text-subtle whitespace-nowrap min-w-0 font-mono truncate max-w-60"
@@ -435,15 +438,17 @@
       {remoteDisplayPath}
     </span>
     {#if workOnRemoteParts[2]}
-      <span class="text-sm text-subtle whitespace-nowrap shrink-0 px-0.5"
-        >{workOnRemoteParts[2]}</span
-      >
+      <span class="text-sm text-subtle whitespace-nowrap shrink-0 px-1">
+        {workOnRemoteParts[2]}
+      </span>
     {/if}
     <span class="text-sm font-medium whitespace-nowrap shrink-0 font-mono"
       >{remoteSetup.branch || 'main'}<!-- i18n-ignore (git branch name) --></span
     >
     {#if workOnRemoteParts[3]}
-      <span class="text-sm text-subtle whitespace-nowrap shrink-0">{workOnRemoteParts[3]}</span>
+      <span class="text-sm text-subtle whitespace-nowrap shrink-0 pl-1">
+        {workOnRemoteParts[3]}
+      </span>
     {/if}
     <!-- Skip isolation toggle for remote -->
     {#if typeof onSkipIsolationChange === 'function'}

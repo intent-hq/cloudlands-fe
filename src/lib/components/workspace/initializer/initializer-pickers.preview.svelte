@@ -2,10 +2,15 @@
   import { definePreview } from '$lib/component-catalog/preview-definition';
   import { appClient } from '$lib/client';
   import { mockInvoke } from '$shared/ipc-mock-router';
+  import { getLocale, locales, overwriteGetLocale } from '$shared/paraglide/runtime.js';
   import { setupRecentRepositoriesPreview } from './recent-repositories.preview-fixtures';
 
-  function setupPickerFixture(onRefresh: () => void) {
+  type Locale = (typeof locales)[number];
+
+  function setupPickerFixture(onRefresh: () => void, locale: Locale) {
     const restoreRepos = setupRecentRepositoriesPreview();
+    const originalGetLocale = getLocale;
+    overwriteGetLocale(() => locale);
     const originalBranches = appClient.git.getBranches;
     const originalStatus = appClient.git.branchStatus;
     const originalGithubBranches = appClient.integrations.githubBranches;
@@ -45,6 +50,7 @@
     });
     appClient.integrations.githubBranchesCached = async () => ({ cached: false, branches: [] });
     return () => {
+      overwriteGetLocale(originalGetLocale);
       appClient.git.getBranches = originalBranches;
       appClient.git.branchStatus = originalStatus;
       appClient.integrations.githubBranches = originalGithubBranches;
@@ -58,6 +64,7 @@
   interface Props {
     position?: 'top' | 'bottom' | 'stacked';
     scenario?: 'local' | 'clone' | 'long' | 'remote';
+    locale?: Locale;
   }
   export const preview = definePreview<Props>({
     id: 'initializer-pickers',
@@ -70,6 +77,7 @@
       clone: { props: { scenario: 'clone' } },
       long: { props: { scenario: 'long' } },
       remote: { props: { scenario: 'remote' } },
+      'remote-de': { props: { scenario: 'remote', locale: 'de' } },
     },
   });
 </script>
@@ -79,7 +87,7 @@
   import RepoAndBranchPicker from './RepoAndBranchPicker.svelte';
   import * as Tabs from '$lib/components/ui/tabs';
 
-  let { position = 'top', scenario = 'local' }: Props = $props();
+  let { position = 'top', scenario = 'local', locale = 'en' }: Props = $props();
   const initialScenario = untrack(() => scenario);
   let branch = $state(initialScenario === 'long' ? 'feature/a-long-selected-branch-name' : 'main');
   let repoPath = $state(
@@ -95,7 +103,12 @@
   let githubUrl = $state(initialScenario === 'clone' ? 'https://github.com/fixture-owner/app' : '');
   let skipIsolation = $state(false);
   let refreshes = $state(0);
-  onDestroy(setupPickerFixture(() => (refreshes += 1)));
+  onDestroy(
+    setupPickerFixture(
+      () => (refreshes += 1),
+      untrack(() => locale),
+    ),
+  );
 </script>
 
 <section

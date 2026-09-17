@@ -1408,6 +1408,7 @@
                           isDirectory={true}
                           side="top"
                           variant="sidebar"
+                          iconOnly
                         >
                           <span class="inline-flex items-center justify-center" data-files-open-in>
                             <Fa icon={faArrowUpRightFromSquare} class="size-4!" />

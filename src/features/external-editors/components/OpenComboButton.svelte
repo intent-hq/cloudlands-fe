@@ -79,6 +79,8 @@
     embedded?: boolean;
     /** Render a children trigger as inline sentence text. */
     inline?: boolean;
+    /** Render an icon-only children trigger as a fixed icon-sized transparent control. */
+    iconOnly?: boolean;
     children?: Snippet;
   }
 
@@ -96,6 +98,7 @@
     compact = false,
     embedded = false,
     inline = false,
+    iconOnly = false,
     children = undefined,
   }: Props = $props();
 
@@ -407,10 +410,10 @@
             type="button"
             onclick={actions.length > 1 ? undefined : handlePrimaryClick}
             {...actions.length > 1 ? props : {}}
-            variant={variant === 'sidebar' ? 'plain' : 'ghost'}
-            size={variant === 'sidebar' ? 'icon-sm' : undefined}
-            wrapContent={variant !== 'sidebar'}
-            class={variant === 'sidebar'
+            variant={iconOnly ? 'plain' : 'ghost'}
+            size={iconOnly ? 'icon-sm' : undefined}
+            wrapContent={!iconOnly}
+            class={iconOnly
               ? 'cursor-pointer text-muted-foreground hover:text-foreground focus-visible:text-foreground'
               : 'cursor-pointer'}
             title={primaryTitle}
