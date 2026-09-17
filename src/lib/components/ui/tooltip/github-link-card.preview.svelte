@@ -1,6 +1,7 @@
 <script lang="ts" module>
   import { definePreview } from '$lib/component-catalog/preview-definition';
   import { MockAppClient } from '$lib/client';
+  import { mockGitHubPullRequestQueued } from '$lib/client/mock/fixtures';
   import { clearGitHubLinkPreviewCache, type GitHubLinkPreviewClient } from './github-link-preview';
 
   export interface GitHubLinkCardPreviewProps {
@@ -65,12 +66,8 @@
       'pr-queued': scenario(
         'PR — queued',
         'Hourglass icon + Queued badge in the info tone for a PR in the merge queue.',
-        `${REPO_URL}/pull/45`,
-        prClient({
-          state: 'queued',
-          headRef: 'fix/queue-ejection-reason',
-          updatedAt: '2026-01-03T11:15:00.000Z',
-        }),
+        `${REPO_URL}/pull/${mockGitHubPullRequestQueued.number}`,
+        mock,
       ),
       'pr-draft': scenario(
         'PR — draft',
