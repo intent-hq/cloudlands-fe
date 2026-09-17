@@ -4,6 +4,17 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.161.5](https://github.com/intent-hq/cloudlands-fe/compare/v2.161.4...v2.161.5) (2026-09-17)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.68 ([#2548](https://github.com/intent-hq/cloudlands-fe/issues/2548)) ([6c8a265](https://github.com/intent-hq/cloudlands-fe/commit/6c8a2650eb876759855c9cc1236ff818a46b4523))
+* **hud:** disable background throttling for the HUD window ([#2544](https://github.com/intent-hq/cloudlands-fe/issues/2544)) ([29dfc01](https://github.com/intent-hq/cloudlands-fe/commit/29dfc01651d4f8f7d75f7210c84755d3818d0961))
+* **hud:** keep the header volume slider mounted across the button gap ([#2541](https://github.com/intent-hq/cloudlands-fe/issues/2541)) ([49a3286](https://github.com/intent-hq/cloudlands-fe/commit/49a328677a91572b218fde6efffe43075d052b24))
+* **notes:** settle keystrokes typed while a version restore awaits settle ([#2540](https://github.com/intent-hq/cloudlands-fe/issues/2540)) ([bcb0e9e](https://github.com/intent-hq/cloudlands-fe/commit/bcb0e9e1abfd594e11dec66b3b4897fcdb0d82e3))
+* retain tooltip content IDs for accessible descriptions ([#2534](https://github.com/intent-hq/cloudlands-fe/issues/2534)) ([51910e5](https://github.com/intent-hq/cloudlands-fe/commit/51910e5776ba8ddcb9ade39b688024e44f0622fd))
+
 ## [2.161.4](https://github.com/intent-hq/cloudlands-fe/compare/v2.161.3...v2.161.4) (2026-09-17)
 
 
