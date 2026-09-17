@@ -6,6 +6,19 @@
 import { vi, afterEach } from 'vitest';
 import * as path from 'path';
 import { tmpdir } from 'os';
+import { scrubHostNodeInjection } from './scrub-host-node-injection';
+
+// Children spawned by tests must not inherit host-level Node injection: on a
+// Datadog-instrumented host, `NODE_OPTIONS=--require dd-trace/init` wrote tracer
+// startup logs to every child's stderr and failed 17 `scripts/` CLI tests
+// asserting an exact stderr (cloudlands-fe#2547 verifier run). This runs per
+// worker, after vitest forked it, so the workers keep their own NODE_OPTIONS
+// (CI's job-level heap flag) and only the processes tests spawn start clean.
+// Hosts with Datadog host-level injection (`/etc/ld.so.preload` launcher)
+// re-inject NODE_OPTIONS into every fresh `node` regardless of the env it
+// starts from; this documented opt-out makes the launcher skip the children.
+scrubHostNodeInjection(process.env);
+process.env.DD_INSTRUMENT_SERVICE_WITH_APM = 'false';
 
 // Ensure tests use a temporary workspaces root
 process.env.WORKSPACES_BASE_DIR =
