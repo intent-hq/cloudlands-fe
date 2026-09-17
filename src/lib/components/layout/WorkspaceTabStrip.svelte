@@ -308,7 +308,8 @@
     const trackingDuration = workspaceTabMotionDuration;
     if (activeTabBoundsPollers.size === 0) return;
     layoutTracking = true;
-    reportActiveTabTracking();
+    // Effect bodies must not flushSync: a nested flush nulls the outer batch.
+    reportActiveTabTracking({ sync: false });
     let startedAt: number | null = null;
     let frame: number | null = null;
     let cancelled = false;
@@ -335,7 +336,7 @@
   });
   $effect(() => {
     dragTracking = draggedWorkspaceId !== null;
-    reportActiveTabTracking();
+    reportActiveTabTracking({ sync: false });
     return () => {
       dragTracking = false;
       reportActiveTabTracking({ sync: false });

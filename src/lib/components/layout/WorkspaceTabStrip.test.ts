@@ -926,7 +926,7 @@ describe('WorkspaceTabStrip', () => {
     });
   });
 
-  describe('parent effects flushed from teardown paths', () => {
+  describe('parent effects flushed from tracking effects and teardown paths', () => {
     let defaultMatchMedia: (query: string) => MediaQueryList;
     let getAnimations: typeof Element.prototype.getAnimations;
 
@@ -946,17 +946,22 @@ describe('WorkspaceTabStrip', () => {
       Element.prototype.getAnimations = getAnimations;
     });
 
-    function renderHarness(siblingGate: 'bounds-cleared' | 'tracking-idle') {
+    function renderHarness(
+      siblingGate: 'bounds-cleared' | 'tracking-idle',
+      measureInsetWhileTracking?: () => number,
+    ) {
       const errors: unknown[] = [];
       const onProbeMounted = vi.fn();
       const view = render(WorkspaceTabStripTeardownHarness, {
         props: {
           activeWorkspaceId: 'ws-1',
           siblingGate,
+          measureInsetWhileTracking,
           onError: (error) => errors.push(error),
           onProbeMounted,
         },
       });
+      expect(errors).toEqual([]);
       const strip = tabScroller();
       strip.getBoundingClientRect = () => makeRect(0, 20, 500);
       setTabGeometry();
@@ -1034,6 +1039,48 @@ describe('WorkspaceTabStrip', () => {
       expect(container.querySelector('[data-teardown-effect-probe]')).toBeNull();
 
       frames.at(-1)!(10_000);
+      await tick();
+
+      expectSiblingMounted(container, errors);
+      expect(container.querySelector('[data-active-tab-tracking="false"]')).toBeTruthy();
+    });
+
+    it('keeps the batch alive when a later parent effect writes state the tracking effect reads', async () => {
+      const frames: FrameRequestCallback[] = [];
+      vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+        frames.push(callback);
+        return frames.length;
+      });
+      const measureInsetWhileTracking = vi.fn(() => 4);
+      // The mount batch already runs the tracking effect; renderHarness asserts
+      // the boundary caught nothing there.
+      const { component, container, errors, onProbeMounted } = renderHarness(
+        'tracking-idle',
+        measureInsetWhileTracking,
+      );
+      expect(measureInsetWhileTracking).toHaveBeenCalled();
+      expect(container.querySelector('[data-active-tab-tracking="true"]')).toBeTruthy();
+      flushSync(() => component.update({ showSibling: true }));
+      expect(onProbeMounted).not.toHaveBeenCalled();
+
+      frames.at(-1)!(10_000);
+      await tick();
+      expectSiblingMounted(container, errors);
+      expect(container.querySelector('[data-active-tab-tracking="false"]')).toBeTruthy();
+
+      try {
+        flushSync(() => component.update({ horizontalPositionTrackingKey: 1 }));
+      } catch (error) {
+        errors.push(error);
+      }
+      await tick();
+
+      expect(errors).toEqual([]);
+      expect(container.querySelector('[data-teardown-boundary-failed]')).toBeNull();
+      expect(container.querySelector('[data-active-tab-tracking="true"]')).toBeTruthy();
+      expect(container.querySelector('[data-teardown-effect-probe]')).toBeNull();
+
+      frames.at(-1)!(20_000);
       await tick();
 
       expectSiblingMounted(container, errors);
