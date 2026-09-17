@@ -318,6 +318,7 @@ describe('ChatPanel skeleton branch vs WorkspaceSetupCard', () => {
       'ResizeObserver',
       class {
         observe() {}
+        unobserve() {}
         disconnect() {}
       },
     );

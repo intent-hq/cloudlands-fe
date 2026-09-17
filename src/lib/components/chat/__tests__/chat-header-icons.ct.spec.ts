@@ -73,5 +73,4 @@ for (const { width, theme, atBottom } of [
     await expect(page.getByTestId('browser-tab-close')).toBeVisible();
     await page.keyboard.press('Escape');
   });
-
 }
