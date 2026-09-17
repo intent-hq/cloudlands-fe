@@ -1893,7 +1893,10 @@
   <!-- Compact header bar (breadcrumb style) -->
   {#if activeTab}
     {@const activeTabPath = getTabPath(activeTab)}
-    {@const activeTabTitle = getTabTitle(activeTab)}
+    {@const activeTabTitle =
+      activeTab.type === 'file' && activeTab.filePath
+        ? activeTab.filePath.split(/[/\\]/).pop() || getTabTitle(activeTab)
+        : getTabTitle(activeTab)}
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
       class={cn(
@@ -2013,7 +2016,10 @@
             {/if}
             <!-- Path (for file-based tabs) -->
             {#if activeTabPath}
-              {@const lastSlash = activeTabPath.lastIndexOf('/')}
+              {@const lastSlash = Math.max(
+                activeTabPath.lastIndexOf('/'),
+                activeTabPath.lastIndexOf('\\'),
+              )}
               {@const dirPath = lastSlash > 0 ? activeTabPath.substring(0, lastSlash) : null}
               {#if dirPath}
                 <span class="text-xs truncate {isFocused ? 'text-subtle' : 'text-ghost'}">
