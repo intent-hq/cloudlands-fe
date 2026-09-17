@@ -55,6 +55,11 @@
   const hosted$ = selectHostedWorkspaces();
   const isCollaboratorOnly$ = selectIsCollaboratorOnlyClient();
 
+  /** The host projects an untitled workspace as `title: ""`; name it as the workspace cards do. */
+  function workspaceLabel(workspace: Pick<GuestWorkspaceRef, 'title'>): string {
+    return workspace.title.trim() || m.workspace_links_untitled_label();
+  }
+
   /** What the *Leave host* confirm dialog shows — never what a retry acts on. */
   let leaveTarget = $state<GuestSessionRecord | null>(null);
   let leaveDialogOpen = $state(false);
@@ -279,7 +284,9 @@
         >
           <div class="min-w-0 type-body text-danger">
             <p>
-              {m.settings_guestSessions_removeAll_error({ workspace: report.workspace.title })}
+              {m.settings_guestSessions_removeAll_error({
+                workspace: workspaceLabel(report.workspace),
+              })}
             </p>
             {#if report.failures.length > 0}
               <ul class="mt-1 space-y-1">
@@ -379,7 +386,9 @@
                     class="flex items-center justify-between gap-3 py-2"
                     data-workspace-id={workspace.id}
                   >
-                    <p class="min-w-0 truncate type-body text-foreground">{workspace.title}</p>
+                    <p class="min-w-0 truncate type-body text-foreground">
+                      {workspaceLabel(workspace)}
+                    </p>
                     <Button
                       variant="ghost"
                       size="sm"
@@ -451,7 +460,9 @@
       data-workspace-id={failed.workspace.id}
     >
       <p class="type-body text-danger">
-        {m.settings_guestSessions_leaveWorkspace_error({ workspace: failed.workspace.title })}
+        {m.settings_guestSessions_leaveWorkspace_error({
+          workspace: workspaceLabel(failed.workspace),
+        })}
       </p>
       <Button
         variant="ghost"
@@ -479,7 +490,7 @@
   bind:open={leaveWorkspaceDialogOpen}
   title={m.settings_guestSessions_leaveWorkspaceConfirm_title()}
   description={m.settings_guestSessions_leaveWorkspaceConfirm_description({
-    workspace: leaveWorkspaceTarget?.workspace.title ?? '',
+    workspace: leaveWorkspaceTarget ? workspaceLabel(leaveWorkspaceTarget.workspace) : '',
     name: leaveWorkspaceTarget ? formatGuestSessionLabel(leaveWorkspaceTarget.session) : '',
   })}
   confirmText={m.settings_guestSessions_leaveWorkspace_label()}
