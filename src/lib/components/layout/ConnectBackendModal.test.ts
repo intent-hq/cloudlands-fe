@@ -271,10 +271,35 @@ describe('ConnectBackendModal', () => {
     await fireEvent.keyDown(picker, { key: 'Escape' });
     await vi.waitFor(() => expect(picker.getAttribute('aria-expanded')).toBe('false'));
     expect(screen.getByRole('dialog')).toBeTruthy();
+    expect(document.activeElement).toBe(picker);
     await fireEvent.keyDown(picker, { key: 'Escape' });
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(mocks.captureFingerprintRequested).not.toHaveBeenCalled();
     expect(mocks.addConnectionRequested).not.toHaveBeenCalled();
+  });
+
+  it('preserves a pointer-selected icon after returning to details and stores its value', async () => {
+    const ConnectBackendModal = (await import('./ConnectBackendModal.svelte')).default;
+    render(ConnectBackendModal, { props: { open: true } });
+
+    const picker = screen.getByRole('combobox');
+    picker.focus();
+    await fireEvent.keyDown(picker, { key: 'Enter' });
+    await fireEvent.pointerUp(screen.getByRole('option', { name: 'Laptop', exact: true }), {
+      pointerType: 'mouse',
+    });
+    await fillDetails();
+    await fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    await screen.findByText('AA:BB:CC:DD');
+    await fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    expect(screen.getByRole('combobox').getAttribute('aria-label')).toContain('Laptop');
+    await fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    await screen.findByText('AA:BB:CC:DD');
+    await fireEvent.click(screen.getByRole('button', { name: 'Confirm & connect' }));
+
+    expect(mocks.addConnectionRequested).toHaveBeenCalledWith(
+      expect.objectContaining({ deviceIcon: 'laptop' }),
+    );
   });
 
   it('opens the backend after main re-pairs an active connection', async () => {

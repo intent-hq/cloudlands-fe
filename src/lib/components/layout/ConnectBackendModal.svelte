@@ -485,7 +485,12 @@
               </div>
             </fieldset>
 
-            <DeviceIconPicker record={{ deviceIcon }} bind:value={deviceIcon} portal={true} />
+            <DeviceIconPicker
+              record={{ deviceIcon }}
+              bind:value={deviceIcon}
+              portal={true}
+              contentClass="z-[calc(var(--layer-modal)+1)]"
+            />
           </div>
 
           <div class="space-y-1">

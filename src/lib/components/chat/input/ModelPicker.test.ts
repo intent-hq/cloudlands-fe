@@ -578,6 +578,7 @@ describe('ModelPicker combined reasoning mode', () => {
     { name: 'regular', props: {} },
     { name: 'xs', props: { size: 'xs' } },
     { name: 'locked', props: { isLocked: true } },
+    { name: 'locked xs', props: { isLocked: true, size: 'xs' } },
   ];
 
   it.each(triggerBranches)(
@@ -589,7 +590,7 @@ describe('ModelPicker combined reasoning mode', () => {
         label: string;
         gaugeValue: number | null;
       }> = [
-        { effort: null, label: 'Auto', gaugeValue: null },
+        { effort: null, label: 'Auto', gaugeValue: -1 },
         { effort: 'none', label: 'Off', gaugeValue: null },
         { effort: 'low', label: 'Low', gaugeValue: 1 },
         { effort: 'medium', label: 'Medium', gaugeValue: 2 },
@@ -621,14 +622,13 @@ describe('ModelPicker combined reasoning mode', () => {
         } else {
           expect(gauge?.dataset.gaugeValue).toBe(String(gaugeValue));
           expect(gauge?.dataset.gaugeSize).toBe('compact');
+          expect(gauge?.dataset.gaugeCentered).toBe(String(effort === null));
+          expect(gauge?.getAttribute('aria-hidden')).toBe('true');
         }
 
-        if (effort === null) {
-          expect(screen.getByTestId('model-reasoning-strength').textContent).toContain('Auto');
-        } else {
-          expect(screen.queryByTestId('model-reasoning-strength')).toBeNull();
-          expect(trigger.textContent).not.toContain(label);
-        }
+        expect(screen.queryByTestId('model-reasoning-strength')).toBeNull();
+        expect(trigger.textContent).not.toContain(label);
+        expect(applyReasoningEffortMock).not.toHaveBeenCalled();
 
         cleanup();
         document.body.innerHTML = '';
@@ -868,17 +868,82 @@ describe('ModelPicker combined reasoning mode', () => {
     });
 
     const trigger = screen.getByRole('button');
-    await waitFor(() => expect(trigger.textContent).toContain('Auto'));
+    await waitFor(() => expect(screen.getByLabelText('GPT-5.6-Sol · Auto')).toBeTruthy());
+    expect(screen.getByTestId('model-reasoning-effort-gauge').dataset.gaugeCentered).toBe('true');
 
     await fireEvent.click(trigger);
     await waitFor(() => expect((effortTrigger() as HTMLButtonElement).disabled).toBe(false));
     expect(screen.queryByTestId('effort-gauge')).toBeNull();
-    expect(trigger.textContent).toContain('Auto');
+    expect(trigger.textContent).not.toContain('Auto');
     expect(trigger.textContent).not.toContain('Default');
     expect(effortTrigger().textContent?.trim()).toBe('Auto');
     const effortListbox = await openEffortSelect();
     expect(within(effortListbox).getByRole('option', { name: 'Auto' })).toBeTruthy();
     expect(onReasoningChange).not.toHaveBeenCalled();
+  });
+
+  it('keeps Auto null through effort picks and unsupported-model transitions', async () => {
+    const levels = ['none', 'low', 'medium', 'high'];
+    const models = [
+      { value: 'codex:gpt-5.6-sol', label: 'GPT-5.6-Sol', effortLevels: levels },
+      { value: 'codex:fast', label: 'Fast model' },
+    ];
+    vi.mocked(getModelsForProviderForLoadingState).mockResolvedValue({ models });
+    const onReasoningChange = vi.fn<(effort: string | null) => boolean>(() => true);
+    const onModelChange = vi.fn();
+    const view = render(ModelPicker, {
+      props: {
+        selectedModel: 'codex:gpt-5.6-sol',
+        showReasoning: true,
+        reasoningEffort: null,
+        onReasoningChange,
+        onModelChange,
+        portal: false,
+      },
+    });
+    const trigger = await screen.findByRole('button', { name: 'GPT-5.6-Sol · Auto' });
+    await fireEvent.click(trigger);
+    await screen.findByRole('option', { name: 'Fast model' });
+    await selectEffort(await openEffortSelect(), 'Auto');
+    expect(onReasoningChange).not.toHaveBeenCalled();
+
+    for (const [label, value] of [
+      ['High', 'high'],
+      ['Auto', null],
+      ['Off', 'none'],
+      ['Auto', null],
+    ] as const) {
+      await selectEffort(await openEffortSelect(), label);
+      await waitFor(() => expect(onReasoningChange).toHaveBeenLastCalledWith(value));
+      await view.rerender({ reasoningEffort: onReasoningChange.mock.calls.at(-1)![0] });
+      await waitFor(() => expect(screen.getByLabelText(`GPT-5.6-Sol · ${label}`)).toBeTruthy());
+      const gauge = screen.queryByTestId('model-reasoning-effort-gauge');
+      if (value === 'none') expect(gauge).toBeNull();
+      else expect(gauge?.dataset.gaugeCentered).toBe(String(value === null));
+    }
+    expect(onReasoningChange.mock.calls).toEqual([['high'], [null], ['none'], [null]]);
+    expect(onModelChange).not.toHaveBeenCalled();
+
+    await fireEvent.click(screen.getByRole('option', { name: 'Fast model' }));
+    await waitFor(() =>
+      expect(onModelChange).toHaveBeenCalledExactlyOnceWith('codex:fast', {
+        providerId: 'codex',
+        modelId: 'fast',
+      }),
+    );
+    expect(screen.queryByTestId('model-reasoning-effort-gauge')).toBeNull();
+    await fireEvent.click(trigger);
+    expect(screen.queryByTestId('model-reasoning-section')).toBeNull();
+    await fireEvent.click(screen.getByRole('option', { name: /GPT-5\.6-Sol/ }));
+    await waitFor(() =>
+      expect(screen.getByTestId('model-reasoning-effort-gauge').dataset.gaugeCentered).toBe('true'),
+    );
+    expect(onModelChange.mock.calls).toEqual([
+      ['codex:fast', { providerId: 'codex', modelId: 'fast' }],
+      ['codex:gpt-5.6-sol', { providerId: 'codex', modelId: 'gpt-5.6-sol' }],
+    ]);
+    expect(onReasoningChange.mock.calls).toEqual([['high'], [null], ['none'], [null]]);
+    expect(applyReasoningEffortMock).not.toHaveBeenCalled();
   });
 
   it('focuses search through the exported keyboard-shortcut entry point and resets on reopen', async () => {
@@ -1276,8 +1341,9 @@ describe('ModelPicker combined reasoning mode', () => {
 
     const trigger = screen.getByRole('button');
     expect(trigger.textContent).toContain('GPT-5.6-Sol');
-    await waitFor(() => expect(trigger.textContent).toContain('Auto'));
-    expect(screen.getByLabelText('GPT-5.6-Sol · Auto')).toBeTruthy();
+    await waitFor(() => expect(screen.getByLabelText('GPT-5.6-Sol · Auto')).toBeTruthy());
+    expect(trigger.textContent).not.toContain('Auto');
+    expect(screen.getByTestId('model-reasoning-effort-gauge').dataset.gaugeCentered).toBe('true');
     expect(trigger.textContent).not.toContain('Default');
     expect(screen.queryByTestId('effort-gauge')).toBeNull();
 

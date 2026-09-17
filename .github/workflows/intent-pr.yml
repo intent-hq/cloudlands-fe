@@ -1219,6 +1219,13 @@ jobs:
   # 'skipped' for the whole matrix, same as before). test-electron is
   # deliberately absent from needs: it is advisory until it meets the
   # promotion criterion in its job comment.
+  # route is a DIRECT gate input, checked first: a route failure skips every
+  # heavy job, and when fast_path == 'true' those skips are exactly what the
+  # fast-path acceptance above expects — so without this check a broken
+  # probe on a release-shaped run was indistinguishable from a legitimate
+  # fast-path skip and passed the gate (cloudlands-fe#2573 review). The
+  # check is unconditional: route's only skip cause is a fork PR (its `if:`
+  # is merge_group-or-same-repo), where the gate must be red anyway.
   gate:
     name: CI Gate
     # Seconds-long job: pinned to ubuntu-latest (see pr-title).
@@ -1236,6 +1243,7 @@ jobs:
     if: always()
     needs:
       [
+        route,
         release-fast-path,
         pr-title,
         conflict-markers,
@@ -1251,6 +1259,14 @@ jobs:
           FAST_PATH: ${{ needs.release-fast-path.outputs.fast_path }}
           CT_REQUIRED: ${{ needs.release-fast-path.outputs.ct_required }}
         run: |
+          # route must have succeeded on every run (see the gate comment): a
+          # route failure skips the heavy jobs, and a fast-path skip
+          # acceptance must never stand in for that. Fork PRs skip route and
+          # fail here — still red, as required.
+          if [ "${{ needs.route.result }}" != "success" ]; then
+            echo "route result '${{ needs.route.result }}' not acceptable — the heavy jobs cannot have run (fast_path='$FAST_PATH')"
+            exit 1
+          fi
           # pr-title / conflict-markers are PR-metadata checks that only run
           # on pull_request; on merge_group they skip (already validated on
           # the PR) and the gate accepts that.
