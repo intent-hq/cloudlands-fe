@@ -10,6 +10,13 @@ app.setPath('sessionData', profile);
 app.commandLine.appendSwitch('disable-background-timer-throttling');
 globalThis.lifetimeEvidence = { registrations: [], guests: [] };
 globalThis.lifetimeCdp = require(cdpBundle).embeddedBrowserCdp;
+globalThis.lifetimeNavigate = (tabId, url) =>
+  require(cdpBundle).executeActions(
+    { actions: [{ action: 'navigate', tabId, url }] },
+    undefined,
+    undefined,
+    tabId[0],
+  );
 if (new URL(url).searchParams.get('owned') === 'true') {
   for (const tab of ['A-1', 'A-2', 'B-1', 'B-2']) {
     globalThis.lifetimeCdp.claimTab(tab, 'fixture-agent', { width: 800, height: 600 });

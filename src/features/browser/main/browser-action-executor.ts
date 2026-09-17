@@ -423,7 +423,13 @@ async function ensureCaptureTabMounted(
 
   let listed: Awaited<ReturnType<typeof embeddedBrowserCdp.listAllTabs>>;
   try {
-    listed = await embeddedBrowserCdp.listAllTabs(workspaceId);
+    // Listing alone only hydrates layouts. An explicit navigation also asks
+    // the host to replace a dead guest; passive listing/capture must not
+    // repeatedly reopen a page that closed itself.
+    listed =
+      actionName === 'navigate'
+        ? await embeddedBrowserCdp.listAllTabs(workspaceId, tabId)
+        : await embeddedBrowserCdp.listAllTabs(workspaceId);
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
     const notVisible = getWindowIdForWorkspace(workspaceId) === undefined;

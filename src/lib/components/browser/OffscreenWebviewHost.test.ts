@@ -7,33 +7,35 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/svelte';
 
-const { layoutsStore, ownClientIdStore, mountedLeasesStore, dispatchMock } = vi.hoisted(() => {
-  // Minimal svelte-store-contract writable (vi.hoisted runs before imports).
-  function miniWritable<T>(initial: T) {
-    let value = initial;
-    const subscribers = new Set<(v: T) => void>();
+const { layoutsStore, ownClientIdStore, mountedLeasesStore, recoveryStore, dispatchMock } =
+  vi.hoisted(() => {
+    // Minimal svelte-store-contract writable (vi.hoisted runs before imports).
+    function miniWritable<T>(initial: T) {
+      let value = initial;
+      const subscribers = new Set<(v: T) => void>();
+      return {
+        subscribe(run: (v: T) => void) {
+          subscribers.add(run);
+          run(value);
+          return () => subscribers.delete(run);
+        },
+        set(next: T) {
+          value = next;
+          for (const run of [...subscribers]) run(value);
+        },
+        get() {
+          return value;
+        },
+      };
+    }
     return {
-      subscribe(run: (v: T) => void) {
-        subscribers.add(run);
-        run(value);
-        return () => subscribers.delete(run);
-      },
-      set(next: T) {
-        value = next;
-        for (const run of [...subscribers]) run(value);
-      },
-      get() {
-        return value;
-      },
+      layoutsStore: miniWritable<Record<string, unknown>>({}),
+      ownClientIdStore: miniWritable<string | null>('cli-own'),
+      mountedLeasesStore: miniWritable<Record<string, Record<string, true>>>({}),
+      recoveryStore: miniWritable<Record<string, string>>({}),
+      dispatchMock: vi.fn(),
     };
-  }
-  return {
-    layoutsStore: miniWritable<Record<string, unknown>>({}),
-    ownClientIdStore: miniWritable<string | null>('cli-own'),
-    mountedLeasesStore: miniWritable<Record<string, Record<string, true>>>({}),
-    dispatchMock: vi.fn(),
-  };
-});
+  });
 
 vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
   selectPanelLayoutWorkspaces: () => layoutsStore,
@@ -45,6 +47,7 @@ vi.mock('$store/renderer/slices/browser-clients/browser-clients-selectors', () =
 
 vi.mock('$store/renderer/slices/tab-state/tab-state-selectors', () => ({
   selectMountedBrowserTabLeases: () => mountedLeasesStore,
+  selectBrowserTabRecoveryRequests: () => recoveryStore,
 }));
 
 vi.mock('$store/renderer/slices/panel-layout/panel-layout-slice', () => ({
@@ -97,7 +100,17 @@ describe('OffscreenWebviewHost', () => {
     layoutsStore.set({});
     ownClientIdStore.set('cli-own');
     mountedLeasesStore.set({});
+    recoveryStore.set({});
     dispatchMock.mockClear();
+    dispatchMock.mockImplementation((action) => {
+      const initial = tabStateReducer(undefined, { type: '@@INIT' });
+      const next = tabStateReducer(
+        { ...initial, browserTabRecoveryRequests: recoveryStore.get() },
+        action,
+      );
+      if (next.browserTabRecoveryRequests !== recoveryStore.get())
+        recoveryStore.set(next.browserTabRecoveryRequests);
+    });
     invokeMock.mockClear();
     (window as unknown as { electronAPI: { invoke: typeof invokeMock } }).electronAPI = {
       invoke: invokeMock,
@@ -120,6 +133,90 @@ describe('OffscreenWebviewHost', () => {
     await waitFor(() => expect(mountedTabIds(container)).toEqual(['tab-bg']));
     const webview = container.querySelector('[data-offscreen-webview-tab="tab-bg"]');
     expect(webview?.getAttribute('src')).toBe('https://example.test/tab-bg');
+  });
+
+  it('replaces a dead guest only on request, registers the replacement and ignores its neutral URL', async () => {
+    layoutsStore.set({ 'ws-bg': browserLayout([{ id: 'tab-bg' }]) });
+    const { container } = render(OffscreenWebviewHost, { excludedWorkspaceIds: new Set() });
+    await waitFor(() => expect(mountedTabIds(container)).toEqual(['tab-bg']));
+    const old = container.querySelector('webview')!;
+    Object.assign(old, {
+      getWebContentsId: () => 10,
+      getURL: () => {
+        throw new Error('Invalid guestInstanceId: 10');
+      },
+    });
+    await fireEvent(old, new Event('destroyed'));
+    expect(container.querySelector('webview')).toBe(old);
+    recoveryStore.set({ 'tab-bg': 'req-1' });
+    await waitFor(() => expect(container.querySelector('webview')).not.toBe(old));
+    const replacement = container.querySelector('webview')!;
+    const loadURL = vi.fn().mockResolvedValue(undefined);
+    Object.assign(replacement, {
+      getWebContentsId: () => 11,
+      getURL: () => 'about:blank',
+      loadURL,
+    });
+    await fireEvent(replacement, Object.assign(new Event('did-navigate'), { url: 'about:blank' }));
+    await fireEvent(replacement, new Event('dom-ready'));
+    expect(invokeMock).toHaveBeenCalledWith('browser:register-tab', {
+      tabId: 'tab-bg',
+      webContentsId: 11,
+    });
+    expect(loadURL).not.toHaveBeenCalled();
+    expect(
+      dispatchMock.mock.calls.filter(
+        ([action]) => action.type === 'panelLayout/updateTabBrowserUrl',
+      ),
+    ).toEqual([]);
+    await fireEvent(
+      replacement,
+      Object.assign(new Event('did-navigate'), { url: 'https://example.test/recovered' }),
+    );
+    expect(dispatchMock).toHaveBeenCalledWith({
+      type: 'panelLayout/updateTabBrowserUrl',
+      payload: ['ws-bg', 'tab-bg', 'https://example.test/recovered'],
+    });
+    expect(recoveryStore.get()).toEqual({});
+  });
+
+  it('does not replace a live or still-attaching guest on a recovery request', async () => {
+    layoutsStore.set({ 'ws-bg': browserLayout([{ id: 'tab-bg' }]) });
+    const { container } = render(OffscreenWebviewHost, { excludedWorkspaceIds: new Set() });
+    await waitFor(() => expect(mountedTabIds(container)).toEqual(['tab-bg']));
+    const webview = container.querySelector('webview')!;
+    recoveryStore.set({ 'tab-bg': 'attaching' });
+    await waitFor(() => expect(recoveryStore.get()).toEqual({}));
+    expect(container.querySelector('webview')).toBe(webview);
+    Object.assign(webview, {
+      getWebContentsId: () => 12,
+      getURL: () => 'https://example.test/tab-bg',
+    });
+    recoveryStore.set({ 'tab-bg': 'live' });
+    await waitFor(() => expect(recoveryStore.get()).toEqual({}));
+    expect(container.querySelector('webview')).toBe(webview);
+  });
+
+  it('discards recovery when the tab is removed before the request is rendered', async () => {
+    layoutsStore.set({ 'ws-bg': browserLayout([{ id: 'tab-bg' }]) });
+    const { container } = render(OffscreenWebviewHost, { excludedWorkspaceIds: new Set() });
+    await waitFor(() => expect(mountedTabIds(container)).toEqual(['tab-bg']));
+    recoveryStore.set({ 'tab-bg': 'req-removed' });
+    layoutsStore.set({});
+    await waitFor(() => expect(mountedTabIds(container)).toEqual([]));
+    await waitFor(() => expect(recoveryStore.get()).toEqual({}));
+    expect(invokeMock).not.toHaveBeenCalled();
+  });
+
+  it('discards an unmountable recovery without bypassing the existing cache cap', async () => {
+    layoutsStore.set({ 'ws-bg': browserLayout([{ id: 'tab-bg' }]) });
+    const { container } = render(OffscreenWebviewHost, {
+      excludedWorkspaceIds: new Set(),
+      maxWebviews: 0,
+    });
+    recoveryStore.set({ 'tab-bg': 'req-capped' });
+    await waitFor(() => expect(recoveryStore.get()).toEqual({}));
+    expect(mountedTabIds(container)).toEqual([]);
   });
 
   it('mounts only tabs hosted by this client; mirrors mount once the host moves here', async () => {
