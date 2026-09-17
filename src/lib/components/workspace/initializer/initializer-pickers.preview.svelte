@@ -38,7 +38,7 @@
       value: (action: Parameters<typeof originalDispatch>[0]) => {
         const result = originalDispatch(action);
         if (action.type === loadGitBranches.type) {
-          const [repoPath] = action.payload;
+          const [repoPath] = action.payload as ReturnType<typeof loadGitBranches>['payload'];
           onRefresh();
           originalDispatch(
             setGitBranches(repoPath, {
@@ -52,11 +52,11 @@
             }),
           );
         } else if (action.type === readGitBranchStatusRequested.type) {
-          const [repoPath, branchName] = action.payload;
+          const [repoPath, branchName] = action.payload as ReturnType<
+            typeof readGitBranchStatusRequested
+          >['payload'];
           originalDispatch(
             setGitBranchStatus(repoPath, branchName, {
-              branch: branchName,
-              isCurrentBranch: branchName === 'main',
               ahead: 0,
               behind: 0,
               hasUncommittedChanges: true,

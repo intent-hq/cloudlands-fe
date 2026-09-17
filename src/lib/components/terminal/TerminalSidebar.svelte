@@ -936,7 +936,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
 
         <!-- Script List -->
         {#if hasScripts}
-          <ListContainer spacing="compact" class="py-0.5 px-1.5">
+          <ListContainer spacing="compact" class="py-1 px-1.5">
             {#each visibleScripts as script (script.id)}
               <!-- svelte-ignore a11y_no_static_element_interactions -->
               <div

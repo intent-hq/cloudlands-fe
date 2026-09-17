@@ -351,7 +351,6 @@ export function createChatDraftManager(options: ChatDraftManagerOptions): ChatDr
       write(workspaceId, agentId, currentValue, persistedAttachments)
         .then(() => {
           if (operationGeneration !== saveOperationGeneration) return;
-          pendingSave = null;
           if (!(options.active?.() ?? true)) return;
           // Only track dirty state if this pair is still the current one.
           if (restoreKey === saveKey) {
@@ -366,7 +365,6 @@ export function createChatDraftManager(options: ChatDraftManagerOptions): ChatDr
         })
         .catch((err) => {
           if (operationGeneration !== saveOperationGeneration) return;
-          pendingSave = null;
           if (!(options.active?.() ?? true)) return;
           // The synchronous cache write above advertised text the daemon
           // never accepted — roll it back to the last persisted state so a
