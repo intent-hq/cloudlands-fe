@@ -1,3 +1,5 @@
+// @vitest-environment node
+// Importing vitest.config.ts pulls in vite/esbuild, which refuses jsdom's TextEncoder.
 import { execFileSync, spawnSync } from 'node:child_process';
 import {
   copyFileSync,
@@ -7,6 +9,7 @@ import {
   readdirSync,
   readFileSync,
   rmSync,
+  statSync,
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
@@ -16,13 +19,17 @@ import { dirname, join, resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   PARAGLIDE_INPUTS_HASH_FILE,
+  PARAGLIDE_IS_SERVER,
+  PARAGLIDE_STALE_MESSAGE,
   canReuseGeneratedParaglide,
   compileWithInputsHash,
   ensureGeneratedParaglide,
+  ensureRepoParaglide,
   generateParaglide,
   paraglideLockPath,
   publishOrder,
 } from '../../scripts/paraglide-inputs-hash.mjs';
+import { generatedParaglidePlugin } from '../../vitest.config';
 
 function readWsUrlDefine(mode: string, wsUrl: string): string {
   const configUrl = pathToFileURL(resolve('vite.config.mjs')).href;
@@ -50,7 +57,16 @@ function readWsUrlDefine(mode: string, wsUrl: string): string {
  */
 type FixturePaths = { projectDir: string; messagesDir: string; outdir: string };
 
-function createParaglideFixtureRoot(): { root: string; paths: FixturePaths } {
+/**
+ * `realProject` writes an inlang project the real `@inlang/paraglide-js`
+ * compiler accepts (message-format plugin resolved through the symlinked
+ * node_modules) and no placeholder outputs; the default is a shape-only
+ * project for tests that inject a fake compiler.
+ */
+function createParaglideFixtureRoot({ realProject = false } = {}): {
+  root: string;
+  paths: FixturePaths;
+} {
   const root = mkdtempSync(join(tmpdir(), 'vite-paraglide-fixture-'));
   for (const shared of ['node_modules', 'scripts', 'package.json']) {
     symlinkSync(resolve(shared), join(root, shared));
@@ -65,33 +81,41 @@ function createParaglideFixtureRoot(): { root: string; paths: FixturePaths } {
   for (const dir of Object.values(paths)) mkdirSync(dir, { recursive: true });
   writeFileSync(
     join(paths.projectDir, 'settings.json'),
-    JSON.stringify({ baseLocale: 'en', locales: ['en', 'ko'] }),
+    JSON.stringify({
+      baseLocale: 'en',
+      locales: ['en', 'ko'],
+      ...(realProject
+        ? {
+            modules: ['./node_modules/@inlang/plugin-message-format/dist/index.js'],
+            'plugin.inlang.messageFormat': { pathPattern: './messages/{locale}.json' },
+          }
+        : {}),
+    }),
   );
   writeFileSync(join(paths.messagesDir, 'en.json'), JSON.stringify({ hello: 'Hello' }));
   writeFileSync(join(paths.messagesDir, 'ko.json'), JSON.stringify({ hello: '안녕하세요' }));
-  writeFileSync(join(paths.outdir, 'messages.js'), 'export const m = {};\n');
-  writeFileSync(join(paths.outdir, 'runtime.js'), 'export const baseLocale = "en";\n');
+  if (!realProject) {
+    writeFileSync(join(paths.outdir, 'messages.js'), 'export const m = {};\n');
+    writeFileSync(join(paths.outdir, 'runtime.js'), 'export const baseLocale = "en";\n');
+  }
   return { root, paths };
 }
 
 function readPluginNames({
   uiPreview,
-  canReuse,
   mode = 'development',
+  command = 'serve',
   configDir = resolve('.'),
 }: {
   uiPreview: boolean;
-  canReuse?: boolean;
   mode?: string;
+  command?: string;
   configDir?: string;
 }): string[] {
   const configUrl = pathToFileURL(join(configDir, 'vite.config.mjs')).href;
   const script = `
     import createViteConfig from ${JSON.stringify(configUrl)};
-    const config = createViteConfig(
-      { command: 'serve', mode: ${JSON.stringify(mode)} },
-      ${canReuse === undefined ? '{}' : `{ canReuseGeneratedParaglide: () => ${JSON.stringify(canReuse)} }`},
-    );
+    const config = createViteConfig({ command: ${JSON.stringify(command)}, mode: ${JSON.stringify(mode)} });
     process.stdout.write(JSON.stringify(config.plugins.map((plugin) => plugin.name)));
   `;
   const output = execFileSync(process.execPath, ['--input-type=module', '-e', script], {
@@ -103,6 +127,77 @@ function readPluginNames({
     },
   });
   return JSON.parse(output);
+}
+
+type BuildStartRun = {
+  ensureCalls: unknown[];
+  watched: string[];
+  error: string | null;
+};
+
+/**
+ * Runs the Paraglide plugin's `buildStart` from the real vite.config.mjs in a
+ * child process. `ensureResult` injects a recording stand-in for the locked
+ * ensure; omitted, the plugin runs the real `ensureRepoParaglide` against the
+ * project at `configDir`.
+ */
+function runParaglideBuildStart({
+  configDir = resolve('.'),
+  ensureResult,
+  times = 1,
+}: {
+  configDir?: string;
+  ensureResult?: boolean;
+  times?: number;
+}): BuildStartRun {
+  const configUrl = pathToFileURL(join(configDir, 'vite.config.mjs')).href;
+  const script = `
+    import createViteConfig from ${JSON.stringify(configUrl)};
+    const ensureCalls = [];
+    const overrides = ${
+      ensureResult === undefined
+        ? '{}'
+        : `{ ensureRepoParaglide: async (options) => { ensureCalls.push(options); return ${JSON.stringify(ensureResult)}; } }`
+    };
+    const config = createViteConfig({ command: 'serve', mode: 'development' }, overrides);
+    const plugin = config.plugins.find((plugin) => plugin.name === 'reuse-generated-paraglide');
+    const watched = [];
+    let error = null;
+    for (let run = 0; run < ${times}; run += 1) {
+      try {
+        await plugin.buildStart.call({ addWatchFile: (file) => watched.push(file) });
+      } catch (caught) {
+        error = caught.message;
+      }
+    }
+    process.stdout.write(JSON.stringify({ ensureCalls, watched, error }));
+  `;
+  const result = spawnSync(process.execPath, ['--input-type=module', '-e', script], {
+    encoding: 'utf8',
+    env: { ...process.env, INTENT_BUILD_TARGET: 'web' },
+  });
+  expect(result.status, result.stderr).toBe(0);
+  return JSON.parse(result.stdout);
+}
+
+/** Every file under `dir` with its mtime and content, for "nothing was rewritten" checks. */
+function snapshotDir(dir: string): Record<string, { mtimeMs: number; content: string }> {
+  const snapshot: Record<string, { mtimeMs: number; content: string }> = {};
+  const walk = (current: string, prefix: string) => {
+    for (const entry of readdirSync(current, { withFileTypes: true })) {
+      const relative = prefix ? `${prefix}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) walk(join(current, entry.name), relative);
+      else {
+        const file = join(current, entry.name);
+        snapshot[relative] = {
+          mtimeMs: statSync(file).mtimeMs,
+          content: readFileSync(file, 'utf8'),
+        };
+      }
+    }
+  };
+  walk(dir, '');
+  return snapshot;
 }
 
 describe('production web Vite configuration', () => {
@@ -122,26 +217,60 @@ describe('production web Vite configuration', () => {
     expect(define['process.env.VITE_INTENTD_WS_URL']).toBe('"ws://127.0.0.1:5181/rpc"');
   });
 
-  it('reuses generated messages for the UI preview when the output is fresh', () => {
-    expect(readPluginNames({ uiPreview: true, canReuse: true })).toContain(
-      'reuse-generated-paraglide',
-    );
+  it.each([
+    { uiPreview: true, mode: 'development', command: 'serve' },
+    { uiPreview: false, mode: 'development', command: 'serve' },
+    { uiPreview: false, mode: 'test', command: 'serve' },
+    { uiPreview: false, mode: 'production', command: 'build' },
+  ])(
+    'routes Paraglide through the locked publisher, never upstream (preview=$uiPreview, $mode, $command)',
+    (options) => {
+      const plugins = readPluginNames(options);
+      expect(plugins).toContain('reuse-generated-paraglide');
+      expect(plugins).not.toContain('unplugin-paraglide-js');
+    },
+  );
+
+  it('buildStart ensures the outdir through the locked publisher and watches the inputs', () => {
+    const run = runParaglideBuildStart({ ensureResult: true });
+    expect(run.ensureCalls).toEqual([{ rootDir: resolve('.'), ifStale: true }]);
+    expect(run.watched).toEqual([resolve('messages'), resolve('project.inlang/settings.json')]);
+    expect(run.error).toBeNull();
   });
 
-  it('never reuses stale generated messages even for the UI preview', () => {
-    const plugins = readPluginNames({ uiPreview: true, canReuse: false });
-    expect(plugins).not.toContain('reuse-generated-paraglide');
-    expect(plugins).toContain('unplugin-paraglide-js');
+  it('buildStart fails the build when the messages never settle', () => {
+    const run = runParaglideBuildStart({ ensureResult: false });
+    expect(run.error).toContain(PARAGLIDE_STALE_MESSAGE);
+  });
+});
+
+describe('Vitest Paraglide plugin', () => {
+  it('does not use upstream paraglideVitePlugin', async () => {
+    const createConfig = (await import('../../vitest.config')).default as (env: {
+      command: string;
+      mode: string;
+    }) => Promise<{ plugins: unknown[] }>;
+    const config = await createConfig({ command: 'serve', mode: 'test' });
+    const names = config.plugins.flat().map((plugin) => (plugin as { name: string }).name);
+    expect(names).toContain('ensure-generated-paraglide');
+    expect(names).not.toContain('unplugin-paraglide-js');
   });
 
-  it.each(['development', 'test'])('uses full compilation in %s mode outside preview', (mode) => {
-    const plugins = readPluginNames({ uiPreview: false, canReuse: true, mode });
-    expect(plugins).toContain('unplugin-paraglide-js');
-    expect(plugins).not.toContain('reuse-generated-paraglide');
+  it('buildStart runs the locked if-stale ensure for the package root', async () => {
+    const calls: unknown[] = [];
+    const plugin = generatedParaglidePlugin({
+      ensure: async (options) => {
+        calls.push(options);
+        return true;
+      },
+    });
+    await plugin.buildStart();
+    expect(calls).toEqual([{ rootDir: resolve('.'), ifStale: true }]);
   });
 
-  it('compiles messages with unplugin outside the UI preview', () => {
-    expect(readPluginNames({ uiPreview: false })).toContain('unplugin-paraglide-js');
+  it('buildStart throws the stale message when the ensure gives up', async () => {
+    const plugin = generatedParaglidePlugin({ ensure: async () => false });
+    await expect(plugin.buildStart()).rejects.toThrow(PARAGLIDE_STALE_MESSAGE);
   });
 });
 
@@ -173,33 +302,36 @@ describe('generated Paraglide reuse in the UI preview', () => {
   const recordSidecar = (paths: FixturePaths) =>
     compileWithInputsHash({ ...paths, compile: fakeCompile });
 
-  it('reuses generated messages only while the recorded input hash matches', async () => {
-    const { root, paths } = createParaglideFixtureRoot();
+  it('a startup after generate:i18n writes nothing and keeps the sidecar (real compiler)', async () => {
+    // What vitest.config.ts / vite.config.mjs run from buildStart: the locked
+    // if-stale ensure over output the CLI published. Upstream's plugin in this
+    // spot rewrote outputs in place and unlinked the sidecar on every start.
+    const { root, paths } = createParaglideFixtureRoot({ realProject: true });
+    fixtures.push(root);
+    await expect(ensureRepoParaglide({ rootDir: root })).resolves.toBe(true);
+    expect(readFileSync(join(paths.outdir, 'runtime.js'), 'utf8')).toContain(PARAGLIDE_IS_SERVER);
+    const published = snapshotDir(paths.outdir);
+    expect(Object.keys(published)).toContain(PARAGLIDE_INPUTS_HASH_FILE);
+
+    await expect(ensureRepoParaglide({ rootDir: root, ifStale: true })).resolves.toBe(true);
+
+    expect(snapshotDir(paths.outdir)).toEqual(published);
+    expect(canReuseGeneratedParaglide(paths)).toBe(true);
+  });
+
+  it('vite.config.mjs buildStart produces a missing outdir once and leaves a current one alone', () => {
+    const { root, paths } = createParaglideFixtureRoot({ realProject: true });
     fixtures.push(root);
 
-    expect(readPluginNames({ uiPreview: true, configDir: root })).toContain(
-      'unplugin-paraglide-js',
-    );
+    const first = runParaglideBuildStart({ configDir: root });
+    expect(first.error).toBeNull();
+    expect(canReuseGeneratedParaglide(paths)).toBe(true);
+    expect(readFileSync(join(paths.outdir, 'runtime.js'), 'utf8')).toContain(PARAGLIDE_IS_SERVER);
+    const published = snapshotDir(paths.outdir);
 
-    await expect(recordSidecar(paths)).resolves.toBe(true);
-    expect(readPluginNames({ uiPreview: true, configDir: root })).toContain(
-      'reuse-generated-paraglide',
-    );
-    expect(readPluginNames({ uiPreview: false, configDir: root })).toContain(
-      'unplugin-paraglide-js',
-    );
-
-    // Touching an input without changing content must not invalidate the outputs.
-    const koCatalog = join(paths.messagesDir, 'ko.json');
-    writeFileSync(koCatalog, JSON.stringify({ hello: '안녕하세요' }));
-    expect(readPluginNames({ uiPreview: true, configDir: root })).toContain(
-      'reuse-generated-paraglide',
-    );
-
-    writeFileSync(koCatalog, JSON.stringify({ hello: '안녕' }));
-    expect(readPluginNames({ uiPreview: true, configDir: root })).toContain(
-      'unplugin-paraglide-js',
-    );
+    const again = runParaglideBuildStart({ configDir: root, times: 2 });
+    expect(again.error).toBeNull();
+    expect(snapshotDir(paths.outdir)).toEqual(published);
   });
 
   it('requires both the sidecar and the generated outputs', async () => {

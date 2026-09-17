@@ -16,7 +16,7 @@
 // next generation (or the preview's unplugin fallback) picks the edit up.
 //
 // Run directly (`pnpm run generate:i18n`), it compiles the project with the
-// same options as `paraglide-js compile --output-structure locale-modules`;
+// options the Vite integration uses (`locale-modules`, Vite's `isServer`);
 // `--if-stale` skips the compile while the recorded hash still matches, so
 // gates that merely need the outputs on disk (knip) stay cheap. The same
 // if-stale step runs from check-deps-fresh.mjs (first command of lint, check,
@@ -34,6 +34,24 @@
 // missing or half-written output, and one that loads the module graph
 // mid-publish gets at worst an older complete snapshot (old `messages/_index.js`
 // over new locale modules), never a new index calling into an old locale module.
+//
+// This module is the only writer of the outdir. vitest.config.ts and
+// vite.config.mjs run `ensureRepoParaglide({ ifStale: true })` from `buildStart`
+// instead of upstream's `paraglideVitePlugin`, which rewrites changed outputs in
+// place with a plain writeFile and unlinks files it did not emit (the sidecar).
+// For that to hold everywhere the default compile below must produce exactly
+// what upstream's Vite hook would: same `outputStructure` and the Vite
+// `isServer` expression (`PARAGLIDE_IS_SERVER`) — a CLI output with the
+// compiler's default `isServer` differs in runtime.js, so upstream would rewrite
+// it on every startup and prune the sidecar, and the next gate would compile
+// again.
+//
+// Known limitation: per-file rename cannot make additions and removals both
+// coherent. Dependency-first order covers additions; when a message is
+// *removed*, the old `messages/_index.js` briefly sits over a new locale module
+// that no longer exports it. Only a reader whose source still calls the removed
+// message (a stale checkout mid-switch) can hit that window, and it self-heals
+// on the next import.
 import { createHash, randomUUID } from 'node:crypto';
 import {
   existsSync,
@@ -50,6 +68,8 @@ import { acquireVerificationLock, defaultLockPath } from './verification-lock.mj
 
 export const PARAGLIDE_INPUTS_HASH_FILE = '.inputs.sha256';
 export const PARAGLIDE_OUTPUT_STRUCTURE = 'locale-modules';
+/** What upstream's Vite `config` hook passes as `isServer`; CLI output must match it byte for byte. */
+export const PARAGLIDE_IS_SERVER = "import.meta.env?.SSR ?? typeof window === 'undefined'";
 const GENERATED_OUTPUTS = ['messages.js', 'runtime.js'];
 const MAX_GENERATE_ATTEMPTS = 3;
 const LOCK_TIMEOUT_MS = 120_000;
@@ -258,6 +278,7 @@ export async function ensureRepoParaglide({ rootDir, ifStale = false, compile })
           outdir,
           outputStructure: PARAGLIDE_OUTPUT_STRUCTURE,
           cleanOutdir: false,
+          isServer: PARAGLIDE_IS_SERVER,
         });
       }),
   });
