@@ -76,7 +76,7 @@
 {#if open && payload}
   <Portal target="body" zIndex={100}>
     <div
-      class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-[1px]"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-background/60 p-4 backdrop-blur-[1px]"
       role="presentation"
       onkeydown={handleKeydown}
       onclick={acknowledge}
@@ -96,13 +96,13 @@
           <div class="flex items-start gap-4">
             {#if failed}
               <div
-                class="mt-0.5 flex size-10 shrink-0 items-center justify-center rounded-full bg-red-500/20 text-red-600 ring-1 ring-red-600/20 dark:bg-red-500/15 dark:text-red-400"
+                class="mt-0.5 flex size-10 shrink-0 items-center justify-center rounded-full bg-danger-background/10 text-danger ring-1 ring-danger/25"
               >
                 <Fa icon={faCircleExclamation} size="lg" />
               </div>
             {:else}
               <div
-                class="mt-0.5 flex size-10 shrink-0 items-center justify-center rounded-full bg-amber-500/20 text-amber-600 ring-1 ring-amber-600/20 dark:bg-amber-500/15 dark:text-amber-400"
+                class="mt-0.5 flex size-10 shrink-0 items-center justify-center rounded-full bg-warning/20 text-warning-ink ring-1 ring-warning/20"
               >
                 <Fa icon={faExclamationTriangle} size="lg" />
               </div>
