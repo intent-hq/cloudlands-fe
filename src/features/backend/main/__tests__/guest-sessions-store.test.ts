@@ -8,7 +8,7 @@ import * as path from 'path';
  * Round-trip tests for the guest sessions store
  * (features/backend/main/guest-sessions-store.ts).
  *
- * The store persists daemons joined as a GUEST (invite.redeem credentials)
+ * The store persists daemons joined as a GUEST (invite.prove credentials)
  * to `guest-sessions.json` under `app.getPath('userData')`, separate from
  * the owner registry, encrypting the token via `safeStorage` when available.
  */
