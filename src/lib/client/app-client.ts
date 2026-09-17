@@ -2114,13 +2114,18 @@ export interface GitHubRepoConfigResult {
   exists: boolean;
 }
 
-/** Normalized single-value PR state (the wire carries `state` + `merged` + `draft`). */
-export type GitHubPullRequestState = 'open' | 'closed' | 'merged' | 'draft';
+/**
+ * Normalized single-value PR state (the wire carries `state` + `merged` +
+ * `draft` + `mergeableState`). `'queued'` is an open, non-draft PR sitting in
+ * the merge queue (`mergeableState: "queued"`).
+ */
+export type GitHubPullRequestState = 'open' | 'closed' | 'merged' | 'draft' | 'queued';
 
 /**
  * One pull request (`github.pulls.get`, §5.27) normalized for link previews:
- * the wire's `state` + `merged` + `draft` collapse into a single `state`
- * (merged → `'merged'`, draft → `'draft'`, else the wire state).
+ * the wire's `state` + `merged` + `draft` + `mergeableState` collapse into a
+ * single `state` (merged → `'merged'`, closed → `'closed'`, draft →
+ * `'draft'`, `mergeableState: "queued"` → `'queued'`, else `'open'`).
  */
 export interface GitHubPullRequestDetails {
   owner: string;

@@ -962,6 +962,7 @@
   "ui_linkTooltip_gitHubStateClosed_label": "닫힘",
   "ui_linkTooltip_gitHubStateMerged_label": "병합됨",
   "ui_linkTooltip_gitHubStateDraft_label": "초안",
+  "ui_linkTooltip_gitHubStateQueued_label": "대기열",
   "ui_linkTooltip_gitHubAuthor_label": "작성자: {author}",
   "ui_linkTooltip_gitHubUpdated_before": "업데이트: ",
   "navigation_linkActionMenu_menu_ariaLabel": "링크 작업",

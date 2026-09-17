@@ -962,6 +962,7 @@
   "ui_linkTooltip_gitHubStateClosed_label": "Fermé",
   "ui_linkTooltip_gitHubStateMerged_label": "Fusionné",
   "ui_linkTooltip_gitHubStateDraft_label": "Brouillon",
+  "ui_linkTooltip_gitHubStateQueued_label": "En file",
   "ui_linkTooltip_gitHubAuthor_label": "par {author}",
   "ui_linkTooltip_gitHubUpdated_before": "mis à jour ",
   "navigation_linkActionMenu_menu_ariaLabel": "Actions du lien",

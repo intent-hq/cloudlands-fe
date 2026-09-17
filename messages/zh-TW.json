@@ -962,6 +962,7 @@
   "ui_linkTooltip_gitHubStateClosed_label": "已關閉",
   "ui_linkTooltip_gitHubStateMerged_label": "已合併",
   "ui_linkTooltip_gitHubStateDraft_label": "草稿",
+  "ui_linkTooltip_gitHubStateQueued_label": "已排隊",
   "ui_linkTooltip_gitHubAuthor_label": "來自 {author}",
   "ui_linkTooltip_gitHubUpdated_before": "更新於 ",
   "navigation_linkActionMenu_menu_ariaLabel": "連結操作",

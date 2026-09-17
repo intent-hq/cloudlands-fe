@@ -62,6 +62,16 @@
           updatedAt: '2026-01-03T09:30:00.000Z',
         }),
       ),
+      'pr-queued': scenario(
+        'PR — queued',
+        'Hourglass icon + Queued badge in the info tone for a PR in the merge queue.',
+        `${REPO_URL}/pull/45`,
+        prClient({
+          state: 'queued',
+          headRef: 'fix/queue-ejection-reason',
+          updatedAt: '2026-01-03T11:15:00.000Z',
+        }),
+      ),
       'pr-draft': scenario(
         'PR — draft',
         'Muted icon + Draft badge; long title clamps to two lines.',

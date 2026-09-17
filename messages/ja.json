@@ -962,6 +962,7 @@
   "ui_linkTooltip_gitHubStateClosed_label": "クローズ",
   "ui_linkTooltip_gitHubStateMerged_label": "マージ済み",
   "ui_linkTooltip_gitHubStateDraft_label": "下書き",
+  "ui_linkTooltip_gitHubStateQueued_label": "待機中",
   "ui_linkTooltip_gitHubAuthor_label": "作成者: {author}",
   "ui_linkTooltip_gitHubUpdated_before": "更新: ",
   "navigation_linkActionMenu_menu_ariaLabel": "リンク操作",
