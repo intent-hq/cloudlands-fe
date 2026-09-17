@@ -2,8 +2,9 @@
  * Invite redemption client (main process) — the guest side of multiplayer
  * invites (intentd #1872).
  *
- * The daemon serves exactly one method on its UNAUTHENTICATED `/invite`
- * WebSocket endpoint: `invite.redeem`, in two phases on the same name:
+ * The daemon serves three methods on its UNAUTHENTICATED `/invite`
+ * WebSocket endpoint. `invite.redeem`, in two phases on the same name, is
+ * the first join on a host:
  *
  * 1. `{ inviteId, secret }` starts an identity-only GitHub device flow and
  *    answers `{ flowId, userCode, verificationUri, expiresIn, interval,
@@ -13,6 +14,14 @@
  * 2. `{ flowId }` blocks until the grant settles and answers the collaborator
  *    credential exactly once: `{ status: "authorized", token, principalId,
  *    login, workspaceId }`.
+ *
+ * A guest that already holds a credential for the host skips the device
+ * flow: `invite.inspect { inviteId, secret }` is phase 1's validation and
+ * decoration with no flow started (`{ workspaceId, workspaceTitle, hostname,
+ * prettyHostname }`), and `invite.accept { inviteId, secret, credential }`
+ * joins with the stored credential and answers the same credential shape as
+ * phase 2. An unknown or revoked credential is refused with
+ * `credential-invalid`, on which the caller falls back to `invite.redeem`.
  *
  * Refusals carry `error.data.code` (`invite-expired`, `invite-pin-mismatch`,
  * `invite-flow-denied`, `workspace-full`, …) so the flow routes on a code,
@@ -61,6 +70,12 @@ const INVITE_START_TIMEOUT_MS = 30_000;
 /** Method name for both redeem phases. */
 // i18n-ignore (wire method name)
 const INVITE_REDEEM_METHOD = 'invite.redeem';
+/** Method name for the flow-less preview of an invite. */
+// i18n-ignore (wire method name)
+const INVITE_INSPECT_METHOD = 'invite.inspect';
+/** Method name for the returning-guest join with a stored credential. */
+// i18n-ignore (wire method name)
+const INVITE_ACCEPT_METHOD = 'invite.accept';
 
 /**
  * Phase-1 result: the device-flow prompt. `hostname` / `prettyHostname` name
@@ -79,6 +94,14 @@ interface InviteRedeemStart {
   prettyHostname?: string;
 }
 
+/** `invite.inspect` result: the phase-1 decoration with no device flow started. */
+interface InviteInspection {
+  workspaceId: string;
+  workspaceTitle: string;
+  hostname?: string;
+  prettyHostname?: string;
+}
+
 /** Phase-2 result: the collaborator credential (returned exactly once). */
 interface InviteCredential {
   status: 'authorized';
@@ -89,10 +112,12 @@ interface InviteCredential {
 }
 
 /**
- * The daemon's documented `error.data.code` values for `invite.redeem`
+ * The daemon's documented `error.data.code` values for the `/invite` methods
  * (intentd #1872; `workspace-full` — the guest cap is spent at join time —
- * from intentd #1917). The closed set is the ONLY server-authored text that
- * ever leaves {@link InviteRpcError}: a code outside it maps to `null`.
+ * from intentd #1917; `credential-invalid` — `invite.accept` with an unknown
+ * or revoked credential — from the returning-guest join). The closed set is
+ * the ONLY server-authored text that ever leaves {@link InviteRpcError}: a
+ * code outside it maps to `null`.
  */
 const INVITE_ERROR_CODES = [
   'invite-not-found',
@@ -107,6 +132,7 @@ const INVITE_ERROR_CODES = [
   'invite-flow-expired',
   'invite-flow-not-found',
   'workspace-full',
+  'credential-invalid',
 ] as const;
 
 export type InviteErrorCode = (typeof INVITE_ERROR_CODES)[number];
@@ -234,6 +260,13 @@ export interface InviteConnection {
    * bounds the wait locally.
    */
   redeemWait(flowId: string, timeoutMs: number): Promise<InviteCredential>;
+  /** Preview the invite (workspace + host names) without starting a device flow. */
+  inspect(inviteId: string, secret: string): Promise<InviteInspection>;
+  /**
+   * Join with a credential this guest already holds for the host; refused
+   * with `credential-invalid` when the host no longer recognizes it.
+   */
+  accept(inviteId: string, secret: string, credential: string): Promise<InviteCredential>;
   /** Tear the socket down; every pending request rejects. */
   close(): void;
 }
@@ -553,7 +586,11 @@ function attachRpc(
     closeTunnel();
   });
 
-  const request = (params: Record<string, string>, timeoutMs: number): Promise<unknown> =>
+  const request = (
+    method: string,
+    params: Record<string, string>,
+    timeoutMs: number,
+  ): Promise<unknown> =>
     new Promise<unknown>((resolve, reject) => {
       if (closed) {
         reject(new InviteTransportError('connection-closed'));
@@ -568,23 +605,37 @@ function attachRpc(
             }, timeoutMs)
           : null;
       pending.set(id, { resolve, reject, timer });
-      ws.send(
-        JSON.stringify({ jsonrpc: '2.0', id, method: INVITE_REDEEM_METHOD, params }),
-        (err) => {
-          if (!err) return;
-          pending.delete(id);
-          if (timer) clearTimeout(timer);
-          reject(toTransportError(err));
-        },
-      );
+      ws.send(JSON.stringify({ jsonrpc: '2.0', id, method, params }), (err) => {
+        if (!err) return;
+        pending.delete(id);
+        if (timer) clearTimeout(timer);
+        reject(toTransportError(err));
+      });
     });
 
   return {
     host,
     via,
     redeemStart: (inviteId, secret) =>
-      request({ inviteId, secret }, INVITE_START_TIMEOUT_MS) as Promise<InviteRedeemStart>,
-    redeemWait: (flowId, timeoutMs) => request({ flowId }, timeoutMs) as Promise<InviteCredential>,
+      request(
+        INVITE_REDEEM_METHOD,
+        { inviteId, secret },
+        INVITE_START_TIMEOUT_MS,
+      ) as Promise<InviteRedeemStart>,
+    redeemWait: (flowId, timeoutMs) =>
+      request(INVITE_REDEEM_METHOD, { flowId }, timeoutMs) as Promise<InviteCredential>,
+    inspect: (inviteId, secret) =>
+      request(
+        INVITE_INSPECT_METHOD,
+        { inviteId, secret },
+        INVITE_START_TIMEOUT_MS,
+      ) as Promise<InviteInspection>,
+    accept: (inviteId, secret, credential) =>
+      request(
+        INVITE_ACCEPT_METHOD,
+        { inviteId, secret, credential },
+        INVITE_START_TIMEOUT_MS,
+      ) as Promise<InviteCredential>,
     close: () => {
       if (closed) return;
       closed = true;
