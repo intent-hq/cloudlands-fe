@@ -2724,8 +2724,6 @@
   "hud_tokenBurn_session_label": "TOK · 24H",
   "hud_tokenBurn_perMinute_label": "{rate}/Min",
   "hud_system_title": "SYSTEM",
-  "hud_system_pass_label": "OK",
-  "hud_system_fail_label": "FEHLER",
   "hud_system_online_label": "ONLINE",
   "hud_system_offline_label": "OFFLINE",
   "hud_backendMenu_secretUnavailable_error": "{label} konnte nicht geöffnet werden: Das gespeicherte Zugriffstoken ist nicht verfügbar. Geben Sie es in einem Workspace-Fenster unter Einstellungen → Geräte erneut ein.",

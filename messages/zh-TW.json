@@ -2724,8 +2724,6 @@
   "hud_tokenBurn_session_label": "TOK · 24H",
   "hud_tokenBurn_perMinute_label": "{rate}/分",
   "hud_system_title": "系統",
-  "hud_system_pass_label": "正常",
-  "hud_system_fail_label": "故障",
   "hud_system_online_label": "線上",
   "hud_system_offline_label": "離線",
   "hud_backendMenu_secretUnavailable_error": "無法開啟 {label}：其儲存的存取權杖無法使用。請在工作區視窗的設定 → 裝置中重新輸入。",

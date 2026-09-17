@@ -2724,8 +2724,6 @@
   "hud_tokenBurn_session_label": "TOK · 24H",
   "hud_tokenBurn_perMinute_label": "{rate}/분",
   "hud_system_title": "시스템",
-  "hud_system_pass_label": "정상",
-  "hud_system_fail_label": "오류",
   "hud_system_online_label": "온라인",
   "hud_system_offline_label": "오프라인",
   "hud_backendMenu_secretUnavailable_error": "{label}을(를) 열 수 없습니다. 저장된 액세스 토큰을 사용할 수 없습니다. 워크스페이스 창의 설정 → 기기에서 다시 입력하세요.",

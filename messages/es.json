@@ -2724,8 +2724,6 @@
   "hud_tokenBurn_session_label": "TOK · 24H",
   "hud_tokenBurn_perMinute_label": "{rate}/min",
   "hud_system_title": "SISTEMA",
-  "hud_system_pass_label": "OK",
-  "hud_system_fail_label": "FALLO",
   "hud_system_online_label": "EN LÍNEA",
   "hud_system_offline_label": "SIN CONEXIÓN",
   "hud_backendMenu_secretUnavailable_error": "No se pudo abrir {label}: su token de acceso almacenado no está disponible. Vuelve a introducirlo en Configuración → Dispositivos desde una ventana de espacio de trabajo.",

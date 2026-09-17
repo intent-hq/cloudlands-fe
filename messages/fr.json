@@ -2724,8 +2724,6 @@
   "hud_tokenBurn_session_label": "TOK · 24H",
   "hud_tokenBurn_perMinute_label": "{rate}/min",
   "hud_system_title": "SYSTÈME",
-  "hud_system_pass_label": "OK",
-  "hud_system_fail_label": "ÉCHEC",
   "hud_system_online_label": "EN LIGNE",
   "hud_system_offline_label": "HORS LIGNE",
   "hud_backendMenu_secretUnavailable_error": "Impossible d'ouvrir {label} : son jeton d'accès enregistré est indisponible. Saisissez-le de nouveau dans Paramètres → Appareils depuis une fenêtre d'espace de travail.",

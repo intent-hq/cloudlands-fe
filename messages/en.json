@@ -2724,8 +2724,6 @@
   "hud_tokenBurn_session_label": "Tok · 24h",
   "hud_tokenBurn_perMinute_label": "{rate}/min",
   "hud_system_title": "System",
-  "hud_system_pass_label": "Pass",
-  "hud_system_fail_label": "Fail",
   "hud_system_online_label": "Online",
   "hud_system_offline_label": "Offline",
   "hud_backendMenu_secretUnavailable_error": "Could not open {label}: its stored access token is unavailable. Re-enter it under Settings → Devices in a workspace window.",

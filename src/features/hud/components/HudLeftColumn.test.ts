@@ -196,6 +196,23 @@ describe('HudLeftColumn WORKSPACES-BY-STATE waiting row', () => {
   });
 });
 
+describe('HudLeftColumn SYSTEM panel header', () => {
+  it('renders no meta text next to the title, even for a failed fleet', async () => {
+    render(HudLeftColumn, { props: { nowMs: NOW_MS } });
+
+    appStore.dispatch(
+      setWorkspaceEntity(workspaceWithAgents('ws-1', [{ id: 'a-0', status: 'error' }], 'failed')),
+    );
+    await waitFor(() => {
+      flushSync();
+      expect(blinks(failedRow())).toBe(true);
+    });
+
+    const header = screen.getByText('System').closest('.hud-panel-header') as HTMLElement;
+    expect(header.textContent?.trim()).toBe('System');
+  });
+});
+
 describe('HudLeftColumn AGENTS-BY-STATE rows', () => {
   it('renders only the RUNNING / FAILED / IDLE bars (no NEEDS ATTENTION or DONE)', () => {
     render(HudLeftColumn, { props: { nowMs: NOW_MS } });
