@@ -494,6 +494,23 @@ export function setupWebviewSecurity(): void {
       contents.on('did-create-window', (popupWindow) => {
         trackWebviewPopup(popupWindow);
       });
+
+      // Diagnosability (intent-hq/intent#5241): a guest page calling
+      // window.close() makes Electron emit `close` and then destroy the guest
+      // unconditionally while its <webview> element is still in the DOM, so
+      // log both steps to attribute a dead tab to its trigger.
+      const guestId = contents.id;
+      // `close` is emitted by WebContents::CloseContents but is absent from
+      // electron.d.ts, so the typed `on` overloads reject it.
+      (contents as unknown as NodeJS.EventEmitter).on('close', () => {
+        logger.info('Webview guest requested window.close(); Electron will destroy the guest', {
+          guestId,
+          url: contents.getURL().substring(0, 100),
+        });
+      });
+      contents.once('destroyed', () => {
+        logger.debug('Webview guest destroyed', { guestId });
+      });
     } else {
       // App-window popups: register a newly allowed /hud popup as THE HUD
       // for its opener's backend immediately (its URL is still loading, so

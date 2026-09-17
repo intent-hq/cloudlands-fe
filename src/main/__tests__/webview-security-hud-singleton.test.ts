@@ -32,6 +32,22 @@ vi.mock('electron', () => ({
   shell: { openExternal: vi.fn(async () => undefined) },
 }));
 
+const loggerMocks = vi.hoisted(() => ({
+  debug: vi.fn(),
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+}));
+
+vi.mock('../../shared/logger', () => ({
+  Logger: class MockLogger {
+    debug = loggerMocks.debug;
+    info = loggerMocks.info;
+    warn = loggerMocks.warn;
+    error = loggerMocks.error;
+  },
+}));
+
 import { _resetHudWindowRefForTests } from '../hud-window';
 import { isWebviewPopupWindow, setupWebviewSecurity } from '../webview-security';
 
@@ -70,6 +86,7 @@ function attachAppWindowContents(opts: { openerBackendId?: string } = {}) {
   const contents = {
     getType: () => 'window',
     on: contentsOn,
+    once: vi.fn(),
     setWindowOpenHandler: vi.fn((h: WindowOpenHandler) => {
       windowOpenHandler = h;
     }),
@@ -87,6 +104,8 @@ function attachAppWindowContents(opts: { openerBackendId?: string } = {}) {
   return {
     openHandler: windowOpenHandler,
     didCreateWindow: didCreate[1] as DidCreateWindowHandler,
+    contentsOn,
+    contentsOnce: contents.once,
   };
 }
 
@@ -213,11 +232,15 @@ describe('isWebviewPopupWindow', () => {
   });
 
   /** Simulate a webview's contents passing through web-contents-created. */
-  function attachWebviewContents() {
+  function attachWebviewContents(opts: { id?: number; url?: string } = {}) {
     const contentsOn = vi.fn();
+    const contentsOnce = vi.fn();
     const contents = {
+      id: opts.id ?? 7,
       getType: () => 'webview',
+      getURL: () => opts.url ?? 'https://example.com/',
       on: contentsOn,
+      once: contentsOnce,
       setWindowOpenHandler: vi.fn(),
     };
     const created = electronMocks.appOn.mock.calls.find(([e]) => e === 'web-contents-created');
@@ -225,7 +248,11 @@ describe('isWebviewPopupWindow', () => {
     (created[1] as (e: unknown, c: unknown) => void)(undefined, contents);
     const didCreate = contentsOn.mock.calls.find(([e]) => e === 'did-create-window');
     if (!didCreate) throw new Error('did-create-window listener not registered');
-    return { didCreateWindow: didCreate[1] as (win: unknown) => void };
+    return {
+      didCreateWindow: didCreate[1] as (win: unknown) => void,
+      contentsOn,
+      contentsOnce,
+    };
   }
 
   function makePopupWindow(contentsId: number) {
@@ -255,5 +282,49 @@ describe('isWebviewPopupWindow', () => {
     const appWindow = makePopupWindow(202);
 
     expect(isWebviewPopupWindow(appWindow as never)).toBe(false);
+  });
+
+  describe('guest close/destroy diagnostics', () => {
+    function findListener(mock: ReturnType<typeof vi.fn>, event: string): (() => void) | undefined {
+      return mock.mock.calls.find(([e]) => e === event)?.[1] as (() => void) | undefined;
+    }
+
+    it('logs a guest close at info level with a truncated URL and its id', () => {
+      const longUrl = 'https://auth.example.com/callback?' + 'code=' + 'x'.repeat(200);
+      const { contentsOn } = attachWebviewContents({ id: 31, url: longUrl });
+
+      const onClose = findListener(contentsOn, 'close');
+      expect(onClose).toBeDefined();
+      onClose!();
+
+      expect(loggerMocks.info).toHaveBeenCalledWith(
+        expect.stringContaining('window.close()'),
+        expect.objectContaining({ guestId: 31, url: longUrl.substring(0, 100) }),
+      );
+      const logged = loggerMocks.info.mock.calls.find(([msg]) =>
+        String(msg).includes('window.close()'),
+      )?.[1] as { url: string };
+      expect(logged.url).toHaveLength(100);
+    });
+
+    it('logs the guest destruction once at debug level with its id', () => {
+      const { contentsOnce } = attachWebviewContents({ id: 32 });
+
+      const onDestroyed = findListener(contentsOnce, 'destroyed');
+      expect(onDestroyed).toBeDefined();
+      onDestroyed!();
+
+      expect(loggerMocks.debug).toHaveBeenCalledWith(
+        expect.stringContaining('destroyed'),
+        expect.objectContaining({ guestId: 32 }),
+      );
+    });
+
+    it('does not attach close/destroyed diagnostics to app-window contents', () => {
+      const { contentsOn, contentsOnce } = attachAppWindowContents();
+
+      expect(findListener(contentsOn, 'close')).toBeUndefined();
+      expect(findListener(contentsOnce, 'destroyed')).toBeUndefined();
+    });
   });
 });
