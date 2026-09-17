@@ -35,6 +35,7 @@
     type AllSpacesViewMode,
     type SidebarNavItem,
   } from '$store/renderer/slices/sidebar-nav/sidebar-nav-types';
+  import { selectIsCollaboratorOnlyClient } from '$store/renderer/slices/workspace/workspace-selectors';
   import { store as appStore } from '$store/renderer/store';
 
   const panelItem$ = selectPanelItem();
@@ -44,6 +45,13 @@
   const onboardingActive$ = selectOnboardingActive();
   const allSpacesViewMode$ = selectAllSpacesViewMode();
   const showArchivedWorkspaces$ = selectShowArchivedWorkspaces();
+  // A collaborator-only client (multiplayer w3) has no Chief: the daemon
+  // answers its `__chief__` calls with not-found, so the card is never
+  // mounted and the workspace list takes the whole panel. The gate is live —
+  // flipping true after mount unmounts the card, whose destroy releases the
+  // Chief workspace (`workspaceUnmounted`).
+  const isCollaboratorOnlyClient$ = selectIsCollaboratorOnlyClient();
+  const chiefHidden = $derived($isCollaboratorOnlyClient$ || $isChiefCollapsed$);
 
   const allSpacesViewModes = [
     { value: 'recent', label: m.layout_allCard_recent_label() },
@@ -289,10 +297,12 @@
           data-combined-panel-split
         >
           <div
-            class="combined-panel-spaces min-h-0 overflow-hidden flex flex-col {$isChiefCollapsed$
+            class="combined-panel-spaces min-h-0 overflow-hidden flex flex-col {chiefHidden
               ? 'flex-1'
               : 'shrink-0'}"
-            style:height={$isChiefCollapsed$ ? undefined : `${liveSplit * 100}%`}
+            style:height={$isChiefCollapsed$ || $isCollaboratorOnlyClient$
+              ? undefined
+              : `${liveSplit * 100}%`}
             data-combined-panel-spaces
           >
             <!-- Combined workspace panel: workspace list stacked above the Chief chat
@@ -408,41 +418,43 @@
             </div>
           </div>
 
-          {#if !$isChiefCollapsed$}
-            <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-            <div
-              class="app-resize-handle combined-panel-divider relative shrink-0"
-              data-resize-axis="y"
-              data-resizing={isSplitResizing}
-              data-testid="split-resize-handle"
-              onmousedown={handleSplitResizeStart}
-              role="separator"
-              aria-orientation="horizontal"
-              aria-label={m.layout_sidebarPanel_resizeListAndChat_ariaLabel()}
-            >
+          {#if !$isCollaboratorOnlyClient$}
+            {#if !$isChiefCollapsed$}
+              <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
               <div
-                class="pointer-events-none h-px w-full bg-border"
-                data-combined-panel-divider-border
-              ></div>
-            </div>
-          {/if}
+                class="app-resize-handle combined-panel-divider relative shrink-0"
+                data-resize-axis="y"
+                data-resizing={isSplitResizing}
+                data-testid="split-resize-handle"
+                onmousedown={handleSplitResizeStart}
+                role="separator"
+                aria-orientation="horizontal"
+                aria-label={m.layout_sidebarPanel_resizeListAndChat_ariaLabel()}
+              >
+                <div
+                  class="pointer-events-none h-px w-full bg-border"
+                  data-combined-panel-divider-border
+                ></div>
+              </div>
+            {/if}
 
-          <!-- overflow-clip with an 8px clip margin (instead of overflow-hidden)
+            <!-- overflow-clip with an 8px clip margin (instead of overflow-hidden)
                lets the Chief composer's streaming aurora bleed across the app
                frame's pl-2/pb-2 window inset to the window edges. -->
-          <div
-            class="min-h-0 overflow-clip [overflow-clip-margin:0.5rem] flex flex-col {$isChiefCollapsed$
-              ? 'shrink-0'
-              : 'flex-1'}"
-            data-combined-panel-chief
-          >
-            <ChiefCard
-              expanded={true}
-              embedded={true}
-              collapsed={$isChiefCollapsed$}
-              ontoggle={() => appStore.dispatch(toggleChiefCollapsed())}
-            />
-          </div>
+            <div
+              class="min-h-0 overflow-clip [overflow-clip-margin:0.5rem] flex flex-col {$isChiefCollapsed$
+                ? 'shrink-0'
+                : 'flex-1'}"
+              data-combined-panel-chief
+            >
+              <ChiefCard
+                expanded={true}
+                embedded={true}
+                collapsed={$isChiefCollapsed$}
+                ontoggle={() => appStore.dispatch(toggleChiefCollapsed())}
+              />
+            </div>
+          {/if}
         </div>
       {:else}
         <!-- Header -->

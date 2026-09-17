@@ -1,5 +1,6 @@
 import type { PullRequestInfo, Workspace, WorkspaceId } from '$shared/types';
 import { PullRequestStatus, WorkspaceStatusEnum } from '$shared/types';
+import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import type { WorkspaceGitStatus } from '$features/accept-changes/types';
 import type { TaskStats } from '$shared/utils/task-stats';
 import { describe, expect, it } from 'vitest';
@@ -232,6 +233,30 @@ describe('selectIsCollaboratorOnlyClient (multiplayer w3)', () => {
       makeWorkspace({ id: 'ws-b' as WorkspaceId, myRole: 'owner' }),
     ]);
     expect(selectIsCollaboratorOnlyClient.select(state)).toBe(false);
+  });
+
+  it('ignores the virtual Chief workspace entity registered by the Chief card', () => {
+    const state = loadedState([
+      makeWorkspace({ id: 'ws-a' as WorkspaceId, myRole: 'collaborator' }),
+    ]);
+    const withChief = {
+      ...state,
+      workspace: workspaceReducer(
+        state.workspace,
+        setWorkspaceEntity(
+          makeWorkspace({ id: CHIEF_WORKSPACE_ID as WorkspaceId, myRole: undefined }),
+        ),
+      ),
+    } as StoreState;
+    expect(selectIsCollaboratorOnlyClient.select(withChief)).toBe(true);
+    const chiefOnly = {
+      ...loadedState([]),
+      workspace: workspaceReducer(
+        loadedState([]).workspace,
+        setWorkspaceEntity(makeWorkspace({ id: CHIEF_WORKSPACE_ID as WorkspaceId })),
+      ),
+    } as StoreState;
+    expect(selectIsCollaboratorOnlyClient.select(chiefOnly)).toBe(false);
   });
 
   it('is false for a pre-w3 daemon that omits myRole (owner semantics preserved)', () => {
