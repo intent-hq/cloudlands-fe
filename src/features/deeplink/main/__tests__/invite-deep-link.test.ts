@@ -76,9 +76,15 @@ vi.mock('../../../backend/main/backend.ipc', () => ({
   },
 }));
 
-vi.mock('../../../backend/main/backend-connection', () => ({
-  PinMismatchError: class PinMismatchError extends Error {},
-}));
+vi.mock('../../../backend/main/backend-connection', async () => {
+  const actual = await vi.importActual<typeof import('../../../backend/main/backend-connection')>(
+    '../../../backend/main/backend-connection',
+  );
+  return {
+    PinMismatchError: class PinMismatchError extends Error {},
+    normalizeFingerprint: actual.normalizeFingerprint,
+  };
+});
 
 const redeemStart = vi.fn();
 const redeemWait = vi.fn();
@@ -1048,6 +1054,63 @@ describe('handleInviteDeepLink — returning guest', () => {
     expect(prompt.dismiss).toHaveBeenCalledExactlyOnceWith('joined');
     expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
     expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it('same host:port, different pinned fingerprint: the stored token is never decrypted or sent; the device flow runs', async () => {
+    // The store's host:port fallback hands back the record pinned to the
+    // previous cert at this address; the link is pinned to a different daemon.
+    guestFindMatching.mockResolvedValue({ ...SESSION, fingerprint: 'DD:EE:FF' });
+    const { prompt } = fakeConsent('open');
+    showInviteConsent.mockReturnValue(prompt);
+
+    await handleInviteDeepLink(LINK);
+
+    expect(guestFindMatching).toHaveBeenCalledWith({
+      hosts: ['192.168.1.10'],
+      port: 8443,
+      fingerprint: 'AA:BB:CC',
+    });
+    expect(guestGetDecryptedToken).not.toHaveBeenCalled();
+    expect(inspect).not.toHaveBeenCalled();
+    expect(accept).not.toHaveBeenCalled();
+    expect(redeemStart).toHaveBeenCalledWith('inv-1', SECRET);
+    expect(showInviteConsent).toHaveBeenCalledTimes(1);
+    expect(showInviteConsent.mock.calls[0][0]).toMatchObject({ mode: 'device-code' });
+    expect(guestAdd).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ token: TOKEN }));
+    expect(logLines.join('\n')).toContain('"reason":"fingerprint-mismatch"');
+    expect(logLines.join('\n')).not.toContain(STORED_TOKEN);
+  });
+
+  it('a stored record without a fingerprint never has its token reused', async () => {
+    guestFindMatching.mockResolvedValue({ ...SESSION, fingerprint: '' });
+    showInviteConsent.mockReturnValue(fakeConsent('open').prompt);
+
+    await handleInviteDeepLink(LINK);
+
+    expect(guestGetDecryptedToken).not.toHaveBeenCalled();
+    expect(accept).not.toHaveBeenCalled();
+    expect(redeemStart).toHaveBeenCalledWith('inv-1', SECRET);
+    expect(logLines.join('\n')).toContain('"reason":"fingerprint-mismatch"');
+  });
+
+  it('same fingerprint at a new address (spelled differently): still the confirm-only path', async () => {
+    guestFindMatching.mockResolvedValue({
+      ...SESSION,
+      host: '10.0.0.5',
+      hosts: ['10.0.0.5'],
+      fingerprint: 'aabbcc',
+    });
+    showInviteConsent.mockReturnValue(fakeConsent('open').prompt);
+
+    await handleInviteDeepLink(LINK);
+
+    expect(guestGetDecryptedToken).toHaveBeenCalledWith('guest-id');
+    expect(inspect).toHaveBeenCalledWith('inv-1', SECRET);
+    expect(showInviteConsent).toHaveBeenCalledTimes(1);
+    expect(showInviteConsent.mock.calls[0][0]).toMatchObject({ mode: 'confirm', login: 'octocat' });
+    expect(accept).toHaveBeenCalledWith('inv-1', SECRET, STORED_TOKEN);
+    expect(redeemStart).not.toHaveBeenCalled();
+    expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
   });
 
   it('a tunnel-only link matches the session keyed on the tc address', async () => {
