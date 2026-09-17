@@ -355,6 +355,67 @@ describe('verification planning', () => {
     expect(deletedPlan.checks.map((check) => check.id)).toContain('vitest-ui-invariants');
   });
 
+  it('runs the full component suite for CT-contract paths and nothing else', () => {
+    const root = fixtureRoot({
+      'src/app.css': "@import '$lib/styles/tokens.css';",
+      'src/lib/styles/tokens.css': ':root { --color: red; }',
+      'scripts/run-ct-tests.mjs': '',
+      'playwright-ct.config.ts': '',
+      'playwright/index.ts': '',
+      'src/lib/component-catalog/capture-stability.ts': '',
+      'src/lib/component-catalog/geometry-probe.ts': '',
+      'src/lib/component-catalog/preview-definition.ts': '',
+      'src/lib/component-catalog/catalog.ts': '',
+      'src/foo.test.ts': '',
+      'src/lib/example.ts': '',
+    });
+    const ids = (files: string[]) =>
+      createVerificationPlan(files, { root, ctTests: [] }).checks.map((check) => check.id);
+    for (const file of [
+      'src/lib/styles/tokens.css',
+      'src/lib/styles/removed.css',
+      'src/app.css',
+      'scripts/run-ct-tests.mjs',
+      'playwright-ct.config.ts',
+      'playwright/index.ts',
+      'src/lib/component-catalog/capture-stability.ts',
+      'src/lib/component-catalog/geometry-probe.ts',
+      'src/lib/component-catalog/preview-definition.ts',
+      'package.json',
+      'pnpm-lock.yaml',
+    ]) {
+      expect(ids([file]), file).toContain('ct-full');
+      expect(ids([file]), file).not.toContain('ct-related');
+    }
+    for (const file of [
+      'src/foo.test.ts',
+      'src/lib/example.ts',
+      'src/lib/component-catalog/catalog.ts',
+      'scripts/verify-changed.mjs',
+    ]) {
+      expect(ids([file]), file).not.toContain('ct-full');
+      expect(ids([file]), file).not.toContain('ct-related');
+    }
+  });
+
+  it('keeps CT specs and geometry goldens on the related lane, not the full suite', () => {
+    const geometryTest = 'src/lib/components/ui/button/button.geometry.ct.spec.ts';
+    const golden = 'src/lib/components/ui/button/__geometry__/button.geometry.json';
+    const root = fixtureRoot({
+      [geometryTest]: "import Preview from './button.preview.svelte';",
+      'src/lib/components/ui/button/button.preview.svelte': '<button />',
+      [golden]: '{}',
+    });
+    const ids = (files: string[]) =>
+      createVerificationPlan(files, { root, ctTests: [geometryTest] }).checks.map(
+        (check) => check.id,
+      );
+    for (const file of [geometryTest, golden]) {
+      expect(ids([file]), file).toContain('ct-related');
+      expect(ids([file]), file).not.toContain('ct-full');
+    }
+  });
+
   describe('suites declaring verify:changed triggers', () => {
     const driftTest = 'scripts/inline-ipc-channels.test.ts';
     const catalogTest = 'src/lib/components/__tests__/catalog.test.ts';
@@ -1123,6 +1184,9 @@ describe('expensive-check coordination', () => {
   it('uses per-kind keys and bounded default waits', () => {
     expect(verificationLockKey(testCheck('ct', 'ct'), {})).toBe('ct-3100');
     expect(verificationLockKey(testCheck('ct', 'ct'), { CT_PORT: '03101' })).toBe('ct-3101');
+    expect(verificationLockKey(testCheck('ct', 'ct'), { CT_PORT: ' 3102 ' })).toBe('ct-3102');
+    expect(verificationLockKey(testCheck('ct', 'ct'), { CT_PORT: '' })).toBe('ct-3100');
+    expect(verificationLockKey(testCheck('ct', 'ct'), { CT_PORT: ' ' })).toBe('ct-3100');
     expect(verificationLockKey(testCheck('vitest', 'vitest-full'), {})).toBe('vitest-full');
     expect(verificationLockKey(testCheck('tsc', null), {})).toBeNull();
     expect(lockTimeout('ct-3100', undefined)).toBe(240_000);

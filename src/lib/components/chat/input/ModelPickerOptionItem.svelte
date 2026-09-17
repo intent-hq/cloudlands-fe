@@ -46,11 +46,7 @@
     <div class="flex-1 min-w-0">
       <div class="flex items-baseline justify-between gap-2">
         <span
-          class={cn(
-            'type-body truncate font-medium',
-            isDefault && 'italic text-muted-foreground',
-            selected && 'font-medium',
-          )}
+          class={cn('type-body truncate font-normal', isDefault && 'italic text-muted-foreground')}
         >
           {option.label}
         </span>

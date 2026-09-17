@@ -186,9 +186,7 @@
           {/if}
         </TooltipTriggerWrapper>
       {/snippet}
-    </TooltipPrimitive.Trigger>
-
-    {#if !disabled && (title || description || content)}
+    </TooltipPrimitive.Trigger>{#if !disabled && (title || description || content)}
       <TooltipPrimitive.Portal>
         <TooltipPrimitive.Content
           role="tooltip"

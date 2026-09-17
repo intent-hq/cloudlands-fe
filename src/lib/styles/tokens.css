@@ -165,7 +165,7 @@
   --theme-light-overlay: 0 0 0;
   --theme-light-hover: rgb(var(--theme-light-overlay) / 0.04);
   --theme-light-active: rgb(var(--theme-light-overlay) / 0.07);
-  --theme-light-selected: 0 0% 83%;
+  --theme-light-selected: 0 0% 94%;
   --theme-dark-overlay: 255 255 255;
   --theme-dark-hover: rgb(var(--theme-dark-overlay) / 0.06);
   --theme-dark-active: rgb(var(--theme-dark-overlay) / 0.1);

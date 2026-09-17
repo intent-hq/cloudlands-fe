@@ -4,6 +4,50 @@ import { WorkspaceStatus } from '$shared/types';
 import { WorkspaceId } from '$shared/types/branded-ids';
 import WorkspaceSidebarPreview from './workspace-sidebar.preview.svelte';
 
+test('aligns status headings to the leading content inset and preserves keyboard collapse', async ({
+  mount,
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const component = await mount(WorkspaceSidebarPreview, {
+    hooksConfig: { geometrySnapshot: { scene: 'workspace-sidebar', state: 'status-groups' } },
+  });
+  await page.evaluate(() => document.fonts.ready);
+  const toggles = component.locator('[data-status-group-toggle]');
+  await expect(toggles).toHaveCount(4);
+  const positions = () =>
+    toggles.evaluateAll((nodes) =>
+      nodes.map((node) => {
+        const style = getComputedStyle(node);
+        const bounds = node.getBoundingClientRect();
+        return {
+          headingX: node.querySelector('h4')!.getBoundingClientRect().x,
+          contentStart:
+            bounds.x + parseFloat(style.borderLeftWidth) + parseFloat(style.paddingLeft),
+          chevronX: node.querySelector('svg')!.getBoundingClientRect().x,
+          overflow: node.scrollWidth - node.clientWidth,
+        };
+      }),
+    );
+  const initial = await positions();
+  expect(initial.every((row) => Math.abs(row.headingX - row.contentStart) <= 1)).toBe(true);
+  expect(initial.every((row) => row.overflow <= 1 && row.chevronX > row.headingX)).toBe(true);
+  for (const id of ['blocked', 'needs_attention', 'in_progress', 'idle']) {
+    const toggle = component.locator(`[data-status-group-toggle="${id}"]`);
+    const rows = component.locator(`#status-group-${id}`);
+    await toggle.focus();
+    await page.keyboard.press('Enter');
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    await expect(toggle).toBeFocused();
+    await expect(rows).toBeHidden();
+    await page.keyboard.press('Space');
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    await expect(toggle).toBeFocused();
+    await expect(rows).toBeVisible();
+  }
+  expect(await positions()).toEqual(initial);
+});
+
 const timestamp = '2026-08-23T12:00:00.000Z';
 const workspace: Workspace = {
   id: WorkspaceId('preview-workspace-primary'),
@@ -45,4 +89,70 @@ test('renders loading, empty, busy, long-content, and narrow workspace states', 
   await component.update({ props: { loading: false, width: 248, workspaces: [workspace] } });
   await expect(component).toHaveAttribute('data-preview-width', '248');
   await expect(component.locator('[data-workspace-card-row]')).toHaveCount(1);
+});
+
+test('keeps assigned and unassigned status and title columns aligned through hover and keyboard navigation', async ({
+  mount,
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const selected: string[] = [];
+  const component = await mount(WorkspaceSidebarPreview, {
+    hooksConfig: { geometrySnapshot: { scene: 'workspace-sidebar', state: 'key-slots' } },
+  });
+  await component.update({ props: { width: 248, onSelect: (id: string) => selected.push(id) } });
+  const rows = component.locator('[data-workspace-card-row]');
+  const badge = component.locator('.micro-key-slot-badge');
+  await expect(rows).toHaveCount(3);
+  await expect(badge).toHaveCount(1);
+
+  async function positions() {
+    return rows.evaluateAll((elements) =>
+      elements.map((row) => {
+        const title = row.querySelector<HTMLElement>('[data-workspace-card-title]')!;
+        const status = row.querySelector<HTMLElement>('[data-workspace-status]')!;
+        return {
+          titleX: title.getBoundingClientRect().x,
+          statusX: status.getBoundingClientRect().x,
+          overflow: row.scrollWidth - row.clientWidth,
+        };
+      }),
+    );
+  }
+
+  await expect
+    .poll(async () => {
+      const rects = await positions();
+      return (
+        Math.max(...rects.map((rect) => rect.titleX)) -
+        Math.min(...rects.map((rect) => rect.titleX))
+      );
+    })
+    .toBeLessThanOrEqual(1);
+  const initial = await positions();
+  expect(
+    Math.max(...initial.map((rect) => rect.statusX)) -
+      Math.min(...initial.map((rect) => rect.statusX)),
+  ).toBeLessThanOrEqual(1);
+  expect(initial.every((rect) => rect.overflow <= 1)).toBe(true);
+  const badgeBox = (await badge.boundingBox())!;
+  expect(badgeBox.width).toBeLessThanOrEqual(20);
+  expect(badgeBox.height).toBeLessThanOrEqual((await rows.first().boundingBox())!.height);
+
+  await rows.nth(1).hover();
+  expect(await positions()).toEqual(initial);
+  await rows.nth(1).locator('[data-workspace-card-title]').click();
+  await expect.poll(() => selected.length).toBe(1);
+  const trigger = rows.nth(2).locator('[data-workspace-card-trigger]');
+  await trigger.focus();
+  await expect(trigger).toBeFocused();
+  expect(await positions()).toEqual(initial);
+  await trigger.press('Enter');
+  await expect.poll(() => selected.length).toBe(2);
+  expect(selected[0]).not.toBe(selected[1]);
+
+  await badge.click();
+  await expect(page.getByRole('menu')).toBeVisible();
+  expect(selected).toHaveLength(2);
+  await page.keyboard.press('Escape');
 });

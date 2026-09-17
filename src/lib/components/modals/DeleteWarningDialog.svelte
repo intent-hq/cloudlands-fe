@@ -113,7 +113,7 @@
     <p class="type-body">
       {isArchive ? m.modals_archiveWarning_description() : m.modals_deleteWarning_description()}
     </p>
-    <div class="min-w-0 space-y-4 pr-8">
+    <div class="min-w-0 space-y-4">
       {#if agents.length > 0 || hookNames.length > 0 || openPrs.length > 0 || hasLocalChanges}
         <div class="rounded-md border border-border bg-muted/40 p-3">
           {#if agents.length > 0}

@@ -18,6 +18,8 @@
   interface Props {
     visible?: boolean;
     message?: string;
+    /** Keep the generic status available to assistive technology without repeating it visually. */
+    showMessage?: boolean;
     lifecycleMessage?: string | null;
     elapsed?: string | null;
     /**
@@ -35,6 +37,7 @@
   let {
     visible = false,
     message = m.chat_streamingStatus_thinking_label(),
+    showMessage = true,
     lifecycleMessage = null,
     elapsed = null,
     onHoverChange,
@@ -101,7 +104,7 @@
           class="inline-flex min-w-0 max-w-full items-baseline gap-[0.5ch]"
           data-testid="streaming-status-copy"
           ><span
-            class="shrink-0 font-normal text-foreground"
+            class={showMessage ? 'shrink-0 font-normal text-foreground' : 'sr-only'}
             data-testid="streaming-status-thinking-label">{message}</span
           >{#if lifecycleMessage}<span
               class="min-w-0 truncate font-normal text-muted-foreground"

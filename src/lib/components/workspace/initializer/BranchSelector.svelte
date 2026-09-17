@@ -142,6 +142,17 @@
   let githubSearchBranches: string[] = $state([]);
   // Guards out-of-order prefix-search responses (only the latest wins).
   let githubSearchRequestId = 0;
+  // A click can explicitly accept the same branch that was auto-selected.
+  // Track that interaction separately from the value echoed by the parent.
+  let explicitBranchSelectionRevision = 0;
+  // Keep the original selection intent until an authoritative list succeeds.
+  // Refresh can abort a request after its cached selection was echoed/persisted.
+  let pendingGithubSelection: {
+    autoSelectedBranch: string;
+    valueBeforePaint: string;
+    savedBranchBeforePaint: string;
+    explicitSelectionRevision: number;
+  } | null = null;
   // Using 'any' because this binds to a Svelte Input component, not a native HTMLInputElement
   // The Input component exports focus() and select() methods that we use
   let searchInputElement: any = $state(null);
@@ -382,6 +393,7 @@
 
     // Only refetch if something meaningful changed
     if (needsRefetch) {
+      pendingGithubSelection = null;
       if (currentRepoPath) {
         // Try to load saved branch for this repo if persistence is enabled.
         const savedBranch = getSavedBranchForRepo(currentRepoPath);
@@ -451,8 +463,9 @@
     ) {
       // Saved branch exists (in local or remote branches), use it
       setInternalBranch(savedBranchForRepo);
-    } else if (defaultBranch && branches.includes(defaultBranch)) {
-      // Fall back to default branch
+    } else if (defaultBranch) {
+      // The repo metadata is authoritative even when the default is outside
+      // the first page returned by github.branches.list.
       setInternalBranch(defaultBranch);
     } else {
       // Last resort: use first available branch
@@ -480,49 +493,6 @@
     // Debug logging to diagnose branch fetching issues
     logger.debug('fetchBranches called', { repoPath, repoType, githubUrl });
     performanceMonitor.start(`fetchBranches-${repoPath}`, { repoType, githubUrl });
-
-    // Check cache first (if caching is enabled)
-    if (debugConfig.get('enableBranchCaching')) {
-      const cached = branchCache.get(repoPath);
-      if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
-        branches = cached.branches;
-        remoteBranches = cached.remoteBranches || [];
-        defaultBranch = cached.default;
-        currentBranch = cached.current || '';
-
-        // Set internal state from cache - always ensure a valid branch is selected
-        // If value prop is provided, trust it (e.g., for remote branches like origin/...)
-        if (value) {
-          // Value prop is the source of truth - don't override it
-          setInternalBranch(value);
-        } else {
-          // Look up saved branch for THIS repo from Redux (not from stale selectedBranch)
-          const savedBranchForRepo = getSavedBranchForRepo(repoPath);
-          if (
-            savedBranchForRepo &&
-            (branches.includes(savedBranchForRepo) || remoteBranches.includes(savedBranchForRepo))
-          ) {
-            // Saved branch exists (in local or remote branches), use it
-            setInternalBranch(savedBranchForRepo);
-          } else if (currentBranch && branches.includes(currentBranch)) {
-            // Fall back to current branch
-            setInternalBranch(currentBranch);
-          } else if (defaultBranch && branches.includes(defaultBranch)) {
-            // Fall back to default branch
-            setInternalBranch(defaultBranch);
-          } else if (branches.length > 0) {
-            // Last resort: use first available branch
-            setInternalBranch(branches[0]);
-          }
-        }
-        notifyBranchesLoaded();
-        isLoading = false;
-        return;
-      }
-    }
-
-    isLoading = true;
-    error = null;
 
     // Defensive check: detect if repoPath looks like a GitHub shorthand (owner/repo)
     // This handles cases where the form state was restored but repoType/githubUrl weren't properly set
@@ -554,13 +524,53 @@
       }
     }
 
+    // Check cache first (if caching is enabled)
+    if (debugConfig.get('enableBranchCaching')) {
+      const cached = branchCache.get(repoPath);
+      if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+        branches = cached.branches;
+        remoteBranches = cached.remoteBranches || [];
+        defaultBranch = cached.default;
+        currentBranch = cached.current || '';
+
+        // Set internal state from cache - always ensure a valid branch is selected
+        // GitHub cache entries are pages too; use the same metadata default.
+        // If value prop is provided, trust it (e.g., for remote branches like origin/...)
+        if (effectiveRepoType === 'github') {
+          applyGithubBranchSelection();
+        } else if (value) {
+          // Value prop is the source of truth - don't override it
+          setInternalBranch(value);
+        } else {
+          // Look up saved branch for THIS repo from Redux (not from stale selectedBranch)
+          const savedBranchForRepo = getSavedBranchForRepo(repoPath);
+          if (
+            savedBranchForRepo &&
+            (branches.includes(savedBranchForRepo) || remoteBranches.includes(savedBranchForRepo))
+          ) {
+            // Saved branch exists (in local or remote branches), use it
+            setInternalBranch(savedBranchForRepo);
+          } else if (currentBranch && branches.includes(currentBranch)) {
+            // Fall back to current branch
+            setInternalBranch(currentBranch);
+          } else if (defaultBranch && branches.includes(defaultBranch)) {
+            // Fall back to default branch
+            setInternalBranch(defaultBranch);
+          } else if (branches.length > 0) {
+            // Last resort: use first available branch
+            setInternalBranch(branches[0]);
+          }
+        }
+        notifyBranchesLoaded();
+        isLoading = false;
+        return;
+      }
+    }
+
+    isLoading = true;
+    error = null;
+
     let fetchSucceeded = false;
-    // Cached-first paint state for the GitHub path (`github.branches.listCached`).
-    let cachedListingApplied = false;
-    let cachedAutoSelectedBranch = '';
-    // Captured before the cached paint: its auto-selection persists via
-    // saveBranchForRepo, so the live saved value is clobbered by then.
-    let savedBranchBeforeCachedPaint = '';
     let freshListingSettled = false;
 
     try {
@@ -635,10 +645,18 @@
           branches = cachedListing.branches;
           defaultBranch = cachedListing.defaultBranch || '';
           isLoading = false;
-          cachedListingApplied = true;
-          savedBranchBeforeCachedPaint = getSavedBranchForRepo(repoPath);
-          applyGithubBranchSelection();
-          cachedAutoSelectedBranch = internalSelectedBranch;
+          if (!pendingGithubSelection) {
+            const savedBranchBeforePaint = getSavedBranchForRepo(repoPath);
+            const valueBeforePaint = value;
+            const explicitSelectionRevision = explicitBranchSelectionRevision;
+            applyGithubBranchSelection();
+            pendingGithubSelection = {
+              autoSelectedBranch: internalSelectedBranch,
+              valueBeforePaint,
+              savedBranchBeforePaint,
+              explicitSelectionRevision,
+            };
+          }
           notifyBranchesLoaded();
           logger.debug('Rendered cached branches via github.branches.listCached', {
             owner,
@@ -703,29 +721,22 @@
       // For GitHub repos, ensure a valid branch is selected
       // (Local repos already handle this above)
       if (effectiveRepoType === 'github' && branches.length > 0) {
-        if (cachedListingApplied && !value) {
-          // Reconcile the cached-first selection against the authoritative
-          // list. A selection the user made after the cached paint is kept
-          // unless it vanished; an auto-selected one re-runs the documented
-          // saved → default → first order (a stale cache may have lacked the
-          // saved branch). setInternalBranch fires onchange and persists —
-          // never leave a vanished branch selected.
-          if (internalSelectedBranch && internalSelectedBranch !== cachedAutoSelectedBranch) {
-            if (!branches.includes(internalSelectedBranch)) {
-              setInternalBranch(
-                defaultBranch && branches.includes(defaultBranch) ? defaultBranch : branches[0],
-              );
-            }
-          } else {
+        const cachedSelection = pendingGithubSelection;
+        if (cachedSelection && !cachedSelection.valueBeforePaint) {
+          // The clone dialog echoes automatic onchange events into value.
+          // Reconcile that provisional value too, but preserve explicit picks
+          // (even a click on the same branch) and different external values.
+          if (
+            explicitBranchSelectionRevision === cachedSelection.explicitSelectionRevision &&
+            (!value || value === cachedSelection.autoSelectedBranch)
+          ) {
             // Use the saved value captured BEFORE the cached paint — the
             // cached auto-selection persisted itself via saveBranchForRepo.
-            const saved = savedBranchBeforeCachedPaint;
+            const saved = cachedSelection.savedBranchBeforePaint;
             const preferred =
               saved && (branches.includes(saved) || remoteBranches.includes(saved))
                 ? saved
-                : defaultBranch && branches.includes(defaultBranch)
-                  ? defaultBranch
-                  : branches[0];
+                : defaultBranch || branches[0];
             if (internalSelectedBranch !== preferred) setInternalBranch(preferred);
           }
         } else {
@@ -735,7 +746,10 @@
 
       // Don't export a superseded fetch's branch list to consumers — a newer
       // fetch (e.g. after a repo change) owns the notification.
-      if (fetchSucceeded && !abortController.signal.aborted) notifyBranchesLoaded();
+      if (fetchSucceeded && !abortController.signal.aborted) {
+        pendingGithubSelection = null;
+        notifyBranchesLoaded();
+      }
     } catch (err) {
       // Handle abort errors silently - they're expected when a new fetch starts
       if (err instanceof Error && err.name === 'AbortError') {
@@ -1003,6 +1017,7 @@
    * Fetches branch status for the selected branch.
    */
   function selectBranch(branch: string, keepSkipIsolation = false) {
+    explicitBranchSelectionRevision++;
     internalSelectedBranch = branch;
     clearSearch();
     try {
@@ -1166,7 +1181,8 @@
 
       // Focus input
       requestAnimationFrame(() => {
-        if (searchInputElement) {
+        // Escape can close the menu before this queued frame runs.
+        if (isOpen && searchInputElement) {
           searchInputElement.focus();
           searchInputElement.select();
         }
@@ -1471,12 +1487,13 @@
         </div>
       </Select.Trigger>
       <Select.Content
-        class="max-w-[400px] min-w-[400px] max-h-[min(600px,calc(var(--radix-popper-available-height,100vh)-16px))] overflow-hidden flex flex-col"
+        class="w-[400px] min-w-0 max-h-[min(600px,calc(var(--bits-select-content-available-height,100dvh)-8px))] overflow-hidden flex flex-col"
+        wrapperClass="flex flex-col"
         {dropUp}
         {portal}
       >
         <!-- Header -->
-        <div class="px-4 pt-2 pb-3">
+        <div class="shrink-0 px-4 pt-2 pb-3">
           <h2 class="text-base font-semibold text-foreground">
             {m.workspace_branchSelector_whichBranch_label()}
           </h2>
@@ -1501,39 +1518,10 @@
           </Button>
         {/if}
 
-        <div class="px-2 pb-1 pt-1 sticky -top-1 bg-popover z-10">
-          <div class="flex gap-2">
-            <Input
-              bind:this={searchInputElement}
-              bind:value={searchValue}
-              autofocus
-              placeholder={m.workspace_branchSelector_search_placeholder()}
-              oninput={(e) => handleManualInput(e.currentTarget.value)}
-              onkeydown={(e) => {
-                if (e.key === 'Enter' && searchValue) {
-                  e.preventDefault();
-                  selectBranch(searchValue);
-                }
-              }}
-              class="flex-1 border-0 bg-background"
-              noFocusStyle
-            />
-            <Button
-              onclick={handleRefresh}
-              variant="ghost-light"
-              size="icon"
-              disabled={isLoading}
-              aria-label={m.workspace_branchSelector_refreshBranches_ariaLabel()}
-            >
-              <Fa icon={faRotate} />
-            </Button>
-          </div>
-        </div>
-
-        <!-- Branch status info -->
+        <!-- Branch status belongs above search, not between search and results. -->
         {#if selectedBranch && repoType === 'local' && (branchStatusBehind > 0 || (showUncommittedIndicator && !skipIsolation && branchStatusHasUncommittedChanges && isCurrentBranch))}
           <div
-            class="mx-2 mb-1 px-3 py-2 text-sm text-subtle"
+            class="shrink-0 px-4 pb-3 text-sm text-subtle"
             transition:slide={{ axis: 'y', tier: 'moderate' }}
           >
             {#if branchStatusBehind > 0}
@@ -1549,7 +1537,37 @@
           </div>
         {/if}
 
-        <div class="overflow-y-auto flex-1 pt-2">
+        <div class="shrink-0 px-3 pb-2">
+          <div class="flex gap-2">
+            <Input
+              bind:this={searchInputElement}
+              bind:value={searchValue}
+              autofocus
+              placeholder={m.workspace_branchSelector_search_placeholder()}
+              oninput={(e) => handleManualInput(e.currentTarget.value)}
+              onkeydown={(e) => {
+                if (e.key === 'Enter' && searchValue) {
+                  e.preventDefault();
+                  selectBranch(searchValue);
+                }
+              }}
+              class="flex-1 min-w-0 border-0 bg-background text-sm"
+              noFocusStyle
+            />
+            <Button
+              onclick={handleRefresh}
+              variant="ghost-light"
+              size="icon"
+              class="shrink-0"
+              disabled={isLoading}
+              aria-label={m.workspace_branchSelector_refreshBranches_ariaLabel()}
+            >
+              <Fa icon={faRotate} class="size-4!" />
+            </Button>
+          </div>
+        </div>
+
+        <div class="min-h-16 overflow-y-auto flex-1" data-testid="branch-results">
           {#if githubAuthNeeded === 'not-authenticated' && !isConnectingGitHub}
             <!-- Connect with GitHub prompt for private repos -->
             <Button
@@ -1823,7 +1841,7 @@
 
         <!-- Use current branch option (no isolated checkout) -->
         {#if typeof onSkipIsolationChange === 'function' && currentBranch}
-          <div class="px-2 pt-2 pb-3 border-t border-border sticky -bottom-1 bg-popover">
+          <div class="shrink-0 px-2 pt-2 pb-3 border-t border-border bg-popover">
             <Button
               variant="ghost"
               onclick={() => {
@@ -1839,7 +1857,8 @@
                 }
                 isOpen = false;
               }}
-              class="w-full flex items-start gap-3 px-2 py-1 rounded-md text-left cursor-pointer"
+              wrapContent={false}
+              class="w-full h-auto flex items-start gap-3 px-2 py-1 rounded-md text-left whitespace-normal cursor-pointer"
             >
               <Checkbox
                 checked={skipIsolation}
@@ -1857,8 +1876,8 @@
                   isOpen = false;
                 }}
               />
-              <div class="items-start flex-1 min-w-0 text-ui font-medium -mt-0.25">
-                {workDirectlyParts[0]}<span class="font-semibold">{currentBranch}</span
+              <div class="items-start flex-1 min-w-0 text-sm font-normal -mt-0.25">
+                {workDirectlyParts[0]}<span class="font-medium">{currentBranch}</span
                 >{workDirectlyParts[1]}
               </div>
             </Button>

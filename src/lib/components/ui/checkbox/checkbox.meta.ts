@@ -18,7 +18,6 @@ export const checkboxMetadata = {
     'src/lib/components/chat/ChatSearch.svelte',
     'src/lib/components/chat/input/ContextPickerButton.svelte',
     'src/lib/components/chat/proposals/BulkProposalItems.svelte',
-    'src/lib/components/layout/ConnectBackendModal.svelte',
     'src/lib/components/modals/InterruptedAgentsModal.svelte',
     'src/lib/components/modals/TransferWorkspaceModal.svelte',
     'src/lib/components/notes/NotesPanel.svelte',

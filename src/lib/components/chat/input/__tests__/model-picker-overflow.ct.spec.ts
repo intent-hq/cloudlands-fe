@@ -1,11 +1,338 @@
 import { expect, test } from '@playwright/experimental-ct-svelte';
 import type { Locator, Page } from '@playwright/test';
 import ModelPickerGeometryHost from './ModelPickerGeometryHost.svelte';
+import SimpleRichInputQueueHost from '../SimpleRichInputQueueHost.svelte';
 
 const outerMenu = (page: Page) =>
   page.locator('[data-slot="dropdown-content"]').filter({ has: page.getByRole('searchbox') });
 const innerMenu = (page: Page) => page.locator('[data-slot="select-content"]');
 const modelTrigger = (page: Page) => page.getByTestId('model-picker-host').getByRole('button');
+
+test('composer model content aligns with text while its hover target extends on both sides', async ({
+  mount,
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const component = await mount(SimpleRichInputQueueHost, { props: { queueCount: 0 } });
+  await component.locator('.tiptap-editor').fill('Align this composer');
+  await page.evaluate(() => document.fonts.ready);
+  const trigger = component.locator('[data-chat-input-primary-actions] button').first();
+  const geometry = await trigger.evaluate((button) => {
+    const content = button.querySelector('span.inline-flex')!.getBoundingClientRect();
+    const label = button.querySelector<HTMLElement>('span.inline-flex > span.truncate')!;
+    const text = button
+      .closest('[data-testid="message-input"]')!
+      .querySelector('.tiptap-editor p')!
+      .getBoundingClientRect();
+    const rect = button.getBoundingClientRect();
+    return {
+      alignment: content.left - text.left,
+      leftInset: content.left - rect.left,
+      rightInset: rect.right - content.right,
+      labelClipped: label.scrollWidth > label.clientWidth,
+    };
+  });
+  expect(Math.abs(geometry.alignment)).toBeLessThan(1);
+  expect(geometry.leftInset).toBeGreaterThanOrEqual(8);
+  expect(Math.abs(geometry.leftInset - geometry.rightInset)).toBeLessThan(1);
+  expect(geometry.labelClipped).toBe(false);
+  await expectHitTarget(trigger);
+  const rest = (await trigger.boundingBox())!;
+  const background = await trigger.evaluate((el) => getComputedStyle(el).backgroundColor);
+  await trigger.hover();
+  await expect
+    .poll(() => trigger.evaluate((el) => getComputedStyle(el).backgroundColor))
+    .not.toBe(background);
+  expect(await trigger.boundingBox()).toEqual(rest);
+});
+
+test('model labels stay normal weight through pointer and keyboard selection', async ({
+  mount,
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await mount(ModelPickerGeometryHost);
+  const trigger = modelTrigger(page);
+  await trigger.press('Enter');
+  const current = page.getByRole('option', { name: /Reasoning model/ });
+  const next = page.getByRole('option', { name: 'Model 2', exact: true });
+  const currentLabel = current.getByText('Reasoning model', { exact: true });
+  const nextLabel = next.getByText('Model 2', { exact: true });
+  await expect(current).toHaveAttribute('aria-selected', 'true');
+  await expect(currentLabel).toHaveCSS('font-weight', '400');
+  await expect(nextLabel).toHaveCSS('font-weight', '400');
+  await next.click();
+  await expect(page.getByTestId('selection')).toContainText('"model":"model-2"');
+  await trigger.press('Enter');
+  await expect(next).toHaveAttribute('aria-selected', 'true');
+  await expect(current).toHaveAttribute('aria-selected', 'false');
+  await expect(currentLabel).toHaveCSS('font-weight', '400');
+  await expect(nextLabel).toHaveCSS('font-weight', '400');
+  await page.getByRole('searchbox').fill('Reasoning');
+  await page.keyboard.press('Enter');
+  await expect(page.getByTestId('selection')).toContainText('"model":"reasoning-model"');
+  await expect(trigger).toBeFocused();
+});
+
+test('provider rail, immediately visible search and bottom-footer effort remain independent', async ({
+  mount,
+  page,
+}) => {
+  await page.setViewportSize({ width: 900, height: 800 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await mount(ModelPickerGeometryHost, { props: { multipleProviders: true } });
+  const trigger = modelTrigger(page);
+  await trigger.press('Enter');
+  const outer = outerMenu(page);
+  const search = page.getByRole('searchbox');
+  await expect(search).toBeFocused();
+  const rail = page.getByTestId('model-provider-rail');
+  const list = outer.getByRole('listbox');
+  const railBox = (await rail.boundingBox())!;
+  const listBox = (await list.boundingBox())!;
+  expect(railBox.x + railBox.width).toBeLessThanOrEqual(listBox.x + 1);
+  expect(railBox.width).toBeLessThan(56);
+  const emptyWidth = (await search.boundingBox())!.width;
+  const selected = list.getByRole('option', { name: /Reasoning model/ });
+  await expect(selected).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('tab')).toHaveCount(2);
+  const effort = page.getByTestId('effort-picker-trigger');
+  expect(await effort.evaluate((el) => el.parentElement?.closest('button'))).toBeNull();
+  const section = page.getByTestId('model-reasoning-section');
+  const sectionBox = (await section.boundingBox())!;
+  const panelBox = (await outer.boundingBox())!;
+  expect(await section.evaluate((el) => el.closest('[role="listbox"]'))).toBeNull();
+  expect(sectionBox.y).toBeGreaterThanOrEqual(listBox.y + listBox.height);
+  expect(Math.abs(sectionBox.x - listBox.x)).toBeLessThan(1);
+  expect(Math.abs(sectionBox.width - listBox.width)).toBeLessThan(1);
+  expect(panelBox.y + panelBox.height - sectionBox.y - sectionBox.height).toBeLessThanOrEqual(1);
+  const labelBox = (await section.getByText('Reasoning effort', { exact: true }).boundingBox())!;
+  const controlBox = (await effort.boundingBox())!;
+  expect(
+    Math.abs(labelBox.y + labelBox.height / 2 - controlBox.y - controlBox.height / 2),
+  ).toBeLessThan(1);
+  expect(labelBox.x + labelBox.width).toBeLessThan(controlBox.x);
+
+  await list.hover();
+  await page.mouse.wheel(0, 2000);
+  await expect.poll(() => list.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+  expect(await section.boundingBox()).toEqual(sectionBox);
+  await expectHitTarget(effort);
+  await page.keyboard.type('Model 20');
+  await expect(search).toHaveValue('Model 20');
+  expect((await search.boundingBox())!.width).toBe(emptyWidth);
+  expect(await search.evaluate((el) => parseFloat(getComputedStyle(el).borderTopWidth))).toBe(0);
+  await expect(list.getByRole('option')).toHaveCount(1);
+  await expect(effort).toBeVisible();
+  expect(await section.boundingBox()).toEqual(sectionBox);
+  await page.keyboard.press('Tab');
+  await expect(list.getByRole('option')).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(effort).toBeFocused();
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('End');
+  await page.keyboard.press('Enter');
+  await expect(page.getByTestId('selection')).toHaveText(
+    JSON.stringify({ model: 'reasoning-model', effort: 'max', changes: 1 }),
+  );
+  await expect(effort).toBeFocused();
+  await outer.getByRole('button', { name: 'Clear search' }).click();
+  await expect(search).toBeFocused();
+  await expect(selected).toHaveAttribute('aria-selected', 'true');
+  await expect(effort).toBeVisible();
+
+  const codex = page.getByRole('tab', { name: /Codex/ });
+  const claude = page.getByRole('tab', { name: /Claude/ });
+  await page.getByRole('tab', { name: /Claude/ }).press('Enter');
+  await expect(outer).toBeVisible();
+  await expect(list.getByRole('option', { name: 'Other provider model' })).toBeVisible();
+  await codex.press('Enter');
+  await expect(selected).toHaveAttribute('aria-selected', 'true');
+  await codex.press('ArrowDown');
+  await expect(claude).toBeFocused();
+  await expect(claude).toHaveAttribute('aria-selected', 'true');
+  await expect(list.getByRole('option', { name: 'Other provider model' })).toBeVisible();
+  await expect(effort).toHaveAccessibleName(/Max/);
+  expect(await section.boundingBox()).toEqual(sectionBox);
+  await page.keyboard.press('ArrowUp');
+  await expect(codex).toBeFocused();
+  await expect(selected).toHaveAttribute('aria-selected', 'true');
+  await page.keyboard.press('Home');
+  await expect(page.getByRole('tab').first()).toBeFocused();
+  await page.keyboard.press('End');
+  await expect(page.getByRole('tab').last()).toBeFocused();
+  await page.keyboard.press('ArrowDown');
+  await expect(page.getByRole('tab').first()).toBeFocused();
+  await codex.press('Enter');
+  await page.getByTestId('model-provider-refresh-button').press('Enter');
+  await expect(outer).toBeVisible();
+  await expect(page.getByTestId('refresh-requests')).toHaveText(
+    JSON.stringify([{ channel: 'codex:get-models', params: { forceRefresh: true } }]),
+  );
+  await search.fill('Model 20');
+  await search.press('Escape');
+  await expect(outer).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(search).toBeFocused();
+  await expect(search).toHaveValue('');
+  await expect(selected).toHaveAttribute('aria-selected', 'true');
+  await search.fill('Model 20');
+  await page.keyboard.press('Enter');
+  await expect(page.getByTestId('selection')).toContainText('"model":"model-20"');
+  await trigger.press('Enter');
+  await claude.press('Enter');
+  await list.getByRole('option', { name: 'Other provider model' }).click();
+  await expect(page.getByTestId('selection')).toContainText('"model":"other-model"');
+  await trigger.press('Enter');
+  await expect(effort).toHaveCount(0);
+});
+
+for (const { opening, width } of [
+  { opening: 'pointer', width: 900 },
+  { opening: 'keyboard', width: 320 },
+] as const) {
+  test(`full-width search is immediately ready on ${opening} open at ${width}px`, async ({
+    mount,
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 800 });
+    await page.emulateMedia({ reducedMotion: opening === 'pointer' ? 'no-preference' : 'reduce' });
+    await mount(ModelPickerGeometryHost);
+    await page.evaluate(() => document.fonts.ready);
+    const trigger = modelTrigger(page);
+    if (opening === 'pointer') await trigger.click();
+    else await trigger.press('Enter');
+    const search = page.getByRole('searchbox');
+    await expect(search).toBeFocused();
+    const outer = outerMenu(page);
+    const panelBox = (await outer.boundingBox())!;
+    const listBox = (await outer.getByRole('listbox').boundingBox())!;
+    const refresh = page.getByTestId('model-provider-refresh-button');
+    const refreshBox = (await refresh.boundingBox())!;
+    const box = (await search.boundingBox())!;
+    const firstOption = outer.getByRole('option').first();
+    const firstRow = (await firstOption.boundingBox())!;
+    const labelTextX = await firstOption
+      .getByText('Reasoning model', { exact: true })
+      .evaluate((el) => {
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        return range.getBoundingClientRect().x;
+      });
+    const searchTextX = await search.evaluate((el) => {
+      const style = getComputedStyle(el);
+      return (
+        el.getBoundingClientRect().x +
+        parseFloat(style.borderLeftWidth) +
+        parseFloat(style.paddingLeft)
+      );
+    });
+    // Compare the caret/content start with actual label text, not either box edge.
+    expect(Math.abs(searchTextX - labelTextX)).toBeLessThan(1);
+    expect(box.x).toBeGreaterThanOrEqual(listBox.x);
+    expect(box.x + box.width).toBeLessThanOrEqual(refreshBox.x);
+    expect(refreshBox.x - box.x - box.width).toBeLessThan(8);
+    expect(box.y - panelBox.y).toBeLessThanOrEqual(8);
+    expect(firstRow.y - box.y - box.height).toBe(4);
+    const presentation = await search.evaluate((el) => ({
+      placeholder: (el as HTMLInputElement).placeholder,
+      caret: getComputedStyle(el).caretColor,
+      color: getComputedStyle(el).color,
+      border: getComputedStyle(el).borderTopWidth,
+      outline: getComputedStyle(el).outlineStyle,
+      background: getComputedStyle(el.parentElement!).backgroundColor,
+      fieldBackground: getComputedStyle(el).backgroundColor,
+      visibleLeadingIcons: Array.from(el.parentElement!.querySelectorAll('svg')).filter(
+        (icon) => icon.getClientRects().length > 0,
+      ).length,
+      resizing: el
+        .parentElement!.getAnimations()
+        .some((animation) =>
+          (animation.effect as KeyframeEffect).getKeyframes().some((frame) => 'width' in frame),
+        ),
+    }));
+    expect(presentation.placeholder.length).toBeGreaterThan(0);
+    expect(presentation.caret).toBe(presentation.color);
+    expect(presentation.caret).not.toBe('rgba(0, 0, 0, 0)');
+    expect(presentation.border).toBe('0px');
+    expect(presentation.outline).toBe('none');
+    expect(presentation.background).toBe('rgba(0, 0, 0, 0)');
+    expect(presentation.fieldBackground).toBe('rgba(0, 0, 0, 0)');
+    expect(presentation.visibleLeadingIcons).toBe(0);
+    expect(presentation.resizing).toBe(false);
+    await expectHitTarget(search);
+    await expectHitTarget(refresh);
+    // No search click/fill: the first keystroke after either open must filter.
+    await page.keyboard.type('Model 20');
+    await expect(search).toHaveValue('Model 20');
+    await expect(outer.getByRole('option')).toHaveCount(1);
+    expect((await search.boundingBox())!.width).toBe(box.width);
+    await search.press('Tab');
+    await expect(search).not.toBeFocused();
+    await expect(search).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+    expect(await search.evaluate((el) => getComputedStyle(el.parentElement!).backgroundColor)).toBe(
+      'rgba(0, 0, 0, 0)',
+    );
+    const clear = page.getByRole('button', { name: 'Clear search' });
+    await expectHitTarget(clear);
+    await clear.click();
+    await expect(search).toHaveValue('');
+    await expect(search).toBeFocused();
+    await search.press('Escape');
+    await expect(trigger).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(search).toBeFocused();
+    expect((await search.boundingBox())!.width).toBe(box.width);
+  });
+}
+
+test('first-open, hover and reopened selected highlights fit the full row without trigger shifts', async ({
+  mount,
+  page,
+}) => {
+  await page.setViewportSize({ width: 900, height: 800 });
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await mount(ModelPickerGeometryHost);
+  const trigger = modelTrigger(page);
+  await page.mouse.move(850, 750);
+  // Mount does not wait for Inter: measure the real font, not its fallback.
+  await page.evaluate(() => document.fonts.ready);
+  const rest = (await trigger.boundingBox())!;
+  await trigger.hover();
+  expect(await trigger.boundingBox()).toEqual(rest);
+  const padding = await trigger.evaluate((el) => ({
+    left: parseFloat(getComputedStyle(el).paddingLeft),
+    right: parseFloat(getComputedStyle(el).paddingRight),
+  }));
+  expect(padding.left).toBeGreaterThanOrEqual(8);
+  expect(padding.left).toBe(padding.right);
+  await page.mouse.move(850, 750);
+  await trigger.press('Enter');
+  const outer = outerMenu(page);
+  const row = outer.getByRole('option', { name: /Reasoning model/ });
+  const selectedHighlight = outer.locator('.bg-selected');
+  async function aligned() {
+    await expect(async () => {
+      const a = (await row.boundingBox())!;
+      const b = (await selectedHighlight.boundingBox())!;
+      for (const key of ['x', 'y', 'width', 'height'] as const)
+        expect(Math.abs(a[key] - b[key])).toBeLessThan(1);
+    }).toPass();
+  }
+  await aligned();
+  await row.hover();
+  await aligned();
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Enter');
+  await aligned();
+  const search = page.getByRole('searchbox');
+  await search.press('ArrowDown');
+  const activeId = await search.getAttribute('aria-activedescendant');
+  await expect(page.locator(`[id="${activeId}"]`)).toHaveAccessibleName('Model 2');
+  await aligned();
+  expect(await outer.evaluate((el) => el.getAnimations().length)).toBe(0);
+});
 
 async function expectHitTarget(target: Locator) {
   // Never scrollIntoViewIfNeeded here: that can conceal clipping by scrolling

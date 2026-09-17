@@ -22,6 +22,7 @@
     handleHistoryNavigateIpc,
   } from '$lib/utils/history-navigation';
   import { isElectronPlatform } from '$lib/utils/platform-capabilities';
+  import { isHudWindowRenderer } from '$lib/utils/navigation.client';
 
   let { children }: { children?: Snippet } = $props();
 
@@ -44,18 +45,29 @@
     const handleWindowBlur = () => setWindowBlurred(true);
     const handleWindowFocus = () => setWindowBlurred(false);
 
-    setWindowBlurred(!document.hasFocus());
+    // `data-window-blurred` pauses ambient motion (app.css keyframes, the
+    // shared frame clock, aurora, mark motion). The HUD pop-out is a monitoring
+    // surface watched on a second display while another window holds focus, so
+    // it never sets the attribute: its takeover choreography must play unfocused,
+    // and any attribute already present on <html> is cleared on mount.
+    // eslint-disable-next-line intent/no-component-async-data-fetch -- synchronous route check, no data fetch
+    const pausesMotionOnBlur = !isHudWindowRenderer();
     const electronApi = window.electronAPI;
     const usesNativeWindowFocus = isElectronPlatform();
     let windowFocusListenerId: string | undefined;
-    if (usesNativeWindowFocus) {
-      // eslint-disable-next-line intent/no-component-async-data-fetch -- root native window lifecycle bridge
-      windowFocusListenerId = electronApi?.on?.('window:focus', (focused: boolean) => {
-        setWindowBlurred(!focused);
-      });
+    if (!pausesMotionOnBlur) {
+      setWindowBlurred(false);
     } else {
-      window.addEventListener('blur', handleWindowBlur);
-      window.addEventListener('focus', handleWindowFocus);
+      setWindowBlurred(!document.hasFocus());
+      if (usesNativeWindowFocus) {
+        // eslint-disable-next-line intent/no-component-async-data-fetch -- root native window lifecycle bridge
+        windowFocusListenerId = electronApi?.on?.('window:focus', (focused: boolean) => {
+          setWindowBlurred(!focused);
+        });
+      } else {
+        window.addEventListener('blur', handleWindowBlur);
+        window.addEventListener('focus', handleWindowFocus);
+      }
     }
 
     // eslint-disable-next-line intent/no-component-async-data-fetch -- root DOM splash lifecycle wiring does not own domain state.
@@ -74,7 +86,7 @@
       if (windowFocusListenerId) {
         // eslint-disable-next-line intent/no-component-async-data-fetch -- paired native window listener cleanup
         electronApi.offById('window:focus', windowFocusListenerId);
-      } else if (!usesNativeWindowFocus) {
+      } else if (pausesMotionOnBlur && !usesNativeWindowFocus) {
         window.removeEventListener('blur', handleWindowBlur);
         window.removeEventListener('focus', handleWindowFocus);
       }

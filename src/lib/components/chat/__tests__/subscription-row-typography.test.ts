@@ -1,4 +1,4 @@
-// @verify-changed-triggers: ../AgentSubscriptions.svelte, ../EventSubscriptionsCard.svelte, ../EventWakeupBanner.svelte, ../AutomatedWakeCardHeader.svelte, ../QueuedMessageNoticeHeader.svelte, ../subscription-disclosure.ts
+// @verify-changed-triggers: ../AgentSubscriptions.svelte, ../EventSubscriptionsCard.svelte, ../EventWakeupBanner.svelte, ../AutomatedWakeCardHeader.svelte, ../subscription-disclosure.ts
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
@@ -289,7 +289,6 @@ describe('collapsed subscription typography contract', () => {
     'EventSubscriptionsCard.svelte',
     'EventWakeupBanner.svelte',
     'AutomatedWakeCardHeader.svelte',
-    'QueuedMessageNoticeHeader.svelte',
   ]) {
     it(`${file} consumes body typography for collapsed rows`, () => {
       const source = readFileSync(resolve(process.cwd(), 'src/lib/components/chat', file), 'utf8');

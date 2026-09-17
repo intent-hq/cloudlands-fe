@@ -35,22 +35,30 @@ describe('DeviceIconPicker', () => {
 
   it('refreshes the automatic label when detection changes', async () => {
     const view = render(DeviceIconPicker, { props: { record: { detectedDeviceKind: 'laptop' } } });
-    expect(screen.getByTestId('device-icon-picker-trigger').textContent).toContain('Laptop');
+    expect(screen.getByTestId('device-icon-picker-trigger').getAttribute('aria-label')).toContain(
+      'Laptop',
+    );
 
     await view.rerender({ record: { detectedDeviceKind: 'cloudVm' } });
-    expect(screen.getByTestId('device-icon-picker-trigger').textContent).toContain('Cloud VM');
+    expect(screen.getByTestId('device-icon-picker-trigger').getAttribute('aria-label')).toContain(
+      'Cloud VM',
+    );
   });
 
   it('starts from the override carried by the record', () => {
     render(DeviceIconPicker, {
       props: { record: { deviceIcon: 'cat', detectedDeviceKind: 'laptop' } },
     });
-    expect(screen.getByTestId('device-icon-picker-trigger').textContent).toContain('Cat');
+    expect(screen.getByTestId('device-icon-picker-trigger').getAttribute('aria-label')).toContain(
+      'Cat',
+    );
   });
 
   it('supports an undefined bound value and updates its parent after mouse selection', async () => {
     render(DeviceIconPickerHarness);
-    expect(screen.getByTestId('device-icon-picker-trigger').textContent).toContain('Cat');
+    expect(screen.getByTestId('device-icon-picker-trigger').getAttribute('aria-label')).toContain(
+      'Cat',
+    );
     expect(screen.getByTestId('bound-device-icon-value').textContent).toBe('undefined');
 
     await fireEvent.keyDown(screen.getByTestId('device-icon-picker-trigger'), { key: 'Enter' });

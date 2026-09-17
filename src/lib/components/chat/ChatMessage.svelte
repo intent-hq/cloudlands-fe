@@ -56,7 +56,6 @@
   import type { ContentBlock } from '$shared/types/content-block';
   import AgentMessageAttributionHeader from './AgentMessageAttributionHeader.svelte';
   import { getAgentMessageAttribution } from '$lib/utils/agent-message-attribution';
-  import QueuedMessageNoticeHeader from './QueuedMessageNoticeHeader.svelte';
   import { getQueueInfo } from '$lib/utils/queue-info';
   import { getPresentedUserMessageText } from '$lib/utils/user-message-presentation';
   import AutomatedWakeCardHeader from './AutomatedWakeCardHeader.svelte';
@@ -385,11 +384,6 @@
     role === 'user' ? getAgentMessageAttribution(message?.metadata) : null,
   );
   let isAgentMessageExpanded = $state(false);
-  let agentMessagePreview = $derived(
-    message
-      ? (role === 'user' ? getPresentedUserMessageText(message) : extractAllContent(message)).trim()
-      : '',
-  );
   let agentMessageBodyId = $derived(`agent-message-body-${message?.id ?? 'pending'}`);
 
   // Queued-delivery info for messages drained from the pending queue
@@ -1425,7 +1419,7 @@
             ? 'automated-wake-card'
             : undefined}
           class="{agentAttribution
-            ? `${SUBSCRIPTION_CARD_CONTAINMENT_CLASS} ${SUBSCRIPTION_CARD_SURFACE_CLASS}`
+            ? `relative ${SUBSCRIPTION_CARD_CONTAINMENT_CLASS} ${SUBSCRIPTION_CARD_SURFACE_CLASS}`
             : automatedWakePresentation
               ? `relative ${suppressAutomatedWakeTopSpacing ? 'mt-0' : SUBSCRIPTION_IN_THREAD_CARD_SPACING_CLASS} ${SUBSCRIPTION_CARD_CONTAINMENT_CLASS} ${SUBSCRIPTION_CARD_SURFACE_CLASS}`
               : USER_MESSAGE_SURFACE_CLASS} {onEditSubmit &&
@@ -1442,7 +1436,7 @@
             handleStartEdit()}
         >
           <!-- Actions -->
-          {#if (!agentAttribution && !automatedWakePresentation) || isAgentMessageExpanded}
+          {#if (!agentAttribution && !automatedWakePresentation) || isAgentMessageExpanded || (automatedWakePresentation && isAutomatedWakeExpanded && queueInfo)}
             <MessageActions
               role="user"
               onCopy={handleCopy}
@@ -1450,7 +1444,10 @@
               {onScrollToPrevious}
               timestamp={message.timestamp}
               createdAt={messageCreatedAt}
-              class="absolute right-1 z-10 {agentAttribution ? 'bottom-1' : 'top-1'}"
+              {queueInfo}
+              class="absolute right-1 z-10 {agentAttribution || automatedWakePresentation
+                ? 'bottom-1'
+                : 'top-1'}"
             />
           {/if}
 
@@ -1458,7 +1455,6 @@
           {#if agentAttribution}
             <AgentMessageAttributionHeader
               attribution={agentAttribution}
-              preview={agentMessagePreview}
               expanded={isAgentMessageExpanded}
               controlsId={agentMessageBodyId}
               ontoggle={() => (isAgentMessageExpanded = !isAgentMessageExpanded)}
@@ -1490,11 +1486,6 @@
                   : undefined}
               transition:safeSubscriptionSlide
             >
-              <!-- Queued-delivery notice for messages drained from the pending queue -->
-              {#if queueInfo}
-                <QueuedMessageNoticeHeader {queueInfo} {isSticky} class="mb-1.5" />
-              {/if}
-
               <div
                 class="type-body select-text text-pretty {agentAttribution ||
                 automatedWakePresentation

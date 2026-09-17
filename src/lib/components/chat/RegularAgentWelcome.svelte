@@ -15,6 +15,8 @@
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import DropdownMenu from '../ui/dropdown-menu.svelte';
   import { Button } from '$lib/components/ui/button';
+  import * as Menu from '$lib/components/ui/menu';
+  import * as Card from '$lib/components/ui/card';
   import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
@@ -88,8 +90,9 @@
             {...props}
             type="button"
             variant="plain"
+            wrapContent={false}
             class={cn(
-              'group flex w-full cursor-pointer items-center gap-3 rounded-lg border border-border bg-card px-4 py-3 text-left shadow-xs transition-colors',
+              'group flex h-auto min-h-(--control-height-medium) w-full cursor-pointer items-center gap-3 whitespace-normal rounded-lg border border-border bg-card px-4 py-3 text-left shadow-xs transition-colors',
               'hover:border-input hover:bg-accent/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
             )}
             data-testid="specialist-picker-trigger"
@@ -116,7 +119,7 @@
           </Button>
         {/snippet}
 
-        {#snippet content({ close }: { close: () => void })}
+        {#snippet content()}
           <div>
             <div class="border-b border-border bg-muted/20 px-4 py-3">
               <p class="type-body font-medium text-foreground">
@@ -129,20 +132,15 @@
             </div>
 
             <div class="max-h-[21rem] overflow-y-auto p-2">
-              <Button
-                type="button"
-                variant="plain"
+              <Menu.Item
                 class={cn(
-                  'flex w-full cursor-pointer items-center gap-3 rounded-md px-3 py-2.5 text-left transition-colors',
+                  'flex h-auto w-full cursor-pointer items-center gap-3 whitespace-normal rounded-md px-3 py-2.5 text-left transition-colors',
                   'hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                   !specialistInfo ? 'bg-accent/70' : '',
                 )}
-                aria-pressed={!specialistInfo}
+                aria-current={!specialistInfo ? 'true' : undefined}
                 data-specialist-option="general"
-                onclick={() => {
-                  onSpecialistChange?.(null);
-                  close();
-                }}
+                onSelect={() => onSpecialistChange?.(null)}
               >
                 <div
                   class="flex size-9 shrink-0 items-center justify-center rounded-md bg-muted/50"
@@ -160,23 +158,18 @@
                 {#if !specialistInfo}
                   <Fa icon={faCheck} size={12} class="shrink-0 text-primary-ink" />
                 {/if}
-              </Button>
+              </Menu.Item>
 
               {#each customSpecialists as specialist (specialist.id)}
-                <Button
-                  type="button"
-                  variant="plain"
+                <Menu.Item
                   class={cn(
-                    'mt-1 flex w-full cursor-pointer items-center gap-3 rounded-md px-3 py-2.5 text-left transition-colors',
+                    'mt-1 flex h-auto w-full cursor-pointer items-center gap-3 whitespace-normal rounded-md px-3 py-2.5 text-left transition-colors',
                     'hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                     specialistInfo?.id === specialist.id ? 'bg-accent/70' : '',
                   )}
-                  aria-pressed={specialistInfo?.id === specialist.id}
+                  aria-current={specialistInfo?.id === specialist.id ? 'true' : undefined}
                   data-specialist-option={specialist.id}
-                  onclick={() => {
-                    onSpecialistChange?.(specialist.id);
-                    close();
-                  }}
+                  onSelect={() => onSpecialistChange?.(specialist.id)}
                 >
                   <div
                     class="flex size-9 shrink-0 items-center justify-center rounded-md bg-muted/50"
@@ -189,7 +182,9 @@
                     />
                   </div>
                   <div class="min-w-0 flex-1">
-                    <div class="type-body font-medium text-foreground">{specialist.name}</div>
+                    <div class="type-body truncate font-medium text-foreground">
+                      {specialist.name}
+                    </div>
                     <div class="type-caption mt-0.5 line-clamp-2 text-muted-foreground">
                       {specialist.description}
                     </div>
@@ -197,18 +192,15 @@
                   {#if specialistInfo?.id === specialist.id}
                     <Fa icon={faCheck} size={12} class="shrink-0 text-primary-ink" />
                   {/if}
-                </Button>
+                </Menu.Item>
               {/each}
             </div>
 
             <div class="border-t border-border bg-popover p-2">
-              <Button
-                type="button"
-                variant="plain"
-                class="flex w-full cursor-pointer items-center gap-3 rounded-md px-3 py-2 text-left text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                onclick={() => {
-                  openSpecialistSettings();
-                  close();
+              <Menu.Item
+                class="flex h-auto w-full cursor-pointer items-center gap-3 whitespace-normal rounded-md px-3 py-2 text-left text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onSelect={() => {
+                  void openSpecialistSettings();
                 }}
               >
                 <div
@@ -219,7 +211,7 @@
                 <span class="type-body font-medium"
                   >{m.chat_regularAgentWelcome_createSpecialist_label()}</span
                 >
-              </Button>
+              </Menu.Item>
             </div>
           </div>
         {/snippet}
@@ -228,39 +220,41 @@
   {/if}
 
   <!-- Behavior Prompt / Description -->
-  <div class="mb-3 px-4" data-testid="agent-welcome-description">
+  {#if specialistInfo}
+    <Card.Root class="mb-3" role="region" aria-label={m.chat_specialistSelector_prompt_label()}>
+      <Card.Header>
+        <Card.Title class="type-caption font-medium"
+          >{m.chat_specialistSelector_prompt_label()}</Card.Title
+        >
+      </Card.Header>
+      <Card.Content>
+        <p
+          data-testid="agent-welcome-description"
+          class="text-sm text-subtle leading-relaxed whitespace-pre-wrap break-words {!showFullPrompt
+            ? 'line-clamp-6'
+            : ''}"
+        >
+          {displayPrompt}
+        </p>
+        <Button
+          type="button"
+          variant="link"
+          aria-expanded={showFullPrompt}
+          onclick={() => (showFullPrompt = !showFullPrompt)}
+          class="text-xs text-muted-foreground hover:text-foreground transition-colors mt-2 cursor-pointer"
+        >
+          {showFullPrompt
+            ? m.chat_regularAgentWelcome_showLess_label()
+            : m.chat_regularAgentWelcome_showMore_label()}
+        </Button>
+      </Card.Content>
+    </Card.Root>
+  {:else}
     <p
-      class="text-sm text-subtle leading-relaxed whitespace-pre-wrap {specialistInfo &&
-      !showFullPrompt
-        ? 'line-clamp-6'
-        : ''}"
+      class="mb-3 px-4 text-sm text-subtle leading-relaxed whitespace-pre-wrap"
+      data-testid="agent-welcome-description"
     >
       {displayPrompt}
-    </p>
-    {#if specialistInfo}
-      <Button
-        type="button"
-        variant="link"
-        onclick={() => (showFullPrompt = !showFullPrompt)}
-        class="text-xs text-muted-foreground hover:text-foreground transition-colors mt-2 cursor-pointer"
-      >
-        {showFullPrompt
-          ? m.chat_regularAgentWelcome_showLess_label()
-          : m.chat_regularAgentWelcome_showMore_label()}
-      </Button>
-    {/if}
-  </div>
-
-  <!-- Source Label -->
-  {#if specialistInfo?.source}
-    <p class="text-xs text-muted-foreground mb-2">
-      {#if specialistInfo.source === 'project'}
-        {m.chat_regularAgentWelcome_projectSpecialist_label()}
-      {:else if specialistInfo.source === 'user'}
-        {m.chat_regularAgentWelcome_userSpecialist_label()}
-      {:else if specialistInfo.source === 'bundled'}
-        {m.chat_regularAgentWelcome_builtInSpecialist_label()}
-      {/if}
     </p>
   {/if}
 

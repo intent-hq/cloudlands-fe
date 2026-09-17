@@ -55,7 +55,7 @@
       <Button variant="primary" size="compact" class="toast-action" onclick={onSwitchTo}>
         {m.agent_attentionToast_switchTo_label()}
       </Button>
-      <Button variant="ghost" size="compact" class="toast-action px-1" onclick={onClose}>
+      <Button variant="ghost" size="compact" class="toast-action" onclick={onClose}>
         {m.agent_attentionToast_later_label()}
       </Button>
     </div>
@@ -93,7 +93,7 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 0;
+    gap: var(--space-2);
     margin-top: 0.75rem;
   }
 

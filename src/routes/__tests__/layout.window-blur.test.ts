@@ -25,6 +25,7 @@ describe('root +layout.svelte window focus lifecycle', () => {
     appStore.dispose();
     document.documentElement.removeAttribute('data-window-blurred');
     window.electronAPI = originalElectronApi;
+    window.history.pushState({}, '', '/');
     vi.restoreAllMocks();
   });
 
@@ -79,5 +80,65 @@ describe('root +layout.svelte window focus lifecycle', () => {
 
     view.unmount();
     expect(offById).toHaveBeenCalledWith('window:focus', 'listener:window:focus');
+  });
+
+  // The HUD pop-out is watched on a second display while another window has
+  // focus; its motion (takeover choreography included) must never pause on blur.
+  describe('HUD window renderer (/hud route)', () => {
+    it('never applies the blurred attribute from native window:focus events', () => {
+      window.history.pushState({}, '', '/hud');
+      const listeners: Record<string, (...args: any[]) => void> = {};
+      const on = vi.fn((channel: string, callback: (...args: any[]) => void) => {
+        listeners[channel] = callback;
+        return `listener:${channel}`;
+      });
+      const offById = vi.fn();
+      window.electronAPI = { on, offById } as ElectronAPI;
+      vi.spyOn(document, 'hasFocus').mockReturnValue(false);
+
+      const view = render(RootLayout);
+      expect(document.documentElement.hasAttribute('data-window-blurred')).toBe(false);
+
+      listeners['window:focus']?.(false);
+      expect(document.documentElement.hasAttribute('data-window-blurred')).toBe(false);
+
+      view.unmount();
+      expect(document.documentElement.hasAttribute('data-window-blurred')).toBe(false);
+    });
+
+    it('never applies the blurred attribute from the DOM blur fallback', () => {
+      window.history.pushState({}, '', '/hud/settings');
+      vi.spyOn(document, 'hasFocus').mockReturnValue(false);
+
+      const view = render(RootLayout);
+      expect(document.documentElement.hasAttribute('data-window-blurred')).toBe(false);
+
+      window.dispatchEvent(new FocusEvent('blur'));
+      expect(document.documentElement.hasAttribute('data-window-blurred')).toBe(false);
+
+      view.unmount();
+      expect(document.documentElement.hasAttribute('data-window-blurred')).toBe(false);
+    });
+
+    it('clears a preseeded blurred attribute on mount with the Electron bridge present', () => {
+      window.history.pushState({}, '', '/hud');
+      document.documentElement.setAttribute('data-window-blurred', '');
+      const on = vi.fn(() => 'listener:window:focus');
+      const offById = vi.fn();
+      window.electronAPI = { on, offById } as unknown as ElectronAPI;
+      vi.spyOn(document, 'hasFocus').mockReturnValue(false);
+
+      render(RootLayout);
+      expect(document.documentElement.hasAttribute('data-window-blurred')).toBe(false);
+    });
+
+    it('clears a preseeded blurred attribute on mount without the Electron bridge', () => {
+      window.history.pushState({}, '', '/hud');
+      document.documentElement.setAttribute('data-window-blurred', '');
+      vi.spyOn(document, 'hasFocus').mockReturnValue(false);
+
+      render(RootLayout);
+      expect(document.documentElement.hasAttribute('data-window-blurred')).toBe(false);
+    });
   });
 });

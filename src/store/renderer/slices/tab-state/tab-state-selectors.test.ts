@@ -1,9 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
 import type { StoreState } from '../../types';
-import type { TabState } from './tab-state-slice';
+import {
+  acquireBrowserTabMount,
+  releaseBrowserTabMount,
+  tabStateReducer,
+  type TabState,
+} from './tab-state-slice';
 import {
   selectActiveWorkspaceIds,
+  selectMountedBrowserTabLeases,
   selectPersistedWorkspaceTabsState,
   selectWorkspaceTabOrder,
   selectWorkspaceTabsHydrated,
@@ -23,11 +29,21 @@ const tabState: TabState = {
   recentlyClosedTabAt: {},
   version: 1,
   hydratedBackendId: null,
+  mountedBrowserTabLeases: {},
 };
 
 const state = { tabState } as unknown as StoreState;
 
 describe('tab state selectors', () => {
+  it('selects only currently leased browser mounts', () => {
+    const mounted = tabStateReducer(tabState, acquireBrowserTabMount('browser-a', 'mount-1'));
+    expect(selectMountedBrowserTabLeases.select({ ...state, tabState: mounted })).toEqual({
+      'browser-a': { 'mount-1': true },
+    });
+    const released = tabStateReducer(mounted, releaseBrowserTabMount('browser-a', 'mount-1'));
+    expect(selectMountedBrowserTabLeases.select({ ...state, tabState: released })).toEqual({});
+  });
+
   it('selects open workspace IDs in openTabs object-key order', () => {
     const stateWithFlags = {
       tabState: {

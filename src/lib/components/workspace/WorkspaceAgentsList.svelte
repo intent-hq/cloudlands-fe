@@ -196,13 +196,13 @@
     {#if children.length > 0}
       {@const isExpanded = hasActiveSearch || expandedAgentIds.has(agent.id)}
       {@const runningChildren = children.filter((child) => isAgentRunning(child.id))}
-      <!-- Keep child indentation; align the toggle with parent padding + avatar + gap + border. -->
+      <!-- Keep child indentation; align the toggle with the parent avatar + gap. -->
       <div class="mb-2" style="padding-left: 26px;">
         <Button
           variant="ghost-light"
           size="sm"
           class="flex h-7 w-full cursor-pointer items-center gap-2 rounded-md bg-transparent px-2 text-sm font-normal text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground active:bg-transparent focus-visible:-outline-offset-2 focus-visible:outline-1 focus-visible:outline-ring focus-visible:ring-0"
-          style="padding-left: calc(var(--agent-avatar-emphasized-surface-size) + 1rem + 1px - 26px);"
+          style="padding-left: calc(var(--agent-avatar-emphasized-surface-size) + 0.5rem - 26px);"
           onclick={(event) => {
             event.stopPropagation();
             toggleDelegation(agent.id);

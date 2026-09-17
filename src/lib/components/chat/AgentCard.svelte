@@ -685,7 +685,7 @@
       class="flex w-full min-w-0 max-w-full text-left gap-2 transition-colors duration-spring-fast ease-spring-fast motion-reduce:transition-none {isEditing
         ? 'overflow-visible'
         : 'overflow-hidden'} {isEditing ? 'cursor-text' : 'cursor-pointer'} group border {panelRow
-        ? 'h-10 items-center rounded-md border-transparent bg-transparent px-2 py-2 type-body font-normal text-foreground hover:bg-transparent active:bg-transparent focus-visible:-outline-offset-2 focus-visible:bg-transparent focus-visible:outline-1 focus-visible:outline-ring focus-visible:ring-0'
+        ? 'h-10 items-center rounded-md border-transparent border-l-0 bg-transparent pl-0 pr-2 py-2 type-body font-normal text-foreground hover:bg-transparent active:bg-transparent focus-visible:-outline-offset-2 focus-visible:bg-transparent focus-visible:outline-1 focus-visible:outline-ring focus-visible:ring-0'
         : inline
           ? `type-body items-center rounded-md ${inlineRowClass}`
           : 'px-1.75 pt-1.25 pb-1.5'} {panelRow
@@ -784,12 +784,14 @@
                   oncopycapture={isolateEditEvent}
                   oncutcapture={isolateEditEvent}
                   onpastecapture={isolateEditEvent}
-                  class="inline-edit-input relative z-10 min-w-0 flex-1 truncate border-none bg-transparent text-sm text-foreground outline-none! ring-0! focus:outline-none! focus:ring-0! focus-visible:outline-none! focus-visible:ring-0!"
+                  class="inline-edit-input relative z-10 min-w-0 flex-1 truncate border-none bg-transparent {panelRow
+                    ? 'type-body font-normal'
+                    : 'text-sm'} text-foreground outline-none! ring-0! focus:outline-none! focus:ring-0! focus-visible:outline-none! focus-visible:ring-0!"
                 />
               {:else}
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <h3
-                  class="relative z-10 cursor-text whitespace-nowrap {panelRow
+                  class="relative z-10 cursor-inherit whitespace-nowrap {panelRow
                     ? 'min-w-0 flex-1 truncate type-body font-normal text-foreground'
                     : inline
                       ? typographyClass
@@ -874,14 +876,6 @@
               class="flex shrink-0 items-center gap-1.5"
               data-agent-row-trailing={panelRow ? '' : undefined}
             >
-              {#if panelRow && isBackground}
-                <span
-                  class="shrink-0 rounded bg-muted px-1 py-0.5 text-ui font-bold text-subtle"
-                  data-agent-background-badge
-                >
-                  {m.chat_agentCard_background_badge()}
-                </span>
-              {/if}
               {#if !panelRow && $lineChanges$ && ($lineChanges$.additions > 0 || $lineChanges$.deletions > 0)}
                 <LineChangeStats
                   additions={$lineChanges$.additions}

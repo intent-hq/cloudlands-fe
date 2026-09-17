@@ -151,11 +151,11 @@ for (const theme of ['light', 'dark'] as const) {
       await expectInset(menu, row);
       await expectHighlight(row, menu.locator('.bg-selected'));
       expect(await row.evaluate((node) => getComputedStyle(node).fontWeight)).toBe('400');
-      const labelStart = await firstTextStart(menu.locator('[data-slot="menu-label"]'));
-      const rowStarts = await Promise.all(
-        (await menu.locator('[data-menu-item]').all()).map(firstTextStart),
-      );
-      for (const rowStart of rowStarts) expect(rowStart).toBeCloseTo(labelStart, 0);
+      for (const item of await menu.locator('[data-menu-item]').all()) {
+        const start = await firstTextStart(item);
+        const hasIcon = await item.locator('[data-slot="menu-item-leading"]').count();
+        expect(start - (await item.boundingBox())!.x).toBeCloseTo(hasIcon ? 32 : 8, 0);
+      }
       const indicator = row.locator('[data-slot="menu-item-indicator"]');
       expect(
         (await row.boundingBox())!.x +
@@ -244,6 +244,25 @@ for (const theme of ['light', 'dark'] as const) {
       await expectHighlight(radioRow, group.locator('.bg-active'));
       expect(await radioRow.evaluate((node) => getComputedStyle(node).fontWeight)).toBe('500');
       await expectFocusTuple(radioRow);
+      const otherRadioRow = radio.getByRole('radio', { name: 'Two' });
+      await otherRadioRow.hover();
+      await expect(radioRow).toBeFocused();
+      await expect(otherRadioRow).toHaveAttribute('aria-checked', 'false');
+      await expect(otherRadioRow).toHaveCSS('font-weight', '400');
+      await expect(radioRow).toHaveAttribute('aria-checked', 'true');
+      await expect(radioRow).toHaveCSS('font-weight', '500');
+      await expect(radio.getByTestId('value')).toHaveText('one');
+      await radioRow.press('ArrowDown');
+      await expect(otherRadioRow).toBeFocused();
+      await expect(otherRadioRow).toHaveAttribute('aria-checked', 'true');
+      await expect(otherRadioRow).toHaveCSS('font-weight', '500');
+      await expect(radioRow).toHaveAttribute('aria-checked', 'false');
+      await expect(radioRow).toHaveCSS('font-weight', '400');
+      await expect(radio.getByTestId('value')).toHaveText('two');
+      await expectFocusTuple(otherRadioRow);
+      await otherRadioRow.press('Space');
+      await expect(otherRadioRow).toHaveAttribute('aria-checked', 'true');
+      await expect(radio.getByTestId('value')).toHaveText('two');
       await radio.unmount();
 
       const sidebar = await mount(SidebarHarness);

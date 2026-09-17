@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { faBolt, faCodePullRequest, faRobot } from '@fortawesome/free-solid-svg-icons';
   import { extractAllContent, type AgentMessage, type Workspace } from '$shared/types';
   import { m } from '$shared/paraglide/messages.js';
   import { getAgentMessageAttribution } from '$lib/utils/agent-message-attribution';
@@ -8,6 +7,12 @@
   import { getAutomatedWakePresentation } from './automated-wake-presentation';
   import { isEventWakeMessage } from './event-wake-summary';
   import EventWakeupBanner from './EventWakeupBanner.svelte';
+  import AgentMessageAttributionHeader from './AgentMessageAttributionHeader.svelte';
+  import AutomatedWakeCardHeader from './AutomatedWakeCardHeader.svelte';
+  import {
+    SUBSCRIPTION_CARD_CONTAINMENT_CLASS,
+    SUBSCRIPTION_CARD_SURFACE_CLASS,
+  } from './subscription-disclosure';
   import PinnedUserPrompt from './PinnedUserPrompt.svelte';
   import type { ComponentProps } from 'svelte';
 
@@ -22,16 +27,12 @@
   const eventWake = $derived(isEventWakeMessage(message));
   const attribution = $derived(getAgentMessageAttribution(message.metadata));
   const wake = $derived(getAutomatedWakePresentation(message));
-  const icon = $derived(
-    attribution ? faRobot : wake?.kind === 'hook' ? faBolt : wake ? faCodePullRequest : undefined,
-  );
   const text = $derived.by(() => {
     const body = getPresentedUserMessageText(message);
     if (attribution) {
       const name =
         attribution.kind === 'chief' ? m.layout_chiefCard_title() : attribution.displayName;
-      const label = m.events_activity_nameSentMessage_label({ name });
-      return body.trim() ? `${label} — ${body.trim()}` : label;
+      return m.events_activity_nameSentMessage_label({ name });
     }
     if (wake) {
       const repo =
@@ -42,7 +43,7 @@
         wake.kind === 'hook'
           ? wake.attribution.displayName
           : getPrMonitorWakeChipLabel(wake.attribution, repo);
-      return wake.bodyText ? `${label} — ${wake.bodyText}` : label;
+      return label;
     }
     if (body.trim()) return body.trim();
     const attachment = message.contentBlocks?.find(
@@ -63,6 +64,33 @@
     {workspace}
     onPinnedActivate={onActivate}
   />
+{:else if attribution || wake}
+  <div
+    class="pointer-events-auto {SUBSCRIPTION_CARD_CONTAINMENT_CLASS} {SUBSCRIPTION_CARD_SURFACE_CLASS}"
+    data-testid="pinned-user-prompt"
+    title={text}
+  >
+    {#if attribution}
+      {#key attribution.fromAgentId}
+        <AgentMessageAttributionHeader
+          {attribution}
+          expanded={false}
+          controlsId=""
+          ontoggle={onActivate}
+          onPinnedActivate={onActivate}
+        />
+      {/key}
+    {:else if wake}
+      <AutomatedWakeCardHeader
+        presentation={wake}
+        expanded={false}
+        controlsId=""
+        {workspace}
+        ontoggle={onActivate}
+        onPinnedActivate={onActivate}
+      />
+    {/if}
+  </div>
 {:else}
-  <PinnedUserPrompt {text} {icon} {surface} {onActivate} />
+  <PinnedUserPrompt {text} {surface} {onActivate} />
 {/if}

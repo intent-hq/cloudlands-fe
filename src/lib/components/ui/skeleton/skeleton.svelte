@@ -18,11 +18,11 @@
 
 <style>
   .skeleton-shimmer {
-    --skeleton: color-mix(in srgb, hsl(var(--muted)) 85%, hsl(var(--foreground)));
+    --skeleton: color-mix(in srgb, hsl(var(--muted)) 75%, hsl(var(--background)));
     background-image: linear-gradient(
       90deg,
       transparent 25%,
-      color-mix(in oklab, hsl(var(--selected)) 55%, transparent) 50%,
+      color-mix(in oklab, hsl(var(--background)) 40%, transparent) 50%,
       transparent 75%
     );
     background-size: 200% 100%;

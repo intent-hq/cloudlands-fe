@@ -6,7 +6,6 @@
   import { Tooltip } from '$lib/components/ui/tooltip';
   import { m } from '$shared/paraglide/messages.js';
   import { Button } from '$lib/components/ui/button';
-  import { Badge } from '$lib/components/ui/badge';
   import { ListView } from '$lib/components/patterns/collection';
   import type { WorkspaceId } from '$shared/types/branded-ids';
   import { handleLink } from '$features/navigation/link-handler';
@@ -149,23 +148,23 @@
                 >{:else}{part.content}{/if}{/each}</span
           >
           {#if hasShortcutHint(index) && showShortcutHints}
-            <Badge
-              variant="secondary"
-              class="{SUGGESTED_PROMPT_HINT_CLASS} mt-px h-5 self-start !font-normal text-muted-foreground! opacity-100"
+            <kbd
+              class="{SUGGESTED_PROMPT_HINT_CLASS} mt-px inline-flex h-5 items-center self-start border-0 bg-transparent p-0 font-sans font-normal text-muted-foreground! opacity-100"
               data-suggested-prompt-hint
             >
               {modifierSymbol}{index + 1}
-            </Badge>
+            </kbd>
           {/if}
           {#if onEdit}
             <Tooltip side="top" delayDuration={300}>
               {#snippet trigger()}
+                <!-- Center on py-0.5 + mt-px + half the leading slot, not the full row. -->
                 <Button
                   type="button"
                   variant="ghost-light"
                   size="icon-xs"
                   iconOnly
-                  class="absolute right-0.5 top-1/2 shrink-0 -translate-y-1/2 rounded opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100"
+                  class="absolute right-0.5 top-[calc(var(--operational-leading-half-slot-size)+var(--space-1)*0.5+1px)] shrink-0 -translate-y-1/2 rounded opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100"
                   onclick={(e) => {
                     e.stopPropagation();
                     onEdit(prompt);

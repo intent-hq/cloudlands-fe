@@ -58,6 +58,8 @@ export type TabState = {
    * in flight.
    */
   hydratedBackendId: string | null;
+  /** Renderer-local DOM leases; never persisted with workspace tabs. */
+  mountedBrowserTabLeases: Record<string, Record<string, true>>;
 };
 
 const MAX_RECENTLY_CLOSED_TABS = 10;
@@ -188,6 +190,7 @@ const initialState: TabState = {
   recentlyClosedTabAt: {},
   version: 0,
   hydratedBackendId: null,
+  mountedBrowserTabLeases: {},
 };
 
 const pruneClosedTabAt = (
@@ -252,6 +255,13 @@ export const workspaceTabsHydrated = createAction<[backendId: string]>(
   'tabState/workspaceTabsHydrated',
 );
 
+export const acquireBrowserTabMount = createAction<[tabId: string, leaseId: string]>(
+  'tabState/acquireBrowserTabMount',
+);
+export const releaseBrowserTabMount = createAction<[tabId: string, leaseId: string]>(
+  'tabState/releaseBrowserTabMount',
+);
+
 /** Actions whose reducer handlers may change the canonical current workspace tab. */
 export const CURRENT_WORKSPACE_TAB_SELECTION_ACTIONS = [
   openWorkspaceTab,
@@ -264,6 +274,29 @@ export const CURRENT_WORKSPACE_TAB_SELECTION_ACTIONS = [
 ];
 
 export const tabStateReducer = createReducer<TabState>(initialState);
+tabStateReducer.with(acquireBrowserTabMount, (state, { payload: [tabId, leaseId] }) => {
+  const leases = state.mountedBrowserTabLeases[tabId];
+  if (leases?.[leaseId]) return state;
+  return {
+    ...state,
+    mountedBrowserTabLeases: {
+      ...state.mountedBrowserTabLeases,
+      [tabId]: { ...leases, [leaseId]: true },
+    },
+  };
+});
+tabStateReducer.with(releaseBrowserTabMount, (state, { payload: [tabId, leaseId] }) => {
+  const leases = state.mountedBrowserTabLeases[tabId];
+  if (!leases?.[leaseId]) return state;
+  const remaining = omitKey(leases, leaseId);
+  return {
+    ...state,
+    mountedBrowserTabLeases:
+      Object.keys(remaining).length > 0
+        ? { ...state.mountedBrowserTabLeases, [tabId]: remaining }
+        : omitKey(state.mountedBrowserTabLeases, tabId),
+  };
+});
 tabStateReducer.with(workspaceTabsHydrated, (state, { payload: [backendId] }) => {
   if (state.hydratedBackendId === backendId) return state;
   return { ...state, hydratedBackendId: backendId };

@@ -419,6 +419,20 @@ for continuously retargeted values.
 - **Exits are crisp.** Enter and retarget motion use the chosen spring tier. Dismissal uses its
   shorter paired exit rather than replaying the spring in reverse.
 
+### Resize affordances
+
+Sidebar and inter-panel dividers share `.app-resize-handle` from
+`src/lib/styles/resize-handles.css`. Keep the hit target transparent and the indicator hidden
+at rest. Hover, keyboard focus, press, and active drag reveal one neutral line using the
+shared muted-foreground treatment; leaving or blurring hides it again unless a drag is active.
+Do not add a Button hover surface, a persistent grip, or component-local color overrides.
+
+Use `data-resize-axis="x"` or `"y"` for the full-span line. The short-indicator option changes
+only its length, never its idle visibility. Preserve the forgiving hit area and scrollbar
+click-through clipping independently of the indicator. Keep keyboard resizing focusable,
+set `data-resizing` throughout pointer drag, and retain the shared reduced-motion behavior.
+The workspace canvas has no outer-right resize target; resizing belongs to its panel gutters.
+
 ### Size ladder and ratchets
 
 The public control ladder is compact 28px, default 32px, and large 36px. Use `SizeProvider` to set

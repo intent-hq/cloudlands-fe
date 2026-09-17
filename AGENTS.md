@@ -183,20 +183,22 @@ git-ignored; never commit these visual-review artifacts.
 Registered scenes also have co-located `*.geometry.ct.spec.ts` suites and checked-in
 `__geometry__/<scene>.geometry.json` baselines. A missing key, an extra key, or a numeric
 field that moves by more than 1px fails with `state/width/key.field expected→actual`.
-Regenerate baselines only for an intentional geometry change:
+Regenerate baselines only for an intentional geometry change, with either equivalent command:
 
 ```bash
 SANDBOX_GEOMETRY_UPDATE=1 pnpm run test:ct -- --grep 'geometry snapshot'
 pnpm sandbox:geometry:update
 ```
 
-The two commands are equivalent; the package script sets
-`SANDBOX_GEOMETRY_UPDATE=1`. Inspect the JSON diff and justify every regenerated
-snapshot in the PR description. To register a scene, add a co-located
-`<scene>.geometry.ct.spec.ts` that statically imports the preview's default component, then
-passes it to `defineGeometrySnapshotSuite` with the scene, named states, contract widths, and
-`__geometry__/<scene>.geometry.json` path. The shared CT hook lazily resolves the matching
-preview definition in the browser, so no per-scene bootstrap registration is needed. Run the
+Linux CI is the only verifier and Inter shapes text differently elsewhere, so run the update
+on a Linux host only: it refuses to write off Linux, every baseline records
+`"$meta": { "generatedOn": "<platform>" }` (the geometry spec rejects any value but `linux`),
+and `SANDBOX_GEOMETRY_UPDATE_ALLOW_NON_LINUX=1` is for uncommitted local experiments only.
+Inspect the JSON diff and justify every regenerated snapshot in the PR description. To
+register a scene, add a co-located `<scene>.geometry.ct.spec.ts` that statically imports the
+preview's default component and passes it to `defineGeometrySnapshotSuite` with the scene,
+named states, contract widths, and `__geometry__/<scene>.geometry.json` path; the shared CT
+hook resolves the preview in the browser, so no per-scene registration is needed. Run the
 update command once to create the baseline. See
 `../../docs/fe/DEVELOPER_GUIDE.md#fast-ui-preview-workflow` for the manual preview loop.
 
@@ -255,7 +257,9 @@ corepack pnpm run test:ct -- src/features/agent/components/agent-avatar/__tests_
 The CT harness defaults to port 3100 (the `CT_PORT` env var overrides it). A run holds
 the host-wide `ct-<CT_PORT>` lock, so a second run on an occupied port waits for the
 first instead of reusing its server; set a free `CT_PORT` to run concurrently (see
-[Verification](#verification)). The run exits with Playwright's
+[Verification](#verification)). The port also keys the generated bundle cache
+(`playwright/.cache-<CT_PORT>`; bare `playwright/.cache` when unset), so per-port runs are
+isolated for server, lock, and cache — including within one worktree. The run exits with Playwright's
 status as soon as the tests finish — the HTML report is written to `playwright-report/`
 but never served automatically. To browse it after the run, opt in from an interactive
 terminal with `CT_HTML_REPORT=open` (or `-- --open-report`); `node
@@ -390,8 +394,9 @@ edited it, and only CI caught it).
 
 Only checks that genuinely conflict use host-wide locks, held for one check at a time:
 Playwright CT uses `ct-<CT_PORT>` (default `ct-3100`) and the full Vitest fallback uses
-`vitest-full`. CT runs on different ports can proceed concurrently; Svelte and TypeScript
-checks do not lock. The default waits are 240 seconds for CT and 120 seconds for full
+`vitest-full`. CT runs on different ports can proceed concurrently — even within one
+worktree, since the port keys the component server, the lock, and the
+`playwright/.cache-<CT_PORT>` bundle cache; Svelte and TypeScript checks do not lock. The default waits are 240 seconds for CT and 120 seconds for full
 Vitest. `VERIFY_CHANGED_LOCK_TIMEOUT_MS` overrides either wait but remains capped at
 300000 ms, and the command never stops the process that owns a lock. Direct
 `pnpm run test:ct` runs hold the same `ct-<CT_PORT>` lock (`scripts/verification-lock.mjs`),
@@ -545,13 +550,56 @@ is roughly 10× the cost of a jsdom test and the CT job is sharded and time-boxe
   share ordered state.
 - **A pass-on-retry fails the required CT lane** (`--fail-on-flaky-tests`). Fix the flake
   or, if it needs more time, tag the individual test
-  `{ tag: '@quarantine' }` — never a whole file. The CT job is merge-queue-only, so a
-  pass-on-retry ejects the PR from the queue rather than reddening a PR check.
+  `{ tag: '@quarantine' }` — never a whole file. The CT job runs on every merge-queue
+  entry, and on `pull_request` only when the diff touches a CT-contract path, a CT spec,
+  or a geometry golden (classified by `scripts/ct-contract-paths.mjs`, shared with
+  `verify:changed`), so on other PRs a pass-on-retry ejects the PR from the queue rather
+  than reddening a PR check.
   Quarantined tests still run on every queue entry as an advisory (non-blocking) step on
   shard 1 and must carry an open tracking issue and an owner; quarantine is temporary,
   not a parking lot — remove the tag in the PR that fixes the flake.
 - Motion specs that sample animation progress mid-flight are the historical flake source;
   prefer asserting start/end states and `getAnimations()` counts over timed midpoints.
+- **A known cause of `mount()` failing with "Execution context was destroyed, most likely
+  because of a navigation" is the context-reuse race.** The message is Playwright's
+  rewrite of any CDP error on the mount evaluate, so it does not name a cause by itself;
+  every recorded incident so far (intent-hq/intent#4373, #5236, #5249) has been the reuse
+  reset, not a component bug. ct-core reuses one browser context + page per worker; between
+  tests it resets that page (navigate to `about:blank`, clear the origin, navigate back to
+  the CT host), and the reset can race the next `mount()`'s `Runtime.callFunctionOn` —
+  whether the previous test was another spec's last cell or the same spec's previous
+  cell. The signature is a pass-on-retry at the `mount(` line with no assertion involved.
+  Fix it by calling, at file level after any `test.setTimeout` / `test.use`:
+  `isolateBrowserContextPerTest(test, 'intent-hq/intent#<issue>')` from
+  `src/test/ct-isolated-browser-context.ts` and `recordCdpLifecycle(test)` from
+  `src/test/ct-cdp-lifecycle-recorder.ts`, with a comment naming the incident. Do not
+  quarantine the test, add retries, or widen timeouts for this signature.
+  - _What it costs_: the isolated spec runs in its own worker (one extra browser launch and
+    CT bundle load per shard) and every test pays a fresh browser context (~1–2 s each
+    locally), so only adopt it on a spec with a recorded destroyed-context incident.
+  - _Guard_: `isolateBrowserContextPerTest` sets the private `_optionContextReuseMode`
+    option and asserts via CDP that each test's `browserContextId` is new to the worker.
+    A failure `browser context <id> was already used by an earlier test in this worker …`
+    means context reuse is back for that spec — typically a Playwright upgrade no longer
+    honoring the private option — so fix the helper, not the spec.
+  - _Reading the CDP lifecycle log_: on a failure the recorder attaches `cdp-lifecycle.json`
+    as an in-memory body attachment — open it from the failed test's attachments in the
+    HTML report (`playwright-report/`); there is no standalone file under `test-results/`.
+    Recording starts in the spec's `beforeEach`, once the `page` fixture is ready, so
+    `sinceStartMs` counts from that attach — not from the start of the test — and anything
+    the harness did to the page before it (fixture setup, an already-finished reuse reset)
+    is not in the log; the leading `Runtime.executionContextCreated` entries are the
+    replay of contexts that already existed at attach. A `Page.frameRequestedNavigation` /
+    `Runtime.executionContextsCleared` / `Page.frameNavigated` (to `about:blank` or the CT
+    host URL) sequence in the milliseconds before the failing mount confirms the reuse
+    reset; `Inspector.targetCrashed` is a renderer crash and a different investigation.
+    Only the replayed entries with no navigation or clear is inconclusive: it means no
+    recorded evidence of navigation or context clearing after attach — the recorded
+    methods are a selection and a CDP error need not emit one — not that the page was
+    healthy or that the test's own code is at fault; inspect a `DEBUG=pw:protocol` run or
+    a trace, which also cover the setup window, before drawing a conclusion. The recorder
+    never fails a test — a `cdp-lifecycle-recorder` annotation reports when it could not
+    start or attach.
 
 ### Testing — every feature/fix against a mock BE
 

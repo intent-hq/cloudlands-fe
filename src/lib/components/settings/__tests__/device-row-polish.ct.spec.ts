@@ -1,0 +1,73 @@
+import { expect, test } from '@playwright/experimental-ct-svelte';
+import Preview from '../devices-settings.preview.svelte';
+
+test('separates device marks and exposes version warnings on focus and hover without row fill', async ({
+  mount,
+  page,
+}) => {
+  await page.setViewportSize({ width: 420, height: 800 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await mount(Preview, {
+    hooksConfig: { geometrySnapshot: { scene: 'devices-settings', state: 'versions' } },
+  });
+  const row = page.getByRole('article', { name: 'Studio Mac', exact: true });
+  await expect(row).toBeVisible();
+  await page.evaluate(() => document.fonts.ready);
+  const marks = await row.getByRole('status').evaluate((status) => {
+    const icon = status.parentElement!.querySelector('svg')!;
+    return {
+      status: status.getBoundingClientRect().toJSON(),
+      icon: icon.getBoundingClientRect().toJSON(),
+    };
+  });
+  expect(marks.icon.left - marks.status.right).toBeGreaterThanOrEqual(8);
+  const version = row.getByRole('button', { name: '6.7.0', exact: true });
+  await version.focus();
+  const tooltip = page.getByRole('tooltip');
+  await expect(tooltip).toContainText('0.9.0');
+  await expect(tooltip).toContainText('0.9.1');
+  await expect(version).toHaveAttribute('aria-describedby', (await tooltip.getAttribute('id'))!);
+  const color = await version.evaluate((node) => {
+    const token = document.createElement('span');
+    token.style.color = 'var(--color-warning-ink)';
+    node.append(token);
+    const expected = getComputedStyle(token).color;
+    token.remove();
+    return { actual: getComputedStyle(node).color, expected };
+  });
+  expect(color.actual).toBe(color.expected);
+  await page.keyboard.press('Escape');
+  await expect(tooltip).toHaveCount(0);
+  const actions = row.getByRole('button', { name: 'Actions for Studio Mac' });
+  await actions.focus();
+  await version.hover();
+  await expect(tooltip).toBeVisible();
+  await page.mouse.move(0, 0);
+  await expect(tooltip).toHaveCount(0);
+  const idleButtonColor = await actions.evaluate((node) => getComputedStyle(node).color);
+  await actions.hover();
+  await expect
+    .poll(() => actions.evaluate((node) => getComputedStyle(node).color))
+    .not.toBe(idleButtonColor);
+  const list = page.getByRole('list', { name: 'Devices', exact: true });
+  const paintedDecorations = await list
+    .locator(':scope > div > [aria-hidden=true]')
+    .evaluateAll(
+      (nodes) =>
+        nodes.filter(
+          (node) => node.getClientRects().length > 0 && getComputedStyle(node).display !== 'none',
+        ).length,
+    );
+  expect(paintedDecorations).toBe(0);
+  await actions.focus();
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('menuitem', { name: 'Update', exact: true })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(actions).toBeFocused();
+  await expect(page.getByText('6.6.0', { exact: true })).toHaveCount(0);
+  await expect(
+    page
+      .getByRole('article', { name: 'Unknown version', exact: true })
+      .getByRole('button', { name: /[0-9]+\.[0-9]+/ }),
+  ).toHaveCount(0);
+});

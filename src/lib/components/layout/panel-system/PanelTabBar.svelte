@@ -16,6 +16,8 @@
   import { cn } from '$lib/utils';
   import { prefersReducedMotion } from '$lib/utils/reduced-motion';
   import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
+  import PlusIcon from 'phosphor-svelte/lib/PlusIcon';
+  import XIcon from 'phosphor-svelte/lib/XIcon';
   import {
     faXmark,
     faFile,
@@ -1198,7 +1200,7 @@
         aria-label={m.ui_breadcrumb_more_label()}
         data-testid="panel-actions-trigger"
       >
-        <KebabIcon class="pointer-events-none size-3.5!" />
+        <KebabIcon class="pointer-events-none size-4!" />
       </Button>
     {/snippet}
     {#snippet content({ close }: { close: () => void })}
@@ -1207,6 +1209,7 @@
         {@render contentActions?.display?.()}
         <Menu.CommandItem
           icon={isZoomed ? faCompress : faExpand}
+          iconWeight="regular"
           label={isZoomed
             ? m.layout_panelTabBar_unzoomPanel_label()
             : m.layout_panelTabBar_zoomPanel_label()}
@@ -1220,6 +1223,7 @@
         <Menu.CommandItem
           icon={faArrowLeft}
           label={m.layout_panelTabBar_moveLeft_label()}
+          iconWeight="regular"
           disabled={!onMoveLeft}
           onclick={() => {
             onMoveLeft?.();
@@ -1229,6 +1233,7 @@
         <Menu.CommandItem
           icon={faArrowRight}
           label={m.layout_panelTabBar_moveRight_label()}
+          iconWeight="regular"
           disabled={!onMoveRight}
           onclick={() => {
             onMoveRight?.();
@@ -1245,6 +1250,7 @@
         <Menu.CommandItem
           icon={faArrowLeft}
           label={m.layout_panelTabBar_movePaneLeft_label()}
+          iconWeight="regular"
           shortcut={movePaneLeftShortcutHint}
           disabled={!onMovePaneLeft}
           onclick={() => {
@@ -1255,6 +1261,7 @@
         <Menu.CommandItem
           icon={faArrowRight}
           label={m.layout_panelTabBar_movePaneRight_label()}
+          iconWeight="regular"
           shortcut={movePaneRightShortcutHint}
           disabled={!onMovePaneRight}
           onclick={() => {
@@ -1265,6 +1272,7 @@
         <Menu.CommandItem
           icon={faTableColumns}
           label={m.layout_panelTabBar_splitRight_label()}
+          iconWeight="regular"
           shortcut={createColumnRightShortcutHint}
           disabled={!onSplitHorizontal}
           onclick={() => {
@@ -1287,6 +1295,7 @@
               <Menu.CommandItem
                 icon={faArrowUpRightFromSquare}
                 label={m.layout_panelTabBar_openInBrowser_label()}
+                iconWeight="regular"
                 onclick={() => {
                   openInExternalBrowser(activeTab);
                   close();
@@ -1306,6 +1315,7 @@
                   showArchiveOption={false}
                   showFileNameCopy={false}
                   layout="submenu"
+                  iconWeight="regular"
                   onClose={close}
                 />
               {/await}
@@ -1313,6 +1323,7 @@
               <Menu.CommandItem
                 icon={faArrowUpRightFromSquare}
                 label={m.ui_fileActions_noRepoPath_tooltip()}
+                iconWeight="regular"
                 disabled
               />
             {/if}
@@ -1343,7 +1354,7 @@
     onclick={handleAddPanelColumn}
     data-add-panel-column
   >
-    <Fa icon={faPlus} size="xs" />
+    <PlusIcon size={16} weight="regular" aria-hidden="true" class="size-4!" />
   </Button>
 {/snippet}
 
@@ -1390,7 +1401,7 @@
         data-testid="panel-close-button"
         data-pane-close={tab?.id}
       >
-        <Fa icon={faXmark} size={14} class="size-3.5!" />
+        <XIcon size={16} weight="regular" aria-hidden="true" class="size-4!" />
       </Button>
     </Tooltip>
   {/if}

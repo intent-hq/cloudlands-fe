@@ -2,6 +2,8 @@
 // Per-Agent Chat State
 // ============================================================================
 
+export type QueuedMessageSendOutcome = 'delivered' | 'queued' | 'quarantined';
+
 export interface StatusEvent {
   phase: string;
   message: string;

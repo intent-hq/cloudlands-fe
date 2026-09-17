@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Isolated browser lifetime fixture</title>
+  </head>
+  <body>
+    <div id="fixture"></div>
+    <script>
+      window.process = { env: { NODE_ENV: 'test' } };
+    </script>
+    <script type="module">
+      import '../../../src/app.css';
+      import { mount } from 'svelte';
+      import Harness from './Harness.svelte';
+      mount(Harness, { target: document.getElementById('fixture') });
+    </script>
+  </body>
+</html>

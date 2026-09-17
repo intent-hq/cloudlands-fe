@@ -534,6 +534,106 @@ describe('MonitoredPrsRow', () => {
     expect(card.textContent).not.toContain('queued to merge');
   });
 
+  describe('rate-limit pause (pausedUntil)', () => {
+    const NOW = new Date('2026-08-07T10:10:00Z');
+
+    function pausedMonitor(overrides: Partial<PrMonitorRow> = {}) {
+      return makeMonitor({
+        lastPolledAt: new Date(NOW.getTime() - 12 * 60_000).toISOString(),
+        pausedUntil: new Date(NOW.getTime() + 35 * 60_000).toISOString(),
+        lastError: 'forge rate limit hit; polling paused',
+        ...overrides,
+      });
+    }
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('replaces the readiness line with the paused status and marks checklist lines stale', async () => {
+      vi.useFakeTimers({ now: NOW, toFake: ['Date', 'setInterval', 'clearInterval'] });
+      monitorsState.monitors = [pausedMonitor()];
+      render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
+
+      const card = await openDetails();
+      const row = screen.getByTestId('monitored-pr-summary').closest('[data-monitor-state]');
+      expect(row?.getAttribute('data-monitor-paused')).toBe('true');
+      const readiness = screen.getByTestId('monitored-pr-readiness').textContent ?? '';
+      expect(readiness).toMatch(
+        /^Monitoring paused until .* \(GitHub rate limit\); last checked 12 minutes ago\.$/,
+      );
+      expect(readiness).not.toContain('blocked by');
+      const lines = Array.from(card.children).map((line) => line.textContent?.trim());
+      expect(lines.slice(1, 4)).toEqual([
+        'As of 12 minutes ago: 1 of 4 checks are still running.',
+        'As of 12 minutes ago: 0 of 1 required approvals received.',
+        'As of 12 minutes ago: 2 unresolved threads.',
+      ]);
+    });
+
+    it('omits the last-checked clause when the paused row has never been polled', async () => {
+      vi.useFakeTimers({ now: NOW, toFake: ['Date', 'setInterval', 'clearInterval'] });
+      monitorsState.monitors = [pausedMonitor({ lastPolledAt: undefined })];
+      render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
+
+      const card = await openDetails();
+      const readiness = screen.getByTestId('monitored-pr-readiness').textContent ?? '';
+      expect(readiness).toMatch(/^Monitoring paused until .* \(GitHub rate limit\)\.$/);
+      expect(readiness).not.toContain('last checked');
+      expect(card.textContent).toContain('1 of 4 checks are still running.');
+      expect(card.textContent).not.toContain('As of');
+    });
+
+    it('renders unchanged when pausedUntil is already in the past', async () => {
+      vi.useFakeTimers({ now: NOW, toFake: ['Date', 'setInterval', 'clearInterval'] });
+      monitorsState.monitors = [
+        pausedMonitor({ pausedUntil: new Date(NOW.getTime() - 60_000).toISOString() }),
+      ];
+      render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
+
+      const card = await openDetails();
+      const row = screen.getByTestId('monitored-pr-summary').closest('[data-monitor-state]');
+      expect(row?.hasAttribute('data-monitor-paused')).toBe(false);
+      expect(card.textContent).not.toContain('Monitoring paused');
+      expect(card.textContent).not.toContain('As of');
+      expect(Array.from(card.children).map((line) => line.textContent?.trim())).toEqual([
+        'Open, but blocked by required checks still running.',
+        '1 of 4 checks are still running.',
+        '0 of 1 required approvals received.',
+        '2 unresolved threads.',
+      ]);
+    });
+
+    it('renders unchanged when pausedUntil is absent', async () => {
+      monitorsState.monitors = [makeMonitor({ lastPolledAt: '2026-08-07T10:05:00Z' })];
+      render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
+
+      const card = await openDetails();
+      expect(card.textContent).not.toContain('Monitoring paused');
+      expect(card.textContent).not.toContain('As of');
+      expect(card.textContent).toContain('Open, but blocked by required checks still running.');
+    });
+
+    it('stops rendering as paused once the deadline elapses without a wire update', async () => {
+      vi.useFakeTimers({ now: NOW, toFake: ['Date', 'setInterval', 'clearInterval'] });
+      monitorsState.monitors = [
+        pausedMonitor({ pausedUntil: new Date(NOW.getTime() + 45_000).toISOString() }),
+      ];
+      render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
+
+      await openDetails();
+      expect(screen.getByTestId('monitored-pr-readiness').textContent).toContain(
+        'Monitoring paused',
+      );
+      await vi.advanceTimersByTimeAsync(60_000);
+      await waitFor(() =>
+        expect(screen.getByTestId('monitored-pr-readiness').textContent).toBe(
+          'Open, but blocked by required checks still running.',
+        ),
+      );
+    });
+  });
+
   it('uses the custom kebab before the disclosure and keeps their actions isolated', async () => {
     monitorsState.monitors = [makeMonitor()];
     render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });

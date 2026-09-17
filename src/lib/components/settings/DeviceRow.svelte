@@ -143,8 +143,8 @@
       detectHosts !== savedDetectHosts ||
       pushToCloud !== savedPushToCloud,
   );
-  // Behind-pin marker: reflects the last captured daemonVersion, so it shows
-  // even while disconnected. The i18n message prepends "v" — strip any
+  // Warning eligibility reflects the last captured daemonVersion; the view
+  // attaches it only to a displayed connected version. The message prepends "v" — strip any
   // daemon-reported prefix so a valid v-prefixed version never renders "vv".
   const daemonBehindTooltip = $derived.by(() => {
     const pinnedVersion = $pinnedVersion$;
@@ -513,31 +513,29 @@
 >
   <ListRow class="px-4 sm:px-5">
     {#snippet leading()}
-      <span
-        class={cn(
-          'size-2.5 rounded-full ring-2 ring-background outline outline-1 outline-border',
-          statusClass(openStatus),
-        )}
-        role="status"
-        aria-label={m.settings_devices_status_ariaLabel({ status: statusLabel(openStatus) })}
-      ></span>
-      <DeviceIcon record={device} size={20} class="text-foreground" />
+      <span class="flex items-center gap-3">
+        <span
+          class={cn(
+            'size-2.5 rounded-full ring-2 ring-background outline outline-1 outline-border',
+            statusClass(openStatus),
+          )}
+          role="status"
+          aria-label={m.settings_devices_status_ariaLabel({ status: statusLabel(openStatus) })}
+        ></span>
+        <DeviceIcon record={device} size={20} class="text-foreground" />
+      </span>
     {/snippet}
     {#snippet title()}<span id={`device-${device.id}-name`}>{displayName}</span>{/snippet}
     {#snippet meta()}
-      <span class="flex items-center gap-2">
-        {#if openStatus === 'connected' && device.intentdVersion}<span>{device.intentdVersion}</span
-          >{/if}
+      {#if openStatus === 'connected' && device.intentdVersion}
         {#if daemonBehindTooltip}
-          <Tooltip content={daemonBehindTooltip} class="self-center">
-            <span
-              class="block size-2 rounded-full bg-warning"
-              role="img"
-              aria-label={daemonBehindTooltip}
-            ></span>
+          <Tooltip content={daemonBehindTooltip} class="rounded-sm text-warning-ink">
+            <span>{device.intentdVersion}</span>
           </Tooltip>
+        {:else}
+          <span>{device.intentdVersion}</span>
         {/if}
-      </span>
+      {/if}
     {/snippet}
     {#snippet trailing()}
       {#if device.isLocal}
@@ -546,7 +544,6 @@
           bind:value={localDeviceIcon}
           disabled={busy !== null}
           portal={true}
-          class="w-48 shrink-0"
           onchange={(value) => void updateLocalDeviceIcon(value)}
         />
       {/if}
@@ -684,7 +681,6 @@
             bind:value={deviceIcon}
             disabled={busy !== null}
             portal={true}
-            class="w-full"
           />
         </div>
       </div>

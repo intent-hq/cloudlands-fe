@@ -9,6 +9,10 @@ export const textEntryGroupClasses = `border-border bg-transparent shadow-none o
 export const textEntryFocusResetClasses =
   'focus-visible:!bg-transparent focus-visible:!shadow-none focus-visible:outline-none';
 
+// Caret-bearing controls indicate focus through their caret, not an outer box.
+// Keep separate from the shared control recipe so file-picker focus is preserved.
+export const textEntryCaretFocusClasses = 'focus-visible:outline-none focus-visible:shadow-none';
+
 export function textEntryHeight(size: UiSize): string {
   return size === 'compact' ? 'h-(--control-height-small)' : 'h-(--control-height-medium)';
 }

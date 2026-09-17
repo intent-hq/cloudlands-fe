@@ -130,6 +130,7 @@
   }
 
   function handleKeydown(e: KeyboardEvent) {
+    if (e.target !== e.currentTarget) return;
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
       handleCardClick();
@@ -166,10 +167,10 @@
   >
     <!-- Gradient overlay — always present, opacity animates on install -->
     <div
+      data-testid="provider-card-artwork"
       class={cn(
         'absolute inset-0 rounded-lg transition-all transform duration-700 ease-out',
         !installed && 'opacity-0 translate-y-full',
-        needsLogin && 'translate-y-[calc(100%_-_13rem)]',
         installed && 'opacity-100',
       )}
       style="background: linear-gradient(in oklab to bottom, {brand.color1} 10%, {brand.color2} 88%);"
@@ -182,11 +183,7 @@
         provider.statusLoading && 'animate-pulse',
       )}
     >
-      <ProviderIcon
-        providerId={provider.id}
-        class={cn(installed && needsLogin && 'text-foreground')}
-        size={32}
-      />
+      <ProviderIcon providerId={provider.id} class="size-8" size={32} />
     </span>
 
     <!-- Full-card-width "SELECTED" banner across the top edge; the card's
@@ -206,9 +203,10 @@
       <div class="flex items-center gap-1.5 min-w-0 pb-1.5">
         {#if provider.docsUrl}
           <Button
-            variant="ghost"
+            variant="plain"
             onclick={(e) => openDocs(provider.docsUrl, e)}
-            class="font-medium text-lg truncate min-w-0 cursor-pointer"
+            class="h-auto shrink min-w-0 font-medium text-lg cursor-pointer"
+            labelClass="text-left"
           >
             {provider.name}
           </Button>
@@ -219,9 +217,10 @@
         {/if}
         {#if provider.docsUrl}
           <Button
-            variant="ghost"
+            variant="plain"
             type="button"
-            class="group/button shrink-0 opacity-50 flex items-center gap-1.5 hover:opacity-100 transition-colors p-0.5 cursor-pointer"
+            iconOnly
+            class="group/button h-auto shrink-0 opacity-50 hover:opacity-100 transition-colors p-0.5 cursor-pointer"
             onclick={(e) => openDocs(provider.docsUrl, e)}
             title={m.onboarding_providerCard_openDocs_tooltip({ name: provider.name })}
             aria-label={m.onboarding_providerCard_openDocs_tooltip({ name: provider.name })}
@@ -278,9 +277,10 @@
         <div class="flex items-center gap-1.5">
           {#if needsInstall || needsLogin || authUnknown}
             <Button
-              variant="ghost"
+              variant="plain"
               type="button"
-              class="flex-none opacity-50 hover:opacity-100 transition-colors px-0.5 py-1 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              iconOnly
+              class="h-auto flex-none opacity-50 hover:opacity-100 transition-colors px-0.5 py-1 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               onclick={(e) => {
                 e.stopPropagation();
                 userRefreshing = true;

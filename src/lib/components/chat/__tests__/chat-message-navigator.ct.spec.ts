@@ -260,8 +260,8 @@ test.describe('chat message navigator production path', () => {
       expect(actionsBox.x + actionsBox.width).toBeLessThanOrEqual(
         headerBox.x + headerBox.width + 0.5,
       );
-      expect(listIconBox.width).toBeCloseTo(14, 0);
-      expect(listIconBox.height).toBeCloseTo(14, 0);
+      expect(listIconBox.width).toBeCloseTo(16, 0);
+      expect(listIconBox.height).toBeCloseTo(16, 0);
       expect(arrowIconBox.width).toBeCloseTo(16, 0);
       expect(arrowIconBox.height).toBeCloseTo(16, 0);
       expect(arrowComputedSize).toEqual({ width: 16, height: 16 });

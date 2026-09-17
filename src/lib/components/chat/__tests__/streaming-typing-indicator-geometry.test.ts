@@ -113,6 +113,30 @@ describe('StreamingTypingIndicator geometry matches operational rows', () => {
     expect(animationRecords).toHaveLength(0);
   });
 
+  it('retains accessible status and lifecycle updates when the generic label is visually suppressed', async () => {
+    const view = render(StreamingTypingIndicator, {
+      props: {
+        visible: true,
+        showMessage: false,
+        message: 'Thinking',
+        lifecycleMessage: 'Sent prompt…',
+      },
+    });
+    const mark = view.getByRole('status', { name: 'Loading' });
+    expect(view.getByText('Thinking')).toBeTruthy();
+    expect(view.getByText('Sent prompt…')).toBeTruthy();
+
+    await view.rerender({ lifecycleMessage: 'Receiving response…' });
+    expect(view.queryByText('Sent prompt…')).toBeNull();
+    expect(view.getByText('Receiving response…')).toBeTruthy();
+    expect(view.getByRole('status', { name: 'Loading' })).toBe(mark);
+
+    await view.rerender({ lifecycleMessage: null });
+    expect(view.queryByText('Receiving response…')).toBeNull();
+    expect(view.getByText('Thinking')).toBeTruthy();
+    expect(view.getByRole('status', { name: 'Loading' })).toBe(mark);
+  });
+
   it('cancels all motion on removal and supports rapid reactivation', async () => {
     const view = render(StreamingTypingIndicator, {
       props: { visible: true, message: 'Thinking' },

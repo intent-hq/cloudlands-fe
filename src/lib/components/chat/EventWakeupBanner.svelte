@@ -43,7 +43,6 @@
   import { store as appStore } from '$store/renderer/store';
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { findSourcePanelId } from '$lib/utils/workspace-navigation';
-  import PinnedUserPrompt from './PinnedUserPrompt.svelte';
 
   interface EventData {
     type: string;
@@ -416,6 +415,10 @@
 
   function openAgent(event: MouseEvent, agentId: string) {
     event.stopPropagation();
+    if (onPinnedActivate) {
+      onPinnedActivate();
+      return;
+    }
     if (!workspace?.id) return;
     appStore.dispatch(
       openAgentTabRequested(String(workspace.id), {
@@ -427,24 +430,32 @@
   }
 </script>
 
-{#if onPinnedActivate}
-  <PinnedUserPrompt text={friendlySummary} icon={faBell} onActivate={onPinnedActivate} />
-{:else if asDivider}
+{#if asDivider || onPinnedActivate}
   <!-- Transcript disclosure - can show summary, agent cards, or both. -->
   <div
     class="event-wakeup-banner group/banner {SUBSCRIPTION_CARD_CONTAINMENT_CLASS} {embedded
       ? ''
-      : `${SUBSCRIPTION_CARD_SURFACE_CLASS} ${suppressTopGap ? 'mt-0' : EVENT_WAKEUP_IN_THREAD_SPACING_CLASS}`}"
-    data-testid="event-wakeup-card"
+      : `${SUBSCRIPTION_CARD_SURFACE_CLASS} ${suppressTopGap || onPinnedActivate ? 'mt-0' : EVENT_WAKEUP_IN_THREAD_SPACING_CLASS}`}"
+    class:pointer-events-auto={!!onPinnedActivate}
+    data-testid={onPinnedActivate ? 'pinned-user-prompt' : 'event-wakeup-card'}
+    title={onPinnedActivate ? friendlySummary : undefined}
     data-embedded={embedded}
-    data-external-spacing-owner={!embedded && !suppressTopGap ? 'event-wakeup-card' : undefined}
+    data-external-spacing-owner={!embedded && !suppressTopGap && !onPinnedActivate
+      ? 'event-wakeup-card'
+      : undefined}
     transition:safeSubscriptionSlide
   >
     <!-- Summary header and completed-agent details share one bounded surface. -->
     {#if showSummary || (showAgentCards && agentEvents.length > 0)}
       <div class="relative w-full min-w-0 max-w-full overflow-hidden">
         {#if showSummary}
-          <div class={SUBSCRIPTION_DISCLOSURE_ROW_CLASS} data-testid="event-wakeup-header">
+          <!-- svelte-ignore a11y_click_events_have_key_events (pinned activation lives on the sibling summary and avatar buttons) -->
+          <!-- svelte-ignore a11y_no_static_element_interactions (only enlarges the pinned buttons' hit area) -->
+          <div
+            class={SUBSCRIPTION_DISCLOSURE_ROW_CLASS}
+            data-testid="event-wakeup-header"
+            onclick={onPinnedActivate ? () => onPinnedActivate?.() : undefined}
+          >
             {#if showAgentCards && agentEvents.length > 0}
               <div
                 class="flex min-w-0 shrink-0 items-center overflow-hidden"
@@ -458,6 +469,9 @@
                       agentName={event.agentName}
                       {workspace}
                       isCompleted={event.type !== 'agent:created'}
+                      activationLabel={onPinnedActivate
+                        ? m.chat_stickyMessageHeader_scrollToPrevious_title()
+                        : undefined}
                       onclick={(pointerEvent) => openAgent(pointerEvent, event.agentId)}
                     />
                   {/if}
@@ -489,10 +503,17 @@
               type="button"
               variant="plain"
               class="type-body flex min-w-0 flex-1 cursor-pointer items-center gap-2 overflow-hidden rounded border-none bg-transparent p-0 text-left font-[inherit] text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              aria-label={friendlySummary}
-              aria-expanded={detailsOpen}
-              aria-controls={detailsId}
-              onclick={() => (detailsOpen = !detailsOpen)}
+              aria-label={onPinnedActivate
+                ? m.chat_stickyMessageHeader_scrollToPrevious_title()
+                : friendlySummary}
+              aria-expanded={onPinnedActivate ? undefined : detailsOpen}
+              aria-controls={onPinnedActivate ? undefined : detailsId}
+              onclick={(event) => {
+                if (onPinnedActivate) {
+                  event.stopPropagation();
+                  onPinnedActivate();
+                } else detailsOpen = !detailsOpen;
+              }}
               data-testid="event-wakeup-summary"
             >
               {#if agentSummaryRoles}
@@ -526,7 +547,8 @@
                 <Fa
                   icon={faChevronDown}
                   size={16}
-                  class="{SUBSCRIPTION_CHEVRON_SIZE_CLASS} {SUBSCRIPTION_CHEVRON_CLASS} {detailsOpen
+                  class="{SUBSCRIPTION_CHEVRON_SIZE_CLASS} {SUBSCRIPTION_CHEVRON_CLASS} {detailsOpen &&
+                  !onPinnedActivate
                     ? ''
                     : 'rotate-90'}"
                 />
@@ -534,7 +556,7 @@
             </Button>
           </div>
 
-          {#if detailsOpen}
+          {#if detailsOpen && !onPinnedActivate}
             <div
               id={detailsId}
               class="w-full min-w-0 max-w-full overflow-hidden border-t border-border {SUBSCRIPTION_WAKE_BODY_PADDING_CLASS}"

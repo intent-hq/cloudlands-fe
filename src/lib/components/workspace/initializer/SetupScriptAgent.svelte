@@ -123,22 +123,24 @@
   </div>
 
   <!-- Content - contained scroll that won't affect parent -->
-  <div class="p-4 max-h-60 overflow-y-auto overscroll-contain">
-    {#if error}
-      <div class="text-sm text-danger bg-danger-background/10 rounded-md p-3">
-        {error}
-      </div>
-    {:else if isGenerating}
-      <div class="flex items-center gap-2 text-subtle">
-        <IntentMarkLoader size={16} class="text-primary" />
-        <span class="text-sm">{m.workspace_setupScriptAgent_analyzing_label()}</span>
-      </div>
-    {/if}
-  </div>
+  {#if error || isGenerating}
+    <div class="p-4 max-h-60 overflow-y-auto overscroll-contain">
+      {#if error}
+        <div class="text-sm text-danger bg-danger-background/10 rounded-md p-3">
+          {error}
+        </div>
+      {:else}
+        <div class="flex items-center gap-2 text-subtle">
+          <IntentMarkLoader size={16} class="text-primary" />
+          <span class="text-sm">{m.workspace_setupScriptAgent_analyzing_label()}</span>
+        </div>
+      {/if}
+    </div>
+  {/if}
 
   <!-- Generated Script Preview -->
   {#if generatedScript && !isGenerating}
-    <div class="border-t border-border p-3 bg-muted/30">
+    <div class="p-3 bg-muted/30">
       <div class="flex items-center justify-between mb-2">
         <div class="flex items-center gap-2">
           <Fa icon={faCheck} class="text-green-500" />

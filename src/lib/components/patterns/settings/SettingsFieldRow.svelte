@@ -8,6 +8,7 @@
     label,
     description,
     htmlFor,
+    activateLabel = false,
     error,
     status,
     statusTone = 'info',
@@ -29,6 +30,8 @@
     label: string;
     description?: string;
     htmlFor?: string;
+    /** Forward label activation to composite controls that ignore native label clicks. */
+    activateLabel?: boolean;
     error?: string;
     status?: string;
     statusTone?: 'info' | 'subtle';
@@ -63,6 +66,18 @@
   );
   const errorId = $derived(error ? `${id}-error` : undefined);
   const orientation = $derived(controlOnly ? 'full-width' : compact ? 'stacked' : 'responsive');
+
+  function handleLabelClick(event: MouseEvent) {
+    if (!activateLabel || !htmlFor) return;
+    // Suppress the browser's additional label-forwarded click. The canonical
+    // select accepts synthetic clicks, while pointer activation belongs to it.
+    event.preventDefault();
+    if (disabled || busy) return;
+    const target = event.currentTarget as HTMLLabelElement;
+    const control = target.ownerDocument.getElementById(htmlFor);
+    control?.focus();
+    control?.click();
+  }
 </script>
 
 <div
@@ -95,9 +110,12 @@
         {#if htmlFor}
           <Label
             id={labelId}
+            data-field-label
             for={htmlFor}
+            onclick={activateLabel ? handleLabelClick : undefined}
             class={cn(
               'type-body block font-medium text-foreground',
+              activateLabel && !disabled && !busy && 'cursor-pointer',
               !compact && 'md:py-[max(0px,calc((var(--control-height-medium)-1lh)/2))]',
             )}
           >
@@ -106,6 +124,7 @@
         {:else}
           <div
             id={labelId}
+            data-field-label
             class={cn(
               'type-body font-medium text-foreground',
               !compact && 'md:py-[max(0px,calc((var(--control-height-medium)-1lh)/2))]',
@@ -140,7 +159,9 @@
   <div
     class={cn(
       'w-full min-w-0 max-w-full',
-      !controlOnly && !compact && 'md:grid md:min-h-(--control-height-medium) md:content-center',
+      !controlOnly &&
+        !compact &&
+        'md:grid md:min-h-(--control-height-medium) md:content-center md:justify-items-end',
       controlOnly || compact ? 'md:justify-self-stretch' : 'md:w-auto md:justify-self-end',
       disabled && 'opacity-60',
     )}
@@ -156,3 +177,25 @@
       })}{:else}{@render children?.()}{/if}
   </div>
 </div>
+
+<style>
+  /* A roomy viewport can still contain a narrow settings pane. Explicit compact
+     rows and full-width custom bodies keep their independent layout contract. */
+  @container settings-form (width < 32rem) {
+    [data-slot='settings-field-row'][data-orientation='responsive'] {
+      grid-template-columns: minmax(0, 1fr);
+      gap: var(--space-3);
+    }
+
+    [data-orientation='responsive'] :global([data-field-label]) {
+      padding-block: 0;
+    }
+
+    [data-field-control][data-orientation='responsive'] {
+      width: 100%;
+      min-height: 0;
+      justify-self: stretch;
+      justify-items: start;
+    }
+  }
+</style>

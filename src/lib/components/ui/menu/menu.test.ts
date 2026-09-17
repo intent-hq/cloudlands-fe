@@ -138,6 +138,39 @@ describe('Menu keyboard and focus behavior', () => {
 });
 
 describe('Menu command state behavior', () => {
+  it.each([
+    { iconWeight: undefined, expectedWeight: 'regular' },
+    { iconWeight: 'bold' as const, expectedWeight: 'bold' },
+  ])(
+    'forwards $expectedWeight icons without changing command or submenu behavior',
+    async ({ iconWeight, expectedWeight }) => {
+      render(MenuTestHarness, { props: { iconWeight } });
+      const trigger = await openMenu();
+      const menu = screen.getByRole('menu');
+      const icons = menu.querySelectorAll('svg[data-icon]');
+      expect(icons).toHaveLength(3);
+      for (const icon of icons) expect(icon.getAttribute('data-weight')).toBe(expectedWeight);
+      expect(menu.querySelector('[iconweight]')).toBeNull();
+
+      const command = screen.getByRole('menuitem', { name: 'Attach files' });
+      expect(command.querySelectorAll('svg')).toHaveLength(1);
+      expect(command.querySelectorAll('kbd')).toHaveLength(1);
+      await fireEvent.click(command);
+      expect(screen.getByTestId('selected').textContent).toBe('attach');
+      await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+      expect(document.activeElement).toBe(trigger);
+
+      await openMenu();
+      const more = screen.getByRole('menuitem', { name: 'More' });
+      more.focus();
+      await fireEvent.keyDown(more, { key: 'ArrowRight' });
+      const archive = await screen.findByRole('menuitem', { name: 'Archive' });
+      await fireEvent.click(archive);
+      expect(screen.getByTestId('selected').textContent).toBe('archive');
+      await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+    },
+  );
+
   it('prevents disabled selection and exposes disabled semantics', async () => {
     render(MenuTestHarness);
     await openMenu();

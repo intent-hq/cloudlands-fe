@@ -56,6 +56,21 @@ test('keeps Add column in every populated and empty panel header', async ({ moun
   expect(await addButtonOwners(component)).toEqual(idsAtThree);
   for (const panelId of idsAtThree) {
     const panel = component.locator(`[data-panel-id="${panelId}"]`);
+    // Measure relative to the panel shell: clicking scrolls an off-screen column into
+    // view, and only focus-driven child geometry shifts are under test here.
+    const childBounds = () =>
+      panel.locator('[data-panel-header], .panel-content').evaluateAll(async (nodes) => {
+        await new Promise<number>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(resolve)),
+        );
+        return nodes.map((node) => {
+          const shell = node.closest('[data-panel-id]')!.getBoundingClientRect();
+          const { x, y, width, height } = node.getBoundingClientRect();
+          return { x: x - shell.x, y: y - shell.y, width, height };
+        });
+      });
+    const childrenBeforeFocus = await childBounds();
+    expect(childrenBeforeFocus).toHaveLength(2);
     const geometryBeforeFocus = await panel.boundingBox();
     await panel.click({ position: { x: 12, y: 90 } });
     await expect(layoutState).toHaveAttribute('data-focused-panel-id', panelId);
@@ -74,21 +89,20 @@ test('keeps Add column in every populated and empty panel header', async ({ moun
     const geometryAfterFocus = await panel.boundingBox();
     expect(geometryAfterFocus!.width).toBeCloseTo(geometryBeforeFocus!.width, 0);
     expect(geometryAfterFocus!.height).toBeCloseTo(geometryBeforeFocus!.height, 0);
+    expect(await childBounds()).toEqual(childrenBeforeFocus);
     await expect
       .poll(() => focusedHeader.evaluate((node) => getComputedStyle(node).boxShadow))
       .toBe('none');
     const panelBorders = await component.locator('[data-panel-id]').evaluateAll((panels) =>
       panels.map((node) => ({
         color: getComputedStyle(node).borderTopColor,
-        empty: node.getAttribute('data-empty-panel-shell') === 'true',
         focused: node.getAttribute('data-focused'),
         width: getComputedStyle(node).borderTopWidth,
       })),
     );
     expect(
-      panelBorders.every(({ color, empty, focused, width }) => {
+      panelBorders.every(({ color, focused, width }) => {
         if (focused === 'true') return width === '1px' && color !== 'rgba(0, 0, 0, 0)';
-        if (empty) return width === '0px' && color === 'rgba(0, 0, 0, 0)';
         return width === '1px' && color === 'rgba(0, 0, 0, 0)';
       }),
     ).toBe(true);

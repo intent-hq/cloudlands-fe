@@ -74,6 +74,10 @@ export interface PrMonitorRow {
   lastChangeAt?: string;
   lastPolledAt?: string;
   lastError?: string;
+  /** RFC 3339 deadline of the daemon's forge rate-limit pause; present on
+   * ACTIVE rows only while polling is suspended (`lastSnapshot` is stale
+   * until the first post-pause poll clears it). */
+  pausedUntil?: string;
   title?: string;
   url?: string;
   lastSnapshot?: PrMonitorSnapshot;

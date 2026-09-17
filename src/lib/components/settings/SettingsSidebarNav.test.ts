@@ -35,6 +35,7 @@ describe('SettingsSidebarNav', () => {
     expect(
       screen.getByRole('button', { name: 'Providers' }).getAttribute('aria-current'),
     ).toBeNull();
+    expect(screen.queryAllByRole('img')).toHaveLength(0);
   });
 
   it('selects a category when clicked', async () => {
@@ -77,17 +78,16 @@ describe('SettingsSidebarNav', () => {
 
   it('delegates specialist navigation without making the section heading clickable', async () => {
     const onSelectSpecialist = vi.fn();
+    const onSelect = vi.fn();
     render(SettingsSidebarNav, {
       activeTab: 'specialists',
-      onSelect: vi.fn(),
+      onSelect,
       agentsNavigation: createSpecialistsNavigation(onSelectSpecialist),
     });
-
-    expect(screen.getByRole('heading', { level: 3, name: 'Specialists' })).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Specialists' })).toBeNull();
 
     await fireEvent.click(screen.getByRole('button', { name: 'Implementor' }));
 
     expect(onSelectSpecialist).toHaveBeenCalledWith('Implementor');
+    expect(onSelect).not.toHaveBeenCalled();
   });
 });

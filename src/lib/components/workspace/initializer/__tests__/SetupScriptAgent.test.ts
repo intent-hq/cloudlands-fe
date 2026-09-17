@@ -6,7 +6,7 @@
  * `setup-scripts:*` streaming IPC flow. These tests cover the seam calls and
  * the unmount race the old listener-cleanup tests guarded against.
  */
-import { cleanup, render, screen, waitFor } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
@@ -24,10 +24,6 @@ vi.mock('$lib/components/editor/CodeEditor.svelte', async () => ({
 }));
 
 vi.mock('$features/agent/components/agent-avatar/AgentAvatar.svelte', async () => ({
-  default: (await import('./mocks/MockComponent.svelte')).default,
-}));
-
-vi.mock('$lib/components/ui/button/button.svelte', async () => ({
   default: (await import('./mocks/MockComponent.svelte')).default,
 }));
 
@@ -83,6 +79,32 @@ describe('SetupScriptAgent (workspace.generateSetupScript flow)', () => {
     await new Promise((r) => setTimeout(r, 0));
 
     expect(mocks.generate).not.toHaveBeenCalled();
+  });
+
+  it('replaces the loading state with a draft and only applies it on request', async () => {
+    let resolveDraft!: (draft: typeof RUST_DRAFT) => void;
+    mocks.generate.mockReturnValue(new Promise((resolve) => (resolveDraft = resolve)));
+    const onScriptGenerated = vi.fn();
+    render(SetupScriptAgent, { props: { repoPath: '/repo', onScriptGenerated } });
+    await waitFor(() => expect(mocks.generate).toHaveBeenCalledWith('ws-1'));
+    expect(screen.getByText(/Analyzing/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Create Script' })).toBeNull();
+    resolveDraft(RUST_DRAFT);
+    const apply = await screen.findByRole('button', { name: 'Create Script' });
+    expect(screen.queryByText(/Analyzing/)).toBeNull();
+    expect(onScriptGenerated).not.toHaveBeenCalled();
+    await fireEvent.click(apply);
+    expect(onScriptGenerated).toHaveBeenCalledWith(
+      expect.objectContaining({ content: RUST_DRAFT.script }),
+    );
+  });
+
+  it('replaces loading with a generation error without offering a draft', async () => {
+    mocks.generate.mockRejectedValue(new Error('Fixture generation failed'));
+    render(SetupScriptAgent, { props: { repoPath: '/repo' } });
+    expect(await screen.findByText('Fixture generation failed')).toBeTruthy();
+    expect(screen.queryByText(/Analyzing/)).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Create Script' })).toBeNull();
   });
 
   it('shows an error when no workspace matches the repo path', async () => {

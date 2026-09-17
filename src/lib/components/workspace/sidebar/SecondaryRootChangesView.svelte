@@ -43,17 +43,25 @@
   import { writeTextToClipboard } from '$lib/utils/clipboard';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
-  import { faArrowsRotate, faChevronDown, faCodeCommit } from '@fortawesome/free-solid-svg-icons';
+  import { faChevronDown, faCodeCommit } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
+  import type { Snippet } from 'svelte';
+  import ChangesRefreshAction from './ChangesRefreshAction.svelte';
   import { slide } from '$lib/motion';
   import { notify } from '$lib/components/patterns/notify';
 
   interface Props {
     workspaceId: string;
     entry: WorkspaceGitRootEntry;
+    onRefreshActionChange?: (action: Snippet | undefined) => void;
   }
 
-  let { workspaceId, entry }: Props = $props();
+  let { workspaceId, entry, onRefreshActionChange }: Props = $props();
+
+  $effect(() => {
+    onRefreshActionChange?.(refreshAction);
+    return () => onRefreshActionChange?.(undefined);
+  });
 
   const gitRootId = $derived(entry.gitRoot?.id ?? '');
   // The root's HEAD when first tracked (registration or sweep backfill);
@@ -230,6 +238,10 @@
   }
 </script>
 
+{#snippet refreshAction()}
+  <ChangesRefreshAction disabled={loading} onclick={load} />
+{/snippet}
+
 <div class="flex flex-col gap-3" data-testid="secondary-root-changes-view">
   <!-- Root branch line + refresh -->
   <div class="flex items-center gap-1.5 text-subtle text-xs -ml-0.5">
@@ -247,16 +259,9 @@
     {:else}
       <span class="text-ui truncate min-w-0">{branchLabel}</span>
     {/if}
-    <Button
-      variant="ghost"
-      type="button"
-      class="ml-auto p-1 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground disabled:opacity-50 cursor-pointer"
-      onclick={load}
-      disabled={loading}
-      title={m.workspace_sidebarChanges_refreshGitStatus_tooltip()}
-    >
-      <Fa icon={faArrowsRotate} class="text-subtle" size={10} />
-    </Button>
+    {#if !onRefreshActionChange}
+      <span class="ml-auto">{@render refreshAction()}</span>
+    {/if}
   </div>
 
   {#if loading && !status}

@@ -227,6 +227,34 @@ test('keeps the regular Aurora clipped during reduced-motion streaming transitio
   await expect(aurora).toHaveCount(0);
 });
 
+test('separates suggestions from the composer while resizing into compact mode', async ({
+  mount,
+}) => {
+  const props = { width: 720, height: 960, suggestions: true };
+  const component = await mount(ChatPanelComposerGeometryHost, { props });
+  const suggestions = component.getByTestId('suggested-prompts-surface');
+  const list = component.getByTestId('suggested-prompts-list');
+  const input = component.getByTestId('message-input');
+  const gap = async () => {
+    const [promptsBox, inputBox] = await Promise.all([
+      suggestions.boundingBox(),
+      input.boundingBox(),
+    ]);
+    return inputBox!.y - promptsBox!.y - promptsBox!.height;
+  };
+
+  await expect(suggestions).toBeVisible();
+  await expect(list).toHaveAttribute('data-compact', 'false');
+  await expect.poll(gap).toBeCloseTo(12, 1);
+  await component.update({ props: { ...props, height: 480 } });
+  await expect(list).toHaveAttribute('data-compact', 'true');
+  await expect.poll(gap).toBeCloseTo(8, 1);
+
+  await suggestions.getByRole('button', { name: 'Edit in input' }).first().click();
+  await expect(input.locator('.tiptap-editor')).toContainText('Review the layout.');
+  await expect.poll(gap).toBeCloseTo(8, 1);
+});
+
 test('keeps attachments, controls, tab order, and resize behavior inside the nested surface', async ({
   mount,
   page,

@@ -74,20 +74,22 @@ export const TAB_DEFINITIONS: TabDefinition[] = [
   {
     id: 'browser',
     get label() {
-      return m.workspace_multiSelectSidebar_browser_label();
+      return m.workspace_multiSelectSidebar_browserTab_label();
     },
     icon: faGlobe,
     get description() {
-      return m.workspace_addContext_browser_description();
+      return m.workspace_multiSelectSidebar_browserTab_description();
     },
   },
   {
     id: 'shell',
     get label() {
-      return m.workspace_terminalDock_shell_label();
+      return m.workspace_multiSelectSidebar_shellTab_label();
     },
     icon: faTerminal,
-    description: '',
+    get description() {
+      return m.workspace_multiSelectSidebar_shellTab_description();
+    },
   },
 ];
 

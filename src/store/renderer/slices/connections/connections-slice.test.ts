@@ -20,6 +20,7 @@ import {
   certMismatchCleared,
   certWarningsReceived,
   authRejectedReceived,
+  keychainSyncStateCleared,
   keychainSyncStateReceived,
   keychainSyncStatusReceived,
   protocolMismatchReceived,
@@ -594,6 +595,20 @@ describe('connectionsReducer', () => {
     it('keychainSyncStateReceived stores the full state', () => {
       const next = connectionsReducer(initialState, keychainSyncStateReceived(SYNC_STATE));
       expect(next.keychainSync).toEqual(SYNC_STATE);
+    });
+
+    it('keychainSyncStateCleared removes only the loaded sync state', () => {
+      const failed = connectionsReducer(initialState, connectOperationFailed('connection failed'));
+      const loaded = connectionsReducer(failed, keychainSyncStateReceived(SYNC_STATE));
+      const next = connectionsReducer(loaded, keychainSyncStateCleared());
+
+      expect(next).toEqual(failed);
+      expect(next.connections).toBe(loaded.connections);
+      expect(loaded.keychainSync).toEqual(SYNC_STATE);
+    });
+
+    it('keychainSyncStateCleared preserves identity when already unloaded', () => {
+      expect(connectionsReducer(initialState, keychainSyncStateCleared())).toBe(initialState);
     });
 
     it('keychainSyncStatusReceived refreshes only the status of a loaded state', () => {
