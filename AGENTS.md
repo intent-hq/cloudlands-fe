@@ -558,13 +558,15 @@ is roughly 10× the cost of a jsdom test and the CT job is sharded and time-boxe
 - Motion specs that sample animation progress mid-flight are the historical flake source;
   prefer asserting start/end states and `getAnimations()` counts over timed midpoints.
 - **`mount()` failing with "Execution context was destroyed, most likely because of a
-  navigation" is a context-reuse race, not a component bug.** ct-core reuses one browser
-  context + page per worker; between tests it resets that page (navigate to `about:blank`,
-  clear the origin, navigate back to the CT host), and the reset can race the next
-  `mount()`'s `Runtime.callFunctionOn` — whether the previous test was another spec's last
-  cell or the same spec's previous cell. The signature is a pass-on-retry at the `mount(`
-  line with no assertion involved. Fix it by calling, at file level after any
-  `test.setTimeout` / `test.use`:
+  navigation" is the known context-reuse race, not a component bug.** The message is
+  Playwright's rewrite of any CDP error on the mount evaluate, so it does not name a
+  cause by itself; every recorded incident so far (intent-hq/intent#4373, #5236, #5249)
+  has been the reuse reset. ct-core reuses one browser context + page per worker; between
+  tests it resets that page (navigate to `about:blank`, clear the origin, navigate back to
+  the CT host), and the reset can race the next `mount()`'s `Runtime.callFunctionOn` —
+  whether the previous test was another spec's last cell or the same spec's previous
+  cell. The signature is a pass-on-retry at the `mount(` line with no assertion involved.
+  Fix it by calling, at file level after any `test.setTimeout` / `test.use`:
   `isolateBrowserContextPerTest(test, 'intent-hq/intent#<issue>')` from
   `src/test/ct-isolated-browser-context.ts` and `recordCdpLifecycle(test)` from
   `src/test/ct-cdp-lifecycle-recorder.ts`, with a comment naming the incident. Do not
@@ -575,21 +577,24 @@ is roughly 10× the cost of a jsdom test and the CT job is sharded and time-boxe
   - _Guard_: `isolateBrowserContextPerTest` sets the private `_optionContextReuseMode`
     option and asserts via CDP that each test's `browserContextId` is new to the worker.
     A failure `browser context <id> was already used by an earlier test in this worker …`
-    means a Playwright upgrade stopped honoring the option — fix the helper, not the spec.
+    means context reuse is back for that spec — typically a Playwright upgrade no longer
+    honoring the private option — so fix the helper, not the spec.
   - _Reading the CDP lifecycle log_: on a failure the recorder attaches `cdp-lifecycle.json`
-    to the report (`test-results/<test>/` and the HTML report). Recording starts in the
-    spec's `beforeEach`, once the `page` fixture is ready, so `sinceStartMs` counts from
-    that attach — not from the start of the test — and anything the harness did to the
-    page before it (fixture setup, an already-finished reuse reset) is not in the log; the
-    leading `Runtime.executionContextCreated` entries are the replay of contexts that
-    already existed at attach. A `Page.frameRequestedNavigation` /
+    as an in-memory body attachment — open it from the failed test's attachments in the
+    HTML report (`playwright-report/`); there is no standalone file under `test-results/`.
+    Recording starts in the spec's `beforeEach`, once the `page` fixture is ready, so
+    `sinceStartMs` counts from that attach — not from the start of the test — and anything
+    the harness did to the page before it (fixture setup, an already-finished reuse reset)
+    is not in the log; the leading `Runtime.executionContextCreated` entries are the
+    replay of contexts that already existed at attach. A `Page.frameRequestedNavigation` /
     `Runtime.executionContextsCleared` / `Page.frameNavigated` (to `about:blank` or the CT
-    host URL) sequence in the milliseconds before the failing mount is the reuse reset;
-    `Inspector.targetCrashed` is a renderer crash and a different investigation; only the
-    replayed `executionContextCreated` entries and no navigation or clear means nothing
-    disturbed the page after attach — the race, if any, ran before the recorder started.
-    The recorder never fails a test — a `cdp-lifecycle-recorder` annotation reports when
-    it could not start or attach.
+    host URL) sequence in the milliseconds before the failing mount confirms the reuse
+    reset; `Inspector.targetCrashed` is a renderer crash and a different investigation.
+    Only the replayed entries with no navigation or clear is inconclusive: it shows nothing
+    disturbed the page after attach, not that the page was healthy — the reset may have
+    run before the recorder started, so fall back to a `DEBUG=pw:protocol` run or a trace
+    for the setup window. The recorder never fails a test — a `cdp-lifecycle-recorder`
+    annotation reports when it could not start or attach.
 
 ### Testing — every feature/fix against a mock BE
 
