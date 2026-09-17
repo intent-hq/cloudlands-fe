@@ -82,9 +82,10 @@
     onFileClicked?: (path: string, staged: boolean) => void;
     openPanelTabs?: PanelTab[];
     activePanelTab?: PanelTab | null;
-    /** Owner-only controls (auto-commit toggle, per-group commit via
-     * `accept-changes.execute`) render only when true; stage / unstage /
-     * revert (`git.stage` / `git.unstage` / `git.discard`) stay for members. */
+    /** Every mutating control (auto-commit toggle, per-group commit via
+     * `accept-changes.execute`, stage / unstage / revert via `git.stage` /
+     * `git.unstage` / `git.discard`) renders only when true; a collaborator
+     * gets the read-only change list. */
     isOwner?: boolean;
   }
 
@@ -758,7 +759,8 @@
                       <Fa icon={faNote} class="h-2.5! w-2.5!" />
                     </Button>
                   {/if}
-                  {#if !isLocked}
+                  <!-- Group stage / commit mutate the worktree (owner-only) -->
+                  {#if isOwner && !isLocked}
                     <Button
                       variant="ghost-light"
                       size="icon-xs"
@@ -771,9 +773,7 @@
                     >
                       <Fa icon={faPlus} class="h-2.5! w-2.5!" />
                     </Button>
-                    {#if !isOwner}
-                      <!-- Group commit runs through accept-changes.execute (owner-only) -->
-                    {:else if commitState === 'active'}
+                    {#if commitState === 'active'}
                       <Tooltip content="Committing..." side="top">
                         <span class="h-5 w-5 flex items-center justify-center">
                           <IntentMarkLoader size={10} class="text-primary-ink" />
@@ -825,8 +825,8 @@
                       <FileRow
                         compact
                         {file}
-                        showStageAction={!isLocked}
-                        showRevertAction={!isLocked}
+                        showStageAction={isOwner && !isLocked}
+                        showRevertAction={isOwner && !isLocked}
                         locked={isLocked}
                         active={isFileActive(file.path, false)}
                         selected={isFileSelected(file.path, false)}
@@ -864,8 +864,8 @@
               <FileRow
                 compact
                 file={toUIFileChange(change, false)}
-                showStageAction
-                showRevertAction
+                showStageAction={isOwner}
+                showRevertAction={isOwner}
                 active={isFileActive(change.relativePath, false)}
                 selected={isFileSelected(change.relativePath, false)}
                 focused={isFileFocused(change.relativePath, false)}
@@ -887,10 +887,10 @@
   </TimelineSection>
 </div>
 
-<!-- Divider with Stage all / Unstage all buttons -->
+<!-- Divider with Stage all / Unstage all buttons (git.stage / git.unstage are owner-only in this tab) -->
 <div>
   <TimelineDivider>
-    {#if hasUnstaged}
+    {#if isOwner && hasUnstaged}
       <DividerButton
         onclick={handleStageAll}
         disabled={isStaging}
@@ -900,8 +900,14 @@
         {m.workspace_fileChanges_stageAll_label()}
       </DividerButton>
     {/if}
-    {#if hasStaged}
-      <DividerButton onclick={handleUnstageAll} disabled={isStaging} loading={isStaging} arrowUp>
+    {#if isOwner && hasStaged}
+      <DividerButton
+        onclick={handleUnstageAll}
+        disabled={isStaging}
+        loading={isStaging}
+        arrowUp
+        data-testid="unstage-all-button"
+      >
         {m.workspace_fileChanges_unstageAll_label()}
       </DividerButton>
     {/if}
@@ -983,7 +989,8 @@
                       <Fa icon={faNote} class="h-2.5! w-2.5!" />
                     </Button>
                   {/if}
-                  {#if !isLocked}
+                  <!-- Group unstage / commit mutate the worktree (owner-only) -->
+                  {#if isOwner && !isLocked}
                     <Button
                       variant="ghost-light"
                       size="icon-xs"
@@ -996,9 +1003,7 @@
                     >
                       <Fa icon={faMinus} class="h-2.5! w-2.5!" />
                     </Button>
-                    {#if !isOwner}
-                      <!-- Group commit runs through accept-changes.execute (owner-only) -->
-                    {:else if commitState === 'active'}
+                    {#if commitState === 'active'}
                       <Tooltip content="Committing..." side="top">
                         <span class="h-5 w-5 flex items-center justify-center">
                           <IntentMarkLoader size={10} class="text-primary-ink" />
@@ -1050,7 +1055,7 @@
                       <FileRow
                         compact
                         {file}
-                        showStageAction={!isLocked}
+                        showStageAction={isOwner && !isLocked}
                         locked={isLocked}
                         active={isFileActive(file.path, true)}
                         selected={isFileSelected(file.path, true)}
@@ -1084,7 +1089,7 @@
               <FileRow
                 compact
                 file={toUIFileChange(change, true)}
-                showStageAction
+                showStageAction={isOwner}
                 active={isFileActive(change.relativePath, true)}
                 selected={isFileSelected(change.relativePath, true)}
                 focused={isFileFocused(change.relativePath, true)}
