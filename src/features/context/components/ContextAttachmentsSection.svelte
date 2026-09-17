@@ -28,6 +28,7 @@
       title={m.context_attachments_title_label()}
       meta={formatInteger(attachments.length)}
       {expanded}
+      collapsedChevronClass="rotate-90"
       onclick={() => (expanded = !expanded)}
     />
     {#if expanded}
