@@ -4,6 +4,18 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.163.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.162.2...v2.163.0) (2026-09-17)
+
+
+### 🚀 Features
+
+* **context:** Show workspace attachments in the sidebar ([#2528](https://github.com/intent-hq/cloudlands-fe/issues/2528)) ([a5e052b](https://github.com/intent-hq/cloudlands-fe/commit/a5e052b87d38dad05632dc8666a595dc91cae944))
+
+
+### ⚡ Performance
+
+* Limit style invalidation on window focus changes ([#2526](https://github.com/intent-hq/cloudlands-fe/issues/2526)) ([834dba5](https://github.com/intent-hq/cloudlands-fe/commit/834dba564108ed11e17fd2d1ace12f26a9037923))
+
 ## [2.162.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.162.1...v2.162.2) (2026-09-17)
 
 
