@@ -11,6 +11,7 @@
   import Fa from 'svelte-fa';
   import { faEllipsis } from '@fortawesome/free-solid-svg-icons';
   import { notify } from '$lib/components/patterns/notify';
+  import { Button } from '$lib/components/ui/button';
   import * as Menu from '$lib/components/ui/menu';
   import { cn } from '$lib/utils.js';
   import { m } from '$shared/paraglide/messages.js';
@@ -191,10 +192,20 @@
       'hover:bg-black/75',
       triggerClass,
     )}
-    aria-label={m.ui_imageActionsMenu_trigger_ariaLabel()}
     onclick={(event: MouseEvent) => event.stopPropagation()}
   >
-    <Fa icon={faEllipsis} size="sm" />
+    {#snippet child({ props })}
+      <Button
+        {...props}
+        variant="plain"
+        size="icon-sm"
+        wrapContent={false}
+        active={open}
+        aria-label={m.ui_imageActionsMenu_trigger_ariaLabel()}
+      >
+        <Fa icon={faEllipsis} size="sm" />
+      </Button>
+    {/snippet}
   </Menu.Trigger>
   <Menu.Content class={contentClass} align="end">
     <Menu.Item onSelect={() => void download()}>
