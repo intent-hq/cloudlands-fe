@@ -112,16 +112,36 @@ for (const { width, height } of [
     await trigger.focus();
     await page.keyboard.press('Enter');
     await expect(laptop).toHaveAttribute('aria-selected', 'true');
-    await expect(page.getByRole('option', { name: 'Potted plant' })).toBeAttached();
+    const lastOption = page.getByRole('option', { name: 'Potted plant' });
+    await expect(lastOption).toBeAttached();
     await page.keyboard.press('End');
-    const lastOptionIsTopmost = await page
-      .getByRole('option', { name: 'Potted plant' })
-      .evaluate((option) => {
-        const rect = option.getBoundingClientRect();
-        const hit = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2);
-        return hit !== null && option.contains(hit);
-      });
-    expect(lastOptionIsTopmost).toBe(true);
+    // End updates the active option before Bits can scroll it: scrolling is
+    // deferred until the reopened floating content has been positioned.
+    await expect(trigger).toHaveAttribute(
+      'aria-activedescendant',
+      (await lastOption.getAttribute('id'))!,
+    );
+    await expect(lastOption).toBeInViewport({ ratio: 1 });
+    const lastOptionStacking = await lastOption.evaluate((option) => {
+      const rect = option.getBoundingClientRect();
+      const hit = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2);
+      return {
+        option: rect.toJSON(),
+        listbox: option.closest('[role="listbox"]')!.getBoundingClientRect().toJSON(),
+        optionIsTopmost: hit !== null && option.contains(hit),
+        hitRole: hit?.getAttribute('role'),
+        hitTag: hit?.tagName,
+      };
+    });
+    await testInfo.attach('device-menu-last-option-stacking', {
+      body: JSON.stringify(lastOptionStacking),
+      contentType: 'application/json',
+    });
+    await testInfo.attach('device-menu-last-option', {
+      body: await page.screenshot(),
+      contentType: 'image/png',
+    });
+    expect(lastOptionStacking.optionIsTopmost).toBe(true);
     await page.keyboard.press('Enter');
     await expect(trigger).toBeFocused();
     await expect(trigger).toHaveAccessibleName(/Potted plant/);
