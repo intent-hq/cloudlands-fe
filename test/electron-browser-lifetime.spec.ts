@@ -130,43 +130,51 @@ test.beforeAll(async () => {
   baseUrl = server.resolvedUrls!.local[0];
 });
 test.afterAll(async () => {
-  await server?.close();
-  if (guestServer) await new Promise<void>((done) => guestServer.close(() => done()));
-  if (bundleDir) await rm(bundleDir, { recursive: true, force: true });
+  try {
+    await server?.close();
+  } finally {
+    try {
+      if (guestServer) await new Promise<void>((done) => guestServer.close(() => done()));
+    } finally {
+      if (bundleDir) await rm(bundleDir, { recursive: true, force: true });
+    }
+  }
 });
 
 async function launch(owned: boolean) {
-  const profile = await mkdtemp(join(tmpdir(), 'intent-browser-lifetime-'));
   const env = Object.fromEntries(
     ['PATH', 'TMPDIR', 'DISPLAY', 'XAUTHORITY', 'SYSTEMROOT'].flatMap((key) =>
       process.env[key] ? [[key, process.env[key]!]] : [],
     ),
   );
-  const app = await electron.launch({
-    args: [
-      join(fixture, 'main.cjs'),
-      profile,
-      `${baseUrl}test/fixtures/browser-lifetime/index.html?owned=${owned}&guest=${encodeURIComponent(guestUrl)}`,
-      cdpBundle,
-    ],
-    env,
-  });
-  const page = await app.firstWindow();
-  page.on('pageerror', (error) => console.error('Fixture renderer:', error.message));
-  page.on('console', (message) => {
-    if (message.type() === 'error') console.error(message.text());
-  });
+  let profile: string | undefined;
+  let app: ElectronApplication | undefined;
   try {
+    profile = await mkdtemp(join(tmpdir(), 'intent-browser-lifetime-'));
+    app = await electron.launch({
+      args: [
+        join(fixture, 'main.cjs'),
+        profile,
+        `${baseUrl}test/fixtures/browser-lifetime/index.html?owned=${owned}&guest=${encodeURIComponent(guestUrl)}`,
+        cdpBundle,
+      ],
+      env,
+    });
+    const page = await app.firstWindow();
+    page.on('pageerror', (error) => console.error('Fixture renderer:', error.message));
+    page.on('console', (message) => {
+      if (message.type() === 'error') console.error(message.text());
+    });
     await page.waitForFunction(() => 'lifetimeFixture' in window);
+    return { app, page, profile };
   } catch (error) {
     try {
-      await app.close();
+      if (app) await app.close();
     } finally {
-      await rm(profile, { recursive: true, force: true });
+      if (profile) await rm(profile, { recursive: true, force: true });
     }
     throw error;
   }
-  return { app, page, profile };
 }
 
 async function guestSnapshot(app: ElectronApplication) {
