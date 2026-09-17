@@ -971,6 +971,56 @@ describe('ChatMessage human author identity (multiplayer)', () => {
     expect(screen.queryByTestId('user-message-author')).toBeNull();
     expect(screen.getByText('hello from a guest')).toBeTruthy();
   });
+
+  it("omits the author identity on the viewer's own rows, keeping it on other members'", () => {
+    const owner = {
+      principalId: 'principal-owner',
+      login: 'owner',
+      displayName: 'Owner Person',
+      avatarUrl: 'https://avatars.example/owner.png',
+    };
+    render(ChatMessage, {
+      props: {
+        message: authoredMessage({ id: 'user-msg-guest' }),
+        workspace: multiMember(),
+        ownPrincipalId: owner.principalId,
+      },
+    });
+    render(ChatMessage, {
+      props: {
+        message: authoredMessage({
+          id: 'user-msg-owner',
+          author: owner,
+          metadata: { fromPrincipalId: owner.principalId },
+          contentBlocks: [{ type: 'text', text: 'hello from the owner' }],
+        }),
+        workspace: multiMember(),
+        ownPrincipalId: owner.principalId,
+      },
+    });
+
+    const headers = screen.getAllByTestId('user-message-author');
+    expect(headers.map((h) => h.getAttribute('data-principal-id'))).toEqual([author.principalId]);
+    expect(screen.getByText('hello from a guest')).toBeTruthy();
+    expect(screen.getByText('hello from the owner')).toBeTruthy();
+  });
+
+  it('shows every author while the own principal is still unknown, then drops its own', async () => {
+    const { rerender } = render(ChatMessage, {
+      props: { message: authoredMessage(), workspace: multiMember(), ownPrincipalId: null },
+    });
+    expect(screen.getByTestId('user-message-author').getAttribute('data-principal-id')).toBe(
+      author.principalId,
+    );
+
+    await rerender({
+      message: authoredMessage(),
+      workspace: multiMember(),
+      ownPrincipalId: author.principalId,
+    });
+    expect(screen.queryByTestId('user-message-author')).toBeNull();
+    expect(screen.getByText('hello from a guest')).toBeTruthy();
+  });
 });
 
 describe('ChatMessage hook wake attribution', () => {

@@ -710,6 +710,33 @@ describe('QueuedMessageList', () => {
       expect(screen.getByText('solo')).toBeTruthy();
     });
 
+    it("omits the author on the viewer's own entries, keeping it on other members'", () => {
+      render(QueuedMessageList, {
+        props: {
+          messages: [
+            queued({
+              id: 'q-guest',
+              content: 'queued by guest',
+              messageMetadata: { fromPrincipalId: guest.principalId },
+            }),
+            queued({
+              id: 'q-owner',
+              content: 'queued by owner',
+              position: 1,
+              messageMetadata: { fromPrincipalId: owner.principalId },
+            }),
+          ],
+          authors,
+          ownPrincipalId: owner.principalId,
+        },
+      });
+
+      const headers = screen.getAllByTestId('queued-message-author');
+      expect(headers.map((h) => h.getAttribute('data-principal-id'))).toEqual([guest.principalId]);
+      expect(screen.getByText('queued by guest')).toBeTruthy();
+      expect(screen.getByText('queued by owner')).toBeTruthy();
+    });
+
     it('omits the author on unstamped or unresolvable entries', () => {
       render(QueuedMessageList, {
         props: {
