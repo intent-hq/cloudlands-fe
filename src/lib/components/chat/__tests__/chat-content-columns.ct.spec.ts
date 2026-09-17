@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/experimental-ct-svelte';
 import type { Locator } from '@playwright/test';
+import { recordCdpLifecycle } from '../../../../test/ct-cdp-lifecycle-recorder';
+import { isolateBrowserContextPerTest } from '../../../../test/ct-isolated-browser-context';
 import ChatPanelOperationalGeometryHost from './ChatPanelOperationalGeometryHost.svelte';
 import {
   applyAuroraPaintProbe,
@@ -7,6 +9,16 @@ import {
   isPaintProbe,
   samplePanelBottomPixels,
 } from './aurora-panel-pixels';
+
+// The first mount of this spec ('caps and centers … 140em measure') intermittently
+// failed with "Execution context was destroyed" on the merge queue
+// (intent-hq/intent#5236) when it ran right after another spec's last test on the
+// same reused per-worker page — the signature fe#2158 / fe#2401 fixed for the
+// operational- and composer-geometry specs. Give every test its own browser
+// context so no prior teardown races the next mount, and record the CDP
+// lifecycle so a recurrence reports the real event ordering.
+isolateBrowserContextPerTest(test, 'intent-hq/intent#5236');
+recordCdpLifecycle(test);
 
 const center = (box: { x: number; width: number }) => box.x + box.width / 2;
 
