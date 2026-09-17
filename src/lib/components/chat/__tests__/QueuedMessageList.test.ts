@@ -692,7 +692,7 @@ describe('QueuedMessageList', () => {
       );
       const avatar = screen.getByTestId('queued-message-author-avatar') as HTMLImageElement;
       expect(avatar.getAttribute('src')).toBe(guest.avatarUrl);
-      expect(screen.getByTestId('queued-message-author-avatar-fallback').textContent).toBe('o');
+      expect(screen.getByTestId('queued-message-author-avatar-fallback').textContent).toBe('O');
       expect(screen.getByText('queued by guest')).toBeTruthy();
       expect(screen.getByText('queued by owner')).toBeTruthy();
     });
