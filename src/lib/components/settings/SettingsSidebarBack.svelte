@@ -3,7 +3,7 @@
   import { ListRow } from '$lib/components/patterns/collection';
   import { m } from '$shared/paraglide/messages.js';
   import { isMacPlatform } from '$lib/utils/shortcuts';
-  import { ArrowLeftIcon } from 'phosphor-svelte';
+  import ArrowLeftIcon from 'phosphor-svelte/lib/ArrowLeftIcon';
 
   let { onBack }: { onBack: () => void } = $props();
   const isMac = isMacPlatform();

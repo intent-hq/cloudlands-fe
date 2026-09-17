@@ -35,6 +35,7 @@ describe('SettingsSidebarNav', () => {
     expect(
       screen.getByRole('button', { name: 'Providers' }).getAttribute('aria-current'),
     ).toBeNull();
+    expect(screen.queryAllByRole('img')).toHaveLength(0);
   });
 
   it('selects a category when clicked', async () => {

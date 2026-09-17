@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { PlusIcon } from 'phosphor-svelte';
+  import PlusIcon from 'phosphor-svelte/lib/PlusIcon';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import { ListRow } from '$lib/components/patterns/collection';
   import {

@@ -2,17 +2,15 @@
   import { ListRow } from '$lib/components/patterns/collection';
   import { Button } from '$lib/components/patterns/settings/custom-controls';
   import { m } from '$shared/paraglide/messages.js';
-  import {
-    DevicesIcon,
-    GearSixIcon,
-    GitBranchIcon,
-    KeyboardIcon,
-    PaintBrushIcon,
-    PlugsConnectedIcon,
-    RobotIcon,
-    SlidersHorizontalIcon,
-    TerminalWindowIcon,
-  } from 'phosphor-svelte';
+  import DevicesIcon from 'phosphor-svelte/lib/DevicesIcon';
+  import GearSixIcon from 'phosphor-svelte/lib/GearSixIcon';
+  import GitBranchIcon from 'phosphor-svelte/lib/GitBranchIcon';
+  import KeyboardIcon from 'phosphor-svelte/lib/KeyboardIcon';
+  import PaintBrushIcon from 'phosphor-svelte/lib/PaintBrushIcon';
+  import PlugsConnectedIcon from 'phosphor-svelte/lib/PlugsConnectedIcon';
+  import RobotIcon from 'phosphor-svelte/lib/RobotIcon';
+  import SlidersHorizontalIcon from 'phosphor-svelte/lib/SlidersHorizontalIcon';
+  import TerminalWindowIcon from 'phosphor-svelte/lib/TerminalWindowIcon';
   import type { Snippet } from 'svelte';
   import type { SettingsTab } from '$lib/components/patterns/settings/types';
 
@@ -147,7 +145,7 @@
                   data-slot="settings-sidebar-icon"
                   class="flex size-4 shrink-0 items-center justify-center"
                 >
-                  <item.icon size={16} weight="regular" />
+                  <item.icon size={16} weight="regular" aria-hidden="true" />
                 </span>
               {/snippet}
               {#snippet title()}
