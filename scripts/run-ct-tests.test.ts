@@ -18,7 +18,7 @@ import {
   runPlaywright,
   usage,
 } from './run-ct-tests.mjs';
-import { HELD_LOCK_ENV, acquireVerificationLock } from './verification-lock.mjs';
+import { HELD_LOCK_ENV, acquireVerificationLock, lockOwner } from './verification-lock.mjs';
 
 const baseEnv = { PATH: '/usr/bin' };
 
@@ -266,8 +266,7 @@ describe('acquireCtPortLock', () => {
       lockPath,
       log() {},
     });
-    const owner = JSON.parse(readFileSync(path.join(lockRoot, 'ct-3300', 'owner.json'), 'utf8'));
-    expect(owner).toMatchObject({ pid: process.pid, cwd });
+    expect(lockOwner(path.join(lockRoot, 'ct-3300'))).toMatchObject({ pid: process.pid, cwd });
     release();
     expect(existsSync(path.join(lockRoot, 'ct-3300'))).toBe(false);
   });
@@ -280,9 +279,7 @@ describe('acquireCtPortLock', () => {
     expect(second.isDone()).toBe(false);
     first();
     const release = await second.tracked;
-    expect(JSON.parse(readFileSync(path.join(lockRoot, 'ct-3301', 'owner.json'), 'utf8')).cwd).toBe(
-      '/worktree/b',
-    );
+    expect(lockOwner(path.join(lockRoot, 'ct-3301')).cwd).toBe('/worktree/b');
     release();
   });
 
@@ -367,9 +364,7 @@ describe('acquireCtPortLock', () => {
     child.emit('exit', null, 'SIGINT');
     expect(exitCodes).toEqual([130]);
     const contender = await acquireCtPortLock({ ...options, env: { CT_PORT: '3307' }, cwd: '/b' });
-    expect(JSON.parse(readFileSync(path.join(lockRoot, 'ct-3307', 'owner.json'), 'utf8')).cwd).toBe(
-      '/b',
-    );
+    expect(lockOwner(path.join(lockRoot, 'ct-3307')).cwd).toBe('/b');
     contender();
   });
 });
