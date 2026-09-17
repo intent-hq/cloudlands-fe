@@ -309,6 +309,21 @@ export const mockGitHubPullRequest: GitHubPullRequestDetails = {
   baseRef: 'main',
 };
 
+/** A merge-queued PR for the GitHub link hover card (`github.pulls.get` mock, PR #43). */
+export const mockGitHubPullRequestQueued: GitHubPullRequestDetails = {
+  owner: 'acme',
+  repo: 'web-app',
+  number: 43,
+  title: 'Persist sidebar width across sessions',
+  state: 'queued',
+  author: 'octocat',
+  createdAt: '2026-01-03T09:00:00.000Z',
+  updatedAt: '2026-01-03T15:30:00.000Z',
+  url: 'https://github.com/acme/web-app/pull/43',
+  headRef: 'feat/persist-sidebar-width',
+  baseRef: 'main',
+};
+
 /** One issue for the GitHub link hover card (`github.issues.get` mock). */
 export const mockGitHubIssue: GitHubIssueDetails = {
   owner: 'acme',

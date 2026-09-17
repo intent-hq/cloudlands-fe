@@ -192,7 +192,9 @@ export class MockAppClient implements Omit<AppClient, MigratedDomain> {
   readonly integrations: AppClient['integrations'] = {
     githubUser: async () => fx.mockGitHubUser,
     githubPullRequest: async (owner, repo, number) => ({
-      ...fx.mockGitHubPullRequest,
+      ...(number === fx.mockGitHubPullRequestQueued.number
+        ? fx.mockGitHubPullRequestQueued
+        : fx.mockGitHubPullRequest),
       owner,
       repo,
       number,
