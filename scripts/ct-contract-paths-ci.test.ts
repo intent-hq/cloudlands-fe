@@ -247,6 +247,16 @@ describe('test-ct runs on pull_request when ct_required is true', () => {
       { event: 'merge_group', ctRequired: '', fastPath: '', route: 'failure' },
       false,
     ],
+    [
+      'release-shaped merge_group entry',
+      { event: 'merge_group', ctRequired: 'true', fastPath: 'true' },
+      false,
+    ],
+    [
+      'non-release merge_group entry with computed outputs',
+      { event: 'merge_group', ctRequired: 'false', fastPath: 'false' },
+      true,
+    ],
   ])('%s → runs=%s', (_name, overrides, expected) => {
     expect(evaluateCondition(condition, { ...ok, ...overrides })).toBe(expected);
   });
@@ -332,6 +342,39 @@ describe('CI Gate accepts a test-ct skip only through an output', () => {
     [
       'merge_group, CT failed',
       { ...results('failure', 'merge_group'), FAST_PATH: '', CT_REQUIRED: '' },
+      1,
+    ],
+    [
+      'merge_group, release fast path, CT and heavy jobs skipped',
+      {
+        ...results('skipped', 'merge_group'),
+        RESULT_checks: 'skipped',
+        RESULT_build_web: 'skipped',
+        RESULT_test: 'skipped',
+        RESULT_test_integration: 'skipped',
+        FAST_PATH: 'true',
+        CT_REQUIRED: 'true',
+      },
+      0,
+    ],
+    [
+      'merge_group, fast path false, CT skipped',
+      { ...results('skipped', 'merge_group'), FAST_PATH: 'false', CT_REQUIRED: 'false' },
+      1,
+    ],
+    [
+      'merge_group, fast path false, integration skipped',
+      {
+        ...results('success', 'merge_group'),
+        RESULT_test_integration: 'skipped',
+        FAST_PATH: 'false',
+        CT_REQUIRED: 'false',
+      },
+      1,
+    ],
+    [
+      'merge_group, release fast path, CT failed',
+      { ...results('failure', 'merge_group'), FAST_PATH: 'true', CT_REQUIRED: 'true' },
       1,
     ],
   ])('%s → exit %i', (_name, env, expected) => {
