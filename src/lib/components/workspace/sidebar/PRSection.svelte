@@ -137,10 +137,10 @@
      * no local-files expansion) — the secondary-root browsing view
      * (monorepo#2053). */
     listOnly?: boolean;
-    /** Owner-only affordances (push / create PR / merge / rebase / connect
-     * remote via `accept-changes.*`, GitHub auth via `github.*`) render only
-     * when true; `git.pull` / force `git.push` and the PR list stay for
-     * members. */
+    /** Every mutating affordance (push / create PR / merge / rebase / connect
+     * remote via `accept-changes.*`, GitHub auth via `github.*`, `git.pull`,
+     * force `git.push`) renders only when true; a collaborator gets the
+     * read-only PR list and sync labels. */
     isOwner?: boolean;
   }
 
@@ -934,8 +934,9 @@
           {@render mergePanelContent()}
         {/if}
       </DividerPanel>
-    {:else if isBehind}
+    {:else if isOwner && isBehind}
       <DividerButton
+        data-testid="pr-pull-button"
         onclick={handlePull}
         disabled={isPulling}
         loading={isPulling}
@@ -969,9 +970,10 @@
       </DividerButton>
     {/if}
 
-    <!-- Force Push Section -->
-    {#if isDiverged}
+    <!-- Force Push Section (owner-only) -->
+    {#if isOwner && isDiverged}
       <DividerButton
+        data-testid="pr-force-push-button"
         onclick={() => {
           forcePushDrawerOpen = !forcePushDrawerOpen;
         }}

@@ -2576,13 +2576,15 @@ describe('SidebarChangesPanel', () => {
   // ═══════════════════════════════════════════════════════════════════════════
 
   describe('Collaborator read-only view', () => {
-    // Every control below routes through an RPC the daemon refuses for a
-    // collaborator (`-32003 Forbidden`, transport `COLLABORATOR_METHODS`):
-    // accept-changes.*, github.*, workspace.setAutoCommit, host.exec and the
-    // protected `workspace.update` fields. Stage / unstage (git.stage /
-    // git.unstage) and every read stay available. The trunk selector is
-    // covered by the "trunk selector" tests above (it is offered only before
-    // the first push, which this fixture is past).
+    // A collaborator's Changes tab is strictly read-only: every mutating
+    // control below is hidden — those routed through an RPC the daemon refuses
+    // for a collaborator (`-32003 Forbidden`, transport `COLLABORATOR_METHODS`:
+    // accept-changes.*, github.*, workspace.setAutoCommit, host.exec, the
+    // protected `workspace.update` fields) and the worktree writes (git.stage /
+    // git.unstage / git.discard / git.pull / force git.push). Every read stays.
+    // The trunk selector is covered by the "trunk selector" tests above (it is
+    // offered only before the first push, which this fixture is past); pull and
+    // force push need their own git state and are covered below.
     const OWNER_ONLY_TESTIDS = [
       'auto-commit-toggle',
       'group-commit-button',
@@ -2593,6 +2595,11 @@ describe('SidebarChangesPanel', () => {
       'pr-push-commits-button',
       'pr-rebase-button',
       'pr-refresh-button',
+      'stage-all-button',
+      'unstage-all-button',
+      'stage-btn',
+      'unstage-btn',
+      'revert-btn',
     ];
 
     async function seedBusyWorkspace(myRole: 'owner' | 'collaborator') {
@@ -2664,7 +2671,6 @@ describe('SidebarChangesPanel', () => {
       for (const id of OWNER_ONLY_TESTIDS) {
         expect(container.querySelector(`[data-testid="${id}"]`), id).not.toBeNull();
       }
-      expect(container.querySelector('[data-testid="stage-all-button"]')).not.toBeNull();
     });
 
     it('renders none of the owner-only controls for a collaborator while keeping the read view', async () => {
@@ -2679,8 +2685,8 @@ describe('SidebarChangesPanel', () => {
       for (const id of OWNER_ONLY_TESTIDS) {
         expect(container.querySelector(`[data-testid="${id}"]`), id).toBeNull();
       }
-      // Member-class writes and reads stay.
-      expect(container.querySelector('[data-testid="stage-all-button"]')).not.toBeNull();
+      // Reads stay: the change list and the commit timeline.
+      expect(container.querySelectorAll('[data-testid="file-row"]').length).toBe(2);
       expect(container.textContent).toContain('Pushed to remote');
       // Unpushed work is not reported as synced just because the push
       // affordance is hidden.
@@ -2741,6 +2747,72 @@ describe('SidebarChangesPanel', () => {
       await new Promise((r) => setTimeout(r, 0));
       expect(container.querySelectorAll('[data-testid="mock-component"]').length).toBe(before);
       expect(container.querySelector('input.inline-edit-input')).toBeNull();
+    });
+
+    it('hides pull and force push from a collaborator and skips the refused status refresh', async () => {
+      const { refreshAcceptChangesStatus } =
+        await import('$store/renderer/slices/changes/changes-slice');
+      const clickRefresh = async (container: HTMLElement) => {
+        const btn = container.querySelector(
+          'button[title="Refresh git status"]',
+        ) as HTMLButtonElement | null;
+        expect(btn).not.toBeNull();
+        await fireEvent.click(btn!);
+        await new Promise((r) => setTimeout(r, 0));
+      };
+
+      // Open PR, everything pushed, behind the remote → pull.
+      const seedBehind = async (myRole: 'owner' | 'collaborator') => {
+        await seedBusyWorkspace(myRole);
+        mockFileTrackingStore.commits = [
+          makeCommit({ hash: 'pushed1', message: 'fix: pushed work', isPushed: true }),
+        ];
+        mockGitState.ahead = 0;
+        mockGitState.behind = 1;
+      };
+      await seedBehind('owner');
+      const owner = await renderPanel();
+      await waitFor(() => {
+        expect(owner.container.querySelector('[data-testid="pr-pull-button"]')).not.toBeNull();
+      });
+      (refreshAcceptChangesStatus as Mock).mockClear();
+      await clickRefresh(owner.container);
+      expect(refreshAcceptChangesStatus).toHaveBeenCalledWith('ws-1');
+      owner.unmount();
+
+      await seedBehind('collaborator');
+      const guest = await renderPanel();
+      await waitFor(() => {
+        expect(guest.container.textContent).toContain('Shared PR');
+      });
+      expect(guest.container.querySelector('[data-testid="pr-pull-button"]')).toBeNull();
+      (refreshAcceptChangesStatus as Mock).mockClear();
+      await clickRefresh(guest.container);
+      expect(refreshAcceptChangesStatus).not.toHaveBeenCalled();
+      guest.unmount();
+
+      // Diverged from the remote → force push.
+      const seedDiverged = async (myRole: 'owner' | 'collaborator') => {
+        await seedBusyWorkspace(myRole);
+        mockGitState.behind = 1;
+        mockGitState.status = { diverged: true };
+      };
+      await seedDiverged('owner');
+      const ownerDiverged = await renderPanel();
+      await waitFor(() => {
+        expect(
+          ownerDiverged.container.querySelector('[data-testid="pr-force-push-button"]'),
+        ).not.toBeNull();
+      });
+      ownerDiverged.unmount();
+
+      await seedDiverged('collaborator');
+      const { container } = await renderPanel();
+      await waitFor(() => {
+        expect(container.textContent).toContain('Shared PR');
+      });
+      expect(container.querySelector('[data-testid="pr-force-push-button"]')).toBeNull();
+      expect(container.textContent).not.toContain('Force Push');
     });
 
     it('hides Create PR / Merge from a collaborator with committed work and no PR', async () => {
