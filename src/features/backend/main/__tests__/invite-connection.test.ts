@@ -203,6 +203,47 @@ describe('openInviteConnection', () => {
     }
   });
 
+  // Returning-guest join: `invite.inspect` previews without a device flow and
+  // `invite.accept` joins with the stored credential; a credential the host no
+  // longer recognizes is the documented `credential-invalid` code.
+  it('runs invite.inspect and invite.accept with the documented params and result shapes', async () => {
+    const INSPECTION = {
+      workspaceId: 'ws_1',
+      workspaceTitle: 'Shared',
+      hostname: 'studio.local',
+      prettyHostname: 'Studio',
+    };
+    daemon.handler = (req) => {
+      if (req.method === 'invite.inspect') return { result: INSPECTION };
+      if (req.method === 'invite.accept') {
+        return req.params?.credential === 'stored-token'
+          ? { result: CREDENTIAL }
+          : { error: { code: -32602, message: 'nope', data: { code: 'credential-invalid' } } };
+      }
+      return { error: { code: -32601, message: 'unknown' } };
+    };
+    const { openInviteConnection, InviteRpcError } = await import('../invite-connection');
+    const conn = await openInviteConnection({
+      hosts: ['127.0.0.1'],
+      port: daemon.port,
+      fingerprint: daemon.fingerprint,
+    });
+    try {
+      await expect(conn.inspect('inv_1', 's3cret')).resolves.toEqual(INSPECTION);
+      await expect(conn.accept('inv_1', 's3cret', 'stored-token')).resolves.toEqual(CREDENTIAL);
+      const refused = await conn.accept('inv_1', 's3cret', 'revoked').catch((e: unknown) => e);
+      expect(refused).toBeInstanceOf(InviteRpcError);
+      expect(refused).toMatchObject({ code: -32602, inviteCode: 'credential-invalid' });
+      expect(daemon.requests.map((r) => [r.method, r.params])).toEqual([
+        ['invite.inspect', { inviteId: 'inv_1', secret: 's3cret' }],
+        ['invite.accept', { inviteId: 'inv_1', secret: 's3cret', credential: 'stored-token' }],
+        ['invite.accept', { inviteId: 'inv_1', secret: 's3cret', credential: 'revoked' }],
+      ]);
+    } finally {
+      conn.close();
+    }
+  });
+
   it('surfaces error.data.code as inviteCode so the flow routes on the code', async () => {
     daemon.handler = () => ({
       error: {
