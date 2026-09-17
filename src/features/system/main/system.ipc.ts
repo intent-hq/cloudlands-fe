@@ -980,8 +980,7 @@ export function setupSystemIPC() {
 
     // Register AFTER stamping (the registry keys off the backend stamp) and
     // BEFORE loadURL so a concurrent HUD-open request reuses this window even
-    // while its URL is still about:blank (mid-navigation race). Registration
-    // also disables background throttling for the HUD (see registerHudWindow).
+    // while its URL is still about:blank (mid-navigation race).
     if (isHudRoute) {
       registerHudWindow(newWindow);
     }

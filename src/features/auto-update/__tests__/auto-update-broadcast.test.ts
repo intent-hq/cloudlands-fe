@@ -29,7 +29,6 @@ interface MockWindow {
     isDestroyed: () => boolean;
     getURL: () => string;
     send: ReturnType<typeof vi.fn>;
-    setBackgroundThrottling: ReturnType<typeof vi.fn>;
   };
 }
 
@@ -43,7 +42,6 @@ function makeWindow(
       isDestroyed: () => opts.webContentsDestroyed ?? false,
       getURL: () => opts.url ?? 'app://workspaces/workspace/x',
       send: vi.fn(),
-      setBackgroundThrottling: vi.fn(),
     },
   };
 }
