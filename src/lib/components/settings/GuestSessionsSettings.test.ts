@@ -316,6 +316,46 @@ describe('GuestSessionsSettings', () => {
     await waitFor(() => expect(screen.queryByTestId('guest-leave-workspace-error')).toBeNull());
   });
 
+  describe('a joined workspace the host projects with an empty title', () => {
+    const untitled = { ...guest, workspaces: [{ id: 'ws-untitled', title: '' }] };
+
+    function untitledRow(): HTMLElement {
+      return screen
+        .getByTestId('guest-sessions-joined')
+        .querySelector('[data-workspace-id="ws-untitled"]') as HTMLElement;
+    }
+
+    it('shows the Untitled fallback in its row', () => {
+      mocks.sessions = [untitled];
+      render(GuestSessionsSettings);
+      expect(within(untitledRow()).getByText('Untitled')).toBeTruthy();
+    });
+
+    it('names it Untitled in the Leave confirm dialog', async () => {
+      mocks.sessions = [untitled];
+      render(GuestSessionsSettings);
+      await fireEvent.click(within(untitledRow()).getByRole('button', { name: 'Leave' }));
+      expect(screen.getByRole('dialog').textContent).toContain('Untitled');
+    });
+
+    it('names it Untitled when the leave fails', async () => {
+      mocks.sessions = [untitled];
+      mocks.leaveWorkspace.mockImplementationOnce((id, workspaceId) => ({
+        type: 'guestSessions/leaveGuestWorkspaceRequested',
+        payload: [id, workspaceId],
+        promise: Promise.reject(new Error('daemon')),
+      }));
+      render(GuestSessionsSettings);
+      await fireEvent.click(within(untitledRow()).getByRole('button', { name: 'Leave' }));
+      const confirmButtons = screen.getAllByRole('button', { name: 'Leave' });
+      await fireEvent.click(confirmButtons[confirmButtons.length - 1]);
+
+      const alert = await screen.findByTestId('guest-leave-workspace-error');
+      expect(alert.textContent).toContain('Untitled');
+      expect(mocks.leaveWorkspace).toHaveBeenCalledWith('guest-1', 'ws-untitled');
+    });
+  });
+
   /**
    * A confirmed operation A is pending; the user opens the same dialog for B
    * and CANCELS it; then A fails. The retry must re-run A — B was never
