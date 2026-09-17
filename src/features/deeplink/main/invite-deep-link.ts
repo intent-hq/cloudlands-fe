@@ -22,7 +22,9 @@
  *    short-lived single-use nonce. No fingerprint confirmation is asked of
  *    the user — the pin is checked mechanically at the handshake, not by eye.
  * 2. Read the GitHub account the guest's OWN daemon is signed in as
- *    (`github.getUser`). Not signed in — or, later, a token that predates the
+ *    (`github.getUser` — the same `GET /user` probe `github.authStatus`
+ *    reduces to `isConfigured`, but returning the login the prove prompt
+ *    names). Not signed in — or, later, a token that predates the
  *    `gist` scope the proof needs (`github-scope-missing`) — puts the consent
  *    modal in its `sign-in-required` state: the guest's own `github.connect`
  *    device flow (code copied to the clipboard; "Open GitHub" opens the URL)
@@ -39,7 +41,9 @@
  *    { inviteId, secret, nonce, gistId, login }` has the host read it, and
  *    `github.identityProof.delete { gistId }` removes it afterwards (best
  *    effort, after the store write — a delete failure never fails the join).
- *    A `proof-expired` refusal offers one retry with a fresh challenge.
+ *    A `proof-expired` or `proof-invalid` refusal offers one retry with a
+ *    fresh challenge: a nonce purged by a later challenge surfaces as
+ *    `proof-invalid`, so both mean "restart the challenge".
  * 5. The prove answer is the point of no return: the host has minted the
  *    credential and consumed a seat, so the modal is dismissed (`joined`) the
  *    moment it resolves and a Cancel from then on is ignored. Store the
@@ -287,15 +291,19 @@ type ProveOutcome =
   | { kind: 'joined' }
   | { kind: 'cancelled' }
   | { kind: 'sign-in-required'; reason: InviteSignInReason }
-  | { kind: 'proof-expired' };
+  | { kind: 'proof-refused'; code: ProofRefusalCode };
+
+/** Host refusals of the proof that a fresh challenge can cure. */
+type ProofRefusalCode = 'proof-invalid' | 'proof-expired';
 
 /**
  * First join on a host: challenge → (sign in) → consent → create → prove →
  * delete. The loop re-enters the sign-in step when the guest daemon refuses
  * to create the proof for want of a token or of the `gist` scope — once: a
  * second refusal after a completed sign-in is surfaced as a failure rather
- * than prompting again — and re-challenges once on `proof-expired` when the
- * user asks to retry (consent already given: no second prompt).
+ * than prompting again — and re-challenges once on `proof-expired` /
+ * `proof-invalid` when the user asks to retry (consent already given: no
+ * second prompt).
  */
 async function joinWithIdentityProof(
   connection: InviteConnection,
@@ -360,12 +368,14 @@ async function joinWithIdentityProof(
         // The joining prompt stays up until the sign-in prompt supersedes it.
         signInReason = outcome.reason;
         break;
-      case 'proof-expired':
+      case 'proof-refused':
         consent?.dismiss('failed');
         consent = null;
-        if (retried) throw new InviteRpcError(-32602, { code: 'proof-expired' });
-        if (!(await showProofExpiredRetry())) {
-          logger.info('User declined to retry the expired identity proof');
+        if (retried) throw new InviteRpcError(-32602, { code: outcome.code });
+        if (!(await showProofRefusedRetry(outcome.code))) {
+          logger.info('User declined to retry the refused identity proof', {
+            code: outcome.code,
+          });
           return;
         }
         retried = true;
@@ -428,8 +438,11 @@ async function proveIdentity(
     });
   } catch (error) {
     void deleteProof(client, proof.gistId);
-    if (error instanceof InviteRpcError && error.inviteCode === 'proof-expired') {
-      return { kind: 'proof-expired' };
+    if (
+      error instanceof InviteRpcError &&
+      (error.inviteCode === 'proof-expired' || error.inviteCode === 'proof-invalid')
+    ) {
+      return { kind: 'proof-refused', code: error.inviteCode };
     }
     throw error;
   }
@@ -946,12 +959,15 @@ async function showConfirmProve(login: string, workspaceTitle: string): Promise<
   return response === 0;
 }
 
-/** The host refused the proof as expired. True when the user chose "Retry". */
-async function showProofExpiredRetry(): Promise<boolean> {
+/** The host refused the proof as expired or invalid. True when the user chose "Retry". */
+async function showProofRefusedRetry(code: ProofRefusalCode): Promise<boolean> {
   const response = await showDialog({
     type: 'question',
     title: m.deeplink_inviteFailed_title(),
-    message: m.deeplink_inviteProofExpired_message(),
+    message:
+      code === 'proof-expired'
+        ? m.deeplink_inviteProofExpired_message()
+        : m.deeplink_inviteProofInvalid_message(),
     buttons: [m.deeplink_inviteProofExpired_retry_button(), m.deeplink_pairDialog_cancel_button()],
     defaultId: 0,
     cancelId: 1,

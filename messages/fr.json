@@ -5716,6 +5716,7 @@
   "deeplink_inviteConfirm_join_button": "Rejoindre",
   "deeplink_inviteProve_detail": "Intent prouve votre identité GitHub à l'hôte avec un gist privé supprimé aussitôt après. L'hôte connaît votre nom d'utilisateur GitHub, l'identifiant de votre compte, votre nom d'affichage et votre avatar.",
   "deeplink_inviteProofExpired_message": "La preuve d'identité a pris trop de temps et l'hôte ne l'accepte plus. Réessayer avec une nouvelle ?",
+  "deeplink_inviteProofInvalid_message": "L'hôte n'a pas pu vérifier votre identité GitHub avec cette preuve. Réessayer avec une nouvelle ?",
   "deeplink_inviteProofExpired_retry_button": "Réessayer",
   "deeplink_inviteFailed_title": "Impossible de rejoindre l’espace de travail",
   "deeplink_inviteFailed_ok_button": "OK",
