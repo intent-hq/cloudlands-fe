@@ -14,6 +14,16 @@ import type {
 export type PresenceCircle = PresenceIdentity &
   Partial<Pick<PresencePerson, 'owner' | 'online' | 'self'>>;
 
+/**
+ * What makes one avatar of a stack a button: its accessible label (also the
+ * tooltip) and what selecting it does — `null` leaves the avatar inert
+ * (`aria-disabled`).
+ */
+export interface PresenceCircleAction {
+  label: string;
+  onSelect: (() => void) | null;
+}
+
 /** The ring around an avatar: the owner blue, an online member green, an offline member grey. */
 export type PresenceRing = 'owner' | 'member' | 'offline';
 

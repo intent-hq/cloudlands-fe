@@ -1632,6 +1632,10 @@
   "workspace_progressCard_base_label": "Base {ref}",
   "workspace_progressCard_copied_label": "Copié",
   "workspace_progressCard_copyPath_ariaLabel": "Copier le chemin de l'espace de travail",
+  "workspace_progressCard_presenceOnAgent_tooltip": "{name} · sur {agent}",
+  "workspace_progressCard_presenceOnNote_tooltip": "{name} · sur {note}",
+  "workspace_progressCard_presenceInWorkspace_tooltip": "{name} · dans cet espace de travail",
+  "workspace_progressCard_presenceOffline_tooltip": "{name} · hors ligne",
   "workspace_checkoutModePill_tooltip": "Mode d'extraction : {label}",
   "workspace_checkoutModePill_cow_label": "CoW",
   "workspace_checkoutModePill_worktree_label": "Arbre de travail",
@@ -6421,11 +6425,6 @@
   "presence_typing_one": "{name} est en train d’écrire…",
   "presence_typing_two_label": "{first} et {second} sont en train d’écrire…",
   "presence_typing_many": "{first} et {count} autres sont en train d’écrire…",
-  "workspace_hoverCard_people_label": "Personnes",
-  "workspace_hoverCard_personViewing_label": "Consulte",
-  "workspace_hoverCard_personOnline_label": "En ligne",
-  "workspace_hoverCard_personOffline_label": "Hors ligne",
-  "workspace_hoverCard_personRemove_ariaLabel": "Retirer {name}",
   "presence_avatarStack_onlyYou_label": "Vous êtes seul ici",
   "presence_person_you_label": "{name} (vous)"
 }

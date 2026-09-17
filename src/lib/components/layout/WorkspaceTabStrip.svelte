@@ -44,13 +44,6 @@
   import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
   import { selectWorkspaceTabStatuses } from '$store/renderer/slices/hud/hud-selectors';
   import type { WorkspaceTabStatus } from '$store/renderer/slices/hud/hud-types';
-  import PresenceAvatarStack from '$features/presence/components/PresenceAvatarStack.svelte';
-  import {
-    selectPresenceMembers,
-    selectPresenceOwnPrincipalId,
-    selectPresenceRosters,
-    selectWorkspacePresencePeople,
-  } from '$store/renderer/slices/presence/presence-selectors';
   import { WorkspaceStatus } from '$shared/types';
   import { resolveEmptyWindowDestination } from '$features/workspace/utils/empty-window-destination';
   import {
@@ -344,17 +337,6 @@
   function getRunningAgentIds(workspaceId: string) {
     void activeStreamsVersion;
     return activeStreamsTracker.getStreamingAgentIdsForWorkspace(workspaceId);
-  }
-
-  const presenceRosters$ = selectPresenceRosters();
-  const presenceMembers$ = selectPresenceMembers();
-  const presenceOwnPrincipalId$ = selectPresenceOwnPrincipalId();
-  function getPresencePeople(workspaceId: string) {
-    void $presenceRosters$;
-    void $presenceMembers$;
-    void $presenceOwnPrincipalId$;
-    void $workspaceItems$;
-    return selectWorkspacePresencePeople.select(appStore.state, workspaceId);
   }
 
   function tabAccessibleLabel(
@@ -950,8 +932,6 @@
       >
         {#if workspace}
           {@const runningAgentIds = getRunningAgentIds(workspaceId)}
-          {@const canManageSharing = workspace.myRole === 'owner'}
-          {@const presencePeople = getPresencePeople(workspaceId)}
           {@const tabStatus = $workspaceTabStatuses$[workspaceId]}
           {@const workspaceStatusState = resolveWorkspaceStatusState(workspace)}
           {@const isArchived = workspace.status === WorkspaceStatus.Archived}
@@ -1008,19 +988,13 @@
               durationMs={isDragged ? 0 : WORKSPACE_TAB_MOTION_DURATION_MS}
             />
             {#key isCurrent && pointerOpenEligibleWorkspaceHoverCardIds.has(workspaceId)}
-              <!-- The hover card offers member Remove only to the
-                   workspace's owner, so the card stays hoverable (see
-                   `disableHoverableContent`) when this window owns the workspace;
-                   otherwise it is a read-only preview that closes on leave. The
-                   current tab normally has no preview, but a shared workspace's
-                   member rows stay reachable there too. -->
               <TooltipRich
                 side="bottom"
                 align="start"
                 delayDuration={workspaceHoverCardOpenDelay}
                 onOpenChange={(open) => handleWorkspaceHoverCardOpenChange(workspaceId, open)}
-                disableHoverableContent={!canManageSharing}
-                disabled={(isCurrent && presencePeople.length === 0) || draggedWorkspaceId !== null}
+                disableHoverableContent={true}
+                disabled={isCurrent || draggedWorkspaceId !== null}
                 showArrow={false}
                 maxWidth="none"
                 class="absolute -inset-px rounded-[inherit]"
@@ -1057,10 +1031,9 @@
                     data-workspace-tab-controls
                   >
                     <span
-                      class="pointer-events-none flex h-4 max-w-16 shrink-0 items-center justify-end gap-1 overflow-hidden"
+                      class="pointer-events-none flex h-4 max-w-14 shrink-0 items-center justify-end overflow-hidden"
                       data-workspace-tab-status-cluster
                     >
-                      <PresenceAvatarStack people={presencePeople} size={12} decorative />
                       <WorkspaceStatusIcon status={workspaceStatusState} size={14} decorative />
                     </span>
                     <span
