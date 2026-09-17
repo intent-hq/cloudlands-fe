@@ -193,7 +193,11 @@ export const selectIsCollaboratorOnlyClient = store.createSelector((state) => {
   if (selectIsGuestWindow.select(state)) return true;
   if (!selectWindowIdentitySettled.select(state)) return true;
   if (!state.workspace.hasLoaded) return false;
-  const workspaces = getItems(state.workspace.workspaces);
+  // The Chief is a client-side virtual workspace (no `myRole`); it must not
+  // read as an owned workspace and defeat the gate that hides it.
+  const workspaces = getItems(state.workspace.workspaces).filter(
+    (ws) => ws.id !== CHIEF_WORKSPACE_ID,
+  );
   return workspaces.length > 0 && workspaces.every((ws) => ws.myRole === 'collaborator');
 });
 
