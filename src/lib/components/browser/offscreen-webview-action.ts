@@ -115,6 +115,20 @@ export function offscreenWebview(node: HTMLElement, entry: OffscreenWebviewEntry
     handleDidNavigate(event);
   };
 
+  // The guest webContents is gone (e.g. the page called window.close()).
+  // The main-process registry drops its own mapping on the webContents
+  // `destroyed` hook (gated on webContentsId so a handed-off tab survives);
+  // here we release the renderer-side handle so a recreated guest's
+  // dom-ready registers again instead of being skipped by the id gate.
+  const handleDestroyed = () => {
+    logger.warn('Offscreen webview guest was destroyed', {
+      tabId: current.tabId,
+      url: current.url,
+    });
+    domReady = false;
+    lastRegisteredWebContentsId = undefined;
+  };
+
   // NOT { once: true }: reparenting the <webview> makes Electron destroy
   // and re-create the guest webContents, and the new guest fires dom-ready
   // again — registration (gated on webContentsId above) and muting must
@@ -126,6 +140,7 @@ export function offscreenWebview(node: HTMLElement, entry: OffscreenWebviewEntry
   // Hash/history navigation does not fire did-navigate; the visible
   // EmbeddedBrowser syncs it too, so mirror it here.
   webview.addEventListener('did-navigate-in-page', handleDidNavigateInPage);
+  webview.addEventListener('destroyed', handleDestroyed);
 
   return {
     update(next: OffscreenWebviewEntry) {
@@ -136,6 +151,7 @@ export function offscreenWebview(node: HTMLElement, entry: OffscreenWebviewEntry
       webview.removeEventListener('dom-ready', handleDomReady);
       webview.removeEventListener('did-navigate', handleDidNavigate);
       webview.removeEventListener('did-navigate-in-page', handleDidNavigateInPage);
+      webview.removeEventListener('destroyed', handleDestroyed);
     },
   };
 }

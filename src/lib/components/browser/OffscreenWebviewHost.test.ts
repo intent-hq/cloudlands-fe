@@ -290,6 +290,40 @@ describe('OffscreenWebviewHost', () => {
     );
   });
 
+  // A guest that closes itself (window.close()) fires `destroyed`; the
+  // action must survive it and release its registration gate so a
+  // recreated guest's dom-ready registers again.
+  it('releases the CDP registration gate when the guest is destroyed', async () => {
+    layoutsStore.set({ 'ws-bg': browserLayout([{ id: 'tab-bg' }]) });
+    const { container } = render(OffscreenWebviewHost, {
+      props: { excludedWorkspaceIds: new Set() },
+    });
+    await waitFor(() => expect(mountedTabIds(container)).toEqual(['tab-bg']));
+    const webview = container.querySelector(
+      '[data-offscreen-webview-tab="tab-bg"]',
+    ) as HTMLElement & {
+      getWebContentsId?: () => number;
+    };
+    const registerCalls = () =>
+      invokeMock.mock.calls.filter(([channel]) => channel === 'browser:register-tab');
+
+    webview.getWebContentsId = () => 77;
+    webview.dispatchEvent(new Event('dom-ready'));
+    await waitFor(() => expect(registerCalls()).toHaveLength(1));
+
+    expect(() => webview.dispatchEvent(new Event('destroyed'))).not.toThrow();
+
+    // Same webContentsId on the next dom-ready: the gate was released, so
+    // the guest registers again instead of being skipped as "same guest".
+    webview.dispatchEvent(new Event('dom-ready'));
+    await waitFor(() =>
+      expect(registerCalls()).toEqual([
+        ['browser:register-tab', { tabId: 'tab-bg', webContentsId: 77 }],
+        ['browser:register-tab', { tabId: 'tab-bg', webContentsId: 77 }],
+      ]),
+    );
+  });
+
   it('syncs full and in-page navigation back into the persisted tab URL', async () => {
     layoutsStore.set({ 'ws-bg': browserLayout([{ id: 'tab-bg' }]) });
     const { container } = render(OffscreenWebviewHost, {

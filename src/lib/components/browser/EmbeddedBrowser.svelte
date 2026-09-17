@@ -202,6 +202,12 @@
   // Flag to hide webview during URL switch to force recreation
   let isRecreatingWebview = $state(false);
 
+  // Set when the guest webContents was destroyed under a mounted <webview>
+  // (e.g. the page called window.close()). The dead element is unmounted and
+  // an error banner is shown until the user explicitly navigates or reloads;
+  // nothing reloads automatically so a self-closing page cannot loop.
+  let isGuestDestroyed = $state(false);
+
   // Track the current URL that the webview should load.
   // Initialize from url prop if valid, otherwise use about:blank. The browser
   // loads exactly the URL it is given — programmatic entry points (script
@@ -586,6 +592,22 @@
       updateNavigationState();
     });
 
+    // The guest webContents is gone (window.close(), guest crash cleanup).
+    // Every later webview method call would throw, so drop the element and
+    // surface a recoverable error state instead of a dead blank frame.
+    addWebviewListener('destroyed', () => {
+      logger.warn('Webview guest was destroyed', { tabId, url: currentWebviewUrl });
+      cleanupWebviewListeners();
+      webviewReady = false;
+      isLoading = false;
+      isPickingElement = false;
+      canGoBack = false;
+      canGoForward = false;
+      lastRegisteredWebContentsId = undefined;
+      errorMessage = m.browser_embedded_pageClosed_error();
+      isGuestDestroyed = true;
+    });
+
     // Navigation events - the webview reports the URL it actually loaded,
     // which is exactly what the address bar shows.
     addWebviewListener('did-navigate', (e: any) => {
@@ -737,11 +759,20 @@
     }
   }
 
+  function safeWebviewUrl(): string | undefined {
+    try {
+      return webviewRef?.getURL?.();
+    } catch {
+      // Guest already destroyed
+      return undefined;
+    }
+  }
+
   function syncCompletedWebviewNavigation(requestedUrl: string) {
     const completedUrl = reconcileEmbeddedBrowserLoadCompletion(
       navigationSync,
       requestedUrl,
-      webviewRef?.getURL?.(),
+      safeWebviewUrl(),
     );
     if (!completedUrl) return;
     displayUrl = completedUrl;
@@ -808,6 +839,7 @@
         isRecreatingWebview = true;
         await tick(); // Wait for webview to be removed from DOM
         currentWebviewUrl = targetUrl;
+        isGuestDestroyed = false;
         isRecreatingWebview = false;
         webviewReady = false;
       }
@@ -840,6 +872,12 @@
   }
 
   function refresh() {
+    // A destroyed guest has no element to reload; mount a fresh one instead.
+    if (isGuestDestroyed) {
+      const targetUrl = currentWebviewUrl !== 'about:blank' ? currentWebviewUrl : displayUrl;
+      if (targetUrl) void loadUrl(targetUrl);
+      return;
+    }
     // Only reload if webview is ready (dom-ready has fired)
     // Otherwise we get: "The WebView must be attached to the DOM and the dom-ready event emitted before this method can be called"
     if (!webviewReady || !webviewRef) return;
@@ -853,7 +891,7 @@
   }
 
   function currentLoadedUrl(): string {
-    const loadedUrl = webviewRef?.getURL?.();
+    const loadedUrl = safeWebviewUrl();
     if (loadedUrl && loadedUrl !== 'about:blank') return loadedUrl;
     return currentWebviewUrl !== 'about:blank' ? currentWebviewUrl : '';
   }
@@ -1235,7 +1273,10 @@
 
   <!-- Browser content -->
   <div class="flex-1 relative overflow-hidden">
-    {#if isUrlValid && !isRecreatingWebview}
+    {#if isGuestDestroyed}
+      <!-- Guest destroyed: the banner above carries the message; the address bar and refresh recover -->
+      <div class="h-full bg-muted/30" data-browser-guest-destroyed></div>
+    {:else if isUrlValid && !isRecreatingWebview}
       <BrowserDeviceFrame
         {viewport}
         onViewportChange={(nextViewport) => onViewportChange?.(nextViewport)}

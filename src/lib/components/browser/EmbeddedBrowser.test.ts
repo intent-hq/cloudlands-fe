@@ -369,6 +369,79 @@ describe('EmbeddedBrowser', () => {
       expect(container.querySelector('input')).toBeNull();
     });
 
+    describe('destroyed guest webContents', () => {
+      const destroyGuest = async (container: HTMLElement) => {
+        const webview = container.querySelector('webview') as HTMLElement & {
+          getURL: () => string;
+          reload: ReturnType<typeof vi.fn>;
+          executeJavaScript: ReturnType<typeof vi.fn>;
+        };
+        webview.reload = vi.fn();
+        webview.executeJavaScript = vi.fn().mockResolvedValue(undefined);
+        // Electron throws on every method call once the guest is gone.
+        webview.getURL = () => {
+          throw new Error('The WebView must be attached to the DOM');
+        };
+        webview.dispatchEvent(new Event('dom-ready'));
+        webview.dispatchEvent(new Event('did-stop-loading'));
+        webview.dispatchEvent(new Event('destroyed'));
+        await waitFor(() => expect(container.querySelector('webview')).toBeNull());
+        return webview;
+      };
+
+      it('shows a page-closed error and drops the dead webview', async () => {
+        const { container, queryByText } = renderPage();
+        const pageClosedMessage = m.browser_embedded_pageClosed_error();
+        expect(queryByText(pageClosedMessage)).toBeNull();
+
+        await destroyGuest(container);
+
+        expect(queryByText(pageClosedMessage)).not.toBeNull();
+        expect(container.querySelector('webview')).toBeNull();
+      });
+
+      it('does not reload the same URL on its own after the guest closes', async () => {
+        const { container } = renderPage();
+        await destroyGuest(container);
+
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        expect(container.querySelector('webview')).toBeNull();
+      });
+
+      it('mounts a fresh webview and clears the banner on a new address', async () => {
+        const { container, getByRole, queryByText } = renderPage();
+        const pageClosedMessage = m.browser_embedded_pageClosed_error();
+        const dead = await destroyGuest(container);
+
+        await fireEvent.click(getByRole('button', { name: 'Edit browser address' }));
+        const input = getByRole('textbox', { name: 'Browser address' });
+        await fireEvent.input(input, { target: { value: 'https://example.test/next' } });
+        await fireEvent.submit(input.closest('form')!);
+
+        await waitFor(() => expect(container.querySelector('webview')).not.toBeNull());
+        const fresh = container.querySelector('webview')!;
+        expect(fresh).not.toBe(dead);
+        expect(fresh.getAttribute('src')).toBe('https://example.test/next');
+        expect(queryByText(pageClosedMessage)).toBeNull();
+      });
+
+      it('mounts a fresh webview for the same URL when the refresh button is used', async () => {
+        const { container, queryByText } = renderPage();
+        const pageClosedMessage = m.browser_embedded_pageClosed_error();
+        const dead = await destroyGuest(container);
+
+        await fireEvent.click(screen.getByRole('button', { name: 'Refresh page' }));
+
+        await waitFor(() => expect(container.querySelector('webview')).not.toBeNull());
+        const fresh = container.querySelector('webview')!;
+        expect(fresh).not.toBe(dead);
+        expect(fresh.getAttribute('src')).toBe('https://example.test/docs');
+        // The dead element was never reloaded in place.
+        expect(dead.reload).not.toHaveBeenCalled();
+        expect(queryByText(pageClosedMessage)).toBeNull();
+      });
+    });
+
     it('discards an edited address on Escape or blur', async () => {
       const { getByRole, queryByRole } = renderPage();
       const edit = () => fireEvent.click(getByRole('button', { name: 'Edit browser address' }));
