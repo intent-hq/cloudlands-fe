@@ -52,6 +52,7 @@ import EmbeddedBrowser from './EmbeddedBrowser.svelte';
 import { m } from '$shared/paraglide/messages.js';
 import { notify } from '$lib/components/patterns/notify';
 import { elementPickerScript } from './element-picker-script';
+import { tabStateReducer } from '$store/renderer/slices/tab-state/tab-state-slice';
 
 class ToolbarResizeObserver {
   static instances: ToolbarResizeObserver[] = [];
@@ -84,6 +85,46 @@ afterEach(() => {
 });
 
 describe('EmbeddedBrowser', () => {
+  const mountedLeases = () =>
+    mocks.dispatch.mock.calls.reduce(
+      (state, [action]) => tabStateReducer(state, action),
+      tabStateReducer(undefined, { type: '@@INIT' }),
+    ).mountedBrowserTabLeases;
+
+  it('leases the live webview until unmount, not just while the panel is active', async () => {
+    const { container, rerender, unmount } = render(EmbeddedBrowser, {
+      props: { url: 'https://example.test/', workspaceId: 'workspace-1', tabId: 'tab-1' },
+    });
+    await waitFor(() => expect(Object.keys(mountedLeases()['tab-1'])).toHaveLength(1));
+    const initialLeases = mountedLeases();
+    const webview = container.querySelector('webview');
+    const leaseCalls = () =>
+      mocks.dispatch.mock.calls.filter(
+        ([action]) =>
+          action.type === 'tabState/acquireBrowserTabMount' ||
+          action.type === 'tabState/releaseBrowserTabMount',
+      );
+    await rerender({ isActive: false });
+    await rerender({ isActive: true });
+    expect(container.querySelector('webview')).toBe(webview);
+    expect(mountedLeases()).toEqual(initialLeases);
+    expect(leaseCalls()).toHaveLength(1);
+
+    unmount();
+    await waitFor(() => expect(mountedLeases()).toEqual({}));
+  });
+
+  it('does not release another mounted instance when an older instance unmounts', async () => {
+    const props = { url: 'about:blank', workspaceId: 'workspace-1', tabId: 'tab-1' };
+    const older = render(EmbeddedBrowser, { props });
+    const newer = render(EmbeddedBrowser, { props });
+    await waitFor(() => expect(Object.keys(mountedLeases()['tab-1'])).toHaveLength(2));
+    older.unmount();
+    await waitFor(() => expect(Object.keys(mountedLeases()['tab-1'])).toHaveLength(1));
+    newer.unmount();
+    await waitFor(() => expect(mountedLeases()).toEqual({}));
+  });
+
   it('mounts a blank webview for about:blank', () => {
     const { container } = render(EmbeddedBrowser, {
       props: { url: 'about:blank', workspaceId: 'workspace-1' },

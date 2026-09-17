@@ -27,6 +27,10 @@
   import { selectPendingBrowserZoom } from '$store/renderer/slices/browser/browser-selectors';
   import { selectMostRecentAgentTab } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import {
+    acquireBrowserTabMount,
+    releaseBrowserTabMount,
+  } from '$store/renderer/slices/tab-state/tab-state-slice';
+  import {
     createEmbeddedBrowserNavigationSyncState,
     navigateEmbeddedBrowserWebview,
     reconcileEmbeddedBrowserLoadCompletion,
@@ -158,6 +162,20 @@
 
   // Electron webview types are unavailable in the renderer build.
   let webviewRef: EmbeddedBrowserWebview | null = $state(null);
+
+  // Lease the actual DOM mount, not the workspace or selected tab. Retained
+  // guests stay authoritative while inactive; tabs evicted by the panel cache
+  // relinquish ownership so the offscreen host can serve them instead.
+  $effect(() => {
+    if (!webviewRef || !tabId) return;
+    const mountedTabId = tabId;
+    const leaseId = crypto.randomUUID();
+    untrack(() => appStore.dispatch(acquireBrowserTabMount(mountedTabId, leaseId)));
+    return () => {
+      untrack(() => appStore.dispatch(releaseBrowserTabMount(mountedTabId, leaseId)));
+    };
+  });
+
   // displayUrl tracks the loaded URL and can differ from prop `url` after navigation.
   // Initialize from url prop so it's correct on first render (intentionally captures initial value)
   // svelte-ignore state_referenced_locally - intentional: we want initial value, effect syncs later changes

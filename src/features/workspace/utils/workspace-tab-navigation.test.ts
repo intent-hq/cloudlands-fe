@@ -49,6 +49,7 @@ const makeTabState = (currentTabId: string | null = 'ws-1'): TabState => ({
   recentlyClosedTabAt: {},
   version: 0,
   hydratedBackendId: null,
+  mountedBrowserTabLeases: {},
 });
 
 function makeStore(

@@ -17,6 +17,11 @@ export const selectCurrentWorkspaceTabId = store.createSelector((state) => {
   return state.tabState.currentTabId;
 });
 
+/** Actual panel webview mounts, including retained inactive tabs. */
+export const selectMountedBrowserTabLeases = store.createSelector((state) => {
+  return state.tabState.mountedBrowserTabLeases;
+});
+
 /**
  * True once the tab saga has (re)hydrated the persisted tab strip for the
  * ACTIVE backend. Until then `currentTabId` may still be the previous

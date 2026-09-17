@@ -135,7 +135,7 @@ describe('workspace surface retention', () => {
     expect(generation(state, 'workspace-a')).toBe(retainedGeneration);
   });
 
-  it('hides and inerts inactive content, releases focus, and preserves the retained DOM', async () => {
+  it('isolates inactive content from accessibility and focus while preserving the retained DOM', async () => {
     const view = render(RetentionHarness, {
       props: input('workspace-a'),
     });
@@ -153,13 +153,14 @@ describe('workspace surface retention', () => {
       '[data-retained-workspace-surface="workspace-a"]',
     );
     expect(inactiveA?.contains(retainedA)).toBe(true);
-    expect(inactiveA?.hasAttribute('hidden')).toBe(true);
+    expect(view.queryByRole('button', { name: 'workspace-a' })).toBeNull();
     expect((inactiveA as HTMLElement & { inert: boolean }).inert).toBe(true);
     expect(inactiveA?.getAttribute('aria-hidden')).toBe('true');
     expect(document.activeElement).not.toBe(retainedA);
 
     await view.rerender(input('workspace-a'));
-    await waitFor(() => expect(inactiveA?.hasAttribute('hidden')).toBe(false));
+    await waitFor(() => expect(inactiveA?.getAttribute('aria-hidden')).toBe('false'));
+    expect((inactiveA as HTMLElement & { inert: boolean }).inert).toBe(false);
     expect(view.getByRole('button', { name: 'workspace-a' })).toBe(retainedA);
   });
 
