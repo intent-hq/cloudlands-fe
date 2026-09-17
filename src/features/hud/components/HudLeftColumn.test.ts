@@ -19,6 +19,7 @@ import { bulkUpsertSessions } from '$store/renderer/slices/agent-session/agent-s
 import { workspaceDeleted } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import type { AgentSession, Workspace, WorkspaceId } from '$shared/types';
 import { WorkspaceStatus } from '$shared/types';
+import { m } from '$shared/paraglide/messages.js';
 
 import HudLeftColumn from './HudLeftColumn.svelte';
 
@@ -208,8 +209,9 @@ describe('HudLeftColumn SYSTEM panel header', () => {
       expect(blinks(failedRow())).toBe(true);
     });
 
-    const header = screen.getByText('System').closest('.hud-panel-header') as HTMLElement;
-    expect(header.textContent?.trim()).toBe('System');
+    const title = m.hud_system_title();
+    const header = screen.getByText(title).closest('header') as HTMLElement;
+    expect(header.textContent?.trim()).toBe(title);
   });
 });
 
