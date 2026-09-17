@@ -114,7 +114,10 @@ test('starter suggestions have tight text gaps and preserve keyboard selection a
   await page.keyboard.press('Enter');
   await expect(editor).toContainText(original.trim());
   await expect(options).toHaveCount(0);
-  await editor.fill('');
+  // Let ProseMirror own the selection before deleting; fill('') selects a DOM range.
+  await editor.press('ControlOrMeta+A');
+  await editor.press('Backspace');
+  await expect(editor).toBeEmpty();
   await expect(options).toHaveCount(4);
   const before = await options.allTextContents();
   await component.locator('#suggestion-shuffle').click();
