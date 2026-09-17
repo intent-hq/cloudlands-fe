@@ -48,6 +48,8 @@ vi.mock('electron', () => ({
 }));
 
 const guestAdd = vi.fn();
+const guestFindMatching = vi.fn();
+const guestGetDecryptedToken = vi.fn();
 vi.mock('../../../backend/main/guest-sessions-store', async () => {
   const actual = await vi.importActual<typeof import('../../../backend/main/guest-sessions-store')>(
     '../../../backend/main/guest-sessions-store',
@@ -57,6 +59,12 @@ vi.mock('../../../backend/main/guest-sessions-store', async () => {
     GuestEncryptionUnavailableError: actual.GuestEncryptionUnavailableError,
     get add() {
       return guestAdd;
+    },
+    get findMatching() {
+      return guestFindMatching;
+    },
+    get getDecryptedToken() {
+      return guestGetDecryptedToken;
     },
   };
 });
@@ -74,6 +82,8 @@ vi.mock('../../../backend/main/backend-connection', () => ({
 
 const redeemStart = vi.fn();
 const redeemWait = vi.fn();
+const inspect = vi.fn();
+const accept = vi.fn();
 const close = vi.fn();
 const openInviteConnection = vi.fn();
 vi.mock('../../../backend/main/invite-connection', async () => {
@@ -169,21 +179,32 @@ const CREDENTIAL = {
   workspaceId: 'ws-1',
 };
 
+/** A fresh connection mock carrying every method the flow may call. */
+function fakeConnection(overrides: Record<string, unknown> = {}) {
+  return {
+    host: '192.168.1.10',
+    via: 'direct',
+    redeemStart,
+    redeemWait,
+    inspect,
+    accept,
+    close,
+    ...overrides,
+  };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   logLines.length = 0;
   appIsReady.mockReturnValue(true);
   showMessageBox.mockResolvedValue({ response: 0 });
   openExternal.mockResolvedValue(undefined);
-  openInviteConnection.mockResolvedValue({
-    host: '192.168.1.10',
-    via: 'direct',
-    redeemStart,
-    redeemWait,
-    close,
-  });
+  openInviteConnection.mockResolvedValue(fakeConnection());
   redeemStart.mockResolvedValue(START);
   redeemWait.mockResolvedValue(CREDENTIAL);
+  // Default: a first join on this host — no stored session.
+  guestFindMatching.mockResolvedValue(null);
+  guestGetDecryptedToken.mockResolvedValue(null);
   guestAdd.mockResolvedValue({ id: 'guest-id', tokenEncrypted: true });
   openBackendWindow.mockResolvedValue({ id: 'guest-id' });
   showInviteConsent.mockImplementation(() => fakeConsent(null).prompt);
@@ -232,7 +253,7 @@ describe('handleInviteDeepLink', () => {
     const order: string[] = [];
     openInviteConnection.mockImplementation(async () => {
       order.push('dial');
-      return { host: '192.168.1.10', via: 'direct', redeemStart, redeemWait, close };
+      return fakeConnection();
     });
     showMessageBox.mockImplementation(async () => {
       order.push('dialog');
@@ -274,13 +295,7 @@ describe('handleInviteDeepLink', () => {
   });
 
   it('tunnel-only envelope (hosts=[] + tc, the daemon default) dials and stores by tc address', async () => {
-    openInviteConnection.mockResolvedValue({
-      host: 'tc-key-abc',
-      via: 'tunnel',
-      redeemStart,
-      redeemWait,
-      close,
-    });
+    openInviteConnection.mockResolvedValue(fakeConnection({ host: 'tc-key-abc', via: 'tunnel' }));
     await handleInviteDeepLink(
       `intent://invite?v=1&host=&port=8443&fp=AA:BB:CC&inviteId=inv-1&secret=${SECRET}&tc=tc-key-abc`,
     );
@@ -443,13 +458,7 @@ describe('handleInviteDeepLink', () => {
       messages.set(code, dialog.message);
     }
     // An unknown redeem refusal still gets the generic sentence.
-    openInviteConnection.mockResolvedValue({
-      host: '192.168.1.10',
-      via: 'direct',
-      redeemStart,
-      redeemWait,
-      close,
-    });
+    openInviteConnection.mockResolvedValue(fakeConnection());
     redeemStart.mockRejectedValue(new InviteRpcError(-32602, { code: 'some-unknown-code' }));
     await handleInviteDeepLink(LINK);
     const generic = (showMessageBox.mock.calls.at(-1)?.[0] as { message: string }).message;
@@ -522,6 +531,7 @@ describe('handleInviteDeepLink — renderer consent modal', () => {
     const payload = showInviteConsent.mock.calls[0][0];
     expect(payload).toEqual({
       requestId: expect.any(String),
+      mode: 'device-code',
       userCode: START.userCode,
       verificationUri: START.verificationUri,
       workspaceTitle: START.workspaceTitle,
@@ -949,6 +959,260 @@ describe('handleInviteDeepLink — cancel after the grant is a no-op', () => {
     expect(guestAdd).not.toHaveBeenCalled();
     expect(openBackendWindow).not.toHaveBeenCalled();
     expect(close).toHaveBeenCalledTimes(1);
+  });
+});
+
+// Returning guest (spec "Returning guest: per-host reuse"): a stored
+// credential for the host skips the GitHub device flow — `invite.inspect`
+// previews the invite, a confirm-only prompt replaces the device code, and
+// `invite.accept` joins with the stored token. Every miss (no session, no
+// token, undecryptable token, credential refused) falls through to the
+// device flow without an extra prompt; a workspace already listed on the
+// session just opens.
+describe('handleInviteDeepLink — returning guest', () => {
+  const STORED_TOKEN = 'stored-guest-token-value';
+  const SESSION = {
+    id: 'guest-id',
+    label: '192.168.1.10',
+    host: '192.168.1.10',
+    hosts: ['192.168.1.10'],
+    port: 8443,
+    fingerprint: 'AA:BB:CC',
+    tcAddress: null,
+    hostname: null,
+    principalId: 'gh:42',
+    login: 'octocat',
+    tokenEncrypted: true,
+    workspaces: [{ id: 'ws-0', title: 'First workspace' }],
+    updatedAt: 1,
+  };
+  const INSPECTION = {
+    workspaceId: 'ws-1',
+    workspaceTitle: 'Shared workspace',
+    hostname: 'studio.local',
+    prettyHostname: 'Studio',
+  };
+  const ACCEPTED = { ...CREDENTIAL, token: 'fresh-guest-token-value' };
+
+  beforeEach(() => {
+    guestFindMatching.mockResolvedValue(SESSION);
+    guestGetDecryptedToken.mockResolvedValue(STORED_TOKEN);
+    inspect.mockResolvedValue(INSPECTION);
+    accept.mockResolvedValue(ACCEPTED);
+  });
+
+  it('renderer happy path: inspect → confirm prompt → accept → store over the old record → open', async () => {
+    const { prompt } = fakeConsent('open');
+    showInviteConsent.mockReturnValue(prompt);
+
+    await handleInviteDeepLink(`${LINK}&tc=ts.example:443`);
+
+    expect(guestFindMatching).toHaveBeenCalledWith({
+      hosts: ['192.168.1.10'],
+      port: 8443,
+      fingerprint: 'AA:BB:CC',
+    });
+    expect(guestGetDecryptedToken).toHaveBeenCalledWith('guest-id');
+    expect(inspect).toHaveBeenCalledWith('inv-1', SECRET);
+    expect(showInviteConsent).toHaveBeenCalledTimes(1);
+    const payload = showInviteConsent.mock.calls[0][0];
+    expect(payload).toEqual({
+      requestId: expect.any(String),
+      mode: 'confirm',
+      login: 'octocat',
+      workspaceTitle: 'Shared workspace',
+      hostLabel: 'Studio',
+    });
+    expect(JSON.stringify(payload)).not.toContain(SECRET);
+    expect(JSON.stringify(payload)).not.toContain(STORED_TOKEN);
+    expect(accept).toHaveBeenCalledWith('inv-1', SECRET, STORED_TOKEN);
+    // No device flow at all.
+    expect(redeemStart).not.toHaveBeenCalled();
+    expect(redeemWait).not.toHaveBeenCalled();
+    expect(clipboardWriteText).not.toHaveBeenCalled();
+    expect(openExternal).not.toHaveBeenCalled();
+    expect(showMessageBox).not.toHaveBeenCalled();
+    // The store's same-daemon upsert takes the fresh token and appends the workspace.
+    expect(guestAdd).toHaveBeenCalledWith({
+      label: '192.168.1.10',
+      host: '192.168.1.10',
+      hosts: ['192.168.1.10'],
+      port: 8443,
+      fingerprint: 'AA:BB:CC',
+      tcAddress: 'ts.example:443',
+      principalId: 'gh:42',
+      login: 'octocat',
+      token: 'fresh-guest-token-value',
+      workspace: { id: 'ws-1', title: 'Shared workspace' },
+    });
+    expect(prompt.dismiss).toHaveBeenCalledExactlyOnceWith('joined');
+    expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it('a tunnel-only link matches the session keyed on the tc address', async () => {
+    openInviteConnection.mockResolvedValue(fakeConnection({ host: 'tc-key-abc', via: 'tunnel' }));
+    showInviteConsent.mockReturnValue(fakeConsent('open').prompt);
+
+    await handleInviteDeepLink(
+      `intent://invite?v=1&host=&port=8443&fp=AA:BB:CC&inviteId=inv-1&secret=${SECRET}&tc=tc-key-abc`,
+    );
+
+    expect(guestFindMatching).toHaveBeenCalledWith({
+      hosts: ['tc-key-abc'],
+      port: 8443,
+      fingerprint: 'AA:BB:CC',
+    });
+    expect(accept).toHaveBeenCalledWith('inv-1', SECRET, STORED_TOKEN);
+    expect(redeemStart).not.toHaveBeenCalled();
+  });
+
+  it('already a member of the invited workspace: no prompt, no accept, the window opens', async () => {
+    inspect.mockResolvedValue({ ...INSPECTION, workspaceId: 'ws-0' });
+
+    await handleInviteDeepLink(LINK);
+
+    expect(inspect).toHaveBeenCalledWith('inv-1', SECRET);
+    expect(showInviteConsent).not.toHaveBeenCalled();
+    expect(showMessageBox).not.toHaveBeenCalled();
+    expect(accept).not.toHaveBeenCalled();
+    expect(redeemStart).not.toHaveBeenCalled();
+    expect(guestAdd).not.toHaveBeenCalled();
+    expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it('cancel on the confirm prompt: dismiss cancelled, nothing accepted, stored, or opened', async () => {
+    const { prompt } = fakeConsent('cancel');
+    showInviteConsent.mockReturnValue(prompt);
+
+    await handleInviteDeepLink(LINK);
+
+    expect(prompt.dismiss).toHaveBeenCalledExactlyOnceWith('cancelled');
+    expect(accept).not.toHaveBeenCalled();
+    expect(redeemStart).not.toHaveBeenCalled();
+    expect(guestAdd).not.toHaveBeenCalled();
+    expect(openBackendWindow).not.toHaveBeenCalled();
+    expect(showMessageBox).not.toHaveBeenCalled();
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it('no renderer: the native confirm box (no device code) is the fallback and the join completes', async () => {
+    showInviteConsent.mockReturnValue(fakeConsent(null).prompt);
+
+    await handleInviteDeepLink(LINK);
+
+    expect(showMessageBox).toHaveBeenCalledTimes(1);
+    const box = showMessageBox.mock.calls[0][0] as { type: string; message: string };
+    expect(box.type).toBe('question');
+    expect(box.message).toContain('@octocat');
+    expect(box.message).toContain('Shared workspace');
+    expect(box.message).not.toContain(START.userCode);
+    expect(accept).toHaveBeenCalledWith('inv-1', SECRET, STORED_TOKEN);
+    expect(redeemStart).not.toHaveBeenCalled();
+    expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
+  });
+
+  it('cancelling the native confirm box aborts without accepting', async () => {
+    showInviteConsent.mockReturnValue(fakeConsent(null).prompt);
+    showMessageBox.mockResolvedValueOnce({ response: 1 });
+
+    await handleInviteDeepLink(LINK);
+
+    expect(accept).not.toHaveBeenCalled();
+    expect(redeemStart).not.toHaveBeenCalled();
+    expect(guestAdd).not.toHaveBeenCalled();
+    expect(openBackendWindow).not.toHaveBeenCalled();
+  });
+
+  it('credential-invalid on accept: the confirm prompt is dismissed and the device flow runs, no extra prompt', async () => {
+    const confirmPrompt = fakeConsent('open').prompt;
+    const devicePrompt = fakeConsent('open').prompt;
+    showInviteConsent.mockReturnValueOnce(confirmPrompt).mockReturnValueOnce(devicePrompt);
+    accept.mockRejectedValue(new InviteRpcError(-32602, { code: 'credential-invalid' }));
+
+    await handleInviteDeepLink(LINK);
+
+    expect(accept).toHaveBeenCalledTimes(1);
+    expect(confirmPrompt.dismiss).toHaveBeenCalledExactlyOnceWith('failed');
+    expect(redeemStart).toHaveBeenCalledWith('inv-1', SECRET);
+    expect(showInviteConsent).toHaveBeenCalledTimes(2);
+    expect(showInviteConsent.mock.calls[1][0]).toMatchObject({ mode: 'device-code' });
+    expect(showMessageBox).not.toHaveBeenCalled();
+    expect(guestAdd).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ token: TOKEN }));
+    expect(devicePrompt.dismiss).toHaveBeenCalledExactlyOnceWith('joined');
+    expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
+    expect(logLines.join('\n')).toContain('"reason":"credential-invalid"');
+  });
+
+  it.each([
+    ['no stored session', () => guestFindMatching.mockResolvedValue(null), 'no-session'],
+    ['no token for the session', () => guestGetDecryptedToken.mockResolvedValue(null), 'no-token'],
+    [
+      'an undecryptable token',
+      () => guestGetDecryptedToken.mockRejectedValue(new Error('keyring changed')),
+      'token-unavailable',
+    ],
+  ])(
+    '%s: falls through to the device flow with no inspect and no extra prompt',
+    async (_name, arrange, reason) => {
+      arrange();
+      const { prompt } = fakeConsent('open');
+      showInviteConsent.mockReturnValue(prompt);
+
+      await handleInviteDeepLink(LINK);
+
+      expect(inspect).not.toHaveBeenCalled();
+      expect(accept).not.toHaveBeenCalled();
+      expect(redeemStart).toHaveBeenCalledWith('inv-1', SECRET);
+      expect(showInviteConsent).toHaveBeenCalledTimes(1);
+      expect(showInviteConsent.mock.calls[0][0]).toMatchObject({ mode: 'device-code' });
+      expect(guestAdd).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ token: TOKEN }));
+      expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
+      expect(logLines.join('\n')).toContain(`"reason":"${reason}"`);
+    },
+  );
+
+  it('an inspect refusal (invite expired) fails the flow like the device flow would', async () => {
+    inspect.mockRejectedValue(new InviteRpcError(-32001, { code: 'invite-expired' }));
+
+    await expect(handleInviteDeepLink(LINK)).resolves.toBeUndefined();
+
+    expect(showInviteConsent).not.toHaveBeenCalled();
+    expect(accept).not.toHaveBeenCalled();
+    expect(redeemStart).not.toHaveBeenCalled();
+    expect(guestAdd).not.toHaveBeenCalled();
+    expect(showMessageBox).toHaveBeenCalledTimes(1);
+    expect(showMessageBox.mock.calls[0][0]).toMatchObject({ type: 'error' });
+    expect(logLines.join('\n')).toContain('invite-expired');
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it('an accept refusal other than credential-invalid: dismiss failed, failure box, no device flow', async () => {
+    const { prompt } = fakeConsent('open');
+    showInviteConsent.mockReturnValue(prompt);
+    accept.mockRejectedValue(new InviteRpcError(-32602, { code: 'workspace-full' }));
+
+    await handleInviteDeepLink(LINK);
+
+    expect(prompt.dismiss).toHaveBeenCalledExactlyOnceWith('failed');
+    expect(redeemStart).not.toHaveBeenCalled();
+    expect(guestAdd).not.toHaveBeenCalled();
+    expect(showMessageBox).toHaveBeenCalledTimes(1);
+    expect(showMessageBox.mock.calls[0][0]).toMatchObject({ type: 'error' });
+    expect(logLines.join('\n')).toContain('workspace-full');
+  });
+
+  it('never logs the stored or the fresh token', async () => {
+    showInviteConsent.mockReturnValue(fakeConsent('open').prompt);
+    guestAdd.mockRejectedValue(new Error(`persist failed: token=${ACCEPTED.token}`));
+
+    await handleInviteDeepLink(LINK);
+
+    const allLogs = logLines.join('\n');
+    expect(allLogs).not.toContain(STORED_TOKEN);
+    expect(allLogs).not.toContain(ACCEPTED.token);
+    expect(allLogs).not.toContain(SECRET);
   });
 });
 
