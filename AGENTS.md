@@ -557,6 +557,34 @@ is roughly 10× the cost of a jsdom test and the CT job is sharded and time-boxe
   not a parking lot — remove the tag in the PR that fixes the flake.
 - Motion specs that sample animation progress mid-flight are the historical flake source;
   prefer asserting start/end states and `getAnimations()` counts over timed midpoints.
+- **`mount()` failing with "Execution context was destroyed, most likely because of a
+  navigation" is a context-reuse race, not a component bug.** ct-core reuses one browser
+  context + page per worker; between tests it resets that page (navigate to `about:blank`,
+  clear the origin, navigate back to the CT host), and the reset can race the next
+  `mount()`'s `Runtime.callFunctionOn` — whether the previous test was another spec's last
+  cell or the same spec's previous cell. The signature is a pass-on-retry at the `mount(`
+  line with no assertion involved. Fix it by calling, at file level after any
+  `test.setTimeout` / `test.use`:
+  `isolateBrowserContextPerTest(test, 'intent-hq/intent#<issue>')` from
+  `src/test/ct-isolated-browser-context.ts` and `recordCdpLifecycle(test)` from
+  `src/test/ct-cdp-lifecycle-recorder.ts`, with a comment naming the incident. Do not
+  quarantine the test, add retries, or widen timeouts for this signature.
+  - _What it costs_: the isolated spec runs in its own worker (one extra browser launch and
+    CT bundle load per shard) and every test pays a fresh browser context (~1–2 s each
+    locally), so only adopt it on a spec with a recorded destroyed-context incident.
+  - _Guard_: `isolateBrowserContextPerTest` sets the private `_optionContextReuseMode`
+    option and asserts via CDP that each test's `browserContextId` is new to the worker.
+    A failure `browser context <id> was already used by an earlier test in this worker …`
+    means a Playwright upgrade stopped honoring the option — fix the helper, not the spec.
+  - _Reading the CDP lifecycle log_: on a failure the recorder attaches `cdp-lifecycle.json`
+    to the report (`test-results/<test>/` and the HTML report). Events are ordered with
+    `sinceStartMs` from the start of the test. A `Page.frameRequestedNavigation` /
+    `Runtime.executionContextsCleared` / `Page.frameNavigated` (to `about:blank` or the CT
+    host URL) sequence in the milliseconds before the failing mount is the reuse reset;
+    `Inspector.targetCrashed` is a renderer crash and a different investigation; no events
+    at all means the page was fine and the failure came from the test's own code. The
+    recorder never fails a test — a `cdp-lifecycle-recorder` annotation reports when it
+    could not start or attach.
 
 ### Testing — every feature/fix against a mock BE
 
