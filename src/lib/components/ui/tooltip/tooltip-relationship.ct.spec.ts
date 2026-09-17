@@ -73,7 +73,7 @@ for (const target of [
   { name: 'Show wrapped help', help: 'Wrapped button help', fixture: 'wrapped-tooltip' },
   { name: 'Passive status', help: 'Passive status help', fixture: 'passive-tooltip' },
 ]) {
-  test(`generic ${target.fixture} portal retains native placement text containment and paint`, async ({
+  test(`generic ${target.fixture} portal renders the tooltip inside the viewport clear of its trigger with contained text`, async ({
     mount,
     page,
   }, testInfo) => {
@@ -100,31 +100,16 @@ for (const target of [
         width: value.width,
         height: value.height,
       });
-      const style = getComputedStyle(node);
       const range = document.createRange();
       range.selectNodeContents(node);
       return {
         box: rect(node.getBoundingClientRect()),
         text: Array.from(range.getClientRects()).map(rect),
-        paint: {
-          background: style.backgroundColor,
-          color: style.color,
-          borderRadius: style.borderRadius,
-          boxShadow: style.boxShadow,
-          fontFamily: style.fontFamily,
-          fontSize: style.fontSize,
-          lineHeight: style.lineHeight,
-          padding: style.padding,
-        },
       };
     });
     await testInfo.attach(`${target.fixture}-geometry`, {
       body: JSON.stringify({ viewport: page.viewportSize(), triggerBox, ...geometry }, null, 2),
       contentType: 'application/json',
-    });
-    await testInfo.attach(`${target.fixture}-paint`, {
-      body: await page.screenshot({ animations: 'disabled' }),
-      contentType: 'image/png',
     });
     expect(await page.getByTestId(target.fixture).getByRole('tooltip').count()).toBe(0);
     const box = geometry.box;
