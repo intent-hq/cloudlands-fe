@@ -121,8 +121,6 @@ describe('isCtTestArtifact', () => {
   it.each([
     'src/lib/components/ui/button/button.geometry.ct.spec.ts',
     'src/features/agent/components/agent-avatar/__tests__/agent-avatar-waiting.ct.spec.ts',
-    'src/lib/example.ct.test.tsx',
-    'src/lib/example.ct.spec.mjs',
     'src/top-level.ct.spec.ts',
     'src/lib/components/workspace/__geometry__/workspace-hover-card.geometry.json',
     './src/lib/components/workspace/__geometry__/workspace-hover-card.geometry.json',
@@ -136,6 +134,10 @@ describe('isCtTestArtifact', () => {
     'src/lib/button.test.ts',
     'src/lib/button.spec.ts',
     'src/lib/button.visual.spec.ts',
+    'src/lib/button.ct.test.ts',
+    'src/lib/button.ct.spec.js',
+    'src/lib/button.ct.spec.tsx',
+    'src/lib/button.ct.spec.mts',
     'src/lib/button.ct.spec.ts.snap',
     'src/lib/components/ui/button/button.svelte',
     'src/lib/components/workspace/workspace-hover-card.geometry.json',
@@ -161,6 +163,8 @@ describe('ctRequired and main', () => {
       ctRequired(['src/lib/components/workspace/__geometry__/workspace-hover-card.geometry.json']),
     ).toBe(true);
     expect(ctRequired(['test/added.ct.spec.ts'])).toBe(false);
+    expect(ctRequired(['src/lib/components/ui/button/button.ct.test.ts'])).toBe(false);
+    expect(ctRequired(['src/lib/components/ui/button/button.ct.spec.js'])).toBe(false);
     expect(ctRequired(['src/lib/components/ui/button/button.svelte'])).toBe(false);
   });
 

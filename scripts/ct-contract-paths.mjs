@@ -17,7 +17,7 @@ import { fileURLToPath } from 'node:url';
 // no CT run and was ejected from the merge queue with 40 CT failures.
 //
 // The workflow's `ct_required` additionally covers the CT test artifacts
-// themselves — `src/**/*.ct.{spec,test}.*` and the geometry goldens
+// themselves — `src/**/*.ct.spec.ts` and the geometry goldens
 // `src/**/__geometry__/*.geometry.json` (`isCtTestArtifact`) — so a PR that
 // edits specs or baselines gets CT signal on pull_request. Those are NOT contract
 // paths: `verify:changed` keeps selecting the narrower `ct-related` lane for
@@ -39,10 +39,12 @@ export const CT_CONTRACT_PATHS = Object.freeze([
   ...CT_CONTRACT_DIRECTORIES.map((directory) => `${directory}**`),
 ]);
 
-// Mirrors `CT_TEST_RE` in `scripts/verify-changed.mjs` (scoped to `src/`, the
-// CT `testDir`) and the golden path `geometrySnapshotTargets` derives there.
+// The spec half is exactly what `playwright-ct.config.ts` discovers (`testDir:
+// './src'`, `testMatch: '**/*.ct.spec.ts'`) — a broader pattern would require CT
+// for files the matrix never loads; the golden half is the path
+// `geometrySnapshotTargets` in `scripts/verify-changed.mjs` derives.
 const CT_TEST_ARTIFACT_RE =
-  /^src\/(?:.*\/)?(?:[^/]+\.ct\.(?:test|spec)\.[cm]?[jt]sx?|__geometry__\/[^/]+\.geometry\.json)$/;
+  /^src\/(?:.*\/)?(?:[^/]+\.ct\.spec\.ts|__geometry__\/[^/]+\.geometry\.json)$/;
 
 const OUTPUT_KEY = 'ct_required';
 
