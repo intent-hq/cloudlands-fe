@@ -5,7 +5,9 @@
    * Daemon-side agent configuration:
    * - agents.maxConcurrent: concurrent agent session cap
    * - agents.flushQueuedMessages: batch-deliver queued messages when a turn ends
-   * - agents.memoryBudgetMb: aggregate child-tree memory admission gate (0 = off)
+   * - agents.memoryBudgetMb: aggregate child-tree memory admission gate
+   *   (absent = auto, a host-derived budget the catalog advertises as
+   *   defaultValue; 0 = off)
    * - agents.idleReapMinutes: idle-agent reap interval (0 = off)
    * - agents.acpNodeMaxOldSpaceMb: V8 heap cap for Node/Electron ACP processes
    *
@@ -73,6 +75,11 @@
   // save fails, so a rejected write never leaves the control lying.
   let memoryBudgetSupported = $state(false);
   let memoryBudgetMb = $state(0);
+  // True while the key is absent and the daemon runs its host-derived budget:
+  // `memoryBudgetMb` then holds that budget (the catalog's defaultValue) so the
+  // controls sit on the number in force, but "Current:" must say it is auto
+  // rather than a value the user persisted. Cleared by the first write.
+  let memoryBudgetAuto = $state(false);
   let memoryBudgetDraftMb = $state(0);
   let memoryBudgetInput = $state('0');
   let memoryBudgetMaxMb = $state<number | null>(null);
@@ -201,6 +208,11 @@
    * a control that writes to a setting it does not have; a daemon that reports
    * the path without an upper bound keeps the number field and drops the
    * slider, because the slider's maximum is the catalog's to supply.
+   *
+   * A `null` value is the absent key, which the daemon treats as auto and
+   * advertises as `defaultValue` (the budget auto resolves to on this host).
+   * That default seeds the controls so saving without moving them writes
+   * nothing; a daemon without it falls back to reading the absent key as off.
    */
   function applyMemoryBudget(entry: SettingDefinitionWithValue | null | undefined) {
     if (!entry) {
@@ -209,7 +221,13 @@
     }
     memoryBudgetSupported = true;
     const catalogMax = typeof entry.max === 'number' && entry.max > 0 ? entry.max : null;
-    const value = typeof entry.value === 'number' && entry.value > 0 ? Math.round(entry.value) : 0;
+    const autoMb =
+      entry.value == null && typeof entry.defaultValue === 'number' && entry.defaultValue > 0
+        ? Math.round(entry.defaultValue)
+        : null;
+    const value =
+      autoMb ?? (typeof entry.value === 'number' && entry.value > 0 ? Math.round(entry.value) : 0);
+    memoryBudgetAuto = autoMb !== null;
     // The ceiling widens to admit what the daemon already holds, and never
     // narrows to hide it: the config file's own validation is looser than the
     // catalog bound, so a budget configured above it is a value the daemon
@@ -366,6 +384,7 @@
           return;
         }
         memoryBudgetMb = entry.value;
+        memoryBudgetAuto = false;
         settingsError = '';
         value = memoryBudgetQueuedMb;
         memoryBudgetQueuedMb = null;
@@ -650,11 +669,25 @@
       : m.settings_agentBackend_memoryBudget_megabytesValue({ value: formatInteger(valueMb) });
   }
 
+  /**
+   * The absent key reads as "Auto (N MB)" — the host-derived budget the daemon
+   * is enforcing — never as a bare N the user did not persist.
+   */
+  function formatCommittedMemoryBudget() {
+    return memoryBudgetAuto
+      ? m.settings_agentBackend_memoryBudget_autoValue({ value: formatInteger(memoryBudgetMb) })
+      : formatMemoryBudget(memoryBudgetMb);
+  }
+
   /** The live slider/field value, which is not yet saved while it is being dragged. */
-  const memoryBudgetDraftDisplay = $derived(formatMemoryBudget(memoryBudgetDraftMb));
+  const memoryBudgetDraftDisplay = $derived(
+    memoryBudgetDraftMb === memoryBudgetMb
+      ? formatCommittedMemoryBudget()
+      : formatMemoryBudget(memoryBudgetDraftMb),
+  );
 
   /** The daemon-acknowledged value, which is what "Current:" may claim. */
-  const memoryBudgetDisplay = $derived(formatMemoryBudget(memoryBudgetMb));
+  const memoryBudgetDisplay = $derived(formatCommittedMemoryBudget());
 
   // Shown only while the ceiling is the catalog's own bound; once a configured
   // budget has widened it past total memory the sentence would not be true.
