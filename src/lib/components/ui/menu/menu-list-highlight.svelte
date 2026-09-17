@@ -14,6 +14,7 @@
   let selectedIndexes = $state<number[]>([]);
   let keyboardIndex = $state<number | null>(null);
   let keyboardActive = $state(false);
+  let pressed = $state(false);
   let lastPointerIndex: number | null | undefined;
   const itemSelector =
     '[data-menu-item], [role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"], [role="option"]';
@@ -123,6 +124,7 @@
       keyboardIndex = index >= 0 ? index : null;
     };
     const handleKeydown = () => {
+      pressed = false;
       keyboardActive = true;
       syncKeyboardIndex();
       // Background Chromium tabs can change activeElement without emitting focusin.
@@ -135,8 +137,20 @@
       keyboardActive = false;
     };
     const handlePointerLeave = () => {
+      pressed = false;
       keyboardActive = true;
       syncKeyboardIndex();
+    };
+    const handlePointerDown = (event: PointerEvent) => {
+      const item = event.target instanceof Element ? event.target.closest(itemSelector) : null;
+      const index = items.indexOf(item as HTMLElement);
+      if (event.button !== 0 || index < 0) return;
+      keyboardActive = false;
+      pressed = true;
+      instance.setActiveIndex(index);
+    };
+    const releasePress = () => {
+      pressed = false;
     };
     const handleFocus = (event: FocusEvent) => {
       const index = items.indexOf(event.target as HTMLElement);
@@ -146,6 +160,9 @@
     container.addEventListener('keydown', handleKeydown, true);
     container.addEventListener('pointermove', handlePointerMove, true);
     container.addEventListener('pointerleave', handlePointerLeave);
+    container.addEventListener('pointerdown', handlePointerDown);
+    window.addEventListener('pointerup', releasePress);
+    window.addEventListener('pointercancel', releasePress);
     container.addEventListener('focusin', handleFocus);
     void tick().then(sync);
 
@@ -154,6 +171,9 @@
       container.removeEventListener('keydown', handleKeydown, true);
       container.removeEventListener('pointermove', handlePointerMove, true);
       container.removeEventListener('pointerleave', handlePointerLeave);
+      container.removeEventListener('pointerdown', handlePointerDown);
+      window.removeEventListener('pointerup', releasePress);
+      window.removeEventListener('pointercancel', releasePress);
       container.removeEventListener('focusin', handleFocus);
       instance.destroy();
       hover = null;
@@ -170,6 +190,20 @@
   aria-hidden="true"
 >
   {#if hover}
-    <ProximityHighlight store={hover} {selectedIndexes} />
+    <ProximityHighlight
+      store={hover}
+      {selectedIndexes}
+      hoverClass={pressed
+        ? selectedIndexes.includes(hover.activeIndex ?? -1)
+          ? 'bg-hover menu-selection-pressed'
+          : 'bg-active'
+        : 'bg-hover'}
+    />
   {/if}
 </span>
+
+<style>
+  [data-slot='menu-list-highlight'] :global(.menu-selection-pressed) {
+    box-shadow: inset 0 0 0 1px var(--active);
+  }
+</style>

@@ -67,7 +67,7 @@
             {/if}
           </div>
         {/snippet}
-        <SettingsForm {schema} {searchQuery} {custom} {descriptions} />
+        <SettingsForm {schema} {searchQuery} {custom} {descriptions} compact={false} />
       </SettingsPageShell>
     </div>
   {/if}

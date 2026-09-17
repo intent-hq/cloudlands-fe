@@ -30,9 +30,40 @@ export function pauseWindowAnimations(root: HTMLElement) {
     pausedTargets.clear();
   }
 
+  // animationstart arrives after a positive delay. Discover newly mounted or
+  // restyled targets before their animation clocks advance while blurred.
+  const targetObserver = new MutationObserver((records) => {
+    if (!isBlurred()) return;
+    const changed = new Set<Element>();
+    for (const record of records) {
+      if (record.type === 'childList') {
+        for (const node of record.addedNodes) {
+          if (node instanceof Element) changed.add(node);
+        }
+      } else if (
+        record.target instanceof Element &&
+        record.attributeName !== pauseAttribute &&
+        record.attributeName !== 'data-window-blurred'
+      ) {
+        changed.add(record.target);
+      }
+    }
+    const animations: Animation[] = [];
+    for (const target of changed) {
+      if (!root.contains(target)) continue;
+      let parent = target.parentElement;
+      while (parent && !changed.has(parent)) parent = parent.parentElement;
+      if (!parent) animations.push(...target.getAnimations({ subtree: true }));
+    }
+    pauseAnimations(animations);
+  });
+
   function reconcile() {
-    if (isBlurred()) pauseAnimations(root.getAnimations({ subtree: true }));
-    else resumeAnimations();
+    targetObserver.disconnect();
+    if (isBlurred()) {
+      targetObserver.observe(root, { childList: true, attributes: true, subtree: true });
+      pauseAnimations(root.getAnimations({ subtree: true }));
+    } else resumeAnimations();
   }
 
   function handleAnimationStart(event: AnimationEvent) {
@@ -49,6 +80,7 @@ export function pauseWindowAnimations(root: HTMLElement) {
   return {
     destroy() {
       observer.disconnect();
+      targetObserver.disconnect();
       root.removeEventListener('animationstart', handleAnimationStart, true);
       resumeAnimations();
     },

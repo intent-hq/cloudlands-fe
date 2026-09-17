@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  acquireBrowserTabMount,
   closeWorkspaceTab,
   endDrag,
   loadScrollPositions,
@@ -7,6 +8,7 @@ import {
   moveWorkspace,
   openWorkspaceTab,
   reopenLastClosedWorkspaceTab,
+  releaseBrowserTabMount,
   restoreWorkspaceTab,
   saveScrollPosition,
   serializeWorkspaceTabsState,
@@ -44,6 +46,7 @@ describe('tabStateReducer', () => {
     recentlyClosedTabAt: {},
     version: 0,
     hydratedBackendId: null,
+    mountedBrowserTabLeases: {},
   };
 
   const makeState = (overrides: Partial<TabState> = {}): TabState => ({
@@ -53,6 +56,33 @@ describe('tabStateReducer', () => {
 
   it('returns the initial state', () => {
     expect(tabStateReducer(undefined, { type: '@@INIT' })).toEqual(initialState);
+  });
+
+  it('keeps a tab leased until its last actual mount releases ownership', () => {
+    const mounted = tabStateReducer(initialState, acquireBrowserTabMount('browser-a', 'mount-1'));
+    expect(mounted.mountedBrowserTabLeases).toEqual({ 'browser-a': { 'mount-1': true } });
+    expect(tabStateReducer(mounted, acquireBrowserTabMount('browser-a', 'mount-1'))).toBe(mounted);
+
+    const overlap = tabStateReducer(mounted, acquireBrowserTabMount('browser-a', 'mount-2'));
+    const released = tabStateReducer(overlap, releaseBrowserTabMount('browser-a', 'mount-1'));
+    expect(released.mountedBrowserTabLeases).toEqual({ 'browser-a': { 'mount-2': true } });
+    expect(tabStateReducer(released, releaseBrowserTabMount('browser-a', 'mount-1'))).toBe(
+      released,
+    );
+    expect(tabStateReducer(released, releaseBrowserTabMount('missing', 'mount-2'))).toBe(released);
+    expect(
+      tabStateReducer(released, releaseBrowserTabMount('browser-a', 'mount-2'))
+        .mountedBrowserTabLeases,
+    ).toEqual({});
+  });
+
+  it('does not persist leases or change them when workspace tabs are rehydrated', () => {
+    const mounted = tabStateReducer(initialState, acquireBrowserTabMount('browser-a', 'mount-1'));
+    const persisted = serializeWorkspaceTabsState(mounted);
+    expect(persisted).toEqual(serializeWorkspaceTabsState(initialState));
+    expect(mounted.version).toBe(initialState.version);
+    const hydrated = tabStateReducer(mounted, loadWorkspaceTabsState(persisted));
+    expect(hydrated.mountedBrowserTabLeases).toBe(mounted.mountedBrowserTabLeases);
   });
 
   it('records the hydrated backend id (idempotently)', () => {

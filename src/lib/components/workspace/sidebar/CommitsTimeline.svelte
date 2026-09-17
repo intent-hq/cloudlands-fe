@@ -938,8 +938,15 @@
   {#if $ftBoundarySha$}
     <Button
       variant="ghost"
-      class="group/boundary relative w-full cursor-pointer {allCommits.length > 0 ? 'mt-2' : ''}"
+      size="compact"
+      wrapContent={false}
+      class="group/boundary relative h-auto min-h-8 w-full justify-start gap-2 px-1 py-2 {allCommits.length >
+      0
+        ? 'mt-2'
+        : ''}"
       disabled={$ftLoadingOlderCommits$}
+      aria-expanded={olderCommits.length > 0}
+      aria-busy={$ftLoadingOlderCommits$}
       onclick={() => {
         if (olderCommits.length > 0) {
           appStore.dispatch(ftClearOlderCommits(workspaceId));
@@ -948,26 +955,26 @@
         }
       }}
     >
-      <div
-        class="relative flex items-center gap-2 px-1 pr-3 w-fit bg-sidebar mr-auto py-2 z-10 group-hover/boundary:opacity-100 {olderCommits.length >
-        0
-          ? 'opacity-100'
-          : 'opacity-0'}"
+      <span
+        class="relative flex shrink-0 items-center gap-1.5 text-ui text-subtle select-none"
+        data-commit-boundary-label
       >
-        <span class="flex items-center gap-1.5 text-ui text-subtle bg-sidebar select-none">
-          {m.workspace_commitsTimeline_workspaceStart_label()}
-          {#if $ftLoadingOlderCommits$}
-            <IntentMarkLoader size={12} class="opacity-50" />
-          {:else}
-            <Fa
-              icon={faChevronDown}
-              size="xs"
-              class="opacity-50 transition-transform {olderCommits.length > 0 ? '' : 'rotate-90'}"
-            />
-          {/if}
-        </span>
-      </div>
-      <div class="absolute top-4.5 left-0 right-0 flex-1 border-t border-border"></div>
+        {m.workspace_commitsTimeline_workspaceStart_label()}
+        {#if $ftLoadingOlderCommits$}
+          <IntentMarkLoader size={12} class="opacity-50" />
+        {:else}
+          <Fa
+            icon={faChevronDown}
+            size="xs"
+            class="opacity-50 transition-transform {olderCommits.length > 0 ? '' : 'rotate-90'}"
+          />
+        {/if}
+      </span>
+      <span
+        class="relative h-px min-w-0 flex-1 bg-border"
+        aria-hidden="true"
+        data-commit-boundary-divider
+      ></span>
     </Button>
   {/if}
 

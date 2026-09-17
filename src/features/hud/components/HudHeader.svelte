@@ -111,6 +111,15 @@
    * revealed on focus-within so keyboard users can Tab from the button onto
    * the slider. The value is the shared persisted master volume (default
    * 0.3) every cue play multiplies with its per-cue pack volume.
+   *
+   * The whole sound group is `app-no-drag`, not just its button and input:
+   * the header is a frameless-window drag region, and the global app.css
+   * rule only exempts interactive elements, so the group's own box (the flex
+   * gap and the slider wrapper) would stay draggable. Electron treats the
+   * pointer entering a draggable region as leaving the web contents, so
+   * `mouseleave` fired the moment the pointer left the button and the
+   * `{#if volumeVisible}` block unmounted the slider before it could be
+   * reached.
    */
   let volumeVisible = $state(false);
 
@@ -137,7 +146,7 @@
   <div class="hud-header-clock">{clockText}</div>
   <div class="hud-header-side hud-header-side-right">
     <div
-      class="hud-header-sound-group"
+      class="hud-header-sound-group app-no-drag"
       data-testid="hud-header-sound-group"
       role="group"
       aria-label={m.hud_header_soundControls_ariaLabel()}

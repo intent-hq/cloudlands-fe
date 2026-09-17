@@ -338,6 +338,7 @@
 
 <SettingsForm
   {schema}
+  compact={false}
   custom={defineSettingsCustomControls({
     'pr-monitor-debounce': debounceControl,
     'max-top-level-agents': maxAgentsControl,

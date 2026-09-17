@@ -678,7 +678,6 @@
                 onclick={() => toggleStatusGroup(group.id)}
                 onkeydown={(event) => event.stopPropagation()}
               >
-                <span class="size-3.5 shrink-0" aria-hidden="true"></span>
                 <Header size={4} class="min-w-0 flex-1 truncate">{group.label}</Header>
                 <Fa
                   icon={faChevronDown}

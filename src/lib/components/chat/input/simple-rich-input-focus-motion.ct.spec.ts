@@ -10,12 +10,6 @@ const states = [
   { name: 'compact narrow light at 100%', height: 560, width: 180, zoom: 1, theme: 'light' },
 ] as const;
 
-async function setPanelHeight(component: Locator, height: number) {
-  await component.locator('div.h-160').evaluate((node, value) => {
-    (node as HTMLElement).style.height = `${value}px`;
-  }, height);
-}
-
 async function composerHeight(input: Locator, zoom: number) {
   return input.evaluate((node, scale) => node.getBoundingClientRect().height / scale, zoom);
 }
@@ -121,7 +115,6 @@ for (const state of states) {
   }) => {
     await page.emulateMedia({ reducedMotion: 'no-preference' });
     const component = await mount(ChatPanelComposerGeometryHost, { props: state });
-    await setPanelHeight(component, state.height);
     const input = component.getByTestId('message-input');
     const editor = input.locator('.tiptap-editor');
     const editorWrapper = input.locator('.editor-wrapper');
@@ -228,9 +221,8 @@ for (const state of states) {
 test('changes content height immediately with reduced motion', async ({ mount, page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   const component = await mount(ChatPanelComposerGeometryHost, {
-    props: { width: 720, zoom: 1, theme: 'dark' },
+    props: { width: 720, zoom: 1, theme: 'dark', height: 800 },
   });
-  await setPanelHeight(component, 800);
   const input = component.getByTestId('message-input');
   const editor = input.locator('.tiptap-editor');
   const editorWrapper = input.locator('.editor-wrapper');
@@ -257,9 +249,8 @@ test('changes content height immediately with reduced motion', async ({ mount, p
 test('does not animate manual resize height changes on focus', async ({ mount, page }) => {
   await page.emulateMedia({ reducedMotion: 'no-preference' });
   const component = await mount(ChatPanelComposerGeometryHost, {
-    props: { width: 420, zoom: 1, theme: 'light' },
+    props: { width: 420, zoom: 1, theme: 'light', height: 800 },
   });
-  await setPanelHeight(component, 800);
   const input = component.getByTestId('message-input');
   const editor = input.locator('.tiptap-editor');
   const resize = input.locator('.resize-handle');

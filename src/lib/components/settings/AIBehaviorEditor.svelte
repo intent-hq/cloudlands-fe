@@ -722,7 +722,7 @@
             <h2 class="type-title font-medium text-foreground">{currentSpecialist.name}</h2>
             {#if isBuiltIn && hasOverrides}
               <span
-                class="type-caption px-1.5 py-0.5 rounded bg-primary/15 text-primary font-medium inline-flex items-center gap-1"
+                class="type-caption px-1.5 py-0.5 rounded bg-primary/15 text-primary-ink font-medium inline-flex items-center gap-1"
               >
                 <Fa icon={faPencil} class="w-2.5 h-2.5" />
                 {m.settings_aiBehavior_modifiedBadge()}
@@ -830,7 +830,12 @@
           <!-- Delegation model options (PROTOCOL §5.11 modelOptions). Keyed on
                the specialist id so draft rows never leak across specialist
                switches (remounting resets the component's local rows). -->
-          <SettingsDisclosure label={m.settings_aiBehavior_advanced_label()} class="mt-4">
+          <SettingsDisclosure
+            label={m.settings_aiBehavior_advanced_label()}
+            class="mt-4"
+            flush
+            muted
+          >
             {#key currentSpecialist.id}
               <SpecialistModelOptions
                 savedOptions={savedModelOptions}

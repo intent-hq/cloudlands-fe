@@ -3,8 +3,15 @@
   import Button from '../button/button.svelte';
   import * as Tooltip from './index';
 
-  let { open = $bindable(false), delayDuration = 80 }: { open?: boolean; delayDuration?: number } =
-    $props();
+  let {
+    open = $bindable(false),
+    delayDuration = 80,
+    secondary,
+  }: {
+    open?: boolean;
+    delayDuration?: number;
+    secondary?: { label: string; shortcut: string | string[] };
+  } = $props();
 </script>
 
 <Tooltip.Provider {delayDuration}>
@@ -31,6 +38,7 @@
   <Tooltip.TooltipShortcut
     label="Open navigation"
     shortcut="mod+k"
+    {secondary}
     delayDuration={0}
     portalTarget="[data-testid='shortcut-tooltip']"
   >

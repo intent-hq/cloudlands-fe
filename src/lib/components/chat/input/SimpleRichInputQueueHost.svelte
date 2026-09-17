@@ -2,8 +2,11 @@
   import SimpleRichInput from './SimpleRichInput.svelte';
   import QueuedMessageList from '../QueuedMessageList.svelte';
 
-  let { streaming = false, queueCount = 12 }: { streaming?: boolean; queueCount?: number } =
-    $props();
+  let {
+    streaming = false,
+    queueCount = 12,
+    width = 360,
+  }: { streaming?: boolean; queueCount?: number; width?: number } = $props();
   let value = $state('');
   let lastAction = $state('');
   const messages = $derived(
@@ -17,7 +20,7 @@
   );
 </script>
 
-<div class="group/panel" style="height: 240px; width: 360px;">
+<div class="group/panel" style="height: 240px;" style:width="{width}px">
   <SimpleRichInput
     bind:value
     workspace={null}

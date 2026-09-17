@@ -638,7 +638,7 @@
         certFingerprint ? `&certFingerprint=${encodeURIComponent(certFingerprint)}` : ''
       }${tcAddress ? `&tc=${encodeURIComponent(tcAddress)}` : ''}`;
       qrDataUrl = await QRCode.toDataURL(pairingUri, {
-        width: 200,
+        width: 544,
         margin: 2,
         color: { dark: '#000000', light: '#ffffff' },
       });
@@ -701,7 +701,7 @@
 </script>
 
 <div class="flex min-w-0 flex-col gap-4" data-settings-websocket-api>
-  <SettingsForm schema={connectionSchema} embedded />
+  <SettingsForm schema={connectionSchema} embedded compact={false} />
 
   {#if !isRemote}
     {#if enabled && tunnelSupported}
@@ -958,7 +958,7 @@
 {#if showQr}
   <!-- QR Code overlay -->
   <div
-    class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+    class="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"
     onclick={(event) => {
       if (event.target === event.currentTarget) handleCloseQr();
     }}
@@ -968,24 +968,21 @@
     aria-label={m.settings_wsApi_qrDialogAriaLabel()}
     tabindex="-1"
   >
-    <div class="max-w-xs rounded-xl bg-card p-6 text-left shadow-xl">
+    <div class="w-full max-w-xs rounded-xl bg-card p-6 text-left shadow-xl">
       <h3 class="type-body font-medium text-foreground mb-3">
-        {m.settings_wsApi_scanToConnect()}
+        {m.settings_wsApi_mobilePairing_label()}
       </h3>
       {#if qrDataUrl}
         <img
           src={qrDataUrl}
           alt={m.settings_wsApi_qrImageAlt()}
-          class="mx-auto rounded-lg"
-          width="200"
-          height="200"
+          class="w-full h-auto rounded-lg"
+          width="544"
+          height="544"
         />
       {/if}
       <p class="type-body text-subtle mt-3">
         {m.settings_wsApi_scanDescription()}
-      </p>
-      <p class="type-body text-warning-ink mt-2">
-        {m.settings_wsApi_qrTokenWarning()}
       </p>
       <Button
         type="button"

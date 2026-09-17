@@ -1,6 +1,7 @@
 <script lang="ts">
   import SizeProvider from '../SizeProvider.svelte';
   import Button from './button.svelte';
+  let rawClicks = $state(0);
 </script>
 
 {#snippet leadingIcon()}
@@ -22,3 +23,7 @@
 </SizeProvider>
 <Button aria-label="Active action" variant="outline" active>Active action</Button>
 <Button aria-label="Loading action" loading>Preserved loading label</Button>
+<Button aria-label="Raw content action" wrapContent={false} onclick={() => (rawClicks += 1)}>
+  <span data-testid="raw-label">Unwrapped visible label</span>
+</Button>
+<output data-testid="raw-clicks">{rawClicks}</output>

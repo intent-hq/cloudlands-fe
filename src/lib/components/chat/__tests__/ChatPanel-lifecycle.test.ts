@@ -1,8 +1,11 @@
 /** @vitest-environment jsdom */
-import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Workspace } from '$shared/types';
+import { KeyboardShortcutManager } from '$lib/utils/keyboardShortcuts';
+import { registerGlobalSearchShortcuts } from '$lib/utils/global-search-shortcuts';
+import { resolveShortcut } from '$lib/utils/shortcut-bindings';
 import {
   animateScrollTo as animateScrollToUtil,
   followToBottom as scrollToBottomUtil,
@@ -656,6 +659,7 @@ beforeEach(() => {
         mocks.resizeConstructor(callback);
       }
       observe = mocks.resizeObserve;
+      unobserve = vi.fn();
       disconnect = mocks.resizeDisconnect;
     },
   );
@@ -730,6 +734,145 @@ afterEach(() => {
   Reflect.deleteProperty(globalThis.CSS, 'highlights');
   vi.useRealTimers();
   vi.unstubAllGlobals();
+});
+
+describe.each([
+  ['macOS', 'MacIntel', { metaKey: true, ctrlKey: false }],
+  ['Windows/Linux', 'Win32', { metaKey: false, ctrlKey: true }],
+] as const)('ChatPanel find routing on %s', (_label, platform, mod) => {
+  let manager: KeyboardShortcutManager;
+  const openGlobalSearch = vi.fn();
+
+  function press(init: KeyboardEventInit = {}, target: EventTarget = document.body) {
+    const event = new KeyboardEvent('keydown', {
+      key: 'f',
+      code: 'KeyF',
+      ...mod,
+      bubbles: true,
+      cancelable: true,
+      ...init,
+    });
+    target.dispatchEvent(event);
+    return event;
+  }
+
+  beforeEach(() => {
+    vi.spyOn(navigator, 'platform', 'get').mockReturnValue(platform);
+    mocks.draftGet.mockResolvedValue(null);
+    manager = new KeyboardShortcutManager();
+    registerGlobalSearchShortcuts(manager, {
+      isMac: platform === 'MacIntel',
+      resolveBinding: () => resolveShortcut('global.search', {}),
+      openSearch: openGlobalSearch,
+    });
+    manager.attach();
+  });
+
+  afterEach(() => {
+    manager.destroy();
+    vi.restoreAllMocks();
+  });
+
+  it('opens and refocuses local search, preserves its query, and closes with Escape', async () => {
+    render(ChatPanel, {
+      props: {
+        workspace: workspace('workspace-a'),
+        agentId: 'agent-a',
+        isActive: true,
+        isPanelFocused: true,
+      },
+    });
+    await tick();
+    expect(press().defaultPrevented).toBe(true);
+    await tick();
+    await tick();
+    const input = screen.getByRole('search').querySelector('input')!;
+    expect(document.activeElement).toBe(input);
+    await fireEvent.input(input, { target: { value: 'needle' } });
+    press();
+    await tick();
+    await tick();
+    expect(input.value).toBe('needle');
+    expect(input.selectionStart).toBe(0);
+    expect(input.selectionEnd).toBe(6);
+    expect(openGlobalSearch).not.toHaveBeenCalled();
+    await fireEvent.keyDown(input, { key: 'Escape' });
+    expect(screen.queryByRole('search')).toBeNull();
+  });
+
+  it('routes to the newly focused chat and ignores the retained inactive chat', async () => {
+    const currentWorkspace = workspace('workspace-a');
+    const first = render(ChatPanel, {
+      props: { workspace: currentWorkspace, agentId: 'agent-a', isPanelFocused: true },
+    });
+    const second = render(ChatPanel, {
+      props: { workspace: currentWorkspace, agentId: 'agent-b', isPanelFocused: false },
+    });
+    await tick();
+    press();
+    await tick();
+    expect(first.container.querySelector('[role="search"]')).not.toBeNull();
+    expect(second.container.querySelector('[role="search"]')).toBeNull();
+    await fireEvent.keyDown(first.container.querySelector('[role="search"] input')!, {
+      key: 'Escape',
+    });
+    await first.rerender({
+      workspace: currentWorkspace,
+      agentId: 'agent-a',
+      isPanelFocused: true,
+      isActive: false,
+    });
+    await second.rerender({
+      workspace: currentWorkspace,
+      agentId: 'agent-b',
+      isPanelFocused: true,
+    });
+    press();
+    await tick();
+    expect(first.container.querySelector('[role="search"]')).toBeNull();
+    expect(second.container.querySelector('[role="search"]')).not.toBeNull();
+    expect(openGlobalSearch).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { isActive: true, isPanelFocused: false },
+    { isActive: false, isPanelFocused: true },
+  ])('falls back when chat cannot own find: %o', async (ownership) => {
+    render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a', ...ownership },
+    });
+    await tick();
+    press();
+    await tick();
+    expect(screen.queryByRole('search')).toBeNull();
+    expect(openGlobalSearch).toHaveBeenCalledOnce();
+  });
+
+  it('does not steal global, wrong-platform, extra-modifier, or already-owned chords', async () => {
+    render(ChatPanel, {
+      props: {
+        workspace: workspace('workspace-a'),
+        agentId: 'agent-a',
+        isPanelFocused: true,
+      },
+    });
+    await tick();
+    press({ shiftKey: true });
+    expect(openGlobalSearch).toHaveBeenCalledOnce();
+    for (const init of [
+      { altKey: true },
+      { metaKey: true, ctrlKey: true },
+      { metaKey: !mod.metaKey, ctrlKey: !mod.ctrlKey },
+    ]) {
+      expect(press(init).defaultPrevented).toBe(false);
+    }
+    const localFind = (event: KeyboardEvent) => event.preventDefault();
+    document.body.addEventListener('keydown', localFind, { once: true });
+    press();
+    await tick();
+    expect(screen.queryByRole('search')).toBeNull();
+    expect(openGlobalSearch).toHaveBeenCalledOnce();
+  });
 });
 
 describe('ChatPanel mounted lifecycle', () => {
@@ -849,11 +992,15 @@ describe('ChatPanel mounted lifecycle', () => {
     flushFrame();
     await tick();
     const overlay = screen.getByTestId('pinned-user-prompt');
-    expect(overlay.getAttribute('title')).toContain('first wake summary');
+    expect(overlay.getAttribute('title')).toBe(initialWake.metadata.hookName);
+    expect(
+      within(overlay).getByTestId('automated-wake-header').getAttribute('data-wake-state'),
+    ).toBe('delivered');
 
     const replacement = {
       ...initialWake,
       contentBlocks: [{ type: 'text', text: 'updated wake summary' }],
+      metadata: { ...initialWake.metadata, hookName: 'Updated build watch', reason: 'evicted' },
     };
     mocks.agentMessages.set(
       tail.map((message) => (message.id === replacement.id ? replacement : message)),
@@ -861,9 +1008,14 @@ describe('ChatPanel mounted lifecycle', () => {
     await tick();
     flushFrame();
     await tick();
-    expect(screen.getByTestId('pinned-user-prompt').getAttribute('title')).toContain(
-      'updated wake summary',
+    const updatedOverlay = screen.getByTestId('pinned-user-prompt');
+    expect(updatedOverlay.getAttribute('title')).toBe(replacement.metadata.hookName);
+    expect(within(updatedOverlay).getByTestId('automated-wake-primary-label').textContent).toBe(
+      replacement.metadata.hookName,
     );
+    expect(
+      within(updatedOverlay).getByTestId('automated-wake-header').getAttribute('data-wake-state'),
+    ).toBe('retired');
 
     mocks.agentHistoryMessages.set([
       {
@@ -905,7 +1057,9 @@ describe('ChatPanel mounted lifecycle', () => {
     await tick();
     sourceTurnRect.mockClear();
     mocks.animateScrollTo.mockClear();
-    await fireEvent.click(screen.getByTestId('pinned-user-prompt'));
+    const reactivatedOverlay = screen.getByTestId('pinned-user-prompt');
+    expect(reactivatedOverlay.getAttribute('title')).toBe(replacement.metadata.hookName);
+    await fireEvent.click(within(reactivatedOverlay).getByRole('button'));
     expect(sourceTurnRect).toHaveBeenCalledOnce();
     expect(mocks.animateScrollTo).toHaveBeenCalledOnce();
     expect(mocks.animateScrollTo.mock.calls[0][0]()).toBe(scroll);
@@ -1758,7 +1912,7 @@ describe('ChatPanel mounted lifecycle', () => {
     expect(mocks.draftGet).toHaveBeenCalledOnce();
   });
 
-  it('replaces the composer with the wizard when questions arrive on an empty composer', async () => {
+  it('retains the empty composer as noninteractive while questions are expanded and restores it when cleared', async () => {
     mocks.draftGet.mockResolvedValue(null);
     render(ChatPanel, {
       props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
@@ -1767,11 +1921,48 @@ describe('ChatPanel mounted lifecycle', () => {
     await Promise.resolve();
     await tick();
 
+    const editor = screen.getByTestId('mock-rich-input-editor') as HTMLInputElement;
+    const composer = screen.getByTestId('question-composer-input');
+    const questionComposer = screen.getByTestId('question-composer');
+    expect(editor.value).toBe('');
+    expect(questionComposer.getAttribute('data-expanded')).toBe('false');
+    expect(composer.contains(editor)).toBe(true);
+    expect(composer.inert).toBe(false);
+    expect(editor.closest('[aria-hidden="true"]')).toBeNull();
+
     mocks.pendingQuestions = { messageId: 'question-1', questions: [] };
     mocks.agentMessages.set([{ id: 'question-1' }]);
     await tick();
     expect(screen.getByTestId('question-wizard-slot')).not.toBeNull();
-    expect(screen.queryByTestId('mock-rich-input')).toBeNull();
+    expect(questionComposer.getAttribute('data-expanded')).toBe('true');
+    expect(screen.getByTestId('mock-rich-input-editor')).toBe(editor);
+    expect(editor.value).toBe('');
+    expect(composer.contains(editor)).toBe(true);
+    expect(composer.inert).toBe(true);
+    expect(editor.closest('[aria-hidden="true"]')).toBe(composer);
+
+    mocks.pendingQuestions = null;
+    mocks.agentMessages.set([]);
+    await tick();
+    await Promise.resolve();
+    await tick();
+    expect(questionComposer.getAttribute('data-expanded')).toBe('false');
+    expect(screen.getByTestId('mock-rich-input-editor')).toBe(editor);
+    expect(editor.value).toBe('');
+    expect(composer.contains(editor)).toBe(true);
+    expect(composer.inert).toBe(false);
+    expect(editor.closest('[aria-hidden="true"]')).toBeNull();
+    mocks.dispatch.mockClear();
+    await fireEvent.input(editor, { target: { value: 'ready after questions' } });
+    expect(screen.getByTestId('mock-rich-input').getAttribute('data-value')).toBe(
+      'ready after questions',
+    );
+    fireEvent.focusOut(screen.getByTestId('chat-composer-controls-inner'));
+    const draftActions = mocks.dispatch.mock.calls.filter(
+      ([action]) => action?.type === 'transientUi/setChatDraft',
+    );
+    expect(draftActions).toHaveLength(1);
+    expect(draftActions[0][0].payload).toEqual(['workspace-a', 'agent-a', 'ready after questions']);
   });
 
   it('does not overwrite typing that races delayed draft hydration', async () => {

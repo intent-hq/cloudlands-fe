@@ -1181,7 +1181,8 @@
 
       // Focus input
       requestAnimationFrame(() => {
-        if (searchInputElement) {
+        // Escape can close the menu before this queued frame runs.
+        if (isOpen && searchInputElement) {
           searchInputElement.focus();
           searchInputElement.select();
         }
@@ -1486,12 +1487,13 @@
         </div>
       </Select.Trigger>
       <Select.Content
-        class="max-w-[400px] min-w-[400px] max-h-[min(600px,calc(var(--radix-popper-available-height,100vh)-16px))] overflow-hidden flex flex-col"
+        class="w-[400px] min-w-0 max-h-[min(600px,calc(var(--bits-select-content-available-height,100dvh)-8px))] overflow-hidden flex flex-col"
+        wrapperClass="flex flex-col"
         {dropUp}
         {portal}
       >
         <!-- Header -->
-        <div class="px-4 pt-2 pb-3">
+        <div class="shrink-0 px-4 pt-2 pb-3">
           <h2 class="text-base font-semibold text-foreground">
             {m.workspace_branchSelector_whichBranch_label()}
           </h2>
@@ -1516,39 +1518,10 @@
           </Button>
         {/if}
 
-        <div class="px-2 pb-1 pt-1 sticky -top-1 bg-popover z-10">
-          <div class="flex gap-2">
-            <Input
-              bind:this={searchInputElement}
-              bind:value={searchValue}
-              autofocus
-              placeholder={m.workspace_branchSelector_search_placeholder()}
-              oninput={(e) => handleManualInput(e.currentTarget.value)}
-              onkeydown={(e) => {
-                if (e.key === 'Enter' && searchValue) {
-                  e.preventDefault();
-                  selectBranch(searchValue);
-                }
-              }}
-              class="flex-1 border-0 bg-background"
-              noFocusStyle
-            />
-            <Button
-              onclick={handleRefresh}
-              variant="ghost-light"
-              size="icon"
-              disabled={isLoading}
-              aria-label={m.workspace_branchSelector_refreshBranches_ariaLabel()}
-            >
-              <Fa icon={faRotate} />
-            </Button>
-          </div>
-        </div>
-
-        <!-- Branch status info -->
+        <!-- Branch status belongs above search, not between search and results. -->
         {#if selectedBranch && repoType === 'local' && (branchStatusBehind > 0 || (showUncommittedIndicator && !skipIsolation && branchStatusHasUncommittedChanges && isCurrentBranch))}
           <div
-            class="mx-2 mb-1 px-3 py-2 text-sm text-subtle"
+            class="shrink-0 px-4 pb-3 text-sm text-subtle"
             transition:slide={{ axis: 'y', tier: 'moderate' }}
           >
             {#if branchStatusBehind > 0}
@@ -1564,7 +1537,37 @@
           </div>
         {/if}
 
-        <div class="overflow-y-auto flex-1 pt-2">
+        <div class="shrink-0 px-3 pb-2">
+          <div class="flex gap-2">
+            <Input
+              bind:this={searchInputElement}
+              bind:value={searchValue}
+              autofocus
+              placeholder={m.workspace_branchSelector_search_placeholder()}
+              oninput={(e) => handleManualInput(e.currentTarget.value)}
+              onkeydown={(e) => {
+                if (e.key === 'Enter' && searchValue) {
+                  e.preventDefault();
+                  selectBranch(searchValue);
+                }
+              }}
+              class="flex-1 min-w-0 border-0 bg-background text-sm"
+              noFocusStyle
+            />
+            <Button
+              onclick={handleRefresh}
+              variant="ghost-light"
+              size="icon"
+              class="shrink-0"
+              disabled={isLoading}
+              aria-label={m.workspace_branchSelector_refreshBranches_ariaLabel()}
+            >
+              <Fa icon={faRotate} class="size-4!" />
+            </Button>
+          </div>
+        </div>
+
+        <div class="min-h-16 overflow-y-auto flex-1" data-testid="branch-results">
           {#if githubAuthNeeded === 'not-authenticated' && !isConnectingGitHub}
             <!-- Connect with GitHub prompt for private repos -->
             <Button
@@ -1838,7 +1841,7 @@
 
         <!-- Use current branch option (no isolated checkout) -->
         {#if typeof onSkipIsolationChange === 'function' && currentBranch}
-          <div class="px-2 pt-2 pb-3 border-t border-border sticky -bottom-1 bg-popover">
+          <div class="shrink-0 px-2 pt-2 pb-3 border-t border-border bg-popover">
             <Button
               variant="ghost"
               onclick={() => {
@@ -1854,7 +1857,8 @@
                 }
                 isOpen = false;
               }}
-              class="w-full flex items-start gap-3 px-2 py-1 rounded-md text-left cursor-pointer"
+              wrapContent={false}
+              class="w-full h-auto flex items-start gap-3 px-2 py-1 rounded-md text-left whitespace-normal cursor-pointer"
             >
               <Checkbox
                 checked={skipIsolation}
@@ -1872,8 +1876,8 @@
                   isOpen = false;
                 }}
               />
-              <div class="items-start flex-1 min-w-0 text-ui font-medium -mt-0.25">
-                {workDirectlyParts[0]}<span class="font-semibold">{currentBranch}</span
+              <div class="items-start flex-1 min-w-0 text-sm font-normal -mt-0.25">
+                {workDirectlyParts[0]}<span class="font-medium">{currentBranch}</span
                 >{workDirectlyParts[1]}
               </div>
             </Button>

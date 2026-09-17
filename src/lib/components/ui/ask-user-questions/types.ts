@@ -52,6 +52,10 @@ export interface AskUserQuestionsProps {
   showBack?: boolean;
   backLabel?: string;
   headerActions?: Snippet;
+  /** Leading actions in the bottom row, before question navigation. */
+  footerActions?: Snippet;
+  /** Center the heading and action groups for a focused question surface. */
+  centered?: boolean;
   showCounter?: boolean;
   alwaysShowSkip?: boolean;
   showOtherSubmit?: boolean;

@@ -64,7 +64,7 @@ for (const scene of stackedRows) {
       expect(pullRequestsBox).not.toBeNull();
       expect(activityBox!.width).toBeCloseTo(pullRequestsBox!.width, 0);
       expect(activityBox!.x).toBeCloseTo(pullRequestsBox!.x, 0);
-      expect(pullRequestsBox!.y).toBeGreaterThanOrEqual(activityBox!.y + activityBox!.height + 15);
+      expect(pullRequestsBox!.y - (activityBox!.y + activityBox!.height)).toBeCloseTo(12, 0);
     } else {
       expect(pullRequestsBox).toBeNull();
     }
@@ -108,7 +108,7 @@ test('keeps the narrow stacked fixture inside the viewport without clipping', as
   expect(await pullRequests.evaluate((node) => getComputedStyle(node).borderTopWidth)).toBe('0px');
   expect(activityBox).not.toBeNull();
   expect(pullRequestsBox).not.toBeNull();
-  expect(pullRequestsBox!.y).toBeGreaterThanOrEqual(activityBox!.y + activityBox!.height + 15);
+  expect(pullRequestsBox!.y - (activityBox!.y + activityBox!.height)).toBeCloseTo(12, 0);
   await expect(card.locator('[data-workspace-hover-card-agent-time]')).toBeVisible();
   await expect(card.locator('[data-workspace-hover-card-agent-context]')).toBeVisible();
   expect(await card.evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
@@ -185,7 +185,7 @@ test('places the status indicator after its right-aligned label', async ({ mount
   expect(await status.evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
 });
 
-test('uses caption typography for metadata while primary labels remain body-sized', async ({
+test('uses compact bottom-row typography while preserving the header body title', async ({
   mount,
   page,
 }) => {
@@ -233,43 +233,97 @@ test('uses caption typography for metadata while primary labels remain body-size
         '[data-workspace-hover-card-agent-detail]',
         '[data-workspace-hover-card-pr-status]',
         '[data-workspace-hover-card-pr-number]',
-      ].map(read),
-      primary: [
-        '[data-workspace-hover-card-title]',
         '[data-workspace-hover-card-agent-name]',
         '[data-workspace-hover-card-pr-title]',
       ].map(read),
+      title: read('[data-workspace-hover-card-title]'),
     };
   });
 
-  expect(typography.metadata).toEqual(Array(7).fill(typography.caption));
-  expect(typography.primary).toEqual(Array(3).fill(typography.body));
+  expect(typography.metadata).toEqual(Array(9).fill(typography.caption));
+  expect(typography.title).toEqual(typography.body);
+  expect(Number.parseFloat(typography.caption.fontSize)).toBeLessThan(
+    Number.parseFloat(typography.title.fontSize),
+  );
 });
 
-test('aligns PR icons and titles with agent rows', async ({ mount, page }) => {
-  await page.setViewportSize({ width: 720, height: 640 });
-  const preview = await mount(WorkspaceHoverCardPreview, {
-    props: fixture('working'),
+for (const { state, width } of [
+  { state: 'working', width: 720 },
+  { state: 'landscape-question', width: 720 },
+  { state: 'landscape-question', width: 420 },
+]) {
+  test(`aligns compact leading graphics and text columns for ${state} at ${width}px`, async ({
+    mount,
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 720 });
+    const preview = await mount(WorkspaceHoverCardPreview, { props: fixture(state) });
+    const card = preview.locator('[data-workspace-hover-card]');
+    const rows = card.locator('[data-workspace-hover-card-agent-row]');
+    await expect(rows.first()).toBeVisible();
+    const geometry = await card.evaluate((node) => {
+      const bounds = (selector: string, root: Element = node) => {
+        const element = root.querySelector(selector);
+        if (!element) throw new Error(`Missing density target: ${selector}`);
+        return element.getBoundingClientRect().toJSON();
+      };
+      return {
+        card: node.getBoundingClientRect().toJSON(),
+        summary: bounds('[data-workspace-hover-card-summary]'),
+        divider: bounds('[data-workspace-hover-card-divider]'),
+        rows: Array.from(node.querySelectorAll('[data-workspace-hover-card-agent-row]')).map(
+          (row) => ({
+            row: row.getBoundingClientRect().toJSON(),
+            avatar: bounds('[data-agent-avatar-with-state]', row),
+            name: bounds('[data-workspace-hover-card-agent-name]', row),
+            context: bounds('[data-workspace-hover-card-agent-context]', row),
+            time: bounds('[data-workspace-hover-card-agent-time]', row),
+          }),
+        ),
+        pr: bounds('[data-workspace-hover-card-pr-row]'),
+        prIcon: bounds('[data-workspace-hover-card-pr-row] svg'),
+        prTitle: bounds('[data-workspace-hover-card-pr-title]'),
+        overflows: node.scrollWidth > node.clientWidth,
+      };
+    });
+
+    expect(geometry.rows.length).toBe(state === 'working' ? 2 : 1);
+    expect(geometry.overflows).toBe(false);
+    expect(geometry.card.x).toBeGreaterThanOrEqual(8);
+    expect(geometry.card.right).toBeLessThanOrEqual(width - 8);
+    expect(geometry.divider.y - geometry.summary.bottom).toBeCloseTo(12, 0);
+    expect(geometry.rows[0].row.y - geometry.divider.bottom).toBeCloseTo(12, 0);
+    for (const [index, row] of geometry.rows.entries()) {
+      expect(row.avatar.width).toBeCloseTo(16, 0);
+      expect(row.avatar.height).toBeCloseTo(16, 0);
+      expect(row.avatar.x).toBeCloseTo(geometry.summary.x, 0);
+      expect(row.avatar.y + row.avatar.height / 2).toBeCloseTo(row.name.y + row.name.height / 2, 0);
+      expect(row.name.x - row.avatar.right).toBeCloseTo(8, 0);
+      expect(row.context.x).toBeCloseTo(row.name.x, 0);
+      expect(row.context.y).toBeCloseTo(row.name.bottom, 0);
+      expect(row.name.height).toBeCloseTo(18, 0);
+      expect(row.time.y).toBeCloseTo(row.name.y, 0);
+      expect(row.time.right).toBeLessThanOrEqual(row.row.right + 1);
+      expect(row.row.height).toBeCloseTo(36, 0);
+      if (index > 0) {
+        expect(row.row.y - geometry.rows[index - 1].row.bottom).toBeCloseTo(8, 0);
+      }
+    }
+    expect(geometry.pr.y - geometry.rows.at(-1)!.row.bottom).toBeCloseTo(12, 0);
+    expect(geometry.prIcon.width).toBeCloseTo(16, 0);
+    expect(geometry.prIcon.height).toBeCloseTo(16, 0);
+    expect(geometry.prIcon.x).toBeCloseTo(geometry.summary.x, 0);
+    expect(geometry.prTitle.x).toBeCloseTo(geometry.rows[0].name.x, 0);
+    expect(geometry.prTitle.height).toBeCloseTo(18, 0);
+    if (width === 420) {
+      const context = card.locator('[data-workspace-hover-card-agent-context]');
+      expect(await context.evaluate((node) => node.scrollWidth > node.clientWidth)).toBe(true);
+      await expect(card.locator('[data-workspace-hover-card-question-meta]')).toHaveAccessibleName(
+        'Question 1 of 4',
+      );
+    }
   });
-  const card = preview.locator('[data-workspace-hover-card]');
-  const agentRow = card.locator('[data-workspace-hover-card-agent-row]').first();
-  const prRow = card.locator('[data-workspace-hover-card-pr-row]').first();
-  const [agentIcon, prIcon, agentName, prTitle] = await Promise.all([
-    agentRow.locator('svg').first().boundingBox(),
-    prRow.locator('svg').first().boundingBox(),
-    agentRow.locator('[data-workspace-hover-card-agent-name]').boundingBox(),
-    prRow.locator('[data-workspace-hover-card-pr-title]').boundingBox(),
-  ]);
-
-  expect(agentIcon).not.toBeNull();
-  expect(prIcon).not.toBeNull();
-  expect(agentName).not.toBeNull();
-  expect(prTitle).not.toBeNull();
-  expect(prIcon!.width).toBeCloseTo(18, 0);
-  expect(prIcon!.height).toBeCloseTo(18, 0);
-  expect(prIcon!.x + prIcon!.width / 2).toBeCloseTo(agentIcon!.x + agentIcon!.width / 2, 0);
-  expect(prTitle!.x).toBeCloseTo(agentName!.x, 0);
-});
+}
 
 test('uses accessible muted foreground for secondary metadata', async ({ mount, page }) => {
   await page.setViewportSize({ width: 720, height: 520 });
@@ -415,7 +469,7 @@ test('keeps the loading skeleton stacked at the target width', async ({ mount, p
   ]);
   expect(activityBox).not.toBeNull();
   expect(pullRequestsBox).not.toBeNull();
-  expect(pullRequestsBox!.y).toBeGreaterThanOrEqual(activityBox!.y + activityBox!.height + 15);
+  expect(pullRequestsBox!.y - (activityBox!.y + activityBox!.height)).toBeCloseTo(12, 0);
   await expect(card.locator('[data-workspace-hover-card-title]')).toHaveCount(0);
 });
 

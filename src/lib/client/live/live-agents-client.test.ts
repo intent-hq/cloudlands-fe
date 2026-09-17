@@ -480,7 +480,7 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
       workspaceId: 'ws-1',
       messageId: 'qm-9',
     });
-    expect(result).toEqual({ success: true, turnId: 'turn-preserved' });
+    expect(result).toEqual({ success: true, queued: false, turnId: 'turn-preserved' });
   });
 
   it('sendQueuedNow folds the -32602 missing-entry rejection into {success:false,error} (no throw)', async () => {
@@ -525,7 +525,49 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
       workspaceId: 'ws-1',
       messageId: 'qm-9',
     });
-    expect(result).toEqual({ success: true });
+    expect(result).toEqual({
+      success: true,
+      queued: true,
+      queuedMessage: {
+        id: 'qm-9',
+        content: 'held',
+        queuedAt: '2026-01-01T00:00:00.000Z',
+        position: 0,
+        turnId: 'turn-restored',
+      },
+    });
+  });
+
+  it('preserves quarantined send-now outcomes and the stored attachments without promoting a turn', async () => {
+    const queuedMessage = {
+      id: 'qm-9',
+      content: 'review',
+      position: 0,
+      queuedAt: '2026-01-01T00:00:00.000Z',
+      turnId: 'turn-restored',
+      imageBlocks: [{ type: 'image', attachmentId: 'synthetic-image' }],
+      fileBlocks: [{ type: 'file', attachmentId: 'synthetic-file', fileName: 'fixture.txt' }],
+    };
+    backend.onRequest('agent.sendQueuedMessageNow', () => ({
+      success: true,
+      queued: true,
+      quarantined: true,
+      queuedMessage,
+    }));
+    const client = new LiveAgentsClient();
+    expect(
+      await client.sendQueuedNow({ agentId: 'agent-1', workspaceId: 'ws-1', messageId: 'qm-9' }),
+    ).toEqual({ success: true, queued: true, quarantined: true, queuedMessage });
+    expect(backend.requests).toEqual([
+      {
+        method: 'agent.sendQueuedMessageNow',
+        params: {
+          agentId: 'agent-1',
+          workspaceId: 'ws-1',
+          messageId: 'qm-9',
+        },
+      },
+    ]);
   });
 
   it('sendQueuedNow folds JSON-RPC "Internal error" + data.detail into the error like runMutation', async () => {

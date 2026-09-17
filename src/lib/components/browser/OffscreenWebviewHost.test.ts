@@ -7,7 +7,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/svelte';
 
-const { layoutsStore, ownClientIdStore, dispatchMock } = vi.hoisted(() => {
+const { layoutsStore, ownClientIdStore, mountedLeasesStore, dispatchMock } = vi.hoisted(() => {
   // Minimal svelte-store-contract writable (vi.hoisted runs before imports).
   function miniWritable<T>(initial: T) {
     let value = initial;
@@ -30,6 +30,7 @@ const { layoutsStore, ownClientIdStore, dispatchMock } = vi.hoisted(() => {
   return {
     layoutsStore: miniWritable<Record<string, unknown>>({}),
     ownClientIdStore: miniWritable<string | null>('cli-own'),
+    mountedLeasesStore: miniWritable<Record<string, Record<string, true>>>({}),
     dispatchMock: vi.fn(),
   };
 });
@@ -40,6 +41,10 @@ vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
 
 vi.mock('$store/renderer/slices/browser-clients/browser-clients-selectors', () => ({
   selectOwnClientId: () => ownClientIdStore,
+}));
+
+vi.mock('$store/renderer/slices/tab-state/tab-state-selectors', () => ({
+  selectMountedBrowserTabLeases: () => mountedLeasesStore,
 }));
 
 vi.mock('$store/renderer/slices/panel-layout/panel-layout-slice', () => ({
@@ -54,6 +59,11 @@ vi.mock('$store/renderer/store', () => ({
 }));
 
 import OffscreenWebviewHost from './OffscreenWebviewHost.svelte';
+import {
+  acquireBrowserTabMount,
+  releaseBrowserTabMount,
+  tabStateReducer,
+} from '$store/renderer/slices/tab-state/tab-state-slice';
 
 function browserLayout(tabs: Array<{ id: string; url?: string; hostClientId?: string }>) {
   return {
@@ -86,6 +96,7 @@ describe('OffscreenWebviewHost', () => {
   beforeEach(() => {
     layoutsStore.set({});
     ownClientIdStore.set('cli-own');
+    mountedLeasesStore.set({});
     dispatchMock.mockClear();
     invokeMock.mockClear();
     (window as unknown as { electronAPI: { invoke: typeof invokeMock } }).electronAPI = {
@@ -134,6 +145,61 @@ describe('OffscreenWebviewHost', () => {
     await waitFor(() =>
       expect(mountedTabIds(container).sort()).toEqual(['tab-legacy', 'tab-mirror', 'tab-own']),
     );
+  });
+
+  it('excludes retained mounts, but hosts never-visited tabs and resumes after cache eviction', async () => {
+    let state = tabStateReducer(undefined, acquireBrowserTabMount('tab-retained', 'mount-1'));
+    mountedLeasesStore.set(state.mountedBrowserTabLeases);
+    layoutsStore.set({
+      'ws-bg': browserLayout([{ id: 'tab-retained' }, { id: 'tab-unvisited' }]),
+    });
+    const { container, rerender } = render(OffscreenWebviewHost, {
+      props: { excludedWorkspaceIds: new Set(['ws-bg']) },
+    });
+    await rerender({ excludedWorkspaceIds: new Set() });
+    await waitFor(() => expect(mountedTabIds(container)).toEqual(['tab-unvisited']));
+    const unvisited = container.querySelector('webview');
+
+    state = tabStateReducer(state, releaseBrowserTabMount('tab-retained', 'mount-1'));
+    mountedLeasesStore.set(state.mountedBrowserTabLeases);
+    await waitFor(() =>
+      expect(mountedTabIds(container).sort()).toEqual(['tab-retained', 'tab-unvisited']),
+    );
+    expect(container.querySelector('[data-offscreen-webview-tab="tab-unvisited"]')).toBe(unvisited);
+
+    state = tabStateReducer(state, acquireBrowserTabMount('tab-retained', 'mount-2'));
+    mountedLeasesStore.set(state.mountedBrowserTabLeases);
+    await waitFor(() => expect(mountedTabIds(container)).toEqual(['tab-unvisited']));
+  });
+
+  it('waits for a panel mount to release before hosting a newly hidden owned tab', async () => {
+    const state = tabStateReducer(undefined, acquireBrowserTabMount('tab-owned', 'mount-1'));
+    mountedLeasesStore.set(state.mountedBrowserTabLeases);
+    layoutsStore.set({
+      'ws-shown': {
+        panels: {},
+        hiddenTabs: {
+          ids: ['tab-owned'],
+          map: {
+            'tab-owned': {
+              id: 'tab-owned',
+              type: 'browser',
+              browserUrl: 'https://example.test/owned',
+              ownerAgentId: 'agent-1',
+            },
+          },
+        },
+      },
+    });
+    const { container } = render(OffscreenWebviewHost, {
+      props: { excludedWorkspaceIds: new Set(['ws-shown']) },
+    });
+    expect(mountedTabIds(container)).toEqual([]);
+    mountedLeasesStore.set(
+      tabStateReducer(state, releaseBrowserTabMount('tab-owned', 'mount-1'))
+        .mountedBrowserTabLeases,
+    );
+    await waitFor(() => expect(mountedTabIds(container)).toEqual(['tab-owned']));
   });
 
   it('registers a mounted webview for CDP on dom-ready', async () => {
@@ -222,6 +288,111 @@ describe('OffscreenWebviewHost', () => {
         ['browser:register-tab', { tabId: 'tab-bg', webContentsId: 77 }],
       ]),
     );
+  });
+
+  // Electron resolves every <webview> method against the element's cached
+  // guest id and throws when it is unset or the guest is gone.
+  const noGuest = () => {
+    throw new Error('The WebView must be attached to the DOM');
+  };
+
+  // A guest that closes itself (window.close()) fires `destroyed`; the
+  // action must survive it and release its registration gate so a
+  // recreated guest's dom-ready registers again.
+  it('releases the CDP registration gate when the guest is destroyed', async () => {
+    layoutsStore.set({ 'ws-bg': browserLayout([{ id: 'tab-bg' }]) });
+    const { container } = render(OffscreenWebviewHost, {
+      props: { excludedWorkspaceIds: new Set() },
+    });
+    await waitFor(() => expect(mountedTabIds(container)).toEqual(['tab-bg']));
+    const webview = container.querySelector(
+      '[data-offscreen-webview-tab="tab-bg"]',
+    ) as HTMLElement & {
+      getWebContentsId?: () => number;
+      getURL?: () => string;
+    };
+    const registerCalls = () =>
+      invokeMock.mock.calls.filter(([channel]) => channel === 'browser:register-tab');
+
+    webview.getWebContentsId = () => 77;
+    webview.getURL = () => 'https://example.test/tab-bg';
+    webview.dispatchEvent(new Event('dom-ready'));
+    await waitFor(() => expect(registerCalls()).toHaveLength(1));
+
+    webview.getURL = noGuest;
+    expect(() => webview.dispatchEvent(new Event('destroyed'))).not.toThrow();
+
+    // Same webContentsId on the next dom-ready: the gate was released, so
+    // the guest registers again instead of being skipped as "same guest".
+    webview.getURL = () => 'https://example.test/tab-bg';
+    webview.dispatchEvent(new Event('dom-ready'));
+    await waitFor(() =>
+      expect(registerCalls()).toEqual([
+        ['browser:register-tab', { tabId: 'tab-bg', webContentsId: 77 }],
+        ['browser:register-tab', { tabId: 'tab-bg', webContentsId: 77 }],
+      ]),
+    );
+  });
+
+  // Reparenting fires the old guest's `destroyed` with no ordering guarantee
+  // against the replacement's dom-ready; a live replacement must keep its
+  // ready state so browserUrl updates keep navigating it.
+  it('ignores a stale destroyed that arrives after the replacement guest is ready', async () => {
+    layoutsStore.set({ 'ws-bg': browserLayout([{ id: 'tab-bg' }]) });
+    const { container } = render(OffscreenWebviewHost, {
+      props: { excludedWorkspaceIds: new Set() },
+    });
+    await waitFor(() => expect(mountedTabIds(container)).toEqual(['tab-bg']));
+    const webview = container.querySelector(
+      '[data-offscreen-webview-tab="tab-bg"]',
+    ) as HTMLElement & {
+      getWebContentsId?: () => number;
+      getURL?: () => string;
+      loadURL?: ReturnType<typeof vi.fn>;
+    };
+    const registerCalls = () =>
+      invokeMock.mock.calls.filter(([channel]) => channel === 'browser:register-tab');
+
+    webview.getWebContentsId = () => 78;
+    webview.getURL = () => 'https://example.test/tab-bg';
+    webview.loadURL = vi.fn().mockResolvedValue(undefined);
+    webview.dispatchEvent(new Event('dom-ready'));
+    await waitFor(() => expect(registerCalls()).toHaveLength(1));
+
+    webview.dispatchEvent(new Event('destroyed'));
+
+    layoutsStore.set({
+      'ws-bg': browserLayout([{ id: 'tab-bg', url: 'https://example.test/next' }]),
+    });
+    await waitFor(() => expect(webview.loadURL).toHaveBeenCalledWith('https://example.test/next'));
+    expect(registerCalls()).toHaveLength(1);
+  });
+
+  it('logs a destroyed guest URL without userinfo, query or fragment', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const closeUrl = 'https://u:pw@auth.example.test/cb?code=SECRETCODE&state=s1#access_token=TOK';
+    layoutsStore.set({ 'ws-bg': browserLayout([{ id: 'tab-bg', url: closeUrl }]) });
+    const { container } = render(OffscreenWebviewHost, {
+      props: { excludedWorkspaceIds: new Set() },
+    });
+    await waitFor(() => expect(mountedTabIds(container)).toEqual(['tab-bg']));
+    const webview = container.querySelector(
+      '[data-offscreen-webview-tab="tab-bg"]',
+    ) as HTMLElement & { getURL?: () => string };
+
+    webview.getURL = noGuest;
+    webview.dispatchEvent(new Event('destroyed'));
+
+    const logged = warn.mock.calls.find(([msg]) => String(msg).includes('guest was destroyed'));
+    expect(logged).toBeDefined();
+    expect((logged![1] as { url: string }).url).toBe('https://auth.example.test/cb');
+    for (const call of warn.mock.calls) {
+      const serialized = JSON.stringify(call);
+      expect(serialized).not.toContain('SECRETCODE');
+      expect(serialized).not.toContain('TOK');
+      expect(serialized).not.toContain('u:pw');
+    }
+    warn.mockRestore();
   });
 
   it('syncs full and in-page navigation back into the persisted tab URL', async () => {

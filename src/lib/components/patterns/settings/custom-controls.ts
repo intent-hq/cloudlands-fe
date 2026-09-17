@@ -17,6 +17,6 @@ export { Select } from '$lib/components/ui/select';
 export { Skeleton } from '$lib/components/ui/skeleton';
 export { Slider } from '$lib/components/ui/slider';
 export { Switch } from '$lib/components/ui/switch';
-export { Textarea } from '$lib/components/ui/textarea';
+export { default as Textarea } from './SettingsTextarea.svelte';
 export * as ToggleGroup from '$lib/components/ui/toggle-group';
 export { Tooltip } from '$lib/components/ui/tooltip';

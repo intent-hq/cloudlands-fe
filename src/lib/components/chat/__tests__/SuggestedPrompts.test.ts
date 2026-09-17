@@ -9,7 +9,6 @@ import { WorkspaceId } from '$shared/types/branded-ids';
 import SuggestedPrompts from '../SuggestedPrompts.svelte';
 import {
   CHAT_OPERATIONAL_LEADING_CLASS,
-  COMPACT_TOOL_TRAILING_CLASS,
   OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS,
   OPERATIONAL_ROW_TONE_CLASS,
 } from '../operational-disclosure-row';
@@ -130,38 +129,26 @@ describe('SuggestedPrompts', () => {
     expect(promptRow('First prompt').className).toContain('py-0.5');
   });
 
-  it('connects chat panel compact mode to prompt spacing', () => {
-    const chatPanel = readFileSync(resolve('src/lib/components/chat/ChatPanel.svelte'), 'utf8');
-
-    expect(chatPanel).toContain(
-      "class=\"w-full {isCompactMode ? 'pb-1' : 'pb-2'} {isChiefWorkspace",
-    );
-    expect(chatPanel).toContain('compact={isCompactMode}');
-  });
-
-  it('renders shortcut hints as opaque normal-weight operational metadata', () => {
-    render(SuggestedPrompts, {
+  it('toggles focused-chat shortcut hints without changing prompt activation', async () => {
+    const onSelect = vi.fn();
+    const { rerender } = render(SuggestedPrompts, {
       props: {
-        prompts: ['Approved, proceed with delegation.'],
-        onSelect: vi.fn(),
-        showShortcutHints: true,
+        prompts: ['Review the fixture.'],
+        onSelect,
+        showShortcutHints: false,
       },
     });
 
-    const hint = screen.getByText(/(?:⌃|Alt\+)1/).closest<HTMLElement>('[data-slot="badge"]')!;
-    expect(hint.className).toContain('!font-normal');
-    expect(hint.className).toContain('text-muted-foreground!');
-    for (const className of COMPACT_TOOL_TRAILING_CLASS.replace('text-ui', '').split(' ')) {
-      if (!className) continue;
-      expect(hint.classList.contains(className)).toBe(true);
-    }
-    expect(hint.className).toContain('type-caption');
-    expect(hint.className).toContain('mt-px');
-    expect(hint.className).toContain('self-start');
-    expect(hint.className).toContain('opacity-100');
-    expect(hint.className).not.toContain('text-ui');
-    expect(hint.className).not.toMatch(/text-(?:muted-foreground|subtle)\//);
-    expect(hint.closest('[data-suggested-prompt-row]')?.className).toContain('type-body');
+    expect(screen.queryByText(/(?:⌃|Alt\+)1/)).toBeNull();
+    await rerender({ showShortcutHints: true });
+    await fireEvent.click(screen.getByText(/(?:⌃|Alt\+)1/));
+    expect(onSelect).toHaveBeenCalledWith('Review the fixture.');
+    await rerender({ showShortcutHints: false });
+    expect(screen.queryByText(/(?:⌃|Alt\+)1/)).toBeNull();
+    await fireEvent.keyDown(screen.getByRole('button', { name: 'Review the fixture.' }), {
+      key: 'Enter',
+    });
+    expect(onSelect).toHaveBeenCalledTimes(2);
   });
 
   it('preserves keyboard selection and the separate edit affordance', async () => {

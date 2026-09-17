@@ -35,8 +35,10 @@ import {
   chatInitialized,
   chatTranscriptSnapshotApplied,
   streamCompleted,
+  streamStatusReceived,
   streamTimedOut,
 } from '../chat-state/chat-state-slice';
+import { agentStreamUpdateReceived } from '../workspace-agents/workspace-agents-stream-slice';
 
 export {
   computeMessageContentHash,
@@ -1854,6 +1856,25 @@ agentSessionReducer.with(chatStreamingReconciled, (state, { payload: { agentId }
     isProcessing: true,
     ...streamingStartedFields(getSession(state, agentId)),
   }),
+);
+// Prompt turns never emit agent:stream:start, and the daemon's turn-start
+// budget re-check runs AFTER the send path already set isStreaming=true
+// (chatSendStarted), so a queue hint that lands during that window has no
+// streaming edge left to clear it. The daemon emits every agent:stream:chunk,
+// agent:tool:call and agent:stream:status of a turn after admission, so the
+// first of them is concrete evidence the turn got past the gate — drop the
+// hint there too. Canonical isResponding alone still never clears it (see
+// canonicalSessionUpdates).
+agentSessionReducer.with(agentStreamUpdateReceived, (state, { payload: [update] }) => {
+  if (update.eventType !== 'chunk' && update.eventType !== 'content-blocks') return state;
+  return updateSessionFields(
+    state,
+    update.agentId,
+    streamingStartedFields(getSession(state, update.agentId)),
+  );
+});
+agentSessionReducer.with(streamStatusReceived, (state, { payload: [agentId] }) =>
+  updateSessionFields(state, agentId, streamingStartedFields(getSession(state, agentId))),
 );
 agentSessionReducer.with(chatInitialized, (state, { payload: [agentId, data] }) => {
   const session = getSession(state, agentId);

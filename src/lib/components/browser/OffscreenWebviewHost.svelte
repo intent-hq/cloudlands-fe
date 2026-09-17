@@ -7,10 +7,12 @@
    * layout, outside the keyed workspace surface.
    *
    * Candidates derive from the panel-layout slice (all hosted workspace
-   * layouts minus the displayed ones); a cap bounds guest memory, evicting
-   * by backgrounding time (see offscreen-webview-cache.ts). When a workspace
-   * is displayed again its tabs leave the candidate set and the visible
-   * EmbeddedBrowser re-registers the tab; when a workspace is
+   * layouts minus displayed workspaces and actual retained panel mounts);
+   * a cap bounds guest memory, evicting by backgrounding time (see
+   * offscreen-webview-cache.ts). Retained panel guests keep sole ownership,
+   * including while inactive. Cold offscreen-to-panel transitions and workspace
+   * surface eviction still recreate guests; this host does not transfer them.
+   * When a workspace is
    * archived/deleted its layout state is cleared (workspaceUnmounted), which
    * drops its entries here and destroys the guests.
    *
@@ -23,6 +25,7 @@
   import { untrack } from 'svelte';
   import { BROWSER_PANEL_PARTITION, BROWSER_PROTOCOLS } from '../../../shared/constants';
   import { selectOwnClientId } from '$store/renderer/slices/browser-clients/browser-clients-selectors';
+  import { selectMountedBrowserTabLeases } from '$store/renderer/slices/tab-state/tab-state-selectors';
   import { selectPanelLayoutWorkspaces } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
   import { offscreenWebview } from './offscreen-webview-action';
@@ -43,6 +46,7 @@
 
   const layouts$ = selectPanelLayoutWorkspaces();
   const ownClientId$ = selectOwnClientId();
+  const mountedBrowserTabLeases$ = selectMountedBrowserTabLeases();
 
   function isKeepAliveUrl(url: string): boolean {
     try {
@@ -61,12 +65,14 @@
   const candidates = $derived.by(() => {
     const out: OffscreenWebviewCandidate[] = [];
     const ownClientId = $ownClientId$;
+    const mountedTabs = $mountedBrowserTabLeases$;
     for (const [workspaceId, layout] of Object.entries($layouts$)) {
       if (!excludedWorkspaceIds.has(workspaceId)) {
         for (const panel of Object.values(layout.panels)) {
           for (const tab of panel.tabs) {
             if (
               tab.type !== 'browser' ||
+              mountedTabs[tab.id] ||
               !tab.browserUrl ||
               !isKeepAliveUrl(tab.browserUrl) ||
               !isHostedHere(tab, ownClientId)
@@ -84,7 +90,8 @@
         }
       }
       // Hidden (user-closed) owned tabs have no visible EmbeddedBrowser even
-      // in the displayed workspace, so they always mount here — pinned, kept
+      // in the displayed workspace, so they mount here after any outgoing panel
+      // mount releases its lease — pinned, kept
       // alive until agent deletion or workspace archive/delete
       // (monorepo#2857). hiddenTabs is a Collection; read its ids/map here
       // since components must not import collection-utils.
@@ -93,6 +100,7 @@
         if (
           !tab ||
           tab.type !== 'browser' ||
+          mountedTabs[tab.id] ||
           !tab.browserUrl ||
           !isKeepAliveUrl(tab.browserUrl) ||
           !isHostedHere(tab, ownClientId)

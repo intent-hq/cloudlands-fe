@@ -7,8 +7,20 @@ import {
   formatSvelteError,
   type SvelteErrorInfo,
 } from './svelte-error-resolver';
+import { isStaleWebviewGuestError, staleWebviewGuestId } from './webview-error-suppression';
 
 const logger = new Logger('ErrorHandler');
+
+// Electron's renderer WebViewImpl keeps a stale guestInstanceId after the guest webContents is
+// destroyed (e.g. the guest page called window.close()); removing the <webview> then runs
+// disconnectedCallback → detachGuest → getGuestForFrame, which throws `Invalid guestInstanceId: N`.
+// The guest is already gone, so this is a harmless upstream quirk, not an app error.
+function warnStaleWebviewGuest(source: string, input: unknown): void {
+  logger.warn(
+    // i18n-ignore (developer log message)
+    `[ErrorHandler] Suppressing Electron stale-guest detach error in ${source} (guestInstanceId ${staleWebviewGuestId(input)})`,
+  );
+}
 
 export interface AppError {
   id: string;
@@ -83,6 +95,13 @@ class ErrorHandler {
             '[ErrorHandler] Suppressing Svelte effect depth error to prevent infinite loop:',
             errorMessage,
           );
+          return;
+        }
+
+        // Suppress Electron's stale-guest <webview> detach error (see warnStaleWebviewGuest)
+        if (isStaleWebviewGuestError(event.error ?? event.message)) {
+          warnStaleWebviewGuest('error event', event.error ?? event.message);
+          event.preventDefault();
           return;
         }
 
@@ -166,6 +185,13 @@ class ErrorHandler {
           return;
         }
 
+        // Suppress Electron's stale-guest <webview> detach error (see warnStaleWebviewGuest)
+        if (isStaleWebviewGuestError(event.reason)) {
+          warnStaleWebviewGuest('unhandledrejection', event.reason);
+          event.preventDefault();
+          return;
+        }
+
         // Suppress bits-ui cleanup errors during component unmount
         // These occur when bits-ui internal event handlers fire after component destruction
         // Known issue: https://github.com/huntabyte/bits-ui/discussions/1302
@@ -224,6 +250,12 @@ class ErrorHandler {
     // Uses the robust utility that handles all known Monaco error patterns
     if (shouldSuppressMonacoUnhandledRejection(error)) {
       return 'suppressed-monaco-error';
+    }
+
+    // Suppress Electron's stale-guest <webview> detach error (see warnStaleWebviewGuest)
+    if (isStaleWebviewGuestError(error)) {
+      warnStaleWebviewGuest('handleError', error);
+      return 'suppressed-webview-stale-guest-error';
     }
 
     // Suppress bits-ui cleanup errors during component unmount

@@ -2,7 +2,7 @@ import { tv } from 'tailwind-variants';
 import { OPTION_LIST_ROW_CLASS } from '$lib/styles/option-list-row';
 
 export const menuItem = tv({
-  base: `${OPTION_LIST_ROW_CLASS} group/menu-item relative z-10 flex w-full min-w-0 cursor-default select-none items-center justify-start gap-2 border-none bg-transparent text-left transition-colors duration-spring-fast ease-spring-fast focus:text-foreground focus-visible:outline-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 motion-reduce:transition-none`,
+  base: `${OPTION_LIST_ROW_CLASS} group/menu-item relative z-10 flex w-full min-w-0 cursor-default select-none items-center gap-2 border-none bg-transparent transition-colors duration-spring-fast ease-spring-fast focus:text-foreground focus-visible:outline-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 motion-reduce:transition-none`,
   variants: {
     inset: { true: 'pl-8' },
   },

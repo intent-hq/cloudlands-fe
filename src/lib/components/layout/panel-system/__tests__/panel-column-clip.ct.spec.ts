@@ -19,9 +19,7 @@ function measureGeometry(component: Locator) {
     const readGeometry = () => {
       const column = document.querySelector('[data-testid="panel-column"]') as HTMLElement;
       const inset = document.querySelector('[data-testid="panel-workspace-inset"]') as HTMLElement;
-      const canvas = inset
-        ?.querySelector('.panel-canvas-resize-handle')
-        ?.closest('.panel-canvas-frame') as HTMLElement | null;
+      const canvas = inset?.querySelector('.panel-canvas-frame') as HTMLElement | null;
       const panels = Array.from(
         document.querySelectorAll<HTMLElement>('.panel-split-container > .panel-split-child'),
       );
@@ -69,11 +67,7 @@ function measureGeometry(component: Locator) {
 async function stableCanvasWidths(component: Locator) {
   return component.evaluate(async () => {
     const sample = () =>
-      (
-        document
-          .querySelector('.panel-canvas-resize-handle')
-          ?.closest('.panel-canvas-frame') as HTMLElement | null
-      )?.offsetWidth ?? null;
+      document.querySelector<HTMLElement>('.panel-canvas-frame')?.offsetWidth ?? null;
     const widths = [sample()];
     await new Promise(requestAnimationFrame);
     widths.push(sample());
@@ -90,15 +84,6 @@ async function expectStableCanvasWidth(component: Locator, expectedWidth: number
       return widths.every((width) => width === expectedWidth) ? widths[0] : null;
     })
     .toBe(expectedWidth);
-}
-
-async function resetCanvasToAutomatic(component: Locator) {
-  await component
-    .locator('.panel-canvas-resize-handle')
-    .evaluate((handle) => handle.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })));
-  const column = component.getByTestId('panel-column');
-  await expect(column).toHaveAttribute('data-persisted-canvas-width', 'null');
-  await expect(column).toHaveAttribute('data-canvas-width-source', 'null');
 }
 
 /**
@@ -228,7 +213,7 @@ for (const mode of ['uncontained', 'contained'] as const) {
   const testName =
     mode === 'uncontained'
       ? 'fits viewport changes while retaining the explicit width preference'
-      : 'releases local width after an automatic reset in contained mode';
+      : 'retains explicit width when the containing viewport changes';
   test(testName, async ({ mount }) => {
     const component = await mount(PanelWorkspaceColumnClipHarness, {
       props: {
@@ -243,14 +228,10 @@ for (const mode of ['uncontained', 'contained'] as const) {
     await expect
       .poll(async () => (await measureGeometry(component)).canvasOffsetWidth)
       .toBe(mode === 'uncontained' ? 760 - UNCONTAINED_INLINE_CHROME : 1208);
-    if (mode === 'contained') {
-      await resetCanvasToAutomatic(component);
-    } else {
-      await expect(component.getByTestId('panel-column')).toHaveAttribute(
-        'data-persisted-canvas-width',
-        '1208',
-      );
-    }
+    await expect(component.getByTestId('panel-column')).toHaveAttribute(
+      'data-persisted-canvas-width',
+      '1208',
+    );
     const resetWidth = (await measureGeometry(component)).canvasOffsetWidth!;
 
     await component
@@ -425,7 +406,9 @@ test('creates a fitted chat once without a post-creation resize flash', async ({
 });
 
 for (const zoomFactor of [1, 2]) {
-  test(`resizes the new chat canvas at ${zoomFactor * 100}% zoom`, async ({ mount }) => {
+  test(`resizes between new chat panels without changing the canvas at ${zoomFactor * 100}% zoom`, async ({
+    mount,
+  }) => {
     const component = await mount(PanelWorkspaceColumnClipHarness, {
       props: {
         scenario: 'create-agent',
@@ -439,7 +422,8 @@ for (const zoomFactor of [1, 2]) {
     });
     await expect.poll(async () => (await measureGeometry(component)).canvasOffsetWidth).toBe(1208);
     expect(await stableCanvasWidths(component)).toEqual([1208, 1208, 1208]);
-    const handle = component.locator('.panel-canvas-resize-handle');
+    const before = (await measureGeometry(component)).panelWidths;
+    const handle = component.locator('.panel-split-handle').first();
     await handle.evaluate(async (element) => {
       element.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, clientX: 100 }));
       document.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: 200 }));
@@ -447,7 +431,11 @@ for (const zoomFactor of [1, 2]) {
       document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, clientX: 200 }));
     });
 
-    await expect.poll(async () => (await measureGeometry(component)).canvasOffsetWidth).toBe(1308);
+    await expect
+      .poll(async () => (await measureGeometry(component)).panelWidths[0])
+      .toBeGreaterThan(before[0]);
+    expect((await measureGeometry(component)).panelWidths[1]).toBeLessThan(before[1]);
+    await expectStableCanvasWidth(component, 1208);
   });
 }
 

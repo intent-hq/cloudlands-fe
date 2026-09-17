@@ -1,4 +1,5 @@
-import type { Snippet } from 'svelte';
+import type { ComponentProps, Snippet } from 'svelte';
+import type { Switch } from '$lib/components/ui/switch';
 
 export type SettingsTab =
   | 'display'
@@ -45,7 +46,9 @@ interface ValueSetting<T> {
   store?: SettingStore<T>;
 }
 
-export interface SwitchSetting extends BaseSetting<'switch'>, ValueSetting<boolean> {}
+export interface SwitchSetting extends BaseSetting<'switch'>, ValueSetting<boolean> {
+  size?: ComponentProps<typeof Switch>['size'];
+}
 
 export interface SelectOption {
   value: string;

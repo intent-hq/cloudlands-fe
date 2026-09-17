@@ -416,6 +416,7 @@
   <SettingsForm
     {schema}
     embedded
+    compact={false}
     custom={defineSettingsCustomControls({
       'workspace-api-replayChars': replayCharsControl,
       'workspace-api-retentionDays': retentionDaysControl,

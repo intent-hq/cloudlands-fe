@@ -330,18 +330,7 @@ describe('RepoSelector mode tabs', () => {
     cleanup();
   });
 
-  it('keeps each mode label on one line', async () => {
-    const { container } = render(RepoSelector, { props: {} });
-    await openDropdown(container);
-
-    for (const label of ['Pick a repo', 'Copy local repo', 'New repo']) {
-      await waitFor(() => {
-        expect(screen.getByRole('button', { name: label }).className).toContain(
-          'whitespace-nowrap',
-        );
-      });
-    }
-  });
+  // Mode-label containment and activation are covered in initializer-pickers.ct.spec.ts.
 
   // Regression: PR #1031's merge reverted the tab order from PR #771
   // (intent-hq/monorepo#2148) — "Pick a repo" must stay the first tab.

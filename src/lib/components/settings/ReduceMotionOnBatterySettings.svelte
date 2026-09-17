@@ -16,6 +16,7 @@
             {
               kind: 'switch',
               id: 'reduce-motion-on-battery-switch',
+              size: 'sm',
               label: m.settings_appearance_reduceMotionOnBattery_label(),
               description: m.settings_appearance_reduceMotionOnBattery_description(),
               get: () => $reduceMotionOnBattery,
@@ -30,4 +31,4 @@
   );
 </script>
 
-<SettingsForm {schema} embedded />
+<SettingsForm {schema} embedded compact={false} />

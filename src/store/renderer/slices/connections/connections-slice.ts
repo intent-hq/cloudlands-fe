@@ -238,6 +238,9 @@ export const keychainSyncStateReceived = createAction<[result: KeychainSyncState
   'connections/keychainSyncStateReceived',
 );
 
+/** Clear the renderer's cached sync state without changing the backend setting. */
+export const keychainSyncStateCleared = createAction('connections/keychainSyncStateCleared');
+
 /**
  * A `connections:sync-status-changed` push arrived — a reconcile's
  * availability verdict changed. Ignored until the full state has been loaded
@@ -414,6 +417,9 @@ connectionsReducer.with(protocolMismatchModalDismissed, (state) => {
 });
 connectionsReducer.with(keychainSyncStateReceived, (state, { payload: [result] }) => {
   return { ...state, keychainSync: result };
+});
+connectionsReducer.with(keychainSyncStateCleared, (state) => {
+  return state.keychainSync === null ? state : { ...state, keychainSync: null };
 });
 connectionsReducer.with(keychainSyncStatusReceived, (state, { payload: [status] }) => {
   // Status alone cannot seed the state — `supported`/`enabled` are unknown

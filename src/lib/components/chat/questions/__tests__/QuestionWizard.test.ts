@@ -84,22 +84,22 @@ function currentOtherInput(): HTMLTextAreaElement {
 }
 
 describe('QuestionWizard', () => {
-  it('renders the fixed question header and RadioGroup rows', () => {
+  it('names the RadioGroup with the current question', () => {
     const { container } = setup();
     expect(screen.getByText('Question 1 of 3')).toBeTruthy();
     expect(container.querySelectorAll('[data-progress-segment]')).toHaveLength(0);
     expect(screen.queryByRole('button', { name: /back/i })).toBeNull();
-    expect(screen.getByText('Token storage')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: SINGLE.question })).toBeTruthy();
     expect(screen.getByRole('radiogroup', { name: SINGLE.question })).toBeTruthy();
     expect(screen.getAllByRole('radio')).toHaveLength(SINGLE.options.length);
   });
 
-  it('renders the counter, question header, Hide, and Dismiss controls', () => {
+  it('renders the counter, question, Hide, and Dismiss controls', () => {
     render(QuestionWizard, {
       props: { questions: [SINGLE, LAST], onDismiss: vi.fn() },
     });
     expect(screen.getByText('Question 1 of 2')).toBeTruthy();
-    expect(screen.getByText('Token storage')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: SINGLE.question })).toBeTruthy();
     expect(screen.getByRole('button', { name: /hide/i })).toBeTruthy();
     expect(screen.getByRole('button', { name: /dismiss/i })).toBeTruthy();
   });
@@ -150,7 +150,7 @@ describe('QuestionWizard', () => {
     const { onComplete } = setup();
     await fireEvent.click(screen.getByText('OS keychain'));
     expect(screen.getByText('Question 2 of 3')).toBeTruthy();
-    expect(screen.getByText('Scope')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: MULTI.question })).toBeTruthy();
     expect(onComplete).not.toHaveBeenCalled();
   });
 
@@ -576,21 +576,17 @@ describe('QuestionWizard', () => {
   });
 
   it('Hide requests collapse; collapsed renders the banner that re-expands on click', async () => {
-    const { container, onToggleCollapsed, rerender } = setup();
+    const { onToggleCollapsed, rerender } = setup();
     await fireEvent.click(screen.getByRole('button', { name: /hide/i }));
     expect(onToggleCollapsed).toHaveBeenCalledWith(true);
     await rerender({ collapsed: true });
     expect(screen.getByText('Click to expand')).toBeTruthy();
-    expect(screen.queryByText('Question 1 of 3')).toBeNull();
-    const wizard = container.querySelector('[data-question-wizard]');
-    expect(wizard?.className).toContain('bg-card');
-    expect(wizard?.className).toContain('rounded-(--radius-large)');
-    expect(wizard?.className).not.toContain('shadow');
+    await waitFor(() => expect(screen.queryByRole('radiogroup')).toBeNull());
     await fireEvent.click(screen.getByText('Agent Has Questions'));
     expect(onToggleCollapsed).toHaveBeenCalledWith(false);
   });
 
-  it('Dismiss from the expanded header opens the confirm dialog; confirming fires onDismiss', async () => {
+  it('Dismiss from the expanded footer opens the confirm dialog; confirming fires onDismiss', async () => {
     const onDismiss = vi.fn();
     const onToggleCollapsed = vi.fn();
     const onComplete = vi.fn();

@@ -7,9 +7,10 @@
   interface Props {
     message: string;
     details: string;
+    closeToast?: () => void;
   }
 
-  let { message, details }: Props = $props();
+  let { message, details, closeToast }: Props = $props();
   const dispatch = createEventDispatcher();
 
   async function copyDetails() {
@@ -17,10 +18,13 @@
   }
 </script>
 
-<div class="relative flex min-w-0 flex-1 items-start gap-2 pr-6" data-toast-layout="error-details">
+<div
+  class="error-details flex min-w-0 flex-1 items-start gap-2.5"
+  data-toast-layout="error-details"
+>
   <ToastGlyph variant="error" />
   <div class="min-w-0 flex-1">
-    <p class="type-body break-words font-medium text-foreground">{message}</p>
+    <p class="toast-title break-words font-medium text-foreground">{message}</p>
     <details class="mt-2 min-w-0 text-muted-foreground">
       <summary
         class="toast-details-summary type-caption inline-flex cursor-pointer items-center gap-2 text-muted-foreground select-none"
@@ -38,12 +42,23 @@
     </details>
   </div>
   <ToastCloseButton
-    onclick={() => dispatch('closeToast')}
+    inline
+    onclick={() => (closeToast ? closeToast() : dispatch('closeToast'))}
     ariaLabel={m.ui_toast_close_ariaLabel()}
   />
 </div>
 
 <style>
+  .toast-title {
+    font-size: var(--toast-title-size, 0.8125rem);
+    line-height: 1.35;
+    margin-top: max(0px, calc((1.5rem - var(--toast-title-size, 0.8125rem) * 1.35) / 2));
+  }
+
+  .error-details > :global([data-toast-glyph]) {
+    margin-top: 0.25rem;
+  }
+
   .toast-details-summary {
     list-style: none;
   }

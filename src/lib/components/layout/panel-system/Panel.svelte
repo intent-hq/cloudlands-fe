@@ -538,7 +538,8 @@
           {@const isActive = active && tab.id === panel.activeTabId}
           <div
             class="tab-content-wrapper h-full w-full"
-            class:hidden={!isActive}
+            class:hidden={!isActive && tab.type !== 'browser'}
+            class:browser-background={!isActive && tab.type === 'browser'}
             data-tab-id={tab.id}
             aria-hidden={!isActive}
             inert={!isActive}
@@ -611,10 +612,6 @@
     }
   }
 
-  .panel[data-empty-panel-shell='true']:not([data-focus-border-visible='true']) {
-    border-width: 0;
-  }
-
   .panel[data-empty-panel-shell='true'] {
     box-shadow: none;
   }
@@ -663,5 +660,14 @@
 
   .tab-content-wrapper.hidden {
     display: none;
+  }
+
+  /* Keep the original browser guest paintable without changing its viewport
+     or reparenting it. Nonbrowser editors retain display:none above. */
+  .tab-content-wrapper.browser-background {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    pointer-events: none;
   }
 </style>

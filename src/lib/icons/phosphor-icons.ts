@@ -1,4 +1,5 @@
 import type { Component } from 'svelte';
+import type { IconWeight } from 'phosphor-svelte';
 import AppleLogoIcon from 'phosphor-svelte/lib/AppleLogoIcon';
 import AlienIcon from 'phosphor-svelte/lib/AlienIcon';
 import ArchiveIcon from 'phosphor-svelte/lib/ArchiveIcon';
@@ -406,6 +407,13 @@ const iconComponents: Record<string, Component<any>> = {
 
 export function getPhosphorIconComponent(iconDefinition: IconDefinition): Component<any> {
   return iconComponents[iconDefinition.iconName] ?? QuestionIcon;
+}
+
+/** UI actions follow Phosphor's regular default; existing brand silhouettes stay unchanged. */
+export function getPhosphorIconWeight(iconDefinition: IconDefinition): IconWeight {
+  return iconDefinition.iconName === 'apple' || iconDefinition.iconName === 'github'
+    ? 'bold'
+    : 'regular';
 }
 
 export const faAlignLeft = icon('align-left');

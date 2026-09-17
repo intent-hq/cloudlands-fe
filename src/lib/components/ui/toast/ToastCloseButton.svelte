@@ -7,16 +7,17 @@
   interface Props {
     onclick: () => void;
     ariaLabel: string;
+    inline?: boolean;
   }
 
-  let { onclick, ariaLabel }: Props = $props();
+  let { onclick, ariaLabel, inline = false }: Props = $props();
 </script>
 
 <Button
   variant="ghost"
   size="icon-compact"
   iconOnly
-  class="toast-close-btn"
+  class={inline ? 'toast-close-btn toast-close-inline' : 'toast-close-btn'}
   {onclick}
   aria-label={ariaLabel}
 >
@@ -42,5 +43,10 @@
     outline: 1px solid hsl(var(--focus-ring));
     outline-offset: 2px;
     box-shadow: none;
+  }
+
+  :global(.toast-close-btn.toast-close-inline) {
+    position: static;
+    flex-shrink: 0;
   }
 </style>

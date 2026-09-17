@@ -80,6 +80,36 @@ describe('Select', () => {
     expect(listbox.getAttribute('aria-labelledby')).toBe('fruit-select');
   });
 
+  it.each([
+    { mode: 'inline', portal: false, staticPosition: false },
+    { mode: 'portalled', portal: true, staticPosition: false },
+  ])(
+    'restores trigger focus when Escape dismisses a focused $mode search field',
+    async ({ portal, staticPosition }) => {
+      render(SelectHarness, { props: { portal, staticPosition, searchable: true } });
+      const trigger = screen.getByRole('combobox', { name: 'Choose fruit' });
+      trigger.focus();
+      await fireEvent.keyDown(trigger, { key: 'Enter' });
+      const search = screen.getByRole('textbox', { name: 'Filter fruit' });
+      search.focus();
+      await fireEvent.keyDown(search, { key: 'Escape' });
+      await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
+      await waitFor(() => expect(document.activeElement).toBe(trigger));
+      expect(screen.getByTestId('select-value').textContent).toBe('apple');
+      expect(trigger.getAttribute('aria-expanded')).toBe('false');
+    },
+  );
+
+  it('does not restore trigger focus when a focused search field is dismissed outside', async () => {
+    render(SelectHarness, { props: { portal: true, searchable: true } });
+    const trigger = screen.getByRole('combobox', { name: 'Choose fruit' });
+    await fireEvent.keyDown(trigger, { key: 'Enter' });
+    screen.getByRole('textbox', { name: 'Filter fruit' }).focus();
+    await fireEvent.pointerDown(document.body);
+    await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
+    expect(document.activeElement).not.toBe(trigger);
+  });
+
   it('names an unlabelled combobox from its visible content and follows the selection', async () => {
     render(SelectHarness, { props: { unlabelled: true } });
     const trigger = await screen.findByRole('combobox', { name: 'Apple' });

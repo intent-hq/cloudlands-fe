@@ -296,6 +296,7 @@ describe('ChatPanel multi-panel context ownership', () => {
       'ResizeObserver',
       class {
         observe() {}
+        unobserve() {}
         disconnect() {}
       },
     );

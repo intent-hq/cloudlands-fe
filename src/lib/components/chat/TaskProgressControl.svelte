@@ -10,9 +10,10 @@
     faClock,
     faEllipsis,
     faEye,
-    faListCheck,
     faTriangleExclamation,
   } from '@fortawesome/free-solid-svg-icons';
+  import ListChecksIcon from 'phosphor-svelte/lib/ListChecksIcon';
+  import { CHAT_ICON_SIZE } from './chat-icon-size';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import ShimmerOverlay from '$lib/components/ui/ShimmerOverlay.svelte';
   import { DROPDOWN_SURFACE_CLASS } from '$lib/components/ui/dropdown-surface';
@@ -263,6 +264,7 @@
   testId: string,
   completedCount?: number,
   className = '',
+  expanded = false,
 )}
   <span
     class="inline-flex size-3.5 shrink-0 items-center justify-center rounded-full bg-background text-foreground leading-none {className}"
@@ -272,19 +274,26 @@
     data-completed-count={completedCount}
   >
     {#if status === 'running'}
-      <IntentMarkLoader size={8} class="size-2!" />
+      <IntentMarkLoader
+        size={expanded ? 14 : 8}
+        class={expanded ? 'size-(--row-icon-size-regular)!' : 'size-2!'}
+      />
     {:else}
       <Fa
         icon={statusIcon(status)}
-        size={status === 'pending' ? 6 : 8}
-        class={status === 'pending' ? 'size-1.5!' : 'size-2!'}
+        size={expanded ? 14 : status === 'pending' ? 6 : 8}
+        class={expanded
+          ? 'size-(--row-icon-size-regular)!'
+          : status === 'pending'
+            ? 'size-1.5!'
+            : 'size-2!'}
       />
     {/if}
   </span>
 {/snippet}
 
 {#snippet taskRowContent(task: TaskProgressItem)}
-  {@render statusIndicator(task.status, 'task-progress-row-status-icon', undefined, 'mt-0.5')}
+  {@render statusIndicator(task.status, 'task-progress-row-status-icon', undefined, 'mt-0.5', true)}
   <span
     class="line-clamp-2 min-w-0 flex-1 {task.status === 'completed'
       ? 'text-muted-foreground'
@@ -324,11 +333,11 @@
       >
         {#if presentation === 'checklist'}
           <span
-            class="inline-flex size-3.5 items-center justify-center"
+            class="inline-flex size-4 items-center justify-center"
             aria-hidden="true"
             data-testid="task-progress-checklist-icon"
           >
-            <Fa icon={faListCheck} size={14} class="size-3.5!" />
+            <ListChecksIcon size={CHAT_ICON_SIZE.compact} weight="regular" class="size-4!" />
           </span>
         {:else}
           <span

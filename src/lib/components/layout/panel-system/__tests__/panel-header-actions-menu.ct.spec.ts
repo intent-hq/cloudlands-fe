@@ -148,7 +148,7 @@ for (const [index, panelType] of panelTypes.entries()) {
     expect(actionGeometry.borderBottomWidth).toBe('0px');
     expect(actionGeometry.trigger).toEqual(['28px', '28px']);
     expect(actionGeometry.close).toEqual(['28px', '28px']);
-    expect(actionGeometry.closeGlyph).toEqual(['14px', '14px']);
+    expect(actionGeometry.closeGlyph).toEqual(['16px', '16px']);
     await expect(contentActions.locator('[data-panel-content-actions-divider]')).toHaveCount(0);
     await expect(panelControls.locator('[data-panel-controls-divider]')).toHaveCount(1);
     expect(

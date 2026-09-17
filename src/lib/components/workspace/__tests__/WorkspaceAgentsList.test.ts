@@ -115,7 +115,11 @@ describe('WorkspaceAgentsList single-line rows', () => {
     const backgroundRow = view.container.querySelector<HTMLElement>(
       `[data-agent-panel-row="${background.id}"]`,
     );
-    expect(backgroundRow?.querySelector('[data-agent-background-badge]')).toBeTruthy();
+    await fireEvent.click(backgroundRow!);
+    expect(onSelect).toHaveBeenLastCalledWith({
+      agentId: background.id,
+      event: expect.any(MouseEvent),
+    });
 
     await fireEvent.keyDown(longRow!, { key: 'Enter' });
     expect(onSelect).toHaveBeenCalledWith({

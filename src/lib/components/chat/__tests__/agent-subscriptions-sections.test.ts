@@ -1290,7 +1290,9 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
     expect(nativeTrigger.className).toContain('w-fit');
     for (const trigger of [nativeTrigger, linkedTrigger]) {
       expect(within(trigger).getByTestId('task-progress-checklist-icon')).toBeTruthy();
-      expect(trigger.querySelectorAll('[data-icon="list-check"]')).toHaveLength(1);
+      expect(
+        trigger.querySelectorAll('[data-testid="task-progress-checklist-icon"] svg'),
+      ).toHaveLength(1);
       expect(within(trigger).queryByTestId('task-progress-icon-stack')).toBeNull();
       expect(within(trigger).queryByTestId('task-progress-status-icon')).toBeNull();
       expect(within(trigger).queryByTestId('task-progress-overflow-indicator')).toBeNull();
@@ -1384,7 +1386,9 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
       expect(trigger.getAttribute('aria-label')).toBe(
         `Task progress: ${completed} of ${tasks.length} completed`,
       );
-      expect(trigger.querySelectorAll('[data-icon="list-check"]')).toHaveLength(1);
+      expect(
+        trigger.querySelectorAll('[data-testid="task-progress-checklist-icon"] svg'),
+      ).toHaveLength(1);
       expect(within(trigger).queryByTestId('task-progress-icon-stack')).toBeNull();
       expect(within(trigger).queryByTestId('task-progress-status-icon')).toBeNull();
       expect(within(trigger).queryByTestId('task-progress-overflow-indicator')).toBeNull();

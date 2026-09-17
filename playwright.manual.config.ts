@@ -3,6 +3,10 @@ import browserConfig from './playwright.config';
 
 export default defineConfig({
   ...browserConfig,
-  testMatch: ['**/catalog-manual-review.capture.spec.ts', '**/current-main-baseline.spec.ts'],
+  testMatch: [
+    '**/catalog-manual-review.capture.spec.ts',
+    '**/current-main-baseline.spec.ts',
+    '**/electron-browser-lifetime.spec.ts',
+  ],
   testIgnore: [],
 });

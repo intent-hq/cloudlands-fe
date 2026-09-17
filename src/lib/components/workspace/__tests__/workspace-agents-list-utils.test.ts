@@ -199,7 +199,6 @@ describe('getFlatWorkspaceAgentRows', () => {
     expect(list).toContain('<LazyAgentCard');
     expect(list).not.toContain('View agent tree');
     expect(sidebar).not.toContain('Agent orchestration');
-    expect(sidebar).toContain("{#if tabId !== 'agents' && tabId !== 'shell'}");
   });
 });
 

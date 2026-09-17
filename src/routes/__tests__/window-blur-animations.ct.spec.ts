@@ -222,3 +222,65 @@ test('teardown resumes retained targets and removes the focus observer', async (
   });
   await expect.poll(state).toBe('running');
 });
+
+for (const activation of ['mounted', 'class-change'] as const) {
+  test(`preserves delayed animations ${activation} while blurred`, async ({ mount, page }) => {
+    await mount(WindowBlurAnimationProbe);
+    await page.evaluate(() => {
+      document.documentElement.setAttribute('data-window-blurred', '');
+      const style = document.createElement('style');
+      style.textContent = `
+        @keyframes delayed-motion { to { opacity: .5; } }
+        .delayed-probe, .delayed-probe::before, .delayed-probe::after {
+          content: ''; display: block; width: 10px; height: 10px;
+          animation: delayed-motion 1s linear 60s both;
+        }
+      `;
+      document.head.append(style);
+    });
+    if (activation === 'class-change') {
+      await page.evaluate(() => {
+        const node = document.createElement('div');
+        node.id = 'delayed-probe';
+        document.body.append(node);
+      });
+    }
+    await page.evaluate((mode) => {
+      const node =
+        mode === 'mounted'
+          ? document.createElement('div')
+          : document.getElementById('delayed-probe')!;
+      node.id = 'delayed-probe';
+      node.className = 'delayed-probe';
+      if (mode === 'mounted') document.body.append(node);
+    }, activation);
+    const animations = () =>
+      page.locator('#delayed-probe').evaluate((node) =>
+        node.getAnimations({ subtree: true }).map((animation) => ({
+          state: animation.playState,
+          time: animation.currentTime,
+        })),
+      );
+    await expect.poll(animations).toEqual([
+      { state: 'paused', time: 0 },
+      { state: 'paused', time: 0 },
+      { state: 'paused', time: 0 },
+    ]);
+    await page.evaluate(async () => {
+      for (let i = 0; i < 4; i++) await new Promise(requestAnimationFrame);
+    });
+    expect(await animations()).toEqual([
+      { state: 'paused', time: 0 },
+      { state: 'paused', time: 0 },
+      { state: 'paused', time: 0 },
+    ]);
+    await page.evaluate(() => document.documentElement.removeAttribute('data-window-blurred'));
+    await expect
+      .poll(async () =>
+        (await animations()).every(
+          (animation) => animation.state === 'running' && Number(animation.time) > 0,
+        ),
+      )
+      .toBe(true);
+  });
+}

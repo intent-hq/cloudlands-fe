@@ -56,7 +56,9 @@ import {
   chatStreamingReconciled,
   chatTranscriptSnapshotApplied,
   streamCompleted,
+  streamStatusReceived,
 } from '../chat-state/chat-state-slice';
+import { agentStreamUpdateReceived } from '../workspace-agents/workspace-agents-stream-slice';
 import {
   isConversationStartLoaded,
   shouldRequestOlderHistory,
@@ -2492,6 +2494,89 @@ describe('agent-session-slice reducer', () => {
         const state = agentSessionReducer(queued(), setAgentStreaming('a1', true));
         expect(state.byAgentId['a1'].processQueueHint).toBeUndefined();
         expect(agentSessionReducer(state, setAgentStreaming('a1', true))).toBe(state);
+      });
+
+      // Prompt turns: the hint lands AFTER chatSendStarted (turn-start budget
+      // re-check) and no agent:stream:start ever follows, so only stream
+      // evidence can clear it.
+      const streamingThenQueued = () => {
+        let state = agentSessionReducer(queued(), chatSendStarted('a1', 'ws-1'));
+        expect(state.byAgentId['a1'].isStreaming).toBe(true);
+        expect(state.byAgentId['a1'].processQueueHint).toBeUndefined();
+        state = agentSessionReducer(state, setProcessQueueHint('a1', 2, 8, 'memory-budget'));
+        expect(state.byAgentId['a1'].processQueueHint?.waiting).toBe(true);
+        return state;
+      };
+      const streamUpdate = (eventType: 'started' | 'chunk' | 'content-blocks' | 'complete') =>
+        agentStreamUpdateReceived({
+          workspaceId: 'ws-1',
+          agentId: 'a1',
+          handlerSessionId: 'a1',
+          source: 'sendMessage',
+          eventType,
+          assistantMessageId: 'msg-1',
+        });
+
+      it('a tool call (content-blocks stream update) clears a hint set while isStreaming was already true', () => {
+        const state = agentSessionReducer(streamingThenQueued(), streamUpdate('content-blocks'));
+        expect(state.byAgentId['a1'].isStreaming).toBe(true);
+        expect(state.byAgentId['a1'].processQueueHint).toBeUndefined();
+      });
+
+      it('a text chunk stream update clears a hint set while isStreaming was already true', () => {
+        const state = agentSessionReducer(streamingThenQueued(), streamUpdate('chunk'));
+        expect(state.byAgentId['a1'].processQueueHint).toBeUndefined();
+      });
+
+      it('an agent:stream:status hint clears a hint set while isStreaming was already true', () => {
+        const state = agentSessionReducer(
+          streamingThenQueued(),
+          streamStatusReceived(
+            'a1',
+            { phase: 'prompt', message: 'Sent prompt…', level: 'info', timestamp: 1 },
+            false,
+          ),
+        );
+        expect(state.byAgentId['a1'].processQueueHint).toBeUndefined();
+      });
+
+      it('stream updates that are not turn evidence (started / complete) leave the hint alone', () => {
+        const base = streamingThenQueued();
+        for (const eventType of ['started', 'complete'] as const) {
+          const state = agentSessionReducer(base, streamUpdate(eventType));
+          expect(state.byAgentId['a1'].processQueueHint?.waiting).toBe(true);
+        }
+      });
+
+      it('a canonical agent:status-changed tick with isResponding alone leaves the hint alone', () => {
+        const state = agentSessionReducer(
+          streamingThenQueued(),
+          eventReceived('ws-1', {
+            id: 'evt-1',
+            workspaceId: 'ws-1',
+            timestamp: '2026-01-01T00:00:00.000Z',
+            type: 'agent:status-changed',
+            actor: { type: 'agent', id: 'a1' },
+            data: { agentId: 'a1', status: 'responding', isActive: true, isResponding: true },
+          } as any),
+        );
+        expect(state.byAgentId['a1'].processQueueHint?.waiting).toBe(true);
+      });
+
+      it('stream evidence for an agent without a hint is a no-op', () => {
+        const state = agentSessionReducer(queued(), chatSendStarted('a1', 'ws-1'));
+        expect(state.byAgentId['a1'].processQueueHint).toBeUndefined();
+        expect(agentSessionReducer(state, streamUpdate('content-blocks'))).toBe(state);
+        expect(
+          agentSessionReducer(
+            state,
+            streamStatusReceived(
+              'a1',
+              { phase: 'prompt', message: 'Sent prompt…', level: 'info', timestamp: 1 },
+              false,
+            ),
+          ),
+        ).toBe(state);
       });
     });
   });

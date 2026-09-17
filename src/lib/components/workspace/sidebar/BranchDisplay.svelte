@@ -34,6 +34,7 @@
   }
 
   let { workspaceId, trunkBranch, repoPath, repoType, canChangeTrunk }: Props = $props();
+  const fieldId = $props.id();
 
   const workspaceIdStore = writable('');
   $effect(() => {
@@ -139,6 +140,8 @@
       e.preventDefault();
       saveBranch();
     } else if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
       branchRename.active = false;
       branchRename.value = $workspace?.branch || '';
     }
@@ -165,22 +168,17 @@
 </script>
 
 <!-- Branch display/edit with trunk branch picker -->
-<div
-  class="grid grid-cols-[minmax(0,auto)_minmax(1rem,1fr)_auto] items-start gap-x-1 text-subtle text-xs mt-1 mb-2"
->
-  <p class="branch-label col-start-1 row-start-1 text-subtle leading-snug type-caption">
-    {m.workspace_sidebarChanges_codeLivesIn_label()}
-  </p>
-  <p
-    class="branch-label col-start-3 row-start-1 justify-self-end text-right text-subtle leading-snug type-caption"
-  >
-    {m.workspace_sidebarChanges_mergedInto_label()}
-  </p>
+<div class="flex min-w-0 flex-col gap-3 mt-1 mb-3" data-branch-summary>
+  <div class="flex min-w-0 flex-col gap-1">
+    <p
+      id={`${fieldId}-working`}
+      class="branch-label text-subtle leading-snug type-caption font-normal"
+    >
+      {m.workspace_sidebarChanges_codeLivesIn_label()}
+    </p>
 
-  <!-- Working branch -->
-  <div class="col-start-1 row-start-2 flex min-w-0 items-center">
-    <GitBranchIcon size={12} class="shrink-0 text-ghost" />
-    <div class="relative inline-flex min-w-0 items-center">
+    <!-- Working branch -->
+    <div class="min-w-0 w-full" data-branch-field="working">
       {#if branchRename.active}
         <Input
           bind:ref={branchRename.inputRef}
@@ -189,12 +187,18 @@
           onblur={saveBranch}
           onkeydown={handleBranchKeydown}
           disabled={branchRename.saving}
-          class="inline-edit-input relative z-10 min-w-[60px] max-w-[150px] rounded border-none bg-transparent px-1 py-0.5 text-ui leading-normal text-foreground outline-none transition-all duration-150 focus:outline-none! focus:ring-none! disabled:opacity-50"
+          size="compact"
+          aria-labelledby={`${fieldId}-working`}
+          class="text-ui font-normal"
           placeholder={m.workspace_sidebarHeader_branchName_placeholder()}
-          style="width: {Math.max(60, Math.min(150, (branchRename.value || '').length * 6 + 20))}px"
         />
       {:else}
-        <Tooltip side="top" disableCloseOnTriggerClick bind:open={branchCopy.workingTooltip}>
+        <Tooltip
+          class="w-full min-w-0"
+          side="top"
+          disableCloseOnTriggerClick
+          bind:open={branchCopy.workingTooltip}
+        >
           {#snippet content()}<span
               >{m.workspace_branchDisplay_workingOn_tooltip({
                 branch: $workspace?.branch || m.workspace_branchDisplay_noBranch_label(),
@@ -205,8 +209,10 @@
                 ><Fa icon={faCheck} size="xs" /></span
               >{/if}{/snippet}
           <Button
-            variant="ghost"
-            class="relative z-10 h-5 max-w-full cursor-text overflow-hidden text-ellipsis whitespace-nowrap rounded border-none bg-transparent px-1 py-0 text-left text-ui leading-normal text-subtle transition-all duration-150 hover:text-foreground hover:opacity-80 focus-visible:outline-none! disabled:cursor-default disabled:opacity-50"
+            variant="outline"
+            size="sm"
+            aria-labelledby={`${fieldId}-working ${fieldId}-working-value`}
+            class="w-full min-w-0 cursor-text justify-start text-left text-ui font-normal"
             onclick={(e) => {
               if (e.shiftKey && $workspace?.branch) {
                 navigator.clipboard.writeText($workspace.branch);
@@ -222,34 +228,28 @@
             }}
             disabled={!$workspace || branchRename.saving}
           >
+            {#snippet leadingIcon()}<GitBranchIcon size={14} class="text-subtle" />{/snippet}
             {#if $workspace}
-              {$workspace.branch || m.workspace_branchDisplay_noBranch_label()}
+              <span id={`${fieldId}-working-value`} class="truncate">
+                {$workspace.branch || m.workspace_branchDisplay_noBranch_label()}
+              </span>
             {/if}
           </Button>
         </Tooltip>
       {/if}
-      <span
-        aria-hidden="true"
-        class="pointer-events-none absolute z-0 rounded-(--radius-small) border transition-[inset,border-color,background-color] duration-(--motion-standard) ease-(--ease-standard) motion-reduce:transition-none {branchRename.active
-          ? '-inset-x-2 -inset-y-1.5 border-ring/60 bg-sidebar'
-          : '-inset-x-1 -inset-y-0.5 border-transparent bg-transparent'}"
-      ></span>
     </div>
   </div>
 
-  <!-- <span class="text-ghost mx-auto">→</span> -->
-  <div
-    class="col-start-2 row-start-2 self-center relative flex-1 ml-0.5 mr-1.5 bg-muted-foreground/70 text-subtle h-px flex items-end opacity-30"
-  >
-    <span class="absolute -right-0.5 top-1/2 transform -translate-y-1/2">→</span>
-  </div>
-
   <!-- Trunk branch picker -->
-  <div
-    class="col-start-3 row-start-2 justify-self-end flex items-center justify-end shrink-0 min-w-0 max-w-[min(100%,_10rem)]"
-  >
+  <div class="flex min-w-0 flex-col gap-1" data-branch-field="target">
+    <p
+      id={`${fieldId}-target`}
+      class="branch-label text-subtle leading-snug type-caption font-normal"
+    >
+      {m.workspace_sidebarChanges_mergedInto_label()}
+    </p>
     <Tooltip
-      class="min-w-0 max-w-full"
+      class="min-w-0 w-full"
       side="top"
       disableCloseOnTriggerClick
       bind:open={branchCopy.trunkTooltip}
@@ -263,7 +263,7 @@
             ><Fa icon={faCheck} size="xs" /></span
           >{/if}{/snippet}
       <div
-        class="flex items-center min-w-0 max-w-full"
+        class="min-w-0 w-full"
         role="button"
         tabindex="-1"
         onclick={(e) => {
@@ -283,13 +283,13 @@
       >
         {#if canChangeTrunk}
           <BranchSelector
-            variant="ghost"
+            variant="default"
             value={trunkBranch}
             {repoPath}
             {repoType}
             dropUp={false}
             portal={true}
-            triggerClass="pl-0 pr-0 py-0 h-5 text-ui"
+            triggerClass="h-(--control-height-small) text-ui font-normal text-foreground"
             hasTriggerIcon={false}
             onchange={async (e) => {
               try {
@@ -306,23 +306,15 @@
             }}
           />
         {:else}
-          <span class="h-5 leading-5 text-ui text-subtle truncate">
-            {trunkBranch || m.workspace_branchSelector_noBranchSelected_label()}
-          </span>
+          <Input
+            readonly
+            size="compact"
+            aria-labelledby={`${fieldId}-target`}
+            value={trunkBranch || m.workspace_branchSelector_noBranchSelected_label()}
+            class="text-ui font-normal cursor-default"
+          />
         {/if}
       </div>
     </Tooltip>
   </div>
 </div>
-
-<style>
-  @container (max-width: 250px) {
-    .branch-label {
-      display: none;
-    }
-  }
-
-  input.inline-edit-input::selection {
-    background: hsl(var(--ring) / 0.3);
-  }
-</style>

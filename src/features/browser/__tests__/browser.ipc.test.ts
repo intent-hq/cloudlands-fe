@@ -63,6 +63,21 @@ vi.mock('../../backend/main/tunnel-manager', () => ({
 vi.mock('../../backend/main/direct-relay', () => ({
   DirectRelay: mocks.DirectRelay,
 }));
+// The pooled-saved-remote cases drive the handler through the renderer's
+// `resolveBrowserLinkForOpen`, whose presentation deps (svelte-sonner toasts
+// via `notify`, the multi-MB compiled Paraglide bundle) are not under test
+// here. Unmocked, their cold transform+import (~7-8 s unloaded) runs inside
+// the first such test body and blows the 30 s budget on a cold cache or a
+// loaded host (intent-hq/intent#5228).
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { error: vi.fn(), warning: vi.fn() },
+}));
+vi.mock('$shared/paraglide/messages.js', () => ({
+  m: {
+    browser_embedded_resolveFailed_error: () => 'resolve failed',
+    browser_linkOpen_loopbackAmbiguity_warning: () => 'loopback ambiguity',
+  },
+}));
 
 type IpcHandler = (event: unknown, data: unknown) => Promise<any>;
 

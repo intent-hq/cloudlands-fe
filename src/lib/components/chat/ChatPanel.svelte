@@ -107,6 +107,7 @@
 
   import {
     sendMessage,
+    sendQueuedMessageNowRequested,
     initializeChatRequested,
     refreshChatTranscriptRequested,
     chatRebindStarted,
@@ -188,6 +189,7 @@
 
   import SuggestedPrompts from './SuggestedPrompts.svelte';
   import QuestionWizard, { type QuestionAnswer } from './questions/QuestionWizard.svelte';
+  import QuestionComposer from './questions/QuestionComposer.svelte';
   import {
     deriveMarkedQuestionRecoveryState,
     deriveWizardPendingQuestions,
@@ -692,6 +694,7 @@
 
   let scrollContainer = $state<HTMLDivElement>();
   let composerElement = $state<HTMLDivElement>();
+  let panelHeight = $state(0);
   let composerHeight = $state(0);
   let inputComponent = $state<SimpleRichInput>();
   // Rehydrate the transcript scroll state cached by the previous instance's
@@ -4675,26 +4678,18 @@
 
   // Handle sending a queued message immediately (interrupts current stream).
   // One atomic daemon call (`agent.sendQueuedMessageNow`, monorepo#1032): the
-  // send middleware needs only agentId/wsId/queuedMessageId — the daemon owns
+  // saga needs only agentId/wsId/queuedMessageId — the daemon owns
   // the entry's content/attachments and dequeues + delivers transactionally.
-  function handleSendQueuedMessageNow(messageId: string) {
-    const message = $queuedMessages$.find((m) => m.id === messageId);
-    if (!message || !workspace) return;
-
+  async function handleSendQueuedMessageNow(messageId: string) {
+    if (!workspace) throw new Error(m.agent_chatSend_sendNowRejected_error());
     logger.info('Send queued message now triggered', { messageId, agentId });
-
-    appStore.dispatch(
-      sendMessage(agentId, {
-        wsId: workspace.id,
-        text: message.content,
-        queuedMessageId: messageId,
-      }),
-    );
-
-    void performLocalSendCleanup({
-      clearInput: false,
-      followBottom: true,
-    });
+    const action = sendQueuedMessageNowRequested(agentId, workspace.id, messageId);
+    appStore.dispatch(action);
+    const outcome = await action.promise;
+    if (outcome === 'delivered') {
+      void performLocalSendCleanup({ clearInput: false, followBottom: true });
+    }
+    return outcome;
   }
 
   // Build workspace context string for agent messages
@@ -5417,7 +5412,7 @@
 <svelte:window
   onkeydown={(e) => {
     if (!isActive) return;
-    const isMac = /Mac|iPhone|iPad|iPod/.test(navigator.userAgent);
+    const isMac = navigator.platform.toUpperCase().includes('MAC');
     if (
       isPanelFocused &&
       !isFocusInEditableElement(e.target as Element | null) &&
@@ -5427,7 +5422,7 @@
       focusPrompt();
       return;
     }
-    if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
+    if (!e.defaultPrevented && matchesShortcut(e, 'mod+f', isMac)) {
       // Only open search if this panel is focused and active, and focus is not in terminal
       if (
         isPanelFocused &&
@@ -5471,6 +5466,7 @@
 
 <div
   bind:this={panelElement}
+  bind:clientHeight={panelHeight}
   class="chat-panel-container group/panel flex flex-col h-full w-full min-w-0 relative z-20"
   role="region"
   aria-label={agentName}
@@ -6555,11 +6551,6 @@
           </div>
         {/if}
 
-        <!-- Pending attention request (discussion/blocker) remains in transcript order. -->
-        {#if workspace?.id && agentId}
-          <AttentionRequestBanner {agentId} />
-        {/if}
-
         <!-- The utility stack owns short-chat surplus through its auto margin.
              It collapses naturally when transcript or expanded disclosure content overflows. -->
         <div class="mt-auto" data-testid="transcript-utility-stack">
@@ -6641,6 +6632,9 @@
           data-testid="chat-composer-controls-inner"
           onfocusout={flushPendingDraftWrite}
         >
+          {#if workspace?.id && agentId}
+            <AttentionRequestBanner {agentId} />
+          {/if}
           {#if isRetiredSession}
             <div
               class="flex w-full items-center justify-between gap-3 px-4 py-3 text-sm text-muted-foreground sm:px-6"
@@ -6679,96 +6673,102 @@
                 </Button>
               </div>
             {/if}
-            {#if pendingQuestions}
-              {#key pendingQuestions.messageId}
-                <div class="w-full" data-testid="question-wizard-slot">
-                  <QuestionWizard
-                    questions={pendingQuestions.questions}
-                    draftKey={wizardDraftKey(agentId, pendingQuestions.messageId)}
-                    collapsed={questionWizardCollapsed}
-                    onToggleCollapsed={(collapsed) => {
-                      // Can be invoked around the teardown frame after the
-                      // pending-questions source is already nulled.
-                      if (!pendingQuestions) return;
-                      questionWizardCollapsedOverride = {
-                        messageId: pendingQuestions.messageId,
-                        collapsed,
-                      };
-                      saveWizardCollapsed(
-                        wizardDraftKey(agentId, pendingQuestions.messageId),
-                        collapsed,
-                      );
-                    }}
-                    onComplete={handleQuestionWizardComplete}
-                    onDismiss={handleQuestionWizardDismiss}
-                  />
-                </div>
-              {/key}
-            {/if}
-            {#if (!pendingQuestions && !pendingQuestionRecoveryLoading) || questionWizardCollapsed}
-              <!-- Show suggested prompts for the last message only, when not streaming. -->
-              {#if suggestedPrompts.length > 0 && !deferTranscriptReveal}
-                <div
-                  class="w-full {isCompactMode ? 'pb-1' : 'pb-2'} {isChiefWorkspace
-                    ? 'px-0'
-                    : COMPOSER_INSET_CLASS}"
-                >
-                  <SuggestedPrompts
-                    prompts={suggestedPrompts}
-                    onSelect={handleSelectSuggestedPrompt}
-                    onEdit={handleEditSuggestedPrompt}
-                    compact={isCompactMode}
-                    showShortcutHints={isChatFocused}
-                    workspaceId={workspace?.id}
-                  />
-                </div>
-              {/if}
-              {#if draftManager.gateVisible}
-                <ChatDraftLoadingGate />
-              {/if}
-              <SimpleRichInput
-                bind:this={inputComponent}
-                bind:contextItems
-                bind:value={inputValue}
-                onvaluechange={(value) => {
-                  scheduleDraftWrite(value);
-                }}
-                onsubmit={handleSend}
-                onforcesubmit={handleForceSubmit}
-                onstop={handleStop}
-                onHistoryPrev={handleHistoryPrev}
-                onHistoryNext={handleHistoryNext}
-                disabled={!workspace || !$agentSession$}
-                inputLocked={draftManager.gateActive}
-                isStreaming={$agentSessionIsStreaming$}
-                isResponding={$agentIsResponding$}
-                {workspace}
-                currentContext={currentMainPanelContext}
-                {agentId}
-                selectedModel={hydratedInputModel}
-                compactMode={isCompactMode}
-                editorClassName={`${COMPOSER_INSET_CLASS} w-full`}
-                contentInsetClassName={`${COMPOSER_INSET_CLASS} w-full`}
-                actionBarEndClassName={COMPOSER_INSET_CLASS}
-                edgeDocked
-                externalDropTarget
-                requiresModelSwitchConfirmation={!canChangeProvider}
-                providerId={inputProviderId}
-              >
-                {#snippet queueRegion()}
-                  {#if queuedMessagesVisibility.showQueue}
-                    <QueuedMessageList
-                      bind:this={queuedMessageListRef}
-                      messages={visibleQueuedMessages}
-                      onedit={handleEditQueuedMessage}
-                      onremove={handleRemoveQueuedMessage}
-                      onsendnow={handleSendQueuedMessageNow}
-                      ondone={() => inputComponent?.focus?.()}
+            <QuestionComposer
+              expanded={!!pendingQuestions && !questionWizardCollapsed}
+              active={isActive && isChatFocused}
+              maxHeight={panelHeight > 0 ? panelHeight - 48 : undefined}
+            >
+              {#snippet question()}
+                {#if pendingQuestions}
+                  {#key pendingQuestions.messageId}
+                    <QuestionWizard
+                      questions={pendingQuestions.questions}
+                      draftKey={wizardDraftKey(agentId, pendingQuestions.messageId)}
+                      collapsed={questionWizardCollapsed}
+                      onToggleCollapsed={(collapsed) => {
+                        // Can be invoked around the teardown frame after the
+                        // pending-questions source is already nulled.
+                        if (!pendingQuestions) return;
+                        questionWizardCollapsedOverride = {
+                          messageId: pendingQuestions.messageId,
+                          collapsed,
+                        };
+                        saveWizardCollapsed(
+                          wizardDraftKey(agentId, pendingQuestions.messageId),
+                          collapsed,
+                        );
+                      }}
+                      onComplete={handleQuestionWizardComplete}
+                      onDismiss={handleQuestionWizardDismiss}
                     />
-                  {/if}
-                {/snippet}
-              </SimpleRichInput>
-            {/if}
+                  {/key}
+                {/if}
+              {/snippet}
+              {#if !pendingQuestionRecoveryLoading || pendingQuestions || questionWizardCollapsed}
+                <!-- Show suggested prompts for the last message only, when not streaming. -->
+                {#if suggestedPrompts.length > 0 && !deferTranscriptReveal}
+                  <div
+                    class="w-full {isCompactMode ? 'pb-2' : 'pb-3'} {isChiefWorkspace
+                      ? 'px-0'
+                      : COMPOSER_INSET_CLASS}"
+                  >
+                    <SuggestedPrompts
+                      prompts={suggestedPrompts}
+                      onSelect={handleSelectSuggestedPrompt}
+                      onEdit={handleEditSuggestedPrompt}
+                      compact={isCompactMode}
+                      showShortcutHints={isChatFocused}
+                      workspaceId={workspace?.id}
+                    />
+                  </div>
+                {/if}
+                {#if draftManager.gateVisible}
+                  <ChatDraftLoadingGate />
+                {/if}
+                <SimpleRichInput
+                  bind:this={inputComponent}
+                  bind:contextItems
+                  bind:value={inputValue}
+                  onvaluechange={(value) => {
+                    scheduleDraftWrite(value);
+                  }}
+                  onsubmit={handleSend}
+                  onforcesubmit={handleForceSubmit}
+                  onstop={handleStop}
+                  onHistoryPrev={handleHistoryPrev}
+                  onHistoryNext={handleHistoryNext}
+                  disabled={!workspace || !$agentSession$}
+                  inputLocked={draftManager.gateActive}
+                  isStreaming={$agentSessionIsStreaming$}
+                  isResponding={$agentIsResponding$}
+                  {workspace}
+                  currentContext={currentMainPanelContext}
+                  {agentId}
+                  selectedModel={hydratedInputModel}
+                  compactMode={isCompactMode}
+                  editorClassName={`${COMPOSER_INSET_CLASS} w-full`}
+                  contentInsetClassName={`${COMPOSER_INSET_CLASS} w-full`}
+                  actionBarEndClassName={COMPOSER_INSET_CLASS}
+                  edgeDocked
+                  externalDropTarget
+                  requiresModelSwitchConfirmation={!canChangeProvider}
+                  providerId={inputProviderId}
+                >
+                  {#snippet queueRegion()}
+                    {#if queuedMessagesVisibility.showQueue}
+                      <QueuedMessageList
+                        bind:this={queuedMessageListRef}
+                        messages={visibleQueuedMessages}
+                        onedit={handleEditQueuedMessage}
+                        onremove={handleRemoveQueuedMessage}
+                        onsendnow={handleSendQueuedMessageNow}
+                        ondone={() => inputComponent?.focus?.()}
+                      />
+                    {/if}
+                  {/snippet}
+                </SimpleRichInput>
+              {/if}
+            </QuestionComposer>
           {/if}
         </div>
       </div>

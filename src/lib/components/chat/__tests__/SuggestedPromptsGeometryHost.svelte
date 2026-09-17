@@ -14,6 +14,10 @@
   }
 
   let { compact = false, theme = 'light', width = 480, zoom = 1 }: Props = $props();
+  let selected = $state('');
+  let edited = $state('');
+  let selectionCount = $state(0);
+  let editCount = $state(0);
 
   const toolReference: ToolUseBlock = {
     type: 'tool_use',
@@ -32,12 +36,23 @@
         'Review the change.',
         'Review the implementation carefully and verify every focused behavior before continuing.',
       ]}
-      onSelect={() => {}}
+      onSelect={(prompt) => {
+        selected = prompt;
+        selectionCount += 1;
+      }}
+      onEdit={(prompt) => {
+        edited = prompt;
+        editCount += 1;
+      }}
       showShortcutHints
       {compact}
     />
     <div class="mt-4" data-testid="tool-call-reference">
       <ToolCall toolUse={toolReference} toolState="completed" result="done" />
     </div>
+    <output data-testid="selected-prompt">{selected}</output>
+    <output data-testid="edited-prompt">{edited}</output>
+    <output data-testid="selection-count">{selectionCount}</output>
+    <output data-testid="edit-count">{editCount}</output>
   </div>
 </section>

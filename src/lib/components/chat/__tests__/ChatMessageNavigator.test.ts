@@ -43,19 +43,22 @@ afterEach(() => {
 });
 
 describe('ChatMessageNavigator', () => {
-  it('keeps the mirrored chat button immediately before the stable down arrow', () => {
-    renderNavigator(true);
+  it('keeps navigation available while disabling scroll at the bottom, then restores scroll away from it', async () => {
+    const view = renderNavigator(true);
     const controls = screen.getByTestId('chat-header-navigation-controls');
     const buttons = controls.querySelectorAll('button');
     expect(buttons).toHaveLength(2);
     expect(buttons[0]).toBe(screen.getByTestId('chat-message-navigator-trigger'));
     expect(buttons[1]).toBe(screen.getByTestId('chat-scroll-to-bottom-button'));
     expect((buttons[1] as HTMLButtonElement).disabled).toBe(true);
-    const chatIcon = buttons[0].querySelector('[data-chat-message-navigator-chat-icon]');
-    expect(chatIcon?.classList.contains('size-3.5!')).toBe(true);
-    expect(chatIcon?.getAttribute('transform')).toBe('scale(-1, 1)');
-    expect(buttons[0].querySelector('[data-icon]')).toBeNull();
-    expect(buttons[1].querySelector('[data-icon]')?.classList.contains('size-4!')).toBe(true);
+    await fireEvent.click(buttons[1]);
+    expect(view.onScrollToBottom).not.toHaveBeenCalled();
+    await fireEvent.click(buttons[0]);
+    await screen.findByRole('combobox', { name: 'Filter user messages' });
+    await view.rerender({ isAtBottom: false });
+    expect((buttons[1] as HTMLButtonElement).disabled).toBe(false);
+    await fireEvent.click(buttons[1]);
+    expect(view.onScrollToBottom).toHaveBeenCalledOnce();
   });
 
   it('opens a valid searchable listbox and autofocuses its quiet field', async () => {

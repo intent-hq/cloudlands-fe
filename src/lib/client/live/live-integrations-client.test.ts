@@ -489,6 +489,36 @@ describe('LiveIntegrationsClient.githubPullRequest (github.pulls.get, §5.27)', 
     expect((await client.githubPullRequest('octo', 'intent', 42)).state).toBe('closed');
   });
 
+  it("collapses an open, non-draft PR with mergeableState 'queued' → 'queued'", async () => {
+    mockedRequest.mockResolvedValueOnce({ pull: { ...PULL_WIRE, mergeableState: 'queued' } });
+    const client = new LiveIntegrationsClient();
+
+    expect((await client.githubPullRequest('octo', 'intent', 42)).state).toBe('queued');
+  });
+
+  it.each([
+    ['merged', { state: 'closed', merged: true }],
+    ['closed', { state: 'closed' }],
+    ['draft', { draft: true }],
+  ] as const)("'%s' wins over mergeableState 'queued'", async (expected, overrides) => {
+    mockedRequest.mockResolvedValueOnce({
+      pull: { ...PULL_WIRE, ...overrides, mergeableState: 'queued' },
+    });
+    const client = new LiveIntegrationsClient();
+
+    expect((await client.githubPullRequest('octo', 'intent', 42)).state).toBe(expected);
+  });
+
+  it.each([undefined, 'clean', 'blocked', 'behind', 'dirty', 'unstable', 'unknown'])(
+    "keeps an open PR as 'open' when mergeableState is %s",
+    async (mergeableState) => {
+      mockedRequest.mockResolvedValueOnce({ pull: { ...PULL_WIRE, mergeableState } });
+      const client = new LiveIntegrationsClient();
+
+      expect((await client.githubPullRequest('octo', 'intent', 42)).state).toBe('open');
+    },
+  );
+
   it('throws when the daemon reports no such PR (pull: null)', async () => {
     mockedRequest.mockResolvedValueOnce({ pull: null });
     const client = new LiveIntegrationsClient();

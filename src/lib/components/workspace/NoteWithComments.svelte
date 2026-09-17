@@ -1016,15 +1016,29 @@
     // is what the pipeline would then apply. A save already in flight is not
     // safe either: the daemon dispatches requests concurrently, so the restore
     // could commit first — wait for its ack too. Mirrors the saga's own flush.
-    if (saveDebounceTimer) {
-      clearTimeout(saveDebounceTimer);
-      saveDebounceTimer = null;
-      void saveEditorContent();
-    }
-    await settleNoteContent(targetWorkspaceId, targetNoteId);
-    if (isComponentDestroyed || noteId !== targetNoteId || workspace?.id !== targetWorkspaceId) {
-      return;
-    }
+    // A keystroke typed while that settle is pending lands on the component
+    // debounce again, where the write-service cannot see it: settle only
+    // covers its own queue. Stage and settle until both are quiescent, so it
+    // is persisted as its own pre-restore version like the typing before the
+    // click, rather than dropped by the restored apply or merged onto the
+    // restored text by a save sent after the restore RPC (intent#4887).
+    // No iteration cap: a pass repeats only when the debounce is armed again
+    // during it (new typing, or the external-update stageUnsavedEdits
+    // fallback), and each such pass drains that debounce into the write-
+    // service before settling again, so the loop ends once outstanding
+    // writes have settled and nothing re-arms the debounce. Capping and
+    // dispatching anyway would recreate the bug.
+    do {
+      if (saveDebounceTimer) {
+        clearTimeout(saveDebounceTimer);
+        saveDebounceTimer = null;
+        void saveEditorContent();
+      }
+      await settleNoteContent(targetWorkspaceId, targetNoteId);
+      if (isComponentDestroyed || noteId !== targetNoteId || workspace?.id !== targetWorkspaceId) {
+        return;
+      }
+    } while (saveDebounceTimer);
 
     logger.info('[RestoreVersion] Dispatching restoreNoteVersion', {
       noteId: targetNoteId,
