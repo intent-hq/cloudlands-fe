@@ -2705,6 +2705,44 @@ describe('SidebarChangesPanel', () => {
       expect(container.querySelector('input[type="text"]')).toBeNull();
     });
 
+    it('keeps commit amend and the base-commit context menu owner-only', async () => {
+      const findCommitLabel = (container: HTMLElement) =>
+        Array.from(container.querySelectorAll('span')).find(
+          (el) => el.textContent?.trim() === 'feat: unpushed work',
+        ) as HTMLElement | undefined;
+
+      await seedBusyWorkspace('owner');
+      const owner = await renderPanel();
+      const ownerLabel = await waitFor(() => {
+        const el = findCommitLabel(owner.container);
+        expect(el).toBeTruthy();
+        return el!;
+      });
+      await fireEvent.contextMenu(ownerLabel);
+      await waitFor(() => {
+        expect(owner.container.querySelector('[data-testid="mock-component"]')).not.toBeNull();
+      });
+      await fireEvent.dblClick(ownerLabel);
+      await waitFor(() => {
+        expect(owner.container.querySelector('input.inline-edit-input')).not.toBeNull();
+      });
+      owner.unmount();
+
+      await seedBusyWorkspace('collaborator');
+      const { container } = await renderPanel();
+      const label = await waitFor(() => {
+        const el = findCommitLabel(container);
+        expect(el).toBeTruthy();
+        return el!;
+      });
+      const before = container.querySelectorAll('[data-testid="mock-component"]').length;
+      await fireEvent.contextMenu(label);
+      await fireEvent.dblClick(label);
+      await new Promise((r) => setTimeout(r, 0));
+      expect(container.querySelectorAll('[data-testid="mock-component"]').length).toBe(before);
+      expect(container.querySelector('input.inline-edit-input')).toBeNull();
+    });
+
     it('hides Create PR / Merge from a collaborator with committed work and no PR', async () => {
       mockFileTrackingStore.commits = [
         makeCommit({ hash: 'c1', message: 'feat: ready to ship', isPushed: false }),
