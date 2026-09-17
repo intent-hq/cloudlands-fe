@@ -1070,6 +1070,8 @@
   "workspace_branchDisplay_shiftClickCopy_label": "Shift+click to copy",
   "workspace_branchDisplay_trunkChange_tooltip": "Trunk branch - click to change",
   "workspace_branchDisplay_trunkLocked_tooltip": "Trunk branch (cannot change after pushing)",
+  "workspace_branchDisplay_trunkOwnerOnly_tooltip": "Trunk branch (only the workspace owner can change it)",
+  "workspace_branchDisplay_workingOnReadOnly_tooltip": "Working on the {branch} branch (only the workspace owner can rename it).",
   "workspace_branchDisplay_workingOn_tooltip": "Working on the {branch} branch. Click to change name.",
   "workspace_branchSelector_completeAuth_description": "Complete authorization in your browser",
   "workspace_branchSelector_connectGithub_label": "Connect GitHub",

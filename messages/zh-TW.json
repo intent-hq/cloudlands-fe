@@ -1070,6 +1070,8 @@
   "workspace_branchDisplay_shiftClickCopy_label": "Shift+點選複製",
   "workspace_branchDisplay_trunkChange_tooltip": "主幹分支——點選更改",
   "workspace_branchDisplay_trunkLocked_tooltip": "主幹分支（推送後無法更改）",
+  "workspace_branchDisplay_trunkOwnerOnly_tooltip": "主幹分支（只有工作區擁有者可以更改）",
+  "workspace_branchDisplay_workingOnReadOnly_tooltip": "正在 {branch} 分支上工作（只有工作區擁有者可以重新命名）。",
   "workspace_branchDisplay_workingOn_tooltip": "正在 {branch} 分支上工作。點選更改名稱。",
   "workspace_branchSelector_completeAuth_description": "請在瀏覽器中完成授權",
   "workspace_branchSelector_connectGithub_label": "連線 GitHub",
