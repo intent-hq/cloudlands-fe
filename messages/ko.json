@@ -1625,6 +1625,10 @@
   "workspace_progressCard_base_label": "베이스 {ref}",
   "workspace_progressCard_copied_label": "복사됨",
   "workspace_progressCard_copyPath_ariaLabel": "작업 공간 경로 복사",
+  "workspace_progressCard_presenceOnAgent_tooltip": "{name} · {agent} 보는 중",
+  "workspace_progressCard_presenceOnNote_tooltip": "{name} · {note} 보는 중",
+  "workspace_progressCard_presenceInWorkspace_tooltip": "{name} · 이 워크스페이스에 있음",
+  "workspace_progressCard_presenceOffline_tooltip": "{name} · 오프라인",
   "workspace_checkoutModePill_tooltip": "체크아웃 모드: {label}",
   "workspace_checkoutModePill_cow_label": "CoW",
   "workspace_checkoutModePill_worktree_label": "워크트리",
@@ -6410,11 +6414,6 @@
   "presence_typing_one": "{name}님이 입력 중…",
   "presence_typing_two_label": "{first}님과 {second}님이 입력 중…",
   "presence_typing_many": "{first}님 외 {count}명이 입력 중…",
-  "workspace_hoverCard_people_label": "사람",
-  "workspace_hoverCard_personViewing_label": "보는 중",
-  "workspace_hoverCard_personOnline_label": "온라인",
-  "workspace_hoverCard_personOffline_label": "오프라인",
-  "workspace_hoverCard_personRemove_ariaLabel": "{name} 제거",
   "presence_avatarStack_onlyYou_label": "여기에는 나만 있습니다",
   "presence_person_you_label": "{name} (나)"
 }

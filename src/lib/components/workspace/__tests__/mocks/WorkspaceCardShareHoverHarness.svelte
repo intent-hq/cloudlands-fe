@@ -6,17 +6,6 @@
   import { WorkspaceId } from '$shared/types/branded-ids';
   import { store as appStore } from '$store/renderer/store';
   import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
-  import {
-    selectShareDialogOpen,
-    selectShareWorkspaceId,
-    selectWorkspaceRosterRemovingPrincipalId,
-  } from '$store/renderer/slices/workspace-share/workspace-share-selectors';
-  import { selectWorkspacePresencePeople } from '$store/renderer/slices/presence/presence-selectors';
-  import {
-    presenceMembersReceived,
-    presenceOwnPrincipalReceived,
-    presenceRosterReceived,
-  } from '$store/renderer/slices/presence/presence-slice';
 
   let { scenario = 'default' }: { scenario?: string } = $props();
 
@@ -41,65 +30,14 @@
     memberCount: 2,
   };
   appStore.dispatch(setWorkspaceEntity(workspace));
-  appStore.dispatch(presenceOwnPrincipalReceived('p-alice'));
-  appStore.dispatch(
-    presenceMembersReceived(workspaceId, [
-      {
-        principalId: 'p-alice',
-        login: 'alice',
-        displayName: 'Alice',
-        avatarUrl: null,
-        role: 'owner',
-        addedAt: '2026-09-01T00:00:00Z',
-      },
-      {
-        principalId: 'p-bob',
-        login: 'bob',
-        displayName: null,
-        avatarUrl: null,
-        role: 'collaborator',
-        addedAt: '2026-09-02T00:00:00Z',
-      },
-    ]),
-  );
-  // The people selector shows nothing while nobody else is online; put bob on
-  // the roster so the roster section renders.
-  appStore.dispatch(
-    presenceRosterReceived({
-      workspaceId,
-      members: [
-        {
-          principalId: 'p-bob',
-          login: 'bob',
-          displayName: null,
-          avatarUrl: null,
-          focus: [{ workspaceId }],
-          typing: [],
-        },
-      ],
-    }),
-  );
-
-  const dialogOpen$ = selectShareDialogOpen();
-  const dialogWorkspaceId$ = selectShareWorkspaceId();
-  const people$ = selectWorkspacePresencePeople(workspaceId);
-  const removingPrincipalId$ = selectWorkspaceRosterRemovingPrincipalId(workspaceId);
 </script>
 
-<output
-  data-share-hover-state
-  data-dialog-open={String($dialogOpen$)}
-  data-dialog-workspace-id={$dialogWorkspaceId$ ?? ''}
-  data-member-count={$people$.length}
-  data-removing-principal-id={$removingPrincipalId$ ?? ''}
-></output>
 <div
   class="flex items-start bg-sidebar p-6 text-sidebar-foreground"
   style:width="900px"
   style:height="400px"
 >
-  <!-- First in DOM order so Tab from the row still reaches the portaled card;
-       laid out top-right, away from the pointer parking spot. -->
+  <!-- Laid out top-right, away from the row and the pointer parking spot. -->
   <!-- i18n-ignore (test fixture) -->
   <button type="button" class="order-last ml-auto self-start" data-share-hover-outside>
     Elsewhere
