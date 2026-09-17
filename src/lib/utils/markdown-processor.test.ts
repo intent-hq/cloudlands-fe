@@ -463,6 +463,38 @@ describe('markdown-processor blank-line round trip', () => {
     expect(html.match(/<li/g)).toHaveLength(4);
   });
 
+  it('keeps one bullet list when blank lines follow a lazy continuation line', async () => {
+    const html = await processMarkdownToHTML('- a\ncontinued\n\n\n- b');
+
+    expect(countEmptyParagraphs(html)).toBe(0);
+    expect(html.match(/<ul/g)).toHaveLength(1);
+    expect(html.match(/<li/g)).toHaveLength(2);
+  });
+
+  it('keeps one ordered list when blank lines follow a lazy continuation line', async () => {
+    const html = await processMarkdownToHTML('1. a\ncontinued\n\n\n2. b');
+
+    expect(countEmptyParagraphs(html)).toBe(0);
+    expect(html.match(/<ol/g)).toHaveLength(1);
+    expect(html.match(/<li/g)).toHaveLength(2);
+  });
+
+  it('keeps one list when a lazy continuation follows a nested item', async () => {
+    const html = await processMarkdownToHTML('- a\n  - nested\ncontinued\n\n\n- b');
+
+    expect(countEmptyParagraphs(html)).toBe(0);
+    expect(html.match(/<ul/g)).toHaveLength(2);
+    expect(html.match(/<li/g)).toHaveLength(3);
+  });
+
+  it('ends list context at a heading so a later blank-line run still expands', async () => {
+    const html = await processMarkdownToHTML('- a\ncontinued\n# H\n\n\n- b');
+
+    expect(countEmptyParagraphs(html)).toBe(1);
+    expect(html.match(/<ul/g)).toHaveLength(2);
+    expect(html).toContain('<h1>H</h1>');
+  });
+
   it('round-trips an empty paragraph between a paragraph and a list', async () => {
     const markdown = processHTMLToMarkdown('<p>a</p><p></p><ul><li><p>item</p></li></ul>');
 
