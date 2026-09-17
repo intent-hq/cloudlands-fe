@@ -135,12 +135,27 @@ export function collectRun({ runId, repo, attempt, runner }) {
   const resolvedAttempt = attempt ?? jobsPayload?.jobs?.[0]?.run_attempt;
 
   const warnings = [];
+  // Artifacts are run-wide and carry no attempt number, so a re-run overwrites
+  // them: for a non-latest attempt only that attempt's job logs are trustworthy.
+  let useArtifacts = true;
+  if (attempt !== undefined) {
+    const latest = runner.api(`repos/${repo}/actions/runs/${runId}`)?.run_attempt;
+    if (latest !== undefined && latest !== attempt) {
+      useArtifacts = false;
+      warnings.push(
+        `artifacts are run-wide; attempt ${attempt} is not the latest (${latest}), using job logs`,
+      );
+    }
+  }
   let artifacts;
   const shards = jobs.map((job) => {
     if (job.conclusion === 'success') return { ...job, source: null, cases: [] };
-    artifacts ??= runner.api(`repos/${repo}/actions/runs/${runId}/artifacts?per_page=100`);
     const name = `playwright-ct-report-${job.shard}-of-${job.shardCount}`;
-    const artifact = (artifacts?.artifacts ?? []).find((a) => a?.name === name && !a.expired);
+    let artifact;
+    if (useArtifacts) {
+      artifacts ??= runner.api(`repos/${repo}/actions/runs/${runId}/artifacts?per_page=100`);
+      artifact = (artifacts?.artifacts ?? []).find((a) => a?.name === name && !a.expired);
+    }
     const report = artifact ? runner.jsonReport(repo, runId, name) : null;
     if (report) return { ...job, source: 'json', cases: casesFromJsonReport(report) };
     const fullLog = runner.jobLog(repo, job.jobId);

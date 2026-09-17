@@ -144,6 +144,7 @@ function fakeRunner({
   logs = {} as Record<number, string>,
   jobs = JOBS,
   artifacts = ARTIFACTS,
+  latestAttempt = 1,
 } = {}) {
   const calls: string[] = [];
   const runner = {
@@ -151,6 +152,7 @@ function fakeRunner({
       calls.push(`api ${path}`);
       if (path.includes('/artifacts')) return artifacts;
       if (path.includes('/jobs')) return jobs;
+      if (path.endsWith(`/actions/runs/${RUN_ID}`)) return { run_attempt: latestAttempt };
       throw new Error(`unexpected api path ${path}`);
     },
     jobLog: (_repo: string, jobId: number) => {
@@ -294,6 +296,52 @@ describe('collectRun shard resolution', () => {
       expect.stringMatching(/^shard 3\/4: required-lane step not found/),
       expect.stringMatching(/^shard 3\/4: no JSON report artifact/),
     ]);
+  });
+
+  it('uses only job logs for a non-latest --attempt because artifacts are run-wide', () => {
+    const attempt1Jobs = {
+      total_count: 1,
+      jobs: [
+        { id: 33, name: 'Component Tests (shard 2/4)', conclusion: 'failure', run_attempt: 1 },
+      ],
+    };
+    const log = [...requiredLaneHeader(2), ...REQUIRED_FAILED_SUMMARY].join('\n');
+    const { runner, calls } = fakeRunner({
+      jobs: attempt1Jobs,
+      logs: { 33: log },
+      latestAttempt: 2,
+    });
+    const { shards, attempt, warnings } = collectRun({
+      runId: RUN_ID,
+      repo: DEFAULT_REPO,
+      attempt: 1,
+      runner,
+    });
+    expect(attempt).toBe(1);
+    // Shard 2's artifact holds a JSON report (attempt 2's); it must not be read.
+    expect(shards[0].source).toBe('log');
+    expect(shards[0].cases).toEqual([REQUIRED_CASE]);
+    expect(warnings[0]).toBe(
+      'artifacts are run-wide; attempt 1 is not the latest (2), using job logs',
+    );
+    expect(calls).toEqual([
+      `api repos/${DEFAULT_REPO}/actions/runs/${RUN_ID}/attempts/1/jobs?per_page=100`,
+      `api repos/${DEFAULT_REPO}/actions/runs/${RUN_ID}`,
+      'log 33',
+    ]);
+  });
+
+  it('keeps the artifact path for an explicit --attempt that is the latest', () => {
+    const { runner, calls } = fakeRunner({ logs: { 33: LOG_WITH_SUMMARY }, latestAttempt: 1 });
+    const { shards, warnings } = collectRun({
+      runId: RUN_ID,
+      repo: DEFAULT_REPO,
+      attempt: 1,
+      runner,
+    });
+    expect(shards[1].source).toBe('json');
+    expect(warnings).toEqual([expect.stringMatching(/^shard 3\/4: no JSON report artifact/)]);
+    expect(calls).toContain('download playwright-ct-report-2-of-4');
   });
 
   it('returns no shards for a run without CT jobs and never fetches artifacts', () => {
