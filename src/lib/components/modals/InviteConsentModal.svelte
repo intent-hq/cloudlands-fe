@@ -10,6 +10,7 @@
    * longer offered).
    */
   import { Button } from '$lib/components/ui/button';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import Fa from 'svelte-fa';
   import { faShieldHalved, faXmark } from '@fortawesome/free-solid-svg-icons';
   import Portal from '$lib/components/ui/Portal.svelte';
@@ -67,7 +68,7 @@
 {#if open && payload}
   <Portal target="body" zIndex={100}>
     <div
-      class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-[1px]"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-background/60 p-4 backdrop-blur-[1px]"
       role="presentation"
       onkeydown={handleKeydown}
       onclick={cancel}
@@ -141,11 +142,8 @@
             onOpen={handleOpen}
           />
           {#if waiting}
-            <div class="flex items-center gap-2 text-sm text-subtle" role="status">
-              <span
-                aria-hidden="true"
-                class="size-3.5 shrink-0 animate-spin rounded-full border-2 border-current border-r-transparent motion-reduce:animate-none"
-              ></span>
+            <div class="flex items-center gap-2 text-sm text-subtle">
+              <IntentMarkLoader size={14} class="shrink-0" />
               <span>{m.inviteConsent_modal_waiting_label()}</span>
             </div>
           {/if}
