@@ -91,8 +91,13 @@ test('Files menu keyboard navigation executes each mock action once and restores
   ];
   for (let index = 0; index < expected.length; index += 1) {
     await page.keyboard.press('Space');
+    await expect(page.getByRole('menu')).toBeVisible();
     await page.keyboard.press('Home');
-    for (let step = 0; step < index; step += 1) await page.keyboard.press('ArrowDown');
+    await expect(items.first()).toBeFocused();
+    for (let step = 0; step < index; step += 1) {
+      await page.keyboard.press('ArrowDown');
+      await expect(items.nth(step + 1)).toBeFocused();
+    }
     await page.keyboard.press('Enter');
     await expect(page.getByRole('menu')).toHaveCount(0);
     await expect(trigger).toBeFocused();
@@ -247,8 +252,12 @@ for (const width of [360, 248]) {
     expect(focus.outline).not.toBe('none');
     expect(focus.outlineWidth).toBeGreaterThan(0);
     await page.keyboard.press('Enter');
+    await expect(page.getByRole('menu')).toBeVisible();
+    const items = page.getByRole('menuitem');
     await page.keyboard.press('Home');
+    await expect(items.first()).toBeFocused();
     await page.keyboard.press('ArrowDown');
+    await expect(items.nth(1)).toBeFocused();
     await page.keyboard.press('Enter');
     await expect(page.getByRole('menu')).toHaveCount(0);
     await expect(trigger).toBeFocused();
