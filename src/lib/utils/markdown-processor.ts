@@ -468,6 +468,10 @@ const TASK_BLOCK_OPEN_REGEX = /^@@@tasks?(?:[ \t]|$)/;
 const TASK_BLOCK_CLOSE_REGEX = /^@@@\s*$/;
 const LIST_ITEM_REGEX = /^[ \t]*(?:[-*+]|\d+[.)])\s/;
 const INDENTED_LINE_REGEX = /^(?: {2,}|\t)/;
+// Blocks that interrupt a paragraph (CommonMark): ATX heading, blockquote,
+// thematic break, HTML block. Fences and `@@@task` openers are matched separately.
+const PARAGRAPH_INTERRUPT_REGEX =
+  /^ {0,3}(?:#{1,6}(?:[ \t]|$)|>|(?:\*[ \t]*){3,}$|(?:-[ \t]*){3,}$|(?:_[ \t]*){3,}$|<[a-zA-Z!/?])/;
 
 /**
  * Turn blank lines beyond the paragraph separator back into empty paragraphs.
@@ -490,9 +494,12 @@ function expandBlankLinesToEmptyParagraphs(markdown: string): string {
   let inTaskBlock = false;
   let pendingBlank: string[] = [];
   let sawContent = false;
-  // A list marker (at any indent) enters list context, indented continuation
-  // lines stay in it, and any other content line leaves it.
+  // A list marker (at any indent) enters list context; indented lines and lazy
+  // paragraph continuations (an unindented line directly after paragraph text)
+  // stay in it; a block boundary — an interrupting block, a fence, a task block,
+  // or a blank-line run followed by a non-list, non-indented line — leaves it.
   let inList = false;
+  let previousWasParagraphText = false;
 
   const pushEmptyParagraphs = (count: number): void => {
     for (let i = 0; i < count; i++) out.push('<p></p>', '');
@@ -531,11 +538,13 @@ function expandBlankLinesToEmptyParagraphs(markdown: string): string {
       ) {
         fence = null;
       }
+      previousWasParagraphText = false;
       continue;
     }
     if (inTaskBlock) {
       out.push(line);
       if (TASK_BLOCK_CLOSE_REGEX.test(line)) inTaskBlock = false;
+      previousWasParagraphText = false;
       continue;
     }
     if (line.trim() === '') {
@@ -543,19 +552,29 @@ function expandBlankLinesToEmptyParagraphs(markdown: string): string {
       continue;
     }
 
+    const followsBlankRun = pendingBlank.length > 0;
     flushBlankRun(line);
     sawContent = true;
     out.push(line);
-    if (LIST_ITEM_REGEX.test(line)) {
-      inList = true;
-    } else if (!INDENTED_LINE_REGEX.test(line)) {
-      inList = false;
-    }
 
     const openMatch = FENCE_OPEN_REGEX.exec(line);
+    const opensTaskBlock = !openMatch && TASK_BLOCK_OPEN_REGEX.test(line);
+    const interruptsParagraph =
+      openMatch !== null || opensTaskBlock || PARAGRAPH_INTERRUPT_REGEX.test(line);
+
+    if (LIST_ITEM_REGEX.test(line)) {
+      inList = true;
+    } else if (
+      !INDENTED_LINE_REGEX.test(line) &&
+      (interruptsParagraph || followsBlankRun || !previousWasParagraphText)
+    ) {
+      inList = false;
+    }
+    previousWasParagraphText = !interruptsParagraph;
+
     if (openMatch) {
       fence = { char: openMatch[1][0], length: openMatch[1].length };
-    } else if (TASK_BLOCK_OPEN_REGEX.test(line)) {
+    } else if (opensTaskBlock) {
       inTaskBlock = true;
     }
   }
