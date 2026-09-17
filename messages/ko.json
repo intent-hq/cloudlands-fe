@@ -1071,6 +1071,8 @@
   "workspace_branchDisplay_shiftClickCopy_label": "Shift+클릭으로 복사",
   "workspace_branchDisplay_trunkChange_tooltip": "트렁크 브랜치 - 클릭하여 변경",
   "workspace_branchDisplay_trunkLocked_tooltip": "트렁크 브랜치(푸시 후에는 변경 불가)",
+  "workspace_branchDisplay_trunkOwnerOnly_tooltip": "트렁크 브랜치(워크스페이스 소유자만 변경 가능)",
+  "workspace_branchDisplay_workingOnReadOnly_tooltip": "{branch} 브랜치에서 작업 중입니다(워크스페이스 소유자만 이름을 변경할 수 있음).",
   "workspace_branchDisplay_workingOn_tooltip": "{branch} 브랜치에서 작업 중입니다. 클릭하여 이름을 변경하세요.",
   "workspace_branchSelector_completeAuth_description": "브라우저에서 승인을 완료하세요",
   "workspace_branchSelector_connectGithub_label": "GitHub 연결",

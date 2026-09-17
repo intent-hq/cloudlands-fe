@@ -1071,6 +1071,8 @@
   "workspace_branchDisplay_shiftClickCopy_label": "Shift+点击复制",
   "workspace_branchDisplay_trunkChange_tooltip": "主干分支——点击更改",
   "workspace_branchDisplay_trunkLocked_tooltip": "主干分支（推送后无法更改）",
+  "workspace_branchDisplay_trunkOwnerOnly_tooltip": "主干分支（只有工作区所有者可以更改）",
+  "workspace_branchDisplay_workingOnReadOnly_tooltip": "正在 {branch} 分支上工作（只有工作区所有者可以重命名）。",
   "workspace_branchDisplay_workingOn_tooltip": "正在 {branch} 分支上工作。点击更改名称。",
   "workspace_branchSelector_completeAuth_description": "请在浏览器中完成授权",
   "workspace_branchSelector_connectGithub_label": "连接 GitHub",

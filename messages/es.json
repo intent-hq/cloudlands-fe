@@ -1071,6 +1071,8 @@
   "workspace_branchDisplay_shiftClickCopy_label": "Mayús+clic para copiar",
   "workspace_branchDisplay_trunkChange_tooltip": "Rama troncal: haga clic para cambiar",
   "workspace_branchDisplay_trunkLocked_tooltip": "Rama troncal (no se puede cambiar después de hacer push)",
+  "workspace_branchDisplay_trunkOwnerOnly_tooltip": "Rama troncal (solo el propietario del espacio de trabajo puede cambiarla)",
+  "workspace_branchDisplay_workingOnReadOnly_tooltip": "Trabajando en la rama {branch} (solo el propietario del espacio de trabajo puede renombrarla).",
   "workspace_branchDisplay_workingOn_tooltip": "Trabajando en la rama {branch}. Haga clic para cambiar el nombre.",
   "workspace_branchSelector_completeAuth_description": "Complete la autorización en su navegador",
   "workspace_branchSelector_connectGithub_label": "Conectar GitHub",
