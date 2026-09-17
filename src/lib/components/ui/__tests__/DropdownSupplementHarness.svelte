@@ -23,11 +23,7 @@
   {/snippet}
   {#snippet footer()}
     <Button onclick={() => (slotActions.footer += 1)}>Footer action</Button>
-  {/snippet}
-  {#snippet itemAfter({ selected })}
-    {#if selected}
-      <Button onclick={() => (actions += 1)}>Configure option</Button>
-    {/if}
+    <Button onclick={() => (actions += 1)}>Configure option</Button>
   {/snippet}
 </Dropdown>
 <output data-testid="supplement-result">{JSON.stringify({ value, changes, actions })}</output>

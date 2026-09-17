@@ -17165,7 +17165,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:modals:produ
                                                                   <span class="[text-box:trim-both_cap_alphabetic]">
                                                                     "running"
                                                             <div class="min-w-0 mt-0.5 text-muted-foreground type-caption">
-                                                              "running • interrupted Sep 11, 2026, 5:00 AM"
+                                                              "running • interrupted Sep 11, 2026, 12:00 PM"
                                               <section class="min-w-0">
                                                 <div class="backdrop-blur-sm bg-background/95 font-medium px-3 py-1.5 sticky text-muted-foreground text-xs top-0 z-20">
                                                   <span class="font-normal text-muted-foreground type-caption">
@@ -17191,7 +17191,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:modals:produ
                                                                   <span class="[text-box:trim-both_cap_alphabetic]">
                                                                     "waiting"
                                                             <div class="min-w-0 mt-0.5 text-muted-foreground type-caption">
-                                                              "waiting • interrupted Sep 11, 2026, 5:00 AM"
+                                                              "waiting • interrupted Sep 11, 2026, 12:00 PM"
                                     <footer class="bg-muted/20 border-border border-t px-6 py-4 shrink-0" data-slot="screen-footer">
                                       <div class="flex gap-3 items-center justify-between" data-size="default" data-slot="form-actions">
                                         <div class="flex items-center" data-slot="form-actions-destructive">
