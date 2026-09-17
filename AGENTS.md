@@ -577,14 +577,19 @@ is roughly 10× the cost of a jsdom test and the CT job is sharded and time-boxe
     A failure `browser context <id> was already used by an earlier test in this worker …`
     means a Playwright upgrade stopped honoring the option — fix the helper, not the spec.
   - _Reading the CDP lifecycle log_: on a failure the recorder attaches `cdp-lifecycle.json`
-    to the report (`test-results/<test>/` and the HTML report). Events are ordered with
-    `sinceStartMs` from the start of the test. A `Page.frameRequestedNavigation` /
+    to the report (`test-results/<test>/` and the HTML report). Recording starts in the
+    spec's `beforeEach`, once the `page` fixture is ready, so `sinceStartMs` counts from
+    that attach — not from the start of the test — and anything the harness did to the
+    page before it (fixture setup, an already-finished reuse reset) is not in the log; the
+    leading `Runtime.executionContextCreated` entries are the replay of contexts that
+    already existed at attach. A `Page.frameRequestedNavigation` /
     `Runtime.executionContextsCleared` / `Page.frameNavigated` (to `about:blank` or the CT
     host URL) sequence in the milliseconds before the failing mount is the reuse reset;
-    `Inspector.targetCrashed` is a renderer crash and a different investigation; no events
-    at all means the page was fine and the failure came from the test's own code. The
-    recorder never fails a test — a `cdp-lifecycle-recorder` annotation reports when it
-    could not start or attach.
+    `Inspector.targetCrashed` is a renderer crash and a different investigation; only the
+    replayed `executionContextCreated` entries and no navigation or clear means nothing
+    disturbed the page after attach — the race, if any, ran before the recorder started.
+    The recorder never fails a test — a `cdp-lifecycle-recorder` annotation reports when
+    it could not start or attach.
 
 ### Testing — every feature/fix against a mock BE
 
