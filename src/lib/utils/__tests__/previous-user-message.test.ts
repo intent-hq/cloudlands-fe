@@ -149,6 +149,15 @@ describe('getHumanMessageAuthor', () => {
     const malformed = { ...msg('u1', 'user', 'hi'), author: { login: 'guest' } } as AgentMessage;
     expect(getHumanMessageAuthor(malformed)).toBeNull();
   });
+
+  it("yields null for the viewer's own row, and the author for everyone else's", () => {
+    const row = { ...msg('u1', 'user', 'hi', { fromPrincipalId: 'principal-guest' }), author };
+    expect(getHumanMessageAuthor(row, 'principal-guest')).toBeNull();
+    expect(getHumanMessageAuthor(row, 'principal-owner')).toBe(author);
+    // Own principal not yet known: nobody can be told apart from the viewer.
+    expect(getHumanMessageAuthor(row, null)).toBe(author);
+    expect(getHumanMessageAuthor(row, undefined)).toBe(author);
+  });
 });
 
 describe('getMessageAuthorLabel', () => {
@@ -290,6 +299,19 @@ describe('collectMessageAuthors / getQueuedMessageAuthor', () => {
     ).toBe(renamed);
     // The surface gate still applies (single-member workspace).
     expect(getQueuedMessageAuthor(stamped, null)).toBeNull();
+  });
+
+  it("yields null for the viewer's own entries on both the projection and the transcript path", () => {
+    const authors = collectMessageAuthors(transcript);
+    const projected = { messageMetadata: { fromPrincipalId: guest.principalId }, author: guest };
+    const stampedOnly = { messageMetadata: { fromPrincipalId: guest.principalId } };
+    expect(getQueuedMessageAuthor(projected, authors, guest.principalId)).toBeNull();
+    expect(getQueuedMessageAuthor(stampedOnly, authors, guest.principalId)).toBeNull();
+    // Another member's entry keeps its author; an unknown own principal keeps every author.
+    expect(getQueuedMessageAuthor(projected, authors, owner.principalId)).toBe(guest);
+    expect(getQueuedMessageAuthor(stampedOnly, authors, owner.principalId)).toBe(guest);
+    expect(getQueuedMessageAuthor(projected, authors, null)).toBe(guest);
+    expect(getQueuedMessageAuthor(stampedOnly, authors, undefined)).toBe(guest);
   });
 
   it('treats an explicit null projection as authoritative: no transcript fallback', () => {
