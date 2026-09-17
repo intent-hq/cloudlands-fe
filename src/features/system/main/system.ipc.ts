@@ -966,11 +966,6 @@ export function setupSystemIPC() {
         contextIsolation: true,
         nodeIntegration: false,
         webviewTag: true,
-        // Electron's macOS same-app occlusion heuristic can report a visible
-        // but unfocused HUD as hidden, which throttles its timers and stops
-        // painting its takeover entry animations. Keep the HUD renderer at
-        // full cadence regardless of reported visibility.
-        ...(isHudRoute && { backgroundThrottling: false }),
       },
       ...getWindowTitleBarOptions(),
       title: 'Intent',
@@ -985,7 +980,8 @@ export function setupSystemIPC() {
 
     // Register AFTER stamping (the registry keys off the backend stamp) and
     // BEFORE loadURL so a concurrent HUD-open request reuses this window even
-    // while its URL is still about:blank (mid-navigation race).
+    // while its URL is still about:blank (mid-navigation race). Registration
+    // also disables background throttling for the HUD (see registerHudWindow).
     if (isHudRoute) {
       registerHudWindow(newWindow);
     }

@@ -49,6 +49,7 @@ const electronMocks = vi.hoisted(() => {
       getURL: () => this.loadedUrl ?? '',
       on: vi.fn(),
       send: vi.fn(),
+      setBackgroundThrottling: vi.fn(),
     };
 
     constructor(options: Record<string, unknown>) {
@@ -178,15 +179,33 @@ describe('HUD window singleton via WINDOW.OPEN_NEW', () => {
     expect(electronMocks.constructed).toHaveLength(2);
   });
 
-  it('creates the HUD window with background throttling disabled; other windows keep the default', async () => {
+  it('disables background throttling on the HUD window; other windows keep the default', async () => {
     const openNew = handlerFor(WINDOW_CHANNELS.OPEN_NEW);
     await openNew({ sender: {} }, { route: '/hud' });
     await openNew({ sender: {} }, { route: '/workspace/ws-1' });
 
     expect(electronMocks.constructed).toHaveLength(2);
     const [hud, workspace] = electronMocks.constructed;
-    expect(hud.options.webPreferences).toMatchObject({ backgroundThrottling: false });
+    expect(hud.webContents.setBackgroundThrottling).toHaveBeenCalledWith(false);
+    expect(workspace.webContents.setBackgroundThrottling).not.toHaveBeenCalled();
     expect(workspace.options.webPreferences).not.toHaveProperty('backgroundThrottling');
+  });
+
+  it('unthrottles the HUD before its URL starts loading', async () => {
+    const openNew = handlerFor(WINDOW_CHANNELS.OPEN_NEW);
+    const navigation = deferred<void>();
+    electronMocks.loadURL.mockReturnValue(navigation.promise);
+
+    const pending = openNew({ sender: {} }, { route: '/hud' }) as Promise<unknown>;
+    await vi.waitFor(() => expect(electronMocks.constructed).toHaveLength(1));
+    const hud = electronMocks.constructed[0];
+    expect(hud.webContents.setBackgroundThrottling).toHaveBeenCalledWith(false);
+    expect(hud.webContents.setBackgroundThrottling.mock.invocationCallOrder[0]).toBeLessThan(
+      hud.loadURL.mock.invocationCallOrder[0],
+    );
+
+    navigation.resolve();
+    await pending;
   });
 
   it('registers the page-title listener on HUD and workspace windows', async () => {
