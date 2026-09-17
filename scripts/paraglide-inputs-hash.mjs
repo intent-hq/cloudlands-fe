@@ -29,8 +29,11 @@
 // (`acquireVerificationLock`, keyed by the outdir's absolute path), an
 // `--if-stale` caller re-checks the sidecar once it holds the lock, and the
 // compiler writes into a fresh staging directory next to the outdir whose files
-// are then renamed into place one by one — stale outputs pruned, sidecar last —
-// so a reader never sees a missing or half-written output.
+// are then renamed into place one by one — each module after the modules it
+// imports, stale outputs pruned, sidecar last — so a reader never sees a
+// missing or half-written output, and one that loads the module graph
+// mid-publish gets at worst an older complete snapshot (old `messages/_index.js`
+// over new locale modules), never a new index calling into an old locale module.
 import { createHash, randomUUID } from 'node:crypto';
 import {
   existsSync,
@@ -41,7 +44,7 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs';
-import { basename, dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, posix, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { acquireVerificationLock, defaultLockPath } from './verification-lock.mjs';
 
@@ -51,6 +54,7 @@ const GENERATED_OUTPUTS = ['messages.js', 'runtime.js'];
 const MAX_GENERATE_ATTEMPTS = 3;
 const LOCK_TIMEOUT_MS = 120_000;
 const LOCK_POLL_MS = 50;
+const RELATIVE_IMPORT_RE = /\b(?:from|import)\s*\(?\s*["'](\.\.?\/[^"']+)["']/g;
 
 export function paraglideInputFiles({ projectDir, messagesDir }) {
   const catalogs = readdirSync(messagesDir)
@@ -109,13 +113,49 @@ function removeEmptyDirs(dir) {
 }
 
 /**
- * Move the staged outputs into `outdir` one rename at a time: every path is
- * either its previous complete version or its new one, never absent or
- * partial. Outputs the new set no longer contains are pruned, then the sidecar
- * is renamed into place last so it only ever vouches for a complete set.
+ * Order `files` (posix paths relative to one root) so every module comes after
+ * the modules it imports relatively, per `readSource(file)`. Publishing in this
+ * order means a reader that loads the graph while it is being published pairs
+ * an old dependent with new leaves at worst — a consistent, merely older
+ * snapshot — instead of a new `messages/_index.js` calling a message that its
+ * still-old `messages/<locale>.js` does not export yet. Import cycles keep the
+ * sorted path order among their members.
+ */
+export function publishOrder(files, readSource) {
+  const set = new Set(files);
+  const imports = (file) => {
+    if (!file.endsWith('.js')) return [];
+    const dir = dirname(file);
+    const found = [];
+    for (const match of readSource(file).matchAll(RELATIVE_IMPORT_RE)) {
+      const target = posix.normalize(posix.join(dir === '.' ? '' : dir, match[1]));
+      if (set.has(target)) found.push(target);
+    }
+    return found;
+  };
+  const ordered = [];
+  const seen = new Set();
+  const visit = (file) => {
+    if (seen.has(file)) return;
+    seen.add(file);
+    for (const dep of imports(file)) visit(dep);
+    ordered.push(file);
+  };
+  for (const file of [...files].sort()) visit(file);
+  return ordered;
+}
+
+/**
+ * Move the staged outputs into `outdir` one rename at a time, dependencies
+ * first: every path is either its previous complete version or its new one,
+ * never absent or partial. Outputs the new set no longer contains are pruned,
+ * then the sidecar is renamed into place last so it only ever vouches for a
+ * complete set.
  */
 function publishStagedOutputs({ staging, outdir, digest }) {
-  const staged = listFiles(staging);
+  const staged = publishOrder(listFiles(staging), (file) =>
+    readFileSync(join(staging, file), 'utf8'),
+  );
   mkdirSync(outdir, { recursive: true });
   for (const relative of staged) {
     const target = join(outdir, relative);

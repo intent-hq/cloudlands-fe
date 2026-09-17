@@ -21,6 +21,7 @@ import {
   ensureGeneratedParaglide,
   generateParaglide,
   paraglideLockPath,
+  publishOrder,
 } from '../../scripts/paraglide-inputs-hash.mjs';
 
 function readWsUrlDefine(mode: string, wsUrl: string): string {
@@ -351,6 +352,114 @@ describe('generated Paraglide output under concurrent generators', () => {
     expect(existsSync(join(paths.outdir, 'messages', 'en.js'))).toBe(true);
     expect(canReuseGeneratedParaglide(paths)).toBe(true);
   };
+
+  it('publishes every generated module after the modules it imports', () => {
+    const locales = ['en', 'de', 'fr', 'zh-CN'];
+    const staged: Record<string, string> = {
+      '.gitignore': '*\n',
+      'README.md': '# generated\n',
+      'messages.js': [
+        "export * from './messages/_index.js'",
+        "export * as m from './messages/_index.js'",
+        '',
+      ].join('\n'),
+      'messages/_index.js': [
+        'import { getLocale, experimentalStaticLocale } from "../runtime.js"',
+        ...locales.map(
+          (locale) => `import * as __${locale.replace('-', '_')} from "./${locale}.js"`,
+        ),
+        'export const hello = (inputs = {}, options = {}) => __en.hello(inputs)',
+        '',
+      ].join('\n'),
+      ...Object.fromEntries(
+        locales.map((locale) => [
+          `messages/${locale}.js`,
+          `export const hello = () => "hello ${locale}";\n`,
+        ]),
+      ),
+      'registry.js': 'export const registry = {};\n',
+      'runtime.js':
+        'export const getLocale = () => "en";\nexport const experimentalStaticLocale = undefined;\n',
+      'server.js':
+        'import * as runtime from "./runtime.js";\nexport const paraglideMiddleware = runtime;\n',
+    };
+    const files = Object.keys(staged).sort(() => 0.5 - Math.random());
+    const ordered = publishOrder(files, (file) => staged[file]);
+    const at = (file: string) => ordered.indexOf(file);
+
+    expect([...ordered].sort()).toEqual(Object.keys(staged).sort());
+    for (const locale of locales) {
+      expect(at(`messages/${locale}.js`)).toBeLessThan(at('messages/_index.js'));
+    }
+    expect(at('runtime.js')).toBeLessThan(at('messages/_index.js'));
+    expect(at('messages/_index.js')).toBeLessThan(at('messages.js'));
+    expect(at('runtime.js')).toBeLessThan(at('server.js'));
+  });
+
+  it('a reader importing the graph mid-publish never pairs a new index with an old locale module', async () => {
+    // Old output: `messages/_index.js` calls into `messages/en.js`; the new
+    // compile adds a message to both. Load the graph in a fresh module instance
+    // at every intermediate publish state (each prefix of the publish order) and
+    // check that calling every message the loaded index exports never throws —
+    // i.e. an index only ever lands over locale modules that already carry
+    // what it calls.
+    const root = mkdtempSync(join(tmpdir(), 'paraglide-publish-order-'));
+    fixtures.push(root);
+    const version = (added: boolean) => ({
+      'messages/en.js': `export const hello = () => "Hello";\n${added ? 'export const added = () => "Added";\n' : ''}`,
+      'messages/_index.js': [
+        'import * as __en from "./en.js"',
+        'export const hello = (inputs = {}) => __en.hello(inputs)',
+        added ? 'export const added = (inputs = {}) => __en.added(inputs)' : '',
+        '',
+      ].join('\n'),
+      'messages.js': "export * as m from './messages/_index.js'\n",
+      'runtime.js': OUTPUT_CONTENT['runtime.js'],
+    });
+    const write = (dir: string, files: Record<string, string>) => {
+      for (const [file, content] of Object.entries(files)) {
+        mkdirSync(dirname(join(dir, file)), { recursive: true });
+        writeFileSync(join(dir, file), content);
+      }
+    };
+    const oldFiles = version(false);
+    const newFiles = version(true);
+    const order = publishOrder(Object.keys(newFiles), (file) => newFiles[file]);
+    const loadAndCallAll = (dir: string, tag: string) => {
+      const entry = pathToFileURL(join(dir, 'messages.js')).href;
+      const script = `import { m } from ${JSON.stringify(entry)}; for (const key of Object.keys(m)) m[key]();`;
+      const result = spawnSync(process.execPath, ['--input-type=module', '-e', script], {
+        encoding: 'utf8',
+      });
+      expect(result.status, `${tag}: ${result.stderr}`).toBe(0);
+    };
+
+    for (let published = 0; published <= order.length; published += 1) {
+      const stateDir = join(root, `state-${published}`);
+      write(stateDir, oldFiles);
+      write(stateDir, Object.fromEntries(order.slice(0, published).map((f) => [f, newFiles[f]])));
+      loadAndCallAll(
+        stateDir,
+        `after publishing ${order.slice(0, published).join(', ') || 'nothing'}`,
+      );
+    }
+
+    // The reverse order is exactly the broken interleaving: a new index over the old locale module.
+    const brokenDir = join(root, 'state-broken');
+    write(brokenDir, oldFiles);
+    write(brokenDir, { 'messages/_index.js': newFiles['messages/_index.js'] });
+    const broken = spawnSync(
+      process.execPath,
+      [
+        '--input-type=module',
+        '-e',
+        `import { m } from ${JSON.stringify(pathToFileURL(join(brokenDir, 'messages.js')).href)}; m.added();`,
+      ],
+      { encoding: 'utf8' },
+    );
+    expect(broken.status).not.toBe(0);
+    expect(broken.stderr).toContain('is not a function');
+  });
 
   it('N concurrent --if-stale generators share one compile and all see current output', async () => {
     const { root, paths } = createParaglideFixtureRoot();
