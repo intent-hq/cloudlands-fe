@@ -28,6 +28,12 @@ const GH_LOG_PREFIX =
 const SUMMARY_HEADER = /^\s*(\d+) (failed|flaky|interrupted|skipped|did not run|passed)(?:\s|$)/;
 const SUMMARY_CASE = /^\s*(?:\[[^\]]*\] › )?(\S+?):(\d+):(\d+) › (.+?)\s*$/;
 const TITLE_SEPARATOR = ' › ';
+// The required lane's command echo (intent-pr.yml "Component tests" step): the
+// only CT invocation in the job that excludes the @quarantine tag. The advisory
+// quarantine lane echoes `--grep '@quarantine\b'` and the warm-up echoes
+// `--only-changed`, so neither matches.
+const REQUIRED_LANE_COMMAND = /--grep-invert\s+'?@quarantine/;
+const STEP_GROUP_START = /^##\[group\]Run /;
 
 /**
  * Select the `Component Tests (shard N/M)` jobs of a GitHub
@@ -97,6 +103,23 @@ export function cleanLogLines(logText) {
   return String(logText ?? '')
     .split(/\r?\n/)
     .map((line) => line.replace(ANSI_ESCAPE, '').replace(GH_LOG_PREFIX, ''));
+}
+
+/**
+ * The slice of a raw job log that belongs to the REQUIRED component-tests step:
+ * from its command echo up to (excluding) the next step's `##[group]Run` line.
+ * On shard 1 the advisory quarantine lane runs after the required lane even
+ * when it is red, and its own summary block would otherwise be the last one in
+ * the log. Returns `null` when the required-lane invocation cannot be found.
+ */
+export function requiredLaneLog(logText) {
+  const rawLines = String(logText ?? '').split(/\r?\n/);
+  const lines = cleanLogLines(logText);
+  const start = lines.findIndex((line) => REQUIRED_LANE_COMMAND.test(line));
+  if (start < 0) return null;
+  let end = start + 1;
+  while (end < lines.length && !STEP_GROUP_START.test(lines[end])) end += 1;
+  return rawLines.slice(start, end).join('\n');
 }
 
 /**

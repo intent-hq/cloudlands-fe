@@ -96,14 +96,49 @@ const JSON_REPORT = {
   ],
 };
 
-const LOG_WITH_SUMMARY = [
-  '2026-09-17T09:35:51.5264218Z   1 flaky',
-  '2026-09-17T09:35:51.5266339Z     [chromium] › src/lib/b.ct.spec.ts:54:1 › wobbles',
-  '2026-09-17T09:35:51.5288934Z   244 passed (11.4m)',
-].join('\n');
+const T = '2026-09-17T09:35:51.5264218Z ';
+// The required-lane step header as GitHub logs it (script echo in ANSI colour).
+function requiredLaneHeader(shard: number) {
+  return [
+    `${T}##[group]Run set -euo pipefail`,
+    `${T}\u001b[36;1mpnpm run test:ct --shard=${shard}/4 --grep-invert '@quarantine\\b' --fail-on-flaky-tests --reporter=list,html,json\u001b[0m`,
+    `${T}##[endgroup]`,
+  ];
+}
+// The advisory quarantine lane (shard 1 only), run after a red required step.
+function advisoryLane(summary: string[]) {
+  return [
+    `${T}##[error]Process completed with exit code 1.`,
+    `${T}##[group]Run pnpm run test:ct --grep '@quarantine\\b' --pass-with-no-tests --reporter=list,html --output=test-results-quarantine`,
+    `${T}\u001b[36;1mpnpm run test:ct --grep '@quarantine\\b' --pass-with-no-tests --reporter=list,html --output=test-results-quarantine\u001b[0m`,
+    `${T}##[endgroup]`,
+    ...summary,
+    `${T}##[group]Run actions/upload-artifact@v7`,
+  ];
+}
+const FLAKY_SUMMARY = [
+  `${T}  1 flaky`,
+  `${T}    [chromium] › src/lib/b.ct.spec.ts:54:1 › wobbles`,
+  `${T}  244 passed (11.4m)`,
+];
+const REQUIRED_FAILED_SUMMARY = [
+  `${T}  1 failed`,
+  `${T}    [chromium] › src/lib/a.ct.spec.ts:3:1 › required regression`,
+  `${T}  240 passed (9.0m)`,
+];
+const REQUIRED_CASE = {
+  status: 'failed',
+  specFile: 'src/lib/a.ct.spec.ts',
+  title: 'required regression',
+  location: 'src/lib/a.ct.spec.ts:3:1',
+};
 
-const LOG_WITHOUT_SUMMARY =
-  '2026-09-17T09:35:51.5264218Z ##[error]Process completed with exit code 137.';
+const LOG_WITH_SUMMARY = [...requiredLaneHeader(3), ...FLAKY_SUMMARY].join('\n');
+
+const LOG_WITHOUT_SUMMARY = [
+  ...requiredLaneHeader(4),
+  `${T}##[error]Process completed with exit code 137.`,
+].join('\n');
 
 function fakeRunner({
   logs = {} as Record<number, string>,
@@ -189,6 +224,76 @@ describe('collectRun shard resolution', () => {
     expect(calls[0]).toBe(
       `api repos/${DEFAULT_REPO}/actions/runs/${RUN_ID}/attempts/2/jobs?per_page=100`,
     );
+  });
+
+  it('lists only the required-lane cases when a red shard 1 is followed by a green advisory lane', () => {
+    const log = [
+      ...requiredLaneHeader(1),
+      ...REQUIRED_FAILED_SUMMARY,
+      ...advisoryLane([`${T}  1 passed (20.0s)`]),
+    ].join('\n');
+    const { runner } = fakeRunner({ logs: { 33: log } });
+    const { shards, warnings } = collectRun({
+      runId: RUN_ID,
+      repo: DEFAULT_REPO,
+      attempt: undefined,
+      runner,
+    });
+    expect(shards[2].source).toBe('log');
+    expect(shards[2].cases).toEqual([REQUIRED_CASE]);
+    expect(warnings).toEqual([expect.stringMatching(/^shard 3\/4: no JSON report artifact/)]);
+  });
+
+  it('lists only the required-lane cases when the advisory lane fails too', () => {
+    const log = [
+      ...requiredLaneHeader(1),
+      ...REQUIRED_FAILED_SUMMARY,
+      ...advisoryLane([
+        `${T}  1 failed`,
+        `${T}    [chromium] › src/lib/q.ct.spec.ts:9:1 › quarantined flake @quarantine`,
+      ]),
+    ].join('\n');
+    const { runner } = fakeRunner({ logs: { 33: log } });
+    const { shards } = collectRun({
+      runId: RUN_ID,
+      repo: DEFAULT_REPO,
+      attempt: undefined,
+      runner,
+    });
+    expect(shards[2].cases).toEqual([REQUIRED_CASE]);
+  });
+
+  it('reads the required lane of a shard without an advisory step unchanged', () => {
+    const log = [
+      ...requiredLaneHeader(3),
+      ...REQUIRED_FAILED_SUMMARY,
+      `${T}##[error]Process completed with exit code 1.`,
+      `${T}##[group]Run actions/upload-artifact@v7`,
+    ].join('\n');
+    const { runner } = fakeRunner({ logs: { 33: log } });
+    const { shards } = collectRun({
+      runId: RUN_ID,
+      repo: DEFAULT_REPO,
+      attempt: undefined,
+      runner,
+    });
+    expect(shards[2].cases).toEqual([REQUIRED_CASE]);
+  });
+
+  it('falls back to the whole log with a warning when the required-lane step is not found', () => {
+    const { runner } = fakeRunner({ logs: { 33: FLAKY_SUMMARY.join('\n') } });
+    const { shards, warnings } = collectRun({
+      runId: RUN_ID,
+      repo: DEFAULT_REPO,
+      attempt: undefined,
+      runner,
+    });
+    expect(shards[2].source).toBe('log');
+    expect(shards[2].cases).toHaveLength(1);
+    expect(warnings).toEqual([
+      expect.stringMatching(/^shard 3\/4: required-lane step not found/),
+      expect.stringMatching(/^shard 3\/4: no JSON report artifact/),
+    ]);
   });
 
   it('returns no shards for a run without CT jobs and never fetches artifacts', () => {

@@ -21,6 +21,7 @@ import {
   formatReport,
   hasListLogSummary,
   parseCtJobs,
+  requiredLaneLog,
 } from './ct-run-failures-lib.mjs';
 
 export const DEFAULT_REPO = 'intent-hq/cloudlands-fe';
@@ -114,6 +115,8 @@ export function createGhRunner({ tmpDir, run = gh }) {
 
 const LOG_WARNING =
   'no JSON report artifact — derived from the list-reporter summary; locations may point at generator helpers';
+const NO_LANE_WARNING =
+  'required-lane step not found in the job log — parsed the whole log; an advisory quarantine summary may mask the required lane';
 const NO_SUMMARY_NOTE = 'red, no test summary found — see job URL';
 
 /**
@@ -140,8 +143,13 @@ export function collectRun({ runId, repo, attempt, runner }) {
     const artifact = (artifacts?.artifacts ?? []).find((a) => a?.name === name && !a.expired);
     const report = artifact ? runner.jsonReport(repo, runId, name) : null;
     if (report) return { ...job, source: 'json', cases: casesFromJsonReport(report) };
-    const log = runner.jobLog(repo, job.jobId);
+    const fullLog = runner.jobLog(repo, job.jobId);
+    // Only the required lane's segment: on shard 1 the advisory quarantine
+    // lane runs afterwards and prints its own summary block.
+    const laneLog = requiredLaneLog(fullLog);
+    const log = laneLog ?? fullLog;
     if (!hasListLogSummary(log)) return { ...job, source: null, cases: [], note: NO_SUMMARY_NOTE };
+    if (laneLog === null) warnings.push(`shard ${job.shard}/${job.shardCount}: ${NO_LANE_WARNING}`);
     warnings.push(`shard ${job.shard}/${job.shardCount}: ${LOG_WARNING}`);
     return { ...job, source: 'log', cases: casesFromListLog(log) };
   });

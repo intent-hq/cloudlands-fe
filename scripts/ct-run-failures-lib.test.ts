@@ -6,6 +6,7 @@ import {
   formatReport,
   hasListLogSummary,
   parseCtJobs,
+  requiredLaneLog,
   // eslint-disable-next-line @typescript-eslint/ban-ts-comment
   // @ts-ignore — plain .mjs module without type declarations
 } from './ct-run-failures-lib.mjs';
@@ -377,6 +378,60 @@ describe('casesFromListLog', () => {
         ['  1 failed', failedLine, '  1 flaky', flakyLine, '  3 passed (1.0s)'].join('\n'),
       ),
     ).toEqual([failed, flaky]);
+  });
+});
+
+describe('requiredLaneLog', () => {
+  const T = '2026-09-17T09:24:22.9620867Z ';
+  const jobLog = [
+    `${T}##[group]Run pnpm run test:ct --only-changed=HEAD --pass-with-no-tests --reporter=list`,
+    `${T}\u001b[36;1mpnpm run test:ct --only-changed=HEAD --pass-with-no-tests --reporter=list\u001b[0m`,
+    `${T}##[endgroup]`,
+    `${T}  2 passed (3.0s)`,
+    `${T}##[group]Run set -euo pipefail`,
+    `${T}\u001b[36;1m# or explicitly parked under the @quarantine tag below.\u001b[0m`,
+    `${T}\u001b[36;1mpnpm run test:ct --shard=1/4 --grep-invert '@quarantine\\b' --fail-on-flaky-tests --reporter=list,html,json\u001b[0m`,
+    `${T}##[endgroup]`,
+    `${T}  1 failed`,
+    `${T}    [chromium] › src/lib/a.ct.spec.ts:3:1 › required regression`,
+    `${T}  240 passed (9.0m)`,
+    `${T}##[error]Process completed with exit code 1.`,
+    `${T}##[group]Run pnpm run test:ct --grep '@quarantine\\b' --pass-with-no-tests --reporter=list,html --output=test-results-quarantine`,
+    `${T}\u001b[36;1mpnpm run test:ct --grep '@quarantine\\b' --pass-with-no-tests --reporter=list,html --output=test-results-quarantine\u001b[0m`,
+    `${T}##[endgroup]`,
+    `${T}  1 failed`,
+    `${T}    [chromium] › src/lib/q.ct.spec.ts:9:1 › quarantined flake @quarantine`,
+    `${T}##[group]Run actions/upload-artifact@v7`,
+  ].join('\n');
+
+  it('slices from the required-lane command echo to the next step', () => {
+    const lane = requiredLaneLog(jobLog);
+    expect(lane).toContain("--grep-invert '@quarantine");
+    expect(lane).toContain('required regression');
+    expect(lane).not.toContain('quarantined flake');
+    expect(lane).not.toContain('--only-changed');
+    expect(lane).not.toContain('upload-artifact');
+    expect(casesFromListLog(lane)).toEqual([
+      {
+        status: 'failed',
+        specFile: 'src/lib/a.ct.spec.ts',
+        title: 'required regression',
+        location: 'src/lib/a.ct.spec.ts:3:1',
+      },
+    ]);
+  });
+
+  it('runs to the end of the log when the required lane is the last step', () => {
+    const lines = jobLog.split('\n');
+    const lane = requiredLaneLog(lines.slice(0, 12).join('\n'));
+    expect(lane).toContain('required regression');
+    expect(lane).toContain('exit code 1');
+  });
+
+  it('returns null when the log carries no required-lane invocation', () => {
+    expect(requiredLaneLog('  1 failed\n    [chromium] › a.ct.spec.ts:1:1 › x')).toBeNull();
+    expect(requiredLaneLog('')).toBeNull();
+    expect(requiredLaneLog(undefined)).toBeNull();
   });
 });
 
