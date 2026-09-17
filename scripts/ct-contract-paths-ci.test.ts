@@ -368,6 +368,11 @@ describe('CI Gate accepts a test-ct skip only through an output', () => {
       1,
     ],
     [
+      'PR, release fast path, route cancelled, heavy jobs skipped',
+      { ...results('skipped'), ...heavySkipped, RESULT_route: 'cancelled', FAST_PATH: 'true' },
+      1,
+    ],
+    [
       'merge_group, CT passed',
       { ...results('success', 'merge_group'), FAST_PATH: '', CT_REQUIRED: '' },
       0,
