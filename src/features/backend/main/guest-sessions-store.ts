@@ -2,7 +2,7 @@
  * Guest sessions registry (main process).
  *
  * Persists the daemons this app joined as a GUEST — a credential minted by
- * `invite.redeem` for the user's own principal — to `guest-sessions.json`
+ * `invite.prove` for the user's own principal — to `guest-sessions.json`
  * under `app.getPath('userData')`, deliberately separate from the paired
  * (owner) registry in `backend-connections.json`: a guest credential must
  * never be listed, forgotten, or keychain-synced as an owner backend, and

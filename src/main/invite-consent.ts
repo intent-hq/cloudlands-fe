@@ -2,12 +2,14 @@
  * Renderer-rendered invite consent prompt for the main process.
  *
  * The `intent://invite` join (`features/deeplink/main/invite-deep-link.ts`)
- * asks the user to confirm their GitHub identity — with a device code on a
- * first join (`mode: "device-code"`), or by confirming the identity the host
+ * asks the user to confirm their GitHub identity — by signing the guest's own
+ * Intent in to GitHub first when it is not (`mode: "sign-in-required"`), by
+ * confirming the signed-in account the identity proof will be made with on a
+ * first join (`mode: "prove"`), or by confirming the identity the host
  * already knows when a credential for it is stored (`mode: "confirm"`). This
  * module drives that prompt as a renderer modal over the `invite-consent:*`
  * channels (contract in `src/shared/ipc/invite-consent.ts`), modelled on
- * `quit-confirmation.ts`; the round-trip below is the same in both modes:
+ * `quit-confirmation.ts`; the round-trip below is the same in every mode:
  *
  *   show → ack within {@link RENDERER_ACK_TIMEOUT_MS} → response → dismiss.
  *
@@ -20,10 +22,12 @@
  * caller can abort the grant wait. `dismiss('joined')` is the point of no
  * return: the caller issues it the moment the grant resolves, and a `cancel`
  * that lands after it is ignored and logged (`cancel-after-grant`), never
- * treated as a cancellation. Nothing secret crosses this boundary: the
- * payload carries the user code, the (already allowlisted) verification URL
- * (or, in confirm mode, the stored login) and display labels only — never the
- * stored credential.
+ * treated as a cancellation. `dismiss('superseded')` ends a request whose
+ * prompt the flow has already replaced with the next one (the renderer, which
+ * is showing the newer request, ignores it). Nothing secret crosses this
+ * boundary: the payload carries the user code, the (already allowlisted)
+ * verification URL (or, in prove / confirm mode, a login) and display labels
+ * only — never the stored credential.
  */
 
 import { BrowserWindow, ipcMain } from 'electron';
