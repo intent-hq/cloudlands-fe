@@ -3768,8 +3768,6 @@
   "inviteConsent_modal_why_description": "Das Intent des Hosts prüft über GitHub, wer beitritt – melde dich an, um deine Identität nachzuweisen. Intent wartet, bis GitHub bestätigt oder der Code abläuft.",
   "inviteConsent_modal_hostLearns_title": "Was der Host erfährt",
   "inviteConsent_modal_hostLearns_description": "Deinen GitHub-Benutzernamen, deine Konto-ID, deinen Anzeigenamen und deinen Avatar. Sonst nichts – es werden keine Berechtigungen erteilt, der Host kann nicht auf deine Repositories oder privaten Daten zugreifen, und das Anmeldetoken wird vom Host einmal zum Nachschlagen deines Kontos verwendet und nie gespeichert.",
-  "inviteConsent_modal_stored_title": "Was auf diesem Gerät gespeichert wird",
-  "inviteConsent_modal_stored_description": "Ein Zugangsnachweis für den Arbeitsbereich dieses Hosts. Du kannst ihn später aus der Gastsitzung entfernen.",
   "inviteConsent_modal_waiting_label": "Warten auf GitHub…",
   "inviteConsent_modal_cancelButton_label": "Abbrechen",
   "inviteConsent_modal_dismiss_ariaLabel": "Einladungsdialog schließen",

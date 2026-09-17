@@ -3768,8 +3768,6 @@
   "inviteConsent_modal_why_description": "主机的 Intent 通过 GitHub 验证加入者的身份，请登录以证明你的身份。Intent 会等待 GitHub 确认或代码过期。",
   "inviteConsent_modal_hostLearns_title": "主机会获知的信息",
   "inviteConsent_modal_hostLearns_description": "你的 GitHub 用户名、账户 ID、显示名称和头像，仅此而已。不会授予任何权限，主机无法访问你的仓库或私人数据，登录令牌仅由主机使用一次以查找你的账户，且不会被保存。",
-  "inviteConsent_modal_stored_title": "此设备上保存的内容",
-  "inviteConsent_modal_stored_description": "用于此主机工作区的凭据。你以后可以从访客会话中将其移除。",
   "inviteConsent_modal_waiting_label": "正在等待 GitHub…",
   "inviteConsent_modal_cancelButton_label": "取消",
   "inviteConsent_modal_dismiss_ariaLabel": "关闭邀请对话框",
