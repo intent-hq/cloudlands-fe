@@ -66,11 +66,22 @@ function evaluate(dir: string, baseRef = 'base') {
 }
 
 // Shapes HEAD like a merge_group entry: the PR branch is cut from `base`,
-// main advances past it (the previous queue entry), and head_sha is the merge
-// of the PR tip onto that advanced main. Returns the entry's base_sha.
-function mergeQueueEntry(dir: string, editPrTip: () => void): string {
+// main advances past it (the previous queue entry), and head_sha is the PR's
+// change applied onto that advanced main. The repo's queue uses the squash
+// method, so the real head is a single-parent commit (parent = base_sha);
+// 'merge' models a merge-method queue (two parents). Returns the entry's
+// base_sha.
+function mergeQueueEntry(
+  dir: string,
+  editPrTip: () => void,
+  method: 'squash' | 'merge' = 'squash',
+): string {
   const git = (...args: string[]) =>
-    execFileSync('git', args, { cwd: dir, encoding: 'utf8' }).trim();
+    execFileSync('git', args, {
+      cwd: dir,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
   git('checkout', '-q', '-b', 'release-pr');
   editPrTip();
   commit(dir, 'chore(main): release');
@@ -78,9 +89,18 @@ function mergeQueueEntry(dir: string, editPrTip: () => void): string {
   writeFileSync(join(dir, 'other.ts'), 'export const other = 1;\n');
   commit(dir, 'previous queue entry');
   const baseSha = git('rev-parse', 'HEAD');
-  git('merge', '-q', '--no-ff', '--no-edit', 'release-pr');
-  expect(git('rev-parse', 'HEAD^1')).toBe(baseSha);
-  expect(git('rev-parse', 'HEAD^2')).toBe(git('rev-parse', 'release-pr'));
+  if (method === 'squash') {
+    git('merge', '-q', '--squash', 'release-pr');
+    commit(dir, 'chore(main): release (squash)');
+    expect(git('rev-list', '--parents', '-n', '1', 'HEAD').split(' ')).toEqual([
+      git('rev-parse', 'HEAD'),
+      baseSha,
+    ]);
+  } else {
+    git('merge', '-q', '--no-ff', '--no-edit', 'release-pr');
+    expect(git('rev-parse', 'HEAD^1')).toBe(baseSha);
+    expect(git('rev-parse', 'HEAD^2')).toBe(git('rev-parse', 'release-pr'));
+  }
   return baseSha;
 }
 
@@ -271,9 +291,15 @@ describe('release-pr-fast-path', () => {
     });
   });
 
-  it('matches a release-shaped merge_group entry (head is the merge of the PR onto base_sha)', () => {
+  it('matches a release-shaped merge_group entry (squash queue: single-parent head on base_sha)', () => {
     const dir = initRepo();
     const baseSha = mergeQueueEntry(dir, () => releaseBump(dir));
+    expect(evaluate(dir, baseSha)).toEqual({ fastPath: true });
+  });
+
+  it('matches a release-shaped merge_group entry (merge queue: two-parent head on base_sha)', () => {
+    const dir = initRepo();
+    const baseSha = mergeQueueEntry(dir, () => releaseBump(dir), 'merge');
     expect(evaluate(dir, baseSha)).toEqual({ fastPath: true });
   });
 
