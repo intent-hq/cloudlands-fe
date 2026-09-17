@@ -989,7 +989,10 @@ jobs:
         run: pnpm run test:ct --only-changed=HEAD --pass-with-no-tests --reporter=list
       - name: Component tests
         # list for readable logs; html feeds the failure artifact below (it
-        # never auto-opens when CI is set).
+        # never auto-opens when CI is set); json writes
+        # playwright-report/results.json into that same artifact so
+        # `pnpm ct:failures <run-id>` can list failed/flaky cases per shard
+        # with their spec file and status instead of scraping the log.
         # The 4 GB heap cap covers the runner + accumulated per-test state
         # for a quarter-shard; the memory-hungry Vite build already ran
         # above. The sampler streams `free -m` + top-RSS processes into
@@ -999,6 +1002,7 @@ jobs:
         # (monorepo#3352).
         env:
           NODE_OPTIONS: '--max-old-space-size=4096'
+          PLAYWRIGHT_JSON_OUTPUT_FILE: playwright-report/results.json
         run: |
           set -euo pipefail
           (
@@ -1021,7 +1025,7 @@ jobs:
           # instead of silent 3x runtime. This job is merge-queue-only, so
           # a red shard ejects the queue entry: a flaky test must be fixed
           # or explicitly parked under the @quarantine tag below.
-          pnpm run test:ct --shard=${{ matrix.shard }}/4 --grep-invert '@quarantine\b' --fail-on-flaky-tests --reporter=list,html
+          pnpm run test:ct --shard=${{ matrix.shard }}/4 --grep-invert '@quarantine\b' --fail-on-flaky-tests --reporter=list,html,json
       - name: Upload playwright report
         # Also on cancellation, so a timeout overrun still leaves the report
         # and traces behind for diagnosis (monorepo#2887).
