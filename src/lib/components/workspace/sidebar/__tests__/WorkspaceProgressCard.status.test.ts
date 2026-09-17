@@ -157,6 +157,11 @@ vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', ()
   selectAllWorkspaceAgents: mocks.selector(() => []),
 }));
 
+vi.mock('$store/renderer/slices/presence/presence-selectors', () => ({
+  selectWorkspacePresencePeople: mocks.selector(() => []),
+  selectWorkspacePresenceFocusTargets: mocks.selector(() => ({})),
+}));
+
 vi.mock('$store/renderer/slices/git/git-selectors', () => ({
   selectAcceptChangesStatus: mocks.selector(() => null),
   selectAcceptChangesStatusLoading: mocks.selector(() => false),
