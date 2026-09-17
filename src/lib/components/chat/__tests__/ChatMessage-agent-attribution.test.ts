@@ -871,7 +871,7 @@ describe('ChatMessage human author identity (multiplayer)', () => {
 
     expect(screen.getByTestId('user-message-author-name').textContent).toBe('guest');
     expect(screen.queryByTestId('user-message-author-avatar')).toBeNull();
-    expect(screen.getByTestId('user-message-author-avatar-fallback').textContent).toBe('g');
+    expect(screen.getByTestId('user-message-author-avatar-fallback').textContent).toBe('G');
     unmount();
 
     render(ChatMessage, {
