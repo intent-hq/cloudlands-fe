@@ -466,6 +466,22 @@ describe('no-flushsync-in-teardown ESLint rule', () => {
     expect(messages).toHaveLength(0);
   });
 
+  it('does not treat a function-valued reduce initialValue or a forEach thisArg as the iteration callback', async () => {
+    const messages = await lintSvelte(
+      component(`
+        import { flushSync } from 'svelte';
+        let items = $state<string[]>([]);
+        $effect(() => {
+          items.reduce((acc) => acc, () => flushSync());
+          items.forEach(() => {}, () => flushSync());
+          items.map((item) => item, { run: () => flushSync() });
+        });
+      `),
+    );
+
+    expect(messages).toHaveLength(0);
+  });
+
   it('reports both an effect body flush and a cleanup flush in the same effect with distinct messages', async () => {
     const messages = await lintSvelte(
       component(`

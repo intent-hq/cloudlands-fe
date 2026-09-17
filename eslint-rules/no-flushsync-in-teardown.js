@@ -15,9 +15,10 @@
 // of `true`, component state, a computed object key, a parameter that is
 // reassigned in the helper body — counts as a flush.
 // Analysis is lexical, with one synchronous exception: a flush inside an IIFE
-// or an inline callback passed to a synchronous iteration method (forEach, map,
-// filter, find, findIndex, some, every, reduce, reduceRight, flatMap — on any
-// receiver) runs as part of the function that contains it and is attributed to
+// or an inline callback passed as the first argument to a synchronous iteration
+// method (forEach, map, filter, find, findIndex, some, every, reduce,
+// reduceRight, flatMap — on any receiver) runs as part of the function that
+// contains it and is attributed to
 // that function. A flush inside any other nested callback (rAF, timer,
 // microtask, promise, event listener, ...) is attributed to that callback, not
 // to the function that schedules it. Function references stored in a
@@ -87,14 +88,15 @@ function getEnclosingFunction(node) {
 }
 
 // Whether `fn` runs synchronously as part of the function that lexically
-// contains it: an IIFE, or an inline callback argument to a synchronous
-// iteration method.
+// contains it: an IIFE, or the callback (first argument) of a synchronous
+// iteration method. Later arguments (`reduce` initialValue, `thisArg`) are
+// never invoked by the method.
 function runsInline(fn) {
   const value = unwrapParent(fn);
   const parent = value.parent;
   if (parent?.type !== 'CallExpression') return false;
   if (parent.callee === value) return true;
-  if (!parent.arguments.includes(value)) return false;
+  if (parent.arguments[0] !== value) return false;
   const callee = unwrapExpression(parent.callee);
   return (
     callee.type === 'MemberExpression' &&
