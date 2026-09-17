@@ -4,6 +4,7 @@ import {
   casesFromJsonReport,
   casesFromListLog,
   formatReport,
+  hasListLogSummary,
   parseCtJobs,
   // eslint-disable-next-line @typescript-eslint/ban-ts-comment
   // @ts-ignore — plain .mjs module without type declarations
@@ -331,6 +332,14 @@ describe('casesFromListLog', () => {
     expect(casesFromListLog(noSummary)).toEqual([]);
     expect(casesFromListLog('')).toEqual([]);
     expect(casesFromListLog(undefined)).toEqual([]);
+  });
+
+  it('hasListLogSummary tells a summarized log from one that died before the summary', () => {
+    expect(hasListLogSummary(listReporterLog())).toBe(true);
+    expect(hasListLogSummary('2026-09-17T09:35:51.5288934Z   244 passed (11.4m)')).toBe(true);
+    expect(hasListLogSummary(listReporterLog().split('\n').slice(0, 20).join('\n'))).toBe(false);
+    expect(hasListLogSummary('##[error]Process completed with exit code 137.')).toBe(false);
+    expect(hasListLogSummary(undefined)).toBe(false);
   });
 
   it('does not list cases under headers other than failed/flaky', () => {

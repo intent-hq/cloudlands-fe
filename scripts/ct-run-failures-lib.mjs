@@ -100,6 +100,16 @@ export function cleanLogLines(logText) {
 }
 
 /**
+ * Whether the log carries a list-reporter summary block at all. Distinguishes
+ * "the shard ran and reported nothing red" from "the shard died before the
+ * reporter summarized" (OOM kill, cancelled job), where `casesFromListLog`
+ * also returns `[]`.
+ */
+export function hasListLogSummary(logText) {
+  return cleanLogLines(logText).some((line) => SUMMARY_HEADER.test(line));
+}
+
+/**
  * Failing and flaky cases from a list-reporter log, read from the final
  * summary block only (the last contiguous run of `N failed` / `N flaky` /
  * `N passed` … header lines and their indented case lines). Per-test `✘`

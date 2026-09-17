@@ -93,6 +93,7 @@
     "test:playwright:manual:baseline": "playwright test --config=playwright.manual.config.ts test/current-main-baseline.spec.ts",
     "test:playwright:manual:browser-lifetime": "playwright test --config=playwright.manual.config.ts test/electron-browser-lifetime.spec.ts",
     "test:ct": "node scripts/run-ct-tests.mjs",
+    "ct:failures": "node scripts/ct-run-failures.mjs",
     "test:playwright:ui": "playwright test --ui",
     "test:playwright:headed": "playwright test --headed",
     "test:run": "node scripts/pnpm-run.mjs test:unit && node scripts/pnpm-run.mjs test:integration && node scripts/pnpm-run.mjs test:playwright",
