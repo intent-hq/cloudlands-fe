@@ -814,7 +814,7 @@ describe('BranchSelector (cached-first GitHub load, github.branches.listCached Â
   };
 
   it.each(['main', 'trunk'])(
-    'selects the reported default %s outside the first page, including a component cache hit',
+    'selects the reported default %s outside the first page on repeated saga-backed loads',
     async (defaultBranch) => {
       debugFlags.enableBranchCaching = true;
       mockGithubBranchesCached.mockResolvedValue({ cached: false, branches: [] });
@@ -824,13 +824,13 @@ describe('BranchSelector (cached-first GitHub load, github.branches.listCached Â
 
       await waitFor(() => expect(onchange).toHaveBeenCalledTimes(1));
       expect(onchange.mock.lastCall![0].detail.branch).toBe(defaultBranch);
-      // Revisit the repository with no incoming selection: the component's
-      // cache holds a page, not the complete set of branches either.
+      // Revisit with no incoming selection. Cache ownership now lives in the
+      // saga/daemon boundary, so the component dispatches another cached load.
       await rerender({ repoPath: '', githubUrl: undefined });
       await rerender(githubProps);
       await waitFor(() => expect(onchange).toHaveBeenCalledTimes(2));
       expect(onchange.mock.lastCall![0].detail.branch).toBe(defaultBranch);
-      expect(mockGithubBranches).toHaveBeenCalledTimes(1);
+      expect(mockGithubBranches).toHaveBeenCalledTimes(2);
     },
   );
 

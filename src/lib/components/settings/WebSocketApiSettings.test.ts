@@ -167,6 +167,7 @@ describe('WebSocketApiSettings', () => {
   beforeEach(() => {
     connectionState.reset();
     vi.resetAllMocks();
+    qrMocks.toDataURL.mockResolvedValue('data:image/png;base64,');
     connectionState.activeId = 'local';
     connectionState.syncState = { supported: true, enabled: true, status: null };
     connectionState.dispatched.length = 0;

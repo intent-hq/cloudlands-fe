@@ -367,7 +367,9 @@ describe('WorkspaceSidebarHeader status message', () => {
     await fireEvent.input(input, { target: { value: 'Do not save this draft' } });
     await fireEvent.keyDown(input, { key: 'Escape' });
     expect(screen.queryByRole('textbox')).toBeNull();
-    expect(mocks.update).not.toHaveBeenCalled();
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'workspace/updateRequested' }),
+    );
     await fireEvent.click(screen.getByRole('button', { name: 'Status Workspace' }));
     expect((screen.getByRole('textbox') as HTMLInputElement).value).toBe(baseWorkspace.title);
   });

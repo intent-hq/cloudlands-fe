@@ -1,7 +1,6 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, fireEvent, waitFor } from '@testing-library/svelte';
 import { warmImport } from '../../../../../test/warm-import';
-import { overrideMockIpcHandler } from '$shared/ipc-mock-router';
 import {
   configuredVisualStates,
   exerciseVisualStates,
@@ -109,9 +108,6 @@ vi.mock('@fortawesome/free-solid-svg-icons', async (importOriginal) => {
   });
 });
 
-const mockInvoke = vi.fn();
-let restoreRename: (() => void) | undefined;
-
 async function renderBranchDisplay(overrides: Partial<Record<string, unknown>> = {}) {
   const BranchDisplay = (await import('../BranchDisplay.svelte')).default;
   const defaults = {
@@ -134,13 +130,8 @@ warmImport(() => import('../BranchDisplay.svelte'));
 describe('BranchDisplay', () => {
   beforeEach(() => {
     mocks.dispatch.mockClear();
-    mockInvoke.mockReset();
     mocks.workspaceEntity.branch = 'feature/branch';
-
-    restoreRename = overrideMockIpcHandler('workspace:rename-branch', mockInvoke);
   });
-
-  afterEach(() => restoreRename?.());
 
   it('affirms repository branch metadata and alignment in every required visual state', async () => {
     const observed = await exerciseVisualStates(async () => {
@@ -181,7 +172,7 @@ describe('BranchDisplay', () => {
     });
   });
 
-  it('Enter with an invalid branch name shows a toast error and does not call IPC', async () => {
+  it('Enter with an invalid branch name shows a toast error and does not request a rename', async () => {
     const { container } = await renderBranchDisplay();
     await fireEvent.click(container.querySelector('button')!);
     await waitFor(() => expect(container.querySelector('input[type="text"]')).toBeTruthy());
@@ -191,13 +182,12 @@ describe('BranchDisplay', () => {
     await fireEvent.keyDown(input, { key: 'Enter' });
 
     await waitFor(() => expect(mockToast.error).toHaveBeenCalled());
-    expect(mockInvoke).not.toHaveBeenCalled();
     expect(mocks.dispatch).not.toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'workspace/updateRequested' }),
+      expect.objectContaining({ type: 'workspace/renameBranchRequested' }),
     );
   });
 
-  it('Escape while editing cancels without calling IPC', async () => {
+  it('Escape while editing cancels without requesting a rename', async () => {
     const { container } = await renderBranchDisplay();
     await fireEvent.click(container.querySelector('button')!);
     await waitFor(() => expect(container.querySelector('input[type="text"]')).toBeTruthy());
@@ -207,7 +197,9 @@ describe('BranchDisplay', () => {
     await fireEvent.keyDown(input, { key: 'Escape' });
 
     await waitFor(() => expect(container.querySelector('input[type="text"]')).toBeFalsy());
-    expect(mockInvoke).not.toHaveBeenCalled();
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'workspace/renameBranchRequested' }),
+    );
   });
 
   it('BranchSelector onchange dispatches the baseRef update request', async () => {
@@ -225,28 +217,18 @@ describe('BranchDisplay', () => {
     );
   });
 
-  it('renames through the existing IPC and persists the successful branch response', async () => {
-    mockInvoke.mockResolvedValue({ success: true });
-    const updated = { ...mocks.workspaceEntity, branch: 'feature/renamed' };
-    mockUpdate.mockResolvedValue({ ok: true, data: updated });
+  it('dispatches a branch rename request with the trimmed branch name', async () => {
     const { container } = await renderBranchDisplay();
     await fireEvent.click(container.querySelector('button')!);
     const input = container.querySelector('input')!;
     await fireEvent.input(input, { target: { value: ' feature/renamed ' } });
     await fireEvent.keyDown(input, { key: 'Enter' });
     await waitFor(() =>
-      expect(mockInvoke).toHaveBeenCalledExactlyOnceWith({
-        id: 'ws-1',
-        newBranchName: 'feature/renamed',
+      expect(mocks.dispatch).toHaveBeenCalledWith({
+        type: 'workspace/renameBranchRequested',
+        payload: ['ws-1', 'feature/renamed'],
       }),
     );
-    await waitFor(() =>
-      expect(mockUpdate).toHaveBeenCalledExactlyOnceWith({ id: 'ws-1', branch: 'feature/renamed' }),
-    );
-    expect(mocks.dispatch).toHaveBeenCalledWith({
-      type: 'workspace/setWorkspaceEntity',
-      payload: [updated],
-    });
   });
 
   it('shift-copy preserves full long values without renaming or unlocking the target', async () => {
@@ -266,8 +248,9 @@ describe('BranchDisplay', () => {
     await fireEvent.click(target, { shiftKey: true });
     expect(writeText).toHaveBeenLastCalledWith('release/locked-target');
     expect(container.querySelector('[data-testid="branch-selector"]')).toBeNull();
-    expect(mockInvoke).not.toHaveBeenCalled();
-    expect(mockUpdate).not.toHaveBeenCalled();
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'workspace/renameBranchRequested' }),
+    );
   });
 
   it('with canChangeTrunk=false renders the read-only trunk and never calls workspace.update', async () => {

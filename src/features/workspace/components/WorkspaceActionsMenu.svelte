@@ -60,7 +60,6 @@
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { notify, withToastCountdown } from '$lib/components/patterns/notify';
   import { Button } from '$lib/components/ui/button';
-  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import * as Menu from '$lib/components/ui/menu';
   import { formatShortcut } from '$lib/utils/shortcuts';
   import { store as appStore } from '$store/renderer/store';

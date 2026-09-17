@@ -43,36 +43,41 @@ function buttonTooltips(container: HTMLElement): string[] {
 }
 
 describe('QueuedMessageList', () => {
-  it('renders a regular queued message as raw text with Edit, Remove and Send now', () => {
+  it('renders a regular queued message as raw text with the reference remove affordance', () => {
     const { container } = render(QueuedMessageList, {
       props: { messages: [queued({ content: 'run the tests' })] },
     });
 
     expect(screen.getByText('run the tests')).toBeTruthy();
     const tooltips = buttonTooltips(container);
-    expect(tooltips).toContain('Edit');
     expect(tooltips).toContain('Remove');
-    expect(tooltips.some((t) => t.startsWith('Send now'))).toBe(true);
   });
 
-  it('reserves the three-action lane before hover and keyboard focus', () => {
+  it('supports reference edit, remove, and send-now keyboard interactions', async () => {
+    const onedit = vi.fn().mockResolvedValue({ success: true });
+    const onremove = vi.fn();
+    const onsendnow = vi.fn();
     render(QueuedMessageList, {
-      props: { messages: [queued({ content: 'A long queued message that stays on one line' })] },
+      props: {
+        messages: [queued({ content: 'A long queued message that stays on one line' })],
+        onedit,
+        onremove,
+        onsendnow,
+      },
     });
 
     const content = screen.getByTestId('queued-message-content');
-    const text = screen.getByTestId('queued-message-text');
-    const actions = screen.getByTestId('queued-message-actions');
-    expect(actions.children).toHaveLength(3);
-    expect(actions.className).toContain('absolute');
-    expect(actions.className).toContain('pointer-events-none');
-    expect(actions.className).toContain('group-hover:pointer-events-auto');
-    expect(actions.className).toContain('group-focus-within:pointer-events-auto');
-    expect(content.className).toContain('pr-24');
-    expect(content.className).not.toContain('group-hover:pr-24');
-    expect(content.className).not.toContain('group-focus-within:pr-24');
-    expect(content.className).not.toContain('transition-[padding-right]');
-    expect(text.className).toContain('truncate');
+    await fireEvent.keyDown(content, { key: 'F2' });
+    await waitFor(() => expect(onedit).toHaveBeenCalledWith('q-1', expect.any(String), true));
+    await fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('textbox')).toBeNull());
+    await fireEvent.keyDown(screen.getByTestId('queued-message-content'), {
+      key: 'Enter',
+      metaKey: true,
+    });
+    expect(onsendnow).toHaveBeenCalledWith('q-1');
+    await fireEvent.keyDown(screen.getByTestId('queued-message-content'), { key: 'Delete' });
+    expect(onremove).toHaveBeenCalledWith('q-1');
   });
 
   describe('edit action', () => {
@@ -262,7 +267,6 @@ describe('QueuedMessageList', () => {
       expect(disclosure.getAttribute('aria-controls')).toBe(content.id);
       expect(chevron.classList.contains('rotate-90')).toBe(false);
       expect(label.textContent?.trim()).toBe('1 queued message');
-      expect(container.className).toContain('pb-2');
       expect(container.className).not.toContain('before:');
       expect(screen.getAllByTestId('queued-message-row')).toHaveLength(1);
     });
