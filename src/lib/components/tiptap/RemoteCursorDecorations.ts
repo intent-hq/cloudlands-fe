@@ -43,10 +43,17 @@ function clampPos(doc: ProseMirrorNode, pos: number): number {
   return Math.max(0, Math.min(pos, doc.content.size));
 }
 
+let widgetSequence = 0;
+
 function caretWidget(cursor: RemoteCursor): HTMLElement {
   const root = document.createElement('span');
   root.className = 'remote-cursor';
   root.style.setProperty('--remote-cursor-color', cursor.color);
+  // Anchor name the bar and the tag position themselves against (see
+  // `.remote-cursor` in tiptap-editor.css); unique per widget so two carets
+  // at the same position never share an anchor.
+  widgetSequence += 1;
+  root.style.setProperty('--remote-cursor-anchor', `--remote-cursor-${widgetSequence}`);
   root.dataset.principalId = cursor.principalId;
   root.setAttribute('aria-hidden', 'true');
   root.contentEditable = 'false';
