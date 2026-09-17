@@ -1506,9 +1506,9 @@
               {:else}
                 <span
                   aria-hidden="true"
-                  class="type-caption flex size-4 shrink-0 items-center justify-center rounded-full bg-muted font-medium uppercase leading-none text-muted-foreground"
+                  class="type-caption flex size-4 shrink-0 items-center justify-center rounded-full bg-muted font-medium leading-none text-muted-foreground"
                   data-testid="user-message-author-avatar-fallback"
-                  >{(humanAuthorLabel ?? '?').slice(0, 1)}</span
+                  >{(humanAuthorLabel ?? '?').slice(0, 1).toUpperCase()}</span
                 >
               {/if}
               <span class="truncate" data-testid="user-message-author-name"
