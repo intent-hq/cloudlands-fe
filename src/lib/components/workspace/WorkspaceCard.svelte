@@ -1,4 +1,5 @@
 <script lang="ts">
+  /* eslint-disable max-lines */
   import { page } from '$app/state';
   import {
     faArrowUpRightFromSquare,

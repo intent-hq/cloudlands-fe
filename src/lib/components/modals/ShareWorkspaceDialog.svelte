@@ -26,6 +26,8 @@
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
   import { Label } from '$lib/components/ui/label';
+  import { ListView } from '$lib/components/patterns/collection';
+  import { notify } from '$lib/components/patterns/notify';
   import { formatRelativeTime } from '$lib/i18n/format';
   import { m } from '$shared/paraglide/messages.js';
   import type { WorkspaceRole } from '$shared/types';
@@ -107,12 +109,11 @@
 
   async function copyLink() {
     if (!createdLinkUrl) return;
-    const { toast } = await import('svelte-sonner');
     try {
       await navigator.clipboard.writeText(createdLinkUrl);
-      toast.success(m.workspace_share_linkCopied_toast());
+      notify.success(m.workspace_share_linkCopied_toast());
     } catch {
-      toast.error(m.workspace_share_linkCopyFailed_error());
+      notify.error(m.workspace_share_linkCopyFailed_error());
     }
   }
 
@@ -151,7 +152,7 @@
 
 {#if open}
   <div
-    class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-8"
+    class="fixed inset-0 bg-background/60 flex items-center justify-center z-50 p-8"
     role="presentation"
     onclick={() => onClose?.()}
     onkeydown={handleKeydown}
@@ -195,7 +196,7 @@
               {m.workspace_share_githubRequired_title()}
             </div>
             <p class="text-sm text-subtle">{m.workspace_share_githubRequired_description()}</p>
-            <Button variant="default" size="sm" onclick={() => onConnectGitHub?.()}>
+            <Button variant="secondary" size="sm" onclick={() => onConnectGitHub?.()}>
               {m.workspace_share_connectGithub_label()}
             </Button>
           </div>
@@ -220,7 +221,7 @@
                 spellcheck={false}
                 disabled={creating}
               />
-              <Button type="submit" variant="default" size="sm" disabled={creating}>
+              <Button type="submit" variant="secondary" size="sm" disabled={creating}>
                 <Fa icon={faLink} />
                 {creating
                   ? m.workspace_share_creating_label()
@@ -268,12 +269,19 @@
 
           {#if invites.length > 0}
             <section class="space-y-2" aria-label={m.workspace_share_openInvites_label()}>
-              <h3 class="text-xs font-medium uppercase tracking-wide text-subtle">
+              <h3 class="type-caption font-medium text-subtle">
                 {m.workspace_share_openInvites_label()}
               </h3>
-              <ul class="divide-y divide-border rounded border border-border" role="list">
-                {#each invites as invite (invite.id)}
-                  <li
+              <ListView
+                virtualize={false}
+                items={invites}
+                getKey={(invite) => invite.id}
+                getText={(invite) => inviteAudience(invite)}
+                ariaLabel={m.workspace_share_openInvites_label()}
+                class="overflow-visible rounded border border-border"
+              >
+                {#snippet row({ item: invite })}
+                  <div
                     class="flex items-center justify-between gap-3 px-3 py-2"
                     data-testid="share-invite-row"
                     data-invite-id={invite.id}
@@ -297,14 +305,14 @@
                     >
                       {m.workspace_share_revoke_label()}
                     </Button>
-                  </li>
-                {/each}
-              </ul>
+                  </div>
+                {/snippet}
+              </ListView>
             </section>
           {/if}
 
           <section class="space-y-2" aria-label={m.workspace_share_members_label()}>
-            <h3 class="text-xs font-medium uppercase tracking-wide text-subtle">
+            <h3 class="type-caption font-medium text-subtle">
               {m.workspace_share_members_label()}
             </h3>
             {#if loading && members.length === 0}
@@ -312,9 +320,16 @@
                 {m.workspace_share_loading_label()}
               </p>
             {:else}
-              <ul class="divide-y divide-border rounded border border-border" role="list">
-                {#each members as member (member.principalId)}
-                  <li
+              <ListView
+                virtualize={false}
+                items={members}
+                getKey={(member) => member.principalId}
+                getText={(member) => memberName(member)}
+                ariaLabel={m.workspace_share_members_label()}
+                class="overflow-visible rounded border border-border"
+              >
+                {#snippet row({ item: member })}
+                  <div
                     class="flex items-center justify-between gap-3 px-3 py-2"
                     data-testid="share-member-row"
                     data-principal-id={member.principalId}
@@ -381,9 +396,9 @@
                         </Button>
                       {/if}
                     {/if}
-                  </li>
-                {/each}
-              </ul>
+                  </div>
+                {/snippet}
+              </ListView>
             {/if}
           </section>
         {/if}

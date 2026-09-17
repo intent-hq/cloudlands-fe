@@ -333,11 +333,21 @@
   // (`myRole === 'owner'`) and withheld once the daemon refuses an owner-only
   // method; only the Remove confirmation step is local. Share… itself lives in
   // the workspace ⋯ menu (WorkspaceProgressCard), not on the card.
-  const rosterMembers$ = selectWorkspaceRosterMembers(workspaceIdStore);
-  const rosterCanManage$ = selectWorkspaceRosterCanManage(workspaceIdStore);
-  const rosterWithheld$ = selectWorkspaceRosterWithheld(workspaceIdStore);
-  const removingPrincipalId$ = selectWorkspaceRosterRemovingPrincipalId(workspaceIdStore);
-  const rosterRemoveError$ = selectWorkspaceRosterRemoveError(workspaceIdStore);
+  const rosterMembers$ = staticData
+    ? writable<WorkspaceMember[]>([])
+    : selectWorkspaceRosterMembers(workspaceIdStore);
+  const rosterCanManage$ = staticData
+    ? writable(false)
+    : selectWorkspaceRosterCanManage(workspaceIdStore);
+  const rosterWithheld$ = staticData
+    ? writable(false)
+    : selectWorkspaceRosterWithheld(workspaceIdStore);
+  const removingPrincipalId$ = staticData
+    ? writable<string | null>(null)
+    : selectWorkspaceRosterRemovingPrincipalId(workspaceIdStore);
+  const rosterRemoveError$ = staticData
+    ? writable<string | null>(null)
+    : selectWorkspaceRosterRemoveError(workspaceIdStore);
   const membersKey = $derived(
     workspace && loadWorkspaceData && (workspace.memberCount ?? 0) > 1
       ? `${workspace.id}:${workspace.memberCount}`
