@@ -1374,6 +1374,7 @@
   "workspace_links_other_label": "その他",
   "workspace_links_remoteSpace_label": "リモートスペース",
   "workspace_links_untitled_label": "無題",
+  "connection_unknownHost_label": "不明なホスト",
   "workspace_mcpServers_enabledCount_label": "{count} 個有効",
   "workspace_mcpServers_manageServers_label": "サーバーを管理",
   "workspace_mcpServers_serverIcon_alt": "{name} のアイコン",
