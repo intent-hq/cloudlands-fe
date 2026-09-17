@@ -548,12 +548,13 @@ for (const owned of [false, true]) {
         await page.evaluate(() => (window as any).lifetimeFixture.switchPanelTab('A-1'));
         await readyPanel(app, page, 'A-1');
         observations.push(await record(app, page, `panel return ${i}`));
-        const returned = observations.at(-1).live.filter((guest: any) =>
-          guest.url.endsWith('tab=A-1'),
-        );
-        expect(returned.map((guest: any) => guest.id), 'original panel guest identity').toEqual([
-          initial.id,
-        ]);
+        const returned = observations
+          .at(-1)
+          .live.filter((guest: any) => guest.url.endsWith('tab=A-1'));
+        expect(
+          returned.map((guest: any) => guest.id),
+          'original panel guest identity',
+        ).toEqual([initial.id]);
         expect(returned[0].url, 'original panel URL').toBe(initial.url);
         expect(returned[0].state, 'original panel in-memory state').toEqual(initial.state);
         expect(returned[0].viewport, 'original panel viewport').toEqual(initial.viewport);
