@@ -47,13 +47,19 @@ export function isUserAuthoredMetadata(metadata: unknown): boolean {
  * counts as human-authored only when its role is `user`, its metadata passes
  * `isUserAuthoredMetadata`, and the projection carries a principal id.
  * Optimistic local rows and rows from older daemons carry no `author`.
+ *
+ * `ownPrincipalId` is the viewer's own principal (`presence.ownPrincipalId`):
+ * the viewer's own rows yield null, so they render as in a single-member
+ * workspace. While it is still unknown (`null` / omitted) nobody can be told
+ * apart from the viewer and every author is kept.
  */
 export function getHumanMessageAuthor(
   message: { role: MessageRole; author?: unknown; metadata?: unknown } | null | undefined,
+  ownPrincipalId?: string | null,
 ): MessageAuthor | null {
   if (!message || message.role !== 'user') return null;
   if (!isUserAuthoredMetadata(message.metadata)) return null;
-  return asMessageAuthor(message.author);
+  return withoutOwnAuthor(asMessageAuthor(message.author), ownPrincipalId);
 }
 
 /** The value as a `MessageAuthor` when it carries a principal id, else null. */
@@ -62,6 +68,15 @@ function asMessageAuthor(value: unknown): MessageAuthor | null {
   const { principalId } = value as { principalId?: unknown };
   if (typeof principalId !== 'string' || principalId.length === 0) return null;
   return value as MessageAuthor;
+}
+
+/** `author`, or null when it is the viewer's own principal (an unknown own principal keeps it). */
+function withoutOwnAuthor(
+  author: MessageAuthor | null,
+  ownPrincipalId: string | null | undefined,
+): MessageAuthor | null {
+  if (!author || !ownPrincipalId) return author;
+  return author.principalId === ownPrincipalId ? null : author;
 }
 
 /**
@@ -114,20 +129,22 @@ export function getQueueSurfaceAuthors(
  * row is gone) with no fallback. Only an ABSENT field (older daemon) resolves
  * the stamp against `authors`; a malformed non-null value is treated as
  * absent. Unstamped entries and unresolvable principals yield null — the
- * caller renders no attribution rather than a placeholder.
+ * caller renders no attribution rather than a placeholder. The viewer's own
+ * entries yield null too (`ownPrincipalId`, as in `getHumanMessageAuthor`).
  */
 export function getQueuedMessageAuthor(
   queued: { messageMetadata?: unknown; author?: unknown } | null | undefined,
   authors: ReadonlyMap<string, MessageAuthor> | null | undefined,
+  ownPrincipalId?: string | null,
 ): MessageAuthor | null {
   if (!queued || !authors) return null;
   const metadata = queued.messageMetadata;
   if (!isUserAuthoredMetadata(metadata)) return null;
   if (queued.author === null) return null;
   const own = asMessageAuthor(queued.author);
-  if (own) return own;
+  if (own) return withoutOwnAuthor(own, ownPrincipalId);
   if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return null;
   const { fromPrincipalId } = metadata as { fromPrincipalId?: unknown };
   if (typeof fromPrincipalId !== 'string' || fromPrincipalId.length === 0) return null;
-  return authors.get(fromPrincipalId) ?? null;
+  return withoutOwnAuthor(authors.get(fromPrincipalId) ?? null, ownPrincipalId);
 }
