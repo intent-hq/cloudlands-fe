@@ -1,6 +1,7 @@
 <script lang="ts">
   import QueuedMessageList from '../QueuedMessageList.svelte';
   import { CHAT_TRANSCRIPT_OVERFLOW_CLASS } from '../chat-queue-edge-layout';
+  import type { QueuedMessage } from '$shared/types';
   import type { ChatQueuedMessageEditOperation } from '$store/renderer/slices/chat-state/chat-state-types';
 
   interface Props {
@@ -10,6 +11,7 @@
     messageCount?: number;
     scrollViewport?: boolean;
     alignWithPrompt?: boolean;
+    imageBlocks?: QueuedMessage['imageBlocks'];
   }
 
   let {
@@ -19,6 +21,7 @@
     messageCount = 1,
     scrollViewport = false,
     alignWithPrompt = false,
+    imageBlocks,
   }: Props = $props();
   let lastAction = $state('none');
   let editOperations = $state<Record<string, ChatQueuedMessageEditOperation>>({});
@@ -31,6 +34,7 @@
           : `Message ${i + 1}`,
       queuedAt: '2026-01-01T00:00:00.000Z',
       position: i,
+      imageBlocks,
     })),
   );
 

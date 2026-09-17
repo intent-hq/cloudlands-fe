@@ -716,7 +716,6 @@
       headerActions={oneShotActions}
       inline
       inlineRowClass={SUBSCRIPTION_ROW_GEOMETRY_CLASS}
-      typographyClass={SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS}
       onclick={(event) => openWatchedAgent(event, watchedAgentId)}
       readOnly={!!isolatedPreview}
     />
@@ -1031,6 +1030,13 @@
 {/if}
 
 <style>
+  :global([data-testid='agent-subscriptions-card'] [data-testid='agent-card-name']),
+  :global([data-testid='agent-subscriptions-card'] [data-testid='agent-card-preview']),
+  :global([data-testid='agent-subscriptions-card'] [data-testid='one-shot-summary-title']),
+  :global([data-testid='agent-subscriptions-card'] [data-testid='one-shot-leading-column']) {
+    color: var(--color-muted-foreground) !important;
+  }
+
   @media (hover: hover) and (pointer: fine) {
     [data-agent-task-action-reveal] :global([data-row-task-action]) {
       opacity: 0;

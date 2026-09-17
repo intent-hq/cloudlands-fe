@@ -528,7 +528,7 @@
           type="button"
           variant="plain"
           size="compact"
-          class="inline-flex shrink-0 p-0 border-0 bg-transparent cursor-pointer align-text-bottom rounded-xs"
+          class="inline-flex shrink-0 p-0 border-0 bg-transparent cursor-pointer align-text-bottom rounded-xs focus:outline-none focus:ring-1 focus:ring-primary"
           data-testid="queued-image-thumbnail"
           onclick={(e) => {
             e.stopPropagation();
