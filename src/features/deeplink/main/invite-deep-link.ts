@@ -5,14 +5,17 @@
  *
  * 0. Returning guest (spec "Returning guest: per-host reuse"): when the
  *    guest-sessions store already holds a credential for this daemon
- *    (fingerprint canonical, host:port fallback), the invite is previewed
- *    with `invite.inspect` — no device flow started. A workspace the session
+ *    (fingerprint canonical, host:port fallback) AND that record's pinned
+ *    fingerprint equals the invite's, the invite is previewed with
+ *    `invite.inspect` — no device flow started. A workspace the session
  *    already lists just opens; otherwise a confirm-only consent prompt
  *    ("Signed in on this host as @login" → Join) leads to
  *    `invite.accept { inviteId, secret, credential }`, and the fresh
  *    credential is stored over the old one (same record, workspace
- *    appended). No session, an undecryptable token, or a `credential-invalid`
- *    refusal fall through to the device flow below without an extra prompt.
+ *    appended). No session, a fingerprint mismatch (a different daemon at
+ *    a known address — the stored token is never decrypted, let alone sent
+ *    to it), an undecryptable token, or a `credential-invalid` refusal fall
+ *    through to the device flow below without an extra prompt.
  * 1. Parse the link and dial the daemon's unauthenticated `/invite`
  *    endpoint with the pin enforced at the TLS handshake, then start the
  *    identity-only GitHub device flow (`invite.redeem { inviteId, secret }`).
@@ -55,7 +58,7 @@ import { showInviteConsent, type InviteConsentPrompt } from '../../../main/invit
 import { getMainWindow } from '../../../main/state';
 import * as guestSessionsStore from '../../backend/main/guest-sessions-store';
 import { openBackendWindow } from '../../backend/main/backend.ipc';
-import { PinMismatchError } from '../../backend/main/backend-connection';
+import { PinMismatchError, normalizeFingerprint } from '../../backend/main/backend-connection';
 import {
   InviteRpcError,
   InviteTransportError,
@@ -84,7 +87,7 @@ interface InviteEnvelope {
  * for the log: every one of these falls through to the device flow.
  */
 type ReturningFallbackReason =
-  'no-session' | 'no-token' | 'token-unavailable' | 'credential-invalid';
+  'no-session' | 'fingerprint-mismatch' | 'no-token' | 'token-unavailable' | 'credential-invalid';
 
 /**
  * Outcome of the returning-guest attempt: `handled` ends the flow (window
@@ -284,6 +287,12 @@ async function joinAsReturningGuest(
     fingerprint,
   });
   if (!session) return { kind: 'fallback', reason: 'no-session' };
+  // Fail closed: the store's host:port fallback can match a record pinned to
+  // a different cert at the same address. Only a session pinned to the exact
+  // daemon this link is pinned to may have its credential reused.
+  if (normalizeFingerprint(session.fingerprint) !== normalizeFingerprint(fingerprint)) {
+    return { kind: 'fallback', reason: 'fingerprint-mismatch' };
+  }
   let token: string | null;
   try {
     token = await guestSessionsStore.getDecryptedToken(session.id);
