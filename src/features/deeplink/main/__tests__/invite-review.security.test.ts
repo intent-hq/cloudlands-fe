@@ -47,12 +47,17 @@ vi.mock('../../../../main/state', () => ({ getMainWindow: () => null }));
 vi.mock('../../../protocol/main/protocol-adapter', () => ({ protocolAdapter: {} }));
 vi.mock('../../../backend/main/guest-sessions-store', () => ({
   add: mocks.add,
+  // First join on this machine: no stored session, so the returning-guest
+  // shortcut is skipped and the device flow under review runs.
+  findMatching: vi.fn(async () => null),
+  getDecryptedToken: vi.fn(async () => null),
   GuestStoreCorruptError: class extends Error {},
   GuestEncryptionUnavailableError: class extends Error {},
 }));
 vi.mock('../../../backend/main/backend.ipc', () => ({ openBackendWindow: mocks.open }));
 vi.mock('../../../backend/main/backend-connection', () => ({
   PinMismatchError: class extends Error {},
+  normalizeFingerprint: (fp: string) => fp,
 }));
 vi.mock('../../../backend/main/invite-connection', () => ({
   InviteRpcError: class extends Error {},
