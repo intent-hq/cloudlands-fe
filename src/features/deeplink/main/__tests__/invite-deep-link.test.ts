@@ -730,6 +730,62 @@ describe('handleInviteDeepLink — renderer consent modal', () => {
   });
 });
 
+// The prompt reads `Join “<title>” on <host>`: the host is the daemon's pretty
+// name when phase 1 carries one (an older daemon omits both name fields → the
+// dialed address), and a blank title reads "Untitled" — while the stored guest
+// session keeps the raw title (its settings row applies the same fallback).
+describe('handleInviteDeepLink — consent prompt labels', () => {
+  it('names the host by its pretty name when phase 1 carries one', async () => {
+    const { prompt } = fakeConsent('open');
+    showInviteConsent.mockReturnValue(prompt);
+    redeemStart.mockResolvedValue({
+      ...START,
+      hostname: 'clements-mbp.local',
+      prettyHostname: 'Clement’s MacBook Pro',
+    });
+
+    await handleInviteDeepLink(LINK);
+
+    expect(showInviteConsent.mock.calls[0][0]).toMatchObject({
+      hostLabel: 'Clement’s MacBook Pro',
+      workspaceTitle: START.workspaceTitle,
+    });
+  });
+
+  it('falls back to the plain hostname, then the dialed address, when the pretty name is blank or absent', async () => {
+    showInviteConsent.mockReturnValue(fakeConsent('open').prompt);
+    redeemStart.mockResolvedValue({
+      ...START,
+      hostname: 'clements-mbp.local',
+      prettyHostname: '  ',
+    });
+    await handleInviteDeepLink(LINK);
+    expect(showInviteConsent.mock.calls[0][0]).toMatchObject({ hostLabel: 'clements-mbp.local' });
+
+    showInviteConsent.mockReturnValue(fakeConsent('open').prompt);
+    redeemStart.mockResolvedValue(START);
+    await handleInviteDeepLink(LINK);
+    expect(showInviteConsent.mock.calls[1][0]).toMatchObject({ hostLabel: '192.168.1.10' });
+  });
+
+  it('a blank workspace title reads "Untitled" in the modal and the native box, but is stored raw', async () => {
+    showInviteConsent.mockReturnValue(fakeConsent(null).prompt);
+    redeemStart.mockResolvedValue({ ...START, workspaceTitle: '   ' });
+
+    await handleInviteDeepLink(LINK);
+
+    expect(showInviteConsent.mock.calls[0][0]).toMatchObject({ workspaceTitle: 'Untitled' });
+    expect(showMessageBox).toHaveBeenCalledTimes(1);
+    expect(showMessageBox.mock.calls[0][0]).toMatchObject({
+      type: 'info',
+      message: expect.stringContaining('“Untitled”'),
+    });
+    expect(guestAdd).toHaveBeenCalledWith(
+      expect.objectContaining({ workspace: { id: 'ws-1', title: '   ' } }),
+    );
+  });
+});
+
 // The grant is the point of no return (PR #2513 review): once it resolves the
 // host has minted the credential and consumed a seat, so a Cancel that lands
 // while the guest-session write is still pending must not be honoured — and
