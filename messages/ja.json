@@ -1065,6 +1065,8 @@
   "workspace_branchDisplay_shiftClickCopy_label": "Shift+クリックでコピー",
   "workspace_branchDisplay_trunkChange_tooltip": "トランクブランチ - クリックで変更",
   "workspace_branchDisplay_trunkLocked_tooltip": "トランクブランチ（プッシュ後は変更不可）",
+  "workspace_branchDisplay_trunkOwnerOnly_tooltip": "トランクブランチ（ワークスペースのオーナーのみ変更可能）",
+  "workspace_branchDisplay_workingOnReadOnly_tooltip": "{branch} ブランチで作業中です（ワークスペースのオーナーのみ名前を変更可能）。",
   "workspace_branchDisplay_workingOn_tooltip": "{branch} ブランチで作業中です。クリックして名前を変更します。",
   "workspace_branchSelector_completeAuth_description": "ブラウザーで認可を完了してください",
   "workspace_branchSelector_connectGithub_label": "GitHub に接続",

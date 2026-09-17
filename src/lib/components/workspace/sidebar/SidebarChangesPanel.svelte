@@ -133,6 +133,19 @@
   });
 
   const workspace = selectWorkspaceById(workspaceIdStore);
+
+  // Multiplayer role gate for the whole Changes tab. A collaborator may only
+  // call the member class of the daemon's capability matrix (intentd
+  // `capability.rs` / transport `COLLABORATOR_METHODS`): git.stage / unstage /
+  // discard / push / pull / fetch and reads. Everything routed through
+  // `accept-changes.*` (commit, push-commits, undo, rebase, merge, PR create,
+  // reset-to-trunk), `github.*`, `workspace.setAutoCommit`, `workspace.archive`
+  // and the protected `workspace.update` fields (`branch`, `baseRef`,
+  // `baseCommitSha`) is owner-only, so those controls are not rendered for a
+  // collaborator. A missing `myRole` is treated as owner, like the rest of the
+  // sidebar (`guest-sessions-selectors.ts`). Threaded to children as a prop.
+  const isOwner = $derived($workspace?.myRole !== 'collaborator');
+
   const acceptChangesState$ = selectAcceptChangesState(workspaceIdStore);
   const pendingAutoAction$ = selectPendingAutoAction(workspaceIdStore);
   const postMergeState$ = selectPostMergeState(workspaceIdStore);
@@ -628,6 +641,7 @@
     isContentMergedToTrunk,
     hasNewWorkAfterMerge,
     isPRMerged,
+    isOwner,
     onOpenFullPanel,
     onOpenChange,
   });
@@ -1012,8 +1026,9 @@
     if (change) onOpenChange?.(change, event);
   }
 
-  // Determine if trunk can be changed (only before first push)
-  const canChangeTrunk = $derived(!hasPushedCommits && unpushedCount === 0);
+  // Determine if trunk can be changed: only before the first push, and only
+  // by the owner — `baseRef` is not collaborator-editable on `workspace.update`.
+  const canChangeTrunk = $derived(isOwner && !hasPushedCommits && unpushedCount === 0);
 
   // Track if we're in the middle of a workspace switch to disable animations
   let isWorkspaceSwitching = $state(false);
@@ -1108,7 +1123,14 @@
         {/if}
 
         {#if !isBrowsingSecondaryRoot}
-          <BranchDisplay {workspaceId} {trunkBranch} {repoPath} {repoType} {canChangeTrunk} />
+          <BranchDisplay
+            {workspaceId}
+            {trunkBranch}
+            {repoPath}
+            {repoType}
+            {canChangeTrunk}
+            {isOwner}
+          />
 
           <div class="relative flex items-center mb-2 h-7" data-changes-summary-count>
             {#if !onRefreshActionChange}
@@ -1188,6 +1210,7 @@
               {onOpenNote}
               {openPanelTabs}
               {activePanelTab}
+              {isOwner}
               onFileClicked={(path, staged) => {
                 focusedFile = { path, staged };
                 if (selectedFiles.size > 0) {
@@ -1197,15 +1220,18 @@
               }}
             />
 
-            <CommitDrawer
-              {workspaceId}
-              bind:commitMessage
-              bind:isCommitting
-              bind:commitDrawerOpen
-              {hasStaged}
-              {stagedChanges}
-              onCommit={() => handleCommit()}
-            />
+            <!-- Commit runs through accept-changes.execute (owner-only) -->
+            {#if isOwner}
+              <CommitDrawer
+                {workspaceId}
+                bind:commitMessage
+                bind:isCommitting
+                bind:commitDrawerOpen
+                {hasStaged}
+                {stagedChanges}
+                onCommit={() => handleCommit()}
+              />
+            {/if}
 
             <!-- COMMITS SECTION -->
             <CommitsTimeline
@@ -1213,6 +1239,7 @@
               {activeFilePath}
               {activeFileStaged}
               pullRequestCount={pullRequests.length}
+              {isOwner}
             />
 
             {#snippet mergePanelContent()}
@@ -1253,8 +1280,9 @@
               bind:this={prSectionRef}
             />
 
-            <!-- Post-merge options - shown when workspace is completed (commits merged to trunk) -->
-            {#if (isMergedToTrunk || (areAllPRsMerged && !hasResetToTrunk) || isContentMergedToTrunk) && (!mergeHeadSha || mergeHeadSha === allCommits[0]?.hash) && !hasNewWorkAfterMerge}
+            <!-- Post-merge options - shown when workspace is completed (commits merged to trunk).
+                 Reset-to-trunk / archive / new space are owner-only. -->
+            {#if isOwner && (isMergedToTrunk || (areAllPRsMerged && !hasResetToTrunk) || isContentMergedToTrunk) && (!mergeHeadSha || mergeHeadSha === allCommits[0]?.hash) && !hasNewWorkAfterMerge}
               <PostMergeActions {workspaceId} {hasNoLocalChanges} {trunkBranch} />
             {/if}
           </div>
