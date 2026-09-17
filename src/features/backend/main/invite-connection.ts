@@ -60,7 +60,11 @@ const INVITE_START_TIMEOUT_MS = 30_000;
 // i18n-ignore (wire method name)
 const INVITE_REDEEM_METHOD = 'invite.redeem';
 
-/** Phase-1 result: the device-flow prompt. */
+/**
+ * Phase-1 result: the device-flow prompt. `hostname` / `prettyHostname` name
+ * the host machine for the consent prompt; older daemons omit both, in which
+ * case the dialed address is shown instead.
+ */
 interface InviteRedeemStart {
   flowId: string;
   userCode: string;
@@ -69,6 +73,8 @@ interface InviteRedeemStart {
   interval: number;
   workspaceId: string;
   workspaceTitle: string;
+  hostname?: string;
+  prettyHostname?: string;
 }
 
 /** Phase-2 result: the collaborator credential (returned exactly once). */
