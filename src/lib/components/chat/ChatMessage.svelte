@@ -196,6 +196,11 @@
     /** Workspace for SimpleRichInput in edit mode */
     workspace?: Workspace | null;
     /**
+     * The viewer's own principal (`presence.ownPrincipalId`): their own rows
+     * render no author identity. `null` = not yet known, every author shown.
+     */
+    ownPrincipalId?: string | null;
+    /**
      * Called when user wants to edit and resend the message. `blocks`
      * carries the attachment content blocks restored/edited in the edit
      * strip (PROTOCOL §5.5) so edit/regenerate never drops attachments.
@@ -247,6 +252,7 @@
     hideToolCalls = false,
     sessionMetadata,
     workspace = null,
+    ownPrincipalId = null,
     onEditSubmit,
     editModel,
     onRegenerate,
@@ -409,14 +415,14 @@
   // Human author identity (multiplayer w2): shown only once the workspace has
   // more than one member, on plain human rows — agent-to-agent sends and
   // automated wakes carry their own sender header. Reads the daemon's
-  // serve-time `author` projection verbatim; single-member workspaces and
-  // rows without the projection render unchanged.
+  // serve-time `author` projection verbatim; single-member workspaces, the
+  // viewer's own rows and rows without the projection render unchanged.
   let humanAuthor = $derived(
     role === 'user' &&
       (workspace?.memberCount ?? 0) >= 2 &&
       !agentAttribution &&
       !automatedWakePresentation
-      ? getHumanMessageAuthor(message)
+      ? getHumanMessageAuthor(message, ownPrincipalId)
       : null,
   );
   let humanAuthorLabel = $derived(humanAuthor ? getMessageAuthorLabel(humanAuthor) : null);

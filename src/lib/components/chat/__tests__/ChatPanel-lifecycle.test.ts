@@ -258,6 +258,7 @@ vi.mock('$store/renderer/slices/workspace-navigation/workspace-navigation-select
 }));
 vi.mock('$store/renderer/slices/presence/presence-selectors', () => ({
   selectAgentTypingPeople: mocks.selector([]),
+  selectPresenceOwnPrincipalId: mocks.selector(null),
 }));
 vi.mock('$store/renderer/slices/transient-ui/transient-ui-selectors', async (importOriginal) => ({
   ...(await importOriginal<
