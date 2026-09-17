@@ -22,15 +22,35 @@
 // if-stale step runs from check-deps-fresh.mjs (first command of lint, check,
 // format:check, test:unit) and from verify:changed, so a fresh clone never has
 // to run generate:i18n by hand before a gate.
-import { createHash } from 'node:crypto';
-import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+//
+// Those gates run concurrently (several worktrees, `verify:changed` next to
+// `test:unit`), so generation is single-writer and published atomically
+// (intent-hq/intent#4565): compile + publish hold one host-wide lock per outdir
+// (`acquireVerificationLock`, keyed by the outdir's absolute path), an
+// `--if-stale` caller re-checks the sidecar once it holds the lock, and the
+// compiler writes into a fresh staging directory next to the outdir whose files
+// are then renamed into place one by one — stale outputs pruned, sidecar last —
+// so a reader never sees a missing or half-written output.
+import { createHash, randomUUID } from 'node:crypto';
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { acquireVerificationLock, defaultLockPath } from './verification-lock.mjs';
 
 export const PARAGLIDE_INPUTS_HASH_FILE = '.inputs.sha256';
 export const PARAGLIDE_OUTPUT_STRUCTURE = 'locale-modules';
 const GENERATED_OUTPUTS = ['messages.js', 'runtime.js'];
 const MAX_GENERATE_ATTEMPTS = 3;
+const LOCK_TIMEOUT_MS = 120_000;
+const LOCK_POLL_MS = 50;
 
 export function paraglideInputFiles({ projectDir, messagesDir }) {
   const catalogs = readdirSync(messagesDir)
@@ -51,26 +71,104 @@ export function hashParaglideInputs({ projectDir, messagesDir }) {
   return hash.digest('hex');
 }
 
+/** The host-wide lock serializing generators of `outdir`. */
+export function paraglideLockPath(outdir) {
+  return defaultLockPath(`paraglide:${resolve(outdir)}`);
+}
+
+async function withParaglideLock(outdir, run) {
+  const release = await acquireVerificationLock({
+    lockPath: paraglideLockPath(outdir),
+    timeoutMs: LOCK_TIMEOUT_MS,
+    pollMs: LOCK_POLL_MS,
+  });
+  try {
+    return await run();
+  } finally {
+    release();
+  }
+}
+
+function listFiles(dir, prefix = '') {
+  const files = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const relative = prefix ? `${prefix}/${entry.name}` : entry.name;
+    if (entry.isDirectory()) files.push(...listFiles(join(dir, entry.name), relative));
+    else files.push(relative);
+  }
+  return files;
+}
+
+function removeEmptyDirs(dir) {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const child = join(dir, entry.name);
+    removeEmptyDirs(child);
+    if (readdirSync(child).length === 0) rmSync(child, { recursive: true, force: true });
+  }
+}
+
 /**
- * Run `compile` and record the inputs' digest next to its outputs. Returns
- * false (and leaves no sidecar) when the inputs changed while compiling.
+ * Move the staged outputs into `outdir` one rename at a time: every path is
+ * either its previous complete version or its new one, never absent or
+ * partial. Outputs the new set no longer contains are pruned, then the sidecar
+ * is renamed into place last so it only ever vouches for a complete set.
  */
-export async function compileWithInputsHash({ projectDir, messagesDir, outdir, compile }) {
-  const sidecar = join(outdir, PARAGLIDE_INPUTS_HASH_FILE);
-  rmSync(sidecar, { force: true });
-  const digest = hashParaglideInputs({ projectDir, messagesDir });
-  await compile();
-  if (hashParaglideInputs({ projectDir, messagesDir }) !== digest) return false;
-  writeFileSync(sidecar, `${digest}\n`);
-  return true;
+function publishStagedOutputs({ staging, outdir, digest }) {
+  const staged = listFiles(staging);
+  mkdirSync(outdir, { recursive: true });
+  for (const relative of staged) {
+    const target = join(outdir, relative);
+    mkdirSync(dirname(target), { recursive: true });
+    renameSync(join(staging, relative), target);
+  }
+  const keep = new Set([...staged, PARAGLIDE_INPUTS_HASH_FILE]);
+  for (const relative of listFiles(outdir)) {
+    if (!keep.has(relative)) rmSync(join(outdir, relative), { force: true });
+  }
+  removeEmptyDirs(outdir);
+  const stagedSidecar = join(staging, PARAGLIDE_INPUTS_HASH_FILE);
+  writeFileSync(stagedSidecar, `${digest}\n`);
+  renameSync(stagedSidecar, join(outdir, PARAGLIDE_INPUTS_HASH_FILE));
+}
+
+async function compileAndPublish({ projectDir, messagesDir, outdir, compile }) {
+  const staging = join(dirname(outdir), `.paraglide-staging-${process.pid}-${randomUUID()}`);
+  mkdirSync(staging, { recursive: true });
+  try {
+    const digest = hashParaglideInputs({ projectDir, messagesDir });
+    await compile({ outdir: staging });
+    if (hashParaglideInputs({ projectDir, messagesDir }) !== digest) {
+      rmSync(join(outdir, PARAGLIDE_INPUTS_HASH_FILE), { force: true });
+      return false;
+    }
+    publishStagedOutputs({ staging, outdir, digest });
+    return true;
+  } finally {
+    rmSync(staging, { recursive: true, force: true });
+  }
+}
+
+async function retryCompileAndPublish({ maxAttempts = MAX_GENERATE_ATTEMPTS, ...options }) {
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    if (await compileAndPublish(options)) return true;
+  }
+  return false;
+}
+
+/**
+ * Run `compile({ outdir })` against a staging directory and publish its
+ * outputs plus the inputs' digest into `outdir` under the outdir's lock.
+ * Returns false (and publishes nothing but the sidecar's removal) when the
+ * inputs changed while compiling.
+ */
+export function compileWithInputsHash(options) {
+  return withParaglideLock(options.outdir, () => compileAndPublish(options));
 }
 
 /** `compileWithInputsHash`, retried while edits keep landing mid-compile. */
-export async function generateParaglide({ maxAttempts = MAX_GENERATE_ATTEMPTS, ...options }) {
-  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-    if (await compileWithInputsHash(options)) return true;
-  }
-  return false;
+export function generateParaglide(options) {
+  return withParaglideLock(options.outdir, () => retryCompileAndPublish(options));
 }
 
 export function canReuseGeneratedParaglide({ projectDir, messagesDir, outdir }) {
@@ -81,10 +179,17 @@ export function canReuseGeneratedParaglide({ projectDir, messagesDir, outdir }) 
   return recorded.length > 0 && recorded === hashParaglideInputs({ projectDir, messagesDir });
 }
 
-/** `generateParaglide`, skipped when `ifStale` is set and the outputs are current. */
+/**
+ * `generateParaglide`, skipped when `ifStale` is set and the outputs are
+ * current. The reuse check repeats once the lock is held, so a caller that
+ * waited on another generator reuses what it just published.
+ */
 export async function ensureGeneratedParaglide({ ifStale = false, ...options }) {
   if (ifStale && canReuseGeneratedParaglide(options)) return true;
-  return generateParaglide(options);
+  return withParaglideLock(options.outdir, () => {
+    if (ifStale && canReuseGeneratedParaglide(options)) return true;
+    return retryCompileAndPublish(options);
+  });
 }
 
 export const PARAGLIDE_STALE_MESSAGE =
@@ -106,12 +211,13 @@ export async function ensureRepoParaglide({ rootDir, ifStale = false, compile })
     ...paths,
     compile:
       compile ??
-      (async () => {
+      (async ({ outdir }) => {
         const { compile: compileProject } = await import('@inlang/paraglide-js');
         return compileProject({
           project: paths.projectDir,
-          outdir: paths.outdir,
+          outdir,
           outputStructure: PARAGLIDE_OUTPUT_STRUCTURE,
+          cleanOutdir: false,
         });
       }),
   });

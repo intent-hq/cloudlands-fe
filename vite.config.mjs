@@ -54,13 +54,15 @@ const reuseGeneratedParaglide = () => ({
     if (!isMessage && !isProjectSettings) return;
 
     // An edit that lands mid-compile leaves no sidecar; it also fires its own
-    // watchChange, which recompiles, so no retry is needed here.
+    // watchChange, which recompiles, so no retry is needed here. The compiler
+    // writes into the staging directory it is handed; the outputs are then
+    // published into paraglideOutdir atomically.
     await compileWithInputsHash({
       ...paraglidePaths,
-      compile: () =>
+      compile: ({ outdir }) =>
         compile({
           project: paraglideProject,
-          outdir: paraglideOutdir,
+          outdir,
           outputStructure: PARAGLIDE_OUTPUT_STRUCTURE,
           cleanOutdir: false,
           isServer: "import.meta.env?.SSR ?? typeof window === 'undefined'",
