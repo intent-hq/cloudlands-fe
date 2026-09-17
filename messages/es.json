@@ -5727,6 +5727,7 @@
   "deeplink_inviteConfirm_join_button": "Unirse",
   "deeplink_inviteProve_detail": "Intent demuestra tu identidad de GitHub al host con un gist privado que se elimina justo después. El host conoce tu nombre de usuario de GitHub, el ID de tu cuenta, tu nombre visible y tu avatar.",
   "deeplink_inviteProofExpired_message": "La prueba de identidad tardó demasiado y el host ya no la acepta. ¿Reintentar con una nueva?",
+  "deeplink_inviteProofInvalid_message": "El host no pudo verificar tu identidad de GitHub con esta prueba. ¿Reintentar con una nueva?",
   "deeplink_inviteProofExpired_retry_button": "Reintentar",
   "deeplink_inviteFailed_title": "No se pudo unir al espacio de trabajo",
   "deeplink_inviteFailed_ok_button": "Aceptar",

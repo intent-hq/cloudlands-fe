@@ -5727,6 +5727,7 @@
   "deeplink_inviteConfirm_join_button": "加入",
   "deeplink_inviteProve_detail": "Intent 通过一个私密 gist 向主机证明你的 GitHub 身份，并在之后立即删除。主机将获知你的 GitHub 用户名、账户 ID、显示名称和头像。",
   "deeplink_inviteProofExpired_message": "身份证明耗时过长，主机已不再接受。要使用新的证明重试吗？",
+  "deeplink_inviteProofInvalid_message": "主机无法通过此证明验证你的 GitHub 身份。要使用新的证明重试吗？",
   "deeplink_inviteProofExpired_retry_button": "重试",
   "deeplink_inviteFailed_title": "无法加入工作区",
   "deeplink_inviteFailed_ok_button": "好",

@@ -5727,6 +5727,7 @@
   "deeplink_inviteConfirm_join_button": "Beitreten",
   "deeplink_inviteProve_detail": "Intent belegt deine GitHub-Identität gegenüber dem Host mit einem privaten Gist, der direkt danach gelöscht wird. Der Host erfährt deinen GitHub-Benutzernamen, deine Konto-ID, deinen Anzeigenamen und deinen Avatar.",
   "deeplink_inviteProofExpired_message": "Der Identitätsnachweis hat zu lange gedauert und der Host akzeptiert ihn nicht mehr. Mit einem neuen erneut versuchen?",
+  "deeplink_inviteProofInvalid_message": "Der Host konnte deine GitHub-Identität mit diesem Nachweis nicht prüfen. Mit einem neuen erneut versuchen?",
   "deeplink_inviteProofExpired_retry_button": "Erneut versuchen",
   "deeplink_inviteFailed_title": "Beitritt zum Workspace nicht möglich",
   "deeplink_inviteFailed_ok_button": "OK",

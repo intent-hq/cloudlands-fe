@@ -5727,6 +5727,7 @@
   "deeplink_inviteConfirm_join_button": "参加",
   "deeplink_inviteProve_detail": "Intent は非公開 gist を使ってホストに GitHub の本人確認を行い、直後にそれを削除します。ホストが知るのは、あなたの GitHub ユーザー名、アカウント ID、表示名、アバターです。",
   "deeplink_inviteProofExpired_message": "本人確認に時間がかかりすぎたため、ホストはこれを受け付けなくなりました。新しい確認でやり直しますか？",
+  "deeplink_inviteProofInvalid_message": "ホストはこの確認では GitHub の本人確認を検証できませんでした。新しい確認でやり直しますか？",
   "deeplink_inviteProofExpired_retry_button": "再試行",
   "deeplink_inviteFailed_title": "ワークスペースに参加できませんでした",
   "deeplink_inviteFailed_ok_button": "OK",
