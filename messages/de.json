@@ -1374,6 +1374,7 @@
   "workspace_links_other_label": "Sonstiges",
   "workspace_links_remoteSpace_label": "Remote-Space",
   "workspace_links_untitled_label": "Ohne Titel",
+  "connection_unknownHost_label": "Unbekannter Host",
   "workspace_mcpServers_enabledCount_label": "{count} aktiviert",
   "workspace_mcpServers_manageServers_label": "Server verwalten",
   "workspace_mcpServers_serverIcon_alt": "{name}-Symbol",
