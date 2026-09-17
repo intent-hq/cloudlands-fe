@@ -669,6 +669,103 @@ describe('daemonEventsBridge (wire contract — agent:idle clears the spinner)',
     expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(false);
   });
 
+  // Prompt turns: the daemon's turn-start budget re-check queues the agent
+  // AFTER the send path already flipped isStreaming (chatSendStarted), and a
+  // prompt turn never emits agent:stream:start — so if agent:process:resumed
+  // is lost, only stream evidence can retire the hint.
+  describe('a queue hint set after chatSendStarted (prompt turn) is retired by stream evidence', () => {
+    const queueAfterSend = () => {
+      seedSession({ status: AgentStatus.Active });
+      appStore.dispatch(chatSendStarted(AGENT, WS));
+      expect(readSession()?.isStreaming).toBe(true);
+      appStore.dispatch(setProcessQueueHint(AGENT, 2, 8, 'memory-budget'));
+      expect(readSession()?.processQueueHint).toEqual({
+        waiting: true,
+        used: 2,
+        cap: 8,
+        reason: 'memory-budget',
+      });
+    };
+
+    it('agent:tool:call clears the hint', async () => {
+      queueAfterSend();
+      await primeBridge();
+      const handler = capturedHandlers[0]!;
+
+      handler(
+        notification('agent:tool:call', {
+          agentId: AGENT,
+          toolName: 'Read',
+          toolKind: 'file',
+          toolCallId: 't1',
+          input: { path: 'src/lib.rs' },
+          status: 'started',
+          messageId: MESSAGE_ID,
+          blockIndex: 1,
+          blockId: `${MESSAGE_ID}:1`,
+        }),
+      );
+
+      expect(readSession()?.processQueueHint).toBeUndefined();
+      expect(readSession()?.isStreaming).toBe(true);
+    });
+
+    it('agent:stream:chunk clears the hint', async () => {
+      queueAfterSend();
+      await primeBridge();
+      const handler = capturedHandlers[0]!;
+
+      handler(
+        notification('agent:stream:chunk', {
+          agentId: AGENT,
+          messageId: MESSAGE_ID,
+          blockIndex: 0,
+          blockId: `${MESSAGE_ID}:0`,
+          blockType: 'text',
+          content: 'Hello',
+        }),
+      );
+
+      expect(readSession()?.processQueueHint).toBeUndefined();
+    });
+
+    it('agent:stream:status clears the hint', async () => {
+      queueAfterSend();
+      await primeBridge();
+      const handler = capturedHandlers[0]!;
+
+      handler(
+        notification('agent:stream:status', {
+          agentId: AGENT,
+          workspaceId: WS,
+          phase: 'prompt',
+          message: 'Sent prompt…',
+          level: 'info',
+          timestamp: 1_700_000_000_000,
+        }),
+      );
+
+      expect(readSession()?.processQueueHint).toBeUndefined();
+    });
+
+    it('a canonical agent:status-changed tick carrying isResponding alone keeps the hint', async () => {
+      queueAfterSend();
+      await primeBridge();
+      const handler = capturedHandlers[0]!;
+
+      handler(
+        notification('agent:status-changed', {
+          agentId: AGENT,
+          status: 'responding',
+          isActive: true,
+          isResponding: true,
+        }),
+      );
+
+      expect(readSession()?.processQueueHint?.waiting).toBe(true);
+    });
+  });
+
   it('ignores non-events.event methods, and forwards non-lifecycle events.event notifications into workspaceEvents without changing agent-session flags', async () => {
     seedSession({ isStreaming: true, status: AgentStatus.Active });
     await primeBridge();
