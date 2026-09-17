@@ -101,6 +101,15 @@
     }),
   );
 
+  const activityWorkspaces = [
+    longWorkspace,
+    workspaceFixture({
+      id: WorkspaceId(`${PREVIEW_FIXTURE_IDS.workspace}-archived`),
+      title: 'An archived workspace with a long title and retained activity metadata',
+      status: WorkspaceStatus.Archived,
+    }),
+  ];
+
   export const preview = definePreview<WorkspaceSidebarPreviewProps>({
     id: 'workspace-sidebar',
     title: 'Workspace sidebar',
@@ -120,6 +129,10 @@
       'status-groups': {
         props: { width: 320, workspaces: statusWorkspaces, statusGroups: true },
         setup: () => setupSidebarStatusGroups(statusWorkspaces),
+      },
+      'activity-times': {
+        props: { width: 248, workspaces: activityWorkspaces, statusGroups: true },
+        setup: () => setupSidebarStatusGroups(activityWorkspaces, true),
       },
     },
   });
@@ -143,6 +156,7 @@
 <section
   class="flex h-[560px] flex-col overflow-hidden rounded-lg border border-border bg-sidebar text-sidebar-foreground"
   style:width={`${width}px`}
+  style:container-type={statusGroups ? 'inline-size' : undefined}
   data-workspace-sidebar-preview
   data-preview-width={width}
 >

@@ -15,7 +15,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 const mocks = vi.hoisted(() => ({
   sendToWorkspaceWindows: vi.fn(),
   getAllWebContents: vi.fn(() => [] as unknown[]),
-  fromId: vi.fn(() => undefined),
+  fromId: vi.fn<(id: number) => unknown>(() => undefined),
   handlers: new Map<string, (event: unknown, data: unknown) => unknown>(),
 }));
 
@@ -148,7 +148,9 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.handlers.clear();
   mocks.getAllWebContents.mockReturnValue([]);
-  mocks.fromId.mockReturnValue(undefined);
+  mocks.fromId.mockImplementation((id) =>
+    mocks.getAllWebContents().find((wc) => (wc as { id: number }).id === id),
+  );
   mocks.sendToWorkspaceWindows.mockReturnValue(DELIVERED);
 });
 
@@ -192,6 +194,57 @@ describe('openDevToolsPanel', () => {
 });
 
 describe('listAllTabs vs closeTab registry agreement (#2536)', () => {
+  it('carries explicit recovery intent on the correlated local IPC request only', async () => {
+    const service = await loadService();
+    wireRenderer([{ tabId: 'tab-a', url: 'http://a/', title: 'A' }]);
+    await service.listAllTabs('ws-1', 'tab-a');
+    expect(mocks.sendToWorkspaceWindows).toHaveBeenCalledExactlyOnceWith(
+      'ws-1',
+      IPC_CHANNELS.BROWSER.LIST_TABS_REQUEST,
+      {
+        workspaceId: 'ws-1',
+        requestId: expect.any(String),
+        recoverTabId: 'tab-a',
+      },
+    );
+    mocks.sendToWorkspaceWindows.mockClear();
+    await service.listAllTabs('ws-1');
+    expect(mocks.sendToWorkspaceWindows).toHaveBeenCalledExactlyOnceWith(
+      'ws-1',
+      IPC_CHANNELS.BROWSER.LIST_TABS_REQUEST,
+      {
+        workspaceId: 'ws-1',
+        requestId: expect.any(String),
+      },
+    );
+  });
+
+  it('rejects a late dead registration without replacing the current live guest', async () => {
+    const service = await loadService();
+    const live = fakeWebview(11, 'http://a/');
+    mocks.getAllWebContents.mockReturnValue([live]);
+    service.registerTab('tab-a', 11);
+    service.registerTab('tab-a', 10);
+    expect(service.isTabMounted('tab-a')).toBe(true);
+    expect(service.listTabs()).toEqual([
+      expect.objectContaining({ tabId: 'tab-a', webContentsId: 11 }),
+    ]);
+  });
+
+  it('does not resolve a registration waiter with an already-dead guest', async () => {
+    vi.useFakeTimers();
+    try {
+      const service = await loadService();
+      const waiter = service.waitForTabRegistration('tab-dead', 1000);
+      mocks.fromId.mockReturnValue({ isDestroyed: () => true });
+      service.registerTab('tab-dead', 10);
+      await vi.advanceTimersByTimeAsync(1000);
+      await expect(waiter).resolves.toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('excludes a UI-closed tab whose webview is still alive', async () => {
     const service = await loadService();
     // tab-closed was closed in the UI: gone from the panel layout, but its

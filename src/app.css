@@ -763,9 +763,11 @@ body.panel-resizing webview {
 
 /* ===== Reduced motion support ===== */
 /* Follows `--motion-reduced` (OS preference or battery saver), see tokens.css */
-html[data-window-blurred] *,
-html[data-window-blurred] *::before,
-html[data-window-blurred] *::after {
+/* The window lifecycle marks actual CSS animation targets. An html descendant
+   blanket would invalidate the entire transcript on every focus change. */
+[data-window-animation-paused],
+[data-window-animation-paused]::before,
+[data-window-animation-paused]::after {
   animation-play-state: paused !important;
 }
 

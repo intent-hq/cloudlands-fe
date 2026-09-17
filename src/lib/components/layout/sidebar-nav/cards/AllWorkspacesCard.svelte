@@ -549,7 +549,7 @@
             <WorkspaceCard
               {workspace}
               variant="compact"
-              showTime={false}
+              showTime={true}
               isUnread={_isUnread(workspace)}
               isPinned={$pinnedIds$.includes(workspace.id)}
               trailingLabel={workspace.status === WorkspaceStatusEnum.Archived
@@ -620,7 +620,7 @@
                     <WorkspaceCard
                       {workspace}
                       variant="compact"
-                      showTime={false}
+                      showTime={true}
                       isUnread={_isUnread(workspace)}
                       isPinned={$pinnedIds$.includes(workspace.id)}
                       trailingLabel={workspace.status === WorkspaceStatusEnum.Archived
@@ -693,7 +693,7 @@
                 <WorkspaceCard
                   {workspace}
                   variant="compact"
-                  showTime={false}
+                  showTime={true}
                   isUnread={_isUnread(workspace)}
                   isPinned={$pinnedIds$.includes(workspace.id)}
                   trailingLabel={workspace.status === WorkspaceStatusEnum.Archived

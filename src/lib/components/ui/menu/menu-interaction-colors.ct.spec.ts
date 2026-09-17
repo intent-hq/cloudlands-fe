@@ -55,6 +55,7 @@ async function sample(row: Locator) {
       }
     }
     return {
+      background,
       luminance: bg,
       contrast: Math.min(...contrasts),
       textCount: contrasts.length,
@@ -120,7 +121,8 @@ for (const theme of ['light', 'dark'] as const) {
       expectReadable(hover);
       await page.mouse.down();
       await expect.poll(async () => (await sample(other)).luminance).not.toBe(hover.luminance);
-      expectReadable(await sample(other));
+      const unselectedPressed = await sample(other);
+      expectReadable(unselectedPressed);
       await other.dispatchEvent('pointercancel');
       await expect.poll(async () => (await sample(other)).luminance).toBe(hover.luminance);
       await page.mouse.move(0, 0);
@@ -132,12 +134,17 @@ for (const theme of ['light', 'dark'] as const) {
         expect(hover.luminance).toBeGreaterThan(0.9);
       } else {
         expect(idle.luminance).toBeGreaterThan(hover.luminance);
-        expect(idle.luminance).toBeLessThan(0.15);
+        expect(idle.luminance).toBeLessThan(0.04);
       }
       await selected.hover();
       await expect.poll(async () => (await sample(selected)).layers).toBe(2);
       const preview = await sample(selected);
       expect(preview.luminance).not.toBe(idle.luminance);
+      if (theme === 'dark') {
+        // Keep selection muted even while the separate hover/keyboard preview is visible.
+        expect(preview.luminance).toBeGreaterThan(idle.luminance);
+        expect(preview.luminance).toBeLessThan(0.06);
+      }
       expectReadable(preview, true);
       await page.mouse.down();
       await expect.poll(async () => (await sample(selected)).inset).toBe(true);
@@ -156,7 +163,27 @@ for (const theme of ['light', 'dark'] as const) {
       await expect(selected).toHaveAttribute(selectedAttribute, 'true');
       await expect.poll(async () => (await sample(selected)).layers).toBe(2);
       await expect.poll(async () => (await sample(selected)).luminance).toBe(preview.luminance);
-      expectReadable(await sample(selected), true);
+      const keyboard = await sample(selected);
+      expectReadable(keyboard, true);
+      await test.info().attach('interaction-colors', {
+        body: Buffer.from(
+          JSON.stringify({
+            theme,
+            kind,
+            idle,
+            hover,
+            unselectedPressed,
+            preview,
+            pressed,
+            keyboard,
+          }),
+        ),
+        contentType: 'application/json',
+      });
+      await test.info().attach('selected-keyboard-preview', {
+        body: await page.locator('[data-list-overlay]').filter({ has: selected }).screenshot(),
+        contentType: 'image/png',
+      });
       await page.keyboard.press('Escape');
       await expect(trigger).toBeFocused();
     });

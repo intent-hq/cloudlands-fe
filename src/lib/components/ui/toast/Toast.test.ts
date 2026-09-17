@@ -193,8 +193,8 @@ describe('Toast', () => {
     expect(document.activeElement).toBe(clearAll);
     await fireEvent.click(clearAll);
     await waitFor(() => expect(screen.queryByText('Clear all')).toBeNull());
+    await waitFor(() => expect(document.querySelectorAll('[data-sonner-toast]')).toHaveLength(0));
 
-    await new Promise((resolve) => setTimeout(resolve, 250));
     showFailure('Newer failure');
     expect(await screen.findByText('Newer failure')).toBeTruthy();
     expect(screen.queryByText('Clear all')).toBeNull();

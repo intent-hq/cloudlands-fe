@@ -156,3 +156,128 @@ test('keeps assigned and unassigned status and title columns aligned through hov
   expect(selected).toHaveLength(2);
   await page.keyboard.press('Escape');
 });
+
+for (const contentWidth of [220, 221]) {
+  test(`restores elapsed labels after resizing through the ${contentWidth}px sidebar boundary`, async ({
+    mount,
+    page,
+  }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    const component = await mount(WorkspaceSidebarPreview, {
+      hooksConfig: { geometrySnapshot: { scene: 'workspace-sidebar', state: 'status-groups' } },
+    });
+    await page.mouse.move(0, 0);
+    const times = component.locator('[data-workspace-card-time]');
+    await expect(times).toHaveCount(4);
+    await expect(times.first()).toBeVisible();
+    // The fixture has a 1px border on each side, outside its query container's content box.
+    await component.update({ props: { width: contentWidth + 2 } });
+    const measuredContentWidth = () =>
+      component.evaluate((element) => {
+        const style = getComputedStyle(element);
+        return element.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+      });
+    await expect.poll(measuredContentWidth).toBe(contentWidth);
+    for (const time of await times.all()) {
+      if (contentWidth === 220) await expect(time).toBeHidden();
+      else await expect(time).toBeVisible();
+    }
+    await component.update({ props: { width: 320 } });
+    await expect.poll(measuredContentWidth).toBe(318);
+    for (const time of await times.all()) await expect(time).toBeVisible();
+    const toggle = component.locator('[data-status-group-toggle="idle"]');
+    const idleTime = component.locator('#status-group-idle [data-workspace-card-time]');
+    await toggle.focus();
+    await page.keyboard.press('Enter');
+    await expect(idleTime).toBeHidden();
+    await page.keyboard.press('Space');
+    await expect(idleTime).toBeVisible();
+  });
+}
+
+test('keeps elapsed labels and long-title metadata contained while pin and menu actions remain reachable', async ({
+  mount,
+  page,
+}, testInfo) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const component = await mount(WorkspaceSidebarPreview, {
+    hooksConfig: { geometrySnapshot: { scene: 'workspace-sidebar', state: 'activity-times' } },
+  });
+  await page.evaluate(() => document.fonts.ready);
+  await page.mouse.move(0, 0);
+  const rows = component.locator('[data-workspace-card-row]');
+  await expect(rows).toHaveCount(2);
+  const row = component.locator('#status-group-pr_open [data-workspace-card-row]');
+  const time = row.locator('[data-workspace-card-time]');
+  await expect(time).toHaveCSS('opacity', '1');
+  await expect(row.locator('[data-workspace-card-pr-item]')).toBeVisible();
+  await expect(
+    component.locator('#status-group-archived [data-workspace-card-trailing-label]'),
+  ).toBeVisible();
+
+  const measure = () =>
+    rows.evaluateAll((elements) =>
+      elements.map((element) => {
+        const rowRect = element.getBoundingClientRect();
+        const title = element.querySelector('[data-workspace-card-title]')!;
+        const titleRect = title.getBoundingClientRect();
+        const time = element.querySelector('[data-workspace-card-time]')!;
+        const range = document.createRange();
+        range.selectNodeContents(time);
+        const ink = range.getBoundingClientRect();
+        const metadata = element.querySelector(
+          '[data-workspace-card-pr-list], [data-workspace-card-trailing-label]',
+        )!;
+        const metadataRect = metadata.getBoundingClientRect();
+        return {
+          x: rowRect.x,
+          y: rowRect.y,
+          height: rowRect.height,
+          titleX: titleRect.x,
+          titleRight: titleRect.right,
+          truncated: title.scrollWidth > title.clientWidth,
+          overflow: element.scrollWidth - element.clientWidth,
+          metadataLeft: metadataRect.left,
+          metadataRight: metadataRect.right,
+          timeLeft: ink.left,
+          timeRight: ink.right,
+          rowRight: rowRect.right,
+        };
+      }),
+    );
+  const initial = await measure();
+  for (const bounds of initial) {
+    expect(bounds.truncated).toBe(true);
+    expect(bounds.overflow).toBeLessThanOrEqual(1);
+    expect(bounds.titleRight).toBeLessThanOrEqual(bounds.metadataLeft + 1);
+    expect(bounds.metadataRight).toBeLessThanOrEqual(bounds.timeLeft + 1);
+    expect(bounds.timeRight).toBeLessThanOrEqual(bounds.rowRight);
+  }
+  await row.hover();
+  await expect(time).toHaveCSS('opacity', '0');
+  expect(await measure()).toEqual(initial);
+  const pin = row.getByRole('button', { name: 'Pin', exact: true });
+  await pin.focus();
+  await page.keyboard.press('Space');
+  await expect(row).toHaveAttribute('data-pinned', 'true');
+  await row.getByRole('button', { name: 'Unpin', exact: true }).press('Space');
+  await expect(row).toHaveAttribute('data-pinned', 'false');
+  const actions = row.getByRole('button', { name: 'Workspace actions', exact: true });
+  await actions.focus();
+  await page.keyboard.press('Space');
+  await expect(page.getByRole('menu')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(actions).toBeFocused();
+  await component.getByRole('listbox').focus();
+  await page.mouse.move(0, 0);
+  await expect(time).toHaveCSS('opacity', '1');
+  expect(await measure()).toEqual(initial);
+  await testInfo.attach('elapsed-activity-geometry', {
+    body: JSON.stringify({ initial, final: await measure() }, null, 2),
+    contentType: 'application/json',
+  });
+  await testInfo.attach('elapsed-activity-narrow', {
+    body: await component.screenshot(),
+    contentType: 'image/png',
+  });
+});

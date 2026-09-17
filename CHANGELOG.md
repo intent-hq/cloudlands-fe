@@ -4,6 +4,39 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.163.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.163.0...v2.163.1) (2026-09-17)
+
+
+### 🐛 Bug Fixes
+
+* **browser:** recover dead offscreen guests without URL rollback ([#2590](https://github.com/intent-hq/cloudlands-fe/issues/2590)) ([7b9ab7c](https://github.com/intent-hq/cloudlands-fe/commit/7b9ab7c1f4c59e2f236ae8925b657c283483f885))
+
+## [2.163.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.162.2...v2.163.0) (2026-09-17)
+
+
+### 🚀 Features
+
+* **context:** Show workspace attachments in the sidebar ([#2528](https://github.com/intent-hq/cloudlands-fe/issues/2528)) ([a5e052b](https://github.com/intent-hq/cloudlands-fe/commit/a5e052b87d38dad05632dc8666a595dc91cae944))
+
+
+### ⚡ Performance
+
+* Limit style invalidation on window focus changes ([#2526](https://github.com/intent-hq/cloudlands-fe/issues/2526)) ([834dba5](https://github.com/intent-hq/cloudlands-fe/commit/834dba564108ed11e17fd2d1ace12f26a9037923))
+
+## [2.162.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.162.1...v2.162.2) (2026-09-17)
+
+
+### 🐛 Bug Fixes
+
+* polish chat cards and compact workspace controls ([#2580](https://github.com/intent-hq/cloudlands-fe/issues/2580)) ([5c2165b](https://github.com/intent-hq/cloudlands-fe/commit/5c2165b977943bfb80add10b71afd3ad92a1086c))
+
+## [2.162.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.162.0...v2.162.1) (2026-09-17)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.71 ([#2581](https://github.com/intent-hq/cloudlands-fe/issues/2581)) ([cad1a12](https://github.com/intent-hq/cloudlands-fe/commit/cad1a1239a97b0c1ba9e12e9745e053d847a6231))
+
 ## [2.162.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.161.5...v2.162.0) (2026-09-17)
 
 

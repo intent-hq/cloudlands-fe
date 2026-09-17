@@ -60,6 +60,8 @@ export type TabState = {
   hydratedBackendId: string | null;
   /** Renderer-local DOM leases; never persisted with workspace tabs. */
   mountedBrowserTabLeases: Record<string, Record<string, true>>;
+  /** One-shot renderer DOM recovery requests, keyed by tab; never persisted. */
+  browserTabRecoveryRequests: Record<string, string>;
 };
 
 const MAX_RECENTLY_CLOSED_TABS = 10;
@@ -191,6 +193,7 @@ const initialState: TabState = {
   version: 0,
   hydratedBackendId: null,
   mountedBrowserTabLeases: {},
+  browserTabRecoveryRequests: {},
 };
 
 const pruneClosedTabAt = (
@@ -262,6 +265,13 @@ export const releaseBrowserTabMount = createAction<[tabId: string, leaseId: stri
   'tabState/releaseBrowserTabMount',
 );
 
+export const requestBrowserTabRecovery = createAction<[tabId: string, requestId: string]>(
+  'tabState/requestBrowserTabRecovery',
+);
+export const consumeBrowserTabRecovery = createAction<[tabId: string, requestId: string]>(
+  'tabState/consumeBrowserTabRecovery',
+);
+
 /** Actions whose reducer handlers may change the canonical current workspace tab. */
 export const CURRENT_WORKSPACE_TAB_SELECTION_ACTIONS = [
   openWorkspaceTab,
@@ -274,6 +284,17 @@ export const CURRENT_WORKSPACE_TAB_SELECTION_ACTIONS = [
 ];
 
 export const tabStateReducer = createReducer<TabState>(initialState);
+tabStateReducer.with(requestBrowserTabRecovery, (state, { payload: [tabId, requestId] }) => {
+  if (state.browserTabRecoveryRequests[tabId] === requestId) return state;
+  return {
+    ...state,
+    browserTabRecoveryRequests: { ...state.browserTabRecoveryRequests, [tabId]: requestId },
+  };
+});
+tabStateReducer.with(consumeBrowserTabRecovery, (state, { payload: [tabId, requestId] }) => {
+  if (state.browserTabRecoveryRequests[tabId] !== requestId) return state;
+  return { ...state, browserTabRecoveryRequests: omitKey(state.browserTabRecoveryRequests, tabId) };
+});
 tabStateReducer.with(acquireBrowserTabMount, (state, { payload: [tabId, leaseId] }) => {
   const leases = state.mountedBrowserTabLeases[tabId];
   if (leases?.[leaseId]) return state;

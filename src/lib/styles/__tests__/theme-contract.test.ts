@@ -512,7 +512,7 @@ describe('theme color contract', () => {
     expect(tokenValue(css, 'theme-dark-overlay')).toBe('255 255 255');
     expect(tokenValue(css, 'theme-dark-hover')).toBe('rgb(var(--theme-dark-overlay) / 0.06)');
     expect(tokenValue(css, 'theme-dark-active')).toBe('rgb(var(--theme-dark-overlay) / 0.1)');
-    expect(tokenValue(css, 'theme-dark-selected')).toBe('0 0% 32%');
+    expect(tokenValue(css, 'theme-dark-selected')).toBe('0 0% 18%');
     expect(tokenValue(css, 'focus-ring')).toBe('var(--ring)');
     expect(tokenValue(css, 'overlay')).toBe('var(--theme-overlay)');
     expect(tokenValue(css, 'hover')).toBe('var(--theme-hover)');

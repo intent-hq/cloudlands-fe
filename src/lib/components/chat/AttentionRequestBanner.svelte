@@ -2,9 +2,9 @@
   /**
    * AttentionRequestBanner Component
    *
-   * Composer card shown when the current agent has a pending
-   * attention request (requestDiscussion / reportBlocker). Sits above the
-   * response prompt and queued messages, and
+   * Transcript card shown when the current agent has a pending
+   * attention request (requestDiscussion / reportBlocker). Scrolls with the
+   * conversation at the shared content width, and
    * retires automatically when the daemon clears the session fields on the
    * user's next response — a user-origin delivery (sendMessage,
    * sendQueuedMessageNow, editAndRegenerate, drained user-origin queue
@@ -36,7 +36,7 @@
 
 {#if $attentionRequest$}
   <div
-    class="mb-2 w-full max-w-[520px] min-w-0 rounded-(--radius-large) border border-border bg-card font-family-child"
+    class="mb-2 w-full min-w-0 rounded-(--radius-large) border border-border bg-card font-family-child"
     data-testid="attention-request-banner"
     transition:safeDisclosureTransition={{ tier: 'moderate' }}
   >

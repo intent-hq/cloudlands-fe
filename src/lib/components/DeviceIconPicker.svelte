@@ -18,6 +18,7 @@
     disabled?: boolean;
     portal?: boolean;
     class?: string;
+    contentClass?: string;
     onchange?: (value: DeviceIconChoice) => void;
   }
 
@@ -27,6 +28,7 @@
     disabled = false,
     portal = false,
     class: className = '',
+    contentClass = '',
     onchange,
   }: Props = $props();
 
@@ -77,7 +79,7 @@
         </Button>
       {/snippet}
     </Select.Trigger>
-    <Select.Content {portal} class="w-56">
+    <Select.Content {portal} class={cn('w-56', contentClass)}>
       <Select.Item value="auto" label={options[0].label}
         >{@render optionRow(options[0])}</Select.Item
       >

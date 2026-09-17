@@ -22,6 +22,7 @@
     handleHistoryNavigateIpc,
   } from '$lib/utils/history-navigation';
   import { isElectronPlatform } from '$lib/utils/platform-capabilities';
+  import { pauseWindowAnimations } from '$lib/actions/pause-window-animations';
   import { isHudWindowRenderer } from '$lib/utils/navigation.client';
 
   let { children }: { children?: Snippet } = $props();
@@ -70,6 +71,8 @@
       }
     }
 
+    const windowAnimations = pauseWindowAnimations(document.documentElement);
+
     // eslint-disable-next-line intent/no-component-async-data-fetch -- root DOM splash lifecycle wiring does not own domain state.
     const stopSplashGate = wireSplashGate(document.getElementById('splash'));
     document.getElementById('app-drag-region')?.remove();
@@ -83,6 +86,7 @@
     );
 
     return () => {
+      windowAnimations.destroy();
       if (windowFocusListenerId) {
         // eslint-disable-next-line intent/no-component-async-data-fetch -- paired native window listener cleanup
         electronApi.offById('window:focus', windowFocusListenerId);

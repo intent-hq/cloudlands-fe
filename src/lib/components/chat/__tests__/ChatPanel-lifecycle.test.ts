@@ -2,6 +2,12 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  transientUiReducer,
+  initialState as initialTransientUi,
+  setComposerContextItems,
+} from '$store/renderer/slices/transient-ui/transient-ui-slice';
+import { selectComposerContextItems } from '$store/renderer/slices/transient-ui/transient-ui-selectors';
 import type { Workspace } from '$shared/types';
 import { KeyboardShortcutManager } from '$lib/utils/keyboardShortcuts';
 import { registerGlobalSearchShortcuts } from '$lib/utils/global-search-shortcuts';
@@ -58,6 +64,8 @@ const mocks = vi.hoisted(() => {
     listenSync: vi.fn(),
     ipcListenerCleanups: [] as Array<ReturnType<typeof vi.fn>>,
     chatDrafts: {} as Record<string, string>,
+    transientUi: { byWorkspaceId: {} } as unknown,
+    deferComposerEmits: false,
     resizeObserve: vi.fn(),
     resizeDisconnect: vi.fn(),
     resizeConstructor: vi.fn(),
@@ -134,6 +142,7 @@ vi.mock('$store/renderer/store', async () => {
     state: () => ({
       ...(mocks.storeState as Record<string, unknown>),
       agentSubscriptionUI: { entries: mocks.agentSubscriptionUIEntries },
+      transientUi: mocks.transientUi,
     }),
     dispatch: mocks.dispatch,
     dedupeEmits: true,
@@ -247,7 +256,10 @@ vi.mock('$store/renderer/slices/multi-panel-context/multi-panel-context-selector
 vi.mock('$store/renderer/slices/workspace-navigation/workspace-navigation-selectors', () => ({
   selectWorkspaceNavigationMainPanel: mocks.selector({ type: 'empty' }),
 }));
-vi.mock('$store/renderer/slices/transient-ui/transient-ui-selectors', () => ({
+vi.mock('$store/renderer/slices/transient-ui/transient-ui-selectors', async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import('$store/renderer/slices/transient-ui/transient-ui-selectors')
+  >()),
   selectChatDraft: {
     select: (_state: unknown, workspaceId: string, agentId: string) =>
       mocks.chatDrafts[`${workspaceId}::${agentId}`] ?? '',
@@ -392,7 +404,7 @@ vi.mock('svelte-fa', async () => ({
 
 import ChatPanel from '../ChatPanel.svelte';
 import RetainedChatPanelOwnershipHarness from './RetainedChatPanelOwnershipHarness.svelte';
-import { clearDraftCacheForTests } from '../chat-draft-cache';
+import { clearDraftCacheForTests, setCachedDraft } from '../chat-draft-cache';
 import {
   clearCachedChatScroll,
   clearChatScrollCacheForTests,
@@ -689,7 +701,18 @@ beforeEach(() => {
   for (const key of Object.keys(mocks.agentSubscriptionUIEntries)) {
     delete mocks.agentSubscriptionUIEntries[key];
   }
+  mocks.transientUi = initialTransientUi;
+  mocks.deferComposerEmits = false;
   mocks.dispatch.mockImplementation((action) => {
+    if (action?.type === 'transientUi/setComposerContextItems') {
+      mocks.transientUi = transientUiReducer(
+        mocks.transientUi as typeof initialTransientUi,
+        action,
+      );
+      if (!mocks.deferComposerEmits) {
+        (appStore as unknown as { emitState(): void }).emitState();
+      }
+    }
     if (action?.type !== 'transientUi/setChatDraft') return action;
     const [workspaceId, agentId, draft] = action.payload as [string, string, string];
     const key = `${workspaceId}::${agentId}`;
@@ -876,6 +899,36 @@ describe.each([
 });
 
 describe('ChatPanel mounted lifecycle', () => {
+  it('preserves consecutive attachment edits before selector emissions catch up', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.transientUi = transientUiReducer(
+      initialTransientUi,
+      setComposerContextItems('workspace-a', 'agent-a', [
+        {
+          id: 'first',
+          type: 'file',
+          label: 'first.png',
+          imageData: 'YQ==',
+          imageMimeType: 'image/png',
+        },
+        {
+          id: 'second',
+          type: 'file',
+          label: 'second.png',
+          imageData: 'Yg==',
+          imageMimeType: 'image/png',
+        },
+      ]),
+    );
+    render(ChatPanel, { props: { workspace: workspace('workspace-a'), agentId: 'agent-a' } });
+    await tick();
+    // Redux commits synchronously, while the production readable coalesces emissions.
+    mocks.deferComposerEmits = true;
+    await fireEvent.click(screen.getByTestId('mock-context-first'));
+    await fireEvent.click(screen.getByTestId('mock-context-second'));
+    expect(selectComposerContextItems.select(appStore.state, 'workspace-a', 'agent-a')).toEqual([]);
+  });
+
   it.each([
     { type: 'event_notification', eventCount: 1, eventTypes: ['file:changed'] },
     { type: 'agent_message', fromAgentId: 'agent-sender', fromAgentName: 'Reviewer' },
@@ -2325,6 +2378,54 @@ describe('ChatPanel mounted lifecycle', () => {
       shouldFollowBottom: true,
     });
   });
+
+  it.each([false, true])(
+    'preserves incoming shared attachments when changing pairs (cached=%s)',
+    async (cached) => {
+      const incoming = {
+        id: 'incoming',
+        type: 'file' as const,
+        label: 'incoming.png',
+        imageData: 'aW5jb21pbmc=',
+        imageMimeType: 'image/png',
+      };
+      const outgoing = { ...incoming, id: 'outgoing', label: 'outgoing.png' };
+      mocks.transientUi = transientUiReducer(
+        transientUiReducer(
+          initialTransientUi,
+          setComposerContextItems('workspace-a', 'agent-a', [outgoing]),
+        ),
+        setComposerContextItems('workspace-b', 'agent-b', [incoming]),
+      );
+      if (cached) setCachedDraft('workspace-b', 'agent-b', { text: '', attachments: [] });
+      const restore = deferred<null>();
+      mocks.draftGet.mockImplementation((workspaceId: string) =>
+        workspaceId === 'workspace-a' ? Promise.resolve(null) : restore.promise,
+      );
+      const view = render(ChatPanel, {
+        props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+      });
+      await tick();
+      await view.rerender({ workspace: workspace('workspace-b'), agentId: 'agent-b' });
+      await tick();
+      expect(selectComposerContextItems.select(appStore.state, 'workspace-b', 'agent-b')).toEqual([
+        incoming,
+      ]);
+      expect(selectComposerContextItems.select(appStore.state, 'workspace-a', 'agent-a')).toEqual([
+        outgoing,
+      ]);
+      expect(screen.getByTestId('mock-context-incoming')).toBeTruthy();
+      expect(screen.getByTestId('mock-rich-input').getAttribute('data-input-locked')).toBe(
+        String(!cached),
+      );
+      restore.resolve(null);
+      await Promise.resolve();
+      await tick();
+      expect(screen.getByTestId('mock-context-incoming')).toBeTruthy();
+      await vi.advanceTimersByTimeAsync(550);
+      expect(mocks.draftSet).toHaveBeenCalledWith('workspace-b', 'agent-b', '', [incoming]);
+    },
+  );
 
   it('keeps draft restore and save ownership with the rebound workspace and agent', async () => {
     const draftA = deferred<{ text: string }>();

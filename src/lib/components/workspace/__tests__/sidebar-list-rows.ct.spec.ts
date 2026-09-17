@@ -6,9 +6,13 @@ for (const cardWidth of [320, 240]) {
   test(`expanded sidebar labels and keyboard actions fit ${cardWidth}px cards`, async ({
     mount,
     page,
-  }) => {
+  }, testInfo) => {
     await page.emulateMedia({ reducedMotion: 'reduce' });
     const component = await mount(Preview, { props: { cardWidth } });
     await assertSidebarListRows(component, page);
+    await testInfo.attach('sidebar-hidden-browser-restored', {
+      body: await component.screenshot(),
+      contentType: 'image/png',
+    });
   });
 }

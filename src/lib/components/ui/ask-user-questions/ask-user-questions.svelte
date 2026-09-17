@@ -713,6 +713,8 @@
                     {@const id = optionId(option, optionIndex)}
                     {@const selected = selectedIds.includes(id)}
                     {@const chipPosition = question.chipPosition ?? 'right'}
+                    {@const hasStackedDescription =
+                      question.layout === 'stacked' && Boolean(option.description?.trim())}
                     <!-- svelte-ignore a11y_no_noninteractive_tabindex (the runtime role is radio or checkbox) -->
                     <div
                       use:registerRow={optionIndex}
@@ -732,8 +734,8 @@
                         'group/question-row relative z-10 flex cursor-pointer select-none',
                         compact ? 'px-2.5' : 'px-3',
                         chipPosition === 'left' ? 'gap-2' : 'gap-3',
-                        question.layout === 'stacked' ? 'items-start' : 'items-center',
-                        question.layout === 'stacked'
+                        hasStackedDescription ? 'items-start' : 'items-center',
+                        hasStackedDescription
                           ? compact
                             ? 'min-h-12 py-1'
                             : 'min-h-14 py-2'
@@ -765,7 +767,7 @@
                           class={cn(
                             'relative inline-flex shrink-0 items-center justify-center',
                             compact ? 'size-6' : 'size-7',
-                            question.layout === 'stacked' && '-mt-px',
+                            hasStackedDescription && '-mt-px',
                           )}
                         >
                           <span

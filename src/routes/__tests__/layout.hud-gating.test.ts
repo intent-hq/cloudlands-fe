@@ -45,6 +45,10 @@ vi.mock('$store/renderer/app-store-lifecycle', () => ({
 }));
 vi.mock('$store/renderer/sagas', () => ({ startAllAppSagas: () => [] }));
 vi.mock('$store/renderer/seeders', () => ({}));
+// Native animation behavior is covered in window-blur-animations.ct.spec.ts.
+vi.mock('$lib/actions/pause-window-animations', () => ({
+  pauseWindowAnimations: () => ({ destroy() {} }),
+}));
 vi.mock('$features/layout/tab-types/register-all', () => ({ registerAllTabTypes: () => {} }));
 vi.mock('$features/backend/splash-gate', () => ({
   dismissSplashElement: mocks.dismissSplashElement,

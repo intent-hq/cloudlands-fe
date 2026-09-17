@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   acquireBrowserTabMount,
   closeWorkspaceTab,
+  consumeBrowserTabRecovery,
   endDrag,
   loadScrollPositions,
   loadWorkspaceTabsState,
@@ -9,6 +10,7 @@ import {
   openWorkspaceTab,
   reopenLastClosedWorkspaceTab,
   releaseBrowserTabMount,
+  requestBrowserTabRecovery,
   restoreWorkspaceTab,
   saveScrollPosition,
   serializeWorkspaceTabsState,
@@ -47,6 +49,7 @@ describe('tabStateReducer', () => {
     version: 0,
     hydratedBackendId: null,
     mountedBrowserTabLeases: {},
+    browserTabRecoveryRequests: {},
   };
 
   const makeState = (overrides: Partial<TabState> = {}): TabState => ({
@@ -74,6 +77,20 @@ describe('tabStateReducer', () => {
       tabStateReducer(released, releaseBrowserTabMount('browser-a', 'mount-2'))
         .mountedBrowserTabLeases,
     ).toEqual({});
+  });
+
+  it('consumes only the current recovery request without persisting DOM intent', () => {
+    const requested = tabStateReducer(initialState, requestBrowserTabRecovery('tab-a', 'req-1'));
+    expect(requested.browserTabRecoveryRequests).toEqual({ 'tab-a': 'req-1' });
+    expect(tabStateReducer(requested, requestBrowserTabRecovery('tab-a', 'req-1'))).toBe(requested);
+    const newer = tabStateReducer(requested, requestBrowserTabRecovery('tab-a', 'req-2'));
+    expect(tabStateReducer(newer, consumeBrowserTabRecovery('tab-a', 'req-1'))).toBe(newer);
+    expect(
+      tabStateReducer(newer, consumeBrowserTabRecovery('tab-a', 'req-2'))
+        .browserTabRecoveryRequests,
+    ).toEqual({});
+    expect(serializeWorkspaceTabsState(newer)).toEqual(serializeWorkspaceTabsState(initialState));
+    expect(newer.version).toBe(initialState.version);
   });
 
   it('does not persist leases or change them when workspace tabs are rehydrated', () => {

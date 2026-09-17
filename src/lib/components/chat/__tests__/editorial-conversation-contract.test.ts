@@ -257,8 +257,9 @@ describe('editorial conversation presentation contract', () => {
     expect(wakeupWrapper).toContain('message-nav-target relative z-10');
     expect(wakeupWrapper).toContain('data-pinned-prompt-id={message.id}');
     expect(wakeupWrapper).toContain('use:attachPinnedPromptMessage={message}');
-    expect(wakeupWrapper).toContain('eventCardAssistantMarginClass(');
-    expect(wakeupWrapper).toContain('turn.assistantMessages.length > 0');
+    // Render-aware turn-body decisions are covered by subscription-card-spacing.test.ts;
+    // chat-panel-visible-card-seams.ct.spec.ts and chat-panel-pending-status-spacing.ct.spec.ts
+    // measure the production transcript for hidden/visible bodies and pending-status transitions.
     // Card/batch/attention seam precedence is covered by subscription-card-gap
     // and attention-flow-spacing-geometry browser tests using measured gaps.
     expect(panel).not.toContain('data-testid="chat-scroll-to-bottom-button"');

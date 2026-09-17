@@ -25,7 +25,12 @@
   import { untrack } from 'svelte';
   import { BROWSER_PANEL_PARTITION, BROWSER_PROTOCOLS } from '../../../shared/constants';
   import { selectOwnClientId } from '$store/renderer/slices/browser-clients/browser-clients-selectors';
-  import { selectMountedBrowserTabLeases } from '$store/renderer/slices/tab-state/tab-state-selectors';
+  import {
+    selectBrowserTabRecoveryRequests,
+    selectMountedBrowserTabLeases,
+  } from '$store/renderer/slices/tab-state/tab-state-selectors';
+  import { consumeBrowserTabRecovery } from '$store/renderer/slices/tab-state/tab-state-slice';
+  import { store as appStore } from '$store/renderer/store';
   import { selectPanelLayoutWorkspaces } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
   import { offscreenWebview } from './offscreen-webview-action';
@@ -47,6 +52,12 @@
   const layouts$ = selectPanelLayoutWorkspaces();
   const ownClientId$ = selectOwnClientId();
   const mountedBrowserTabLeases$ = selectMountedBrowserTabLeases();
+  const recoveryRequests$ = selectBrowserTabRecoveryRequests();
+  let recoveryKeys = $state<Record<string, string>>({});
+
+  function recoverGuest(tabId: string, requestId: string) {
+    recoveryKeys = { ...recoveryKeys, [tabId]: requestId };
+  }
 
   function isKeepAliveUrl(url: string): boolean {
     try {
@@ -149,7 +160,35 @@
     const liveUrlByTabId = new Map(candidates.map((c) => [c.tabId, c.url]));
     return [...cache.keys()].flatMap((tabId) => {
       const frozen = frozenByTabId.get(tabId);
-      return frozen ? [{ tabId, ...frozen, desiredUrl: liveUrlByTabId.get(tabId) }] : [];
+      return frozen && liveUrlByTabId.has(tabId)
+        ? [
+            {
+              tabId,
+              ...frozen,
+              recoveryKey: recoveryKeys[tabId],
+              recoveryRequestId: $recoveryRequests$[tabId],
+              recoverGuest,
+              desiredUrl: liveUrlByTabId.get(tabId),
+            },
+          ]
+        : [];
+    });
+  });
+
+  $effect(() => {
+    const eligible = new Set(candidates.map((candidate) => candidate.tabId));
+    const mounted = cache;
+    for (const [tabId, requestId] of Object.entries($recoveryRequests$)) {
+      if (!eligible.has(tabId) || !mounted.has(tabId)) {
+        untrack(() => appStore.dispatch(consumeBrowserTabRecovery(tabId, requestId)));
+      }
+    }
+    untrack(() => {
+      const retained = Object.fromEntries(
+        Object.entries(recoveryKeys).filter(([id]) => eligible.has(id) && mounted.has(id)),
+      );
+      if (Object.keys(retained).length !== Object.keys(recoveryKeys).length)
+        recoveryKeys = retained;
     });
   });
 </script>
@@ -173,14 +212,16 @@
 >
   <div class="relative h-[800px] w-[1280px]">
     {#each entries as entry (entry.tabId)}
-      <webview
-        class="absolute inset-0 h-full w-full border-none"
-        src={entry.url}
-        partition={BROWSER_PANEL_PARTITION}
-        allowpopups
-        data-offscreen-webview-tab={entry.tabId}
-        use:offscreenWebview={entry}
-      ></webview>
+      {#key entry.recoveryKey}
+        <webview
+          class="absolute inset-0 h-full w-full border-none"
+          src={entry.recoveryKey ? 'about:blank' : entry.url}
+          partition={BROWSER_PANEL_PARTITION}
+          allowpopups
+          data-offscreen-webview-tab={entry.tabId}
+          use:offscreenWebview={entry}
+        ></webview>
+      {/key}
     {/each}
   </div>
 </div>

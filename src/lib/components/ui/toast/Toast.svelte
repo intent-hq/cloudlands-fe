@@ -149,7 +149,7 @@
 
 {#if showClearAll}
   <Button
-    variant="ghost"
+    variant="secondary"
     size="lg"
     class={staticPosition ? 'toast-clear-all toast-clear-all-static' : 'toast-clear-all'}
     onclick={clearVisibleToasts}
@@ -428,33 +428,22 @@
 
   :global(.toast-clear-all) {
     position: fixed;
-    left: calc(1rem + min(22rem, calc(100vw - clamp(2rem, 8vw, 4rem))));
-    bottom: 1rem;
+    left: var(--space-4);
+    bottom: var(--space-4);
     z-index: 1000000000;
-    transform: translateX(-100%);
-    color: hsl(var(--muted-foreground));
   }
 
   :global(.toast-clear-all.toast-clear-all-static) {
     position: relative;
     inset: auto;
-    margin-top: 0.5rem;
-    margin-left: auto;
-    transform: none;
+    margin-top: var(--space-2);
+    margin-right: auto;
   }
 
   :global(.toast-clear-all:focus-visible) {
     outline: 1px solid hsl(var(--focus-ring));
     outline-offset: 2px;
     box-shadow: none;
-  }
-
-  @media (max-width: 600px) {
-    :global(.toast-clear-all) {
-      left: 1rem;
-      bottom: 1rem;
-      transform: none;
-    }
   }
 
   :global(.sonner-loading-bar) {
