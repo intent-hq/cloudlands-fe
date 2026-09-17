@@ -379,6 +379,93 @@ describe('no-flushsync-in-teardown ESLint rule', () => {
     expect(messages).toHaveLength(0);
   });
 
+  it('attributes synchronous iteration callbacks and IIFEs to the enclosing effect body', async () => {
+    const messages = await lintSvelte(
+      component(`
+        import { flushSync } from 'svelte';
+        let items = $state<string[]>([]);
+        $effect(() => {
+          items.forEach(() => flushSync());
+          (() => flushSync())();
+          (function () { flushSync(); })();
+          new Set(items).forEach((item) => { void item; flushSync(); });
+          items.map((item) => { flushSync(); return item; });
+          items.some((item) => (item ? flushSync() : false));
+          [...items].reduce((acc, item) => { flushSync(); return acc + item; }, '');
+        });
+      `),
+    );
+
+    expect(messages.map((message) => [message.line, message.messageId])).toEqual([
+      [6, 'flushSyncInEffect'],
+      [7, 'flushSyncInEffect'],
+      [8, 'flushSyncInEffect'],
+      [9, 'flushSyncInEffect'],
+      [10, 'flushSyncInEffect'],
+      [11, 'flushSyncInEffect'],
+      [12, 'flushSyncInEffect'],
+    ]);
+  });
+
+  it('follows a flush inside a forEach callback back to the same-file helper that iterates (pre-fix overflow reporter pattern)', async () => {
+    const messages = await lintSvelte(
+      component(`
+        import { flushSync } from 'svelte';
+        const reporters = new Set<() => void>();
+        function reportAll(sync = true) {
+          reporters.forEach((report) => {
+            report();
+            if (sync) flushSync();
+          });
+        }
+        $effect(() => {
+          reportAll();
+          reportAll(false);
+          return () => reportAll();
+        });
+      `),
+    );
+
+    expect(
+      messages.map((message) => [
+        message.line,
+        message.messageId,
+        message.message.split(' runs ')[0],
+      ]),
+    ).toEqual([
+      [12, 'flushSyncInEffect', 'reportAll() (which calls flushSync)'],
+      [14, 'flushSyncInTeardown', 'reportAll() (which calls flushSync)'],
+    ]);
+  });
+
+  it('keeps deferred callbacks scheduled from an iteration callback, and iteration in event handlers, unreported', async () => {
+    const messages = await lintSvelte(
+      component(
+        `
+        import { flushSync } from 'svelte';
+        let items = $state<string[]>([]);
+        let el: HTMLElement;
+        $effect(() => {
+          items.forEach(() => requestAnimationFrame(() => flushSync()));
+          items.forEach(() => setTimeout(() => flushSync(), 0));
+          items.forEach(() => el.addEventListener('click', () => flushSync()));
+          items.forEach(() => Promise.resolve().then(() => flushSync()));
+          const observer = new ResizeObserver(() => flushSync());
+          observer.observe(el);
+          return () => observer.disconnect();
+        });
+        function handleClick() {
+          items.forEach(() => flushSync());
+          (() => flushSync())();
+        }
+      `,
+        '<button onclick={handleClick}></button>',
+      ),
+    );
+
+    expect(messages).toHaveLength(0);
+  });
+
   it('reports both an effect body flush and a cleanup flush in the same effect with distinct messages', async () => {
     const messages = await lintSvelte(
       component(`

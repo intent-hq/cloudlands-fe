@@ -14,8 +14,15 @@
 // (keeping the callee's default semantics). Anything else — `true`, a default
 // of `true`, component state, a computed object key, a parameter that is
 // reassigned in the helper body — counts as a flush.
-// Analysis is lexical: a flush inside a nested callback (rAF, forEach, ...) is
-// attributed to that callback, not to the helper that schedules it.
+// Analysis is lexical, with one synchronous exception: a flush inside an IIFE
+// or an inline callback passed to a synchronous iteration method (forEach, map,
+// filter, find, findIndex, some, every, reduce, reduceRight, flatMap — on any
+// receiver) runs as part of the function that contains it and is attributed to
+// that function. A flush inside any other nested callback (rAF, timer,
+// microtask, promise, event listener, ...) is attributed to that callback, not
+// to the function that schedules it. Function references stored in a
+// collection and invoked later (`reporters.forEach((report) => report())`) are
+// still not traced to their definitions.
 //
 // The same flushSync reachability is rejected inside the body of an $effect /
 // $effect.pre callback. Svelte 5.56 `schedule_effect()` dereferences
@@ -24,9 +31,10 @@
 // effect in that traversal that writes state throws
 // `TypeError: Cannot read properties of null (reading 'schedule')` (upstream
 // sveltejs/svelte#18546; caught by ErrorBoundary:MainLayout in v2.161.3 via
-// WorkspaceTabStrip and ResponseGroup effect bodies). Only the callback that
-// directly encloses the call counts as the effect body: a flush inside a rAF /
-// timer callback the body schedules runs outside the traversal.
+// WorkspaceTabStrip and ResponseGroup effect bodies). The effect body is the
+// callback that encloses the call once IIFEs and synchronous iteration
+// callbacks are climbed out of: a flush inside a rAF / timer callback the body
+// schedules runs outside the traversal.
 
 const FUNCTION_TYPES = new Set([
   'FunctionDeclaration',
@@ -56,11 +64,52 @@ function unwrapParent(node) {
   return current;
 }
 
+// Methods whose inline callback runs synchronously inside the caller, on any
+// receiver (Array, Set, Map, ...).
+const SYNC_ITERATION_METHODS = new Set([
+  'forEach',
+  'map',
+  'filter',
+  'find',
+  'findIndex',
+  'some',
+  'every',
+  'reduce',
+  'reduceRight',
+  'flatMap',
+]);
+
 function getEnclosingFunction(node) {
   for (let current = node.parent; current; current = current.parent) {
     if (FUNCTION_TYPES.has(current.type)) return current;
   }
   return null;
+}
+
+// Whether `fn` runs synchronously as part of the function that lexically
+// contains it: an IIFE, or an inline callback argument to a synchronous
+// iteration method.
+function runsInline(fn) {
+  const value = unwrapParent(fn);
+  const parent = value.parent;
+  if (parent?.type !== 'CallExpression') return false;
+  if (parent.callee === value) return true;
+  if (!parent.arguments.includes(value)) return false;
+  const callee = unwrapExpression(parent.callee);
+  return (
+    callee.type === 'MemberExpression' &&
+    !callee.computed &&
+    callee.property.type === 'Identifier' &&
+    SYNC_ITERATION_METHODS.has(callee.property.name)
+  );
+}
+
+// The function whose synchronous execution runs `node`: the nearest enclosing
+// function, climbing out of IIFEs and synchronous iteration callbacks.
+function getRunningFunction(node) {
+  let fn = getEnclosingFunction(node);
+  while (fn && runsInline(fn)) fn = getEnclosingFunction(fn);
+  return fn;
 }
 
 function isWithin(node, container) {
@@ -264,11 +313,11 @@ function createAnalyzer(sourceCode, actionIdentifiers) {
     return null;
   }
 
-  // The source text of the `$effect` / `$effect.pre` whose callback directly
-  // encloses `node`, or null. Lexical: a nested callback (rAF, timer, ...) is
-  // its own function, so a flush inside it is not the effect body.
+  // The source text of the `$effect` / `$effect.pre` whose callback runs `node`
+  // synchronously (see getRunningFunction), or null. A nested rAF / timer / ...
+  // callback is its own function, so a flush inside it is not the effect body.
   function findEffectBodyHost(node) {
-    const fn = getEnclosingFunction(node);
+    const fn = getRunningFunction(node);
     if (!fn) return null;
     const host = getCallbackHost(fn);
     if (host !== '$effect' && host !== '$effect.pre') return null;
@@ -540,7 +589,7 @@ export default {
             continue;
           }
 
-          const helper = getEnclosingFunction(call);
+          const helper = getRunningFunction(call);
           const helperVariable = helper ? getFunctionVariable(sourceCode, helper) : null;
           if (!helperVariable) continue;
 
