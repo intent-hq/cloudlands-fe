@@ -1260,6 +1260,102 @@ describe('NoteWithComments task conversion regression', () => {
     }
   });
 
+  // Regression (intent-hq/intent#4887, real component + REAL write service):
+  // a keystroke typed while the restore awaits the in-flight save's settle
+  // sits on the component's own debounce, invisible to settleNoteContent. The
+  // restore used to be dispatched the moment the first save acked, and that
+  // keystroke was then either dropped (restored text applied before its save
+  // fired) or merged onto the restored text (its save sent after the restore
+  // RPC). It must reach the daemon as its own pre-restore version instead,
+  // exactly like typing that preceded the click.
+  it('saves a keystroke typed while the restore awaits settle before dispatching the restore', async () => {
+    const service = await vi.importActual<typeof import('$features/notes/notes-write-service')>(
+      '$features/notes/notes-write-service',
+    );
+    const { appClient } = await import('$lib/client');
+    let resolveFirst!: (value: unknown) => void;
+    let resolveSecond!: (value: unknown) => void;
+    const wire = vi
+      .spyOn(appClient.notes, 'setContent')
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveFirst = resolve;
+        }) as never,
+      )
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveSecond = resolve;
+        }) as never,
+      );
+    replaceNotes([createNote('spec', 'A', 'note A', { rev: 4 })]);
+    const view = await renderInitializedNote('spec', 'note A');
+    const editor = (view.container.querySelector('.ProseMirror') as any).editor;
+    await waitFor(() => expect(editor.getText()).toBe('note A'));
+    vi.useFakeTimers();
+    await vi.advanceTimersByTimeAsync(1200);
+    vi.mocked(hasPendingNoteContent).mockImplementation(service.hasPendingNoteContent);
+    vi.mocked(updateNoteContent).mockImplementation(service.updateNoteContent);
+    vi.mocked(flushNoteContent).mockImplementation(service.flushNoteContent);
+    vi.mocked(settleNoteContent).mockImplementation(service.settleNoteContent);
+    mockDispatch.mockImplementation((action: any) => {
+      if (action.type === 'workspaceNotes/applyLocalNoteUpdate') {
+        const { noteId, update } = action.payload;
+        replaceNotes([{ ...getNoteById(noteId), ...update }]);
+      }
+      return action;
+    });
+    const restoreDispatched = () =>
+      mockDispatch.mock.calls.some(
+        ([action]) => action?.type === 'workspaceNotes/restoreNoteVersion',
+      );
+    const firstResult = { success: true, newContent: 'note A local', noteRev: 5 };
+    const secondResult = { success: true, newContent: 'note A local more', noteRev: 6 };
+    try {
+      editor.commands.insertContentAt(editor.state.doc.content.size - 1, ' local');
+      await vi.advanceTimersByTimeAsync(1801);
+      expect(wire).toHaveBeenCalledWith('spec', 'note A local', 4, 'ws-1');
+      mockDispatch.mockClear();
+
+      const restore = versionHistory.props!.onRestore!('version-1');
+      await tick();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(restoreDispatched()).toBe(false);
+
+      // Typed while the restore awaits the first save's ack: on the
+      // component debounce only, not in the write-service.
+      editor.commands.insertContentAt(editor.state.doc.content.size - 1, ' more');
+      resolveFirst(firstResult);
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(wire).toHaveBeenCalledTimes(2);
+      expect(wire.mock.calls[1]).toEqual(['spec', 'note A local more', 5, 'ws-1']);
+      expect(service.hasPendingNoteContent('ws-1', 'spec')).toBe(true);
+      expect(restoreDispatched()).toBe(false);
+
+      resolveSecond(secondResult);
+      await restore;
+      expect(service.hasPendingNoteContent('ws-1', 'spec')).toBe(false);
+      expect(mockDispatch).toHaveBeenCalledWith({
+        type: 'workspaceNotes/restoreNoteVersion',
+        payload: { workspaceId: 'ws-1', noteId: 'spec', versionId: 'version-1' },
+      });
+      // Nothing of that keystroke is left to send after the restore.
+      await vi.advanceTimersByTimeAsync(3000);
+      expect(wire).toHaveBeenCalledTimes(2);
+    } finally {
+      resolveFirst(firstResult);
+      resolveSecond(secondResult);
+      await vi.advanceTimersByTimeAsync(0);
+      await service.settleNoteContent('ws-1', 'spec');
+      vi.mocked(hasPendingNoteContent).mockImplementation(() => false);
+      vi.mocked(updateNoteContent).mockImplementation(() => undefined);
+      vi.mocked(flushNoteContent).mockImplementation(async () => undefined);
+      vi.mocked(settleNoteContent).mockImplementation(async () => undefined);
+      mockDispatch.mockImplementation((action: any) => action);
+      wire.mockRestore();
+    }
+  });
+
   it('does not apply a pending note conversion after unmount', async () => {
     const view = await renderInitializedNote();
     mockApplyExternalUpdateHtml.mockClear();
