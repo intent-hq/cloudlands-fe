@@ -13,19 +13,32 @@ import {
 } from '$store/renderer/slices/hardware-console/hardware-console-selectors';
 import type { Workspace } from '$shared/types';
 
-export function setupSidebarStatusGroups(workspaces: Workspace[]) {
+export function setupSidebarStatusGroups(workspaces: Workspace[], showArchived = false) {
   const previousWorkspaces = selectWorkspaceItems.select(appStore.state);
   const previousLoaded = appStore.state.workspace.hasLoaded;
-  const { allSpacesViewMode, collapsedStatusGroupIds } = appStore.state.sidebarNav;
+  const { allSpacesViewMode, collapsedStatusGroupIds, pinnedWorkspaceIds, showArchivedWorkspaces } =
+    appStore.state.sidebarNav;
   appStore.dispatch(replaceWorkspaceList(workspaces));
   appStore.dispatch(setWorkspaceHasLoaded(true));
   appStore.dispatch(
-    hydrateSidebarNav({ allSpacesViewMode: 'status', collapsedStatusGroupIds: [] }),
+    hydrateSidebarNav({
+      allSpacesViewMode: 'status',
+      collapsedStatusGroupIds: [],
+      pinnedWorkspaceIds: [],
+      showArchivedWorkspaces: showArchived,
+    }),
   );
   return () => {
     appStore.dispatch(replaceWorkspaceList(previousWorkspaces));
     appStore.dispatch(setWorkspaceHasLoaded(previousLoaded));
-    appStore.dispatch(hydrateSidebarNav({ allSpacesViewMode, collapsedStatusGroupIds }));
+    appStore.dispatch(
+      hydrateSidebarNav({
+        allSpacesViewMode,
+        collapsedStatusGroupIds,
+        pinnedWorkspaceIds,
+        showArchivedWorkspaces,
+      }),
+    );
   };
 }
 

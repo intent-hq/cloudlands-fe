@@ -8,6 +8,54 @@ const outerMenu = (page: Page) =>
 const innerMenu = (page: Page) => page.locator('[data-slot="select-content"]');
 const modelTrigger = (page: Page) => page.getByTestId('model-picker-host').getByRole('button');
 
+test('compact composer Auto gauge stays centered and stable after explicit effort', async ({
+  mount,
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 320, height: 480 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await mount(ModelPickerGeometryHost, { props: { placement: 'composer' } });
+  await page.evaluate(() => document.fonts.ready);
+  const trigger = modelTrigger(page);
+  const gauge = trigger.getByTestId('model-reasoning-effort-gauge');
+  const needle = trigger.getByTestId('model-reasoning-effort-gauge-needle');
+  await expect(trigger).toHaveAccessibleName('Reasoning model · Auto');
+  await expect(needle).toHaveCSS('transform', 'matrix(1, 0, 0, 1, 0, 0)');
+  const initial = await gauge.boundingBox();
+  expect(initial).not.toBeNull();
+  const label = trigger.getByText('Reasoning model', { exact: true });
+  const labelBox = (await label.boundingBox())!;
+  const iconBox = (await trigger.getByRole('img').boundingBox())!;
+  expect(iconBox.x + iconBox.width).toBeLessThan(labelBox.x);
+  expect(labelBox.x + labelBox.width).toBeLessThan(initial!.x);
+  expect(initial!.x + initial!.width).toBeLessThanOrEqual(320);
+  const bounds = (await trigger.boundingBox())!;
+  expect(Math.abs(initial!.y + initial!.height / 2 - bounds.y - bounds.height / 2)).toBeLessThan(1);
+  await expectHitTarget(trigger);
+  await testInfo.attach('compact-composer-auto-gauge', {
+    body: await trigger.screenshot(),
+    contentType: 'image/png',
+  });
+  await trigger.press('Enter');
+  await page.getByTestId('effort-picker-trigger').click();
+  await innerMenu(page).getByRole('option', { name: 'High', exact: true }).click();
+  await expect(trigger).toHaveAccessibleName('Reasoning model · High');
+  await expect(needle).not.toHaveCSS('transform', 'matrix(1, 0, 0, 1, 0, 0)');
+  expect(await gauge.boundingBox()).toEqual(initial);
+  expect(await trigger.boundingBox()).toEqual(bounds);
+  await page.getByTestId('effort-picker-trigger').click();
+  await innerMenu(page).getByRole('option', { name: 'Auto', exact: true }).click();
+  await page.getByTestId('effort-picker-trigger').press('Escape');
+  await expect(trigger).toBeFocused();
+  await expect(trigger).toHaveAccessibleName('Reasoning model · Auto');
+  await expect(needle).toHaveCSS('transform', 'matrix(1, 0, 0, 1, 0, 0)');
+  expect(await gauge.boundingBox()).toEqual(initial);
+  await testInfo.attach('auto-gauge-geometry', {
+    body: JSON.stringify({ initial, after: await gauge.boundingBox(), trigger: bounds }),
+    contentType: 'application/json',
+  });
+});
+
 test('composer model content aligns with text while its hover target extends on both sides', async ({
   mount,
   page,

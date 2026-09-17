@@ -63,7 +63,7 @@ for (const compact of [false, true]) {
 test('starter suggestions have tight text gaps and preserve keyboard selection and shuffle', async ({
   mount,
   page,
-}) => {
+}, testInfo) => {
   await page.setViewportSize({ width: 720, height: 900 });
   const component = await mount(Preview);
   const editor = component.locator('.rich-textarea [contenteditable=true]');
@@ -114,11 +114,19 @@ test('starter suggestions have tight text gaps and preserve keyboard selection a
   await page.keyboard.press('Enter');
   await expect(editor).toContainText(original.trim());
   await expect(options).toHaveCount(0);
-  // Let ProseMirror own the selection before deleting; fill('') selects a DOM range.
+  // Use the editor's select-all keybinding, not fill's DOM-only Range selection:
+  // ProseMirror must own the selection that the following delete key consumes.
   await editor.press('ControlOrMeta+A');
+  await expect
+    .poll(() => editor.evaluate(() => window.getSelection()?.toString().trim()))
+    .toBe(original.trim());
   await editor.press('Backspace');
-  await expect(editor).toBeEmpty();
+  await expect(editor).toHaveText('');
   await expect(options).toHaveCount(4);
+  await testInfo.attach('starter-suggestions-after-keyboard-clear', {
+    body: await page.screenshot(),
+    contentType: 'image/png',
+  });
   const before = await options.allTextContents();
   await component.locator('#suggestion-shuffle').click();
   await expect.poll(() => options.allTextContents()).not.toEqual(before);

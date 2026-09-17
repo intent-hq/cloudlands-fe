@@ -58,7 +58,7 @@ for (const { width, theme } of [
   test(`panel menu ink matches header with keyboard actions at ${width}px in ${theme}`, async ({
     mount,
     page,
-  }) => {
+  }, testInfo) => {
     await page.setViewportSize({ width, height: 700 });
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.evaluate(
@@ -78,7 +78,19 @@ for (const { width, theme } of [
     await expect(menu).toBeVisible();
     const openIn = menu.locator('[data-slot="menu-sub-trigger"]');
     await expect(openIn).toBeVisible();
-    const ink = await menu.evaluate(probePanelMenuIcons);
+    // Floating content exists offscreen while Bits measures it. Wait for placement,
+    // then sample the menu and its children in the same browser turn.
+    await expect(menu).toBeInViewport({ ratio: 1 });
+    const geometry = await menu.evaluate(probePanelMenuIcons);
+    const { icons: ink, bounds: menuBounds } = geometry;
+    await testInfo.attach('panel-menu-ink-geometry', {
+      body: JSON.stringify(geometry),
+      contentType: 'application/json',
+    });
+    await testInfo.attach('panel-menu-ink', {
+      body: await page.screenshot(),
+      contentType: 'image/png',
+    });
     expect(ink.map((icon) => icon.id)).toEqual([
       'font',
       'expand',
@@ -92,7 +104,6 @@ for (const { width, theme } of [
       'table-columns',
       'up-right-from-square',
     ]);
-    const menuBounds = (await menu.boundingBox())!;
     for (const icon of ink) {
       expect(icon.svg).toEqual({ width: 16, height: 16, transform: 'none' });
       expect(icon.strokeWidth).toBeCloseTo(1, 1);

@@ -35,6 +35,7 @@
     setupCardOnly = false,
     pendingAssistantStatus,
     pendingEvent = false,
+    cardSeamMessages,
   }: {
     theme?: 'light' | 'dark';
     zoom?: number;
@@ -47,10 +48,12 @@
     setupCardOnly?: boolean;
     pendingAssistantStatus?: 'thinking' | 'error' | 'model-unavailable' | 'idle' | 'reply';
     pendingEvent?: boolean;
+    cardSeamMessages?: AgentMessage[];
   } = $props();
   const setupCardFixture = untrack(() => setupCardOnly);
   const reasoningSearchFixture = untrack(() => reasoningSearchOnly);
   const pendingFixture = untrack(() => pendingAssistantStatus !== undefined);
+  const cardSeamFixture = untrack(() => cardSeamMessages);
   const workspaceId = 'chat-panel-operational-geometry';
   const agentId = 'chat-panel-operational-agent';
   const timestamp = '2026-08-17T12:00:00.000Z';
@@ -529,21 +532,24 @@
       : message('user-pending', 'user', [{ type: 'text', text: 'Wait for the first reply' }]),
   ]);
   // svelte-ignore state_referenced_locally -- each CT mount uses one immutable fixture scenario.
-  const messages = pendingFixture
-    ? pendingMessages
-    : setupCardFixture
-      ? []
-      : terminalStatusOnly
-        ? terminalStatusMessages
-        : groupedOrphanSearchOnly
-          ? groupedOrphanSearchMessages
-          : reasoningSearchOnly
-            ? reasoningSearchMessages
-            : seamOnly
-              ? seamMessages
-              : alignmentMessages;
+  const messages =
+    cardSeamFixture ??
+    (pendingFixture
+      ? pendingMessages
+      : setupCardFixture
+        ? []
+        : terminalStatusOnly
+          ? terminalStatusMessages
+          : groupedOrphanSearchOnly
+            ? groupedOrphanSearchMessages
+            : reasoningSearchOnly
+              ? reasoningSearchMessages
+              : seamOnly
+                ? seamMessages
+                : alignmentMessages);
   // svelte-ignore state_referenced_locally -- each CT mount uses one immutable fixture scenario.
   const fixtureIsStreaming =
+    !cardSeamFixture &&
     !setupCardFixture &&
     !terminalStatusOnly &&
     !reasoningSearchOnly &&
@@ -556,8 +562,8 @@
     status: 'active',
     isActive: true,
     isStreaming: fixtureIsStreaming,
-    isProcessing: !setupCardFixture && !reasoningSearchFixture,
-    isResponding: !setupCardFixture && !reasoningSearchFixture,
+    isProcessing: !cardSeamFixture && !setupCardFixture && !reasoningSearchFixture,
+    isResponding: !cardSeamFixture && !setupCardFixture && !reasoningSearchFixture,
     isInitialAgent: setupCardFixture,
     metadata: setupCardFixture ? { isInitialAgent: true } : undefined,
     messages,
