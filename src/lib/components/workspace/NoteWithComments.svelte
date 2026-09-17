@@ -1022,6 +1022,9 @@
     // is persisted as its own pre-restore version like the typing before the
     // click, rather than dropped by the restored apply or merged onto the
     // restored text by a save sent after the restore RPC (intent#4887).
+    // No iteration cap: each pass awaits a write-service round trip and only
+    // repeats if the user typed during it, so the loop ends one settle after
+    // typing stops. Capping and dispatching anyway would recreate the bug.
     do {
       if (saveDebounceTimer) {
         clearTimeout(saveDebounceTimer);
