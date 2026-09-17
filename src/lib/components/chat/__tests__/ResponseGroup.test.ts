@@ -7,7 +7,7 @@
  */
 import { describe, it, expect, vi } from 'vitest';
 import { fireEvent, render, waitFor } from '@testing-library/svelte';
-import { createRawSnippet } from 'svelte';
+import { createRawSnippet, tick } from 'svelte';
 import ResponseGroup from '../ResponseGroup.svelte';
 import {
   dedupeKeys,
@@ -313,6 +313,14 @@ describe('ResponseGroup - collapse state model', () => {
 
   const liveBlocks = [{ type: 'text', text: 'live chunk' }] as ContentBlock[];
 
+  // Svelte sets `inert` as a property where the DOM exposes it and as an
+  // attribute otherwise; jsdom differs by version, so accept either.
+  function isInert(element: HTMLElement): boolean {
+    return (
+      Boolean((element as HTMLElement & { inert?: boolean }).inert) || element.hasAttribute('inert')
+    );
+  }
+
   it('collapses from the streaming edge without a synchronous flush inside the effect', async () => {
     const { container, rerender } = render(ResponseGroup, {
       props: { name: 'Live group', isStreaming: true, children },
@@ -349,6 +357,67 @@ describe('ResponseGroup - collapse state model', () => {
         true,
       );
       await waitFor(() => expect(details(container)).toBeNull());
+    } finally {
+      styleSpy.mockRestore();
+    }
+  });
+
+  it('cancels a pending collapse when re-expanded within the same task', async () => {
+    const { container } = render(ResponseGroup, { props: { name: 'Group', children } });
+    const btn = header(container);
+    await fireEvent.click(btn);
+    await waitFor(() => expect(btn.getAttribute('aria-expanded')).toBe('true'));
+    const body = details(container)!;
+
+    // Native `click()` runs the handlers synchronously without the harness
+    // flushing in between, so both toggles land in one batch: the second
+    // must cancel the two-phase collapse the first one started.
+    resetEffectFlushSyncCalls();
+    btn.click();
+    btn.click();
+    await tick();
+
+    expect(effectFlushSyncCalls()).toBe(0);
+    expect(btn.getAttribute('aria-expanded')).toBe('true');
+    expect(details(container)).toBe(body);
+    expect(body.getAttribute('aria-hidden')).toBeNull();
+    expect(isInert(body)).toBe(false);
+
+    // The cancelled collapse must not leave `isClosing` stuck: a later
+    // collapse still runs to completion.
+    await fireEvent.click(btn);
+    await waitFor(() => expect(btn.getAttribute('aria-expanded')).toBe('false'));
+    await waitFor(() => expect(details(container)).toBeNull());
+  });
+
+  it('reopens the same details node when re-expanded during a measured outro', async () => {
+    const styleSpy = mockMeasuredPreviewStyle('[data-operational-expanded-content]');
+    try {
+      const { container, rerender } = render(ResponseGroup, {
+        props: { name: 'Live group', isStreaming: true, children },
+      });
+      const btn = header(container);
+      const body = details(container)!;
+
+      await rerender({ blocks: liveBlocks });
+      expect(btn.getAttribute('aria-expanded')).toBe('false');
+      expect(details(container)).toBe(body);
+      expect(body.getAttribute('aria-hidden')).toBe('true');
+      expect(isInert(body)).toBe(true);
+
+      resetEffectFlushSyncCalls();
+      await fireEvent.click(btn);
+
+      expect(effectFlushSyncCalls()).toBe(0);
+      expect(btn.getAttribute('aria-expanded')).toBe('true');
+      expect(details(container)).toBe(body);
+      expect(body.getAttribute('aria-hidden')).toBeNull();
+      expect(isInert(body)).toBe(false);
+
+      // The interrupted outro must not remove the reopened details later on.
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      expect(details(container)).toBe(body);
+      expect(body.getAttribute('aria-hidden')).toBeNull();
     } finally {
       styleSpy.mockRestore();
     }
