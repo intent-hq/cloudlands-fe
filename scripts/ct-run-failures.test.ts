@@ -365,6 +365,39 @@ describe('collectRun shard resolution', () => {
     expect(shards[2].cases).toEqual([REQUIRED_CASE]);
   });
 
+  it('uses the job log, not a download, when a rerun left several same-named artifacts', () => {
+    const artifacts = {
+      total_count: 3,
+      artifacts: [
+        { id: 890, name: 'playwright-ct-report-2-of-4', expired: false },
+        { id: 900, name: 'playwright-ct-report-2-of-4', expired: false },
+        { id: 901, name: 'playwright-ct-report-3-of-4', expired: true },
+      ],
+    };
+    const { runner, calls } = fakeRunner({
+      artifacts,
+      logs: { 22: LOG_WITH_SUMMARY, 33: LOG_WITH_SUMMARY, 44: LOG_WITHOUT_SUMMARY },
+    });
+    const { shards, warnings } = collectRun({
+      runId: RUN_ID,
+      repo: DEFAULT_REPO,
+      attempt: undefined,
+      runner,
+    });
+    expect(shards[1].source).toBe('log');
+    expect(shards[1].cases).toEqual([
+      expect.objectContaining({ status: 'flaky', title: 'wobbles' }),
+    ]);
+    expect(warnings).toEqual([
+      'shard 2/4: multiple artifacts named playwright-ct-report-2-of-4 (rerun); using job logs',
+      expect.stringMatching(/^shard 2\/4: no JSON report artifact/),
+      expect.stringMatching(/^shard 3\/4: no JSON report artifact/),
+    ]);
+    // Never downloads: the duplicate for shard 2 is skipped, shard 3's is expired.
+    expect(calls.filter((c) => c.startsWith('download'))).toEqual([]);
+    expect(calls).toContain('log 22');
+  });
+
   it('falls back to the whole log with a warning when the required-lane step is not found', () => {
     const { runner } = fakeRunner({ logs: { 33: FLAKY_SUMMARY.join('\n') } });
     const { shards, warnings } = collectRun({

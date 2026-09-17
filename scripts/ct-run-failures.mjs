@@ -184,7 +184,16 @@ export function collectRun({ runId, repo, attempt, runner }) {
     let artifact;
     if (useArtifacts) {
       artifacts ??= listAll(runner, `repos/${repo}/actions/runs/${runId}/artifacts`, 'artifacts');
-      artifact = artifacts.find((a) => a?.name === name && !a.expired);
+      const matching = artifacts.filter((a) => a?.name === name && !a.expired);
+      // `gh run download --name` cannot target an artifact id: after a rerun
+      // several same-named artifacts may survive and it could fetch a stale one.
+      if (matching.length > 1) {
+        warnings.push(
+          `shard ${job.shard}/${job.shardCount}: multiple artifacts named ${name} (rerun); using job logs`,
+        );
+      } else {
+        artifact = matching[0];
+      }
     }
     const report = artifact ? runner.jsonReport(repo, runId, name) : null;
     if (report) return { ...job, source: 'json', cases: casesFromJsonReport(report) };
