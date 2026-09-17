@@ -1,4 +1,4 @@
-import { posix, sep } from 'node:path';
+import { sep } from 'node:path';
 
 // The single definition of which files are Playwright component tests.
 // `playwright-ct.config.ts` sets `testDir`/`testMatch` from these constants, and
@@ -19,21 +19,29 @@ export function normalizeCtPath(file) {
   return path;
 }
 
+// Playwright evaluates `testMatch` with `createFileMatcher` (playwright/lib/util.js):
+// `minimatch(filePath, pattern, { nocase: true, dot: true })`, and its `testDir`
+// walk skips only `node_modules` and `.gitignore` rules. For `**/*<suffix>` that
+// is exactly "the path ends with <suffix>, case-insensitively, dotfiles and
+// dot-directories included" — so the classifiers compare suffixes that way
+// instead of using Node's `path.matchesGlob`, which is case-sensitive and
+// rejects dot segments (playwright/ct-spec-pattern.test.ts pins the agreement
+// against the CT runner's own matcher).
+function endsWithNocase(path, suffix) {
+  return path.toLowerCase().endsWith(suffix.toLowerCase());
+}
+
 // True for exactly the files `playwright-ct.config.ts` discovers: under
-// `CT_TEST_DIR/`, matching `CT_TEST_MATCH` (Node's built-in glob matcher; the
-// fixtures in ct-spec-pattern.test.ts pin that its semantics for this pattern
-// equal Playwright's).
+// `CT_TEST_DIR/` and matching `CT_TEST_MATCH` under Playwright's semantics.
 export function isCtSpec(file) {
   const path = normalizeCtPath(file);
-  const prefix = `${CT_TEST_DIR}/`;
-  if (!path.startsWith(prefix)) return false;
-  return posix.matchesGlob(path.slice(prefix.length), CT_TEST_MATCH);
+  return path.startsWith(`${CT_TEST_DIR}/`) && endsWithNocase(path, CT_SPEC_SUFFIX);
 }
 
 // Suffix-only check for callers that route a CT-suffixed file outside
 // `CT_TEST_DIR` to a different lane instead of ignoring it.
 export function hasCtSpecSuffix(file) {
-  return normalizeCtPath(file).endsWith(CT_SPEC_SUFFIX);
+  return endsWithNocase(normalizeCtPath(file), CT_SPEC_SUFFIX);
 }
 
 // `<directory>/<scene>.geometry<CT_SPEC_SUFFIX>` → `{ directory, scene }`, with
@@ -41,7 +49,7 @@ export function hasCtSpecSuffix(file) {
 export function ctGeometryScene(file) {
   const path = normalizeCtPath(file);
   const suffix = `.geometry${CT_SPEC_SUFFIX}`;
-  if (!path.endsWith(suffix)) return null;
+  if (!endsWithNocase(path, suffix)) return null;
   const stem = path.slice(0, -suffix.length);
   const slash = stem.lastIndexOf('/');
   const scene = stem.slice(slash + 1);

@@ -736,6 +736,11 @@ describe('verification planning', () => {
     expect(testRunner('tests/unit/edge-cases.test.ts')).toBe('vitest');
     expect(testRunner('src/test/factories/__tests__/workspace.factory.test.ts')).toBe('vitest');
     expect(testRunner('src/lib/__tests__/button.ct.spec.ts')).toBe('ct');
+    // Playwright matches testMatch with nocase + dot, so these are CT specs too.
+    expect(testRunner('src/.fixtures/button.ct.spec.ts')).toBe('ct');
+    expect(testRunner('src/.hidden.ct.spec.ts')).toBe('ct');
+    expect(testRunner('src/button.CT.spec.ts')).toBe('ct');
+    expect(testRunner('src/button.CT.SPEC.TS')).toBe('ct');
     // Only the files playwright-ct.config.ts discovers (`**/*.ct.spec.ts`) are
     // CT; vitest.config.ts excludes just that pattern, so a `.ct.test.ts` under
     // `src/` is a Vitest suite, not a CT one.
@@ -966,6 +971,16 @@ describe('verification planning', () => {
       expect(line).not.toContain('src/lib/splash/__tests__/splash-loader.test.ts');
       expect(line.includes('vitest') && line.includes('test/splash-loader.spec.ts')).toBe(false);
     }
+  });
+
+  it('feeds playwright/ sources to vitest related so their colocated suites run', () => {
+    const root = fixtureRoot({
+      'playwright/ct-spec-pattern.mjs': 'export const CT_TEST_DIR = "src";',
+      'playwright/ct-spec-pattern.test.ts': "import './ct-spec-pattern.mjs';",
+    });
+    const plan = createVerificationPlan(['playwright/ct-spec-pattern.mjs'], { root, ctTests: [] });
+    const related = plan.checks.find((check) => check.id === 'vitest-related');
+    expect(related?.args).toContain('playwright/ct-spec-pattern.mjs');
   });
 
   it('runs the whole Playwright browser suite when its config changes', () => {

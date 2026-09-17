@@ -1,3 +1,6 @@
+// @vitest-environment node
+
+import { createRequire } from 'node:module';
 import { describe, expect, it } from 'vitest';
 import {
   CT_SPEC_SUFFIX,
@@ -8,27 +11,45 @@ import {
   isCtSpec,
 } from './ct-spec-pattern.mjs';
 
-// `isCtSpec` matches with Node's `path.matchesGlob` while Playwright matches
-// `testMatch` with its own glob engine; these fixtures pin that the two agree
-// for `CT_TEST_MATCH` (`**/` spans zero or more directories, `*` never crosses
-// `/`, the suffix is literal), so the change classifiers keep selecting exactly
-// the files `playwright-ct.config.ts` discovers.
+// The oracle is the CT runner's own `testMatch` matcher: the `playwright` that
+// `@playwright/experimental-ct-svelte` resolves through `experimental-ct-core`
+// (not the top-level `@playwright/test`, which may be a different version).
+// `createFileMatcher` is `minimatch(..., { nocase: true, dot: true })`, so a
+// dot-directory spec or a case-folded suffix is discovered; `isCtSpec` must
+// agree, or the CT gate and `verify:changed` skip a spec the matrix runs.
+const ctRequire = createRequire(
+  createRequire(
+    createRequire(import.meta.url).resolve('@playwright/experimental-ct-svelte'),
+  ).resolve('@playwright/experimental-ct-core'),
+);
+const { createFileMatcher } = ctRequire('playwright/lib/util') as {
+  createFileMatcher: (patterns: string | string[]) => (filePath: string) => boolean;
+};
+const playwrightMatches = createFileMatcher(CT_TEST_MATCH);
+// Playwright walks `testDir` and matches absolute paths, so the oracle sees the
+// repo-relative path without any `./` prefix and only files under `testDir`.
+const playwrightDiscovers = (file: string) => {
+  const path = file.replace(/^(?:\.\/)+/, '');
+  return path.startsWith(`${CT_TEST_DIR}/`) && playwrightMatches(path);
+};
+
 describe('isCtSpec', () => {
   it('derives the discovery pattern from the one suffix', () => {
     expect(CT_TEST_DIR).toBe('src');
     expect(CT_TEST_MATCH).toBe(`**/*${CT_SPEC_SUFFIX}`);
   });
 
-  it.each([
+  const accepted = [
     'src/a/b.ct.spec.ts',
     './src/a/b.ct.spec.ts',
     'src/top-level.ct.spec.ts',
     'src/lib/components/ui/card/card.geometry.ct.spec.ts',
-  ])('accepts %s', (file) => {
-    expect(isCtSpec(file)).toBe(true);
-  });
-
-  it.each([
+    'src/.fixtures/button.ct.spec.ts',
+    'src/.hidden.ct.spec.ts',
+    'src/button.CT.spec.ts',
+    'src/button.CT.SPEC.TS',
+  ];
+  const rejected = [
     'src/a/b.ct.test.ts',
     'src/a/b.ct.spec.js',
     'src/a/b.ct.spec.tsx',
@@ -41,15 +62,29 @@ describe('isCtSpec', () => {
     'scripts/probe.ct.spec.ts',
     'src',
     '',
-  ])('rejects %s', (file) => {
+  ];
+
+  it.each(accepted)('accepts %s', (file) => {
+    expect(isCtSpec(file)).toBe(true);
+  });
+
+  it.each(rejected)('rejects %s', (file) => {
     expect(isCtSpec(file)).toBe(false);
   });
+
+  it.each([...accepted, ...rejected])(
+    "agrees with Playwright's testMatch matcher on %s",
+    (file) => {
+      expect(isCtSpec(file)).toBe(playwrightDiscovers(file));
+    },
+  );
 });
 
 describe('hasCtSpecSuffix', () => {
-  it('checks only the suffix, regardless of directory', () => {
+  it('checks only the suffix, regardless of directory or case', () => {
     expect(hasCtSpecSuffix('scripts/probe.ct.spec.ts')).toBe(true);
     expect(hasCtSpecSuffix('./src/a/b.ct.spec.ts')).toBe(true);
+    expect(hasCtSpecSuffix('scripts/.probe.CT.spec.ts')).toBe(true);
     expect(hasCtSpecSuffix('src/a/b.ct.test.ts')).toBe(false);
     expect(hasCtSpecSuffix('src/a/b.ct.spec.tsx')).toBe(false);
   });
@@ -66,6 +101,10 @@ describe('ctGeometryScene', () => {
       scene: 'workspace-hover-card',
     });
     expect(ctGeometryScene('card.geometry.ct.spec.ts')).toEqual({ directory: '', scene: 'card' });
+    expect(ctGeometryScene('src/.fixtures/Card.Geometry.CT.Spec.TS')).toEqual({
+      directory: 'src/.fixtures/',
+      scene: 'Card',
+    });
   });
 
   it.each([

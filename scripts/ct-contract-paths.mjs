@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 import { execFileSync } from 'node:child_process';
 import { realpathSync } from 'node:fs';
-import { posix } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CT_TEST_DIR, isCtSpec, normalizeCtPath } from '../playwright/ct-spec-pattern.mjs';
 
@@ -43,8 +42,9 @@ export const CT_CONTRACT_PATHS = Object.freeze([
 // The spec half is `isCtSpec` — exactly what `playwright-ct.config.ts` discovers,
 // since both read `playwright/ct-spec-pattern.mjs` (a broader pattern would
 // require CT for files the matrix never loads); the golden half is the path
-// `geometrySnapshotTargets` in `scripts/verify-changed.mjs` derives.
-const CT_GEOMETRY_GOLDEN_GLOB = `${CT_TEST_DIR}/**/__geometry__/*.geometry.json`;
+// `geometrySnapshotTargets` in `scripts/verify-changed.mjs` derives (matched
+// relative to `CT_TEST_DIR/`; dot-prefixed segments are accepted).
+const CT_GEOMETRY_GOLDEN_RE = /^(?:.*\/)?__geometry__\/[^/]+\.geometry\.json$/;
 
 const OUTPUT_KEY = 'ct_required';
 
@@ -56,8 +56,14 @@ export function isCtContractPath(file) {
   );
 }
 
+function isCtGeometryGolden(file) {
+  const path = normalizeCtPath(file);
+  const prefix = `${CT_TEST_DIR}/`;
+  return path.startsWith(prefix) && CT_GEOMETRY_GOLDEN_RE.test(path.slice(prefix.length));
+}
+
 export function isCtTestArtifact(file) {
-  return isCtSpec(file) || posix.matchesGlob(normalizeCtPath(file), CT_GEOMETRY_GOLDEN_GLOB);
+  return isCtSpec(file) || isCtGeometryGolden(file);
 }
 
 export function ctRequired(files) {

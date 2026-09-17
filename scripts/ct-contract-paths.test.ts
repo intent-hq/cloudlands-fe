@@ -122,8 +122,14 @@ describe('isCtTestArtifact', () => {
     'src/lib/components/ui/button/button.geometry.ct.spec.ts',
     'src/features/agent/components/agent-avatar/__tests__/agent-avatar-waiting.ct.spec.ts',
     'src/top-level.ct.spec.ts',
+    // Playwright's testMatch matcher is nocase + dot: these are discovered too.
+    'src/.fixtures/button.ct.spec.ts',
+    'src/.hidden.ct.spec.ts',
+    'src/button.CT.spec.ts',
     'src/lib/components/workspace/__geometry__/workspace-hover-card.geometry.json',
     './src/lib/components/workspace/__geometry__/workspace-hover-card.geometry.json',
+    'src/.fixtures/__geometry__/button.geometry.json',
+    'src/x/__geometry__/.button.geometry.json',
   ])('matches %s', (file) => {
     expect(isCtTestArtifact(file)).toBe(true);
   });

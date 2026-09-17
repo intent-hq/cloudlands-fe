@@ -272,6 +272,9 @@ function isExisting(file, root) {
 }
 
 export function testRunner(file) {
+  // Before UNIT_TEST_RE: Playwright discovers CT specs case-insensitively, so a
+  // `.CT.SPEC.TS` under src/ is a CT spec although no unit-test pattern sees it.
+  if (isCtSpec(file)) return 'ct';
   if (!UNIT_TEST_RE.test(file)) return null;
   if (file.startsWith('test/')) {
     if (!PLAYWRIGHT_TEST_RE.test(file) || PLAYWRIGHT_MANUAL_RE.test(file)) return 'manual';
@@ -280,7 +283,6 @@ export function testRunner(file) {
   if (file.startsWith('tests/integration/')) {
     return INTEGRATION_TEST_RE.test(file) ? 'integration' : 'manual';
   }
-  if (isCtSpec(file)) return 'ct';
   if (hasCtSpecSuffix(file)) return 'manual';
   if (VISUAL_TEST_RE.test(file) || VITEST_EXCLUDED_RE.test(file)) return 'manual';
   return 'vitest';
@@ -396,7 +398,7 @@ export function createVerificationPlan(files, options = {}) {
   const directUnit = [...new Set([...directTests('vitest'), ...deletedUnitDirectories])];
   const relatedSources = existing.filter(
     (file) =>
-      /^(?:src|scripts)\//.test(file) &&
+      /^(?:src|scripts|playwright)\//.test(file) &&
       CODE_EXTENSIONS.has(extname(file)) &&
       !UNIT_TEST_RE.test(file),
   );
