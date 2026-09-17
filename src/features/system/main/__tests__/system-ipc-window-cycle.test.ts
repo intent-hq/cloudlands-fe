@@ -61,6 +61,7 @@ function makeWindow(
     webContents: {
       isDestroyed: () => false,
       getURL: () => opts.url ?? 'http://localhost:5173/',
+      setBackgroundThrottling: vi.fn(),
     },
   };
 }

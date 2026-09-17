@@ -5,6 +5,7 @@ import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } 
 import { fileURLToPath } from 'node:url';
 import { escape as escapeGlob, globSync } from 'glob';
 import { checkDepsFresh, checkNodeSupport, ensureI18nFresh } from './check-deps-fresh.mjs';
+import { isCtContractPath } from './ct-contract-paths.mjs';
 import { pnpmInvocation } from './pnpm-launcher.mjs';
 import {
   acquireVerificationLock,
@@ -419,9 +420,10 @@ export function createVerificationPlan(files, options = {}) {
     if (file === 'tsconfig.json') boundaries.add('renderer');
     else if (file === 'tsconfig.main.json') boundaries.add('main');
     else if (file === 'tsconfig.preload.json') boundaries.add('preload');
-    else if (file === 'playwright-ct.config.ts' || file.startsWith('playwright/')) fullCt = true;
     else if (file === 'playwright.config.ts') fullPlaywright = true;
     else if (file === 'vitest.config.ts') fullUnit = true;
+    // Shared with the pull_request workflow's test-ct relevance step.
+    if (isCtContractPath(file)) fullCt = true;
 
     const known =
       CODE_EXTENSIONS.has(extname(file)) ||
@@ -439,7 +441,6 @@ export function createVerificationPlan(files, options = {}) {
       boundaries.add('main');
       boundaries.add('preload');
       svelteCheck = true;
-      if (file === 'package.json' || file === 'pnpm-lock.yaml') fullCt = true;
     }
   }
 

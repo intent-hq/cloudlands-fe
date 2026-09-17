@@ -24,7 +24,7 @@
 </script>
 
 <span
-  class="type-caption flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border font-medium leading-none a11y-ignore {slotColorClasses} {className}"
+  class="type-caption flex h-4 w-4 shrink-0 items-center justify-center rounded-[3px] border font-medium leading-none a11y-ignore {slotColorClasses} {className}"
   title={m.workspace_microKeyBadge_tooltip({ number: formatInteger(slot + 1) })}
 >
   {formatInteger(slot + 1)}
