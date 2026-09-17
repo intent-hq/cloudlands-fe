@@ -108,7 +108,7 @@ for (const direction of ['horizontal', 'vertical'] as const) {
 }
 
 for (const theme of ['light', 'dark']) {
-  test(`divider is discoverable before hover and strengthens on hover and keyboard focus in ${theme}`, async ({
+  test(`divider stays hidden at rest and reveals on hover and keyboard focus in ${theme}`, async ({
     mount,
     page,
   }) => {
@@ -124,18 +124,19 @@ for (const theme of ['light', 'dark']) {
     const handle = component.locator('.panel-split-handle');
     const opacity = () =>
       handle.evaluate((node) => Number(getComputedStyle(node, '::before').opacity));
+    // The shared resize contract keeps the indicator hidden at rest; the short
+    // indicator only changes its length, never its idle visibility.
     const idleOpacity = await opacity();
-    expect(idleOpacity).toBeGreaterThan(0);
-    expect(idleOpacity).toBeLessThan(1);
+    expect(idleOpacity).toBe(0);
     await handle.hover();
-    await expect.poll(opacity).toBeGreaterThan(idleOpacity);
+    await expect.poll(opacity).toBe(1);
     await page.mouse.move(0, 0);
     await handle.focus();
     await expect(handle).toBeFocused();
     const firstPanel = component.locator('.panel-split-child').first();
     const before = (await firstPanel.boundingBox())!;
     await page.keyboard.press('ArrowRight');
-    await expect.poll(opacity).toBeGreaterThan(idleOpacity);
+    await expect.poll(opacity).toBe(1);
     await expect
       .poll(async () => (await firstPanel.boundingBox())!.width)
       .toBeGreaterThan(before.width);

@@ -471,7 +471,7 @@
           aria-label={m.workspace_sidebarHeader_editTitle_tooltip()}
           class="type-title h-auto w-full rounded border-none bg-transparent px-0 py-0.5 text-foreground leading-normal
                  hover:bg-transparent focus-visible:bg-transparent focus-visible:shadow-none
-                 focus-visible:outline focus-visible:outline-1 focus-visible:outline-ring focus-visible:outline-offset-[-1px]"
+                 focus-visible:outline-solid focus-visible:outline-1 focus-visible:outline-ring focus-visible:outline-offset-[-1px]"
           placeholder={m.ui_editableName_placeholder()}
         />
       {:else}
