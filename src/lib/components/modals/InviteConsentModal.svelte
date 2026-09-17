@@ -134,14 +134,6 @@
               {m.inviteConsent_modal_hostLearns_description()}
             </p>
           </section>
-          <section class="space-y-1">
-            <h3 class="text-sm font-medium text-foreground">
-              {m.inviteConsent_modal_stored_title()}
-            </h3>
-            <p class="text-xs text-subtle">
-              {m.inviteConsent_modal_stored_description()}
-            </p>
-          </section>
           <GitHubDeviceCodeCard
             userCode={payload.userCode}
             verificationUri={payload.verificationUri}
