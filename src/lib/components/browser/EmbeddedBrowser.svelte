@@ -54,6 +54,7 @@
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
+  import { describeUrlForLog } from '$shared/utils/sanitize-credentials';
   import { matchesShortcut } from '$lib/utils/shortcut-bindings';
   import { effectiveShortcutReadable } from '$lib/utils/effective-shortcuts';
   import { invoke } from '$lib/electron-bridge';
@@ -316,6 +317,11 @@
   // guest re-registers (registerTab re-applies viewport emulation).
   let lastRegisteredWebContentsId: number | undefined;
 
+  // The guest webContentsId observed at the latest dom-ready, tracked
+  // independently of CDP registration (which needs a tabId) so the
+  // `destroyed` listener can tell a replaced guest from a closed one.
+  let attachedWebContentsId: number | undefined;
+
   // Keyboard interceptor script to inject into webview
   // Since webview runs in a separate process, keyboard events don't bubble up.
   // We inject a script that captures keyboard shortcuts and logs special messages
@@ -408,6 +414,7 @@
       const handleDomReady = () => {
         webviewReady = true;
         logger.debug('Webview ready', { url: currentWebviewUrl });
+        attachedWebContentsId = liveGuestWebContentsId(currentWebview);
 
         // Inject keyboard interceptor on initial load
         injectKeyboardInterceptor();
@@ -576,6 +583,17 @@
     webviewListeners.push({ event, handler });
   }
 
+  // getWebContentsId() throws while the element holds no attached guest
+  // (Electron's WebViewImpl.reset() clears it on disconnect); undefined
+  // here means exactly that.
+  function liveGuestWebContentsId(target: EmbeddedBrowserWebview): number | undefined {
+    try {
+      return target.getWebContentsId();
+    } catch {
+      return undefined;
+    }
+  }
+
   function setupWebviewListeners() {
     if (!webviewRef) return;
 
@@ -595,8 +613,43 @@
     // The guest webContents is gone (window.close(), guest crash cleanup).
     // Every later webview method call would throw, so drop the element and
     // surface a recoverable error state instead of a dead blank frame.
+    //
+    // Reparenting (panel drag) also destroys the guest, and that `destroyed`
+    // DOES reach this element (Electron 44, lib/renderer/web-view/*):
+    // disconnectedCallback deregisters the IPC channel, detaches the guest
+    // and reset() clears guestInstanceId; connectedCallback re-registers the
+    // SAME viewInstanceId channel and creates a new guest. The old guest's
+    // `destroyed` is forwarded by lib/browser/guest-view-manager
+    // sendToEmbedder to that channel in a later IPC task, i.e. after the
+    // element is connected again — either before the new guest attaches
+    // (getWebContentsId() throws) or after (it returns the new guest's id).
+    // A guest that closed itself never runs reset(), so the element still
+    // reports the id seen at its dom-ready: only that case is a page close.
+    // Assumed ordering: the old guest is detached by the sync detachGuest
+    // IPC on disconnect, so its `destroyed` lands before the new guest's
+    // dom-ready. Not covered (treated as a close; the refresh button
+    // recovers): a `destroyed` that lands after the new guest's dom-ready,
+    // or after it attached when the old guest never reached dom-ready.
     addWebviewListener('destroyed', () => {
-      logger.warn('Webview guest was destroyed', { tabId, url: currentWebviewUrl });
+      const target = webviewRef;
+      const currentId = target ? liveGuestWebContentsId(target) : undefined;
+      if (
+        !target?.isConnected ||
+        currentId === undefined ||
+        (attachedWebContentsId !== undefined && currentId !== attachedWebContentsId)
+      ) {
+        logger.debug('Ignoring destroyed event for a replaced guest', {
+          tabId,
+          attachedWebContentsId,
+          currentWebContentsId: currentId,
+        });
+        return;
+      }
+      // Origin + path only: OAuth close pages carry codes/tokens in the URL.
+      logger.warn('Webview guest was destroyed', {
+        tabId,
+        url: describeUrlForLog(currentWebviewUrl),
+      });
       cleanupWebviewListeners();
       webviewReady = false;
       isLoading = false;
@@ -604,6 +657,7 @@
       canGoBack = false;
       canGoForward = false;
       lastRegisteredWebContentsId = undefined;
+      attachedWebContentsId = undefined;
       errorMessage = m.browser_embedded_pageClosed_error();
       isGuestDestroyed = true;
     });

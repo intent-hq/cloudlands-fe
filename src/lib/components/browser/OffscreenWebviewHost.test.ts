@@ -324,6 +324,30 @@ describe('OffscreenWebviewHost', () => {
     );
   });
 
+  it('logs a destroyed guest URL without userinfo, query or fragment', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const closeUrl = 'https://u:pw@auth.example.test/cb?code=SECRETCODE&state=s1#access_token=TOK';
+    layoutsStore.set({ 'ws-bg': browserLayout([{ id: 'tab-bg', url: closeUrl }]) });
+    const { container } = render(OffscreenWebviewHost, {
+      props: { excludedWorkspaceIds: new Set() },
+    });
+    await waitFor(() => expect(mountedTabIds(container)).toEqual(['tab-bg']));
+    const webview = container.querySelector('[data-offscreen-webview-tab="tab-bg"]') as HTMLElement;
+
+    webview.dispatchEvent(new Event('destroyed'));
+
+    const logged = warn.mock.calls.find(([msg]) => String(msg).includes('guest was destroyed'));
+    expect(logged).toBeDefined();
+    expect((logged![1] as { url: string }).url).toBe('https://auth.example.test/cb');
+    for (const call of warn.mock.calls) {
+      const serialized = JSON.stringify(call);
+      expect(serialized).not.toContain('SECRETCODE');
+      expect(serialized).not.toContain('TOK');
+      expect(serialized).not.toContain('u:pw');
+    }
+    warn.mockRestore();
+  });
+
   it('syncs full and in-page navigation back into the persisted tab URL', async () => {
     layoutsStore.set({ 'ws-bg': browserLayout([{ id: 'tab-bg' }]) });
     const { container } = render(OffscreenWebviewHost, {

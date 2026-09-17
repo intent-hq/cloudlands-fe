@@ -29,6 +29,7 @@ import {
 import { getBackendIdForWebContents, stampWindowWithBackend } from './window-backend';
 import { isTrustedHidOrigin } from '../features/hardware-console/main/hardware-console.ipc';
 import { Logger } from '../shared/logger';
+import { describeUrlForLog } from '../shared/utils/sanitize-credentials';
 import { isTrustedRendererUrl } from './ipc-authorization';
 
 const logger = new Logger('WebviewSecurity');
@@ -87,19 +88,6 @@ function isBlockedProtocol(url: string): boolean {
     return BROWSER_PROTOCOLS.BLOCKED.includes(parsed.protocol);
   } catch {
     return false;
-  }
-}
-
-/**
- * Reduce a URL to origin + pathname for diagnostic logs: userinfo, query and
- * fragment are dropped so OAuth codes/tokens never reach the log file.
- */
-function describeUrlForLog(url: string): string {
-  try {
-    const parsed = new URL(url);
-    return `${parsed.origin}${parsed.pathname}`.substring(0, 100);
-  } catch {
-    return '';
   }
 }
 

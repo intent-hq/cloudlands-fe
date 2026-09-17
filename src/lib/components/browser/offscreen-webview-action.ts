@@ -8,6 +8,7 @@
  * boundary — IPC and store dispatch stay in this module.
  */
 import { createLogger } from '$lib/utils/client-logger';
+import { describeUrlForLog } from '$shared/utils/sanitize-credentials';
 import { updateTabBrowserUrl } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 import { store as appStore } from '$store/renderer/store';
 
@@ -120,10 +121,12 @@ export function offscreenWebview(node: HTMLElement, entry: OffscreenWebviewEntry
   // `destroyed` hook (gated on webContentsId so a handed-off tab survives);
   // here we release the renderer-side handle so a recreated guest's
   // dom-ready registers again instead of being skipped by the id gate.
+  // The URL is reduced to origin + path: OAuth close pages carry codes and
+  // tokens in the query/fragment.
   const handleDestroyed = () => {
     logger.warn('Offscreen webview guest was destroyed', {
       tabId: current.tabId,
-      url: current.url,
+      url: describeUrlForLog(current.url),
     });
     domReady = false;
     lastRegisteredWebContentsId = undefined;

@@ -370,20 +370,30 @@ describe('EmbeddedBrowser', () => {
     });
 
     describe('destroyed guest webContents', () => {
-      const destroyGuest = async (container: HTMLElement) => {
-        const webview = container.querySelector('webview') as HTMLElement & {
-          getURL: () => string;
-          reload: ReturnType<typeof vi.fn>;
-          executeJavaScript: ReturnType<typeof vi.fn>;
-        };
+      type GuestWebview = HTMLElement & {
+        getURL: () => string;
+        getWebContentsId: () => number;
+        reload: ReturnType<typeof vi.fn>;
+        executeJavaScript: ReturnType<typeof vi.fn>;
+      };
+
+      const attachGuest = (container: HTMLElement, webContentsId: number) => {
+        const webview = container.querySelector('webview') as GuestWebview;
         webview.reload = vi.fn();
         webview.executeJavaScript = vi.fn().mockResolvedValue(undefined);
-        // Electron throws on every method call once the guest is gone.
+        webview.getWebContentsId = () => webContentsId;
+        webview.dispatchEvent(new Event('dom-ready'));
+        webview.dispatchEvent(new Event('did-stop-loading'));
+        return webview;
+      };
+
+      // A guest that closed itself: the element stays connected and keeps
+      // reporting the id it had at dom-ready, while every guest method throws.
+      const destroyGuest = async (container: HTMLElement) => {
+        const webview = attachGuest(container, 10);
         webview.getURL = () => {
           throw new Error('The WebView must be attached to the DOM');
         };
-        webview.dispatchEvent(new Event('dom-ready'));
-        webview.dispatchEvent(new Event('did-stop-loading'));
         webview.dispatchEvent(new Event('destroyed'));
         await waitFor(() => expect(container.querySelector('webview')).toBeNull());
         return webview;
@@ -398,6 +408,68 @@ describe('EmbeddedBrowser', () => {
 
         expect(queryByText(pageClosedMessage)).not.toBeNull();
         expect(container.querySelector('webview')).toBeNull();
+      });
+
+      it('logs the closed page URL without userinfo, query or fragment', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        const { container } = renderPage();
+        const webview = attachGuest(container, 10);
+        const closeUrl =
+          'https://u:pw@auth.example.test/cb?code=SECRETCODE&state=s1#access_token=TOK';
+        webview.dispatchEvent(Object.assign(new Event('did-navigate'), { url: closeUrl }));
+
+        webview.dispatchEvent(new Event('destroyed'));
+        await waitFor(() => expect(container.querySelector('webview')).toBeNull());
+
+        const logged = warn.mock.calls.find(([msg]) => String(msg).includes('guest was destroyed'));
+        expect(logged).toBeDefined();
+        const data = logged![1] as { url: string };
+        expect(data.url).toBe('https://auth.example.test/cb');
+        for (const call of warn.mock.calls) {
+          const serialized = JSON.stringify(call);
+          expect(serialized).not.toContain('SECRETCODE');
+          expect(serialized).not.toContain('TOK');
+          expect(serialized).not.toContain('u:pw');
+        }
+        warn.mockRestore();
+      });
+
+      // Reparenting (panel drag) destroys and re-creates the guest; the old
+      // guest's `destroyed` reaches the re-connected element before the new
+      // guest attached (no id yet) or after (a new id). Neither is a close.
+      it('keeps the webview when destroyed arrives mid-reparent before the new guest attaches', async () => {
+        const { container, queryByText } = renderPage();
+        const pageClosedMessage = m.browser_embedded_pageClosed_error();
+        const webview = attachGuest(container, 10);
+
+        // disconnectedCallback → reset() cleared guestInstanceId.
+        webview.getWebContentsId = () => {
+          throw new Error('The WebView must be attached to the DOM');
+        };
+        webview.dispatchEvent(new Event('destroyed'));
+
+        // The replacement guest attaches and becomes ready.
+        webview.getWebContentsId = () => 11;
+        webview.dispatchEvent(new Event('dom-ready'));
+
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        expect(queryByText(pageClosedMessage)).toBeNull();
+        expect(container.querySelector('webview')).toBe(webview);
+      });
+
+      it('keeps the webview when destroyed arrives after the replacement guest attached', async () => {
+        const { container, queryByText } = renderPage();
+        const pageClosedMessage = m.browser_embedded_pageClosed_error();
+        const webview = attachGuest(container, 10);
+
+        // The new guest is attached (new id) but has not reached dom-ready.
+        webview.getWebContentsId = () => 11;
+        webview.dispatchEvent(new Event('destroyed'));
+        webview.dispatchEvent(new Event('dom-ready'));
+
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        expect(queryByText(pageClosedMessage)).toBeNull();
+        expect(container.querySelector('webview')).toBe(webview);
       });
 
       it('does not reload the same URL on its own after the guest closes', async () => {
