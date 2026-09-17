@@ -5716,6 +5716,7 @@
   "deeplink_inviteConfirm_join_button": "Join",
   "deeplink_inviteProve_detail": "Intent proves your GitHub identity to the host with a private gist that is deleted right after. The host learns your GitHub username, account ID, display name and avatar.",
   "deeplink_inviteProofExpired_message": "The identity proof took too long and the host no longer accepts it. Retry with a fresh one?",
+  "deeplink_inviteProofInvalid_message": "The host could not verify your GitHub identity with this proof. Retry with a fresh one?",
   "deeplink_inviteProofExpired_retry_button": "Retry",
   "deeplink_inviteFailed_title": "Could not join the workspace",
   "deeplink_inviteFailed_ok_button": "OK",

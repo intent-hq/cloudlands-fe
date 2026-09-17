@@ -509,7 +509,7 @@ describe('handleInviteDeepLink', () => {
     'host refuses the proof with %s: distinct failure dialog, code logged, gist deleted',
     async (code) => {
       prove.mockRejectedValue(new InviteRpcError(-32602, { code }));
-      // `proof-expired` offers one retry; decline it so the failure surfaces.
+      // `proof-expired` / `proof-invalid` offer one retry; decline it so the failure surfaces.
       showMessageBox.mockResolvedValue({ response: 1 });
       showMessageBox.mockResolvedValueOnce({ response: 0 });
       await expect(handleInviteDeepLink(LINK)).resolves.toBeUndefined();
@@ -519,10 +519,11 @@ describe('handleInviteDeepLink', () => {
       ]);
       expect(guestAdd).not.toHaveBeenCalled();
       expect(openBackendWindow).not.toHaveBeenCalled();
-      if (code === 'proof-expired') {
+      if (code === 'proof-expired' || code === 'proof-invalid') {
         // Declining the retry ends the flow quietly: the retry box was the last dialog.
         expect(dialog.type).toBe('question');
         expect(logLines.join('\n')).toContain('declined to retry');
+        expect(logLines.join('\n')).toContain(`"code":"${code}"`);
         return;
       }
       expect(dialog.type).toBe('error');
@@ -800,7 +801,7 @@ describe('handleInviteDeepLink — renderer consent modal (prove)', () => {
   it('prove refusal after join: dismiss failed before the failure box, gist deleted', async () => {
     const { prompt } = fakeConsent('open');
     showInviteConsent.mockReturnValue(prompt);
-    prove.mockRejectedValue(new InviteRpcError(-32602, { code: 'proof-invalid' }));
+    prove.mockRejectedValue(new InviteRpcError(-32602, { code: 'github-unreachable' }));
     const order: string[] = [];
     prompt.dismiss.mockImplementation((outcome: string) => order.push(`dismiss:${outcome}`));
     showMessageBox.mockImplementation(async () => {
@@ -816,52 +817,89 @@ describe('handleInviteDeepLink — renderer consent modal (prove)', () => {
     expect(guestAdd).not.toHaveBeenCalled();
   });
 
-  it('proof-expired once: the prove prompt is dismissed failed, Retry re-challenges without a second consent and joins', async () => {
-    const { prompt } = fakeConsent('open');
-    showInviteConsent.mockReturnValue(prompt);
-    prove.mockRejectedValueOnce(new InviteRpcError(-32602, { code: 'proof-expired' }));
-    challenge.mockResolvedValueOnce(CHALLENGE).mockResolvedValueOnce({
-      ...CHALLENGE,
-      nonce: 'nonce-value-2',
-    });
+  // Both host refusals restart the challenge: a nonce purged by a later
+  // challenge surfaces as `proof-invalid`, not `proof-expired`.
+  it.each(['proof-expired', 'proof-invalid'])(
+    '%s once: the prove prompt is dismissed failed, Retry re-challenges without a second consent and joins',
+    async (code) => {
+      const { prompt } = fakeConsent('open');
+      showInviteConsent.mockReturnValue(prompt);
+      prove.mockRejectedValueOnce(new InviteRpcError(-32602, { code }));
+      challenge.mockResolvedValueOnce(CHALLENGE).mockResolvedValueOnce({
+        ...CHALLENGE,
+        nonce: 'nonce-value-2',
+      });
 
+      await handleInviteDeepLink(LINK);
+
+      expect(showInviteConsent).toHaveBeenCalledTimes(1);
+      expect(prompt.dismiss).toHaveBeenCalledExactlyOnceWith('failed');
+      // The retry box is the only native dialog.
+      expect(showMessageBox).toHaveBeenCalledTimes(1);
+      expect(showMessageBox.mock.calls[0][0]).toMatchObject({ type: 'question' });
+      expect(challenge).toHaveBeenCalledTimes(2);
+      expect(localCalls('github.identityProof.create').map(([, params]) => params)).toEqual([
+        { nonce: 'nonce-value-1', hostLabel: '192.168.1.10' },
+        { nonce: 'nonce-value-2', hostLabel: '192.168.1.10' },
+      ]);
+      expect(prove).toHaveBeenLastCalledWith('inv-1', SECRET, {
+        nonce: 'nonce-value-2',
+        gistId: PROOF.gistId,
+        login: PROOF.login,
+      });
+      // Both gists are deleted: the refused one and the accepted one.
+      expect(localCalls('github.identityProof.delete')).toHaveLength(2);
+      expect(guestAdd).toHaveBeenCalledTimes(1);
+      expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
+    },
+  );
+
+  it('the retry box names the refusal: expired and invalid read differently', async () => {
+    showInviteConsent.mockReturnValue(fakeConsent('open').prompt);
+    showMessageBox.mockResolvedValue({ response: 1 });
+    prove.mockRejectedValue(new InviteRpcError(-32602, { code: 'proof-expired' }));
     await handleInviteDeepLink(LINK);
-
-    expect(showInviteConsent).toHaveBeenCalledTimes(1);
-    expect(prompt.dismiss).toHaveBeenCalledExactlyOnceWith('failed');
-    // The retry box is the only native dialog.
-    expect(showMessageBox).toHaveBeenCalledTimes(1);
-    expect(showMessageBox.mock.calls[0][0]).toMatchObject({ type: 'question' });
-    expect(challenge).toHaveBeenCalledTimes(2);
-    expect(localCalls('github.identityProof.create').map(([, params]) => params)).toEqual([
-      { nonce: 'nonce-value-1', hostLabel: '192.168.1.10' },
-      { nonce: 'nonce-value-2', hostLabel: '192.168.1.10' },
-    ]);
-    expect(prove).toHaveBeenLastCalledWith('inv-1', SECRET, {
-      nonce: 'nonce-value-2',
-      gistId: PROOF.gistId,
-      login: PROOF.login,
-    });
-    // Both gists are deleted: the expired one and the accepted one.
-    expect(localCalls('github.identityProof.delete')).toHaveLength(2);
-    expect(guestAdd).toHaveBeenCalledTimes(1);
-    expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
+    const expired = showMessageBox.mock.calls.at(-1)?.[0] as { message: string };
+    prove.mockRejectedValue(new InviteRpcError(-32602, { code: 'proof-invalid' }));
+    await handleInviteDeepLink(LINK);
+    const invalid = showMessageBox.mock.calls.at(-1)?.[0] as { message: string };
+    expect(showMessageBox).toHaveBeenCalledTimes(2);
+    expect(expired.message).not.toBe(invalid.message);
   });
 
-  it('proof-expired twice: the second refusal is a failure, not another retry box', async () => {
+  it.each(['proof-expired', 'proof-invalid'])(
+    '%s twice: the second refusal is a failure, not another retry box',
+    async (code) => {
+      showInviteConsent.mockReturnValue(fakeConsent('open').prompt);
+      prove.mockRejectedValue(new InviteRpcError(-32602, { code }));
+
+      await handleInviteDeepLink(LINK);
+
+      expect(challenge).toHaveBeenCalledTimes(2);
+      expect(prove).toHaveBeenCalledTimes(2);
+      // Retry box, then the failure box.
+      expect(showMessageBox).toHaveBeenCalledTimes(2);
+      expect(showMessageBox.mock.calls[0][0]).toMatchObject({ type: 'question' });
+      expect(showMessageBox.mock.calls[1][0]).toMatchObject({ type: 'error' });
+      expect(guestAdd).not.toHaveBeenCalled();
+      expect(logLines.join('\n')).toContain(`"inviteCode":"${code}"`);
+    },
+  );
+
+  // A mixed pair is still one retry: the bound is per join, not per code.
+  it('proof-expired then proof-invalid: one retry box, then the failure', async () => {
     showInviteConsent.mockReturnValue(fakeConsent('open').prompt);
-    prove.mockRejectedValue(new InviteRpcError(-32602, { code: 'proof-expired' }));
+    prove
+      .mockRejectedValueOnce(new InviteRpcError(-32602, { code: 'proof-expired' }))
+      .mockRejectedValueOnce(new InviteRpcError(-32602, { code: 'proof-invalid' }));
 
     await handleInviteDeepLink(LINK);
 
     expect(challenge).toHaveBeenCalledTimes(2);
-    expect(prove).toHaveBeenCalledTimes(2);
-    // Retry box, then the failure box.
     expect(showMessageBox).toHaveBeenCalledTimes(2);
-    expect(showMessageBox.mock.calls[0][0]).toMatchObject({ type: 'question' });
     expect(showMessageBox.mock.calls[1][0]).toMatchObject({ type: 'error' });
+    expect(logLines.join('\n')).toContain('"inviteCode":"proof-invalid"');
     expect(guestAdd).not.toHaveBeenCalled();
-    expect(logLines.join('\n')).toContain('"inviteCode":"proof-expired"');
   });
 });
 
