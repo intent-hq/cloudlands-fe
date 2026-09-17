@@ -7,7 +7,7 @@ import type { WorkspaceInvite, WorkspaceMember } from '$features/workspace-shari
 
 const toastMocks = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }));
 
-vi.mock('svelte-sonner', () => ({ toast: toastMocks }));
+vi.mock('$lib/components/patterns/notify', () => ({ notify: toastMocks }));
 
 vi.mock('svelte-fa', async () => ({
   default: (await import('../../workspace/sidebar/__tests__/mocks/Fa.svelte')).default,
