@@ -183,20 +183,22 @@ git-ignored; never commit these visual-review artifacts.
 Registered scenes also have co-located `*.geometry.ct.spec.ts` suites and checked-in
 `__geometry__/<scene>.geometry.json` baselines. A missing key, an extra key, or a numeric
 field that moves by more than 1px fails with `state/width/key.field expected→actual`.
-Regenerate baselines only for an intentional geometry change:
+Regenerate baselines only for an intentional geometry change, with either equivalent command:
 
 ```bash
 SANDBOX_GEOMETRY_UPDATE=1 pnpm run test:ct -- --grep 'geometry snapshot'
 pnpm sandbox:geometry:update
 ```
 
-The two commands are equivalent; the package script sets
-`SANDBOX_GEOMETRY_UPDATE=1`. Inspect the JSON diff and justify every regenerated
-snapshot in the PR description. To register a scene, add a co-located
-`<scene>.geometry.ct.spec.ts` that statically imports the preview's default component, then
-passes it to `defineGeometrySnapshotSuite` with the scene, named states, contract widths, and
-`__geometry__/<scene>.geometry.json` path. The shared CT hook lazily resolves the matching
-preview definition in the browser, so no per-scene bootstrap registration is needed. Run the
+Linux CI is the only verifier and Inter shapes text differently elsewhere, so run the update
+on a Linux host only: it refuses to write off Linux, every baseline records
+`"$meta": { "generatedOn": "<platform>" }` (the geometry spec rejects any value but `linux`),
+and `SANDBOX_GEOMETRY_UPDATE_ALLOW_NON_LINUX=1` is for uncommitted local experiments only.
+Inspect the JSON diff and justify every regenerated snapshot in the PR description. To
+register a scene, add a co-located `<scene>.geometry.ct.spec.ts` that statically imports the
+preview's default component and passes it to `defineGeometrySnapshotSuite` with the scene,
+named states, contract widths, and `__geometry__/<scene>.geometry.json` path; the shared CT
+hook resolves the preview in the browser, so no per-scene registration is needed. Run the
 update command once to create the baseline. See
 `../../docs/fe/DEVELOPER_GUIDE.md#fast-ui-preview-workflow` for the manual preview loop.
 
