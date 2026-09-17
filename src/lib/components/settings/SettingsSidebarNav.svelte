@@ -2,20 +2,17 @@
   import { ListRow } from '$lib/components/patterns/collection';
   import { Button } from '$lib/components/patterns/settings/custom-controls';
   import { m } from '$shared/paraglide/messages.js';
-  import {
-    faCodeBranch,
-    faGlobe,
-    faKeyboard,
-    faServer,
-    faPlug,
-    faRobot,
-    faSliders,
-    faTerminal,
-    faWandMagicSparkles,
-  } from '@fortawesome/free-solid-svg-icons';
+  import DevicesIcon from 'phosphor-svelte/lib/DevicesIcon';
+  import GearSixIcon from 'phosphor-svelte/lib/GearSixIcon';
+  import GitBranchIcon from 'phosphor-svelte/lib/GitBranchIcon';
+  import KeyboardIcon from 'phosphor-svelte/lib/KeyboardIcon';
+  import PaintBrushIcon from 'phosphor-svelte/lib/PaintBrushIcon';
+  import PlugsConnectedIcon from 'phosphor-svelte/lib/PlugsConnectedIcon';
+  import RobotIcon from 'phosphor-svelte/lib/RobotIcon';
+  import SlidersHorizontalIcon from 'phosphor-svelte/lib/SlidersHorizontalIcon';
+  import TerminalWindowIcon from 'phosphor-svelte/lib/TerminalWindowIcon';
   import type { Snippet } from 'svelte';
   import type { SettingsTab } from '$lib/components/patterns/settings/types';
-  import Fa from 'svelte-fa';
 
   interface Props {
     activeTab: SettingsTab;
@@ -25,164 +22,153 @@
 
   let { activeTab, onSelect, agentsNavigation }: Props = $props();
 
-  const groups = [
-    {
-      id: 'preferences',
-      get label() {
-        return m.settings_sidebar_preferences_label();
-      },
-    },
-    {
-      id: 'agents',
-      get label() {
-        return m.settings_sidebar_agents_label();
-      },
-    },
-    {
-      id: 'integrations',
-      get label() {
-        return m.settings_sidebar_integrations_label();
-      },
-    },
-    {
-      id: 'environment',
-      get label() {
-        return m.settings_sidebar_environment_label();
-      },
-    },
-    {
-      id: 'troubleshooting',
-      get label() {
-        return m.settings_sidebar_troubleshooting_label();
-      },
-    },
-  ];
-
   const primaryItems = [
     {
       id: 'display',
-      group: 'preferences',
-      icon: faWandMagicSparkles,
+      icon: PaintBrushIcon,
       get label() {
         return m.settings_sidebar_display_label();
       },
     },
     {
       id: 'app-behavior',
-      group: 'preferences',
-      icon: faSliders,
+      icon: SlidersHorizontalIcon,
       get label() {
         return m.settings_sidebar_appBehavior_label();
       },
     },
     {
+      id: 'input',
+      icon: KeyboardIcon,
+      get label() {
+        return m.settings_sidebar_input_label();
+      },
+    },
+    {
       id: 'agent-behavior',
-      group: 'agents',
-      icon: faRobot,
+      icon: RobotIcon,
       get label() {
         return m.settings_sidebar_agentBehavior_label();
       },
     },
     {
       id: 'providers',
-      group: 'integrations',
-      icon: faTerminal,
+      icon: TerminalWindowIcon,
       get label() {
         return m.settings_sidebar_providers_label();
       },
     },
     {
       id: 'connections',
-      group: 'integrations',
-      icon: faPlug,
+      icon: PlugsConnectedIcon,
       get label() {
         return m.settings_sidebar_connections_label();
       },
     },
     {
       id: 'devices',
-      group: 'environment',
-      icon: faServer,
+      icon: DevicesIcon,
       get label() {
         return m.settings_sidebar_devices_label();
       },
     },
     {
       id: 'setup',
-      group: 'environment',
-      icon: faCodeBranch,
+      icon: GitBranchIcon,
       get label() {
         return m.settings_sidebar_setup_label();
       },
     },
     {
-      id: 'input',
-      group: 'preferences',
-      icon: faKeyboard,
-      get label() {
-        return m.settings_sidebar_input_label();
-      },
-    },
-    {
       id: 'advanced',
-      group: 'troubleshooting',
-      icon: faGlobe,
+      icon: GearSixIcon,
       get label() {
         return m.settings_sidebar_advanced_label();
       },
     },
   ];
+
+  const groups = [
+    {
+      id: 'preferences',
+      get label() {
+        return m.settings_sidebar_preferences_label();
+      },
+      items: primaryItems.slice(0, 3),
+    },
+    {
+      id: 'environment',
+      get label() {
+        return m.settings_sidebar_environment_label();
+      },
+      items: primaryItems.slice(5),
+    },
+    {
+      id: 'agents',
+      get label() {
+        return m.settings_sidebar_agents_label();
+      },
+      items: primaryItems.slice(3, 5),
+    },
+  ];
 </script>
 
 <nav
-  class="flex min-h-0 w-full flex-1 flex-col gap-4 overflow-y-auto px-3 py-4"
+  class="flex min-h-0 w-full flex-1 flex-col gap-4 overflow-y-auto px-3 pt-1 pb-5"
   aria-label={m.settings_page_title()}
 >
   {#each groups as group (group.id)}
     <section aria-labelledby={`settings-group-${group.id}`}>
       <h2
         id={`settings-group-${group.id}`}
-        class="mb-2 px-2.5 type-caption font-semibold text-muted-foreground"
+        class="px-3 type-caption font-normal text-muted-foreground"
       >
         {group.label}
       </h2>
-      <div class="flex flex-col gap-0.5">
-        {#each primaryItems.filter((item) => item.group === group.id) as item (item.id)}
+      <div class="mt-2 flex flex-col">
+        {#each group.items as item (item.id)}
           <Button
-            variant="ghost"
+            variant="plain"
             type="button"
             onclick={() => onSelect(item.id as SettingsTab)}
             active={activeTab === item.id}
             aria-current={activeTab === item.id ? 'page' : undefined}
             data-settings-tab={item.id}
-            class="h-auto w-full justify-start p-0 text-left type-caption {activeTab === item.id
-              ? 'bg-muted font-medium text-foreground shadow-xs'
+            class="h-auto w-full justify-start rounded-lg p-0 text-left type-caption font-normal hover:bg-hover active:bg-active {activeTab ===
+            item.id
+              ? 'bg-foreground/5 text-foreground'
               : 'text-muted-foreground'}"
           >
-            <ListRow class="min-h-(--row-height-regular) w-full gap-2.5 px-2.5 py-0">
+            <ListRow class="min-h-8 w-full gap-2 px-3 py-0">
               {#snippet leading()}
                 <span
                   data-slot="settings-sidebar-icon"
-                  class="flex size-4 shrink-0 items-center justify-center opacity-75"
+                  class="flex size-4 shrink-0 items-center justify-center"
                 >
-                  <Fa icon={item.icon} size="sm" />
+                  <item.icon size={16} weight="regular" aria-hidden="true" />
                 </span>
               {/snippet}
-              {#snippet title()}{item.label}{/snippet}
+              {#snippet title()}
+                <span data-settings-sidebar-label class="block truncate type-body font-normal">
+                  {item.label}
+                </span>
+              {/snippet}
             </ListRow>
           </Button>
         {/each}
       </div>
-      {#if group.id === 'agents'}
-        <section data-settings-agents-section data-settings-specialists-section class="mt-2">
-          <h3 class="px-2.5 type-caption font-semibold text-muted-foreground">
-            {m.settings_sidebar_specialists_label()}
-          </h3>
-          <div class="mt-2 flex flex-col gap-0.5 [&_[data-settings-agent-row]]:justify-start">
-            {@render agentsNavigation()}
-          </div>
-        </section>
-      {/if}
     </section>
   {/each}
+  <section
+    data-settings-agents-section
+    data-settings-specialists-section
+    aria-labelledby="settings-group-specialists"
+  >
+    <h2 id="settings-group-specialists" class="px-3 type-caption font-normal text-muted-foreground">
+      {m.settings_sidebar_specialists_label()}
+    </h2>
+    <div class="mt-2 flex flex-col">
+      {@render agentsNavigation()}
+    </div>
+  </section>
 </nav>

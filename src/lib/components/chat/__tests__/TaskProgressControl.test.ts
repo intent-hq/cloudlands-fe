@@ -191,7 +191,6 @@ describe('TaskProgressControl', () => {
       );
       expect(trigger.getAttribute('aria-expanded')).toBe('false');
       expect(screen.getByTestId('task-progress-checklist-icon')).toBeTruthy();
-      expect(trigger.querySelectorAll('[data-icon="list-check"]')).toHaveLength(1);
       expect(trigger.querySelector('[data-testid="task-progress-icon-stack"]')).toBeNull();
       expect(trigger.querySelector('[data-testid="task-progress-status-icon"]')).toBeNull();
       expect(trigger.querySelector('[data-testid="task-progress-overflow-indicator"]')).toBeNull();

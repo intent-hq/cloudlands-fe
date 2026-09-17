@@ -3389,7 +3389,8 @@
             <Button
               variant="ghost"
               type="button"
-              class="group flex min-h-9 w-full cursor-pointer items-center gap-1.5 rounded-md px-2.5 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+              wrapContent={false}
+              class="group flex h-auto min-h-9 w-full min-w-0 cursor-pointer flex-wrap items-center justify-start gap-1.5 rounded-md px-2.5 py-2 text-left text-sm whitespace-normal text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
               onclick={() => (showSetupScript = !showSetupScript)}
             >
               <span>{m.workspace_compactInitializer_setupDevEnvWith_before()}</span>
@@ -3397,7 +3398,7 @@
                    inside the pill while loading) so the row keeps the same
                    structure and height when the probe resolves. -->
               <span
-                class="rounded-md border border-border bg-background px-2 py-0.5 font-medium text-foreground"
+                class="min-w-0 max-w-full rounded-md border border-border bg-background px-2 py-0.5 font-medium wrap-break-word text-foreground"
               >
                 {#if isRepoConfigLoading}
                   <IntentMarkLoader size={14} />
@@ -3408,9 +3409,9 @@
                   {setupScriptDisplayName(setupScriptName, setupScriptNameSource)}
                 {/if}
               </span>
-              <p class="text-sm text-subtle">
+              <span class="text-sm text-subtle">
                 {m.workspace_compactInitializer_setupDevEnvWith_after()}
-              </p>
+              </span>
             </Button>
           </div>
           <SetupScriptModal

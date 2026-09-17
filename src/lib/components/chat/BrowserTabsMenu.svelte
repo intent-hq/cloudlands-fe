@@ -1,6 +1,8 @@
 <script lang="ts">
   import { writable } from 'svelte/store';
   import Fa from 'svelte-fa';
+  import BrowserIcon from 'phosphor-svelte/lib/BrowserIcon';
+  import { CHAT_ICON_SIZE } from './chat-icon-size';
   import { faWindowMaximize, faXmark } from '@fortawesome/free-solid-svg-icons';
   import * as Dialog from '$lib/components/ui/dialog';
   import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
@@ -182,7 +184,12 @@
           tooltipDelayDuration={300}
           data-testid="browser-tabs-trigger"
         >
-          <Fa icon={faWindowMaximize} size={14} class="size-3.5!" />
+          <BrowserIcon
+            size={CHAT_ICON_SIZE.compact}
+            weight="regular"
+            aria-hidden="true"
+            class="size-4!"
+          />
         </Button>
       {/snippet}
     </Menu.Trigger>

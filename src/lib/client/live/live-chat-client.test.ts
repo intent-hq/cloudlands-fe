@@ -364,6 +364,33 @@ describe('LiveChatClient.subscribe (standing §7.1 subscription)', () => {
     off();
   });
 
+  it('preserves sent text and image attachment references in seq-0 and recovery snapshots', async () => {
+    mockChatSubscribe();
+    const seen: Array<{ messages: Array<{ contentBlocks?: unknown[] }> }> = [];
+    const off = new LiveChatClient().subscribe('agent-1', (transcript) => seen.push(transcript));
+    await flush();
+    expect(mockedRequest).toHaveBeenCalledWith('chat.subscribe', {
+      agentId: 'agent-1',
+      deltaEncoding: 'incremental',
+      projection: 'slim',
+    });
+    const contentBlocks = [
+      ...SEEDED_SNAPSHOT.messages[0].contentBlocks,
+      { type: 'image', id: '0190a1b2-user:1', attachmentId: 'att-image', mimeType: 'image/png' },
+    ];
+    const snapshot = {
+      ...SEEDED_SNAPSHOT,
+      messages: [{ ...SEEDED_SNAPSHOT.messages[0], contentBlocks }],
+    };
+    snapshotPush('sub-1', 0, snapshot);
+    expect(seen.at(-1)?.messages[0].contentBlocks).toEqual(contentBlocks);
+    deltaPush('sub-1', 3, { added: [], updated: [], removedIds: [] });
+    await flush();
+    snapshotPush('sub-2', 0, snapshot);
+    expect(seen.at(-1)?.messages[0].contentBlocks).toEqual(contentBlocks);
+    off();
+  });
+
   it('preserves a legacy slim image placeholder in seq-0 and recovery snapshots', async () => {
     mockChatSubscribe();
     const client = new LiveChatClient();
@@ -1352,6 +1379,14 @@ describe('LiveChatClient.subscribe canonical delta validation', () => {
   it.each([
     { label: 'full', image: validImage },
     { label: 'empty full', image: { ...validImage, data: '' } },
+    {
+      label: 'attachment reference with MIME',
+      image: { type: 'image', id: 'image:0', attachmentId: 'att-image', mimeType: 'image/png' },
+    },
+    {
+      label: 'attachment reference without MIME',
+      image: { type: 'image', id: 'image:0', attachmentId: 'att-image' },
+    },
     ...[8192, 0].flatMap((dataBytes) => [
       {
         label: `thumbnail (${dataBytes} bytes)`,

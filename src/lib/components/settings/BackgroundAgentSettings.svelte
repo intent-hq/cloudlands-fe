@@ -116,7 +116,7 @@
 </script>
 
 {#snippet defaultControl()}
-  <div class="w-72 shrink-0">
+  <div class="flex w-full min-w-0 flex-col items-end">
     <!-- Empty defaultModel means "provider default": the daemon/CLI default is
          used because background requests omit `model` on the wire. -->
     <ModelPicker
@@ -127,13 +127,15 @@
       defaultModelLabel={m.chat_modelPicker_providerDefault_label()}
       defaultOptionLabel={m.chat_modelPicker_providerDefault_label()}
       defaultOptionDescription={m.settings_backgroundAgent_providerDefault_description()}
-      variant="default"
+      variant="outline"
+      showProviderWarningNotice
+      noticeClass="mt-2"
     />
   </div>
 {/snippet}
 
 {#snippet commitControl()}
-  <div class="w-72 shrink-0">
+  <div class="flex w-full min-w-0 flex-col items-end">
     <ModelPicker
       selectedModel={$typeOverrides$.commit || undefined}
       onModelChange={(model) => handleOverrideChange('commit', model)}
@@ -142,13 +144,15 @@
       defaultModelLabel={m.settings_backgroundAgent_useDefaultOption()}
       defaultOptionLabel={m.settings_backgroundAgent_useDefaultOption()}
       defaultOptionDescription={m.settings_backgroundAgent_useDefault_description()}
-      variant="default"
+      variant="outline"
+      showProviderWarningNotice
+      noticeClass="mt-2"
     />
   </div>
 {/snippet}
 
 {#snippet prControl()}
-  <div class="w-72 shrink-0">
+  <div class="flex w-full min-w-0 flex-col items-end">
     <ModelPicker
       selectedModel={$typeOverrides$.pr || undefined}
       onModelChange={(model) => handleOverrideChange('pr', model)}
@@ -157,13 +161,15 @@
       defaultModelLabel={m.settings_backgroundAgent_useDefaultOption()}
       defaultOptionLabel={m.settings_backgroundAgent_useDefaultOption()}
       defaultOptionDescription={m.settings_backgroundAgent_useDefault_description()}
-      variant="default"
+      variant="outline"
+      showProviderWarningNotice
+      noticeClass="mt-2"
     />
   </div>
 {/snippet}
 
 {#snippet fastControl()}
-  <div class="w-72 shrink-0">
+  <div class="flex w-full min-w-0 flex-col items-end">
     <ModelPicker
       selectedModel={$typeOverrides$.fast || undefined}
       onModelChange={(model) => handleOverrideChange('fast', model)}
@@ -172,7 +178,9 @@
       defaultModelLabel={m.settings_backgroundAgent_useDefaultOption()}
       defaultOptionLabel={m.settings_backgroundAgent_useDefaultOption()}
       defaultOptionDescription={m.settings_backgroundAgent_useDefault_description()}
-      variant="default"
+      variant="outline"
+      showProviderWarningNotice
+      noticeClass="mt-2"
     />
   </div>
 {/snippet}
@@ -180,33 +188,28 @@
 <SettingsForm
   schema={defaultSchema}
   embedded
+  compact={false}
   custom={defineSettingsCustomControls({ 'background-agent-default': defaultControl })}
 />
 
 <!-- Per-type Overrides -->
-<div>
-  <p class="type-body mb-1 font-medium text-foreground">
-    {m.settings_backgroundAgent_overrides_title()}
-  </p>
-
-  <div class="divide-y divide-border">
-    {#snippet fastDescription()}
-      <span class="block">{BACKGROUND_AGENT_TYPE_INFO.fast.description}</span>
-      {#if fastEnhanceUnavailable}
-        <span class="block" data-testid="fast-auggie-only-note">
-          {m.settings_backgroundAgent_fastAuggieOnlyNote()}
-        </span>
-      {/if}
-    {/snippet}
-    <SettingsForm
-      schema={overridesSchema}
-      embedded
-      custom={defineSettingsCustomControls({
-        'background-agent-commit': commitControl,
-        'background-agent-pr': prControl,
-        'background-agent-fast': fastControl,
-      })}
-      descriptions={{ 'background-agent-fast': fastDescription }}
-    />
-  </div>
+<div class="mt-4 border-t border-border pt-6" data-testid="model-action-overrides">
+  {#snippet fastDescription()}
+    <span class="block">{BACKGROUND_AGENT_TYPE_INFO.fast.description}</span>
+    {#if fastEnhanceUnavailable}
+      <span class="block" data-testid="fast-auggie-only-note">
+        {m.settings_backgroundAgent_fastAuggieOnlyNote()}
+      </span>
+    {/if}
+  {/snippet}
+  <SettingsForm
+    schema={overridesSchema}
+    compact={false}
+    custom={defineSettingsCustomControls({
+      'background-agent-commit': commitControl,
+      'background-agent-pr': prControl,
+      'background-agent-fast': fastControl,
+    })}
+    descriptions={{ 'background-agent-fast': fastDescription }}
+  />
 </div>

@@ -885,6 +885,7 @@
 <SettingsForm
   {schema}
   embedded
+  compact={false}
   custom={defineSettingsCustomControls({
     'max-concurrent-agents': maxConcurrentControl,
     'flush-queued-messages': flushQueuedMessagesControl,

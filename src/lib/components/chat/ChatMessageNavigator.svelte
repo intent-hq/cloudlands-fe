@@ -12,6 +12,7 @@
   import { OPTION_LIST_ROW_CLASS } from '$lib/styles/option-list-row';
   import { m } from '$shared/paraglide/messages.js';
   import ScrollToBottomButton from './ScrollToBottomButton.svelte';
+  import { CHAT_ICON_SIZE } from './chat-icon-size';
   import type { UserMessageNavigationItem } from './chat-message-navigation';
 
   interface Props {
@@ -212,10 +213,11 @@
           data-testid="chat-message-navigator-trigger"
         >
           <ChatTextIcon
-            size={14}
-            mirrored
+            size={CHAT_ICON_SIZE.compact}
+            weight="regular"
+            mirrored={false}
             aria-hidden="true"
-            class="size-3.5!"
+            class="size-4!"
             data-chat-message-navigator-chat-icon
           />
         </Button>

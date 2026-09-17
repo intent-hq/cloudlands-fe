@@ -17,7 +17,7 @@ interface BaseMessageAttribution {
 
 interface AgentSenderAttribution extends BaseMessageAttribution {
   kind: 'agent';
-  /** Display name for the sender ("Agent" fallback, truncated to ~20 chars). */
+  /** Full display name for the sender ("Agent" fallback). */
   displayName: string;
   /**
    * Verbatim sender name from metadata (empty when absent) — untrimmed and
@@ -37,8 +37,6 @@ interface ChiefMessageAttribution extends BaseMessageAttribution {
 }
 
 export type AgentMessageAttribution = AgentSenderAttribution | ChiefMessageAttribution;
-
-const MAX_NAME_LENGTH = 20;
 
 /**
  * Extract sender attribution from an opaque message metadata object.
@@ -71,9 +69,7 @@ export function getAgentMessageAttribution(metadata: unknown): AgentMessageAttri
   if (md.type !== 'agent_message') return null;
 
   const rawName = typeof md.fromAgentName === 'string' ? md.fromAgentName : '';
-  const name = rawName.trim() || 'Agent';
-  const displayName =
-    name.length > MAX_NAME_LENGTH ? name.slice(0, MAX_NAME_LENGTH - 1) + '…' : name;
+  const displayName = rawName.trim() || 'Agent';
 
   return { kind: 'agent', fromAgentId, displayName, rawName };
 }

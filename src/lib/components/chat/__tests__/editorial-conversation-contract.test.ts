@@ -61,12 +61,15 @@ describe('editorial conversation presentation contract', () => {
 
   it('caps transcript, questions, and composer content at the approved 140em measure', () => {
     const panel = source('src/lib/components/chat/ChatPanel.svelte');
+    const questionComposer = source('src/lib/components/chat/questions/QuestionComposer.svelte');
 
     expect(panel).toContain(
       'conversation-column chat-content-measure mx-auto flex min-h-full w-full min-w-0 flex-col',
     );
     expect(panel).not.toContain('max-w-[var(--content-measure-wide)]');
-    expect(panel).toContain('<div class="w-full" data-testid="question-wizard-slot">');
+    expect(panel).toContain('<QuestionComposer');
+    expect(questionComposer).toContain('data-testid="question-wizard-slot"');
+    expect(questionComposer).toContain("'w-full min-w-0'");
     expect(panel).toContain('conversation-composer relative z-10 w-full');
     expect(panel).toContain(
       'class="composer-prompt-lane chat-content-measure mx-auto w-full min-w-0"',
@@ -271,7 +274,8 @@ describe('editorial conversation presentation contract', () => {
     expect(wakeup).toContain('m.events_activity_partFinished_label().trim()');
     expect(wakeup).not.toContain('<AgentCard');
     expect(avatar).toContain('<Tooltip.Trigger');
-    expect(avatar).toContain('aria-label={onclick');
+    expect(avatar).toContain('aria-label={activationLabel ??');
+    expect(avatar).toContain('(onclick ? m.chat_msgAttribution_openAgent_title');
   });
 
   it('reveals message and suggestion actions for keyboard focus as well as hover', () => {
@@ -350,7 +354,7 @@ describe('editorial conversation presentation contract', () => {
     expect(panel).toContain('const transcriptBottomInsetClass = $derived(');
     expect(panel).toContain('{transcriptBottomInsetClass}');
     expect(queueEdgeLayout).toContain("return isCompactMode ? 'pb-3' : 'pb-6'");
-    expect(panel).toContain("isCompactMode ? 'pb-1' : 'pb-2'");
+    expect(panel).toContain("isCompactMode ? 'pb-2' : 'pb-3'");
     expect(panel).not.toContain("'pb-1 pt-3'");
     expect(panel).not.toContain('eventSubscriptionsOwnEndGap');
     expect(panel).not.toContain('eventSubscriptionsVisible');

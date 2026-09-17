@@ -259,7 +259,9 @@ describe('AgentTabType agent model reactivity', () => {
     );
     expect(screen.getByTestId('task-progress-trigger').className).toContain('w-fit');
     expect(screen.getByTestId('task-progress-checklist-icon')).toBeTruthy();
-    expect(header.querySelectorAll('[data-icon="list-check"]')).toHaveLength(1);
+    expect(
+      header.querySelectorAll('[data-testid="task-progress-checklist-icon"] svg'),
+    ).toHaveLength(1);
     expect(header.querySelector('[data-testid="task-progress-icon-stack"]')).toBeNull();
     expect(header.querySelector('[data-testid="task-progress-status-icon"]')).toBeNull();
 

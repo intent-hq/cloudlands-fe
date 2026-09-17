@@ -7,6 +7,7 @@
   } from '../pinned-prompt';
   import { USER_MESSAGE_SURFACE_CLASS } from '../user-message-surface';
   import PinnedTurnPrompt from '../PinnedTurnPrompt.svelte';
+  import { measureScrollbarGutterWidth } from '../scrollbar-gutter';
   import EventWakeupBanner from '../EventWakeupBanner.svelte';
   import ChatMessage from '../ChatMessage.svelte';
   import { isEventWakeMessage } from '../event-wake-summary';
@@ -46,6 +47,16 @@
       ),
   );
   let scrollContainer: HTMLDivElement;
+  let scrollbarGutterWidth = $state(0);
+  $effect(() => {
+    const measure = () => {
+      scrollbarGutterWidth = measureScrollbarGutterWidth(scrollContainer);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(scrollContainer);
+    return () => observer.disconnect();
+  });
   function returnToSource() {
     if (!pinned) return;
     const source = scrollContainer.querySelector<HTMLElement>(
@@ -66,16 +77,23 @@
   data-testid="sticky-stability-host"
 >
   <div class="relative h-[280px]">
-    <div class="pointer-events-none absolute inset-x-0 top-0 z-40 px-4">
-      {#if pinned}
-        {#if turnMessages}
-          <PinnedTurnPrompt message={pinned.message} onActivate={returnToSource} />
-        {:else}
-          <div data-testid="pinned-user-prompt" class="rounded-md bg-card px-3 py-2 shadow-sm">
-            Pinned {pinned.id}
-          </div>
+    <!-- Mirror ChatPanel: inline-end padding compensates the scroll container's
+         scrollbar gutter so the pinned lane matches the source column's box. -->
+    <div
+      class="pointer-events-none absolute inset-x-0 top-0 z-40"
+      style:padding-inline-end="{scrollbarGutterWidth}px"
+    >
+      <div class="px-4">
+        {#if pinned}
+          {#if turnMessages}
+            <PinnedTurnPrompt message={pinned.message} onActivate={returnToSource} />
+          {:else}
+            <div data-testid="pinned-user-prompt" class="rounded-md bg-card px-3 py-2 shadow-sm">
+              Pinned {pinned.id}
+            </div>
+          {/if}
         {/if}
-      {/if}
+      </div>
     </div>
     <!-- svelte-ignore a11y_no_noninteractive_tabindex (keyboard-scroll test target) -->
     <div
@@ -106,7 +124,6 @@
                   >['metadata']}
                   asDivider={true}
                   suppressTopGap={true}
-                  showAgentCards={false}
                 />
               {:else}
                 <ChatMessage {message} readOnly={true} suppressAutomatedWakeTopSpacing={true} />

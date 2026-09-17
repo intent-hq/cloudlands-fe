@@ -142,5 +142,6 @@
 
 <SettingsForm
   {schema}
+  compact={false}
   custom={defineSettingsCustomControls({ 'notification-volume': volumeControl })}
 />

@@ -1,6 +1,7 @@
 <script lang="ts">
   import QueuedMessageList from '../QueuedMessageList.svelte';
   import { CHAT_TRANSCRIPT_OVERFLOW_CLASS } from '../chat-queue-edge-layout';
+  import type { QueuedMessage } from '$shared/types';
 
   interface Props {
     width?: number;
@@ -9,6 +10,7 @@
     messageCount?: number;
     scrollViewport?: boolean;
     alignWithPrompt?: boolean;
+    imageBlocks?: QueuedMessage['imageBlocks'];
   }
 
   let {
@@ -18,6 +20,7 @@
     messageCount = 1,
     scrollViewport = false,
     alignWithPrompt = false,
+    imageBlocks,
   }: Props = $props();
   let lastAction = $state('none');
   const messages = $derived(
@@ -29,6 +32,7 @@
           : `Message ${i + 1}`,
       queuedAt: '2026-01-01T00:00:00.000Z',
       position: i,
+      imageBlocks,
     })),
   );
 </script>
@@ -37,7 +41,9 @@
   <div class="mx-auto" style:width="{contentWidth}px" data-testid="queued-message-content-column">
     <QueuedMessageList
       {messages}
-      onsendnow={(id) => (lastAction = `send:${id}`)}
+      onsendnow={(id) => {
+        lastAction = `send:${id}`;
+      }}
       onremove={(id) => (lastAction = `remove:${id}`)}
       onedit={async (id, _content, editing) => {
         lastAction = `${editing ? 'edit' : 'save'}:${id}`;
@@ -56,7 +62,9 @@
       <div class="relative z-20 mt-6 w-full" data-testid="queued-message-utility-area">
         <QueuedMessageList
           {messages}
-          onsendnow={(id) => (lastAction = `send:${id}`)}
+          onsendnow={(id) => {
+            lastAction = `send:${id}`;
+          }}
           onremove={(id) => (lastAction = `remove:${id}`)}
           onedit={async (id, _content, editing) => {
             lastAction = `${editing ? 'edit' : 'save'}:${id}`;

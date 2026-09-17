@@ -460,17 +460,24 @@ export class LiveAgentsClient implements AgentsClient {
     // NO `agent:queue:processing` event, the RPC response replaces it, §5.5),
     // surfaced on the MutationResult (monorepo#1057).
     try {
-      const result = await backendRequest<{ turnId?: unknown } | undefined>(
-        'agent.sendQueuedMessageNow',
-        {
-          agentId: params.agentId,
-          workspaceId: params.workspaceId,
-          messageId: params.messageId,
-        },
-      );
-      return typeof result?.turnId === 'string'
-        ? { success: true, turnId: result.turnId }
-        : { success: true };
+      const result = await backendRequest<{
+        success: boolean;
+        queued: boolean;
+        quarantined?: boolean;
+        queuedMessage?: QueuedMessage;
+        turnId?: string;
+      }>('agent.sendQueuedMessageNow', {
+        agentId: params.agentId,
+        workspaceId: params.workspaceId,
+        messageId: params.messageId,
+      });
+      return {
+        success: result.success,
+        queued: result.queued,
+        ...(result.quarantined !== undefined ? { quarantined: result.quarantined } : {}),
+        ...(result.queuedMessage ? { queuedMessage: result.queuedMessage } : {}),
+        ...(!result.queued && result.turnId ? { turnId: result.turnId } : {}),
+      };
     } catch (error) {
       // Same error shaping as `runMutation` (which this method bypassed to
       // extract `turnId`): fold JSON-RPC "Internal error" + `data.detail`

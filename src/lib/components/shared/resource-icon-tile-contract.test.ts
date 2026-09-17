@@ -88,10 +88,14 @@ describe('resource icon tile source contract', () => {
     expect(tabBar).toContain('width="14"');
     // Rendered action ink, hit targets and keyboard routing are covered by agent-header-icons.ct.spec.ts.
     expect(navigator).toContain("import ChatTextIcon from 'phosphor-svelte/lib/ChatTextIcon'");
-    expect(navigator).toMatch(/<ChatTextIcon[\s\S]*?size=\{14\}[\s\S]*?mirrored/);
+    expect(navigator).toMatch(
+      /<ChatTextIcon[\s\S]*?size=\{CHAT_ICON_SIZE\.compact\}[\s\S]*?mirrored=\{false\}/,
+    );
     expect(navigator).toContain('data-chat-message-navigator-chat-icon');
     expect(navigator).not.toContain('faList');
-    expect(scrollButton).toContain('size={CHAT_ICON_SIZE.compact} class="size-4!"');
+    expect(scrollButton).toMatch(
+      /<ArrowDownIcon[\s\S]*?size=\{CHAT_ICON_SIZE\.compact\}[\s\S]*?class="size-4!"/,
+    );
     expect(chatSizes).toContain('header: 12');
     expect(chatSizes).toContain('compact: 16');
     expect(tabBar).not.toContain('pl-4 pr-2.5 sm:pl-6');

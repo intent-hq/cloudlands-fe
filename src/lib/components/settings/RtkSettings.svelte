@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Button } from '$lib/components/patterns/settings/custom-controls';
+  import { Button, IntentMarkLoader } from '$lib/components/patterns/settings/custom-controls';
   /**
    * RTK Settings Component
    *
@@ -24,11 +24,16 @@
   import { ROOT_WORKSPACE_ID } from '$lib/components/terminal/RootQuakeTerminalOverlay.svelte';
   import { store as appStore } from '$store/renderer/store';
   import { notify } from '$lib/components/patterns/notify';
-  import { SettingsForm, defineSettings } from '$lib/components/patterns/settings';
+  import {
+    SettingsForm,
+    defineSettings,
+    defineSettingsCustomControls,
+  } from '$lib/components/patterns/settings';
 
   let rtkAvailable = $state(false);
   let rtkEnabled = $state(false);
   let loaded = $state(false);
+  let settingKnown = $state(false);
   let checking = $state(false);
   let settingsError = $state('');
   let updating = $state(false);
@@ -37,13 +42,19 @@
 
   onMount(async () => {
     // Read rtk.enabled from daemon settings catalog (LiveSettingsClient.get folds errors to null)
-    const entry = await appClient.settings.get(SETTING_PATH);
-    if (entry === null) {
+    try {
+      const entry = await appClient.settings.get(SETTING_PATH);
+      if (entry === null) {
+        settingsError = m.settings_rtk_loadError();
+        console.error('Failed to load RTK settings: daemon returned null');
+      } else {
+        rtkEnabled = typeof entry.value === 'boolean' ? entry.value : false;
+        settingKnown = true;
+        settingsError = '';
+      }
+    } catch (error) {
       settingsError = m.settings_rtk_loadError();
-      console.error('Failed to load RTK settings: daemon returned null');
-    } else {
-      rtkEnabled = typeof entry.value === 'boolean' ? entry.value : false;
-      settingsError = '';
+      console.error('Failed to load RTK settings:', error);
     }
 
     // Check if rtk is installed (separate failure domain)
@@ -145,15 +156,23 @@
           id: 'rtk',
           title: m.settings_rtk_label(),
           entries: [
-            {
-              kind: 'switch',
-              id: 'rtk-enabled',
-              label: m.settings_rtk_label(),
-              get: () => rtkEnabled,
-              set: handleToggle,
-              error: () => settingsError || undefined,
-              disabled: () => !rtkAvailable || updating,
-            },
+            loaded && settingKnown
+              ? {
+                  kind: 'switch',
+                  id: 'rtk-enabled',
+                  label: m.settings_rtk_label(),
+                  get: () => rtkEnabled,
+                  set: handleToggle,
+                  error: () => settingsError || undefined,
+                  disabled: () => !rtkAvailable || updating,
+                }
+              : {
+                  kind: 'custom',
+                  id: 'rtk-enabled',
+                  label: m.settings_rtk_label(),
+                  busy: !loaded,
+                  error: () => settingsError || undefined,
+                },
           ],
         },
       ],
@@ -162,41 +181,53 @@
 </script>
 
 {#snippet rtkDescription()}
-  <span class="block">
-    {rtkAvailable ? m.settings_rtk_enabledDescription() : m.settings_rtk_notInstalled()}
-    {#if !rtkAvailable}
-      <Button
-        variant="link"
-        size="sm"
-        type="button"
-        class="h-auto px-0"
-        onclick={recheckRtk}
-        disabled={checking}
-        >{checking ? m.settings_rtk_checking() : m.settings_rtk_checkAgain()}</Button
-      >
-    {/if}
-  </span>
-  {#if !rtkAvailable}
+  {#if !loaded}
+    {m.ui_spinner_loading_ariaLabel()}
+  {:else}
     <span class="block">
-      {m.settings_rtk_installHint_before()}
-      <Button variant="link" size="sm" type="button" class="h-auto px-0" onclick={installRtk}
-        ><!-- i18n-ignore (shell command) -->brew install rtk</Button
-      >
-      {m.settings_rtk_installHint_orVisit()}
-      <Button
-        variant="link"
-        size="sm"
-        href="https://github.com/rtk-ai/rtk"
-        target="_blank"
-        rel="noopener noreferrer"
-        class="h-auto px-0"><!-- i18n-ignore (URL) -->github.com/rtk-ai/rtk</Button
-      >.
+      {rtkAvailable ? m.settings_rtk_enabledDescription() : m.settings_rtk_notInstalled()}
+      {#if !rtkAvailable}
+        <Button
+          variant="link"
+          size="sm"
+          type="button"
+          class="h-auto px-0"
+          onclick={recheckRtk}
+          disabled={checking}
+          >{checking ? m.settings_rtk_checking() : m.settings_rtk_checkAgain()}</Button
+        >
+      {/if}
     </span>
+    {#if !rtkAvailable}
+      <span class="block">
+        {m.settings_rtk_installHint_before()}
+        <Button variant="link" size="sm" type="button" class="h-auto px-0" onclick={installRtk}
+          ><!-- i18n-ignore (shell command) -->brew install rtk</Button
+        >
+        {m.settings_rtk_installHint_orVisit()}
+        <Button
+          variant="link"
+          size="sm"
+          href="https://github.com/rtk-ai/rtk"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="h-auto px-0"><!-- i18n-ignore (URL) -->github.com/rtk-ai/rtk</Button
+        >.
+      </span>
+    {/if}
   {/if}
 {/snippet}
 
-{#if loaded}
-  <div data-rtk-settings class="min-w-0 w-full">
-    <SettingsForm {schema} embedded descriptions={{ 'rtk-enabled': rtkDescription }} />
-  </div>
-{/if}
+{#snippet loadingControl()}
+  {#if !loaded}<IntentMarkLoader size={20} />{/if}
+{/snippet}
+
+<div data-rtk-settings class="min-w-0 w-full">
+  <SettingsForm
+    {schema}
+    embedded
+    compact={false}
+    custom={defineSettingsCustomControls({ 'rtk-enabled': loadingControl })}
+    descriptions={{ 'rtk-enabled': rtkDescription }}
+  />
+</div>

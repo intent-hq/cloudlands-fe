@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { QueuedMessage } from '$shared/types';
@@ -78,6 +78,180 @@ describe('QueuedMessageList', () => {
     expect(onsendnow).toHaveBeenCalledWith('q-1');
     await fireEvent.keyDown(screen.getByTestId('queued-message-content'), { key: 'Delete' });
     expect(onremove).toHaveBeenCalledWith('q-1');
+  });
+
+  describe('edit action', () => {
+    it('edits only the selected row, cancelling drafts or saving without sending or removing', async () => {
+      const onedit = vi.fn().mockResolvedValue({ success: true });
+      const onsendnow = vi.fn();
+      const onremove = vi.fn();
+      render(QueuedMessageList, {
+        props: {
+          messages: [queued({}), queued({ id: 'q-2', content: 'second', position: 1 })],
+          onedit,
+          onsendnow,
+          onremove,
+        },
+      });
+      const row = within(screen.getAllByTestId('queued-message-row')[1]);
+      await fireEvent.click(row.getByRole('button', { name: 'Edit', exact: true }));
+      await waitFor(() => expect(onedit.mock.calls).toEqual([['q-2', 'second', true]]));
+      const editor = row.getByRole('textbox') as HTMLTextAreaElement;
+      await waitFor(() => expect(document.activeElement).toBe(editor));
+      expect(editor.value).toBe('second');
+      await fireEvent.input(editor, { target: { value: 'discard draft' } });
+      await fireEvent.keyDown(editor, { key: 'Escape' });
+      await waitFor(() => expect(row.queryByRole('textbox')).toBeNull());
+      expect(onedit.mock.calls).toEqual([
+        ['q-2', 'second', true],
+        ['q-2', 'second', false],
+      ]);
+
+      await fireEvent.click(row.getByRole('button', { name: 'Edit', exact: true }));
+      await waitFor(() => expect(onedit).toHaveBeenCalledTimes(3));
+      expect((row.getByRole('textbox') as HTMLTextAreaElement).value).toBe('second');
+      await fireEvent.input(row.getByRole('textbox'), { target: { value: 'saved draft' } });
+      await fireEvent.keyDown(row.getByRole('textbox'), { key: 'Enter' });
+      await waitFor(() => expect(row.queryByRole('textbox')).toBeNull());
+      expect(onedit).toHaveBeenLastCalledWith('q-2', 'saved draft', false);
+      expect(onsendnow).not.toHaveBeenCalled();
+      expect(onremove).not.toHaveBeenCalled();
+      expect(screen.getAllByTestId('queued-message-row')).toHaveLength(2);
+    });
+
+    it('does not expose editing or accept its keyboard shortcut while disabled', async () => {
+      const onedit = vi.fn();
+      render(QueuedMessageList, { props: { messages: [queued({})], onedit, disabled: true } });
+      expect(screen.queryByRole('button', { name: 'Edit', exact: true })).toBeNull();
+      await fireEvent.keyDown(screen.getByTestId('queued-message-content'), { key: 'F2' });
+      expect(screen.queryByRole('textbox')).toBeNull();
+      expect(onedit).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('send immediately', () => {
+    it('targets only the chosen ID and prevents duplicate/edit/remove actions until acknowledgement', async () => {
+      const pending = deferred<'delivered'>();
+      const onsendnow = vi.fn(() => pending.promise);
+      const onremove = vi.fn();
+      const onedit = vi.fn();
+      const message = queued({
+        imageBlocks: [{ type: 'image', data: 'synthetic', mimeType: 'image/png' }],
+        fileBlocks: [
+          {
+            type: 'file',
+            attachmentId: 'fixture-file',
+            fileName: 'fixture.txt',
+            mimeType: 'text/plain',
+          },
+        ],
+      });
+      const view = render(QueuedMessageList, {
+        props: {
+          messages: [message, queued({ id: 'q-2', content: 'second', position: 1 })],
+          onsendnow,
+          onremove,
+          onedit,
+        },
+      });
+      const row = within(screen.getAllByTestId('queued-message-row')[0]);
+      await fireEvent.click(row.getByRole('button', { name: 'Send immediately' }));
+      await fireEvent.keyDown(row.getByTestId('queued-message-content'), {
+        key: 'Enter',
+        ctrlKey: true,
+      });
+      await fireEvent.keyDown(row.getByTestId('queued-message-content'), { key: 'Delete' });
+      await fireEvent.keyDown(row.getByTestId('queued-message-content'), { key: 'F2' });
+      const edit = row.getByRole('button', { name: 'Edit', exact: true });
+      expect(edit.hasAttribute('disabled')).toBe(true);
+      await fireEvent.click(edit);
+      expect(onsendnow.mock.calls).toEqual([['q-1']]);
+      expect(onremove).not.toHaveBeenCalled();
+      expect(onedit).not.toHaveBeenCalled();
+      expect(screen.getAllByTestId('queued-message-row')[0].getAttribute('aria-busy')).toBe('true');
+      expect(row.getByTestId('queued-image-thumbnail')).toBeTruthy();
+      expect(row.getByTestId('queued-file-chip')).toBeTruthy();
+
+      await view.rerender({ messages: [queued({ id: 'q-2', content: 'second' }), message] });
+      pending.resolve('delivered');
+      await waitFor(() =>
+        expect(row.getByRole('button', { name: 'Send immediately' }).hasAttribute('disabled')).toBe(
+          true,
+        ),
+      );
+      await fireEvent.keyDown(row.getByTestId('queued-message-content'), {
+        key: 'Enter',
+        metaKey: true,
+      });
+      expect(onsendnow).toHaveBeenCalledTimes(1);
+      await view.rerender({ messages: [queued({ id: 'q-2', content: 'second' })] });
+      expect(screen.getAllByTestId('queued-message-row')).toHaveLength(1);
+      expect(screen.getByText('second')).toBeTruthy();
+    });
+
+    it.each(['queued', 'quarantined'] as const)(
+      'keeps %s outcomes actionable without removing attachments',
+      async (outcome) => {
+        const onsendnow = vi.fn().mockResolvedValue(outcome);
+        render(QueuedMessageList, { props: { messages: [queued({})], onsendnow } });
+        const send = screen.getByRole('button', { name: 'Send immediately' });
+        await fireEvent.click(send);
+        await waitFor(() => expect(screen.getByRole('status')).toBeTruthy());
+        expect(screen.getAllByTestId('queued-message-row')).toHaveLength(1);
+        expect(send.hasAttribute('disabled')).toBe(false);
+        await fireEvent.click(send);
+        expect(onsendnow).toHaveBeenCalledTimes(2);
+      },
+    );
+
+    it('shows failure and retries the same ID without invoking remove', async () => {
+      const onsendnow = vi
+        .fn()
+        .mockRejectedValueOnce(new Error('fixture failure'))
+        .mockResolvedValue('delivered');
+      const onremove = vi.fn();
+      render(QueuedMessageList, { props: { messages: [queued({})], onsendnow, onremove } });
+      await fireEvent.click(screen.getByRole('button', { name: 'Send immediately' }));
+      await waitFor(() =>
+        expect(screen.getByRole('alert').textContent).toContain('fixture failure'),
+      );
+      await fireEvent.click(screen.getByRole('button', { name: 'Send immediately' }));
+      await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
+      expect(onsendnow.mock.calls).toEqual([['q-1'], ['q-1']]);
+      expect(onremove).not.toHaveBeenCalled();
+    });
+
+    it('does not send disabled or edit-held messages through the shortcut', async () => {
+      const onsendnow = vi.fn();
+      const view = render(QueuedMessageList, {
+        props: { messages: [queued({})], onsendnow, disabled: true },
+      });
+      await fireEvent.keyDown(screen.getByTestId('queued-message-content'), {
+        key: 'Enter',
+        ctrlKey: true,
+      });
+      await view.rerender({ messages: [queued({ editing: true })], disabled: false });
+      await fireEvent.keyDown(screen.getByTestId('queued-message-content'), {
+        key: 'Enter',
+        metaKey: true,
+      });
+      expect(onsendnow).not.toHaveBeenCalled();
+    });
+
+    it('ignores an acknowledgement after the selected message disappeared', async () => {
+      const pending = deferred<'queued'>();
+      const onsendnow = vi.fn(() => pending.promise);
+      const view = render(QueuedMessageList, { props: { messages: [queued({})], onsendnow } });
+      await fireEvent.click(screen.getByRole('button', { name: 'Send immediately' }));
+      await view.rerender({ messages: [queued({ id: 'q-2', content: 'next' })] });
+      pending.resolve('queued');
+      await tick();
+      expect(screen.queryByRole('status')).toBeNull();
+      expect(
+        screen.getByRole('button', { name: 'Send immediately' }).hasAttribute('disabled'),
+      ).toBe(false);
+      expect(onsendnow.mock.calls).toEqual([['q-1']]);
+    });
   });
 
   describe('queue disclosure', () => {
