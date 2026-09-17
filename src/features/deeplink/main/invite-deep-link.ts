@@ -127,13 +127,20 @@ export async function handleInviteDeepLink(url: string): Promise<void> {
     const grant = connection.redeemWait(start.flowId, start.expiresIn * 1000 + WAIT_MARGIN_MS);
     grant.catch(() => {});
 
+    // Prompt labels: the host's pretty name when the daemon sends one (older
+    // daemons omit it → the dialed address), and "Untitled" for a blank title.
+    // The stored guest session keeps the raw title; its settings row applies
+    // the same fallback on render.
+    const hostLabel = nonBlank(start.prettyHostname) ?? nonBlank(start.hostname) ?? connection.host;
+    const workspaceTitle = nonBlank(start.workspaceTitle) ?? m.workspace_links_untitled_label();
+
     await clipboard.writeText(start.userCode);
     consent = showInviteConsent({
       requestId: randomUUID(),
       userCode: start.userCode,
       verificationUri: start.verificationUri,
-      workspaceTitle: start.workspaceTitle,
-      hostLabel: connection.host,
+      workspaceTitle,
+      hostLabel,
       expiresInMs: start.expiresIn * 1000,
     });
     const decision = await consent.decision;
@@ -145,7 +152,7 @@ export async function handleInviteDeepLink(url: string): Promise<void> {
     // No renderer to show the modal (cold start / no ack): native box.
     if (
       decision === null &&
-      !(await showDeviceCode(start.userCode, start.verificationUri, start.workspaceTitle))
+      !(await showDeviceCode(start.userCode, start.verificationUri, workspaceTitle))
     ) {
       logger.info('User cancelled the invite device flow');
       return;
@@ -263,6 +270,12 @@ function describeErrorForLog(error: unknown): Record<string, unknown> {
     return { kind: 'store', code: error.code };
   }
   return { kind: 'unknown' };
+}
+
+/** The trimmed string, or `undefined` when absent, not a string, or whitespace-only. */
+function nonBlank(value: unknown): string | undefined {
+  const trimmed = typeof value === 'string' ? value.trim() : '';
+  return trimmed ? trimmed : undefined;
 }
 
 async function showDialog(options: MessageBoxOptions): Promise<number> {
