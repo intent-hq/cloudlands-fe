@@ -8,7 +8,7 @@ if (!profile || !url || new URL(url).hostname !== '127.0.0.1') {
 app.setPath('userData', profile);
 app.setPath('sessionData', profile);
 app.commandLine.appendSwitch('disable-background-timer-throttling');
-globalThis.lifetimeEvidence = { registrations: [], guests: [] };
+globalThis.lifetimeEvidence = { registrations: [], guests: [], tabListRequests: [] };
 globalThis.lifetimeCdp = require(cdpBundle).embeddedBrowserCdp;
 globalThis.lifetimeNavigate = (tabId, url) =>
   require(cdpBundle).executeActions(

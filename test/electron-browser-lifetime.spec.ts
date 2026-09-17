@@ -62,6 +62,9 @@ test.beforeAll(async () => {
           if (id === '\0fixture-window-routing')
             return `import { BrowserWindow } from 'electron';
               export function sendToWorkspaceWindows(workspaceId, channel, payload) {
+                if (channel === 'browser:list-tabs-request') {
+                  globalThis.lifetimeEvidence.tabListRequests.push({ workspaceId, payload });
+                }
                 const windows = BrowserWindow.getAllWindows();
                 for (const window of windows) window.webContents.send(channel, payload);
                 return { windowCount: windows.length, browserClientsNotified: false, delivered: windows.length > 0 };
@@ -441,8 +444,25 @@ for (const hidden of [false, true]) {
       const closedGuests = await app.evaluate(
         () => (globalThis as any).lifetimeEvidence.guests.length,
       );
-      await app.evaluate(() => (globalThis as any).lifetimeCdp.listAllTabs('B'));
-      await page.waitForTimeout(150);
+      const passiveList = await app.evaluate(() =>
+        (globalThis as any).lifetimeCdp.listAllTabs('B'),
+      );
+      expect(passiveList.stale).toBe(false);
+      expect(passiveList.tabs).toContainEqual(
+        expect.objectContaining({ tabId: 'B-1', mounted: false }),
+      );
+      expect(
+        await app.evaluate(() => (globalThis as any).lifetimeEvidence.tabListRequests),
+      ).toEqual([
+        { workspaceId: 'B', payload: { workspaceId: 'B', requestId: expect.any(String) } },
+      ]);
+      // Observe the registration event over the same budget used for explicit
+      // recovery, rather than sampling once after an arbitrary short sleep.
+      expect(
+        await app.evaluate(() =>
+          (globalThis as any).lifetimeCdp.waitForTabRegistration('B-1', 3000),
+        ),
+      ).toBe(false);
       expect(await app.evaluate(() => (globalThis as any).lifetimeEvidence.guests.length)).toBe(
         closedGuests,
       );
@@ -454,6 +474,12 @@ for (const hidden of [false, true]) {
       expect(result).toMatchObject({
         success: true,
         results: [{ action: 'navigate', success: true, result: { tabId: 'B-1', url } }],
+      });
+      expect(
+        await app.evaluate(() => (globalThis as any).lifetimeEvidence.tabListRequests.at(-1)),
+      ).toEqual({
+        workspaceId: 'B',
+        payload: { workspaceId: 'B', requestId: expect.any(String), recoverTabId: 'B-1' },
       });
       const registered = await app.evaluate(() =>
         (globalThis as any).lifetimeCdp.waitForTabRegistration('B-1', 3000),
@@ -490,6 +516,7 @@ for (const hidden of [false, true]) {
         .toBe(false);
       observations.push(await record(app, page, 'after second navigation settles'));
       const settled = observations.at(-1);
+      expect(settled.guests).toHaveLength(closedGuests + 1);
       expect(settled.live.find((guest: any) => guest.id === recovered.id)?.url).toBe(nextUrl);
       expect(settled.urls['B-1']).toBe(nextUrl);
       expect(settled.records).toEqual(initial);
@@ -502,11 +529,32 @@ for (const hidden of [false, true]) {
       await expect
         .poll(() => app.evaluate(() => (globalThis as any).lifetimeCdp.isTabMounted('B-1')))
         .toBe(false);
+      const removedLayout = await page.evaluate(() => (window as any).lifetimeFixture.records().B);
+      expect(removedLayout.visible).not.toContain('B-1');
+      expect(removedLayout.hidden).not.toContain('B-1');
+      expect(removedLayout.owners).not.toHaveProperty('B-1');
+      const removedList = await app.evaluate(() =>
+        (globalThis as any).lifetimeCdp.listAllTabs('B'),
+      );
+      expect(removedList.stale).toBe(false);
+      expect(removedList.tabs.map((tab: { tabId: string }) => tab.tabId)).not.toContain('B-1');
       const removedResult = await app.evaluate(
         (_electron, url) => (globalThis as any).lifetimeNavigate('B-1', url),
         nextUrl,
       );
-      expect(removedResult.success).toBe(false);
+      expect(removedResult).toMatchObject({
+        success: false,
+        results: [
+          {
+            action: 'navigate',
+            success: false,
+            error: expect.stringMatching(/B-1.*not found.*workspace B/),
+          },
+        ],
+      });
+      expect(await page.evaluate(() => (window as any).lifetimeFixture.records().B)).toEqual(
+        removedLayout,
+      );
       expect(await app.evaluate(() => (globalThis as any).lifetimeCdp.isTabMounted('B-1'))).toBe(
         false,
       );
@@ -516,6 +564,9 @@ for (const hidden of [false, true]) {
           (await guestSnapshot(app)).live.some((guest) => guest.url.includes('tab=B-')),
         )
         .toBe(false);
+      expect(await app.evaluate(() => (globalThis as any).lifetimeEvidence.guests.length)).toBe(
+        closedGuests + 1,
+      );
     } finally {
       await teardown(app, page, profile, observations, testInfo);
     }
