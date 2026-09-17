@@ -3778,8 +3778,6 @@
   "inviteConsent_modal_why_description": "ホストの Intent は、GitHub を通じて誰が参加するのかを確認します。サインインして本人であることを証明してください。Intent は GitHub が確認するか、コードの有効期限が切れるまで待機します。",
   "inviteConsent_modal_hostLearns_title": "ホストに伝わる情報",
   "inviteConsent_modal_hostLearns_description": "GitHub のユーザー名、アカウント ID、表示名、アバターのみです。それ以外は伝わりません。権限は付与されず、ホストはあなたのリポジトリや非公開データにアクセスできません。サインイントークンはホストがアカウントを照会するために一度だけ使用され、保存されることはありません。",
-  "inviteConsent_modal_stored_title": "この端末に保存される情報",
-  "inviteConsent_modal_stored_description": "このホストのワークスペース用の資格情報です。後でゲストセッションから削除できます。",
   "inviteConsent_modal_waiting_label": "GitHub を待機中…",
   "inviteConsent_modal_cancelButton_label": "キャンセル",
   "inviteConsent_modal_dismiss_ariaLabel": "招待ダイアログを閉じる",
