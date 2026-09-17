@@ -2,28 +2,31 @@
  * Invite redemption client (main process) — the guest side of multiplayer
  * invites (intentd #1872).
  *
- * The daemon serves three methods on its UNAUTHENTICATED `/invite`
- * WebSocket endpoint. `invite.redeem`, in two phases on the same name, is
- * the first join on a host:
+ * The daemon serves four methods on its UNAUTHENTICATED `/invite`
+ * WebSocket endpoint. The first join on a host is the gist identity proof
+ * (intentd #1967), in two steps:
  *
- * 1. `{ inviteId, secret }` starts an identity-only GitHub device flow and
- *    answers `{ flowId, userCode, verificationUri, expiresIn, interval,
- *    workspaceId, workspaceTitle }` — the UI shows the code + URL.
- * 2. `{ flowId }` blocks until the grant settles and answers the collaborator
- *    credential exactly once: `{ status: "authorized", token, principalId,
- *    login, workspaceId }`.
+ * 1. `invite.challenge { inviteId, secret }` validates the invite and answers
+ *    its decoration plus a short-lived single-use nonce: `{ workspaceId,
+ *    workspaceTitle, hostname, prettyHostname, nonce, nonceExpiresAt }`.
+ * 2. `invite.prove { inviteId, secret, nonce, gistId, login }` joins once the
+ *    host has read a gist owned by `login` whose proof file starts with that
+ *    nonce (the guest publishes it through its own daemon's
+ *    `github.identityProof.create`), answering the collaborator credential
+ *    exactly once: `{ status: "authorized", token, principalId, login,
+ *    workspaceId }`.
  *
- * A guest that already holds a credential for the host skips the device
- * flow: `invite.inspect { inviteId, secret }` is phase 1's validation and
- * decoration with no flow started (`{ workspaceId, workspaceTitle, hostname,
+ * A guest that already holds a credential for the host skips the proof:
+ * `invite.inspect { inviteId, secret }` is the challenge's validation and
+ * decoration with no nonce issued (`{ workspaceId, workspaceTitle, hostname,
  * prettyHostname }`), and `invite.accept { inviteId, secret, credential }`
  * joins with the stored credential and answers the same credential shape as
- * phase 2. An unknown or revoked credential is refused with
- * `credential-invalid`, on which the caller falls back to `invite.redeem`.
+ * `invite.prove`. An unknown or revoked credential is refused with
+ * `credential-invalid`, on which the caller falls back to the proof.
  *
  * Refusals carry `error.data.code` (`invite-expired`, `invite-pin-mismatch`,
- * `invite-flow-denied`, `workspace-full`, …) so the flow routes on a code,
- * never on prose.
+ * `proof-invalid`, `workspace-full`, …) so the flow routes on a code, never
+ * on prose.
  *
  * Trust: the link's `fp` pins the daemon's self-signed cert and every
  * candidate is dialed through {@link pinnedTlsConnect}, so the invite secret
@@ -62,45 +65,57 @@ const { WebSocket: NodeWebSocket } = nodeRequire('ws') as {
 /** Overall bound on the multi-host `/invite` race. */
 const INVITE_CONNECT_TIMEOUT_MS = 10_000;
 
-/** Bound on phase-1 (`{ inviteId, secret }`): the daemon talks to GitHub once. */
-const INVITE_START_TIMEOUT_MS = 30_000;
+/**
+ * Bound on the local-only requests (`invite.challenge`, `invite.inspect`,
+ * `invite.accept`): the daemon answers from its own store.
+ */
+const INVITE_REQUEST_TIMEOUT_MS = 30_000;
 
-/** Method name for both redeem phases. */
-// i18n-ignore (wire method name)
-const INVITE_REDEEM_METHOD = 'invite.redeem';
+/** Bound on `invite.prove`: the daemon reads the proof gist from GitHub once. */
+const INVITE_PROVE_TIMEOUT_MS = 60_000;
+
 /** Method name for the flow-less preview of an invite. */
 // i18n-ignore (wire method name)
 const INVITE_INSPECT_METHOD = 'invite.inspect';
 /** Method name for the returning-guest join with a stored credential. */
 // i18n-ignore (wire method name)
 const INVITE_ACCEPT_METHOD = 'invite.accept';
+/** Method name for the proof step 1: the preview plus a single-use nonce. */
+// i18n-ignore (wire method name)
+const INVITE_CHALLENGE_METHOD = 'invite.challenge';
+/** Method name for the proof step 2: join with the published proof gist. */
+// i18n-ignore (wire method name)
+const INVITE_PROVE_METHOD = 'invite.prove';
 
 /**
- * Phase-1 result: the device-flow prompt. `hostname` / `prettyHostname` name
- * the host machine for the consent prompt; older daemons omit both, in which
- * case the dialed address is shown instead.
+ * `invite.inspect` result: the invite's decoration with nothing issued.
+ * `hostname` / `prettyHostname` name the host machine for the consent
+ * prompt; older daemons omit both, in which case the dialed address is shown
+ * instead.
  */
-interface InviteRedeemStart {
-  flowId: string;
-  userCode: string;
-  verificationUri: string;
-  expiresIn: number;
-  interval: number;
+export interface InviteInspection {
   workspaceId: string;
   workspaceTitle: string;
   hostname?: string;
   prettyHostname?: string;
 }
 
-/** `invite.inspect` result: the phase-1 decoration with no device flow started. */
-interface InviteInspection {
-  workspaceId: string;
-  workspaceTitle: string;
-  hostname?: string;
-  prettyHostname?: string;
+/** `invite.challenge` result: the inspection plus the nonce the proof gist must carry. */
+export interface InviteChallenge extends InviteInspection {
+  /** Single-use nonce; the first line of the proof gist. */
+  nonce: string;
+  /** RFC 3339 instant after which the host refuses the nonce (`proof-expired`). */
+  nonceExpiresAt: string;
 }
 
-/** Phase-2 result: the collaborator credential (returned exactly once). */
+/** The guest's published identity proof, as `invite.prove` names it. */
+interface InviteProof {
+  nonce: string;
+  gistId: string;
+  login: string;
+}
+
+/** Join result (`invite.prove` / `invite.accept`): the collaborator credential, returned exactly once. */
 interface InviteCredential {
   status: 'authorized';
   token: string;
@@ -113,9 +128,12 @@ interface InviteCredential {
  * The daemon's documented `error.data.code` values for the `/invite` methods
  * (intentd #1872; `workspace-full` — the guest cap is spent at join time —
  * from intentd #1917; `credential-invalid` — `invite.accept` with an unknown
- * or revoked credential — from the returning-guest join). The closed set is
- * the ONLY server-authored text that ever leaves {@link InviteRpcError}: a
- * code outside it maps to `null`.
+ * or revoked credential — from the returning-guest join; `proof-invalid` /
+ * `proof-expired` / `github-unreachable` — `invite.prove` could not verify
+ * the gist, the nonce is spent or past `nonceExpiresAt`, or the host could
+ * not reach GitHub — from intentd #1967). The closed set is the ONLY
+ * server-authored text that ever leaves {@link InviteRpcError}: a code
+ * outside it maps to `null`.
  */
 const INVITE_ERROR_CODES = [
   'invite-not-found',
@@ -124,13 +142,11 @@ const INVITE_ERROR_CODES = [
   'invite-redeemed',
   'invite-pin-mismatch',
   'invite-pin-unknown',
-  'invite-flow-busy',
-  'invite-flow-denied',
-  'invite-flow-error',
-  'invite-flow-expired',
-  'invite-flow-not-found',
   'workspace-full',
   'credential-invalid',
+  'proof-invalid',
+  'proof-expired',
+  'github-unreachable',
 ] as const;
 
 export type InviteErrorCode = (typeof INVITE_ERROR_CODES)[number];
@@ -174,7 +190,7 @@ export class InviteRpcError extends Error {
  *   tunneled dial broke before the handshake completed (e.g. the tailcat
  *   child exited immediately).
  * - `host-unreachable`: no candidate answered within the connect bound, or
- *   the daemon never answered a redeem request within its bound.
+ *   the daemon never answered an invite request within its bound.
  * - `host-refused`: a candidate answered but refused the connection
  *   (ECONNREFUSED, or a non-101 answer to the `/invite` upgrade).
  * - `connection-closed`: the socket closed (or reset) before the invite flow
@@ -241,15 +257,20 @@ export interface InviteConnection {
   readonly host: string;
   /** Whether the tunnel carried the connection. */
   readonly via: 'direct' | 'tunnel';
-  /** Phase 1: start the device flow for this invite. */
-  redeemStart(inviteId: string, secret: string): Promise<InviteRedeemStart>;
+  /** Proof step 1: preview the invite and obtain the single-use nonce. */
+  challenge(inviteId: string, secret: string): Promise<InviteChallenge>;
   /**
-   * Phase 2: wait for the grant. Blocks for as long as the device flow is
-   * open; `timeoutMs` (default: `expiresIn` + margin, supplied by the caller)
-   * bounds the wait locally.
+   * Proof step 2: join with the published proof gist. The host reads the
+   * gist from GitHub, so this is the one host round-trip that talks to a
+   * third party; `timeoutMs` bounds the wait locally.
    */
-  redeemWait(flowId: string, timeoutMs: number): Promise<InviteCredential>;
-  /** Preview the invite (workspace + host names) without starting a device flow. */
+  prove(
+    inviteId: string,
+    secret: string,
+    proof: InviteProof,
+    timeoutMs?: number,
+  ): Promise<InviteCredential>;
+  /** Preview the invite (workspace + host names) without issuing a nonce. */
   inspect(inviteId: string, secret: string): Promise<InviteInspection>;
   /**
    * Join with a credential this guest already holds for the host; refused
@@ -599,25 +620,29 @@ function attachRpc(
   return {
     host,
     via,
-    redeemStart: (inviteId, secret) =>
+    challenge: (inviteId, secret) =>
       request(
-        INVITE_REDEEM_METHOD,
+        INVITE_CHALLENGE_METHOD,
         { inviteId, secret },
-        INVITE_START_TIMEOUT_MS,
-      ) as Promise<InviteRedeemStart>,
-    redeemWait: (flowId, timeoutMs) =>
-      request(INVITE_REDEEM_METHOD, { flowId }, timeoutMs) as Promise<InviteCredential>,
+        INVITE_REQUEST_TIMEOUT_MS,
+      ) as Promise<InviteChallenge>,
+    prove: (inviteId, secret, proof, timeoutMs = INVITE_PROVE_TIMEOUT_MS) =>
+      request(
+        INVITE_PROVE_METHOD,
+        { inviteId, secret, nonce: proof.nonce, gistId: proof.gistId, login: proof.login },
+        timeoutMs,
+      ) as Promise<InviteCredential>,
     inspect: (inviteId, secret) =>
       request(
         INVITE_INSPECT_METHOD,
         { inviteId, secret },
-        INVITE_START_TIMEOUT_MS,
+        INVITE_REQUEST_TIMEOUT_MS,
       ) as Promise<InviteInspection>,
     accept: (inviteId, secret, credential) =>
       request(
         INVITE_ACCEPT_METHOD,
         { inviteId, secret, credential },
-        INVITE_START_TIMEOUT_MS,
+        INVITE_REQUEST_TIMEOUT_MS,
       ) as Promise<InviteCredential>,
     close: () => {
       if (closed) return;

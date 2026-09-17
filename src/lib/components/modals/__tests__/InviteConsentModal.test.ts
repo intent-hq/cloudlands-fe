@@ -13,14 +13,25 @@ vi.mock('svelte-fa', async () => ({
 const { handleLink } = vi.hoisted(() => ({ handleLink: vi.fn(() => Promise.resolve()) }));
 vi.mock('$features/navigation/link-handler', () => ({ handleLink }));
 
+/** The guest's own sign-in (`sign-in-required`): device code + URL, "Open GitHub" primary. */
 const PAYLOAD: InviteConsentShowPayload = {
   requestId: 'req-1',
-  mode: 'device-code',
+  mode: 'sign-in-required',
+  reason: 'not-connected',
   userCode: 'ABCD-1234',
   verificationUri: 'https://github.com/login/device',
   workspaceTitle: 'Alpha',
   hostLabel: 'host.example',
   expiresInMs: 900_000,
+};
+
+/** First join with a signed-in guest (`prove`): no code, "Join" primary. */
+const PROVE_PAYLOAD: InviteConsentShowPayload = {
+  requestId: 'req-3',
+  mode: 'prove',
+  login: 'octocat',
+  workspaceTitle: 'Alpha',
+  hostLabel: 'host.example',
 };
 
 const CONFIRM_PAYLOAD: InviteConsentShowPayload = {
@@ -43,7 +54,7 @@ async function loadModal() {
 }
 
 describe('InviteConsentModal', () => {
-  it('shows the workspace, host, device code and verification URL', async () => {
+  it('sign-in-required: shows the workspace, host, device code and verification URL, no Join button', async () => {
     const InviteConsentModal = await loadModal();
 
     render(InviteConsentModal, { props: { open: true, payload: PAYLOAD, onRespond: vi.fn() } });
@@ -52,7 +63,33 @@ describe('InviteConsentModal', () => {
     expect(dialogEl.getAttribute('aria-modal')).toBe('true');
     expect(screen.getByText('ABCD-1234')).toBeTruthy();
     expect(screen.getByText('https://github.com/login/device')).toBeTruthy();
+    expect(screen.getByText('Sign in to GitHub first')).toBeTruthy();
+    expect(screen.getByText('What the host learns')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Join' })).toBeNull();
     expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  it('sign-in-required: the scope-missing reason is explained differently from not-connected', async () => {
+    const InviteConsentModal = await loadModal();
+
+    const { unmount } = render(InviteConsentModal, {
+      props: { open: true, payload: PAYLOAD, onRespond: vi.fn() },
+    });
+    await screen.findByRole('alertdialog', { name: DIALOG_NAME });
+    const notConnected =
+      screen.getByText('Sign in to GitHub first').nextElementSibling?.textContent;
+    unmount();
+
+    render(InviteConsentModal, {
+      props: { open: true, payload: { ...PAYLOAD, reason: 'scope-missing' }, onRespond: vi.fn() },
+    });
+    await screen.findByRole('alertdialog', { name: DIALOG_NAME });
+    const scopeMissing =
+      screen.getByText('Sign in to GitHub first').nextElementSibling?.textContent;
+
+    expect(notConnected).toBeTruthy();
+    expect(scopeMissing).toBeTruthy();
+    expect(scopeMissing).not.toBe(notConnected);
   });
 
   it('Open GitHub reports open once, keeps the dialog up in a waiting state and does not open the URL itself', async () => {
@@ -160,46 +197,70 @@ describe('InviteConsentModal', () => {
     expect(onRespond.mock.calls).toEqual([['open']]);
   });
 
-  // Returning guest (confirm mode): no device code or URL, the stored identity
-  // is named, "Why sign in?" is hidden, and Join is the primary action that
-  // keeps the dialog up until main dismisses it.
-  it('confirm mode: names the stored identity, hides the device flow, and Join reports open once', async () => {
+  // Prove (first join, signed in) and confirm (returning guest): no device
+  // code or URL, the identity is named — the GitHub account the proof is made
+  // with, or the identity the host already knows — the sign-in section is
+  // hidden, and Join is the primary action that keeps the dialog up until
+  // main dismisses it.
+  it.each([
+    ['prove', PROVE_PAYLOAD, 'Signed in to GitHub as @octocat'],
+    ['confirm', CONFIRM_PAYLOAD, 'Signed in on this host as @octocat'],
+  ] as const)(
+    '%s mode: names the identity, hides the device flow, and Join reports open once',
+    async (_mode, payload, identityLine) => {
+      const onRespond = vi.fn();
+      const InviteConsentModal = await loadModal();
+
+      render(InviteConsentModal, { props: { open: true, payload, onRespond } });
+
+      await screen.findByRole('alertdialog', { name: DIALOG_NAME });
+      expect(screen.getByText(identityLine)).toBeTruthy();
+      expect(screen.getByText('What the host learns')).toBeTruthy();
+      expect(screen.queryByText('Sign in to GitHub first')).toBeNull();
+      expect(screen.queryByText('ABCD-1234')).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Open GitHub' })).toBeNull();
+      expect(screen.queryByRole('status')).toBeNull();
+
+      const joinButton = screen.getByRole('button', { name: 'Join' });
+      await fireEvent.click(joinButton);
+      await fireEvent.click(joinButton);
+
+      expect(onRespond).toHaveBeenCalledExactlyOnceWith('open');
+      expect(handleLink).not.toHaveBeenCalled();
+      expect(screen.getByRole('alertdialog', { name: DIALOG_NAME })).toBeTruthy();
+      expect(screen.getByRole('status')).toBeTruthy();
+    },
+  );
+
+  it.each([
+    ['prove', PROVE_PAYLOAD],
+    ['confirm', CONFIRM_PAYLOAD],
+  ] as const)('%s mode: Cancel reports cancel without joining', async (_mode, payload) => {
     const onRespond = vi.fn();
     const InviteConsentModal = await loadModal();
 
-    render(InviteConsentModal, {
-      props: { open: true, payload: CONFIRM_PAYLOAD, onRespond },
-    });
-
-    await screen.findByRole('alertdialog', { name: DIALOG_NAME });
-    expect(screen.getByText('Signed in on this host as @octocat')).toBeTruthy();
-    expect(screen.getByText('What the host learns')).toBeTruthy();
-    expect(screen.queryByText('Why sign in?')).toBeNull();
-    expect(screen.queryByText('ABCD-1234')).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Open GitHub' })).toBeNull();
-    expect(screen.queryByRole('status')).toBeNull();
-
-    const joinButton = screen.getByRole('button', { name: 'Join' });
-    await fireEvent.click(joinButton);
-    await fireEvent.click(joinButton);
-
-    expect(onRespond).toHaveBeenCalledExactlyOnceWith('open');
-    expect(handleLink).not.toHaveBeenCalled();
-    expect(screen.getByRole('alertdialog', { name: DIALOG_NAME })).toBeTruthy();
-    expect(screen.getByRole('status')).toBeTruthy();
-  });
-
-  it('confirm mode: Cancel and Escape report cancel without joining', async () => {
-    const onRespond = vi.fn();
-    const InviteConsentModal = await loadModal();
-
-    render(InviteConsentModal, {
-      props: { open: true, payload: CONFIRM_PAYLOAD, onRespond },
-    });
+    render(InviteConsentModal, { props: { open: true, payload, onRespond } });
     await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
 
     expect(onRespond).toHaveBeenCalledExactlyOnceWith('cancel');
     expect(screen.queryByRole('alertdialog')).toBeNull();
+  });
+
+  it('prove mode: a cancel from the joining state is still reported until main dismisses', async () => {
+    const onRespond = vi.fn();
+    const InviteConsentModal = await loadModal();
+
+    const { rerender } = render(InviteConsentModal, {
+      props: { open: true, payload: PROVE_PAYLOAD, onRespond },
+    });
+    await fireEvent.click(screen.getByRole('button', { name: 'Join' }));
+    expect(screen.getByRole('status')).toBeTruthy();
+    await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(onRespond.mock.calls).toEqual([['open'], ['cancel']]);
+
+    await rerender({ open: false, payload: null, onRespond });
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(screen.queryByRole('status')).toBeNull();
   });
 
   it('renders nothing when closed or without payload', async () => {
