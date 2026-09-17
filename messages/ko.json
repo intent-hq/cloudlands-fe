@@ -148,7 +148,7 @@
   "settings_agentBackend_flushQueuedMessages_systemOnly_label": "시스템 메시지만",
   "settings_agentBackend_flushQueuedMessages_off_label": "끄기(FIFO)",
   "settings_agentBackend_memoryBudget_label": "에이전트 메모리 예산",
-  "settings_agentBackend_memoryBudget_description": "현재: {current}. 에이전트 전체 메모리에 대한 완만한 상한입니다. 예산을 초과하는 동안 새 에이전트 실행은 유휴 프로세스 정리 뒤에서 대기하며, 이미 실행 중인 것은 종료되지 않습니다. 자동은 데몬이 이 컴퓨터의 메모리에서 도출한 예산이며, 0으로 설정하면 한도가 비활성화됩니다. 변경 사항은 데몬 재시작 시 적용됩니다.",
+  "settings_agentBackend_memoryBudget_description": "현재: {current}. 데몬의 에이전트 프로세스 트리 전체 메모리에 대한 완만한 상한입니다. 새 에이전트 실행이 유휴 프로세스 정리 뒤에서 대기하는 것은 두 조건이 동시에 충족될 때만입니다: 트리가 예산을 초과하고, 이 컴퓨터의 사용 가능한 메모리가 8 GiB에 임시 에이전트 하나(약 660 MB)를 더한 값보다 적을 때입니다. 여유 메모리가 그보다 많은 컴퓨터에서는 예산을 초과한 트리도 그대로 둡니다. 사용 가능한 메모리를 측정할 수 없으면 예산 초과만으로도 실행이 대기합니다. 이미 실행 중인 것은 종료되지 않습니다. 자동은 데몬이 이 컴퓨터의 메모리에서 도출한 예산이며, 명시적으로 0으로 설정한 경우에만 한도가 비활성화됩니다. 변경 사항은 데몬 재시작 시 적용됩니다.",
   "settings_agentBackend_memoryBudget_boundsNote": "최댓값 {max}은(는) 데몬이 보고한 이 컴퓨터의 전체 메모리입니다.",
   "settings_agentBackend_memoryBudget_offValue": "끄기",
   "settings_agentBackend_memoryBudget_autoValue": "자동({value} MB)",

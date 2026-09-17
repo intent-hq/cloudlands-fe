@@ -148,7 +148,7 @@
   "settings_agentBackend_flushQueuedMessages_systemOnly_label": "仅系统消息",
   "settings_agentBackend_flushQueuedMessages_off_label": "关闭（FIFO）",
   "settings_agentBackend_memoryBudget_label": "智能体内存预算",
-  "settings_agentBackend_memoryBudget_description": "当前：{current}。对智能体总内存的软性上限：超出预算时，新的智能体启动会排队等待空闲进程被回收——已在运行的进程不会被终止。自动是守护进程根据本机内存推算的预算；设为 0 则关闭该限制。更改将在守护进程重启后生效。",
+  "settings_agentBackend_memoryBudget_description": "当前：{current}。对守护进程的智能体进程树总内存的软性上限。只有在两个条件同时成立时，新的智能体启动才会排队等待空闲进程被回收：进程树超出预算，且本机可用内存低于 8 GiB 加一个临时智能体（约 660 MB）。若本机空闲内存高于该值，即使进程树超出预算也不会受到影响。当无法采样可用内存时，仅超出预算即会使启动排队。已在运行的进程不会被终止。自动是守护进程根据本机内存推算的预算；只有显式设为 0 才会关闭该限制。更改将在守护进程重启后生效。",
   "settings_agentBackend_memoryBudget_boundsNote": "最大值 {max} 是守护进程报告的本机总内存。",
   "settings_agentBackend_memoryBudget_offValue": "关闭",
   "settings_agentBackend_memoryBudget_autoValue": "自动（{value} MB）",

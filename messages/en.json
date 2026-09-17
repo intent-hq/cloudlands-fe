@@ -148,7 +148,7 @@
   "settings_agentBackend_flushQueuedMessages_systemOnly_label": "System Messages Only",
   "settings_agentBackend_flushQueuedMessages_off_label": "Off (FIFO)",
   "settings_agentBackend_memoryBudget_label": "Agent memory budget",
-  "settings_agentBackend_memoryBudget_description": "Current: {current}. A soft cap on total agent memory: while over budget, new agent spawns wait behind idle-process eviction — nothing already running is killed. Auto is a budget the daemon derives from this machine's memory; 0 turns the gate off. Changes apply on daemon restart.",
+  "settings_agentBackend_memoryBudget_description": "Current: {current}. A soft cap on the total memory of the daemon's agent process tree. New agent spawns wait behind idle-process eviction only while two conditions hold at once: the tree is over budget and this machine's available memory is below 8 GiB plus one provisional agent (about 660 MB). An over-budget tree on a machine with more free memory than that is left alone. If available memory cannot be sampled, being over budget alone makes spawns wait. Nothing already running is killed. Auto is a budget the daemon derives from this machine's memory; only an explicit 0 turns the gate off. Changes apply on daemon restart.",
   "settings_agentBackend_memoryBudget_boundsNote": "The maximum, {max}, is this machine's total memory as reported by the daemon.",
   "settings_agentBackend_memoryBudget_offValue": "Off",
   "settings_agentBackend_memoryBudget_autoValue": "Auto ({value} MB)",
