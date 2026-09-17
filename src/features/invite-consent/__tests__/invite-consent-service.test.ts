@@ -12,6 +12,7 @@ import type { InviteConsentShowPayload } from '$shared/ipc/invite-consent';
 
 const SHOW_PAYLOAD: InviteConsentShowPayload = {
   requestId: 'req-1',
+  mode: 'device-code',
   userCode: 'ABCD-1234',
   verificationUri: 'https://github.com/login/device',
   workspaceTitle: 'Alpha',
