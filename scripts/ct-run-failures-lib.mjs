@@ -120,6 +120,7 @@ export function casesFromListLog(logText) {
   if (end < 0) return [];
   let start = end;
   while (start > 0 && isBlockLine(lines[start - 1])) start -= 1;
+  while (end + 1 < lines.length && isBlockLine(lines[end + 1])) end += 1;
 
   const cases = [];
   const seen = new Set();

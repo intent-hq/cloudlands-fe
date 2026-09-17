@@ -341,6 +341,34 @@ describe('casesFromListLog', () => {
     ].join('\n');
     expect(casesFromListLog(log)).toEqual([]);
   });
+
+  it('keeps the cases after the final header when no passed/skipped footer follows', () => {
+    const failedLine = '    [chromium] › a.ct.spec.ts:1:1 › fails';
+    const flakyLine = '    [chromium] › b.ct.spec.ts:2:3 › wobbles';
+    const failed = {
+      status: 'failed',
+      specFile: 'a.ct.spec.ts',
+      title: 'fails',
+      location: 'a.ct.spec.ts:1:1',
+    };
+    const flaky = {
+      status: 'flaky',
+      specFile: 'b.ct.spec.ts',
+      title: 'wobbles',
+      location: 'b.ct.spec.ts:2:3',
+    };
+
+    expect(casesFromListLog(`  1 failed\n${failedLine}\n`)).toEqual([failed]);
+    expect(casesFromListLog(`  1 flaky\n${flakyLine}\n`)).toEqual([flaky]);
+    expect(casesFromListLog(['  1 failed', failedLine, '  1 flaky', flakyLine].join('\n'))).toEqual(
+      [failed, flaky],
+    );
+    expect(
+      casesFromListLog(
+        ['  1 failed', failedLine, '  1 flaky', flakyLine, '  3 passed (1.0s)'].join('\n'),
+      ),
+    ).toEqual([failed, flaky]);
+  });
 });
 
 describe('formatReport', () => {
